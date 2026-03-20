@@ -1,0 +1,86 @@
+name: CI — Sirsi Anubis
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build anubis
+        run: go build -o anubis ./cmd/anubis/
+
+      - name: Build anubis-agent
+        run: CGO_ENABLED=0 go build -o anubis-agent ./cmd/anubis-agent/
+
+      - name: Binary size guard
+        run: |
+          ANUBIS_SIZE=$(stat -f%z anubis 2>/dev/null || stat -c%s anubis)
+          AGENT_SIZE=$(stat -f%z anubis-agent 2>/dev/null || stat -c%s anubis-agent)
+          echo "anubis: ${ANUBIS_SIZE} bytes"
+          echo "anubis-agent: ${AGENT_SIZE} bytes"
+          # Warn if anubis > 25MB
+          if [ "$ANUBIS_SIZE" -gt 26214400 ]; then
+            echo "::warning::anubis binary exceeds 25MB (${ANUBIS_SIZE} bytes)"
+          fi
+          # Warn if agent > 12MB
+          if [ "$AGENT_SIZE" -gt 12582912 ]; then
+            echo "::warning::anubis-agent binary exceeds 12MB (${AGENT_SIZE} bytes)"
+          fi

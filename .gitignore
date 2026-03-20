@@ -1,0 +1,33 @@
+# Binaries
+anubis
+anubis-agent
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+dist/
+build/
+
+# Test output
+coverage.out
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (user-specific)
+*.local.yaml
+
+# Temporary
+tmp/
+.tmp/

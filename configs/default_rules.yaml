@@ -1,0 +1,282 @@
+# Sirsi Anubis — Default Scan Rules Configuration
+# These rules define what Anubis scans for on a local workstation.
+# Users can override or extend these in ~/.config/anubis/rules.yaml
+
+version: "1.0"
+
+# ═══════════════════════════════════════════
+# GENERAL MAC
+# ═══════════════════════════════════════════
+general:
+  - name: system_caches
+    description: "System and application caches"
+    paths:
+      - "~/Library/Caches/*"
+    exclude:
+      - "~/Library/Caches/com.apple.*"  # Don't touch Apple's own caches
+    min_age_days: 7
+
+  - name: system_logs
+    description: "System and application logs"
+    paths:
+      - "~/Library/Logs/*"
+      - "/var/log/*"
+    min_age_days: 30
+
+  - name: crash_reports
+    description: "Crash reports and diagnostic data"
+    paths:
+      - "~/Library/Logs/DiagnosticReports/*"
+    min_age_days: 7
+
+  - name: downloads_junk
+    description: "Old installer files in Downloads"
+    paths:
+      - "~/Downloads/*.dmg"
+      - "~/Downloads/*.pkg"
+      - "~/Downloads/*.zip"
+    min_age_days: 30
+
+  - name: trash
+    description: "Items in Trash"
+    paths:
+      - "~/.Trash/*"
+    min_age_days: 7
+
+# ═══════════════════════════════════════════
+# VIRTUALIZATION
+# ═══════════════════════════════════════════
+virtualization:
+  - name: parallels_full
+    description: "Parallels Desktop complete remnant scan"
+    paths:
+      - "~/Applications (Parallels)/"
+      - "~/Library/Preferences/com.parallels.*"
+      - "~/Library/Group Containers/*parallels*"
+      - "~/Library/Containers/*parallels*"
+      - "~/Library/Saved Application State/com.parallels.*"
+      - "~/Library/Application Scripts/*parallels*"
+      - "~/Library/HTTPStorages/com.parallels.*"
+      - "~/Library/WebKit/com.parallels.*"
+      - "~/Library/Caches/com.parallels.*"
+      - "/Library/Preferences/Parallels/"
+      - "/Library/Parallels/"
+      - "/var/db/receipts/com.parallels.*"
+    requires_sudo: true  # For /Library and /var paths
+
+  - name: docker_desktop
+    description: "Docker Desktop images, volumes, and build cache"
+    paths:
+      - "~/Library/Containers/com.docker.docker/"
+      - "~/Library/Group Containers/group.com.docker/"
+      - "~/.docker/"
+    commands:
+      - "docker system df"  # Show disk usage
+      - "docker system prune -af --volumes"  # Clean command (with confirm)
+
+  - name: vmware_fusion
+    description: "VMware Fusion preferences and logs"
+    paths:
+      - "~/Library/Preferences/VMware Fusion/"
+      - "~/Library/Logs/VMware/"
+      - "~/Library/Caches/com.vmware.*"
+      - "~/Library/Application Support/VMware Fusion/"
+
+# ═══════════════════════════════════════════
+# DEVELOPER FRAMEWORKS
+# ═══════════════════════════════════════════
+dev:
+  - name: node_modules
+    description: "Node.js dependency directories"
+    find_pattern: "node_modules"
+    search_paths:
+      - "~/Development/"
+      - "~/code/"
+      - "~/projects/"
+    min_age_days: 14
+
+  - name: npm_cache
+    description: "npm/yarn/pnpm global caches"
+    paths:
+      - "~/.npm/"
+      - "~/.yarn/"
+      - "~/.pnpm-store/"
+
+  - name: nextjs_builds
+    description: "Next.js build directories"
+    find_pattern: ".next"
+    search_paths:
+      - "~/Development/"
+      - "~/code/"
+    min_age_days: 7
+
+  - name: rust_cargo
+    description: "Rust cargo registry and build targets"
+    paths:
+      - "~/.cargo/registry/"
+      - "~/.cargo/git/"
+    find_pattern: "target"
+    search_paths:
+      - "~/Development/"
+      - "~/code/"
+
+  - name: go_modules
+    description: "Go module cache"
+    paths:
+      - "~/go/pkg/mod/"
+
+  - name: python_caches
+    description: "Python pip, conda, and virtual environments"
+    paths:
+      - "~/.cache/pip/"
+      - "~/miniconda3/pkgs/"
+      - "~/anaconda3/pkgs/"
+    find_pattern: "__pycache__"
+    search_paths:
+      - "~/Development/"
+
+  - name: java_gradle_maven
+    description: "Java build tool caches"
+    paths:
+      - "~/.gradle/caches/"
+      - "~/.m2/repository/"
+
+  - name: homebrew_old
+    description: "Old Homebrew formula versions"
+    commands:
+      - "brew cleanup --dry-run"
+
+# ═══════════════════════════════════════════
+# AI / ML
+# ═══════════════════════════════════════════
+ai:
+  - name: huggingface_cache
+    description: "HuggingFace downloaded models"
+    paths:
+      - "~/.cache/huggingface/hub/"
+
+  - name: ollama_models
+    description: "Ollama local models"
+    paths:
+      - "~/.ollama/models/"
+
+  - name: pytorch_cache
+    description: "PyTorch hub and model cache"
+    paths:
+      - "~/.cache/torch/"
+
+  - name: mlx_cache
+    description: "Apple MLX model cache"
+    paths:
+      - "~/.cache/mlx/"
+      - "~/Library/Caches/mlx/"
+
+  - name: metal_shaders
+    description: "Compiled Metal shader caches"
+    paths:
+      - "~/Library/Caches/com.apple.metal/"
+
+# ═══════════════════════════════════════════
+# IDES & AI CODING TOOLS
+# ═══════════════════════════════════════════
+ides:
+  - name: xcode_derived_data
+    description: "Xcode Derived Data (build caches)"
+    paths:
+      - "~/Library/Developer/Xcode/DerivedData/"
+
+  - name: xcode_archives
+    description: "Xcode Archives"
+    paths:
+      - "~/Library/Developer/Xcode/Archives/"
+    min_age_days: 90
+
+  - name: xcode_simulators
+    description: "Old iOS/watchOS simulator runtimes"
+    commands:
+      - "xcrun simctl list runtimes"
+
+  - name: vscode_extensions
+    description: "VS Code extension caches and workspace storage"
+    paths:
+      - "~/.vscode/extensions/"
+      - "~/Library/Application Support/Code/Cache/"
+      - "~/Library/Application Support/Code/CachedData/"
+
+  - name: jetbrains_caches
+    description: "JetBrains IDE caches and indices"
+    paths:
+      - "~/Library/Caches/JetBrains/"
+      - "~/Library/Application Support/JetBrains/*/caches/"
+
+  - name: claude_code
+    description: "Claude Code / Antigravity caches"
+    paths:
+      - "~/.claude/"
+
+  - name: gemini_cli
+    description: "Gemini CLI caches"
+    paths:
+      - "~/.gemini/"
+    exclude:
+      - "~/.gemini/antigravity/skills/"  # Don't delete installed skills
+
+  - name: android_studio
+    description: "Android Studio SDK, AVDs, and Gradle"
+    paths:
+      - "~/Library/Android/sdk/"
+      - "~/.android/avd/"
+
+# ═══════════════════════════════════════════
+# CLOUD & INFRASTRUCTURE
+# ═══════════════════════════════════════════
+cloud:
+  - name: kubernetes_minikube
+    description: "Minikube VM images and caches"
+    paths:
+      - "~/.minikube/"
+
+  - name: helm_cache
+    description: "Helm chart cache"
+    paths:
+      - "~/.cache/helm/"
+
+  - name: terraform_providers
+    description: "Terraform provider caches"
+    find_pattern: ".terraform"
+    search_paths:
+      - "~/Development/"
+      - "~/code/"
+
+  - name: gcloud_cache
+    description: "Google Cloud SDK caches"
+    paths:
+      - "~/.config/gcloud/logs/"
+      - "~/.config/gcloud/cache/"
+
+  - name: firebase_cache
+    description: "Firebase CLI caches and emulator JARs"
+    paths:
+      - "~/.cache/firebase/"
+
+# ═══════════════════════════════════════════
+# CLOUD STORAGE
+# ═══════════════════════════════════════════
+storage:
+  - name: onedrive_cache
+    description: "OneDrive local cache and logs"
+    paths:
+      - "~/Library/Caches/com.microsoft.OneDrive/"
+      - "~/Library/Logs/OneDrive/"
+
+  - name: google_drive_cache
+    description: "Google Drive cache and logs"
+    paths:
+      - "~/Library/Application Support/Google/DriveFS/Logs/"
+      - "~/Library/Caches/com.google.drivefs/"
+
+  - name: dropbox_cache
+    description: "Dropbox cache and landfill"
+    paths:
+      - "~/.dropbox/"
+      - "~/Dropbox/.dropbox.cache/"
