@@ -1,6 +1,6 @@
 # ANUBIS_RULES.md
 **Operational Directive for All Development Agents (sirsi-anubis)**
-**Version:** 1.0.0
+**Version:** 1.1.0 (Traceability Hardened)
 **Date:** March 20, 2026
 
 ---
@@ -92,8 +92,19 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
     2. **Test** — `go test ./...` must pass with zero failures.
     3. **Build** — `go build ./cmd/anubis/` and `go build ./cmd/anubis-agent/` must succeed.
     4. **Binary Size Guard** — Warning if `anubis` > 25MB or `anubis-agent` > 12MB.
+*   **Agent Responsibility**: After ANY `go get` that modifies `go.sum`, the agent MUST commit and push the updated sum file immediately.
 
-### 2.4 Commit Convention
+### 2.4 Commit Traceability Protocol (Rule A7)
+> Adapted from FinalWishes Rule 29. **No orphan commits.**
+
+Every commit MUST be cross-referenced to the relevant:
+1.  **Canon Document** — Which document(s) from §4 does this change relate to?
+2.  **Version** — What version does this bump? (SemVer: patch/minor/major)
+3.  **Changelog** — An entry MUST be added to `CHANGELOG.md` for every commit.
+4.  **ADR** — Which Architecture Decision Record governs this change? If none exists, determine if one is needed.
+
+Commit messages MUST include a `Refs:` footer linking to at least the canon doc and ADR.
+
 ```
 type(module): description
 
@@ -114,9 +125,75 @@ Scans 12+ macOS subsystem directories for Parallels remnants:
 Application Scripts, Group Containers, keychains, HTTPStorages,
 package receipts, ghost apps in Launch Services.
 
-Refs: ANUBIS_RULES.md, ADR-001
+Refs: ANUBIS_RULES.md, ARCHITECTURE_DESIGN.md, ADR-001
 Changelog: v0.1.0 — Parallels scan rule
 ```
+
+This ensures every line of code is traceable to a decision, documented for users, and visualized in the architecture. **No orphan commits.**
+
+### 2.5 Feature Documentation Protocol (Rule A8)
+> Adapted from FinalWishes Rule 30. **A feature without documentation is an incomplete feature.**
+
+Every feature, scan rule, or module MUST have:
+1.  **User-Facing Documentation** — Written in `docs/user-guides/` in plain language. Explains what the feature does in the CLI, what flags are available, and what to expect. Written for the sysadmin, developer, or DevOps engineer.
+2.  **Developer-Facing README** — Written in the feature's directory (e.g., `internal/jackal/rules/README.md`). Explains the architecture, how to add new rules, the interface contract, dependencies, and known limitations.
+
+Neither document is optional. The docs and README must be created **in the same commit** as the feature code.
+
+### 2.6 Context Monitoring Protocol (Rule A9)
+> Adapted from FinalWishes Rule 31. **The agent is responsible for ensuring the session never gets cut short.**
+
+The agent MUST monitor context window and token usage throughout every session. After **every sprint or phase**, the agent MUST report:
+1.  **Commits this session** — total count
+2.  **Context health** — 🟢 Healthy / 🟡 Getting Deep / 🔴 Critical
+3.  **Recommendation** — Continue / Wrap Soon / Wrap Now
+
+When context health is 🟡 or 🔴, the agent MUST proactively:
+- Commit all work
+- Update `CHANGELOG.md`
+- Generate a fresh `docs/CONTINUATION-PROMPT.md`
+- Report final metrics
+
+**The agent is responsible for ensuring the session never gets cut short by context exhaustion.** If the context is getting deep, say so. Don't wait to be asked.
+
+### 2.7 Terminal UI Fidelity (Rule A10)
+> Adapted from FinalWishes Rule 27 (design fidelity). Applied to terminal output.
+
+All terminal output MUST use the Anubis brand language:
+*   **Colors**: Gold (`#C8A951`) for highlights, White for body text, Red for errors, Green for success. No raw unstylized output in interactive mode.
+*   **Rendering**: Uses `lipgloss` for styled output and `table` for tabular data.
+*   **Headers**: 𓂀 glyph prefix for section headers.
+*   **Progress**: Spinner or progress bar for operations > 2 seconds.
+*   **JSON mode**: `--json` flag outputs raw JSON for piping/scripting. No styling in JSON mode.
+*   **Quiet mode**: `--quiet` flag suppresses all output except errors and final summary.
+
+### 2.8 Scan Data Privacy (Rule A11)
+> Adapted from FinalWishes Rule 26 (PII siloing).
+
+Anubis scans filesystems and processes. Scan results may contain sensitive information:
+*   **File paths** in scan reports MUST NOT be transmitted to any external service.
+*   **Process names and arguments** MUST be sanitized before any fleet reporting (strip environment variables, connection strings, tokens).
+*   **Network scan results** (IPs, hostnames, open ports) are stored locally only — never transmitted unless the user explicitly exports them.
+*   **Audit logs** (`~/.config/anubis/audit.log`) are local-only and NEVER uploaded.
+*   Anubis has **zero telemetry, zero analytics, zero phone-home**. This is non-negotiable.
+
+### 2.9 Code Freeze & Stability Protocol (Rule A12)
+> Adapted from SirsiNexusApp §2.2. **PARAMOUNT.**
+
+*   **Do No Harm**: You **MUST NOT** break any working scan rule, CLI command, or module. Before touching any file, verify what currently works and ensure it still works after.
+*   **Additive-Only Changes**: Do not refactor working scan rules, restructure working module interfaces, or rewrite working logic unless explicitly directed.
+*   **Mandatory Canon Review**: Before writing code, re-read `ANUBIS_RULES.md`, relevant ADRs, `SAFETY_DESIGN.md`, and the files you intend to modify.
+*   **Sprint Planning is Mandatory**: Present a detailed sprint plan before ANY code change. No code without USER approval.
+*   **Living Canon**: Codify new rules immediately — never defer.
+
+### 2.10 Release Versioning Protocol (Rule A13)
+> Adapted from SirsiNexusApp §5.1.
+
+*   **Semver**: `MAJOR.MINOR.PATCH-channel` (channels: `alpha` → `beta` → `rc` → `stable`)
+*   **Source of Truth**: `VERSION` file at project root
+*   **On Every Release**, update ALL of: `VERSION`, `CHANGELOG.md`, git tag
+*   **goreleaser** handles binary distribution with version injection via `-ldflags`
+*   **Tag format**: `v0.1.0-alpha`, `v1.0.0`, etc.
 
 ---
 
@@ -199,13 +276,16 @@ These documents are the source of truth for this repo:
 ## 6. Interaction Protocol
 *   **User**: "I want X."
 *   **Agent Response**: "I see you want X. However, analyzing `ADR-001`, Y might be better because [Reason]. Should we do Y? If you insist on X, here is the risk."
+*   **Artifacts**: Use `implementation_plan.md` to structure complex thought.
 
 ---
 
 ## 7. Agent Capabilities
-*   **CLI Access**: Full CLI access to GitHub.
+*   **CLI Access**: Full CLI access to GitHub and local filesystem.
+*   **Pipeline Visibility**: Full CI/CD pipeline access via `gh` CLI.
 *   **Push Protocol**: ALWAYS run `git status` -> `git add` -> `git commit` -> `git push`.
 *   **Identity**: `SirsiMaster` account exclusively.
+*   **Build Verification**: After ANY code change, run `go build ./cmd/anubis/` and `go test ./...` before committing.
 
 ---
 
