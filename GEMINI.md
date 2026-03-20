@@ -31,6 +31,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | Module | Codename | Archetype | Role |
 | :--- | :--- | :--- | :--- |
 | Local Scanner | **Jackal** 🐺 | The Hunter | Patrols and cleans individual machines |
+| Ghost Hunter | **Ka** 𓂓 | The Spirit | Detects dead app remnants and residual hauntings |
 | Fleet Sweep | **Scarab** 🪲 | The Transformer | Rolls across VLANs, subnets, domains |
 | Policy Engine | **Scales** ⚖️ | The Judgment | Weighs findings against defined policies |
 | Resource Optimizer | **Hapi** 🌊 | The Flow | Controls VRAM, GPU memory, and storage flow |

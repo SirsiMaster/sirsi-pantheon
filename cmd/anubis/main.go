@@ -59,6 +59,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(weighCmd)
 	rootCmd.AddCommand(judgeCmd)
+	rootCmd.AddCommand(kaCmd)
 }
 
 func main() {

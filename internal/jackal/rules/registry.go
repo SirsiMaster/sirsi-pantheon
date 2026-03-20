@@ -1,7 +1,3 @@
-// Package rules provides all built-in scan rules for the Jackal engine.
-//
-// Rule registration: All rules are registered via AllRules().
-// New rules should be added there.
 package rules
 
 import (
@@ -32,7 +28,7 @@ func AllRules() []jackal.ScanRule {
 // darwinRules returns macOS-specific scan rules.
 func darwinRules() []jackal.ScanRule {
 	return []jackal.ScanRule{
-		// General Mac
+		// General Mac (6 rules)
 		NewSystemCachesRule(),
 		NewSystemLogsRule(),
 		NewCrashReportsRule(),
@@ -40,8 +36,26 @@ func darwinRules() []jackal.ScanRule {
 		NewTrashRule(),
 		NewBrowserCachesRule(),
 
-		// IDEs (macOS-specific)
+		// Virtualization (4 rules)
+		NewParallelsFullRule(),
+		NewVMwareFusionRule(),
+		NewUTMRule(),
+		NewVirtualBoxRule(),
+
+		// AI/ML — macOS only (2 rules)
+		NewMLXCacheRule(),
+		NewMetalShaderCacheRule(),
+
+		// IDEs — macOS only (4 rules)
 		NewXcodeDerivedDataRule(),
+		NewVSCodeCachesRule(),
+		NewJetBrainsCachesRule(),
+		NewAndroidStudioRule(),
+
+		// Cloud Storage — macOS only (3 rules)
+		NewOneDriveCacheRule(),
+		NewGoogleDriveCacheRule(),
+		NewDropboxCacheRule(),
 	}
 }
 
@@ -54,11 +68,27 @@ func linuxRules() []jackal.ScanRule {
 // crossPlatformRules returns rules that work on all platforms.
 func crossPlatformRules() []jackal.ScanRule {
 	return []jackal.ScanRule{
-		// Developer Frameworks
+		// Developer Frameworks (5 rules)
 		NewNodeModulesRule(),
 		NewGoModCacheRule(),
 		NewPythonCachesRule(),
 		NewRustTargetRule(),
 		NewDockerRule(),
+
+		// AI/ML — cross-platform (4 rules)
+		NewHuggingFaceCacheRule(),
+		NewOllamaModelsRule(),
+		NewPyTorchCacheRule(),
+		NewTensorFlowCacheRule(),
+
+		// IDEs — cross-platform (2 rules)
+		NewClaudeCodeRule(),
+		NewGeminiCLIRule(),
+
+		// Cloud — cross-platform (4 rules)
+		NewKubernetesCachesRule(),
+		NewTerraformCachesRule(),
+		NewGCloudCachesRule(),
+		NewFirebaseCachesRule(),
 	}
 }
