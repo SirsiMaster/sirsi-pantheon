@@ -1,0 +1,83 @@
+# Documentation to set up goreleaser once ready:
+# goreleaser init
+# goreleaser release --snapshot --clean
+
+version: 2
+
+project_name: sirsi-anubis
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  # Controller binary — full CLI
+  - id: anubis
+    main: ./cmd/anubis/
+    binary: anubis
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  # Agent binary — lightweight, zero-dep
+  - id: anubis-agent
+    main: ./cmd/anubis-agent/
+    binary: anubis-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - CONTRIBUTING.md
+      - SECURITY.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: sirsi-anubis
+    repository:
+      owner: SirsiMaster
+      name: homebrew-tools
+    homepage: "https://github.com/SirsiMaster/sirsi-anubis"
+    description: "𓂀 The Guardian of Infrastructure Hygiene — scan, clean, and optimize workstations"
+    license: "MIT"
+    install: |
+      bin.install "anubis"
+      bin.install "anubis-agent"
+    test: |
+      system "#{bin}/anubis", "version"
