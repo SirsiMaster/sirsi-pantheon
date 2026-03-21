@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-anubis/internal/output"
+	"github.com/SirsiMaster/sirsi-anubis/internal/updater"
 )
 
 // version is set by goreleaser at build time via -ldflags.
@@ -41,14 +43,24 @@ containers, VMs, networks, and storage backends.
 	},
 }
 
-// versionCmd prints the version.
+// versionCmd prints the version and optionally checks for updates.
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Show Anubis version",
+	Short: "Show Anubis version and check for updates",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("𓂀 Sirsi Anubis %s\n", version)
 		fmt.Println("  The Guardian of Infrastructure Hygiene")
 		fmt.Println("  \"Weigh. Judge. Purge.\"")
+		fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+
+		// Phone home — check for updates and advisories
+		result := updater.Check(version)
+		if notice := updater.FormatUpdateNotice(result); notice != "" {
+			fmt.Print(notice)
+		}
+		if advisory := updater.FormatAdvisories(result.Advisories); advisory != "" {
+			fmt.Print(advisory)
+		}
 	},
 }
 

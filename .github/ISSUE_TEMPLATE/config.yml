@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/SirsiMaster/sirsi-anubis/discussions
+    about: Ask questions, share ideas, or show off your Anubis setup
+  - name: 📖 Documentation
+    url: https://github.com/SirsiMaster/sirsi-anubis/tree/main/docs
+    about: Read architecture docs, ADRs, and the scan rule guide
