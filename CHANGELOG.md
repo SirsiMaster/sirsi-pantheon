@@ -37,6 +37,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - ADR: ADR-001
 - Changelog: v0.2.0-alpha — Day 5 Neural Brain
 
+### Added (Day 6: MCP Server + IDE Integrations)
+- **MCP module** (`internal/mcp/`) — Model Context Protocol server
+  - JSON-RPC 2.0 over stdio, MCP spec 2025-03-26 compliant
+  - `initialize` handshake with capability negotiation
+  - `tools/list` and `tools/call` for tool invocation
+  - `resources/list` and `resources/read` for resource access
+  - `ping` and method-not-found handling
+- **`anubis mcp`** — start MCP server for AI IDE integration
+- **4 MCP Tools:**
+  - `scan_workspace` — run Jackal scan engine on a directory
+  - `ghost_report` — run Ka ghost detection
+  - `health_check` — system health summary with grade
+  - `classify_files` — brain-powered semantic file classification
+- **3 MCP Resources:**
+  - `anubis://health-status` — system health as JSON
+  - `anubis://capabilities` — modules, commands, and scan rules
+  - `anubis://brain-status` — neural brain installation status
+- **VS Code extension scaffold** (`extensions/vscode/`)
+  - Extension manifest with Eye of Horus sidebar concept
+  - 4 commands: scan workspace, ghost report, health check, install brain
+  - Status bar icon, activity bar sidebar, configuration options
+- **Workspace config** — `.anubis/config.yaml` template for per-project settings
+- **14 MCP tests** — server lifecycle, tool calls, resource reads, error handling
+- **IDE config examples** — Claude Code, Cursor, Windsurf setup instructions
+
+### Refs
+- Canon: ANUBIS_RULES.md, docs/DEVELOPMENT_PLAN.md
+- ADR: ADR-001
+- Changelog: v0.2.0-alpha — Day 6 MCP Server
+
 ## [0.1.0-alpha.2] — 2026-03-21
 ### Fixed (Session 2: Clean, Lint, Optimize)
 - **CI pipeline** — fixed go.mod version mismatch (`go 1.26.1` → `go 1.22.0`)

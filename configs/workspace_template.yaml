@@ -1,0 +1,40 @@
+# .anubis/config.yaml — Per-project Anubis configuration
+#
+# Place this file in your project root to customize Anubis behavior
+# for this specific workspace. Works with both CLI and MCP server.
+#
+# This template shows all available options with their defaults.
+
+# Scan categories to include (empty = all)
+# Valid: general, dev, ai, vms, ides, cloud, storage
+categories:
+  - dev
+  - ai
+  - ides
+
+# Custom ignore patterns (in addition to .anubisignore)
+ignore:
+  - "vendor/"
+  - "node_modules/"
+  - ".git/"
+
+# Scan profiles to apply
+# Valid: general, developer, ai-engineer, devops
+profile: developer
+
+# Brain / Neural classification
+brain:
+  enabled: false    # Set to true to use neural classification
+  batch_size: 100   # Files per batch for classification
+
+# Thresholds for health grading
+thresholds:
+  excellent: 100MB    # Under this = EXCELLENT
+  good: 1GB           # Under this = GOOD
+  fair: 5GB           # Under this = FAIR
+  # Above fair = NEEDS ATTENTION
+
+# MCP server settings (used when running `anubis mcp`)
+mcp:
+  scan_timeout: 30s   # Max time for scan operations
+  max_findings: 50    # Max findings to return via MCP

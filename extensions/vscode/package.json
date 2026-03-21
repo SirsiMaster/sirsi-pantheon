@@ -1,0 +1,124 @@
+{
+  "name": "sirsi-anubis",
+  "displayName": "𓂀 Sirsi Anubis — Eye of Horus",
+  "description": "Infrastructure hygiene monitor for your workspace. Powered by the Anubis MCP server.",
+  "version": "0.1.0",
+  "publisher": "SirsiMaster",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SirsiMaster/sirsi-anubis"
+  },
+  "categories": [
+    "Other",
+    "Linters"
+  ],
+  "keywords": [
+    "infrastructure",
+    "cleanup",
+    "hygiene",
+    "devtools",
+    "ghost-files",
+    "mcp"
+  ],
+  "icon": "icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "anubis.scanWorkspace",
+        "title": "𓂀 Anubis: Scan Workspace",
+        "category": "Anubis"
+      },
+      {
+        "command": "anubis.ghostReport",
+        "title": "𓂓 Anubis: Ghost Report",
+        "category": "Anubis"
+      },
+      {
+        "command": "anubis.healthCheck",
+        "title": "𓂀 Anubis: Health Check",
+        "category": "Anubis"
+      },
+      {
+        "command": "anubis.installBrain",
+        "title": "🧠 Anubis: Install Brain",
+        "category": "Anubis"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "anubis-sidebar",
+          "title": "Eye of Horus",
+          "icon": "$(eye)"
+        }
+      ]
+    },
+    "views": {
+      "anubis-sidebar": [
+        {
+          "id": "anubis-health",
+          "name": "Health Meter"
+        },
+        {
+          "id": "anubis-ghosts",
+          "name": "Ghost Apps"
+        },
+        {
+          "id": "anubis-findings",
+          "name": "Scan Findings"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Sirsi Anubis",
+      "properties": {
+        "anubis.binaryPath": {
+          "type": "string",
+          "default": "anubis",
+          "description": "Path to the anubis binary"
+        },
+        "anubis.autoScan": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically scan workspace on open"
+        },
+        "anubis.scanCategories": {
+          "type": "array",
+          "default": ["dev", "ai", "ides"],
+          "description": "Categories to include in workspace scans"
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "anubis.scanWorkspace",
+          "when": "true"
+        },
+        {
+          "command": "anubis.ghostReport",
+          "when": "true"
+        },
+        {
+          "command": "anubis.healthCheck",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "echo 'Scaffold only — no compilation needed yet'",
+    "watch": "echo 'Scaffold only'",
+    "lint": "echo 'Scaffold only'"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0"
+  }
+}
