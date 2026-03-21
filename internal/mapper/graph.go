@@ -114,12 +114,15 @@ func (g *InfraGraph) ToJSON() ([]byte, error) {
 }
 
 // RenderHTML produces a self-contained HTML file with an interactive graph.
-// Uses Sigma.js v2 (CDN) and Graphology for rendering.
+// Uses pure Canvas + JavaScript — ZERO external dependencies.
+// Works from file:// protocol, no server needed.
 func (g *InfraGraph) RenderHTML(outputPath string) error {
 	graphJSON, err := json.Marshal(g)
 	if err != nil {
 		return fmt.Errorf("marshal graph: %w", err)
 	}
+
+	colorsJSON := mustJSON(NodeColors)
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -127,8 +130,6 @@ func (g *InfraGraph) RenderHTML(outputPath string) error {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>𓂀 Anubis Infrastructure Map — %s</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -137,35 +138,56 @@ func (g *InfraGraph) RenderHTML(outputPath string) error {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     overflow: hidden;
   }
+  canvas { display: block; cursor: grab; }
+  canvas:active { cursor: grabbing; }
   #header {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     background: linear-gradient(180deg, rgba(13,13,26,0.95) 0%%, rgba(13,13,26,0) 100%%);
-    padding: 20px 30px;
+    padding: 20px 30px; pointer-events: none;
   }
-  #header h1 { font-size: 24px; color: #C8A951; }
-  #header p { font-size: 13px; color: #888; margin-top: 4px; }
-  #graph { width: 100vw; height: 100vh; }
+  #header h1 { font-size: 22px; color: #C8A951; letter-spacing: 1px; }
+  #header p { font-size: 12px; color: #666; margin-top: 4px; }
   #legend {
     position: fixed; bottom: 20px; left: 20px; z-index: 10;
-    background: rgba(13,13,26,0.9); border: 1px solid #333;
-    border-radius: 8px; padding: 16px; font-size: 12px;
+    background: rgba(13,13,26,0.92); border: 1px solid #333;
+    border-radius: 10px; padding: 16px 20px; font-size: 12px;
+    backdrop-filter: blur(8px);
   }
-  .legend-item { display: flex; align-items: center; margin: 4px 0; }
+  .legend-item { display: flex; align-items: center; margin: 5px 0; color: #aaa; }
   .legend-dot {
     width: 10px; height: 10px; border-radius: 50%%;
-    margin-right: 8px; display: inline-block;
+    margin-right: 10px; display: inline-block;
+    box-shadow: 0 0 6px currentColor;
   }
   #stats {
     position: fixed; top: 20px; right: 20px; z-index: 10;
-    background: rgba(13,13,26,0.9); border: 1px solid #333;
-    border-radius: 8px; padding: 16px; font-size: 12px; text-align: right;
+    background: rgba(13,13,26,0.92); border: 1px solid #333;
+    border-radius: 10px; padding: 16px 20px; font-size: 12px;
+    text-align: right; backdrop-filter: blur(8px);
   }
+  #stats .label { color: #666; }
+  #stats .value { color: #C8A951; font-weight: 600; }
   #tooltip {
     position: fixed; display: none; z-index: 20;
-    background: rgba(13,13,26,0.95); border: 1px solid #C8A951;
-    border-radius: 6px; padding: 10px 14px; font-size: 12px;
-    pointer-events: none; max-width: 280px;
+    background: rgba(13,13,26,0.96); border: 1px solid #C8A951;
+    border-radius: 8px; padding: 12px 16px; font-size: 12px;
+    pointer-events: none; max-width: 300px;
+    box-shadow: 0 4px 20px rgba(200,169,81,0.15);
+    backdrop-filter: blur(10px);
   }
+  #tooltip .name { color: #C8A951; font-weight: 600; font-size: 14px; }
+  #tooltip .type { color: #888; margin-top: 2px; }
+  #tooltip .meta { color: #555; margin-top: 4px; font-size: 11px; }
+  #controls {
+    position: fixed; bottom: 20px; right: 20px; z-index: 10;
+    display: flex; gap: 8px;
+  }
+  #controls button {
+    background: rgba(13,13,26,0.92); border: 1px solid #333;
+    border-radius: 8px; padding: 8px 12px; color: #C8A951;
+    cursor: pointer; font-size: 14px; backdrop-filter: blur(8px);
+  }
+  #controls button:hover { border-color: #C8A951; }
 </style>
 </head>
 <body>
@@ -173,92 +195,294 @@ func (g *InfraGraph) RenderHTML(outputPath string) error {
   <h1>𓂀 Anubis Infrastructure Map</h1>
   <p>%s — %s — Generated %s</p>
 </div>
-<div id="graph"></div>
+<canvas id="graph"></canvas>
 <div id="legend"></div>
 <div id="stats"></div>
 <div id="tooltip"></div>
+<div id="controls">
+  <button onclick="resetView()" title="Reset view">⟲</button>
+  <button onclick="toggleLabels()" title="Toggle labels">Aa</button>
+</div>
 
 <script>
-const data = %s;
+(function() {
+  'use strict';
+  const data = %s;
+  const typeColors = %s;
+  const canvas = document.getElementById('graph');
+  const ctx = canvas.getContext('2d');
+  const tooltip = document.getElementById('tooltip');
+  let W, H, dpr;
+  let showLabels = true;
 
-// Build graph
-const graph = new graphology.Graph();
+  // --- Resize ---
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
 
-// Add nodes with force-layout positions
-const typeCount = {};
-data.nodes.forEach((n, i) => {
-  typeCount[n.type] = (typeCount[n.type] || 0) + 1;
-  const angle = (2 * Math.PI * i) / data.nodes.length;
-  const radius = 3 + Math.random() * 2;
-  graph.addNode(n.id, {
-    label: n.label,
-    x: n.x || Math.cos(angle) * radius + (Math.random() - 0.5),
-    y: n.y || Math.sin(angle) * radius + (Math.random() - 0.5),
-    size: Math.max(6, Math.min(20, Math.log2((n.size || 1024) / 1024) + 4)),
-    color: n.color || '#C8A951',
-    type: n.type
+  // --- Camera ---
+  let camX = 0, camY = 0, camZoom = 1;
+  function worldToScreen(wx, wy) {
+    return [(wx - camX) * camZoom + W/2, (wy - camY) * camZoom + H/2];
+  }
+  function screenToWorld(sx, sy) {
+    return [(sx - W/2) / camZoom + camX, (sy - H/2) / camZoom + camY];
+  }
+
+  // --- Build simulation nodes ---
+  const nodes = data.nodes.map((n, i) => {
+    const angle = (2 * Math.PI * i) / data.nodes.length;
+    const r = 120 + Math.random() * 80;
+    return {
+      id: n.id, label: n.label, type: n.type,
+      color: n.color || typeColors[n.type] || '#C8A951',
+      size: Math.max(5, Math.min(18, Math.log2((n.size || 4096) / 1024) + 3)),
+      x: Math.cos(angle) * r + (Math.random() - 0.5) * 40,
+      y: Math.sin(angle) * r + (Math.random() - 0.5) * 40,
+      vx: 0, vy: 0,
+      metadata: n.metadata || {}
+    };
   });
-});
 
-data.edges.forEach(e => {
-  if (graph.hasNode(e.source) && graph.hasNode(e.target)) {
-    graph.addEdge(e.source, e.target, {
-      label: e.label || '',
-      size: 1,
-      color: '#333'
+  const nodeMap = {};
+  nodes.forEach(n => nodeMap[n.id] = n);
+
+  const edges = data.edges.filter(e => nodeMap[e.source] && nodeMap[e.target]).map(e => ({
+    source: nodeMap[e.source], target: nodeMap[e.target], label: e.label || ''
+  }));
+
+  // --- Force simulation ---
+  const REPULSION = 3000;
+  const SPRING_K = 0.008;
+  const SPRING_LEN = 80;
+  const DAMPING = 0.92;
+  const CENTER_PULL = 0.001;
+  let simRunning = true;
+  let simSteps = 0;
+
+  function simulate() {
+    if (!simRunning) return;
+
+    // Repulsion between all pairs (Barnes-Hut would be better for large graphs)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+        let force = REPULSION / (dist * dist);
+        let fx = (dx / dist) * force;
+        let fy = (dy / dist) * force;
+        a.vx -= fx; a.vy -= fy;
+        b.vx += fx; b.vy += fy;
+      }
+    }
+
+    // Spring forces along edges
+    edges.forEach(e => {
+      let dx = e.target.x - e.source.x;
+      let dy = e.target.y - e.source.y;
+      let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      let force = (dist - SPRING_LEN) * SPRING_K;
+      let fx = (dx / dist) * force;
+      let fy = (dy / dist) * force;
+      e.source.vx += fx; e.source.vy += fy;
+      e.target.vx -= fx; e.target.vy -= fy;
     });
+
+    // Center pull + velocity update
+    nodes.forEach(n => {
+      n.vx -= n.x * CENTER_PULL;
+      n.vy -= n.y * CENTER_PULL;
+      n.vx *= DAMPING; n.vy *= DAMPING;
+      n.x += n.vx; n.y += n.vy;
+    });
+
+    simSteps++;
+    if (simSteps > 300) simRunning = false;
   }
-});
 
-// Render
-const container = document.getElementById('graph');
-const renderer = new Sigma(graph, container, {
-  renderLabels: true,
-  labelSize: 11,
-  labelColor: { color: '#C8A951' },
-  defaultEdgeColor: '#333',
-  defaultNodeColor: '#C8A951',
-  minCameraRatio: 0.1,
-  maxCameraRatio: 10,
-});
+  // --- Render ---
+  let hoveredNode = null;
+  let frame = 0;
 
-// Legend
-const legendEl = document.getElementById('legend');
-const colors = %s;
-let legendHTML = '';
-for (const [type, color] of Object.entries(colors)) {
-  const count = typeCount[type] || 0;
-  if (count > 0) {
-    legendHTML += '<div class="legend-item"><span class="legend-dot" style="background:' + color + '"></span>' + type + ' (' + count + ')</div>';
+  function render() {
+    simulate();
+    frame++;
+    ctx.clearRect(0, 0, W, H);
+
+    // Edges
+    ctx.lineWidth = 0.5;
+    edges.forEach(e => {
+      const [x1,y1] = worldToScreen(e.source.x, e.source.y);
+      const [x2,y2] = worldToScreen(e.target.x, e.target.y);
+      // Fade edges based on distance from center
+      const alpha = hoveredNode ? (e.source === hoveredNode || e.target === hoveredNode ? 0.6 : 0.08) : 0.2;
+      ctx.strokeStyle = 'rgba(100,100,120,' + alpha + ')';
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    });
+
+    // Nodes
+    nodes.forEach(n => {
+      const [sx,sy] = worldToScreen(n.x, n.y);
+      const r = n.size * camZoom;
+      if (sx < -50 || sx > W+50 || sy < -50 || sy > H+50) return; // cull
+
+      const isHovered = n === hoveredNode;
+      const isConnected = hoveredNode && edges.some(e =>
+        (e.source === hoveredNode && e.target === n) ||
+        (e.target === hoveredNode && e.source === n));
+      const dimmed = hoveredNode && !isHovered && !isConnected;
+
+      // Glow
+      if (isHovered || (!hoveredNode && r > 4)) {
+        const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3);
+        glow.addColorStop(0, n.color + (isHovered ? '40' : '18'));
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(sx, sy, r * 3, 0, Math.PI*2); ctx.fill();
+      }
+
+      // Node circle
+      ctx.globalAlpha = dimmed ? 0.2 : 1;
+      ctx.fillStyle = n.color;
+      ctx.beginPath(); ctx.arc(sx, sy, Math.max(2, r), 0, Math.PI*2); ctx.fill();
+
+      // Border on hover
+      if (isHovered) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx, sy, r + 2, 0, Math.PI*2); ctx.stroke();
+      }
+
+      // Labels
+      if (showLabels && camZoom > 0.4 && (r > 3 || isHovered)) {
+        const fontSize = Math.max(9, Math.min(13, 10 * camZoom));
+        ctx.font = (isHovered ? 'bold ' : '') + fontSize + 'px -apple-system, system-ui, sans-serif';
+        ctx.fillStyle = dimmed ? 'rgba(200,169,81,0.15)' : (isHovered ? '#fff' : 'rgba(200,169,81,0.7)');
+        ctx.textAlign = 'center';
+        ctx.fillText(n.label, sx, sy - r - 5);
+      }
+      ctx.globalAlpha = 1;
+    });
+
+    // Watermark
+    ctx.font = '11px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(200,169,81,0.15)';
+    ctx.textAlign = 'right';
+    ctx.fillText('𓂀 Sirsi Anubis • Seba Graph', W - 20, H - 12);
+
+    requestAnimationFrame(render);
   }
-}
-legendEl.innerHTML = legendHTML;
+  requestAnimationFrame(render);
 
-// Stats
-document.getElementById('stats').innerHTML =
-  '<div style="color:#C8A951;font-size:14px;font-weight:600">Stats</div>' +
-  '<div>Nodes: ' + data.nodes.length + '</div>' +
-  '<div>Edges: ' + data.edges.length + '</div>' +
-  '<div>Platform: ' + data.platform + '</div>';
+  // --- Mouse interaction ---
+  let isDragging = false, dragStartX, dragStartY, dragCamX, dragCamY;
+  let dragNode = null;
 
-// Tooltip on hover
-const tooltip = document.getElementById('tooltip');
-renderer.on('enterNode', ({node}) => {
-  const attrs = graph.getNodeAttributes(node);
-  tooltip.style.display = 'block';
-  tooltip.innerHTML = '<div style="color:#C8A951;font-weight:600">' + attrs.label + '</div>' +
-    '<div style="color:#888">Type: ' + (attrs.type || 'unknown') + '</div>';
-});
-renderer.on('leaveNode', () => { tooltip.style.display = 'none'; });
-renderer.getMouseCaptor().on('mousemove', (e) => {
-  tooltip.style.left = e.original.clientX + 12 + 'px';
-  tooltip.style.top = e.original.clientY + 12 + 'px';
-});
+  function getNodeAtMouse(mx, my) {
+    const [wx, wy] = screenToWorld(mx, my);
+    let closest = null, closestDist = Infinity;
+    nodes.forEach(n => {
+      const dx = n.x - wx, dy = n.y - wy;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const hitR = (n.size + 4) / camZoom;
+      if (dist < hitR && dist < closestDist) {
+        closest = n; closestDist = dist;
+      }
+    });
+    return closest;
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    const node = getNodeAtMouse(e.clientX, e.clientY);
+    if (node) {
+      dragNode = node;
+      simRunning = false;
+    } else {
+      isDragging = true;
+      dragStartX = e.clientX; dragStartY = e.clientY;
+      dragCamX = camX; dragCamY = camY;
+    }
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (dragNode) {
+      const [wx, wy] = screenToWorld(e.clientX, e.clientY);
+      dragNode.x = wx; dragNode.y = wy;
+      dragNode.vx = 0; dragNode.vy = 0;
+    } else if (isDragging) {
+      const dx = (e.clientX - dragStartX) / camZoom;
+      const dy = (e.clientY - dragStartY) / camZoom;
+      camX = dragCamX - dx; camY = dragCamY - dy;
+    } else {
+      const node = getNodeAtMouse(e.clientX, e.clientY);
+      hoveredNode = node;
+      if (node) {
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 15) + 'px';
+        tooltip.style.top = (e.clientY + 15) + 'px';
+        let html = '<div class="name">' + node.label + '</div>';
+        html += '<div class="type">' + node.type + '</div>';
+        if (Object.keys(node.metadata).length) {
+          html += '<div class="meta">';
+          for (const [k,v] of Object.entries(node.metadata)) {
+            html += k + ': ' + v + '<br>';
+          }
+          html += '</div>';
+        }
+        tooltip.innerHTML = html;
+        canvas.style.cursor = 'pointer';
+      } else {
+        tooltip.style.display = 'none';
+        canvas.style.cursor = 'grab';
+      }
+    }
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    isDragging = false;
+    dragNode = null;
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    camZoom = Math.max(0.1, Math.min(10, camZoom * factor));
+  }, {passive: false});
+
+  // --- Controls ---
+  window.resetView = () => { camX = 0; camY = 0; camZoom = 1; };
+  window.toggleLabels = () => { showLabels = !showLabels; };
+
+  // --- Legend ---
+  const typeCount = {};
+  nodes.forEach(n => typeCount[n.type] = (typeCount[n.type] || 0) + 1);
+  let legendHTML = '<div style="color:#C8A951;font-weight:600;margin-bottom:8px">Legend</div>';
+  for (const [type, color] of Object.entries(typeColors)) {
+    if (typeCount[type]) {
+      legendHTML += '<div class="legend-item"><span class="legend-dot" style="background:'+color+';color:'+color+'"></span>'+type+' ('+typeCount[type]+')</div>';
+    }
+  }
+  document.getElementById('legend').innerHTML = legendHTML;
+
+  // --- Stats ---
+  document.getElementById('stats').innerHTML =
+    '<div style="color:#C8A951;font-weight:600;margin-bottom:8px">Stats</div>' +
+    '<div><span class="label">Nodes: </span><span class="value">'+nodes.length+'</span></div>' +
+    '<div><span class="label">Edges: </span><span class="value">'+edges.length+'</span></div>' +
+    '<div><span class="label">Platform: </span><span class="value">'+data.platform+'</span></div>' +
+    '<div style="margin-top:8px;color:#444;font-size:10px">Scroll to zoom • Drag to pan</div>';
+})();
 </script>
 </body>
 </html>`, g.Hostname, g.Hostname, g.Platform, g.GeneratedAt,
-		string(graphJSON),
-		mustJSON(NodeColors))
+		string(graphJSON), colorsJSON)
 
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
