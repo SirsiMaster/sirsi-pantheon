@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-anubis/internal/output"
+	"github.com/SirsiMaster/sirsi-anubis/internal/stealth"
 	"github.com/SirsiMaster/sirsi-anubis/internal/updater"
 )
 
@@ -16,8 +17,9 @@ var version = "dev"
 
 // Global flags
 var (
-	jsonOutput bool
-	quietMode  bool
+	jsonOutput  bool
+	quietMode   bool
+	stealthMode bool
 )
 
 // rootCmd is the base command for anubis.
@@ -40,6 +42,11 @@ containers, VMs, networks, and storage backends.
 	Run: func(cmd *cobra.Command, args []string) {
 		output.Banner()
 		_ = cmd.Help()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if stealthMode {
+			_ = stealth.CleanExit()
+		}
 	},
 }
 
@@ -67,6 +74,7 @@ var versionCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress all output except errors and summary")
+	rootCmd.PersistentFlags().BoolVar(&stealthMode, "stealth", false, "Ephemeral mode — delete all Anubis data after execution")
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(weighCmd)
@@ -76,6 +84,8 @@ func init() {
 	rootCmd.AddCommand(sightCmd)
 	rootCmd.AddCommand(profileCmd)
 	rootCmd.AddCommand(sebaCmd)
+	rootCmd.AddCommand(bookCmd)
+	rootCmd.AddCommand(initiateCmd)
 }
 
 func main() {
