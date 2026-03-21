@@ -19,7 +19,7 @@ func (m *mockRule) Name() string        { return m.name }
 func (m *mockRule) DisplayName() string { return m.name }
 func (m *mockRule) Category() Category  { return m.category }
 func (m *mockRule) Description() string { return "mock rule for testing" }
-func (m *mockRule) Platforms() []string  { return m.platforms }
+func (m *mockRule) Platforms() []string { return m.platforms }
 
 func (m *mockRule) Scan(_ context.Context, _ ScanOptions) ([]Finding, error) {
 	if m.scanErr != nil {
