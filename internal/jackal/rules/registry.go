@@ -28,13 +28,16 @@ func AllRules() []jackal.ScanRule {
 // darwinRules returns macOS-specific scan rules.
 func darwinRules() []jackal.ScanRule {
 	return []jackal.ScanRule{
-		// General Mac (6 rules)
+		// General Mac (9 rules)
 		NewSystemCachesRule(),
 		NewSystemLogsRule(),
 		NewCrashReportsRule(),
 		NewDownloadsJunkRule(),
 		NewTrashRule(),
 		NewBrowserCachesRule(),
+		NewTimeMachineLocalRule(),
+		NewMailAttachmentsCacheRule(),
+		NewFontCachesRule(),
 
 		// Virtualization (4 rules)
 		NewParallelsFullRule(),
@@ -46,22 +49,31 @@ func darwinRules() []jackal.ScanRule {
 		NewMLXCacheRule(),
 		NewMetalShaderCacheRule(),
 
-		// IDEs — macOS only (4 rules)
+		// IDEs — macOS only (8 rules)
 		NewXcodeDerivedDataRule(),
 		NewVSCodeCachesRule(),
 		NewJetBrainsCachesRule(),
 		NewAndroidStudioRule(),
+		NewCursorCacheRule(),
+		NewWindsurfCacheRule(),
+		NewZedCacheRule(),
 
-		// Cloud Storage — macOS only (3 rules)
+		// Package managers — macOS only (3 rules)
+		NewHomebrewCacheRule(),
+		NewCocoaPodsCacheRule(),
+		NewSPMCacheRule(),
+
+		// Cloud Storage — macOS only (4 rules)
 		NewOneDriveCacheRule(),
 		NewGoogleDriveCacheRule(),
 		NewDropboxCacheRule(),
+		NewICloudCacheRule(),
 	}
 }
 
 // linuxRules returns Linux-specific scan rules.
 func linuxRules() []jackal.ScanRule {
-	// TODO: Phase 2
+	// TODO: Phase 2 — systemd journals, apt/dpkg cache, snap cache
 	return []jackal.ScanRule{}
 }
 
@@ -75,20 +87,36 @@ func crossPlatformRules() []jackal.ScanRule {
 		NewRustTargetRule(),
 		NewDockerRule(),
 
-		// AI/ML — cross-platform (4 rules)
+		// Package managers — cross-platform (5 rules)
+		NewNpmGlobalCacheRule(),
+		NewGradleCacheRule(),
+		NewMavenCacheRule(),
+		NewComposerCacheRule(),
+		NewRubyGemsCacheRule(),
+
+		// AI/ML — cross-platform (9 rules)
 		NewHuggingFaceCacheRule(),
 		NewOllamaModelsRule(),
 		NewPyTorchCacheRule(),
 		NewTensorFlowCacheRule(),
+		NewOnnxCacheRule(),
+		NewVLLMCacheRule(),
+		NewJaxCacheRule(),
+		NewStableDiffusionModelsRule(),
+		NewLangChainCacheRule(),
 
-		// IDEs — cross-platform (2 rules)
+		// IDEs — cross-platform (4 rules)
 		NewClaudeCodeRule(),
 		NewGeminiCLIRule(),
+		NewNeovimCacheRule(),
+		NewCodexCLIRule(),
 
-		// Cloud — cross-platform (4 rules)
+		// Cloud — cross-platform (6 rules)
 		NewKubernetesCachesRule(),
 		NewTerraformCachesRule(),
 		NewGCloudCachesRule(),
 		NewFirebaseCachesRule(),
+		NewNginxLogsRule(),
+		NewAWSCLICacheRule(),
 	}
 }
