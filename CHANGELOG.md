@@ -67,6 +67,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - ADR: ADR-001
 - Changelog: v0.2.0-alpha — Day 6 MCP Server
 
+### Added (Day 7: Scales Policy Engine + Agent Hardening)
+- **Scales module** (`internal/scales/`) — YAML policy engine
+  - Policy parser with validation (operators, severities, metrics)
+  - Threshold normalization (KB/MB/GB/TB → bytes)
+  - Built-in default workstation hygiene policy
+- **Policy enforcement** (`internal/scales/enforce.go`)
+  - Evaluates scan results against configurable thresholds
+  - Generates pass/warn/fail verdicts with remediation suggestions
+  - Collects metrics from Jackal (waste) and Ka (ghosts)
+- **`anubis scales enforce`** — run policies against current state
+  - Custom policy files via `-f` flag
+  - JSON output support
+  - Eye of Horus/Ra upsell for fleet enforcement
+- **`anubis scales validate`** — validate policy YAML syntax
+- **`anubis scales verdicts`** — show enforcement results
+- **Agent hardening** (`cmd/anubis-agent/`)
+  - Fixed command set: scan, report, clean, version (Rule A3)
+  - All output JSON via AgentResponse envelope
+  - Clean requires `--confirm` flag (Rule A1)
+  - Health grading: EXCELLENT/GOOD/FAIR/NEEDS_ATTENTION
+- **Example policy file** — workstation + CI/CD templates
+- **13 scales tests** — parsing, validation, normalization, enforcement, verdicts
+
+### Refs
+- Canon: ANUBIS_RULES.md, docs/DEVELOPMENT_PLAN.md
+- ADR: ADR-001
+- Changelog: v0.2.0-alpha — Day 7 Scales + Agent
 ## [0.1.0-alpha.2] — 2026-03-21
 ### Fixed (Session 2: Clean, Lint, Optimize)
 - **CI pipeline** — fixed go.mod version mismatch (`go 1.26.1` → `go 1.22.0`)

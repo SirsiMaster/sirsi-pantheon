@@ -1,0 +1,71 @@
+# Anubis Scales — Example Policy File
+# Usage: anubis scales enforce -f configs/example_policy.yaml
+# Validate: anubis scales validate -f configs/example_policy.yaml
+
+api_version: v1
+
+policies:
+  - name: workstation-hygiene
+    description: Standard infrastructure hygiene checks for developer workstations
+    version: "1.0.0"
+    rules:
+      - id: waste-warning
+        name: Infrastructure waste warning
+        description: Warn when total waste exceeds 5 GB
+        metric: total_size
+        operator: gt
+        threshold: 5
+        unit: GB
+        severity: warn
+        remediation: Run 'anubis judge --dry-run' to review cleanup opportunities
+
+      - id: waste-critical
+        name: Infrastructure waste critical
+        description: Fail when total waste exceeds 20 GB
+        metric: total_size
+        operator: gt
+        threshold: 20
+        unit: GB
+        severity: fail
+        remediation: Run 'anubis judge --confirm' to clean up immediately
+
+      - id: ghost-accumulation
+        name: Ghost app accumulation
+        description: Warn when more than 50 ghost apps are detected
+        metric: ghost_count
+        operator: gt
+        threshold: 50
+        severity: warn
+        remediation: Run 'anubis ka --clean --dry-run' to review ghost cleanup
+
+      - id: high-findings
+        name: High finding count
+        description: Warn on excessive findings from scans
+        metric: finding_count
+        operator: gt
+        threshold: 100
+        severity: warn
+        remediation: Review findings with 'anubis weigh' and clean selectively
+
+  - name: ci-pipeline
+    description: Strict policy for CI/CD environments — zero tolerance
+    version: "1.0.0"
+    rules:
+      - id: ci-waste
+        name: CI waste limit
+        description: Fail if any significant waste is found in CI
+        metric: total_size
+        operator: gt
+        threshold: 1
+        unit: GB
+        severity: fail
+        remediation: Clean build environment before deployment
+
+      - id: ci-ghosts
+        name: CI ghost limit
+        description: Fail if ghosts are present in CI
+        metric: ghost_count
+        operator: gt
+        threshold: 0
+        severity: fail
+        remediation: Ensure clean base images without ghost apps

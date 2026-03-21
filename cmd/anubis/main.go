@@ -91,6 +91,7 @@ func init() {
 	rootCmd.AddCommand(installBrainCmd)
 	rootCmd.AddCommand(uninstallBrainCmd)
 	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(scalesCmd)
 }
 
 func main() {
