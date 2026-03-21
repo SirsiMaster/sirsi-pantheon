@@ -86,6 +86,7 @@ func init() {
 	rootCmd.AddCommand(sebaCmd)
 	rootCmd.AddCommand(bookCmd)
 	rootCmd.AddCommand(initiateCmd)
+	rootCmd.AddCommand(hapiCmd)
 }
 
 func main() {
