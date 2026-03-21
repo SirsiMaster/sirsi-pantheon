@@ -1,10 +1,11 @@
 # 𓂀 Sirsi Anubis — Canonical Development Plan
-**Version:** 1.0.0
+**Version:** 2.0.0
 **Date:** March 21, 2026
-**Status:** LOCKED — Canonical Reference
+**Status:** LOCKED — Ship Week (March 21–28, 2026)
 
-> This is the master roadmap. All sprint plans, session prompts, and feature
-> work MUST trace back to this document. Changes require ADR review.
+> **DEADLINE: Friday March 28, 2026.**
+> Every feature ships this week. April investor demos require a complete,
+> polished, demoable product. No feature deferred. No excuses.
 
 ---
 
@@ -12,26 +13,31 @@
 
 | Tier | Codename | License | Distribution | Scope |
 |:-----|:---------|:--------|:-------------|:------|
-| **Anubis** | Open Source | MIT | Homebrew, GitHub Releases, `go install`, Docker | Single workstation — scan, clean, ghost hunt, RAM guard |
-| **Eye of Horus** | Subnet Edition | Licensed | Upgrade from Anubis | Local subnet scanning — VLAN sweep, LAN discovery, agent deployment |
-| **Ra** | Enterprise Edition | Sirsi-only | Bundled with Sirsi Platform | Fleet-scale — multi-site, SAN/NAS, policy enforcement, reporting dashboard |
+| **Anubis Free** | Open Source | MIT | Homebrew, GitHub Releases, `go install` | Single workstation — scan, clean, ghost hunt, RAM guard |
+| **Anubis Pro** | Neural Edition | Freemium | `anubis install-brain` add-on | Semantic search, dedup, neural context sanitization |
+| **Eye of Horus** | Subnet Edition | Licensed | Upgrade from Free/Pro | Local subnet scanning — VLAN sweep, LAN agents |
+| **Ra** | Enterprise | Sirsi-only | Bundled with Sirsi Platform | Fleet-scale — multi-site, SAN/NAS, policy, dashboard |
 
-### Tier Boundaries
+### Tier Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    RA (Enterprise)                       │
-│   Fleet policies, multi-site, SAN/NAS/S3, dashboards   │
-│ ┌─────────────────────────────────────────────────────┐ │
-│ │              EYE OF HORUS (Subnet)                  │ │
-│ │   VLAN sweep, LAN agents, local fleet orchestration │ │
-│ │ ┌─────────────────────────────────────────────────┐ │ │
-│ │ │               ANUBIS (Open Source)               │ │ │
-│ │ │   weigh, judge, ka, guard, sight, hapi          │ │ │
-│ │ │   34→60+ rules, CLI, JSON output, profiles      │ │ │
-│ │ └─────────────────────────────────────────────────┘ │ │
-│ └─────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                       RA (Enterprise)                        │
+│    Fleet policies, multi-site, SAN/NAS, Sirsi dashboard     │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │                 EYE OF HORUS (Subnet)                    │ │
+│ │    VLAN sweep, LAN agents, local fleet orchestration     │ │
+│ │ ┌──────────────────────────────────────────────────────┐ │ │
+│ │ │               ANUBIS PRO (Neural)                    │ │ │
+│ │ │    install-brain, semantic search, dedup, ANE/CUDA   │ │ │
+│ │ │ ┌──────────────────────────────────────────────────┐ │ │ │
+│ │ │ │            ANUBIS FREE (Open Source)              │ │ │ │
+│ │ │ │  weigh, judge, ka, guard, sight, hapi, profiles  │ │ │ │
+│ │ │ │  64+ rules, book-of-the-dead, JSON, stealth      │ │ │ │
+│ │ │ └──────────────────────────────────────────────────┘ │ │ │
+│ │ └──────────────────────────────────────────────────────┘ │ │
+│ └──────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -40,220 +46,237 @@
 
 ### Operating Systems
 
-| OS | Status | Binary | Notes |
-|:---|:-------|:-------|:------|
-| macOS (arm64) | 🔨 Active dev | `anubis-darwin-arm64` | Primary dev platform |
-| macOS (amd64) | 🔨 CI builds | `anubis-darwin-amd64` | Intel Mac support |
-| Linux (amd64) | Phase 2 | `anubis-linux-amd64` | Ubuntu/Debian/Fedora |
-| Linux (arm64) | Phase 2 | `anubis-linux-arm64` | Raspberry Pi, ARM servers |
-| Windows (amd64) | Phase 3 | `anubis-windows-amd64.exe` | WSL2 + native |
-| Windows (arm64) | Phase 4 | `anubis-windows-arm64.exe` | Surface Pro, Snapdragon |
+| OS | Binary | Status |
+|:---|:-------|:-------|
+| macOS (arm64) | `anubis-darwin-arm64` | ✅ Primary — shipping |
+| macOS (amd64) | `anubis-darwin-amd64` | ✅ CI cross-compile |
+| Linux (amd64) | `anubis-linux-amd64` | ✅ goreleaser builds |
+| Linux (arm64) | `anubis-linux-arm64` | ✅ goreleaser builds |
+| Windows (amd64) | `anubis-windows-amd64.exe` | 📋 Post-launch |
+| Windows (arm64) | `anubis-windows-arm64.exe` | 📋 Post-launch |
 
 ### GPU / Accelerator Detection
 
-| Accelerator | Detection Method | Hapi Module | Phase |
-|:------------|:----------------|:------------|:------|
-| Apple Metal / MLX | `system_profiler SPDisplaysDataType`, Metal API | `hapi/metal.go` | 3 |
-| NVIDIA CUDA | `nvidia-smi`, NVML library | `hapi/cuda.go` | 3 |
-| AMD ROCm | `rocm-smi`, `/sys/class/drm/` | `hapi/rocm.go` | 4 |
-| Intel oneAPI | `xpu-smi`, SYCL runtime | `hapi/intel.go` | 5 |
+| Accelerator | Detection | Module | Day |
+|:------------|:----------|:-------|:----|
+| Apple Metal / MLX | `system_profiler`, Metal API | `hapi/metal.go` | Wed 3/26 |
+| NVIDIA CUDA | `nvidia-smi`, NVML | `hapi/cuda.go` | Wed 3/26 |
+| AMD ROCm | `rocm-smi` | `hapi/rocm.go` | Wed 3/26 |
+| Intel oneAPI | `xpu-smi` | `hapi/intel.go` | Wed 3/26 |
 
-### Framework / Model Detection
+### AI Framework Detection — All ✅ Done
 
-| Category | Detection | Scan Rule | Phase |
-|:---------|:----------|:----------|:------|
-| PyTorch | `~/.cache/torch`, `torch.cuda.is_available()` | `pytorch_cache` | ✅ Done |
-| TensorFlow | `~/.cache/tensorflow`, `tf.config.list_physical_devices` | `tensorflow_cache` | ✅ Done |
-| HuggingFace | `~/.cache/huggingface`, `transformers` cache | `huggingface_cache` | ✅ Done |
-| Ollama | `~/.ollama/models` | `ollama_models` | ✅ Done |
-| Apple MLX | `~/.cache/mlx`, CoreML models | `mlx_cache` | ✅ Done |
-| ONNX Runtime | `~/.cache/onnxruntime` | `onnx_cache` | 2 |
-| vLLM | `~/.cache/vllm` | `vllm_cache` | 2 |
-| JAX/Flax | `~/.cache/jax` | `jax_cache` | 2 |
-| Stable Diffusion | `~/.cache/stable-diffusion`, ComfyUI models | `sd_models` | 2 |
-| LangChain | `~/.langchain`, vector store caches | `langchain_cache` | 3 |
+PyTorch, TensorFlow, HuggingFace, Ollama, MLX, ONNX, vLLM, JAX,
+Stable Diffusion, LangChain — all 10 frameworks have scan rules shipped.
 
-### IDE / Dev Tool Detection
+### IDE Detection — All ✅ Done
 
-| Tool | Detection | Scan Rule | Phase |
-|:-----|:----------|:----------|:------|
-| VS Code | `~/Library/Application Support/Code/` | `vscode_caches` | ✅ Done |
-| JetBrains | `~/Library/Caches/JetBrains` | `jetbrains_caches` | ✅ Done |
-| Xcode | `~/Library/Developer/Xcode/DerivedData` | `xcode_derived_data` | ✅ Done |
-| Android Studio | `~/.android/avd`, `~/.android/cache` | `android_studio` | ✅ Done |
-| Claude Code | `~/.claude/logs` | `claude_code` | ✅ Done |
-| Gemini CLI | `~/.gemini/cache` | `gemini_cli` | ✅ Done |
-| Cursor | `~/Library/Application Support/Cursor/` | `cursor_caches` | 2 |
-| Windsurf | `~/Library/Application Support/Windsurf/` | `windsurf_caches` | 2 |
-| Zed | `~/Library/Application Support/Zed/` | `zed_caches` | 2 |
-| Neovim | `~/.local/share/nvim`, `~/.cache/nvim` | `neovim_caches` | 2 |
-| Eclipse | `~/eclipse/`, `.metadata/` dirs | `eclipse_caches` | 3 |
+VS Code, JetBrains, Xcode, Android Studio, Claude Code, Gemini CLI,
+Cursor, Windsurf, Zed, Neovim, Codex — all 11 tools have scan rules shipped.
 
 ---
 
-## Phase Roadmap
+## Ship Week Schedule
 
-### Phase 1: Jackal MVP — Local Workstation 🐺
-**Status:** 🔨 In Progress | **Target:** v0.2.0-alpha
+### Day 1: Friday March 21 ✅ DONE
+**Sprint 1.0–1.7 Complete**
 
-#### Sprint 1.0 — Foundation ✅ DONE
-- [x] Project scaffolding (cobra CLI, lipgloss UI, Go 1.22)
-- [x] ScanRule interface + Engine (concurrent scan orchestration)
-- [x] Safety module (hardcoded protected paths, dry-run enforcement)
-- [x] `anubis weigh` — scan with category flags
-- [x] `anubis judge` — clean with `--dry-run`/`--confirm`/`--trash`
-- [x] 12 initial scan rules (general Mac)
+- [x] Foundation — CLI, engine, safety, 12 rules
+- [x] Ka Ghost Hunter — 22 rules, Launch Services scanning
+- [x] CI + Quality — 100+ tests, ADRs, docs, portfolio CI fix
+- [x] Guard Module — RAM audit, process slayer, orphan detection
+- [x] Scan Rule Expansion — 34 → 64 rules across all 7 categories
+- [x] Sight Module — Launch Services rebuild, Spotlight reindex
+- [x] Profiles + Config — 4 profiles, YAML config, ~/.config/anubis/
+- [x] Distribution — goreleaser, SCAN_RULE_GUIDE, binary polish (4.1 MB)
 
-#### Sprint 1.1 — Ka Ghost Hunter ✅ DONE
-- [x] Ka module (`internal/ka/`) — 5-step ghost detection algorithm
-- [x] `anubis ka` command — ghost scan, clean, target filter
-- [x] 22 new scan rules (AI, virtualization, IDEs, cloud, storage)
-- [x] Launch Services (lsregister) scanning
-- [x] Bundle ID extraction + system component filtering
-
-#### Sprint 1.2 — CI + Quality ✅ DONE
-- [x] CI pipeline green (go.mod fix, golangci-lint config, gofmt)
-- [x] Unit tests (65+ cases, jackal 93%, cleaner 49%, ka 19.5%)
-- [x] ADR-002, CONTRIBUTING.md, SECURITY.md, CHANGELOG
-- [x] Portfolio CI fix (FinalWishes, tenant-scaffold)
-
-#### Sprint 1.3 — Guard Module 🛡️
-- [ ] `internal/guard/audit.go` — process enumeration + memory grouping
-- [ ] `internal/guard/slayer.go` — orphan process detection + termination
-  - Node.js orphans (`node --max-old-space-size`)
-  - LSP servers (TypeScript, Rust Analyzer, gopls, pyright)
-  - Docker Desktop background processes
-  - Electron helper renderers
-- [ ] `internal/guard/protector.go` — memory budget recommendations
-- [ ] `cmd/anubis/guard.go` — `anubis guard`, `anubis guard --slay <target>`
-- [ ] Safety: SIGTERM first, SIGKILL after 5s timeout, never kill root/system
-
-#### Sprint 1.4 — Scan Rule Expansion (34 → 60+)
-- [ ] Java/Gradle: `~/.gradle/caches`, `~/.m2/repository`
-- [ ] Homebrew: `~/Library/Caches/Homebrew`, old formula versions
-- [ ] npm/yarn/pnpm: global caches (`~/.npm/_cacache`, `~/.yarn/cache`)
-- [ ] CocoaPods: `~/Library/Caches/CocoaPods`
-- [ ] Swift Package Manager: `~/Library/Developer/Xcode/SPMRepositories`
-- [ ] Composer (PHP): `~/.composer/cache`
-- [ ] Ruby gems: `~/.gem/ruby/*/cache`
-- [ ] Cursor IDE, Windsurf, Zed, Neovim caches
-- [ ] ONNX, vLLM, JAX, Stable Diffusion caches
-- [ ] iCloud Drive cache: `~/Library/Mobile Documents`
-- [ ] nginx logs: `/var/log/nginx/`, `/usr/local/var/log/nginx/`
-- [ ] Time Machine local snapshots
-- [ ] Codex CLI: `~/.codex/`
-- [ ] Spotlight index rebuild option
-
-#### Sprint 1.5 — Sight Module 👁️
-- [ ] `internal/sight/launchservices.go` — ghost app detection (extract from Ka)
-- [ ] `internal/sight/rebuild.go` — Launch Services database rebuild
-- [ ] `cmd/anubis/sight.go` — `anubis sight`, `anubis sight --fix`
-- [ ] Spotlight re-index trigger for cleaned ghost apps
-
-#### Sprint 1.6 — Profiles + Config
-- [ ] `internal/profile/` — developer profile system
-- [ ] `~/.config/anubis/config.yaml` — user preferences
-- [ ] `~/.config/anubis/profiles/*.yaml` — named scan profiles
-- [ ] `anubis profile create`, `anubis profile list`, `anubis profile use`
-- [ ] Default profiles: `general`, `developer`, `ai-engineer`, `devops`
-
-#### Sprint 1.7 — Distribution + Polish
-- [ ] goreleaser setup (multi-platform binaries, checksums)
-- [ ] Homebrew tap: `SirsiMaster/homebrew-tools`
-- [ ] `go install` support (publish module)
-- [ ] Binary size audit (target: anubis < 10 MB, agent < 5 MB)
-- [ ] Shell completions (bash, zsh, fish, PowerShell)
-- [ ] `docs/SCAN_RULE_GUIDE.md` — contributor guide for new rules
-- [ ] Linux rule implementations (linuxRules() in registry.go)
-- [ ] Man page generation
-
-**Phase 1 Exit Criteria:**
-- 60+ scan rules across all 7 categories
-- `weigh`, `judge`, `ka`, `guard`, `sight` all working
-- macOS + Linux support
-- Homebrew + goreleaser distribution
-- Test coverage > 70% on core modules
-- README accurately describes shipped features
+**Status: 7 commands working, 64 rules, 100+ tests, CI green**
 
 ---
 
-### Phase 2: Jackal+ — Deep Scanning 🐺+
-**Target:** v0.3.0-beta
+### Day 2: Saturday March 22
+**Book of the Dead + Stealth + Initiate**
 
-- [ ] Container scanning — scan inside Docker containers (`docker exec`)
-- [ ] VM guest scanning — scan inside Parallels/UTM/VMware guests
-- [ ] Offline disk scanning — scan mounted external drives
-- [ ] Windows rule implementations
-- [ ] Interactive TUI mode (bubbletea) — real-time scan progress
-- [ ] Scan scheduling (cron-based, launchd)
-- [ ] Markdown/HTML report generation (`output/markdown.go`, `output/html.go`)
-- [ ] Disk image scanning (DMG, VHD, VMDK mounted volumes)
+- [ ] `anubis book-of-the-dead` — hidden system autopsy command
+  - Deep system report: disk, RAM, GPU, ghosts, processes, network
+  - Styled terminal output (papyrus/hieroglyphic ASCII theme)
+  - Hidden from `--help` (Cobra `Hidden: true`)
+  - Upsell footer: "To perform this ritual across 100+ nodes, connect to Sirsi"
+  - `--verbose` for expanded detail
+  - `--json` for structured data export
+
+- [ ] `anubis initiate` — batch macOS permission grant
+  - Request Full Disk Access, Accessibility, Network
+  - Guide user through System Preferences panels
+  - Verify permissions after granting
+  - "Ritual Initiation" branding
+
+- [ ] `--stealth` / `--clean-exit` flag on all commands
+  - Wipe `~/.config/anubis/cache/` after scan
+  - Delete downloaded brain weights
+  - Zero footprint mode: "Anubis comes, judges, and vanishes"
+
+- [ ] `.anubisignore` support
+  - Exclude paths from scanning (like .gitignore syntax)
+  - Pre-indexing hook for AI editors
+  - Default `.anubisignore` template
 
 ---
 
-### Phase 3: Hapi — Resource Optimizer 🌊
-**Target:** v0.4.0-beta
+### Day 3: Sunday March 23
+**Hapi Resource Optimizer**
 
-- [ ] `internal/hapi/metal.go` — Apple Metal/MLX unified memory audit
-- [ ] `internal/hapi/cuda.go` — NVIDIA CUDA VRAM management (`nvidia-smi`)
-- [ ] `internal/hapi/vram.go` — GPU memory audit and optimization
+- [ ] `internal/hapi/detect.go` — hardware detection engine
+  - Apple Silicon: Neural Engine, Metal GPU, unified memory
+  - NVIDIA: CUDA cores, VRAM, driver version via nvidia-smi
+  - AMD: ROCm, VRAM via rocm-smi
+  - Intel: integrated GPU, oneAPI
+  - CPU-only fallback
+
+- [ ] `internal/hapi/vram.go` — GPU/VRAM audit
+  - Metal memory pressure (macOS)
+  - CUDA VRAM usage per process (Linux/Windows)
+  - Fragmentation detection
+
+- [ ] `internal/hapi/dedup.go` — duplicate file detection
+  - SHA-256 hash-based comparison
+  - Size-first filter (skip if size differs)
+  - Parallel hashing via goroutines
+  - Report only (no auto-delete)
+
 - [ ] `internal/hapi/snapshots.go` — APFS snapshot pruning
-- [ ] `internal/hapi/dedup.go` — duplicate file detection (hash-based)
-- [ ] `internal/hapi/compress.go` — compression analysis and recommendations
-- [ ] `internal/hapi/tier.go` — hot/warm/cold storage tiering
-- [ ] `cmd/anubis/hapi.go` — `anubis hapi`, `anubis hapi --gpu`, `anubis hapi --dedup`
-- [ ] Platform detection: Metal vs CUDA vs ROCm vs CPU-only
+  - List local Time Machine snapshots
+  - Calculate space used
+  - Safe pruning with confirmation
+
+- [ ] `cmd/anubis/hapi.go` — CLI command
+  - `anubis hapi` — full resource audit
+  - `anubis hapi --gpu` — GPU/VRAM focus
+  - `anubis hapi --dedup` — find duplicate files
+  - `anubis hapi --snapshots` — APFS snapshot management
 
 ---
 
-### Phase 4: Scarab — Fleet Sweep (Eye of Horus) 🪲
-**Target:** v0.5.0 | **License:** Eye of Horus (upgrade from OSS)
+### Day 4: Monday March 24
+**Scarab Scout + Eye of Horus Foundation**
 
-- [ ] `internal/scarab/discovery.go` — subnet/VLAN host discovery
+- [ ] `internal/scarab/discovery.go` — network host discovery
+  - ARP table parsing
+  - Subnet ping sweep (ICMP)
+  - mDNS/Bonjour service discovery (macOS)
+  - Port scanning (SSH, Docker API)
+
 - [ ] `internal/scarab/sweep.go` — parallel fleet scanning
-- [ ] `internal/scarab/container.go` — Docker/Kubernetes container scanning
-- [ ] `internal/scarab/vm.go` — VM guest agent deployment
-- [ ] `internal/scarab/transport/ssh.go` — SSH transport
-- [ ] `internal/scarab/transport/grpc.go` — gRPC transport
-- [ ] `cmd/anubis/scarab.go` — `anubis scarab discover`, `anubis scarab sweep`
-- [ ] Agent auto-deployment — push `anubis-agent` to targets
-- [ ] `--confirm-network` safety flag (Rule A4)
-- [ ] Agent binary: static, zero-dep, fixed command set (Rule A3)
+  - Fan-out scan across discovered hosts
+  - Concurrent SSH connections
+  - Result aggregation
+
+- [ ] `internal/scarab/container.go` — container scanning
+  - Docker socket detection
+  - Container listing + size audit
+  - Dangling images, stopped containers, unused volumes
+
+- [ ] `cmd/anubis/scarab.go` — CLI command
+  - `anubis scarab discover` — find hosts on network
+  - `anubis scarab sweep` — scan all discovered hosts
+  - `anubis scarab containers` — Docker/K8s audit
+  - `--confirm-network` safety flag (Rule A4)
 
 ---
 
-### Phase 5: Scarab+ — Storage Backends 🪲+
-**Target:** v0.6.0 | **License:** Eye of Horus / Ra
+### Day 5: Tuesday March 25
+**Neural Brain + Pro Architecture**
 
-- [ ] `internal/scarab/storage.go` — NFS/SMB/iSCSI scanning
-- [ ] S3-compatible storage scanning (AWS S3, MinIO, Backblaze)
-- [ ] APFS/ZFS pool analysis
-- [ ] SAN/NAS orphan detection
-- [ ] Storage cost estimation (cloud pricing integration)
+- [ ] `internal/brain/downloader.go` — on-demand model fetcher
+  - Download CoreML/ONNX model to `~/.anubis/weights/`
+  - Progress bar display
+  - Checksum verification
+  - Version management (update/remove)
+
+- [ ] `internal/brain/inference.go` — model inference wrapper
+  - ONNX Runtime Go bindings (ort-go)
+  - CoreML bridge via CGO (macOS)
+  - CPU fallback for cross-platform
+  - Batch inference for file classification
+
+- [ ] `anubis install-brain` — download neural weights
+  - `anubis install-brain` — install default model
+  - `anubis install-brain --remove` — self-delete weights
+  - `anubis install-brain --update` — fetch latest
+  - Size budget: < 100 MB for quantized model
+
+- [ ] `anubis uninstall-brain` — clean removal
 
 ---
 
-### Phase 6: Scales — Policy Engine (Ra) ⚖️
-**Target:** v1.0.0 | **License:** Ra (Enterprise, Sirsi-only)
+### Day 6: Wednesday March 26
+**IDE Integrations + MCP Server**
+
+- [ ] `internal/mcp/server.go` — MCP (Model Context Protocol) server
+  - Anubis as context sanitizer for Claude/Cursor/Windsurf
+  - Tools: `scan_workspace`, `clean_workspace`, `ghost_report`
+  - Resources: scan results, ghost list, health status
+  - Runs as local stdio server
+
+- [ ] `anubis mcp` — start MCP server mode
+  - Integrates with Claude Code, Cursor, Windsurf
+  - Pre-scan workspace before AI indexing
+  - "I'm running Anubis to weigh the heart of this directory..."
+
+- [ ] VS Code Extension scaffold
+  - `extensions/vscode/` — extension manifest
+  - "Eye of Horus" sidebar health meter concept
+  - Status bar icon (red/green based on workspace health)
+  - Command palette integration
+
+- [ ] `.anubis/` workspace config
+  - Per-project Anubis configuration
+  - Custom scan rules for specific repos
+  - Integration with `.anubisignore`
+
+---
+
+### Day 7: Thursday March 27
+**Scales Policy Engine + Agent Hardening**
 
 - [ ] `internal/scales/policy.go` — YAML policy parser
-- [ ] `internal/scales/enforce.go` — fleet-wide enforcement
-- [ ] `internal/scales/verdicts.go` — verdict reporting
-- [ ] `cmd/anubis/scales.go` — `anubis scales enforce`, `anubis scales validate`
-- [ ] Slack/Teams/webhook notifications
-- [ ] Compliance reports (SOC2, CIS benchmarks)
-- [ ] Integration with Sirsi Nexus platform API
+  - Policy definitions for scan thresholds
+  - Auto-remediation rules (with approval)
+  - Notification targets (Slack, Teams, webhook)
+
+- [ ] `internal/scales/enforce.go` — policy enforcement
+  - Evaluate scan results against policies
+  - Generate verdicts (pass/warn/fail)
+  - Recommended actions
+
+- [ ] `cmd/anubis/scales.go` — CLI command
+  - `anubis scales enforce` — run policies
+  - `anubis scales validate` — check policy syntax
+  - `anubis scales verdicts` — show results
+
+- [ ] Agent hardening
+  - `cmd/anubis-agent/` — implement scan/report/clean
+  - Fixed command set (no shell access)
+  - JSON stdout for controller communication
+  - Self-update mechanism stub
 
 ---
 
-### Phase 7: Temple — GUI 🏛️
-**Target:** v2.0.0 | **License:** All tiers (OSS + Eye + Ra)
+### Day 8: Friday March 28
+**Polish, README, Release Prep**
 
-- [ ] SwiftUI native macOS app (wraps CLI engine)
-- [ ] Web dashboard (Sirsi Nexus embedded)
-- [ ] Real-time fleet monitoring
-- [ ] Scan scheduling + history
-- [ ] Visual ghost map / disk treemap
+- [ ] Update README.md — accurate feature list, all commands documented
+- [ ] Update CHANGELOG.md — v0.2.0-alpha complete entry
+- [ ] Update VERSION file
+- [ ] Final test suite run (target: 70%+ coverage on core)
+- [ ] Binary size audit (controller < 15 MB, agent < 5 MB)
+- [ ] gofmt + go vet + golangci-lint clean
+- [ ] Tag v0.2.0-alpha
+- [ ] goreleaser snapshot build (verify all platforms)
+- [ ] GitHub Release draft
+- [ ] Product Hunt / Hacker News launch copy draft
+- [ ] Investor demo script (5-minute walkthrough)
+- [ ] Continuation prompt for next sprint cycle
 
 ---
 
@@ -261,59 +284,95 @@
 
 | Binary | Current | Target | Strategy |
 |:-------|:--------|:-------|:---------|
-| `anubis` | 5.2 MB | < 15 MB | All modules compiled in, UPX optional |
-| `anubis-agent` | 2.4 MB | < 5 MB | Scan-only, no UI, no cobra, `CGO_ENABLED=0` |
-
-**Build flags:**
-```bash
-# Controller (full)
-go build -ldflags="-s -w" -o anubis ./cmd/anubis/
-
-# Agent (minimal)
-CGO_ENABLED=0 go build -ldflags="-s -w" -o anubis-agent ./cmd/anubis-agent/
-```
+| `anubis` | 4.1 MB | < 15 MB | All modules, no brain weights |
+| `anubis-agent` | 1.6 MB | < 5 MB | Scan-only, no UI, `CGO_ENABLED=0` |
+| Brain weights | 0 MB | < 100 MB | On-demand download, self-deletable |
 
 ---
 
-## Scan Rule Target Count
+## Scan Rule Count
 
-| Category | Current | Phase 1.4 Target | Phase 2+ Target |
-|:---------|:--------|:-----------------|:----------------|
-| General Mac | 6 | 10 | 12 |
-| Virtualization | 4 | 5 | 6 |
-| Dev Frameworks | 5 | 14 | 18 |
-| AI/ML | 6 | 11 | 15 |
-| IDEs & AI Tools | 6 | 12 | 14 |
-| Cloud & Infra | 4 | 7 | 10 |
-| Cloud Storage | 3 | 5 | 6 |
-| **Total** | **34** | **64** | **81** |
+| Category | Shipped | Notes |
+|:---------|:--------|:------|
+| General Mac | 9 | caches, logs, crash, downloads, trash, browser, TM, mail, fonts |
+| Virtualization | 4 | Parallels, VMware, UTM, VirtualBox |
+| Dev Frameworks | 10 | node, go, python, rust, docker, npm, gradle, maven, composer, ruby |
+| AI/ML | 11 | MLX, Metal, HF, Ollama, PyTorch, TF, ONNX, vLLM, JAX, SD, LangChain |
+| IDEs & AI Tools | 11 | Xcode, VS Code, JetBrains, Android, Claude, Gemini, Cursor, Windsurf, Zed, Neovim, Codex |
+| Cloud & Infra | 6 | K8s, Terraform, gcloud, Firebase, nginx, AWS |
+| Cloud Storage | 4 | OneDrive, Google Drive, Dropbox, iCloud |
+| **Total** | **55 registered + sub-rules = 64+ effective** | |
 
 ---
 
-## Integration with Sirsi Ecosystem
+## CLI Command Map (Ship Week)
 
-| Sirsi Product | Anubis Integration |
-|:--------------|:-------------------|
-| **Sirsi Nexus** | Ra tier: fleet API, dashboard, policy management |
-| **Sirsi-Sign** | Shared security infrastructure, agent auth certificates |
-| **Sirsi Rook** | Database artifact scanning (stale backups, orphaned schemas) |
-| **Sirsi Rogue** | Security sweep integration (CVE scanning, exposed secrets) |
+| Command | Day | Status |
+|:--------|:----|:-------|
+| `anubis version` | Day 1 | ✅ Shipped |
+| `anubis weigh` | Day 1 | ✅ Shipped |
+| `anubis judge` | Day 1 | ✅ Shipped |
+| `anubis ka` | Day 1 | ✅ Shipped |
+| `anubis guard` | Day 1 | ✅ Shipped |
+| `anubis sight` | Day 1 | ✅ Shipped |
+| `anubis profile` | Day 1 | ✅ Shipped |
+| `anubis book-of-the-dead` | Day 2 | 📋 Saturday |
+| `anubis initiate` | Day 2 | 📋 Saturday |
+| `anubis hapi` | Day 3 | 📋 Sunday |
+| `anubis scarab` | Day 4 | 📋 Monday |
+| `anubis install-brain` | Day 5 | 📋 Tuesday |
+| `anubis mcp` | Day 6 | 📋 Wednesday |
+| `anubis scales` | Day 7 | 📋 Thursday |
+| **Release v0.2.0-alpha** | Day 8 | 📋 Friday |
+
+---
+
+## Integration Map
+
+| Integration | Method | Day |
+|:------------|:-------|:----|
+| Claude Code | MCP Server (stdio) | Day 6 |
+| Cursor | MCP Server (stdio) | Day 6 |
+| Windsurf | MCP Server (stdio) | Day 6 |
+| VS Code | Extension scaffold | Day 6 |
+| Codex / Antigravity | Pre-flight hook via JSON | Day 6 |
+| Sirsi Nexus | Ra API (future) | Post-launch |
+
+---
+
+## Investor Demo Script (5 min)
+
+1. `anubis version` — branding moment (10s)
+2. `anubis weigh` — live scan, show 69 GB found (30s)
+3. `anubis guard` — show RAM audit, orphan processes (20s)
+4. `anubis ka` — ghost app hunt (20s)
+5. `anubis sight` — Launch Services ghost scan (15s)
+6. `anubis hapi --gpu` — GPU/hardware detection (15s)
+7. `anubis book-of-the-dead` — full system autopsy (30s)
+8. `anubis judge --dry-run` — show what would be cleaned (20s)
+9. `anubis scarab discover` — show network hosts (20s)
+10. `anubis profile list` — show developer profiles (10s)
+11. Close: "From workstation to enterprise. Anubis → Eye of Horus → Ra" (30s)
 
 ---
 
 ## Decision Log
 
-| Decision | Rationale | ADR |
+| Decision | Rationale | Ref |
 |:---------|:----------|:----|
 | Go 1.22+ | Static binary, cross-platform, contributor-friendly | ADR-001 |
 | Agent-controller model | Fleet scalability without SSH key sprawl | ADR-001 |
 | MIT open source | Community adoption, Anubis is preview/marketing for Sirsi | ADR-001 |
 | Ka ghost detection | No competitor does cross-referenced ghost hunting | ADR-002 |
-| 3-tier licensing | Open source → subnet → enterprise growth path | This document |
-| Device-aware scanning | Platform detection adapts rules (Metal vs CUDA vs ROCm) | This document |
+| 4-tier licensing | Free → Pro → Eye of Horus → Ra growth path | v2.0.0 |
+| On-demand brain | Keep base binary < 15 MB, neural weights downloaded separately | v2.0.0 |
+| MCP integration | Position Anubis as "Context Sanitizer for AI era" | v2.0.0 |
+| Ship week deadline | April investor demos require complete product | v2.0.0 |
+| Book of the Dead | Hidden command differentiator, memorable demo moment | v2.0.0 |
+| Ephemeral mode | "Zero footprint" narrative — Anubis comes, judges, vanishes | v2.0.0 |
 
 ---
 
-> **This plan is LOCKED.** Sprint plans reference specific sections.
-> All feature work traces to a phase + sprint number here.
-> Changes to scope or timeline require ADR review.
+> **This plan ships by Friday March 28, 2026.**
+> One command per day. No deferrals. CI green at every commit.
+> April investors see a complete, polished, demoable product.
