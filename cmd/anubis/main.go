@@ -60,6 +60,7 @@ func init() {
 	rootCmd.AddCommand(weighCmd)
 	rootCmd.AddCommand(judgeCmd)
 	rootCmd.AddCommand(kaCmd)
+	rootCmd.AddCommand(guardCmd)
 }
 
 func main() {
