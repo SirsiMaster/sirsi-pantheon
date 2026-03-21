@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Anubis infrastructure hygiene platform.
 
-**Total ADRs: 1** | **Next available: ADR-002**
+**Total ADRs: 2** | **Next available: ADR-003**
 
 ---
 
@@ -11,6 +11,7 @@ This index tracks **all** architectural decisions for the Sirsi Anubis infrastru
 | ID | Title | Status | Date |
 |----|-------|--------|------|
 | [ADR-001](ADR-001-FOUNDING-ARCHITECTURE.md) | Founding Architecture — Go, cobra, agent-controller, module codenames | Accepted | 2026-03-20 |
+| [ADR-002](ADR-002-KA-GHOST-DETECTION.md) | Ka Ghost Detection — 5-step algorithm, 17 residual locations, bundle ID matching | Accepted | 2026-03-20 |
 
 ---
 
@@ -19,8 +20,8 @@ This index tracks **all** architectural decisions for the Sirsi Anubis infrastru
 ### Core Architecture
 - ADR-001: Founding Architecture — language, framework, modules, license, distribution
 
-### Scan Rules (Future)
-- *(ADR-002+: Scan rule interface design, rule categories, etc.)*
+### Ghost Detection
+- ADR-002: Ka Ghost Detection — algorithm, residual locations, data model
 
 ### Fleet Management (Future)
 - *(Agent protocol, network discovery, transport layer)*
@@ -35,6 +36,7 @@ This index tracks **all** architectural decisions for the Sirsi Anubis infrastru
 | Range | Status |
 |:------|:-------|
 | ADR-001 | Active — Founding Architecture |
-| ADR-002+ | Next available |
+| ADR-002 | Active — Ka Ghost Detection |
+| ADR-003+ | Next available |
 
-> **Last updated:** March 20, 2026 — Project genesis. ADR-001 accepted.
+> **Last updated:** March 21, 2026 — ADR-002 accepted (Ka module).

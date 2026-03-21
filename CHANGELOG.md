@@ -6,14 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 ### Planned
-- Phase 1 (Jackal): Local workstation scanner + cleaner
-- General Mac cleaning rules (caches, logs, browser junk, crash reports)
-- Developer framework rules (Node, Rust, Go, Python, Java)
-- Virtualization rules (Parallels, Docker, VMware, UTM)
-- AI/ML rules (MLX, CUDA, HuggingFace, Ollama)
-- IDE rules (Xcode, VS Code, JetBrains, Claude Code, Gemini CLI)
-- RAM guard (process audit, orphan killer, memory budgets)
-- Spotlight sight (ghost app detection, Launch Services rebuild)
+- Phase 1 (Jackal): RAM guard, interactive mode, profiles
+- Phase 2 (Jackal+): Container/VM scanning, offline disk scan
+- Phase 3 (Hapi): VRAM management, storage optimization
+
+---
+
+## [0.1.0-alpha.2] — 2026-03-21
+### Fixed (Session 2: Clean, Lint, Optimize)
+- **CI pipeline** — fixed go.mod version mismatch (`go 1.26.1` → `go 1.22.0`)
+- **golangci-lint** — added `.golangci.yml` config, replaced deprecated `exportloopref` with `copyloopvar`
+- **errcheck** — fixed unchecked `cmd.Help()` return value
+- **gofmt** — applied formatting to 4 source files with drift
+- **Portfolio CI** — fixed FinalWishes (`go 1.25.0` → `go 1.24.0`), tenant-scaffold (missing `package-lock.json`)
+
+### Added (Session 2: Tests + Documentation)
+- **Unit tests** — `types_test.go` (FormatSize, ExpandPath, PlatformMatch), `safety_test.go` (all protection layers), `scanner_test.go` (extractBundleID, guessAppName, isSystemBundleID), `engine_test.go` (mock rules, category filtering, clean safety)
+- **ADR-002** — Ka Ghost Detection algorithm (5-step process, 17 residual locations)
+- **CONTRIBUTING.md** — contributor guide with scan rule examples and safety rules
+- **SECURITY.md** — security policy, threat model, protected paths, data privacy
+
+---
+
+## [0.1.0-alpha.1] — 2026-03-20
+### Added (Session 1: Ka Ghost Hunter)
+- **Ka module** (`internal/ka/`) — Ghost detection engine scanning 17 macOS locations
+- **22 new scan rules** — AI/ML (6), virtualization (4), IDEs (5), cloud (4), storage (3)
+- **`anubis ka`** — Ghost hunting CLI command with `--clean`, `--dry-run`, `--target` flags
+- **Launch Services scanning** — detects phantom app registrations in Spotlight
+- **Bundle ID extraction** — heuristic parser for plist filenames and directory names
+- **System filtering** — `com.apple.*` and known system services excluded from ghosts
 
 ---
 
