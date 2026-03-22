@@ -122,3 +122,22 @@ A future session should read memory (~5 seconds), then only read source files re
 
 **What I'm proud of**: The 99.3% context reduction is a real number. Reading ~100 lines of YAML instead of ~15,000 lines of Go. This is not a gimmick — it's measurably faster.
 
+---
+
+## Entry 007 — 2026-03-22 11:21 — Build in public
+
+**Context**: User wanted a public-facing record of the build-test-fix cycles. Not just a changelog — a narrative that shows the mistakes alongside the successes.
+
+**Insight**: Most developer tools hide the messy middle. They ship a polished website with marketing claims. You never see the bugs that got shipped, the benchmarks that didn't hold up, the architecture decisions that were wrong the first time. Showing all of it builds trust with technical users who can smell manufactured credibility.
+
+**Decision**: Created `docs/BUILD_LOG.md` — a sprint-by-sprint chronicle that includes:
+- What broke and how we fixed it
+- Real benchmark data with verification commands
+- Honest test coverage (93% best, 0% worst for 9 modules)
+- The safety bug that could have trashed the wrong file
+- Dollar cost comparisons for token savings
+
+Added "building in public" badge to README. Linked from CHANGELOG.
+
+**Design principle**: Transparency is the product. If our code is good enough to inspect, our process should be too. This is how you compete with established tools that have more marketing budget — you out-trust them.
+

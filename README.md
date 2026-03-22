@@ -5,7 +5,9 @@
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-C8A951?style=flat)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.3.0--alpha-1A1A5E?style=flat)](VERSION)
+[![Tests](https://img.shields.io/badge/tests-303%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![MCP](https://img.shields.io/badge/MCP-2025--03--26-purple?style=flat)](https://modelcontextprotocol.io)
+[![Build in Public](https://img.shields.io/badge/building-in%20public-C8A951?style=flat)](docs/BUILD_LOG.md)
 
 > *"Weigh. Judge. Purge."*
 

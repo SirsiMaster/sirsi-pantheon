@@ -2,17 +2,21 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+**Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
+
 ---
 
 ## [Unreleased]
 ### Planned
-- Phase 1 (Jackal): RAM guard, interactive mode, profiles
-- Phase 2 (Jackal+): Container/VM scanning, offline disk scan
-- Phase 3 (Hapi): VRAM management, storage optimization
+- P0: Cleaner test coverage to 80%+ (safety-critical)
+- P0: Scanner edge case tests (permissions, symlink loops)
+- P1: Linux folder picker (zenity), Platform interface abstraction
+- P1: Structured logging (replace fmt.Printf)
+- P2: npm publish thoth-init, VS Code extension
 
 ---
 
-## [0.3.0-alpha] — 2026-03-21 (Ship Week — Mirror + Audit)
+## [0.3.0-alpha] — 2026-03-21/22 (Ship Week — Mirror + Audit + Thoth)
 
 ### Added
 - **Mirror module** (`internal/mirror/`) — file deduplication engine
@@ -23,48 +27,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   - Flags: `--photos`, `--music`, `--min-size`, `--max-size`, `--protect`
   - JSON output via `--json` for pipeline integration
 - **Mirror GUI** (`internal/mirror/server.go`) — local web UI
-  - `anubis mirror` (no args) launches browser-based interface
-  - Drag-and-drop folder selection
-  - Filter chips: All Files, Photos, Music, Video, Documents
-  - Advanced options panel: min/max size dropdowns, protected directories
-  - Results view with keep/remove badges, stat cards, collapsible groups
-  - JSON export button — GUI-CLI feature parity
+  - Native macOS Finder folder picker via `/api/pick-folder`
+  - Filesystem browser API via `/api/browse`
+  - Graceful SIGINT/SIGTERM shutdown
+  - Filter chips, advanced options, results view with keep/remove badges
   - Egyptian dark theme, Inter font, gold accents
-- **Mirror design doc** (`docs/MIRROR_DESIGN.md`)
-  - Product model: "One Engine, Two Interfaces" — GUI and CLI have identical features
-  - Free tier (Ankh): full dedup engine via both interfaces
-  - Pro tier (Eye of Horus): ANE neural importance ranking via both interfaces
-  - Five implementation phases with competitive analysis
-- **12 mirror tests** — duplicate detection, protected dirs, size filters, media
-  filters, empty files, multiple groups, sort by waste, hash correctness
+- **𓁟 Thoth knowledge system** — persistent AI memory
+  - Three-layer architecture: memory.yaml → journal.md → artifacts/
+  - `thoth_read_memory` MCP tool for AI IDEs
+  - Standalone CLI: `tools/thoth-init/` (auto-detects language, counts lines)
+  - Installed across 4 Sirsi codebases (428,000+ lines)
+  - 98% context reduction benchmarked on real projects
+- **Decision log** (`internal/cleaner/decisions.go`)
+  - Per-file action recording: path, size, SHA-256, reason, timestamp
+  - Persists to `~/.config/anubis/mirror/decisions/`
+  - Trash-first policy on macOS (reversible, "Put Back" works)
+- **Performance documentation** (`docs/MIRROR_PERFORMANCE.md`)
+  - Real benchmark data: 27.3x faster, 98.8% less disk I/O
+  - Algorithm explanation, scaling properties, safety claims
+- **Build log** (`docs/BUILD_LOG.md`) — public build-in-public chronicle
+- **12 mirror tests** + existing suite = 303 total
 
 ### Changed
 - **Seba graph** — complete kinetic rewrite (self-contained Canvas renderer)
-  - Animated data pulses, breathing nodes, ghost shimmer, process heartbeats
-  - Bezier edges with gradients, particle system, star field background
-  - Click-to-focus with smooth zoom, hover highlighting, ambient drift
-  - Zero CDN dependencies — works from `file://` protocol
+- **Guard optimization** — pre-lowercased orphanPatterns keys in hot loop
+- **README** — added Mirror benchmarks, Thoth section, updated architecture
+- **GoReleaser** — fixed brews vs homebrew_casks, removed stale .goreleaser.yml
 
 ### Fixed
-- **Scanner optimization** — two-stage partial hash pre-filter
-  - Hashes first 4KB + last 4KB before reading full file
-  - Eliminates files with same size but different content without reading GBs
-  - Real-world test: 709 files scanned in 684ms
-- **Safety hardening** — added `protectedHomeDirs` to cleaner
-  - ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures, ~/Music, ~/Movies, ~/Library
-  - Blocks deletion of the directory itself; files inside remain deletable
-  - New tests: `TestValidatePath_ProtectedHomeDirs` (11 test cases)
-- **Dead code removed** — symlink check that could never trigger (filepath.Walk
-  resolves symlinks before the callback), unused `groupID` variable
-- **Lint fixes** — capitalized error string (ST1005), unnecessary `fmt.Sprintf`,
-  variable shadowing across 6 files, errcheck on JSON encoder calls
-- **CI** — all GitHub Actions jobs green (lint, test, build)
+- **GUI folder picker** — was returning browser-relative paths → native macOS Finder dialog
+- **moveToTrash** — silently ignored filepath.Abs error (could trash wrong file)
+- **Drop zone text** — said "Drop folders here" but D&D can't work → now says "Select folders"
+- **Dead code removed** — symlink check, unused groupID, FollowLinks field
+- **Lint fixes** — errcheck, capitalized errors, unnecessary Sprintf
+- **GoReleaser CI** — deprecated format, stale config file
 
 ### Stats
-- 16 CLI commands, 64 scan rules, 15 internal modules
-- ~95 tests across 8 packages, all passing (with `-race`)
-- 14,500+ lines of Go
+- 17 CLI commands, 64 scan rules, 17 internal modules
+- 303 tests across 8 packages, all passing (with `-race`)
+- ~15,000 lines of Go
 - Lint clean (golangci-lint + staticcheck)
+- Test coverage range: 93% (jackal) to 0% (9 untested modules)
+- 6 bugs found and fixed in this audit cycle
+
 
 ## [0.2.0-alpha] — 2026-03-25 (Ship Week Day 5)
 ### Added (Day 5: Neural Brain Downloader)
