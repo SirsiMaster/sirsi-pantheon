@@ -186,3 +186,22 @@ Added "building in public" badge to README. Linked from CHANGELOG.
 **Launch prep verified**: GoReleaser snapshot builds 12 binaries across 6 platforms, all within size budget. Launch copy, investor demo, and all public-facing stats updated.
 
 **Session total**: 10 commits, 27 files modified, 150 tests written, 4 sprints completed.
+
+---
+
+## Entry 011 — 2026-03-22 19:45 — "Trust is the product"
+
+**Context**: New session started by running the continuation prompt. Before touching any code, audited every statistical claim in the codebase against real commands. Found 5 categories of inflated or fabricated numbers.
+
+**Findings**:
+1. **Scan rule count**: Every public document said "64 rules." Actual count: 58. The number was wrong in 12+ files including Product Hunt copy, investor demo, README, goreleaser, and the HTML build log.
+2. **Token savings**: Case study title claimed "3 Million Tokens in 11 Sessions." Thoth was created on March 21 at 23:56. Only 2 sessions have started with Thoth available. Actual cumulative savings: ~549K tokens (2 × 274,524).
+3. **Cross-repo claims**: Case study projected savings for SirsiNexus ($111/session), FinalWishes, and Assiduous — but Thoth has never been used in a session on any of those repos. The numbers were pure projection presented as measurement.
+4. **Session counting**: ROI script used `commits / 5` to estimate sessions, producing inflated counts. A session is properly defined as one AI conversation between continuation prompt runs.
+5. **Line counts**: Case study used stale line counts (22,958) when actual is 23,177. Thoth file counts said "297" when actual is 300. Small but sloppy.
+
+**Decision**: Corrected all 12 files. Canonized two new rules:
+- **Rule A14 (Statistics Integrity)**: Every public number must be reproducible. No projections as measurements.
+- **Rule A15 (Session Definition)**: A session = one AI conversation between continuation prompts. Not time gaps, not commit counts.
+
+**Why this matters**: The per-session savings are genuinely impressive ($4.12, 98.7% context reduction). Inflating the cumulative numbers cheapens the real achievement and destroys trust with technical users who will verify claims. Build-in-public means the audit trail is visible — the correction is as much a part of the story as the original error. Transparency IS the product.

@@ -196,6 +196,23 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **goreleaser** handles binary distribution with version injection via `-ldflags`
 *   **Tag format**: `v0.1.0-alpha`, `v1.0.0`, etc.
 
+### 2.11 Statistics Integrity Protocol (Rule A14)
+> Established March 22, 2026, after audit found 5 inflated claims in public-facing materials.
+
+*   **Every public-facing number MUST be independently verifiable.** Include the command to reproduce it.
+*   **No projections presented as measurements.** If a number is projected, it MUST be labeled as a projection.
+*   **No cross-repo claims without cross-repo evidence.** Benchmarks measured on Anubis do not apply to other repos unless measured there.
+*   **Cumulative claims require cumulative evidence.** "X tokens saved across N sessions" requires N to be counted, not estimated.
+*   **When in doubt, report per-session numbers only.** Per-session savings are verifiable; cumulative extrapolations are speculation.
+
+### 2.12 Session Definition (Rule A15)
+> Established March 22, 2026. Canonical definition for all Thoth metrics and context monitoring.
+
+*   A **session** is defined as one AI conversation — the work between two continuation prompt runs.
+*   Sessions are NOT defined by time gaps, commit clusters, or calendar days.
+*   `docs/CONTINUATION-PROMPT.md` is the session boundary marker.
+*   Session counts in ROI calculations, case studies, and build logs MUST use this definition.
+
 ---
 
 ## 3. Technology Stack

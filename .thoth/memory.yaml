@@ -51,6 +51,10 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # 9. Build-in-public (ADR-003): every release updates VERSION, CHANGELOG,
 #    BUILD_LOG.md, build-log.html, Thoth, and ADRs. Mistakes stay in the record.
 #    Voice: direct verbs, never "the user wanted." Transparency is the product.
+# 10. Statistics Integrity (Rule A14): every public-facing number must be
+#     independently verifiable. No projections presented as measurements.
+# 11. Session definition (Rule A15): a session = one AI conversation between
+#     continuation prompts. Not time gaps, not commit clusters.
 
 ## Known Limitations (as of v0.3.0-alpha)
 # - GUI folder picker only works on macOS (needs zenity for Linux, PowerShell for Windows)
@@ -63,9 +67,13 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # - Platform-specific code is scattered, not behind a Platform interface
 
 ## Recent Changes (most recent first)
-# 2026-03-22: Case study system — dogfooding narratives + ROI tracking across 4 repos
+# 2026-03-22: Statistics audit — corrected all inflated claims across 12 files
+#   Scan rules: 64→58 (verified). Tests: ~395→453 (verified).
+#   Removed fabricated cross-repo savings. Removed "3M tokens in 11 sessions."
+#   Canonized Rule A14 (Statistics Integrity) and Rule A15 (Session Definition).
+#   ROI script fixed: naive commits/5 → gap-based heuristic + methodology note.
+# 2026-03-22: Case study system — dogfooding narratives + ROI tracking
 #   Created: docs/case-studies/, scripts/thoth-roi.sh, pitch deck stub
-#   SirsiNexus: 618K lines → 45 Thoth lines, $111/session (star number)
 # 2026-03-22: Safety-critical coverage sprint — cleaner 49%→77%, ka 19.5%→42.7%
 #   Added: 30 cleaner tests (DecisionLog, DeleteFile, CleanFile, DirSize, constants)
 #   Added: 28 ka tests (isInstalled, countFiles, mergeOrphans, Clean, constants)
