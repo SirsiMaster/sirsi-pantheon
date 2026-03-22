@@ -4,6 +4,12 @@ description: How to monitor context window and token usage during development se
 
 # Context & Token Monitoring Workflow (v2.1)
 
+> **Note:** As of March 2026, **Thoth is the canonical session manager** for all Sirsi projects.
+> Thoth owns both Project Memory and Context Monitoring as a single unified responsibility.
+> The continuation prompt (`docs/CONTINUATION-PROMPT.md`) embeds the full monitoring spec,
+> heuristic model, and wrap protocol. This file is retained as **supplementary reference**
+> for AG Monitor Pro setup details, interaction modes, and agent-side heuristic calibration.
+
 ## Overview
 Track session health using AG Monitor Pro (installed) plus agent-side heuristics.
 Report after every sprint/phase to prevent context exhaustion.
