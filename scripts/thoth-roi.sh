@@ -101,7 +101,9 @@ echo "│"
 echo "└───────────────────────────────────"
 echo ""
 
-# Session count estimate (gap-based: >2hr gap = new session)
+# Session count estimate
+# NOTE: A "session" = one AI conversation (between continuation prompts).
+# Git commit gaps are a heuristic; for accurate counts, check conversation history.
 if [ -d "$REPO/.git" ]; then
   SESSIONS=$(cd "$REPO" && git log --format='%at' --reverse --since="2026-03-20" 2>/dev/null | awk '
     BEGIN { sessions=1; prev=0 }
@@ -118,7 +120,7 @@ if [ -d "$REPO/.git" ]; then
   echo "┌─ Cumulative (est. $SESSIONS sessions) ──"
   echo "│ Total tokens saved: $(printf '%9d' $TOTAL_TOKENS)"
   echo "│ Total cost saved:   \$${TOTAL_COST}"
-  echo "│ Note: sessions counted by >2hr commit gaps"
+  echo "│ Note: heuristic — real session count = continuation prompt cycles"
   echo "└───────────────────────────────────"
 fi
 
