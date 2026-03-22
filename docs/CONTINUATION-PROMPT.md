@@ -1,6 +1,6 @@
-# 𓂀 Sirsi Anubis — Continuation Prompt
-**Date:** March 22, 2026 (Saturday, 4:47 PM ET)
-**Session:** Build-in-Public + Thoth Independence + Audit Cycle
+# ‍‍‍𓂀 Sirsi Anubis — Continuation Prompt
+**Date:** March 22, 2026 (Saturday, 6:15 PM ET)
+**Session:** Test Coverage Blitz + Launch Preparation
 **Repo:** `github.com/SirsiMaster/sirsi-anubis`
 **Path:** `/Users/thekryptodragon/Development/sirsi-anubis`
 
@@ -10,9 +10,9 @@
 
 1. **Run `/session-start`** — the Thoth workflow at `.agent/workflows/session-start.md`
 2. **Read `.thoth/memory.yaml`** — compressed project state (~100 lines). This replaces reading source files.
-3. **Read `.thoth/journal.md`** — timestamped reasoning (8 entries).
+3. **Read `.thoth/journal.md`** — timestamped reasoning (9 entries).
 4. **Read `ANUBIS_RULES.md`** — the 12 non-negotiable safety rules.
-5. **Scope**: Test coverage + launch preparation. No new features.
+5. **Scope**: Cleaner coverage + launch execution. No new features.
 6. **Deadline: Friday March 28** — April investor demos require complete product.
 7. **All code compiles and tests pass** — do NOT break the build.
 8. **ADR-003 is ACTIVE** — every release must update BUILD_LOG.md, build-log.html, CHANGELOG, Thoth.
@@ -80,9 +80,10 @@ Thoth tracks session health to prevent context exhaustion. After every sprint:
 
 ### Binary
 - **Version:** 0.3.0-alpha (tagged `v0.3.0-alpha`)
-- **Size:** ~12 MB (macOS arm64)
+- **Size:** ~8 MB (macOS arm64), ~2 MB (agent)
 - **Go:** 1.22+, Cobra CLI, lipgloss terminal UI
-- **Tests:** 303 passing, 0 lint warnings
+- **Tests:** ~395 passing, 15 test suites, 0 lint warnings
+- **GoReleaser:** Verified — 12 binaries across 6 platforms all compile
 
 ### 17 CLI Commands
 
@@ -106,35 +107,34 @@ Thoth tracks session health to prevent context exhaustion. After every sprint:
 | `anubis initiate` | (cli) | macOS permission wizard |
 | `anubis version` | updater | Version + update check |
 
-### Module Test Coverage — THE MAIN GAP
+### Module Test Coverage
 
-**8 modules HAVE tests:**
+**15 modules HAVE tests:**
 
 | Module | Coverage | Notes |
 |:-------|:---------|:------|
 | jackal | 93% | Scan engine |
-| cleaner | 49% | Safety + deletion |
+| cleaner | ~49% | Safety + deletion — **NEEDS MORE** |
 | ka | 19.5% | Ghost detection |
 | guard | 42 tests | RAM audit |
 | brain | has tests | Neural downloader |
 | mcp | has tests | MCP server |
 | mirror | has tests | File dedup |
 | scales | has tests | Policy engine |
+| **ignore** | ✅ 17 tests | .anubisignore (new this session) |
+| **jackal/rules** | ✅ 11 tests | 64 rule registry (new this session) |
+| **profile** | ✅ 16 tests | Scan profiles (new this session) |
+| **stealth** | ✅ 9 tests | Ephemeral cleanup (new this session) |
+| **hapi** | ✅ 20 tests | GPU detect, dedup, snapshots (new this session) |
+| **scarab** | ✅ 12 tests | Network discovery (new this session) |
+| **sight** | ✅ 9 tests | LaunchServices (new this session) |
 
-**9 modules have ZERO tests (priority targets):**
+**2 modules have ZERO tests (low priority — display-only):**
 
-| Module | Priority | Why |
-|:-------|:---------|:----|
-| **ignore** | 🔴 High | `.anubisignore` is user-facing |
-| **jackal/rules** | 🔴 High | 64 scan rules need registration verification |
-| **profile** | 🟡 Medium | Scan profiles are user-facing |
-| **stealth** | 🟡 Medium | Ephemeral mode must clean up correctly |
-| **hapi** | 🟡 Medium | GPU detection, dedup, snapshots |
-| **scarab** | 🟡 Medium | Network discovery |
-| **sight** | 🟢 Low | macOS-only LaunchServices |
-| **mapper** | 🟢 Low | Graph generation |
-| **output** | 🟢 Low | Terminal rendering |
-| **updater** | 🟢 Low | Version check |
+| Module | Priority | Why low |
+|:-------|:---------|:--------|
+| **mapper** | 🟢 Low | Graph generation (display) |
+| **output** | 🟢 Low | Terminal rendering (display) |
 
 ### Infrastructure
 - CI: `.github/workflows/ci.yml` (lint + test + build)
@@ -164,42 +164,33 @@ Thoth is standalone at `github.com/SirsiMaster/sirsi-thoth`:
 
 ## WHAT TO BUILD NEXT
 
-### Priority 1: Test Coverage (target: 12+ modules with tests)
+### Priority 1: Deepen Safety-Critical Coverage
 
-Write tests for these modules in this order:
-
-```
-1. internal/ignore/ignore_test.go     — .anubisignore is user-facing
-2. internal/jackal/rules/*_test.go    — verify 64 scan rules register correctly
-3. internal/profile/profile_test.go   — scan profiles
-4. internal/stealth/stealth_test.go   — ephemeral mode cleanup
-5. internal/hapi/detect_test.go       — GPU detection
-```
-
-Lower priority (nice to have):
-```
-6. internal/scarab/*_test.go          — network discovery
-7. internal/sight/*_test.go           — macOS LaunchServices
-```
-
-### Priority 2: Launch Preparation
+Cleaner module is at ~49% — this is the safety-critical code that deletes files.
+Scanner edge cases (permissions, symlinks) are untested.
 
 ```
-- Product Hunt / Hacker News launch copy draft
-- Investor demo script (5-minute walkthrough)
-- goreleaser snapshot build (verify all platforms compile)
-- GitHub Release draft for v0.3.0-alpha
+1. internal/cleaner/   — target 80%+ coverage (safety-critical)
+2. internal/ka/        — improve from 19.5%
+3. Scanner edge cases  — permission errors, symlink loops, empty dirs
 ```
 
-### Priority 3: Update Build-in-Public Artifacts (per ADR-003)
+### Priority 2: Launch Execution
 
-After completing Priorities 1-2:
 ```
-- Update BUILD_LOG.md with test coverage sprint
-- Update build-log.html stats (test count, module coverage)
-- Update CHANGELOG.md
-- Update .thoth/memory.yaml
-- Journal entry for test coverage decisions
+- Product Hunt submission (copy in docs/LAUNCH_COPY.md)
+- Hacker News Show HN (copy in docs/LAUNCH_COPY.md)
+- GitHub Release v0.3.0-alpha (goreleaser already verified)
+- Investor demo rehearsal (script in docs/INVESTOR_DEMO.md)
+```
+
+### Priority 3: Production Polish
+
+```
+- Structured logging (replace fmt.Printf with slog)
+- Linux folder picker (zenity)
+- Platform abstraction interface
+- VS Code extension completion
 ```
 
 ---
@@ -249,4 +240,4 @@ cat .thoth/memory.yaml
 go build ./cmd/anubis/ && go test ./... && echo "✓ Ready"
 ```
 
-Then begin Priority 1: `internal/ignore/ignore_test.go`
+Then begin Priority 1: Cleaner test coverage (`internal/cleaner/`)
