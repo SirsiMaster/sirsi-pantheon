@@ -3,7 +3,7 @@
 > A transparent record of how Sirsi Anubis was designed, built, tested, broken, fixed, and shipped. No cherry-picking — the mistakes stay in.
 
 [![Version](https://img.shields.io/badge/version-0.3.0--alpha-C8A951?style=flat)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-303%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-~395%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 
 ---
@@ -12,7 +12,7 @@
 
 Most developer tools ship a polished website with marketing claims. You never see the messy middle — the bugs that got shipped, the benchmarks that didn't hold up, the architecture decisions that were wrong the first time.
 
-We're showing all of it. Every cycle of **build → test → find problems → fix → test again** is documented here. If we claim "27.3x faster," we show you the real benchmark data. If 9 out of 17 modules have zero test coverage, we say so.
+We're showing all of it. Every cycle of **build → test → find problems → fix → test again** is documented here. If we claim "27.3x faster," we show you the real benchmark data. If a module has zero test coverage, we say so.
 
 This document is the high-level narrative. The [CHANGELOG](CHANGELOG.md) has every detail. The [engineering journal](.thoth/journal.md) has the reasoning behind every decision.
 
@@ -108,6 +108,38 @@ Commits: 7  |  Lines: ~14,800  |  Tests: 303  |  Bugs fixed: 6
 Commits: 5  |  Repos touched: 4  |  Files created: 14  |  Version: 0.3.0-alpha
 ```
 
+### Sprint 6 — Test Coverage Blitz (March 22, Session 2)
+
+**What happened**: 9 out of 17 modules had zero test coverage. That's unacceptable for a product launching in April. Wrote tests for 7 modules in priority order: ignore → rules → profile → stealth → hapi → scarab → sight.
+
+**Built**: 7 test files covering all priority modules. Focused on pure functions and unit tests that work in CI (temp dirs, struct validation, parsing) — no tests that require live network, Docker, or system-level macOS calls.
+
+**Tested**: ~395 tests across 15 suites. All passing with `-race`. Full `go vet` clean.
+
+**Found**:
+- ARP parsing edge case: macOS `(incomplete)` entries match the parenthesis-detection regex, overwriting the IP. Not user-facing (rejected by `isValidIP`) but documents a fragile parser.
+- Registry comment says "8 IDE rules" but only 7 are listed. Cosmetic.
+- Constructor names don't always match internal rule names (`NewRustTargetRule` → `rust_targets`). Tests caught it.
+- All default profiles include "general" category — good product design confirmed.
+
+```
+Commits: 3  |  Tests written: 94  |  Total: ~395  |  Suites: 15/17
+```
+
+### Sprint 7 — Launch Preparation (March 22, Session 2)
+
+**What happened**: Verified all platform builds, updated launch materials with current stats, added Mirror dedup scene to investor demo.
+
+**Built**: GoReleaser snapshot (12 binaries), updated launch copy with competitor table, updated investor demo script.
+
+**Tested**: All 12 binaries compile clean — darwin/linux/windows × amd64/arm64. Binary sizes within budget: anubis ~8MB (≤15MB), agent ~2MB (≤5MB).
+
+**Updated**: CHANGELOG stats, README badge (303 → ~395), goreleaser release header, Thoth memory + journal.
+
+```
+Commits: 2  |  Binaries verified: 12  |  Docs updated: 6
+```
+
 ---
 
 ## Current State — v0.3.0-alpha
@@ -115,15 +147,17 @@ Commits: 5  |  Repos touched: 4  |  Files created: 14  |  Version: 0.3.0-alpha
 | Metric | Value | Verified |
 |:-------|:------|:--------:|
 | Go source lines | ~15,000 | ✅ `find + wc -l` |
-| Test count | 303 | ✅ `go test ./...` |
+| Test count | ~395 | ✅ `go test ./...` |
+| Test suites | 15/17 modules | ✅ `go test ./...` |
 | Test coverage (best) | Jackal: 93% | ✅ `go test -cover` |
-| Test coverage (worst) | 9 modules: 0% | ✅ Disclosed |
+| Test coverage (worst) | 2 modules: 0% (mapper, output) | ✅ Disclosed |
 | Lint status | Clean | ✅ golangci-lint |
 | Race detector | Clean | ✅ `-race` flag |
 | CI/CD | Green | ✅ GitHub Actions |
-| Binary size | 12 MB + 3.2 MB | ✅ `ls -la` |
+| Binary size | ~8 MB + ~2 MB | ✅ GoReleaser snapshot |
 | Scan rules | 64 across 7 domains | ✅ Counted |
 | Protected paths | 29 hardcoded | ✅ Code review |
+| Cross-compile | 6 platforms (3 OS × 2 arch) | ✅ GoReleaser snapshot |
 | Platform | macOS (100%), Linux (~60%), Windows (~40%) | ✅ Audited |
 
 ### What Works:
@@ -134,10 +168,12 @@ Commits: 5  |  Repos touched: 4  |  Files created: 14  |  Version: 0.3.0-alpha
 - [x] AI IDE integration via MCP (5 tools)
 - [x] Safety: trash-first, decision log, 29 protected paths
 - [x] Thoth: persistent AI memory across sessions
+- [x] 15 of 17 modules have test coverage
+- [x] Cross-compiles for 6 platforms, all within binary size budget
 
 ### What Doesn't (yet):
-- [ ] 9 modules have zero test coverage
-- [ ] Cleaner (safety-critical code) has only 25% coverage
+- [ ] 2 modules have zero test coverage (mapper, output — display-only)
+- [ ] Cleaner (safety-critical code) has only ~49% coverage
 - [ ] No structured logging
 - [ ] GUI folder picker is macOS-only
 - [ ] No Linux/Windows trash integration
@@ -171,18 +207,18 @@ find . -name '*.go' | grep -v _test | xargs wc -l | tail -1
 
 ---
 
-## Next Milestone: v0.4.0-alpha
+## Next Milestone: v0.4.0 (Target: March 28, 2026)
 
-**Focus**: Test coverage blitz + cross-platform
+**Focus**: Production readiness for April investor demos
 
 | P0 | P1 | P2 |
 |:---|:---|:---|
 | Cleaner to 80%+ coverage | Linux folder picker | npm publish thoth-init |
 | Scanner edge case tests | Structured logging | VS Code extension |
-| Permission error handling | Platform interface | GitHub Action for Thoth |
+| Product Hunt / HN launch | Platform interface | GitHub Action for Thoth |
 
 ---
 
-*Last updated: March 22, 2026. This document is updated with every sprint.*
+*Last updated: March 22, 2026 (Sprint 7). This document is updated with every sprint.*
 
 *See [CHANGELOG.md](CHANGELOG.md) for detailed changes. See [.thoth/journal.md](.thoth/journal.md) for design reasoning.*

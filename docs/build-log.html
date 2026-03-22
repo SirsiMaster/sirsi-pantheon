@@ -532,12 +532,12 @@
     </p>
     <div class="hero-stats">
       <div class="hero-stat">
-        <span class="hero-stat-value">303</span>
+        <span class="hero-stat-value">395</span>
         <span class="hero-stat-label">Tests Passing</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">6</span>
-        <span class="hero-stat-label">Bugs Fixed</span>
+        <span class="hero-stat-value">15</span>
+        <span class="hero-stat-label">Test Suites</span>
       </div>
       <div class="hero-stat">
         <span class="hero-stat-value">27.3×</span>
@@ -759,6 +759,43 @@
         </div>
       </div>
 
+      <div class="sprint">
+        <div class="sprint-dot"></div>
+        <span class="sprint-date">March 22 — Session 2</span>
+        <h3>Test Coverage Blitz</h3>
+        <p class="sprint-body">
+          9 out of 17 modules had <strong>zero test coverage</strong>. Unacceptable for a product launching in April.
+          Wrote tests for 7 modules in a single session: ignore rules, scan registry, profiles, stealth cleanup,
+          hardware detection, network discovery, and Launch Services.
+        </p>
+        <p class="sprint-body">
+          <strong>Found along the way:</strong> an ARP parsing edge case where macOS "incomplete" entries could
+          confuse the IP extractor, a comment-count mismatch in the rule registry, and confirmed that every default
+          profile includes the "general" scan category (good product design).
+        </p>
+        <div class="sprint-metrics">
+          <div class="metric"><span class="metric-val">94</span><span class="metric-label">new tests</span></div>
+          <div class="metric"><span class="metric-val">15/17</span><span class="metric-label">modules tested</span></div>
+          <div class="metric"><span class="metric-val">~395</span><span class="metric-label">total tests</span></div>
+        </div>
+      </div>
+
+      <div class="sprint">
+        <div class="sprint-dot"></div>
+        <span class="sprint-date">March 22 — Latest</span>
+        <h3>Launch Preparation</h3>
+        <p class="sprint-body">
+          Verified all platform builds with <strong>GoReleaser snapshot</strong> — 12 binaries across
+          macOS, Linux, and Windows (both Intel and ARM). All within size budget.
+          Updated launch copy, investor demo script, and all public-facing stats.
+        </p>
+        <div class="sprint-metrics">
+          <div class="metric"><span class="metric-val">12</span><span class="metric-label">binaries verified</span></div>
+          <div class="metric"><span class="metric-val">~8 MB</span><span class="metric-label">main binary</span></div>
+          <div class="metric"><span class="metric-val">6</span><span class="metric-label">platforms</span></div>
+        </div>
+      </div>
+
     </div>
   </section>
 
@@ -774,9 +811,10 @@
       <div class="status-grid">
         <div class="neo-card">
           <h4>Reliability</h4>
-          <div class="status-row"><span class="status-row-label">Automated tests</span><span class="status-row-value pass">303 passing</span></div>
+          <div class="status-row"><span class="status-row-label">Automated tests</span><span class="status-row-value pass">~395 passing</span></div>
+          <div class="status-row"><span class="status-row-label">Test suites</span><span class="status-row-value pass">15 of 17</span></div>
           <div class="status-row"><span class="status-row-label">Best coverage</span><span class="status-row-value pass">93%</span></div>
-          <div class="status-row"><span class="status-row-label">Worst coverage</span><span class="status-row-value warn">0% (9 modules)</span></div>
+          <div class="status-row"><span class="status-row-label">Untested modules</span><span class="status-row-value pass">2 (display-only)</span></div>
           <div class="status-row"><span class="status-row-label">Race conditions</span><span class="status-row-value pass">0 found</span></div>
           <div class="status-row"><span class="status-row-label">Code warnings</span><span class="status-row-value pass">0</span></div>
         </div>
@@ -841,10 +879,11 @@
         <p>We'd rather tell you what isn't ready than let you discover it.</p>
       </div>
       <div class="neo-card todo-list">
-        <div class="todo-item"><span class="todo-item-label">9 of 17 internal modules need test coverage</span><span class="todo-badge progress">In Progress</span></div>
+        <div class="todo-item"><span class="todo-item-label">Cleaner module needs deeper test coverage</span><span class="todo-badge progress">In Progress</span></div>
         <div class="todo-item"><span class="todo-item-label">Windows support is incomplete</span><span class="todo-badge planned">Planned</span></div>
         <div class="todo-item"><span class="todo-item-label">No automatic update mechanism yet</span><span class="todo-badge planned">Planned</span></div>
         <div class="todo-item"><span class="todo-item-label">Visual app still being polished</span><span class="todo-badge progress">In Progress</span></div>
+        <div class="todo-item"><span class="todo-item-label">No structured logging (uses fmt.Printf)</span><span class="todo-badge planned">Planned</span></div>
       </div>
     </div>
   </section>
