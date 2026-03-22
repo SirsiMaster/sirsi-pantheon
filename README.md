@@ -4,14 +4,14 @@
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-C8A951?style=flat)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.2.0--alpha-1A1A5E?style=flat)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.3.0--alpha-1A1A5E?style=flat)](VERSION)
 [![MCP](https://img.shields.io/badge/MCP-2025--03--26-purple?style=flat)](https://modelcontextprotocol.io)
 
 > *"Weigh. Judge. Purge."*
 
-Sirsi Anubis is a free, open-source infrastructure hygiene platform. It scans, judges, and purges waste across workstations, containers, VMs, and networks — with a neural classification brain and MCP server for AI IDE integration.
+Sirsi Anubis is a free, open-source infrastructure hygiene platform. It scans, judges, and purges waste across workstations, containers, VMs, and networks — with duplicate file detection, a neural classification brain, and MCP server for AI IDE integration.
 
-**No cleaning tool understands what developers and AI engineers leave behind.** Anubis does — with 64+ scan rules across 7 domains, ghost app detection, neural file classification, and a policy engine for fleet enforcement.
+**No cleaning tool understands what developers and AI engineers leave behind.** Anubis does — with 64+ scan rules across 7 domains, ghost app detection, file deduplication that's **27x faster** than naive hashing, and a policy engine for fleet enforcement.
 
 ---
 
@@ -49,6 +49,14 @@ anubis ka --clean --dry-run    # Preview ghost cleanup
 anubis ka --clean --confirm    # Release the spirits
 ```
 
+### Find Duplicate Files
+```bash
+anubis mirror ~/Downloads ~/Desktop  # Scan directories for duplicates
+anubis mirror --photos --min-size 1MB # Large photo duplicates only
+anubis mirror --json > report.json   # Export results
+anubis mirror                        # Launch GUI (browser-based)
+```
+
 ---
 
 ## 📋 All Commands
@@ -69,6 +77,7 @@ anubis ka --clean --confirm    # Release the spirits
 | `anubis mcp` | 🔌 Start MCP server for AI IDE integration |
 | `anubis scales enforce` | ⚖️ Run hygiene policy enforcement |
 | `anubis scales validate` | ⚖️ Validate policy YAML |
+| `anubis mirror` | 🪞 Duplicate file scanner (GUI + CLI) |
 | `anubis book-of-the-dead` | 📜 Deep system autopsy |
 | `anubis initiate` | 🔑 Grant macOS permissions |
 
@@ -89,6 +98,7 @@ Anubis is built on modules named after Egyptian mythology:
 |:-------|:---------|:-----|:-------|
 | 🐺 **Jackal** | The Hunter | Scan engine — 64 rules across 7 domains | ✅ |
 | 𓂓 **Ka** | The Spirit | Ghost app detection — 17 macOS locations | ✅ |
+| 🪞 **Mirror** | The Reflection | File deduplication — 27x faster than naive hashing | ✅ |
 | 🛡️ **Guard** | The Guardian | RAM audit, zombie process management | ✅ |
 | 👁️ **Sight** | The Sight | Launch Services + Spotlight repair | ✅ |
 | 📊 **Profile** | The Record | Machine profiling and system info | ✅ |
@@ -103,8 +113,8 @@ Anubis is built on modules named after Egyptian mythology:
 
 | Binary | Size | Purpose |
 |:-------|:-----|:--------|
-| `anubis` | 7.7 MB | Full CLI controller |
-| `anubis-agent` | 2.1 MB | Lightweight fleet agent (JSON only, fixed command set) |
+| `anubis` | 12 MB | Full CLI controller + Mirror GUI |
+| `anubis-agent` | 3.2 MB | Lightweight fleet agent (JSON only, fixed command set) |
 
 ---
 
@@ -206,12 +216,46 @@ anubis scales validate -f policy.yaml      # Syntax check
 
 ---
 
+## 🪞 Mirror — File Deduplication
+
+Mirror finds duplicate files across any directory using a **three-phase scan**:
+
+1. **Size grouping** — instant elimination of unique file sizes
+2. **Partial hash** — SHA-256 of first 4KB + last 4KB (8KB per file)
+3. **Full hash** — complete SHA-256 only for files that pass both phases
+
+### Why This Matters
+
+| Metric | Naive approach | Anubis Mirror |
+|:-------|:--------------|:--------------|
+| 56 candidate files (97.8 MB) | Reads all 97.8 MB | Reads 448 KB partial, then only matched files |
+| Disk I/O | 97.8 MB | **< 2 MB** |
+| Time | 84 ms | **3 ms** |
+| Speedup | 1x | **27.3x** |
+| I/O reduction | — | **98.8%** |
+
+*Benchmarked on real ~/Downloads directory, March 2026.*
+
+### Cleaning Policy
+
+- **Trash first** — all removals go to macOS Trash (reversible, "Put Back" works)
+- **Decision log** — every action recorded with path, SHA-256, reason, timestamp
+- **Per-file rollback** — session logs persist at `~/.config/anubis/mirror/decisions/`
+- **Human approval required** — no automatic deletion, ever
+
+### GUI + CLI Feature Parity
+
+`anubis mirror` (no args) launches a browser-based GUI with native macOS folder picker.
+Every feature in the CLI is available in the GUI — identical engine, different interface.
+
+---
+
 ## 🛡️ Product Tiers
 
 | Tier | Scope | Price |
 |:-----|:------|:------|
-| **Anubis Free** | Single workstation, all scan commands | Free forever |
-| **Anubis Pro** | Neural brain, semantic search, MCP | $9/mo |
+| **Anubis Free** | Single workstation, all scan commands, Mirror GUI + CLI | Free forever |
+| **Anubis Pro** | Neural brain, importance ranking, semantic search | $9/mo |
 | **Eye of Horus** | Subnet sweep (< 100 nodes) | $29/mo |
 | **Ra** | Enterprise fleet, SAN/NAS, compliance | Contact |
 
@@ -222,6 +266,8 @@ anubis scales validate -f policy.yaml      # Syntax check
 - **Rule A11: No Telemetry** — zero analytics, tracking, or data collection
 - **Rule A1: Safety First** — all destructive ops require `--confirm` or `--dry-run`
 - **Rule A3: Fixed Agent Commands** — agent has no shell access
+- **Trash-first cleaning** — every removal goes to Trash with full decision log
+- **29 protected paths** — system dirs, user content dirs, keychains, and SSH keys are hardcoded as undeletable
 - **`--stealth` mode** — Anubis comes, judges, and vanishes (zero footprint)
 - All scanning is local — no data leaves your machine
 

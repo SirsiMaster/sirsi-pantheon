@@ -55,8 +55,8 @@ var orphanPatterns = map[string]string{
 	"next-server":           "node",
 	"webpack":               "node",
 	"electron":              "electron",
-	"Electron Helper":       "electron",
-	"Electron Helper (GPU)": "electron",
+	"electron helper":       "electron",
+	"electron helper (gpu)": "electron",
 
 	// LSP servers
 	"typescript-language-server": "lsp",
@@ -151,12 +151,12 @@ func classifyProcess(p *ProcessInfo) string {
 	name := strings.ToLower(p.Name)
 	cmd := strings.ToLower(p.Command)
 
-	// Check direct name match
+	// Check direct name match (pattern keys are already lowercase)
 	for pattern, group := range orphanPatterns {
-		if strings.Contains(name, strings.ToLower(pattern)) {
+		if strings.Contains(name, pattern) {
 			return group
 		}
-		if strings.Contains(cmd, strings.ToLower(pattern)) {
+		if strings.Contains(cmd, pattern) {
 			return group
 		}
 	}
