@@ -54,10 +54,7 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 				return nil
 			}
 			if !info.Mode().IsRegular() {
-				return nil // Skip non-regular files
-			}
-			if !opts.FollowLinks && info.Mode()&os.ModeSymlink != 0 {
-				return nil
+				return nil // Skip non-regular files (symlinks, devices, etc.)
 			}
 
 			size := info.Size()
@@ -88,9 +85,14 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 		}
 	}
 
-	// Phase 2: For size groups with multiple files, compute SHA-256
-	// Only hash files that share the same size (massive speedup)
-	hashGroups := make(map[string][]FileEntry)
+	// Phase 2: Two-stage hashing to minimize disk I/O
+	// Stage A: Hash first 4KB of each file (fast pre-filter).
+	//          Two files with different 4KB prefixes cannot be duplicates.
+	// Stage B: Full SHA-256 only for files whose 4KB prefix matched.
+	//          This avoids reading entire large files unless necessary.
+	const partialSize = 4096
+
+	partialGroups := make(map[string][]string) // partial hash → file paths
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8) // Limit concurrent I/O
@@ -103,20 +105,51 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 		for _, p := range paths {
 			wg.Add(1)
 			sem <- struct{}{}
-			go func(filePath string, fileSize int64) {
+			go func(filePath string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				hash, hashErr := hashFilePartial(filePath, partialSize)
+				if hashErr != nil {
+					return
+				}
+				// Key includes size for extra safety
+				key := fmt.Sprintf("%d:%s", size, hash)
+				mu.Lock()
+				partialGroups[key] = append(partialGroups[key], filePath)
+				mu.Unlock()
+			}(p)
+		}
+	}
+	wg.Wait()
+
+	// Stage B: Full hash only for files that passed the partial filter
+	hashGroups := make(map[string][]FileEntry)
+
+	for _, paths := range partialGroups {
+		if len(paths) < 2 {
+			continue // Partial hash was unique — no match possible
+		}
+
+		for _, p := range paths {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(filePath string) {
 				defer wg.Done()
 				defer func() { <-sem }()
 
 				hash, hashErr := hashFileSHA256(filePath)
 				if hashErr != nil {
-					return // Skip unhashable files
+					return
 				}
 
 				ext := strings.ToLower(filepath.Ext(filePath))
 				info, _ := os.Stat(filePath)
 				var modTime time.Time
+				var fileSize int64
 				if info != nil {
 					modTime = info.ModTime()
+					fileSize = info.Size()
 				}
 
 				entry := FileEntry{
@@ -138,7 +171,7 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 				mu.Lock()
 				hashGroups[hash] = append(hashGroups[hash], entry)
 				mu.Unlock()
-			}(p, size)
+			}(p)
 		}
 	}
 	wg.Wait()
@@ -147,7 +180,6 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 	var groups []DuplicateGroup
 	totalDuplicates := 0
 	var totalWaste int64
-	groupID := 0
 
 	for hash, files := range hashGroups {
 		if len(files) < 2 {
@@ -174,7 +206,6 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 		groups = append(groups, group)
 		totalDuplicates += len(files) - 1
 		totalWaste += waste
-		groupID++
 	}
 
 	// Sort groups by waste (largest savings first)
@@ -221,6 +252,41 @@ func sortByPriority(files []FileEntry) {
 		// Larger file = less compressed = higher quality
 		return a.Size > b.Size
 	})
+}
+
+// hashFilePartial hashes the first n bytes AND last n bytes of a file.
+// Two files that share the same format header (e.g., MP4, JPEG) but have
+// different content will match on the first bytes but differ at the end.
+// Reading 8KB total instead of the entire file to eliminate non-matches.
+func hashFilePartial(path string, n int) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+
+	// Hash first n bytes
+	if _, copyErr := io.CopyN(h, f, int64(n)); copyErr != nil && copyErr != io.EOF {
+		return "", copyErr
+	}
+
+	// Hash last n bytes (seek from end)
+	info, statErr := f.Stat()
+	if statErr != nil {
+		return "", statErr
+	}
+	if info.Size() > int64(n*2) {
+		// File is large enough to have distinct head/tail regions
+		if _, seekErr := f.Seek(-int64(n), io.SeekEnd); seekErr == nil {
+			if _, copyErr := io.CopyN(h, f, int64(n)); copyErr != nil && copyErr != io.EOF {
+				return "", copyErr
+			}
+		}
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // hashFileSHA256 computes SHA-256 of a file.

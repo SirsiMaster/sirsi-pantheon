@@ -68,6 +68,20 @@ var protectedExact = []string{
 	".config/anubis", // Own config directory
 }
 
+// protectedHomeDirs are directories directly under $HOME that MUST NEVER
+// be deleted as a whole. Individual files inside them can be removed,
+// but passing the directory itself to DeleteFile is blocked.
+// This prevents a bug from doing os.RemoveAll(~/Desktop).
+var protectedHomeDirs = []string{
+	"Desktop",
+	"Documents",
+	"Downloads",
+	"Pictures",
+	"Music",
+	"Movies",
+	"Library",
+}
+
 // ValidatePath checks if a path is safe to delete.
 // Returns an error if the path is protected.
 func ValidatePath(path string) error {
@@ -109,6 +123,13 @@ func ValidatePath(path string) error {
 			for _, exact := range protectedExact {
 				if relPath == exact || strings.HasPrefix(relPath, exact+"/") {
 					return fmt.Errorf("BLOCKED: %q is a protected path", absPath)
+				}
+			}
+			// Block deletion of user content root directories
+			// (e.g., ~/Desktop, ~/Documents — individual files inside are OK)
+			for _, dir := range protectedHomeDirs {
+				if relPath == dir {
+					return fmt.Errorf("BLOCKED: %q is a protected user directory", absPath)
 				}
 			}
 		}

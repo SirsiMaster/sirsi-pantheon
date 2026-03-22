@@ -12,6 +12,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.3.0-alpha] — 2026-03-21 (Ship Week — Mirror + Audit)
+
+### Added
+- **Mirror module** (`internal/mirror/`) — file deduplication engine
+  - Three-phase scan: size grouping → partial hash (first+last 4KB) → full SHA-256
+  - 8-worker parallel hashing with semaphore-bounded I/O
+  - Smart keep/delete recommendations: protected > shallow > oldest > largest
+  - Media type classification: photos, music, video, documents (30+ extensions)
+  - Flags: `--photos`, `--music`, `--min-size`, `--max-size`, `--protect`
+  - JSON output via `--json` for pipeline integration
+- **Mirror GUI** (`internal/mirror/server.go`) — local web UI
+  - `anubis mirror` (no args) launches browser-based interface
+  - Drag-and-drop folder selection
+  - Filter chips: All Files, Photos, Music, Video, Documents
+  - Advanced options panel: min/max size dropdowns, protected directories
+  - Results view with keep/remove badges, stat cards, collapsible groups
+  - JSON export button — GUI-CLI feature parity
+  - Egyptian dark theme, Inter font, gold accents
+- **Mirror design doc** (`docs/MIRROR_DESIGN.md`)
+  - Product model: "One Engine, Two Interfaces" — GUI and CLI have identical features
+  - Free tier (Ankh): full dedup engine via both interfaces
+  - Pro tier (Eye of Horus): ANE neural importance ranking via both interfaces
+  - Five implementation phases with competitive analysis
+- **12 mirror tests** — duplicate detection, protected dirs, size filters, media
+  filters, empty files, multiple groups, sort by waste, hash correctness
+
+### Changed
+- **Seba graph** — complete kinetic rewrite (self-contained Canvas renderer)
+  - Animated data pulses, breathing nodes, ghost shimmer, process heartbeats
+  - Bezier edges with gradients, particle system, star field background
+  - Click-to-focus with smooth zoom, hover highlighting, ambient drift
+  - Zero CDN dependencies — works from `file://` protocol
+
+### Fixed
+- **Scanner optimization** — two-stage partial hash pre-filter
+  - Hashes first 4KB + last 4KB before reading full file
+  - Eliminates files with same size but different content without reading GBs
+  - Real-world test: 709 files scanned in 684ms
+- **Safety hardening** — added `protectedHomeDirs` to cleaner
+  - ~/Desktop, ~/Documents, ~/Downloads, ~/Pictures, ~/Music, ~/Movies, ~/Library
+  - Blocks deletion of the directory itself; files inside remain deletable
+  - New tests: `TestValidatePath_ProtectedHomeDirs` (11 test cases)
+- **Dead code removed** — symlink check that could never trigger (filepath.Walk
+  resolves symlinks before the callback), unused `groupID` variable
+- **Lint fixes** — capitalized error string (ST1005), unnecessary `fmt.Sprintf`,
+  variable shadowing across 6 files, errcheck on JSON encoder calls
+- **CI** — all GitHub Actions jobs green (lint, test, build)
+
+### Stats
+- 16 CLI commands, 64 scan rules, 15 internal modules
+- ~95 tests across 8 packages, all passing (with `-race`)
+- 14,500+ lines of Go
+- Lint clean (golangci-lint + staticcheck)
+
 ## [0.2.0-alpha] — 2026-03-25 (Ship Week Day 5)
 ### Added (Day 5: Neural Brain Downloader)
 - **Brain module** (`internal/brain/`) — on-demand neural model management

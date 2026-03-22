@@ -75,7 +75,7 @@ func runKa() error {
 	scanner := ka.NewScanner()
 	ghosts, err := scanner.Scan(kaSudo)
 	if err != nil {
-		return fmt.Errorf("Ka scan failed: %w", err)
+		return fmt.Errorf("ka scan failed: %w", err)
 	}
 
 	// Filter by target if specified

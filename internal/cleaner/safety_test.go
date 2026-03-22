@@ -1,6 +1,8 @@
 package cleaner
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -126,6 +128,44 @@ func TestValidatePath_EdgeCases(t *testing.T) {
 			}
 			if !tt.wantError && err != nil {
 				t.Errorf("ValidatePath(%q) = %v, want nil", tt.path, err)
+			}
+		})
+	}
+}
+
+func TestValidatePath_ProtectedHomeDirs(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home directory")
+	}
+
+	// These directories themselves should be BLOCKED
+	blocked := []string{"Desktop", "Documents", "Downloads", "Pictures", "Music", "Movies", "Library"}
+	for _, dir := range blocked {
+		fullPath := filepath.Join(home, dir)
+		t.Run("blocked_"+dir, func(t *testing.T) {
+			err := ValidatePath(fullPath)
+			if err == nil {
+				t.Errorf("ValidatePath(%q) = nil, want BLOCKED — deleting ~/% s would be catastrophic", fullPath, dir)
+			}
+		})
+	}
+
+	// Files INSIDE these directories should still be ALLOWED
+	allowed := []struct {
+		name string
+		path string
+	}{
+		{"file in Downloads", filepath.Join(home, "Downloads", "old-installer.dmg")},
+		{"file in Desktop", filepath.Join(home, "Desktop", "screenshot.png")},
+		{"file in Documents", filepath.Join(home, "Documents", "notes.txt")},
+		{"subdir in Pictures", filepath.Join(home, "Pictures", "vacation", "photo.jpg")},
+	}
+	for _, tt := range allowed {
+		t.Run("allowed_"+tt.name, func(t *testing.T) {
+			err := ValidatePath(tt.path)
+			if err != nil {
+				t.Errorf("ValidatePath(%q) = %v, want nil — files inside protected dirs should be deletable", tt.path, err)
 			}
 		})
 	}
