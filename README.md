@@ -9,7 +9,7 @@
 [![MCP](https://img.shields.io/badge/MCP-2025--03--26-purple?style=flat)](https://modelcontextprotocol.io)
 [![Build in Public](https://img.shields.io/badge/building-in%20public-C8A951?style=flat)](docs/BUILD_LOG.md)
 
-> *"Weigh. Judge. Purge."*
+> *"Weigh. Judge. Purify."*
 
 Sirsi Anubis is a free, open-source infrastructure hygiene platform. It scans, judges, and purges waste across workstations, containers, VMs, and networks — with duplicate file detection, a neural classification brain, and MCP server for AI IDE integration.
 
