@@ -60,13 +60,13 @@ Commits: 8  |  Lines: ~12,000  |  Tests: 72  |  Version: 0.2.0-alpha
 
 ### Sprint 3 — Mirror Engine (March 21, Day 8)
 
-**What happened**: Built the file deduplication engine — the product's revenue feature. Started with naive full-file hashing. User pointed out it was too slow for large files.
+**What happened**: Built the file deduplication engine — the product's revenue feature. Started with naive full-file hashing. Testing revealed it was too slow for large files.
 
 **Built**: Three-phase dedup scanner, 8-worker parallel hashing, smart keep/delete recommender, GUI web interface.
 
 **Tested**: 12 Mirror-specific tests. Ran benchmark on real ~/Downloads directory.
 
-**Broke**: GUI folder picker returned relative paths (browser security sandbox). Users couldn't actually scan folders. Fixed with native macOS Finder dialog via osascript.
+**Broke**: GUI folder picker returned relative paths (browser security sandbox). Couldn't actually scan real folders. Fixed with native macOS Finder dialog via osascript.
 
 ```
 Commits: 5  |  Lines: ~14,500  |  Tests: 84  |  Version: 0.3.0-alpha
@@ -74,7 +74,7 @@ Commits: 5  |  Lines: ~14,500  |  Tests: 84  |  Version: 0.3.0-alpha
 
 ### Sprint 4 — Performance + Safety Audit (March 21-22, Audit Cycle 1)
 
-**What happened**: Deep audit of every module. User asked "measure twice, cut once" — hash the first 4KB then the last 4KB. Implemented two-phase partial hashing. User's friend tested the GUI and folders didn't work. User insisted on trash-first deletion with full audit trail.
+**What happened**: Deep audit of every module. Key insight: "measure twice, cut once" — hash the first 4KB then the last 4KB. Implemented two-phase partial hashing. Testing exposed the broken GUI folder picker. Added trash-first deletion with full audit trail.
 
 **Built**: Partial hash pre-filter, DecisionLog system, `/api/browse` filesystem browser, `/api/pick-folder` native picker, graceful SIGINT shutdown.
 
@@ -96,7 +96,7 @@ Commits: 7  |  Lines: ~14,800  |  Tests: 303  |  Bugs fixed: 6
 
 ### Sprint 5 — Thoth Knowledge System (March 22, Session)
 
-**What happened**: User asked about AI memory limitations — "you as an LLM have no active memory." Built a three-layer persistent knowledge system for AI-assisted development. Named it **Thoth** after the Egyptian god of knowledge.
+**What happened**: Identified a core problem with AI-assisted development — LLMs have no persistent memory across sessions. Built a three-layer persistent knowledge system. Named it **Thoth** after the Egyptian god of knowledge.
 
 **Built**: Thoth specification, project template, standalone CLI tool (`thoth-init`), MCP tool (`thoth_read_memory`), global AI skill, session workflow. Installed across 4 codebases.
 
