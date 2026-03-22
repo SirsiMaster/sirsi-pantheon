@@ -31,11 +31,12 @@ Egyptian copper mirrors reveal truth — what is real and what is merely
 a reflection. Mirror scans your files and finds duplicates, recommending
 which copy to keep based on location, age, and context.
 
-  anubis mirror ~/Photos ~/Downloads    Find duplicates across directories
-  anubis mirror --photos ~/Pictures     Photo-specific scan (jpg, heic, png...)
-  anubis mirror --music ~/Music         Music-specific scan (mp3, flac, m4a...)
-  anubis mirror --min-size 1MB          Skip files smaller than 1MB
-  anubis mirror --protect ~/Originals   Never suggest deleting from this dir
+  anubis mirror                           Launch the visual GUI
+  anubis mirror ~/Photos ~/Downloads      CLI scan across directories
+  anubis mirror --photos ~/Pictures       Photo-specific scan (jpg, heic, png...)
+  anubis mirror --music ~/Music           Music-specific scan (mp3, flac, m4a...)
+  anubis mirror --min-size 1MB            Skip files smaller than 1MB
+  anubis mirror --protect ~/Originals     Never suggest deleting from this dir
 
 How it works:
   1. Groups files by size (instant pre-filter)
@@ -45,7 +46,7 @@ How it works:
 All scanning is read-only. Mirror never deletes files without --confirm.
 
 Pro tier: Importance ranking with on-device neural analysis (ANE).`,
-	Args: cobra.MinimumNArgs(1),
+	Args: cobra.ArbitraryArgs,
 	Run:  runMirror,
 }
 
@@ -59,6 +60,36 @@ func init() {
 }
 
 func runMirror(cmd *cobra.Command, args []string) {
+	// No args = launch GUI
+	if len(args) == 0 {
+		output.Header("🪞 Mirror — Launching Visual UI")
+		fmt.Println()
+
+		srv, srvErr := mirror.NewServer()
+		if srvErr != nil {
+			output.Error(fmt.Sprintf("Failed to start server: %v", srvErr))
+			os.Exit(1)
+		}
+
+		output.Info(fmt.Sprintf("  🌐 %s", srv.URL()))
+		output.Info("  Opening browser...")
+		fmt.Println()
+		output.Info("  Press Ctrl+C to stop")
+		fmt.Println()
+
+		if openErr := srv.OpenBrowser(); openErr != nil {
+			output.Warn(fmt.Sprintf("  Could not open browser: %v", openErr))
+			output.Info(fmt.Sprintf("  Open manually: %s", srv.URL()))
+		}
+
+		if serveErr := srv.Serve(); serveErr != nil {
+			output.Error(fmt.Sprintf("Server error: %v", serveErr))
+			os.Exit(1)
+		}
+		return
+	}
+
+	// With args = CLI mode
 	output.Header("🪞 Mirror — Duplicate File Scanner")
 	fmt.Println()
 
