@@ -1,6 +1,8 @@
 package ka
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -23,6 +25,15 @@ func TestExtractBundleID(t *testing.T) {
 		{"unknown TLD prefix", "xyz.something.app", ""},
 		{"empty string", "", ""},
 		{"de prefix", "de.appmaker.myapp", "de.appmaker.myapp"},
+		// additional edge cases
+		{"me prefix", "me.developer.myapp", "me.developer.myapp"},
+		{"co prefix", "co.company.tool", "co.company.tool"},
+		{"app prefix", "app.custom.widget", "app.custom.widget"},
+		{"uk prefix", "uk.co.company.app", "uk.co.company.app"},
+		{"fr prefix", "fr.company.product", "fr.company.product"},
+		{"jp prefix", "jp.co.company.app", "jp.co.company.app"},
+		{"double group prefix", "group.group.com.app", ""},
+		{"plist + savedState", "com.test.app.savedState.plist", "com.test.app"},
 	}
 
 	for _, tt := range tests {
@@ -48,6 +59,9 @@ func TestGuessAppName(t *testing.T) {
 		{"2-part returns raw", "com.app", "com.app"},
 		{"1-part returns raw", "something", "something"},
 		{"org prefix", "org.mozilla.firefox", "Firefox"},
+		// additional
+		{"hyphen to space", "com.company.my-cool-app", "My cool app"},
+		{"empty parts", "com..empty", "Empty"},
 	}
 
 	for _, tt := range tests {
@@ -123,5 +137,327 @@ func TestNewScanner(t *testing.T) {
 	}
 	if s.knownBundleIDs == nil {
 		t.Error("knownBundleIDs map not initialized")
+	}
+}
+
+// ═══════════════════════════════════════════
+// isInstalled
+// ═══════════════════════════════════════════
+
+func TestIsInstalled_ByBundleID(t *testing.T) {
+	s := &Scanner{
+		installedApps:  map[string]bool{"com.example.app": true},
+		installedNames: map[string]bool{},
+		knownBundleIDs: map[string]string{},
+	}
+
+	if !s.isInstalled("com.example.app", "anything") {
+		t.Error("should be installed by bundle ID")
+	}
+}
+
+func TestIsInstalled_ByName(t *testing.T) {
+	s := &Scanner{
+		installedApps:  map[string]bool{},
+		installedNames: map[string]bool{"firefox": true},
+		knownBundleIDs: map[string]string{},
+	}
+
+	if !s.isInstalled("org.mozilla.firefox", "com.mozilla.firefox.plist") {
+		t.Error("should match by name substring")
+	}
+}
+
+func TestIsInstalled_NoMatch(t *testing.T) {
+	s := &Scanner{
+		installedApps:  map[string]bool{},
+		installedNames: map[string]bool{"safari": true},
+		knownBundleIDs: map[string]string{},
+	}
+
+	if s.isInstalled("com.parallels.desktop", "com.parallels.desktop.plist") {
+		t.Error("should NOT match — parallels is not installed")
+	}
+}
+
+// ═══════════════════════════════════════════
+// countFiles
+// ═══════════════════════════════════════════
+
+func TestCountFiles_Nested(t *testing.T) {
+	tmp := t.TempDir()
+	sub := filepath.Join(tmp, "sub")
+	os.MkdirAll(sub, 0755)
+	os.WriteFile(filepath.Join(tmp, "a.txt"), []byte("a"), 0644)
+	os.WriteFile(filepath.Join(sub, "b.txt"), []byte("b"), 0644)
+	os.WriteFile(filepath.Join(sub, "c.txt"), []byte("c"), 0644)
+
+	count := countFiles(tmp)
+	if count != 3 {
+		t.Errorf("countFiles = %d, want 3", count)
+	}
+}
+
+func TestCountFiles_EmptyDir(t *testing.T) {
+	tmp := t.TempDir()
+	count := countFiles(tmp)
+	if count != 0 {
+		t.Errorf("countFiles(empty) = %d, want 0", count)
+	}
+}
+
+func TestCountFiles_NonExistent(t *testing.T) {
+	count := countFiles("/nonexistent/path/12345")
+	if count != 0 {
+		t.Errorf("countFiles(nonexistent) = %d, want 0", count)
+	}
+}
+
+// ═══════════════════════════════════════════
+// mergeOrphans
+// ═══════════════════════════════════════════
+
+func TestMergeOrphans_FilesystemOnly(t *testing.T) {
+	s := NewScanner()
+	orphans := map[string][]Residual{
+		"com.test.app": {
+			{Path: "/tmp/a", Type: ResidualCaches, SizeBytes: 100, FileCount: 1},
+			{Path: "/tmp/b", Type: ResidualPreferences, SizeBytes: 50, FileCount: 1},
+		},
+	}
+	lsGhosts := map[string]bool{}
+
+	ghosts := s.mergeOrphans(orphans, lsGhosts)
+	if len(ghosts) != 1 {
+		t.Fatalf("expected 1 ghost, got %d", len(ghosts))
+	}
+	if ghosts[0].TotalSize != 150 {
+		t.Errorf("TotalSize = %d, want 150", ghosts[0].TotalSize)
+	}
+	if ghosts[0].TotalFiles != 2 {
+		t.Errorf("TotalFiles = %d, want 2", ghosts[0].TotalFiles)
+	}
+	if ghosts[0].DetectionMethod != "filesystem" {
+		t.Errorf("DetectionMethod = %q, want filesystem", ghosts[0].DetectionMethod)
+	}
+	if ghosts[0].InLaunchServices {
+		t.Error("InLaunchServices should be false")
+	}
+}
+
+func TestMergeOrphans_LaunchServicesOnly(t *testing.T) {
+	s := NewScanner()
+	orphans := map[string][]Residual{}
+	lsGhosts := map[string]bool{"com.dead.app": true}
+
+	ghosts := s.mergeOrphans(orphans, lsGhosts)
+	if len(ghosts) != 1 {
+		t.Fatalf("expected 1 ghost, got %d", len(ghosts))
+	}
+	if ghosts[0].DetectionMethod != "launch_services" {
+		t.Errorf("DetectionMethod = %q, want launch_services", ghosts[0].DetectionMethod)
+	}
+	if !ghosts[0].InLaunchServices {
+		t.Error("InLaunchServices should be true")
+	}
+}
+
+func TestMergeOrphans_Combined(t *testing.T) {
+	s := NewScanner()
+
+	orphans := map[string][]Residual{
+		"com.found.both": {
+			{Path: "/tmp/cache", Type: ResidualCaches, SizeBytes: 200, FileCount: 3},
+		},
+	}
+	lsGhosts := map[string]bool{
+		"com.found.both": true,
+		"com.only.ls":    true,
+	}
+
+	ghosts := s.mergeOrphans(orphans, lsGhosts)
+	if len(ghosts) != 2 {
+		t.Fatalf("expected 2 ghosts, got %d", len(ghosts))
+	}
+
+	// Find the one detected by both
+	var foundBoth, foundLS bool
+	for _, g := range ghosts {
+		if g.BundleID == "com.found.both" {
+			foundBoth = true
+			if g.DetectionMethod != "filesystem" {
+				t.Errorf("combined ghost should have detection method 'filesystem', got %q", g.DetectionMethod)
+			}
+			if !g.InLaunchServices {
+				t.Error("combined ghost should have InLaunchServices=true")
+			}
+		}
+		if g.BundleID == "com.only.ls" {
+			foundLS = true
+			if g.DetectionMethod != "launch_services" {
+				t.Errorf("LS-only ghost should have detection method 'launch_services', got %q", g.DetectionMethod)
+			}
+		}
+	}
+	if !foundBoth {
+		t.Error("missing ghost com.found.both")
+	}
+	if !foundLS {
+		t.Error("missing ghost com.only.ls")
+	}
+}
+
+func TestMergeOrphans_Empty(t *testing.T) {
+	s := NewScanner()
+	ghosts := s.mergeOrphans(map[string][]Residual{}, map[string]bool{})
+	if len(ghosts) != 0 {
+		t.Errorf("expected 0 ghosts, got %d", len(ghosts))
+	}
+}
+
+// ═══════════════════════════════════════════
+// Clean — dry-run safety
+// ═══════════════════════════════════════════
+
+func TestClean_DryRun(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "cache.data")
+	os.WriteFile(path, make([]byte, 512), 0644)
+
+	s := NewScanner()
+	ghost := Ghost{
+		BundleID: "com.test.app",
+		Residuals: []Residual{
+			{Path: path, Type: ResidualCaches, SizeBytes: 512, FileCount: 1},
+		},
+	}
+
+	freed, cleaned, err := s.Clean(ghost, true, false)
+	if err != nil {
+		t.Fatalf("Clean(dry-run) error: %v", err)
+	}
+	if freed < 512 {
+		t.Errorf("freed = %d, want >= 512", freed)
+	}
+	if cleaned != 1 {
+		t.Errorf("cleaned = %d, want 1", cleaned)
+	}
+
+	// File should still exist
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("file should still exist after dry-run")
+	}
+}
+
+func TestClean_ProtectedPathSkipped(t *testing.T) {
+	s := NewScanner()
+	ghost := Ghost{
+		BundleID: "com.test.protected",
+		Residuals: []Residual{
+			{Path: "/System/Library/something", Type: ResidualPreferences, SizeBytes: 100},
+		},
+	}
+
+	freed, cleaned, err := s.Clean(ghost, false, false)
+	if err != nil {
+		t.Fatalf("Clean() error: %v", err)
+	}
+	if freed != 0 {
+		t.Errorf("freed = %d, want 0 (protected path should be skipped)", freed)
+	}
+	if cleaned != 0 {
+		t.Errorf("cleaned = %d, want 0 (protected path should be skipped)", cleaned)
+	}
+}
+
+func TestClean_EmptyResiduals(t *testing.T) {
+	s := NewScanner()
+	ghost := Ghost{BundleID: "com.test.empty"}
+
+	freed, cleaned, err := s.Clean(ghost, false, false)
+	if err != nil {
+		t.Fatalf("Clean() error: %v", err)
+	}
+	if freed != 0 || cleaned != 0 {
+		t.Errorf("freed=%d, cleaned=%d, want 0, 0", freed, cleaned)
+	}
+}
+
+// ═══════════════════════════════════════════
+// Ghost / Residual struct defaults
+// ═══════════════════════════════════════════
+
+func TestGhost_Defaults(t *testing.T) {
+	g := Ghost{}
+	if g.AppName != "" {
+		t.Error("default AppName should be empty")
+	}
+	if g.InLaunchServices {
+		t.Error("default InLaunchServices should be false")
+	}
+	if g.TotalSize != 0 {
+		t.Error("default TotalSize should be 0")
+	}
+}
+
+func TestResidual_Defaults(t *testing.T) {
+	r := Residual{}
+	if r.RequiresSudo {
+		t.Error("default RequiresSudo should be false")
+	}
+	if r.Type != "" {
+		t.Error("default Type should be empty")
+	}
+}
+
+// ═══════════════════════════════════════════
+// Residual location constants
+// ═══════════════════════════════════════════
+
+func TestUserResidualLocations_Complete(t *testing.T) {
+	if len(userResidualLocations) < 12 {
+		t.Errorf("expected at least 12 user residual locations, got %d", len(userResidualLocations))
+	}
+
+	// All user locations should NOT require sudo
+	for _, loc := range userResidualLocations {
+		if loc.RequiresSudo {
+			t.Errorf("user location %q should not require sudo", loc.Dir)
+		}
+		if loc.Dir == "" {
+			t.Error("location Dir should not be empty")
+		}
+	}
+}
+
+func TestSystemResidualLocations_Complete(t *testing.T) {
+	if len(systemResidualLocations) < 5 {
+		t.Errorf("expected at least 5 system residual locations, got %d", len(systemResidualLocations))
+	}
+
+	// All system locations SHOULD require sudo
+	for _, loc := range systemResidualLocations {
+		if !loc.RequiresSudo {
+			t.Errorf("system location %q should require sudo", loc.Dir)
+		}
+	}
+}
+
+func TestResidualTypes_UniqueValues(t *testing.T) {
+	types := []ResidualType{
+		ResidualPreferences, ResidualAppSupport, ResidualCaches,
+		ResidualContainers, ResidualGroupContainers, ResidualSavedState,
+		ResidualHTTPStorages, ResidualWebKit, ResidualCookies,
+		ResidualAppScripts, ResidualLogs, ResidualLaunchAgent,
+		ResidualLaunchDaemon, ResidualReceipts, ResidualLoginItems,
+		ResidualCrashReports, ResidualGhostApp,
+	}
+
+	seen := make(map[ResidualType]bool)
+	for _, rt := range types {
+		if seen[rt] {
+			t.Errorf("duplicate ResidualType: %q", rt)
+		}
+		seen[rt] = true
 	}
 }
