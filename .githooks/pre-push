@@ -1,0 +1,54 @@
+#!/bin/bash
+# 𓂀 Anubis Pre-Push Gate
+# Runs the same checks CI runs, so lint issues never reach the pipeline.
+# Install: git config core.hooksPath .githooks
+# Skip:    git push --no-verify (use sparingly)
+
+set -e
+
+echo ""
+echo "  𓂀 Anubis pre-push gate..."
+echo ""
+
+# 1. gofmt — formatting must be canonical
+BAD_FMT=$(gofmt -l ./internal/ ./cmd/ 2>/dev/null || true)
+if [ -n "$BAD_FMT" ]; then
+    echo "  ❌ gofmt — these files need formatting:"
+    echo "$BAD_FMT" | sed 's/^/     /'
+    echo ""
+    echo "  Fix: gofmt -w ./internal/ ./cmd/"
+    exit 1
+fi
+
+# 2. go vet — static analysis
+if ! go vet ./... 2>/dev/null; then
+    echo "  ❌ go vet failed"
+    exit 1
+fi
+
+# 3. golangci-lint — full linter suite (if installed)
+LINT_BIN=""
+if command -v golangci-lint &>/dev/null; then
+    LINT_BIN="golangci-lint"
+elif [ -x "$HOME/go/bin/golangci-lint" ]; then
+    LINT_BIN="$HOME/go/bin/golangci-lint"
+fi
+
+if [ -n "$LINT_BIN" ]; then
+    if ! $LINT_BIN run --timeout=2m 2>/dev/null; then
+        echo ""
+        echo "  ❌ golangci-lint failed — fix errors before pushing"
+        exit 1
+    fi
+else
+    echo "  ⚠️  golangci-lint not found — skipping (install for full gate)"
+fi
+
+# 4. Build check
+if ! go build ./... 2>/dev/null; then
+    echo "  ❌ build failed"
+    exit 1
+fi
+
+echo "  ✅ Pipeline gate passed — pushing"
+echo ""
