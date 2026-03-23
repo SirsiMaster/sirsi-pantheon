@@ -442,3 +442,68 @@ func TestTextResult(t *testing.T) {
 		t.Error("IsError should be true for error result")
 	}
 }
+
+func TestResourcesRead_HealthStatus(t *testing.T) {
+	params := ResourceReadParams{URI: "anubis://health-status"}
+	resp, err := sendRequest(t, "resources/read", params, 11)
+	if err != nil {
+		t.Fatalf("Read health-status error: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("Read health-status returned error: %v", resp.Error)
+	}
+}
+
+func TestResourcesRead_BrainStatus(t *testing.T) {
+	params := ResourceReadParams{URI: "anubis://brain-status"}
+	resp, err := sendRequest(t, "resources/read", params, 12)
+	if err != nil {
+		t.Fatalf("Read brain-status error: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("Read brain-status returned error: %v", resp.Error)
+	}
+}
+
+func TestToolsCall_ThothReadMemory_NotFound(t *testing.T) {
+	params := ToolCallParams{
+		Name: "thoth_read_memory",
+		Arguments: map[string]interface{}{
+			"path": "/tmp/nonexistent-thoth-project-dir",
+		},
+	}
+	resp, err := sendRequest(t, "tools/call", params, 13)
+	if err != nil {
+		t.Fatalf("thoth_read_memory error: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("thoth_read_memory returned error: %v", resp.Error)
+	}
+
+	resultData, _ := json.Marshal(resp.Result)
+	var result ToolResult
+	json.Unmarshal(resultData, &result)
+	if !strings.Contains(result.Content[0].Text, "No Thoth memory file found") {
+		t.Errorf("Expected 'No Thoth memory file found', got %q", result.Content[0].Text)
+	}
+}
+
+func TestToolsCall_ScanWorkspace_InvalidCategory(t *testing.T) {
+	params := ToolCallParams{
+		Name: "scan_workspace",
+		Arguments: map[string]interface{}{
+			"category": "invalid-category-name",
+		},
+	}
+	resp, err := sendRequest(t, "tools/call", params, 14)
+	if err != nil {
+		t.Fatalf("scan_workspace error: %v", err)
+	}
+
+	resultData, _ := json.Marshal(resp.Result)
+	var result ToolResult
+	json.Unmarshal(resultData, &result)
+	if !result.IsError {
+		t.Error("Invalid category should set isError=true")
+	}
+}

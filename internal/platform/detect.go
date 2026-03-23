@@ -25,7 +25,11 @@ func Reset() {
 }
 
 func detect() Platform {
-	switch runtime.GOOS {
+	return detectFor(runtime.GOOS)
+}
+
+func detectFor(goos string) Platform {
+	switch goos {
 	case "darwin":
 		return &Darwin{}
 	case "linux":

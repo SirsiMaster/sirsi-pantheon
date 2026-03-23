@@ -66,16 +66,34 @@ type UpdateResult struct {
 	Error           error
 }
 
+type Client struct {
+	ReleasesURL string
+	AdvisoryURL string
+	HTTPClient  *http.Client
+}
+
+func NewClient() *Client {
+	return &Client{
+		ReleasesURL: GitHubReleasesAPI,
+		AdvisoryURL: AdvisoryURL,
+		HTTPClient:  &http.Client{Timeout: checkTimeout},
+	}
+}
+
 // Check performs a non-blocking version and advisory check.
 // It contacts only public GitHub APIs — no telemetry, no tracking.
 // Times out after 3 seconds to never slow down the CLI.
 func Check(currentVersion string) *UpdateResult {
+	return NewClient().Check(currentVersion)
+}
+
+func (c *Client) Check(currentVersion string) *UpdateResult {
 	result := &UpdateResult{
 		CurrentVersion: currentVersion,
 	}
 
 	// Check latest release
-	release, err := fetchLatestRelease()
+	release, err := c.fetchLatestRelease()
 	if err != nil {
 		result.Error = err
 		return result
@@ -93,17 +111,15 @@ func Check(currentVersion string) *UpdateResult {
 	result.DownloadURL = findPlatformAsset(release.Assets)
 
 	// Check advisories
-	advisories, _ := fetchAdvisories(currentVersion)
+	advisories, _ := c.fetchAdvisories(currentVersion)
 	result.Advisories = advisories
 
 	return result
 }
 
 // fetchLatestRelease gets the latest release from GitHub.
-func fetchLatestRelease() (*Release, error) {
-	client := &http.Client{Timeout: checkTimeout}
-
-	resp, err := client.Get(GitHubReleasesAPI)
+func (c *Client) fetchLatestRelease() (*Release, error) {
+	resp, err := c.HTTPClient.Get(c.ReleasesURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch release: %w", err)
 	}
@@ -122,10 +138,8 @@ func fetchLatestRelease() (*Release, error) {
 }
 
 // fetchAdvisories checks for post-release roadblocks and known issues.
-func fetchAdvisories(currentVersion string) ([]Advisory, error) {
-	client := &http.Client{Timeout: checkTimeout}
-
-	resp, err := client.Get(AdvisoryURL)
+func (c *Client) fetchAdvisories(currentVersion string) ([]Advisory, error) {
+	resp, err := c.HTTPClient.Get(c.AdvisoryURL)
 	if err != nil {
 		return nil, err
 	}

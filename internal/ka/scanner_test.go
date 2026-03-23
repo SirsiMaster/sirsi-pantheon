@@ -152,7 +152,7 @@ func TestScanner_BuildInstalledAppIndex(t *testing.T) {
 
 	// Create a fake .app
 	os.MkdirAll(filepath.Join(appDir, "Test.app"), 0755)
-	
+
 	s := NewScanner()
 	s.appDirs = []string{appDir}
 	s.skipBrew = true // Don't try to call brew
@@ -180,7 +180,7 @@ func TestScanner_IndexHomebrewCasks_Skip(t *testing.T) {
 	s := NewScanner()
 	s.appDirs = []string{}
 	s.skipBrew = true
-	
+
 	err := s.buildInstalledAppIndex() // Should skip brew list
 	if err != nil {
 		t.Fatalf("buildInstalledAppIndex with skipBrew=true error: %v", err)
@@ -257,7 +257,7 @@ func TestScanner_ScanForOrphans(t *testing.T) {
 	defer func() { userResidualLocations = originalLocations }()
 
 	orphans := s.scanForOrphans(false)
-	
+
 	if len(orphans) != 1 {
 		t.Fatalf("expected 1 orphan bundle ID, got %d", len(orphans))
 	}

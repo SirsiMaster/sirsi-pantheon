@@ -133,6 +133,10 @@ func parseARPTable() []Host {
 
 // parseARPLine extracts IP and MAC from an ARP table entry.
 func parseARPLine(line string) *Host {
+	return parseARPLineFor(line, runtime.GOOS)
+}
+
+func parseARPLineFor(line, goos string) *Host {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil
@@ -141,25 +145,28 @@ func parseARPLine(line string) *Host {
 	// macOS: ? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ...
 	// Linux: 192.168.1.1  ether  aa:bb:cc:dd:ee:ff  C  en0
 	fields := strings.Fields(line)
-	if len(fields) < 4 {
+	if len(fields) < 3 {
 		return nil
 	}
 
 	var ip, mac string
 
-	if runtime.GOOS == "darwin" {
+	if goos == "darwin" {
 		// Extract IP from parentheses
 		for _, f := range fields {
 			if strings.HasPrefix(f, "(") && strings.HasSuffix(f, ")") {
 				ip = strings.Trim(f, "()")
+				break
 			}
 		}
-		// MAC is usually field[3]
-		if len(fields) > 3 {
+		// MAC is usually field[3] if field[2] is 'at'
+		if len(fields) > 3 && fields[2] == "at" {
 			mac = fields[3]
 		}
 	} else {
 		ip = fields[0]
+		// Linux 'arp -n' format: IP address HW type HW address Flags Mask Iface
+		// 192.168.1.1 ether aa:bb:cc:dd:ee:ff C en0
 		if len(fields) > 2 {
 			mac = fields[2]
 		}

@@ -2,7 +2,6 @@ package scarab
 
 import (
 	"net"
-	"runtime"
 	"testing"
 )
 
@@ -10,39 +9,27 @@ import (
 // parseARPLine
 // ═══════════════════════════════════════════
 
-func TestParseARPLine_DarwinFormat(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Darwin ARP format test requires macOS")
-	}
-	// macOS: ? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]
-	line := "? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]"
-	h := parseARPLine(line)
-	if h == nil {
-		t.Fatal("expected non-nil host")
-	}
-	if h.IP != "192.168.1.1" {
-		t.Errorf("IP = %q, want %q", h.IP, "192.168.1.1")
-	}
-	if h.MAC != "aa:bb:cc:dd:ee:ff" {
-		t.Errorf("MAC = %q, want %q", h.MAC, "aa:bb:cc:dd:ee:ff")
+func TestParseARPLineFor_Darwin(t *testing.T) {
+	line := "? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en1 [ethernet]"
+	h := parseARPLineFor(line, "darwin")
+	if h == nil || h.IP != "192.168.1.1" || h.MAC != "aa:bb:cc:dd:ee:ff" {
+		t.Errorf("Darwin Parse failed: %+v", h)
 	}
 }
 
-func TestParseARPLine_LinuxFormat(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("Linux ARP format test requires Linux")
+func TestParseARPLineFor_Linux(t *testing.T) {
+	line := "192.168.1.1  ether  aa:bb:cc:dd:ee:ff  C  eth0"
+	h := parseARPLineFor(line, "linux")
+	if h == nil || h.IP != "192.168.1.1" || h.MAC != "aa:bb:cc:dd:ee:ff" {
+		t.Errorf("Linux Parse failed: %+v", h)
 	}
-	// Linux: 192.168.1.1  ether  aa:bb:cc:dd:ee:ff  C  en0
-	line := "192.168.1.1  ether  aa:bb:cc:dd:ee:ff  C  en0"
-	h := parseARPLine(line)
-	if h == nil {
-		t.Fatal("expected non-nil host")
-	}
-	if h.IP != "192.168.1.1" {
-		t.Errorf("IP = %q, want %q", h.IP, "192.168.1.1")
-	}
-	if h.MAC != "aa:bb:cc:dd:ee:ff" {
-		t.Errorf("MAC = %q, want %q", h.MAC, "aa:bb:cc:dd:ee:ff")
+}
+
+func TestParseARPLineFor_Incomplete(t *testing.T) {
+	line := "192.168.1.2  ether  (incomplete)  C  eth0"
+	h := parseARPLineFor(line, "linux")
+	if h == nil || h.IP != "192.168.1.2" || h.MAC != "" {
+		t.Errorf("Incomplete parse failed: %+v", h)
 	}
 }
 
@@ -190,5 +177,19 @@ func TestContainerAudit_Defaults(t *testing.T) {
 	}
 	if a.RunningCount != 0 || a.StoppedCount != 0 {
 		t.Error("counts should default to 0")
+	}
+}
+
+func TestAuditContainers(t *testing.T) {
+	_, err := AuditContainers()
+	if err != nil {
+		t.Errorf("AuditContainers failed: %v", err)
+	}
+}
+
+func TestDiscover(t *testing.T) {
+	_, err := Discover()
+	if err != nil {
+		t.Logf("Discover info (might skip in CI): %v", err)
 	}
 }

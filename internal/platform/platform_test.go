@@ -125,3 +125,60 @@ func TestDarwin_SupportsTrash(t *testing.T) {
 		t.Error("Darwin should support trash")
 	}
 }
+
+func TestDetectFor(t *testing.T) {
+	tests := []struct {
+		goos string
+		want string
+	}{
+		{"darwin", "darwin"},
+		{"linux", "linux"},
+		{"windows", "linux"}, // Fallback
+		{"unknown", "linux"}, // Fallback
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.goos, func(t *testing.T) {
+			p := detectFor(tt.goos)
+			if p.Name() != tt.want {
+				t.Errorf("detectFor(%q).Name() = %q, want %q", tt.goos, p.Name(), tt.want)
+			}
+		})
+	}
+}
+
+func TestDarwin_Name(t *testing.T) {
+	d := &Darwin{}
+	if d.Name() != "darwin" {
+		t.Errorf("Darwin.Name() = %q, want %q", d.Name(), "darwin")
+	}
+}
+
+func TestLinux_Name(t *testing.T) {
+	l := &Linux{}
+	if l.Name() != "linux" {
+		t.Errorf("Linux.Name() = %q, want %q", l.Name(), "linux")
+	}
+}
+
+func TestLinux_SupportsTrash(t *testing.T) {
+	l := &Linux{}
+	if l.SupportsTrash() {
+		t.Error("Linux should NOT claim to support trash yet")
+	}
+}
+
+func TestMock_Name(t *testing.T) {
+	m := &Mock{}
+	if m.Name() != "mock" {
+		t.Errorf("Mock.Name() = %q, want %q", m.Name(), "mock")
+	}
+}
+
+func TestLinux_MoveToTrash_Fail(t *testing.T) {
+	l := &Linux{}
+	err := l.MoveToTrash("/no/such/path")
+	if err == nil {
+		t.Error("expected error from gio trash on Mac")
+	}
+}
