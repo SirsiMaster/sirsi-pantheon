@@ -925,6 +925,12 @@
     </div>
 
     <div class="benchmark-row">
+      <div class="benchmark-label"><span>Ka ghost detection (Horus wired)</span><span>7.8× faster</span></div>
+      <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="87%"></div></div>
+      <div class="benchmark-footnote"><span>Before: 8.5 seconds</span><span>After: 1.08 seconds</span></div>
+    </div>
+
+    <div class="benchmark-row">
       <div class="benchmark-label"><span>Disk reads — less is better for your SSD</span><span>98.8% less</span></div>
       <div class="benchmark-track"><div class="benchmark-fill danger" data-width="98.8%"></div></div>
       <div class="benchmark-footnote"><span>Before: 97.8 MB read</span><span>After: &lt;2 MB read</span></div>
@@ -1055,9 +1061,9 @@
       </div>
 
       <div class="benchmark-row">
-        <div class="benchmark-label"><span>Pre-push gate — complete flow</span><span>13× faster</span></div>
-        <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="92%"></div></div>
-        <div class="benchmark-footnote"><span>Before: ~65 seconds</span><span>After: ~5 seconds</span></div>
+        <div class="benchmark-label"><span>Pre-push gate — complete flow</span><span>~32× faster</span></div>
+        <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="97%"></div></div>
+        <div class="benchmark-footnote"><span>Before: ~65 seconds</span><span>After: ~2 seconds</span></div>
       </div>
 
       <div style="background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-md); padding:1.5rem; margin-top:2rem;">
@@ -1121,6 +1127,7 @@
           <strong style="color:var(--color-gold);">The recursive win:</strong>
           Horus indexes the filesystem once with parallel goroutines →
           Jackal queries the index in 5ms instead of walking for 15s →
+          Ka queries in 1s instead of walking for 8.5s →
           faster pre-push gate → more pushes per session → more dogfooding →
           <strong style="color:var(--color-emerald-light);">more performance discoveries → better product.</strong>
           The improvements compound. Every deity wins if one deity wins.

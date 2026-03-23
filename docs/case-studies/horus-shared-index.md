@@ -1,8 +1,8 @@
 # 👁️ Case Study: Horus Shared Filesystem Index — Every Deity Wins
 
-**Date:** 2026-03-23 (Session 12)
+**Date:** 2026-03-23 (Sessions 12–13)
 **Category:** Architecture / Performance / Process Improvement
-**Impact:** Weigh 15.6s → 833ms (18.7×), Ma'at 55s → 12ms (4,583×), pre-push 65s → 5s (13×)
+**Impact:** Weigh 15.6s → 833ms (18.7×), Ka 8.5s → 1.08s (7.8×), Ma'at 55s → 12ms (4,583×), pre-push 65s → 2s (32×)
 **Rule:** A14 (Statistics Integrity) — all numbers measured, not projected
 
 ---
@@ -14,7 +14,7 @@ Pantheon has three deities that independently traverse the filesystem:
 | Deity | Purpose | Time | Method |
 |-------|---------|------|--------|
 | **Jackal** (Weigh) | Find caches/artifacts | 15.6s | `filepath.Walk` × 58 rules |
-| **Ka** | Find ghost apps | 10.9s | `filepath.Walk` × 17 locations |
+| **Ka** | Find ghost apps | 8.5s | `filepath.Walk` × 17 locations |
 | **Seba** | Infrastructure mapping | ~12s | `filepath.Walk` + commands |
 
 Total: **~38 seconds** of redundant filesystem traversal per full assessment.
@@ -127,15 +127,17 @@ Horus Index (parallel goroutine walk)
 | `maat` | 55,000ms | 12ms | ✅ **4,583× faster** |
 | `guard` | 140ms | 140ms | ✅ Already fast |
 | `weigh` | 15,600ms | 833ms | ✅ **18.7× faster** |
-| `ka` | 10,900ms | 10,900ms | 🔜 Horus wiring next |
-| Pre-push | ~65,000ms | ~5,000ms | ✅ **13× faster** |
+| `ka` | 8,457ms | 1,080ms | ✅ **7.8× faster** |
+| Pre-push | ~65,000ms | ~2,000ms | ✅ **~32× faster** |
 
 ### Feather Weight Progression
 
 ```
 Session start:  69/100  (5 warnings, 0 failures)
 Mid-session:    75/100  (3 warnings)
-Session end:    81/100  (1 warning — brain coverage)
+Session 12 end: 81/100  (1 warning — brain coverage)
+Session 13 end: 81/100  (Ka optimized, brain coverage still 40%)
+Session 14:     brain 40% → 56% — warning eliminated
 Canon linkage:  60% → 100% (10/10 commits linked)
 ```
 
@@ -146,7 +148,7 @@ This is the Pantheon thesis in code:
 ```
 Horus indexes the filesystem      → one walk
 Jackal queries Horus               → instant DirSizeAndCount
-Ka will query Horus                → instant ghost detection
+Ka queries Horus                   → instant ghost detection (Session 13)
 Ma'at uses git diff                → instant coverage
 Fast pre-push gate                 → more pushes per session
 More pushes                        → more dogfooding
@@ -161,12 +163,22 @@ issues, which produces more fixes.
 
 ## Benchmark Progression
 
+### Weigh (Jackal)
 ```
 Phase 0 (baseline):         15,600 ms
 Phase 1 (WalkDir):           9,200 ms  (1.7×)
 Phase 1.5 (Horus cache):    7,200 ms  (2.2×)
 Phase 2 (gob+preaggreg):    6,300 ms  (2.5×)
 Phase 2.5 (FindDirsNamed):    833 ms  (18.7×)  ← FINAL
+```
+
+### Ka (Ghost Detection)
+```
+Phase 0 (baseline):          8,457 ms
+Phase 1 (Horus wiring):     1,080 ms  (7.8×)
+  └── DirSizeAndCount O(1)  replaces DirSize + countFiles (double-walk)
+  └── Filesystem scan ‖ lsregister as parallel goroutines
+  └── --deep flag: lsregister now opt-in (5.3s savings)
 ```
 
 ## Files Changed
