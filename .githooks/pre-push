@@ -10,7 +10,8 @@ echo ""
 echo "  𓇳 Pantheon pre-push gate..."
 echo ""
 
-# 0. Ma'at Quality Assessment
+# 0. Build fresh binary for Ma'at assessment
+go build -o ./pantheon ./cmd/pantheon/ 2>/dev/null
 if [ -x "./pantheon" ]; then
     echo "  𓆄 Ma'at quality assessment..."
     ./pantheon maat --coverage --canon || {

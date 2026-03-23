@@ -31,5 +31,6 @@ Thumbs.db
 # Temporary
 tmp/
 .tmp/
-pantheon
-pantheon-agent
+/pantheon
+/pantheon-agent
+
