@@ -270,10 +270,10 @@ func TestScanner_ScanForOrphans(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════
-// countFiles
+// dirSizeAndCount
 // ═══════════════════════════════════════════
 
-func TestCountFiles_Nested(t *testing.T) {
+func TestDirSizeAndCount_Nested(t *testing.T) {
 	tmp := t.TempDir()
 	sub := filepath.Join(tmp, "sub")
 	os.MkdirAll(sub, 0755)
@@ -281,24 +281,33 @@ func TestCountFiles_Nested(t *testing.T) {
 	os.WriteFile(filepath.Join(sub, "b.txt"), []byte("b"), 0644)
 	os.WriteFile(filepath.Join(sub, "c.txt"), []byte("c"), 0644)
 
-	count := countFiles(tmp)
+	size, count := dirSizeAndCount(tmp)
 	if count != 3 {
-		t.Errorf("countFiles = %d, want 3", count)
+		t.Errorf("dirSizeAndCount count = %d, want 3", count)
+	}
+	if size != 3 {
+		t.Errorf("dirSizeAndCount size = %d, want 3", size)
 	}
 }
 
-func TestCountFiles_EmptyDir(t *testing.T) {
+func TestDirSizeAndCount_EmptyDir(t *testing.T) {
 	tmp := t.TempDir()
-	count := countFiles(tmp)
+	size, count := dirSizeAndCount(tmp)
 	if count != 0 {
-		t.Errorf("countFiles(empty) = %d, want 0", count)
+		t.Errorf("dirSizeAndCount(empty) count = %d, want 0", count)
+	}
+	if size != 0 {
+		t.Errorf("dirSizeAndCount(empty) size = %d, want 0", size)
 	}
 }
 
-func TestCountFiles_NonExistent(t *testing.T) {
-	count := countFiles("/nonexistent/path/12345")
+func TestDirSizeAndCount_NonExistent(t *testing.T) {
+	size, count := dirSizeAndCount("/nonexistent/path/12345")
 	if count != 0 {
-		t.Errorf("countFiles(nonexistent) = %d, want 0", count)
+		t.Errorf("dirSizeAndCount(nonexistent) count = %d, want 0", count)
+	}
+	if size != 0 {
+		t.Errorf("dirSizeAndCount(nonexistent) size = %d, want 0", size)
 	}
 }
 

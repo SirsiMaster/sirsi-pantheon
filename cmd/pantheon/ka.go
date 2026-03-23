@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
@@ -21,6 +22,7 @@ var (
 	kaDryRun  bool
 	kaConfirm bool
 	kaTarget  string
+	kaDeep    bool
 )
 
 // kaCmd implements `pantheon ka` — the Ghost Hunter.
@@ -37,6 +39,7 @@ resources and haunting your system.
 Anubis Ka finds these spirits and releases them.
 
   pantheon ka                     Scan for all ghosts
+  pantheon ka --deep               Include Spotlight/Launch Services ghosts
   pantheon ka --sudo              Include system-level ghosts (requires sudo)
   pantheon ka --clean --dry-run   Preview ghost cleanup
   pantheon ka --clean --confirm   Release the spirits (delete residuals)
@@ -48,6 +51,7 @@ Anubis Ka finds these spirits and releases them.
 
 func init() {
 	kaCmd.Flags().BoolVar(&kaSudo, "sudo", false, "Include system-level residuals (requires sudo)")
+	kaCmd.Flags().BoolVar(&kaDeep, "deep", false, "Include Spotlight/Launch Services ghost scan (slower)")
 	kaCmd.Flags().BoolVar(&kaClean, "clean", false, "Clean ghost residuals (requires --dry-run or --confirm)")
 	kaCmd.Flags().BoolVar(&kaDryRun, "dry-run", false, "Preview what would be cleaned")
 	kaCmd.Flags().BoolVar(&kaConfirm, "confirm", false, "Actually clean ghost residuals")
@@ -73,6 +77,15 @@ func runKa() error {
 	}
 
 	scanner := ka.NewScanner()
+
+	// Load Horus shared index for fast DirSizeAndCount lookups.
+	if manifest, err := horus.Index(horus.IndexOptions{}); err == nil {
+		scanner.Manifest = manifest
+	}
+
+	// Skip lsregister -dump unless --deep (saves ~5 seconds).
+	scanner.SkipLaunchServices = !kaDeep
+
 	ghosts, err := scanner.Scan(kaSudo)
 	if err != nil {
 		return fmt.Errorf("ka scan failed: %w", err)
