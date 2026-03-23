@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Anubis
 # Read this FIRST before any source files.
-# Last updated: 2026-03-23T04:08:00-04:00
+# Last updated: 2026-03-23T05:33:00-04:00
 
 ## Identity
 project: sirsi-anubis
@@ -8,10 +8,10 @@ repo: github.com/SirsiMaster/sirsi-anubis
 language: Go 1.22+
 version: 0.3.0-alpha
 binary_count: 2 (anubis @ 12 MB, anubis-agent @ 3.2 MB)
-test_count: 470
-line_count: ~17,000
-module_count: 19
-command_count: 17
+test_count: 522
+line_count: ~19,300
+module_count: 20
+command_count: 18
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_read_memory)
 
 ## Architecture Quick Reference
@@ -33,6 +33,7 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # Updater: internal/updater/ (GitHub releases check)
 # Profile: internal/profile/ (machine profiling)
 # Hapi: internal/hapi/ (GPU, dedup, snapshots)
+# Ma'at: internal/maat/ (QA/QC governance — coverage, canon, pipeline)
 
 ## Critical Design Decisions
 # 1. Three-phase dedup: size grouping → partial hash (first+last 4KB) → full SHA-256
@@ -55,6 +56,9 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 #     independently verifiable. No projections presented as measurements.
 # 11. Session definition (Rule A15): a session = one AI conversation between
 #     continuation prompts. Not time gaps, not commit clusters.
+# 12. Pantheon is the product (ADR-005): all deities are sub-systems.
+#     Deities keep repos and versions. Polyglot. Single install, single brand.
+# 13. Portfolio Standard v2.0.0: 26 universal rules deployed to all 5 repos.
 
 ## Known Limitations (as of v0.3.0-alpha)
 # - GUI folder picker only works on macOS (Linux: zenity/kdialog in platform/linux.go)
@@ -63,8 +67,21 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # - Ka ghost hunting is macOS-only (searches .app bundles, LaunchServices)
 # - Scan rules are macOS/Linux only — no Windows AppData paths yet
 # - Homebrew tap disabled (needs PAT for cross-repo access)
+# - ADR count: 5 (001-founding, 002-ka, 003-build-in-public, 004-maat, 005-pantheon)
 
 ## Recent Changes (most recent first)
+# 2026-03-23: Session 9 — Ma'at built + Pantheon unification
+#   Built Ma'at QA/QC governance agent (internal/maat/): 4 source files, 57 tests
+#   Core types: Verdict, Assessment, CanonLink, Report, Assessor, Weigh()
+#   Three domains: coverage (go test -cover), canon (git log), pipeline (gh CLI)
+#   CLI: anubis maat [--pipeline] [--coverage] [--canon] [--json]
+#   ADR-004: Ma'at QA/QC Governance canonized
+#   ADR-005: Pantheon Unification canonized — all deities as sub-systems
+#   Portfolio Standard v2.0.0: 26 universal rules, 3 canon tiers, Pantheon reqs
+#   Deployed Pantheon governance to all 5 repos: real Thoth memories,
+#     GEMINI.md + CLAUDE.md, Portfolio Standard, session workflows
+#   Pantheon coverage: ~20% → ~75% across portfolio
+#   All 5 repos pushed and clean
 # 2026-03-23: Session 8 — platform wiring + CI lint fix + pre-push gate
 #   Wired Platform interface into cleaner (3 runtime.GOOS → platform.Current())
 #   Wired Platform interface into mirror (OpenBrowser + PickFolder)
@@ -119,6 +136,10 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # internal/mcp/tools.go         — MCP tools including thoth_read_memory
 # internal/jackal/engine.go     — scan engine orchestrator
 # internal/ka/scanner.go        — ghost app detection
+# internal/maat/maat.go          — Ma'at core types + Weigh orchestrator
+# internal/maat/coverage.go      — coverage governance
+# internal/maat/canon.go         — canon verification
+# internal/maat/pipeline.go      — pipeline monitoring
 # .goreleaser.yaml              — release config (brews, not homebrew_casks)
 # .github/workflows/ci.yml      — CI pipeline (lint + test + build)
 # .thoth/memory.yaml            — THIS FILE
@@ -128,6 +149,9 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # docs/BUILD_LOG.md             — sprint chronicle (markdown, for developers)
 # docs/build-log.html           — build-in-public page (HTML, for everyone)
 # docs/ADR-003-BUILD-IN-PUBLIC.md — canonical build-in-public process
+# docs/ADR-004-MAAT-QA-GOVERNANCE.md — Ma'at architecture
+# docs/ADR-005-PANTHEON-UNIFICATION.md — Pantheon vision
+# docs/SIRSI_PORTFOLIO_STANDARD.md — 26 universal rules
 # docs/ADR-INDEX.md              — all architecture decision records
 # tools/thoth-init/index.js     — standalone thoth-init CLI (npx)
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
