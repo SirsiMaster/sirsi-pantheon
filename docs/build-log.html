@@ -516,6 +516,7 @@
       .sprint-dot { left: -1.55rem; }
       .sprint-metrics { flex-direction: column; gap: 0.4rem; }
       .status-grid { grid-template-columns: 1fr; }
+      [style*="grid-template-columns:repeat(3"] { grid-template-columns: 1fr !important; }
     }
   </style>
 </head>
@@ -524,7 +525,7 @@
 
   <!-- ═══ Hero ═══ -->
   <section class="hero">
-    <div class="hero-glyph">🏛️</div>
+    <div class="hero-glyph">𓇳</div>
     <h1>Building <span>Pantheon</span><br>in Public</h1>
     <p class="hero-subtitle">
       A transparent record of how we design, build, test, break, and fix our software.
@@ -567,12 +568,13 @@
       </p>
       <p style="color:var(--text-secondary); font-size:0.95rem; line-height:1.9; margin-top:1rem;">
         <strong style="color:var(--color-gold);">𓂀 Anubis</strong> is the foundational module — the reason Pantheon exists.
+        <em style="color:var(--color-gold);">Weigh. Judge. Purify.</em>
         It scans, judges, and purges waste across workstations with 58 rules, ghost app detection,
         file dedup that's <strong style="color:var(--color-gold);">27× faster</strong> than naive hashing,
         and a policy engine for fleet enforcement.
       </p>
       <p style="color:var(--text-secondary); font-size:0.95rem; line-height:1.9; margin-top:1rem;">
-        <strong style="color:var(--color-gold);">🪶 Ma'at</strong> governs quality — test coverage thresholds,
+        <strong style="color:var(--color-gold);">𓆄 Ma'at</strong> governs quality — test coverage thresholds,
         canon document verification, and CI pipeline monitoring. 57 tests across 3 governance domains.
       </p>
       <p style="color:var(--text-secondary); font-size:0.95rem; line-height:1.9; margin-top:1rem;">
@@ -613,7 +615,7 @@
     </div>
 
     <div style="max-width:880px; margin:2rem auto 0;">
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1.25rem;">
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:1.25rem;">
         <div class="neo-card" style="text-align:center; padding:1.5rem;">
           <div style="font-size:2.2rem; font-weight:700; color:var(--color-gold);">186 KB</div>
           <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">All Sirsi code compiled</div>
@@ -633,6 +635,16 @@
           <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">1</div>
           <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">Binary to install</div>
           <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">All deities included</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-gold);">12 MB</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">Full binary (unstripped)</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">With debug symbols</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">~10 MB</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">Go runtime overhead</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">Paid once, shared by all</div>
         </div>
       </div>
 
@@ -901,7 +913,7 @@
     </div>
 
     <div style="max-width:880px; margin:0 auto;">
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem; margin-bottom:2.5rem;">
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:1.5rem; margin-bottom:2.5rem;">
         <div class="neo-card" style="text-align:center; padding:1.5rem;">
           <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">98.7%</div>
           <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">less code to read per session</div>
@@ -921,6 +933,16 @@
           <div style="font-size:2.2rem; font-weight:700; color:var(--color-gold);">150</div>
           <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">tests in one session</div>
           <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">enabled by context preservation</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">10s</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">time to productive</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">vs 3–5 min without Thoth</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-gold);">5</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">projects using Thoth</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">deployed across all Sirsi repos</div>
         </div>
       </div>
 
@@ -1012,7 +1034,7 @@
 
   <!-- ═══ Footer ═══ -->
   <footer>
-    <div style="font-size:2rem; margin-bottom:0.5rem;">🏛️</div>
+    <div style="font-size:2rem; margin-bottom:0.5rem;">𓇳</div>
     <div class="footer-brand">Sirsi Technologies</div>
     <p style="margin-top:0.25rem;">Unified DevOps Intelligence — One Install, All Deities</p>
     <div class="footer-links">
