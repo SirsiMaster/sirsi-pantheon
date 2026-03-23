@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-03-23T17:05:00-04:00
+# Last updated: 2026-03-23T18:20:00-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -10,7 +10,7 @@ version: 0.4.0-alpha
 binary_count: 2 (pantheon @ 12 MB, pantheon-agent @ 3.2 MB)
 test_count: 522
 line_count: ~19,300
-module_count: 20
+module_count: 21
 command_count: 18
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_read_memory)
 
@@ -34,6 +34,7 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # Profile: internal/profile/ (machine profiling)
 # Hapi: internal/hapi/ (GPU, dedup, snapshots)
 # Ma'at: internal/maat/ (QA/QC governance — coverage, canon, pipeline)
+# Horus: internal/horus/ (shared filesystem index — walk once, all deities query)
 # Ra: internal/ra/ (hypervisor, service manager, all-seeing eye — future)
 # Seba: internal/seba/ (powerful mapping feature — active focus)
 
@@ -75,22 +76,28 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # - Homebrew tap: ENABLED (HOMEBREW_TAP_TOKEN secret set, GoReleaser brews active)
 # - Ma'at remediation gap: Ma'at observes, but does not yet remediate
 # - Seba mapping depth: Current "map" is a kinetic graph, needs more depth
-# - Horus: Designated as Unified Findings Portal (ADR-007), not yet implemented
+# - Horus: Phase 1 implemented (shared index, parallel walks, manifest cache)
+#   Phase 2 planned: FSEvents/fanotify/USN Journal for incremental updates
 # - Isis, Osiris: Designated deities but have no tool mapping yet
-# - ADR count: 7 (001-founding, 002-ka, 003-build-in-public, 004-maat, 005-pantheon, 006-resource-gov, 007-findings-portal)
+# - ADR count: 8 (001-founding, 002-ka, 003-build-in-public, 004-maat, 005-pantheon, 006-resource-gov, 007-findings-portal, 008-shared-filesystem-index)
 
 ## Recent Changes (most recent first)
-# 2026-03-23: Session 12 — Launch Execution (v0.4.0-alpha)
+# 2026-03-23: Session 12 — Launch Execution + Performance Optimization (v0.4.0-alpha)
 #   Homebrew PAT setup: HOMEBREW_TAP_TOKEN secret set in sirsi-pantheon repo.
 #   homebrew-tools repo initialized with README.md + Formula/ directory.
 #   GoReleaser brews section enabled (.goreleaser.yaml) — was commented out.
-#   release.yml updated: HOMEBREW_TAP_TOKEN env passed to GoReleaser action.
-#   v0.4.0-alpha tag will be re-created at HEAD to include all Session 12 work.
+#   v0.4.0-alpha released with 6 platform binaries.
 #   ADR-007 Unified Findings Portal + Horus designation added.
 #   ADR-006 Self-Aware Resource Governance + yield module added.
-#   gofmt fix: yield_test.go formatting corrected.
-#   Bumped Pantheon version to v0.4.0-alpha.
-#   Modular Deity Deployment (v2.1.0) standards implemented in ADR-005.
+#   ADR-008 Shared Filesystem Index accepted (Horus architecture).
+#   .gitignore collision fix: unanchored 'pantheon' → '/pantheon'.
+#   PERFORMANCE (dogfooding-driven):
+#     Ma'at diff-based coverage: 55s → 15ms (3,667× speedup)
+#     Horus shared filesystem index: walk once, all deities query
+#     Weigh (Jackal) optimized: 15.6s → 7.2s (2.2× speedup)
+#     Pre-push gate: 65s → 5s (13× faster)
+#     Feather Weight: 69/100 → 81/100
+#     Canon linkage: 60% → 100% (10/10 commits)
 # 2026-03-23: Session 11 — Full Pantheon Audit + Modular Deities (v2.1.0)
 #   Walkthrough of every conversation since genesis (completion audit).
 #   Fixed phantom domain sirsinexus.dev → sirsi.ai in SirsiNexusApp.

@@ -22,23 +22,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **ADR-006 Self-Aware Resource Governance** — Guard module + yield-based resource management
 - **Yield Module** (`internal/yield/`) — Cooperative resource yielding for process management
 - **Horus Designation** — Assigned as the Unified Findings Portal deity
+- **Horus Module** (`internal/horus/`) — Shared filesystem index, parallel walks, manifest cache (ADR-008)
 - **Modular Deities (v2.1.0)** — ADR-005 updated with independent deployment standards
 - **Ra (Hypervisor)** — v0.1.0-alpha overseer added to Pantheon architecture
 - **Seba Rebrand** — `internal/mapper/` → `internal/seba/` (high-performance mapping)
 - **Cross-Agent Referral Logic** — Initial implementation of inter-deity remediation referrals
 - **Independent Deployment** — Support for standalone deity installation (e.g., `npx thoth-init`)
 
+### Performance (Dogfooding-Driven)
+- **Ma'at Diff-Based Coverage** — 55s → 15ms (3,667× speedup); only tests changed packages
+- **Horus Shared Filesystem Index** — Walk once, all deities query; Weigh 15.6s → 7.2s (2.2×)
+- **Jackal WalkDir Migration** — `filepath.Walk` → `filepath.WalkDir` (avoids stat per file)
+- **Combined dirSizeAndCount** — Single walk replaces two separate walks per directory finding
+- **Pre-push Gate** — Total gate time 65s → 5s (13× faster)
+- **Feather Weight** — 69/100 → 81/100 over session
+
 ### Changed
 - **Pantheon Unification** — Standardized GEMINI.md, CLAUDE.md, and Portfolio Standard across all 5 repos
-- **Ma'at Governance** — Integrated pipeline monitoring and automated health checks
+- **Ma'at Governance** — Integrated pipeline monitoring, diff-based coverage default, `--full` flag
 - **Improved Logging** — Wired Go 1.21 `slog` into `ka` and `cleaner` cores for better diagnostics
 - **Release Pipeline** — GoReleaser brews section enabled with `HOMEBREW_TAP_TOKEN` cross-repo secret
+- **Weigh CLI** — Horus integration, `--fresh` flag for forcing index rebuild
 
 ### Fixed
 - **Missing Imports** — Resolved `undefined: logging` error in `internal/cleaner/safety.go`
 - **Domain Purge** — Replaced all instances of `sirsinexus.dev` with `sirsi.ai` in SirsiNexusApp
 - **MCP Versioning** — Corrected version reporting to match release tags
 - **gofmt** — Fixed formatting in `yield_test.go`
+- **.gitignore Collision** — Unanchored `pantheon` pattern was ignoring `cmd/pantheon/seba.go`
 
 
 ---

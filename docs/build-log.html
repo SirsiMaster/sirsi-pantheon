@@ -537,7 +537,7 @@
         <span class="hero-stat-label">Tests Passing</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">20</span>
+        <span class="hero-stat-value">21</span>
         <span class="hero-stat-label">Modules</span>
       </div>
       <div class="hero-stat">
@@ -855,9 +855,10 @@
           Only tests packages with changed files. Unchanged packages use cached coverage.
         </div>
         <div class="sprint-metrics">
-          <div class="metric"><span class="metric-val">1,500×</span><span class="metric-label">speedup</span></div>
-          <div class="metric"><span class="metric-val">6</span><span class="metric-label">platform binaries</span></div>
-          <div class="metric"><span class="metric-val">7</span><span class="metric-label">ADRs</span></div>
+          <div class="metric"><span class="metric-val">3,667×</span><span class="metric-label">Ma'at speedup</span></div>
+          <div class="metric"><span class="metric-val">2.2×</span><span class="metric-label">Weigh speedup</span></div>
+          <div class="metric"><span class="metric-val">8</span><span class="metric-label">ADRs</span></div>
+          <div class="metric"><span class="metric-val">81</span><span class="metric-label">Feather Weight</span></div>
         </div>
       </div>
 
@@ -912,9 +913,15 @@
     </div>
 
     <div class="benchmark-row">
-      <div class="benchmark-label"><span>Scan speed</span><span>27.3× faster</span></div>
+      <div class="benchmark-label"><span>Scan speed (dedup)</span><span>27.3× faster</span></div>
       <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="94%"></div></div>
       <div class="benchmark-footnote"><span>Before: 84 ms per batch</span><span>After: 3 ms per batch</span></div>
+    </div>
+
+    <div class="benchmark-row">
+      <div class="benchmark-label"><span>Weigh scan (Horus cached)</span><span>2.2× faster</span></div>
+      <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="54%"></div></div>
+      <div class="benchmark-footnote"><span>Before: 15.6 seconds</span><span>After: 7.2 seconds</span></div>
     </div>
 
     <div class="benchmark-row">
@@ -1077,6 +1084,58 @@
       <p style="color:var(--text-muted); font-size:0.78rem; margin-top:1.5rem; text-align:center;">
         Measured on Apple M4 Max, macOS Sequoia. All numbers independently verifiable.
         <a href="https://github.com/SirsiMaster/sirsi-pantheon/blob/main/docs/case-studies/maat-diff-coverage-speedup.md" style="color:var(--color-emerald-light);">Read the full case study →</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══ Horus — The Recursive Win ═══ -->
+  <section class="section">
+    <div class="section-header">
+      <p style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.15em; margin-bottom:0.5rem;">Architecture · Every Deity Wins If One Deity Wins</p>
+      <h2>👁️ Horus: Walk the Filesystem Once, Query Forever</h2>
+      <div class="gold-rule"></div>
+      <p>Three deities were independently walking the same directories. Now they share one index.</p>
+    </div>
+
+    <div style="max-width:880px; margin:0 auto;">
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:1.5rem; margin-bottom:2.5rem;">
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">7.2s</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">Weigh scan (cached)</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">was 15.6 seconds</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-gold);">5ms</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">per directory query</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">in-memory index lookup</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">1 walk</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">feeds all deities</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">was 3 independent walks</div>
+        </div>
+      </div>
+
+      <div style="background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-md); padding:1.5rem; margin-top:1rem;">
+        <p style="color:var(--text-primary); font-size:0.92rem; line-height:1.8; margin:0;">
+          <strong style="color:var(--color-gold);">The recursive win:</strong>
+          Horus indexes the filesystem once with parallel goroutines →
+          Jackal queries the index in 5ms instead of walking for 15s →
+          faster pre-push gate → more pushes per session → more dogfooding →
+          <strong style="color:var(--color-emerald-light);">more performance discoveries → better product.</strong>
+          The improvements compound. Every deity wins if one deity wins.
+        </p>
+        <p style="color:var(--text-primary); font-size:0.92rem; line-height:1.8; margin:1rem 0 0 0;">
+          <strong style="color:var(--color-emerald-light);">Phase 2 coming:</strong>
+          macOS FSEvents, Linux fanotify, and Windows USN Journal will make the index
+          incremental — tracking only what changed since the last scan.
+          Target: <strong>200–500ms</strong> for any deity.
+        </p>
+      </div>
+
+      <p style="color:var(--text-muted); font-size:0.78rem; margin-top:1.5rem; text-align:center;">
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/blob/main/docs/case-studies/horus-shared-index.md" style="color:var(--color-emerald-light);">Read the full Horus case study →</a> |
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/blob/main/docs/ADR-008-SHARED-FILESYSTEM-INDEX.md" style="color:var(--color-emerald-light);">ADR-008 →</a>
       </p>
     </div>
   </section>
