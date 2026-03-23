@@ -545,7 +545,7 @@
         <span class="hero-stat-label">All App Code</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">3</span>
+        <span class="hero-stat-value">6</span>
         <span class="hero-stat-label">Deities</span>
       </div>
     </div>
@@ -829,6 +829,38 @@
         </div>
       </div>
 
+      <div class="sprint">
+        <div class="sprint-dot"></div>
+        <span class="sprint-date">March 23 — Session 12</span>
+        <h3>Launch Execution + Dogfooding Discovery</h3>
+        <p class="sprint-body">
+          Released <strong>v0.4.0-alpha</strong> with Homebrew tap integration —
+          <code>brew tap SirsiMaster/tools && brew install sirsi-pantheon</code>.
+          GoReleaser auto-publishes the formula to <code>homebrew-tools/Formula/</code> on every tagged release.
+        </p>
+        <p class="sprint-body">
+          During release execution, discovered that <strong>Ma'at's pre-push hook took 55 seconds per push</strong> —
+          running full test coverage across all 17 packages even when only 1-2 files changed.
+          After 4 pushes (3 min 40 sec of waiting), implemented <strong>diff-based coverage</strong>.
+        </p>
+        <div class="callout callout-bug">
+          <span class="callout-icon">🐛</span>
+          <code>.gitignore</code> pattern <code>pantheon</code> was silently ignoring <code>cmd/pantheon/seba.go</code>
+          (matching any path containing "pantheon"). CI builds were failing since the Seba rebrand.
+          Fix: anchor with <code>/pantheon</code> to match root-level binary only.
+        </div>
+        <div class="callout callout-fix">
+          <span class="callout-icon">✅</span>
+          Ma'at diff-based coverage: <strong>55s → 36ms</strong> (1,500× speedup).
+          Only tests packages with changed files. Unchanged packages use cached coverage.
+        </div>
+        <div class="sprint-metrics">
+          <div class="metric"><span class="metric-val">1,500×</span><span class="metric-label">speedup</span></div>
+          <div class="metric"><span class="metric-val">6</span><span class="metric-label">platform binaries</span></div>
+          <div class="metric"><span class="metric-val">7</span><span class="metric-label">ADRs</span></div>
+        </div>
+      </div>
+
     </div>
   </section>
 
@@ -981,6 +1013,74 @@
     </div>
   </section>
 
+  <!-- ═══ Ma'at Dogfooding — Process Improvement ═══ -->
+  <section class="section">
+    <div class="section-header">
+      <p style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.15em; margin-bottom:0.5rem;">Dogfooding · Process Improvement Before Release</p>
+      <h2>🪶 Ma'at: 55 Seconds Was Destroying Productivity</h2>
+      <div class="gold-rule"></div>
+      <p>We found a product-killing performance bug by using our own tool. Fixed it in the same session.</p>
+    </div>
+
+    <div style="max-width:880px; margin:0 auto;">
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:1.5rem; margin-bottom:2.5rem;">
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">36ms</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">coverage check (diff mode)</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">was 55 seconds</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-gold);">1,536×</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">speedup</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">diff mode vs full scan</div>
+        </div>
+        <div class="neo-card" style="text-align:center; padding:1.5rem;">
+          <div style="font-size:2.2rem; font-weight:700; color:var(--color-emerald-light);">~5s</div>
+          <div style="color:var(--text-secondary); font-size:0.8rem; margin-top:0.25rem;">total pre-push gate</div>
+          <div style="color:var(--text-muted); font-size:0.7rem; margin-top:0.5rem;">was ~65 seconds</div>
+        </div>
+      </div>
+
+      <div class="benchmark-row">
+        <div class="benchmark-label"><span>Ma'at governance check (diff mode)</span><span>1,536× faster</span></div>
+        <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="99.9%"></div></div>
+        <div class="benchmark-footnote"><span>Before: 55.3 seconds</span><span>After: 36 milliseconds</span></div>
+      </div>
+
+      <div class="benchmark-row">
+        <div class="benchmark-label"><span>Pre-push gate — complete flow</span><span>13× faster</span></div>
+        <div class="benchmark-track"><div class="benchmark-fill emerald" data-width="92%"></div></div>
+        <div class="benchmark-footnote"><span>Before: ~65 seconds</span><span>After: ~5 seconds</span></div>
+      </div>
+
+      <div style="background:var(--card-bg); border:1px solid var(--card-border); border-radius:var(--radius-md); padding:1.5rem; margin-top:2rem;">
+        <p style="color:var(--text-primary); font-size:0.92rem; line-height:1.8; margin:0;">
+          <strong style="color:var(--color-gold);">The discovery:</strong> During v0.4.0-alpha release execution, every
+          <code>git push</code> triggered Ma'at, which ran <code>go test -cover ./...</code> across
+          <strong>all 17+ packages</strong>. After 4 pushes (3 min 40 sec of waiting), the insight landed:
+          <strong style="color:var(--color-emerald-light);">a governance tool that destroys productivity is worse than no governance at all.</strong>
+        </p>
+        <p style="color:var(--text-primary); font-size:0.92rem; line-height:1.8; margin:1rem 0 0 0;">
+          <strong style="color:var(--color-emerald-light);">The fix:</strong> Diff-based coverage.
+          Ma'at now uses <code>git diff</code> to detect which packages have changed <code>.go</code> files
+          and only tests those. Unchanged packages use cached coverage from
+          <code>~/.config/pantheon/maat/coverage-cache.json</code>.
+          Same verdicts, same accuracy — <strong>1,500× faster</strong>.
+        </p>
+        <p style="color:var(--text-primary); font-size:0.92rem; line-height:1.8; margin:1rem 0 0 0;">
+          <strong style="color:var(--color-gold);">The lesson:</strong> Most teams discover performance issues after users complain.
+          Pantheon found and fixed this during internal development — a direct benefit of building in public
+          and eating our own dog food.
+        </p>
+      </div>
+
+      <p style="color:var(--text-muted); font-size:0.78rem; margin-top:1.5rem; text-align:center;">
+        Measured on Apple M4 Max, macOS Sequoia. All numbers independently verifiable.
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/blob/main/docs/case-studies/maat-diff-coverage-speedup.md" style="color:var(--color-emerald-light);">Read the full case study →</a>
+      </p>
+    </div>
+  </section>
+
   <!-- ═══ Honest ═══ -->
   <section class="status-section section-padded">
     <div style="max-width:880px; margin:0 auto;">
@@ -994,7 +1094,7 @@
         <div class="todo-item"><span class="todo-item-label">Windows support is incomplete</span><span class="todo-badge planned">Planned</span></div>
         <div class="todo-item"><span class="todo-item-label">No automatic update mechanism yet</span><span class="todo-badge planned">Planned</span></div>
         <div class="todo-item"><span class="todo-item-label">Visual app still being polished</span><span class="todo-badge progress">In Progress</span></div>
-        <div class="todo-item"><span class="todo-item-label">No structured logging (uses fmt.Printf)</span><span class="todo-badge planned">Planned</span></div>
+        <div class="todo-item"><span class="todo-item-label">Structured logging implemented (Go 1.21 slog)</span><span class="todo-badge progress">Done</span></div>
       </div>
     </div>
   </section>
