@@ -100,6 +100,7 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(scalesCmd)
 	rootCmd.AddCommand(mirrorCmd)
+	rootCmd.AddCommand(maatCmd)
 }
 
 func main() {
