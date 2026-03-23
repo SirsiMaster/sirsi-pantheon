@@ -1,8 +1,9 @@
 # ‍‍‍𓂀 Sirsi Anubis — Continuation Prompt
-**Date:** March 22, 2026 (Saturday, 9:25 PM ET)
-**Session:** Statistics Audit + Production Polish + Launch
+**Date:** March 23, 2026 (Sunday, 4:08 AM ET)
+**Session:** Platform Wiring + CI Fix + Pipeline Governance
 **Repo:** `github.com/SirsiMaster/sirsi-anubis`
 **Path:** `/Users/thekryptodragon/Development/sirsi-anubis`
+**CI Status:** ✅ Green (first passing run after 5 consecutive failures)
 
 ---
 
@@ -17,6 +18,7 @@
 7. **ADR-003 is ACTIVE** — every release must update BUILD_LOG.md, build-log.html, CHANGELOG, Thoth.
 8. **Rule A14 (Statistics Integrity)** — every public number must be independently verifiable.
 9. **Rule A15 (Session Definition)** — a session = one AI conversation between continuation prompts.
+10. **Pre-push hook is ACTIVE** — `.githooks/pre-push` runs golangci-lint before every push. Do NOT skip it.
 
 ---
 
@@ -115,6 +117,7 @@ If truncation detected, wrap immediately.
 ### Infrastructure
 - CI: `.github/workflows/ci.yml` (lint + test + build)
 - Release: `.github/workflows/release.yml` (goreleaser on v* tag push)
+- **Pre-push hook**: `.githooks/pre-push` (gofmt + go vet + golangci-lint + go build)
 - v0.3.0-alpha released on GitHub (6 binaries + checksums)
 - Homebrew tap: `SirsiMaster/homebrew-tools` (repo exists, needs PAT)
 - VS Code extension scaffold: `extensions/vscode/`
@@ -136,14 +139,8 @@ If truncation detected, wrap immediately.
 
 ## What's Next
 
-### Priority 1: Wire Platform Interface
-The Platform interface exists but the cleaner module still uses `runtime.GOOS` checks directly.
-```
-- Replace runtime.GOOS checks in cleaner/safety.go with platform.Current()
-- Replace moveToTrash() calls with platform.Current().MoveToTrash()
-- Replace osascript folder picker in mirror/server.go with platform.Current().PickFolder()
-- Update tests to use platform.Set(&Mock{}) for cross-platform testing
-```
+### Priority 1: ✅ DONE — Platform Interface Wired (Session 8)
+Completed in session 8. Cleaner and mirror now use `platform.Current()` instead of `runtime.GOOS`.
 
 ### Priority 2: Homebrew Tap
 ```
@@ -160,14 +157,24 @@ The Platform interface exists but the cleaner module still uses `runtime.GOOS` c
 - Scanner edge cases: permission errors, symlink loops
 ```
 
-### Priority 4: Launch Execution
+### Priority 4: Anubis Maat — Pipeline Purifier (NEW)
+```
+- internal/maat/monitor.go — poll gh run list for failures
+- internal/maat/diagnose.go — parse failure logs, categorize errors
+- internal/maat/fix.go — auto-fix lint (gofmt, misspell, goimports)
+- internal/maat/report.go — format actionable reports
+- cmd/anubis/maat.go — CLI command
+- Modes: --check (diagnose), --fix (auto-remediate), --watch (daemon)
+```
+
+### Priority 5: Launch Execution
 ```
 - Product Hunt submission (copy in docs/LAUNCH_COPY.md)
 - Hacker News Show HN (copy in docs/LAUNCH_COPY.md)
 - Investor demo rehearsal (script in docs/INVESTOR_DEMO.md)
 ```
 
-### Priority 5: Production Polish
+### Priority 6: Production Polish
 ```
 - Convert pitch deck stub to full HTML slide
 - VS Code extension completion

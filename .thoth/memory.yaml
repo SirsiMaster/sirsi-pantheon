@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Anubis
 # Read this FIRST before any source files.
-# Last updated: 2026-03-22T21:25:00-04:00
+# Last updated: 2026-03-23T04:08:00-04:00
 
 ## Identity
 project: sirsi-anubis
@@ -63,9 +63,17 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, thoth_
 # - Ka ghost hunting is macOS-only (searches .app bundles, LaunchServices)
 # - Scan rules are macOS/Linux only — no Windows AppData paths yet
 # - Homebrew tap disabled (needs PAT for cross-repo access)
-# - Platform interface exists but not yet wired into cleaner module
 
 ## Recent Changes (most recent first)
+# 2026-03-23: Session 8 — platform wiring + CI lint fix + pre-push gate
+#   Wired Platform interface into cleaner (3 runtime.GOOS → platform.Current())
+#   Wired Platform interface into mirror (OpenBrowser + PickFolder)
+#   Removed duplicated moveToTrash(), protectedPrefixes from cleaner
+#   Tests use platform.Set(&Mock{}) for cross-platform testing
+#   Fixed 8 golangci-lint errors (gofmt, govet/unusedwrite, misspell) across 5 files
+#   CI green after 5 consecutive failures
+#   Pre-push hook: .githooks/pre-push (gofmt + go vet + golangci-lint + go build)
+#   Proposed: anubis maat — pipeline purifier (CI monitoring + auto-remediation)
 # 2026-03-22: Session 7 — statistics audit + production polish
 #   Structured logging: internal/logging/ (slog, --verbose, --quiet, --json)
 #   Platform abstraction: internal/platform/ (Darwin, Linux, Mock)

@@ -9,9 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ## [Unreleased]
 ### Planned
 - P0: Cleaner test coverage to 80%+ (safety-critical)
-- P0: Scanner edge case tests (permissions, symlink loops)
-- P1: Wire Platform interface into cleaner module (replace runtime.GOOS checks)
+- P0: Scanner edge cases (permissions, symlink loops)
 - P1: Homebrew tap (needs PAT for cross-repo access)
+- P1: `anubis maat` — pipeline purifier (CI monitoring + auto-fix + reporting)
 - P2: npm publish thoth-init, VS Code extension
 
 ---
@@ -87,6 +87,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Rules canonized** — A14 (Statistics Integrity), A15 (Session Definition)
 - **GitHub Release** — v0.3.0-alpha published with 6 binaries
 - **`SirsiMaster/homebrew-tools`** repo created (pending PAT setup)
+
+### Session 8 (2026-03-23)
+- **Platform interface wired** into cleaner and mirror modules (Priority 1 complete)
+  - Replaced 3 `runtime.GOOS` checks in `cleaner/safety.go` with `platform.Current()`
+  - Replaced `moveToTrash()` and `protectedPrefixes` map with platform interface calls
+  - Replaced `OpenBrowser()` switch and `handlePickFolder` osascript in `mirror/server.go`
+  - Tests use `platform.Set(&Mock{})` for cross-platform testing
+- **CI lint fixes** — resolved 8 lint errors that broke 5 consecutive CI runs
+  - `gofmt`: alignment in `ignore_test.go`, `registry_test.go`
+  - `govet/unusedwrite`: struct assertions in `scarab_test.go`, `sight_test.go`
+  - `misspell`: "cancelled" → "canceled" in platform package
+- **Pre-push hook** (`.githooks/pre-push`) — mirrors CI checks locally
+  - Runs gofmt + go vet + golangci-lint + go build before every push
+  - Prevents lint issues from ever reaching the pipeline
+- **Maat proposed** — pipeline purifier module (CI monitoring + auto-remediation)
 
 
 ## [0.2.0-alpha] — 2026-03-25 (Ship Week Day 5)

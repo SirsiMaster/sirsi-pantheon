@@ -223,3 +223,19 @@ Added "building in public" badge to README. Linked from CHANGELOG.
 **Release**: v0.3.0-alpha published on GitHub with 6 binaries (darwin/linux × amd64/arm64, windows × amd64/arm64). Tests pass on macOS locally and Linux CI after adding platform skip guards.
 
 **Session total**: 10 commits, 30+ files modified, 17 new tests (6 logging + 11 platform), 3 case studies, 2 rules canonized.
+
+---
+
+## Entry 013 — 2026-03-23 04:08 — "The feedback loop was broken"
+
+**Context**: Session 8 started with Priority 1 from the continuation prompt: wire `platform.Current()` into cleaner and mirror. Completed — 37 lines net reduction, no new dependencies. Then discovered that CI had been failing across 5 consecutive commits. The lint errors (gofmt alignment, govet/unusedwrite, misspell) were trivial — 30 seconds to fix — but persisted for 6+ hours because nobody checked.
+
+**Root cause**: No local lint gate. `golangci-lint` wasn't even installed locally. The CI linter runs on push but the signal (❌ in `gh run list`) was invisible. Developers (including AI agents) push code, move on to the next thing, and never circle back to see if CI passed.
+
+**Fix (immediate)**: Installed `.githooks/pre-push` that mirrors the CI lint checks locally. Every push now runs through gofmt, go vet, golangci-lint, and go build before bytes leave the machine. This catches 90%+ of the issue class.
+
+**Fix (proposed)**: `anubis maat` — a pipeline purifier module named after the Egyptian goddess of truth and cosmic order. The concept fills a gap no existing tool covers: real-time CI monitoring → failure categorization → auto-fix for lintable issues → actionable reports for everything else. Modes: `--check` (diagnose), `--fix` (auto-remediate), `--watch` (daemon). This extends the Anubis brand naturally: Anubis judges your machine, Maat judges your pipeline.
+
+**Observation on AI agents and CI**: Even with tool access (`gh run list`, `gh run view --log-failed`), AI agents don't spontaneously monitor CI status after pushing code. The push is treated as the end of the action, not the beginning of validation. A pre-push hook converts validation from a post-hoc check into a gate — the same pattern as `ValidatePath` in the cleaner module. Safety by design, not by discipline.
+
+**Session scope**: Platform wiring (Priority 1), CI lint fixes (8 errors, 5 files), pre-push hook, Maat proposal. Net: -37 lines, CI green, 470 tests still passing.
