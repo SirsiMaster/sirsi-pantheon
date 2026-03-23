@@ -144,12 +144,21 @@ func (c *CoverageAssessor) runFullCoverage() (string, error) {
 
 // runDiffCoverage only tests packages with changed .go files.
 // Unchanged packages use cached coverage values.
+// Falls back to full coverage when cache is incomplete.
 func (c *CoverageAssessor) runDiffCoverage() (string, error) {
 	changedPkgs := c.changedPackages()
 
 	// Load cached coverage for unchanged packages.
 	cache := c.coverageCachePath()
 	cachedResults, _ := loadCoverageCache(cache)
+
+	// If the cache is incomplete (doesn't cover all threshold modules),
+	// fall back to a full scan to populate it. This prevents "no coverage
+	// data found" verdicts from dragging down the feather weight.
+	if !c.cacheCoversThresholds(cachedResults) {
+		return c.runFullCoverage()
+	}
+
 	cachedMap := make(map[string]CoverageResult)
 	for _, r := range cachedResults {
 		cachedMap[r.Package] = r
@@ -209,6 +218,23 @@ func (c *CoverageAssessor) runDiffCoverage() (string, error) {
 	}
 
 	return strings.Join(mergedLines, "\n"), nil
+}
+
+// cacheCoversThresholds checks if the cache has data for all threshold modules.
+func (c *CoverageAssessor) cacheCoversThresholds(cached []CoverageResult) bool {
+	if len(cached) == 0 {
+		return false
+	}
+	cachedSet := make(map[string]bool)
+	for _, r := range cached {
+		cachedSet[r.Package] = true
+	}
+	for _, t := range c.Thresholds {
+		if !cachedSet[t.Module] {
+			return false
+		}
+	}
+	return true
 }
 
 // changedPackages uses git diff to find which internal/ packages have changed.

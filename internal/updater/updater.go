@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	// GitHubReleasesAPI is the public endpoint for version checks.
-	GitHubReleasesAPI = "https://api.github.com/repos/SirsiMaster/sirsi-pantheon/releases/latest"
+	// GitHubReleasesAPI is the endpoint for listing all releases.
+	GitHubReleasesAPI = "https://api.github.com/repos/SirsiMaster/sirsi-pantheon/releases?per_page=10"
 
 	// AdvisoryURL is checked for post-release roadblocks and known issues.
 	AdvisoryURL = "https://raw.githubusercontent.com/SirsiMaster/sirsi-pantheon/main/ADVISORY.json"
@@ -92,8 +93,8 @@ func (c *Client) Check(currentVersion string) *UpdateResult {
 		CurrentVersion: currentVersion,
 	}
 
-	// Check latest release
-	release, err := c.fetchLatestRelease()
+	// Fetch all releases and find the newest one
+	release, err := c.fetchNewestRelease()
 	if err != nil {
 		result.Error = err
 		return result
@@ -102,8 +103,8 @@ func (c *Client) Check(currentVersion string) *UpdateResult {
 	result.LatestVersion = strings.TrimPrefix(release.TagName, "v")
 	result.ReleaseURL = release.HTMLURL
 
-	// Compare versions (simple string comparison for now)
-	if result.LatestVersion != currentVersion && currentVersion != "dev" {
+	// Only signal update if the remote version is actually newer
+	if currentVersion != "dev" && compareVersions(result.LatestVersion, currentVersion) > 0 {
 		result.UpdateAvailable = true
 	}
 
@@ -117,11 +118,13 @@ func (c *Client) Check(currentVersion string) *UpdateResult {
 	return result
 }
 
-// fetchLatestRelease gets the latest release from GitHub.
-func (c *Client) fetchLatestRelease() (*Release, error) {
+// fetchNewestRelease fetches all releases and returns the one with the highest
+// semver version. This correctly handles pre-releases (which GitHub's /latest
+// endpoint skips), preventing false "downgrade" notifications.
+func (c *Client) fetchNewestRelease() (*Release, error) {
 	resp, err := c.HTTPClient.Get(c.ReleasesURL)
 	if err != nil {
-		return nil, fmt.Errorf("fetch release: %w", err)
+		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -129,12 +132,27 @@ func (c *Client) fetchLatestRelease() (*Release, error) {
 		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
 
-	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode release: %w", err)
+	var releases []Release
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
 	}
 
-	return &release, nil
+	if len(releases) == 0 {
+		return nil, fmt.Errorf("no releases found")
+	}
+
+	// Find the release with the highest version.
+	best := &releases[0]
+	for i := 1; i < len(releases); i++ {
+		r := &releases[i]
+		rVer := strings.TrimPrefix(r.TagName, "v")
+		bVer := strings.TrimPrefix(best.TagName, "v")
+		if compareVersions(rVer, bVer) > 0 {
+			best = r
+		}
+	}
+
+	return best, nil
 }
 
 // fetchAdvisories checks for post-release roadblocks and known issues.
@@ -228,4 +246,64 @@ func FormatAdvisories(advisories []Advisory) string {
 		}
 	}
 	return sb.String()
+}
+
+// compareVersions compares two semver-like version strings (e.g., "0.4.0-alpha").
+// Returns: positive if a > b, negative if a < b, 0 if equal.
+// Handles major.minor.patch and optional pre-release suffix.
+func compareVersions(a, b string) int {
+	aParts, aPre := parseVersion(a)
+	bParts, bPre := parseVersion(b)
+
+	// Compare numeric parts (major, minor, patch)
+	for i := 0; i < 3; i++ {
+		av, bv := 0, 0
+		if i < len(aParts) {
+			av = aParts[i]
+		}
+		if i < len(bParts) {
+			bv = bParts[i]
+		}
+		if av != bv {
+			return av - bv
+		}
+	}
+
+	// Numeric parts are equal — compare pre-release.
+	// No pre-release > any pre-release (1.0.0 > 1.0.0-alpha).
+	switch {
+	case aPre == "" && bPre == "":
+		return 0
+	case aPre == "":
+		return 1 // a is stable, b has pre-release
+	case bPre == "":
+		return -1 // b is stable, a has pre-release
+	default:
+		// Both have pre-release — compare alphabetically.
+		// This gives correct ordering: alpha < beta < rc
+		if aPre < bPre {
+			return -1
+		}
+		if aPre > bPre {
+			return 1
+		}
+		return 0
+	}
+}
+
+// parseVersion splits "0.4.0-alpha" into ([0, 4, 0], "alpha").
+func parseVersion(v string) ([]int, string) {
+	preRelease := ""
+	if idx := strings.IndexByte(v, '-'); idx != -1 {
+		preRelease = v[idx+1:]
+		v = v[:idx]
+	}
+
+	parts := strings.Split(v, ".")
+	nums := make([]int, len(parts))
+	for i, p := range parts {
+		n, _ := strconv.Atoi(p)
+		nums[i] = n
+	}
+	return nums, preRelease
 }
