@@ -69,20 +69,22 @@ archives:
       - configs/example_policy.yaml
       - configs/workspace_template.yaml
 
-brews:
-  - name: sirsi-anubis
-    repository:
-      owner: SirsiMaster
-      name: homebrew-tools
-    directory: Formula
-    homepage: https://github.com/SirsiMaster/sirsi-anubis
-    description: "𓂀 Infrastructure hygiene for the AI era"
-    license: MIT
-    install: |
-      bin.install "anubis"
-      bin.install "anubis-agent"
-    test: |
-      system "#{bin}/anubis", "version"
+# TODO: Enable Homebrew tap after setting up a PAT with cross-repo write access.
+# The default GITHUB_TOKEN cannot push to SirsiMaster/homebrew-tools.
+# brews:
+#   - name: sirsi-anubis
+#     repository:
+#       owner: SirsiMaster
+#       name: homebrew-tools
+#     directory: Formula
+#     homepage: https://github.com/SirsiMaster/sirsi-anubis
+#     description: "𓂀 Infrastructure hygiene for the AI era"
+#     license: MIT
+#     install: |
+#       bin.install "anubis"
+#       bin.install "anubis-agent"
+#     test: |
+#       system "#{bin}/anubis", "version"
 
 checksum:
   name_template: checksums.txt
