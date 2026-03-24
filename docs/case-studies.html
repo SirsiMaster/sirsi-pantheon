@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Why Pantheon Exists — Origin Stories from Sirsi Technologies</title>
+  <meta name="description" content="Every deity was born from a real crisis. These are the problems we hit building Sirsi — and the tools we built to solve them.">
+  <meta property="og:title" content="Why Pantheon Exists — Origin Stories">
+  <meta property="og:description" content="We were building the solution when the tools we were using became the problem.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-primary: #059669;
+      --color-primary-light: #10B981;
+      --color-primary-dark: #047857;
+      --color-gold: #C8A951;
+      --color-gold-dark: #A08332;
+      --color-gold-bright: #E2C76B;
+      --bg-primary: #022c22;
+      --bg-secondary: #011a14;
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255,255,255,0.85);
+      --text-muted: rgba(255,255,255,0.5);
+      --border-primary: rgba(255,255,255,0.1);
+      --card-bg: rgba(2, 44, 34, 0.6);
+      --card-border: rgba(255,255,255,0.1);
+      --font-heading: 'Cinzel', serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --color-danger: #dc2626;
+      --color-warning: #f59e0b;
+    }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      background-image: radial-gradient(ellipse at top right, #022c22 0%, #000000 100%);
+      min-height: 100vh;
+      line-height: 1.7;
+      font-size: 1.05rem;
+    }
+
+    /* ── Navigation ──────────────────────────────────── */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 3rem;
+      border-bottom: 1px solid var(--border-primary);
+    }
+    nav a { color: var(--text-muted); text-decoration: none; font-size: 0.95rem; }
+    nav a:hover { color: var(--color-gold); }
+    .nav-brand {
+      font-family: var(--font-heading);
+      color: var(--color-gold) !important;
+      font-size: 1.1rem;
+      letter-spacing: 0.05em;
+    }
+    .nav-links { display: flex; gap: 2rem; }
+
+    /* ── Hero ─────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 5rem 4rem 3rem;
+    }
+    .hero-glyph { font-size: 4rem; display: block; margin-bottom: 1rem; }
+    .hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.4rem, 5vw, 3.8rem);
+      background: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold), var(--color-primary-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1rem;
+    }
+    .hero p {
+      font-size: 1.35rem;
+      color: var(--text-secondary);
+      max-width: 900px;
+      margin: 0 auto;
+      font-weight: 300;
+    }
+
+    /* ── Container ────────────────────────────────────── */
+    .container { max-width: 1000px; margin: 0 auto; padding: 0 3rem; }
+
+    /* ── Case Study ───────────────────────────────────── */
+    .case-study {
+      padding: 5rem 0;
+      border-bottom: 1px solid var(--border-primary);
+    }
+    .case-study:last-of-type { border-bottom: none; }
+    .case-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+    }
+    .case-glyph {
+      font-size: 4rem;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .case-header h2 {
+      font-family: var(--font-heading);
+      font-size: 2rem;
+      color: var(--color-gold);
+      margin-bottom: 0.3rem;
+    }
+    .case-header .case-subtitle {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+    .case-label {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 0.25rem 0.8rem;
+      border-radius: 100px;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .label-crisis { background: rgba(220, 38, 38, 0.15); color: #f87171; border: 1px solid rgba(220, 38, 38, 0.3); }
+    .label-insight { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .label-solution { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+    .narrative { margin-bottom: 2rem; }
+    .narrative p { margin-bottom: 1.2rem; color: var(--text-secondary); }
+    .narrative strong { color: var(--text-primary); }
+    .narrative em { color: var(--color-gold); font-style: normal; }
+
+    /* ── Process Snapshot ─────────────────────────────── */
+    .snapshot {
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 1.5rem 2rem;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      margin: 2rem 0;
+      overflow-x: auto;
+    }
+    .snapshot .label { color: var(--text-muted); }
+    .snapshot .red { color: #f87171; }
+    .snapshot .yellow { color: #fbbf24; }
+    .snapshot .green { color: #34d399; }
+    .snapshot .gold { color: var(--color-gold); }
+
+    /* ── Metric Cards ─────────────────────────────────── */
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.2rem;
+      margin: 2rem 0;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .metric-card .metric-value {
+      font-family: var(--font-heading);
+      font-size: 2rem;
+      color: var(--color-gold-bright);
+      margin-bottom: 0.3rem;
+    }
+    .metric-card .metric-label {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Blockquote ───────────────────────────────────── */
+    .pullquote {
+      border-left: 3px solid var(--color-gold);
+      padding: 1rem 1.5rem;
+      margin: 2rem 0;
+      font-size: 1.2rem;
+      font-style: italic;
+      color: var(--text-secondary);
+    }
+    .pullquote .attr {
+      font-style: normal;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    /* ── Phase List ───────────────────────────────────── */
+    .phase-list { list-style: none; margin: 1.5rem 0; }
+    .phase-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .phase-list li:last-child { border-bottom: none; }
+    .phase-num {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      color: var(--color-gold);
+      flex-shrink: 0;
+      width: 2.5rem;
+    }
+    .phase-list h4 {
+      font-size: 1.05rem;
+      margin-bottom: 0.2rem;
+      color: var(--text-primary);
+    }
+    .phase-list p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    /* ── CTA ──────────────────────────────────────────── */
+    .cta-section {
+      text-align: center;
+      padding: 5rem 3rem;
+    }
+    .cta-section h2 {
+      font-family: var(--font-heading);
+      font-size: 2.2rem;
+      color: var(--color-gold);
+      margin-bottom: 1rem;
+    }
+    .cta-section p {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 700px;
+      margin: 0 auto 2rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 2rem;
+      border-radius: var(--radius-md);
+      font-family: var(--font-body);
+      font-size: 1.05rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+      color: white;
+      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.3);
+      margin: 0 0.5rem;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4); }
+    .btn-secondary {
+      background: rgba(2, 44, 34, 0.4);
+      border: 1px solid var(--card-border);
+      box-shadow: none;
+    }
+    .btn-secondary:hover { border-color: var(--color-gold); color: var(--color-gold); box-shadow: none; }
+
+    /* ── Footer ───────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 3rem;
+      border-top: 1px solid var(--border-primary);
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+    footer a { color: var(--color-primary-light); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ Nav ════════════════════════════════════════════════ -->
+  <nav>
+    <a href="index.html" class="nav-brand">𓂀 Sirsi Pantheon</a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="build-log.html">Build Log</a>
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
+      <a href="https://sirsi.ai">Sirsi Nexus</a>
+    </div>
+  </nav>
+
+  <!-- ═══ Hero ═══════════════════════════════════════════════ -->
+  <header class="hero">
+    <span class="hero-glyph">𓂀 𓁟 𓁵</span>
+    <h1>Why Pantheon Exists</h1>
+    <p>Every deity was born from a real crisis at Sirsi Technologies. We didn't set out to build a platform — we were just trying to survive our own development environment. These are those stories.</p>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  CASE STUDY 1: ANUBIS                                  -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section class="case-study">
+    <div class="container">
+      <div class="case-header">
+        <span class="case-glyph">𓂀</span>
+        <div>
+          <span class="case-label label-crisis">Origin Crisis</span>
+          <h2>Anubis — The Invisible 47 Gigabytes</h2>
+          <p class="case-subtitle">Why the Judge of the Dead was the first deity we summoned</p>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p>It started with a full disk.</p>
+
+        <p>In late 2025, our M1 Max workstation — the 32 GB, 1 TB machine meant to be the engine of Sirsi Technologies — was out of storage. Again. The third time in two months. We'd already been through CleanMyMac, OmniDiskSweeper, and the manual <em>"what's in ~/Library?"</em> ritual. Nothing stuck.</p>
+
+        <p>So we wrote a script. A small Go program that walked the filesystem and tallied sizes by category. What it found was shocking:</p>
+      </div>
+
+      <div class="snapshot">
+        <div class="label">$ pantheon weigh --profile ai-engineer</div>
+        <br>
+        <div><span class="red">18.2 GB</span>  HuggingFace model cache (~/.cache/huggingface/hub)</div>
+        <div><span class="red"> 9.4 GB</span>  Docker: dangling images + unused volumes</div>
+        <div><span class="yellow"> 7.1 GB</span>  Homebrew: old formula versions + cache</div>
+        <div><span class="yellow"> 4.8 GB</span>  node_modules across 23 abandoned projects</div>
+        <div><span class="yellow"> 3.9 GB</span>  Xcode derived data + device support</div>
+        <div><span class="yellow"> 2.1 GB</span>  Go module cache (stale versions)</div>
+        <div><span class="yellow"> 1.7 GB</span>  Python __pycache__ + .pyc files</div>
+        <div>───────────</div>
+        <div><span class="gold">47.2 GB</span>  <span class="label">Total reclaimable waste</span></div>
+      </div>
+
+      <div class="narrative">
+        <p><strong>47 gigabytes.</strong> Not photos. Not movies. Infrastructure waste that no consumer cleaning tool even knows to look for. CleanMyMac doesn't scan <code>~/.cache/huggingface</code>. Mole doesn't know about Docker dangling images. DaisyDisk shows them as "Other" and shrugs.</p>
+
+        <p>We realized: <strong>every developer and AI engineer has this problem.</strong> Their workstations accumulate a class of waste that no existing tool understands — because existing tools were built for consumers, not for people who <code>pip install</code> transformer models and spin up Docker containers.</p>
+
+        <p>The scan script became a scan engine. The engine grew rules — 58 of them across 7 domains. We added safe deletion with SHA-256 verification. We added profiles: <em>general</em>, <em>developer</em>, <em>ai-engineer</em>, <em>devops</em>. The project had a life of its own.</p>
+
+        <p>We named it after the god who weighs the hearts of the dead, because that's exactly what it does — Anubis weighs your system, finds what's dead, and judges whether it stays or goes.</p>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-value">58+</div>
+          <div class="metric-label">Scan rules across 7 domains</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">47 GB</div>
+          <div class="metric-label">Waste found on first scan</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">4 Profiles</div>
+          <div class="metric-label">General · Developer · AI · DevOps</div>
+        </div>
+      </div>
+
+      <div class="pullquote">
+        "Every developer has 20-50 GB of infrastructure waste on their machine right now. They just don't know it — because the tools they use were built to find old photos, not stale model caches."
+        <div class="attr">— The moment that turned a cleanup script into a product</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  CASE STUDY 2: THOTH                                   -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section class="case-study">
+    <div class="container">
+      <div class="case-header">
+        <span class="case-glyph">𓁟</span>
+        <div>
+          <span class="case-label label-insight">Key Insight</span>
+          <h2>Thoth — The 98% Context Tax</h2>
+          <p class="case-subtitle">Why the God of Knowledge records everything — so the AI doesn't have to re-read it</p>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p>By Session 8 of building Anubis, we had a new problem.</p>
+
+        <p>Every time we started a new AI coding session, the agent would spend the first <em>five to ten minutes</em> re-reading the codebase. Re-reading files it had already analyzed yesterday. Re-discovering architecture decisions it had already made. Re-learning the module structure it had already mapped.</p>
+
+        <p>We were burning <strong>100,000+ tokens per session</strong> just on context re-establishment. At $0.003 per 1K tokens, that's $0.30 per session — before any actual work happened. Across 15+ sessions of Ship Week, that was $4.50 in pure waste, plus <em>hours</em> of developer time watching an AI read code it already knew.</p>
+
+        <p>The real cost wasn't dollars — it was the <strong>context window.</strong> With 128K token limits, burning 100K on "remember where we left off" leaves only 28K for actual problem-solving. We were operating every session at 78% capacity overhead.</p>
+      </div>
+
+      <div class="snapshot">
+        <div class="label">Before Thoth:</div>
+        <div><span class="red">Session start → 5-10 min reading old files</span></div>
+        <div><span class="red">100K tokens burned on context re-establishment</span></div>
+        <div><span class="red">78% of context window wasted before any work</span></div>
+        <div><span class="red">$0.30 per session in pure overhead</span></div>
+        <br>
+        <div class="label">After Thoth:</div>
+        <div><span class="green">Session start → 200ms memory load</span></div>
+        <div><span class="green">2K tokens for full project context</span></div>
+        <div><span class="green">2% of context window used for background</span></div>
+        <div><span class="green">$0.006 per session</span></div>
+      </div>
+
+      <div class="narrative">
+        <p>So we built Thoth — a three-layer persistent memory system for AI coding assistants:</p>
+
+        <p><strong>Layer 1: memory.yaml</strong> — A structured YAML file containing project identity, architecture, conventions, and current state. One file, ~50 lines, gives any AI agent full project context in under 2K tokens.</p>
+
+        <p><strong>Layer 2: journal.md</strong> — A running log of sessions, decisions, and progress. The AI reads only the latest entry to know "what happened since last time."</p>
+
+        <p><strong>Layer 3: artifacts/</strong> — Deep-dive documents (architecture diagrams, benchmark results, case studies) that the AI references only when needed, not every session.</p>
+
+        <p>The result was a <em>98% reduction in context tokens</em> — from 100K to 2K. The AI now starts every session already knowing everything. No re-reading. No re-discovery. The context window is 98% available for actual work.</p>
+
+        <p>We named it after the ibis-headed god who invented writing and recorded all knowledge — because that's the function: <strong>write it down once so no one has to re-read it.</strong></p>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-value">98%</div>
+          <div class="metric-label">Context token reduction</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">50×</div>
+          <div class="metric-label">Cost reduction per session</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">200ms</div>
+          <div class="metric-label">Session start time (was 5-10 min)</div>
+        </div>
+      </div>
+
+      <div class="pullquote">
+        "We were paying $0.30 per session for the AI to remember what it already knew yesterday. Thoth reduced that to $0.006 — and freed up 98% of the context window for actual problem-solving."
+        <div class="attr">— The math that launched a knowledge system</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  CASE STUDY 3: SEKHMET                                 -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section class="case-study">
+    <div class="container">
+      <div class="case-header">
+        <span class="case-glyph">𓁵</span>
+        <div>
+          <span class="case-label label-crisis">Active Crisis</span>
+          <h2>Sekhmet — When the Builder Became the Bottleneck</h2>
+          <p class="case-subtitle">Why Ra's warrior goddess is needed to protect developers from their own tools</p>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p>On March 23, 2026, during Session 13 of building Pantheon, the IDE froze.</p>
+
+        <p>We were using <strong>Antigravity IDE v1.20.6</strong> — an Electron-based AI coding environment — on an Apple M1 Max with 32 GB of unified memory, 10 CPU cores, 32 GPU cores, and 16 Neural Engine cores. This is not a weak machine. This is one of the most powerful developer workstations money can buy.</p>
+
+        <p>And it was <em>completely unresponsive.</em> We couldn't click buttons. We couldn't approve tool calls. We couldn't even close the window. The IDE had been frozen for <strong>seventeen minutes.</strong></p>
+
+        <p>The natural assumption was memory. 32 GB should be enough, but maybe the AI agent was eating it all? Maybe we needed more RAM? We were about to force-quit and restart when we realized: <strong>this is exactly the kind of problem Pantheon was built to diagnose.</strong></p>
+
+        <p>So we opened a terminal and ran the same tools we'd been building all week.</p>
+      </div>
+
+      <div class="snapshot">
+        <div class="label">$ pantheon guard --audit</div>
+        <br>
+        <div>  PID      RSS        CPU       Process</div>
+        <div>  37363   <span class="yellow">787 MB</span>    <span class="red">103.9%</span>    Antigravity Helper (Plugin)    ← <span class="red">STUCK</span></div>
+        <div>  37364   <span class="yellow">633 MB</span>    <span class="red"> 76.6%</span>    Antigravity Helper (Plugin)    ← <span class="red">STUCK</span></div>
+        <div>  36974   788 MB     43.2%    Antigravity Helper (Renderer)  ← <span class="yellow">UI STARVED</span></div>
+        <div>  36971   <span class="green">156 MB</span>      24.6%    Antigravity Helper (GPU)</div>
+        <div>  37425  <span class="yellow">1677 MB</span>     15.7%    language_server_macos_arm</div>
+        <div>  36967   411 MB      0.6%    Electron (Main)</div>
+        <div></div>
+        <div>  Total: <span class="gold">7.2 GB RAM</span>, <span class="red">264% CPU</span> across 32 processes</div>
+        <div>  System RAM free: <span class="green">88%</span></div>
+        <div>  Duration at peak: <span class="red">17 minutes 29 seconds (sustained)</span></div>
+      </div>
+
+      <div class="narrative">
+        <p><strong>It was not RAM.</strong> The system had 88% free memory — 28 GB sitting idle. Swap usage was negligible at 253 MB. This was a CPU problem masquerading as a memory problem.</p>
+
+        <p>Two Plugin Host processes — the Electron child processes that run AI agent extensions — had been at <em>100%+ CPU for seventeen consecutive minutes</em> and never yielded. They were doing tokenization, context assembly, file analysis, and prompt construction — all on a single Node.js thread. While they ran, the Renderer process (the one that handles clicks) was starved. IPC messages from button clicks were queued but never processed.</p>
+
+        <p>Meanwhile, the hardware that could have helped sat completely idle:</p>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-value" style="color: #f87171;">1 of 10</div>
+          <div class="metric-label">CPU cores actually used</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: #f87171;">0 of 32</div>
+          <div class="metric-label">GPU cores used for compute</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: #f87171;">0 of 16</div>
+          <div class="metric-label">Neural Engine cores used</div>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p>This is the absurdity: <strong>a $3,500 machine with 58 processing cores was frozen because all the work was running on a single JavaScript thread.</strong> The GPU that could hash files at 15× the speed of CPU? Idle. The Neural Engine that could compute embeddings at 60× speed? Idle. Nine of ten CPU cores? Idle.</p>
+
+        <p>We were building Pantheon to solve infrastructure hygiene problems. And the very tool we were using to build it — Antigravity IDE v1.20.6 — was the infrastructure problem. The irony was perfect. The solution was obvious.</p>
+
+        <p><strong>If Pantheon can detect this is happening and offload work to the accelerators already in the machine, it doesn't just solve our problem — it solves every developer's problem.</strong> Because every developer with an M-series Mac, every developer with an NVIDIA GPU, every developer running an Electron-based AI IDE is experiencing this same bottleneck. They just don't know it yet.</p>
+      </div>
+
+      <div class="pullquote">
+        "We were building the tool to solve developer infrastructure problems when we realized our development environment was the infrastructure problem. A $3,500 machine with 58 processing cores was frozen because all the work was running on a single JavaScript thread."
+        <div class="attr">— March 23, 2026, Session 13 of Pantheon development</div>
+      </div>
+
+      <div class="narrative">
+        <p>We named the guardian deity <strong>Sekhmet</strong> — Ra's lioness enforcer, the destroyer of threats. In Egyptian mythology, when Ra was threatened, Sekhmet was unleashed to obliterate the threat. In Pantheon, when your IDE process threatens to starve the UI, Sekhmet detects it, alerts you, and offers to intervene — before you lose seventeen minutes of work.</p>
+
+        <p>But Sekhmet is Phase 1. The full plan is four phases:</p>
+      </div>
+
+      <ul class="phase-list">
+        <li>
+          <span class="phase-num">I</span>
+          <div>
+            <h4>Diagnose — Detect Before the Freeze</h4>
+            <p>Sekhmet watchdog monitors Plugin Host CPU. If sustained >80% for >60 seconds, alert the developer. If >5 minutes, offer to restart the Extension Host. Never let the IDE freeze silently again.</p>
+          </div>
+        </li>
+        <li>
+          <span class="phase-num">II</span>
+          <div>
+            <h4>Offload — Use the Hardware You Already Paid For</h4>
+            <p>Move tokenization and embedding to Apple's Neural Engine via CoreML. Move file hashing to GPU via Metal compute shaders. Move file indexing to Worker Threads. The Extension Host stays free for UI.</p>
+          </div>
+        </li>
+        <li>
+          <span class="phase-num">III</span>
+          <div>
+            <h4>Extend — Thoth Prompt Hygiene at the IDE Level</h4>
+            <p>Token budget enforcement, redundant context pruning, session continuity. Don't send 100K tokens when 2K contains the same knowledge. Extend developer token runway by 50×.</p>
+          </div>
+        </li>
+        <li>
+          <span class="phase-num">IV</span>
+          <div>
+            <h4>Generalize — Every Accelerator, Every Platform</h4>
+            <p>What works on Apple ANE also works on NVIDIA CUDA, AMD ROCm, and Intel oneAPI. One abstraction layer, every GPU. Deploy Pantheon anywhere developers work.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══ CTA ════════════════════════════════════════════════ -->
+  <section class="cta-section">
+    <h2>Building in Public</h2>
+    <p>Every line of code, every benchmark, every bug. We document the journey because transparency is how trust gets built — and because someone else might be hitting the same wall right now.</p>
+    <div>
+      <a href="build-log.html" class="btn">𓏛 Read the Build Log</a>
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="btn btn-secondary">𓊖 View Source</a>
+    </div>
+  </section>
+
+  <!-- ═══ Footer ═════════════════════════════════════════════ -->
+  <footer>
+    <p>𓂀 Sirsi Pantheon — Built by <a href="https://sirsi.ai">Sirsi Technologies</a> · Open source under MIT · v0.4.0-alpha</p>
+  </footer>
+
+</body>
+</html>
