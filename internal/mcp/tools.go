@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
@@ -111,11 +112,12 @@ func handleScanWorkspace(args map[string]interface{}) (*ToolResult, error) {
 		categories = []jackal.Category{cat}
 	}
 
-	// Create engine and run scan
+	// Create engine and run scan with aggressive timeout.
+	// MCP callers (AI IDEs) should not wait >5s for context.
 	engine := jackal.NewEngine()
 	engine.RegisterAll(rules.AllRules()...)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	result, err := engine.Scan(ctx, jackal.ScanOptions{
@@ -234,60 +236,49 @@ func handleGhostReport(args map[string]interface{}) (*ToolResult, error) {
 	return textResult(sb.String(), false), nil
 }
 
-// handleHealthCheck provides a quick system health summary.
+// handleHealthCheck provides an instant system health summary.
+// PERFORMANCE: Uses cached Horus index + static system info. No live scans.
+// Target: <10ms response time (was 17s with live Jackal+Ka scans).
 func handleHealthCheck(_ map[string]interface{}) (*ToolResult, error) {
+	start := time.Now()
 	var sb strings.Builder
 	sb.WriteString("𓂀 Anubis Health Check\n\n")
 
-	// System info
+	// System info — instant (runtime constants)
 	sb.WriteString(fmt.Sprintf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH))
 	sb.WriteString(fmt.Sprintf("CPUs: %d\n", runtime.NumCPU()))
+	sb.WriteString(fmt.Sprintf("GOMAXPROCS: %d\n", runtime.GOMAXPROCS(0)))
 
-	// Quick scan to get waste total
-	engine := jackal.NewEngine()
-	engine.RegisterAll(rules.AllRules()...)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	result, err := engine.Scan(ctx, jackal.ScanOptions{})
-	if err != nil {
-		sb.WriteString(fmt.Sprintf("Scan error: %v\n", err))
-	} else {
-		sb.WriteString(fmt.Sprintf("Infrastructure waste: %s (%d findings)\n",
-			jackal.FormatSize(result.TotalSize), len(result.Findings)))
-		sb.WriteString(fmt.Sprintf("Rules matched: %d/%d\n", result.RulesWithFindings, result.RulesRan))
-	}
-
-	// Ghost count
-	scanner := ka.NewScanner()
-	ghosts, err := scanner.Scan(false)
+	// Horus index — read cache only, NEVER trigger a build.
+	// LoadManifest returns in <1ms (gob decode) or fails instantly (no file).
+	m, err := horus.LoadManifest(horus.DefaultCachePath())
 	if err == nil {
-		sb.WriteString(fmt.Sprintf("Ghost apps: %d\n", len(ghosts)))
+		sb.WriteString(fmt.Sprintf("Indexed: %d dirs, %d files\n",
+			m.Stats.DirsWalked, m.Stats.FilesIndexed))
+		sb.WriteString(fmt.Sprintf("Index age: %s\n",
+			time.Since(m.Timestamp).Truncate(time.Second)))
+	} else {
+		sb.WriteString("Horus index: not cached (run 'pantheon weigh' to build)\n")
 	}
 
-	// Brain status
+	// Brain status — instant (file existence check)
 	if brain.IsInstalled() {
 		sb.WriteString("Neural brain: ✅ Installed\n")
 	} else {
-		sb.WriteString("Neural brain: Not installed (run 'anubis install-brain')\n")
+		sb.WriteString("Neural brain: Not installed (run 'pantheon install-brain')\n")
 	}
 
-	// Health grade
-	var grade string
-	if result != nil {
-		switch {
-		case result.TotalSize < 1024*1024*100: // < 100 MB
-			grade = "EXCELLENT"
-		case result.TotalSize < 1024*1024*1024: // < 1 GB
-			grade = "GOOD"
-		case result.TotalSize < 1024*1024*1024*5: // < 5 GB
-			grade = "FAIR"
-		default:
-			grade = "NEEDS ATTENTION"
-		}
-		sb.WriteString(fmt.Sprintf("\nHealth Grade: %s\n", grade))
+	// Watchdog status — instant (ring buffer read)
+	bridge := GetWatchdogBridge()
+	if bridge != nil {
+		buffered, lifetime := bridge.Ring().Stats()
+		sb.WriteString(fmt.Sprintf("Watchdog: active (%d alerts, %d lifetime)\n", buffered, lifetime))
+	} else {
+		sb.WriteString("Watchdog: dormant\n")
 	}
+
+	sb.WriteString(fmt.Sprintf("\nResponse time: %s\n", time.Since(start).Round(time.Microsecond)))
+	sb.WriteString("\nFor full scan: 'pantheon weigh' or call scan_workspace tool.")
 
 	return textResult(sb.String(), false), nil
 }

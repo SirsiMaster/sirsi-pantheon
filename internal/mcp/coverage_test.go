@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // handleGhostReport runs live Ka scanning — exercise the code path.
@@ -39,19 +40,29 @@ func TestHandleGhostReport_WithTarget(t *testing.T) {
 	}
 }
 
-// handleHealthCheck runs a full system scan — integration test only.
-// The B11 fix prevents panics but the scan takes >30s on large workspaces.
+// handleHealthCheck now uses cached data — should be instant (<100ms).
 func TestHandleHealthCheck(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test: skipping in short mode")
-	}
+	start := time.Now()
 	result, err := handleHealthCheck(nil)
+	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("handleHealthCheck: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
+	// Performance gate: health_check MUST respond in <1s
+	if elapsed > 1*time.Second {
+		t.Errorf("health_check took %s — must be <1s (no live scans)", elapsed)
+	}
+	text := result.Content[0].Text
+	if !strings.Contains(text, "Anubis Health Check") {
+		t.Error("should contain health check header")
+	}
+	if !strings.Contains(text, "Response time:") {
+		t.Error("should report response time")
+	}
+	t.Logf("health_check response: %s", elapsed.Round(time.Microsecond))
 }
 
 // Server.Run reads from os.Stdin which we can't easily test, but verify
