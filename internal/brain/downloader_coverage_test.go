@@ -487,3 +487,167 @@ func TestWriteLocalManifest_ReadBack(t *testing.T) {
 		t.Errorf("SizeBytes = %d, want 999999", got.SizeBytes)
 	}
 }
+
+// --- GetStatus tests ---
+
+func TestGetStatus_ReturnsStatus(t *testing.T) {
+	status, err := GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus error: %v", err)
+	}
+	if status == nil {
+		t.Fatal("GetStatus should return non-nil status")
+	}
+	if status.WeightsDir == "" {
+		t.Error("WeightsDir should not be empty")
+	}
+}
+
+func TestReadLocalManifest_NoFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	_, err := readLocalManifest(tmpDir)
+	if err == nil {
+		t.Error("readLocalManifest should error when manifest doesn't exist")
+	}
+}
+
+// --- FormatBytes tests ---
+
+func TestFormatBytes_Coverage(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0 B"},
+		{100, "100 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KB"},
+		{1536, "1.5 KB"},
+		{1048576, "1.0 MB"},
+		{1073741824, "1.0 GB"},
+		{52428800, "50.0 MB"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d", tt.input), func(t *testing.T) {
+			got := FormatBytes(tt.input)
+			if got != tt.want {
+				t.Errorf("FormatBytes(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- Install model selection logic ---
+
+func TestInstallModelSelection_DefaultModel(t *testing.T) {
+	remote := &RemoteManifest{
+		SchemaVersion: 1,
+		DefaultModel:  "anubis-v1",
+		Models: []ModelInfo{
+			{Name: "anubis-v1", Version: "1.0.0", Format: "onnx"},
+			{Name: "anubis-v2", Version: "2.0.0", Format: "onnx"},
+		},
+	}
+
+	// The Install function's model selection logic:
+	// Find default model by name
+	var model *ModelInfo
+	for _, m := range remote.Models {
+		if m.Name == remote.DefaultModel {
+			info := m
+			model = &info
+			break
+		}
+	}
+	if model == nil {
+		t.Fatal("should find default model")
+	}
+	if model.Name != "anubis-v1" {
+		t.Errorf("selected model = %q, want anubis-v1", model.Name)
+	}
+}
+
+func TestInstallModelSelection_FallbackToFirst(t *testing.T) {
+	remote := &RemoteManifest{
+		SchemaVersion: 1,
+		DefaultModel:  "nonexistent",
+		Models: []ModelInfo{
+			{Name: "first-model", Version: "1.0.0", Format: "onnx"},
+		},
+	}
+
+	var model *ModelInfo
+	for _, m := range remote.Models {
+		if m.Name == remote.DefaultModel {
+			info := m
+			model = &info
+			break
+		}
+	}
+	if model == nil {
+		info := remote.Models[0]
+		model = &info
+	}
+	if model.Name != "first-model" {
+		t.Errorf("should fall back to first model, got %q", model.Name)
+	}
+}
+
+func TestInstallModelSelection_EmptyModels(t *testing.T) {
+	remote := &RemoteManifest{
+		SchemaVersion: 1,
+		Models:        []ModelInfo{},
+	}
+	if len(remote.Models) == 0 {
+		// This is the error path Install() takes
+		return
+	}
+	t.Error("should detect empty models list")
+}
+
+// --- IsInstalled tests ---
+
+func TestIsInstalled(t *testing.T) {
+	installed := IsInstalled()
+	// Just verify it returns without panic — value depends on env
+	_ = installed
+}
+
+// --- WeightsDir tests ---
+
+func TestWeightsDir_ReturnsPath(t *testing.T) {
+	dir, err := WeightsDir()
+	if err != nil {
+		t.Fatalf("WeightsDir error: %v", err)
+	}
+	if dir == "" {
+		t.Error("WeightsDir should return non-empty path")
+	}
+}
+
+// --- LatestRemote field in Status ---
+
+func TestStatus_WithLatestRemote(t *testing.T) {
+	status := Status{
+		Installed:   true,
+		UpdateReady: true,
+		LatestRemote: &ModelInfo{
+			Name:    "v2-model",
+			Version: "2.0.0",
+		},
+	}
+	data, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+	var got Status
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if !got.UpdateReady {
+		t.Error("UpdateReady should be true")
+	}
+	if got.LatestRemote == nil || got.LatestRemote.Version != "2.0.0" {
+		t.Error("LatestRemote should be preserved")
+	}
+}

@@ -42,53 +42,68 @@ func AuditContainers() (*ContainerAudit, error) {
 		"--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}").Output()
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if line == "" {
+			c := splitContainerLine(line)
+			if c == nil {
 				continue
-			}
-			parts := strings.SplitN(line, "\t", 5)
-			if len(parts) < 4 {
-				continue
-			}
-			c := Container{
-				ID:      parts[0],
-				Name:    parts[1],
-				Image:   parts[2],
-				Status:  parts[3],
-				Running: strings.HasPrefix(parts[3], "Up"),
-			}
-			if len(parts) >= 5 {
-				c.Ports = parts[4]
 			}
 			if c.Running {
 				audit.RunningCount++
 			} else {
 				audit.StoppedCount++
 			}
-			audit.Containers = append(audit.Containers, c)
+			audit.Containers = append(audit.Containers, *c)
 		}
 	}
 
 	// Count dangling images
 	out, err = exec.Command("docker", "images", "-f", "dangling=true", "-q").Output()
 	if err == nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if line != "" {
-				audit.DanglingImages++
-			}
-		}
+		audit.DanglingImages = countNonEmptyLines(strings.TrimSpace(string(out)))
 	}
 
 	// Count unused volumes
 	out, err = exec.Command("docker", "volume", "ls", "-f", "dangling=true", "-q").Output()
 	if err == nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if line != "" {
-				audit.UnusedVolumes++
-			}
-		}
+		audit.UnusedVolumes = countNonEmptyLines(strings.TrimSpace(string(out)))
 	}
 
 	return audit, nil
+}
+
+// splitContainerLine parses a single tab-delimited docker ps output line.
+func splitContainerLine(line string) *Container {
+	if line == "" {
+		return nil
+	}
+	parts := strings.SplitN(line, "\t", 5)
+	if len(parts) < 4 {
+		return nil
+	}
+	c := &Container{
+		ID:      parts[0],
+		Name:    parts[1],
+		Image:   parts[2],
+		Status:  parts[3],
+		Running: strings.HasPrefix(parts[3], "Up"),
+	}
+	if len(parts) >= 5 {
+		c.Ports = strings.TrimSpace(parts[4])
+	}
+	return c
+}
+
+// countNonEmptyLines counts non-blank lines in a string.
+func countNonEmptyLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	count := 0
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 // FormatContainerStatus returns a styled status string.
