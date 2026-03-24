@@ -129,7 +129,25 @@ func TestContainer_Fields(t *testing.T) {
 		Ports:   "80/tcp",
 		Running: true,
 	}
+	if c.ID != "abc" {
+		t.Errorf("ID = %q, want %q", c.ID, "abc")
+	}
+	if c.Name != "test" {
+		t.Errorf("Name = %q, want %q", c.Name, "test")
+	}
+	if c.Image != "nginx" {
+		t.Errorf("Image = %q, want %q", c.Image, "nginx")
+	}
+	if c.Status != "Up 1h" {
+		t.Errorf("Status = %q, want %q", c.Status, "Up 1h")
+	}
 	if c.Size != "5MB" {
 		t.Errorf("Size = %q, want %q", c.Size, "5MB")
+	}
+	if c.Ports != "80/tcp" {
+		t.Errorf("Ports = %q, want %q", c.Ports, "80/tcp")
+	}
+	if !c.Running {
+		t.Error("Running should be true")
 	}
 }
