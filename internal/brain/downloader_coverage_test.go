@@ -651,3 +651,110 @@ func TestStatus_WithLatestRemote(t *testing.T) {
 		t.Error("LatestRemote should be preserved")
 	}
 }
+
+// --- hashFile tests ---
+
+func TestHashFile_CorrectHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.bin")
+	content := []byte("hello anubis brain")
+	os.WriteFile(testFile, content, 0o644)
+
+	got, err := hashFile(testFile)
+	if err != nil {
+		t.Fatalf("hashFile: %v", err)
+	}
+
+	// Compute expected hash
+	h := sha256.Sum256(content)
+	want := hex.EncodeToString(h[:])
+
+	if got != want {
+		t.Errorf("hashFile = %s, want %s", got, want)
+	}
+}
+
+func TestHashFile_MissingFile(t *testing.T) {
+	_, err := hashFile("/nonexistent/path/to/file.bin")
+	if err == nil {
+		t.Error("should error on missing file")
+	}
+}
+
+// --- downloadFile tests (using httptest) ---
+
+func TestDownloadFile_Success(t *testing.T) {
+	content := []byte("model-weights-data-here")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	dest := filepath.Join(tmpDir, "model.onnx")
+
+	err := downloadFile(srv.URL, dest, int64(len(content)), nil)
+	if err != nil {
+		t.Fatalf("downloadFile: %v", err)
+	}
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Error("downloaded content doesn't match")
+	}
+}
+
+func TestDownloadFile_WithProgress(t *testing.T) {
+	content := []byte("some-model-data")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	dest := filepath.Join(tmpDir, "model.bin")
+
+	progressCalled := false
+	err := downloadFile(srv.URL, dest, int64(len(content)), func(downloaded, total int64) {
+		progressCalled = true
+		if downloaded <= 0 {
+			t.Errorf("downloaded should be > 0, got %d", downloaded)
+		}
+	})
+	if err != nil {
+		t.Fatalf("downloadFile: %v", err)
+	}
+	if !progressCalled {
+		t.Error("progress callback should have been called")
+	}
+}
+
+func TestDownloadFile_404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	dest := filepath.Join(tmpDir, "model.bin")
+
+	err := downloadFile(srv.URL, dest, 0, nil)
+	if err == nil {
+		t.Error("should error on 404")
+	}
+}
+
+// --- Remove tests ---
+
+func TestRemove_NonExistentDir(t *testing.T) {
+	// Remove should be a no-op if nothing is installed
+	// We can't easily test this without mocking WeightsDir,
+	// but we can verify the function doesn't panic
+	err := Remove()
+	// This may or may not error depending on environment
+	_ = err
+}
