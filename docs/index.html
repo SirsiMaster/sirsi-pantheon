@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sirsi Pantheon — Infrastructure Hygiene for the AI Era</title>
+  <meta name="description" content="One install. All deities. Scan, judge, and purge infrastructure waste across workstations, containers, and networks. Open source, written in Go.">
+  <meta property="og:title" content="Sirsi Pantheon — Infrastructure Hygiene for the AI Era">
+  <meta property="og:description" content="One command to find and clean 50GB+ of waste on your development machine.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-primary: #059669;
+      --color-primary-light: #10B981;
+      --color-primary-dark: #047857;
+      --color-primary-bg: #022c22;
+      --color-gold: #C8A951;
+      --color-gold-dark: #A08332;
+      --color-gold-bright: #E2C76B;
+      --bg-primary: #022c22;
+      --bg-secondary: #011a14;
+      --bg-gradient: radial-gradient(ellipse at top right, #022c22 0%, #000000 100%);
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255,255,255,0.85);
+      --text-muted: rgba(255,255,255,0.5);
+      --border-primary: rgba(255,255,255,0.1);
+      --glass-bg: rgba(2, 44, 34, 0.4);
+      --glass-border: rgba(255,255,255,0.08);
+      --card-bg: rgba(2, 44, 34, 0.6);
+      --card-border: rgba(255,255,255,0.1);
+      --font-heading: 'Cinzel', serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 24px;
+      --shadow-card: 0 10px 30px -10px rgba(0,0,0,0.5);
+    }
+
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      background-image: var(--bg-gradient);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Hero ─────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 6rem 2rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 20%, rgba(5, 150, 105, 0.08) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(200, 169, 81, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+    }
+    .hero-hieroglyph {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      display: block;
+      animation: float 4s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      background: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold), var(--color-primary-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1rem;
+    }
+    .hero .subtitle {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 2rem;
+      font-weight: 300;
+    }
+    .hero .tagline {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: var(--color-gold);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 2.5rem;
+    }
+
+    /* ── CTA ──────────────────────────────────────────── */
+    .cta-group {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 2rem;
+      border-radius: var(--radius-md);
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+      color: white;
+      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.3);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+    }
+    .btn-secondary {
+      background: var(--glass-bg);
+      color: var(--text-primary);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(10px);
+    }
+    .btn-secondary:hover {
+      border-color: var(--color-gold);
+      color: var(--color-gold);
+    }
+
+    /* ── Install Block ───────────────────────────────── */
+    .install-block {
+      max-width: 540px;
+      margin: 2rem auto;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: var(--color-primary-light);
+      position: relative;
+    }
+    .install-block .prompt { color: var(--color-gold); }
+    .install-block .comment { color: var(--text-muted); }
+    .install-block code { display: block; margin: 0.3rem 0; }
+
+    /* ── Stats Strip ─────────────────────────────────── */
+    .stats-strip {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+      padding: 2rem 1rem;
+      flex-wrap: wrap;
+    }
+    .stat {
+      text-align: center;
+    }
+    .stat-value {
+      font-family: var(--font-heading);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--color-gold-bright);
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Section ──────────────────────────────────────── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+
+    section {
+      padding: 4rem 0;
+    }
+    section h2 {
+      font-family: var(--font-heading);
+      font-size: 1.8rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+      color: var(--color-gold);
+    }
+    section .section-sub {
+      text-align: center;
+      color: var(--text-muted);
+      margin-bottom: 3rem;
+      font-size: 0.95rem;
+    }
+
+    /* ── Deity Grid ───────────────────────────────────── */
+    .deity-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+    .deity-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 1.8rem;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    .deity-card:hover {
+      border-color: var(--color-primary);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(5, 150, 105, 0.15);
+    }
+    .deity-card .deity-icon {
+      font-size: 2rem;
+      margin-bottom: 0.8rem;
+      display: block;
+    }
+    .deity-card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.15rem;
+      margin-bottom: 0.4rem;
+      color: var(--color-gold-bright);
+    }
+    .deity-card .deity-cmd {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--color-primary-light);
+      margin-bottom: 0.6rem;
+      display: block;
+    }
+    .deity-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* ── Case Studies ─────────────────────────────────── */
+    .case-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.2rem;
+    }
+    .case-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 1.4rem;
+      transition: border-color 0.2s ease;
+    }
+    .case-card:hover { border-color: var(--color-gold-dark); }
+    .case-card .metric {
+      font-family: var(--font-heading);
+      font-size: 1.4rem;
+      color: var(--color-gold-bright);
+      margin-bottom: 0.3rem;
+    }
+    .case-card h4 {
+      font-size: 0.95rem;
+      margin-bottom: 0.4rem;
+      color: var(--text-primary);
+    }
+    .case-card p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* ── Links Section ────────────────────────────────── */
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1rem;
+    }
+    .link-card {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.4rem;
+      text-decoration: none;
+      color: var(--text-primary);
+      transition: all 0.2s ease;
+    }
+    .link-card:hover {
+      border-color: var(--color-primary);
+      transform: translateY(-2px);
+    }
+    .link-card .link-icon { font-size: 1.8rem; }
+    .link-card .link-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .link-card .link-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Footer ───────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--border-primary);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    footer a {
+      color: var(--color-primary-light);
+      text-decoration: none;
+    }
+    footer a:hover { text-decoration: underline; }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ Hero ═══════════════════════════════════════════════ -->
+  <header class="hero">
+    <span class="hero-hieroglyph">𓂀</span>
+    <h1>Sirsi Pantheon</h1>
+    <p class="tagline">One Install. All Deities.</p>
+    <p class="subtitle">
+      Infrastructure hygiene for the AI era. Scan, judge, and purge waste across
+      workstations, containers, VMs, and networks. Open source. Zero telemetry.
+    </p>
+
+    <div class="cta-group">
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="btn btn-primary">
+        ⭐ View on GitHub
+      </a>
+      <a href="build-log.html" class="btn btn-secondary">
+        📜 Build Log
+      </a>
+      <a href="https://sirsi.ai" class="btn btn-secondary">
+        🏛️ Sirsi Nexus
+      </a>
+    </div>
+
+    <div class="install-block">
+      <code><span class="comment"># Install via Homebrew</span></code>
+      <code><span class="prompt">$</span> brew tap SirsiMaster/tools</code>
+      <code><span class="prompt">$</span> brew install sirsi-pantheon</code>
+      <code></code>
+      <code><span class="comment"># Or download the binary</span></code>
+      <code><span class="prompt">$</span> go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@latest</code>
+    </div>
+  </header>
+
+  <!-- ═══ Stats ══════════════════════════════════════════════ -->
+  <div class="stats-strip">
+    <div class="stat">
+      <div class="stat-value">17</div>
+      <div class="stat-label">CLI Commands</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">22</div>
+      <div class="stat-label">Modules</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">15K+</div>
+      <div class="stat-label">Lines of Go</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">80/100</div>
+      <div class="stat-label">Ma'at Quality</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">MIT</div>
+      <div class="stat-label">License</div>
+    </div>
+  </div>
+
+  <!-- ═══ Deities ════════════════════════════════════════════ -->
+  <section>
+    <div class="container">
+      <h2>The Pantheon</h2>
+      <p class="section-sub">Each deity manages a domain of infrastructure hygiene</p>
+
+      <div class="deity-grid">
+        <div class="deity-card">
+          <span class="deity-icon">𓂀</span>
+          <h3>Anubis — The Weighing</h3>
+          <span class="deity-cmd">pantheon weigh · pantheon judge</span>
+          <p>Scan 7 domains and 58+ rules for infrastructure waste. Cache directories, orphaned build artifacts, stale model weights, zombie processes. Judge and safely purge what's dead.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">𓂓</span>
+          <h3>Ka — Ghost Hunter</h3>
+          <span class="deity-cmd">pantheon ka</span>
+          <p>Hunt ghost apps — remnants of applications that were uninstalled but left behind .plist files, Launch Services registrations, and cache directories. Parallel lsregister scan in under 1s.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">🪞</span>
+          <h3>Mirror — Deduplication</h3>
+          <span class="deity-cmd">pantheon mirror</span>
+          <p>Find duplicate files using three-phase matching: size grouping → partial hash (first+last 4KB) → full SHA-256. Smart keep/delete recommendations. Web UI included.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">🛡️</span>
+          <h3>Guard — RAM Sentinel</h3>
+          <span class="deity-cmd">pantheon guard</span>
+          <p>Audit memory pressure, identify zombie and orphan processes, and surgically terminate resource hogs. Process classification across 5 target types.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">🪶</span>
+          <h3>Ma'at — QA Governance</h3>
+          <span class="deity-cmd">pantheon maat</span>
+          <p>Automated quality assessment: coverage enforcement, canon linkage verification, lint integration. The Feather Weight score gamifies code quality.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">⚖️</span>
+          <h3>Scales — Policy Engine</h3>
+          <span class="deity-cmd">pantheon scales</span>
+          <p>Define and enforce infrastructure hygiene policies. YAML-based rules, org-wide standards, pass/fail verdicts with actionable remediation.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">👁️</span>
+          <h3>Sight — Spotlight Healer</h3>
+          <span class="deity-cmd">pantheon sight</span>
+          <p>Fix ghost apps in macOS Spotlight and Launch Services. Detect phantom registrations, reindex, and restore search accuracy.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">🪲</span>
+          <h3>Scarab — Fleet Scanner</h3>
+          <span class="deity-cmd">pantheon scarab</span>
+          <p>Discover and audit hosts across your network. Docker container inspection, ARP scanning, port discovery. The network-scale Anubis.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">𓁟</span>
+          <h3>Thoth — AI Memory</h3>
+          <span class="deity-cmd">pantheon mcp</span>
+          <p>Persistent knowledge system for AI coding assistants. Three-layer memory architecture achieves 98% context reduction. MCP server for Claude, Cursor, and Windsurf.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Dogfooding Results ═════════════════════════════════ -->
+  <section>
+    <div class="container">
+      <h2>Dogfooding Results</h2>
+      <p class="section-sub">Every feature was built because we needed it. Every metric is real.</p>
+
+      <div class="case-grid">
+        <div class="case-card">
+          <div class="metric">64 GB</div>
+          <h4>Docker Ghost Reclaimed</h4>
+          <p>Phantom Docker volumes and dangling images identified and purged via Scarab audit.</p>
+        </div>
+        <div class="case-card">
+          <div class="metric">3,667×</div>
+          <h4>Ma'at Coverage Speedup</h4>
+          <p>Diff-based coverage assessment: 55 seconds → 15 milliseconds. Only tests changed packages.</p>
+        </div>
+        <div class="case-card">
+          <div class="metric">8.5s → 1.08s</div>
+          <h4>Ka Ghost Scan</h4>
+          <p>Parallel lsregister scan with Horus shared index. From sluggish to sub-second.</p>
+        </div>
+        <div class="case-card">
+          <div class="metric">98%</div>
+          <h4>Thoth Context Savings</h4>
+          <p>AI memory system eliminates 98% of context re-reading across sessions.</p>
+        </div>
+        <div class="case-card">
+          <div class="metric">15.6s → 833ms</div>
+          <h4>Horus Filesystem Index</h4>
+          <p>Walk once, all deities query. Manifests cached as gob files. 19× speedup.</p>
+        </div>
+        <div class="case-card">
+          <div class="metric">80/100</div>
+          <h4>Feather Weight</h4>
+          <p>Ma'at quality score across 17 modules. 0 warnings, 0 failures. All thresholds met.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Resources ══════════════════════════════════════════ -->
+  <section>
+    <div class="container">
+      <h2>Resources</h2>
+      <p class="section-sub">Everything is open. Everything is documented.</p>
+
+      <div class="links-grid">
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="link-card">
+          <span class="link-icon">📦</span>
+          <div>
+            <div class="link-title">GitHub Repository</div>
+            <div class="link-desc">Source code, issues, releases</div>
+          </div>
+        </a>
+        <a href="build-log.html" class="link-card">
+          <span class="link-icon">📜</span>
+          <div>
+            <div class="link-title">Build Log</div>
+            <div class="link-desc">Every sprint, bug, and benchmark</div>
+          </div>
+        </a>
+        <a href="https://sirsi.ai" class="link-card">
+          <span class="link-icon">🏛️</span>
+          <div>
+            <div class="link-title">Sirsi Nexus</div>
+            <div class="link-desc">The platform that powers Pantheon</div>
+          </div>
+        </a>
+        <a href="ADR-INDEX.md" class="link-card">
+          <span class="link-icon">📐</span>
+          <div>
+            <div class="link-title">Architecture Decisions</div>
+            <div class="link-desc">8 ADRs documenting every design choice</div>
+          </div>
+        </a>
+        <a href="THOTH.md" class="link-card">
+          <span class="link-icon">𓁟</span>
+          <div>
+            <div class="link-title">Thoth Documentation</div>
+            <div class="link-desc">AI memory system guide</div>
+          </div>
+        </a>
+        <a href="SCAN_RULE_GUIDE.md" class="link-card">
+          <span class="link-icon">📋</span>
+          <div>
+            <div class="link-title">Scan Rule Guide</div>
+            <div class="link-desc">How to customize scan rules</div>
+          </div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Footer ═════════════════════════════════════════════ -->
+  <footer>
+    <div class="footer-links">
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
+      <a href="build-log.html">Build Log</a>
+      <a href="https://sirsi.ai">Sirsi Nexus</a>
+      <a href="SIRSI_PORTFOLIO_STANDARD.md">Portfolio Standard</a>
+    </div>
+    <p>
+      𓂀 Sirsi Pantheon — Built by <a href="https://sirsi.ai">Sirsi Technologies</a><br>
+      Open source under MIT License · v0.4.0-alpha · The jackal sees everything.
+    </p>
+  </footer>
+
+</body>
+</html>
