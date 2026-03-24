@@ -6,6 +6,18 @@ import (
 	"strings"
 )
 
+// Injectable command runners for testability (B11 pattern).
+var (
+	runDockerInfo = func() error { return exec.Command("docker", "info").Run() }
+	runDockerPS   = func() ([]byte, error) {
+		return exec.Command("docker", "ps", "-a", "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}").Output()
+	}
+	runDockerImages = func() ([]byte, error) { return exec.Command("docker", "images", "-f", "dangling=true", "-q").Output() }
+	runDockerVols   = func() ([]byte, error) {
+		return exec.Command("docker", "volume", "ls", "-f", "dangling=true", "-q").Output()
+	}
+)
+
 // Container represents a Docker container.
 type Container struct {
 	ID      string `json:"id"`
@@ -32,14 +44,13 @@ func AuditContainers() (*ContainerAudit, error) {
 	audit := &ContainerAudit{}
 
 	// Check Docker is running
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	if err := runDockerInfo(); err != nil {
 		return audit, nil // Docker not running — not an error
 	}
 	audit.DockerRunning = true
 
 	// List all containers
-	out, err := exec.Command("docker", "ps", "-a",
-		"--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}").Output()
+	out, err := runDockerPS()
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			c := splitContainerLine(line)
@@ -56,13 +67,13 @@ func AuditContainers() (*ContainerAudit, error) {
 	}
 
 	// Count dangling images
-	out, err = exec.Command("docker", "images", "-f", "dangling=true", "-q").Output()
+	out, err = runDockerImages()
 	if err == nil {
 		audit.DanglingImages = countNonEmptyLines(strings.TrimSpace(string(out)))
 	}
 
 	// Count unused volumes
-	out, err = exec.Command("docker", "volume", "ls", "-f", "dangling=true", "-q").Output()
+	out, err = runDockerVols()
 	if err == nil {
 		audit.UnusedVolumes = countNonEmptyLines(strings.TrimSpace(string(out)))
 	}

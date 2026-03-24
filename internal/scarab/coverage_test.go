@@ -1,6 +1,7 @@
 package scarab
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -149,5 +150,148 @@ func TestContainer_Fields(t *testing.T) {
 	}
 	if !c.Running {
 		t.Error("Running should be true")
+	}
+}
+
+// === MOCKED DEPENDENCY TESTS ===
+
+func saveAndRestoreDocker(t *testing.T) {
+	t.Helper()
+	origInfo := runDockerInfo
+	origPS := runDockerPS
+	origImages := runDockerImages
+	origVols := runDockerVols
+	t.Cleanup(func() {
+		runDockerInfo = origInfo
+		runDockerPS = origPS
+		runDockerImages = origImages
+		runDockerVols = origVols
+	})
+}
+
+func TestAuditContainers_DockerNotRunning(t *testing.T) {
+	saveAndRestoreDocker(t)
+	runDockerInfo = func() error { return fmt.Errorf("docker not running") }
+
+	audit, err := AuditContainers()
+	if err != nil {
+		t.Fatalf("AuditContainers: %v", err)
+	}
+	if audit.DockerRunning {
+		t.Error("should not be running")
+	}
+	if len(audit.Containers) != 0 {
+		t.Error("should have no containers")
+	}
+}
+
+func TestAuditContainers_WithContainers(t *testing.T) {
+	saveAndRestoreDocker(t)
+	runDockerInfo = func() error { return nil }
+	runDockerPS = func() ([]byte, error) {
+		return []byte("abc123\tmy-nginx\tnginx:latest\tUp 3 hours\t80/tcp\n" +
+			"def456\tmy-redis\tredis:7\tExited (0) 1 day ago\t\n"), nil
+	}
+	runDockerImages = func() ([]byte, error) {
+		return []byte("sha256:aaa\nsha256:bbb\n"), nil
+	}
+	runDockerVols = func() ([]byte, error) {
+		return []byte("vol1\n"), nil
+	}
+
+	audit, err := AuditContainers()
+	if err != nil {
+		t.Fatalf("AuditContainers: %v", err)
+	}
+	if !audit.DockerRunning {
+		t.Error("should be running")
+	}
+	if audit.RunningCount != 1 {
+		t.Errorf("RunningCount = %d, want 1", audit.RunningCount)
+	}
+	if audit.StoppedCount != 1 {
+		t.Errorf("StoppedCount = %d, want 1", audit.StoppedCount)
+	}
+	if len(audit.Containers) != 2 {
+		t.Errorf("Containers len = %d, want 2", len(audit.Containers))
+	}
+	if audit.DanglingImages != 2 {
+		t.Errorf("DanglingImages = %d, want 2", audit.DanglingImages)
+	}
+	if audit.UnusedVolumes != 1 {
+		t.Errorf("UnusedVolumes = %d, want 1", audit.UnusedVolumes)
+	}
+}
+
+func TestAuditContainers_PSError(t *testing.T) {
+	saveAndRestoreDocker(t)
+	runDockerInfo = func() error { return nil }
+	runDockerPS = func() ([]byte, error) { return nil, fmt.Errorf("ps failed") }
+	runDockerImages = func() ([]byte, error) { return nil, fmt.Errorf("images failed") }
+	runDockerVols = func() ([]byte, error) { return nil, fmt.Errorf("vols failed") }
+
+	audit, err := AuditContainers()
+	if err != nil {
+		t.Fatalf("AuditContainers: %v", err)
+	}
+	if !audit.DockerRunning {
+		t.Error("Docker should be running even if ps fails")
+	}
+	if len(audit.Containers) != 0 {
+		t.Error("should have no containers on PS error")
+	}
+}
+
+func TestAuditContainers_EmptyOutput(t *testing.T) {
+	saveAndRestoreDocker(t)
+	runDockerInfo = func() error { return nil }
+	runDockerPS = func() ([]byte, error) { return []byte(""), nil }
+	runDockerImages = func() ([]byte, error) { return []byte(""), nil }
+	runDockerVols = func() ([]byte, error) { return []byte(""), nil }
+
+	audit, err := AuditContainers()
+	if err != nil {
+		t.Fatalf("AuditContainers: %v", err)
+	}
+	if audit.DanglingImages != 0 {
+		t.Errorf("DanglingImages = %d, want 0", audit.DanglingImages)
+	}
+}
+
+// --- FormatContainerStatus ---
+
+func TestFormatContainerStatus_Running_Mocked(t *testing.T) {
+	s := FormatContainerStatus(Container{Running: true, Status: "Up 3 hours"})
+	if s != "🟢 Up 3 hours" {
+		t.Errorf("got %q", s)
+	}
+}
+
+func TestFormatContainerStatus_Stopped_Mocked(t *testing.T) {
+	s := FormatContainerStatus(Container{Running: false, Status: "Exited (0)"})
+	if s != "🔴 Exited (0)" {
+		t.Errorf("got %q", s)
+	}
+}
+
+// --- countNonEmptyLines edge cases ---
+
+func TestCountNonEmptyLines_Mixed(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"", 0},
+		{"a", 1},
+		{"a\nb\nc", 3},
+		{"a\n\n\nb", 2},
+		{"\n\n", 0},
+		{"  \n  \n", 0},
+	}
+	for _, tt := range tests {
+		got := countNonEmptyLines(tt.input)
+		if got != tt.want {
+			t.Errorf("countNonEmptyLines(%q) = %d, want %d", tt.input, got, tt.want)
+		}
 	}
 }
