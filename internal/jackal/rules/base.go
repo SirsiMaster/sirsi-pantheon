@@ -169,6 +169,9 @@ func (r *baseScanRule) isExcluded(path string, homeDir string) bool {
 // dirSizeAndCount walks a directory once and returns total size and file count.
 // Uses filepath.WalkDir (Go 1.16+) which avoids os.Stat per entry — significantly
 // faster than filepath.Walk on directories with thousands of files.
+// Capped at maxDirWalkFiles to prevent unbounded walks (B11).
+const maxDirWalkFiles = 100_000
+
 func dirSizeAndCount(dir string) (int64, int) {
 	var totalSize int64
 	count := 0
@@ -180,6 +183,9 @@ func dirSizeAndCount(dir string) (int64, int) {
 			count++
 			if info, err := d.Info(); err == nil {
 				totalSize += info.Size()
+			}
+			if count >= maxDirWalkFiles {
+				return filepath.SkipAll
 			}
 		}
 		return nil

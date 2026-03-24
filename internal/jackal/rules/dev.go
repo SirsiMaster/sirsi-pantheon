@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/cleaner"
@@ -224,7 +225,7 @@ func (r *findRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jackal.
 
 			if d.IsDir() && d.Name() != r.targetName {
 				rel, _ := filepath.Rel(root, path)
-				depth := len(filepath.SplitList(rel))
+				depth := strings.Count(rel, string(filepath.Separator)) + 1
 				if depth > r.maxDepth {
 					return filepath.SkipDir
 				}

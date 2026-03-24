@@ -3,6 +3,7 @@ package jackal
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sort"
 	"sync"
 )
@@ -125,14 +126,26 @@ func (e *Engine) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error
 		ruleName string
 	}
 
-	// Run rules concurrently
+	// Run rules concurrently with bounded worker pool.
+	// Cap goroutines at NumCPU to prevent IPC starvation (B11).
+	maxWorkers := runtime.NumCPU()
+	if maxWorkers > len(rules) {
+		maxWorkers = len(rules)
+	}
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+
 	ch := make(chan ruleResult, len(rules))
+	sem := make(chan struct{}, maxWorkers)
 	var wg sync.WaitGroup
 
 	for _, rule := range rules {
 		wg.Add(1)
+		sem <- struct{}{} // Acquire semaphore slot
 		go func(r ScanRule) {
 			defer wg.Done()
+			defer func() { <-sem }() // Release slot
 			findings, err := r.Scan(ctx, opts)
 			ch <- ruleResult{
 				findings: findings,
