@@ -13,6 +13,26 @@ import (
 	"time"
 )
 
+// Injectable dependencies for testability.
+var (
+	getLocalSubnetFn = defaultGetLocalSubnet
+	parseARPTableFn  = defaultParseARPTable
+	pingSweepFn      = defaultPingSweep
+	pingHostFn       = defaultPingHost
+	runARPCommand    = func() ([]byte, error) {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("arp", "-a")
+		case "linux":
+			cmd = exec.Command("arp", "-n")
+		default:
+			return nil, fmt.Errorf("unsupported OS")
+		}
+		return cmd.Output()
+	}
+)
+
 // Host represents a discovered host on the network.
 type Host struct {
 	IP        string `json:"ip"`
@@ -38,17 +58,17 @@ func Discover() (*DiscoveryResult, error) {
 	result := &DiscoveryResult{}
 
 	// Get local subnet
-	subnet, err := getLocalSubnet()
+	subnet, err := getLocalSubnetFn()
 	if err != nil {
 		return nil, fmt.Errorf("detect subnet: %w", err)
 	}
 	result.Subnet = subnet
 
 	// Phase 1: Parse ARP table (instant — already known hosts)
-	arpHosts := parseARPTable()
+	arpHosts := parseARPTableFn()
 
 	// Phase 2: Ping sweep for additional discovery
-	pingHosts := pingSweep(subnet)
+	pingHosts := pingSweepFn(subnet)
 
 	// Merge results
 	hostMap := make(map[string]*Host)
@@ -76,6 +96,10 @@ func Discover() (*DiscoveryResult, error) {
 
 // getLocalSubnet returns the local subnet in CIDR notation.
 func getLocalSubnet() (string, error) {
+	return getLocalSubnetFn()
+}
+
+func defaultGetLocalSubnet() (string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
@@ -92,7 +116,6 @@ func getLocalSubnet() (string, error) {
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok {
 				if ipnet.IP.To4() != nil && !ipnet.IP.IsLoopback() {
-					// Return subnet
 					network := ipnet.IP.Mask(ipnet.Mask)
 					ones, _ := ipnet.Mask.Size()
 					return fmt.Sprintf("%s/%d", network.String(), ones), nil
@@ -105,19 +128,13 @@ func getLocalSubnet() (string, error) {
 
 // parseARPTable reads the system ARP cache.
 func parseARPTable() []Host {
+	return parseARPTableFn()
+}
+
+func defaultParseARPTable() []Host {
 	var hosts []Host
 
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("arp", "-a")
-	case "linux":
-		cmd = exec.Command("arp", "-n")
-	default:
-		return hosts
-	}
-
-	out, err := cmd.Output()
+	out, err := runARPCommand()
 	if err != nil {
 		return hosts
 	}
@@ -188,6 +205,10 @@ func parseARPLineFor(line, goos string) *Host {
 
 // pingSweep sends ICMP pings across the subnet.
 func pingSweep(subnet string) []Host {
+	return pingSweepFn(subnet)
+}
+
+func defaultPingSweep(subnet string) []Host {
 	ip, ipnet, err := net.ParseCIDR(subnet)
 	if err != nil {
 		return nil
@@ -212,7 +233,7 @@ func pingSweep(subnet string) []Host {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if pingHost(t) {
+			if pingHostFn(t) {
 				mu.Lock()
 				hosts = append(hosts, Host{
 					IP:    t,
@@ -229,6 +250,10 @@ func pingSweep(subnet string) []Host {
 
 // pingHost sends a single ping and returns success.
 func pingHost(ip string) bool {
+	return pingHostFn(ip)
+}
+
+func defaultPingHost(ip string) bool {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":

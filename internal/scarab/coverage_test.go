@@ -2,6 +2,8 @@ package scarab
 
 import (
 	"fmt"
+	"net"
+	"sync"
 	"testing"
 )
 
@@ -293,5 +295,187 @@ func TestCountNonEmptyLines_Mixed(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("countNonEmptyLines(%q) = %d, want %d", tt.input, got, tt.want)
 		}
+	}
+}
+
+// === MOCKED DISCOVERY TESTS ===
+
+func saveAndRestoreDiscovery(t *testing.T) {
+	t.Helper()
+	origSubnet := getLocalSubnetFn
+	origARP := parseARPTableFn
+	origSweep := pingSweepFn
+	origPing := pingHostFn
+	origARPCmd := runARPCommand
+	t.Cleanup(func() {
+		getLocalSubnetFn = origSubnet
+		parseARPTableFn = origARP
+		pingSweepFn = origSweep
+		pingHostFn = origPing
+		runARPCommand = origARPCmd
+	})
+}
+
+func TestDiscover_Mocked(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	getLocalSubnetFn = func() (string, error) { return "192.168.1.0/24", nil }
+	parseARPTableFn = func() []Host {
+		return []Host{
+			{IP: "192.168.1.1", MAC: "aa:bb:cc:dd:ee:ff", Alive: true},
+			{IP: "192.168.1.2", MAC: "11:22:33:44:55:66", Alive: true},
+		}
+	}
+	pingSweepFn = func(subnet string) []Host {
+		return []Host{
+			{IP: "192.168.1.1", Alive: true}, // overlap with ARP
+			{IP: "192.168.1.3", Alive: true}, // new from ping
+		}
+	}
+
+	result, err := Discover()
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if result.Subnet != "192.168.1.0/24" {
+		t.Errorf("Subnet = %q", result.Subnet)
+	}
+	if len(result.Hosts) != 3 {
+		t.Errorf("Hosts = %d, want 3 (2 ARP + 1 ping-only)", len(result.Hosts))
+	}
+	if result.TotalAlive != 3 {
+		t.Errorf("TotalAlive = %d, want 3", result.TotalAlive)
+	}
+}
+
+func TestDiscover_SubnetError(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	getLocalSubnetFn = func() (string, error) { return "", fmt.Errorf("no interface") }
+
+	_, err := Discover()
+	if err == nil {
+		t.Error("should error on subnet failure")
+	}
+}
+
+func TestParseARPTable_Mocked(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	runARPCommand = func() ([]byte, error) {
+		return []byte("? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]\n" +
+			"? (192.168.1.2) at 11:22:33:44:55:66 on en0 ifscope [ethernet]\n"), nil
+	}
+
+	hosts := defaultParseARPTable()
+	if len(hosts) != 2 {
+		t.Errorf("hosts = %d, want 2", len(hosts))
+	}
+}
+
+func TestParseARPTable_CommandError(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	runARPCommand = func() ([]byte, error) { return nil, fmt.Errorf("arp failed") }
+
+	hosts := defaultParseARPTable()
+	if len(hosts) != 0 {
+		t.Error("should return empty on error")
+	}
+}
+
+func TestPingSweep_Mocked(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	pinged := make(map[string]bool)
+	var mu sync.Mutex
+	pingHostFn = func(ip string) bool {
+		mu.Lock()
+		pinged[ip] = true
+		mu.Unlock()
+		return ip == "10.0.0.1" || ip == "10.0.0.2"
+	}
+
+	// /30 = 4 IPs: .0 (network, skipped), .1, .2, .3 (broadcast)
+	hosts := defaultPingSweep("10.0.0.0/30")
+	if len(hosts) != 2 {
+		t.Errorf("hosts = %d, want 2 alive", len(hosts))
+	}
+}
+
+func TestPingSweep_InvalidSubnet(t *testing.T) {
+	hosts := defaultPingSweep("not-a-cidr")
+	if hosts != nil {
+		t.Error("should return nil for invalid CIDR")
+	}
+}
+
+func TestPingHost_Mocked(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	pingHostFn = func(ip string) bool { return ip == "1.2.3.4" }
+
+	if !pingHost("1.2.3.4") {
+		t.Error("should be alive")
+	}
+	if pingHost("5.6.7.8") {
+		t.Error("should be dead")
+	}
+}
+
+func TestGetLocalSubnet_Wrapper(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	getLocalSubnetFn = func() (string, error) { return "10.0.0.0/8", nil }
+
+	subnet, err := getLocalSubnet()
+	if err != nil {
+		t.Fatalf("getLocalSubnet: %v", err)
+	}
+	if subnet != "10.0.0.0/8" {
+		t.Errorf("subnet = %q", subnet)
+	}
+}
+
+func TestIncrementIP_Mocked(t *testing.T) {
+	ip := net.ParseIP("192.168.1.254").To4()
+	incrementIP(ip)
+	if ip.String() != "192.168.1.255" {
+		t.Errorf("got %s, want 192.168.1.255", ip.String())
+	}
+	incrementIP(ip)
+	if ip.String() != "192.168.2.0" {
+		t.Errorf("got %s, want 192.168.2.0", ip.String())
+	}
+}
+
+func TestIsValidIP_Mocked(t *testing.T) {
+	if !isValidIP("192.168.1.1") {
+		t.Error("should be valid")
+	}
+	if isValidIP("not-an-ip") {
+		t.Error("should be invalid")
+	}
+	if !isValidIP("::1") {
+		t.Error("IPv6 should be valid")
+	}
+}
+
+// --- Wrapper coverage ---
+
+func TestParseARPTable_Wrapper(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	parseARPTableFn = func() []Host {
+		return []Host{{IP: "10.0.0.1", Alive: true}}
+	}
+
+	hosts := parseARPTable()
+	if len(hosts) != 1 {
+		t.Errorf("hosts = %d, want 1", len(hosts))
+	}
+}
+
+func TestPingSweep_Wrapper(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	pingSweepFn = func(subnet string) []Host {
+		return []Host{{IP: "10.0.0.2", Alive: true}}
+	}
+
+	hosts := pingSweep("10.0.0.0/24")
+	if len(hosts) != 1 {
+		t.Errorf("hosts = %d, want 1", len(hosts))
 	}
 }
