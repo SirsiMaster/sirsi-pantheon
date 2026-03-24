@@ -92,7 +92,7 @@ if [ "$DEPTH" = "deep" ]; then
 elif [ -n "$CHANGED_PKGS" ]; then
     # Fast/Standard: only test changed packages
     echo "  🧪 Testing changed packages: $(echo $CHANGED_PKGS | wc -w | tr -d ' ') pkg(s)"
-    if ! go test $CHANGED_PKGS -count=1 -timeout 60s 2>/dev/null; then
+    if ! go test $CHANGED_PKGS -short -count=1 -timeout 60s 2>/dev/null; then
         echo "  ❌ Tests failed in changed packages — fix before pushing."
         exit 1
     fi

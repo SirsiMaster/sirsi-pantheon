@@ -284,9 +284,33 @@ func TestResourcesRead_UnknownURI(t *testing.T) {
 }
 
 func TestToolsCall_HealthCheck(t *testing.T) {
-	t.Skip("skipping: health_check triggers live jackal scan that panics on large workspaces (B11)")
-}
+	if testing.Short() {
+		t.Skip("integration test: skipping in short mode")
+	}
+	params := ToolCallParams{
+		Name:      "health_check",
+		Arguments: map[string]interface{}{},
+	}
 
+	resp, err := sendRequest(t, "tools/call", params, 8)
+	if err != nil {
+		t.Fatalf("tools/call error: %v", err)
+	}
+
+	if resp.Error != nil {
+		t.Fatalf("tools/call returned error: %v", resp.Error)
+	}
+
+	resultData, _ := json.Marshal(resp.Result)
+	var result ToolResult
+	if err := json.Unmarshal(resultData, &result); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatal("Expected at least one content block")
+	}
+}
 func TestToolsCall_UnknownTool(t *testing.T) {
 	params := ToolCallParams{
 		Name:      "nonexistent_tool",

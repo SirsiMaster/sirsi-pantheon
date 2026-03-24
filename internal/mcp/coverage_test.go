@@ -39,10 +39,19 @@ func TestHandleGhostReport_WithTarget(t *testing.T) {
 	}
 }
 
-// handleHealthCheck triggers live jackal scans which panic on large workspaces
-// due to deep filepath.WalkDir recursion. This is a B11 fix (concurrency rewrite).
+// handleHealthCheck runs a full system scan — integration test only.
+// The B11 fix prevents panics but the scan takes >30s on large workspaces.
 func TestHandleHealthCheck(t *testing.T) {
-	t.Skip("skipping: handleHealthCheck triggers live jackal scan that panics on large workspaces (B11)")
+	if testing.Short() {
+		t.Skip("integration test: skipping in short mode")
+	}
+	result, err := handleHealthCheck(nil)
+	if err != nil {
+		t.Fatalf("handleHealthCheck: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
 }
 
 // Server.Run reads from os.Stdin which we can't easily test, but verify
