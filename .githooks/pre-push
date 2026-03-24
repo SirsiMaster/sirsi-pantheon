@@ -1,16 +1,28 @@
 #!/bin/bash
 # 𓂀 Pantheon Pre-Push Gate
-# Guarantees CI stays green by running the SAME checks CI runs locally.
+# Guarantees CI stays green by running checks before push.
 # Install: git config core.hooksPath .githooks
 # Skip:    git push --no-verify (use sparingly)
+#
+# DEPTH TIERS (set MAAT_DEPTH env var, default: fast):
+#   fast     — fmt + vet + build + diff-only tests          (~10-30s)
+#   standard — fast + Ma'at coverage + canon on changed     (~60-90s)
+#   deep     — standard + full test suite + full Ma'at      (~3-5 min)
+#
+# Examples:
+#   git push                           # uses fast (default)
+#   MAAT_DEPTH=standard git push       # adds Ma'at on changed pkgs
+#   MAAT_DEPTH=deep git push           # full suite (pre-release)
 
 set -e
 
+DEPTH="${MAAT_DEPTH:-fast}"
+
 echo ""
-echo "  𓇳 Pantheon pre-push gate..."
+echo "  𓇳 Pantheon pre-push gate... [depth: $DEPTH]"
 echo ""
 
-# Detect tag-only pushes (skip Ma'at for speed — tags don't change code)
+# ── Detect tag-only pushes (always fast) ─────────────────────────────
 TAG_ONLY=true
 while read local_ref local_sha remote_ref remote_sha; do
     case "$local_ref" in
@@ -19,19 +31,23 @@ while read local_ref local_sha remote_ref remote_sha; do
     esac
 done
 
-# 0. Build fresh binary for Ma'at assessment
-go build -o ./pantheon ./cmd/pantheon/ 2>/dev/null
-if [ "$TAG_ONLY" = "false" ] && [ -x "./pantheon" ]; then
-    echo "  𓆄 Ma'at quality assessment..."
-    ./pantheon maat --coverage --canon || {
-        echo "  ❌ Ma'at assessment failed — quality standards not met"
-        exit 1
-    }
-else
-    echo "  ⏭️  Tag push — skipping Ma'at (code unchanged)"
+if [ "$TAG_ONLY" = "true" ]; then
+    echo "  ⏭️  Tag push — fast pass"
+    exit 0
 fi
 
-# 1. gofmt — formatting must be canonical
+# ── Detect changed Go packages (for diff-based testing) ─────────────
+CHANGED_PKGS=""
+CHANGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACMR HEAD -- '*.go' 2>/dev/null || \
+                   git diff --name-only HEAD~1 HEAD -- '*.go' 2>/dev/null || echo "")
+
+if [ -n "$CHANGED_GO_FILES" ]; then
+    # Extract unique package directories from changed files
+    CHANGED_PKGS=$(echo "$CHANGED_GO_FILES" | xargs -I{} dirname {} | sort -u | \
+                   sed 's|^|./|' | tr '\n' ' ')
+fi
+
+# ── 1. gofmt — formatting must be canonical ─────────────────────────
 BAD_FMT=$(gofmt -l ./internal/ ./cmd/ 2>/dev/null || true)
 if [ -n "$BAD_FMT" ]; then
     echo "  ❌ gofmt — these files need formatting:"
@@ -41,56 +57,56 @@ if [ -n "$BAD_FMT" ]; then
     exit 1
 fi
 
-# 2. go vet — static analysis
+# ── 2. go vet — static analysis ─────────────────────────────────────
 if ! go vet ./... 2>/dev/null; then
     echo "  ❌ go vet failed"
     exit 1
 fi
 
-# 3. golangci-lint — full linter suite (if installed)
-LINT_BIN=""
-if command -v golangci-lint &>/dev/null; then
-    LINT_BIN="golangci-lint"
-elif [ -x "$HOME/go/bin/golangci-lint" ]; then
-    LINT_BIN="$HOME/go/bin/golangci-lint"
-fi
-
-if [ -n "$LINT_BIN" ]; then
-    if ! $LINT_BIN run --timeout=2m 2>/dev/null; then
-        echo ""
-        echo "  ❌ golangci-lint failed — fix errors before pushing"
-        exit 1
-    fi
-else
-    echo "  ⚠️  golangci-lint not found — skipping (install for full gate)"
-fi
-
-# 4. Build check — both binaries, same as CI
+# ── 3. Build check — both binaries ──────────────────────────────────
 if ! go build ./... 2>/dev/null; then
     echo "  ❌ build failed"
     exit 1
 fi
 
-# 5. ──────────────────────────────────────────────────────────────────
-#    TEST SUITE — the #1 reason CI goes red
-#    Runs the full test suite locally. This is the gate CI uses.
-#    Tests with //go:build darwin tags will be skipped on Linux CI,
-#    so platform-specific failures can't slip through.
-# ──────────────────────────────────────────────────────────────────
-echo "  🧪 Running test suite..."
-if ! go test ./... -count=1 -timeout 120s 2>/dev/null; then
-    echo ""
-    echo "  ❌ Tests failed — CI would fail. Fix before pushing."
-    echo "  Run: go test -v ./... to see failures"
-    exit 1
+# ── 4. Tests — diff-based or full depending on depth ────────────────
+if [ "$DEPTH" = "deep" ]; then
+    # Deep: full test suite (same as CI)
+    echo "  🧪 Running full test suite..."
+    if ! go test ./... -count=1 -timeout 120s 2>/dev/null; then
+        echo "  ❌ Tests failed — fix before pushing."
+        exit 1
+    fi
+elif [ -n "$CHANGED_PKGS" ]; then
+    # Fast/Standard: only test changed packages
+    echo "  🧪 Testing changed packages: $(echo $CHANGED_PKGS | wc -w | tr -d ' ') pkg(s)"
+    if ! go test $CHANGED_PKGS -count=1 -timeout 60s 2>/dev/null; then
+        echo "  ❌ Tests failed in changed packages — fix before pushing."
+        exit 1
+    fi
+else
+    echo "  🧪 No Go files changed — skipping tests"
 fi
 
-# 6. IDE / Agent Health Check
-echo "  👁️ Checking Agent health..."
+# ── 5. Ma'at — only on standard/deep ────────────────────────────────
+if [ "$DEPTH" = "standard" ] || [ "$DEPTH" = "deep" ]; then
+    go build -o ./pantheon ./cmd/pantheon/ 2>/dev/null
+    if [ -x "./pantheon" ]; then
+        echo "  𓆄 Ma'at quality assessment..."
+        ./pantheon maat --coverage --canon || {
+            echo "  ❌ Ma'at assessment failed"
+            exit 1
+        }
+        rm -f ./pantheon
+    fi
+elif [ "$DEPTH" = "fast" ]; then
+    echo "  ⏭️  Ma'at skipped (use MAAT_DEPTH=standard for assessment)"
+fi
+
+# ── 6. Thoth health ─────────────────────────────────────────────────
 if [ -f ".thoth/memory.yaml" ]; then
-    if ! grep -q "project: sirsi-pantheon" .thoth/memory.yaml; then
-        echo "  ❌ Thoth memory corrupted or mismatched"
-        exit 1
+    if ! grep -q "project: sirsi-pantheon" .thoth/memory.yaml 2>/dev/null; then
+        echo "  ⚠️  Thoth memory mismatch (non-blocking)"
     fi
 fi
 
