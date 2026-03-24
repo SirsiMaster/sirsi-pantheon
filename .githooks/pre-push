@@ -22,12 +22,21 @@ echo ""
 echo "  𓇳 Pantheon pre-push gate... [depth: $DEPTH]"
 echo ""
 
-# ── Detect tag-only pushes (always fast) ─────────────────────────────
+# ── Detect tag-only pushes + capture push refs ───────────────────────
+# Git pre-push hook receives: <local-ref> <local-sha> <remote-ref> <remote-sha>
+# on stdin. remote_sha is what the remote has NOW — the correct base
+# for our diff. If remote_sha is all zeros, this is a new branch.
 TAG_ONLY=true
+PUSH_LOCAL_SHA=""
+PUSH_REMOTE_SHA=""
 while read local_ref local_sha remote_ref remote_sha; do
     case "$local_ref" in
         refs/tags/*) ;;
-        *) TAG_ONLY=false ;;
+        *)
+            TAG_ONLY=false
+            PUSH_LOCAL_SHA="$local_sha"
+            PUSH_REMOTE_SHA="$remote_sha"
+            ;;
     esac
 done
 
@@ -37,18 +46,33 @@ if [ "$TAG_ONLY" = "true" ]; then
 fi
 
 # ── Detect changed Go packages (for diff-based testing) ─────────────
-# Compare what's being PUSHED (commits on local not yet on remote).
-# - @{push} is the remote tracking ref (e.g., origin/main)
-# - Falls back to HEAD~1 for repos without upstream tracking
-CHANGED_PKGS=""
-REMOTE_REF=$(git rev-parse --verify @{push} 2>/dev/null || \
-             git rev-parse --verify HEAD~1 2>/dev/null || echo "")
+# Priority:
+#   1. Use PUSH_REMOTE_SHA from stdin (most reliable — actual remote state)
+#   2. Fall back to @{push} (remote tracking ref)
+#   3. Fall back to HEAD~1 (at least test the last commit)
+#   4. No ref available — test everything
 
-if [ -n "$REMOTE_REF" ]; then
-    CHANGED_GO_FILES=$(git diff --name-only "$REMOTE_REF" HEAD -- '*.go' 2>/dev/null || echo "")
+CHANGED_PKGS=""
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+if [ -n "$PUSH_REMOTE_SHA" ] && [ "$PUSH_REMOTE_SHA" != "$ZERO_SHA" ]; then
+    # Best case: compare against actual remote state from stdin
+    DIFF_BASE="$PUSH_REMOTE_SHA"
+elif [ -n "$PUSH_REMOTE_SHA" ] && [ "$PUSH_REMOTE_SHA" = "$ZERO_SHA" ]; then
+    # New branch — no remote history, test everything
+    DIFF_BASE=""
 else
-    # No ref to compare — treat as if everything changed
+    # Fallback: try @{push} then HEAD~1
+    DIFF_BASE=$(git rev-parse --verify @{push} 2>/dev/null || \
+                git rev-parse --verify HEAD~1 2>/dev/null || echo "")
+fi
+
+if [ -z "$DIFF_BASE" ]; then
     CHANGED_GO_FILES="all"
+elif [ -n "$PUSH_LOCAL_SHA" ]; then
+    CHANGED_GO_FILES=$(git diff --name-only "$DIFF_BASE" "$PUSH_LOCAL_SHA" -- '*.go' 2>/dev/null || echo "")
+else
+    CHANGED_GO_FILES=$(git diff --name-only "$DIFF_BASE" HEAD -- '*.go' 2>/dev/null || echo "")
 fi
 
 if [ "$CHANGED_GO_FILES" = "all" ]; then
