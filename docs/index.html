@@ -380,15 +380,15 @@
       <div class="stat-label">CLI Commands</div>
     </div>
     <div class="stat">
-      <div class="stat-value">22</div>
-      <div class="stat-label">Modules</div>
+      <div class="stat-value">11</div>
+      <div class="stat-label">Deities</div>
     </div>
     <div class="stat">
       <div class="stat-value">15K+</div>
       <div class="stat-label">Lines of Go</div>
     </div>
     <div class="stat">
-      <div class="stat-value">80/100</div>
+      <div class="stat-value">88/100</div>
       <div class="stat-label">Ma'at Quality</div>
     </div>
     <div class="stat">
@@ -401,62 +401,74 @@
   <section>
     <div class="container">
       <h2>The Pantheon</h2>
-      <p class="section-sub">Each deity manages a domain of infrastructure hygiene</p>
+      <p class="section-sub">Each deity commands its own domain — install one, install all</p>
 
       <div class="deity-grid">
         <div class="deity-card">
           <span class="deity-icon">𓂀</span>
-          <h3>Anubis — The Weighing</h3>
+          <h3>Anubis — Judge of the Dead</h3>
           <span class="deity-cmd">pantheon weigh · pantheon judge</span>
-          <p>Scan 7 domains and 58+ rules for infrastructure waste. Cache directories, orphaned build artifacts, stale model weights, zombie processes. Judge and safely purge what's dead.</p>
+          <p>The jackal god who weighs your system's heart. Scans 7 domains and 58+ rules for infrastructure waste — cache directories, orphaned build artifacts, stale model weights. Then renders judgment: purge what's dead.</p>
         </div>
         <div class="deity-card">
           <span class="deity-icon">𓂓</span>
-          <h3>Ka — Ghost Hunter</h3>
+          <h3>Ka — Spirit of the Dead</h3>
           <span class="deity-cmd">pantheon ka</span>
-          <p>Hunt ghost apps — remnants of applications that were uninstalled but left behind .plist files, Launch Services registrations, and cache directories. Parallel lsregister scan in under 1s.</p>
+          <p>The life force that persists after death. Ka hunts ghost apps — the spirits of uninstalled software that linger as .plist files, Launch Services phantoms, and orphaned cache directories. Sub-second parallel scan.</p>
         </div>
         <div class="deity-card">
-          <span class="deity-icon">𓋹</span>
-          <h3>Mirror — Deduplication</h3>
+          <span class="deity-icon">𓉡</span>
+          <h3>Hathor — Goddess of Reflection</h3>
           <span class="deity-cmd">pantheon mirror</span>
-          <p>Find duplicate files using three-phase matching: size grouping → partial hash (first+last 4KB) → full SHA-256. Smart keep/delete recommendations. Web UI included.</p>
+          <p>The mirror goddess finds your duplicates. Three-phase matching: size grouping → partial hash (first+last 4KB) → full SHA-256. Smart keep/delete recommendations with protected paths. Web UI included.</p>
         </div>
         <div class="deity-card">
-          <span class="deity-icon">𓊝</span>
-          <h3>Guard — RAM Sentinel</h3>
+          <span class="deity-icon">𓁵</span>
+          <h3>Sekhmet — The Warrior Guardian</h3>
           <span class="deity-cmd">pantheon guard</span>
-          <p>Audit memory pressure, identify zombie and orphan processes, and surgically terminate resource hogs. Process classification across 5 target types.</p>
+          <p>Ra's lioness enforcer and destroyer of threats. Sekhmet audits memory pressure, classifies processes across 5 types, and surgically terminates zombie and orphan processes consuming your resources.</p>
         </div>
         <div class="deity-card">
           <span class="deity-icon">𓆄</span>
-          <h3>Ma'at — QA Governance</h3>
-          <span class="deity-cmd">pantheon maat</span>
-          <p>Automated quality assessment: coverage enforcement, canon linkage verification, lint integration. The Feather Weight score gamifies code quality.</p>
-        </div>
-        <div class="deity-card">
-          <span class="deity-icon">𓇼</span>
-          <h3>Scales — Policy Engine</h3>
-          <span class="deity-cmd">pantheon scales</span>
-          <p>Define and enforce infrastructure hygiene policies. YAML-based rules, org-wide standards, pass/fail verdicts with actionable remediation.</p>
+          <h3>Ma'at — Truth and Order</h3>
+          <span class="deity-cmd">pantheon maat · pantheon scales</span>
+          <p>The goddess of cosmic order wields her feather and her scales. Quality governance with coverage enforcement, canon linkage verification, and policy-as-code. The Feather Weight score gamifies truth.</p>
         </div>
         <div class="deity-card">
           <span class="deity-icon">𓁹</span>
-          <h3>Sight — Spotlight Healer</h3>
+          <h3>Horus — The All-Seeing Eye</h3>
           <span class="deity-cmd">pantheon sight</span>
-          <p>Fix ghost apps in macOS Spotlight and Launch Services. Detect phantom registrations, reindex, and restore search accuracy.</p>
+          <p>The redeemer who restores what can be saved. Horus heals Spotlight and Launch Services, fixing phantom registrations and ghost entries. His shared filesystem index lets every deity see everything — walk once, query forever.</p>
         </div>
         <div class="deity-card">
           <span class="deity-icon">𓆣</span>
-          <h3>Scarab — Fleet Scanner</h3>
+          <h3>Khepri — Scarab of Renewal</h3>
           <span class="deity-cmd">pantheon scarab</span>
-          <p>Discover and audit hosts across your network. Docker container inspection, ARP scanning, port discovery. The network-scale Anubis.</p>
+          <p>The dawn beetle who transforms and renews. Khepri discovers and audits hosts across your network — Docker container inspection, ARP scanning, port discovery. Fleet-scale infrastructure hygiene.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">𓇼</span>
+          <h3>Seba — The Star Map</h3>
+          <span class="deity-cmd">pantheon seba</span>
+          <p>The Egyptian word for "star." Seba visualizes your infrastructure as an interactive network graph — mapping the constellation of services, hosts, and dependencies across your environment.</p>
         </div>
         <div class="deity-card">
           <span class="deity-icon">𓁟</span>
-          <h3>Thoth — AI Memory</h3>
-          <span class="deity-cmd">pantheon mcp</span>
-          <p>Persistent knowledge system for AI coding assistants. Three-layer memory architecture achieves 98% context reduction. MCP server for Claude, Cursor, and Windsurf.</p>
+          <h3>Thoth — God of Knowledge</h3>
+          <span class="deity-cmd">pantheon mcp · pantheon install-brain</span>
+          <p>The ibis-headed scribe who records all things. Persistent AI memory with 98% context reduction. Neural file classification via the Brain module. MCP server for Claude, Cursor, and Windsurf.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">𓁶</span>
+          <h3>Hapi — God of the Flood</h3>
+          <span class="deity-cmd">pantheon hapi</span>
+          <p>The Nile god who controls the flow of abundance. Hapi detects hardware resources — GPUs, Neural Engines, VRAM — and optimizes resource allocation so nothing runs dry.</p>
+        </div>
+        <div class="deity-card">
+          <span class="deity-icon">☀️</span>
+          <h3>Ra — The Supreme Overseer</h3>
+          <span class="deity-cmd">planned</span>
+          <p>The sun god who rules all deities. Ra is the autonomous hypervisor — orchestrating every deity, monitoring system health, and making autonomous decisions about when to scan, judge, guard, and heal.</p>
         </div>
       </div>
     </div>
