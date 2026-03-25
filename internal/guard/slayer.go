@@ -49,10 +49,19 @@ type SlayResult struct {
 	DryRun     bool
 }
 
+// ProcessKiller is a function that terminates a process by PID.
+// Inject a mock for testing the Slay execution paths.
+type ProcessKiller func(pid int) error
+
 // Slay terminates processes matching the target group.
 // Rule A1: NEVER kills without confirmation (dryRun must be explicitly false).
 // Safety: SIGTERM first, SIGKILL after 5s timeout. Never kills root/system processes.
 func Slay(target SlayTarget, dryRun bool) (*SlayResult, error) {
+	return SlayWith(target, dryRun, killProcess)
+}
+
+// SlayWith is the injectable version of Slay for testing.
+func SlayWith(target SlayTarget, dryRun bool, killer ProcessKiller) (*SlayResult, error) {
 	result := &SlayResult{
 		Target: target,
 		DryRun: dryRun,
@@ -99,7 +108,7 @@ func Slay(target SlayTarget, dryRun bool) (*SlayResult, error) {
 			continue
 		}
 
-		err := killProcess(p.PID)
+		err := killer(p.PID)
 		if err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Errorf("PID %d (%s): %w", p.PID, p.Name, err))
