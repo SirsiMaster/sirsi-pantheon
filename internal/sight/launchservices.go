@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+// CommandRunner executes a system command and returns its error.
+// Inject a mock for testing without side effects.
+type CommandRunner func(name string, args ...string) error
+
 // GhostRegistration represents an app registered in Launch Services
 // whose .app bundle no longer exists on disk.
 type GhostRegistration struct {
@@ -54,6 +58,11 @@ func Scan() (*SightResult, error) {
 // Fix rebuilds the Launch Services database, removing ghost registrations.
 // This is a DESTRUCTIVE operation — it resets all file associations.
 func Fix(dryRun bool) error {
+	return FixWith(dryRun, defaultRunner)
+}
+
+// FixWith is the injectable version of Fix for testing.
+func FixWith(dryRun bool, runner CommandRunner) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("sight: only supported on macOS")
 	}
@@ -65,20 +74,23 @@ func Fix(dryRun bool) error {
 	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 
 	// Kill the Launch Services database and rebuild
-	cmd := exec.Command(lsregister, "-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user")
-	if err := cmd.Run(); err != nil {
+	if err := runner(lsregister, "-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user"); err != nil {
 		return fmt.Errorf("sight: lsregister rebuild failed: %w", err)
 	}
 
 	// Restart Finder to pick up changes
-	cmd = exec.Command("killall", "Finder")
-	_ = cmd.Run() // Non-fatal if Finder restart fails
+	_ = runner("killall", "Finder") // Non-fatal if Finder restart fails
 
 	return nil
 }
 
 // ReindexSpotlight triggers a Spotlight re-index for the boot volume.
 func ReindexSpotlight(dryRun bool) error {
+	return ReindexSpotlightWith(dryRun, defaultRunner)
+}
+
+// ReindexSpotlightWith is the injectable version for testing.
+func ReindexSpotlightWith(dryRun bool, runner CommandRunner) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("sight: only supported on macOS")
 	}
@@ -86,11 +98,15 @@ func ReindexSpotlight(dryRun bool) error {
 		return nil
 	}
 
-	cmd := exec.Command("mdutil", "-E", "/")
-	if err := cmd.Run(); err != nil {
+	if err := runner("mdutil", "-E", "/"); err != nil {
 		return fmt.Errorf("sight: Spotlight reindex failed (may need sudo): %w", err)
 	}
 	return nil
+}
+
+// defaultRunner executes a real system command.
+func defaultRunner(name string, args ...string) error {
+	return exec.Command(name, args...).Run()
 }
 
 // parseLSRegisterDump extracts ghost registrations from lsregister output.
