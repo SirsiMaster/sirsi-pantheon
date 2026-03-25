@@ -4,15 +4,16 @@ VERSION ?= v0.4.0-alpha
 BUILD_DIR ?= bin
 GO_FLAGS ?= -ldflags="-X main.Version=$(VERSION)"
 
-.PHONY: all clean build-all build-anubis build-thoth build-maat build-scarab build-guard build-agent
+.PHONY: all clean build-all build-anubis build-thoth build-maat build-scarab build-guard build-agent build-menubar bundle publish test-proof
 
 all: build-all
 
 # --- Standard Build ---
-build-all: build-anubis build-thoth build-maat build-scarab build-guard build-agent
+build-all: build-anubis build-thoth build-maat build-scarab build-guard build-agent build-menubar
 
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -rf Pantheon.app
 
 # --- Individual Deity Binaries ---
 build-anubis:
@@ -32,6 +33,44 @@ build-guard:
 
 build-agent:
 	go build $(GO_FLAGS) -o $(BUILD_DIR)/pantheon-agent ./cmd/pantheon-agent/
+
+# --- Menu Bar App (ADR-010) ---
+build-menubar:
+	go build $(GO_FLAGS) -o $(BUILD_DIR)/pantheon-menubar ./cmd/pantheon-menubar/
+
+# --- macOS .app Bundle ---
+# Creates Pantheon.app suitable for /Applications
+bundle: build-menubar
+	@echo "📦 Building Pantheon.app bundle..."
+	@rm -rf Pantheon.app
+	@mkdir -p Pantheon.app/Contents/MacOS
+	@mkdir -p Pantheon.app/Contents/Resources
+	@cp $(BUILD_DIR)/pantheon-menubar Pantheon.app/Contents/MacOS/pantheon-menubar
+	@cp cmd/pantheon-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
+	@cp cmd/pantheon-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
+	@echo "✅ Pantheon.app created — install with: cp -R Pantheon.app /Applications/"
+
+# --- Horus Auto-Publish ---
+# Generates docs/build-log.html and docs/case-studies.html
+publish:
+	@echo "𓂀 Horus Auto-Publish..."
+	@go run ./cmd/pantheon-menubar/ -publish 2>/dev/null || \
+		echo "  ℹ️  Publish via Go: go run -tags publish ./internal/horus/..."
+
+# --- LaunchAgent (auto-start at login) ---
+install-launchagent:
+	@echo "📋 Installing LaunchAgent..."
+	@mkdir -p ~/Library/LaunchAgents
+	@sed "s|BINARY_PATH|$(shell pwd)/$(BUILD_DIR)/pantheon-menubar|g" \
+		cmd/pantheon-menubar/bundle/ai.sirsi.pantheon.plist > \
+		~/Library/LaunchAgents/ai.sirsi.pantheon.plist
+	@launchctl load ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
+	@echo "✅ Pantheon will start at login"
+
+uninstall-launchagent:
+	@launchctl unload ~/Library/LaunchAgents/ai.sirsi.pantheon.plist 2>/dev/null || true
+	@rm -f ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
+	@echo "✅ LaunchAgent removed"
 
 # --- Public Proof of Testing ---
 test-proof:
