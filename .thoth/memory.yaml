@@ -1,13 +1,13 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-03-24T20:30:00-04:00
+# Last updated: 2026-03-25T10:55:00-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+
-version: 0.4.0-alpha (Revision 2)
-binary_count: 2 (pantheon @ 12 MB, pantheon-agent @ 3.2 MB)
+version: 0.4.0-alpha (Revision 3)
+binary_count: 7 (pantheon, pantheon-agent, anubis, guard, maat, scarab, thoth)
 test_count: 768
 line_count: ~17,110
 module_count: 22

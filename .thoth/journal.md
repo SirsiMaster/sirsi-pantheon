@@ -339,3 +339,17 @@ Canonized as ADR-005. Key principles:
 **Result**: 87.2% → **90.1% weighted coverage**. 13/22 modules now at 90%+. 768 tests. The "boss fight" of the coverage wall was won by making the system more modular, not just writing more tests.
 
 **Rule A17 (graduated)**: Side Effect Injection is now a governance requirement. A module that performs a side effect without an injectable provider is a failed build.
+
+---
+
+## Entry 018 — 2026-03-25 10:20 — "The Lost Session: Recovery as a Feature"
+
+**Context**: Session 17 was lost. All 38 file changes (1,350 additions, 2,061 deletions) existed only in the working tree — zero commits, zero pushes. A new session started with no context of what happened.
+
+**Insight**: Pantheon's own architecture enabled its recovery. Thoth's journal (Entry 017) explained *why* the changes were made. Ma'at's QA_PLAN.md explained the coverage targets. The PANTHEON_ROADMAP.md documented the cross-platform plan. Git preserved the working tree. The pre-push gate caught formatting issues in the recovered files. Total recovery time: 20 minutes. Zero data lost.
+
+**Decision**: Proposed Rule A18 (Incremental Commits) — no session may accumulate more than 5 file changes without a checkpoint commit. Created case study at `docs/case-studies/session-recovery.md`. Created ADR-010 (Menu Bar Application) for the next major feature.
+
+**Result**: The incident proved that Pantheon's deity architecture works beyond code — Thoth preserves intent, Ma'at enforces quality, and the pre-push gate prevents broken recoveries. The strongest product story is one where the product saves itself.
+
+**Next**: Session 18 — macOS menu bar app. Pantheon becomes visible in the GUI.
