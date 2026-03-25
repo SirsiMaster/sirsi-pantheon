@@ -38,18 +38,18 @@ const (
 // Checkpoint represents the current state of uncommitted work.
 type Checkpoint struct {
 	// Git status
-	UncommittedFiles   int       `json:"uncommitted_files"`
-	UntrackedFiles     int       `json:"untracked_files"`
-	StagedFiles        int       `json:"staged_files"`
-	ModifiedFiles      int       `json:"modified_files"`
-	DeletedFiles       int       `json:"deleted_files"`
-	TotalChanges       int       `json:"total_changes"`
-	LinesAdded         int       `json:"lines_added"`
-	LinesDeleted       int       `json:"lines_deleted"`
-	LastCommitTime     time.Time `json:"last_commit_time"`
-	LastCommitHash     string    `json:"last_commit_hash"`
-	LastCommitMessage  string    `json:"last_commit_message"`
-	TimeSinceCommit    time.Duration `json:"time_since_commit"`
+	UncommittedFiles  int           `json:"uncommitted_files"`
+	UntrackedFiles    int           `json:"untracked_files"`
+	StagedFiles       int           `json:"staged_files"`
+	ModifiedFiles     int           `json:"modified_files"`
+	DeletedFiles      int           `json:"deleted_files"`
+	TotalChanges      int           `json:"total_changes"`
+	LinesAdded        int           `json:"lines_added"`
+	LinesDeleted      int           `json:"lines_deleted"`
+	LastCommitTime    time.Time     `json:"last_commit_time"`
+	LastCommitHash    string        `json:"last_commit_hash"`
+	LastCommitMessage string        `json:"last_commit_message"`
+	TimeSinceCommit   time.Duration `json:"time_since_commit"`
 
 	// Risk assessment
 	Risk    RiskLevel `json:"risk"`

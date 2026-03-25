@@ -1,8 +1,9 @@
 # ADR-010: Pantheon Menu Bar Application
 
-**Status**: Proposed  
+**Status**: Accepted ✅  
 **Date**: 2026-03-25  
-**Decision**: Build a native macOS menu bar application for Pantheon.
+**Decision**: Build a native macOS menu bar application for Pantheon.  
+**Implemented**: Session 18 — Phase 1 complete (headless + .app bundle)
 
 ## Context
 

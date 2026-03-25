@@ -23,19 +23,19 @@ import (
 // StatsSnapshot is a point-in-time collection of system metrics.
 type StatsSnapshot struct {
 	// RAM
-	TotalRAM     int64   `json:"total_ram"`
-	UsedRAM      int64   `json:"used_ram"`
-	FreeRAM      int64   `json:"free_ram"`
-	RAMPercent   float64 `json:"ram_percent"`
-	RAMPressure  string  `json:"ram_pressure"` // "low", "medium", "high"
-	RAMIcon      string  `json:"ram_icon"`
+	TotalRAM    int64   `json:"total_ram"`
+	UsedRAM     int64   `json:"used_ram"`
+	FreeRAM     int64   `json:"free_ram"`
+	RAMPercent  float64 `json:"ram_percent"`
+	RAMPressure string  `json:"ram_pressure"` // "low", "medium", "high"
+	RAMIcon     string  `json:"ram_icon"`
 
 	// Git / Osiris
-	UncommittedFiles  int    `json:"uncommitted_files"`
-	TimeSinceCommit   string `json:"time_since_commit"`
-	GitBranch         string `json:"git_branch"`
-	OsirisRisk        string `json:"osiris_risk"`
-	OsirisIcon        string `json:"osiris_icon"`
+	UncommittedFiles int    `json:"uncommitted_files"`
+	TimeSinceCommit  string `json:"time_since_commit"`
+	GitBranch        string `json:"git_branch"`
+	OsirisRisk       string `json:"osiris_risk"`
+	OsirisIcon       string `json:"osiris_icon"`
 
 	// Accelerator
 	PrimaryAccelerator string `json:"primary_accelerator"`
@@ -268,13 +268,13 @@ func collectAccelerator(snap *StatsSnapshot) {
 // ── Deity Detection ─────────────────────────────────────────────────────
 
 var knownDeities = map[string]string{
-	"pantheon":        "🏛 Pantheon",
-	"anubis":          "𓂀 Anubis",
-	"pantheon-agent":  "🤖 Agent",
-	"guard":           "🛡 Guard",
-	"maat":            "🪶 Ma'at",
-	"scarab":          "🪲 Scarab",
-	"thoth":           "𓁟 Thoth",
+	"pantheon":       "🏛 Pantheon",
+	"anubis":         "𓂀 Anubis",
+	"pantheon-agent": "🤖 Agent",
+	"guard":          "🛡 Guard",
+	"maat":           "🪶 Ma'at",
+	"scarab":         "🪲 Scarab",
+	"thoth":          "𓁟 Thoth",
 }
 
 func collectDeities(snap *StatsSnapshot) {

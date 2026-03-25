@@ -1,16 +1,16 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-03-25T10:55:00-04:00
+# Last updated: 2026-03-25T11:38:00-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+
-version: 0.4.0-alpha (Revision 3)
-binary_count: 7 (pantheon, pantheon-agent, anubis, guard, maat, scarab, thoth)
-test_count: 768
-line_count: ~17,110
-module_count: 22
+version: 0.4.0-alpha (Revision 4)
+binary_count: 8 (pantheon, pantheon-agent, anubis, guard, maat, scarab, thoth, pantheon-menubar)
+test_count: 819+
+line_count: ~18,500
+module_count: 24
 command_count: 18
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
 
@@ -80,10 +80,31 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchd
 # - Seba mapping depth: Current "map" is a kinetic graph, needs more depth
 # - Horus: Phase 1 implemented (shared index, parallel walks, manifest cache)
 #   Phase 2 planned: FSEvents/fanotify/USN Journal for incremental updates
-# - Isis, Osiris: Designated deities but have no tool mapping yet
-# - ADR count: 9 (001-founding... 009-injectable-providers)
+# - Osiris: Checkpoint guardian implemented (uncommitted work detection + risk assessment)
+# - Isis: Designated deity but has no tool mapping yet
+# - ADR count: 10 (001-founding... 010-menubar-application)
+# - Pantheon.app: macOS menu bar application (headless + .app bundle)
 
 ## Recent Changes (most recent first)
+# 2026-03-25: Session 18 — Menu Bar App + Horus Publish + Osiris Guardian
+#   macOS Menu Bar Application (ADR-010): Phase 1 complete.
+#   - cmd/pantheon-menubar/: stats.go, handlers.go, icon.go, main.go
+#   - Headless mode: real-time RAM/Git/accelerator/deity stats (105ms collection)
+#   - Pantheon.app bundle: make bundle → installable .app with Info.plist
+#   - LaunchAgent: make install-launchagent → auto-start at login
+#   Horus Auto-Publish (internal/horus/publish.go):
+#   - Reads Thoth journal + case study markdown → generates styled HTML
+#   - build-log.html + case-studies.html with Pantheon gold/lapis theme
+#   - 92.8% coverage, 16 tests
+#   Osiris Checkpoint Guardian (internal/osiris/):
+#   - Detects uncommitted work, assesses risk (none/low/moderate/high/critical)
+#   - Time-based escalation: 2+ hours since commit → critical
+#   - FormatReport, Summary, StatusIcon for menu bar integration
+#   - 92.8% coverage, 15 tests
+#   Module count: 22 → 24 (osiris, horus/publish)
+#   Binary count: 7 → 8 (pantheon-menubar)
+#   Test count: 768 → 819+ (51 new tests, all passing)
+#   Makefile: 6 new targets (build-menubar, bundle, publish, install/uninstall-launchagent)
 # 2026-03-24: Session 16b — The Coverage Sprint & Antigravity Bridge (90.1% Hit)
 #   Coverage breakthrough: 87.2% → 90.1% (Rule A16 established).
 #   Injectable Providers: standard interface injection for signals and exec.Command (ADR-009).

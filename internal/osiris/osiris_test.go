@@ -44,11 +44,11 @@ func setupMockWithErrors(responses map[string]string, errors map[string]error) f
 func TestAssess_CleanTree(t *testing.T) {
 	commitTime := time.Now().Add(-5 * time.Minute).Format(time.RFC3339)
 	cleanup := setupMock(map[string]string{
-		"git rev-parse --show-toplevel":     "/Users/test/project",
-		"git rev-parse --abbrev-ref HEAD":   "main",
-		"git status --porcelain":            "",
-		"git log -1 --format=%H|%s|%aI":     "abc1234567890|clean commit|" + commitTime,
-		"git diff --stat --numstat":          "",
+		"git rev-parse --show-toplevel":   "/Users/test/project",
+		"git rev-parse --abbrev-ref HEAD": "main",
+		"git status --porcelain":          "",
+		"git log -1 --format=%H|%s|%aI":   "abc1234567890|clean commit|" + commitTime,
+		"git diff --stat --numstat":       "",
 	})
 	defer cleanup()
 
@@ -84,7 +84,7 @@ func TestAssess_FewChanges(t *testing.T) {
 		"git rev-parse --abbrev-ref HEAD": "feature/menu-bar",
 		"git status --porcelain":          " M internal/guard/watchdog.go\n M internal/osiris/osiris.go\n?? new_file.txt",
 		"git log -1 --format=%H|%s|%aI":   "def4567890abc|add watchdog|" + commitTime,
-		"git diff --stat --numstat":        "10\t2\tinternal/guard/watchdog.go\n5\t1\tinternal/osiris/osiris.go",
+		"git diff --stat --numstat":       "10\t2\tinternal/guard/watchdog.go\n5\t1\tinternal/osiris/osiris.go",
 	})
 	defer cleanup()
 
@@ -134,7 +134,7 @@ func TestAssess_ModerateRisk(t *testing.T) {
 		"git rev-parse --abbrev-ref HEAD": "main",
 		"git status --porcelain":          strings.Join(lines, "\n"),
 		"git log -1 --format=%H|%s|%aI":   "aaa1234567890|session work|" + commitTime,
-		"git diff --stat --numstat":        "",
+		"git diff --stat --numstat":       "",
 	})
 	defer cleanup()
 
@@ -166,7 +166,7 @@ func TestAssess_HighRisk(t *testing.T) {
 		"git rev-parse --abbrev-ref HEAD": "dev",
 		"git status --porcelain":          strings.Join(lines, "\n"),
 		"git log -1 --format=%H|%s|%aI":   "bbb1234567890|wip|" + commitTime,
-		"git diff --stat --numstat":        "",
+		"git diff --stat --numstat":       "",
 	})
 	defer cleanup()
 
@@ -201,7 +201,7 @@ func TestAssess_CriticalRisk_ManyFiles(t *testing.T) {
 		"git rev-parse --abbrev-ref HEAD": "feature/big",
 		"git status --porcelain":          strings.Join(lines, "\n"),
 		"git log -1 --format=%H|%s|%aI":   "ccc1234567890|big change|" + commitTime,
-		"git diff --stat --numstat":        "",
+		"git diff --stat --numstat":       "",
 	})
 	defer cleanup()
 
@@ -232,7 +232,7 @@ func TestAssess_CriticalRisk_TimeElapsed(t *testing.T) {
 		"git rev-parse --abbrev-ref HEAD": "main",
 		"git status --porcelain":          " M a.go\n M b.go\n M c.go",
 		"git log -1 --format=%H|%s|%aI":   "ddd1234567890|old commit|" + commitTime,
-		"git diff --stat --numstat":        "",
+		"git diff --stat --numstat":       "",
 	})
 	defer cleanup()
 
@@ -271,7 +271,7 @@ func TestAssess_StagedAndDeleted(t *testing.T) {
 		"git rev-parse --abbrev-ref HEAD": "main",
 		"git status --porcelain":          "A  new.go\nD  old.go\nMM both.go",
 		"git log -1 --format=%H|%s|%aI":   "eee1234567890|stage test|" + commitTime,
-		"git diff --stat --numstat":        "",
+		"git diff --stat --numstat":       "",
 	})
 	defer cleanup()
 
