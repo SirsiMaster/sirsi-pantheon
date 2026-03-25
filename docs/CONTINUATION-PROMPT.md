@@ -38,18 +38,18 @@ Total gain:  4,583×       18.7×       7.8×         ~32×        270×
 | 🟢 | horus | 92.1% |
 | 🟢 | ignore | 91.8% |
 | 🟢 | seba | 90.0% |
-| 🟡 | guard | 89.0% |
+| 🟢 | guard | 91.0% |
 | 🟡 | updater | 87.4% |
+| 🟡 | maat | 88.0% |
 | 🟡 | mcp | 86.8% |
 | 🟡 | cleaner | 85.7% |
+| 🟡 | hapi | 84.3% |
 | 🟡 | profile | 83.6% |
-| 🟡 | hapi | 83.1% |
 | 🟡 | mirror | 82.9% |
 | 🟡 | stealth | 82.6% |
-| 🟡 | maat | 79.9% |
+| 🟡 | yield | 82.1% |
 | 🟠 | sight | 77.5% |
 | 🟠 | platform | 73.4% |
-| 🔴 | yield | 59.3% |
 
 ## Session 16b Deliveries
 
@@ -59,30 +59,41 @@ Total gain:  4,583×       18.7×       7.8×         ~32×        270×
 - All timeouts capped at 5s (was 30s in scales, 15s in MCP)
 - Performance gate test: health_check MUST respond <1s
 
-### Coverage Sprint (✅ DONE — 5 rounds)
+### Coverage Sprint (✅ DONE — 8 rounds)
 - Round 1: platform 45→73%, hapi 56→83%, yield 52→59%
 - Round 2: maat 71→80%
 - Round 3: output 0→100%, mcp 82→87%
 - Round 4: cleaner 80→86%
+- Round 5: yield 59→82% (injectable LoadProvider)
+- Round 6: hapi 83→84% (snapshot tests)
+- Round 7: guard 89→91% (injectable ProcessKiller)
+- Round 8: maat 80→88% (injectable pipeline/coverage runners)
+
+### Antigravity Bridge Wiring (✅ DONE)
+- `pantheon guard --watch` now starts full bridge (StartBridge + AlertRing)
+- Registers with MCP via SetWatchdogBridge()
+- Alerts flow: Watchdog → AlertRing → MCP resource → IDE
+- Clean shutdown on Ctrl+C with stats reporting
 
 ## Known Issues
 
 1. **Canon linkage**: 2 historical commits lack `Refs:` footers (rebase risk)
 2. **CoreML bridge**: ANE detection works, inference requires CGo
 3. **Metal compute**: Hash acceleration stubbed (CPU fallback)
-4. **Antigravity CLI wiring**: Bridge registered in MCP but not started from CLI
+4. **Thoth staleness**: Memory updates are manual — need automated fact collection (Horus/Ra feeds Thoth)
 
 ## Priority Queue (Next Session)
 
-### Priority 1: Coverage to 99% — Mock exec.Command
-- **Platform** (73.4%): Mock sysctl/ioreg for DetectCompute, DetectIDE path tests
-- **Yield** (59.3%): Mock getLoadAverage for all WarnIfHeavy verdict paths
+### Priority 1: Coverage to 95% — Remaining Modules
 - **Sight** (77.5%): Mock lsregister for Fix/ReindexSpotlight
-- **Ma'at** (79.9%): Mock git/go-test for runFullCoverage, changedPackages
+- **Platform** (73.4%): ExecRunner interface for sysctl/ioreg/system_profiler
+- **Stealth** (82.6%): Mock os.RemoveAll error paths
+- **Mirror** (82.9%): Mock OpenBrowser for Serve() path
 
-### Priority 2: CLI Wiring for Antigravity Bridge
-- Wire `StartBridge()` in `guard --watch` CLI command
-- Call `mcp.SetWatchdogBridge()` when MCP server starts alongside watchdog
+### Priority 2: Thoth Auto-Sync
+- Horus/Ra feed facts to Thoth automatically
+- Pre-push gate warns on stale `.thoth/memory.yaml`
+- `pantheon thoth sync` CLI command for automated stat updates
 
 ### Priority 3: CoreML Bridge for ANE
 - CGo or subprocess to Swift/Python CoreML runtime
