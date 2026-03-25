@@ -221,6 +221,14 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Safety**: Testing MUST exercise at least one failure path for every system side effect (e.g., "kill root process fails") without mutating the host.
 *   **Verification**: A module with system side effects and zero mock-based coverage is a **governance failure**.
 
+### 2.14 The QA Sovereign (Rule A17)
+> Established March 24, 2026. Required for across-the-board quality in the Pantheon. (docs/QA_PLAN.md)
+
+*   **Rule**: 𓆄 **Ma'at** is the sole deity of quality, truth, and order. She maintains the **Quality Charter** (`docs/QA_PLAN.md`).
+*   **Feather Weight**: All Sirsi ecosystem code (Sirsi, Assiduous, FinalWishes) is judged by Ma'at's **Feather Weight (0-100)** score.
+*   **Sovereignty**: Ma'at administers the tests, validates the scores, and provides the "Quality Insight" for all other deities.
+*   **Canon Gate**: A module failing a Ma'at assessment (score < 85) is considered "not yet canon" and cannot be included in a stable release.
+
 ---
 
 ## 3. Technology Stack
