@@ -33,6 +33,8 @@ tmp/
 .tmp/
 /pantheon
 /pantheon-agent
+/pantheon-menubar
+/language_server_macos_arm
 
 bin/
 coverage_target_modules.out
