@@ -18,11 +18,12 @@ import (
 )
 
 var (
-	guardSlayTarget string
-	guardDryRun     bool
-	guardConfirm    bool
-	guardWatch      bool
-	guardThreshold  float64
+	guardSlayTarget   string
+	guardReniceTarget string
+	guardDryRun       bool
+	guardConfirm      bool
+	guardWatch        bool
+	guardThreshold    float64
 )
 
 var guardCmd = &cobra.Command{
@@ -36,20 +37,19 @@ Slay zombie Node processes, stale LSP servers, and runaway builds.
   pantheon guard                    Audit RAM usage and show process groups
   pantheon guard --slay node        Kill orphaned Node.js processes
   pantheon guard --slay lsp         Kill stale language servers
-  pantheon guard --slay docker      Kill Docker Desktop helpers
-  pantheon guard --slay electron    Kill Electron helper renderers
-  pantheon guard --slay build       Kill stale build processes
-  pantheon guard --slay ai          Kill orphaned AI/ML processes
   pantheon guard --slay all         Kill all known orphan types
+  pantheon guard --renice lsp       Deprioritize LSPs for click latency fix
 
 Safety: --dry-run is the default. Use --confirm to actually kill processes.
         SIGTERM is sent first; SIGKILL only after 5s grace period.
-        System processes (kernel_task, WindowServer, launchd) are NEVER killed.`,
+        System processes (kernel_task, WindowServer, launchd) are NEVER killed.
+        --renice does NOT kill processes — it lowers their scheduler priority.`,
 	Run: runGuard,
 }
 
 func init() {
 	guardCmd.Flags().StringVar(&guardSlayTarget, "slay", "", "Target group to kill (node, lsp, docker, electron, build, ai, all)")
+	guardCmd.Flags().StringVar(&guardReniceTarget, "renice", "", "Deprioritize background processes (lsp, all)")
 	guardCmd.Flags().BoolVar(&guardDryRun, "dry-run", false, "Show what would be killed without actually killing")
 	guardCmd.Flags().BoolVar(&guardConfirm, "confirm", false, "Actually kill processes (required for slay)")
 	guardCmd.Flags().BoolVar(&guardWatch, "watch", false, "Sekhmet watchdog mode — monitor CPU pressure continuously")
@@ -57,6 +57,12 @@ func init() {
 }
 
 func runGuard(cmd *cobra.Command, args []string) {
+	// Renice mode
+	if guardReniceTarget != "" {
+		runRenice()
+		return
+	}
+
 	// Watch mode (Sekhmet watchdog)
 	if guardWatch {
 		runWatchdog()
@@ -202,6 +208,33 @@ func renderSlayResult(result *guard.SlayResult) {
 		output.Warn("This was a dry run. To actually kill processes:")
 		output.Info("  pantheon guard --slay %s --confirm", result.Target)
 	}
+	fmt.Println()
+}
+
+func runRenice() {
+	target := guard.ReniceTarget(guardReniceTarget)
+	if target != guard.ReniceTargetLSP && target != guard.ReniceTargetAll {
+		output.Error("Invalid renice target: %q", guardReniceTarget)
+		output.Warn("Valid targets: lsp, all")
+		os.Exit(1)
+	}
+
+	result, err := guard.Renice(target)
+	if err != nil {
+		output.Error("Renice failed: %v", err)
+		os.Exit(1)
+	}
+
+	if jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(result)
+		return
+	}
+
+	output.Header("𓁵 Sekhmet — Renice")
+	fmt.Println()
+	fmt.Print(guard.FormatReniceReport(result))
 	fmt.Println()
 }
 
