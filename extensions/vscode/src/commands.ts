@@ -17,6 +17,7 @@ import { promisify } from 'util';
 import * as vscode from 'vscode';
 import { PantheonStatusBar } from './statusBar';
 import { ThothProvider } from './thothProvider';
+import { Guardian } from './guardian';
 
 const execFileAsync = promisify(execFile);
 
@@ -25,7 +26,8 @@ export function registerCommands(
     binaryPath: string,
     output: vscode.OutputChannel,
     statusBar: PantheonStatusBar | undefined,
-    thothProvider: ThothProvider | undefined
+    thothProvider: ThothProvider | undefined,
+    guardian: Guardian | undefined
 ): void {
 
     // ── Scan Workspace ────────────────────────────────────────────
@@ -44,7 +46,7 @@ export function registerCommands(
             }, async (progress, token) => {
                 try {
                     const { stdout } = await execFileAsync(binaryPath, [
-                        'weigh', '--json', '--path', workspaceRoot
+                        'weigh', '--dev', '--json'
                     ], {
                         timeout: 60000,
                     });
@@ -78,7 +80,7 @@ export function registerCommands(
             const terminal = vscode.window.createTerminal({
                 name: '𓁵 Pantheon Guardian',
                 shellPath: binaryPath,
-                shellArgs: ['guard', '--watch'],
+                shellArgs: ['guard', '--json'],
                 iconPath: new vscode.ThemeIcon('shield'),
             });
             terminal.show();
@@ -87,6 +89,7 @@ export function registerCommands(
     );
 
     // ── Renice LSP ────────────────────────────────────────────────
+    // Uses native renice(1) + taskpolicy(1) — no CLI binary dependency
     context.subscriptions.push(
         vscode.commands.registerCommand('pantheon.reniceLSP', async () => {
             await vscode.window.withProgress({
@@ -94,35 +97,17 @@ export function registerCommands(
                 title: '𓁵 Renicing LSP processes...',
                 cancellable: false,
             }, async () => {
-                try {
-                    const { stdout } = await execFileAsync(binaryPath, [
-                        'guard', '--renice', 'lsp', '--json'
-                    ], { timeout: 15000 });
-
-                    output.appendLine('\n𓁵 ═══ Renice Results ═══');
-                    output.appendLine(stdout);
-
-                    try {
-                        const result = JSON.parse(stdout);
-                        if (result.reniced === 0) {
-                            vscode.window.showInformationMessage(
-                                '𓁵 No LSP processes found to renice'
-                            );
-                        } else {
-                            const procs = result.processes
-                                ?.map((p: { name: string; rss_human: string }) =>
-                                    `${p.name} (${p.rss_human})`
-                                )
-                                .join(', ') || '';
-                            vscode.window.showInformationMessage(
-                                `𓁵 Reniced ${result.reniced} process(es): ${procs}`
-                            );
-                        }
-                    } catch {
-                        vscode.window.showInformationMessage('𓁵 Renice complete — see Output panel');
-                    }
-                } catch (err: unknown) {
-                    handleCommandError('Renice', err, output);
+                if (guardian) {
+                    await guardian.manualRenice();
+                } else {
+                    // Fallback: create a temporary Guardian for one-shot renice
+                    const tempGuardian = new Guardian(binaryPath, output, {
+                        reniceDelaySec: 0,
+                        pollIntervalSec: 5,
+                        autoRenice: false,
+                    });
+                    await tempGuardian.manualRenice();
+                    tempGuardian.dispose();
                 }
             });
         })

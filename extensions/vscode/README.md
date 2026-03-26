@@ -1,18 +1,20 @@
 # 𓂀 Pantheon — Anubis Suite
 
-**Always-on infrastructure hygiene for your IDE.** Auto-renice, RAM guardian, context compression. The Anubis Suite operates without oversight.
+**Always-on infrastructure hygiene for your IDE.** Auto-renice, RAM guardian, memory GC, context compression. The Anubis Suite operates without oversight.
 
 ## Features
 
 ### 🛡️ Always-On Guardian
-- **Auto-renice**: Deprioritizes LSP processes (gopls, tsserver, rust-analyzer) to Background QoS
+- **Auto-renice**: Deprioritizes LSP processes (gopls, tsserver, rust-analyzer) to Background QoS via native `renice(1)` + `taskpolicy(1)`
+- **Memory GC**: Tracks per-process RSS across poll cycles — when a third-party LSP exceeds 500 MB for 3+ consecutive checks, triggers VS Code's built-in LSP restart to reclaim memory
 - **30s startup delay**: Gives LSPs time to initialize before intervention
 - **60s re-apply loop**: Catches respawned or reset processes  
-- Zero telemetry. Zero network calls.
+- Zero telemetry. Zero network calls. No CLI binary dependency for renice.
 
-### 𓂀 Ankh Status Bar
+### 👁️ Pantheon Status Bar
 - Live RAM & CPU metrics polled every 5 seconds
-- Color-coded health states: ✅ healthy / ⚠️ warning (>3GB) / 🔴 error
+- `$(eye) PANTHEON` — healthy display with codicons for visibility
+- Color-coded health states: ✅ healthy / ⚠️ warning (>1GB third-party LSPs) / 🔴 error
 - Click to open the full metrics panel
 
 ### 𓁟 Thoth Context Compression

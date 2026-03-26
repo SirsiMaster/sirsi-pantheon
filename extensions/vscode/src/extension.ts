@@ -64,7 +64,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     // ── Command Palette Registration ──────────────────────────────────
-    registerCommands(context, binaryPath, outputChannel, statusBar, thothProvider);
+    registerCommands(context, binaryPath, outputChannel, statusBar, thothProvider, guardian);
 
     // ── Workspace Optimization ────────────────────────────────────────
     const autoOptimize = config.get<boolean>('workspace.autoOptimize', false);

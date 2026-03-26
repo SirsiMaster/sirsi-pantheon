@@ -84,6 +84,7 @@ export class PantheonStatusBar implements vscode.Disposable {
             let totalRAM = 0;
             let lspCount = 0;
             let cpuHogs = 0;
+            let thirdPartyRAM = 0; // RAM from non-host LSPs only
 
             const lspPatterns = [
                 'language_server_macos_arm',
@@ -94,6 +95,9 @@ export class PantheonStatusBar implements vscode.Disposable {
                 'clangd',
                 'sourcekit-lsp',
             ];
+
+            // Host IDE LSP — always large, not a warning signal
+            const hostLSP = 'language_server_macos_arm';
 
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i].trim();
@@ -110,6 +114,9 @@ export class PantheonStatusBar implements vscode.Disposable {
                 if (isLSP) {
                     totalRAM += rss;
                     lspCount++;
+                    if (!name.includes(hostLSP)) {
+                        thirdPartyRAM += rss;
+                    }
                 }
 
                 if (cpu > 80) {
@@ -126,8 +133,8 @@ export class PantheonStatusBar implements vscode.Disposable {
                 lastUpdate: new Date(),
             };
 
-            // Determine state
-            if (totalRAM > 3 * 1024 * 1024 * 1024) { // > 3 GB
+            // Warning based on third-party LSPs only (host LSP at 4-6 GB is normal)
+            if (thirdPartyRAM > 1 * 1024 * 1024 * 1024) { // > 1 GB of third-party LSPs
                 this.state = 'warning';
             } else {
                 this.state = 'healthy';
@@ -145,23 +152,23 @@ export class PantheonStatusBar implements vscode.Disposable {
     private updateDisplay(): void {
         switch (this.state) {
             case 'healthy':
-                this.statusBarItem.text = `𓂀 ${this.metrics.ramHuman}`;
+                this.statusBarItem.text = `$(eye) PANTHEON ${this.metrics.ramHuman}`;
                 this.statusBarItem.backgroundColor = undefined;
                 break;
             case 'warning':
-                this.statusBarItem.text = `𓂀 ${this.metrics.ramHuman} ▲`;
+                this.statusBarItem.text = `$(eye) PANTHEON ${this.metrics.ramHuman} $(warning)`;
                 this.statusBarItem.backgroundColor = new vscode.ThemeColor(
                     'statusBarItem.warningBackground'
                 );
                 break;
             case 'error':
-                this.statusBarItem.text = '⚠ Pantheon';
+                this.statusBarItem.text = '$(warning) PANTHEON';
                 this.statusBarItem.backgroundColor = new vscode.ThemeColor(
                     'statusBarItem.errorBackground'
                 );
                 break;
             case 'initializing':
-                this.statusBarItem.text = '⏳ Pantheon';
+                this.statusBarItem.text = '$(loading~spin) PANTHEON';
                 this.statusBarItem.backgroundColor = undefined;
                 break;
         }
