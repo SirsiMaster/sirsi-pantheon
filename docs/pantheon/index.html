@@ -37,42 +37,119 @@
     .hero .subtitle { font-size: 1.3rem; color: var(--text-dim); max-width: 700px; margin: 0 auto 2rem; }
     .hero .tagline { font-family: var(--font-mono); font-size: 0.95rem; color: var(--gold-dark); letter-spacing: 0.12em; text-transform: uppercase; }
 
-    /* ── Deity Grid ────────────────────────────────────── */
+    /* ── Container ─────────────────────────────────────── */
     .container { max-width: 1200px; margin: 0 auto; padding: 0 3rem; }
     section { padding: 3rem 0; }
     section h2 { font-family: var(--font-heading); font-size: 2rem; color: var(--gold); text-align: center; margin-bottom: 0.3rem; }
     section .sub { text-align: center; color: var(--text-muted); margin-bottom: 2.5rem; }
 
+    /* ── Flip Card Grid ───────────────────────────────── */
     .deity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
     @media (max-width: 900px) { .deity-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 600px) { .deity-grid { grid-template-columns: 1fr; } }
 
-    .deity-card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2rem;
-      text-decoration: none; color: var(--text); transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
-      display: flex; flex-direction: column; position: relative; overflow: hidden;
+    .flip-container {
+      perspective: 1000px;
+      height: 340px;
+      cursor: pointer;
     }
-    .deity-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--gold), transparent); opacity: 0; transition: opacity 0.3s; }
-    .deity-card:hover { border-color: var(--border-hover); transform: translateY(-4px); box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
-    .deity-card:hover::before { opacity: 1; }
+    .flip-container.flipped .flipper { transform: rotateY(180deg); }
 
-    .deity-card .card-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-    .deity-card .glyph { font-size: 2.8rem; }
-    .deity-card .card-title { font-family: var(--font-heading); font-size: 1.4rem; color: var(--gold-bright); }
-    .deity-card .card-role { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
-    .deity-card .card-desc { font-size: 1rem; color: var(--text-dim); line-height: 1.5; flex: 1; margin-bottom: 1.2rem; }
-    .deity-card .card-meta { display: flex; gap: 1.2rem; flex-wrap: wrap; }
-    .deity-card .meta-item { display: flex; flex-direction: column; }
-    .deity-card .meta-value { font-family: var(--font-heading); font-size: 1.1rem; color: var(--gold); }
-    .deity-card .meta-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
-    .deity-card .badge { position: absolute; top: 1rem; right: 1rem; font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: rgba(5,150,105,0.15); color: var(--emerald-light); border: 1px solid rgba(5,150,105,0.3); text-transform: uppercase; letter-spacing: 0.05em; }
-    .deity-card .badge.planned { background: rgba(200,169,81,0.1); color: var(--gold-dark); border-color: rgba(200,169,81,0.25); }
+    .flipper {
+      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-style: preserve-3d;
+      position: relative;
+      height: 100%;
+    }
+
+    .card-front, .card-back {
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .card-front::before, .card-back::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--gold), transparent);
+      opacity: 0; transition: opacity 0.3s;
+    }
+
+    .flip-container:hover .card-front::before,
+    .flip-container:hover .card-back::before { opacity: 1; }
+
+    .flip-container:hover .card-front,
+    .flip-container:hover .card-back {
+      border-color: var(--border-hover);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+
+    .card-back {
+      transform: rotateY(180deg);
+      background: linear-gradient(170deg, #0D1F18 0%, #0A1A14 40%, #0F1A10 100%);
+    }
+
+    /* ── Card Front ───────────────────────────────────── */
+    .card-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+    .glyph { font-size: 2.8rem; }
+    .card-title { font-family: var(--font-heading); font-size: 1.4rem; color: var(--gold-bright); }
+    .card-role { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .card-desc { font-size: 1rem; color: var(--text-dim); line-height: 1.5; flex: 1; margin-bottom: 1.2rem; }
+    .card-meta { display: flex; gap: 1.2rem; flex-wrap: wrap; }
+    .meta-item { display: flex; flex-direction: column; }
+    .meta-value { font-family: var(--font-heading); font-size: 1.1rem; color: var(--gold); }
+    .meta-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .badge { position: absolute; top: 1rem; right: 1rem; font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: rgba(5,150,105,0.15); color: var(--emerald-light); border: 1px solid rgba(5,150,105,0.3); text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge.planned { background: rgba(200,169,81,0.1); color: var(--gold-dark); border-color: rgba(200,169,81,0.25); }
+
+    .flip-hint { font-size: 0.7rem; color: var(--text-muted); text-align: right; margin-top: auto; letter-spacing: 0.06em; }
+    .flip-hint span { display: inline-block; animation: pulse-hint 2s ease-in-out infinite; }
+    @keyframes pulse-hint { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+    /* ── Card Back ─────────────────────────────────────── */
+    .back-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+    .back-header .glyph { font-size: 1.8rem; }
+    .back-header .card-title { font-size: 1.1rem; }
+    .back-header .label-dev { font-size: 0.65rem; color: var(--emerald-light); text-transform: uppercase; letter-spacing: 0.1em; background: rgba(5,150,105,0.12); padding: 0.15rem 0.5rem; border-radius: 4px; margin-left: auto; }
+
+    .dev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem 1.2rem; flex: 1; }
+    .dev-item label { display: block; font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.15rem; }
+    .dev-item .dev-val { font-family: var(--font-mono); font-size: 0.85rem; color: var(--gold-bright); }
+    .dev-item .dev-val.path { color: var(--emerald-light); font-size: 0.78rem; }
+
+    .back-actions { display: flex; gap: 0.6rem; margin-top: auto; padding-top: 0.8rem; border-top: 1px solid var(--border); }
+    .back-actions a {
+      flex: 1; text-align: center; text-decoration: none; font-size: 0.78rem; padding: 0.5rem;
+      border-radius: 8px; transition: all 0.2s; font-weight: 500;
+    }
+    .btn-page { background: rgba(200,169,81,0.12); color: var(--gold); border: 1px solid rgba(200,169,81,0.25); }
+    .btn-page:hover { background: rgba(200,169,81,0.25); }
+    .btn-dl { background: rgba(5,150,105,0.12); color: var(--emerald-light); border: 1px solid rgba(5,150,105,0.25); }
+    .btn-dl:hover { background: rgba(5,150,105,0.25); }
+    .btn-src { background: rgba(240,237,229,0.05); color: var(--text-dim); border: 1px solid rgba(240,237,229,0.1); }
+    .btn-src:hover { background: rgba(240,237,229,0.1); }
 
     /* ── Install ──────────────────────────────────────── */
     .install { max-width: 700px; margin: 2rem auto; background: rgba(0,0,0,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem 2rem; }
     .install code { display: block; font-family: var(--font-mono); font-size: 0.95rem; margin: 0.3rem 0; color: var(--emerald-light); }
     .install .prompt { color: var(--gold); }
     .install .comment { color: var(--text-muted); }
+
+    /* ── Editions ──────────────────────────────────────── */
+    .edition-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+    @media (max-width: 700px) { .edition-grid { grid-template-columns: 1fr; } }
+    .edition-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2rem;
+      color: var(--text); display: flex; flex-direction: column;
+    }
+    .edition-card.enterprise { border-color: var(--gold-dark); }
 
     /* ── Footer ───────────────────────────────────────── */
     footer { text-align: center; padding: 3rem 2rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.9rem; }
@@ -85,11 +162,11 @@
 
   <!-- ═══ Nav ═══ -->
   <nav>
-    <a href="../index.html" class="logo"><span class="glyph">𓂀</span> Pantheon</a>
+    <a href="/" class="logo"><span class="glyph">𓂀</span> Pantheon</a>
     <div class="nav-links">
-      <a href="../index.html">Home</a>
-      <a href="../build-log.html">Build Log</a>
-      <a href="../case-studies.html">Case Studies</a>
+      <a href="/">Home</a>
+      <a href="/build-log">Build Log</a>
+      <a href="/case-studies">Case Studies</a>
       <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
       <a href="https://sirsi.ai">Sirsi Nexus</a>
     </div>
@@ -99,7 +176,7 @@
   <header class="hero">
     <p class="tagline">pantheon.sirsi.ai</p>
     <h1>The Deity Registry</h1>
-    <p class="subtitle">Every module in the Pantheon gets a full page — features, metrics, installation, and downloads. Click any deity to explore.</p>
+    <p class="subtitle">Every module in the Pantheon gets a full page — features, metrics, installation, and downloads. Click any card to flip and see developer details.</p>
   </header>
 
   <!-- ═══ Install ═══ -->
@@ -115,231 +192,527 @@
   <section>
     <div class="container">
       <h2>Choose Your Deity</h2>
-      <p class="sub">Each deity can be installed standalone or as part of the full Pantheon</p>
+      <p class="sub">Each deity can be installed standalone or as part of the full Pantheon · Click to flip</p>
 
       <div class="deity-grid">
 
-        <a href="anubis.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓂀</span>
-            <div>
-              <div class="card-title">Anubis</div>
-              <div class="card-role">Judge of the Dead</div>
+        <!-- ═══ ANUBIS ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓂀</span>
+                <div><div class="card-title">Anubis</div><div class="card-role">Judge of the Dead</div></div>
+              </div>
+              <p class="card-desc">Finds junk on your computer that cleaning apps miss. 58 scan rules across 7 domains — caches, Docker, AI models, IDEs, and more.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">58</span><span class="meta-label">Scan Rules</span></div>
+                <div class="meta-item"><span class="meta-value">94.6%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓂀</span>
+                <div class="card-title">Anubis</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/jackal/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">94.6%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">142</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">4.0 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">weigh, judge</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">horus, brain</div></div>
+                <div class="dev-item"><label>MCP Tool</label><div class="dev-val">scan_workspace</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-001</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/anubis" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/jackal" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Finds junk on your computer that cleaning apps miss. 58 scan rules across 7 domains — caches, Docker, AI models, IDEs, and more.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">58</span><span class="meta-label">Scan Rules</span></div>
-            <div class="meta-item"><span class="meta-value">94.6%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="ka.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓂓</span>
-            <div>
-              <div class="card-title">Ka</div>
-              <div class="card-role">Spirit of the Dead</div>
+        <!-- ═══ KA ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓂓</span>
+                <div><div class="card-title">Ka</div><div class="card-role">Spirit of the Dead</div></div>
+              </div>
+              <p class="card-desc">Detects ghost apps — software you deleted that left behind startup files, system registrations, and phantom processes.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">17</span><span class="meta-label">Search Paths</span></div>
+                <div class="meta-item"><span class="meta-value">93.0%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">&lt; 1s</span><span class="meta-label">Scan Time</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓂓</span>
+                <div class="card-title">Ka</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/ka/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">93.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">38</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">3.8 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">ka, ka --clean</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">platform</div></div>
+                <div class="dev-item"><label>MCP Tool</label><div class="dev-val">ghost_report</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-002</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/ka" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/ka" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Detects ghost apps — software you deleted that left behind startup files, system registrations, and phantom processes.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">17</span><span class="meta-label">Search Paths</span></div>
-            <div class="meta-item"><span class="meta-value">93.0%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">&lt; 1s</span><span class="meta-label">Scan Time</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="sekhmet.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓁵</span>
-            <div>
-              <div class="card-title">Sekhmet</div>
-              <div class="card-role">Warrior Guardian</div>
+        <!-- ═══ SEKHMET ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓁵</span>
+                <div><div class="card-title">Sekhmet</div><div class="card-role">Warrior Guardian</div></div>
+              </div>
+              <p class="card-desc">Guards your system against CPU and RAM hogs. Detects runaway processes, throttles offenders with renice, and prevents IDE freezes.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">95.0%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">3 levels</span><span class="meta-label">Throttle</span></div>
+                <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓁵</span>
+                <div class="card-title">Sekhmet</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/guard/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">95.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">87</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">4.0 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">guard, guard --watch</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">platform, yield</div></div>
+                <div class="dev-item"><label>Features</label><div class="dev-val">renice, slay, orphan</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-006</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/sekhmet" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/guard" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Guards your system against CPU and RAM hogs. Detects runaway processes, throttles offenders with renice, and prevents IDE freezes.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">95.0%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">3 levels</span><span class="meta-label">Throttle</span></div>
-            <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="hathor.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓉡</span>
-            <div>
-              <div class="card-title">Hathor</div>
-              <div class="card-role">Goddess of Reflection</div>
+        <!-- ═══ HATHOR ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓉡</span>
+                <div><div class="card-title">Hathor</div><div class="card-role">Goddess of Reflection</div></div>
+              </div>
+              <p class="card-desc">Finds duplicate files eating your storage. 3-phase dedup engine — size grouping → partial hash → full SHA-256. Includes web GUI.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">27×</span><span class="meta-label">Faster</span></div>
+                <div class="meta-item"><span class="meta-value">98.8%</span><span class="meta-label">I/O Saved</span></div>
+                <div class="meta-item"><span class="meta-value">Web GUI</span><span class="meta-label">Included</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓉡</span>
+                <div class="card-title">Hathor</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/mirror/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">86.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">24</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">4.2 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">mirror, mirror --gui</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">platform, horus</div></div>
+                <div class="dev-item"><label>Algorithm</label><div class="dev-val">3-phase SHA-256</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/hathor" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/mirror" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Finds duplicate files eating your storage. 3-phase dedup engine — size grouping → partial hash → full SHA-256. Includes web GUI.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">27×</span><span class="meta-label">Faster</span></div>
-            <div class="meta-item"><span class="meta-value">98.8%</span><span class="meta-label">I/O Saved</span></div>
-            <div class="meta-item"><span class="meta-value">Web GUI</span><span class="meta-label">Included</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="maat.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓆄</span>
-            <div>
-              <div class="card-title">Ma'at</div>
-              <div class="card-role">Truth and Order</div>
+        <!-- ═══ MA'AT ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓆄</span>
+                <div><div class="card-title">Ma'at</div><div class="card-role">Truth and Order</div></div>
+              </div>
+              <p class="card-desc">Grades your code quality and enforces team standards. Coverage governance, canon verification, YAML policy engine.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">88/100</span><span class="meta-label">Score</span></div>
+                <div class="meta-item"><span class="meta-value">3</span><span class="meta-label">Domains</span></div>
+                <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓆄</span>
+                <div class="card-title">Ma'at</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/maat/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">88.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">32</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">4.0 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">maat, maat --full</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">scales, platform</div></div>
+                <div class="dev-item"><label>Domains</label><div class="dev-val">coverage, canon, CI</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/maat" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/maat" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Grades your code quality and enforces team standards. Coverage governance, canon verification, YAML policy engine.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">88/100</span><span class="meta-label">Score</span></div>
-            <div class="meta-item"><span class="meta-value">3</span><span class="meta-label">Domains</span></div>
-            <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="horus.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓁹</span>
-            <div>
-              <div class="card-title">Horus</div>
-              <div class="card-role">The All-Seeing Eye</div>
+        <!-- ═══ HORUS ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓁹</span>
+                <div><div class="card-title">Horus</div><div class="card-role">The All-Seeing Eye</div></div>
+              </div>
+              <p class="card-desc">Shared filesystem index — walk the disk once, all deities query instantly. Fixes macOS Spotlight and Launch Services. Auto-publishes build docs.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">19×</span><span class="meta-label">Faster</span></div>
+                <div class="meta-item"><span class="meta-value">92.8%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">Gob cache</span><span class="meta-label">Format</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓁹</span>
+                <div class="card-title">Horus</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/horus/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">92.8%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">28</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">incl.</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">weigh --fresh</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">sight, platform</div></div>
+                <div class="dev-item"><label>Publisher</label><div class="dev-val">HTML auto-gen</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-008</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/horus" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/horus" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Shared filesystem index — walk the disk once, all deities query instantly. Fixes macOS Spotlight and Launch Services. Auto-publishes build documentation.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">19×</span><span class="meta-label">Faster</span></div>
-            <div class="meta-item"><span class="meta-value">92.8%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">Gob cache</span><span class="meta-label">Format</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="khepri.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓆣</span>
-            <div>
-              <div class="card-title">Khepri</div>
-              <div class="card-role">Scarab of Renewal</div>
+        <!-- ═══ KHEPRI ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓆣</span>
+                <div><div class="card-title">Khepri</div><div class="card-role">Scarab of Renewal</div></div>
+              </div>
+              <p class="card-desc">Scans every device on your local network. Audits Docker containers, discovers hosts via ARP, inspects configurations.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">LAN-wide</span><span class="meta-label">Scope</span></div>
+                <div class="meta-item"><span class="meta-value">94.8%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓆣</span>
+                <div class="card-title">Khepri</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/scarab/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">94.8%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">45</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">4.0 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">scarab, fleet</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">platform</div></div>
+                <div class="dev-item"><label>Protocols</label><div class="dev-val">ARP, Docker API</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/khepri" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/scarab" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Scans every device on your local network. Audits Docker containers, discovers hosts via ARP, inspects configurations.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">LAN-wide</span><span class="meta-label">Scope</span></div>
-            <div class="meta-item"><span class="meta-value">94.8%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">4.0 MB</span><span class="meta-label">Download</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="thoth.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓁟</span>
-            <div>
-              <div class="card-title">Thoth</div>
-              <div class="card-role">God of Knowledge</div>
+        <!-- ═══ THOTH ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓁟</span>
+                <div><div class="card-title">Thoth</div><div class="card-role">God of Knowledge</div></div>
+              </div>
+              <p class="card-desc">Persistent AI memory that cuts context window waste by 98.7%. MCP server for Claude, Cursor, and Windsurf integration.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">98.7%</span><span class="meta-label">Token Saved</span></div>
+                <div class="meta-item"><span class="meta-value">5</span><span class="meta-label">MCP Tools</span></div>
+                <div class="meta-item"><span class="meta-value">$4.08</span><span class="meta-label">Saved/Session</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓁟</span>
+                <div class="card-title">Thoth</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/brain/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">52.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">22</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">3.5 MB</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">mcp, thoth-init</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">mcp</div></div>
+                <div class="dev-item"><label>Protocol</label><div class="dev-val">JSON-RPC 2.0</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-001</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/thoth" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/brain" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Persistent AI memory that cuts context window waste by 98.7%. MCP server for Claude, Cursor, and Windsurf integration.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">98.7%</span><span class="meta-label">Token Saved</span></div>
-            <div class="meta-item"><span class="meta-value">5</span><span class="meta-label">MCP Tools</span></div>
-            <div class="meta-item"><span class="meta-value">$4.08</span><span class="meta-label">Saved/Session</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="hapi.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓁶</span>
-            <div>
-              <div class="card-title">Hapi</div>
-              <div class="card-role">God of the Flood</div>
+        <!-- ═══ HAPI ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓁶</span>
+                <div><div class="card-title">Hapi</div><div class="card-role">God of the Flood</div></div>
+              </div>
+              <p class="card-desc">Hardware accelerator detection — finds GPUs, Neural Engines, VRAM, and CPU cores. Routes to the fastest compute available.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">4</span><span class="meta-label">Vendors</span></div>
+                <div class="meta-item"><span class="meta-value">84.3%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">Auto</span><span class="meta-label">Detection</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓁶</span>
+                <div class="card-title">Hapi</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/hapi/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">84.3%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">18</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">incl.</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">hapi</div></div>
+                <div class="dev-item"><label>Vendors</label><div class="dev-val">NVIDIA, Apple, AMD, Intel</div></div>
+                <div class="dev-item"><label>Detects</label><div class="dev-val">GPU, ANE, VRAM, cores</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/hapi" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/hapi" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Hardware accelerator detection — finds GPUs, Neural Engines, VRAM, and CPU cores. Routes to the fastest compute available.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">4</span><span class="meta-label">Vendors</span></div>
-            <div class="meta-item"><span class="meta-value">84.3%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">Auto</span><span class="meta-label">Detection</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="osiris.html" class="deity-card">
-          <span class="badge">shipped</span>
-          <div class="card-header">
-            <span class="glyph">𓁹</span>
-            <div>
-              <div class="card-title">Osiris</div>
-              <div class="card-role">Checkpoint Guardian</div>
+        <!-- ═══ OSIRIS ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓁹</span>
+                <div><div class="card-title">Osiris</div><div class="card-role">Checkpoint Guardian</div></div>
+              </div>
+              <p class="card-desc">Detects uncommitted work and assesses risk of session data loss. 5-level risk system with time-based escalation.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">5</span><span class="meta-label">Risk Levels</span></div>
+                <div class="meta-item"><span class="meta-value">92.8%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">2h</span><span class="meta-label">Escalation</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓁹</span>
+                <div class="card-title">Osiris</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/osiris/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">92.8%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">15</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">incl.</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">osiris</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">platform</div></div>
+                <div class="dev-item"><label>Risk Levels</label><div class="dev-val">5 (minimal→critical)</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/osiris" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/osiris" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Detects uncommitted work and assesses risk of session data loss. 5-level risk system with time-based escalation.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">5</span><span class="meta-label">Risk Levels</span></div>
-            <div class="meta-item"><span class="meta-value">92.8%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">2h</span><span class="meta-label">Escalation</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="seba.html" class="deity-card">
-          <span class="badge planned">in progress</span>
-          <div class="card-header">
-            <span class="glyph">𓇼</span>
-            <div>
-              <div class="card-title">Seba</div>
-              <div class="card-role">Star Map</div>
+        <!-- ═══ SEBA ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge planned">in progress</span>
+              <div class="card-header">
+                <span class="glyph">𓇼</span>
+                <div><div class="card-title">Seba</div><div class="card-role">Star Map</div></div>
+              </div>
+              <p class="card-desc">Draws a visual map of your infrastructure. Interactive topology graph showing service connections and dependencies.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">Graph</span><span class="meta-label">Engine</span></div>
+                <div class="meta-item"><span class="meta-value">90.0%</span><span class="meta-label">Coverage</span></div>
+                <div class="meta-item"><span class="meta-value">D3.js</span><span class="meta-label">Visualization</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">𓇼</span>
+                <div class="card-title">Seba</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/seba/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">90.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">12</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">incl.</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">seba</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">scarab</div></div>
+                <div class="dev-item"><label>Renderer</label><div class="dev-val">Canvas + D3.js</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/seba" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/seba" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">Draws a visual map of your infrastructure. Interactive topology graph showing service connections and dependencies.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">Graph</span><span class="meta-label">Engine</span></div>
-            <div class="meta-item"><span class="meta-value">90.0%</span><span class="meta-label">Coverage</span></div>
-            <div class="meta-item"><span class="meta-value">D3.js</span><span class="meta-label">Visualization</span></div>
-          </div>
-        </a>
+        </div>
 
-        <a href="ra.html" class="deity-card">
-          <span class="badge planned">planned</span>
-          <div class="card-header">
-            <span class="glyph">☀️</span>
-            <div>
-              <div class="card-title">Ra</div>
-              <div class="card-role">Supreme Overseer</div>
+        <!-- ═══ RA ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge planned">planned</span>
+              <div class="card-header">
+                <span class="glyph">☀️</span>
+                <div><div class="card-title">Ra</div><div class="card-role">Supreme Overseer</div></div>
+              </div>
+              <p class="card-desc">The autonomous hypervisor. Monitors system health and orchestrates all deities automatically. Fleet management and Sirsi Nexus bridge.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">12</span><span class="meta-label">Deities</span></div>
+                <div class="meta-item"><span class="meta-value">Fleet</span><span class="meta-label">Scale</span></div>
+                <div class="meta-item"><span class="meta-value">Enterprise</span><span class="meta-label">Tier</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="glyph">☀️</span>
+                <div class="card-title">Ra</div>
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/ra/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">—</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">—</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">TBD</div></div>
+                <div class="dev-item"><label>Status</label><div class="dev-val">Planned</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">all deities</div></div>
+                <div class="dev-item"><label>Scope</label><div class="dev-val">Fleet orchestration</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/ra" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="btn-src">Source</a>
+              </div>
             </div>
           </div>
-          <p class="card-desc">The autonomous hypervisor. Monitors system health and orchestrates all deities automatically. Fleet management, compliance, and the Sirsi Nexus bridge.</p>
-          <div class="card-meta">
-            <div class="meta-item"><span class="meta-value">12</span><span class="meta-label">Deities</span></div>
-            <div class="meta-item"><span class="meta-value">Fleet</span><span class="meta-label">Scale</span></div>
-            <div class="meta-item"><span class="meta-value">Enterprise</span><span class="meta-label">Tier</span></div>
-          </div>
-        </a>
+        </div>
 
       </div>
     </div>
   </section>
 
-  <!-- ═══ Tiers ═══ -->
+  <!-- ═══ Editions ═══ -->
   <section>
     <div class="container">
       <h2>Editions</h2>
       <p class="sub">Free forever for your machine. Paid for your fleet.</p>
-      <div class="deity-grid" style="grid-template-columns: repeat(2, 1fr);">
-        <div class="deity-card" style="cursor: default;">
+      <div class="edition-grid">
+        <div class="edition-card">
           <div class="card-header">
             <span class="glyph">𓂀</span>
-            <div>
-              <div class="card-title">Pantheon Anubis</div>
-              <div class="card-role">Free Edition</div>
-            </div>
+            <div><div class="card-title">Pantheon Anubis</div><div class="card-role">Free Edition</div></div>
           </div>
           <p class="card-desc">All deities, all commands, single machine. Scan, clean, guard, govern, deduplicate, ghost hunt, hardware detect, AI memory. No feature gating. No telemetry. Free forever.</p>
           <div class="card-meta">
@@ -348,15 +721,12 @@
             <div class="meta-item"><span class="meta-value">MIT</span><span class="meta-label">License</span></div>
           </div>
         </div>
-        <div class="deity-card" style="cursor: default; border-color: var(--gold-dark);">
+        <div class="edition-card enterprise">
           <div class="card-header">
             <span class="glyph">☀️</span>
-            <div>
-              <div class="card-title">Pantheon Ra</div>
-              <div class="card-role">Enterprise Edition</div>
-            </div>
+            <div><div class="card-title">Pantheon Ra</div><div class="card-role">Enterprise Edition</div></div>
           </div>
-          <p class="card-desc">Fleet management across routers, switches, GPU/TPU clusters, cloud infrastructure. Centralized policy enforcement, compliance reporting, and Sirsi Nexus integration. The infrastructure immune system for your organization.</p>
+          <p class="card-desc">Fleet management across routers, switches, GPU/TPU clusters, cloud infrastructure. Centralized policy enforcement, compliance reporting, and Sirsi Nexus integration.</p>
           <div class="card-meta">
             <div class="meta-item"><span class="meta-value">Fleet</span><span class="meta-label">Scale</span></div>
             <div class="meta-item"><span class="meta-value">LSP</span><span class="meta-label">Included</span></div>
@@ -371,11 +741,11 @@
   <footer>
     <div class="footer-links">
       <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
-      <a href="../build-log.html">Build Log</a>
-      <a href="../case-studies.html">Case Studies</a>
+      <a href="/build-log">Build Log</a>
+      <a href="/case-studies">Case Studies</a>
       <a href="https://sirsi.ai">Sirsi Nexus</a>
     </div>
-    <p>𓂀 Pantheon v0.4.0-alpha — Built by <a href="https://sirsi.ai">Sirsi Technologies</a></p>
+    <p>𓂀 Pantheon v0.5.0-alpha — Built by <a href="https://sirsi.ai">Sirsi Technologies</a></p>
     <p style="margin-top: 0.3rem; font-size: 0.8rem;">One install. All deities. Nothing escapes the Weighing.</p>
   </footer>
 
