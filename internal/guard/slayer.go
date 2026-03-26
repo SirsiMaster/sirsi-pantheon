@@ -133,7 +133,7 @@ func isProtectedProcessWith(p platform.Platform, proc ProcessInfo) bool {
 		return true
 	}
 
-	// Protected process names
+	// Protected process names (exact match)
 	protectedNames := []string{
 		"kernel_task", "launchd", "WindowServer", "loginwindow",
 		"coreaudiod", "dock", "finder", "systemuiserver",
@@ -145,6 +145,12 @@ func isProtectedProcessWith(p platform.Platform, proc ProcessInfo) bool {
 		if strings.ToLower(protected) == nameLower {
 			return true
 		}
+	}
+
+	// Antigravity core — killing this crashes the IDE.
+	// Uses Contains because the full path is in proc.Name.
+	if strings.Contains(nameLower, "language_server_macos_arm") {
+		return true
 	}
 
 	return false

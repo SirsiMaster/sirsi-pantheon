@@ -61,6 +61,9 @@ var orphanPatterns = map[string]string{
 	"electron helper (gpu)": "electron",
 
 	// LSP servers
+	// NOTE: language_server_macos_arm is intentionally EXCLUDED — it is
+	// Antigravity's core AI backend. Killing it crashes the IDE.
+	// Use `pantheon guard --renice lsp` to deprioritize it instead.
 	"typescript-language-server": "lsp",
 	"tsserver":                   "lsp",
 	"gopls":                      "lsp",
