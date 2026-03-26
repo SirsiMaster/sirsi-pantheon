@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-03-25T20:26:00-04:00
+# Last updated: 2026-03-25T22:00:00-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -68,7 +68,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 5 modules, 7 commands)
 # 15. Cross-Agent Referral Logic: deities allude to other deities that
 #     can act upon their findings (cohesive ecosystem, modular design).
 
-## Known Limitations (as of v0.4.0-alpha)
+## Known Limitations (as of v0.5.0-alpha)
 # - GUI folder picker only works on macOS (Linux: zenity/kdialog in platform/linux.go)
 # - Trash integration only works on macOS (Linux: gio trash in platform/linux.go)
 # - 13/22 modules at 90%+ test coverage (weighted avg 90.1%)
@@ -89,8 +89,17 @@ vscode_extension: extensions/vscode/ (TypeScript, 5 modules, 7 commands)
 # - Guard renice: pantheon guard --renice lsp (deprioritizes LSPs to Background QoS)
 # - language_server_macos_arm is PROTECTED — never slay, only renice
 # - Rule A19: NEVER modify /Applications/*.app/ bundles
+# - Website: sirsi-pantheon.web.app / pantheon.sirsi.ai (Firebase Hosting)
+# - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
 
 ## Recent Changes (most recent first)
+# 2026-03-25: Session 20 — The Deployment Sprint
+#   Deployed Deity Registry to Firebase Hosting (sirsi-pantheon.web.app).
+#   Wired custom domain pantheon.sirsi.ai via Firebase API + GoDaddy CNAME.
+#   Rebuilt index with flip cards (front=user, back=developer info).
+#   Fixed all deity page nav links and URL displays for Firebase.
+#   VERSION bumped to 0.5.0-alpha. Extension icon created.
+#   Canon cleanup: CHANGELOG, Thoth, continuation prompt updated.
 # 2026-03-25: Session 19 — Pantheon VS Code Extension (OpenVSX)
 #   Full TypeScript extension replacing JS scaffold (ADR-012).
 #   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.

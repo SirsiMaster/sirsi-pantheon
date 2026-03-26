@@ -13,6 +13,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - P1: CoreML embeddings on ANE (60x speedup)
 - P2: npm publish thoth-init, VS Code extension
 
+### Session 20 (2026-03-25) — The Deployment Sprint
+- **Firebase Hosting** — Deployed Deity Registry to `sirsi-pantheon.web.app` via Firebase Hosting (15 HTML pages).
+  - Created Firebase site `sirsi-pantheon` in project `sirsi-nexus-live`.
+  - Configured hosting target with clean URLs and 1-hour cache.
+- **Custom Domain** — Wired `pantheon.sirsi.ai` via Firebase Hosting API + GoDaddy CNAME.
+  - Firebase: `HOST_ACTIVE`, `OWNERSHIP_ACTIVE`. SSL auto-provisioning.
+- **Flip Cards** — Rebuilt Deity Registry index with click-to-flip 3D cards.
+  - Front: user-facing (name, description, key metrics).
+  - Back: developer info (package path, coverage, test count, commands, deps, ADR).
+  - 3 action buttons per card: Full Page, Download (releases), Source (GitHub internal/ link).
+- **Deity Page Fixes** — Updated all 12 deity pages:
+  - URL display: subdomain → path format (`pantheon.sirsi.ai/anubis`).
+  - Nav links: relative → absolute for Firebase deployment.
+- **Canon Cleanup** — VERSION bump to `0.5.0-alpha`, extension icon created, CHANGELOG + Thoth updated.
+
 ### Session 19 (2026-03-25) — The Pantheon Extension
 - **VS Code Extension** (`extensions/vscode/`) — Full TypeScript extension replacing JS scaffold (ADR-012).
   - `extension.ts`: Entry point — starts Guardian, status bar, Thoth on activation.

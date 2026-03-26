@@ -533,19 +533,19 @@
     </p>
     <div class="hero-stats">
       <div class="hero-stat">
-        <span class="hero-stat-value">768</span>
+        <span class="hero-stat-value">819+</span>
         <span class="hero-stat-label">Tests Passing</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">22</span>
+        <span class="hero-stat-value">24</span>
         <span class="hero-stat-label">Modules</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">241 KB</span>
-        <span class="hero-stat-label">Deity Logic</span>
+        <span class="hero-stat-value">85.7%</span>
+        <span class="hero-stat-label">Avg Coverage</span>
       </div>
       <div class="hero-stat">
-        <span class="hero-stat-value">6</span>
+        <span class="hero-stat-value">12</span>
         <span class="hero-stat-label">Deities</span>
       </div>
     </div>
@@ -874,6 +874,59 @@
         </div>
       </div>
 
+      <div class="sprint">
+        <div class="sprint-dot"></div>
+        <span class="sprint-date">March 25 — Sessions 18–18c</span>
+        <h3>Performance Optimization</h3>
+        <p class="sprint-body">
+          IDE click latency hit <strong>400ms+</strong>. Diagnosed to LSP processes (gopls, TypeScript) consuming P-core CPU time.
+          Built <strong>Sekhmet renice</strong> — deprioritizes LSPs to Background QoS via <code>pantheon guard --renice lsp</code>.
+          Protected <code>language_server_macos_arm</code> from accidental slay. Implemented scoped Horus indexing (856K→50K files).
+        </p>
+        <div class="callout callout-fix">
+          <span class="callout-icon">✅</span>
+          Click latency eliminated. IDE Renderer regained P-core access. Horus memory reduced by releasing index after use.
+        </div>
+        <div class="sprint-metrics">
+          <div class="metric"><span class="metric-val">8</span><span class="metric-label">commits</span></div>
+          <div class="metric"><span class="metric-val">0ms</span><span class="metric-label">click lag</span></div>
+          <div class="metric"><span class="metric-val">856K→50K</span><span class="metric-label">indexed files</span></div>
+        </div>
+      </div>
+
+      <div class="sprint">
+        <div class="sprint-dot"></div>
+        <span class="sprint-date">March 25 — Session 19</span>
+        <h3>VS Code Extension</h3>
+        <p class="sprint-body">
+          Built the <strong>Pantheon VS Code Extension</strong> — 5 TypeScript modules replacing the JS scaffold.
+          Always-on Guardian (auto-renice every 60s), Ankh status bar (live RAM/CPU from <code>ps</code> every 5s),
+          7 Command Palette entries, and Thoth context compression from <code>.thoth/memory.yaml</code>.
+        </p>
+        <div class="sprint-metrics">
+          <div class="metric"><span class="metric-val">5</span><span class="metric-label">TS modules</span></div>
+          <div class="metric"><span class="metric-val">7</span><span class="metric-label">commands</span></div>
+          <div class="metric"><span class="metric-val">ADR-012</span><span class="metric-label">accepted</span></div>
+        </div>
+      </div>
+
+      <div class="sprint">
+        <div class="sprint-dot"></div>
+        <span class="sprint-date">March 25 — Session 20</span>
+        <h3>The Deployment Sprint</h3>
+        <p class="sprint-body">
+          Deployed the <strong>Deity Registry</strong> to Firebase Hosting at
+          <a href="https://sirsi-pantheon.web.app" target="_blank">sirsi-pantheon.web.app</a>.
+          Wired custom domain <strong>pantheon.sirsi.ai</strong> via Firebase Hosting API + GoDaddy CNAME.
+          Rebuilt the registry index with <strong>click-to-flip 3D cards</strong> showing developer info on the back.
+        </p>
+        <div class="sprint-metrics">
+          <div class="metric"><span class="metric-val">15</span><span class="metric-label">pages deployed</span></div>
+          <div class="metric"><span class="metric-val">12</span><span class="metric-label">deity cards</span></div>
+          <div class="metric"><span class="metric-val">SSL</span><span class="metric-label">auto-provisioned</span></div>
+        </div>
+      </div>
+
     </div>
   </section>
 
@@ -889,10 +942,10 @@
       <div class="status-grid">
         <div class="neo-card">
           <h4>Reliability</h4>
-          <div class="status-row"><span class="status-row-label">Automated tests</span><span class="status-row-value pass">522 passing</span></div>
-          <div class="status-row"><span class="status-row-label">Test suites</span><span class="status-row-value pass">18 of 20</span></div>
-          <div class="status-row"><span class="status-row-label">Best coverage</span><span class="status-row-value pass">93%</span></div>
-          <div class="status-row"><span class="status-row-label">Untested modules</span><span class="status-row-value pass">2 (display-only)</span></div>
+          <div class="status-row"><span class="status-row-label">Automated tests</span><span class="status-row-value pass">819+ passing</span></div>
+          <div class="status-row"><span class="status-row-label">Test suites</span><span class="status-row-value pass">23 of 24</span></div>
+          <div class="status-row"><span class="status-row-label">Avg coverage</span><span class="status-row-value pass">85.7%</span></div>
+          <div class="status-row"><span class="status-row-label">Untested modules</span><span class="status-row-value pass">1 (display-only)</span></div>
           <div class="status-row"><span class="status-row-label">Race conditions</span><span class="status-row-value pass">0 found</span></div>
           <div class="status-row"><span class="status-row-label">Code warnings</span><span class="status-row-value pass">0</span></div>
         </div>
