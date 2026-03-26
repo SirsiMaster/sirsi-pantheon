@@ -1,148 +1,124 @@
-# 𓂀 Session Continuation — Pantheon Menu Bar App (Session 18)
+# 𓂀 Session Continuation — Pantheon Extension Architecture (Session 19)
 
 ## Session Context
-- **Status**: 🟢 All work recovered. Clean tree. All pushed.
-- **Version**: 0.4.0-alpha (Revision 3)
-- **Tests**: 768+ passing, 90.1% weighted coverage
-- **Rules**: A16 (Interface Injection), A17 (Ma'at QA Sovereign), A18 (Incremental Commits — proposed)
-- **ADRs**: 001–010 canonized (010 = Menu Bar Application)
-- **Last Commit**: `8224ace` — cross-platform architecture + standalone deities
+- **Status**: 🟢 All work pushed. Clean tree.
+- **Version**: 0.5.0-alpha
+- **Tests**: 819+ passing, all CI green (pending Windows verification)
+- **Rules**: A1-A19 codified (A18=Incremental Commits, A19=No App Bundle Mutations)
+- **ADRs**: 001–011 canonized (011 = Deity Alignment & Context Architecture)
+- **Last Commit**: `8922114` — protect language_server_macos_arm from slay
 
-## What Was Accomplished (Sessions 15–17)
+## What Was Accomplished (Session 18-19)
 
-### Session 15: B11 Concurrency + B10 Pre-push Fix
-- 10 modules fully multithreaded with `runtime.LockOSThread()`
-- Pre-push diff detection fixed (remote_sha from stdin)
-- Accelerator abstraction layer (ANE, Metal, CUDA, ROCm, CPU)
+### Session 18a: Horus Phase 2 Memory Optimization
+- Purged `Entries map[string]Entry` from Manifest struct
+- Reduced Pantheon CLI memory footprint: 2.4 GB → ~100 MB
+- Hybrid Glob Strategy: Horus dirs first, filesystem fallback for files
+- Ma'at Platform Integrity: `internal/maat/platform.go` (prevents hardware misreporting)
 
-### Session 16a: Antigravity IPC Bridge
-- `internal/guard/antigravity.go`: AlertRing + Bridge + MCP serialization
-- `pantheon guard --watch` wired to bridge consumer
-- MCP health_check optimized: 17s → 63ms
+### Session 18b: Hot-Swap Catastrophe + Recovery
+- Agent replaced IDE's `language_server_macos_arm` binary → crashed IDE
+- Rule A19 codified: NEVER modify `/Applications/*.app/` bundles
+- Case Study 010 published: full post-mortem
 
-### Session 16b: Coverage Breakthrough (90.1%)
-- 14 commits, massive coverage sprint
-- Interface injection pattern standardized (ADR-009)
-- 768 tests, output 0→100%, brain 94.6%, scarab 95.9%
+### Session 18c: Deity Alignment + Renice
+- **ADR-011**: Canonical deity scopes (Thoth=context compressor, Horus=publisher+lazy FS index, Guard=process control)
+- **Horus Phase 3**: Scoped indexing — 856K files → ~50K files (14 roots → 8 targeted)
+- **`pantheon guard --renice lsp`**: Live deprioritized 3.1 GB of LSP processes to Background QoS
+- **`language_server_macos_arm` protected**: Added to protected process list, excluded from slay targets
+- **IDE Settings**: Shell Integration disabled, gopls directory filters, file watcher exclusions
+- **CI Fix**: Removed tracked `pantheon-menubar` binary causing Windows test failures
 
-### Session 17: Cross-Platform + Standalone (RECOVERED)
-- Platform interface: 12 methods, darwin.go + linux.go
-- 5 standalone deity binaries + Makefile
-- CI: Windows/Linux/macOS matrix with -race
-- Ma'at proof.go: HardeningCertificate for transparency
-- Case study: docs/case-studies/session-recovery.md
+### Key Lessons (Hardcoded)
+1. `language_server_macos_arm` is Antigravity's core AI backend — killing it crashes the IDE
+2. The IDE's 2.7 GB LSP heap can only be released by restarting the IDE, not from outside
+3. The IDE IS multi-process (not single-threaded) — click latency comes from core contention
+4. `renice`/`taskpolicy` are safe OS-level scheduling APIs — no binary modification needed
+5. Triple-indexing (LSP + Horus + Thoth) is the root cause of memory bloat
 
-## 🎯 SESSION 18 OBJECTIVE: macOS Menu Bar Application (ADR-010)
+## 🎯 SESSION 19 OBJECTIVE: Pantheon as an IDE Extension
+
+### The Problem
+Pantheon is not running inside Antigravity. The ankh (𓂀) is not present.
+Users cannot install Pantheon as an extension. All our work (renice, scoped indexing,
+context compression) only takes effect when manually invoked from the CLI.
+This defeats the purpose: **Pantheon should operate without oversight.**
 
 ### Primary Goal
-Build a native macOS menu bar application so Pantheon appears in:
-1. **Menu bar** (top-right icon area, NSStatusBarItem)
-2. **Finder** (as Pantheon.app in /Applications)
-3. **Launchpad** (visible, launchable)
+Build a VS Code / OpenVSX extension that packages Pantheon's capabilities
+as an always-on IDE integration:
 
-### Implementation Plan
-
-#### Phase 1: Go + systray (this session)
 ```
-cmd/pantheon-menubar/
-├── main.go           # systray.Run() + menu items
-├── icon.go           # Embedded icon bytes
-├── handlers.go       # Menu click handlers → CLI subcommands
-└── stats.go          # Live stats collection for menu display
-```
-
-Features:
-- 𓂀 Ankh icon in menu bar
-- **Stats panel at top of dropdown** (always visible):
-  - 🟢/🟡/🔴 RAM Pressure (free %, swap usage)
-  - 🧠 Context Pressure (if AI session detected: tokens used / remaining)
-  - 📄 Files since last commit (uncommitted change count)
-  - ⏱ Time since last commit
-  - 🏛 Active deities/agents (which are running)
-  - 📡 Active sessions (watchdog, MCP server, etc.)
-  - 💾 Disk waste estimate (last scan result)
-  - ⚡ Accelerator status (ANE/GPU/CPU mode)
-- **Commands section** (below stats):
-  - Scan (weigh) | Judge | Guard | Ka | Mirror
-- **Quick actions**:
-  - Start/Stop Watchdog
-  - Open Build Log
-  - Open Case Studies
-  - Quit
-- Status line: "Pantheon Active — last scan: 2m ago"
-- Sekhmet watchdog running in background
-- Alert badge when CPU starvation detected
-
-#### Phase 2: .app Bundle
-```
-Pantheon.app/Contents/
-├── Info.plist
-├── MacOS/pantheon-menubar
-├── Resources/AppIcon.icns
-└── PkgInfo
+sirsi-pantheon-extension/
+├── package.json          # Extension manifest (activationEvents, contributes)
+├── src/
+│   ├── extension.ts      # activate() — starts Guardian, Horus, Thoth
+│   ├── guardian.ts        # Background renice + memory pressure monitor
+│   ├── statusBar.ts       # Ankh (𓂀) icon in status bar with live metrics
+│   ├── commands.ts        # Command palette: Pantheon: Scan, Guard, Renice
+│   └── thothProvider.ts   # Context compression for AI conversations
+├── resources/
+│   ├── ankh.svg           # Status bar icon
+│   └── ankh-alert.svg     # Alert state icon
+└── tsconfig.json
 ```
 
-- Makefile target: `make bundle`
-- Installable via `cp -R Pantheon.app /Applications/`
-- Homebrew cask support (future)
+### Extension Capabilities (Always-On)
+1. **Guardian (background)**: Auto-renices LSP processes on startup + after IDE restart
+2. **Status Bar Ankh**: Shows RAM pressure, deity status, active warnings
+3. **Context Compression**: Thoth memory available as inline completion context
+4. **Command Palette**: `Pantheon: Scan`, `Pantheon: Guard`, `Pantheon: Renice LSP`
+5. **Workspace Settings**: Auto-applies optimal gopls filters, watcher exclusions
 
-#### Phase 3: Notifications + LaunchAgent
-- macOS Notification Center integration
-- LaunchAgent plist for auto-start at login
-- Background daemon mode
+### OpenVSX Extensions to Evaluate
+| Extension | Action | Rationale |
+|-----------|--------|-----------|
+| `golang.go` | ✅ Keep | Required for gopls integration |
+| `esbenp.prettier-vscode` | ⚠️ Evaluate | Running but may not be needed for Go-only work |
+| `ms-azuretools.vscode-docker` | ❌ Disable | Docker is uninstalled — this is dead weight |
+| `ms-vscode-remote.remote-containers` | ❌ Disable | No containers in use — saves Extension Host memory |
+| `pkief.material-icon-theme` | ⚠️ Two versions | Delete the older 5.8.0, keep 5.24.0 |
+| `github.vscode-pull-request-github` | ✅ Keep | Used for PR management |
+
+### Architecture Notes
+- Extension activates on workspace open (`*` activation event)
+- Spawns `pantheon guard --watch` as a child process
+- Communicates via JSON-RPC over stdin/stdout (MCP protocol)
+- Guardian auto-runs `renice lsp` 30s after activation (LSP needs time to spawn)
+- Status bar updates every 5s with RAM/CPU metrics from Guard
+- No telemetry (Rule A11) — all processing stays local
 
 ### Dependencies
-- `github.com/getlantern/systray` or `fyne.io/systray`
-- Icon: generate Egyptian-style ankh/eye glyph (.icns format)
-- `internal/guard/antigravity.go` for alert consumption
+- Node.js + TypeScript (standard VS Code extension)
+- `@vscode/vsce` for packaging
+- OpenVSX CLI for publishing
+- Pantheon binary must be installed (`brew install sirsi-pantheon`)
 
-### Architecture Reference
-- ADR-010: Menu Bar Application
-- ADR-006: Self-Aware Resource Governance
-- `internal/guard/watchdog.go`: Background monitoring
-- `internal/guard/antigravity.go`: Alert ring buffer
+## Current Deity Registry (ADR-011)
 
-## Current Coverage Ledger
-| Module | Coverage | Status |
-|--------|----------|--------|
-| brain | 94.6% | ✅ |
-| scarab | 95.9% | ✅ |
-| ka | 93.0% | ✅ |
-| sight | 93.0% | ✅ |
-| guard | 91.0% | ✅ |
-| maat | 88.0% | ✅ |
-| cleaner | 86.0% | ✅ |
-| mcp | 87.0% | ✅ |
-| hapi | 84.0% | ✅ |
-| yield | 82.0% | ✅ |
-| platform | 73.4% | ⚠️ |
+| Deity | Package | Role | Status |
+|-------|---------|------|--------|
+| 𓁟 Thoth | `internal/brain/` + `.thoth/` | Context Compressor | ✅ Active |
+| 𓁹 Horus | `internal/horus/` | Publisher + Lazy FS Index | ✅ Active |
+| 🐺 Jackal | `internal/jackal/` | Waste Scanner | ✅ Active |
+| 𓂓 Ka | `internal/ka/` | Ghost Detector | ✅ Active |
+| 𓁵 Sekhmet | `internal/guard/` | Process Control + Renice | ✅ Active |
+| 𓆄 Ma'at | `internal/maat/` | Quality & Truth | ✅ Active |
+| 🌊 Hapi | `internal/hapi/` | GPU/VRAM/Storage | ✅ Active |
+| 🪲 Scarab | `internal/scarab/` | Fleet Discovery | ✅ Active |
+| 🔮 Seba | `internal/seba/` | Dependency Mapper | ✅ Active |
+| ☀️ Ra | `internal/ra/` | Hypervisor (Thinker) | 🔮 Future |
 
 ## Known Issues
-1. **MCP health_check**: Still panics on large workspaces (integration test, skipped in -short)
-2. **Canon linkage**: 2 historical commits lack `Refs:` footers
-3. **CoreML bridge**: ANE detection works, actual inference requires CGo
-4. **Windows platform**: `internal/platform/windows.go` not yet created
-
-## Deity Duties (New)
-
-### 𓂀 Horus — Auto-Publish (Build-in-Public)
-Horus should take Thoth's journal scribings and auto-update:
-- `docs/case-studies.html` — newest stories at top, timestamped
-- `docs/build-log.html` — session summaries, metrics
-- Frequency: **twice daily** (or on every `git push`)
-- Implementation: Makefile target or pre-push hook addition
-
-### 𓁹 Osiris — Recovery Deity (NEW)
-Osiris is the god of resurrection and the afterlife. In Pantheon:
-- **Osiris guards against session loss** (Rule A18: Incremental Commits)
-- Detects uncommitted work and warns before session end
-- Future: auto-checkpoint commits every N file changes
-- The session recovery case study is Osiris's origin story
+1. **Windows CI**: Tracked binary removed, awaiting verification on next push
+2. **2.7 GB LSP**: Cannot release without IDE restart. Renice mitigates.
+3. **Extension Host limits**: Single process per extension — Pantheon extension must be lightweight
+4. **go.mod lint**: `fyne.io/systray should be direct` warning (low priority)
 
 ## One-Line Starter for Next Session
 
-> **"Continue from `docs/CONTINUATION-PROMPT.md` — Session 18: build the macOS menu bar app (ADR-010) with stats panel, Horus auto-publish, and Osiris checkpoint guardian."**
+> **"Continue from `docs/CONTINUATION-PROMPT.md` — Session 19: build the Pantheon VS Code extension (OpenVSX) with always-on Guardian, status bar ankh, context compression via Thoth, and auto-renice. The Anubis Suite must operate without oversight."**
 
 ---
-**Last Updated**: March 25, 2026 — 11:27
-**Session Count**: 18 (next)
+**Last Updated**: March 25, 2026 — 20:21
+**Session Count**: 19 (next)

@@ -6,7 +6,7 @@
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+
-version: 0.4.0-alpha (Revision 4)
+version: 0.5.0-alpha
 binary_count: 8 (pantheon, pantheon-agent, anubis, guard, maat, scarab, thoth, pantheon-menubar)
 test_count: 819+
 line_count: ~18,500
@@ -34,7 +34,7 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchd
 # Profile: internal/profile/ (machine profiling)
 # Hapi: internal/hapi/ (GPU, dedup, snapshots)
 # Ma'at: internal/maat/ (QA/QC governance — coverage, canon, pipeline)
-# Horus: internal/horus/ (shared filesystem index — walk once, all deities query)
+# Horus: internal/horus/ (publisher + scoped FS index — Phase 3: 8 targeted roots, demand-driven)
 # Ra: internal/ra/ (hypervisor, service manager, all-seeing eye — future)
 # Seba: internal/seba/ (powerful mapping feature — active focus)
 
@@ -78,14 +78,29 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchd
 # - Homebrew tap: VERIFIED (brew install sirsi-pantheon works end-to-end)
 # - Ma'at remediation gap: Ma'at observes, but does not yet remediate
 # - Seba mapping depth: Current "map" is a kinetic graph, needs more depth
-# - Horus: Phase 1 implemented (shared index, parallel walks, manifest cache)
-#   Phase 2 planned: FSEvents/fanotify/USN Journal for incremental updates
+# - Horus: Phase 3 implemented (scoped indexing, 856K→50K files, Release() for context cleanup)
+#   FullScanRoots() available for deep scans. Publisher generates HTML case studies.
 # - Osiris: Checkpoint guardian implemented (uncommitted work detection + risk assessment)
 # - Isis: Designated deity but has no tool mapping yet
-# - ADR count: 10 (001-founding... 010-menubar-application)
+# - ADR count: 11 (001-founding... 011-deity-alignment)
 # - Pantheon.app: macOS menu bar application (headless + .app bundle)
+# - Guard renice: pantheon guard --renice lsp (deprioritizes LSPs to Background QoS)
+# - language_server_macos_arm is PROTECTED — never slay, only renice
+# - Rule A19: NEVER modify /Applications/*.app/ bundles
 
 ## Recent Changes (most recent first)
+# 2026-03-25: Session 18c — Deity Alignment, Guard Renice, IDE Optimization
+#   ADR-011: Deity Alignment — canonical scopes for all 10 deities.
+#   Thoth = context compressor, Horus = publisher + lazy FS index, Guard = process control.
+#   Horus Phase 3: Scoped indexing (14 roots → 8 targeted, 856K → ~50K files).
+#   Guard renice: `pantheon guard --renice lsp` — deprioritizes LSPs to Background QoS.
+#   Live result: language_server_macos_arm (2.7 GB) + 2× gopls (422 MB) → Background QoS.
+#   CRITICAL: language_server_macos_arm added to PROTECTED process list after slay crashed IDE.
+#   IDE Settings: Shell Integration disabled, gopls directory filters, file watcher exclusions.
+#   CI Fix: Removed tracked `pantheon-menubar` binary causing Windows test failures.
+#   Platform compute.go: Restored M4 family bandwidth values corrupted by sed rename.
+#   Case Study 010: The Hot-Swap Catastrophe (P0 incident post-mortem).
+#   Rule A18 (Incremental Commits) + Rule A19 (No App Bundle Mutations) codified.
 # 2026-03-25: Session 18 — Menu Bar App + Horus Publish + Osiris Guardian
 #   macOS Menu Bar Application (ADR-010): Phase 1 complete.
 #   - cmd/pantheon-menubar/: stats.go, handlers.go, icon.go, main.go
