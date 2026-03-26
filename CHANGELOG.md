@@ -13,6 +13,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - P1: CoreML embeddings on ANE (60x speedup)
 - P2: npm publish thoth-init, VS Code extension
 
+### Session 19 (2026-03-25) — The Pantheon Extension
+- **VS Code Extension** (`extensions/vscode/`) — Full TypeScript extension replacing JS scaffold (ADR-012).
+  - `extension.ts`: Entry point — starts Guardian, status bar, Thoth on activation.
+  - `guardian.ts`: Always-on renice (30s delay, 60s re-apply loop). Spawns `pantheon guard --renice lsp --json`.
+  - `statusBar.ts`: Ankh (𓂀) icon with live RAM/CPU metrics. Polls `ps` directly (sub-50ms). Color-coded states.
+  - `commands.ts`: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
+  - `thothProvider.ts`: Context compression from `.thoth/memory.yaml` with file watching.
+- **ADR-012**: Pantheon VS Code Extension architecture decision accepted.
+- **ADR Index**: Updated to 12 ADRs (001–012).
+- **Status**: Extension compiles (0 TypeScript errors), Go backend builds, 819+ tests passing.
+
 ### Session 16b (2026-03-24) — The Interface Injection Sprint
 - **Coverage Breakthrough** — Weighted average pushed to **90.1%** (Rule A16 established).
 - **Injectable Providers** — Established standard interface injection for signals and `exec.Command` (ADR-009).

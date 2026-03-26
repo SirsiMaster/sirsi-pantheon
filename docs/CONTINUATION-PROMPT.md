@@ -1,98 +1,56 @@
-# 𓂀 Session Continuation — Pantheon Extension Architecture (Session 19)
+# 𓂀 Session Continuation — Pantheon Extension Polish (Session 20)
 
 ## Session Context
 - **Status**: 🟢 All work pushed. Clean tree.
 - **Version**: 0.5.0-alpha
-- **Tests**: 819+ passing, all CI green (pending Windows verification)
-- **Rules**: A1-A19 codified (A18=Incremental Commits, A19=No App Bundle Mutations)
-- **ADRs**: 001–011 canonized (011 = Deity Alignment & Context Architecture)
-- **Last Commit**: `8922114` — protect language_server_macos_arm from slay
+- **Tests**: 819+ passing, all CI green
+- **Rules**: A1-A19 codified
+- **ADRs**: 001–012 canonized (012 = VS Code Extension)
+- **Last Commit**: `f1c02b9` — feat(extension): Pantheon VS Code Extension
 
-## What Was Accomplished (Session 18-19)
+## What Was Accomplished (Session 19)
 
-### Session 18a: Horus Phase 2 Memory Optimization
-- Purged `Entries map[string]Entry` from Manifest struct
-- Reduced Pantheon CLI memory footprint: 2.4 GB → ~100 MB
-- Hybrid Glob Strategy: Horus dirs first, filesystem fallback for files
-- Ma'at Platform Integrity: `internal/maat/platform.go` (prevents hardware misreporting)
+### VS Code Extension — Full Build
+- **TypeScript rewrite**: Replaced JS scaffold with 5-module TypeScript extension
+- `extension.ts` — Entry point: starts Guardian, status bar, Thoth on activation
+- `guardian.ts` — Always-on renice (30s delay, 60s re-apply loop)
+- `statusBar.ts` — Ankh (𓂀) icon with live RAM/CPU metrics (polls `ps` directly)
+- `commands.ts` — 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings)
+- `thothProvider.ts` — Context compression from `.thoth/memory.yaml` with file watching
+- **ADR-012**: Pantheon VS Code Extension architecture accepted
+- **Status bar states**: healthy/warning (>3GB)/error/initializing with color coding
+- **Zero telemetry** (Rule A11), no binary mutations (Rule A19)
+- **Extension compiles**: 0 TypeScript errors, Go backend builds clean
 
-### Session 18b: Hot-Swap Catastrophe + Recovery
-- Agent replaced IDE's `language_server_macos_arm` binary → crashed IDE
-- Rule A19 codified: NEVER modify `/Applications/*.app/` bundles
-- Case Study 010 published: full post-mortem
+### Key Architecture Decisions
+1. Status bar polls `ps -axo` directly every 5s (not the full Pantheon binary) for sub-50ms overhead
+2. Guardian delays renice 30s after activation — LSPs need time to spawn
+3. Re-renice loop every 60s catches respawned/reset processes
+4. Extension requires `pantheon` CLI binary — graceful ENOENT degradation
 
-### Session 18c: Deity Alignment + Renice
-- **ADR-011**: Canonical deity scopes (Thoth=context compressor, Horus=publisher+lazy FS index, Guard=process control)
-- **Horus Phase 3**: Scoped indexing — 856K files → ~50K files (14 roots → 8 targeted)
-- **`pantheon guard --renice lsp`**: Live deprioritized 3.1 GB of LSP processes to Background QoS
-- **`language_server_macos_arm` protected**: Added to protected process list, excluded from slay targets
-- **IDE Settings**: Shell Integration disabled, gopls directory filters, file watcher exclusions
-- **CI Fix**: Removed tracked `pantheon-menubar` binary causing Windows test failures
+## 🎯 SESSION 20 OBJECTIVES
 
-### Key Lessons (Hardcoded)
-1. `language_server_macos_arm` is Antigravity's core AI backend — killing it crashes the IDE
-2. The IDE's 2.7 GB LSP heap can only be released by restarting the IDE, not from outside
-3. The IDE IS multi-process (not single-threaded) — click latency comes from core contention
-4. `renice`/`taskpolicy` are safe OS-level scheduling APIs — no binary modification needed
-5. Triple-indexing (LSP + Horus + Thoth) is the root cause of memory bloat
+### P0: Extension Installation + Live Testing
+1. Install the extension in the IDE and verify activation
+2. Test Guardian auto-renice — confirm LSPs are deprioritized
+3. Test status bar metric accuracy — compare with Activity Monitor
+4. Test each Command Palette entry end-to-end
 
-## 🎯 SESSION 19 OBJECTIVE: Pantheon as an IDE Extension
+### P1: Package + Publish
+1. Package VSIX: `npm run package` (creates `.vsix` file)
+2. Test sideload: `code --install-extension sirsi-pantheon-0.5.0.vsix`
+3. Publish to OpenVSX: `npm run publish:openvsx` (needs token)
+4. Add marketplace badges to README
 
-### The Problem
-Pantheon is not running inside Antigravity. The ankh (𓂀) is not present.
-Users cannot install Pantheon as an extension. All our work (renice, scoped indexing,
-context compression) only takes effect when manually invoked from the CLI.
-This defeats the purpose: **Pantheon should operate without oversight.**
+### P2: MCP Integration
+1. Connect Guardian to MCP resources (replace CLI spawn with MCP JSON-RPC)
+2. Add `anubis://guardian-status` MCP resource
+3. Sidebar view with TreeView data provider for real-time metrics
 
-### Primary Goal
-Build a VS Code / OpenVSX extension that packages Pantheon's capabilities
-as an always-on IDE integration:
-
-```
-sirsi-pantheon-extension/
-├── package.json          # Extension manifest (activationEvents, contributes)
-├── src/
-│   ├── extension.ts      # activate() — starts Guardian, Horus, Thoth
-│   ├── guardian.ts        # Background renice + memory pressure monitor
-│   ├── statusBar.ts       # Ankh (𓂀) icon in status bar with live metrics
-│   ├── commands.ts        # Command palette: Pantheon: Scan, Guard, Renice
-│   └── thothProvider.ts   # Context compression for AI conversations
-├── resources/
-│   ├── ankh.svg           # Status bar icon
-│   └── ankh-alert.svg     # Alert state icon
-└── tsconfig.json
-```
-
-### Extension Capabilities (Always-On)
-1. **Guardian (background)**: Auto-renices LSP processes on startup + after IDE restart
-2. **Status Bar Ankh**: Shows RAM pressure, deity status, active warnings
-3. **Context Compression**: Thoth memory available as inline completion context
-4. **Command Palette**: `Pantheon: Scan`, `Pantheon: Guard`, `Pantheon: Renice LSP`
-5. **Workspace Settings**: Auto-applies optimal gopls filters, watcher exclusions
-
-### OpenVSX Extensions to Evaluate
-| Extension | Action | Rationale |
-|-----------|--------|-----------|
-| `golang.go` | ✅ Keep | Required for gopls integration |
-| `esbenp.prettier-vscode` | ⚠️ Evaluate | Running but may not be needed for Go-only work |
-| `ms-azuretools.vscode-docker` | ❌ Disable | Docker is uninstalled — this is dead weight |
-| `ms-vscode-remote.remote-containers` | ❌ Disable | No containers in use — saves Extension Host memory |
-| `pkief.material-icon-theme` | ⚠️ Two versions | Delete the older 5.8.0, keep 5.24.0 |
-| `github.vscode-pull-request-github` | ✅ Keep | Used for PR management |
-
-### Architecture Notes
-- Extension activates on workspace open (`*` activation event)
-- Spawns `pantheon guard --watch` as a child process
-- Communicates via JSON-RPC over stdin/stdout (MCP protocol)
-- Guardian auto-runs `renice lsp` 30s after activation (LSP needs time to spawn)
-- Status bar updates every 5s with RAM/CPU metrics from Guard
-- No telemetry (Rule A11) — all processing stays local
-
-### Dependencies
-- Node.js + TypeScript (standard VS Code extension)
-- `@vscode/vsce` for packaging
-- OpenVSX CLI for publishing
-- Pantheon binary must be installed (`brew install sirsi-pantheon`)
+### P3: Extension Audit
+1. Evaluate installed extensions per continuation prompt table
+2. Disable unnecessary extensions (Docker, Remote Containers)
+3. Measure Extension Host memory before/after optimization
 
 ## Current Deity Registry (ADR-011)
 
@@ -110,15 +68,15 @@ sirsi-pantheon-extension/
 | ☀️ Ra | `internal/ra/` | Hypervisor (Thinker) | 🔮 Future |
 
 ## Known Issues
-1. **Windows CI**: Tracked binary removed, awaiting verification on next push
-2. **2.7 GB LSP**: Cannot release without IDE restart. Renice mitigates.
-3. **Extension Host limits**: Single process per extension — Pantheon extension must be lightweight
-4. **go.mod lint**: `fyne.io/systray should be direct` warning (low priority)
+1. **Extension not yet installed**: Built but not sideloaded into IDE
+2. **OpenVSX publish**: Needs API token setup
+3. **MCP not wired**: Extension uses CLI spawn, not MCP JSON-RPC
+4. **No icon.png**: `resources/icon.png` referenced but not created
 
 ## One-Line Starter for Next Session
 
-> **"Continue from `docs/CONTINUATION-PROMPT.md` — Session 19: build the Pantheon VS Code extension (OpenVSX) with always-on Guardian, status bar ankh, context compression via Thoth, and auto-renice. The Anubis Suite must operate without oversight."**
+> **"Continue from `docs/CONTINUATION-PROMPT.md` — Session 20: install, test, and publish the Pantheon VS Code extension. Verify Guardian auto-renice, sideload VSIX, audit extensions, and wire MCP integration."**
 
 ---
-**Last Updated**: March 25, 2026 — 20:21
-**Session Count**: 19 (next)
+**Last Updated**: March 25, 2026 — 20:45
+**Session Count**: 20 (next)

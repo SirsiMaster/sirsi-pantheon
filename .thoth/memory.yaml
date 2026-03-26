@@ -1,18 +1,19 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-03-25T11:38:00-04:00
+# Last updated: 2026-03-25T20:26:00-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
-language: Go 1.22+
+language: Go 1.22+ / TypeScript
 version: 0.5.0-alpha
 binary_count: 8 (pantheon, pantheon-agent, anubis, guard, maat, scarab, thoth, pantheon-menubar)
 test_count: 819+
-line_count: ~18,500
+line_count: ~20,000
 module_count: 24
 command_count: 18
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
+vscode_extension: extensions/vscode/ (TypeScript, 5 modules, 7 commands)
 
 ## Architecture Quick Reference
 # Modules are named after Egyptian mythology
@@ -82,13 +83,23 @@ mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchd
 #   FullScanRoots() available for deep scans. Publisher generates HTML case studies.
 # - Osiris: Checkpoint guardian implemented (uncommitted work detection + risk assessment)
 # - Isis: Designated deity but has no tool mapping yet
-# - ADR count: 11 (001-founding... 011-deity-alignment)
+# - ADR count: 12 (001-founding... 012-vscode-extension)
+# - VS Code Extension: extensions/vscode/ (TypeScript, always-on Guardian, ankh status bar, Thoth)
 # - Pantheon.app: macOS menu bar application (headless + .app bundle)
 # - Guard renice: pantheon guard --renice lsp (deprioritizes LSPs to Background QoS)
 # - language_server_macos_arm is PROTECTED — never slay, only renice
 # - Rule A19: NEVER modify /Applications/*.app/ bundles
 
 ## Recent Changes (most recent first)
+# 2026-03-25: Session 19 — Pantheon VS Code Extension (OpenVSX)
+#   Full TypeScript extension replacing JS scaffold (ADR-012).
+#   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.
+#   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns pantheon guard --renice lsp.
+#   statusBar.ts: Ankh (𓂀) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
+#   commands.ts: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
+#   thothProvider.ts: Context compression from .thoth/memory.yaml with file watching.
+#   ADR-012 accepted. ADR Index: 12 ADRs (001-012).
+#   Status: Extension compiles (0 TS errors), Go builds, 819+ tests passing.
 # 2026-03-25: Session 18c — Deity Alignment, Guard Renice, IDE Optimization
 #   ADR-011: Deity Alignment — canonical scopes for all 10 deities.
 #   Thoth = context compressor, Horus = publisher + lazy FS index, Guard = process control.
