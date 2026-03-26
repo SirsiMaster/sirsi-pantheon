@@ -45,6 +45,12 @@
 3. Add marketplace badges to README
 4. Verify listing at open-vsx.org/extension/SirsiMaster/sirsi-pantheon
 
+### P1: System Metrics Expansion
+1. **macOS Memory Pressure** — read from `memory_pressure` or `vm_stat` (green/yellow/red)
+2. **Overall RAM Usage** — total system RAM used vs. available (not just LSPs)
+3. Display both in status bar tooltip and System Metrics dashboard
+4. Surface pressure state in the status bar icon (healthy → pressure → critical)
+
 ### P1: MCP Integration
 1. Connect Guardian to MCP resources (replace CLI spawn with MCP JSON-RPC)
 2. Add `anubis://guardian-status` MCP resource
