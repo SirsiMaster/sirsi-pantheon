@@ -2,13 +2,14 @@
 //
 // Entry point. Activates on workspace open (onStartupFinished).
 // Starts Guardian (always-on renice), status bar ankh, Thoth provider,
-// and registers all command palette entries.
+// Thoth Accountability Engine, and registers all command palette entries.
 //
 // Architecture:
 //   activate() → starts Guardian background loop
 //             → creates status bar ankh with live metrics
 //             → registers Command Palette commands
 //             → loads Thoth context from .thoth/memory.yaml
+//             → runs Thoth Accountability Engine (cold-start benchmark)
 //
 // The Anubis Suite operates without oversight.
 
@@ -17,10 +18,12 @@ import { Guardian } from './guardian';
 import { PantheonStatusBar } from './statusBar';
 import { registerCommands } from './commands';
 import { ThothProvider } from './thothProvider';
+import { ThothAccountabilityEngine } from './thothAccountability';
 
 let guardian: Guardian | undefined;
 let statusBar: PantheonStatusBar | undefined;
 let thothProvider: ThothProvider | undefined;
+let accountabilityEngine: ThothAccountabilityEngine | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('Pantheon');
@@ -63,8 +66,21 @@ export function activate(context: vscode.ExtensionContext): void {
         outputChannel.appendLine('𓁟 Thoth context provider loaded');
     }
 
+    // ── Thoth Accountability Engine ───────────────────────────────────
+    const accountabilityEnabled = config.get<boolean>('thoth.accountability', true);
+    if (accountabilityEnabled) {
+        accountabilityEngine = new ThothAccountabilityEngine(context, outputChannel);
+        context.subscriptions.push(accountabilityEngine);
+        // Run benchmark async — don't block activation
+        accountabilityEngine.activate().catch(err => {
+            const msg = err instanceof Error ? err.message : String(err);
+            outputChannel.appendLine(`𓁟 Accountability Engine error: ${msg}`);
+        });
+        outputChannel.appendLine('𓁟 Thoth Accountability Engine armed');
+    }
+
     // ── Command Palette Registration ──────────────────────────────────
-    registerCommands(context, binaryPath, outputChannel, statusBar, thothProvider, guardian);
+    registerCommands(context, binaryPath, outputChannel, statusBar, thothProvider, guardian, accountabilityEngine);
 
     // ── Workspace Optimization ────────────────────────────────────────
     const autoOptimize = config.get<boolean>('workspace.autoOptimize', false);
@@ -98,6 +114,7 @@ export function deactivate(): void {
     guardian?.dispose();
     statusBar?.dispose();
     thothProvider?.dispose();
+    accountabilityEngine?.dispose();
 }
 
 // ── Workspace Settings ────────────────────────────────────────────────

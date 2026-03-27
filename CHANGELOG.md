@@ -11,7 +11,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - P0: Reach 95%+ coverage on remaining modules (Sight, Platform, Mirror)
 - P1: Thoth auto-sync (Horus/Ra feed facts)
 - P1: CoreML embeddings on ANE (60x speedup)
-- P2: npm publish thoth-init, VS Code extension
+- P2: npm publish thoth-init, VS Code extension on OpenVSX
+
+### Session 22 (2026-03-26) — Thoth Accountability Engine + Extension Triage
+- **Thoth Accountability Engine** (`extensions/vscode/src/thothAccountability.ts`, 645 lines)
+  - Cold-start benchmark: walks workspace source, compares against memory.yaml.
+  - First measurement: ~1.5M source chars → ~19K memory.yaml = **371K tokens saved** per activation.
+  - Dollar savings: configurable pricing tier (Opus $15/M, Sonnet $3/M, Haiku $0.25/M). Default: **$1.11/session**.
+  - Freshness meter: compares memory.yaml mtime against most recent source edit. FRESH/STALE/OUTDATED status.
+  - Coverage governance: cross-references `internal/` directories against memory.yaml mentions.
+  - Context budget: memory.yaml token count as % of 200K context window (<5%).
+  - Lifetime counter: persists total tokens, dollars, and sessions across restarts via `globalStorageUri`.
+  - Premium webview report in Royal Neo-Deco design language (gold/lapis/obsidian).
+  - Status bar: `$(bookmark)` with live savings display next to main PANTHEON ankh.
+- **Extension Commands** — `pantheon.thothAccountability` command with 5-option QuickPick menu.
+  - Integrated into `pantheon.showMetrics` system dashboard.
+  - New configuration: `pantheon.thoth.accountability`, `pantheon.thoth.pricingModel`.
+- **Extension Triage** — diagnosed and fixed 4 simultaneous extension issues:
+  1. **AG Monitor Pro** (1988ms profile): disabled — `js-tiktoken` WASM init + `chokidar` watcher.
+  2. **Pantheon 0.5.0** cascade unresponsive: sideloaded v0.6.0 with Accountability Engine.
+  3. **Git extension** missing `title` properties: patched 2 Antigravity-added commands.
+  4. **Antigravity extension** missing command declarations: patched 3 undeclared commands.
+- **Gatekeeper Recovery** — modifying `.app` bundle broke macOS code signature.
+  - Fix: `xattr -cr` + `codesign --force --deep --sign -` (ad-hoc re-signing).
+  - Documented as case study with procedure for future `.app` manifest patches.
+- **Version**: 0.6.0-alpha. Extension VSIX: 49.47 KB (13 files, 6 modules, 8 commands).
 
 ### Session 21 (2026-03-26) — Extension Live Testing + Memory GC
 - **Guardian Rewrite** — Native `renice(1)` + `taskpolicy(1)` implementation. No CLI binary dependency for renice.

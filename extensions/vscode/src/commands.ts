@@ -10,6 +10,7 @@
 //   pantheon.ghostReport        — Ka ghost detection
 //   pantheon.thothContext       — Show Thoth compressed context
 //   pantheon.showMetrics        — Display system metrics dashboard
+//   pantheon.thothAccountability — Full Thoth Accountability Report
 //   pantheon.applyWorkspaceSettings — Apply optimal IDE settings
 
 import { execFile } from 'child_process';
@@ -18,6 +19,7 @@ import * as vscode from 'vscode';
 import { PantheonStatusBar } from './statusBar';
 import { ThothProvider } from './thothProvider';
 import { Guardian } from './guardian';
+import { ThothAccountabilityEngine } from './thothAccountability';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +29,8 @@ export function registerCommands(
     output: vscode.OutputChannel,
     statusBar: PantheonStatusBar | undefined,
     thothProvider: ThothProvider | undefined,
-    guardian: Guardian | undefined
+    guardian: Guardian | undefined,
+    accountabilityEngine: ThothAccountabilityEngine | undefined
 ): void {
 
     // ── Scan Workspace ────────────────────────────────────────────
@@ -183,6 +186,82 @@ export function registerCommands(
         })
     );
 
+    // ── Thoth Accountability Report ───────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('pantheon.thothAccountability', async () => {
+            if (!accountabilityEngine) {
+                vscode.window.showWarningMessage(
+                    '𓁟 Thoth Accountability Engine not initialized'
+                );
+                return;
+            }
+
+            const choice = await vscode.window.showQuickPick([
+                { label: '$(graph) Full Accountability Report', description: 'Webview with all metrics, savings, and freshness', action: 'report' },
+                { label: '$(pulse) Quick Summary', description: 'Token savings and dollar amount', action: 'summary' },
+                { label: '$(clock) Check Freshness', description: 'Is memory.yaml up to date?', action: 'freshness' },
+                { label: '$(checklist) Check Coverage', description: 'Are all modules documented?', action: 'coverage' },
+                { label: '$(history) Lifetime Stats', description: 'Total savings across all sessions', action: 'lifetime' },
+            ], { placeHolder: '𓁟 Thoth Accountability — Choose Report' });
+
+            if (!choice) { return; }
+
+            switch ((choice as { action: string }).action) {
+                case 'report':
+                    await vscode.window.withProgress({
+                        location: vscode.ProgressLocation.Notification,
+                        title: '𓁟 Generating Thoth Accountability Report...',
+                        cancellable: false,
+                    }, async () => {
+                        await accountabilityEngine!.showAccountabilityReport();
+                    });
+                    break;
+
+                case 'summary': {
+                    const summary = accountabilityEngine.getSavingsSummary();
+                    vscode.window.showInformationMessage(`𓁟 ${summary}`);
+                    break;
+                }
+
+                case 'freshness': {
+                    const freshness = await accountabilityEngine.checkFreshness();
+                    if (freshness) {
+                        vscode.window.showInformationMessage(
+                            `𓁟 Freshness: ${freshness.status} — memory.yaml is ${freshness.ageMinutes} min behind latest source edit (${freshness.latestSourceFile})`
+                        );
+                    } else {
+                        vscode.window.showWarningMessage('𓁟 Unable to check freshness');
+                    }
+                    break;
+                }
+
+                case 'coverage': {
+                    const coverage = await accountabilityEngine.checkCoverage();
+                    if (coverage) {
+                        const missing = coverage.missingModules.length > 0
+                            ? ` Missing: ${coverage.missingModules.join(', ')}`
+                            : ' All modules covered!';
+                        vscode.window.showInformationMessage(
+                            `𓁟 Coverage: ${coverage.coveragePercent}% (${coverage.modulesInMemory}/${coverage.modulesOnDisk} modules).${missing}`
+                        );
+                    } else {
+                        vscode.window.showWarningMessage('𓁟 Unable to check coverage');
+                    }
+                    break;
+                }
+
+                case 'lifetime': {
+                    const lifetime = accountabilityEngine.getLifetime();
+                    vscode.window.showInformationMessage(
+                        `𓁟 Lifetime: $${lifetime.totalDollarsSaved.toFixed(2)} saved across ${lifetime.totalSessions} sessions ` +
+                        `(${lifetime.totalTokensSaved.toLocaleString()} tokens, since ${new Date(lifetime.firstSessionDate).toLocaleDateString()})`
+                    );
+                    break;
+                }
+            }
+        })
+    );
+
     // ── System Metrics Dashboard ──────────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand('pantheon.showMetrics', async () => {
@@ -192,6 +271,8 @@ export function registerCommands(
             }
 
             const metrics = statusBar.getMetrics();
+
+            // Build items list — include Thoth accountability if available
             const items: vscode.QuickPickItem[] = [
                 {
                     label: `$(dashboard) LSP RAM: ${metrics.ramHuman}`,
@@ -209,7 +290,26 @@ export function registerCommands(
                     label: `$(clock) Last Update: ${metrics.lastUpdate.toLocaleTimeString()}`,
                     description: '',
                 },
+            ];
+
+            // Add Thoth savings to the dashboard
+            if (accountabilityEngine) {
+                const benchmark = accountabilityEngine.getBenchmark();
+                if (benchmark) {
+                    const summary = accountabilityEngine.getSavingsSummary();
+                    items.push({
+                        label: `$(bookmark) Thoth: ${summary}`,
+                        description: `${benchmark.compressionRatio.toFixed(1)}% compression`,
+                    });
+                }
+            }
+
+            items.push(
                 { label: '', kind: vscode.QuickPickItemKind.Separator },
+                {
+                    label: '$(graph) Thoth Accountability Report',
+                    description: 'Full savings + freshness + coverage',
+                },
                 {
                     label: '$(arrow-down) Renice LSP Processes',
                     description: 'Lower priority of language servers',
@@ -222,7 +322,7 @@ export function registerCommands(
                     label: '$(refresh) Refresh Metrics',
                     description: 'Force metric refresh',
                 },
-            ];
+            );
 
             const selected = await vscode.window.showQuickPick(items, {
                 placeHolder: '𓂀 Pantheon — System Metrics',
@@ -230,7 +330,9 @@ export function registerCommands(
 
             if (!selected) { return; }
 
-            if (selected.label.includes('Renice')) {
+            if (selected.label.includes('Thoth Accountability')) {
+                await vscode.commands.executeCommand('pantheon.thothAccountability');
+            } else if (selected.label.includes('Renice')) {
                 await vscode.commands.executeCommand('pantheon.reniceLSP');
             } else if (selected.label.includes('Scan')) {
                 await vscode.commands.executeCommand('pantheon.scan');

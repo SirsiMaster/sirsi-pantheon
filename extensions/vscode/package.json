@@ -2,7 +2,7 @@
   "name": "sirsi-pantheon",
   "displayName": "𓂀 Pantheon — Anubis Suite",
   "description": "Always-on infrastructure hygiene: auto-renice, RAM guardian, context compression. The Anubis Suite operates without oversight.",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "SirsiMaster",
   "license": "MPL-2.0",
   "engines": {
@@ -74,6 +74,12 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "pantheon.thothAccountability",
+        "title": "𓁟 Pantheon: Thoth Accountability Report",
+        "category": "Pantheon",
+        "icon": "$(graph)"
+      },
+      {
         "command": "pantheon.applyWorkspaceSettings",
         "title": "𓂀 Pantheon: Apply Optimal Workspace Settings",
         "category": "Pantheon",
@@ -113,6 +119,22 @@
           "default": true,
           "description": "Enable Thoth context compression (reads .thoth/memory.yaml)."
         },
+        "pantheon.thoth.accountability": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Thoth Accountability Engine (cold-start benchmark, token savings, dollar ROI)."
+        },
+        "pantheon.thoth.pricingModel": {
+          "type": "string",
+          "default": "sonnet",
+          "enum": ["opus", "sonnet", "haiku"],
+          "enumDescriptions": [
+            "Claude Opus — $15/M input tokens (highest quality)",
+            "Claude Sonnet — $3/M input tokens (balanced)",
+            "Claude Haiku — $0.25/M input tokens (fastest)"
+          ],
+          "description": "AI model pricing tier for dollar savings calculation."
+        },
         "pantheon.workspace.autoOptimize": {
           "type": "boolean",
           "default": false,
@@ -128,6 +150,7 @@
         { "command": "pantheon.ghostReport", "when": "true" },
         { "command": "pantheon.thothContext", "when": "true" },
         { "command": "pantheon.showMetrics", "when": "true" },
+        { "command": "pantheon.thothAccountability", "when": "true" },
         { "command": "pantheon.applyWorkspaceSettings", "when": "true" }
       ]
     }
