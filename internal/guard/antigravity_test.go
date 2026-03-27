@@ -148,18 +148,14 @@ func TestDefaultBridgeConfig(t *testing.T) {
 
 func TestStartBridge_LifecycleWithAlerts(t *testing.T) {
 	// Mock the sampler to produce high-CPU alerts
-	alertCount := 0
 	old := sampleTopCPUFn
 	sampleTopCPUFn = func(topN int) ([]ProcessInfo, error) {
-		alertCount++
 		return []ProcessInfo{
 			{PID: 42, Name: "Plugin Host", CPUPercent: 103.9, RSS: 512 * 1024 * 1024},
 		}, nil
 	}
-	defer func() { sampleTopCPUFn = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	var received []AlertEntry
 	var mu sync.Mutex
@@ -183,6 +179,8 @@ func TestStartBridge_LifecycleWithAlerts(t *testing.T) {
 	// Wait for some alerts to flow through
 	time.Sleep(400 * time.Millisecond)
 	cancel()
+	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
+	sampleTopCPUFn = old
 
 	// Verify ring buffer has alerts
 	current, _ := bridge.Ring().Stats()
@@ -197,8 +195,6 @@ func TestStartBridge_LifecycleWithAlerts(t *testing.T) {
 	if rcvCount == 0 {
 		t.Error("OnAlert callback was never called")
 	}
-
-	t.Logf("Bridge lifecycle: %d polls, %d alerts received", alertCount, rcvCount)
 }
 
 func TestStartBridge_CriticalSeverity(t *testing.T) {
@@ -208,10 +204,8 @@ func TestStartBridge_CriticalSeverity(t *testing.T) {
 			{PID: 99, Name: "runaway", CPUPercent: 200.0, RSS: 1024 * 1024},
 		}, nil
 	}
-	defer func() { sampleTopCPUFn = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	var gotCritical bool
 	var mu sync.Mutex
@@ -236,6 +230,8 @@ func TestStartBridge_CriticalSeverity(t *testing.T) {
 
 	time.Sleep(400 * time.Millisecond)
 	cancel()
+	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
+	sampleTopCPUFn = old
 
 	mu.Lock()
 	if !gotCritical {
@@ -249,10 +245,8 @@ func TestStartBridge_DefaultBufferSize(t *testing.T) {
 	sampleTopCPUFn = func(topN int) ([]ProcessInfo, error) {
 		return nil, nil // no processes
 	}
-	defer func() { sampleTopCPUFn = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	bridge := StartBridge(ctx, BridgeConfig{
 		BufferSize: 50,
@@ -267,6 +261,8 @@ func TestStartBridge_DefaultBufferSize(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 	cancel()
+	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
+	sampleTopCPUFn = old
 
 	// Should still work (no panic, clean shutdown)
 	current, _ := bridge.Ring().Stats()
@@ -282,10 +278,8 @@ func TestBridge_StatusJSON(t *testing.T) {
 			{PID: 42, Name: "vscode", CPUPercent: 95.0, RSS: 256 * 1024 * 1024},
 		}, nil
 	}
-	defer func() { sampleTopCPUFn = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	bridge := StartBridge(ctx, BridgeConfig{
 		BufferSize: 50,
@@ -319,6 +313,8 @@ func TestBridge_StatusJSON(t *testing.T) {
 	}
 
 	cancel()
+	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
+	sampleTopCPUFn = old
 
 	t.Logf("StatusJSON: buffered=%d, lifetime=%d, polls=%d",
 		status.BufferedCount, status.LifetimeAlerts, status.WatchdogPolls)
@@ -329,10 +325,8 @@ func TestBridge_WatchdogAccessor(t *testing.T) {
 	sampleTopCPUFn = func(topN int) ([]ProcessInfo, error) {
 		return nil, nil
 	}
-	defer func() { sampleTopCPUFn = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	bridge := StartBridge(ctx, BridgeConfig{
 		BufferSize: 50,
@@ -350,4 +344,6 @@ func TestBridge_WatchdogAccessor(t *testing.T) {
 	}
 
 	cancel()
+	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
+	sampleTopCPUFn = old
 }
