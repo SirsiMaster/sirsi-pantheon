@@ -157,4 +157,10 @@ func TestSightResult_AllFields(t *testing.T) {
 	if r.TotalGhosts != 1 {
 		t.Error("TotalGhosts mismatch")
 	}
+	if len(r.GhostRegistrations) != 1 || r.GhostRegistrations[0].BundleID != "test" {
+		t.Error("GhostRegistrations mismatch")
+	}
+	if !r.CanFix {
+		t.Error("CanFix should be true")
+	}
 }

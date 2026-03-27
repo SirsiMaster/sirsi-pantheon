@@ -106,6 +106,12 @@ func TestSnapshotStruct(t *testing.T) {
 	if snap.Date == "" {
 		t.Error("Date empty")
 	}
+	if snap.Size != "1.2 GB" {
+		t.Errorf("Size = %q, want 1.2 GB", snap.Size)
+	}
+	if snap.Volume != "/" {
+		t.Errorf("Volume = %q, want /", snap.Volume)
+	}
 }
 
 func TestSnapshotResult_Empty(t *testing.T) {

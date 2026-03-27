@@ -41,6 +41,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Run tests
+        shell: bash
         run: go test -v -race -short -coverprofile=coverage.out ./...
         env:
           CGO_ENABLED: 1

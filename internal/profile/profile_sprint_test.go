@@ -25,8 +25,8 @@ func TestSaveConfig_RoundTrip(t *testing.T) {
 
 	// Verify file exists
 	path := filepath.Join(home, ".config", "anubis", "config.yaml")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("Config file not created: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("Config file not created: %v", statErr)
 	}
 
 	// Load it back
@@ -61,8 +61,8 @@ func TestSaveProfile_RoundTrip(t *testing.T) {
 
 	// Verify file exists
 	path := filepath.Join(home, ".config", "anubis", "profiles", "custom.yaml")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("Profile file not created: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("Profile file not created: %v", statErr)
 	}
 
 	// Load it back

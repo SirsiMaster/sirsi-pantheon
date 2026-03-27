@@ -396,8 +396,8 @@ func TestLoadJSONManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(jsonPath, data, 0o644); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(jsonPath, data, 0o644); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 
 	// Load it

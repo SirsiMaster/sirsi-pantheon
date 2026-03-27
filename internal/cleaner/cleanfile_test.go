@@ -123,8 +123,8 @@ func TestDecisionLog_RecordAndSave(t *testing.T) {
 	}
 
 	// Verify file was saved
-	if _, err := os.Stat(logPath); err != nil {
-		t.Errorf("Decision log file not created: %v", err)
+	if _, statErr := os.Stat(logPath); statErr != nil {
+		t.Errorf("Decision log file not created: %v", statErr)
 	}
 
 	// Load it back

@@ -83,8 +83,8 @@ func Publish(cfg PublishConfig) (*PublishResult, error) {
 	// Collect case studies from markdown files
 	studies, err := collectCaseStudies(cfg.CaseStudyDir)
 	if err == nil && len(studies) > 0 {
-		if err := writeCaseStudyHTML(cfg.CaseStudyPath, studies); err != nil {
-			result.Error = fmt.Sprintf("case study write: %v", err)
+		if writeErr := writeCaseStudyHTML(cfg.CaseStudyPath, studies); writeErr != nil {
+			result.Error = fmt.Sprintf("case study write: %v", writeErr)
 		} else {
 			result.CaseStudyUpdated = true
 			result.EntriesAdded += len(studies)

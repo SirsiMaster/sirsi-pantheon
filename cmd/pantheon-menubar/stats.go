@@ -103,7 +103,7 @@ func collectRAM(snap *StatsSnapshot) {
 	}
 
 	var total int64
-	fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &total)
+	_, _ = fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &total)
 	snap.TotalRAM = total
 
 	// Get memory pressure
@@ -116,7 +116,7 @@ func collectRAM(snap *StatsSnapshot) {
 			for _, line := range strings.Split(pressure, "\n") {
 				if strings.Contains(line, "free percentage") {
 					var pct int
-					fmt.Sscanf(line, "System-wide memory free percentage: %d%%", &pct)
+					_, _ = fmt.Sscanf(line, "System-wide memory free percentage: %d%%", &pct)
 					snap.RAMPercent = float64(100 - pct)
 					snap.FreeRAM = total * int64(pct) / 100
 					snap.UsedRAM = total - snap.FreeRAM
@@ -156,7 +156,7 @@ func collectRAMFromVMStat(snap *StatsSnapshot) {
 	for _, line := range strings.Split(string(out), "\n") {
 		switch {
 		case strings.Contains(line, "page size of"):
-			fmt.Sscanf(line, "Mach Virtual Memory Statistics: (page size of %d bytes)", &pageSize)
+			_, _ = fmt.Sscanf(line, "Mach Virtual Memory Statistics: (page size of %d bytes)", &pageSize)
 		case strings.Contains(line, "Pages free"):
 			free = parseVMStatLine(line) * pageSize
 		case strings.Contains(line, "Pages active"):
@@ -181,7 +181,7 @@ func parseVMStatLine(line string) int64 {
 	valStr := strings.TrimSpace(parts[1])
 	valStr = strings.TrimSuffix(valStr, ".")
 	var v int64
-	fmt.Sscanf(valStr, "%d", &v)
+	_, _ = fmt.Sscanf(valStr, "%d", &v)
 	return v
 }
 
@@ -339,24 +339,5 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh", h)
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
-}
-
-// formatBytes returns a human-readable byte count.
-func formatBytes(bytes int64) string {
-	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-	)
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d B", bytes)
 	}
 }

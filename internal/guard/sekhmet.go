@@ -2,6 +2,7 @@ package guard
 
 import (
 	"fmt"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/hapi"
 )
 

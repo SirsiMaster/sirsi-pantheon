@@ -117,8 +117,8 @@ func TestCoverageCache_SaveAndLoad(t *testing.T) {
 	}
 
 	// Verify file exists
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("Cache file not created: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("Cache file not created: %v", statErr)
 	}
 
 	// Load

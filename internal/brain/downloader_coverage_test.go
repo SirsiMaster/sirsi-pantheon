@@ -548,8 +548,10 @@ func TestInstallModelSelection_DefaultModel(t *testing.T) {
 			{Name: "anubis-v2", Version: "2.0.0", Format: "onnx"},
 		},
 	}
+	if remote.SchemaVersion != 1 {
+		t.Errorf("SchemaVersion = %d, want 1", remote.SchemaVersion)
+	}
 
-	// The Install function's model selection logic:
 	// Find default model by name
 	var model *ModelInfo
 	for _, m := range remote.Models {
@@ -575,6 +577,9 @@ func TestInstallModelSelection_FallbackToFirst(t *testing.T) {
 			{Name: "first-model", Version: "1.0.0", Format: "onnx"},
 		},
 	}
+	if remote.SchemaVersion != 1 {
+		t.Errorf("SchemaVersion = %d, want 1", remote.SchemaVersion)
+	}
 
 	var model *ModelInfo
 	for _, m := range remote.Models {
@@ -597,6 +602,9 @@ func TestInstallModelSelection_EmptyModels(t *testing.T) {
 	remote := &RemoteManifest{
 		SchemaVersion: 1,
 		Models:        []ModelInfo{},
+	}
+	if remote.SchemaVersion != 1 {
+		t.Errorf("SchemaVersion = %d, want 1", remote.SchemaVersion)
 	}
 	if len(remote.Models) == 0 {
 		// This is the error path Install() takes

@@ -73,6 +73,9 @@ func TestSightResult_Fields(t *testing.T) {
 	if r.TotalGhosts != 1 {
 		t.Errorf("TotalGhosts = %d, want 1", r.TotalGhosts)
 	}
+	if r.LaunchServicesSize != 1024*1024 {
+		t.Errorf("LaunchServicesSize = %d, want %d", r.LaunchServicesSize, 1024*1024)
+	}
 	if r.GhostRegistrations[0].BundleID != "com.test.app" {
 		t.Error("BundleID mismatch")
 	}
