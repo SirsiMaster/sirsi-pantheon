@@ -39,14 +39,29 @@
 
 ## 🎯 SESSION 22 OBJECTIVES
 
-### P0: Thoth Savings Dashboard (MOST IMPORTANT FEATURE)
-1. **Status bar**: `𓁟 Thoth: 271K tokens saved ($4.08)` — calculated from file sizes
-2. **Calculation**: `(all source files chars / 4) - (memory.yaml chars / 4)` = tokens saved
-3. **Dollar estimate**: tokens saved × $15/M (Opus input pricing)
-4. **Staleness warning**: If memory.yaml is older than latest source edits → "⚠ Thoth stale"
-5. **Context % meter**: `memory.yaml tokens / 200K context window` = % used
-6. **Session ROI**: End-of-session summary showing savings vs. cost
-7. **Surface in**: Status bar tooltip, System Metrics dashboard, and menu bar app
+### P0: Thoth Accountability Engine (THE STAR OF PANTHEON)
+Thoth's value is concentrated at the START of each conversation (cold-start optimizer).
+He must PROVE his value with evidence, not claims.
+
+**What to build:**
+1. **Cold Start Benchmark**: Calculate tokens saved = `(all source chars / 4) - (memory.yaml chars / 4)`
+2. **Dollar savings**: tokens saved × $15/M (Opus) or $3/M (Sonnet) — user-configurable
+3. **Freshness meter**: Compare `memory.yaml` mtime vs latest source edits → ✅ Fresh / ⚠️ Stale
+4. **Coverage %**: What % of project state is captured in memory.yaml
+5. **Session mileage estimate**: Based on message count × avg tokens/msg, predict remaining context
+6. **Lifetime counter**: Persist across sessions — total tokens saved, total $ avoided
+7. **A/B Evidence**: Log "first file read" timestamps to prove cold-start speedup
+
+**Where to surface:**
+- Status bar tooltip: `𓁟 $4.08 saved this session`
+- System Metrics dashboard: Full accountability table
+- Menu bar app: Lifetime savings
+- End-of-session: Auto-generated Thoth Accountability Report
+
+**Key insight**: Thoth's value is ENTIRELY at conversation start (first 10 seconds).
+Mid-conversation he adds zero. His measurement must focus on cold-start cost delta.
+
+**Triangulation**: Antigravity's token counter + reset timer + memory.yaml file size = provable ROI
 
 ### P0: Host LSP Auto-Cleanse
 1. **Problem**: `language_server_macos_arm` grows to 5+ GB and never releases memory
