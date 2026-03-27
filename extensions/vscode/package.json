@@ -84,6 +84,12 @@
         "title": "𓂀 Pantheon: Apply Optimal Workspace Settings",
         "category": "Pantheon",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "pantheon.crashpadReport",
+        "title": "𓁵 Pantheon: Crashpad Stability Report",
+        "category": "Pantheon",
+        "icon": "$(warning)"
       }
     ],
     "configuration": {
@@ -151,6 +157,7 @@
         { "command": "pantheon.thothContext", "when": "true" },
         { "command": "pantheon.showMetrics", "when": "true" },
         { "command": "pantheon.thothAccountability", "when": "true" },
+        { "command": "pantheon.crashpadReport", "when": "true" },
         { "command": "pantheon.applyWorkspaceSettings", "when": "true" }
       ]
     }

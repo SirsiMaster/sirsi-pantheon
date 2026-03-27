@@ -19,11 +19,13 @@ import { PantheonStatusBar } from './statusBar';
 import { registerCommands } from './commands';
 import { ThothProvider } from './thothProvider';
 import { ThothAccountabilityEngine } from './thothAccountability';
+import { CrashpadMonitor } from './crashpadMonitor';
 
 let guardian: Guardian | undefined;
 let statusBar: PantheonStatusBar | undefined;
 let thothProvider: ThothProvider | undefined;
 let accountabilityEngine: ThothAccountabilityEngine | undefined;
+let crashpadMonitor: CrashpadMonitor | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('Pantheon');
@@ -79,8 +81,14 @@ export function activate(context: vscode.ExtensionContext): void {
         outputChannel.appendLine('𓁟 Thoth Accountability Engine armed');
     }
 
+    // ── Crashpad Monitor ──────────────────────────────────────────────
+    crashpadMonitor = new CrashpadMonitor(outputChannel);
+    crashpadMonitor.start();
+    context.subscriptions.push(crashpadMonitor);
+    outputChannel.appendLine('𓁵 Crashpad Monitor armed — tracking IDE stability');
+
     // ── Command Palette Registration ──────────────────────────────────
-    registerCommands(context, binaryPath, outputChannel, statusBar, thothProvider, guardian, accountabilityEngine);
+    registerCommands(context, binaryPath, outputChannel, statusBar, thothProvider, guardian, accountabilityEngine, crashpadMonitor);
 
     // ── Workspace Optimization ────────────────────────────────────────
     const autoOptimize = config.get<boolean>('workspace.autoOptimize', false);
@@ -115,6 +123,7 @@ export function deactivate(): void {
     statusBar?.dispose();
     thothProvider?.dispose();
     accountabilityEngine?.dispose();
+    crashpadMonitor?.dispose();
 }
 
 // ── Workspace Settings ────────────────────────────────────────────────

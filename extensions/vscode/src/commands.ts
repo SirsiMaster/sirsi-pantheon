@@ -11,6 +11,7 @@
 //   pantheon.thothContext       — Show Thoth compressed context
 //   pantheon.showMetrics        — Display system metrics dashboard
 //   pantheon.thothAccountability — Full Thoth Accountability Report
+//   pantheon.crashpadReport     — Crashpad stability report
 //   pantheon.applyWorkspaceSettings — Apply optimal IDE settings
 
 import { execFile } from 'child_process';
@@ -20,6 +21,7 @@ import { PantheonStatusBar } from './statusBar';
 import { ThothProvider } from './thothProvider';
 import { Guardian } from './guardian';
 import { ThothAccountabilityEngine } from './thothAccountability';
+import { CrashpadMonitor } from './crashpadMonitor';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +32,8 @@ export function registerCommands(
     statusBar: PantheonStatusBar | undefined,
     thothProvider: ThothProvider | undefined,
     guardian: Guardian | undefined,
-    accountabilityEngine: ThothAccountabilityEngine | undefined
+    accountabilityEngine: ThothAccountabilityEngine | undefined,
+    crashpadMonitor: CrashpadMonitor | undefined
 ): void {
 
     // ── Scan Workspace ────────────────────────────────────────────
@@ -311,6 +314,10 @@ export function registerCommands(
                     description: 'Full savings + freshness + coverage',
                 },
                 {
+                    label: '$(warning) Crashpad Stability Report',
+                    description: 'IDE crash dump monitor',
+                },
+                {
                     label: '$(arrow-down) Renice LSP Processes',
                     description: 'Lower priority of language servers',
                 },
@@ -332,6 +339,8 @@ export function registerCommands(
 
             if (selected.label.includes('Thoth Accountability')) {
                 await vscode.commands.executeCommand('pantheon.thothAccountability');
+            } else if (selected.label.includes('Crashpad')) {
+                await vscode.commands.executeCommand('pantheon.crashpadReport');
             } else if (selected.label.includes('Renice')) {
                 await vscode.commands.executeCommand('pantheon.reniceLSP');
             } else if (selected.label.includes('Scan')) {
@@ -385,6 +394,50 @@ export function registerCommands(
             vscode.window.showInformationMessage(
                 '𓂀 Workspace settings optimized — gopls filters, watcher exclusions, shell integration'
             );
+        })
+    );
+
+    // ── Crashpad Stability Report ─────────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('pantheon.crashpadReport', async () => {
+            if (!crashpadMonitor) {
+                vscode.window.showWarningMessage(
+                    '𓁵 Crashpad Monitor not initialized'
+                );
+                return;
+            }
+
+            const choice = await vscode.window.showQuickPick([
+                { label: '$(warning) Full Stability Report', description: 'Crash dump timeline, trends, and recommendations', action: 'report' },
+                { label: '$(pulse) Quick Status', description: 'Pending dump count and trend', action: 'status' },
+                { label: '$(trash) Clear Pending Dumps', description: 'Delete unsubmitted crash reports', action: 'clear' },
+            ], { placeHolder: '𓁵 Crashpad — IDE Stability Monitor' });
+
+            if (!choice) { return; }
+
+            switch ((choice as { action: string }).action) {
+                case 'report':
+                    await crashpadMonitor.showReport();
+                    break;
+                case 'status': {
+                    const status = crashpadMonitor.getStatus();
+                    if (status) {
+                        const trendIcon = status.trend === 'critical' ? '🔴'
+                            : status.trend === 'growing' ? '🟡'
+                            : '🟢';
+                        vscode.window.showInformationMessage(
+                            `𓁵 Crashpad: ${status.pendingCount} pending dumps, ` +
+                            `${status.recentCount} in last 24h — ${trendIcon} ${status.trend}`
+                        );
+                    } else {
+                        vscode.window.showInformationMessage('𓁵 Crashpad: No data yet — check will run shortly');
+                    }
+                    break;
+                }
+                case 'clear':
+                    await crashpadMonitor.clearPendingDumps();
+                    break;
+            }
         })
     );
 }
