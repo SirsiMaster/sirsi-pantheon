@@ -39,6 +39,15 @@
 
 ## 🎯 SESSION 22 OBJECTIVES
 
+### P0: Thoth Savings Dashboard (MOST IMPORTANT FEATURE)
+1. **Status bar**: `𓁟 Thoth: 271K tokens saved ($4.08)` — calculated from file sizes
+2. **Calculation**: `(all source files chars / 4) - (memory.yaml chars / 4)` = tokens saved
+3. **Dollar estimate**: tokens saved × $15/M (Opus input pricing)
+4. **Staleness warning**: If memory.yaml is older than latest source edits → "⚠ Thoth stale"
+5. **Context % meter**: `memory.yaml tokens / 200K context window` = % used
+6. **Session ROI**: End-of-session summary showing savings vs. cost
+7. **Surface in**: Status bar tooltip, System Metrics dashboard, and menu bar app
+
 ### P0: Host LSP Auto-Cleanse
 1. **Problem**: `language_server_macos_arm` grows to 5+ GB and never releases memory
 2. **Solution**: Extend Guardian GC to cleanse the host LSP under safe conditions:
