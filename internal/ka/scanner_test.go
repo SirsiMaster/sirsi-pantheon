@@ -27,6 +27,10 @@ func TestExtractBundleID(t *testing.T) {
 		{"unknown TLD prefix", "xyz.something.app", ""},
 		{"empty string", "", ""},
 		{"de prefix", "de.appmaker.myapp", "de.appmaker.myapp"},
+		{"malformed prefix", "notatld.test.app", ""},
+		{"long prefix", "a.b.c.d.e.f", ""},
+		{"only prefix", "com.", ""},
+		{"too short", "c.", ""},
 		// additional edge cases
 		{"me prefix", "me.developer.myapp", "me.developer.myapp"},
 		{"co prefix", "co.company.tool", "co.company.tool"},
@@ -36,6 +40,9 @@ func TestExtractBundleID(t *testing.T) {
 		{"jp prefix", "jp.co.company.app", "jp.co.company.app"},
 		{"double group prefix", "group.group.com.app", ""},
 		{"plist + savedState", "com.test.app.savedState.plist", "com.test.app"},
+		{"br prefix", "br.com.test.app", "br.com.test.app"},
+		{"au prefix", "au.com.test.app", "au.com.test.app"},
+		{"edu prefix", "edu.university.app", "edu.university.app"},
 	}
 
 	for _, tt := range tests {
@@ -140,8 +147,8 @@ func TestNewScanner(t *testing.T) {
 	if s.knownBundleIDs == nil {
 		t.Error("knownBundleIDs map not initialized")
 	}
-	if s.readBundleID == nil {
-		t.Error("readBundleID function not initialized")
+	if s.ReadBundleIDFn == nil {
+		t.Error("ReadBundleIDFn function not initialized")
 	}
 }
 
@@ -155,12 +162,12 @@ func TestScanner_BuildInstalledAppIndex(t *testing.T) {
 
 	s := NewScanner()
 	s.appDirs = []string{appDir}
-	s.skipBrew = true // Don't try to call brew
-	s.readBundleID = func(path string) string {
+	s.SkipBrew = true // Don't try to call brew
+	s.ReadBundleIDFn = func(path string) (string, error) {
 		if strings.HasSuffix(path, "Test.app") {
-			return "com.test.app"
+			return "com.test.app", nil
 		}
-		return ""
+		return "", nil
 	}
 
 	err := s.buildInstalledAppIndex()
@@ -179,11 +186,11 @@ func TestScanner_BuildInstalledAppIndex(t *testing.T) {
 func TestScanner_IndexHomebrewCasks_Skip(t *testing.T) {
 	s := NewScanner()
 	s.appDirs = []string{}
-	s.skipBrew = true
+	s.SkipBrew = true
 
 	err := s.buildInstalledAppIndex() // Should skip brew list
 	if err != nil {
-		t.Fatalf("buildInstalledAppIndex with skipBrew=true error: %v", err)
+		t.Fatalf("buildInstalledAppIndex with SkipBrew=true error: %v", err)
 	}
 	if len(s.installedNames) != 0 {
 		t.Errorf("expected 0 installed names, got %d", len(s.installedNames))

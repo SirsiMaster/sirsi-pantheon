@@ -8,7 +8,64 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
+	"sync"
 )
+
+var (
+	metricsCollector   func() (*ScanMetrics, error) = CollectMetrics
+	metricsCollectorMu sync.RWMutex
+)
+
+// SetMetricsCollector allows overriding the metrics collection logic (for testing).
+// Compliant with Rule A21 (Concurrency-Safe Injectable Mocks).
+func SetMetricsCollector(collector func() (*ScanMetrics, error)) {
+	metricsCollectorMu.Lock()
+	defer metricsCollectorMu.Unlock()
+	metricsCollector = collector
+}
+
+func getMetricsCollector() func() (*ScanMetrics, error) {
+	metricsCollectorMu.RLock()
+	defer metricsCollectorMu.RUnlock()
+	return metricsCollector
+}
+
+var (
+	newJackalEngine = func() *jackal.Engine {
+		e := jackal.NewEngine()
+		e.RegisterAll(rules.AllRules()...)
+		return e
+	}
+	newKaScanner = func() *ka.Scanner {
+		s := ka.NewScanner()
+		s.SkipLaunchServices = true // Default for speed in metrics
+		return s
+	}
+	factoryMu sync.RWMutex
+)
+
+// SetScannerFactories allows overriding the engines used by CollectMetrics (for testing).
+func SetScannerFactories(
+	jackalFactory func() *jackal.Engine,
+	kaFactory func() *ka.Scanner,
+) {
+	factoryMu.Lock()
+	defer factoryMu.Unlock()
+	newJackalEngine = jackalFactory
+	newKaScanner = kaFactory
+}
+
+func getJackalEngine() *jackal.Engine {
+	factoryMu.RLock()
+	defer factoryMu.RUnlock()
+	return newJackalEngine()
+}
+
+func getKaScanner() *ka.Scanner {
+	factoryMu.RLock()
+	defer factoryMu.RUnlock()
+	return newKaScanner()
+}
 
 // Verdict is the result of evaluating a single policy rule.
 type Verdict struct {
@@ -47,8 +104,7 @@ func CollectMetrics() (*ScanMetrics, error) {
 	metrics := &ScanMetrics{}
 
 	// Run Jackal scan for waste metrics
-	engine := jackal.NewEngine()
-	engine.RegisterAll(rules.AllRules()...)
+	engine := getJackalEngine()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -62,7 +118,7 @@ func CollectMetrics() (*ScanMetrics, error) {
 	metrics.FindingCount = len(result.Findings)
 
 	// Run Ka scan for ghost count
-	scanner := ka.NewScanner()
+	scanner := getKaScanner()
 	ghosts, err := scanner.Scan(false) // no sudo
 	if err == nil {
 		metrics.GhostCount = len(ghosts)
@@ -73,7 +129,8 @@ func CollectMetrics() (*ScanMetrics, error) {
 
 // Enforce evaluates a policy against the current system state.
 func Enforce(policy Policy) (*EnforceResult, error) {
-	metrics, err := CollectMetrics()
+	collector := getMetricsCollector()
+	metrics, err := collector()
 	if err != nil {
 		return nil, fmt.Errorf("collect metrics: %w", err)
 	}

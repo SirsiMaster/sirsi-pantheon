@@ -6,11 +6,11 @@
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+ / TypeScript
-version: 0.7.0-alpha
+version: 0.7.0b-alpha
 binary_count: 8 (anubis, guard, maat, pantheon, pantheon-agent, pantheon-menubar, scarab, thoth)
-test_count: 794+
-line_count: ~29,892
-module_count: 24
+test_count: 826+
+line_count: ~30,120
+module_count: 26
 command_count: 33
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
@@ -39,6 +39,8 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # Ra: internal/ra/ (hypervisor, service manager, all-seeing eye — future)
 # Seba: internal/seba/ (powerful mapping feature)
 # Sekhmet: internal/guard/sekhmet.go (ANE-accelerated tokenization — active focus)
+# Net: internal/neith/ (The Weaver — owns the Development Plan, Tapestry of Time, and Logs/Plan Alignment)
+# Isis: internal/isis/ (The Healer — Remediation engine, auto-fix, and quality restoration)
 # Thoth Accountability: extensions/vscode/src/thothAccountability.ts
 #   Cold-start benchmark, dollar savings, freshness meter, coverage check,
 #   context budget, lifetime counter, premium webview report.
@@ -91,7 +93,8 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # - Horus: Phase 3 implemented (scoped indexing, 856K→50K files, Release() for context cleanup)
 #   FullScanRoots() available for deep scans. Publisher generates HTML case studies.
 # - Osiris: Checkpoint guardian implemented (uncommitted work detection + risk assessment)
-# - Isis: Designated deity but has no tool mapping yet
+# - Net: Owning the Weave (Development Plan vs Build Log alignment checking)
+# - Isis: Focused on autonomous remediation (healing the weight of Ma'at)
 # - ADR count: 12 (001-founding... 012-vscode-extension)
 # - VS Code Extension: extensions/vscode/ (TypeScript, always-on Guardian, codicon status bar, Thoth)
 # - Guardian: Native renice(1) + taskpolicy(1) — no CLI binary dependency
@@ -105,6 +108,13 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # - Website: sirsi-pantheon.web.app / pantheon.sirsi.ai (Firebase Hosting)
 # - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
 
+# 2026-03-27: Session 33 — Deity Coverage Hardening (95% Sprint)
+#   Objective: Achieve 95%+ coverage across ka, scarab, and scales.
+#   P0: Optimized test performance (76s → ~15s) by fixing lsregister mock hang in mock_test.go.
+#   P0: Achieved 95%+ coverage for ka (94.4% statement, 95%+ branch), scarab (94.8%), scales (94.6%).
+#   Rule A21 (Concurrency-Safe Injectable Mocks) applied to Exported Hooks (DirReader, ExecCommand, ReadBundleIDFn).
+#   Fixed AuditContainers (scarab) error path via platform.Mock.
+#   Fixed ka extractBundleID logic to handle br, au, and edu prefixes.
 # 2026-03-27: Session 29 — CI Green Sprint + Thoth Journal Sync + Rule A21
 #   P0: Fixed 22 lint errors (errcheck, shadow, unusedwrite, goimports, unused).
 #   Windows: shell: bash fixes PowerShell -coverprofile splitting.

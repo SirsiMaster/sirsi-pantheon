@@ -122,32 +122,31 @@ var systemResidualLocations = []residualLocation{
 	{ResidualAppSupport, "/Library/Application Support", true},
 }
 
+// HorusManifest is the interface for the shared filesystem index.
+type HorusManifest interface {
+	DirSizeAndCount(dir string) (int64, int)
+	Exists(path string) bool
+}
+
 // Scanner is the Ka ghost detection engine.
 type Scanner struct {
-	homeDir        string
-	appDirs        []string          // Directories to scan for .app bundles
-	installedApps  map[string]bool   // Bundle IDs of currently installed apps
-	installedNames map[string]bool   // Names of currently installed apps (lowercase)
-	knownBundleIDs map[string]string // Bundle ID → app name mapping
-	skipBrew       bool              // Whether to skip Homebrew cask indexing (for testing)
-	readBundleID   func(string) string
-
-	// SkipLaunchServices skips the lsregister -dump scan (5+ seconds).
-	// Filesystem scan alone finds 95%+ of ghosts.
+	homeDir            string
+	appDirs            []string          // Directories to scan for .app bundles
+	installedApps      map[string]bool   // Bundle IDs of currently installed apps
+	installedNames     map[string]bool   // Names of currently installed apps (lowercase)
+	knownBundleIDs     map[string]string // Bundle ID → app name mapping
+	DirReader          func(string) ([]os.DirEntry, error)
+	ExecCommand        func(string, ...string) *exec.Cmd
+	ReadBundleIDFn     func(string) (string, error)
 	SkipLaunchServices bool
-
-	// Manifest is the shared Horus filesystem index.
-	// When set, DirSizeAndCount queries the index instead of walking.
-	Manifest interface {
-		DirSizeAndCount(dir string) (int64, int)
-		Exists(path string) bool
-	}
+	SkipBrew           bool
+	Manifest           HorusManifest
 }
 
 // NewScanner creates a new Ka scanner.
 func NewScanner() *Scanner {
 	homeDir, _ := os.UserHomeDir()
-	return &Scanner{
+	s := &Scanner{
 		homeDir: homeDir,
 		appDirs: []string{
 			"/Applications",
@@ -156,8 +155,24 @@ func NewScanner() *Scanner {
 		installedApps:  make(map[string]bool),
 		installedNames: make(map[string]bool),
 		knownBundleIDs: make(map[string]string),
-		readBundleID:   readBundleID, // Default implementation
+		DirReader:      os.ReadDir,          // Default implementation
+		ExecCommand:    exec.Command,        // Default implementation
+		ReadBundleIDFn: readBundleIDDefault, // Default implementation
 	}
+	return s
+}
+
+// readBundleIDDefault reads the CFBundleIdentifier from an app's Info.plist.
+func readBundleIDDefault(appPath string) (string, error) {
+	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
+
+	cmd := exec.Command("defaults", "read", plistPath, "CFBundleIdentifier")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
 }
 
 // Scan discovers all ghosts (Kas) on the system.
@@ -223,7 +238,7 @@ func (s *Scanner) Clean(ghost Ghost, dryRun bool, useTrash bool) (int64, int, er
 // buildInstalledAppIndex scans configured app directories for .app bundles.
 func (s *Scanner) buildInstalledAppIndex() error {
 	for _, dir := range s.appDirs {
-		entries, err := os.ReadDir(dir)
+		entries, err := s.DirReader(dir)
 		if err != nil {
 			continue
 		}
@@ -238,7 +253,10 @@ func (s *Scanner) buildInstalledAppIndex() error {
 			s.installedNames[strings.ToLower(appName)] = true
 
 			// Read bundle ID from Info.plist
-			bundleID := s.readBundleID(appPath)
+			bundleID, err := s.ReadBundleIDFn(appPath)
+			if err != nil {
+				continue
+			}
 			if bundleID != "" {
 				s.installedApps[bundleID] = true
 				s.knownBundleIDs[bundleID] = appName
@@ -247,7 +265,7 @@ func (s *Scanner) buildInstalledAppIndex() error {
 	}
 
 	// Also index Homebrew casks if not skipped
-	if !s.skipBrew {
+	if !s.SkipBrew {
 		s.indexHomebrewCasks()
 	}
 
@@ -265,7 +283,7 @@ func (s *Scanner) scanForOrphans(includeSudo bool) map[string][]Residual {
 
 	for _, loc := range locations {
 		dir := expandPath(loc.Dir, s.homeDir)
-		entries, err := os.ReadDir(dir)
+		entries, err := s.DirReader(dir)
 		if err != nil {
 			continue
 		}
@@ -332,8 +350,8 @@ func (s *Scanner) scanForOrphans(includeSudo bool) map[string][]Residual {
 func (s *Scanner) scanLaunchServices() map[string]bool {
 	ghosts := make(map[string]bool)
 
-	// Use lsregister to dump registered apps
-	cmd := exec.Command("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-dump")
+	path := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+	cmd := s.ExecCommand(path, "-dump")
 	output, err := cmd.Output()
 	if err != nil {
 		return ghosts
@@ -431,20 +449,30 @@ func (s *Scanner) isInstalled(bundleID, fileName string) bool {
 }
 
 // indexHomebrewCasks adds Homebrew cask apps to the installed app index.
-func (s *Scanner) indexHomebrewCasks() {
-	cmd := exec.Command("brew", "list", "--cask", "-1")
-	output, err := cmd.Output()
+func (s *Scanner) indexHomebrewCasks() map[string]bool {
+	casks := make(map[string]bool)
+
+	if s.SkipBrew {
+		return casks
+	}
+
+	command := s.ExecCommand("brew", "list", "--cask", "-1")
+	output, err := command.Output()
 	if err != nil {
-		return
+		logging.Debug("brew list --cask error", "err", err)
+		return casks
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
-		name := strings.TrimSpace(scanner.Text())
-		if name != "" {
-			s.installedNames[strings.ToLower(name)] = true
+		cask := strings.TrimSpace(scanner.Text())
+		if cask != "" {
+			casks[cask] = true
+			s.installedNames[strings.ToLower(cask)] = true
 		}
 	}
+
+	return casks
 }
 
 // isSystemBundleID returns true if the bundle ID belongs to a macOS system
@@ -499,10 +527,13 @@ func extractBundleID(name string) string {
 	}
 
 	// Common TLD prefixes for bundle IDs
-	validPrefixes := []string{"com", "org", "net", "io", "dev", "me", "co", "app", "de", "uk", "fr", "jp"}
+	validPrefixes := []string{"com", "org", "net", "io", "dev", "me", "co", "app", "de", "uk", "fr", "jp", "br", "au", "edu"}
 	for _, prefix := range validPrefixes {
 		if parts[0] == prefix {
-			return name
+			// Ensure there's a non-empty part after the prefix
+			if len(parts) > 1 && parts[1] != "" {
+				return name
+			}
 		}
 	}
 
@@ -528,19 +559,6 @@ func guessAppName(bundleID string) string {
 	}
 
 	return name
-}
-
-// readBundleID reads the CFBundleIdentifier from an app's Info.plist.
-func readBundleID(appPath string) string {
-	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
-
-	cmd := exec.Command("defaults", "read", plistPath, "CFBundleIdentifier")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSpace(string(output))
 }
 
 func expandPath(path string, homeDir string) string {

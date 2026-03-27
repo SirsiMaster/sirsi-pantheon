@@ -5,6 +5,8 @@ import (
 	"net"
 	"sync"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
 // ═══════════════════════════════════════════
@@ -374,5 +376,18 @@ func TestPingSweep_Wrapper(t *testing.T) {
 	hosts := pingSweep("10.0.0.0/24")
 	if len(hosts) != 1 {
 		t.Errorf("hosts = %d, want 1", len(hosts))
+	}
+}
+func TestAuditContainers_PlatformError(t *testing.T) {
+	mockPlatform := &platform.Mock{
+		CommandError: fmt.Errorf("mocked error"),
+	}
+	// We use AuditContainersWith to avoid global state issues
+	audit, err := AuditContainersWith(mockPlatform)
+	if err != nil {
+		t.Fatalf("AuditContainersWith should not return error on docker info failure: %v", err)
+	}
+	if audit.DockerRunning {
+		t.Error("expected DockerRunning = false")
 	}
 }

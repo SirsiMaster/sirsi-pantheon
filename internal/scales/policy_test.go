@@ -137,9 +137,14 @@ func TestNormalizeThreshold(t *testing.T) {
 		unit      string
 		expected  int64
 	}{
+		{1, "kb", 1024},
 		{1, "KB", 1024},
+		{1, "mb", 1024 * 1024}, // Added lowercase MB
 		{1, "MB", 1024 * 1024},
+		{1, "gb", 1024 * 1024 * 1024}, // Added lowercase GB
 		{1, "GB", 1024 * 1024 * 1024},
+		{1, "tb", 1024 * 1024 * 1024 * 1024}, // Added lowercase TB
+		{1, "TB", 1024 * 1024 * 1024 * 1024},
 		{5, "GB", 5 * 1024 * 1024 * 1024},
 		{100, "", 100},
 		{42, "bytes", 42},

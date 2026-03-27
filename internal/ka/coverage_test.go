@@ -1,6 +1,8 @@
 package ka
 
 import (
+	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -9,7 +11,13 @@ import (
 func TestScan_SkipLaunchServices(t *testing.T) {
 	scanner := NewScanner()
 	scanner.SkipLaunchServices = true
-	scanner.skipBrew = true
+	scanner.SkipBrew = true
+	scanner.DirReader = func(path string) ([]os.DirEntry, error) {
+		return nil, nil // Return empty to avoid slow walk
+	}
+	scanner.ExecCommand = func(string, ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
 
 	ghosts, err := scanner.Scan(false)
 	if err != nil {
@@ -24,7 +32,13 @@ func TestScan_SkipLaunchServices(t *testing.T) {
 func TestScan_WithLaunchServices(t *testing.T) {
 	scanner := NewScanner()
 	scanner.SkipLaunchServices = false
-	scanner.skipBrew = true
+	scanner.SkipBrew = true
+	scanner.DirReader = func(path string) ([]os.DirEntry, error) {
+		return nil, nil // Return empty to avoid slow walk
+	}
+	scanner.ExecCommand = func(string, ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
 
 	ghosts, err := scanner.Scan(false)
 	if err != nil {
@@ -39,7 +53,13 @@ func TestScan_WithLaunchServices(t *testing.T) {
 
 func TestScanLaunchServices(t *testing.T) {
 	scanner := NewScanner()
-	scanner.skipBrew = true
+	scanner.SkipBrew = true
+	scanner.DirReader = func(path string) ([]os.DirEntry, error) {
+		return nil, nil
+	}
+	scanner.ExecCommand = func(string, ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
 	// Build installed app index first (required for scanLaunchServices)
 	scanner.buildInstalledAppIndex()
 
@@ -55,6 +75,10 @@ func TestScanLaunchServices(t *testing.T) {
 func TestIndexHomebrewCasks(t *testing.T) {
 	scanner := NewScanner()
 
+	scanner.ExecCommand = func(string, ...string) *exec.Cmd {
+		// Return a command that fails so it doesn't try to run 'brew'
+		return exec.Command("false")
+	}
 	// This calls `brew list --cask` — may fail if brew is not installed.
 	scanner.indexHomebrewCasks()
 
@@ -66,9 +90,13 @@ func TestIndexHomebrewCasks(t *testing.T) {
 
 func TestReadBundleID_ValidApp(t *testing.T) {
 	// Safari is always installed on macOS
-	bundleID := readBundleID("/Applications/Safari.app")
+	bundleID, err := readBundleIDDefault("/Applications/Safari.app")
+	if err != nil {
+		t.Logf("readBundleIDDefault returned error for Safari (expected in CI): %v", err)
+		return
+	}
 	if bundleID == "" {
-		t.Log("readBundleID returned empty for Safari (expected in CI)")
+		t.Log("readBundleIDDefault returned empty for Safari")
 		return
 	}
 	if bundleID != "com.apple.Safari" {
@@ -77,8 +105,8 @@ func TestReadBundleID_ValidApp(t *testing.T) {
 }
 
 func TestReadBundleID_InvalidApp(t *testing.T) {
-	bundleID := readBundleID("/nonexistent/app.app")
-	if bundleID != "" {
-		t.Errorf("expected empty bundleID for nonexistent app, got %q", bundleID)
+	bundleID, err := readBundleIDDefault("/nonexistent/app.app")
+	if err == nil && bundleID != "" {
+		t.Errorf("expected empty bundleID or error for nonexistent app, got %q", bundleID)
 	}
 }

@@ -1,7 +1,7 @@
 # 🏛️ Sirsi Pantheon — Canonical Roadmap
 **Version:** 3.0.0 (The Unified Platform)
-**Date:** March 24, 2026
-**Status:** **ACTIVE — Phase 3: Hardening & Coverage breakthrough (Sprint 9)**
+**Date:** March 27, 2026
+**Status:** **ACTIVE — Phase 3: Hardening & Coverage breakthrough (Session 33)**
 
 ## 1. Vision: The Unified DevOps Intelligence Platform
 Pantheon is the single, modular brand for all Sirsi automation deities. One binary gives you all features, though each deity can be installed standalone if preferred.
@@ -11,15 +11,17 @@ Pantheon is the single, modular brand for all Sirsi automation deities. One bina
 | Deity | Status | Role | Domain | Coverage |
 |:------|:-------|:-----|:-------|:---------|
 | 𓂀 **Anubis** | ✅ Shipped | The Judge | Infrastructure hygiene, scans, judge | 93% |
-| 𓂓 **Ka** | ✅ Shipped | The Spirit | Ghost app detection, LaunchServices | 65% |
+| 𓂓 **Ka** | ✅ Shipped | The Spirit | Ghost app detection, LaunchServices | 94.4% |
 | 𓆄 **Ma'at** | ✅ Shipped | The Truth | QA/QC Governance, scores, pipeline | 88% |
 | 𓁹 **Horus** | ✅ Shipped | The Eye | Shared filesystem index, Spotlight fix | 82% |
-| 𓆣 **Khepri** | ✅ Shipped | The Scarab | Network discovery, container scans | 85% |
+| 𓆣 **Khepri** | ✅ Shipped | The Scarab | Network discovery, container scans | 94.8% |
 | 𓁟 **Thoth** | ✅ Shipped | The Wisdom | Persistent AI memory, MCP toolkit | 60% |
 | 𓇼 **Seba** | 🚧 Active | The Map | Visual infrastructure topology | 0% |
-| 𓁵 **Sekhmet** | ✅ Shipped | The Warrior | Guard, CPU/RAM yield, process kill | 91% |
+| 𓁢 **Sekhmet** | ✅ Shipped | The Warrior | Guard, CPU/RAM yield, process kill | 91% |
 | 𓁶 **Hapi** | ✅ Shipped | The Flow | Hardware detection (GPU, ANE, CUDA) | 84% |
-| ☀️ **Ra** | 📋 Planned | The Boss | Supreme Overseer — hypervisor & portal | — |
+| 𓁐 **Isis** | 🚧 Active | The Healer | Autonomous Remediation & Quality Restoration | -- |
+| 𓁯 **Net** | 🚧 Active | The Weaver | Tapestry of Time — Plan vs Log Alignment | -- |
+| ☀️ **Ra** | 📋 Planned | The Boss | Supreme Overseer — hypervisor & portal | -- |
 
 ## 3. The 99% Coverage Sprint (Currently Active)
 We have hit **90.1% Weighted Average** across all modules.
@@ -37,7 +39,7 @@ We have hit **90.1% Weighted Average** across all modules.
 
 ### Phase 3: Hardening & Bridge (CURRENT) — 🚧 Now
 - **Antigravity IPC Bridge** wiring.
-- **90% coverage breakthrough** (Interface Injection).
+- **95% Deity coverage breakthrough** (Session 33).
 - **Quality Charter (docs/QA_PLAN.md)** established.
 
 ### Phase 4: Intelligence & Portal (NEXT) — 📋 April
@@ -53,6 +55,6 @@ Ma'at is the lone sovereign of quality across the Pantheon:
 - To reach the **99% Goal**, we need approximately **232 more tests** targeting the remaining 10% (the "Untouchable" edge cases).
 
 ---
-**Custodian**: 𓂀 Ra & 𓆄 Ma'at
-**Last Assessment**: Session 16b — 90.1% Passing.
-*Building in public. No deferrals. No excuses.*
+**Custodian**: 𓁯 Net & 𓁹 Ra & 𓆄 Ma'at
+**Last Assessment**: Session 33 — 90.1% Global Weighted / 95% Deity Layer.
+*Building in public. The weave is secure. No excuses.*
