@@ -39,6 +39,16 @@
 
 ## 🎯 SESSION 22 OBJECTIVES
 
+### P0: Host LSP Auto-Cleanse
+1. **Problem**: `language_server_macos_arm` grows to 5+ GB and never releases memory
+2. **Solution**: Extend Guardian GC to cleanse the host LSP under safe conditions:
+   - **Idle detection**: No editor activity for 5+ min AND RSS > 4 GB → restart LSP
+   - **Conversation boundary**: If Antigravity exposes "new conversation" event, trigger on that
+   - **Manual command**: `Pantheon: Cleanse LSP Memory` in Command Palette
+3. **Implementation**: Use `workbench.action.reloadWindow` or find Antigravity-specific LSP restart command
+4. **Guard rails**: Never cleanse during active edits. Log RSS before/after. Notify user via status bar.
+5. **Research**: Check if Antigravity exposes conversation lifecycle events in its extension API
+
 ### P0: Publish to OpenVSX
 1. Create OpenVSX API token at open-vsx.org (SirsiMaster Chrome profile)
 2. Publish: `npm run publish:openvsx`
