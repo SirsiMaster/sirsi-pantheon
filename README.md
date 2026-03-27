@@ -4,8 +4,9 @@
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-C8A951?style=flat)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.4.0--alpha-1A1A5E?style=flat)](VERSION)
-[![Tests](https://img.shields.io/badge/tests-768%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/Version-0.5.1--alpha-1A1A5E?style=flat)](VERSION)
+[![Tests](https://img.shields.io/badge/tests-819%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![OpenVSX](https://img.shields.io/badge/OpenVSX-v0.5.1-purple?style=flat)](https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon)
 [![MCP](https://img.shields.io/badge/MCP-2025--03--26-purple?style=flat)](https://modelcontextprotocol.io)
 [![Build in Public](https://img.shields.io/badge/building-in%20public-C8A951?style=flat)](docs/BUILD_LOG.md)
 
@@ -31,17 +32,66 @@
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Installation — All Platforms & Methods
 
-### Install
+> **Not sure which tool to use?** See the [FAQ: Which Pantheon Tool Should I Use?](https://pantheon.sirsi.ai/faq)
+
+### CLI (macOS / Linux)
 ```bash
-# From source
+# Homebrew (recommended)
+brew tap SirsiMaster/tools && brew install sirsi-pantheon
+
+# From source (requires Go 1.22+)
 go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@latest
 
 # Or clone and build
 git clone https://github.com/SirsiMaster/sirsi-pantheon.git
 cd sirsi-pantheon && go build -o pantheon ./cmd/pantheon/
 ```
+
+### CLI (Windows)
+```powershell
+# From source (requires Go 1.22+)
+go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@latest
+
+# Or download binary from GitHub Releases
+# https://github.com/SirsiMaster/sirsi-pantheon/releases
+```
+
+### VS Code Extension (macOS / Linux / Windows)
+Search **"Pantheon"** in your extension marketplace, or:
+```bash
+# VS Code
+code --install-extension SirsiMaster.sirsi-pantheon
+
+# Antigravity / Cursor / Windsurf — works on any VS Code-based IDE
+# Also available on OpenVSX: https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon
+```
+
+### Menu Bar App (macOS only)
+```bash
+# Build from source
+go build -o /opt/homebrew/bin/pantheon-menubar ./cmd/pantheon-menubar/
+
+# Auto-start at login
+cp cmd/pantheon-menubar/bundle/ai.sirsi.pantheon.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
+```
+
+### MCP Server (any platform with AI IDE)
+```bash
+pantheon mcp    # Starts JSON-RPC 2.0 server over stdio
+```
+See [MCP Configuration](#-mcp-server--ai-ide-integration) below.
+
+### Binary Sizes
+
+| Component | Download | On Disk |
+|:----------|:---------|:--------|
+| CLI (`pantheon`) | 6.6 MB | 12 MB |
+| Menu Bar (`pantheon-menubar`) | 2.6 MB | 4.5 MB |
+| Extension (`.vsix`) | 40 KB | 40 KB |
+| Agent (`pantheon-agent`) | ~1.2 MB | 2.1 MB |
 
 ### Scan Your Machine
 ```bash
@@ -359,6 +409,40 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 ---
 
+## 🔌 VS Code Extension — Always-On Guardian
+
+The Pantheon extension brings Guardian auto-renice, memory GC, and live metrics into your IDE.
+
+| Feature | Description |
+|:--------|:-----------|
+| **Guardian Auto-Renice** | Deprioritizes LSP processes (gopls, tsserver, rust-analyzer) to nice +10 / Background QoS |
+| **Memory Pressure GC** | Restarts bloated language servers when >500 MB sustained for 3+ checks |
+| **Status Bar** | `$(eye) PANTHEON 4.8 GB` — live RAM metrics, color-coded health |
+| **Command Palette** | 7 commands: Scan, Guard, Renice, Ka, Thoth, Metrics, Settings |
+| **Thoth Context** | Reads `.thoth/memory.yaml` for instant project context |
+
+**Install**: Search "Pantheon" in extensions, or visit [OpenVSX](https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon).
+**Works in**: VS Code, Antigravity, Cursor, Windsurf — any VS Code-based IDE.
+**No AI required.** No CLI binary dependency for core features.
+
+---
+
+## 🖥️ Menu Bar App — IDE-Independent Monitoring
+
+Native macOS menu bar application that runs independently of any IDE.
+
+| Feature | Description |
+|:--------|:-----------|
+| **System Tray Icon** | Heavyweight ankh (☥) in macOS menu bar — always visible |
+| **Live Stats** | RAM pressure, Git status, branch, accelerator detection |
+| **Command Shortcuts** | Quick-launch scan, guard, ghost hunt from the menu |
+| **Auto-Start** | LaunchAgent with `RunAtLoad: true`, `KeepAlive: true` — survives reboots |
+
+**Footprint**: 4.5 MB on disk, ~50 MB RSS at runtime.
+**macOS only** (12.0+).
+
+---
+
 ## 📄 License
 
 MIT License — free and open source forever. See [LICENSE](LICENSE).
@@ -373,13 +457,13 @@ Sirsi Pantheon is built by [Sirsi Technologies](https://sirsi.ai).
 
 ## 𓂀 Documentation & Registry
 
-- **[Deity Registry](docs/pantheon/index.html)**: Interactive hub for all 12 deities at `pantheon.sirsi.ai`.
-- **[Case Studies (HTML)](docs/case-studies.html)**: Origin stories and nitty-gritty post-mortems of system failures.
-- **[Case Studies (Markdown)](docs/CASE-STUDIES.md)**: GitHub-flavored version of the case studies.
+- **[FAQ: Which Tool Should I Use?](https://pantheon.sirsi.ai/faq)**: Decision matrix for choosing the right Pantheon tool.
+- **[Deity Registry](https://pantheon.sirsi.ai)**: Interactive hub for all 12 deities.
 - **[Build Log](docs/build-log.html)**: Real-time chronicle of the Pantheon build.
+- **[Case Studies](docs/case-studies.html)**: Origin stories and post-mortems.
 - **[ADR Index](docs/ADR-INDEX.md)**: Every architectural decision record.
+- **[OpenVSX Listing](https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon)**: VS Code extension on OpenVSX.
 
 ---
 
 *𓂀 One install. All deities. Nothing escapes the Weighing.*
-```
