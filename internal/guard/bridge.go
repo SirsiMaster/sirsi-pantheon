@@ -12,13 +12,12 @@ import (
 // AntigravityBridge provides a thread-safe, bounded ring buffer for MCP resources
 // to monitor system health and watchdog alerts.
 type AntigravityBridge struct {
-	mu           sync.RWMutex
-	alerts       *AlertRing
-	lastSnapshot time.Time
-	polls        int64
-	alertsTotal  int64
-	backoffs     int64
-	onAlert      func(AlertEntry)
+	mu          sync.RWMutex
+	alerts      *AlertRing
+	polls       int64
+	alertsTotal int64
+	backoffs    int64
+	onAlert     func(AlertEntry)
 }
 
 // AlertRing is a fixed-size buffer for system alerts.

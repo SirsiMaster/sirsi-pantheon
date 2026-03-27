@@ -63,10 +63,9 @@ type ThrottleResult struct {
 
 // Throttler manages process priority adjustments.
 type Throttler struct {
-	mu          sync.RWMutex
-	throttled   map[int]ThrottleEvent // PID → original throttle event
-	autoEnabled bool
-	cmdRunner   func(name string, args ...string) (string, error)
+	mu        sync.RWMutex
+	throttled map[int]ThrottleEvent // PID → original throttle event
+	cmdRunner func(name string, args ...string) (string, error)
 }
 
 // NewThrottler creates a Throttler instance.

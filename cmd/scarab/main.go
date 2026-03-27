@@ -11,6 +11,7 @@ import (
 var version = "v0.4.0-standalone"
 
 func main() {
+	_ = version // set via ldflags
 	var verboseMode bool
 
 	rootCmd := &cobra.Command{

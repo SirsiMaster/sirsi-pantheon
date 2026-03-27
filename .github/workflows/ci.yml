@@ -41,7 +41,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -short -coverprofile=coverage.out ./...
+        env:
+          CGO_ENABLED: 1
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
@@ -68,7 +70,9 @@ jobs:
         run: go build -o pantheon${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/pantheon/
 
       - name: Build pantheon-agent
-        run: CGO_ENABLED=0 go build -o pantheon-agent${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/pantheon-agent/
+        run: go build -o pantheon-agent${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/pantheon-agent/
+        env:
+          CGO_ENABLED: '0'
 
       - name: Binary size guard (Unix)
         if: matrix.os != 'windows-latest'

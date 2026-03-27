@@ -8,9 +8,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 ### Planned
-- P0: Reach 95%+ coverage on remaining modules (Sight, Platform, Mirror)
-- P1: CoreML embeddings on ANE (60x speedup)
+- P0: Wire `thoth sync` auto-journal from git diffs
+- P1: Reach 95%+ coverage on remaining modules
 - P2: npm publish thoth-init
+
+### Session 28 (2026-03-27) — Ghost Transcripts Recovery + CI Remediation
+- **Case Study 014** — "The Ghost Transcripts": discovered Antigravity IDE never writes `overview.txt` — 90+ conversations with zero transcripts.
+- **Forensic Recovery** — Reconstructed journal entries 022-024 from git diffs, case studies, build log, and memory.yaml.
+- **CI Remediation** — Fixed 3 CI failure categories: Windows `CGO_ENABLED` syntax, `coverprofile` parsing, 20+ lint errors.
+- **Lint Hardening** — Fixed unused `version` vars (5 standalone binaries), unused struct fields (`lastSnapshot`, `autoEnabled`), misspelling (`cancelled`→`canceled`).
+- **Binary Hygiene** — Removed tracked `thoth` binary from git, added to `.gitignore`.
+- **Test Hardening** — Added `-short` flag to CI test runner to skip live syscall tests (30s timeout prevention).
 
 ## [0.7.0-alpha] — 2026-03-27 (Ecosystem Hardening — AEGIS Phase)
 ### Added

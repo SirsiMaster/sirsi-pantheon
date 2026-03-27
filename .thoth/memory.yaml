@@ -105,6 +105,13 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # - Website: sirsi-pantheon.web.app / pantheon.sirsi.ai (Firebase Hosting)
 # - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
 
+# 2026-03-27: Session 28 — Ghost Transcripts Recovery + CI Remediation
+#   CRITICAL FINDING: Antigravity IDE never writes overview.txt — 90+ conversations, zero transcripts.
+#   Recovered 3 lost sessions (25-27) using git forensics, Thoth memory, CHANGELOG, case studies.
+#   Reconstructed journal entries 022-024. Case Study 014 published.
+#   Fixed CI: Windows CGO_ENABLED (env block), -short flag (skip live syscall tests), 20+ lint errors.
+#   Removed tracked thoth binary from git. Added to .gitignore.
+#   Recovery deities: Git (100% code), Thoth (summaries), Ma'at (changelog), Horus (build log).
 # 2026-03-27: Session 27 — Singleton Architecture Finalization
 #   Verified all 3 entry points (menubar, guard, mcp) have platform.TryLock + correct imports.
 #   Hardened LaunchAgent plist: KeepAlive changed from `true` to `SuccessfulExit: false`.

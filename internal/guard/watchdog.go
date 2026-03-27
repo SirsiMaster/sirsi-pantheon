@@ -85,7 +85,7 @@ type Watchdog struct {
 
 // StartWatch creates and starts a Sekhmet watchdog on a background goroutine.
 // Returns a *Watchdog handle. Consume alerts via watchdog.Alerts().
-// The watchdog runs until ctx is cancelled or watchdog.Stop() is called.
+// The watchdog runs until ctx is canceled or watchdog.Stop() is called.
 func StartWatch(ctx context.Context, cfg WatchConfig) *Watchdog {
 	applyDefaults(&cfg)
 

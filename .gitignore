@@ -34,6 +34,7 @@ tmp/
 /pantheon
 /pantheon-agent
 /pantheon-menubar
+/thoth
 /language_server_macos_arm
 
 bin/
