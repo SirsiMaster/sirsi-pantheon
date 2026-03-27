@@ -271,24 +271,27 @@ func compareVersions(a, b string) int {
 
 	// Numeric parts are equal — compare pre-release.
 	// No pre-release > any pre-release (1.0.0 > 1.0.0-alpha).
-	switch {
-	case aPre == "" && bPre == "":
-		return 0
-	case aPre == "":
-		return 1 // a is stable, b has pre-release
-	case bPre == "":
-		return -1 // b is stable, a has pre-release
-	default:
-		// Both have pre-release — compare alphabetically.
-		// This gives correct ordering: alpha < beta < rc
-		if aPre < bPre {
-			return -1
-		}
-		if aPre > bPre {
-			return 1
-		}
+	if aPre == "" && bPre == "" {
 		return 0
 	}
+	if aPre == "" {
+		return 1 // a is stable, b is pre-release
+	}
+	if bPre == "" {
+		return -1 // b is stable, a is pre-release
+	}
+
+	// Both have pre-release — compare them.
+	// We handle common tags: alpha < beta < rc
+	tags := map[string]int{"alpha": 1, "beta": 2, "rc": 3}
+	av := tags[strings.ToLower(aPre)]
+	bv := tags[strings.ToLower(bPre)]
+
+	if av != bv {
+		return av - bv
+	}
+
+	return strings.Compare(aPre, bPre)
 }
 
 // parseVersion splits "0.4.0-alpha" into ([0, 4, 0], "alpha").

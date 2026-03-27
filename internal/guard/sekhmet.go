@@ -7,10 +7,10 @@ import (
 
 // TokenizeResult contains the output of the Sekhmet tokenization service.
 type TokenizeResult struct {
-	Tokens    []int  `json:"tokens"`
-	Count     int    `json:"count"`
-	Accel     string `json:"accelerator"`
-	Duration  string `json:"duration"`
+	Tokens   []int  `json:"tokens"`
+	Count    int    `json:"count"`
+	Accel    string `json:"accelerator"`
+	Duration string `json:"duration"`
 }
 
 // Tokenize processes text into tokens using the best available accelerator (ANE, GPU, or CPU).

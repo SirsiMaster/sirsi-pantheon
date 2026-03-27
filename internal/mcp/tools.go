@@ -87,6 +87,15 @@ func registerTools(s *Server) {
 			},
 		},
 	}, handleThothReadMemory)
+
+	s.RegisterTool(Tool{
+		Name:        "detect_hardware",
+		Description: "Detect system hardware accelerators (GPU/NPU/TPU) and resource limits (RAM/CPU/Metal).",
+		InputSchema: InputSchema{
+			Type:       "object",
+			Properties: map[string]SchemaField{},
+		},
+	}, handleDetectHardware)
 }
 
 // handleScanWorkspace runs the Jackal scan engine on a workspace.
@@ -417,4 +426,29 @@ func shortenHomePath(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
+}
+
+// handleDetectHardware returns the system hardware profile via Hapi.
+func handleDetectHardware(_ map[string]interface{}) (*ToolResult, error) {
+	bridge, err := brain.NewHapiBridge()
+	if err != nil {
+		return &ToolResult{
+			Content: []ContentBlock{
+				{Type: "text", Text: fmt.Sprintf("Hardware detection failed: %v", err)},
+			},
+			IsError: true,
+		}, nil
+	}
+
+	profile := bridge.Profile()
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return &ToolResult{
+		Content: []ContentBlock{
+			{Type: "text", Text: fmt.Sprintf("𓂀 Hardware Profile Detected:\n\n```json\n%s\n```\nRecommended Backend: %s", string(data), bridge.BackendPreference())},
+		},
+	}, nil
 }

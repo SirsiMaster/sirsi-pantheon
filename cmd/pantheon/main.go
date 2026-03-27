@@ -108,7 +108,6 @@ func init() {
 	rootCmd.AddCommand(maatCmd)
 }
 
-
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

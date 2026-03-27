@@ -152,8 +152,11 @@ func (w *Watchdog) run() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-			start := time.Now()
+			// Check self-governance via AntiGravity (Rule A1)
+			ag := &AntiGravity{MaxMemoryMB: 1536} // 1.5GB soft limit
+			_ = ag.CheckSelf()
 
+			start := time.Now()
 			procs, err := sampleTopCPUFn(w.cfg.SampleSize)
 			if err != nil {
 				continue // Transient — retry next tick

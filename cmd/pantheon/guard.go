@@ -15,6 +15,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
 var (
@@ -57,6 +58,14 @@ func init() {
 }
 
 func runGuard(cmd *cobra.Command, args []string) {
+	// Ensure singleton for guard operations
+	unlock, err := platform.TryLock("guard-cli")
+	if err != nil {
+		fmt.Println("🛡️  Pantheon Guard is already active in another process.")
+		return
+	}
+	defer unlock()
+
 	// Renice mode
 	if guardReniceTarget != "" {
 		runRenice()
@@ -248,8 +257,6 @@ func slayTargetStrings() []string {
 }
 
 // runWatchdog starts the Sekhmet watchdog mode with the Antigravity IPC bridge.
-// The bridge connects the watchdog to MCP consumers via a thread-safe AlertRing,
-// so any running MCP server can query live alerts via anubis://watchdog-alerts.
 func runWatchdog() {
 	numCPU := runtime.NumCPU()
 
@@ -263,11 +270,10 @@ func runWatchdog() {
 	output.Info("Press Ctrl+C to stop.")
 	fmt.Println()
 
-	// Configure the bridge (not just the raw watchdog)
+	// Configure the bridge
 	cfg := guard.DefaultBridgeConfig()
 	cfg.WatchConfig.CPUThreshold = guardThreshold
 	cfg.OnAlert = func(entry guard.AlertEntry) {
-		// Print alerts to stderr in real-time
 		severity := "⚠️"
 		if entry.Severity == "critical" {
 			severity = "🔴"
@@ -276,7 +282,6 @@ func runWatchdog() {
 			severity, entry.Severity, entry.PID, entry.ProcessName,
 			entry.CPUPercent, entry.RSSHuman, entry.Duration)
 
-		// Give actionable advice
 		group := classifyForAdvice(entry.ProcessName)
 		if group != "" {
 			output.Warn("  → Fix: pantheon guard --slay %s --dry-run", group)
@@ -286,10 +291,10 @@ func runWatchdog() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start the full bridge (watchdog + ring buffer + MCP integration)
+	// Start the full bridge
 	bridge := guard.StartBridge(ctx, cfg)
 
-	// Register with MCP so the watchdog-alerts resource serves live data
+	// Register with MCP
 	mcp.SetWatchdogBridge(bridge)
 	output.Success("Antigravity bridge active — MCP consumers can query alerts")
 	fmt.Println()
@@ -302,7 +307,7 @@ func runWatchdog() {
 	fmt.Println()
 	output.Info("𓁵 Sekhmet standing down.")
 
-	// Report final stats from the bridge
+	// Report final stats
 	status := bridge.Status()
 	fmt.Println()
 	output.Info("Buffered alerts:  %d", status.BufferedCount)
@@ -311,7 +316,6 @@ func runWatchdog() {
 	output.Info("Backoffs:         %d", status.WatchdogBackoffs)
 
 	// Clean shutdown
-	bridge.Stop()
 	mcp.SetWatchdogBridge(nil)
 }
 

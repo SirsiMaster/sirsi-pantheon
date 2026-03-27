@@ -27,10 +27,7 @@ func TestSetGetWatchdogBridge(t *testing.T) {
 	cfg := guard.DefaultBridgeConfig()
 	cfg.WatchConfig.Interval = 100 * time.Millisecond
 	bridge := guard.StartBridge(ctx, cfg)
-	defer func() {
-		cancel()
-		bridge.Stop()
-	}()
+	defer cancel()
 
 	SetWatchdogBridge(bridge)
 
@@ -81,10 +78,7 @@ func TestHandleWatchdogResource_WithBridge(t *testing.T) {
 	cfg := guard.DefaultBridgeConfig()
 	cfg.WatchConfig.Interval = 100 * time.Millisecond
 	bridge := guard.StartBridge(ctx, cfg)
-	defer func() {
-		cancel()
-		bridge.Stop()
-	}()
+	defer cancel()
 
 	SetWatchdogBridge(bridge)
 
@@ -130,10 +124,7 @@ func TestHandleHealthCheck_WithBridge(t *testing.T) {
 	cfg := guard.DefaultBridgeConfig()
 	cfg.WatchConfig.Interval = 100 * time.Millisecond
 	bridge := guard.StartBridge(ctx, cfg)
-	defer func() {
-		cancel()
-		bridge.Stop()
-	}()
+	defer cancel()
 
 	SetWatchdogBridge(bridge)
 

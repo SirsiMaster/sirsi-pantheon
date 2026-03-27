@@ -247,12 +247,13 @@ func containsSegment(dir, segment string) bool {
 // splitPath splits a path into its components.
 func splitPath(path string) []string {
 	var parts []string
+	path = filepath.Clean(path)
 	for {
 		dir, file := filepath.Split(path)
 		if file != "" {
 			parts = append([]string{file}, parts...)
 		}
-		if dir == path { // root
+		if dir == path || dir == "" || dir == "." { // root or no more parts
 			break
 		}
 		path = filepath.Clean(dir)

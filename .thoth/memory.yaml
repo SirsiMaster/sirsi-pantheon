@@ -105,7 +105,18 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # - Website: sirsi-pantheon.web.app / pantheon.sirsi.ai (Firebase Hosting)
 # - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
 
-## Recent Changes (most recent first)
+# 2026-03-27: Session 27 — Singleton Architecture Finalization
+#   Verified all 3 entry points (menubar, guard, mcp) have platform.TryLock + correct imports.
+#   Hardened LaunchAgent plist: KeepAlive changed from `true` to `SuccessfulExit: false`.
+#   This prevents respawn loops when TryLock causes a clean exit(0), only restarts on crash.
+#   Confirmed AntiGravity (1.5GB) is integrated in watchdog.go at line 155-157.
+#   Full build passes clean (`go build ./...` — zero errors).
+# 2026-03-27: Session 26 — Pantheon Ecosystem Singleton Hardening (AEGIS Phase)
+#   Implemented platform.TryLock across Menubar, Guard, and MCP entry points.
+#   Created Hapi-Brain bridge (internal/brain/hapi_bridge.go) for hardware-aware inference.
+#   Hardened Sekhmet watchdog with 1.5GB memory governance threshold.
+#   Standardized MCP server startup and integrated detect_hardware tool.
+#   Verified LaunchAgent configuration and solved Triple Ankh redundancy.
 # 2026-03-27: Session 25 — Sekhmet Phase II (ANE Tokenization)
 #   Implemented native Go tokenization service (Sekhmet).
 #   extended HAPI Accelerator interface with Tokenize(text string).

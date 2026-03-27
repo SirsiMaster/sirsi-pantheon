@@ -9,9 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ## [Unreleased]
 ### Planned
 - P0: Reach 95%+ coverage on remaining modules (Sight, Platform, Mirror)
-- P1: Thoth auto-sync (Horus/Ra feed facts)
 - P1: CoreML embeddings on ANE (60x speedup)
 - P2: npm publish thoth-init
+
+## [0.7.0-alpha] — 2026-03-27 (Ecosystem Hardening — AEGIS Phase)
+### Added
+- **Singleton Enforcement** — Implemented Unix domain socket locking (`platform.TryLock`) across all primary entry points (Menubar, Guard, MCP) to prevent process redundancy.
+- **Hapi-Brain Bridge** — Created `internal/brain/hapi_bridge.go` for hardware-aware inference backend selection (CoreML vs ONNX).
+- **Hardened Watchdog** — Sekhmet watchdog now enforces a 1.5GB memory governance threshold and tracks process prioritization.
+- **MCP hardware tool** — Added `detect_hardware` tool to the MCP server for real-time accelerator and resource detection.
+
+### Fixed
+- **Triple Ankh Redundancy** — Resolved the issue of multiple pantheon-menubar instances running simultaneously.
+- **MCP Standardization** — Refactored MCP server startup to utilize the standard `mcp.NewServer()` implementation with singleton hardening.
+- **LaunchAgent Audit** — Synchronized `ai.sirsi.pantheon.plist` with the hardened singleton architecture.
 
 ### Session 25 (2026-03-27) — Sekhmet Phase II (ANE Tokenization)
 - **HAPI Tokenization** — Extended the `Accelerator` interface with native `Tokenize` support.

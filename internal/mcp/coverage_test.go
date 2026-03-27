@@ -12,6 +12,9 @@ import (
 
 // handleGhostReport runs live Ka scanning — exercise the code path.
 func TestHandleGhostReport_NoTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping live Ka scan in short mode")
+	}
 	result, err := handleGhostReport(map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("handleGhostReport: %v", err)
@@ -29,6 +32,9 @@ func TestHandleGhostReport_NoTarget(t *testing.T) {
 }
 
 func TestHandleGhostReport_WithTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping live Ka scan in short mode")
+	}
 	result, err := handleGhostReport(map[string]interface{}{
 		"target": "NonExistentAppXYZ12345",
 	})
