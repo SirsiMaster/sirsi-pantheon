@@ -11,6 +11,12 @@ Sirsi Anubis is an infrastructure hygiene platform built on an **agent-controlle
 1. **Local mode** — the `anubis` binary runs directly on a workstation, scanning and cleaning the local machine.
 2. **Fleet mode** — the `anubis` binary acts as a controller, deploying lightweight `anubis-agent` binaries to remote targets (VMs, containers, bare metal) and orchestrating fleet-wide scans.
 
+### 1.1 The Pantheon Hierarchy
+The Sirsi Pantheon follows a dual-cluster governance model overseen by **Ra** (Hypervisor) and **Net** (The Weaver). See [PANTHEON_HIERARCHY.md](PANTHEON_HIERARCHY.md) for the full canonical ruleset.
+
+- **𓀭 THE CODE GODS**: Governance, Knowledge, Plan, & Healing (Net, Thoth, Ma'at, Isis).
+- **𓀰 THE MACHINE GODS**: Infrastructure, Safety, OS, & Hardware (Horus, Anubis, Ka, Sekhmet, Hapi, Scarab, Seba).
+
 ```
                     ┌─────────────────────────────┐
                     │         USER / ADMIN         │

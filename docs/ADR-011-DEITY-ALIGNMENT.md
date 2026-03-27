@@ -18,9 +18,24 @@ and perceptible click latency in the IDE.
 
 ### Deity Canonical Scopes
 
-| Deity | Archetype | Single Responsibility |
+| ☀️ **Ra** | The Hypervisor | Supreme Overseer & Orchestrator of Creation |
+| 𓁯 **Net** | The Weaver | Weaver of Existence — Owners Plan, Canon & Timelines |
+|-------|-----------|----------------------|
+| **𓀭 The Code Gods** | **Governance & Knowledge** | **Plan, Quality, Memory, Healing** |
 |-------|-----------|----------------------|
 | **𓁟 Thoth** | The Memory | Context compressor — ensures no consumer reads raw history |
+| **𓆄 Ma'at** | The Feather | Quality & truth validation, weighing of the heart |
+| **𓁐 Isis** | The Healer | Autonomous remediation — restores quality after Ma'at's weigh |
+|-------|-----------|----------------------|
+| **𓀰 The Machine Gods** | **Infrastructure & OS** | **Safety, Resource, Network, Hardware** |
+|-------|-----------|----------------------|
+| **𓁹 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
+| **🐺 Jackal/Anubis** | The Hunter | Waste scanner & Infrastructure Hygiene Judge |
+| **𓂓 Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
+| **𓁵 Sekhmet** | The Warrior | Process control — watchdog, orphan slayer, NPU hardening |
+| **🌊 Hapi** | The River | GPU/VRAM and NPU (Accelerator) flow management |
+| **🪲 Scarab** | The Roller | Fleet discovery — subnets, VLANs, containers |
+| **🔮 Seba** | The Star | Dependency graph & Topology mapper |
 | **𓁹 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
 | **🐺 Jackal** | The Hunter | Waste scanner — uses Horus index as read-only data source |
 | **𓂓 Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |

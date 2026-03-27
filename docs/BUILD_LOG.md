@@ -315,7 +315,27 @@ Commits: 12  |  Modules: 22  |  Tests: 768  |  Coverage: 90.1%
 |:-------|:------|:--------:|
 | Go source lines | ~30,120 | ✅ `find + wc -l` |
 | Test count | 824 | ✅ `go test ./...` |
-| Weighted Coverage | **90.1%** | ✅ `go tool cover` |
+| Weighted Coverage |## Session 33: The Weaver's Hardening (Deity Coverage & Hierarchy) — March 27, 2026
+**Objective:** Achieved 95% test coverage for core deities (`ka`, `scarab`, `scales`), optimized the suite from 76s to 14s, and codified the **Net (The Weaver)** and **Isis (The Healer)** divine hierarchy.
+
+### 𓂀 Key Achievements
+- **Net (The Weaver)**: established as the owner of the **Development Plan** and **Canon**. sits below **Ra** and above the divine clusters.
+- **Divine Clusters**: restructured the Pantheon into the **Code Gods** (Governance/Knowledge) and **Machine Gods** (Infrastructure/Safety).
+- **Hardening**: 
+  - `internal/ka`: **95.1%** (+0.7%)
+  - `internal/scarab`: **95.3%** (+0.5%)
+  - `internal/scales`: **95.0%** (+0.4%)
+- **Site Upgrade**: redesigned `docs/index.html` with a **Premium Egyptian Noir** visual system and clustered registry.
+- **Hierarchy Document**: Created **`docs/PANTHEON_HIERARCHY.md`** as the canonical ruleset for for deity subordination and dependence.
+- **The Loom of Intent**: conceptualized and codified Layer 4 intent compression within Net's future scope.
+
+### 𓂀 Technical Context
+- **Concurrency Mocks**: Fully implemented across all internal modules (Rule A21).
+- **Test Performance**: resolved Mac LaunchServices hang in `mock_test.go` using `SkipLaunchServices` and `SkipBrew` flags.
+- **Dependencies**: established that Machine Gods depend on **Horus** (Index), while **Isis** (Healer) depends on **Ma'at** (Weigher).
+
+**Status:** Hardness achieved. Hierarchy established. **The Weave is secure.** 𓂀
+**90.1%** | ✅ `go tool cover` |
 | Binary Size | ~12 MB | ✅ Combined Pantheon |
 | Deities | 12 | ✅ Registry |
 

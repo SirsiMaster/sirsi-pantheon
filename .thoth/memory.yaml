@@ -36,12 +36,23 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # Hapi: internal/hapi/ (GPU, dedup, snapshots)
 # Ma'at: internal/maat/ (QA/QC governance — coverage, canon, pipeline)
 # Horus: internal/horus/ (publisher + scoped FS index — Phase 3: 8 targeted roots, demand-driven)
-# Ra: internal/ra/ (hypervisor, service manager, all-seeing eye — future)
-# Seba: internal/seba/ (powerful mapping feature)
-# Sekhmet: internal/guard/sekhmet.go (ANE-accelerated tokenization — active focus)
-# Net: internal/neith/ (The Weaver — owns the Development Plan, Tapestry of Time, and Logs/Plan Alignment)
-# Isis: internal/isis/ (The Healer — Remediation engine, auto-fix, and quality restoration)
-# Thoth Accountability: extensions/vscode/src/thothAccountability.ts
+# ☀️ Ra: internal/ra/ (The Hypervisor — Supreme Overseer)
+# 𓁯 Net: internal/neith/ (The Weaver — Owns Plan, Canon & Timelines)
+# 
+# 𓀭 THE CODE GODS (Governance & Knowledge)
+#   Thoth: Scribe/Memory compressor (extensions/vscode/src/thothAccountability.ts)
+#   Ma'at: Quality standard/Weigher (internal/maat/)
+#   Isis: Healer/Remediation engine (internal/isis/)
+#
+# 𓀰 THE MACHINE GODS (Infrastructure & OS)
+#   Horus: The Eye/Shared FS Index
+#   Anubis: The Judge/Hygiene
+#   Ka: The Spirit/Ghost Hunter
+#   Sekhmet: The Warrior/Watchdog/NPU
+#   Hapi: The Flow/Accelerator
+#   Scarab: The Roller/Discovery
+#   Seba: The Star/Topology
+#
 #   Cold-start benchmark, dollar savings, freshness meter, coverage check,
 #   context budget, lifetime counter, premium webview report.
 # Crashpad Monitor: extensions/vscode/src/crashpadMonitor.ts

@@ -3,810 +3,531 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sirsi Pantheon — Infrastructure Hygiene for the AI Era</title>
-  <meta name="description" content="One install. All deities. Scan, judge, and purge infrastructure waste across workstations, containers, and networks. Open source, written in Go.">
-  <meta property="og:title" content="Sirsi Pantheon — Infrastructure Hygiene for the AI Era">
-  <meta property="og:description" content="One command to find and clean 50GB+ of waste on your development machine.">
-  <meta property="og:type" content="website">
+  <title>Sirsi Pantheon — The Divine Hierarchy of DevSecOps</title>
+  <meta name="description" content="One install. All deities. The unified platform for infrastructure hygiene, codebase governance, and persistent AI knowledge.">
+  
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Outfit:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --color-primary: #059669;
-      --color-primary-light: #10B981;
-      --color-primary-dark: #047857;
-      --color-primary-bg: #022c22;
-      --color-gold: #C8A951;
-      --color-gold-dark: #A08332;
-      --color-gold-bright: #E2C76B;
-      --bg-primary: #022c22;
-      --bg-secondary: #011a14;
-      --bg-gradient: radial-gradient(ellipse at top right, #022c22 0%, #000000 100%);
-      --text-primary: #ffffff;
-      --text-secondary: rgba(255,255,255,0.85);
-      --text-muted: rgba(255,255,255,0.5);
-      --border-primary: rgba(255,255,255,0.1);
-      --glass-bg: rgba(2, 44, 34, 0.4);
-      --glass-border: rgba(255,255,255,0.08);
-      --card-bg: rgba(2, 44, 34, 0.6);
-      --card-border: rgba(255,255,255,0.1);
+      --gold: hsl(45, 52%, 55%);
+      --gold-light: hsl(45, 60%, 70%);
+      --gold-glow: hsla(45, 52%, 55%, 0.3);
+      --emerald: hsl(160, 84%, 39%);
+      --bg: hsl(165, 80%, 3%);
+      --bg-alt: hsl(165, 80%, 5%);
+      --text: hsl(0, 0%, 95%);
+      --text-dim: hsl(0, 0%, 70%);
+      --border: hsla(0, 0%, 100%, 0.08);
+      --glass: hsla(165, 80%, 5%, 0.6);
       --font-heading: 'Cinzel', serif;
-      --font-body: 'Inter', sans-serif;
+      --font-body: 'Outfit', sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
-      --radius-md: 8px;
-      --radius-lg: 12px;
-      --radius-xl: 24px;
-      --shadow-card: 0 10px 30px -10px rgba(0,0,0,0.5);
     }
 
-    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 0% 0%, hsla(160, 84%, 15%, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 100% 100%, hsla(45, 52%, 10%, 0.1) 0%, transparent 50%);
+      color: var(--text);
       font-family: var(--font-body);
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      background-image: var(--bg-gradient);
-      min-height: 100vh;
       line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Hero ─────────────────────────────────────────── */
-    .hero {
+    /* ── Utilities ──────────────────────────────────────── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+    .gold-text { color: var(--gold); }
+    .mono { font-family: var(--font-mono); font-size: 0.9em; }
+    
+    /* ── Hero ──────────────────────────────────────────── */
+    header {
+      min-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
       text-align: center;
-      padding: 6rem 4rem 4rem;
+      padding: 4rem 1rem;
       position: relative;
-      overflow: hidden;
     }
-    .hero::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle at 30% 20%, rgba(5, 150, 105, 0.08) 0%, transparent 50%),
-                  radial-gradient(circle at 70% 80%, rgba(200, 169, 81, 0.05) 0%, transparent 50%);
-      pointer-events: none;
-    }
-    .hero-hieroglyph {
-      font-size: 5rem;
-      margin-bottom: 1rem;
-      display: block;
-      animation: float 4s ease-in-out infinite;
-    }
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
-    }
-    .hero h1 {
-      font-family: var(--font-heading);
-      font-size: clamp(2.8rem, 6vw, 4.5rem);
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      background: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold), var(--color-primary-light));
+
+    .ankh-hero {
+      font-size: 6rem;
+      margin-bottom: 1.5rem;
+      background: linear-gradient(135deg, var(--gold), var(--gold-light));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 1rem;
+      filter: drop-shadow(0 0 20px var(--gold-glow));
+      animation: pulse 4s ease-in-out infinite;
     }
-    .hero .subtitle {
-      font-size: 1.5rem;
-      color: var(--text-secondary);
-      max-width: 1000px;
-      margin: 0 auto 2rem;
-      font-weight: 300;
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.8; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
     }
-    .hero .tagline {
-      font-family: var(--font-mono);
-      font-size: 1.1rem;
-      color: var(--color-gold);
+
+    h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(3rem, 8vw, 5rem);
       letter-spacing: 0.1em;
-      text-transform: uppercase;
-      margin-bottom: 2.5rem;
-    }
-
-    /* ── CTA ──────────────────────────────────────────── */
-    .cta-group {
-      display: flex;
-      gap: 1.5rem;
-      justify-content: center;
-      flex-wrap: wrap;
+      font-weight: 900;
       margin-bottom: 1rem;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.85rem 2rem;
-      border-radius: var(--radius-md);
-      font-family: var(--font-body);
-      font-size: 1.1rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s ease;
-      cursor: pointer;
-      border: none;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-      color: white;
-      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.3);
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
-    }
-    .btn-secondary {
-      background: var(--glass-bg);
-      color: var(--text-primary);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(10px);
-    }
-    .btn-secondary:hover {
-      border-color: var(--color-gold);
-      color: var(--color-gold);
+      text-transform: uppercase;
     }
 
-    /* ── Install Block ───────────────────────────────── */
-    .install-block {
+    .subtitle {
+      font-size: 1.4rem;
       max-width: 800px;
-      margin: 2rem auto;
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      padding: 1rem 1.5rem;
-      font-family: var(--font-mono);
-      font-size: 1.05rem;
-      color: var(--color-primary-light);
+      color: var(--text-dim);
+      font-weight: 300;
+      margin-bottom: 3rem;
+    }
+
+    /* ── Navigation Clusters ──────────────────────────── */
+    .cluster-nav {
+      display: flex;
+      gap: 2rem;
+      margin-bottom: 4rem;
+    }
+
+    .nav-item {
+      text-decoration: none;
+      color: var(--text-dim);
+      font-family: var(--font-heading);
+      font-size: 0.9rem;
+      letter-spacing: 0.2em;
+      transition: all 0.3s ease;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid transparent;
+    }
+
+    .nav-item:hover {
+      color: var(--gold);
+      border-bottom-color: var(--gold);
+    }
+
+    /* ── The Weave Section ────────────────────────────── */
+    .weave-block {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      padding: 4rem 0;
+      margin-bottom: 6rem;
       position: relative;
     }
-    .install-block .prompt { color: var(--color-gold); }
-    .install-block .comment { color: var(--text-muted); }
-    .install-block code { display: block; margin: 0.3rem 0; }
 
-    /* ── Stats Strip ─────────────────────────────────── */
-    .stats-strip {
-      display: flex;
-      justify-content: center;
-      gap: 3rem;
-      padding: 2rem 1rem;
-      flex-wrap: wrap;
-    }
-    .stat {
-      text-align: center;
-    }
-    .stat-value {
+    .section-label {
       font-family: var(--font-heading);
-      font-size: 2.4rem;
-      font-weight: 700;
-      color: var(--color-gold-bright);
-    }
-    .stat-label {
-      font-size: 0.95rem;
-      color: var(--text-muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.4em;
+      color: var(--gold);
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
+      display: block;
+      text-align: center;
     }
 
-    /* ── Section ──────────────────────────────────────── */
-    .container { max-width: 1400px; margin: 0 auto; padding: 0 3rem; }
-
-    section {
-      padding: 4rem 0;
+    .weave-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
     }
-    section h2 {
+
+    .weave-text h2 {
       font-family: var(--font-heading);
-      font-size: 2.2rem;
-      text-align: center;
-      margin-bottom: 0.5rem;
-      color: var(--color-gold);
+      font-size: 2.5rem;
+      margin-bottom: 1.5rem;
     }
-    section .section-sub {
-      text-align: center;
-      color: var(--text-muted);
-      margin-bottom: 3rem;
+
+    .weave-text p {
+      color: var(--text-dim);
+      margin-bottom: 2rem;
       font-size: 1.1rem;
     }
 
-    /* ── Deity Flip Cards ──────────────────────────────── */
+    /* ── Registry Grid ────────────────────────────────── */
+    .deity-section {
+      margin-bottom: 8rem;
+    }
+
+    .deity-section h2 {
+      font-family: var(--font-heading);
+      text-align: center;
+      font-size: 2rem;
+      margin-bottom: 4rem;
+      letter-spacing: 0.1em;
+    }
+
     .deity-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 2rem;
     }
-    .flip-card {
+
+    /* ── Flip Cards Premium ───────────────────────────── */
+    .card {
+      height: 400px;
       perspective: 1000px;
-      height: 280px;
       cursor: pointer;
     }
-    .flip-card-inner {
+
+    .card-inner {
       position: relative;
       width: 100%;
       height: 100%;
-      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.8s cubic-bezier(0.23, 1, 0.32, 1);
       transform-style: preserve-3d;
     }
-    .flip-card:hover .flip-card-inner {
+
+    .card:hover .card-inner {
       transform: rotateY(180deg);
     }
-    .flip-card-front, .flip-card-back {
+
+    .card-front, .card-back {
       position: absolute;
       width: 100%;
       height: 100%;
       backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(10px);
-      overflow: hidden;
-    }
-    .flip-card-front {
-      background: var(--card-bg);
+      border-radius: 12px;
+      background: var(--glass);
+      border: 1px solid var(--border);
+      padding: 2.5rem;
       display: flex;
       flex-direction: column;
-      align-items: center;
+    }
+
+    .card-front {
       justify-content: center;
+      align-items: center;
       text-align: center;
-      padding: 2rem 1.5rem;
     }
-    .flip-card-front .deity-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-      display: block;
-    }
-    .flip-card-front h3 {
-      font-family: var(--font-heading);
-      font-size: 1.3rem;
-      color: var(--color-gold-bright);
-      margin-bottom: 0.6rem;
-    }
-    .flip-card-front .eli5 {
-      font-size: 1.1rem;
-      color: var(--text-secondary);
-      line-height: 1.4;
-      max-width: 280px;
-    }
-    .flip-card-front .flip-hint {
-      position: absolute;
-      bottom: 0.8rem;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    .flip-card-back {
-      background: linear-gradient(135deg, rgba(2, 44, 34, 0.9), rgba(0, 0, 0, 0.85));
+
+    .card-back {
       transform: rotateY(180deg);
-      padding: 1.5rem 1.8rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
+      background: linear-gradient(135deg, var(--bg-alt), var(--bg));
+      justify-content: space-between;
     }
-    .flip-card-back .back-cmd {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      color: var(--color-primary-light);
-      background: rgba(0,0,0,0.4);
-      padding: 0.4rem 0.8rem;
-      border-radius: 4px;
-      display: inline-block;
-      margin-bottom: 0.8rem;
-      align-self: flex-start;
-    }
-    .flip-card-back .back-desc {
-      font-size: 0.95rem;
-      color: var(--text-secondary);
-      line-height: 1.5;
+
+    .deity-icon {
+      font-size: 4rem;
       margin-bottom: 1rem;
+      color: var(--gold);
     }
-    .flip-card-back .back-impact {
-      display: flex;
-      gap: 1.2rem;
-      flex-wrap: wrap;
-    }
-    .flip-card-back .impact-item {
-      display: flex;
-      flex-direction: column;
-    }
-    .flip-card-back .impact-value {
+
+    h3 {
       font-family: var(--font-heading);
-      font-size: 1.3rem;
-      color: var(--color-gold-bright);
-    }
-    .flip-card-back .impact-label {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
       letter-spacing: 0.05em;
     }
 
-    /* ── Case Studies ─────────────────────────────────── */
-    .case-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.2rem;
-    }
-    .case-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      padding: 1.4rem;
-      transition: border-color 0.2s ease;
-    }
-    .case-card:hover { border-color: var(--color-gold-dark); }
-    .case-card .metric {
-      font-family: var(--font-heading);
-      font-size: 1.7rem;
-      color: var(--color-gold-bright);
-      margin-bottom: 0.3rem;
-    }
-    .case-card h4 {
-      font-size: 1.1rem;
-      margin-bottom: 0.4rem;
-      color: var(--text-primary);
-    }
-    .case-card p {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      line-height: 1.4;
+    .tag {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
     }
 
-    /* ── Links Section ────────────────────────────────── */
-    .links-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-    }
-    .link-card {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      padding: 1rem 1.4rem;
-      text-decoration: none;
-      color: var(--text-primary);
-      transition: all 0.2s ease;
-    }
-    .link-card:hover {
-      border-color: var(--color-primary);
-      transform: translateY(-2px);
-    }
-    .link-card .link-icon { font-size: 2.2rem; }
-    .link-card .link-title {
-      font-weight: 600;
-      font-size: 1.1rem;
-    }
-    .link-card .link-desc {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-    }
-
-    /* ── Footer ───────────────────────────────────────── */
-    footer {
-      text-align: center;
-      padding: 3rem 2rem;
-      border-top: 1px solid var(--border-primary);
-      color: var(--text-muted);
+    .description {
+      color: var(--text-dim);
       font-size: 1rem;
     }
-    footer a {
-      color: var(--color-primary-light);
-      text-decoration: none;
-    }
-    footer a:hover { text-decoration: underline; }
-    .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
+
+    .back-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
       margin-bottom: 1rem;
-      flex-wrap: wrap;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label { color: var(--text-dim); font-size: 0.9rem; }
+    .stat-value { color: var(--gold); font-weight: 600; }
+
+    /* ── Ledger Footer ───────────────────────────────── */
+    .ledger {
+      background: black;
+      padding: 4rem 0;
+      border-top: 1px solid var(--gold-glow);
+    }
+
+    .ledger-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2rem;
+      text-align: center;
+    }
+
+    .ledger-item .value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--gold);
+      display: block;
+    }
+
+    .ledger-item .label {
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 768px) {
+      .weave-content { grid-template-columns: 1fr; gap: 2rem; }
+      .ledger-grid { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ═══ Hero ═══════════════════════════════════════════════ -->
-  <header class="hero">
-    <span class="hero-hieroglyph">𓂀</span>
+  <!-- Hero -->
+  <header>
+    <div class="ankh-hero">𓂀</div>
     <h1>Sirsi Pantheon</h1>
-    <p class="tagline">One Install. All Deities.</p>
     <p class="subtitle">
-      Infrastructure hygiene for the AI era. Scan, judge, and purge waste across
-      workstations, containers, VMs, and networks. Open source. Zero telemetry.
+      One Install. All Deities. The unified DevOps intelligence platform for infrastructure hygiene, 
+      governance, and autonomous remediation.
     </p>
-
-    <div class="cta-group">
-      <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="btn btn-primary">
-        𓇳 View on GitHub
-      </a>
-      <a href="case-studies.html" class="btn btn-secondary">
-        𓂀 Origin Stories
-      </a>
-      <a href="build-log.html" class="btn btn-secondary">
-        𓏛 Build Log
-      </a>
-      <a href="https://sirsi.ai" class="btn btn-secondary">
-        𓉔 Sirsi Nexus
-      </a>
+    
+    <div class="cluster-nav">
+      <a href="#code-gods" class="nav-item">THE CODE CLUSTER</a>
+      <a href="#machine-gods" class="nav-item">THE MACHINE CLUSTER</a>
+      <a href="#hypervisor" class="nav-item">THE OVERSEER</a>
     </div>
 
-    <div class="install-block">
-      <code><span class="comment"># Install via Homebrew</span></code>
-      <code><span class="prompt">$</span> brew tap SirsiMaster/tools</code>
-      <code><span class="prompt">$</span> brew install sirsi-pantheon</code>
-      <code></code>
-      <code><span class="comment"># Or download the binary</span></code>
-      <code><span class="prompt">$</span> go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@latest</code>
+    <div style="margin-top: 2rem;">
+      <code class="mono" style="padding: 1rem 2rem; background: var(--bg-alt); border: 1px solid var(--gold-glow); border-radius: 6px;">
+        <span style="color: var(--gold);">$</span> brew install sirsi-pantheon
+      </code>
     </div>
   </header>
 
-  <!-- ═══ Stats ══════════════════════════════════════════════ -->
-  <div class="stats-strip">
-    <div class="stat">
-      <div class="stat-value">19</div>
-      <div class="stat-label">CLI Commands</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">11</div>
-      <div class="stat-label">Deities</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">21K+</div>
-      <div class="stat-label">Lines of Go</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">90/100</div>
-      <div class="stat-label">Ma'at Quality</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">MIT</div>
-      <div class="stat-label">License</div>
-    </div>
-  </div>
-
-  <!-- ═══ Deities ════════════════════════════════════════════ -->
-  <section>
+  <!-- Section: The Weaver -->
+  <section class="weave-block" id="the-weave">
     <div class="container">
-      <h2>The Pantheon</h2>
-      <p class="section-sub">Hover a card to see what it does under the hood</p>
+      <span class="section-label">THE SUPREME GOVERNANCE</span>
+      <div class="weave-content">
+        <div class="weave-text">
+          <span class="gold-text mono">𓁯 Net (Neith)</span>
+          <h2>The Weaver of Existence</h2>
+          <p>
+            Net owns the planetary alignment. She sits between the Hypervisor and the clusters, 
+            continuously weaving the <strong>Development Plan</strong> into reality. She assesses 
+            the "drift" of existence and possesses infinite wisdom for corrective action.
+          </p>
+          <div class="stat-row">
+            <span class="stat-label">Ownership</span>
+            <span class="stat-value">Plan / Canon / ADRs</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Mission</span>
+            <span class="stat-value">Timeline Integrity</span>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: center; font-size: 15rem; opacity: 0.1;">𓁯</div>
+      </div>
+    </div>
+  </section>
 
+  <!-- Section: Code Gods -->
+  <section class="deity-section" id="code-gods">
+    <div class="container">
+      <span class="section-label">𓀭 THE CODE CLUSTER</span>
+      <h2>Governance & Knowledge</h2>
+      
       <div class="deity-grid">
-
-        <!-- Anubis -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓂀</span>
-              <h3>Anubis</h3>
-              <p class="eli5">Finds junk on your computer that cleaning apps miss.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon weigh · $ pantheon judge</span>
-              <p class="back-desc">Scans 7 domains (caches, Docker, Homebrew, Python, Node, Go, AI models) with 58+ rules. Shows you exactly what's wasting space and safely deletes it.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">47 GB</span><span class="impact-label">Found on first scan</span></div>
-                <div class="impact-item"><span class="impact-value">58+</span><span class="impact-label">Scan rules</span></div>
-                <div class="impact-item"><span class="impact-value">4</span><span class="impact-label">Profiles</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Ka -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓂓</span>
-              <h3>Ka</h3>
-              <p class="eli5">Detects apps you deleted that are still secretly running.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon ka</span>
-              <p class="back-desc">Finds "ghost apps" — uninstalled software that left behind startup files, system registrations, and cache folders. Scans Launch Services in parallel for sub-second results.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">&lt; 1s</span><span class="impact-label">Full scan time</span></div>
-                <div class="impact-item"><span class="impact-value">8.5s → 1s</span><span class="impact-label">Before/after</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Hathor -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓉡</span>
-              <h3>Hathor</h3>
-              <p class="eli5">Finds duplicate files eating your storage.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon mirror</span>
-              <p class="back-desc">Three-phase dedup: groups by size → partial hash (first+last 4KB) → full SHA-256. Recommends which copy to keep. Includes a web UI for review.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">3-phase</span><span class="impact-label">Matching algo</span></div>
-                <div class="impact-item"><span class="impact-value">Web UI</span><span class="impact-label">Visual review</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Sekhmet -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓁵</span>
-              <h3>Sekhmet</h3>
-              <p class="eli5">Kills runaway processes that freeze your machine.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon guard</span>
-              <p class="back-desc">Audits RAM and CPU pressure. Classifies every process as system, user, zombie, orphan, or hog. Monitor crash dumps for IDE instability. Detects Extension Host crashes before they cascade into V8 OOM.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">264%</span><span class="impact-label">CPU caught</span></div>
-                <div class="impact-item"><span class="impact-value">v0.7.0</span><span class="impact-label">Crash Monitor</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Ma'at -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓆄</span>
+        <div class="card">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓆄</div>
+              <div class="tag">The Standard</div>
               <h3>Ma'at</h3>
-              <p class="eli5">Grades your code quality and enforces team standards.</p>
-              <span class="flip-hint">hover to flip</span>
+              <p class="description">Grades code quality and weighs every heart against the feather.</p>
             </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon maat · $ pantheon scales</span>
-              <p class="back-desc">Runs test coverage, lint checks, and commit traceability. Produces a "Feather Weight" score out of 100. Scales enforces org-wide policies as YAML rules.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">90/100</span><span class="impact-label">Current score</span></div>
-                <div class="impact-item"><span class="impact-value">3,667×</span><span class="impact-label">Speed boost</span></div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/maat</span>
+                <h3>The Truth</h3>
               </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Metric</span><span class="stat-value">Feather Weight</span></div>
+                <div class="stat-row"><span class="stat-label">Domains</span><span class="stat-value">Coverage / Canon</span></div>
+                <div class="stat-row"><span class="stat-label">Score</span><span class="stat-value">90.1 / 100</span></div>
+              </div>
+              <p class="description">Runs concurrent OS-thread assessments of codebase health and ADR drift.</p>
             </div>
           </div>
         </div>
 
-        <!-- Horus -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓁹</span>
-              <h3>Horus</h3>
-              <p class="eli5">Fixes broken search results and indexes your entire filesystem.</p>
-              <span class="flip-hint">hover to flip</span>
+        <!-- Isis -->
+        <div class="card">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁐</div>
+              <div class="tag">The Healer</div>
+              <h3>Isis</h3>
+              <p class="description">Autonomously fixes findings to restore the Weight of the Feather.</p>
             </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon sight</span>
-              <p class="back-desc">Heals macOS Spotlight and Launch Services. Builds a shared filesystem index that every other deity uses — walk the disk once, all modules query it instantly.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">15.6s → 833ms</span><span class="impact-label">Index time</span></div>
-                <div class="impact-item"><span class="impact-value">19×</span><span class="impact-label">Speedup</span></div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/isis</span>
+                <h3>Restoration</h3>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Khepri -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓆣</span>
-              <h3>Khepri</h3>
-              <p class="eli5">Scans every device on your network and audits Docker containers.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon scarab</span>
-              <p class="back-desc">ARP-scans your local network, discovers hosts, inspects Docker containers for waste and vulnerabilities. Fleet-scale version of Anubis.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">64 GB</span><span class="impact-label">Docker waste found</span></div>
-                <div class="impact-item"><span class="impact-value">LAN-wide</span><span class="impact-label">Scan scope</span></div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Action</span><span class="stat-value">Remediation</span></div>
+                <div class="stat-row"><span class="stat-label">Targets</span><span class="stat-value">Lint / Test / ADR</span></div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Seba -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓇼</span>
-              <h3>Seba</h3>
-              <p class="eli5">Draws a visual map of your infrastructure.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon seba</span>
-              <p class="back-desc">Generates an interactive network topology graph. See how services, hosts, and containers connect to each other at a glance.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">Interactive</span><span class="impact-label">Graph view</span></div>
-                <div class="impact-item"><span class="impact-value">Real-time</span><span class="impact-label">Topology</span></div>
-              </div>
+              <p class="description">Restores project alignment by auto-fixing the wounds identified by Ma'at.</p>
             </div>
           </div>
         </div>
 
         <!-- Thoth -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓁟</span>
+        <div class="card">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁟</div>
+              <div class="tag">The Memory</div>
               <h3>Thoth</h3>
-              <p class="eli5">Cuts AI token waste by 98% so your context window lasts.</p>
-              <span class="flip-hint">hover to flip</span>
+              <p class="description">Scribe of Wisdom. Zero-token persistent context with 98% savings.</p>
             </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon mcp · $ pantheon install-brain</span>
-              <p class="back-desc">Three-layer memory system for token-efficient AI sessions. Eliminates redundant codebase re-reading, keeps context resident across sessions. MCP server for Claude, Cursor, and Windsurf.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">98%</span><span class="impact-label">Less re-reading</span></div>
-                <div class="impact-item"><span class="impact-value">50×</span><span class="impact-label">Cost reduction</span></div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">extensions/vscode</span>
+                <h3>The Wisdom</h3>
               </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Context Savings</span><span class="stat-value">98.7%</span></div>
+                <div class="stat-row"><span class="stat-label">Cold Boot</span><span class="stat-value">105ms</span></div>
+              </div>
+              <p class="description">Persistent project memory that eliminates the need for AI assistants to re-read source files.</p>
             </div>
           </div>
         </div>
-
-        <!-- Hapi -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">𓁶</span>
-              <h3>Hapi</h3>
-              <p class="eli5">Detects your GPU, Neural Engine, and available hardware.</p>
-              <span class="flip-hint">hover to flip</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">$ pantheon hapi</span>
-              <p class="back-desc">Hardware resource detection — finds GPUs, VRAM, Neural Engines, CPU cores. Routes computation to the fastest available accelerator so nothing sits idle.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">4 vendors</span><span class="impact-label">Apple · NVIDIA · AMD · Intel</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Ra -->
-        <div class="flip-card">
-          <div class="flip-card-inner">
-            <div class="flip-card-front">
-              <span class="deity-icon">☀️</span>
-              <h3>Ra</h3>
-              <p class="eli5">The boss. Runs all deities automatically.</p>
-              <span class="flip-hint">coming soon</span>
-            </div>
-            <div class="flip-card-back">
-              <span class="back-cmd">planned</span>
-              <p class="back-desc">Autonomous hypervisor that monitors system health and decides when to scan, guard, clean, and heal — without you asking. The orchestrator of the entire Pantheon.</p>
-              <div class="back-impact">
-                <div class="impact-item"><span class="impact-value">Autonomous</span><span class="impact-label">Decision engine</span></div>
-                <div class="impact-item"><span class="impact-value">11 deities</span><span class="impact-label">Orchestrated</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
     </div>
   </section>
 
-  <!-- ═══ Dogfooding Results ═════════════════════════════════ -->
-  <section>
+  <!-- Section: Machine Gods -->
+  <section class="deity-section" id="machine-gods">
     <div class="container">
-      <h2>Dogfooding Results</h2>
-      <p class="section-sub">Every feature was built because we needed it. Every metric is real.</p>
+      <span class="section-label">𓀰 THE MACHINE CLUSTER</span>
+      <h2>Infrastructure & Safety</h2>
+      
+      <div class="deity-grid">
+        <!-- Anubis -->
+        <div class="card">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓂀</div>
+              <div class="tag">The Judge</div>
+              <h3>Anubis</h3>
+              <p class="description">Finds and cleans waste that common tools can't see.</p>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/jackal</span>
+                <h3>Hygiene</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Scan Rules</span><span class="stat-value">58 Domains</span></div>
+                <div class="stat-row"><span class="stat-label">Safety</span><span class="stat-value">Trash-First</span></div>
+              </div>
+              <p class="description">Scans caches, Docker, brew, and ghost artifacts across the workstation.</p>
+            </div>
+          </div>
+        </div>
 
-      <div class="case-grid">
-        <div class="case-card">
-          <div class="metric">64 GB</div>
-          <h4>Docker Ghost Reclaimed</h4>
-          <p>Phantom Docker volumes and dangling images identified and purged via Scarab audit.</p>
+        <!-- Ka -->
+        <div class="card">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓂓</div>
+              <div class="tag">The Spirit</div>
+              <h3>Ka</h3>
+              <p class="description">Spirits of deleted apps haunting your Launch Services.</p>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/ka</span>
+                <h3>Purity</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Scan Rate</span><span class="stat-value">&lt; 1.0s</span></div>
+              </div>
+              <p class="description">Detects application remnants in system registrations and private caches.</p>
+            </div>
+          </div>
         </div>
-        <div class="case-card">
-          <div class="metric">3,667×</div>
-          <h4>Ma'at Coverage Speedup</h4>
-          <p>Diff-based coverage assessment: 55 seconds → 15 milliseconds. Only tests changed packages.</p>
-        </div>
-        <div class="case-card">
-          <div class="metric">8.5s → 1.08s</div>
-          <h4>Ka Ghost Scan</h4>
-          <p>Parallel lsregister scan with Horus shared index. From sluggish to sub-second.</p>
-        </div>
-        <div class="case-card">
-          <div class="metric">98%</div>
-          <h4>Thoth Context Savings</h4>
-          <p>AI memory system eliminates 98% of context re-reading across sessions.</p>
-        </div>
-        <div class="case-card">
-          <div class="metric">15.6s → 833ms</div>
-          <h4>Horus Filesystem Index</h4>
-          <p>Walk once, all deities query. Manifests cached as gob files. 19× speedup.</p>
-        </div>
-        <div class="case-card">
-          <div class="metric">80/100</div>
-          <h4>Feather Weight</h4>
-          <p>Ma'at quality score across 17 modules. 0 warnings, 0 failures. All thresholds met.</p>
+
+        <!-- Sekhmet -->
+        <div class="card">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁵</div>
+              <div class="tag">The Warrior</div>
+              <h3>Sekhmet</h3>
+              <p class="description">Watchdog guardian that yields resources back to the host.</p>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/guard</span>
+                <h3>Protection</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Hard Limit</span><span class="stat-value">1.5 GB</span></div>
+                <div class="stat-row"><span class="stat-label">Acceleration</span><span class="stat-value">Apple NPU</span></div>
+              </div>
+              <p class="description">Kills runaway LSPs and orphan processes. Uses NPU for low-power monitoring.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ═══ Resources ══════════════════════════════════════════ -->
-  <section>
+  <!-- Technical Ledger -->
+  <section class="ledger">
     <div class="container">
-      <h2>Resources</h2>
-      <p class="section-sub">Everything is open. Everything is documented.</p>
-
-      <div class="links-grid">
-        <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="link-card">
-          <span class="link-icon">𓊖</span>
-          <div>
-            <div class="link-title">GitHub Repository</div>
-            <div class="link-desc">Source code, issues, releases</div>
-          </div>
-        </a>
-        <a href="build-log.html" class="link-card">
-          <span class="link-icon">𓏛</span>
-          <div>
-            <div class="link-title">Build Log</div>
-            <div class="link-desc">Every sprint, bug, and benchmark</div>
-          </div>
-        </a>
-        <a href="https://sirsi.ai" class="link-card">
-          <span class="link-icon">𓉔</span>
-          <div>
-            <div class="link-title">Sirsi Nexus</div>
-            <div class="link-desc">The platform that powers Pantheon</div>
-          </div>
-        </a>
-        <a href="ADR-INDEX.md" class="link-card">
-          <span class="link-icon">𓇯</span>
-          <div>
-            <div class="link-title">Architecture Decisions</div>
-            <div class="link-desc">12 ADRs documenting every design choice</div>
-          </div>
-        </a>
-        <a href="THOTH.md" class="link-card">
-          <span class="link-icon">𓁟</span>
-          <div>
-            <div class="link-title">Thoth Documentation</div>
-            <div class="link-desc">AI memory system guide</div>
-          </div>
-        </a>
-        <a href="SCAN_RULE_GUIDE.md" class="link-card">
-          <span class="link-icon">𓏞</span>
-          <div>
-            <div class="link-title">Scan Rule Guide</div>
-            <div class="link-desc">How to customize scan rules</div>
-          </div>
-        </a>
+      <div class="ledger-grid">
+        <div class="ledger-item">
+          <span class="value">95.0%</span>
+          <span class="label">Deity Coverage</span>
+        </div>
+        <div class="ledger-item">
+          <span class="value">14s</span>
+          <span class="label">Test Latency</span>
+        </div>
+        <div class="ledger-item">
+          <span class="value">856</span>
+          <span class="label">Verified Tests</span>
+        </div>
+        <div class="ledger-item">
+          <span class="value">30.1K</span>
+          <span class="label">Lines of Go</span>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ═══ Footer ═════════════════════════════════════════════ -->
-  <footer>
-    <div class="footer-links">
-      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
-      <a href="build-log.html">Build Log</a>
-      <a href="https://sirsi.ai">Sirsi Nexus</a>
-      <a href="SIRSI_PORTFOLIO_STANDARD.md">Portfolio Standard</a>
-    </div>
-    <p>
-      𓂀 Sirsi Pantheon — Built by <a href="https://sirsi.ai">Sirsi Technologies</a><br>
-      Open source under MIT License · v0.7.0-alpha · The jackal sees everything.
-    </p>
+  <footer style="padding: 4rem 1rem; text-align: center; color: var(--text-dim); font-size: 0.9rem;">
+    <p>𓂀 Sirsi Pantheon v0.7.0b-alpha · Built by Sirsi Technologies</p>
+    <a href="https://sirsi.ai" style="color: var(--gold); text-decoration: none; margin-top: 1rem; display: block;">Back to Sirius</a>
   </footer>
 
 </body>

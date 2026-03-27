@@ -14,21 +14,38 @@
 
 **Sirsi Pantheon** is a unified DevOps intelligence platform that brings together every deity in the Sirsi ecosystem into a single, lightweight binary. Install once, get infrastructure hygiene, QA/QC governance, persistent AI knowledge, and more.
 
-### The Deities
-
+### ☀️ The Hypervisor
 | Glyph | Deity | Domain | What It Does |
 |:------|:------|:-------|:-------------|
-| 𓂀 | **Anubis** | Judge of the Dead | Finds junk on your computer that cleaning apps miss |
-| 𓂓 | **Ka** | Spirit of the Dead | Detects apps you deleted that are still secretly running |
-| 𓉡 | **Hathor** | Goddess of Reflection | Finds duplicate files eating your storage |
-| 𓁵 | **Sekhmet** | Warrior Guardian | Kills runaway processes that freeze your machine |
-| 𓆄 | **Ma'at** | Truth and Order | Grades your code quality and enforces team standards |
-| 𓁹 | **Horus** | The All-Seeing Eye | Fixes broken search results and indexes your filesystem |
-| 𓆣 | **Khepri** | Scarab of Renewal | Scans every device on your network and audits Docker |
-| 𓇼 | **Seba** | Star Map | Draws a visual map of your infrastructure |
-| 𓁟 | **Thoth** | God of Knowledge | Cuts AI token waste by 98% so your context window lasts |
-| 𓁶 | **Hapi** | God of the Flood | Detects your GPU, Neural Engine, and available hardware |
-| ☀️ | **Ra** | Supreme Overseer | The boss — runs all deities automatically (planned) |
+| ☀️ | **Ra** | Supreme Overseer | The boss — orchestrates all deities automatically (planned) |
+
+### 𓁯 The Weaver
+| Glyph | Deity | Domain | What It Does |
+|:------|:------|:-------|:-------------|
+| 𓁯 | **Net** | Weaver of Existence | Writer/Owner of the Development Plan, ADRs, and Canon |
+
+### 𓀭 The Code Gods (Governance & Knowledge)
+*Decision-making, standards, memory, and healing.*
+
+| Glyph | Deity | Roles | What It Does | Dependencies |
+|:------|:------|:------|:-------------|:-------------|
+| 𓁟 | **Thoth** | God of Knowledge | Cuts AI token waste by 98% via persistent memory | None |
+| 𓆄 | **Ma'at** | Goddess of Order | Grades code quality and enforces team standards | None |
+| 𓁐 | **Isis** | The Healer | **Remediation engine** — autonomously fixes Ma'at findings | Ma'at |
+
+### 𓀰 The Machine Gods (Infrastructure & OS)
+*Infrastructure hygiene, safety, and hardware flow.*
+
+| Glyph | Deity | Domain | What It Does | Dependencies |
+|:------|:------|:-------|:-------------|:-------------|
+| 𓂀 | **Anubis** | Judge of Hygiene | Finds junk on your computer that cleaning apps miss | Horus |
+| 𓂓 | **Ka** | Spirit Hunter | Detects apps you deleted that are still secretly running | Horus |
+| 𓁵 | **Sekhmet**| Warrior Guardian | Watchdog: kills runaway processes & NPU acceleration | Hapi |
+| 𓁹 | **Horus** | The All-Seeing Eye| Shared storage index: walk once, query forever | None |
+| 𓆣 | **Khepri** | The Scarab | Network discovery and container audit scavenger | None |
+| 𓁶 | **Hapi** | God of the Flow | Detects GPUs, ANE, and hardware accelerators | None |
+| 𓇼 | **Seba** | Star Map | Draws a visual map of your infrastructure topology | Khepri |
+| 𓉡 | **Hathor**| Goddess of Dedup | Mirror: Finds duplicate files eating your storage | None |
 
 ---
 
