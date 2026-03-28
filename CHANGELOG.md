@@ -11,6 +11,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - P1: Reach 95%+ coverage on remaining modules
 - P2: npm publish thoth-init
 
+### Session 31 (2026-03-28) — Seshat Extension + Neith's Triad Retrofit
+- **Seshat VS Code Extension** (`extensions/gemini-bridge/`) — Full TypeScript extension for Gemini Bridge.
+  - 7 source files: `extension.ts`, `commands.ts`, `dashboard.ts`, `knowledgeProvider.ts`, `chromeProfilesProvider.ts`, `syncStatusProvider.ts`, `paths.ts`.
+  - **Activity Bar**: Dedicated sidebar with 3 tree views — Knowledge Items, Chrome Profiles, Sync Status.
+  - **Dashboard Webview**: Gold-on-black Egyptian aesthetic with KI inventory, conversation count, bridge direction visualizer, and sync actions.
+  - **Chrome Profile Discovery**: Reads Chrome's `Local State` to enumerate all profiles; highlights configurable default (`SirsiMaster`).
+  - **6 Commands**: `seshat.listKnowledge`, `seshat.exportKI`, `seshat.syncToGemini`, `seshat.listProfiles`, `seshat.listConversations`, `seshat.showDashboard`.
+  - **4 Config settings**: `seshat.defaultProfile`, `seshat.autoSync`, `seshat.pantheonBinaryPath`, `seshat.antigravityDir`.
+  - VSIX packaged: `seshat-gemini-bridge-0.1.0.vsix` (430 KB, 12 files).
+  - Publisher: `SirsiMaster`. License: MPL-2.0.
+- **Neith's Triad Retrofit** — `ARCHITECTURE_DESIGN.md` upgraded from v1.0.0 to v2.0.0:
+  - §7: **Data Flow Architecture** — Full Mermaid diagram mapping all CLI entry points, Code Gods, Machine Gods, Safety Layer, Output Layer, and Seshat's 6 external system directions.
+  - §8: **Recommended Implementation Order** — Gantt chart of 7 build phases from Jackal through Distribution.
+  - §9: **Key Decision Points** — 10-row decision matrix covering binary architecture, concurrency, policy language, safety model, UI framework, fleet transport, context format, deity coupling, distribution, and bridge direction.
+  - Document now fully compliant with Rule A22.
+- **Firebase Deploy** — 17 files deployed to `sirsi-pantheon.web.app` with all 11 deity click-to-flip cards live.
+
 ### Session 29 (2026-03-27) — CI Green Sprint + Thoth Journal Sync + Rule A21
 - **CI Remediation (P0)** — Resolved 22 lint errors across 16 files:
   - `errcheck`: 4 suppressed `fmt.Sscanf` returns in `stats.go`

@@ -1,0 +1,164 @@
+{
+  "name": "seshat-gemini-bridge",
+  "displayName": "𓁆 Seshat — Gemini Bridge",
+  "description": "Bidirectional knowledge sync: Gemini AI Mode ↔ NotebookLM ↔ Antigravity IDE. Extract, package, distill, and bridge conversations across three knowledge systems.",
+  "version": "0.1.0",
+  "publisher": "SirsiMaster",
+  "license": "MPL-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SirsiMaster/sirsi-pantheon"
+  },
+  "categories": [
+    "Other",
+    "Data Science"
+  ],
+  "keywords": [
+    "gemini",
+    "notebooklm",
+    "knowledge",
+    "bridge",
+    "seshat",
+    "pantheon",
+    "ai",
+    "sync"
+  ],
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#0F0F0F",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "seshat.listKnowledge",
+        "title": "𓁆 Seshat: List Knowledge Items",
+        "category": "Seshat",
+        "icon": "$(library)"
+      },
+      {
+        "command": "seshat.exportKI",
+        "title": "𓁆 Seshat: Export Knowledge Item",
+        "category": "Seshat",
+        "icon": "$(export)"
+      },
+      {
+        "command": "seshat.syncToGemini",
+        "title": "𓁆 Seshat: Sync KI → GEMINI.md",
+        "category": "Seshat",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "seshat.listProfiles",
+        "title": "𓁆 Seshat: List Chrome Profiles",
+        "category": "Seshat",
+        "icon": "$(accounts)"
+      },
+      {
+        "command": "seshat.listConversations",
+        "title": "𓁆 Seshat: List Brain Conversations",
+        "category": "Seshat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "seshat.showDashboard",
+        "title": "𓁆 Seshat: Open Bridge Dashboard",
+        "category": "Seshat",
+        "icon": "$(dashboard)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "seshat-bridge",
+          "title": "𓁆 Seshat Bridge",
+          "icon": "resources/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "seshat-bridge": [
+        {
+          "id": "seshat.knowledgeItems",
+          "name": "Knowledge Items",
+          "icon": "$(library)",
+          "contextualTitle": "Seshat Knowledge"
+        },
+        {
+          "id": "seshat.chromeProfiles",
+          "name": "Chrome Profiles",
+          "icon": "$(accounts)",
+          "contextualTitle": "Chrome Profiles"
+        },
+        {
+          "id": "seshat.syncStatus",
+          "name": "Sync Status",
+          "icon": "$(sync)",
+          "contextualTitle": "Bridge Status"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Seshat — Gemini Bridge",
+      "properties": {
+        "seshat.defaultProfile": {
+          "type": "string",
+          "default": "SirsiMaster",
+          "description": "Default Chrome profile for Gemini extraction. Use 'seshat.listProfiles' to discover available profiles."
+        },
+        "seshat.autoSync": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically sync Knowledge Items to GEMINI.md on workspace open."
+        },
+        "seshat.pantheonBinaryPath": {
+          "type": "string",
+          "default": "pantheon",
+          "description": "Path to the Pantheon CLI binary (for seshat subcommands)."
+        },
+        "seshat.antigravityDir": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to Antigravity data directory. Leave empty for default (~/.gemini/antigravity)."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        { "command": "seshat.listKnowledge", "when": "true" },
+        { "command": "seshat.exportKI", "when": "true" },
+        { "command": "seshat.syncToGemini", "when": "true" },
+        { "command": "seshat.listProfiles", "when": "true" },
+        { "command": "seshat.listConversations", "when": "true" },
+        { "command": "seshat.showDashboard", "when": "true" }
+      ],
+      "view/title": [
+        {
+          "command": "seshat.showDashboard",
+          "when": "view == seshat.knowledgeItems",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "npx -y @vscode/vsce package --no-dependencies",
+    "publish:openvsx": "npx -y ovsx publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

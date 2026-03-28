@@ -1,6 +1,7 @@
-# Architecture Design — Sirsi Anubis
-**Version:** 1.0.0
-**Date:** March 20, 2026
+# Architecture Design — Sirsi Pantheon
+**Version:** 2.0.0
+**Date:** March 28, 2026
+**Custodian:** 𓁯 Net (The Weaver)
 
 ---
 
@@ -268,3 +269,171 @@ configs/
 ```
 
 **Key invariant:** The Safety Module is consulted before EVERY deletion operation. There is no code path that bypasses it.
+
+---
+
+## 7. Data Flow Architecture ⚠️ MANDATORY (Neith's Triad §1)
+
+> Net decrees: Show how data moves through the system.
+
+```mermaid
+graph TD
+    subgraph "User Layer"
+        USER["👤 User / Admin"]
+    end
+
+    subgraph "CLI Entry Points"
+        PANTHEON["cmd/pantheon — Unified CLI"]
+        ANUBIS["cmd/anubis — Hygiene Controller"]
+        THOTH_CLI["cmd/thoth — Context Manager"]
+        MAAT_CLI["cmd/maat — QA Weigher"]
+    end
+
+    subgraph "Code Gods (Governance & Knowledge)"
+        NET["𓁯 Net — Neith (Weaver)"]
+        THOTH["𓁟 Thoth (Memory)"]
+        MAAT["𓆄 Ma'at (Standards)"]
+        ISIS["𓁐 Isis (Healer)"]
+        SESHAT["𓁆 Seshat (Bridge)"]
+    end
+
+    subgraph "Machine Gods (Infrastructure & OS)"
+        HORUS["𓁹 Horus (Eye/Index)"]
+        JACKAL["🐺 Jackal (Scan Engine)"]
+        KA["𓂓 Ka (Ghost Hunter)"]
+        GUARD["🛡️ Guard (RAM)"]
+        HAPI["🌊 Hapi (Optimizer)"]
+        SCARAB["𓆣 Scarab (Fleet)"]
+        SEBA["𓇼 Seba (Mapper)"]
+        SIGHT["👁️ Sight (Spotlight)"]
+    end
+
+    subgraph "Safety Layer"
+        CLEANER["🧹 Cleaner (Deletion Engine)"]
+        SAFETY["⛔ Safety Module"]
+    end
+
+    subgraph "Output Layer"
+        TERMINAL["Terminal (lipgloss)"]
+        JSON_OUT["JSON (piping)"]
+        HTML_OUT["HTML (reports)"]
+    end
+
+    subgraph "External Systems"
+        GEMINI["Gemini AI Mode"]
+        NOTEBOOKLM["NotebookLM"]
+        ANTIGRAVITY["Antigravity IDE"]
+    end
+
+    USER --> PANTHEON
+    USER --> ANUBIS
+
+    PANTHEON --> THOTH_CLI
+    PANTHEON --> MAAT_CLI
+    PANTHEON --> SESHAT
+
+    ANUBIS -->|"scan"| JACKAL
+    ANUBIS -->|"guard"| GUARD
+    ANUBIS -->|"hapi"| HAPI
+    ANUBIS -->|"scarab"| SCARAB
+    ANUBIS -->|"sight"| SIGHT
+    ANUBIS -->|"ka"| KA
+
+    NET -->|"plan + ADRs"| MAAT
+    MAAT -->|"findings"| ISIS
+    ISIS -->|"healed"| THOTH
+    THOTH -->|"memory.yaml"| NET
+    SESHAT -->|"KI export"| THOTH
+    SESHAT -->|"templates"| NET
+
+    HORUS -->|"manifest"| JACKAL
+    HORUS -->|"manifest"| KA
+    HORUS -->|"manifest"| SCARAB
+    HAPI -->|"hardware caps"| GUARD
+
+    JACKAL -->|"findings"| CLEANER
+    CLEANER -->|"validate"| SAFETY
+    SAFETY -->|"approved"| CLEANER
+
+    JACKAL --> TERMINAL
+    JACKAL --> JSON_OUT
+    SCARAB --> HTML_OUT
+
+    SESHAT <-->|"Direction 1,5"| GEMINI
+    SESHAT <-->|"Direction 2,3"| NOTEBOOKLM
+    SESHAT <-->|"Direction 4,6"| ANTIGRAVITY
+```
+
+**Key invariant:** No deletion bypasses the Safety Module. No architecture document bypasses Neith's Triad.
+
+---
+
+## 8. Recommended Implementation Order ⚠️ MANDATORY (Neith's Triad §2)
+
+> Net decrees: Show how to build this incrementally.
+
+```mermaid
+gantt
+    title Pantheon Deity Build Sequence
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %d
+
+    section Phase 1: Foundation (Core Scanning)
+    Jackal (Scan Engine)              :done, p1a, 2025-10-01, 21d
+    Cleaner + Safety Module           :done, p1b, after p1a, 14d
+    Output (Terminal/JSON)            :done, p1c, after p1a, 14d
+
+    section Phase 2: OS Intelligence
+    Guard (RAM Management)            :done, p2a, after p1b, 14d
+    Sight (Spotlight/Launch)          :done, p2b, after p1b, 7d
+    Ka (Ghost App Detection)          :done, p2c, after p2b, 7d
+
+    section Phase 3: Resource Governance
+    Hapi (GPU/VRAM Optimization)      :done, p3a, after p2a, 21d
+    Horus (Filesystem Index)          :done, p3b, after p2a, 14d
+    Scales (Policy Engine)            :done, p3c, after p3b, 14d
+
+    section Phase 4: Fleet Operations
+    Scarab (Fleet Discovery)          :done, p4a, after p3c, 28d
+    Seba (Topology Mapper)            :done, p4b, after p4a, 14d
+
+    section Phase 5: Governance & Knowledge
+    Thoth (Context Compression)       :done, p5a, after p3a, 21d
+    Ma'at (QA Standards)              :done, p5b, after p5a, 14d
+    Isis (Remediation Engine)         :done, p5c, after p5b, 14d
+    Net (The Weaver)                  :done, p5d, after p5c, 7d
+
+    section Phase 6: Knowledge Bridge
+    Seshat (Gemini Bridge)            :done, p6a, after p5a, 14d
+
+    section Phase 7: Distribution
+    VS Code Extension (Pantheon)      :done, p7a, after p5d, 7d
+    VS Code Extension (Seshat)        :active, p7b, after p6a, 7d
+    OpenVSX Publishing                :active, p7c, after p7b, 3d
+    Firebase Deployment               :active, p7d, after p7c, 1d
+```
+
+**Minimum Viable Pipeline:** Phase 1 delivers local scan + safe deletion (`anubis weigh` + `anubis judge`).
+
+---
+
+## 9. Key Decision Points ⚠️ MANDATORY (Neith's Triad §3)
+
+> Net decrees: Show what forks were encountered and why each path was chosen.
+
+| Question | Options | Recommendation |
+|----------|---------|----------------|
+| **Single binary or multi-binary?** | Single monolith / Multi-binary (controller + agent) / Daemon | **Multi-binary** — `pantheon` (unified) + `anubis` (controller) + `anubis-agent` (lightweight remote). Agent must be statically compiled with zero deps for fleet deployment. |
+| **Scan architecture: serial or concurrent?** | Serial scan / Concurrent goroutines / Worker pool | **Concurrent goroutines** — Each `ScanRule.Scan()` runs in its own goroutine with `context.Context` for cancellation. Bounded by `runtime.NumCPU()`. |
+| **Policy language?** | YAML / JSON / OPA Rego / CUE | **YAML** — Human-readable, familiar to SREs, sufficient for rule matching. OPA rejected for complexity overhead. |
+| **Safety enforcement: advisory or hard block?** | Hard deny-list / Advisory warnings / Configurable | **Hard deny-list** — Protected paths are NEVER deletable, even with `--force`. Advisory for edge cases. No exceptions. |
+| **Terminal UI framework?** | lipgloss / bubbletea / termui | **lipgloss** — Composable styling without full TUI overhead. Gold-on-black Pantheon aesthetic. bubbletea reserved for future interactive mode. |
+| **Fleet transport protocol?** | SSH only / gRPC only / Hybrid | **Hybrid** — SSH for initial agent deployment + gRPC for structured scan results. Bastion proxy support for air-gapped networks. |
+| **Context compression format?** | YAML (Thoth) / JSON / Protobuf | **YAML** — `.thoth/memory.yaml` is human-auditable. Token savings measured via Accountability Engine. Protobuf rejected for lack of human readability. |
+| **Deity coupling model?** | Tight coupling / Loose with shared bus / Independent with optional integration | **Independent with optional integration** — Every deity runs standalone. Combined efficiency via Horus manifest + Thoth memory when Weave is active. |
+| **Extension distribution?** | VS Code Marketplace / OpenVSX / Private VSIX | **OpenVSX** — Open-source marketplace. Accessible from VS Code, Codium, and Antigravity IDE. Private VSIX as fallback. |
+| **Knowledge bridge direction?** | Gemini-only / Antigravity-only / Full bidirectional | **Full bidirectional (6 directions)** — Gemini ↔ NotebookLM ↔ Antigravity. Seshat handles all six flows to eliminate knowledge silos. |
+
+---
+
+*𓁯 This document follows Neith's Architecture Triad (Rule A22). All three mandatory sections are present.*
