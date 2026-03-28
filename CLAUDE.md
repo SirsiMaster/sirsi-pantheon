@@ -288,6 +288,18 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Enforcement**: Any module using Rule A16 (Injectable Providers) with goroutine-based consumers MUST comply with this rule. A package-level `var fn = defaultFn` without a mutex is a governance failure under Ma'at.
 *   **Evidence**: Sessions 29-30 — 4 consecutive CI failures, all `WARNING: DATA RACE` on `sampleTopCPUFn` at `watchdog.go:160`. Fixed by `getSampleFn()`/`setSampleFn()` accessor pattern.
 
+### 2.19 Neith's Architecture Triad (Rule A22)
+> Established March 28, 2026. Every architecture document must contain the three mandatory sections decreed by 𓁯 Net (The Weaver).
+
+*   **Rule**: Every `ARCHITECTURE_DESIGN.md` (or equivalent primary architecture document) in every Sirsi portfolio repository MUST contain the following three sections, known as **Neith's Triad**:
+    1. **Data Flow Architecture** — A Mermaid diagram showing all data flows, transformations, and system boundaries. Must label every edge with the data transformation. Must show error/fallback paths where applicable.
+    2. **Recommended Implementation Order** — A Mermaid Gantt chart or numbered phase list showing build sequence, dependencies, and estimated effort. Must identify the minimum viable pipeline and distinguish required vs. optional phases.
+    3. **Key Decision Points** — A Markdown table matrix of architectural decisions with columns: Question | Options | Recommendation. Must capture at least 3 decision points, include rationale, and record rejected alternatives.
+*   **Retroactive**: Existing repos (`sirsi-pantheon`, `SirsiNexusApp`, `FinalWishes`, `Assiduous`) MUST be audited and updated to include these sections in their next architecture session.
+*   **Enforcement**: A new architecture document missing any of the three sections is considered **incomplete** under Ma'at's governance (Rule A17). It cannot be merged until all three are present.
+*   **Custodian**: 𓁯 Net (Neith) owns this standard and the templates. The Triad is maintained in `docs/NEITH_ARCHITECTURE_TEMPLATE.md`.
+*   **Evidence**: Established from the Gemini Bridge architecture document, which demonstrated that these three sections provide complete decision traceability, implementation clarity, and project alignment.
+
 ---
 
 ## 3. Technology Stack

@@ -64,6 +64,7 @@
       margin-bottom: 1.5rem;
       background: linear-gradient(135deg, var(--gold), var(--gold-light));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
       filter: drop-shadow(0 0 20px var(--gold-glow));
       animation: pulse 4s ease-in-out infinite;
@@ -96,6 +97,8 @@
       display: flex;
       gap: 2rem;
       margin-bottom: 4rem;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
     .nav-item {
@@ -172,7 +175,7 @@
       gap: 2rem;
     }
 
-    /* ── Flip Cards Premium ───────────────────────────── */
+    /* ── Flip Cards Premium (CLICK to flip) ──────────── */
     .card {
       height: 400px;
       perspective: 1000px;
@@ -187,7 +190,8 @@
       transform-style: preserve-3d;
     }
 
-    .card:hover .card-inner {
+    /* Click-to-flip: toggled via JS */
+    .card.flipped .card-inner {
       transform: rotateY(180deg);
     }
 
@@ -257,6 +261,14 @@
     .stat-label { color: var(--text-dim); font-size: 0.9rem; }
     .stat-value { color: var(--gold); font-weight: 600; }
 
+    .flip-hint {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      opacity: 0.5;
+      margin-top: auto;
+      text-align: center;
+    }
+
     /* ── Ledger Footer ───────────────────────────────── */
     .ledger {
       background: black;
@@ -304,9 +316,9 @@
     </p>
     
     <div class="cluster-nav">
+      <a href="#the-weave" class="nav-item">THE WEAVER</a>
       <a href="#code-gods" class="nav-item">THE CODE CLUSTER</a>
       <a href="#machine-gods" class="nav-item">THE MACHINE CLUSTER</a>
-      <a href="#hypervisor" class="nav-item">THE OVERSEER</a>
     </div>
 
     <div style="margin-top: 2rem;">
@@ -337,6 +349,14 @@
             <span class="stat-label">Mission</span>
             <span class="stat-value">Timeline Integrity</span>
           </div>
+          <div class="stat-row">
+            <span class="stat-label">Architecture Standard</span>
+            <span class="stat-value">Neith's Triad (Rule A22)</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Engine</span>
+            <span class="stat-value">🧶 The Loom of Intent</span>
+          </div>
         </div>
         <div style="display: flex; justify-content: center; font-size: 15rem; opacity: 0.1;">𓁯</div>
       </div>
@@ -351,13 +371,14 @@
       
       <div class="deity-grid">
         <!-- Ma'at -->
-        <div class="card">
+        <div class="card" onclick="this.classList.toggle('flipped')">
           <div class="card-inner">
             <div class="card-front">
               <div class="deity-icon">𓆄</div>
               <div class="tag">The Standard</div>
               <h3>Ma'at</h3>
               <p class="description">Grades code quality and weighs every heart against the feather.</p>
+              <span class="flip-hint">tap to reveal</span>
             </div>
             <div class="card-back">
               <div class="back-header">
@@ -370,18 +391,20 @@
                 <div class="stat-row"><span class="stat-label">Score</span><span class="stat-value">90.1 / 100</span></div>
               </div>
               <p class="description">Runs concurrent OS-thread assessments of codebase health and ADR drift.</p>
+              <span class="flip-hint">tap to close</span>
             </div>
           </div>
         </div>
 
         <!-- Isis -->
-        <div class="card">
+        <div class="card" onclick="this.classList.toggle('flipped')">
           <div class="card-inner">
             <div class="card-front">
               <div class="deity-icon">𓁐</div>
               <div class="tag">The Healer</div>
               <h3>Isis</h3>
               <p class="description">Autonomously fixes findings to restore the Weight of the Feather.</p>
+              <span class="flip-hint">tap to reveal</span>
             </div>
             <div class="card-back">
               <div class="back-header">
@@ -391,31 +414,62 @@
               <div>
                 <div class="stat-row"><span class="stat-label">Action</span><span class="stat-value">Remediation</span></div>
                 <div class="stat-row"><span class="stat-label">Targets</span><span class="stat-value">Lint / Test / ADR</span></div>
+                <div class="stat-row"><span class="stat-label">Cycle</span><span class="stat-value">Ma'at → Isis (auto)</span></div>
               </div>
               <p class="description">Restores project alignment by auto-fixing the wounds identified by Ma'at.</p>
+              <span class="flip-hint">tap to close</span>
             </div>
           </div>
         </div>
 
         <!-- Thoth -->
-        <div class="card">
+        <div class="card" onclick="this.classList.toggle('flipped')">
           <div class="card-inner">
             <div class="card-front">
               <div class="deity-icon">𓁟</div>
               <div class="tag">The Memory</div>
               <h3>Thoth</h3>
               <p class="description">Scribe of Wisdom. Zero-token persistent context with 98% savings.</p>
+              <span class="flip-hint">tap to reveal</span>
             </div>
             <div class="card-back">
               <div class="back-header">
-                <span class="mono gold-text">extensions/vscode</span>
+                <span class="mono gold-text">internal/thoth</span>
                 <h3>The Wisdom</h3>
               </div>
               <div>
                 <div class="stat-row"><span class="stat-label">Context Savings</span><span class="stat-value">98.7%</span></div>
                 <div class="stat-row"><span class="stat-label">Cold Boot</span><span class="stat-value">105ms</span></div>
+                <div class="stat-row"><span class="stat-label">Layers</span><span class="stat-value">3 (L0/L1/L2)</span></div>
               </div>
               <p class="description">Persistent project memory that eliminates the need for AI assistants to re-read source files.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seshat -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁆</div>
+              <div class="tag">The Scribe</div>
+              <h3>Seshat</h3>
+              <p class="description">Gemini Bridge — bidirectional knowledge sync across AI platforms.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/seshat</span>
+                <h3>The Bridge</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Directions</span><span class="stat-value">6 Bidirectional</span></div>
+                <div class="stat-row"><span class="stat-label">Systems</span><span class="stat-value">Gemini / NLML / AG</span></div>
+                <div class="stat-row"><span class="stat-label">Formats</span><span class="stat-value">Takeout / MD / KI</span></div>
+              </div>
+              <p class="description">Syncs conversations and knowledge between Gemini AI Mode, NotebookLM, and Antigravity IDE.</p>
+              <span class="flip-hint">tap to close</span>
             </div>
           </div>
         </div>
@@ -431,13 +485,14 @@
       
       <div class="deity-grid">
         <!-- Anubis -->
-        <div class="card">
+        <div class="card" onclick="this.classList.toggle('flipped')">
           <div class="card-inner">
             <div class="card-front">
               <div class="deity-icon">𓂀</div>
               <div class="tag">The Judge</div>
               <h3>Anubis</h3>
               <p class="description">Finds and cleans waste that common tools can't see.</p>
+              <span class="flip-hint">tap to reveal</span>
             </div>
             <div class="card-back">
               <div class="back-header">
@@ -449,18 +504,45 @@
                 <div class="stat-row"><span class="stat-label">Safety</span><span class="stat-value">Trash-First</span></div>
               </div>
               <p class="description">Scans caches, Docker, brew, and ghost artifacts across the workstation.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Horus -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁹</div>
+              <div class="tag">The Eye</div>
+              <h3>Horus</h3>
+              <p class="description">Shared filesystem index — high-speed publisher for all deities.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/horus</span>
+                <h3>The Sight</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Index</span><span class="stat-value">Shared Manifest</span></div>
+                <div class="stat-row"><span class="stat-label">Speed</span><span class="stat-value">Sub-second</span></div>
+              </div>
+              <p class="description">Builds and publishes the unified filesystem manifest consumed by all Machine Gods.</p>
+              <span class="flip-hint">tap to close</span>
             </div>
           </div>
         </div>
 
         <!-- Ka -->
-        <div class="card">
+        <div class="card" onclick="this.classList.toggle('flipped')">
           <div class="card-inner">
             <div class="card-front">
               <div class="deity-icon">𓂓</div>
               <div class="tag">The Spirit</div>
               <h3>Ka</h3>
               <p class="description">Spirits of deleted apps haunting your Launch Services.</p>
+              <span class="flip-hint">tap to reveal</span>
             </div>
             <div class="card-back">
               <div class="back-header">
@@ -471,18 +553,20 @@
                 <div class="stat-row"><span class="stat-label">Scan Rate</span><span class="stat-value">&lt; 1.0s</span></div>
               </div>
               <p class="description">Detects application remnants in system registrations and private caches.</p>
+              <span class="flip-hint">tap to close</span>
             </div>
           </div>
         </div>
 
         <!-- Sekhmet -->
-        <div class="card">
+        <div class="card" onclick="this.classList.toggle('flipped')">
           <div class="card-inner">
             <div class="card-front">
               <div class="deity-icon">𓁵</div>
               <div class="tag">The Warrior</div>
               <h3>Sekhmet</h3>
               <p class="description">Watchdog guardian that yields resources back to the host.</p>
+              <span class="flip-hint">tap to reveal</span>
             </div>
             <div class="card-back">
               <div class="back-header">
@@ -494,6 +578,82 @@
                 <div class="stat-row"><span class="stat-label">Acceleration</span><span class="stat-value">Apple NPU</span></div>
               </div>
               <p class="description">Kills runaway LSPs and orphan processes. Uses NPU for low-power monitoring.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hapi -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">🌊</div>
+              <div class="tag">The Flow</div>
+              <h3>Hapi</h3>
+              <p class="description">Controls VRAM, GPU memory, and optimizes storage flow.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/hapi</span>
+                <h3>Optimization</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Domains</span><span class="stat-value">VRAM / Metal / CUDA</span></div>
+                <div class="stat-row"><span class="stat-label">Storage</span><span class="stat-value">Snapshots / Dedup</span></div>
+              </div>
+              <p class="description">Hardware accelerator detection, APFS snapshot pruning, and resource flow balancing.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Khepri (Scarab) -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓆣</div>
+              <div class="tag">The Scavenger</div>
+              <h3>Khepri</h3>
+              <p class="description">Fleet discovery — rolls across subnets, VLANs, and containers.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/scarab</span>
+                <h3>Fleet Sweep</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Transports</span><span class="stat-value">SSH / gRPC / K8s</span></div>
+                <div class="stat-row"><span class="stat-label">Targets</span><span class="stat-value">VM / Pod / NAS</span></div>
+              </div>
+              <p class="description">Subnet and VLAN discovery, parallel fleet scanning, and agent deployment.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seba -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓇼</div>
+              <div class="tag">The Star</div>
+              <h3>Seba</h3>
+              <p class="description">Visual topology and dependency graph mapping.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">internal/seba</span>
+                <h3>The Map</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Output</span><span class="stat-value">Mermaid / DOT / SVG</span></div>
+                <div class="stat-row"><span class="stat-label">Scope</span><span class="stat-value">Module Dependencies</span></div>
+              </div>
+              <p class="description">Generates visual maps of infrastructure topology and code dependency graphs.</p>
+              <span class="flip-hint">tap to close</span>
             </div>
           </div>
         </div>
@@ -529,6 +689,19 @@
     <p>𓂀 Sirsi Pantheon v0.7.0b-alpha · Built by Sirsi Technologies</p>
     <a href="https://sirsi.ai" style="color: var(--gold); text-decoration: none; margin-top: 1rem; display: block;">Back to Sirius</a>
   </footer>
+
+  <!-- Click-to-flip handler -->
+  <script>
+    // Cards flip on click, not hover
+    // The onclick handlers are already on each .card element
+    // This prevents accidental flips when scrolling on mobile
+    document.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('touchstart', (e) => {
+        // Prevent double-handling on touch devices
+        e.stopPropagation();
+      });
+    });
+  </script>
 
 </body>
 </html>

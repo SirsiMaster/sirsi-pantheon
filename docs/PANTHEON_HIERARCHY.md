@@ -14,12 +14,12 @@
 
 ## 𓁯 II. The Weaver of Existence: Net (Neith)
 **Net** sits below Ra and above the two divine clusters. She is the writer and owner of the planetary alignment.
-- **Ownership**: 
-  - The **Development Plan** (`DEVELOPMENT_PLAN.md` / `ROADMAP.md`)
-  - The **Project Canon** (`ANUBIS_RULES.md` / `ARCHITECTURE_DESIGN.md`)
-  - All **ADRs** (Architecture Decision Records)
-- **Power**: She can add, expand, remove, or delete anything in the Weave (Canon). 
-- **Mission**: Assesses the logs against the plan to ensure the universe is not unbalanced. She is embedded into every Pantheon-compliant repository.
+- **Ownership**: The **Development Plan**, the **Project Canon**, and all **ADRs**.
+- **The Engine: 🧶 The Loom of Intent**: 
+  - Net's primary tool for **Prompt Restructuring**.
+  - **Function**: Middleware that filters unstructured user language through the "Weave" of the Development Plan.
+  - **Output**: Generates high-density, direct instructions for the active LLM, reducing "human bloat" and token consumption.
+  - **Alignment**: It ensures the user's intent never "drifts" from the project's established standards.
 
 ---
 
@@ -31,10 +31,12 @@
 | **𓁟 Thoth** | The Memory | Scribe | Context compression & persistent AI knowledge. |
 | **𓆄 Ma'at** | The Standard | Weigher | QA/QC Governance. Weighs the heart (code) against the feather. |
 | **𓁐 Isis** | The Healer | Restorer | **Remediation engine**. Heals findings from Ma'at to restore quality. |
+| **𓁆 Seshat** | The Scribe | Bridge | **Gemini Bridge**. Bidirectional sync: Gemini ↔ NotebookLM ↔ Antigravity. |
 
 **Dependencies**:
 - **Isis** depends on **Ma'at** (for finding the wounds that need healing).
 - **Net** depends on **Thoth** (for the logs/logs of time) and **Ma'at** (for the current state of truth).
+- **Seshat** depends on **Thoth** (for Knowledge Items to bridge) and **Net** (for architecture templates).
 
 ---
 

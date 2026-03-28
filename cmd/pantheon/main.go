@@ -40,7 +40,10 @@ and purge waste across workstations, containers, VMs, and networks.
   pantheon maat           Run governance assessments
 
   𓁟 Thoth — Persistent Knowledge
-  pantheon mcp            AI IDE integration (includes thoth_read_memory)`,
+  pantheon mcp            AI IDE integration (includes thoth_read_memory)
+
+  𓁆 Seshat — Gemini Bridge
+  pantheon seshat          Knowledge sync (Gemini ↔ NotebookLM ↔ Antigravity)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		output.Banner()
 		_ = cmd.Help()
@@ -70,6 +73,7 @@ var versionCmd = &cobra.Command{
 		fmt.Println("    𓂀 Anubis  — Infrastructure Hygiene (foundational)")
 		fmt.Println("    🪶 Ma'at   — QA/QC Governance")
 		fmt.Println("    𓁟 Thoth   — Persistent Knowledge")
+		fmt.Println("    𓁆 Seshat  — Gemini Bridge")
 
 		// Phone home — check for updates and advisories
 		result := updater.Check(version)
@@ -106,6 +110,7 @@ func init() {
 	rootCmd.AddCommand(scalesCmd)
 	rootCmd.AddCommand(mirrorCmd)
 	rootCmd.AddCommand(maatCmd)
+	rootCmd.AddCommand(seshatCmd)
 }
 
 func main() {
