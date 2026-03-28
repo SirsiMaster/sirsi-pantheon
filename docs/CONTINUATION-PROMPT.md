@@ -1,45 +1,70 @@
-# PANTHEON CONTINUATION PROMPT — SESSION 30
-
-## Status: AEGIS PHASE COMPLETE 𓂀
-**CI Status**: 🟢 GREEN (macos-latest tests, ubuntu/windows build-only)
-**Last Commit**: `72ce204` — ci(gate): restrict tests to macOS
-**Session Duration**: ~3 hours (Sessions 28-29 combined)
-
-### I. Hardened Canon (AEGIS)
-- **Rule A21**: Concurrency-Safe Injectable Mocks (Ma'at). Package-level function pointers MUST use sync.RWMutex accessors (`getSampleFn`/`setSampleFn`).
-- **Singleton Hardening**: All entry points (Menubar, Guard, MCP) use `platform.TryLock` to prevent redundancy.
-- **Race Fixes**: `AlertRing` and `Watchdog` sampler are now fully thread-safe under `-race`.
-
-### II. Thoth Mastery
-- **Journal Auto-Sync**: `thoth sync` now harvests git diffs and auto-generates journal entries (Entry 025 was the first auto-gen test).
-- **Ghost Transcript Gap**: Permanently closed. Git history is the source of truth for Thoth memory.
-
-### III. Deployment Status
-- **CLI**: v0.7.0-alpha (AEGIS release ready)
-- **Registry**: `https://sirsi-pantheon.web.app` (17 files deployed)
-- **Extension**: VS Code sideloaded with Thoth Accountability + Crashpad Monitor.
+# 𓁆 Gemini Bridge — Session 31 Wrap Prompt
+**Conversation ID**: `8969e362-3a7d-4cc8-afaa-2f167684cbe8`
+**Previous Conversation**: `b0f97ce0-0571-471f-a791-86c09a0b71a2`
+**Last Commit**: `743cff5` — `𓁆 Seshat: Gemini Bridge docs page + workstream wrap`
+**Date**: March 28, 2026
 
 ---
 
-## 🚀 Session 30 Objectives (Remaining P1/P2)
+## Context
 
-1. **Coverage Sprint (P1)**: 
-   - Target 95%+ coverage on `ka`, `scarab`, `scales`.
-   - Current avg: 90.1%.
-   - Focus on `internal/platforms/` and edge cases in the scanners.
-
-2. **Npm Publish (P2)**:
-   - Finalize `tools/thoth-init/`.
-   - Publish to npm registry to enable `npx thoth-init` for other Sirsi repos.
-
-3. **Performance Audit**:
-   - Verify CLI start times (target <50ms for `pantheon --help`).
-   - Audit `internal/horus/` index size and Release() efficiency.
-
-### 🛡️ Guardrails:
-- **Rule A19**: NO bundle modifications (prohibited after session 23).
-- **Rule A21**: Every new mock MUST used the mutex-protected accessor pattern.
+This session completed ALL remaining deliverables from the Gemini Bridge workstream that began in conversation `b0f97ce0`. The workstream is now **CLOSED**.
 
 ---
-**Verified by Ma'at: Session 29 concluded with all gates passed.**
-✍️ *Signed by Antigravity*
+
+## What Was Delivered (This Session)
+
+### 1. Seshat VS Code Extension (`extensions/gemini-bridge/`)
+- **7 TypeScript modules**: `extension.ts`, `commands.ts`, `dashboard.ts`, `knowledgeProvider.ts`, `chromeProfilesProvider.ts`, `syncStatusProvider.ts`, `paths.ts`
+- **Activity Bar**: Dedicated sidebar with 3 tree views (KIs, Chrome Profiles, Sync Status)
+- **Dashboard Webview**: Gold-on-black Egyptian aesthetic
+- **6 Commands**: `seshat.listKnowledge`, `seshat.exportKI`, `seshat.syncToGemini`, `seshat.listProfiles`, `seshat.listConversations`, `seshat.showDashboard`
+- **4 Config settings**: `seshat.defaultProfile`, `seshat.autoSync`, `seshat.pantheonBinaryPath`, `seshat.antigravityDir`
+- **Published**: `SirsiMaster.seshat-gemini-bridge@0.1.0` on OpenVSX
+- **VSIX**: `seshat-gemini-bridge-0.1.0.vsix` (430 KB)
+
+### 2. ARCHITECTURE_DESIGN.md — Neith's Triad (Rule A22) Retrofit
+- **v1.0.0 → v2.0.0**: Title changed from "Sirsi Anubis" to "Sirsi Pantheon"
+- **§7 Data Flow Architecture**: Full Mermaid diagram with 6 subgroups, 20+ nodes
+- **§8 Implementation Order**: Gantt chart with 7 phases, 17 milestones
+- **§9 Decision Points**: 10-row decision matrix
+- **Status**: Rule A22 compliant
+
+### 3. Firebase Deploy
+- 17+ files deployed to `sirsi-pantheon.web.app`
+- All 11 deity cards live with click-to-flip interaction
+
+### 4. Gemini Bridge Docs Page (`docs/gemini-bridge.html`)
+- Six-direction flow diagram
+- Three installation methods (CLI, VS Code, Antigravity Skill)
+- Chrome profile setup guide
+- Script reference table
+
+---
+
+## What Was Delivered (Previous Session — b0f97ce0)
+
+- **Antigravity Skill** (`~/.gemini/antigravity/skills/gemini-bridge/`): 10 Python scripts
+- **Seshat Go Module** (`internal/seshat/`): Core types, syncer, CLI subcommands
+- **Rule A22** (Neith's Architecture Triad): Canonized in PANTHEON_RULES.md
+- **Registry Page** (`docs/index.html`): Click-to-flip cards, all 11 deities
+
+---
+
+## Workstream Status: **COMPLETE** ✅
+
+All deliverables from the original continuation prompt have been shipped:
+1. ✅ Seshat VS Code Extension → Published to OpenVSX
+2. ✅ ARCHITECTURE_DESIGN.md → Rule A22 compliant
+3. ✅ Firebase Deploy → Live at sirsi-pantheon.web.app
+4. ✅ Gemini Bridge Docs Page → docs/gemini-bridge.html
+
+No remaining work items for this workstream.
+
+---
+
+## Key Decisions & Notes
+
+- **OpenVSX Token**: A third token was accidentally created (`seshat-bridge-publish`). User has been advised to delete it from https://open-vsx.org/user-settings/tokens.
+- **Chrome Profile**: `SirsiMaster` (Profile 12) per Rule A20.
+- **Firebase Project**: `sirsi-nexus-live` hosts the `sirsi-pantheon` site.

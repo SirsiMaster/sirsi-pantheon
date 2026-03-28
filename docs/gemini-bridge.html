@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>𓁆 Seshat — Gemini Bridge | Sirsi Pantheon</title>
+  <meta name="description" content="Bidirectional knowledge sync between Gemini AI Mode, NotebookLM, and Antigravity IDE. Six data flow directions, automated extraction, packaging, and distillation.">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Outfit:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --gold: hsl(45, 52%, 55%);
+      --gold-light: hsl(45, 60%, 70%);
+      --gold-glow: hsla(45, 52%, 55%, 0.3);
+      --emerald: hsl(160, 84%, 39%);
+      --bg: hsl(165, 80%, 3%);
+      --bg-alt: hsl(165, 80%, 5%);
+      --text: hsl(0, 0%, 95%);
+      --text-dim: hsl(0, 0%, 70%);
+      --border: hsla(0, 0%, 100%, 0.08);
+      --glass: hsla(165, 80%, 5%, 0.6);
+      --font-heading: 'Cinzel', serif;
+      --font-body: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 0% 0%, hsla(160, 84%, 15%, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 100% 100%, hsla(45, 52%, 10%, 0.1) 0%, transparent 50%);
+      color: var(--text);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+    .gold-text { color: var(--gold); }
+    .mono { font-family: var(--font-mono); font-size: 0.9em; }
+
+    /* ── Back Nav ────────────────────────────────────── */
+    .back-nav {
+      padding: 1.5rem 2rem;
+      font-family: var(--font-heading);
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
+    }
+    .back-nav a {
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.3s;
+    }
+    .back-nav a:hover { color: var(--gold); }
+
+    /* ── Hero ────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 6rem 1rem 4rem;
+    }
+    .hero-glyph {
+      font-size: 5rem;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, var(--gold), var(--gold-light));
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 20px var(--gold-glow));
+      animation: pulse 4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.8; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+    .hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      letter-spacing: 0.08em;
+      font-weight: 900;
+      margin-bottom: 0.5rem;
+    }
+    .hero-sub {
+      font-size: 1.25rem;
+      color: var(--text-dim);
+      font-weight: 300;
+      max-width: 700px;
+      margin: 0 auto 3rem;
+    }
+
+    /* ── Flow Diagram ───────────────────────────────── */
+    .flow-section {
+      padding: 4rem 0;
+      margin-bottom: 2rem;
+    }
+    .section-label {
+      font-family: var(--font-heading);
+      font-size: 0.8rem;
+      letter-spacing: 0.4em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      display: block;
+      text-align: center;
+    }
+    .flow-diagram {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr;
+      gap: 1rem;
+      align-items: center;
+      max-width: 900px;
+      margin: 0 auto 3rem;
+    }
+    .flow-node {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    .flow-node:hover {
+      border-color: var(--gold);
+      box-shadow: 0 0 20px var(--gold-glow);
+      transform: translateY(-3px);
+    }
+    .flow-node-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .flow-node-name {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      margin-bottom: 0.25rem;
+    }
+    .flow-node-desc {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+    .flow-arrow {
+      font-size: 2rem;
+      color: var(--gold);
+      text-align: center;
+      opacity: 0.6;
+    }
+
+    /* ── Direction Cards ─────────────────────────────── */
+    .directions-section { padding: 2rem 0 4rem; }
+    .directions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .dir-card {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      transition: all 0.3s ease;
+    }
+    .dir-card:hover {
+      border-color: var(--gold);
+      box-shadow: 0 0 15px var(--gold-glow);
+    }
+    .dir-num {
+      background: var(--gold);
+      color: var(--bg);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      font-family: var(--font-mono);
+    }
+    .dir-content h3 {
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      letter-spacing: 0.03em;
+      margin-bottom: 0.3rem;
+    }
+    .dir-content p {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+    }
+    .dir-script {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--gold);
+      opacity: 0.7;
+      margin-top: 0.4rem;
+    }
+
+    /* ── Install Section ─────────────────────────────── */
+    .install-section {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      padding: 4rem 0;
+      margin: 2rem 0;
+    }
+    .install-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+    .install-card {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+    }
+    .install-card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+    .install-card p {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .code-block {
+      background: hsla(0, 0%, 0%, 0.4);
+      border: 1px solid hsla(0, 0%, 100%, 0.05);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-align: left;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--text-dim);
+    }
+    .code-block .prompt { color: var(--gold); }
+    .code-block .comment { color: hsla(0, 0%, 100%, 0.25); }
+
+    /* ── Chrome Profiles ─────────────────────────────── */
+    .profiles-section { padding: 4rem 0; }
+    .profiles-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 2rem;
+    }
+    .profiles-table th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--gold);
+      border-bottom: 2px solid var(--gold-glow);
+    }
+    .profiles-table td {
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+    .profiles-table tr:hover td { color: var(--text); }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+    .badge-gold { background: var(--gold); color: var(--bg); }
+    .badge-dim { background: hsla(0,0%,100%,0.08); color: var(--text-dim); }
+
+    /* ── Script Reference ────────────────────────────── */
+    .scripts-section { padding: 4rem 0; }
+    .scripts-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 2rem;
+    }
+    .scripts-table th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--gold);
+      border-bottom: 2px solid var(--gold-glow);
+    }
+    .scripts-table td {
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+    .scripts-table td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--gold-light);
+    }
+
+    /* ── Footer ──────────────────────────────────────── */
+    footer {
+      padding: 3rem 1rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--gold-glow);
+    }
+    footer a { color: var(--gold); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 768px) {
+      .flow-diagram { grid-template-columns: 1fr; }
+      .flow-arrow { transform: rotate(90deg); }
+      .install-grid { grid-template-columns: 1fr; }
+      .directions-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="back-nav">
+    <a href="/">← PANTHEON REGISTRY</a>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-glyph">𓁆</div>
+    <h1>Seshat — Gemini Bridge</h1>
+    <p class="hero-sub">
+      Bidirectional knowledge sync between Gemini AI Mode, NotebookLM, and Antigravity IDE.
+      Six data flow directions. Zero knowledge silos.
+    </p>
+  </section>
+
+  <!-- Flow Diagram -->
+  <section class="flow-section">
+    <div class="container">
+      <span class="section-label">THE THREE PILLARS</span>
+      <div class="flow-diagram">
+        <div class="flow-node">
+          <div class="flow-node-icon">✦</div>
+          <div class="flow-node-name">Gemini AI Mode</div>
+          <div class="flow-node-desc">Google's conversational AI with deep reasoning</div>
+        </div>
+        <div class="flow-arrow">⇄</div>
+        <div class="flow-node">
+          <div class="flow-node-icon">📓</div>
+          <div class="flow-node-name">NotebookLM</div>
+          <div class="flow-node-desc">Source-grounded research with citations</div>
+        </div>
+        <div class="flow-arrow">⇄</div>
+        <div class="flow-node">
+          <div class="flow-node-icon">🧠</div>
+          <div class="flow-node-name">Antigravity IDE</div>
+          <div class="flow-node-desc">Persistent Knowledge Items across sessions</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Six Directions -->
+  <section class="directions-section">
+    <div class="container">
+      <span class="section-label">SIX BIDIRECTIONAL FLOWS</span>
+      <h2 style="font-family: var(--font-heading); text-align: center; font-size: 2rem; margin-bottom: 1rem;">Every Direction Covered</h2>
+      <div class="directions-grid">
+        <div class="dir-card">
+          <div class="dir-num">1</div>
+          <div class="dir-content">
+            <h3>Gemini → NotebookLM</h3>
+            <p>Extract conversations from Google Takeout and upload as NotebookLM sources for grounded research.</p>
+            <div class="dir-script">pipeline.py → package_notebook.py</div>
+          </div>
+        </div>
+        <div class="dir-card">
+          <div class="dir-num">2</div>
+          <div class="dir-content">
+            <h3>NotebookLM → Gemini</h3>
+            <p>Query NotebookLM and inject distilled, citation-backed answers into GEMINI.md context files.</p>
+            <div class="dir-script">distill_to_gemini.py</div>
+          </div>
+        </div>
+        <div class="dir-card">
+          <div class="dir-num">3</div>
+          <div class="dir-content">
+            <h3>NotebookLM → Antigravity</h3>
+            <p>Distill notebook insights into persistent Knowledge Items for cross-session AI memory.</p>
+            <div class="dir-script">inject_knowledge.py</div>
+          </div>
+        </div>
+        <div class="dir-card">
+          <div class="dir-num">4</div>
+          <div class="dir-content">
+            <h3>Antigravity → NotebookLM</h3>
+            <p>Export Knowledge Items and conversations as Markdown sources for NotebookLM notebooks.</p>
+            <div class="dir-script">sync_to_notebooklm.py</div>
+          </div>
+        </div>
+        <div class="dir-card">
+          <div class="dir-num">5</div>
+          <div class="dir-content">
+            <h3>Gemini → Antigravity</h3>
+            <p>Extract Gemini conversations and inject directly as searchable Knowledge Items.</p>
+            <div class="dir-script">pipeline.py --inject-ki</div>
+          </div>
+        </div>
+        <div class="dir-card">
+          <div class="dir-num">6</div>
+          <div class="dir-content">
+            <h3>Antigravity → Gemini</h3>
+            <p>Export Knowledge Items into GEMINI.md or CLAUDE.md for instant AI context loading.</p>
+            <div class="dir-script">sync_to_gemini.py</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Installation -->
+  <section class="install-section">
+    <div class="container">
+      <span class="section-label">INSTALLATION</span>
+      <h2 style="font-family: var(--font-heading); text-align: center; font-size: 2rem; margin-bottom: 0.5rem;">Three Ways to Bridge</h2>
+      <div class="install-grid">
+        <div class="install-card">
+          <h3>CLI</h3>
+          <p>Via the Pantheon unified binary</p>
+          <div class="code-block"><span class="comment"># Install Pantheon</span>
+<span class="prompt">$</span> brew install sirsi-pantheon
+
+<span class="comment"># Use Seshat subcommands</span>
+<span class="prompt">$</span> pantheon seshat list
+<span class="prompt">$</span> pantheon seshat export --all
+<span class="prompt">$</span> pantheon seshat sync --target GEMINI.md</div>
+        </div>
+        <div class="install-card">
+          <h3>VS Code Extension</h3>
+          <p>Activity bar + dashboard + commands</p>
+          <div class="code-block"><span class="comment"># From OpenVSX</span>
+<span class="prompt">$</span> ext install SirsiMaster.seshat-gemini-bridge
+
+<span class="comment"># Or from VSIX</span>
+<span class="prompt">$</span> code --install-extension \
+  seshat-gemini-bridge-0.1.0.vsix</div>
+        </div>
+        <div class="install-card">
+          <h3>Antigravity Skill</h3>
+          <p>10 Python scripts with venv isolation</p>
+          <div class="code-block"><span class="comment"># Full pipeline (extract → inject)</span>
+<span class="prompt">$</span> python3 scripts/run.py pipeline.py \
+  --input antigravity \
+  --last 10 --inject-ki
+
+<span class="comment"># Chrome profile selection</span>
+<span class="prompt">$</span> python3 scripts/run.py pipeline.py \
+  --profile SirsiMaster</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Chrome Profile Setup -->
+  <section class="profiles-section">
+    <div class="container">
+      <span class="section-label">CHROME PROFILE SETUP</span>
+      <h2 style="font-family: var(--font-heading); text-align: center; font-size: 2rem; margin-bottom: 0.5rem;">Multi-Profile Extraction</h2>
+      <p style="text-align: center; color: var(--text-dim); max-width: 700px; margin: 0 auto;">
+        Seshat discovers all Chrome profiles on your system. Use <code class="mono" style="color: var(--gold);">--profile</code> 
+        to select which profile to extract Gemini conversations from.
+      </p>
+      <table class="profiles-table">
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Purpose</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="mono gold-text">--list-profiles</code></td>
+            <td>Discover all Chrome profiles</td>
+            <td><code class="mono">pantheon seshat --list-profiles</code></td>
+          </tr>
+          <tr>
+            <td><code class="mono gold-text">--profile</code></td>
+            <td>Select a specific profile</td>
+            <td><code class="mono">--profile SirsiMaster</code></td>
+          </tr>
+          <tr>
+            <td><code class="mono gold-text">seshat.defaultProfile</code></td>
+            <td>VS Code extension setting</td>
+            <td><span class="badge badge-gold">SirsiMaster</span> (default)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Script Reference -->
+  <section class="scripts-section">
+    <div class="container">
+      <span class="section-label">SCRIPT REFERENCE</span>
+      <h2 style="font-family: var(--font-heading); text-align: center; font-size: 2rem; margin-bottom: 0.5rem;">Antigravity Skill Scripts</h2>
+      <p style="text-align: center; color: var(--text-dim); margin-bottom: 1rem;">
+        Always use <code class="mono gold-text">python3 scripts/run.py [script]</code> — never call scripts directly.
+      </p>
+      <table class="scripts-table">
+        <thead>
+          <tr>
+            <th>Script</th>
+            <th>Direction</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>pipeline.py</td><td>1 + 5</td><td>Full extract → package → inject pipeline</td></tr>
+          <tr><td>extract_gemini.py</td><td>1, 5</td><td>Extract from Takeout, Markdown, or Antigravity</td></tr>
+          <tr><td>package_notebook.py</td><td>1</td><td>Package as NotebookLM Markdown sources</td></tr>
+          <tr><td>inject_knowledge.py</td><td>3, 5</td><td>Create Antigravity Knowledge Items</td></tr>
+          <tr><td>sync_to_notebooklm.py</td><td>4</td><td>Export Antigravity → NotebookLM sources</td></tr>
+          <tr><td>sync_to_gemini.py</td><td>6</td><td>Export KIs → GEMINI.md / CLAUDE.md context</td></tr>
+          <tr><td>distill_to_gemini.py</td><td>2</td><td>Query NotebookLM → inject into GEMINI.md</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>𓁆 Seshat — Gemini Bridge · Part of <a href="/">Sirsi Pantheon</a> v0.7.0b-alpha</p>
+    <p style="margin-top: 0.5rem;"><a href="https://github.com/SirsiMaster/sirsi-pantheon">Source</a> · <a href="https://open-vsx.org/extension/SirsiMaster/seshat-gemini-bridge">OpenVSX</a> · <a href="https://sirsi.ai">Sirsi Technologies</a></p>
+  </footer>
+
+</body>
+</html>
