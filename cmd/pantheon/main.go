@@ -39,7 +39,11 @@ and purge waste across workstations, containers, VMs, and networks.
   🪶 Ma'at — QA/QC Governance
   pantheon maat           Run governance assessments
 
+  𓁐 Isis — Autonomous Remediation
+  pantheon isis heal      Run Ma'at→Isis healing cycle (--fix to apply)
+
   𓁟 Thoth — Persistent Knowledge
+  pantheon thoth sync     Auto-sync memory.yaml + journal.md from source/git
   pantheon mcp            AI IDE integration (includes thoth_read_memory)
 
   𓁆 Seshat — Gemini Bridge
@@ -111,6 +115,8 @@ func init() {
 	rootCmd.AddCommand(mirrorCmd)
 	rootCmd.AddCommand(maatCmd)
 	rootCmd.AddCommand(seshatCmd)
+	rootCmd.AddCommand(thothCmd)
+	rootCmd.AddCommand(isisCmd)
 }
 
 func main() {

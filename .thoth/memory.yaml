@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-03-27T11:53:54-04:00
+# Last updated: 2026-03-28T23:32:27-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -8,10 +8,10 @@ repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+ / TypeScript
 version: 0.7.0b-alpha
 binary_count: 8 (anubis, guard, maat, pantheon, pantheon-agent, pantheon-menubar, scarab, thoth)
-test_count: 826+
-line_count: ~30,120
-module_count: 26
-command_count: 33
+test_count: 843+
+line_count: ~32,825
+module_count: 27
+command_count: 42
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
@@ -105,7 +105,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   FullScanRoots() available for deep scans. Publisher generates HTML case studies.
 # - Osiris: Checkpoint guardian implemented (uncommitted work detection + risk assessment)
 # - Net: Owning the Weave (Development Plan vs Build Log alignment checking)
-# - Isis: Focused on autonomous remediation (healing the weight of Ma'at)
+# - Isis: Phase 1 live — 4 strategies (lint, vet, coverage-gap, canon-sync). Dry-run default.
 # - ADR count: 12 (001-founding... 012-vscode-extension)
 # - VS Code Extension: extensions/vscode/ (TypeScript, always-on Guardian, codicon status bar, Thoth)
 # - Guardian: Native renice(1) + taskpolicy(1) — no CLI binary dependency
@@ -118,6 +118,25 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   Valid JSON can crash Extension Host via semantic corruption. No exceptions.
 # - Website: sirsi-pantheon.web.app / pantheon.sirsi.ai (Firebase Hosting)
 # - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
+
+# 2026-03-28: Session 35 — Isis (The Healer) Phase 1 + Thoth CLI + Distribution
+#   THOTH CLI: `pantheon thoth sync` wired (cmd/pantheon/thoth.go). Two-phase auto-sync:
+#     Phase 1: memory.yaml identity fields from source analysis.
+#     Phase 2: journal.md entries from git commits (--since, --dry-run).
+#     findRepoRoot() walks up from cwd to find .thoth/.
+#   ISIS: Full remediation engine (internal/isis/, 6 files, 24 tests):
+#     isis.go: Healer struct, Strategy interface, Heal() orchestrator, Report formatter.
+#     lint.go: LintStrategy — goimports + gofmt (injectable RunCmd per Rule A21).
+#     vet.go: VetStrategy — go vet parse + report (structural, no auto-fix).
+#     coverage.go: CoverageStrategy — AST-based export/test gap detection.
+#     canon.go: CanonStrategy — triggers thoth sync on drift detection.
+#     bridge.go: FromMaatReport() converts Ma'at assessments to Isis findings.
+#   CLI: `pantheon isis heal` (dry-run default, --fix to apply, --full-weigh for go test).
+#     Fast mode: reads Ma'at coverage cache (~3ms) instead of running go test (~5min).
+#     Strategy filters: --lint-only, --vet-only, --coverage-only, --canon-only.
+#   DISTRIBUTION: thoth-init README.md for npm publish. Local test verified.
+#   DOGFOODING: `pantheon thoth sync` used to update its own memory.yaml. Self-referential.
+#   Next: npm publish thoth-init, brew tap marketing, Isis Phase 2 (deeper remediation).
 
 # 2026-03-28: Session 34 — Grand Unification + Seba's Sovereignty
 #   Objective: Unify all workstreams into a single canonical prompt and canonize Seba's role.
