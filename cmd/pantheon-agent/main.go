@@ -206,7 +206,7 @@ func respondError(command, msg string) {
 }
 
 func printUsage() {
-	fmt.Println("🏛️ Sirsi Pantheon Agent")
+	fmt.Println("𓂀 Sirsi Pantheon Agent")
 	fmt.Println("  Lightweight agent for fleet deployment")
 	fmt.Println()
 	fmt.Println("  This binary is deployed to remote targets by the Pantheon controller.")

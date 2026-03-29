@@ -66,7 +66,7 @@ extensions/vscode/
 |-------|------|---------|
 | Healthy | `𓂀 1.2 GB` | Guardian active, normal RAM |
 | Warning | `𓂀 3.5 GB ▲` | RAM > 3 GB, yellow background |
-| Error | `⚠ Pantheon` | Binary not found or system error |
+| Error | `⚠️ Pantheon` | Binary not found or system error |
 | Initializing | `⏳ Pantheon` | First metric fetch pending |
 
 ## Consequences

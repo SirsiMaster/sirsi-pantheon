@@ -17,7 +17,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show Pantheon version and check for updates",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("𓂀 Sirsi Pantheon %s\n", version)
+		fmt.Printf("𓉴 Sirsi Pantheon %s\n", version)
 		fmt.Println("  Unified DevOps Intelligence Platform")
 		fmt.Println("  \"One Install. All Deities.\"")
 	},
@@ -25,8 +25,8 @@ var versionCmd = &cobra.Command{
 
 var rootCmd = &cobra.Command{
 	Use:   "pantheon",
-	Short: "𓂀 Sirsi Pantheon — Unified DevOps Intelligence Platform",
-	Long: `𓂀 Sirsi Pantheon — Unified DevOps Intelligence Platform
+	Short: "𓉴 Sirsi Pantheon — Unified DevOps Intelligence Platform",
+	Long: `𓉴 Sirsi Pantheon — Unified DevOps Intelligence Platform
 "One Install. All Deities."
 
 Pantheon unifies the entire Sirsi ecosystem into a single, hardened platform.

@@ -102,7 +102,7 @@ The public registry provides a high-fidelity visual map of the 6 Master Pillars.
 ```mermaid
 graph TD
     subgraph "User Layer"
-        USER["👤 User / Admin"]
+        USER["𓀀 User / Admin"]
     end
 
     subgraph "Unified Entry Point"

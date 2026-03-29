@@ -1,4 +1,4 @@
-# 🏛️ Sirsi Pantheon — Canonical Roadmap
+# 𓂀 Sirsi Pantheon — Canonical Roadmap
 **Version:** 3.0.0 (The Unified Platform)
 **Date:** March 27, 2026
 **Status:** **ACTIVE — Phase 3: Hardening & Coverage breakthrough (Session 33)**
@@ -11,7 +11,7 @@ Pantheon is the single, modular brand for all Sirsi automation deities. One bina
 | Deity | Status | Role | Domain | Coverage |
 |:------|:-------|:-----|:-------|:---------|
 | 𓂀 **Anubis** | ✅ Shipped | The Judge | Infrastructure hygiene, scans, judge | 93% |
-| 𓂓 **Ka** | ✅ Shipped | The Spirit | Ghost app detection, LaunchServices | 94.4% |
+| ⚠️ **Ka** | ✅ Shipped | The Spirit | Ghost app detection, LaunchServices | 94.4% |
 | 𓆄 **Ma'at** | ✅ Shipped | The Truth | QA/QC Governance, scores, pipeline | 88% |
 | 𓁹 **Horus** | ✅ Shipped | The Eye | Shared filesystem index, Spotlight fix | 82% |
 | 𓆣 **Khepri** | ✅ Shipped | The Scarab | Network discovery, container scans | 94.8% |

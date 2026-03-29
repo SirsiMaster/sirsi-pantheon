@@ -108,7 +108,7 @@ Horus walks the disk once (parallelized) and caches a Gob manifest (31MB). Deiti
 
 ---
 
-## 𓂓 Case Study 7: KA & THE GHOST OF PARALLELS
+## ⚠️ Case Study 7: KA & THE GHOST OF PARALLELS
 **Status:** Shipped | **Deity:** Ka (Spirit Double) | **Waste Found:** 8.5 GB
 
 ### The Crisis

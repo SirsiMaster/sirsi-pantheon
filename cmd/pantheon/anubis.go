@@ -57,7 +57,7 @@ var anubisJudgeCmd = &cobra.Command{
 
 var anubisKaCmd = &cobra.Command{
 	Use:   "ka",
-	Short: "𓂓 Hunt ghost app residuals and spotlight phantoms",
+	Short: "⚠️ Hunt ghost app residuals and spotlight phantoms",
 	RunE:  func(cmd *cobra.Command, args []string) error { return runKa(cmd.Context()) },
 }
 

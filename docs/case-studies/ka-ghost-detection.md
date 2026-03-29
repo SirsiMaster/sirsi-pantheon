@@ -1,4 +1,4 @@
-# 𓂓 Case Study: Ka — Ghost App Detection
+# ⚠️ Case Study: Ka — Ghost App Detection
 
 > **You uninstalled Parallels Desktop. macOS says it's gone. But 23 GB of virtual machine caches, kernel extensions, preferences, and a Spotlight registration are still on your disk. Ka finds them.**
 

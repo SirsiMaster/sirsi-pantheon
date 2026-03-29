@@ -35,12 +35,12 @@ func init() {
 
 func runInitiate(cmd *cobra.Command, args []string) {
 	if runtime.GOOS != "darwin" {
-		output.Info("🔑 Initiate is only needed on macOS")
+		output.Info("𓂋 Initiate is only needed on macOS")
 		output.Info("   On Linux, run pantheon with sudo for full access")
 		return
 	}
 
-	output.Header("🔑 Initiate — The Ritual of Access")
+	output.Header("𓂋 Initiate — The Ritual of Access")
 	fmt.Println()
 
 	// Check current permissions

@@ -38,7 +38,7 @@ Use it to visualize dependencies, audit architecture, and map the fleet.
 
 var sebaScanCmd = &cobra.Command{
 	Use:   "scan",
-	Short: "◆ Master architecture map of the current system",
+	Short: "𓇼 Master architecture map of the current system",
 	Run: func(cmd *cobra.Command, args []string) {
 		start := time.Now()
 		output.Banner()

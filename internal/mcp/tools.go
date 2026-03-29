@@ -202,7 +202,7 @@ func handleGhostReport(args map[string]interface{}) (*ToolResult, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("𓂓 Ka Ghost Report — %d ghosts detected\n\n", len(ghosts)))
+	sb.WriteString(fmt.Sprintf("⚠️ Ka Ghost Report — %d ghosts detected\n\n", len(ghosts)))
 
 	if len(ghosts) == 0 {
 		sb.WriteString("No ghost apps found. Machine is spiritually clean.")

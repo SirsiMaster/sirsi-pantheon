@@ -40,56 +40,47 @@
       {
         "command": "pantheon.scan",
         "title": "𓂀 Pantheon: Scan Workspace",
-        "category": "Pantheon",
-        "icon": "$(search)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.guard",
         "title": "𓂀 Pantheon: Start Guardian",
-        "category": "Pantheon",
-        "icon": "$(shield)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.reniceLSP",
         "title": "𓂀 Pantheon: Renice LSP Processes",
-        "category": "Pantheon",
-        "icon": "$(arrow-down)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.ghostReport",
         "title": "𓂀 Pantheon: Ghost Report (Ka)",
-        "category": "Pantheon",
-        "icon": "$(ghost)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.thothContext",
         "title": "𓁟 Pantheon: Show Thoth Context",
-        "category": "Pantheon",
-        "icon": "$(book)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.showMetrics",
         "title": "𓂀 Pantheon: Show System Metrics",
-        "category": "Pantheon",
-        "icon": "$(dashboard)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.thothAccountability",
         "title": "𓁟 Pantheon: Thoth Accountability Report",
-        "category": "Pantheon",
-        "icon": "$(graph)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.applyWorkspaceSettings",
         "title": "𓂀 Pantheon: Apply Optimal Workspace Settings",
-        "category": "Pantheon",
-        "icon": "$(settings-gear)"
+        "category": "Pantheon"
       },
       {
         "command": "pantheon.crashpadReport",
         "title": "𓂀 Pantheon: Crashpad Stability Report",
-        "category": "Pantheon",
-        "icon": "$(warning)"
+        "category": "Pantheon"
       }
     ],
     "configuration": {

@@ -40,38 +40,32 @@
       {
         "command": "seshat.listKnowledge",
         "title": "𓁆 Seshat: List Knowledge Items",
-        "category": "Seshat",
-        "icon": "$(library)"
+        "category": "Seshat"
       },
       {
         "command": "seshat.exportKI",
         "title": "𓁆 Seshat: Export Knowledge Item",
-        "category": "Seshat",
-        "icon": "$(export)"
+        "category": "Seshat"
       },
       {
         "command": "seshat.syncToGemini",
         "title": "𓁆 Seshat: Sync KI → GEMINI.md",
-        "category": "Seshat",
-        "icon": "$(sync)"
+        "category": "Seshat"
       },
       {
         "command": "seshat.listProfiles",
         "title": "𓁆 Seshat: List Chrome Profiles",
-        "category": "Seshat",
-        "icon": "$(accounts)"
+        "category": "Seshat"
       },
       {
         "command": "seshat.listConversations",
         "title": "𓁆 Seshat: List Brain Conversations",
-        "category": "Seshat",
-        "icon": "$(comment-discussion)"
+        "category": "Seshat"
       },
       {
         "command": "seshat.showDashboard",
         "title": "𓁆 Seshat: Open Bridge Dashboard",
-        "category": "Seshat",
-        "icon": "$(dashboard)"
+        "category": "Seshat"
       }
     ],
     "viewsContainers": {
@@ -87,20 +81,17 @@
       "seshat-bridge": [
         {
           "id": "seshat.knowledgeItems",
-          "name": "Knowledge Items",
-          "icon": "$(library)",
+          "name": "𓁟 Knowledge Items",
           "contextualTitle": "Seshat Knowledge"
         },
         {
           "id": "seshat.chromeProfiles",
-          "name": "Chrome Profiles",
-          "icon": "$(accounts)",
+          "name": "𓂋 Chrome Profiles",
           "contextualTitle": "Chrome Profiles"
         },
         {
           "id": "seshat.syncStatus",
-          "name": "Sync Status",
-          "icon": "$(sync)",
+          "name": "𓁆 Sync Status",
           "contextualTitle": "Bridge Status"
         }
       ]

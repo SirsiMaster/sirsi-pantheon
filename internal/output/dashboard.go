@@ -49,7 +49,7 @@ func (m MainModel) View() string {
 		return "𓂀 Pantheon ritual complete.\n"
 	}
 
-	header := TitleStyle.Render("   🏛️  Pantheon Command Center  ")
+	header := TitleStyle.Render("   𓂀  Pantheon Command Center  ")
 
 	// Stats Grid
 	stats := lipgloss.JoinHorizontal(lipgloss.Top,

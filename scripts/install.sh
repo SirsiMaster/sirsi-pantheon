@@ -1,5 +1,5 @@
 #!/bin/bash
-# 🏛️ Sirsi Pantheon — Production Installer
+# 𓂀 Sirsi Pantheon — Production Installer
 # "One Install. All Deities."
 
 set -e
@@ -9,7 +9,7 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 echo -e "${GOLD}${BOLD}"
-echo "  🏛️  Sirsi Pantheon"
+echo "  𓂀  Sirsi Pantheon"
 echo "  ═══════════════════════════════"
 echo "  Unified DevOps Intelligence Platform"
 echo "  Establishing The Ritual of Access..."

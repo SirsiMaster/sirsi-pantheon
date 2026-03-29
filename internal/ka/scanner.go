@@ -1,6 +1,6 @@
 // Package ka implements the Ghost Hunter module for Sirsi Anubis.
 //
-// 𓂓 Ka — the spiritual double that persists after the body dies.
+// ⚠️ Ka — the spiritual double that persists after the body dies.
 // In Egyptian belief, the Ka remains after death and needs sustenance.
 // An uninstalled app's remnants ARE its Ka — the spirit lingers on
 // your filesystem, consuming resources, polluting Spotlight, and

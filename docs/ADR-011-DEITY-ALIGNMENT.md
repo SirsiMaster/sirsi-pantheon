@@ -31,17 +31,17 @@ and perceptible click latency in the IDE.
 |-------|-----------|----------------------|
 | **𓁹 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
 | **🐺 Jackal/Anubis** | The Hunter | Waste scanner & Infrastructure Hygiene Judge |
-| **𓂓 Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
+| **⚠️ Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
 | **𓁵 Sekhmet** | The Warrior | Process control — watchdog, orphan slayer, NPU hardening |
-| **🌊 Hapi** | The River | GPU/VRAM and NPU (Accelerator) flow management |
+| **𓈗 Hapi** | The River | GPU/VRAM and NPU (Accelerator) flow management |
 | **🪲 Scarab** | The Roller | Fleet discovery — subnets, VLANs, containers |
 | **🔮 Seba** | The Star | Dependency graph & Topology mapper |
 | **𓁹 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
 | **🐺 Jackal** | The Hunter | Waste scanner — uses Horus index as read-only data source |
-| **𓂓 Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
+| **⚠️ Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
 | **𓁵 Sekhmet** | The Warrior | Process control — RAM watchdog, orphan slayer, renice |
 | **𓆄 Ma'at** | The Feather | Quality & truth validation, platform integrity |
-| **🌊 Hapi** | The River | GPU/VRAM and storage flow management |
+| **𓈗 Hapi** | The River | GPU/VRAM and storage flow management |
 | **🪲 Scarab** | The Roller | Fleet discovery — subnets, VLANs, containers |
 | **🔮 Seba** | The Star | Dependency graph mapper |
 | **☀️ Ra** | The Thinker | Hypervisor — orchestrates all deities (FUTURE) |

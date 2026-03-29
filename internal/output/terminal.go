@@ -145,7 +145,7 @@ func Success(format string, args ...interface{}) {
 // Warn prints a themed warning message.
 func Warn(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "  %s %s\n", WarningStyle.Render("𓂓"), BodyStyle.Render(msg))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", WarningStyle.Render("⚠️"), BodyStyle.Render(msg))
 }
 
 // Error prints a themed error message.
@@ -222,9 +222,8 @@ func Footer(elapsed time.Duration) {
 	)
 }
 
-// Section starts a new visual section with a glyph.
 func Section(title string) {
-	fmt.Fprintf(os.Stderr, "\n%s\n", TitleStyle.Render("⬥ "+title))
+	fmt.Fprintf(os.Stderr, "\n%s\n", TitleStyle.Render("𓂀 "+title))
 }
 
 // shortenPath replaces home dir with ~ and truncates long paths.

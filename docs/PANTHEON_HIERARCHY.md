@@ -1,4 +1,4 @@
-# 🏛️ The Pantheon Hierarchy — Canonical Ruleset
+# 𓂀 The Pantheon Hierarchy — Canonical Ruleset
 **Version:** 1.0.0
 **Date:** March 27, 2026
 **Custodian:** 𓁯 Net (The Weaver)
@@ -47,9 +47,9 @@
 |:------|:----------|:-----|:---------------|
 | **𓁹 Horus** | The Eye | Watcher | Shared filesystem index & high-speed publisher. |
 | **🐺 Anubis** | The Judge | Hygiene | Infrastructure hygiene judge & waste hunter. |
-| **𓂓 Ka** | The Spirit | Hunter | Ghost app detection & LaunchServices repair. |
+| **⚠️ Ka** | The Spirit | Hunter | Ghost app detection & LaunchServices repair. |
 | **𓁵 Sekhmet**| The Warrior | Guardian | Watchdog: Process prioritization, RAM safety, & NPU hardening. |
-| **🌊 Hapi** | The Flow | Optimizer | Hardware accelerator detection (GPU/ANE/CUDA). |
+| **𓈗 Hapi** | The Flow | Optimizer | Hardware accelerator detection (GPU/ANE/CUDA). |
 | **𓆣 Khepri** | The Scarab | Scavenger | Fleet discovery: Subnets, containers, and network hygiene. |
 | **𓇼 Seba** | The Star | Mapper | Visual topology, dependency graphs, and **Architectural Mapping**. |
 

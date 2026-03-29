@@ -17,9 +17,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Universal Glyph Standard** — Purged all generic emojis (🏛️, 🌊, ⬥) and geometric symbols (⬥, ◇, ◆) across the entire platform. 
   - **CLI/TUI**: All headers, status indicators, and dashboards now use High-Fidelity Ancient Egyptian Hieroglyphs.
   - **Registry**: Remastered `docs/index.html` with click-to-flip cards reflecting the unified 6-pillar hierarchy.
-- **Hardening & Verification** — Resolved all compilation regressions, import collisions (fmt, os, InfoStyle), and unit test mismatches (seba.Scan, seshat.List).
-- **Zero Bloat Standard** — Permanently retired and purged all legacy command files from `cmd/pantheon/` to ensure a clean architectural footprint.
-- **Stats**: 15 files modified, consolidated 13 legacy scripts, 100% build-readiness.
+- **Safety Restoration** — Restored the **⚠️ Universal Warning** signal throughout the platform to ensure absolute safety and recognition for destructive operations.
+- **Monumental Baseline (𓉴)** — Promoted the **Great Pyramid (𓉴)** as the primary architectural anchor for the Pantheon platform and Web Registry, replacing legacy generic identifiers.
+- **Hieroglyphic Menu** — Published the `glyph_menu.md` (Artifact) featuring over 25 categorized hieroglyphs for Master Pillar selection variety.
+- **Hardening & Verification** — Resolved all compilation regressions, import collisions (fmt, os, InfoStyle), and unit test mismatches.
+- **Stats**: 36 files modified, consolidated 13 legacy scripts, 100% build-readiness.
 
 ### Planned
 - P1: npm publish thoth-init

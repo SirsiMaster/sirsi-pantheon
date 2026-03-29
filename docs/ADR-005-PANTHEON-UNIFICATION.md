@@ -50,10 +50,10 @@ Sirsi Technologies (super-repo / company)
     ├── 🪶 Ma'at     — Governance (Go)     — v0.1.0
     ├── ⚖️ Scales    — Policy (Go)         — within Anubis
     ├── 🪲 Scarab    — Network (Go)        — within Anubis
-    ├── 🌊 Hapi      — Resources (Go)      — within Anubis
+    ├── 𓈗 Hapi      — Resources (Go)      — within Anubis
     ├── 𓅓 Horus     — System Sentinel (Go) — within Anubis (was Guard)
     ├── 🪞 Mirror    — Dedup (Go)          — within Anubis
-    ├── 𓂓 Ka         — Ghost Hunting (Go)  — within Anubis
+    ├── ⚠️ Ka         — Ghost Hunting (Go)  — within Anubis
     ├── 👁️ Sight     — LaunchServices (Go) — within Anubis
     ├── 𓄿 Isis      — [Undesignated]      — (pending)
     ├── 𓀭 Osiris    — [Undesignated]      — (pending)
