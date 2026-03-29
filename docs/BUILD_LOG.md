@@ -3,7 +3,7 @@
 > A transparent record of how Sirsi Anubis was designed, built, tested, broken, fixed, and shipped. No cherry-picking — the mistakes stay in.
 
 [![Version](https://img.shields.io/badge/version-0.7.0--alpha-C8A951?style=flat)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-824%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-843%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 
 ---
@@ -307,14 +307,28 @@ Commits: 12  |  Modules: 22  |  Tests: 768  |  Coverage: 90.1%
 
 **Tested**: 12ms bridge overhead. 90.1% coverage maintained.
 
+### Sprint 15 — Isis Phase 1 + Thoth CLI (March 28, Session 35)
+
+**What happened**: Wired the Thoth auto-sync CLI and built the full Isis autonomous remediation engine. Fixed a critical performance issue where the default `isis heal` was running the entire test suite (~5 minutes) — switched to cache-based Ma'at weighing (~3ms).
+
+**Built**: `pantheon thoth sync` (two-phase auto-sync: memory.yaml from source analysis + journal.md from git log). `pantheon isis heal` (4-strategy remediation engine: lint, vet, coverage gap detection via AST analysis, canon drift detection). `thoth-init` README for npm publication.
+
+**Tested**: 24 new Isis tests covering all 4 strategies, Healer dispatch, report formatting, Ma'at bridge, and extractModule parsing. All 843+ tests passing.
+
+**Innovation**: Isis uses Go's `go/parser` to perform AST-based export analysis — it finds every exported function that lacks a corresponding test, giving you exact file and line numbers. The Ma'at→Isis→Thoth chain is fully operational: Ma'at weighs → Isis heals → Thoth syncs.
+
+```
+Commits: 1  |  Files: 14  |  Lines: +1,765  |  Tests: 843+  |  Isis heal: 41ms
+```
+
 ---
 
-## Current State — v0.7.0-alpha
+## Current State — v0.7.1-alpha
 
 | Metric | Value | Verified |
 |:-------|:------|:--------:|
-| Go source lines | ~30,120 | ✅ `find + wc -l` |
-| Test count | 824 | ✅ `go test ./...` |
+| Go source lines | ~32,825 | ✅ `thoth sync` |
+| Test count | 843+ | ✅ `go test ./...` |
 | Weighted Coverage |## Session 33: The Weaver's Hardening (Deity Coverage & Hierarchy) — March 27, 2026
 **Objective:** Achieved 95% test coverage for core deities (`ka`, `scarab`, `scales`), optimized the suite from 76s to 14s, and codified the **Net (The Weaver)** and **Isis (The Healer)** divine hierarchy.
 
@@ -337,10 +351,22 @@ Commits: 12  |  Modules: 22  |  Tests: 768  |  Coverage: 90.1%
 **Status:** Hardness achieved. Hierarchy established. **The Weave is secure.** 𓂀
 **90.1%** | ✅ `go tool cover` |
 | Binary Size | ~12 MB | ✅ Combined Pantheon |
-| Deities | 12 | ✅ Registry |
+| Deities | 13 | ✅ Registry + Isis live |
+| CLI Commands | 42 | ✅ `thoth sync` counted |
+
+### What Works:
+- [x] **Isis Remediation Cycle**: Ma'at weighs → Isis heals → Ma'at re-weighs (41ms default).
+- [x] **Thoth Auto-Sync**: `pantheon thoth sync` updates memory + journal from source/git.
+- [x] **AST-Based Coverage Gaps**: Isis parses Go exports to find untested functions.
+- [x] **Cache-Based Assessment**: Isis uses cached Ma'at data for instant cycles.
+
+### What Doesn't (yet):
+- [ ] `thoth-init` not yet published to npm.
+- [ ] Isis cannot auto-generate test scaffolds (Phase 2).
+- [ ] `internal/thoth/` has 0% test coverage.
 
 ---
 
-*Last updated: March 27, 2026 (Sprint 14). This document is updated with every sprint.*
+*Last updated: March 28, 2026 (Sprint 15). This document is updated with every sprint.*
 
 *See [CHANGELOG.md](CHANGELOG.md) for detailed changes. See [.thoth/journal.md](.thoth/journal.md) for design reasoning.*

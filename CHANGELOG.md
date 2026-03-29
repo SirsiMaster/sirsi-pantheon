@@ -8,10 +8,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 ### Planned
-- P1: Reach 95%+ coverage on remaining modules
-- P2: npm publish thoth-init
+- P1: npm publish thoth-init
+- P2: Isis Phase 2 (test scaffold generation, errcheck auto-fix)
+- P3: Thoth test coverage (internal/thoth/ at 0%)
 
-### Session 31 (2026-03-28) — Seshat Extension + Neith's Triad Retrofit
+### Session 35 (2026-03-28) — Isis Phase 1 (The Healer) + Thoth CLI
+- **Thoth CLI** (`cmd/pantheon/thoth.go`) — `pantheon thoth sync` wired to CLI.
+  - Two-phase auto-sync: Phase 1 updates memory.yaml identity fields from source analysis. Phase 2 appends journal.md entries from git history.
+  - `findRepoRoot()` walks up from cwd to locate `.thoth/` directory.
+  - Flags: `--since`, `--dry-run`, `--memory-only`, `--journal-only`.
+  - Self-dogfooded: the sync command updated its own memory.yaml in this session.
+- **Isis Remediation Engine** (`internal/isis/`, 6 files, 24 tests) — Phase 1 of the Ma'at→Isis healing cycle.
+  - `isis.go`: `Healer` struct, `Strategy` interface, `Heal()` orchestrator with dispatch, `Report` formatter.
+  - `lint.go`: `LintStrategy` — runs `goimports` + `gofmt` with injectable `RunCmd` (Rule A21).
+  - `vet.go`: `VetStrategy` — runs `go vet`, parses findings. Reports (no auto-fix — requires human judgment).
+  - `coverage.go`: `CoverageStrategy` — uses `go/parser` AST analysis to find exported functions without tests.
+  - `canon.go`: `CanonStrategy` — detects memory.yaml/journal drift and triggers `thoth.Sync()`.
+  - `bridge.go`: `FromMaatReport()` converts Ma'at `Assessment` verdicts to Isis `Finding` structs.
+- **Isis CLI** (`cmd/pantheon/isis.go`) — `pantheon isis heal`.
+  - Dry-run by default (Rule A1 — safety first). `--fix` to apply changes.
+  - Cache-based Ma'at weighing (~3ms) by default. `--full-weigh` for live `go test` (~5min).
+  - Strategy filters: `--lint-only`, `--vet-only`, `--coverage-only`, `--canon-only`.
+- **Distribution** — `tools/thoth-init/README.md` for npm publish. Local `npx thoth-init -y` verified.
+- **Stats**: 14 files changed, +1,765 lines, 843+ tests, 27 modules, 42 commands.
 - **Seshat VS Code Extension** (`extensions/gemini-bridge/`) — Full TypeScript extension for Gemini Bridge.
   - 7 source files: `extension.ts`, `commands.ts`, `dashboard.ts`, `knowledgeProvider.ts`, `chromeProfilesProvider.ts`, `syncStatusProvider.ts`, `paths.ts`.
   - **Activity Bar**: Dedicated sidebar with 3 tree views — Knowledge Items, Chrome Profiles, Sync Status.
