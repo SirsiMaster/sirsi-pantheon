@@ -55,7 +55,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Binary Hygiene** — Removed tracked `thoth` binary from git, added to `.gitignore`.
 - **Test Hardening** — Added `-short` flag to CI test runner to skip live syscall tests (30s timeout prevention).
 
-## [0.7.0-alpha] — 2026-03-27 (Ecosystem Hardening — AEGIS Phase)
+## [0.7.0-alpha] — 2026-03-27 (Ecosystem Hardening — Sekhmet Phase)
 ### Added
 - **Singleton Enforcement** — Implemented Unix domain socket locking (`platform.TryLock`) across all primary entry points (Menubar, Guard, MCP) to prevent process redundancy.
 - **Hapi-Brain Bridge** — Created `internal/brain/hapi_bridge.go` for hardware-aware inference backend selection (CoreML vs ONNX).

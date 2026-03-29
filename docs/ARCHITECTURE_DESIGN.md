@@ -275,6 +275,7 @@ configs/
 ## 7. Data Flow Architecture ⚠️ MANDATORY (Neith's Triad §1)
 
 > Net decrees: Show how data moves through the system.
+> *Mapped by 𓇼 Seba (The Star).*
 
 ```mermaid
 graph TD
@@ -371,6 +372,7 @@ graph TD
 ## 8. Recommended Implementation Order ⚠️ MANDATORY (Neith's Triad §2)
 
 > Net decrees: Show how to build this incrementally.
+> *Mapped by 𓇼 Seba (The Star).*
 
 ```mermaid
 gantt
@@ -420,6 +422,7 @@ gantt
 ## 9. Key Decision Points ⚠️ MANDATORY (Neith's Triad §3)
 
 > Net decrees: Show what forks were encountered and why each path was chosen.
+> *Mapped by 𓇼 Seba (The Star).*
 
 | Question | Options | Recommendation |
 |----------|---------|----------------|
@@ -436,4 +439,4 @@ gantt
 
 ---
 
-*𓁯 This document follows Neith's Architecture Triad (Rule A22). All three mandatory sections are present.*
+*𓁯 This document follows Neith's Architecture Triad (Rule A22). All three mandatory sections are present, mapped by Seba and reported to Neith.*

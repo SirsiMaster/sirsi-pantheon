@@ -51,12 +51,13 @@
 | **𓁵 Sekhmet**| The Warrior | Guardian | Watchdog: Process prioritization, RAM safety, & NPU hardening. |
 | **🌊 Hapi** | The Flow | Optimizer | Hardware accelerator detection (GPU/ANE/CUDA). |
 | **𓆣 Khepri** | The Scarab | Scavenger | Fleet discovery: Subnets, containers, and network hygiene. |
-| **𓇼 Seba** | The Star | Mapper | Visual topology & dependency graph mapping. |
+| **𓇼 Seba** | The Star | Mapper | Visual topology, dependency graphs, and **Architectural Mapping**. |
 
 **Dependencies**:
 - **Machine Gods** depend on **Horus** (for the unified filesystem manifest).
 - **Sekhmet** depends on **Hapi** (for hardware-accelerated tokenization).
 - **Anubis/Ka** depend on **Horus** (for sub-second scan performance).
+- **Seba** reports all Architectural Mapping (Gantt, Mermaid, Matrices) to **Net** upon request.
 
 ---
 

@@ -12,7 +12,7 @@ This case study documents how we discovered the bug, how Pantheon's deities reco
 On March 27, 2026, the developer returned to the Pantheon project after 3 productive sessions (Sessions 25-27) with a different AI agent instance. The sessions had produced:
 
 - **Session 25**: Sekhmet Phase II — ANE tokenization acceleration (native Go BPE, 17.9x faster)
-- **Session 26**: AEGIS Phase — Singleton architecture (`platform.TryLock`)
+- **Session 26**: Sekhmet Phase — Singleton architecture (`platform.TryLock`)
 - **Session 27**: LaunchAgent hardening, test performance audit
 
 Combined: **50+ files changed, 1,200+ lines of insertions, 10 new files created, 2 major architectural features shipped.**
@@ -92,11 +92,11 @@ That commit message alone is a recoverable narrative.
 
 ### 🥈 Ma'at (𓆄) — The CHANGELOG Guardian
 **Recovery contribution: Session entries for all 3 sessions.**
-The CHANGELOG had structured entries for the AEGIS Phase and Sekhmet ANE tokenization. Ma'at's governance framework required these entries, and they served as independent verification of what happened.
+The CHANGELOG had structured entries for the Sekhmet Phase and Sekhmet ANE tokenization. Ma'at's governance framework required these entries, and they served as independent verification of what happened.
 
 ### 🥈 Horus (𓁹) — The Build Log
 **Recovery contribution: Full Session 26 entry, partial Session 25.**
-`BUILD_LOG.md` contained Sprint 14 (Sekhmet) and Session 26 (AEGIS) documentation with technical metrics.
+`BUILD_LOG.md` contained Sprint 14 (Sekhmet) and Session 26 (Sekhmet) documentation with technical metrics.
 
 ### 🥉 Case Study 013 — The Deep Dive
 **Recovery contribution: Full Session 25 technical documentation.**

@@ -300,6 +300,20 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Custodian**: 𓁯 Net (Neith) owns this standard and the templates. The Triad is maintained in `docs/NEITH_ARCHITECTURE_TEMPLATE.md`.
 *   **Evidence**: Established from the Gemini Bridge architecture document, which demonstrated that these three sections provide complete decision traceability, implementation clarity, and project alignment.
 
+### 2.20 Truth Vector (Rule A23)
+> Established March 28, 2026. The foundational honesty protocol governing all AI-assisted development across the Sirsi ecosystem.
+
+*   **Rule**: Every AI agent operating within a Sirsi repository MUST adhere to the following six axioms. Violation of any axiom is considered a governance failure under Ma'at.
+    1. **Always tell the truth.** If you do not know how to do something — whether it is coding, planning, integration, or any other task — you must say so. Pretending competence is worse than admitting uncertainty.
+    2. **Declare confidence.** Before writing code, provide your confidence level in both the plan and your capability to implement it. This is a hard requirement, not optional transparency.
+    3. **Ask, never guess.** When you don't know or don't understand, it is always better to ask rather than infer or guess. Guessing wastes sessions. A question costs nothing; a wrong assumption costs a refactor.
+    4. **Measure thrice, cut once.** Do not write code until you understand the task and are confident you can achieve the requested goal. Premature implementation creates technical debt.
+    5. **Advanced simplicity.** Always seek the most advanced solution that does NOT increase or create complexity. Simple, direct solutions that never require refactoring are the standard. Clever code that needs explaining is a failure.
+    6. **Use existing tools.** Use the tools at hand — skills, extensions, Pantheon deities, external APIs. If it is easier and cheaper to use an external tool rather than building yourself, suggest that approach and explain the integration cost.
+*   **Scope**: This rule applies to ALL Sirsi repositories and ALL AI agents (Antigravity, Claude, Gemini, Cursor, Windsurf). It is not project-specific.
+*   **Enforcement**: An AI agent that guesses instead of asking (Axiom 3), or codes before understanding (Axiom 4), has violated Truth Vector. The resulting work must be reviewed before canonization.
+*   **Custodian**: The user is the sole arbiter of Truth Vector compliance.
+
 ---
 
 ## 3. Technology Stack
