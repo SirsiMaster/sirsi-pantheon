@@ -46,7 +46,10 @@ func Scan(opts ScanOptions) (*MirrorResult, error) {
 
 		walkErr := filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				return nil // Skip inaccessible files
+				if path == absRoot {
+					return err // Root MUST exist
+				}
+				return nil // Skip inaccessible children
 			}
 			if info.IsDir() {
 				// Skip hidden directories (except the root)
