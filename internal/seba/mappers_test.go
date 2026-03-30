@@ -11,8 +11,8 @@ import (
 
 func TestMapperRegistry(t *testing.T) {
 	t.Parallel()
-	if len(mapperRegistry) != 9 {
-		t.Errorf("mapperRegistry has %d entries, want 9", len(mapperRegistry))
+	if len(mapperRegistry) < 17 {
+		t.Errorf("mapperRegistry has %d entries, want at least 17", len(mapperRegistry))
 	}
 }
 
