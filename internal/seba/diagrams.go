@@ -526,20 +526,112 @@ func discoverDeities(projectRoot string) []deityInfo {
 	return found
 }
 
-// RenderDiagramsHTML produces a self-contained HTML page with all diagrams.
+// RenderDiagramsHTML produces a self-contained, navigable HTML page.
 func RenderDiagramsHTML(diagrams []*DiagramResult, outputPath string) error {
-	var cards strings.Builder
+	// Categorize diagrams
+	categories := map[string][]string{
+		"Pantheon":      {"hierarchy", "dataflow", "memory", "governance", "pipeline"},
+		"Code Analysis": {"modules", "callgraph", "commandtree", "commandwiring", "moduledataflow", "deptree"},
+		"System":        {"systemoverview", "memorypressure", "cputopology", "gpuarch", "processmap", "networkports", "sshmap", "diskusage"},
+		"Git & Ops":     {"commitheatmap", "filehotspots", "releasetimeline", "cipipeline"},
+	}
+	catOrder := []string{"Pantheon", "Code Analysis", "System", "Git & Ops"}
+	catIcons := map[string]string{
+		"Pantheon":      "𓇶",
+		"Code Analysis": "📦",
+		"System":        "🖥️",
+		"Git & Ops":     "🔀",
+	}
+
+	// Build diagram index
+	diagramMap := map[string]*DiagramResult{}
 	for _, d := range diagrams {
-		escaped := strings.ReplaceAll(d.Mermaid, "`", "\\`")
-		cards.WriteString(fmt.Sprintf(`
-    <div class="diagram-card" id="%s">
-      <h2>%s</h2>
-      <div class="mermaid-container">
-        <pre class="mermaid">%s</pre>
+		diagramMap[string(d.Type)] = d
+	}
+
+	// Build sidebar nav HTML
+	var sidebarItems strings.Builder
+	idx := 0
+	for _, cat := range catOrder {
+		types := categories[cat]
+		icon := catIcons[cat]
+		sidebarItems.WriteString(fmt.Sprintf(`<div class="nav-category">
+      <div class="nav-cat-label">%s %s</div>`, icon, cat))
+		for _, dtype := range types {
+			d, ok := diagramMap[dtype]
+			if !ok {
+				continue
+			}
+			active := ""
+			if idx == 0 {
+				active = " active"
+			}
+			// Short label from title
+			label := d.Title
+			if dashIdx := strings.Index(label, "—"); dashIdx > 0 {
+				label = strings.TrimSpace(label[dashIdx+len("—"):])
+			}
+			if len(label) > 35 {
+				label = label[:32] + "..."
+			}
+			sidebarItems.WriteString(fmt.Sprintf(`
+      <a class="nav-item%s" data-idx="%d" onclick="showDiagram(%d)">%s</a>`,
+				active, idx, idx, label))
+			idx++
+		}
+		sidebarItems.WriteString("\n    </div>\n")
+	}
+
+	// Build diagram slide HTML — ordered by category
+	var slides strings.Builder
+	slideIdx := 0
+	totalDiagrams := 0
+	for _, cat := range catOrder {
+		types := categories[cat]
+		for _, dtype := range types {
+			if _, ok := diagramMap[dtype]; ok {
+				totalDiagrams++
+			}
+		}
+		_ = types
+	}
+
+	for _, cat := range catOrder {
+		types := categories[cat]
+		for _, dtype := range types {
+			d, ok := diagramMap[dtype]
+			if !ok {
+				continue
+			}
+			display := "none"
+			if slideIdx == 0 {
+				display = "block"
+			}
+			// HTML-encode the mermaid source for the hidden script tag
+			safeMermaid := strings.ReplaceAll(d.Mermaid, "&", "&amp;")
+			safeMermaid = strings.ReplaceAll(safeMermaid, "<", "&lt;")
+			safeMermaid = strings.ReplaceAll(safeMermaid, ">", "&gt;")
+			slides.WriteString(fmt.Sprintf(`
+    <div class="slide" id="slide-%d" data-category="%s" style="display:%s">
+      <div class="slide-header">
+        <span class="breadcrumb">%s %s → %s</span>
+        <div class="slide-actions">
+          <span class="slide-counter">%d / %d</span>
+          <button class="btn-copy" onclick="copyMermaid(%d)">📋 Copy</button>
+        </div>
       </div>
-      <button onclick="copyDiagram(this)" data-mermaid="%s">📋 Copy Mermaid</button>
-    </div>
-`, string(d.Type), d.Title, d.Mermaid, escaped))
+      <h2>%s</h2>
+      <div class="mermaid-viewport" id="viewport-%d"></div>
+      <script type="text/mermaid" id="mmd-src-%d">%s</script>
+    </div>`,
+				slideIdx, cat, display,
+				catIcons[cat], cat, d.Title,
+				slideIdx+1, totalDiagrams,
+				slideIdx,
+				d.Title,
+				slideIdx, slideIdx, safeMermaid))
+			slideIdx++
+		}
 	}
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
@@ -547,195 +639,377 @@ func RenderDiagramsHTML(diagrams []*DiagramResult, outputPath string) error {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>𓇽 Seba — Architectural Diagrams</title>
+<title>𓇽 Seba — The Star Map | Sirsi Pantheon</title>
+<meta name="description" content="Architectural diagrams generated from live project analysis by Seba, the Pantheon mapping engine.">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Outfit:wght@300;400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
-  :root {
-    --bg: #06060F;
-    --card-bg: #0D0D1A;
-    --gold: #C8A951;
-    --text: #E0E0E0;
-    --dim: #555;
-    --border: rgba(200,169,81,0.15);
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', -apple-system, system-ui, sans-serif;
-    padding: 2rem;
-    min-height: 100vh;
-  }
-  h1 {
-    color: var(--gold);
-    font-size: 1.8rem;
-    font-weight: 300;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    text-align: center;
-    margin-bottom: 0.5rem;
-  }
-  .subtitle {
-    text-align: center;
-    color: var(--dim);
-    font-size: 0.85rem;
-    margin-bottom: 3rem;
-    letter-spacing: 1px;
-  }
-  .diagram-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 2rem;
-    margin-bottom: 2.5rem;
-    position: relative;
-    overflow: hidden;
-    scroll-margin-top: 1rem;
-  }
-  .diagram-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--gold), transparent);
-    opacity: 0.4;
-  }
-  .diagram-card h2 {
-    color: var(--gold);
-    font-size: 1.1rem;
-    font-weight: 400;
-    margin-bottom: 1.5rem;
-    letter-spacing: 1px;
-  }
-  .mermaid-container {
-    background: rgba(255,255,255,0.03);
-    border-radius: 12px;
-    padding: 1.5rem;
-    overflow-x: auto;
-    min-height: 200px;
-  }
-  /* Hide raw source text — Mermaid replaces with SVG */
-  pre.mermaid {
-    visibility: hidden;
-    font-size: 0;
-    line-height: 0;
-    overflow: hidden;
-    max-height: 0;
-  }
-  /* Once Mermaid renders, SVG becomes visible */
-  pre.mermaid[data-processed="true"],
-  pre.mermaid svg,
-  .mermaid svg {
-    visibility: visible;
-    font-size: initial;
-    line-height: initial;
-    max-height: none;
-    display: flex;
-    justify-content: center;
-    width: 100%%;
-  }
-  button {
-    position: absolute;
-    top: 1.5rem; right: 1.5rem;
-    background: rgba(200,169,81,0.1);
-    border: 1px solid var(--border);
-    color: var(--dim);
-    padding: 6px 14px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.75rem;
-    transition: all 0.3s;
-    z-index: 2;
-  }
-  button:hover {
-    border-color: var(--gold);
-    color: var(--gold);
-    background: rgba(200,169,81,0.2);
-  }
-  .nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    justify-content: center;
-    margin-bottom: 2.5rem;
-  }
-  .nav a {
-    color: var(--dim);
-    text-decoration: none;
-    padding: 6px 16px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 0.8rem;
-    transition: all 0.3s;
-  }
-  .nav a:hover {
-    border-color: var(--gold);
-    color: var(--gold);
-    background: rgba(200,169,81,0.08);
-  }
-  footer {
-    text-align: center;
-    color: var(--dim);
-    font-size: 0.75rem;
-    margin-top: 3rem;
-    padding: 2rem;
-  }
+:root {
+  --gold: hsl(45, 52%%, 55%%);
+  --gold-light: hsl(45, 60%%, 70%%);
+  --gold-glow: hsla(45, 52%%, 55%%, 0.3);
+  --emerald: hsl(160, 84%%, 39%%);
+  --emerald-dim: hsl(160, 60%%, 25%%);
+  --emerald-glow: hsla(160, 84%%, 39%%, 0.15);
+  --bg: hsl(165, 80%%, 3%%);
+  --bg-alt: hsl(165, 80%%, 5%%);
+  --sidebar-bg: hsla(165, 80%%, 5%%, 0.85);
+  --card-bg: hsl(165, 40%%, 7%%);
+  --text: hsl(0, 0%%, 95%%);
+  --text-dim: hsl(0, 0%%, 60%%);
+  --border: hsla(0, 0%%, 100%%, 0.08);
+  --heading: 'Cinzel', serif;
+  --body: 'Outfit', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 0%% 0%%, hsla(160, 84%%, 15%%, 0.08) 0%%, transparent 50%%),
+    radial-gradient(circle at 100%% 100%%, hsla(45, 52%%, 10%%, 0.08) 0%%, transparent 50%%);
+  color: var(--text);
+  font-family: var(--body);
+  min-height: 100vh;
+  display: flex;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Sidebar ────────────────────────────────── */
+.sidebar {
+  width: 280px;
+  min-height: 100vh;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--border);
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  overflow-y: auto;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-header {
+  padding: 2rem 1.5rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-header h1 {
+  font-family: var(--heading);
+  color: var(--gold);
+  font-size: 1.1rem;
+  font-weight: 400;
+  letter-spacing: 2px;
+}
+.sidebar-header p {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin-top: 0.3rem;
+  letter-spacing: 0.5px;
+}
+.nav-category {
+  padding: 0.5rem 0;
+}
+.nav-cat-label {
+  padding: 0.8rem 1.5rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--emerald);
+}
+.nav-item {
+  display: block;
+  padding: 0.5rem 1.5rem 0.5rem 2rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 2px solid transparent;
+}
+.nav-item:hover {
+  color: var(--text);
+  background: var(--emerald-glow);
+  border-left-color: var(--emerald);
+}
+.nav-item.active {
+  color: var(--gold);
+  background: var(--gold-glow);
+  border-left-color: var(--gold);
+  font-weight: 600;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+.sidebar-footer a {
+  color: var(--gold);
+  text-decoration: none;
+}
+
+/* ── Main Content ───────────────────────────── */
+.main {
+  margin-left: 280px;
+  flex: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: hsla(165, 80%%, 3%%, 0.9);
+}
+.nav-arrows {
+  display: flex;
+  gap: 0.5rem;
+}
+.nav-arrows button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-arrows button:hover {
+  border-color: var(--emerald);
+  color: var(--emerald);
+  background: var(--emerald-glow);
+}
+.kbd-hint {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  opacity: 0.5;
+}
+
+.content {
+  flex: 1;
+  padding: 2rem;
+}
+.slide {
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.slide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.breadcrumb {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+.slide-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.slide-counter {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.btn-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: var(--body);
+  transition: all 0.2s;
+}
+.btn-copy:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.slide h2 {
+  font-family: var(--heading);
+  color: var(--gold);
+  font-size: 1.3rem;
+  font-weight: 400;
+  margin-bottom: 1.5rem;
+  letter-spacing: 1px;
+}
+.mermaid-viewport {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  min-height: 400px;
+  overflow-x: auto;
+  position: relative;
+}
+.mermaid-viewport::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--emerald), var(--gold), transparent);
+  border-radius: 16px 16px 0 0;
+  opacity: 0.6;
+}
+/* SVGs rendered by mermaid.render() into viewport */
+.mermaid-viewport svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%%;
+}
+/* Hide the mermaid source script tags */
+script[type="text/mermaid"] {
+  display: none;
+}
+
+/* ── Responsive ─────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar { width: 60px; }
+  .sidebar-header h1, .sidebar-header p,
+  .nav-cat-label, .nav-item { font-size: 0; visibility: hidden; height: 0; padding: 0; }
+  .nav-category { padding: 0; }
+  .main { margin-left: 60px; }
+  .sidebar-footer { display: none; }
+}
 </style>
 </head>
 <body>
-  <h1>𓇽 Seba — The Star Map</h1>
-  <p class="subtitle">Architectural Diagrams · Generated from Live Project Analysis</p>
 
-  <div class="nav">
-    <a href="#hierarchy">Hierarchy</a>
-    <a href="#dataflow">Data Flow</a>
-    <a href="#modules">Modules</a>
-    <a href="#memory">Memory</a>
-    <a href="#governance">Governance</a>
-    <a href="#pipeline">Pipeline</a>
+<nav class="sidebar">
+  <div class="sidebar-header">
+    <h1>𓇽 SEBA</h1>
+    <p>The Star Map · %d diagrams</p>
+  </div>
+  %s
+  <div class="sidebar-footer">
+    <p>𓇶 Sirsi Pantheon v1.0.0-rc1</p>
+    <a href="https://sirsi.ai">sirsi.ai</a>
+  </div>
+</nav>
+
+<main class="main">
+  <div class="top-bar">
+    <div class="nav-arrows">
+      <button onclick="prevDiagram()" title="Previous (←)">←</button>
+      <button onclick="nextDiagram()" title="Next (→)">→</button>
+    </div>
+    <span class="kbd-hint">← → arrow keys to navigate</span>
   </div>
 
-  %s
+  <div class="content">
+    %s
+  </div>
+</main>
 
-  <footer>
-    <p>𓇽 Seba · Sirsi Pantheon v1.0.0-rc1 · Generated from live source analysis</p>
-  </footer>
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#0A3D2E',
+    primaryTextColor: '#C8A951',
+    primaryBorderColor: '#23B87C',
+    lineColor: '#23B87C',
+    secondaryColor: '#0D1F18',
+    tertiaryColor: '#06120D',
+    fontFamily: 'Outfit, -apple-system, sans-serif'
+  }
+});
 
-  <script>
-    mermaid.initialize({
-      startOnLoad: true,
-      theme: 'dark',
-      themeVariables: {
-        primaryColor: '#1A1A5E',
-        primaryTextColor: '#C8A951',
-        primaryBorderColor: '#C8A951',
-        lineColor: '#C8A951',
-        secondaryColor: '#0D0D1A',
-        tertiaryColor: '#06060F',
-        fontFamily: 'Inter, -apple-system, system-ui, sans-serif'
-      }
-    });
+let currentIdx = 0;
+const total = %d;
+const rendered = {};
 
-    // After Mermaid renders, ensure SVGs are visible and source text is hidden
-    mermaid.run().then(() => {
-      document.querySelectorAll('pre.mermaid').forEach(pre => {
-        pre.style.visibility = 'visible';
-        pre.style.maxHeight = 'none';
-        pre.style.fontSize = 'initial';
-        pre.style.lineHeight = 'initial';
-      });
-    });
+async function renderSlide(idx) {
+  if (rendered[idx]) return;
+  const src = document.getElementById('mmd-src-' + idx);
+  const vp = document.getElementById('viewport-' + idx);
+  if (!src || !vp) return;
+  try {
+    const id = 'mmd-svg-' + idx;
+    const { svg } = await mermaid.render(id, src.textContent);
+    vp.innerHTML = svg;
+    rendered[idx] = true;
+  } catch (e) {
+    vp.innerHTML = '<p style="color:#E74C3C;padding:1rem;">Render error: ' + e.message + '</p>';
+  }
+}
 
-    function copyDiagram(btn) {
-      const mmd = btn.getAttribute('data-mermaid');
-      navigator.clipboard.writeText(mmd);
+async function showDiagram(idx) {
+  if (idx < 0 || idx >= total) return;
+
+  const prev = document.getElementById('slide-' + currentIdx);
+  if (prev) prev.style.display = 'none';
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  currentIdx = idx;
+  const slide = document.getElementById('slide-' + idx);
+  if (slide) {
+    slide.style.display = 'block';
+    slide.style.animation = 'none';
+    slide.offsetHeight;
+    slide.style.animation = 'fadeIn 0.3s ease';
+    await renderSlide(idx);
+  }
+
+  const navItem = document.querySelector('.nav-item[data-idx="' + idx + '"]');
+  if (navItem) {
+    navItem.classList.add('active');
+    navItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function nextDiagram() { showDiagram(currentIdx + 1); }
+function prevDiagram() { showDiagram(currentIdx - 1); }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); nextDiagram(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')    { e.preventDefault(); prevDiagram(); }
+});
+
+function copyMermaid(idx) {
+  const src = document.getElementById('mmd-src-' + idx);
+  if (src) {
+    navigator.clipboard.writeText(src.textContent);
+    const btn = document.querySelector('#slide-' + idx + ' .btn-copy');
+    if (btn) {
       btn.textContent = '✅ Copied!';
-      setTimeout(() => btn.textContent = '📋 Copy Mermaid', 2000);
+      setTimeout(() => btn.textContent = '📋 Copy', 2000);
     }
-  </script>
+  }
+}
+
+// Render first diagram on load
+window.addEventListener('load', () => renderSlide(0));
+</script>
 </body>
-</html>`, cards.String())
+</html>`, totalDiagrams, sidebarItems.String(), slides.String(), totalDiagrams)
 
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

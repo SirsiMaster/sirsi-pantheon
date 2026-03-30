@@ -192,8 +192,8 @@ func TestRenderDiagramsHTML(t *testing.T) {
 	if !strings.Contains(content, "mermaid") {
 		t.Error("HTML should reference mermaid")
 	}
-	if !strings.Contains(content, "id=\"hierarchy\"") {
-		t.Error("HTML cards should have id attributes")
+	if !strings.Contains(content, "slide-") {
+		t.Error("HTML should contain slide elements")
 	}
 }
 
