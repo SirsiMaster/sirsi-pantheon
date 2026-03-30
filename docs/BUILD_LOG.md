@@ -3,7 +3,7 @@
 > A transparent record of how Sirsi Anubis was designed, built, tested, broken, fixed, and shipped. No cherry-picking — the mistakes stay in.
 
 [![Version](https://img.shields.io/badge/version-v1.0.0--rc1-C8A951?style=flat)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-1202%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-1324%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 
 ---
@@ -331,7 +331,7 @@ Commits: 1  |  Files: 14  |  Lines: +1,765  |  Tests: 843+  |  Isis heal: 41ms
 | Total source lines | 24,532 | ✅ `maat pulse` |
 | Source files | 115 | ✅ `maat pulse` |
 | Test files | 69 | ✅ `maat pulse` |
-| Test count | **1,202** | ✅ `go test -v ./...` |
+| Test count | **1,324** | ✅ `go test -v ./...` |
 | Packages passing | 26/26 | ✅ `go test ./...` |
 | Weighted Coverage | ~76.6% | ✅ `go test -cover` |
 | Binary Size | 11.4 MB | ✅ `maat pulse` |
@@ -373,11 +373,11 @@ Commits: 1  |  Files: 14  |  Lines: +1,765  |  Tests: 843+  |  Isis heal: 41ms
 ### What Doesn't (yet):
 - [ ] `thoth-init` not yet published to npm.
 - [ ] Isis cannot auto-generate test scaffolds (Phase 2).
-- [ ] `internal/thoth/` has 0% test coverage.
+- [x] `internal/thoth/` coverage: 85.4% (remediated Session 38).
 
 ---
 
-*Last updated: March 28, 2026 (Sprint 15). This document is updated with every sprint.*
+*Last updated: March 30, 2026 (Ma'at Ground Truth Audit). This document is updated with every sprint.*
 
 *See [CHANGELOG.md](CHANGELOG.md) for detailed changes. See [.thoth/journal.md](.thoth/journal.md) for design reasoning.*
 
@@ -424,7 +424,7 @@ Remastered the entire platform aesthetic and registry iconography to reflect the
     - Fully synchronized the **6 Integrated Master Pillars** across the CLI, Registry, and Documentation.
 
 ### 𓁢 Technical Metrics:
-- **Total Tests**: 861 passing.
+- **Total Tests**: 1,202+ passing.
 - **Metric Buffer**: 1.0 MB (increased from 200 KB).
 - **LSP Baseline**: 4.7 GB (Host) / < 1 GB (Third-party).
 - **Architecture Compliance**: 100% Rule A22 (Neith's Triad).
