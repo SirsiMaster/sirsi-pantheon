@@ -70,6 +70,44 @@ It provides MCP-compatible project memory, AI context management, and canon sync
 	syncCmd.Flags().String("since", "24 hours ago", "Git log time window (e.g. '7 days ago')")
 	syncCmd.Flags().Bool("dry-run", false, "Preview journal entries without writing")
 
+	var initYes bool
+	var initName, initLang, initVersion string
+
+	initCmd := &cobra.Command{
+		Use:   "init [path]",
+		Short: "Initialize .thoth/ knowledge system in a project",
+		Long: `𓁟 Thoth Init — Scaffold the three-layer knowledge system
+
+Creates .thoth/memory.yaml, .thoth/journal.md, and .thoth/artifacts/ in the
+target directory. Auto-detects project language, counts source lines, and
+injects Thoth read instructions into IDE rules files.
+
+  thoth init              Initialize in current directory (interactive)
+  thoth init --yes        Non-interactive mode
+  thoth init /path --yes  Initialize a specific project`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root := "."
+			if len(args) > 0 {
+				root = args[0]
+			}
+			if initYes {
+				return thoth.Init(thoth.InitOptions{
+					RepoRoot: root,
+					Name:     initName,
+					Language: initLang,
+					Version:  initVersion,
+					Yes:      true,
+				})
+			}
+			return thoth.InteractiveInit(root)
+		},
+	}
+	initCmd.Flags().BoolVarP(&initYes, "yes", "y", false, "Non-interactive mode (no prompts)")
+	initCmd.Flags().StringVar(&initName, "name", "", "Override project name")
+	initCmd.Flags().StringVar(&initLang, "language", "", "Override detected language")
+	initCmd.Flags().StringVar(&initVersion, "version", "", "Override project version")
+
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(syncCmd)
 
 	if err := rootCmd.Execute(); err != nil {
