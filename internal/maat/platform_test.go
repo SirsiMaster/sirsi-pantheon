@@ -1,10 +1,14 @@
 package maat
 
 import (
+	"runtime"
 	"testing"
 )
 
 func TestGetActualPlatform(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("GetActualPlatform uses macOS sysctl — skipping on " + runtime.GOOS)
+	}
 	info, err := GetActualPlatform()
 	if err != nil {
 		t.Fatalf("Failed to get platform info: %v", err)

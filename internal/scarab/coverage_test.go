@@ -3,6 +3,7 @@ package scarab
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -257,6 +258,9 @@ func TestDiscover_SubnetError(t *testing.T) {
 }
 
 func TestParseARPTable_Mocked(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("ARP mock uses macOS format — skipping on " + runtime.GOOS)
+	}
 	saveAndRestoreDiscovery(t)
 	runARPCommand = func() ([]byte, error) {
 		return []byte("? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]\n" +

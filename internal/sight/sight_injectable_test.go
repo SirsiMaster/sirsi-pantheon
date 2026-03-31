@@ -2,6 +2,7 @@ package sight
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 )
 
@@ -44,9 +45,17 @@ func mockRunnerFail() CommandRunner {
 	}
 }
 
+func skipIfNotDarwin(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("sight tests require macOS")
+	}
+}
+
 // ── FixWith ──────────────────────────────────────────────────────────────
 
 func TestFixWith_DryRun(t *testing.T) {
+	skipIfNotDarwin(t)
 	err := FixWith(true, mockRunnerSuccess())
 	if err != nil {
 		t.Errorf("FixWith dry run should not error: %v", err)
@@ -54,6 +63,7 @@ func TestFixWith_DryRun(t *testing.T) {
 }
 
 func TestFixWith_Success(t *testing.T) {
+	skipIfNotDarwin(t)
 	runner := &mockRunner{}
 	err := FixWith(false, runner)
 	if err != nil {
@@ -66,6 +76,7 @@ func TestFixWith_Success(t *testing.T) {
 }
 
 func TestFixWith_LsregisterFails(t *testing.T) {
+	skipIfNotDarwin(t)
 	err := FixWith(false, mockRunnerFail())
 	if err == nil {
 		t.Error("FixWith should error when lsregister fails")
@@ -73,6 +84,7 @@ func TestFixWith_LsregisterFails(t *testing.T) {
 }
 
 func TestFixWith_FinderKillFails(t *testing.T) {
+	skipIfNotDarwin(t)
 	// Custom runner: lsregister succeeds, killall fails (non-fatal)
 	callCount := 0
 	runner := &mockRunner{
@@ -93,6 +105,7 @@ func TestFixWith_FinderKillFails(t *testing.T) {
 // ── ReindexSpotlightWith ────────────────────────────────────────────────
 
 func TestReindexSpotlightWith_DryRun(t *testing.T) {
+	skipIfNotDarwin(t)
 	err := ReindexSpotlightWith(true, mockRunnerSuccess())
 	if err != nil {
 		t.Errorf("ReindexSpotlightWith dry run: %v", err)
@@ -100,6 +113,7 @@ func TestReindexSpotlightWith_DryRun(t *testing.T) {
 }
 
 func TestReindexSpotlightWith_Success(t *testing.T) {
+	skipIfNotDarwin(t)
 	runner := &mockRunner{}
 	err := ReindexSpotlightWith(false, runner)
 	if err != nil {
@@ -111,6 +125,7 @@ func TestReindexSpotlightWith_Success(t *testing.T) {
 }
 
 func TestReindexSpotlightWith_Failure(t *testing.T) {
+	skipIfNotDarwin(t)
 	err := ReindexSpotlightWith(false, mockRunnerFail())
 	if err == nil {
 		t.Error("ReindexSpotlightWith should error when mdutil fails")

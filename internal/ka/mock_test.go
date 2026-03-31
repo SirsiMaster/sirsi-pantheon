@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -177,6 +178,9 @@ func TestScanner_Clean_Mocked_RealFiles(t *testing.T) {
 }
 
 func TestScanner_Clean_SkipsProtected(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Ka ghost cleaning uses macOS paths — skipping on " + runtime.GOOS)
+	}
 	// Protected path that will trigger ValidatePath error
 	protectedPath := "/System/Library/protected_mock"
 
