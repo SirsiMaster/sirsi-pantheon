@@ -20,11 +20,6 @@ var (
 	anubisAll     bool
 	anubisDryRun  bool
 	anubisConfirm bool
-
-	// Mirror flags
-	mirrorPhotos  bool
-	mirrorMusic   bool
-	mirrorMinSize string
 )
 
 var anubisCmd = &cobra.Command{

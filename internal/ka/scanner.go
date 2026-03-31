@@ -202,7 +202,6 @@ func (s *Scanner) Scan(ctx context.Context, includeSudo bool) ([]Ghost, error) {
 		// Full path: parallel filesystem + lsregister.
 		type scanResult struct {
 			ghosts map[string]bool
-			err    error
 		}
 		resChan := make(chan scanResult, 1)
 
@@ -219,7 +218,7 @@ func (s *Scanner) Scan(ctx context.Context, includeSudo bool) ([]Ghost, error) {
 		case res := <-resChan:
 			lsGhosts = res.ghosts
 		case <-ctx.Done():
-			logging.Warn("ka: Launch Services scan timed out or cancelled")
+			logging.Warn("ka: Launch Services scan timed out or canceled")
 			lsGhosts = make(map[string]bool)
 		}
 	}

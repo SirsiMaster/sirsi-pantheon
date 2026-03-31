@@ -15,8 +15,6 @@ import (
 var (
 	thothSince       string
 	thothDryRun      bool
-	thothMemoryOnly  bool
-	thothJournalOnly bool
 	brainUpdate      bool
 	brainRemove      bool
 	thothInitYes     bool

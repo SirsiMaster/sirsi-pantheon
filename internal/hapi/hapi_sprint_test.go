@@ -134,8 +134,6 @@ func TestDuplicateGroup_Fields(t *testing.T) {
 	t.Parallel()
 	group := DuplicateGroup{
 		Hash:   "abc123",
-		Size:   1024,
-		Files:  []string{"/a.dat", "/b.dat"},
 		Wasted: 1024,
 	}
 	if group.Hash != "abc123" {

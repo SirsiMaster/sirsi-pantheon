@@ -55,10 +55,10 @@ func TestCurrentSetReset(t *testing.T) {
 	}
 
 	Reset()
-	if Current().Name() != runtime.GOOS {
-		// Reset should restore to detected platform
-		// On macOS this is "darwin", on Linux "linux"
-	}
+	// Reset should restore to detected platform.
+	// On macOS this is "darwin", on Linux "linux".
+	// Verifying the call doesn't panic; value correctness is platform-dependent.
+	_ = Current().Name()
 }
 
 // ── Darwin Tests ─────────────────────────────────────────────────────────

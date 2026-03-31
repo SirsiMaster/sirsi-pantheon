@@ -83,10 +83,8 @@ func TestModuleStatus_Fields(t *testing.T) {
 func TestHardeningCertificate_Fields(t *testing.T) {
 	t.Parallel()
 	cert := HardeningCertificate{
-		Entity:           "Test Entity",
-		Version:          "v1.0.0",
-		WeightedCoverage: 86.2,
-		TestCount:        1324,
+		Entity:    "Test Entity",
+		TestCount: 1324,
 	}
 	if cert.Entity != "Test Entity" {
 		t.Errorf("Entity = %q", cert.Entity)
@@ -181,10 +179,8 @@ func TestVerdict_Unknown(t *testing.T) {
 func TestCanonLink_Fields(t *testing.T) {
 	t.Parallel()
 	cl := CanonLink{
-		Feature:   "FastTokenize",
-		Canon:     "ADR-009",
-		Linked:    true,
-		CommitSHA: "abc1234",
+		Feature: "FastTokenize",
+		Linked:  true,
 	}
 	if cl.Feature != "FastTokenize" {
 		t.Errorf("Feature = %q", cl.Feature)

@@ -263,11 +263,6 @@ func defaultBinarySizer(path string) (int64, error) {
 //	ok      github.com/.../internal/cleaner   0.234s
 //	FAIL    github.com/.../internal/brain     0.123s
 //	--- SKIP: TestFoo (0.00s)
-var testPassRegex = regexp.MustCompile(`(?m)^ok\s+\S+\s+`)
-var testFailRegex = regexp.MustCompile(`(?m)^FAIL\s+\S+\s+`)
-var testSkipRegex = regexp.MustCompile(`(?m)--- SKIP:`)
-var testRunRegex = regexp.MustCompile(`(?m)--- PASS:|--- FAIL:`)
-
 func parseTestCounts(output string) (passed, failed, skipped int) {
 	// Count individual test results (more accurate than package results)
 	for _, line := range strings.Split(output, "\n") {

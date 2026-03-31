@@ -133,7 +133,7 @@ func WriteKnowledgeItem(paths Paths, name string, ki KnowledgeItem, artifacts ma
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(kiPath, "metadata.json"), metaBytes, 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(kiPath, "metadata.json"), metaBytes, 0644); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
 

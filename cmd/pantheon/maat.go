@@ -19,7 +19,6 @@ var (
 
 	// Isis / Heal flags
 	healFull bool
-	healLint bool
 
 	// Pulse flags
 	pulseSkipTests bool
@@ -107,7 +106,7 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	}
 
 	output.Dashboard(map[string]string{
-		"Verdict": fmt.Sprintf("%s", report.OverallVerdict.Icon()),
+		"Verdict": report.OverallVerdict.Icon(),
 		"Weight":  fmt.Sprintf("%d/100", report.OverallWeight),
 		"Status":  report.OverallVerdict.String(),
 	})

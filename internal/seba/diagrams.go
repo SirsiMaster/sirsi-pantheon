@@ -31,6 +31,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // DiagramType identifies which diagram to generate.
@@ -178,12 +181,12 @@ func generateDataFlow(projectRoot string) (*DiagramResult, error) {
 	sb.WriteString("    User --> Binary\n\n")
 
 	for _, d := range deities {
-		id := strings.Title(d.name)
+		id := cases.Title(language.Und).String(d.name)
 		sb.WriteString(fmt.Sprintf("    %s[\"%s %s<br/>%s\"]\n", id, d.glyph, id, d.domain))
 	}
 	sb.WriteString("\n")
 	for _, d := range deities {
-		id := strings.Title(d.name)
+		id := cases.Title(language.Und).String(d.name)
 		sb.WriteString(fmt.Sprintf("    Binary --> %s\n", id))
 	}
 
@@ -195,7 +198,7 @@ func generateDataFlow(projectRoot string) (*DiagramResult, error) {
 
 	// Wire data stores to deities
 	for _, d := range deities {
-		id := strings.Title(d.name)
+		id := cases.Title(language.Und).String(d.name)
 		switch d.name {
 		case "anubis":
 			sb.WriteString(fmt.Sprintf("    %s --> FS\n", id))

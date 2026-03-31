@@ -322,9 +322,13 @@ func InjectIDERules(root string) []string {
 		} else {
 			// Create new rules file
 			if ide.Dir != "" {
-				os.MkdirAll(filepath.Join(root, ide.Dir), 0o755)
+				if err := os.MkdirAll(filepath.Join(root, ide.Dir), 0o755); err != nil {
+					continue
+				}
 			}
-			os.WriteFile(fullPath, []byte(strings.TrimSpace(thothRule)+"\n"), 0o644)
+			if err := os.WriteFile(fullPath, []byte(strings.TrimSpace(thothRule)+"\n"), 0o644); err != nil {
+				continue
+			}
 			injected = append(injected, ide.Name+" (created)")
 		}
 	}
@@ -346,7 +350,9 @@ func createSessionWorkflow(root string) bool {
 		return false
 	}
 
-	os.MkdirAll(workflowDir, 0o755)
+	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
+		return false
+	}
 	if err := os.WriteFile(workflowPath, data, 0o644); err != nil {
 		return false
 	}

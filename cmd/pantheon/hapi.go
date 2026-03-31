@@ -12,8 +12,6 @@ import (
 )
 
 var (
-	hapiProfile bool
-	hapiRaw     bool
 	computeText string
 )
 

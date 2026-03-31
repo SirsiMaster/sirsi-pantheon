@@ -303,12 +303,8 @@ func TestScan_NonExistentPath(t *testing.T) {
 func TestMirrorResult_Fields(t *testing.T) {
 	t.Parallel()
 	r := MirrorResult{
-		TotalScanned:    1000,
-		TotalDuplicates: 50,
-		TotalWasteBytes: 1024 * 1024,
-		UniqueFiles:     950,
-		ScanDuration:    2 * time.Second,
-		DirsScanned:     []string{"/a", "/b"},
+		UniqueFiles: 950,
+		DirsScanned: []string{"/a", "/b"},
 	}
 	if r.UniqueFiles != 950 {
 		t.Errorf("UniqueFiles = %d", r.UniqueFiles)
@@ -323,11 +319,8 @@ func TestMirrorResult_Fields(t *testing.T) {
 func TestDuplicateGroup_Fields(t *testing.T) {
 	t.Parallel()
 	g := DuplicateGroup{
-		ID:          "dup-abc123",
-		MatchType:   MatchPerceptual,
-		Recommended: 0,
-		Confidence:  0.95,
-		WasteBytes:  2048,
+		MatchType:  MatchPerceptual,
+		Confidence: 0.95,
 	}
 	if g.MatchType != MatchPerceptual {
 		t.Errorf("MatchType = %q", g.MatchType)

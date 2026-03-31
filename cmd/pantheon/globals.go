@@ -4,6 +4,5 @@ package main
 var (
 	JsonOutput  bool
 	quietMode   bool
-	stealthMode bool
 	verboseMode bool
 )

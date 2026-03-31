@@ -247,9 +247,8 @@ func TestVetStrategy_Heal_DryRun(t *testing.T) {
 func TestVetFinding_Fields(t *testing.T) {
 	t.Parallel()
 	vf := VetFinding{
-		File:    "main.go",
-		Line:    42,
-		Message: "unused variable",
+		File: "main.go",
+		Line: 42,
 	}
 	if vf.File != "main.go" {
 		t.Errorf("File = %q", vf.File)

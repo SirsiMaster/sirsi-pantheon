@@ -1,8 +1,9 @@
 package guard
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/hapi"
 	"runtime"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/hapi"
 )
 
 // ResourceStats contains memory and system metrics for the Anubis dashboard.

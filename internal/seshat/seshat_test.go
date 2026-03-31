@@ -47,17 +47,17 @@ func TestWriteAndReadKnowledgeItem(t *testing.T) {
 
 	// Verify directory structure
 	metaPath := filepath.Join(paths.KnowledgeDir, "test_ki", "metadata.json")
-	if _, err := os.Stat(metaPath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(metaPath); os.IsNotExist(statErr) {
 		t.Fatal("metadata.json not created")
 	}
 
 	tsPath := filepath.Join(paths.KnowledgeDir, "test_ki", "timestamps.json")
-	if _, err := os.Stat(tsPath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(tsPath); os.IsNotExist(statErr) {
 		t.Fatal("timestamps.json not created")
 	}
 
 	overviewPath := filepath.Join(paths.KnowledgeDir, "test_ki", "artifacts", "overview.md")
-	if _, err := os.Stat(overviewPath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(overviewPath); os.IsNotExist(statErr) {
 		t.Fatal("artifacts/overview.md not created")
 	}
 
