@@ -14,25 +14,25 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/thoth"
 )
 
-// registerTools adds all Anubis tools to the MCP server.
+// registerTools adds Pantheon tools to the MCP server.
+// Only tools that provide real, distinct value are exposed.
 func registerTools(s *Server) {
 	s.RegisterTool(Tool{
 		Name:        "scan_workspace",
-		Description: "Scan a workspace directory for infrastructure waste (stale caches, orphaned build artifacts, unused dependencies). Read-only — never deletes anything.",
+		Description: "Scan a directory for infrastructure waste — stale caches, orphaned build artifacts, unused dependencies. Read-only, never deletes anything. Returns findings with sizes.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
 				"path": {
 					Type:        "string",
-					Description: "Absolute path to the workspace directory to scan. Defaults to current working directory.",
+					Description: "Absolute path to scan. Defaults to current working directory.",
 				},
 				"category": {
 					Type:        "string",
-					Description: "Optional category filter: general, dev, ai, vms, ides, cloud, storage. Leave empty for all.",
+					Description: "Filter: general, dev, ai, vms, ides, cloud, storage. Empty for all.",
 				},
 			},
 		},
@@ -40,13 +40,13 @@ func registerTools(s *Server) {
 
 	s.RegisterTool(Tool{
 		Name:        "ghost_report",
-		Description: "Hunt for ghost apps — remnants of uninstalled applications lingering on the system (preferences, caches, launch agents, Spotlight registrations).",
+		Description: "Detect remnants of uninstalled applications — orphaned preferences, caches, launch agents, and Spotlight registrations that waste disk space.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
 				"target": {
 					Type:        "string",
-					Description: "Optional: hunt for a specific ghost by app name or bundle ID.",
+					Description: "Optional: filter by app name or bundle ID.",
 				},
 			},
 		},
@@ -54,7 +54,7 @@ func registerTools(s *Server) {
 
 	s.RegisterTool(Tool{
 		Name:        "health_check",
-		Description: "Quick system health summary — CPU, RAM, GPU, disk usage, and infrastructure hygiene score.",
+		Description: "Quick system health summary — CPU, RAM, indexed file count, and watchdog status. Uses cached data only, responds in under 10ms.",
 		InputSchema: InputSchema{
 			Type:       "object",
 			Properties: map[string]SchemaField{},
@@ -62,107 +62,41 @@ func registerTools(s *Server) {
 	}, handleHealthCheck)
 
 	s.RegisterTool(Tool{
-		Name:        "classify_files",
-		Description: "Classify files semantically using Anubis brain (junk, project, config, model, media, etc). Uses heuristic classifier or neural model if installed.",
-		InputSchema: InputSchema{
-			Type: "object",
-			Properties: map[string]SchemaField{
-				"paths": {
-					Type:        "string",
-					Description: "Comma-separated list of file paths to classify.",
-				},
-			},
-			Required: []string{"paths"},
-		},
-	}, handleClassifyFiles)
-
-	s.RegisterTool(Tool{
 		Name:        "thoth_read_memory",
-		Description: "𓁟 Read the project's Thoth memory file (.thoth/memory.yaml) for instant project context. Call this at the start of every conversation to understand the project without reading source files. Returns architecture, design decisions, limitations, and file map.",
+		Description: "Read the project's .thoth/memory.yaml for instant context. Call this at conversation start to understand the project without reading source files. Returns architecture, decisions, stats, and file map.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
 				"path": {
 					Type:        "string",
-					Description: "Path to the project root. Defaults to current working directory.",
+					Description: "Project root path. Defaults to current working directory.",
 				},
 			},
 		},
 	}, handleThothReadMemory)
 
 	s.RegisterTool(Tool{
-		Name:        "detect_hardware",
-		Description: "Detect system hardware accelerators (GPU/NPU/TPU) and resource limits (RAM/CPU/Metal).",
-		InputSchema: InputSchema{
-			Type:       "object",
-			Properties: map[string]SchemaField{},
-		},
-	}, handleDetectHardware)
-
-	s.RegisterTool(Tool{
 		Name:        "thoth_sync",
-		Description: "Trigger Thoth memory sync — auto-discovers codebase facts and updates .thoth/memory.yaml and journal.md.",
+		Description: "Sync project memory — discovers codebase facts (module count, test count, line count) and appends recent git commits to the engineering journal.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
 				"path": {
 					Type:        "string",
-					Description: "Path to the project root. Defaults to current working directory.",
+					Description: "Project root path. Defaults to current working directory.",
 				},
 			},
 		},
 	}, handleThothSync)
 
 	s.RegisterTool(Tool{
-		Name:        "maat_audit",
-		Description: "Run coverage governance audit across all modules. Returns per-module coverage and pass/fail verdicts.",
-		InputSchema: InputSchema{
-			Type: "object",
-			Properties: map[string]SchemaField{
-				"skip_tests": {
-					Type:        "boolean",
-					Description: "Skip running go test, use cached coverage only. Defaults to true for speed.",
-				},
-			},
-		},
-	}, handleMaatAudit)
-
-	s.RegisterTool(Tool{
-		Name:        "anubis_weigh",
-		Description: "Run a full disk waste analysis and return a dashboard summary of infrastructure waste.",
-		InputSchema: InputSchema{
-			Type: "object",
-			Properties: map[string]SchemaField{
-				"path": {
-					Type:        "string",
-					Description: "Path to scan. Defaults to current working directory.",
-				},
-			},
-		},
-	}, handleAnubisWeigh)
-
-	s.RegisterTool(Tool{
-		Name:        "judge_cleanup",
-		Description: "DRY RUN ONLY — Preview what would be cleaned without deleting anything. Use the CLI 'pantheon anubis judge --confirm' for actual cleanup.",
-		InputSchema: InputSchema{
-			Type: "object",
-			Properties: map[string]SchemaField{
-				"path": {
-					Type:        "string",
-					Description: "Path to scan. Defaults to current working directory.",
-				},
-			},
-		},
-	}, handleJudgeCleanup)
-
-	s.RegisterTool(Tool{
-		Name:        "pantheon_status",
-		Description: "Overall Pantheon system status — modules, version, brain status, and operational readiness.",
+		Name:        "detect_hardware",
+		Description: "Detect system hardware — CPU model, GPU vendor (Apple Metal, NVIDIA, AMD), neural engine, and available accelerators. Returns JSON hardware profile.",
 		InputSchema: InputSchema{
 			Type:       "object",
 			Properties: map[string]SchemaField{},
 		},
-	}, makePantheonStatusHandler(s))
+	}, handleDetectHardware)
 }
 
 // handleScanWorkspace runs the Jackal scan engine on a workspace.
@@ -363,38 +297,6 @@ func handleHealthCheck(_ map[string]interface{}) (*ToolResult, error) {
 	return textResult(sb.String(), false), nil
 }
 
-// handleClassifyFiles classifies files using the brain module.
-func handleClassifyFiles(args map[string]interface{}) (*ToolResult, error) {
-	pathsRaw, _ := args["paths"].(string)
-	if pathsRaw == "" {
-		return textResult("Missing required parameter: paths", true), nil
-	}
-
-	paths := strings.Split(pathsRaw, ",")
-	for i := range paths {
-		paths[i] = strings.TrimSpace(paths[i])
-	}
-
-	classifier, err := brain.GetClassifier()
-	if err != nil {
-		return textResult(fmt.Sprintf("Classifier error: %v", err), true), nil
-	}
-	defer classifier.Close()
-
-	result, err := classifier.ClassifyBatch(paths, 4)
-	if err != nil {
-		return textResult(fmt.Sprintf("Classification failed: %v", err), true), nil
-	}
-
-	// Format as JSON for structured consumption
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return textResult(fmt.Sprintf("Marshal error: %v", err), true), nil
-	}
-
-	return textResult(string(data), false), nil
-}
-
 // handleThothReadMemory reads the project's Thoth memory and journal files.
 // This gives AI assistants instant project context without reading source files.
 func handleThothReadMemory(args map[string]interface{}) (*ToolResult, error) {
@@ -527,155 +429,6 @@ func handleThothSync(args map[string]interface{}) (*ToolResult, error) {
 	}
 
 	return textResult(fmt.Sprintf("Thoth sync complete.\n- Memory updated: %s/.thoth/memory.yaml\n- Journal: %d commits processed", projectPath, commitCount), false), nil
-}
-
-// handleMaatAudit runs a coverage governance audit.
-func handleMaatAudit(args map[string]interface{}) (*ToolResult, error) {
-	skipTests := true // default to true for MCP (speed)
-	if v, ok := args["skip_tests"].(bool); ok {
-		skipTests = v
-	}
-
-	assessor := &maat.CoverageAssessor{
-		Thresholds: maat.DefaultThresholds(),
-		SkipTests:  skipTests,
-	}
-
-	report, err := maat.Weigh(assessor)
-	if err != nil {
-		return textResult(fmt.Sprintf("Ma'at audit failed: %v", err), true), nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Ma'at Governance Audit\n\n")
-	sb.WriteString(fmt.Sprintf("Verdict: %s\n", report.OverallVerdict))
-	sb.WriteString(fmt.Sprintf("Weight: %d / 100\n", report.OverallWeight))
-	sb.WriteString(fmt.Sprintf("Assessments: %d passed, %d warned, %d failed\n\n",
-		report.Passes, report.Warnings, report.Failures))
-
-	for _, a := range report.Assessments {
-		sb.WriteString(fmt.Sprintf("  [%s] %s — weight %d\n",
-			a.Verdict, a.Subject, a.FeatherWeight))
-	}
-
-	return textResult(sb.String(), false), nil
-}
-
-// handleAnubisWeigh runs a full disk waste scan.
-func handleAnubisWeigh(args map[string]interface{}) (*ToolResult, error) {
-	scanPath, _ := args["path"].(string)
-	if scanPath == "" {
-		var err error
-		scanPath, err = os.Getwd()
-		if err != nil {
-			return textResult("Could not determine working directory", true), nil
-		}
-	}
-
-	engine := jackal.NewEngine()
-	engine.RegisterAll(rules.AllRules()...)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := engine.Scan(ctx, jackal.ScanOptions{})
-	if err != nil {
-		return textResult(fmt.Sprintf("Weigh failed: %v", err), true), nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Anubis Weigh — %s\n\n", scanPath))
-	sb.WriteString(fmt.Sprintf("Total waste: %s\n", jackal.FormatSize(result.TotalSize)))
-	sb.WriteString(fmt.Sprintf("Findings: %d across %d rules\n\n", len(result.Findings), result.RulesRan))
-
-	if len(result.ByCategory) > 0 {
-		sb.WriteString("By Category:\n")
-		for cat, summary := range result.ByCategory {
-			sb.WriteString(fmt.Sprintf("  %s: %s (%d items)\n",
-				string(cat), jackal.FormatSize(summary.TotalSize), summary.Findings))
-		}
-	}
-
-	return textResult(sb.String(), false), nil
-}
-
-// handleJudgeCleanup returns a dry-run cleanup preview. NEVER deletes anything.
-func handleJudgeCleanup(_ map[string]interface{}) (*ToolResult, error) {
-	engine := jackal.NewEngine()
-	engine.RegisterAll(rules.AllRules()...)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := engine.Scan(ctx, jackal.ScanOptions{})
-	if err != nil {
-		return textResult(fmt.Sprintf("Scan failed: %v", err), true), nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Judge Cleanup Preview (DRY RUN)\n\n")
-	sb.WriteString(fmt.Sprintf("Would clean: %s across %d items\n\n",
-		jackal.FormatSize(result.TotalSize), len(result.Findings)))
-
-	limit := 30
-	if len(result.Findings) < limit {
-		limit = len(result.Findings)
-	}
-
-	for _, f := range result.Findings[:limit] {
-		sb.WriteString(fmt.Sprintf("  [REMOVE] %s — %s\n",
-			shortenHomePath(f.Path), jackal.FormatSize(f.SizeBytes)))
-	}
-
-	if len(result.Findings) > limit {
-		sb.WriteString(fmt.Sprintf("\n  ... and %d more items\n", len(result.Findings)-limit))
-	}
-
-	sb.WriteString("\nThis is a DRY RUN preview. No files were deleted.")
-	sb.WriteString("\nRun 'pantheon anubis judge --confirm' in terminal for actual cleanup.")
-
-	return textResult(sb.String(), false), nil
-}
-
-// makePantheonStatusHandler creates a handler that captures the server reference.
-func makePantheonStatusHandler(s *Server) func(map[string]interface{}) (*ToolResult, error) {
-	return func(_ map[string]interface{}) (*ToolResult, error) {
-		var sb strings.Builder
-		sb.WriteString("Pantheon System Status\n\n")
-		sb.WriteString(fmt.Sprintf("Version: %s\n", ServerVersion))
-		sb.WriteString(fmt.Sprintf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH))
-		sb.WriteString(fmt.Sprintf("CPUs: %d\n", runtime.NumCPU()))
-		sb.WriteString(fmt.Sprintf("MCP Tools: %d registered\n", len(s.tools)))
-		sb.WriteString(fmt.Sprintf("MCP Resources: %d registered\n", len(s.resources)))
-
-		// Brain status
-		if brain.IsInstalled() {
-			sb.WriteString("Brain: installed\n")
-		} else {
-			sb.WriteString("Brain: not installed\n")
-		}
-
-		// Horus index
-		m, err := horus.LoadManifest(horus.DefaultCachePath())
-		if err == nil {
-			sb.WriteString(fmt.Sprintf("Horus Index: %d files, age %s\n",
-				m.Stats.FilesIndexed, time.Since(m.Timestamp).Truncate(time.Second)))
-		} else {
-			sb.WriteString("Horus Index: not cached\n")
-		}
-
-		// Watchdog
-		bridge := GetWatchdogBridge()
-		if bridge != nil {
-			sb.WriteString("Watchdog: active\n")
-		} else {
-			sb.WriteString("Watchdog: dormant\n")
-		}
-
-		sb.WriteString("\nModules: jackal, ka, guard, sight, hapi, seba, scarab, thoth, seshat, neith, maat, mcp, brain")
-
-		return textResult(sb.String(), false), nil
-	}
 }
 
 // handleDetectHardware returns the system hardware profile via Hapi.

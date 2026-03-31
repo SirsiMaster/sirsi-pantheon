@@ -1317,8 +1317,9 @@ func TestGetClassifier_NoModel(t *testing.T) {
 	if c == nil {
 		t.Fatal("classifier should not be nil")
 	}
-	if c.Name() != "stub-heuristic-v1" {
-		t.Errorf("Name = %q, want stub-heuristic-v1", c.Name())
+	// On macOS, returns spotlight-mdls; on other platforms, stub-heuristic-v1
+	if c.Name() != "spotlight-mdls" && c.Name() != "stub-heuristic-v1" {
+		t.Errorf("Name = %q, want spotlight-mdls or stub-heuristic-v1", c.Name())
 	}
 }
 
@@ -1347,9 +1348,13 @@ func TestGetClassifier_WeightsDirError(t *testing.T) {
 	saveAndRestore(t)
 	weightsDirFn = func() (string, error) { return "", fmt.Errorf("no home") }
 
-	_, err := GetClassifier()
-	if err == nil {
-		t.Error("should error when WeightsDir fails")
+	// GetClassifier now falls back to Spotlight/heuristic instead of erroring
+	c, err := GetClassifier()
+	if err != nil {
+		t.Errorf("GetClassifier should fall back gracefully, got error: %v", err)
+	}
+	if c == nil {
+		t.Error("classifier should not be nil even on WeightsDir failure")
 	}
 }
 

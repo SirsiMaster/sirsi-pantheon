@@ -267,23 +267,26 @@ func splitPath(path string) []string {
 func GetClassifier() (Classifier, error) {
 	dir, err := WeightsDir()
 	if err != nil {
-		return nil, err
+		// No weights dir — use Spotlight on macOS, heuristic elsewhere
+		c := NewSpotlightClassifier()
+		_ = c.Load("")
+		return c, nil
 	}
 
 	// Check if a model is installed
 	local, err := readLocalManifest(dir)
 	if err != nil || local == nil {
-		// No model installed — return stub
-		stub := NewStubClassifier()
-		_ = stub.Load("")
-		return stub, nil
+		// No model installed — use Spotlight on macOS, heuristic elsewhere
+		c := NewSpotlightClassifier()
+		_ = c.Load("")
+		return c, nil
 	}
 
-	// Model installed — for now, still use stub until real backends ship
+	// Model installed — for now, use Spotlight + heuristic until real ONNX/CoreML backends ship
 	// Future: check local.Format and return ONNXClassifier or CoreMLClassifier
-	stub := NewStubClassifier()
-	_ = stub.Load(dir)
-	return stub, nil
+	c := NewSpotlightClassifier()
+	_ = c.Load(dir)
+	return c, nil
 }
 
 // InstalledModelPath returns the full path to the installed model file, or empty string.

@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
 var version = "v0.9.0-rc1"
@@ -25,22 +27,24 @@ var versionCmd = &cobra.Command{
 
 var rootCmd = &cobra.Command{
 	Use:   "pantheon",
-	Short: "𓉴 Sirsi Pantheon — Unified DevOps Intelligence Platform",
-	Long: `𓉴 Sirsi Pantheon — Unified DevOps Intelligence Platform
-"One Install. All Deities."
+	Short: "Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence",
+	Long: `Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence
 
-Pantheon unifies the entire Sirsi ecosystem into a single, hardened platform.
-Functionality is organized by Deity pillars:
+Core commands:
+  pantheon scan               Scan for infrastructure waste (caches, build artifacts, orphaned files)
+  pantheon ghosts             Detect remnants of uninstalled applications
+  pantheon dedup [dirs...]    Find duplicate files across directories
+  pantheon guard              Monitor system resources and memory pressure
+  pantheon thoth init         Initialize AI project memory (.thoth/)
+  pantheon thoth sync         Sync project memory from source + git history
+  pantheon thoth compact      Persist session decisions before context compression
+  pantheon mcp                Start MCP server for IDE integration (Claude, Cursor, VS Code)
 
-  𓁢 Anubis     Infrastructure Hygiene, Resource Guarding & Mirroring
-  𓆄 Ma'at      Governance, Compliance & Autonomous Healing
-  𓁟 Thoth      Knowledge Management & AI Intelligence
-  𓈗 Hapi       Hardware Profiling & ML Accelerated Compute
-  𓇽 Seba       Architectural Mapping & Fleet Network Discovery
-  𓁆 Seshat     Gemini Knowledge Bridge & AI Context Server
-
-Run any deity for subcommands:
-  pantheon anubis --help`,
+Advanced:
+  pantheon anubis --help      Full hygiene engine (scan, judge, clean)
+  pantheon maat --help        Governance and compliance auditing
+  pantheon hapi --help        Hardware profiling and accelerator detection
+  pantheon seba --help        Architecture mapping and diagrams`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			if err := output.LaunchDashboard(); err != nil {
@@ -57,19 +61,81 @@ Run any deity for subcommands:
 	},
 }
 
+// Top-level aliases for the core user-facing commands.
+// These delegate to the internal deity commands so users don't need to
+// know the mythology to use the tool.
+var scanCmd = &cobra.Command{
+	Use:   "scan",
+	Short: "Scan for infrastructure waste",
+	RunE:  func(cmd *cobra.Command, args []string) error { return runWeigh(cmd.Context()) },
+}
+
+var ghostsCmd = &cobra.Command{
+	Use:   "ghosts",
+	Short: "Detect remnants of uninstalled applications",
+	RunE:  func(cmd *cobra.Command, args []string) error { return runKa(cmd.Context()) },
+}
+
+var dedupCmd = &cobra.Command{
+	Use:   "dedup [directories...]",
+	Short: "Find duplicate files",
+	RunE:  runAnubisMirror,
+}
+
+var guardCmd = &cobra.Command{
+	Use:   "guard",
+	Short: "Monitor system resources and memory pressure",
+	RunE:  runAnubisGuard,
+}
+
+var mcpCmd = &cobra.Command{
+	Use:   "mcp",
+	Short: "Start MCP server for IDE integration",
+	Long: `Start the Model Context Protocol server for AI IDE integration.
+
+Pantheon exposes scanning, ghost detection, project memory, and system
+health as MCP tools that any compatible IDE can call.
+
+Configure in your IDE:
+  {
+    "mcpServers": {
+      "pantheon": {
+        "command": "pantheon",
+        "args": ["mcp"]
+      }
+    }
+  }`,
+	Run: func(cmd *cobra.Command, args []string) {
+		unlock, err := platform.TryLock("mcp-cli")
+		if err != nil {
+			output.Error("MCP server is already running.")
+			return
+		}
+		defer unlock()
+
+		server := mcp.NewServer()
+		if err := server.Run(); err != nil {
+			output.Error("MCP server error: %v", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&JsonOutput, "json", false, "Output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress output")
 	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Debug logging")
 
-	rootCmd.AddCommand(anubisCmd)
+	// Core commands
+	scanCmd.Flags().BoolVar(&anubisAll, "all", false, "Scan all categories")
+	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
+	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(ghostsCmd)
+	rootCmd.AddCommand(dedupCmd)
+	rootCmd.AddCommand(guardCmd)
+	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(thothCmd)
 	rootCmd.AddCommand(maatCmd)
-	rootCmd.AddCommand(hapiCmd)
-	rootCmd.AddCommand(sebaCmd)
-	rootCmd.AddCommand(seshatCmd)
-	rootCmd.AddCommand(neithCmd)
-	rootCmd.AddCommand(initiateCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 

@@ -153,7 +153,7 @@ func TestToolsList(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"scan_workspace", "ghost_report", "health_check", "classify_files"} {
+	for _, expected := range []string{"scan_workspace", "ghost_report", "health_check", "thoth_read_memory", "thoth_sync", "detect_hardware"} {
 		if !toolNames[expected] {
 			t.Errorf("Missing expected tool: %s", expected)
 		}
@@ -335,43 +335,6 @@ func TestToolsCall_UnknownTool(t *testing.T) {
 
 	if !result.IsError {
 		t.Error("Unknown tool should set isError=true")
-	}
-}
-
-func TestToolsCall_ClassifyFiles(t *testing.T) {
-	params := ToolCallParams{
-		Name: "classify_files",
-		Arguments: map[string]interface{}{
-			"paths": "/test/main.go, /tmp/debug.log, /data/export.csv",
-		},
-	}
-
-	resp, err := sendRequest(t, "tools/call", params, 10)
-	if err != nil {
-		t.Fatalf("tools/call error: %v", err)
-	}
-
-	if resp.Error != nil {
-		t.Fatalf("tools/call returned error: %v", resp.Error)
-	}
-
-	resultData, _ := json.Marshal(resp.Result)
-	var result ToolResult
-	if err := json.Unmarshal(resultData, &result); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-
-	if result.IsError {
-		t.Fatal("classify_files should not return error for valid paths")
-	}
-
-	if len(result.Content) == 0 {
-		t.Fatal("Expected content in classify_files result")
-	}
-
-	// Should be valid JSON containing classifications
-	if !strings.Contains(result.Content[0].Text, "classifications") {
-		t.Error("classify_files result should contain 'classifications'")
 	}
 }
 

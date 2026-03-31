@@ -52,7 +52,7 @@ export function registerCommands(
             }, async (progress, token) => {
                 try {
                     const { stdout } = await execFileAsync(binaryPath, [
-                        'weigh', '--dev', '--json'
+                        'scan', '--json'
                     ], {
                         timeout: 60000,
                     });
@@ -129,7 +129,7 @@ export function registerCommands(
             }, async () => {
                 try {
                     const { stdout } = await execFileAsync(binaryPath, [
-                        'ka', '--json'
+                        'ghosts', '--json'
                     ], { timeout: 30000 });
 
                     output.appendLine('\n𓂓 ═══ Ghost Report (Ka) ═══');
