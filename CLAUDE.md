@@ -1,6 +1,6 @@
 # PANTHEON_RULES.md
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 3.0.0 (v1.0.0-rc1 Release)
+**Version:** 3.0.0 (v0.9.0-rc1 Release)
 **Date:** March 31, 2026
 
 ---

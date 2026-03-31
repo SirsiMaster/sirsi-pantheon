@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
-## [1.0.0-rc1] — 2026-03-31
+## [0.9.0-rc1] — 2026-03-31
 
 ### Added
 - **Neith Module** — Real plan alignment engine with keyword-based log assessment, full tapestry validation (all 5 deity checks), drift detection, and CLI (`pantheon neith status`, `pantheon neith align`).
