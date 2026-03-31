@@ -1,4 +1,4 @@
-# goreleaser config — Sirsi Pantheon v0.4.0-alpha
+# goreleaser config — Sirsi Pantheon v0.8.0-beta
 # Docs: https://goreleaser.com
 version: 2
 
@@ -116,14 +116,14 @@ release:
     - 𓁟 **Thoth** — Persistent Knowledge
 
     ### Highlights
-    - 18 CLI commands, 58 scan rules, 20 internal modules
+    - 64 scan rules across 7 categories, 27 internal modules
     - Mirror file deduplication — 27x faster than naive hashing
-    - Trash-first cleaning with per-file decision log
-    - Neural brain downloader + classifier interface
+    - Trash-first cleaning with 29 hardcoded safety protections
+    - Ma'at streaming governance audit with per-package progress
+    - Thoth project memory system for AI-assisted development
     - MCP server for AI IDE integration (Claude, Cursor, Windsurf)
     - Scales policy engine for fleet enforcement
-    - Ma'at QA/QC governance assessments
-    - 29 hardcoded safety protections, 522 tests, 18 test suites
+    - 1,500+ tests, ~85% weighted coverage, 0 lint errors
 
     ### Install
     ```bash

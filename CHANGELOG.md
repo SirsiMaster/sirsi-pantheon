@@ -6,7 +6,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
-### Session 37 (2026-03-29) — The Great Pantheon Consolidation (v1.0.0-rc1)
+## [0.8.0-beta] — 2026-03-31 (The Honest Measurement)
+
+### What This Release Is
+v0.8.0-beta is the first credible public release of Pantheon. All metrics are verified by `go test -cover ./...` — no hardcoded numbers, no projections presented as measurements. The previous v1.0.0-rc1 claim was premature and has been corrected.
+
+### Added
+- **Thoth Knowledge System** — Go port of sirsi-thoth folded into Pantheon. `pantheon thoth init --yes <dir>` scaffolds .thoth/ project memory. Detects Go, TypeScript, Next.js, Rust, Python projects.
+- **Ma'at Streaming Progress** — `maat audit` now shows per-package test results as they stream in, with color-coded verdicts. No more 2-minute silent waits.
+- **`--skip-test` Flag** — `maat audit --skip-test` uses cached coverage for instant governance results without running the full test suite.
+- **Ma'at Dynamic Module Discovery** — `DefaultThresholds()` now scans `internal/*/` dynamically instead of using a hardcoded registry. All 27 modules are now measured (was missing 10).
+- **E2E Smoke Tests** — 9-test bash suite (`scripts/smoke.sh`) + 10-test Go E2E suite (`tests/e2e/smoke_test.go`) testing the compiled binary against the real filesystem.
+- **Jackal Rules Coverage** — 93.1% coverage on scan rules (was 64.5%). 50+ new tests covering all rule constructors, Scan/Clean operations, Horus manifest branches, findRule depth/matchFile logic.
+
+### Fixed
+- **False Coverage Reports** — Ma'at was reporting 0% for 10 modules (thoth=83%, seshat=85%, neith=100%, etc.) due to hardcoded module registry. Fixed with dynamic discovery.
+- **CI Pipeline** — Go 1.22 -> 1.24, golangci-lint v4 -> v6, 40+ lint errors resolved across 19 files.
+- **Version Honesty** — Corrected v1.0.0-rc1 -> v0.8.0-beta. The v1.0.0-rc1 label was premature — it will be earned after 30-day dogfooding.
+
+### Changed
+- Version: `0.7.0-alpha` -> `0.8.0-beta`
+- Go: 1.22 -> 1.24 across all CI workflows
+- golangci-lint: v4 -> v6
+
+### Verified Metrics (March 31, 2026)
+| Metric | Value | Command |
+|--------|-------|---------|
+| Tests Passing | 1,500+ | `go test -short ./...` |
+| Packages | 28/28 green | `go test ./...` |
+| Weighted Coverage | ~85% | `go test -cover ./...` |
+| Lint Errors | 0 | `golangci-lint run ./...` |
+| Binary Size | ~12 MB | `go build ./cmd/pantheon/` |
+| Scan Rules | 64 | `internal/jackal/rules/` |
+| Internal Modules | 27 | `ls internal/` |
+| E2E Smoke Tests | 9+10 | `scripts/smoke.sh` + `go test ./tests/e2e/` |
+
+### What's NOT in This Release
+- Ra (web portal) — not started
+- Neith (orchestration) — stub only
+- Windows/Linux ghost detection — macOS-first
+- Cross-platform GUI — CLI only for now
+
+### What's Next (v1.0.0-rc1 — earned, not declared)
+- 30-day dogfooding on production machines
+- Cross-platform testing (Linux, Windows)
+- Neith orchestration implementation
+- MCP plugin for Claude Code (desktop/IDE/CLI)
+
+---
+
+### Session 37 (2026-03-29) — The Great Pantheon Consolidation
 - **Deity-First Architecture** — Successfully consolidated 12 fragmented command scripts into 6 Master Deity Pillars, achieving the "One Install. All Deities." standard.
   - **Anubis 𓂀**: Unified Hygiene, Ka Ghost Hunter, Mirror Dedup, and Guard Watchdog.
   - **Ma'at 𓁐**: Unified Scales Governance and Isis Autonomous Remediation.

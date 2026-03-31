@@ -1,7 +1,7 @@
 # PANTHEON_RULES.md
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 2.0.0 (The Pantheon Unification)
-**Date:** March 24, 2026
+**Version:** 2.1.0 (v0.8.0-beta Release)
+**Date:** March 31, 2026
 
 ---
 

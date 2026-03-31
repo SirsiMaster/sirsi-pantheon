@@ -17,6 +17,9 @@ var (
 	maatSudo bool
 	maatFix  bool
 
+	// Audit flags
+	auditSkipTests bool
+
 	// Isis / Heal flags
 	healFull bool
 
@@ -81,6 +84,7 @@ a structured .pantheon/metrics.json that all downstream consumers can read:
 
 func init() {
 	maatAuditCmd.Flags().BoolVar(&maatSudo, "sudo", false, "Scan system-level governance")
+	maatAuditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Skip go test (use cached coverage only)")
 	maatScalesCmd.Flags().BoolVar(&maatFix, "fix", false, "Actually apply policy fixes")
 
 	maatHealCmd.Flags().BoolVar(&maatFix, "fix", false, "Apply healing remedies")
@@ -100,15 +104,58 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	output.Banner()
 	output.Header("MA'AT — Governance Audit")
 
-	report, err := maat.Weigh(&maat.CoverageAssessor{Thresholds: maat.DefaultThresholds(), DiffOnly: true})
+	if auditSkipTests {
+		output.Info("Skipping tests — using cached coverage only")
+	} else {
+		output.Info("Running go test -cover ./... (streaming per-package results)")
+	}
+
+	assessor := &maat.CoverageAssessor{
+		Thresholds: maat.DefaultThresholds(),
+		DiffOnly:   !auditSkipTests,
+		SkipTests:  auditSkipTests,
+		ProgressFn: func(p maat.PackageProgress) {
+			prefix := fmt.Sprintf("  [%d/%d]", p.Current, p.Total)
+			switch {
+			case p.NoTests:
+				output.Dim("%s %s — no test files", prefix, p.Package)
+			case p.Failed:
+				output.Error("%s %s — FAIL (%.1f%%)", prefix, p.Package, p.Coverage)
+			case p.Coverage >= 80:
+				output.Success("%s %s — %.1f%% coverage", prefix, p.Package, p.Coverage)
+			case p.Coverage >= 50:
+				output.Warn("%s %s — %.1f%% coverage", prefix, p.Package, p.Coverage)
+			default:
+				output.Error("%s %s — %.1f%% coverage", prefix, p.Package, p.Coverage)
+			}
+		},
+	}
+
+	report, err := maat.Weigh(assessor)
 	if err != nil {
 		return err
 	}
 
+	// Print per-module verdict table.
+	var rows [][]string
+	for _, a := range report.Assessments {
+		rows = append(rows, []string{
+			a.Verdict.Icon(),
+			a.Subject,
+			a.Message,
+			fmt.Sprintf("%d", a.FeatherWeight),
+		})
+	}
+	if len(rows) > 0 {
+		output.Table([]string{"", "Module", "Result", "Weight"}, rows)
+	}
+
 	output.Dashboard(map[string]string{
-		"Verdict": report.OverallVerdict.Icon(),
-		"Weight":  fmt.Sprintf("%d/100", report.OverallWeight),
-		"Status":  report.OverallVerdict.String(),
+		"Verdict":  report.OverallVerdict.Icon() + " " + report.OverallVerdict.String(),
+		"Weight":   fmt.Sprintf("%d/100", report.OverallWeight),
+		"Passed":   fmt.Sprintf("%d", report.Passes),
+		"Warnings": fmt.Sprintf("%d", report.Warnings),
+		"Failures": fmt.Sprintf("%d", report.Failures),
 	})
 	output.Footer(time.Since(start))
 	return nil

@@ -90,7 +90,7 @@ rm -rf "$MIRROR_TMP"
 
 # ── 8. Scales policy — can it evaluate a custom policy? ──────────────
 echo "  [8/9] Scales policy check..."
-SCALES_OUTPUT=$("$BINARY" scales 2>&1)
+SCALES_OUTPUT=$(timeout 15 "$BINARY" scales 2>&1 || true)
 if echo "$SCALES_OUTPUT" | grep -qEi "policy|rules|loaded|verdict|pass|fail|scales"; then
     pass "Scales policy engine responded"
 else

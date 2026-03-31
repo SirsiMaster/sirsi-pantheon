@@ -33,6 +33,16 @@ type CoverageResult struct {
 	NoTests bool `json:"no_tests,omitempty"`
 }
 
+// PackageProgress reports the result of a single package test as it completes.
+type PackageProgress struct {
+	Package  string  // Package name (e.g., "cleaner", "jackal")
+	Coverage float64 // Coverage percentage (0 if no tests)
+	NoTests  bool    // True if [no test files]
+	Failed   bool    // True if FAIL
+	Current  int     // 1-based index of this package in the run
+	Total    int     // Total expected packages (0 if unknown)
+}
+
 // CoverageAssessor assesses test coverage against declared thresholds.
 type CoverageAssessor struct {
 	// Thresholds defines per-module coverage requirements.
@@ -55,6 +65,14 @@ type CoverageAssessor struct {
 	// CachePath overrides the default coverage cache location.
 	// Default: ~/.config/pantheon/maat/coverage-cache.json
 	CachePath string
+
+	// SkipTests when true, skips running go test and uses only cached results.
+	// Useful for fast governance checks that don't need fresh coverage.
+	SkipTests bool
+
+	// ProgressFn is called for each package as test results stream in.
+	// If nil, no progress is reported.
+	ProgressFn func(PackageProgress)
 }
 
 // safetyCriticalModules are modules where coverage is paramount (delete/kill operations).
@@ -156,8 +174,12 @@ func (c *CoverageAssessor) coverageCachePath() string {
 	return filepath.Join(home, ".config", "pantheon", "maat", "coverage-cache.json")
 }
 
-// runCoverage executes coverage — either diff-only or full scan.
+// runCoverage executes coverage — either skip, diff-only, or full scan.
 func (c *CoverageAssessor) runCoverage() (string, error) {
+	if c.SkipTests {
+		return c.runSkipTests()
+	}
+
 	if c.Runner != nil {
 		return c.Runner()
 	}
@@ -169,19 +191,91 @@ func (c *CoverageAssessor) runCoverage() (string, error) {
 	return c.runFullCoverage()
 }
 
-// runFullCoverage runs go test -cover on all packages.
+// runSkipTests returns cached coverage without running any tests.
+func (c *CoverageAssessor) runSkipTests() (string, error) {
+	cache := c.coverageCachePath()
+	cached, err := loadCoverageCache(cache)
+	if err == nil && len(cached) > 0 {
+		var lines []string
+		for _, r := range cached {
+			if r.NoTests {
+				lines = append(lines, fmt.Sprintf("?\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t[no test files]", r.Package))
+			} else {
+				lines = append(lines, fmt.Sprintf("ok\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t(cached)\tcoverage: %.1f%% of statements", r.Package, r.Coverage))
+			}
+		}
+		return strings.Join(lines, "\n"), nil
+	}
+	// No cache available — return empty so evaluate() gives warnings, not crashes.
+	return "", nil
+}
+
+// runFullCoverage runs go test -cover on all packages, streaming results
+// line-by-line and calling ProgressFn for each completed package.
 func (c *CoverageAssessor) runFullCoverage() (string, error) {
 	cmd := exec.Command("go", "test", "-cover", "./...")
 	if c.ProjectRoot != "" {
 		cmd.Dir = c.ProjectRoot
 	}
 
-	out, err := cmd.CombinedOutput()
-	if err != nil && len(out) == 0 {
-		return "", fmt.Errorf("go test -cover: %w", err)
+	// If no progress callback, use simple buffered mode.
+	if c.ProgressFn == nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil && len(out) == 0 {
+			return "", fmt.Errorf("go test -cover: %w", err)
+		}
+		return string(out), nil
 	}
 
-	return string(out), nil
+	// Streaming mode: pipe stdout and read line-by-line.
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("stdout pipe: %w", err)
+	}
+	cmd.Stderr = cmd.Stdout // merge stderr into stdout pipe
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start go test: %w", err)
+	}
+
+	// Count expected packages from thresholds for progress denominator.
+	total := len(c.Thresholds)
+
+	var lines []string
+	count := 0
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines = append(lines, line)
+
+		// Detect package result lines and report progress.
+		if matches := coverageRegex.FindStringSubmatch(line); len(matches) == 3 {
+			count++
+			pkg := normalizePackageName(matches[1])
+			cov, _ := strconv.ParseFloat(matches[2], 64)
+			c.ProgressFn(PackageProgress{
+				Package:  pkg,
+				Coverage: cov,
+				Current:  count,
+				Total:    total,
+				Failed:   strings.HasPrefix(line, "FAIL"),
+			})
+		} else if matches := noTestRegex.FindStringSubmatch(line); len(matches) == 2 {
+			count++
+			pkg := normalizePackageName(matches[1])
+			c.ProgressFn(PackageProgress{
+				Package: pkg,
+				NoTests: true,
+				Current: count,
+				Total:   total,
+			})
+		}
+	}
+
+	// Wait for command to finish — don't fail on non-zero exit if we got output.
+	_ = cmd.Wait()
+
+	return strings.Join(lines, "\n"), nil
 }
 
 // runDiffCoverage only tests packages with changed .go files.
