@@ -4,8 +4,8 @@
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-C8A951?style=flat)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.7.0--alpha-1A1A5E?style=flat)](VERSION)
-[![Tests](https://img.shields.io/badge/tests-819%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/Version-0.9.0--rc1-1A1A5E?style=flat)](VERSION)
+[![Tests](https://img.shields.io/badge/tests-1500%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![OpenVSX](https://img.shields.io/badge/OpenVSX-v0.5.1-purple?style=flat)](https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon)
 [![MCP](https://img.shields.io/badge/MCP-2025--03--26-purple?style=flat)](https://modelcontextprotocol.io)
 [![Build in Public](https://img.shields.io/badge/building-in%20public-C8A951?style=flat)](docs/BUILD_LOG.md)
@@ -112,69 +112,68 @@ See [MCP Configuration](#-mcp-server--ai-ide-integration) below.
 
 ### Scan Your Machine
 ```bash
-pantheon weigh                   # Full scan — discover all waste
-pantheon weigh --dev             # Developer frameworks only
-pantheon weigh --ai              # AI/ML caches only
-pantheon weigh --json            # Machine-readable output
+pantheon scan                    # Find infrastructure waste (caches, build artifacts, orphaned files)
+pantheon scan --all              # Scan all categories
+pantheon scan --json             # Machine-readable output
 ```
 
-### Clean What Was Found
+### Find Ghost Apps
 ```bash
-pantheon judge --dry-run         # Preview cleanup
-pantheon judge --confirm         # Execute cleanup
-```
-
-### Hunt Ghost Apps
-```bash
-pantheon ka                      # Find remnants of uninstalled apps
-pantheon ka --target "Parallels" # Hunt specific ghost
-pantheon ka --clean --dry-run    # Preview ghost cleanup
-pantheon ka --clean --confirm    # Release the spirits
+pantheon ghosts                  # Detect remnants of uninstalled applications
+pantheon ghosts --sudo           # Include system directories
 ```
 
 ### Find Duplicate Files
 ```bash
-pantheon mirror ~/Downloads ~/Desktop  # Scan directories for duplicates
-pantheon mirror --photos --min-size 1MB # Large photo duplicates only
-pantheon mirror --json > report.json   # Export results
-pantheon mirror                        # Launch GUI (browser-based)
+pantheon dedup ~/Downloads ~/Desktop  # Scan directories for duplicates
 ```
 
-### Run QA/QC Governance
+### Monitor Resources
 ```bash
-pantheon maat                    # Full governance assessment
-pantheon maat --coverage         # Test coverage governance
-pantheon maat --canon            # Canon document verification
-pantheon maat --pipeline         # CI pipeline monitoring
+pantheon guard                   # System resource monitoring and memory pressure
+```
+
+### AI Project Memory
+```bash
+pantheon thoth init              # Initialize .thoth/ knowledge system
+pantheon thoth sync              # Sync memory from source + git history
+pantheon thoth compact -s "..."  # Persist session decisions before context compression
+```
+
+### Start MCP Server (any AI IDE)
+```bash
+pantheon mcp                     # JSON-RPC 2.0 over stdio — works with Claude, Cursor, Windsurf
+```
+
+### Run Governance Audit
+```bash
+pantheon maat audit              # Coverage governance across all modules
+pantheon maat audit --skip-test  # Use cached coverage (instant)
 ```
 
 ---
 
-## 📋 All Commands
+## Commands
 
-| Command | Deity | Description |
-|:--------|:------|:-----------|
-| `pantheon weigh` | 𓂀 Anubis | Scan workstation for infrastructure waste |
-| `pantheon judge` | 𓂀 Anubis | Clean artifacts found by weigh |
-| `pantheon ka` | 𓂓 Ka | Hunt ghost apps — find spirits of the dead |
-| `pantheon guard` | 𓁵 Sekhmet | RAM audit, zombie process management |
-| `pantheon sight` | 𓁹 Horus | Launch Services / Spotlight repair |
-| `pantheon mirror` | 𓉡 Hathor | Duplicate file scanner (GUI + CLI) |
-| `pantheon hapi` | 𓁶 Hapi | Hardware detection (GPU, Neural Engine, VRAM) |
-| `pantheon scarab` | 𓆣 Khepri | Network discovery + container audit |
-| `pantheon seba` | 𓇼 Seba | Infrastructure topology graph |
-| `pantheon mcp` | 𓁟 Thoth | Start MCP server for AI IDE integration |
-| `pantheon install-brain` | 𓁟 Thoth | Download neural classification model |
-| `pantheon maat` | 𓆄 Ma'at | QA/QC governance assessment |
-| `pantheon scales enforce` | 𓆄 Ma'at | Run hygiene policy enforcement |
-| `pantheon profile` | — | Machine profiling and system info |
-| `pantheon version` | — | Show version and deity roster |
+### Core (what most users need)
+| Command | Description |
+|:--------|:-----------|
+| `pantheon scan` | Scan for infrastructure waste (caches, build artifacts, orphaned files) |
+| `pantheon ghosts` | Detect remnants of uninstalled applications |
+| `pantheon dedup [dirs...]` | Find duplicate files across directories |
+| `pantheon guard` | Monitor system resources and memory pressure |
+| `pantheon mcp` | Start MCP server for AI IDE integration |
+| `pantheon thoth init` | Initialize AI project memory (.thoth/) |
+| `pantheon thoth sync` | Sync project memory from source + git |
+| `pantheon thoth compact` | Persist session decisions before context compression |
+| `pantheon maat audit` | Governance and coverage auditing |
+| `pantheon version` | Show version |
 
 ### Global Flags
 ```bash
 --json      # JSON output for scripting
 --quiet     # Suppress non-essential output
---stealth   # Ephemeral mode — delete all Pantheon data after execution
+--verbose   # Debug logging
 ```
 
 ---
@@ -185,7 +184,7 @@ Pantheon is built on modules named after Egyptian mythology. Every deity maintai
 
 | Module | Deity | Role | Status |
 |:-------|:------|:-----|:-------|
-| **Jackal** | 𓂀 Anubis | Scan engine — 58 rules across 7 domains | ✅ |
+| **Jackal** | Anubis | Scan engine — 64 rules across 7 domains | ✅ |
 | **Cleaner** | 𓂀 Anubis | Safe deletion with Trash + SHA-256 verification | ✅ |
 | **Ka** | 𓂓 Ka | Ghost app detection — 17 macOS locations | ✅ |
 | **Mirror** | 𓉡 Hathor | File dedup — 27x faster than naive hashing | ✅ |
@@ -202,7 +201,7 @@ Pantheon is built on modules named after Egyptian mythology. Every deity maintai
 
 ---
 
-## 📦 Scan Domains (58 Rules)
+## Scan Domains (64 Rules)
 
 | Domain | Examples |
 |:-------|:--------|
@@ -267,11 +266,12 @@ pantheon mcp    # Start MCP server (stdio)
 ### MCP Tools
 | Tool | Description |
 |:-----|:-----------|
-| `scan_workspace` | Scan a directory for waste |
-| `ghost_report` | Hunt dead app remnants |
-| `health_check` | System health summary with grade |
-| `classify_files` | Semantic file classification |
-| `thoth_read_memory` | 𓁟 Load project context without reading source files |
+| `scan_workspace` | Scan a directory for infrastructure waste |
+| `ghost_report` | Detect remnants of uninstalled applications |
+| `health_check` | System health summary (cached, <10ms response) |
+| `thoth_read_memory` | Load project context without reading source files |
+| `thoth_sync` | Sync project memory from source + git history |
+| `detect_hardware` | CPU, GPU, Neural Engine, and accelerator detection |
 
 ---
 
@@ -485,4 +485,4 @@ Sirsi Pantheon is built by [Sirsi Technologies](https://sirsi.ai).
 
 ---
 
-*𓂀 One install. All deities. Nothing escapes the Weighing.*
+*Built by [Sirsi Technologies](https://sirsi.ai). Open source, MIT licensed.*

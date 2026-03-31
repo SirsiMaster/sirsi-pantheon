@@ -1,8 +1,8 @@
-# Sirsi Pantheon v0.8.0-beta Release Notes
+# Sirsi Pantheon v0.9.0-rc1 Release Notes
 
 **Date:** March 31, 2026
-**Status:** Public Beta
-**Platform:** macOS (primary), Linux, Windows (CLI only)
+**Status:** Release Candidate
+**Platform:** macOS Apple Silicon (primary), Linux, Windows (CLI only)
 
 ---
 

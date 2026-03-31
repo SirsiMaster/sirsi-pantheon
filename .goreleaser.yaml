@@ -106,24 +106,23 @@ release:
   prerelease: auto
   draft: false
   header: |
-    ## 🏛️ Sirsi Pantheon {{.Version}}
+    ## Sirsi Pantheon {{.Version}}
 
-    Unified DevOps Intelligence Platform — One Install, All Deities.
+    Infrastructure hygiene and developer intelligence. One binary.
 
-    ### Deities
-    - 𓂀 **Anubis** — Infrastructure Hygiene (foundational)
-    - 🪶 **Ma'at** — QA/QC Governance
-    - 𓁟 **Thoth** — Persistent Knowledge
+    ### Core Features
+    - **Scan** — 64 rules across 7 categories find infrastructure waste
+    - **Ghosts** — Detect remnants of uninstalled apps (macOS + Linux)
+    - **Dedup** — Find duplicate files with 3-phase hashing (27x faster than naive)
+    - **Guard** — System resource monitoring with accelerator detection
+    - **Thoth** — AI project memory (98.7% context compression)
+    - **MCP Server** — 6 tools for AI IDE integration (Claude, Cursor, Windsurf, VS Code)
 
-    ### Highlights
-    - 64 scan rules across 7 categories, 27 internal modules
-    - Mirror file deduplication — 27x faster than naive hashing
-    - Trash-first cleaning with 29 hardcoded safety protections
-    - Ma'at streaming governance audit with per-package progress
-    - Thoth project memory system for AI-assisted development
-    - MCP server for AI IDE integration (Claude, Cursor, Windsurf)
-    - Scales policy engine for fleet enforcement
-    - 1,500+ tests, ~85% weighted coverage, 0 lint errors
+    ### Stats
+    - 1,500+ tests, ~85% coverage, 0 lint errors
+    - 28 packages, Apple Silicon first-class
+    - Spotlight-accelerated file classification on macOS
+    - Real BPE tokenizer for accurate token counting
 
     ### Install
     ```bash
@@ -133,4 +132,4 @@ release:
     ```
   footer: |
     ---
-    *🏛️ One install. All deities. Nothing escapes the Weighing.*
+    *Built by [Sirsi Technologies](https://sirsi.ai). MIT licensed.*
