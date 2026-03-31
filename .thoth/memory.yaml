@@ -1,0 +1,55 @@
+# 𓁟 Thoth — Project Memory for sirsi-thoth
+# Read this FIRST before any source files.
+# Last updated: 2026-03-23T05:10:00-04:00
+
+## Identity
+project: sirsi-thoth
+repo: github.com/SirsiMaster/sirsi-thoth
+type: Infrastructure Tool — Persistent AI Knowledge System
+language: JavaScript (Node.js CLI)
+version: 1.0.0
+binary: thoth-init (npx thoth-init)
+
+## Architecture Quick Reference
+# index.js         — CLI entry point (npx thoth-init)
+# templates/       — Template files for scaffolding (.thoth/, .agent/)
+# package.json     — npm package config
+# SPECIFICATION.md — Full Thoth specification
+
+## What Thoth Does
+# 1. Scaffolds .thoth/memory.yaml in any project
+# 2. Creates .agent/workflows/session-start.md
+# 3. Injects Thoth instructions into GEMINI.md / CLAUDE.md
+# 4. Works standalone — no Anubis, no MCP needed
+# 5. Non-interactive mode: npx thoth-init --yes
+
+## Critical Design Decisions
+# 1. Standalone distribution — CLI scaffolder, not a runtime dependency
+# 2. Zero config — detects project type and generates appropriate memory
+# 3. IDE rules injection — modifies GEMINI.md/CLAUDE.md directly
+# 4. Three-layer knowledge: memory (state) + journal (why) + artifacts (deep)
+# 5. Simple npm package — runs via npx, no global install needed
+
+## Known Limitations
+# - No CI pipeline (no .github/workflows/)
+# - No GEMINI.md or CLAUDE.md
+# - No .agent/workflows/
+# - No tests beyond `node index.js --help`
+# - Not yet published to npm
+
+## Pantheon Status
+# Thoth: ✅ Active (this file + SPECIFICATION.md)
+# Ma'at: ❌ Not yet deployed
+# Pre-push hook: ❌ Not installed
+# Session workflows: ❌ Not installed
+# GEMINI.md: ❌ Missing
+# CLAUDE.md: ❌ Missing
+# CI: ❌ Missing
+
+## File Map
+# index.js              — CLI entry point
+# package.json          — npm config (v1.0.0)
+# SPECIFICATION.md      — Thoth specification
+# README.md             — Project readme
+# templates/            — Scaffolding templates
+# .thoth/memory.yaml    — THIS FILE

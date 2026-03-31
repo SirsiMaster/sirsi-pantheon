@@ -1,0 +1,34 @@
+# 𓁟 Thoth — Project Memory
+# Read this FIRST before any source files.
+# Last updated: YYYY-MM-DD
+
+## Identity
+project: YOUR_PROJECT_NAME
+language: YOUR_LANGUAGE
+version: 0.1.0
+
+## Stats
+# line_count: ~X,XXX
+# test_count: XX
+# module_count: XX
+
+## Architecture Quick Reference
+# src/           — application source code
+# tests/         — test suite
+# docs/          — documentation
+# config/        — configuration files
+
+## Critical Design Decisions
+# 1. [Decision]: [Rationale]
+# 2. [Decision]: [Rationale]
+
+## Known Limitations
+# - [What doesn't work yet]
+# - [What's incomplete]
+
+## Recent Changes (most recent first)
+# YYYY-MM-DD: Thoth initialized
+
+## File Map (most important files)
+# .thoth/memory.yaml  — THIS FILE
+# .thoth/journal.md   — engineering journal (WHY behind decisions)

@@ -1,0 +1,45 @@
+{
+  "name": "thoth-init",
+  "version": "1.0.0",
+  "description": "𓁟 Thoth — Persistent knowledge system for AI-assisted development. Gives AI coding assistants structured memory across sessions. 98% context reduction.",
+  "main": "index.js",
+  "bin": {
+    "thoth-init": "./index.js"
+  },
+  "scripts": {
+    "test": "node index.js --help || true"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "memory",
+    "context",
+    "claude",
+    "cursor",
+    "windsurf",
+    "copilot",
+    "codex",
+    "gemini",
+    "coding-assistant",
+    "developer-tools",
+    "knowledge-management",
+    "thoth",
+    "sirsi",
+    "persistent-memory",
+    "context-reduction",
+    "ai-coding"
+  ],
+  "author": "Sirsi Technologies",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SirsiMaster/sirsi-thoth"
+  },
+  "homepage": "https://github.com/SirsiMaster/sirsi-thoth",
+  "bugs": {
+    "url": "https://github.com/SirsiMaster/sirsi-thoth/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
