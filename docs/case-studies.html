@@ -881,6 +881,40 @@
     </div>
   </section>
 
+  <section class="case-study">
+    <div class="container">
+      <div class="case-header">
+        <span class="case-glyph">𓁵</span>
+        <div>
+          <span class="case-label label-crisis">System Stability</span>
+          <h2>Sekhmet — The Invisible Regression</h2>
+          <p class="case-subtitle">When the monitoring tool became the thing degrading the system it was monitoring</p>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p>The development machine was crashing repeatedly. Kernel panics. Memory kills. Eight reboots in seven days. The instinct was to blame macOS — but the crashes started the same week Pantheon shipped its menubar LaunchAgent, VS Code extension, and Crashpad Monitor. <strong>Was Pantheon itself causing the crashes it was designed to prevent?</strong></p>
+        <p>A full regression analysis of 176+ Go files across 27 packages found the answer: yes, partially. The ANE detector was calling <code>ioreg -l -w0</code>, dumping <strong>8 MB of I/O Registry data per call</strong>. The menubar was polling every 10 seconds, spawning <strong>60,000 subprocesses per day</strong>. The <code>lsregister</code> parser was buffering 20-50 MB in memory. Combined with Go's lazy GC, these added up to sustained memory pressure that pushed 32 GB of RAM past the Jetsam kill threshold.</p>
+        <p>Nine fixes were applied. A new <code>pantheon doctor</code> command was born — a one-shot health diagnostic that checks RAM pressure, swap, disk space, crash history, and Pantheon's own process health in under 100 milliseconds.</p>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-value">6</div>
+          <div class="metric-label">Jetsam memory kills in 7 days</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">60K → 10K</div>
+          <div class="metric-label">Daily subprocess spawns (6× reduction)</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">91ms</div>
+          <div class="metric-label">Doctor diagnostic (7 checks, 0-100 score)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══ CTA ════════════════════════════════════════════════ -->
   <section class="cta-section">
     <h2>Building in Public</h2>
