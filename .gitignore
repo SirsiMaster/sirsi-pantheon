@@ -44,3 +44,4 @@ Pantheon.app/
 # Ma'at Pulse — dynamic measurement output (local only)
 .pantheon/
 *.out
+.firebase/
