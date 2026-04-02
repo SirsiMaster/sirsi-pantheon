@@ -155,6 +155,7 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(thothCmd)
 	rootCmd.AddCommand(maatCmd)
+	rootCmd.AddCommand(seshatCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
