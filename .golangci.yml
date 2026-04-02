@@ -1,9 +1,11 @@
-# .golangci.yml — Sirsi Anubis linter configuration
+# .golangci.yml — Sirsi Pantheon linter configuration (golangci-lint v2)
 # Rule A6: golangci-lint must pass with zero errors on every push/PR.
+
+version: "2"
 
 run:
   timeout: 5m
-  go: "1.22"
+  go: "1.25"
 
 linters:
   enable:
@@ -21,7 +23,6 @@ linters:
 
 linters-settings:
   errcheck:
-    # Don't require checking errors from fmt.Fprint* (terminal output)
     exclude-functions:
       - fmt.Fprintln
       - fmt.Fprintf
@@ -30,23 +31,20 @@ linters-settings:
   govet:
     enable-all: true
     disable:
-      - fieldalignment # Not critical for CLI tool
+      - fieldalignment
 
   misspell:
     locale: US
 
 issues:
-  # Don't limit the number of issues reported
   max-issues-per-linter: 0
   max-same-issues: 0
 
   exclude-rules:
-    # Allow unused parameters in interface implementations
     - linters:
         - unused
       text: "parameter .* always receives"
 
-    # Exclude test files from some linters
     - path: _test\.go
       linters:
         - errcheck
