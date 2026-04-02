@@ -60,7 +60,7 @@ func (a *NotebookLMAdapter) Export(items []KnowledgeItem) error {
 
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("# %s\n\n", ki.Title))
-		sb.WriteString(fmt.Sprintf("**Source**: Seshat Knowledge Grafting Engine\n"))
+		sb.WriteString("**Source**: Seshat Knowledge Grafting Engine\n")
 		sb.WriteString(fmt.Sprintf("**Exported**: %s\n\n", time.Now().Format("2006-01-02 15:04")))
 		sb.WriteString("---\n\n")
 

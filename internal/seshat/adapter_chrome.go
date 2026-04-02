@@ -45,7 +45,7 @@ func (a *ChromeHistoryAdapter) Ingest(since time.Time) ([]KnowledgeItem, error) 
 	if err != nil {
 		return nil, fmt.Errorf("read Chrome history: %w", err)
 	}
-	if err := os.WriteFile(tmpDB, src, 0600); err != nil {
+	if err = os.WriteFile(tmpDB, src, 0600); err != nil {
 		return nil, fmt.Errorf("copy history to temp: %w", err)
 	}
 	defer os.Remove(tmpDB)

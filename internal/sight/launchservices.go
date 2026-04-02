@@ -183,7 +183,7 @@ func parseLSRegisterStream(sr StreamingRunner, lsregister string, p CommandRunne
 	if err != nil {
 		return nil, err
 	}
-	defer cleanup()
+	defer func() { _ = cleanup() }()
 
 	var ghosts []GhostRegistration
 	seen := make(map[string]bool)

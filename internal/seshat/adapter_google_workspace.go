@@ -84,13 +84,13 @@ func (a *GoogleWorkspaceAdapter) Ingest(since time.Time) ([]KnowledgeItem, error
 	var items []KnowledgeItem
 
 	// Fetch recent Google Docs
-	docs, err := a.listDriveFiles(token, "application/vnd.google-apps.document", since)
-	if err != nil {
-		fmt.Printf("  ⚠️  Google Docs: %v\n", err)
+	docs, docsErr := a.listDriveFiles(token, "application/vnd.google-apps.document", since)
+	if docsErr != nil {
+		fmt.Printf("  ⚠️  Google Docs: %v\n", docsErr)
 	} else {
 		for _, doc := range docs {
-			content, err := a.exportFileAsText(token, doc.ID, "text/plain")
-			if err != nil {
+			content, exportErr := a.exportFileAsText(token, doc.ID, "text/plain")
+			if exportErr != nil {
 				continue
 			}
 			items = append(items, KnowledgeItem{
@@ -105,13 +105,13 @@ func (a *GoogleWorkspaceAdapter) Ingest(since time.Time) ([]KnowledgeItem, error
 	}
 
 	// Fetch recent Google Sheets (metadata only — full content is complex)
-	sheets, err := a.listDriveFiles(token, "application/vnd.google-apps.spreadsheet", since)
-	if err != nil {
-		fmt.Printf("  ⚠️  Google Sheets: %v\n", err)
+	sheets, sheetsErr := a.listDriveFiles(token, "application/vnd.google-apps.spreadsheet", since)
+	if sheetsErr != nil {
+		fmt.Printf("  ⚠️  Google Sheets: %v\n", sheetsErr)
 	} else {
 		for _, sheet := range sheets {
-			content, err := a.exportFileAsText(token, sheet.ID, "text/csv")
-			if err != nil {
+			content, exportErr := a.exportFileAsText(token, sheet.ID, "text/csv")
+			if exportErr != nil {
 				content = sheet.Description
 			}
 			items = append(items, KnowledgeItem{
