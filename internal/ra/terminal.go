@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 // SpawnConfig describes how to spawn a terminal window for a Ra scope.
@@ -104,8 +103,8 @@ func KillWindow(pidFile string) error {
 		return fmt.Errorf("ra kill: parse pid from %s: %w", pidFile, err)
 	}
 
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("ra kill: send SIGTERM to pid %d: %w", pid, err)
+	if err := killProcess(pid); err != nil {
+		return fmt.Errorf("ra kill: terminate pid %d: %w", pid, err)
 	}
 
 	return nil

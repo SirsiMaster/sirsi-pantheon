@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -74,7 +73,7 @@ func Monitor(raDir string) (*DeploymentStatus, error) {
 		ws.PID = pid
 
 		// Check if process is alive (signal 0 = test existence).
-		alive := syscall.Kill(pid, 0) == nil
+		alive := isProcessAlive(pid)
 
 		if alive {
 			ws.State = "running"
