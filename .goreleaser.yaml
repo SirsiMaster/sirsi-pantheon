@@ -44,13 +44,108 @@ builds:
       - -s -w
       - -X main.version={{.Version}}
 
+  - id: pantheon-anubis
+    main: ./cmd/anubis/
+    binary: pantheon-anubis
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+  - id: pantheon-maat
+    main: ./cmd/maat/
+    binary: pantheon-maat
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+  - id: pantheon-thoth
+    main: ./cmd/thoth/
+    binary: pantheon-thoth
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+  - id: pantheon-scarab
+    main: ./cmd/scarab/
+    binary: pantheon-scarab
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+  - id: pantheon-guard
+    main: ./cmd/guard/
+    binary: pantheon-guard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
 archives:
   - id: default
     builds:
       - pantheon
       - pantheon-agent
+      - pantheon-anubis
+      - pantheon-maat
+      - pantheon-thoth
+      - pantheon-scarab
+      - pantheon-guard
     name_template: >-
-      {{ .ProjectName }}_
+      sirsi-pantheon_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -69,21 +164,198 @@ archives:
       - configs/example_policy.yaml
       - configs/workspace_template.yaml
 
+  - id: pantheon-anubis
+    builds:
+      - pantheon-anubis
+    name_template: >-
+      pantheon-anubis_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: linux
+        format: tar.gz
+      - goos: darwin
+        format: tar.gz
+    files:
+      - LICENSE
+
+  - id: pantheon-maat
+    builds:
+      - pantheon-maat
+    name_template: >-
+      pantheon-maat_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: linux
+        format: tar.gz
+      - goos: darwin
+        format: tar.gz
+    files:
+      - LICENSE
+
+  - id: pantheon-thoth
+    builds:
+      - pantheon-thoth
+    name_template: >-
+      pantheon-thoth_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: linux
+        format: tar.gz
+      - goos: darwin
+        format: tar.gz
+    files:
+      - LICENSE
+
+  - id: pantheon-scarab
+    builds:
+      - pantheon-scarab
+    name_template: >-
+      pantheon-scarab_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: linux
+        format: tar.gz
+      - goos: darwin
+        format: tar.gz
+    files:
+      - LICENSE
+
+  - id: pantheon-guard
+    builds:
+      - pantheon-guard
+    name_template: >-
+      pantheon-guard_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: linux
+        format: tar.gz
+      - goos: darwin
+        format: tar.gz
+    files:
+      - LICENSE
+
 brews:
   - name: sirsi-pantheon
+    ids:
+      - default
     repository:
       owner: SirsiMaster
       name: homebrew-tools
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
-    description: "🏛️ Unified DevOps Intelligence Platform — One Install, All Deities"
+    description: "Unified DevOps Intelligence Platform — One Install, All Deities"
     license: MIT
     install: |
       bin.install "pantheon"
       bin.install "pantheon-agent"
+      bin.install "pantheon-anubis"
+      bin.install "pantheon-maat"
+      bin.install "pantheon-thoth"
+      bin.install "pantheon-scarab"
+      bin.install "pantheon-guard"
     test: |
       system "#{bin}/pantheon", "version"
+
+  - name: pantheon-anubis
+    ids:
+      - pantheon-anubis
+    repository:
+      owner: SirsiMaster
+      name: homebrew-tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/SirsiMaster/sirsi-pantheon
+    description: "Infrastructure scanner and cleaner — standalone deity"
+    license: MIT
+    install: |
+      bin.install "pantheon-anubis"
+    test: |
+      system "#{bin}/pantheon-anubis", "version"
+
+  - name: pantheon-maat
+    ids:
+      - pantheon-maat
+    repository:
+      owner: SirsiMaster
+      name: homebrew-tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/SirsiMaster/sirsi-pantheon
+    description: "Quality assurance and audit engine — standalone deity"
+    license: MIT
+    install: |
+      bin.install "pantheon-maat"
+    test: |
+      system "#{bin}/pantheon-maat", "version"
+
+  - name: pantheon-thoth
+    ids:
+      - pantheon-thoth
+    repository:
+      owner: SirsiMaster
+      name: homebrew-tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/SirsiMaster/sirsi-pantheon
+    description: "AI project memory with context compression — standalone deity"
+    license: MIT
+    install: |
+      bin.install "pantheon-thoth"
+    test: |
+      system "#{bin}/pantheon-thoth", "version"
+
+  - name: pantheon-scarab
+    ids:
+      - pantheon-scarab
+    repository:
+      owner: SirsiMaster
+      name: homebrew-tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/SirsiMaster/sirsi-pantheon
+    description: "Fleet sweep and network discovery — standalone deity"
+    license: MIT
+    install: |
+      bin.install "pantheon-scarab"
+    test: |
+      system "#{bin}/pantheon-scarab", "version"
+
+  - name: pantheon-guard
+    ids:
+      - pantheon-guard
+    repository:
+      owner: SirsiMaster
+      name: homebrew-tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/SirsiMaster/sirsi-pantheon
+    description: "System resource monitoring with accelerator detection — standalone deity"
+    license: MIT
+    install: |
+      bin.install "pantheon-guard"
+    test: |
+      system "#{bin}/pantheon-guard", "version"
 
 checksum:
   name_template: checksums.txt

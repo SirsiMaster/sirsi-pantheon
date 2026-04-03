@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" fill="none">
+  <defs>
+    <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E2C76B"/>
+      <stop offset="50%" stop-color="#C8A951"/>
+      <stop offset="100%" stop-color="#A08332"/>
+    </linearGradient>
+    <linearGradient id="lapis-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2A2A7E"/>
+      <stop offset="100%" stop-color="#1A1A5E"/>
+    </linearGradient>
+  </defs>
+  <!-- Ankh Symbol -->
+  <g transform="translate(10, 8)">
+    <!-- Ankh loop (top oval) -->
+    <ellipse cx="30" cy="22" rx="14" ry="18" stroke="url(#gold-grad)" stroke-width="4" fill="none"/>
+    <!-- Ankh crossbar -->
+    <line x1="10" y1="40" x2="50" y2="40" stroke="url(#gold-grad)" stroke-width="4" stroke-linecap="round"/>
+    <!-- Ankh stem -->
+    <line x1="30" y1="40" x2="30" y2="78" stroke="url(#gold-grad)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <!-- SIRSI wordmark -->
+  <text x="80" y="58" font-family="'Cinzel', 'Georgia', serif" font-size="48" font-weight="700" fill="url(#gold-grad)" letter-spacing="8">SIRSI</text>
+  <!-- TECHNOLOGIES subtitle -->
+  <text x="84" y="80" font-family="'Inter', 'Helvetica Neue', sans-serif" font-size="13" font-weight="400" fill="#A08332" letter-spacing="6">TECHNOLOGIES</text>
+</svg>
