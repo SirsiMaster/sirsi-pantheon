@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Anubis jackal head in profile, facing right -->
+  <g fill="#C8A951" stroke="none">
+    <!-- Main head silhouette -->
+    <path d="
+      M 18 58
+      L 18 42
+      Q 16 38 16 34
+      L 16 28
+      Q 16 24 18 22
+      L 20 20
+      L 22 16
+      Q 24 12 26 10
+      L 30 8
+      L 34 10
+      L 36 14
+      L 36 18
+      L 34 20
+      L 32 22
+      Q 30 24 30 26
+      L 30 28
+      L 34 26
+      L 38 22
+      L 42 18
+      L 46 16
+      L 48 16
+      L 48 18
+      L 46 22
+      L 42 28
+      L 38 32
+      L 34 34
+      L 30 34
+      L 28 36
+      Q 26 38 26 42
+      L 26 58
+      Z
+    "/>
+    <!-- Left ear (tall, pointed) -->
+    <path d="
+      M 20 20
+      L 14 4
+      L 16 2
+      L 24 12
+      L 22 16
+      Z
+    "/>
+    <!-- Right ear (tall, pointed) -->
+    <path d="
+      M 28 14
+      L 30 2
+      L 34 4
+      L 34 10
+      L 30 14
+      Z
+    "/>
+    <!-- Eye cutout -->
+    <circle cx="28" cy="24" r="2.5" fill="#000"/>
+    <!-- Nostril detail -->
+    <circle cx="46" cy="19" r="1" fill="#000"/>
+  </g>
+</svg>

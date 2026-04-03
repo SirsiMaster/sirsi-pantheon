@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Ra: Egyptian stylized eye with sun rays downward -->
+  <g fill="none" stroke="#C8A951" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Upper eyelid -->
+    <path d="M 12 22 Q 20 12 32 12 Q 44 12 52 22"/>
+    <!-- Lower eyelid -->
+    <path d="M 12 22 Q 20 30 32 30 Q 44 30 52 22"/>
+    <!-- Iris/pupil -->
+    <circle cx="32" cy="21" r="5" fill="#C8A951"/>
+    <!-- Extended eye corners (Egyptian style) -->
+    <path d="M 8 22 L 12 22" stroke-width="2"/>
+    <path d="M 52 22 L 56 22" stroke-width="2"/>
+    <!-- Cosmetic line beneath eye -->
+    <path d="M 28 30 L 26 36" stroke-width="2"/>
+
+    <!-- Sun rays emanating downward -->
+    <line x1="22" y1="34" x2="16" y2="54" stroke-width="2.5"/>
+    <line x1="30" y1="32" x2="26" y2="56" stroke-width="2.5"/>
+    <line x1="34" y1="32" x2="38" y2="56" stroke-width="2.5"/>
+    <line x1="42" y1="34" x2="48" y2="54" stroke-width="2.5"/>
+    <line x1="32" y1="32" x2="32" y2="58" stroke-width="2.5"/>
+  </g>
+</svg>
