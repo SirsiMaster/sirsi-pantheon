@@ -6,22 +6,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
-## [0.9.0-rc1] — 2026-03-31
+## [0.9.0-rc1] — 2026-04-03
 
 ### Added
-- **Neith Module** — Real plan alignment engine with keyword-based log assessment, full tapestry validation (all 5 deity checks), drift detection, and CLI (`pantheon neith status`, `pantheon neith align`).
-- **Ka Cross-Platform Ghost Detection** — `GhostProvider` interface with platform-specific implementations. macOS (full), Linux (XDG + dpkg + .desktop files), Windows (stub). All providers testable from any platform via `TestMockProvider`.
+- **Seshat v2.0 — Universal Knowledge Grafting** — 5 source adapters (Gemini, Claude, Chrome, Apple Notes, Google Workspace) + 3 target adapters (Thoth, GEMINI.md, NotebookLM). Secrets filter with regex-based detection and redaction.
+- **Seshat Chrome Profile Support** — `--profile` flag for per-profile ingestion, `--all-profiles` for multi-profile sweep, `pantheon seshat profiles chrome` to list all profiles, `pantheon seshat open chrome --profile <name>` to launch Chrome with a specific profile.
+- **Seshat NotebookLM Export** — `pantheon seshat notebooklm` exports KIs as Markdown and opens NotebookLM in the browser for drag-and-drop upload.
+- **Neith Module** — Plan alignment engine with keyword-based log assessment, full tapestry validation (all 5 deity checks), drift detection, and CLI (`pantheon neith status`, `pantheon neith align`).
+- **Ka Cross-Platform Ghost Detection** — `GhostProvider` interface with platform-specific implementations. macOS (full), Linux (XDG + dpkg + .desktop files), Windows (stub).
 - **5 New MCP Tools** — `thoth_sync`, `maat_audit`, `anubis_weigh`, `judge_cleanup` (dry-run only), `pantheon_status`. Total: 11 tools, 4 resources.
-- **Thoth /compact Integration** — `pantheon thoth compact -s "summary"` persists session decisions into memory.yaml and journal.md before context compression. Includes `PruneJournal()` for age/count-based cleanup.
-- **Claude Code Custom Command** — `.claude/commands/compact.md` for `/compact` integration.
+- **Thoth /compact Integration** — `pantheon thoth compact -s "summary"` persists session decisions before context compression.
+- **Sirsi Orchestrator** — Python orchestrator using claude-code-sdk to dispatch parallel Claude sessions across all Sirsi repositories. Commands: health, test, lint, task, broadcast, nightly.
+- **Rich CLI Help System** — `pantheon help <deity>` with lipgloss-styled terminal guides for 12 deities. `--docs` flag opens web docs in browser. `--list` shows all available guides.
+- **Per-Deity Binary Builds** — goreleaser now produces standalone binaries: `pantheon-anubis`, `pantheon-maat`, `pantheon-thoth`, `pantheon-scarab`, `pantheon-guard`. Each installable via `brew install SirsiMaster/tools/pantheon-<deity>`.
+- **Getting Started Guide** — Full 7-step HTML walkthrough at pantheon.sirsi.ai/getting-started.
+- **Deity Pages** — New HTML pages for Seshat, Isis, and Neith. All 15 deity pages now have how-to guides, FAQ sections, and platform support badges.
+- **Sirsi Branding** — SVG logo assets (dark, light, icon), "by Sirsi Technologies" throughout all pages and README.
 
 ### Changed
-- **Hapi → Seba Consolidation** — Hardware detection and accelerator logic moved from `internal/hapi/` to `internal/seba/`. Hapi retains backward-compatible wrappers (type aliases + delegation). Hapi now contains only APFS snapshot management + wrappers. Circular import resolved via guard bridge pattern.
-- **Hapi dedup.go removed** — Duplicate detection is handled by the mirror module; hapi's version was redundant.
+- **Hapi → Seba Consolidation** — Hardware detection moved to `internal/seba/`. Hapi retains backward-compatible wrappers.
+- **FAQ Expanded** — General, deity-specific, and troubleshooting sections with 15+ Q&As.
+- **Platform Support Matrix** — Every deity page and the registry index now show macOS/Linux/Windows compatibility.
 
 ### Fixed
-- All 28 packages pass tests on macOS and Ubuntu CI
+- All packages pass tests on macOS and Ubuntu CI
 - Zero golangci-lint errors
+- Smoke test updated for v0.9.0-rc1 version string
 
 ### Not Included (deferred)
 - **Ra** — Web portal / hypervisor orchestration (not started)
