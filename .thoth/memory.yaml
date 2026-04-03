@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-04-01T15:47:30-04:00
+# Last updated: 2026-04-02T16:50:10-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -8,10 +8,10 @@ repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+ / TypeScript
 version: 0.7.0b-alpha
 binary_count: 8 (anubis, guard, maat, pantheon, pantheon-agent, pantheon-menubar, scarab, thoth)
-test_count: 1172+
-line_count: ~39,521
+test_count: 1173+
+line_count: ~40,400
 module_count: 27
-command_count: 48
+command_count: 52
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
@@ -417,4 +417,5 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
 # 2026-04-01: {"session_id":"b3eafb76-9e33-4114-9bf6-345bb2dd653b","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/b3eafb76-9e33-4114-9bf6-345bb2dd653b.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
