@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>𓁆 Seshat — Goddess of Writing & Measurement | Sirsi Pantheon</title>
+  <meta name="description" content="Universal knowledge grafting — ingests from multiple AI platforms, reconciles, and exports to multiple targets. Part of the Sirsi Pantheon infrastructure hygiene platform.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --gold: #C8A951; --gold-bright: #E2C76B; --gold-dark: #A08332;
+      --emerald: #059669; --emerald-light: #10B981;
+      --bg: #020C08; --surface: #0A1A14; --surface-hover: #122820;
+      --text: #F0EDE5; --text-dim: rgba(240,237,229,0.6); --text-muted: rgba(240,237,229,0.35);
+      --border: rgba(200,169,81,0.15); --border-hover: rgba(200,169,81,0.35);
+      --font-heading: 'Cinzel', serif; --font-body: 'Inter', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+    }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    body { font-family: var(--font-body); background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 1rem 3rem; border-bottom: 1px solid var(--border); backdrop-filter: blur(20px); position: sticky; top: 0; z-index: 100; background: rgba(2,12,8,0.85); }
+    nav .logo { font-family: var(--font-heading); font-size: 1.3rem; color: var(--gold); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; }
+    nav .logo .glyph { font-size: 1.6rem; }
+    nav .nav-links { display: flex; gap: 1.5rem; }
+    nav .nav-links a { color: var(--text-dim); text-decoration: none; font-size: 0.95rem; transition: color 0.2s; }
+    nav .nav-links a:hover { color: var(--gold); }
+
+    .container { max-width: 1000px; margin: 0 auto; padding: 0 3rem; }
+    section { padding: 3rem 0; }
+    section h2 { font-family: var(--font-heading); font-size: 1.8rem; color: var(--gold); margin-bottom: 1.5rem; }
+
+    .hero { text-align: center; padding: 5rem 3rem 3rem; position: relative; }
+    .hero::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 100%; background: radial-gradient(ellipse at 50% 20%, rgba(200,169,81,0.05) 0%, transparent 60%); pointer-events: none; }
+    .hero .glyph-big { font-size: 6rem; display: block; margin-bottom: 1rem; animation: float 4s ease-in-out infinite; }
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    .hero h1 { font-family: var(--font-heading); font-size: 3.5rem; background: linear-gradient(135deg, var(--gold-bright), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 0.3rem; }
+    .hero .role { font-family: var(--font-mono); font-size: 1rem; color: var(--gold-dark); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 1rem; }
+    .hero .domain-tag { display: inline-block; padding: 0.3rem 1rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1.5rem; }
+    .hero .desc { font-size: 1.15rem; color: var(--text-dim); max-width: 700px; margin: 0 auto; line-height: 1.7; }
+
+    .metrics-strip { display: flex; justify-content: center; gap: 3rem; padding: 2rem 0 3rem; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+    .metric { text-align: center; }
+    .metric .val { font-family: var(--font-heading); font-size: 2rem; font-weight: 700; color: var(--gold-bright); }
+    .metric .lbl { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+
+    .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.2rem; }
+    @media (max-width: 700px) { .feature-grid { grid-template-columns: 1fr; } }
+    .feature-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; transition: border-color 0.2s; }
+    .feature-card:hover { border-color: var(--border-hover); }
+    .feature-card .f-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.6rem; }
+    .feature-card .f-icon { font-size: 1.5rem; }
+    .feature-card .f-name { font-family: var(--font-heading); font-size: 1.1rem; color: var(--gold); }
+    .feature-card .f-desc { font-size: 0.95rem; color: var(--text-dim); line-height: 1.5; }
+
+    .cmd-block { background: rgba(0,0,0,0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem 2rem; margin-bottom: 1rem; }
+    .cmd-block code { display: block; font-family: var(--font-mono); font-size: 0.9rem; margin: 0.4rem 0; }
+    .cmd-block .prompt { color: var(--gold); }
+    .cmd-block .comment { color: var(--text-muted); }
+    .cmd-block .cmd-text { color: var(--emerald-light); }
+
+    .surface-table { width: 100%; border-collapse: collapse; }
+    .surface-table th, .surface-table td { text-align: left; padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); }
+    .surface-table th { font-family: var(--font-heading); font-size: 0.85rem; color: var(--gold-dark); text-transform: uppercase; letter-spacing: 0.08em; }
+    .surface-table td { font-size: 0.95rem; color: var(--text-dim); }
+
+    .download-section { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .dl-card { flex: 1; min-width: 250px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center; text-decoration: none; color: var(--text); transition: all 0.3s; }
+    .dl-card:hover { border-color: var(--gold); transform: translateY(-3px); }
+    .dl-card .dl-title { font-family: var(--font-heading); font-size: 1.2rem; color: var(--gold); margin-bottom: 0.4rem; }
+    .dl-card .dl-desc { font-size: 0.9rem; color: var(--text-dim); margin-bottom: 0.6rem; }
+    .dl-card .dl-size { font-family: var(--font-mono); font-size: 0.85rem; color: var(--emerald-light); }
+
+    .auto-update { text-align: center; padding: 1.5rem; margin-top: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+    .auto-update .url { font-family: var(--font-mono); font-size: 0.9rem; color: var(--emerald-light); }
+    .auto-update p { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.3rem; }
+
+    footer { text-align: center; padding: 3rem 2rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.9rem; }
+    footer a { color: var(--emerald-light); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    .footer-links { display: flex; justify-content: center; gap: 2rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo"><span class="glyph">𓁢</span> Pantheon</a>
+    <div class="nav-links">
+      <a href="/">All Deities</a>
+      <a href="/build-log">Build Log</a>
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
+      <a href="https://sirsi.ai">Sirsi Nexus</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <span class="glyph-big">𓁆</span>
+    <h1>Seshat</h1>
+    <div class="role">Goddess of Writing & Measurement</div>
+    <div class="domain-tag">Universal Knowledge Grafting</div>
+    <p class="desc">Seshat ingests knowledge from multiple AI platforms and tools, reconciles it into a unified format, and exports to multiple targets. She is the universal bridge that ensures your knowledge travels seamlessly between Gemini, Claude, Chrome, Apple Notes, Google Workspace, NotebookLM, and Thoth.</p>
+  </header>
+
+  <div class="metrics-strip">
+    <div class="metric"><div class="val">5</div><div class="lbl">Source Adapters</div></div>
+    <div class="metric"><div class="val">3</div><div class="lbl">Target Adapters</div></div>
+    <div class="metric"><div class="val">Multi</div><div class="lbl">Chrome Profiles</div></div>
+    <div class="metric"><div class="val">Filtered</div><div class="lbl">Secrets Redaction</div></div>
+  </div>
+
+  <section>
+    <div class="container">
+      <h2>Features</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="f-header"><span class="f-icon">🔌</span><span class="f-name">5 Source Adapters</span></div>
+          <p class="f-desc">Ingests from Gemini AI Mode, Claude conversations, Chrome browsing history, Apple Notes, and Google Workspace documents</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-header"><span class="f-icon">🎯</span><span class="f-name">3 Target Adapters</span></div>
+          <p class="f-desc">Exports reconciled knowledge to Thoth memory layers, GEMINI.md format, and Google NotebookLM sources</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-header"><span class="f-icon">🌐</span><span class="f-name">Chrome Profile Selection</span></div>
+          <p class="f-desc">Supports multi-profile ingestion from Chrome. Select SirsiMaster or any other profile for targeted knowledge capture</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-header"><span class="f-icon">🔒</span><span class="f-name">Secrets Filter</span></div>
+          <p class="f-desc">Automatically redacts API keys, tokens, passwords, and other sensitive data before export to any target adapter</p>
+        </div>
+        <div class="feature-card">
+          <div class="f-header"><span class="f-icon">🔄</span><span class="f-name">Multi-Profile Ingestion</span></div>
+          <p class="f-desc">Ingest from multiple Chrome profiles, Apple Notes accounts, and Workspace tenants in a single sweep</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Usage</h2>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat ingest</span></code>
+        <code><span class="comment"># Ingest knowledge from all configured source adapters</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat profiles chrome</span></code>
+        <code><span class="comment"># List available Chrome profiles for ingestion</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat notebooklm</span></code>
+        <code><span class="comment"># Export reconciled knowledge to Google NotebookLM</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat open chrome --profile SirsiMaster</span></code>
+        <code><span class="comment"># Open Chrome with the SirsiMaster profile for manual ingestion</span></code>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Adapter Matrix</h2>
+      <table class="surface-table">
+        <thead><tr><th>Adapter</th><th>Direction</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Gemini AI Mode</td><td>Source</td><td>Conversation export and knowledge extraction</td></tr>
+          <tr><td>Claude</td><td>Source</td><td>Session history and artifact extraction</td></tr>
+          <tr><td>Chrome</td><td>Source</td><td>Browsing history, bookmarks, profile-scoped</td></tr>
+          <tr><td>Apple Notes</td><td>Source</td><td>Note content and attachments</td></tr>
+          <tr><td>Google Workspace</td><td>Source</td><td>Docs, Sheets, Slides content</td></tr>
+          <tr><td>Thoth</td><td>Target</td><td>memory.yaml, journal.md, artifacts/</td></tr>
+          <tr><td>GEMINI.md</td><td>Target</td><td>Gemini-compatible markdown format</td></tr>
+          <tr><td>NotebookLM</td><td>Target</td><td>Google NotebookLM source documents</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Download</h2>
+      <div class="download-section">
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" class="dl-card">
+          <div class="dl-title">𓁢 Full Pantheon</div>
+          <div class="dl-desc">All deities in one binary. Recommended.</div>
+          <div class="dl-size">12 MB · macOS arm64</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" class="dl-card">
+          <div class="dl-title">𓁆 Seshat Standalone</div>
+          <div class="dl-desc">Just this deity. Minimal footprint.</div>
+          <div class="dl-size">3.2 MB · macOS arm64</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" class="dl-card">
+          <div class="dl-title">Linux x86_64</div>
+          <div class="dl-desc">Seshat for Linux servers and desktops.</div>
+          <div class="dl-size">3.4 MB · linux amd64</div>
+        </a>
+      </div>
+
+      <div class="auto-update">
+        <div class="url">pantheon.sirsi.ai/seshat</div>
+        <p>This page is the canonical source for Seshat. Bundled offline copies auto-check for updates here.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-links">
+      <a href="/">All Deities</a>
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
+      <a href="/build-log">Build Log</a>
+      <a href="https://sirsi.ai">Sirsi Nexus</a>
+    </div>
+    <p>𓁆 Seshat — Part of <a href="/">Sirsi Pantheon</a> · &copy; 2026 Sirsi Technologies — sirsi.ai</p>
+  </footer>
+</body>
+</html>

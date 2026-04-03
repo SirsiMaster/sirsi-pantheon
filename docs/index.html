@@ -273,9 +273,10 @@
   <header>
     <div class="ankh-hero">𓁢</div>
     <h1>Sirsi Pantheon</h1>
+    <p style="font-family: var(--font-heading); font-size: 0.9rem; color: var(--gold); letter-spacing: 0.2em; margin-bottom: 1rem; opacity: 0.8;">by Sirsi Technologies</p>
     <p class="subtitle">
       One Install. All Deities. The unified DevOps intelligence platform.
-      Infrastructure hygiene, governance, and autonomous remediation simplified into six divine Pillars.
+      Infrastructure hygiene, governance, and autonomous remediation simplified into eight divine Pillars.
     </p>
     
     <div class="cluster-nav">
@@ -294,7 +295,7 @@
   <section class="deity-section" id="master-pillars">
     <div class="container">
       <span class="section-label">THE SUPREME PILLARS</span>
-      <h2>One Install. Six Deities.</h2>
+      <h2>One Install. Eight Deities.</h2>
       
       <div class="deity-grid">
         <!-- Anubis -->
@@ -453,6 +454,58 @@
             </div>
           </div>
         </div>
+
+        <!-- Isis -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁐</div>
+              <div class="tag">The Healing Pillar</div>
+              <h3>Isis</h3>
+              <p class="description">Autonomous remediation — automatically fixes lint errors, vet warnings, and formatting issues found by Ma'at.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">pantheon maat heal</span>
+                <h3>Remediation</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Functions</span><span class="stat-value">heal / lint / vet / fmt</span></div>
+                <div class="stat-row"><span class="stat-label">Automation</span><span class="stat-value">Fully Autonomous</span></div>
+                <div class="stat-row"><span class="stat-label">Parent</span><span class="stat-value">Ma'at Module</span></div>
+              </div>
+              <p class="description">Heals the codebase by automatically fixing all remediable findings from Ma'at audits.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Neith -->
+        <div class="card" onclick="this.classList.toggle('flipped')">
+          <div class="card-inner">
+            <div class="card-front">
+              <div class="deity-icon">𓁯</div>
+              <div class="tag">The Architecture Pillar</div>
+              <h3>Net (Neith)</h3>
+              <p class="description">Architecture documentation, ADR templates, and the Architecture Triad enforcement across all repos.</p>
+              <span class="flip-hint">tap to reveal</span>
+            </div>
+            <div class="card-back">
+              <div class="back-header">
+                <span class="mono gold-text">pantheon neith</span>
+                <h3>Architecture</h3>
+              </div>
+              <div>
+                <div class="stat-row"><span class="stat-label">Functions</span><span class="stat-value">audit / adr / canon</span></div>
+                <div class="stat-row"><span class="stat-label">Triad</span><span class="stat-value">DataFlow · Order · Decisions</span></div>
+                <div class="stat-row"><span class="stat-label">ADRs</span><span class="stat-value">13+ managed</span></div>
+              </div>
+              <p class="description">Weaves the structural fabric — data flow diagrams, implementation order, and key decision matrices.</p>
+              <span class="flip-hint">tap to close</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -466,7 +519,7 @@
           <span class="label">Consolidated Architecture</span>
         </div>
         <div class="ledger-item">
-          <span class="value">6</span>
+          <span class="value">8</span>
           <span class="label">Integrated Pillars</span>
         </div>
         <div class="ledger-item">
@@ -481,8 +534,38 @@
     </div>
   </section>
 
-  <footer style="padding: 4rem 1rem; text-align: center; color: var(--text-dim); font-size: 0.9rem;">
+  <!-- Individual Deity Downloads -->
+  <section style="padding: 4rem 0; border-top: 1px solid var(--border);">
+    <div class="container" style="text-align: center;">
+      <span class="section-label">INDIVIDUAL DOWNLOADS</span>
+      <h2 style="font-family: var(--font-heading); font-size: 2rem; margin-bottom: 2rem;">Download Any Deity Standalone</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;max-width:900px;margin:0 auto;">
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='hsl(45,52%,55%)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:1.8rem;">𓁢</div><div style="font-family:var(--font-heading);color:var(--gold);font-size:0.85rem;margin-top:0.3rem;">Anubis</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='hsl(45,52%,55%)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:1.8rem;">𓆄</div><div style="font-family:var(--font-heading);color:var(--gold);font-size:0.85rem;margin-top:0.3rem;">Ma'at</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='hsl(45,52%,55%)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:1.8rem;">𓁟</div><div style="font-family:var(--font-heading);color:var(--gold);font-size:0.85rem;margin-top:0.3rem;">Thoth</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='hsl(45,52%,55%)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:1.8rem;">𓁆</div><div style="font-family:var(--font-heading);color:var(--gold);font-size:0.85rem;margin-top:0.3rem;">Seshat</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='hsl(45,52%,55%)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:1.8rem;">𓁐</div><div style="font-family:var(--font-heading);color:var(--gold);font-size:0.85rem;margin-top:0.3rem;">Isis</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:1rem;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='hsl(45,52%,55%)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:1.8rem;">𓁯</div><div style="font-family:var(--font-heading);color:var(--gold);font-size:0.85rem;margin-top:0.3rem;">Neith</div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer style="padding: 4rem 1rem; text-align: center; color: var(--text-dim); font-size: 0.9rem; border-top: 1px solid var(--border);">
+    <p style="font-family:var(--font-heading);color:var(--gold);font-size:1rem;letter-spacing:0.15em;margin-bottom:0.5rem;">SIRSI</p>
     <p>𓇶 Sirsi Pantheon v0.9.0-rc1 · Built by Sirsi Technologies</p>
+    <p style="margin-top:0.5rem;font-size:0.8rem;">&copy; 2026 Sirsi Technologies — sirsi.ai</p>
     <a href="https://sirsi.ai" style="color: var(--gold); text-decoration: none; margin-top: 1rem; display: block;">Back to Sirsi</a>
   </footer>
 

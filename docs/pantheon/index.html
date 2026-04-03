@@ -157,7 +157,7 @@
 
   <!-- ═══ Nav ═══ -->
   <nav>
-    <a href="/" class="logo"><span class="glyph">𓁢</span> Pantheon</a>
+    <a href="/" class="logo"><span style="font-family:var(--font-heading);font-size:1.1rem;color:var(--gold);letter-spacing:0.15em;font-weight:700;margin-right:0.5rem;">SIRSI</span><span class="glyph">𓁢</span> Pantheon</a>
     <div class="nav-links">
       <a href="/">Home</a>
       <a href="/build-log">Build Log</a>
@@ -171,6 +171,7 @@
   <header class="hero">
     <p class="tagline">pantheon.sirsi.ai</p>
     <h1>The Deity Registry</h1>
+    <p style="font-family:var(--font-heading);font-size:0.9rem;color:var(--gold-dark);letter-spacing:0.15em;margin-bottom:0.8rem;">by Sirsi Technologies</p>
     <p class="subtitle">Every module in the Pantheon gets a full page — features, metrics, installation, and downloads. Click any card to flip and see developer details.</p>
   </header>
 
@@ -658,6 +659,173 @@
           </div>
         </div>
 
+        <!-- ═══ SESHAT ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge planned">in progress</span>
+              <div class="card-header">
+                <span class="glyph">𓁆</span>
+                <div><div class="card-title">Seshat</div><div class="card-role">Goddess of Writing & Measurement</div></div>
+              </div>
+              <p class="card-desc">Universal knowledge grafting — ingests from multiple AI platforms, reconciles, and exports to multiple targets.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">5</span><span class="meta-label">Sources</span></div>
+                <div class="meta-item"><span class="meta-value">3</span><span class="meta-label">Targets</span></div>
+                <div class="meta-item"><span class="meta-value">Multi</span><span class="meta-label">Profiles</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/seshat/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">—</div></div>
+                <div class="dev-item"><label>Sources</label><div class="dev-val">Gemini, Claude, Chrome, Notes, GWS</div></div>
+                <div class="dev-item"><label>Targets</label><div class="dev-val">Thoth, GEMINI.md, NotebookLM</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">seshat ingest, profiles</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">thoth, platform</div></div>
+                <div class="dev-item"><label>Security</label><div class="dev-val">Secrets filter</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">—</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/seshat" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/seshat" class="btn-src">Source</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ ISIS ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge">shipped</span>
+              <div class="card-header">
+                <span class="glyph">𓁐</span>
+                <div><div class="card-title">Isis</div><div class="card-role">The Healer</div></div>
+              </div>
+              <p class="card-desc">Autonomous remediation — automatically fixes lint errors, vet warnings, and formatting issues found by Ma'at.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">Auto</span><span class="meta-label">Lint Fix</span></div>
+                <div class="meta-item"><span class="meta-value">Auto</span><span class="meta-label">Vet Fix</span></div>
+                <div class="meta-item"><span class="meta-value">gofmt</span><span class="meta-label">Enforce</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/maat/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">88.0%</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">incl. Ma'at</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">incl.</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">maat heal</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">maat, platform</div></div>
+                <div class="dev-item"><label>Fixes</label><div class="dev-val">lint, vet, fmt, coverage</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-004</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/isis" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/maat" class="btn-src">Source</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ NEITH ═══ -->
+        <div class="flip-container" onclick="this.classList.toggle('flipped')">
+          <div class="flipper">
+            <div class="card-front">
+              <span class="badge planned">planned</span>
+              <div class="card-header">
+                <span class="glyph">𓁯</span>
+                <div><div class="card-title">Net (Neith)</div><div class="card-role">The Weaver</div></div>
+              </div>
+              <p class="card-desc">Architecture documentation, ADR templates, and development planning. Enforces the Architecture Triad across all repos.</p>
+              <div class="card-meta">
+                <div class="meta-item"><span class="meta-value">3</span><span class="meta-label">Triad</span></div>
+                <div class="meta-item"><span class="meta-value">13+</span><span class="meta-label">ADRs</span></div>
+                <div class="meta-item"><span class="meta-value">Canon</span><span class="meta-label">Review</span></div>
+              </div>
+              <div class="flip-hint"><span>↻ click to flip</span></div>
+            </div>
+            <div class="card-back">
+                <span class="label-dev">Developer</span>
+              </div>
+              <div class="dev-grid">
+                <div class="dev-item"><label>Package</label><div class="dev-val path">internal/neith/</div></div>
+                <div class="dev-item"><label>Coverage</label><div class="dev-val">—</div></div>
+                <div class="dev-item"><label>Test Count</label><div class="dev-val">—</div></div>
+                <div class="dev-item"><label>Binary Size</label><div class="dev-val">TBD</div></div>
+                <div class="dev-item"><label>Commands</label><div class="dev-val">neith audit, adr</div></div>
+                <div class="dev-item"><label>Dependencies</label><div class="dev-val">platform</div></div>
+                <div class="dev-item"><label>Triad</label><div class="dev-val">DataFlow, Order, Decisions</div></div>
+                <div class="dev-item"><label>ADR</label><div class="dev-val">ADR-022</div></div>
+              </div>
+              <div class="back-actions">
+                <a href="/neith" class="btn-page">Full Page</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" class="btn-dl">Download</a>
+                <a href="https://github.com/SirsiMaster/sirsi-pantheon/tree/main/internal/neith" class="btn-src">Source</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Individual Downloads ═══ -->
+  <section>
+    <div class="container">
+      <h2>Download Individual Deity</h2>
+      <p class="sub">Each deity is independently distributable. Download just what you need.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓁢</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Anubis</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">4.0 MB</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓁟</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Thoth</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">3.5 MB</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓆄</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Ma'at</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">4.0 MB</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓁐</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Isis</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">via Ma'at</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓁆</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Seshat</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">3.2 MB</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓁯</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Neith</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">3.0 MB</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓁵</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Sekhmet</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">4.0 MB</div>
+        </a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases/latest" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;text-decoration:none;color:var(--text);transition:all 0.3s;" onmouseover="this.style.borderColor='var(--gold)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='';this.style.transform=''">
+          <div style="font-size:2rem;margin-bottom:0.3rem;">𓇽</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:0.95rem;">Seba</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--emerald-light);margin-top:0.3rem;">incl.</div>
+        </a>
       </div>
     </div>
   </section>
@@ -704,7 +872,8 @@
       <a href="/case-studies">Case Studies</a>
       <a href="https://sirsi.ai">Sirsi Nexus</a>
     </div>
-    <p>𓁢 Pantheon v0.7.0-alpha — Built by <a href="https://sirsi.ai">Sirsi Technologies</a></p>
+    <p>𓁢 Pantheon v0.9.0-rc1 — Built by <a href="https://sirsi.ai">Sirsi Technologies</a></p>
+    <p style="margin-top: 0.3rem; font-size: 0.8rem;">&copy; 2026 Sirsi Technologies — sirsi.ai</p>
     <p style="margin-top: 0.3rem; font-size: 0.8rem;">One install. All deities. Nothing escapes the Weighing.</p>
   </footer>
 
