@@ -177,7 +177,8 @@ func (a *AppleANEAccelerator) Tokenize(text string) ([]int, error) {
 // ─── Metal GPU ───────────────────────────────────────────────────────
 
 // MetalAccelerator routes to Metal compute shaders on Apple GPUs.
-// Status: DETECTED. Hashing uses CPU sha256. Next: Metal compute shader for parallel hashing.
+// SHA-256 hashing uses a Metal compute kernel when available (CGO+darwin),
+// falling back to Go's crypto/sha256 otherwise.
 type MetalAccelerator struct {
 	cores int
 	model string
@@ -189,9 +190,31 @@ func (m *MetalAccelerator) SupportsEmbedding() bool      { return false }
 func (m *MetalAccelerator) SupportsHashing() bool        { return true }
 func (m *MetalAccelerator) SupportsClassification() bool { return false }
 func (m *MetalAccelerator) Available() bool              { return m.cores > 0 }
+
 func (m *MetalAccelerator) ComputeHash(data []byte) [32]byte {
-	// CPU fallback. Metal compute shader for parallel SHA-256 is next.
+	if metalAvailable() {
+		hashes, err := MetalHashBatch([][]byte{data})
+		if err == nil && len(hashes) == 1 {
+			return hashes[0]
+		}
+	}
 	return sha256.Sum256(data)
+}
+
+// ComputeHashBatch hashes multiple data blocks in parallel on the GPU.
+// On Apple Silicon with unified memory, there is zero CPU↔GPU copy overhead.
+func (m *MetalAccelerator) ComputeHashBatch(blocks [][]byte) ([][32]byte, error) {
+	return MetalHashBatch(blocks)
+}
+
+// MetalShaderAvailable returns true if the Metal SHA-256 compute shader compiled.
+func (m *MetalAccelerator) MetalShaderAvailable() bool {
+	return metalAvailable()
+}
+
+// MetalDeviceName returns the GPU device name reported by Metal.
+func (m *MetalAccelerator) MetalDeviceName() string {
+	return metalGPUName()
 }
 
 func (m *MetalAccelerator) Tokenize(text string) ([]int, error) {

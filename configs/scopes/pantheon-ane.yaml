@@ -5,10 +5,12 @@ deadline: ""
 priority: "P2"
 max_turns: 50
 scope_of_work: |
-  1. CoreML classifier — CGO bridge in internal/brain/inference.go
-  2. Metal compute shaders — parallel SHA-256 in internal/seba/accel.go
-  3. Real ANE tokenization — replace Go BPE stub with CoreML-backed tokenizer
-  4. pantheon benchmark CLI command measuring ANE vs Metal vs CPU
-  5. Thoth memory compression — ANE-accelerated summarization to reduce memory.yaml
-  6. KV cache analysis — measure token usage per session, identify reduction opportunities
-  7. Commit, push, run pantheon thoth compact
+  Existing files: internal/brain/inference.go (CGO stub), internal/seba/accel.go (Metal stub).
+  Read those files first to understand current state, then execute in order:
+
+  1. internal/brain/inference.go — extend the existing CGO bridge to call CoreML's MLModel.prediction(from:) via C interop. Add build tags for darwin/arm64. If CoreML headers are missing, create a minimal Objective-C bridge file.
+  2. internal/seba/accel.go — implement Metal compute shader dispatch for parallel SHA-256 hashing. Use the Metal Performance Shaders framework via CGO. Add fallback to pure-Go when Metal is unavailable.
+  3. Add a `pantheon benchmark` CLI command in cmd/pantheon/benchmark.go that runs inference.go and accel.go with timing, comparing ANE vs Metal vs CPU paths. Output a table with lipgloss styling.
+  4. Skip tokenization and KV cache tasks for now (deferred to next sprint).
+  5. Run go build ./cmd/pantheon/ and go test ./... to verify.
+  6. Commit, push, run pantheon thoth compact.

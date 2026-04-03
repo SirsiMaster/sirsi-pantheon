@@ -261,31 +261,146 @@ func splitPath(path string) []string {
 	return parts
 }
 
+// CoreMLClassifier uses Apple's CoreML framework via CGO for file classification.
+// On Apple Silicon, CoreML automatically routes inference to the ANE (Neural Engine).
+// Falls back to SpotlightClassifier if no compiled model (.mlmodelc) is available.
+type CoreMLClassifier struct {
+	modelPath string
+	fallback  *SpotlightClassifier
+	loaded    bool
+}
+
+// NewCoreMLClassifier creates a classifier that uses CoreML when a compiled model exists.
+func NewCoreMLClassifier() *CoreMLClassifier {
+	return &CoreMLClassifier{fallback: NewSpotlightClassifier()}
+}
+
+func (c *CoreMLClassifier) Name() string {
+	if c.loaded && coremlAvailable() {
+		return "coreml-ane"
+	}
+	return c.fallback.Name()
+}
+
+func (c *CoreMLClassifier) Load(weightsDir string) error {
+	_ = c.fallback.Load(weightsDir)
+
+	if !coremlAvailable() {
+		return nil // silently fall back
+	}
+
+	if weightsDir == "" {
+		return nil
+	}
+
+	// Look for a compiled CoreML model in the weights directory
+	modelPath := filepath.Join(weightsDir, "classifier.mlmodelc")
+	if _, err := os.Stat(modelPath); err != nil {
+		return nil // no model — fallback is fine
+	}
+
+	c.modelPath = modelPath
+	c.loaded = true
+	return nil
+}
+
+func (c *CoreMLClassifier) Classify(filePath string) (*Classification, error) {
+	if !c.loaded || !coremlAvailable() {
+		return c.fallback.Classify(filePath)
+	}
+
+	label, confidence, err := coremlPredict(c.modelPath, filePath)
+	if err != nil {
+		return c.fallback.Classify(filePath)
+	}
+
+	return &Classification{
+		Path:       filePath,
+		Class:      mapCoreMLLabel(label),
+		Confidence: confidence,
+		ModelUsed:  "coreml-ane",
+	}, nil
+}
+
+func (c *CoreMLClassifier) ClassifyBatch(filePaths []string, workers int) (*BatchResult, error) {
+	if !c.loaded || !coremlAvailable() {
+		return c.fallback.ClassifyBatch(filePaths, workers)
+	}
+
+	// CoreML handles its own threading — run predictions sequentially
+	// and let CoreML's runtime parallelize internally.
+	result := &BatchResult{ModelUsed: "coreml-ane"}
+	for _, fp := range filePaths {
+		cl, err := c.Classify(fp)
+		if err != nil {
+			result.FilesSkipped++
+			continue
+		}
+		result.Classifications = append(result.Classifications, *cl)
+		result.FilesProcessed++
+	}
+	return result, nil
+}
+
+func (c *CoreMLClassifier) Close() error {
+	c.loaded = false
+	return c.fallback.Close()
+}
+
+// mapCoreMLLabel converts a CoreML model output label to a FileClass.
+func mapCoreMLLabel(label string) FileClass {
+	switch label {
+	case "junk", "cache", "temp", "build_artifact":
+		return ClassJunk
+	case "essential", "system", "critical":
+		return ClassEssential
+	case "project", "source", "documentation":
+		return ClassProject
+	case "model", "weights", "checkpoint":
+		return ClassModel
+	case "data", "dataset", "database":
+		return ClassData
+	case "media", "image", "video", "audio":
+		return ClassMedia
+	case "archive", "compressed":
+		return ClassArchive
+	case "config", "configuration", "settings":
+		return ClassConfig
+	default:
+		return ClassUnknown
+	}
+}
+
 // GetClassifier returns the best available classifier for the current platform.
-// Currently returns a StubClassifier. When ONNX/CoreML models are trained,
-// this will auto-detect the installed model and return the appropriate backend.
+// Priority: CoreML (ANE) > Spotlight (system-accelerated) > Heuristic (CPU).
 func GetClassifier() (Classifier, error) {
 	dir, err := WeightsDir()
 	if err != nil {
-		// No weights dir — use Spotlight on macOS, heuristic elsewhere
-		c := NewSpotlightClassifier()
-		_ = c.Load("")
-		return c, nil
+		dir = ""
 	}
 
-	// Check if a model is installed
-	local, err := readLocalManifest(dir)
-	if err != nil || local == nil {
-		// No model installed — use Spotlight on macOS, heuristic elsewhere
-		c := NewSpotlightClassifier()
-		_ = c.Load("")
-		return c, nil
+	// Try CoreML first (Apple Silicon with compiled model)
+	if coremlAvailable() && dir != "" {
+		c := NewCoreMLClassifier()
+		_ = c.Load(dir)
+		if c.loaded {
+			return c, nil
+		}
 	}
 
-	// Model installed — for now, use Spotlight + heuristic until real ONNX/CoreML backends ship
-	// Future: check local.Format and return ONNXClassifier or CoreMLClassifier
+	// Check if a model is installed for future ONNX backend
+	if dir != "" {
+		if local, err := readLocalManifest(dir); err == nil && local != nil {
+			// Model installed but no CoreML — use Spotlight
+			c := NewSpotlightClassifier()
+			_ = c.Load(dir)
+			return c, nil
+		}
+	}
+
+	// Default: Spotlight on macOS, heuristic elsewhere
 	c := NewSpotlightClassifier()
-	_ = c.Load(dir)
+	_ = c.Load("")
 	return c, nil
 }
 

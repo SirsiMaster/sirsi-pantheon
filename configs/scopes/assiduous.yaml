@@ -5,12 +5,14 @@ deadline: "2026-04-15"
 priority: "P0"
 max_turns: 50
 scope_of_work: |
+  Read CLAUDE.md and the web/ directory structure first, then execute in order:
+
   1. Fix firebase.json: change "public": "public" to "public": "web/dist"
-  2. cd web && npm run build — verify dist/ output
-  3. Complete LoginPage with Firebase Auth + role-based redirect
-  4. Complete AdminDashboard with real Firestore queries via TanStack Query
-  5. Complete Properties page with listing data + filters
-  6. Build SharedComponents (Button, Card, Form, Modal) in web/src/components/
-  7. Layout + Sidebar wrapper consistency across all 34 pages
-  8. Deploy to Firebase Hosting and verify all routes
+  2. cd web && npm run build — verify dist/ output exists
+  3. Complete LoginPage (web/src/pages/) with Firebase Auth + role-based redirect to /admin or /properties
+  4. Complete AdminDashboard (web/src/pages/) with real Firestore queries via TanStack Query useQuery hooks
+  5. Complete Properties page (web/src/pages/) with listing data from Firestore + client-side filters
+  6. Build SharedComponents (Button, Card, Form, Modal) in web/src/components/ — use Tailwind, keep them minimal
+  7. Ensure Layout + Sidebar wrapper is consistent across all page files
+  8. Run firebase deploy --only hosting and verify the deployed URL loads
   9. Commit, push, run pantheon thoth compact

@@ -39,20 +39,60 @@ func SpawnWindow(cfg SpawnConfig) (*SpawnResult, error) {
 		}
 	}
 
-	// Build the claude command with autonomy flags.
-	// --permission-mode auto: auto-approve common tool operations
+	// Build the claude command with full autonomy flags.
+	// --dangerously-skip-permissions: bypass all permission prompts (scope is pre-approved by Ra)
 	// --allowedTools: whitelist the tools the agent needs
-	// --print: non-interactive mode (reads prompt from stdin)
-	claudeFlags := "--permission-mode auto --allowedTools \"Bash Edit Write Read Glob Grep Agent\""
+	// --print: non-interactive mode (skips workspace trust dialog, reads prompt from stdin)
+	// --output-format stream-json --verbose: stream JSON events in real-time instead of
+	//   buffering all output until completion (default --print behavior)
+	// --name: session name for /resume identification
+	//
+	// The stream-json output is piped through a python one-liner that extracts
+	// assistant text and tool use summaries, writing human-readable output to both
+	// the terminal (live progress) and the log file (Ra monitoring).
+	claudeFlags := fmt.Sprintf(
+		"--dangerously-skip-permissions --allowedTools \"Bash Edit Write Read Glob Grep Agent\" --name \"Ra: %s\" --output-format stream-json --verbose",
+		cfg.Name,
+	)
+
+	// Python one-liner that reads stream-json from stdin and extracts readable text.
+	// Writes to both stdout (terminal) and the log file.
+	streamFilter := fmt.Sprintf(
+		`python3 -u -c "
+import sys, json
+log = open(%s, 'w', buffering=1)
+def out(s):
+    print(s, flush=True)
+    log.write(s + '\n')
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        ev = json.loads(line)
+    except:
+        continue
+    t = ev.get('type','')
+    if t == 'assistant':
+        msg = ev.get('message',{})
+        for c in msg.get('content',[]):
+            if c.get('type') == 'text':
+                out(c['text'])
+            elif c.get('type') == 'tool_use':
+                out('[tool: ' + c.get('name','?') + ']')
+    elif t == 'result':
+        out('--- Ra scope complete (exit: ' + ev.get('stop_reason','?') + ') ---')
+log.close()
+"`, escapeShell(cfg.LogFile))
 
 	// Build the shell command that records PID, runs claude, and captures exit code.
 	shellCmd := fmt.Sprintf(
-		"echo $$ > %s && cd %s && claude %s --print < %s 2>&1 | tee %s; echo $? > %s",
+		"echo $$ > %s && cd %s && claude %s --print < %s 2>/dev/null | %s; echo $? > %s",
 		escapeShell(cfg.PIDFile),
 		escapeShell(cfg.WorkDir),
 		claudeFlags,
 		escapeShell(cfg.PromptFile),
-		escapeShell(cfg.LogFile),
+		streamFilter,
 		escapeShell(cfg.ExitFile),
 	)
 

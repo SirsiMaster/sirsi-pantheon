@@ -5,9 +5,11 @@ deadline: "2026-05-15"
 priority: "P1"
 max_turns: 50
 scope_of_work: |
-  1. Deploy Cloud SQL PII Vault to Cloud Run
-  2. Wire real GCS signed upload URLs (replace mock paths in Go API)
-  3. Complete Go API endpoint tests
-  4. Firebase Auth + Firestore integration hardening
-  5. Web app page completion (dashboard, vault, beneficiaries, attestation)
-  6. Commit, push, run pantheon thoth compact
+  Read CLAUDE.md and the project structure first, then execute in order:
+
+  1. Deploy Cloud SQL PII Vault to Cloud Run — use existing Dockerfile and cloudbuild.yaml if present; create them if not. Target the existing GCP project.
+  2. In the Go API (find the main.go or cmd/ entrypoint), replace mock GCS paths with real signed upload URLs using cloud.google.com/go/storage. Look for TODO/FIXME comments marking the mocks.
+  3. Add tests for all Go API endpoints — use httptest.NewServer pattern. Cover happy path + auth failure + validation error for each endpoint.
+  4. Harden Firebase Auth + Firestore integration — verify auth middleware checks ID tokens, Firestore security rules match the API's expected access patterns.
+  5. Complete web app pages (dashboard, vault, beneficiaries, attestation) — read existing page stubs and fill in the UI + data fetching.
+  6. Commit, push, run pantheon thoth compact.

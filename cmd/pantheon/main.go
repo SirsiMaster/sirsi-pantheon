@@ -193,6 +193,9 @@ func init() {
 	rootCmd.AddCommand(seshatCmd)
 	rootCmd.AddCommand(raCmd)
 	rootCmd.AddCommand(anubisCmd)
+	rootCmd.AddCommand(hapiCmd)
+	rootCmd.AddCommand(sebaCmd)
+	rootCmd.AddCommand(benchmarkCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 

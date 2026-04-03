@@ -5,8 +5,8 @@ deadline: ""
 priority: "P2"
 max_turns: 50
 scope_of_work: |
-  1. Resolve remaining transitive Dependabot vulnerabilities
-  2. Portal-app component stability and test coverage
-  3. sirsi-component-library build-out
-  4. sirsi-sign improvements
-  5. Commit, push, run pantheon thoth compact
+  1. Run npm audit in the repo root and each package under packages/. Fix all high/critical vulnerabilities by upgrading transitive deps (npm audit fix, or manual resolution in package-lock.json). Do NOT downgrade direct dependencies.
+  2. In packages/sirsi-portal-app/ — read existing components, add missing unit tests for any component with 0 test coverage. Use the existing test framework (check package.json for vitest/jest).
+  3. In packages/sirsi-component-library/ — inventory existing components, ensure each has an export in the package index. Add basic smoke tests for any untested components.
+  4. In packages/sirsi-opensign/ — read CLAUDE.md or README for improvement backlog. Fix the top 3 issues if documented; otherwise skip.
+  5. Commit, push, run pantheon thoth compact.
