@@ -162,6 +162,7 @@
       <a href="/">Home</a>
       <a href="/build-log">Build Log</a>
       <a href="/case-studies">Case Studies</a>
+      <a href="/faq.html">FAQ</a>
       <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
       <a href="https://sirsi.ai">Sirsi Nexus</a>
     </div>
@@ -864,12 +865,164 @@
     </div>
   </section>
 
+  <!-- ═══ Platform Support ═══ -->
+  <section>
+    <div class="container">
+      <h2>Platform Support</h2>
+      <p class="sub">macOS is the primary platform. Linux and Windows support varies by deity.</p>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+          <thead>
+            <tr>
+              <th style="background:rgba(200,169,81,0.08);color:var(--gold-dark);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;padding:14px 16px;text-align:left;border-bottom:1px solid var(--border);">Deity</th>
+              <th style="background:rgba(200,169,81,0.08);color:var(--gold-dark);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;padding:14px 16px;text-align:center;border-bottom:1px solid var(--border);">macOS</th>
+              <th style="background:rgba(200,169,81,0.08);color:var(--gold-dark);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;padding:14px 16px;text-align:center;border-bottom:1px solid var(--border);">Linux</th>
+              <th style="background:rgba(200,169,81,0.08);color:var(--gold-dark);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;padding:14px 16px;text-align:center;border-bottom:1px solid var(--border);">Windows</th>
+              <th style="background:rgba(200,169,81,0.08);color:var(--gold-dark);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;padding:14px 16px;text-align:left;border-bottom:1px solid var(--border);">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Anubis</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">macOS-specific rules (Spotlight, Launch Services) skipped on other platforms</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Ka</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--text-muted);">&#8212;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Ghost detection paths are macOS-specific (LaunchAgents, LoginItems)</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Sekhmet</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Crashpad monitoring is macOS-only; process guard works cross-platform</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Hathor</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Pure filesystem operations — works everywhere</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Ma'at</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Go toolchain only — fully cross-platform</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Thoth</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">MCP server runs anywhere — YAML/JSON memory files are portable</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Hapi</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">ANE detection is macOS-only; NVIDIA/AMD detection works on Linux</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Seshat</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--text-muted);">&#8212;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Apple Notes ingestion and Chrome profile paths are macOS-specific</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Horus</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Spotlight/Launch Services repair is macOS-only; filesystem index works everywhere</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(200,169,81,0.08);">
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Khepri</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--gold-dark);">&#9679;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">ARP/Docker scanning works on macOS and Linux</td>
+            </tr>
+            <tr>
+              <td style="padding:12px 16px;color:var(--gold-bright);font-family:var(--font-heading);">Isis</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;text-align:center;color:var(--emerald-light);font-size:1.1rem;">&#10003;</td>
+              <td style="padding:12px 16px;color:var(--text-dim);font-size:0.85rem;">Go toolchain auto-fix — fully cross-platform</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:2rem;font-size:0.8rem;color:var(--text-muted);">
+          <span><span style="color:var(--emerald-light);">&#10003;</span> Full support</span>
+          <span><span style="color:var(--gold-dark);">&#9679;</span> Partial support</span>
+          <span><span style="color:var(--text-muted);">&#8212;</span> Not supported</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FAQ ═══ -->
+  <section>
+    <div class="container">
+      <h2>Frequently Asked Questions</h2>
+      <p class="sub">Quick answers to common questions. <a href="/faq.html" style="color:var(--emerald-light);">See the full FAQ &rarr;</a></p>
+
+      <div style="display:grid;gap:1rem;">
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;">
+          <div style="font-family:var(--font-heading);color:var(--gold-bright);font-size:1rem;margin-bottom:0.5rem;">Does Pantheon send any data externally?</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">No. Zero telemetry, zero analytics, zero phone-home. All data stays on your machine. This is enforced by project governance and is non-negotiable.</p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;">
+          <div style="font-family:var(--font-heading);color:var(--gold-bright);font-size:1rem;margin-bottom:0.5rem;">Can I install just one deity?</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Yes. Each deity is independently distributable: <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">brew install SirsiMaster/tools/pantheon-thoth</code>. Or install the full bundle with <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">brew install sirsi-pantheon</code>.</p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;">
+          <div style="font-family:var(--font-heading);color:var(--gold-bright);font-size:1rem;margin-bottom:0.5rem;">Does Thoth work with Claude and Cursor?</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Yes. Thoth exposes an MCP server that integrates with any MCP-compatible IDE, including Claude Code, Cursor, and Windsurf. Run <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">pantheon mcp</code> to start the server.</p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;">
+          <div style="font-family:var(--font-heading);color:var(--gold-bright);font-size:1rem;margin-bottom:0.5rem;">Can Ma'at run in CI?</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Yes. Use <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">pantheon maat audit --json</code> for CI/CD pipelines. Set a threshold with <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">--min-score 85</code> for automatic enforcement.</p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;">
+          <div style="font-family:var(--font-heading);color:var(--gold-bright);font-size:1rem;margin-bottom:0.5rem;">What platforms does Pantheon support?</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">macOS has full support for all features. Linux supports CLI and Go tooling. Windows has basic CLI support. See the platform support table above for per-deity details.</p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem 2rem;">
+          <div style="font-family:var(--font-heading);color:var(--gold-bright);font-size:1rem;margin-bottom:0.5rem;">Is Pantheon open source?</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Yes. Pantheon is MIT licensed. The full source is on <a href="https://github.com/SirsiMaster/sirsi-pantheon" style="color:var(--emerald-light);">GitHub</a>. Built by <a href="https://sirsi.ai" style="color:var(--emerald-light);">Sirsi Technologies</a>.</p>
+        </div>
+
+      </div>
+
+      <div style="text-align:center;margin-top:2rem;">
+        <a href="/faq.html" style="display:inline-block;padding:0.7rem 2rem;background:rgba(200,169,81,0.12);color:var(--gold);border:1px solid rgba(200,169,81,0.25);border-radius:8px;text-decoration:none;font-size:0.9rem;font-weight:500;transition:all 0.2s;" onmouseover="this.style.background='rgba(200,169,81,0.25)'" onmouseout="this.style.background='rgba(200,169,81,0.12)'">View Full FAQ &rarr;</a>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══ Footer ═══ -->
   <footer>
     <div class="footer-links">
       <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
       <a href="/build-log">Build Log</a>
       <a href="/case-studies">Case Studies</a>
+      <a href="/faq.html">FAQ</a>
       <a href="https://sirsi.ai">Sirsi Nexus</a>
     </div>
     <p>𓁢 Pantheon v0.9.0-rc1 — Built by <a href="https://sirsi.ai">Sirsi Technologies</a></p>

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FAQ — Which Pantheon Tool Should I Use? | Sirsi Pantheon</title>
-    <meta name="description" content="Choose the right Pantheon tool for your workflow: VS Code Extension, Menu Bar App, CLI, or MCP Server.">
+    <title>FAQ — Frequently Asked Questions | Sirsi Pantheon</title>
+    <meta name="description" content="Frequently asked questions about Sirsi Pantheon — platform support, installation, troubleshooting, and deity-specific usage.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -45,7 +45,7 @@
         }
 
         .hero::before {
-            content: '𓁢';
+            content: '𓆄';
             position: absolute;
             font-size: 300px;
             opacity: 0.03;
@@ -378,8 +378,8 @@
 </head>
 <body>
     <header class="hero">
-        <h1>Which Pantheon Tool Should I Use?</h1>
-        <p>Four layers, one ecosystem. Choose what matches your workflow — most developers use 2-3 simultaneously.</p>
+        <h1>Frequently Asked Questions</h1>
+        <p>Everything you need to know about Pantheon — from choosing the right tool to troubleshooting common issues.</p>
     </header>
 
     <nav>
@@ -568,9 +568,155 @@
         </div>
     </div>
 
+        <!-- ═══ General FAQ ═══ -->
+        <div class="matrix" style="margin-top: 60px;">
+            <h2>General FAQ</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 35%;">Question</th>
+                        <th>Answer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="tool-name">What platforms does Pantheon support?</span></td>
+                        <td>
+                            <strong>macOS</strong> is the primary platform with full support for all features. <strong>Linux</strong> supports CLI and Go tooling (scan, guard, maat, thoth). <strong>Windows</strong> has basic CLI support.
+                            <br><br>
+                            Some features are macOS-specific: Apple Notes ingestion (Seshat), ANE/Neural Engine detection (Hapi), Chrome profile path resolution, Spotlight and Launch Services repair (Horus), LaunchAgent management, and crashpad monitoring (Sekhmet).
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Does Pantheon send any data externally?</span></td>
+                        <td>
+                            <strong>No. Zero telemetry, zero analytics, zero phone-home.</strong> All scan results, file paths, process names, and audit logs stay on your machine. Pantheon has no network calls, no usage tracking, and no crash reporting. This is enforced by Rule A11 in the project governance and is non-negotiable.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Can I install just one deity instead of the full bundle?</span></td>
+                        <td>
+                            Yes. Each deity is independently distributable via Homebrew:
+                            <br><br>
+                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">brew install SirsiMaster/tools/pantheon-thoth</code>
+                            <br>
+                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">brew install SirsiMaster/tools/pantheon-maat</code>
+                            <br>
+                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">brew install SirsiMaster/tools/pantheon-anubis</code>
+                            <br><br>
+                            Or install the full bundle with <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">brew install sirsi-pantheon</code> to get everything.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">How big is the binary?</span></td>
+                        <td>The full Pantheon bundle (all deities) is approximately <strong>12 MB</strong>. Individual deity binaries range from <strong>5-8 MB</strong> depending on the module. All binaries are statically compiled Go with zero external dependencies.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Is Pantheon open source?</span></td>
+                        <td>Yes. Pantheon is released under the <strong>MIT license</strong>. The full source code is available on <a href="https://github.com/SirsiMaster/sirsi-pantheon" style="color: var(--gold);">GitHub</a>.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Who built this?</span></td>
+                        <td><strong>Sirsi Technologies</strong> (<a href="https://sirsi.ai" style="color: var(--gold);">sirsi.ai</a>) — an infrastructure intelligence company building tools that help developers and teams understand, optimize, and govern their compute environments.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══ Deity-Specific FAQ ═══ -->
+        <div class="matrix">
+            <h2>Deity-Specific FAQ</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 35%;">Question</th>
+                        <th>Answer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="tool-name">What's the difference between <code style="color: var(--green);">anubis scan</code> and <code style="color: var(--green);">pantheon scan</code>?</span></td>
+                        <td>They are the same thing. <code style="color: var(--green);">pantheon scan</code> is a convenience shortcut that routes to the Anubis scanner. Both run the same 58 scan rules across the same 7 domains.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Does Thoth work with Claude and Cursor?</span></td>
+                        <td>Yes. Thoth exposes an MCP (Model Context Protocol) server that integrates with any MCP-compatible AI IDE, including <strong>Claude Code</strong>, <strong>Cursor</strong>, and <strong>Windsurf</strong>. Run <code style="color: var(--green);">pantheon mcp</code> to start the server, then configure your IDE to connect.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Can Ma'at run in CI?</span></td>
+                        <td>Yes. Use <code style="color: var(--green);">pantheon maat audit --json</code> for CI/CD pipelines. The JSON output includes the Feather Weight score (0-100), per-package coverage, lint results, and a pass/fail gate. Set a threshold with <code style="color: var(--green);">--min-score 85</code> for automatic enforcement.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Does Seshat upload anything to NotebookLM automatically?</span></td>
+                        <td><strong>No.</strong> Seshat exports files to a local directory and opens the NotebookLM browser page. You manually drag-and-drop the exported files into NotebookLM. No automatic uploads, no API calls, no data leaves your machine without your direct action.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">What does Hapi detect?</span></td>
+                        <td>Hapi detects hardware accelerators across four vendors: <strong>NVIDIA GPUs</strong> (CUDA cores, VRAM), <strong>AMD GPUs</strong> (ROCm), <strong>Apple Silicon</strong> (GPU cores, unified memory), and <strong>Apple Neural Engine (ANE)</strong> / NPU. It reports VRAM allocation, compute capability, and recommends the optimal acceleration path.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Can I use Hathor (dedup) on network drives?</span></td>
+                        <td>Yes. Pass the mount path directly: <code style="color: var(--green);">pantheon mirror /Volumes/NAS-Share</code>. Hathor's 3-phase dedup engine (size grouping, partial hash, full SHA-256) works on any mounted filesystem. For large network volumes, consider using <code style="color: var(--green);">--min-size</code> to skip small files.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══ Troubleshooting FAQ ═══ -->
+        <div class="matrix">
+            <h2>Troubleshooting</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 35%;">Problem</th>
+                        <th>Solution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="tool-name"><code style="color: var(--green);">pantheon scan</code> is slow</span></td>
+                        <td>
+                            Use <code style="color: var(--green);">--quick</code> for fast mode, which skips deep directory walks and heavy rules. You can also exclude large directories:
+                            <br><br>
+                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">pantheon scan --quick --exclude node_modules,vendor,.git</code>
+                            <br><br>
+                            A full scan with 58 rules across 7 domains takes 10-30 seconds on most machines. Quick mode finishes in under 5 seconds.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Chrome history can't be read</span></td>
+                        <td>
+                            Chrome locks its SQLite database while running, which prevents Seshat from reading history and bookmarks. <strong>This is handled automatically</strong> — Pantheon copies the database to a temp directory before reading it.
+                            <br><br>
+                            If you still see errors, try closing Chrome first, or check that your Chrome profile path is correct (macOS default: <code style="color: var(--text-dim); font-size: 0.85rem;">~/Library/Application Support/Google/Chrome/Default</code>).
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="tool-name">Command not found after install</span></td>
+                        <td>
+                            Your shell may not have the Homebrew bin directory in its PATH. Try:
+                            <br><br>
+                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">brew link sirsi-pantheon</code>
+                            <br><br>
+                            If that doesn't work, verify the binary exists with <code style="color: var(--green); font-size: 0.85rem;">brew list sirsi-pantheon</code> and ensure <code style="color: var(--text-dim); font-size: 0.85rem;">/opt/homebrew/bin</code> (Apple Silicon) or <code style="color: var(--text-dim); font-size: 0.85rem;">/usr/local/bin</code> (Intel) is in your PATH.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══ Sirsi Branding ═══ -->
+        <div class="installer-section" style="margin-top: 40px;">
+            <h2 style="font-size: 1.1rem; margin-bottom: 8px;">Built by Sirsi Technologies</h2>
+            <p style="margin-bottom: 8px; font-size: 0.9rem;"><a href="https://sirsi.ai" style="color: var(--gold); text-decoration: none;">sirsi.ai</a> — Infrastructure intelligence for developers and teams.</p>
+            <p style="font-size: 0.8rem; color: var(--text-dim);">Pantheon is open source (MIT). Zero telemetry. Zero network calls. Your data stays yours.</p>
+        </div>
+
+    </div>
+
     <footer>
-        <p>𓁢 Pantheon v0.5.1 — <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a> · <a href="https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon">OpenVSX</a> · <a href="/">Registry</a></p>
-        <p style="margin-top: 8px;">Zero telemetry. Zero network calls. Open source forever.</p>
+        <p>𓁢 Pantheon v0.9.0-rc1 — <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a> · <a href="https://open-vsx.org/extension/SirsiMaster/sirsi-pantheon">OpenVSX</a> · <a href="/">Registry</a></p>
+        <p style="margin-top: 8px;">Built by <a href="https://sirsi.ai">Sirsi Technologies</a> — Zero telemetry. Zero network calls. Open source forever.</p>
     </footer>
 </body>
 </html>
