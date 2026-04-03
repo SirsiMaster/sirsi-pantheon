@@ -116,6 +116,33 @@ See [MCP Configuration](#-mcp-server--ai-ide-integration) below.
 | Extension (`.vsix`) | 40 KB | 40 KB |
 | Agent (`pantheon-agent`) | ~1.2 MB | 2.1 MB |
 
+---
+
+## Getting Started
+
+Get up and running in under a minute. For the full walkthrough, see the [Getting Started Guide](https://pantheon.sirsi.ai/getting-started).
+
+```bash
+# 1. Install
+brew tap SirsiMaster/tools && brew install sirsi-pantheon
+
+# 2. Scan your machine for waste
+pantheon scan
+
+# 3. Find ghost apps and duplicates
+pantheon ghosts
+pantheon dedup ~/Documents
+
+# 4. Set up AI memory in a project
+cd ~/my-project && pantheon thoth init && pantheon thoth sync
+
+# 5. Audit code quality and auto-fix
+pantheon maat audit
+pantheon maat heal
+```
+
+---
+
 ### Scan Your Machine
 ```bash
 pantheon scan                    # Find infrastructure waste (caches, build artifacts, orphaned files)

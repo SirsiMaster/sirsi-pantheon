@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started — Sirsi Pantheon</title>
+  <meta name="description" content="Step-by-step guide to installing and using Sirsi Pantheon — infrastructure hygiene, code quality, AI memory, and more.">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Outfit:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --gold: hsl(45, 52%, 55%);
+      --gold-light: hsl(45, 60%, 70%);
+      --gold-glow: hsla(45, 52%, 55%, 0.3);
+      --emerald: hsl(160, 84%, 39%);
+      --bg: hsl(165, 80%, 3%);
+      --bg-alt: hsl(165, 80%, 5%);
+      --text: hsl(0, 0%, 95%);
+      --text-dim: hsl(0, 0%, 70%);
+      --border: hsla(0, 0%, 100%, 0.08);
+      --glass: hsla(165, 80%, 5%, 0.6);
+      --font-heading: 'Cinzel', serif;
+      --font-body: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 0% 0%, hsla(160, 84%, 15%, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 100% 100%, hsla(45, 52%, 10%, 0.1) 0%, transparent 50%);
+      color: var(--text);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 0 2rem; }
+    .gold-text { color: var(--gold); }
+    .mono { font-family: var(--font-mono); font-size: 0.9em; }
+
+    /* ── Nav Bar ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+
+    .nav-brand img {
+      height: 28px;
+      width: auto;
+    }
+
+    .nav-brand span {
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      color: var(--gold);
+      letter-spacing: 0.15em;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .nav-item {
+      text-decoration: none;
+      color: var(--text-dim);
+      font-family: var(--font-heading);
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      transition: all 0.3s ease;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px solid transparent;
+      text-transform: uppercase;
+    }
+
+    .nav-item:hover,
+    .nav-item.active {
+      color: var(--gold);
+      border-bottom-color: var(--gold);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      padding: 5rem 1rem 3rem;
+    }
+
+    .hero-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, var(--gold), var(--gold-light));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 20px var(--gold-glow));
+    }
+
+    .hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 5vw, 3rem);
+      letter-spacing: 0.1em;
+      font-weight: 900;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .hero p {
+      color: var(--text-dim);
+      font-size: 1.15rem;
+      font-weight: 300;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* ── Steps ── */
+    .steps { padding: 2rem 0 4rem; }
+
+    .step {
+      margin-bottom: 3.5rem;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .step-number {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid var(--gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      color: var(--gold);
+      font-weight: 700;
+    }
+
+    .step h2 {
+      font-family: var(--font-heading);
+      font-size: 1.4rem;
+      letter-spacing: 0.05em;
+    }
+
+    .step p {
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+
+    .step h3 {
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      margin: 1.25rem 0 0.5rem;
+      color: var(--gold-light);
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Code Blocks ── */
+    pre {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+      margin-bottom: 1rem;
+    }
+
+    pre code {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    .cmd-prompt { color: var(--gold); user-select: none; }
+    .cmd-comment { color: hsl(0, 0%, 45%); }
+    .cmd-flag { color: var(--emerald); }
+
+    /* ── Output Block ── */
+    .output-block {
+      background: hsl(165, 80%, 2%);
+      border: 1px solid hsla(160, 84%, 39%, 0.15);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .output-block code {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      line-height: 1.7;
+      white-space: pre;
+    }
+
+    .output-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--emerald);
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    /* ── Platform Table ── */
+    .platform-section {
+      padding: 4rem 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .platform-section h2 {
+      font-family: var(--font-heading);
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.1em;
+    }
+
+    .section-label {
+      font-family: var(--font-heading);
+      font-size: 0.8rem;
+      letter-spacing: 0.4em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      display: block;
+      text-align: center;
+    }
+
+    .platform-table-wrap {
+      overflow-x: auto;
+      margin-top: 2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th {
+      font-family: var(--font-heading);
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold);
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-bottom: 2px solid var(--gold-glow);
+    }
+
+    td {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    tr:hover td {
+      background: hsla(165, 80%, 5%, 0.4);
+    }
+
+    td:first-child {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .check { color: var(--emerald); }
+    .cross { color: hsl(0, 60%, 50%); }
+    .partial { color: hsl(45, 52%, 55%); }
+
+    /* ── Footer ── */
+    footer {
+      padding: 4rem 1rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--border);
+    }
+
+    footer a {
+      color: var(--gold);
+      text-decoration: none;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      nav { flex-direction: column; gap: 1rem; }
+      .nav-links { justify-content: center; }
+      .step-header { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <a href="https://sirsi.ai" class="nav-brand">
+      <img src="assets/sirsi-logo.svg" alt="Sirsi Technologies">
+      <span>PANTHEON</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-item">Registry</a>
+      <a href="getting-started.html" class="nav-item active">Getting Started</a>
+      <a href="faq.html" class="nav-item">FAQ</a>
+      <a href="build-log.html" class="nav-item">Build Log</a>
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon" class="nav-item">Source</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-icon">𓁢</div>
+    <h1>Getting Started</h1>
+    <p>From zero to a clean, governed, AI-aware workstation in seven steps.</p>
+  </div>
+
+  <!-- Steps -->
+  <section class="steps">
+    <div class="container">
+
+      <!-- Step 1: Install -->
+      <div class="step" id="install">
+        <div class="step-header">
+          <div class="step-number">1</div>
+          <h2>Install</h2>
+        </div>
+
+        <h3>macOS (Homebrew)</h3>
+        <pre><code><span class="cmd-prompt">$</span> brew tap SirsiMaster/tools && brew install sirsi-pantheon</code></pre>
+
+        <h3>Linux / From Source</h3>
+        <pre><code><span class="cmd-prompt">$</span> go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@latest</code></pre>
+
+        <h3>Individual Deities</h3>
+        <p>Only need one module? Install deities standalone:</p>
+        <pre><code><span class="cmd-prompt">$</span> brew install SirsiMaster/tools/pantheon-thoth   <span class="cmd-comment"># AI memory only</span>
+<span class="cmd-prompt">$</span> brew install SirsiMaster/tools/pantheon-maat    <span class="cmd-comment"># Code quality only</span>
+<span class="cmd-prompt">$</span> brew install SirsiMaster/tools/pantheon-anubis   <span class="cmd-comment"># Infrastructure hygiene only</span></code></pre>
+      </div>
+
+      <!-- Step 2: First Scan -->
+      <div class="step" id="first-scan">
+        <div class="step-header">
+          <div class="step-number">2</div>
+          <h2>First Scan</h2>
+        </div>
+        <p>Run a scan to discover infrastructure waste across your machine -- caches, build artifacts, orphaned files, and more.</p>
+        <pre><code><span class="cmd-prompt">$</span> pantheon scan</code></pre>
+
+        <span class="output-label">Example output</span>
+        <div class="output-block"><code>  Scanning 64 rules across 7 domains...
+
+  Domain              Found     Size
+  ─────────────────────────────────────
+  General Mac           12     3.8 GB
+  Dev Frameworks         8     1.2 GB
+  AI/ML                  3     890 MB
+  Virtualization         2     2.1 GB
+  ─────────────────────────────────────
+  Total                 25     8.0 GB</code></div>
+
+        <p>Want a quick one-shot health check instead? Use <code class="mono">doctor</code>:</p>
+        <pre><code><span class="cmd-prompt">$</span> pantheon doctor</code></pre>
+        <p>This runs scan, ghost detection, and resource checks in a single pass and prints a summary health report.</p>
+      </div>
+
+      <!-- Step 3: Clean Up -->
+      <div class="step" id="clean-up">
+        <div class="step-header">
+          <div class="step-number">3</div>
+          <h2>Clean Up</h2>
+        </div>
+        <p>Once you know what waste exists, start cleaning interactively:</p>
+        <pre><code><span class="cmd-prompt">$</span> pantheon scan <span class="cmd-flag">--clean</span>    <span class="cmd-comment"># Interactive cleanup -- review each finding before removal</span></code></pre>
+
+        <h3>Find Ghost Apps</h3>
+        <p>Detect remnants of applications you already uninstalled -- leftover plists, caches, login items, and support files lurking across 17 macOS locations.</p>
+        <pre><code><span class="cmd-prompt">$</span> pantheon ghosts</code></pre>
+
+        <h3>Find Duplicate Files</h3>
+        <p>Scan directories for duplicate files using a three-phase hash engine (27x faster than naive hashing).</p>
+        <pre><code><span class="cmd-prompt">$</span> pantheon dedup ~/Documents</code></pre>
+      </div>
+
+      <!-- Step 4: Thoth -->
+      <div class="step" id="thoth">
+        <div class="step-header">
+          <div class="step-number">4</div>
+          <h2>Set Up AI Memory (Thoth)</h2>
+        </div>
+        <p>Thoth gives AI coding assistants persistent memory across sessions. Instead of re-reading thousands of source lines, the AI reads a compact memory file for instant context -- saving 98.7% of tokens.</p>
+
+        <h3>Initialize in a project</h3>
+        <pre><code><span class="cmd-prompt">$</span> cd ~/my-project
+<span class="cmd-prompt">$</span> pantheon thoth init</code></pre>
+        <p>This creates a <code class="mono">.thoth/</code> directory with <code class="mono">memory.yaml</code>, <code class="mono">journal.md</code>, and an <code class="mono">artifacts/</code> folder.</p>
+
+        <h3>Sync memory from source</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon thoth sync</code></pre>
+        <p>Reads your source files and git history to build a compressed project state. Run this after major changes.</p>
+
+        <h3>Compact before context compression</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon thoth compact <span class="cmd-flag">-s</span> "Refactored auth module, added OAuth2 flow"</code></pre>
+        <p>Use <code class="mono">compact</code> when your AI session is getting long and you want to preserve decisions before context is compressed or the session ends.</p>
+      </div>
+
+      <!-- Step 5: Ma'at -->
+      <div class="step" id="maat">
+        <div class="step-header">
+          <div class="step-number">5</div>
+          <h2>Code Quality (Ma'at)</h2>
+        </div>
+        <p>Ma'at audits your repository for test coverage, lint errors, vet warnings, and formatting issues -- then grades it on a 0-100 scale.</p>
+
+        <h3>Audit a repository</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon maat audit</code></pre>
+
+        <span class="output-label">Example output</span>
+        <div class="output-block"><code>  Ma'at Governance Assessment
+  ───────────────────────────
+  Coverage:   87.3%    PASS
+  Lint:        0 errors  PASS
+  Vet:         0 warnings  PASS
+  Formatting:  all clean  PASS
+  ───────────────────────────
+  Feather Weight: 94/100</code></div>
+
+        <h3>Auto-fix findings</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon maat heal</code></pre>
+        <p>Isis (the healing engine) automatically fixes all remediable lint, vet, and formatting issues found by the audit.</p>
+      </div>
+
+      <!-- Step 6: Seshat -->
+      <div class="step" id="seshat">
+        <div class="step-header">
+          <div class="step-number">6</div>
+          <h2>Knowledge Grafting (Seshat)</h2>
+        </div>
+        <p>Seshat ingests knowledge from external AI platforms and browsers, then exports it into formats your tools understand.</p>
+
+        <h3>Ingest from Gemini</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon seshat ingest <span class="cmd-flag">--source</span> gemini</code></pre>
+
+        <h3>List Chrome profiles</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon seshat profiles chrome</code></pre>
+
+        <h3>Export to NotebookLM</h3>
+        <pre><code><span class="cmd-prompt">$</span> pantheon seshat notebooklm <span class="cmd-flag">--profile</span> SirsiMaster</code></pre>
+        <p>Seshat supports ingestion from Chrome, Gemini, Claude, Apple Notes, and Google Workspace -- and can export to Thoth memory, GEMINI.md, or NotebookLM.</p>
+      </div>
+
+      <!-- Step 7: Hapi -->
+      <div class="step" id="hapi">
+        <div class="step-header">
+          <div class="step-number">7</div>
+          <h2>Hardware Detection (Hapi)</h2>
+        </div>
+        <p>Hapi detects your hardware accelerators -- CPUs, GPUs, Apple Neural Engine, and VRAM -- so Pantheon and your AI tools know what compute is available.</p>
+        <pre><code><span class="cmd-prompt">$</span> pantheon hapi detect</code></pre>
+
+        <span class="output-label">Example output</span>
+        <div class="output-block"><code>  Hardware Accelerators
+  ─────────────────────────────────────
+  CPU:    Apple M4 Max (16-core)
+  GPU:    Apple M4 Max (40-core)
+  ANE:    Apple Neural Engine (16-core)
+  RAM:    128 GB unified
+  VRAM:   Shared (128 GB)
+  ─────────────────────────────────────
+  Compute Class: Apple Silicon (ANE-capable)</code></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Platform Support -->
+  <section class="platform-section">
+    <div class="container">
+      <span class="section-label">Compatibility</span>
+      <h2>Platform Support</h2>
+      <div class="platform-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>macOS</th>
+              <th>Linux</th>
+              <th>Windows</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Scan (Anubis)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="partial">Partial</td>
+            </tr>
+            <tr>
+              <td>Ghost Detection (Ka)</td>
+              <td class="check">&#10003;</td>
+              <td class="cross">&#10007;</td>
+              <td class="cross">&#10007;</td>
+            </tr>
+            <tr>
+              <td>Dedup (Hathor / Mirror)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+            </tr>
+            <tr>
+              <td>AI Memory (Thoth)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+            </tr>
+            <tr>
+              <td>Code Quality (Ma'at)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+            </tr>
+            <tr>
+              <td>Healing (Isis)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+            </tr>
+            <tr>
+              <td>Knowledge Grafting (Seshat)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="partial">Partial</td>
+            </tr>
+            <tr>
+              <td>Hardware Detection (Hapi)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="partial">Partial</td>
+            </tr>
+            <tr>
+              <td>ANE Acceleration (Sekhmet)</td>
+              <td class="check">&#10003;</td>
+              <td class="cross">&#10007;</td>
+              <td class="cross">&#10007;</td>
+            </tr>
+            <tr>
+              <td>Topology Mapping (Seba)</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+            </tr>
+            <tr>
+              <td>MCP Server</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+              <td class="check">&#10003;</td>
+            </tr>
+            <tr>
+              <td>Menu Bar App</td>
+              <td class="check">&#10003;</td>
+              <td class="cross">&#10007;</td>
+              <td class="cross">&#10007;</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p style="font-family:var(--font-heading);color:var(--gold);font-size:1rem;letter-spacing:0.15em;margin-bottom:0.5rem;">SIRSI</p>
+    <p>Sirsi Pantheon v0.9.0-rc1 &middot; Built by Sirsi Technologies</p>
+    <p style="margin-top:0.5rem;font-size:0.8rem;">&copy; 2026 Sirsi Technologies &mdash; <a href="https://sirsi.ai">sirsi.ai</a></p>
+    <div style="margin-top:1rem;display:flex;gap:2rem;justify-content:center;flex-wrap:wrap;">
+      <a href="index.html">Pantheon Registry</a>
+      <a href="faq.html">FAQ</a>
+      <a href="build-log.html">Build Log</a>
+      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
+    </div>
+  </footer>
+
+</body>
+</html>
