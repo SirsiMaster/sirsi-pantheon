@@ -1,4 +1,4 @@
-// 𓂀 Pantheon Commands — commands.ts
+// 𓃣 Pantheon Commands — commands.ts
 //
 // Command Palette registrations for the Pantheon extension.
 // All commands are prefixed with "Pantheon:" in the palette.
@@ -41,13 +41,13 @@ export function registerCommands(
         vscode.commands.registerCommand('pantheon.scan', async () => {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             if (!workspaceRoot) {
-                vscode.window.showWarningMessage('𓂀 Pantheon: No workspace folder open');
+                vscode.window.showWarningMessage('𓃣 Pantheon: No workspace folder open');
                 return;
             }
 
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: '𓂀 Pantheon: Scanning workspace...',
+                title: '𓃣 Pantheon: Scanning workspace...',
                 cancellable: true,
             }, async (progress, token) => {
                 try {
@@ -58,7 +58,7 @@ export function registerCommands(
                     });
 
                     // Show results in output channel
-                    output.appendLine('\n𓂀 ═══ Workspace Scan Results ═══');
+                    output.appendLine('\n𓃣 ═══ Workspace Scan Results ═══');
                     output.appendLine(stdout);
                     output.show();
 
@@ -68,10 +68,10 @@ export function registerCommands(
                         const findings = result.total_findings || result.findings?.length || 0;
                         const size = result.total_size_human || 'unknown';
                         vscode.window.showInformationMessage(
-                            `𓂀 Scan complete: ${findings} findings, ${size} reclaimable`
+                            `𓃣 Scan complete: ${findings} findings, ${size} reclaimable`
                         );
                     } catch {
-                        vscode.window.showInformationMessage('𓂀 Scan complete — see Output panel');
+                        vscode.window.showInformationMessage('𓃣 Scan complete — see Output panel');
                     }
                 } catch (err: unknown) {
                     handleCommandError('Scan', err, output);
@@ -269,7 +269,7 @@ export function registerCommands(
     context.subscriptions.push(
         vscode.commands.registerCommand('pantheon.showMetrics', async () => {
             if (!statusBar) {
-                vscode.window.showWarningMessage('𓂀 Pantheon: Status bar not initialized');
+                vscode.window.showWarningMessage('𓃣 Pantheon: Status bar not initialized');
                 return;
             }
 
@@ -332,7 +332,7 @@ export function registerCommands(
             );
 
             const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: '𓂀 Pantheon — System Metrics',
+                placeHolder: '𓃣 Pantheon — System Metrics',
             });
 
             if (!selected) { return; }
@@ -347,7 +347,7 @@ export function registerCommands(
                 await vscode.commands.executeCommand('pantheon.scan');
             } else if (selected.label.includes('Refresh')) {
                 statusBar.forceRefresh();
-                vscode.window.showInformationMessage('𓂀 Metrics refreshed');
+                vscode.window.showInformationMessage('𓃣 Metrics refreshed');
             }
         })
     );
@@ -356,7 +356,7 @@ export function registerCommands(
     context.subscriptions.push(
         vscode.commands.registerCommand('pantheon.applyWorkspaceSettings', async () => {
             const confirm = await vscode.window.showWarningMessage(
-                '𓂀 Pantheon will apply optimal IDE settings for Go development. This modifies workspace settings.',
+                '𓃣 Pantheon will apply optimal IDE settings for Go development. This modifies workspace settings.',
                 'Apply',
                 'Cancel'
             );
@@ -390,9 +390,9 @@ export function registerCommands(
                 vscode.ConfigurationTarget.Workspace
             );
 
-            output.appendLine('𓂀 Workspace settings optimized');
+            output.appendLine('𓃣 Workspace settings optimized');
             vscode.window.showInformationMessage(
-                '𓂀 Workspace settings optimized — gopls filters, watcher exclusions, shell integration'
+                '𓃣 Workspace settings optimized — gopls filters, watcher exclusions, shell integration'
             );
         })
     );
@@ -453,13 +453,13 @@ function handleCommandError(
 
     if (msg.includes('ENOENT')) {
         vscode.window.showErrorMessage(
-            `𓂀 Pantheon binary not found. Install: brew install sirsi-pantheon`
+            `𓃣 Pantheon binary not found. Install: brew install sirsi-pantheon`
         );
     } else if (msg.includes('TIMEOUT') || msg.includes('timeout')) {
-        vscode.window.showWarningMessage(`𓂀 ${command} timed out`);
+        vscode.window.showWarningMessage(`𓃣 ${command} timed out`);
     } else {
-        vscode.window.showErrorMessage(`𓂀 ${command} failed: ${msg}`);
+        vscode.window.showErrorMessage(`𓃣 ${command} failed: ${msg}`);
     }
 
-    output.appendLine(`𓂀 ${command} error: ${msg}`);
+    output.appendLine(`𓃣 ${command} error: ${msg}`);
 }

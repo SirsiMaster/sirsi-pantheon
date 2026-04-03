@@ -21,8 +21,8 @@ var raRecord bool
 
 var raCmd = &cobra.Command{
 	Use:   "ra",
-	Short: "\u2600\uFE0F Ra \u2014 Supreme Overseer & Cross-Repo Orchestrator",
-	Long: `☀️ Ra — Supreme Overseer & Cross-Repo Orchestrator
+	Short: "𓇶 Ra — Supreme Overseer & Cross-Repo Orchestrator",
+	Long: `𓇶 Ra — Supreme Overseer & Cross-Repo Orchestrator
 
 Ra orchestrates all Pantheon deities across all Sirsi repositories using
 the Sirsi Orchestrator (claude-code-sdk). He dispatches parallel work,
@@ -342,7 +342,7 @@ var raDeployDryRun bool
 
 var raDeployCmd = &cobra.Command{
 	Use:   "deploy",
-	Short: "𓁯 Neith weaves scopes, ☀️ Ra spawns terminal windows",
+	Short: "𓁯 Neith weaves scopes, 𓇶 Ra spawns terminal windows",
 	Long: `Neith assembles scope prompts from each repo's canon documents
 (CLAUDE.md, Thoth memory, ADRs, blueprints, continuation prompts).
 Ra then spawns a macOS terminal window for each scope.
@@ -365,7 +365,7 @@ Ra then spawns a macOS terminal window for each scope.
 			}
 		}
 
-		output.Header("☀️ Ra — Deploy")
+		output.Header("𓇶 Ra — Deploy")
 		if raDeployDryRun {
 			output.Info("Dry run — Neith will weave prompts but Ra will not spawn windows")
 		}
@@ -387,7 +387,7 @@ Ra then spawns a macOS terminal window for each scope.
 			return err
 		}
 
-		fmt.Printf("\n  ☀️ Deployed %d scope(s)\n\n", len(result.Spawned))
+		fmt.Printf("\n  𓇶 Deployed %d scope(s)\n\n", len(result.Spawned))
 		return nil
 	},
 }
@@ -396,7 +396,7 @@ var raKillCmd = &cobra.Command{
 	Use:   "kill",
 	Short: "Terminate all deployed Ra windows",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		output.Header("☀️ Ra — Kill All Windows")
+		output.Header("𓇶 Ra — Kill All Windows")
 		return ra.KillAll(ra.RADir())
 	},
 }
@@ -405,7 +405,7 @@ var raCollectCmd = &cobra.Command{
 	Use:   "collect",
 	Short: "Collect results from completed windows and run pipeline",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		output.Header("☀️ Ra — Collect Results")
+		output.Header("𓇶 Ra — Collect Results")
 
 		results, err := ra.CollectResults(ra.RADir())
 		if err != nil {
@@ -431,7 +431,7 @@ var raCollectCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("\n  ☀️ Ra → 𓁆 Seshat ingested %d items → 𓁟 Thoth %s\n\n",
+		fmt.Printf("\n  𓇶 Ra → 𓁆 Seshat ingested %d items → 𓁟 Thoth %s\n\n",
 			pr.ItemsIngested, func() string {
 				if pr.ThothSynced {
 					return "synced ✅"

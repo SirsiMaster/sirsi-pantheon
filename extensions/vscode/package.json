@@ -1,6 +1,6 @@
 {
   "name": "sirsi-pantheon",
-  "displayName": "𓂀 Sirsi Pantheon",
+  "displayName": "𓃣 Sirsi Pantheon",
   "description": "One Install. All Deities. The unified DevOps intelligence platform. Infrastructure hygiene, codebase governance, and persistent AI knowledge.",
   "version": "0.7.1",
   "publisher": "SirsiMaster",
@@ -39,22 +39,22 @@
     "commands": [
       {
         "command": "pantheon.scan",
-        "title": "𓂀 Pantheon: Scan Workspace",
+        "title": "𓃣 Pantheon: Scan Workspace",
         "category": "Pantheon"
       },
       {
         "command": "pantheon.guard",
-        "title": "𓂀 Pantheon: Start Guardian",
+        "title": "𓃣 Pantheon: Start Guardian",
         "category": "Pantheon"
       },
       {
         "command": "pantheon.reniceLSP",
-        "title": "𓂀 Pantheon: Renice LSP Processes",
+        "title": "𓃣 Pantheon: Renice LSP Processes",
         "category": "Pantheon"
       },
       {
         "command": "pantheon.ghostReport",
-        "title": "𓂀 Pantheon: Ghost Report (Ka)",
+        "title": "𓃣 Pantheon: Ghost Report (Ka)",
         "category": "Pantheon"
       },
       {
@@ -64,7 +64,7 @@
       },
       {
         "command": "pantheon.showMetrics",
-        "title": "𓂀 Pantheon: Show System Metrics",
+        "title": "𓃣 Pantheon: Show System Metrics",
         "category": "Pantheon"
       },
       {
@@ -74,12 +74,12 @@
       },
       {
         "command": "pantheon.applyWorkspaceSettings",
-        "title": "𓂀 Pantheon: Apply Optimal Workspace Settings",
+        "title": "𓃣 Pantheon: Apply Optimal Workspace Settings",
         "category": "Pantheon"
       },
       {
         "command": "pantheon.crashpadReport",
-        "title": "𓂀 Pantheon: Crashpad Stability Report",
+        "title": "𓃣 Pantheon: Crashpad Stability Report",
         "category": "Pantheon"
       }
     ],

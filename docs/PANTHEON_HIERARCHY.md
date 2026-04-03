@@ -7,7 +7,7 @@
 
 ---
 
-## ☀️ I. The Supreme Overseer: Ra
+## 𓇶 I. The Supreme Overseer: Ra
 **Ra** is the Hypervisor. He sits above all clusters and deities. 
 - **Role**: Supreme Orchestrator. 
 - **Subordination**: Even Ra must submit to the weave and tapestry maintained by Net, though he alone supervises the active creation of new infrastructure.
@@ -45,7 +45,7 @@
 
 | Deity | Archetype | Role | Responsibility |
 |:------|:----------|:-----|:---------------|
-| **𓁹 Horus** | The Eye | Watcher | Shared filesystem index & high-speed publisher. |
+| **𓂀 Horus** | The Eye | Watcher | Shared filesystem index & high-speed publisher. |
 | **🐺 Anubis** | The Judge | Hygiene | Infrastructure hygiene judge & waste hunter. |
 | **⚠️ Ka** | The Spirit | Hunter | Ghost app detection & LaunchServices repair. |
 | **𓁵 Sekhmet**| The Warrior | Guardian | Watchdog: Process prioritization, RAM safety, & NPU hardening. |

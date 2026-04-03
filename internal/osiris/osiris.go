@@ -196,14 +196,14 @@ func (cp *Checkpoint) assessRisk() {
 		cp.Risk = RiskNone
 	case cp.TotalChanges >= 30 || hoursSinceCommit >= 2:
 		cp.Risk = RiskCritical
-		cp.Warning = fmt.Sprintf("𓁹 OSIRIS WARNING: %d uncommitted files, %.0f min since last commit — commit now!",
+		cp.Warning = fmt.Sprintf("𓋹 OSIRIS WARNING: %d uncommitted files, %.0f min since last commit — commit now!",
 			cp.TotalChanges, cp.TimeSinceCommit.Minutes())
 	case cp.TotalChanges >= 16:
 		cp.Risk = RiskHigh
-		cp.Warning = fmt.Sprintf("𓁹 Osiris: %d uncommitted files — consider a checkpoint commit", cp.TotalChanges)
+		cp.Warning = fmt.Sprintf("𓋹 Osiris: %d uncommitted files — consider a checkpoint commit", cp.TotalChanges)
 	case cp.TotalChanges >= 6:
 		cp.Risk = RiskModerate
-		cp.Warning = fmt.Sprintf("𓁹 Osiris: %d uncommitted files", cp.TotalChanges)
+		cp.Warning = fmt.Sprintf("𓋹 Osiris: %d uncommitted files", cp.TotalChanges)
 	default:
 		cp.Risk = RiskLow
 	}
@@ -247,7 +247,7 @@ func (cp *Checkpoint) StatusIcon() string {
 // FormatReport returns a multi-line report for terminal or notification.
 func (cp *Checkpoint) FormatReport() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("𓁹 Osiris Checkpoint — %s\n", cp.StatusIcon()))
+	sb.WriteString(fmt.Sprintf("𓋹 Osiris Checkpoint — %s\n", cp.StatusIcon()))
 	sb.WriteString(fmt.Sprintf("  Branch:     %s\n", cp.Branch))
 	sb.WriteString(fmt.Sprintf("  Repo:       %s\n", filepath.Base(cp.RepoRoot)))
 	sb.WriteString(fmt.Sprintf("  Risk:       %s\n", cp.Risk))

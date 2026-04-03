@@ -104,7 +104,7 @@ func Deploy(opts DeployOptions) (*DeployResult, error) {
 		// Ra spawns the terminal window
 		cfg := SpawnConfig{
 			Name:       scope.Name,
-			Title:      fmt.Sprintf("☀️ Ra: %s", scope.DisplayName),
+			Title:      fmt.Sprintf("𓇶 Ra: %s", scope.DisplayName),
 			WorkDir:    repoPath,
 			PromptFile: promptFile,
 			LogFile:    filepath.Join(raDir, "logs", scope.Name+".log"),
@@ -119,7 +119,7 @@ func Deploy(opts DeployOptions) (*DeployResult, error) {
 			continue
 		}
 
-		fmt.Printf("  ☀️ Spawned: %s → %s\n", scope.DisplayName, repoPath)
+		fmt.Printf("  𓇶 Spawned: %s → %s\n", scope.DisplayName, repoPath)
 		spawned = append(spawned, scope.Name)
 	}
 
@@ -163,7 +163,7 @@ func Deploy(opts DeployOptions) (*DeployResult, error) {
 			if err != nil {
 				fmt.Printf("  ⚠️  Pipeline error: %v\n", err)
 			} else {
-				fmt.Printf("\n  ☀️ Ra complete → 𓁆 Seshat ingested %d items → 𓁟 Thoth %s\n",
+				fmt.Printf("\n  𓇶 Ra complete → 𓁆 Seshat ingested %d items → 𓁟 Thoth %s\n",
 					pr.ItemsIngested, syncStatus(pr.ThothSynced))
 			}
 		}

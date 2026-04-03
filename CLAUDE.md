@@ -163,7 +163,7 @@ When context health is 🟡 or 🔴, the agent MUST proactively:
 All terminal output MUST use the Anubis brand language:
 *   **Colors**: Gold (`#C8A951`) for highlights, White for body text, Red for errors, Green for success. No raw unstylized output in interactive mode.
 *   **Rendering**: Uses `lipgloss` for styled output and `table` for tabular data.
-*   **Headers**: 𓂀 glyph prefix for section headers.
+*   **Headers**: 𓃣 glyph prefix for section headers.
 *   **Progress**: Spinner or progress bar for operations > 2 seconds.
 *   **JSON mode**: `--json` flag outputs raw JSON for piping/scripting. No styling in JSON mode.
 *   **Quiet mode**: `--quiet` flag suppresses all output except errors and final summary.

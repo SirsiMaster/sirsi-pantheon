@@ -113,7 +113,7 @@ func GenerateAllDiagrams(projectRoot string) ([]*DiagramResult, error) {
 
 func generateHierarchy() (*DiagramResult, error) {
 	mermaid := `graph TD
-    Ra["☀️ Ra<br/>Supreme Overseer"]
+    Ra["𓇶 Ra<br/>Supreme Overseer"]
     Net["𓁯 Net / Neith<br/>The Weaver"]
 
     subgraph CodeGods["𓀭 Code Gods — Governance & Knowledge"]
@@ -124,7 +124,7 @@ func generateHierarchy() (*DiagramResult, error) {
     end
 
     subgraph MachineGods["𓀰 Machine Gods — Infrastructure & OS"]
-        Horus["𓁹 Horus<br/>The Eye"]
+        Horus["𓂀 Horus<br/>The Eye"]
         Anubis["𓁢 Anubis<br/>The Judge"]
         Ka["⚠️ Ka<br/>The Spirit"]
         Sekhmet["𓁵 Sekhmet<br/>The Warrior"]

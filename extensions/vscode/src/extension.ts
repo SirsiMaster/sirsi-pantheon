@@ -1,4 +1,4 @@
-// 𓂀 Pantheon VS Code Extension — extension.ts
+// 𓃣 Pantheon VS Code Extension — extension.ts
 //
 // Entry point. Activates on workspace open (onStartupFinished).
 // Starts Guardian (always-on renice), status bar ankh, Thoth provider,
@@ -29,7 +29,7 @@ let crashpadMonitor: CrashpadMonitor | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('Pantheon');
-    outputChannel.appendLine('𓂀 Pantheon extension activating...');
+    outputChannel.appendLine('𓃣 Pantheon extension activating...');
 
     // ── Resolve binary path ───────────────────────────────────────────
     const config = vscode.workspace.getConfiguration('pantheon');
@@ -100,13 +100,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const pollInterval = config.get<number>('guardian.pollInterval', 5);
     statusBar.startMetricLoop(pollInterval * 1000);
 
-    outputChannel.appendLine('𓂀 Pantheon extension activated — the Anubis Suite is operational');
+    outputChannel.appendLine('𓃣 Pantheon extension activated — the Anubis Suite is operational');
 
     // Show welcome notification on first install
     const hasShownWelcome = context.globalState.get<boolean>('pantheon.welcomeShown');
     if (!hasShownWelcome) {
         vscode.window.showInformationMessage(
-            '𓂀 Pantheon activated. Guardian is monitoring your workspace.',
+            '𓃣 Pantheon activated. Guardian is monitoring your workspace.',
             'Show Metrics',
             'Dismiss'
         ).then(choice => {
@@ -141,7 +141,7 @@ function applyOptimalSettings(outputChannel: vscode.OutputChannel): void {
             '-**/.vscode-test',
             '-**/dist',
         ], vscode.ConfigurationTarget.Workspace);
-        outputChannel.appendLine('𓂀 Applied gopls directory filters');
+        outputChannel.appendLine('𓃣 Applied gopls directory filters');
     }
 
     // File watcher exclusions — reduce inotify/kqueue pressure
@@ -164,13 +164,13 @@ function applyOptimalSettings(outputChannel: vscode.OutputChannel): void {
 
     if (needsUpdate) {
         wsConfig.update('files.watcherExclude', existingExcludes, vscode.ConfigurationTarget.Workspace);
-        outputChannel.appendLine('𓂀 Applied file watcher exclusions');
+        outputChannel.appendLine('𓃣 Applied file watcher exclusions');
     }
 
     // Disable shell integration if causing issues
     const shellIntegration = wsConfig.get<boolean>('terminal.integrated.shellIntegration.enabled');
     if (shellIntegration !== false) {
         wsConfig.update('terminal.integrated.shellIntegration.enabled', false, vscode.ConfigurationTarget.Workspace);
-        outputChannel.appendLine('𓂀 Disabled shell integration (reduces Extension Host CPU)');
+        outputChannel.appendLine('𓃣 Disabled shell integration (reduces Extension Host CPU)');
     }
 }

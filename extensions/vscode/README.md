@@ -1,4 +1,4 @@
-# 𓂀 Pantheon — Anubis Suite
+# 𓃣 Pantheon — Anubis Suite
 
 **Always-on infrastructure hygiene for your IDE.** Auto-renice, RAM guardian, memory GC, context compression. The Anubis Suite operates without oversight.
 

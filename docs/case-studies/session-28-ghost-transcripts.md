@@ -94,7 +94,7 @@ That commit message alone is a recoverable narrative.
 **Recovery contribution: Session entries for all 3 sessions.**
 The CHANGELOG had structured entries for the Sekhmet Phase and Sekhmet ANE tokenization. Ma'at's governance framework required these entries, and they served as independent verification of what happened.
 
-### 🥈 Horus (𓁹) — The Build Log
+### 🥈 Horus (𓂀) — The Build Log
 **Recovery contribution: Full Session 26 entry, partial Session 25.**
 `BUILD_LOG.md` contained Sprint 14 (Sekhmet) and Session 26 (Sekhmet) documentation with technical metrics.
 

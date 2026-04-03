@@ -14,10 +14,10 @@
 
 **Sirsi Pantheon** is a unified DevOps intelligence platform that brings together every deity in the Sirsi ecosystem into a single, lightweight binary. Install once, get infrastructure hygiene, QA/QC governance, persistent AI knowledge, and more.
 
-### ☀️ The Hypervisor
+### 𓇶 The Hypervisor
 | Glyph | Deity | Domain | What It Does |
 |:------|:------|:-------|:-------------|
-| ☀️ | **Ra** | Supreme Overseer | The boss — orchestrates all deities automatically (planned) |
+| 𓇶 | **Ra** | Supreme Overseer | The boss — orchestrates all deities automatically (planned) |
 
 ### 𓁯 The Weaver
 | Glyph | Deity | Domain | What It Does | Dependencies |
@@ -39,10 +39,10 @@
 
 | Glyph | Deity | Domain | What It Does | Dependencies |
 |:------|:------|:-------|:-------------|:-------------|
-| 𓂀 | **Anubis** | Judge of Hygiene | Finds junk on your computer that cleaning apps miss | Horus |
+| 𓃣 | **Anubis** | Judge of Hygiene | Finds junk on your computer that cleaning apps miss | Horus |
 | 𓂓 | **Ka** | Spirit Hunter | Detects apps you deleted that are still secretly running | Horus |
 | 𓁵 | **Sekhmet**| Warrior Guardian | Watchdog: kills runaway processes & NPU acceleration | Hapi |
-| 𓁹 | **Horus** | The All-Seeing Eye| Shared storage index: walk once, query forever | None |
+| 𓂀 | **Horus** | The All-Seeing Eye| Shared storage index: walk once, query forever | None |
 | 𓆣 | **Khepri** | The Scarab | Network discovery and container audit scavenger | None |
 | 𓁶 | **Hapi** | God of the Flow | Detects GPUs, ANE, and hardware accelerators | None |
 | 𓇼 | **Seba** | Star Map | Draws a visual map of your infrastructure topology | Khepri |
@@ -218,12 +218,12 @@ Pantheon is built on modules named after Egyptian mythology. Every deity maintai
 | Module | Deity | Role | Status |
 |:-------|:------|:-----|:-------|
 | **Jackal** | Anubis | Scan engine — 64 rules across 7 domains | ✅ |
-| **Cleaner** | 𓂀 Anubis | Safe deletion with Trash + SHA-256 verification | ✅ |
+| **Cleaner** | 𓃣 Anubis | Safe deletion with Trash + SHA-256 verification | ✅ |
 | **Ka** | 𓂓 Ka | Ghost app detection — 17 macOS locations | ✅ |
 | **Mirror** | 𓉡 Hathor | File dedup — 27x faster than naive hashing | ✅ |
 | **Guard** | 𓁵 Sekhmet | RAM audit, zombie process management | ✅ |
-| **Sight** | 𓁹 Horus | Launch Services + Spotlight repair | ✅ |
-| **Horus** | 𓁹 Horus | Shared filesystem index — walk once, query forever | ✅ |
+| **Sight** | 𓂀 Horus | Launch Services + Spotlight repair | ✅ |
+| **Horus** | 𓂀 Horus | Shared filesystem index — walk once, query forever | ✅ |
 | **Hapi** | 𓁶 Hapi | GPU/Neural Engine/VRAM detection | ✅ |
 | **Scarab** | 𓆣 Khepri | Network discovery + container audit | ✅ |
 | **Brain** | 𓁟 Thoth | On-demand model downloader + classifier | ✅ |
@@ -544,7 +544,7 @@ MIT License — free and open source forever. See [LICENSE](LICENSE).
 - **GitHub**: [github.com/SirsiMaster](https://github.com/SirsiMaster)
 - **Pantheon Hub**: [pantheon.sirsi.ai](https://pantheon.sirsi.ai)
 
-## 𓂀 Documentation & Registry
+## 𓃣 Documentation & Registry
 
 - **[FAQ: Which Tool Should I Use?](https://pantheon.sirsi.ai/faq)**: Decision matrix for choosing the right Pantheon tool.
 - **[Deity Registry](https://pantheon.sirsi.ai)**: Interactive hub for all 12 deities.

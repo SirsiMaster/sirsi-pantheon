@@ -1,5 +1,5 @@
 #!/bin/bash
-# 𓂀 Pantheon Pre-Push Gate
+# 𓃣 Pantheon Pre-Push Gate
 # Guarantees CI stays green by running checks before push.
 # Install: git config core.hooksPath .githooks
 # Skip:    git push --no-verify (use sparingly)

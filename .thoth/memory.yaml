@@ -36,7 +36,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # Hapi: internal/hapi/ (GPU, dedup, snapshots)
 # Ma'at: internal/maat/ (QA/QC governance — coverage, canon, pipeline)
 # Horus: internal/horus/ (publisher + scoped FS index — Phase 3: 8 targeted roots, demand-driven)
-# ☀️ Ra: internal/ra/ (The Hypervisor — Supreme Overseer)
+# 𓇶 Ra: internal/ra/ (The Hypervisor — Supreme Overseer)
 # 𓁯 Net: internal/neith/ (The Weaver — Owns Plan, Canon & Timelines)
 # 
 # 𓀭 THE CODE GODS (Governance & Knowledge)
@@ -243,7 +243,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   Full TypeScript extension replacing JS scaffold (ADR-012).
 #   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.
 #   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns pantheon guard --renice lsp.
-#   statusBar.ts: Ankh (𓂀) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
+#   statusBar.ts: Ankh (𓃣) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
 #   commands.ts: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
 #   thothProvider.ts: Context compression from .thoth/memory.yaml with file watching.
 #   ADR-012 accepted. ADR Index: 12 ADRs (001-012).

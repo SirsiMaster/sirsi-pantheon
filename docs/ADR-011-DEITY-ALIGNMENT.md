@@ -18,7 +18,7 @@ and perceptible click latency in the IDE.
 
 ### Deity Canonical Scopes
 
-| ☀️ **Ra** | The Hypervisor | Supreme Overseer & Orchestrator of Creation |
+| 𓇶 **Ra** | The Hypervisor | Supreme Overseer & Orchestrator of Creation |
 | 𓁯 **Net** | The Weaver | Weaver of Existence — Owners Plan, Canon & Timelines |
 |-------|-----------|----------------------|
 | **𓀭 The Code Gods** | **Governance & Knowledge** | **Plan, Quality, Memory, Healing** |
@@ -29,14 +29,14 @@ and perceptible click latency in the IDE.
 |-------|-----------|----------------------|
 | **𓀰 The Machine Gods** | **Infrastructure & OS** | **Safety, Resource, Network, Hardware** |
 |-------|-----------|----------------------|
-| **𓁹 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
+| **𓂀 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
 | **🐺 Jackal/Anubis** | The Hunter | Waste scanner & Infrastructure Hygiene Judge |
 | **⚠️ Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
 | **𓁵 Sekhmet** | The Warrior | Process control — watchdog, orphan slayer, NPU hardening |
 | **𓈗 Hapi** | The River | GPU/VRAM and NPU (Accelerator) flow management |
 | **🪲 Scarab** | The Roller | Fleet discovery — subnets, VLANs, containers |
 | **🔮 Seba** | The Star | Dependency graph & Topology mapper |
-| **𓁹 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
+| **𓂀 Horus** | The Watcher | Publisher (HTML/GitHub) + demand-driven filesystem index |
 | **🐺 Jackal** | The Hunter | Waste scanner — uses Horus index as read-only data source |
 | **⚠️ Ka** | The Spirit | Ghost detector — finds remnants of uninstalled apps |
 | **𓁵 Sekhmet** | The Warrior | Process control — RAM watchdog, orphan slayer, renice |
@@ -44,7 +44,7 @@ and perceptible click latency in the IDE.
 | **𓈗 Hapi** | The River | GPU/VRAM and storage flow management |
 | **🪲 Scarab** | The Roller | Fleet discovery — subnets, VLANs, containers |
 | **🔮 Seba** | The Star | Dependency graph mapper |
-| **☀️ Ra** | The Thinker | Hypervisor — orchestrates all deities (FUTURE) |
+| **𓇶 Ra** | The Thinker | Hypervisor — orchestrates all deities (FUTURE) |
 
 ### Key Changes
 

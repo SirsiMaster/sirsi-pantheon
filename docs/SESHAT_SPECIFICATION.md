@@ -18,8 +18,8 @@ In the Pantheon, Seshat is the **universal knowledge grafting layer** — she in
 | **Sirsi** (creator deity) | Seshat is Sirsi's scribe — she records and reconciles all knowledge that flows through the ecosystem |
 | **Thoth** 𓁟 | Project-level memory keeper. Seshat feeds Thoth with reconciled knowledge; Thoth persists it per-project |
 | **Ma'at** 𓆄 | Governs quality of Seshat's reconciled output (no hallucinated references, no stale data) |
-| **Ra** ☀️ | Enterprise orchestrator — will use Seshat for fleet-wide knowledge distribution |
-| **Osiris** 𓁹 | Session checkpoint guardian — Seshat can recover knowledge from Osiris snapshots |
+| **Ra** 𓇶 | Enterprise orchestrator — will use Seshat for fleet-wide knowledge distribution |
+| **Osiris** 𓋹 | Session checkpoint guardian — Seshat can recover knowledge from Osiris snapshots |
 
 ---
 

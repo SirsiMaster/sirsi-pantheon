@@ -13,7 +13,7 @@ import (
 // SpawnConfig describes how to spawn a terminal window for a Ra scope.
 type SpawnConfig struct {
 	Name       string // scope name
-	Title      string // window title (e.g. "☀️ Ra: Assiduous")
+	Title      string // window title (e.g. "𓇶 Ra: Assiduous")
 	WorkDir    string // repo path
 	PromptFile string // path to Neith's generated prompt
 	LogFile    string // stdout/stderr capture

@@ -91,7 +91,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 ### Session 37 (2026-03-29) — The Great Pantheon Consolidation
 - **Deity-First Architecture** — Successfully consolidated 12 fragmented command scripts into 6 Master Deity Pillars, achieving the "One Install. All Deities." standard.
-  - **Anubis 𓂀**: Unified Hygiene, Ka Ghost Hunter, Mirror Dedup, and Guard Watchdog.
+  - **Anubis 𓃣**: Unified Hygiene, Ka Ghost Hunter, Mirror Dedup, and Guard Watchdog.
   - **Ma'at 𓁐**: Unified Scales Governance and Isis Autonomous Remediation.
   - **Thoth 𓁟**: Unified Knowledge Sync and Permanent Brain Ledger.
   - **Hapi 𓈗**: Unified Hardware Detection and Sekhmet ANE Acceleration.
@@ -282,7 +282,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - **VS Code Extension** (`extensions/vscode/`) — Full TypeScript extension replacing JS scaffold (ADR-012).
   - `extension.ts`: Entry point — starts Guardian, status bar, Thoth on activation.
   - `guardian.ts`: Always-on renice (30s delay, 60s re-apply loop). Spawns `pantheon guard --renice lsp --json`.
-  - `statusBar.ts`: Ankh (𓂀) icon with live RAM/CPU metrics. Polls `ps` directly (sub-50ms). Color-coded states.
+  - `statusBar.ts`: Ankh (𓃣) icon with live RAM/CPU metrics. Polls `ps` directly (sub-50ms). Color-coded states.
   - `commands.ts`: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
   - `thothProvider.ts`: Context compression from `.thoth/memory.yaml` with file watching.
 - **ADR-012**: Pantheon VS Code Extension architecture decision accepted.

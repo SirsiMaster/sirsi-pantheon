@@ -1,4 +1,4 @@
-# 𓂀 Anubis Engineering Journal
+# 𓃣 Anubis Engineering Journal
 # Running commentary and insights — a documentary of the build process.
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
@@ -475,7 +475,7 @@ Issues 3 and 4 required modifying files inside `/Applications/Antigravity.app/`.
 
 > ⚠️ This entry was reconstructed from git commits `bc62920` and `6a322ca`, BUILD_LOG.md Session 26, and memory.yaml after the original conversation was lost.
 
-**Context**: Sessions 26-27. Three Pantheon processes were running simultaneously: the Menu Bar app, the Guard CLI daemon, and the MCP server. Each one displayed the ankh (𓂀) icon in the macOS menu bar. The user saw three identical tray icons. This is the "Triple Ankh" problem.
+**Context**: Sessions 26-27. Three Pantheon processes were running simultaneously: the Menu Bar app, the Guard CLI daemon, and the MCP server. Each one displayed the ankh (𓃣) icon in the macOS menu bar. The user saw three identical tray icons. This is the "Triple Ankh" problem.
 
 **Root cause**: No process-level exclusion. Each entry point (`cmd/pantheon-menubar/main.go`, `cmd/pantheon/guard.go`, `cmd/pantheon/mcp.go`) started independently without checking if another Pantheon instance was already running.
 

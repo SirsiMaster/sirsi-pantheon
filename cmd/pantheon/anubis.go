@@ -229,12 +229,12 @@ func runAnubisApps(cmd *cobra.Command, args []string) error {
 		}
 
 		_, err := ra.SpawnWindow(ra.SpawnConfig{
-			Name:    "anubis-apps",
-			Title:   "\U000130C3 Anubis \u2014 Application Registry",
-			WorkDir: cwd,
-			LogFile: raDir + "/logs/anubis-apps.log",
-			ExitFile: raDir + "/exits/anubis-apps.exit",
-			PIDFile:  raDir + "/pids/anubis-apps.pid",
+			Name:       "anubis-apps",
+			Title:      "\U000130C3 Anubis \u2014 Application Registry",
+			WorkDir:    cwd,
+			LogFile:    raDir + "/logs/anubis-apps.log",
+			ExitFile:   raDir + "/exits/anubis-apps.exit",
+			PIDFile:    raDir + "/pids/anubis-apps.pid",
 			PromptFile: "", // Not using claude --print; we need a direct command
 		})
 		if err != nil {

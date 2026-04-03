@@ -36,12 +36,12 @@ type InstalledApp struct {
 
 // systemProfilerApp represents a single app entry from system_profiler JSON.
 type systemProfilerApp struct {
-	Name      string `json:"_name"`
-	Version   string `json:"version"`
-	Path      string `json:"path"`
-	BundleID  string `json:"info"`       // sometimes populated
-	Source    string `json:"obtained_from"` // "identified_developer", "apple", "mac_app_store", etc.
-	LastUsed  string `json:"lastModified"`
+	Name     string `json:"_name"`
+	Version  string `json:"version"`
+	Path     string `json:"path"`
+	BundleID string `json:"info"`          // sometimes populated
+	Source   string `json:"obtained_from"` // "identified_developer", "apple", "mac_app_store", etc.
+	LastUsed string `json:"lastModified"`
 }
 
 // systemProfilerResult wraps the top-level JSON structure from system_profiler.

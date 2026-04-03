@@ -1,10 +1,10 @@
-// 𓂀 Pantheon Status Bar — statusBar.ts
+// 𓃣 Pantheon Status Bar — statusBar.ts
 //
-// The Ankh (𓂀) icon in the IDE status bar with live system metrics.
+// The Ankh (𓃣) icon in the IDE status bar with live system metrics.
 //
 // States:
-//   𓂀 Pantheon      — healthy, Guardian running
-//   𓂀 Pantheon ▲    — memory pressure detected
+//   𓃣 Pantheon      — healthy, Guardian running
+//   𓃣 Pantheon ▲    — memory pressure detected
 //   ⚠ Pantheon      — error / binary not found
 //   ⏳ Pantheon      — initializing / first scan pending
 //
@@ -181,7 +181,7 @@ export class PantheonStatusBar implements vscode.Disposable {
         md.isTrusted = true;
         md.supportThemeIcons = true;
 
-        md.appendMarkdown('### 𓂀 Pantheon — Anubis Suite\n\n');
+        md.appendMarkdown('### 𓃣 Pantheon — Anubis Suite\n\n');
         md.appendMarkdown(`| Metric | Value |\n|--------|-------|\n`);
         md.appendMarkdown(`| LSP RAM | **${this.metrics.ramHuman}** |\n`);
         md.appendMarkdown(`| LSP Processes | ${this.metrics.lspProcesses} |\n`);

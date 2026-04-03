@@ -93,7 +93,7 @@ Ma'at now queries Git for modified files and only runs tests on changed packages
 
 ---
 
-## 𓁹 Case Study 6: HORUS & THE SHARED INDEX
+## 𓂀 Case Study 6: HORUS & THE SHARED INDEX
 **Status:** Shipped | **Deity:** Horus (All-Seeing Eye) | **Speedup:** 19× Overall
 
 ### The Problem
