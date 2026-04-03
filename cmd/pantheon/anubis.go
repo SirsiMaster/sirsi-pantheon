@@ -228,6 +228,7 @@ func runAnubisApps(cmd *cobra.Command, args []string) error {
 			shellArgs = append(shellArgs, "--json")
 		}
 
+		_ = shellArgs // used to build the command for the spawned window
 		_, err := ra.SpawnWindow(ra.SpawnConfig{
 			Name:       "anubis-apps",
 			Title:      "\U000130C3 Anubis \u2014 Application Registry",
@@ -440,7 +441,7 @@ func runAnubisUninstall(ctx context.Context, appName string, complete bool) erro
 	response = strings.TrimSpace(strings.ToLower(response))
 
 	if response != "y" && response != "yes" {
-		output.Info("Cancelled.")
+		output.Info("Canceled.")
 		return nil
 	}
 

@@ -416,7 +416,7 @@ func appSize(ctx context.Context, appPath string) int64 {
 		return 0
 	}
 	var kb int64
-	fmt.Sscanf(fields[0], "%d", &kb)
+	_, _ = fmt.Sscanf(fields[0], "%d", &kb)
 	return kb * 1024
 }
 

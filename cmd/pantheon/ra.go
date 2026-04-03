@@ -358,7 +358,7 @@ Ra then spawns a macOS terminal window for each scope.
 		}
 
 		configDir := filepath.Join(repoRoot, "configs", "scopes")
-		if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		if _, statErr := os.Stat(configDir); os.IsNotExist(statErr) {
 			// Try relative to PANTHEON_ROOT
 			if root := os.Getenv("PANTHEON_ROOT"); root != "" {
 				configDir = filepath.Join(root, "configs", "scopes")

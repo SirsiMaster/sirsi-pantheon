@@ -225,14 +225,14 @@ func IngestWindowResults(repoRoot string, results []WindowResult) (*PipelineResu
 
 func writeDeployMeta(raDir string, scopes []string) {
 	metaDir := raDir
-	os.MkdirAll(metaDir, 0755)
+	_ = os.MkdirAll(metaDir, 0755)
 
 	meta := deploymentMeta{
 		StartedAt: time.Now().Format(time.RFC3339),
 		Scopes:    scopes,
 	}
 	data, _ := json.MarshalIndent(meta, "", "  ")
-	os.WriteFile(filepath.Join(metaDir, "deployment.json"), data, 0644)
+	_ = os.WriteFile(filepath.Join(metaDir, "deployment.json"), data, 0644)
 }
 
 func expandHome(path string) string {

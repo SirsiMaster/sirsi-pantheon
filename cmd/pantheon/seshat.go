@@ -528,8 +528,8 @@ Examples:
 		}
 
 		fmt.Printf("  📤 Exporting %d items to NotebookLM format...\n", len(items))
-		if err := target.Export(items); err != nil {
-			return fmt.Errorf("export to NotebookLM: %w", err)
+		if exportErr := target.Export(items); exportErr != nil {
+			return fmt.Errorf("export to NotebookLM: %w", exportErr)
 		}
 
 		// Step 3: List exported files
