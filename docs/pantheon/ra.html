@@ -124,7 +124,7 @@
       <span class="supported">Linux &#10003;</span>
       <span class="partial">Windows ~</span>
     </div>
-    <p class="desc">Ra is the supreme overseer — the Sirsi Hypervisor incarnated as a Pantheon deity. He monitors system health, decides when to scan, guard, clean, and heal — without you asking. In the Ra Enterprise Edition, he orchestrates fleets of machines, manages GPU/TPU clusters, enforces compliance across routers and switches, and connects to the Sirsi Nexus platform. Ra is the crown jewel.</p>
+    <p class="desc">Ra is the supreme overseer — the Sirsi Hypervisor incarnated as a Pantheon deity. He orchestrates all deities across every Sirsi repository, dispatching parallel Claude agents for health checks, tests, lints, and arbitrary tasks fleet-wide. In the Ra Enterprise Edition, he manages GPU/TPU clusters, enforces compliance across routers and switches, and connects to the Sirsi Nexus platform. Ra is the crown jewel.</p>
   </header>
 
   <div class="metrics-strip">
@@ -162,8 +162,32 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra (planned)</span></code>
-        <code><span class="comment"># Start autonomous monitoring and orchestration</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra health</span></code>
+        <code><span class="comment"># Health check across all repos</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra test</span></code>
+        <code><span class="comment"># Run tests across all repos in parallel</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra lint</span></code>
+        <code><span class="comment"># Run linters across all repos in parallel</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra task pantheon "fix the seba test failures"</span></code>
+        <code><span class="comment"># Dispatch targeted task to a specific repo</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra broadcast "check for security vulnerabilities"</span></code>
+        <code><span class="comment"># Run a prompt across all repos simultaneously</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra nightly</span></code>
+        <code><span class="comment"># Full nightly CI: health + lint + test</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra status</span></code>
+        <code><span class="comment"># Show orchestrator prerequisites and repo fleet</span></code>
       </div>
     </div>
   </section>
@@ -173,7 +197,7 @@
       <h2>Usability Surface</h2>
       <table class="surface-table">
         <thead><tr><th>Interface</th><th>Status</th><th>Detail</th></tr></thead>
-        <tbody><tr><td>CLI</td><td>📋 Planned</td><td>pantheon ra</td></tr><tr><td>Web Dashboard</td><td>📋 Planned</td><td>Enterprise admin portal</td></tr><tr><td>LSP</td><td>📋 Planned</td><td>Sirsi Language Server</td></tr><tr><td>API</td><td>📋 Planned</td><td>REST + gRPC fleet API</td></tr></tbody>
+        <tbody><tr><td>CLI</td><td>✅ Active</td><td>pantheon ra health | test | lint | task | broadcast | nightly | status</td></tr><tr><td>Web Dashboard</td><td>📋 Planned</td><td>Enterprise admin portal</td></tr><tr><td>LSP</td><td>📋 Planned</td><td>Sirsi Language Server</td></tr><tr><td>API</td><td>📋 Planned</td><td>REST + gRPC fleet API</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -211,18 +235,28 @@
       <div class="howto">
         <h2>How To</h2>
         <div class="step">
-          <div class="step-num">Step 1</div>
-          <p><strong>Understand the vision</strong> — Ra is the autonomous orchestration layer (enterprise). Currently planned.</p>
-          <pre><code># Ra is not yet available as a standalone command</code></pre>
+          <div class="step-num">Step 1 — Install prerequisites</div>
+          <p>Ra requires Python 3 and the Claude Agent SDK to dispatch parallel work.</p>
+          <pre><code>pip3 install claude-code-sdk</code></pre>
         </div>
         <div class="step">
-          <div class="step-num">Step 2</div>
-          <p><strong>Preview the architecture</strong> — Ra will coordinate all deities automatically based on policy.</p>
-          <pre><code># pantheon ra (planned) -- start autonomous monitoring</code></pre>
+          <div class="step-num">Step 2 — Check status</div>
+          <p>Verify that the orchestrator, python3, and claude-code-sdk are all available.</p>
+          <pre><code>pantheon ra status</code></pre>
         </div>
         <div class="step">
-          <div class="step-num">Step 3</div>
-          <p><strong>Enterprise integration</strong> — Ra Enterprise connects to Sirsi Nexus for fleet-wide management.</p>
+          <div class="step-num">Step 3 — Run a health check</div>
+          <p>Quick fleet-wide health check: git status, recent commits, and build verification across all repos.</p>
+          <pre><code>pantheon ra health</code></pre>
+        </div>
+        <div class="step">
+          <div class="step-num">Step 4 — Dispatch targeted work</div>
+          <p>Send a task to a specific repo with full tool access (Read, Grep, Bash, Edit, Write).</p>
+          <pre><code>pantheon ra task pantheon "fix the seba test failures"</code></pre>
+        </div>
+        <div class="step">
+          <div class="step-num">Step 5 — Enterprise integration</div>
+          <p>Ra Enterprise connects to Sirsi Nexus for fleet-wide machine management.</p>
           <pre><code># Contact sirsi.ai for Ra Enterprise pricing</code></pre>
         </div>
       </div>
@@ -234,8 +268,8 @@
       <div class="faq">
         <h2>Frequently Asked Questions</h2>
         <div class="faq-item">
-          <div class="faq-q">When will Ra be available?</div>
-          <div class="faq-a">Ra is currently in the planning phase. The architecture is designed but implementation has not started. Check the build log for updates.</div>
+          <div class="faq-q">Is Ra available now?</div>
+          <div class="faq-a">Yes. The Ra CLI is live as of v0.9.0. Run <code>pantheon ra status</code> to verify your setup, then use <code>pantheon ra health</code> to get started.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Will Ra be free?</div>
@@ -260,7 +294,7 @@
       <a href="/build-log">Build Log</a>
       <a href="https://sirsi.ai">Sirsi Nexus</a>
     </div>
-    <p>☀️ Ra — Part of <a href="/">Sirsi Pantheon</a> v0.4.0-alpha</p>
+    <p>☀️ Ra — Part of <a href="/">Sirsi Pantheon</a> v0.9.0-rc1</p>
   </footer>
 </body>
 </html>

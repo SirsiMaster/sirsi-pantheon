@@ -178,6 +178,26 @@ func guides() map[string]deityGuide {
 			},
 			Platform: "All platforms. Requires Go toolchain.",
 		},
+		"ra": {
+			Name: "Ra", Glyph: "\u2600\uFE0F", Tagline: "Supreme Overseer & Cross-Repo Orchestrator",
+			Steps: []step{
+				{"What Ra does", "Ra orchestrates all Pantheon deities across every Sirsi\nrepository. He dispatches parallel Claude agents to run health checks,\ntests, lints, and arbitrary tasks fleet-wide."},
+				{"Quick health check", "Run `pantheon ra health` to verify build status,\ngit cleanliness, and recent commits across all repos."},
+				{"Parallel testing", "Run `pantheon ra test` to execute each repo's test\nsuite in parallel via dedicated Claude agents."},
+				{"Targeted work", "Run `pantheon ra task pantheon \"fix X\"` to dispatch a\nfocused task to a single repo with full tool access."},
+				{"Fleet-wide broadcast", "Run `pantheon ra broadcast \"check deps\"` to run\nthe same prompt across every repo simultaneously."},
+				{"Nightly CI", "Run `pantheon ra nightly` for a comprehensive three-phase\ncheck: health, lint, and test across the fleet."},
+			},
+			Examples: []string{
+				"pantheon ra health",
+				"pantheon ra test",
+				"pantheon ra task pantheon \"fix the seba test failures\"",
+				"pantheon ra broadcast \"check for security vulnerabilities in dependencies\"",
+				"pantheon ra nightly",
+				"pantheon ra status",
+			},
+			Platform: "All platforms. Requires python3 and claude-code-sdk (pip3 install claude-code-sdk).",
+		},
 		"isis": {
 			Name: "Isis", Glyph: "\U00013068", Tagline: "Autonomous Healing & Remediation",
 			Steps: []step{
@@ -197,7 +217,7 @@ func guides() map[string]deityGuide {
 func AllDeities() []string {
 	return []string{
 		"anubis", "hapi", "hathor", "horus", "isis",
-		"ka", "khepri", "maat", "seba", "sekhmet",
+		"ka", "khepri", "maat", "ra", "seba", "sekhmet",
 		"seshat", "thoth",
 	}
 }

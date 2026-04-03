@@ -42,6 +42,7 @@ Core commands:
   pantheon mcp                Start MCP server for IDE integration (Claude, Cursor, VS Code)
 
 Advanced:
+  pantheon ra --help          Supreme Overseer — cross-repo orchestration
   pantheon anubis --help      Full hygiene engine (scan, judge, clean)
   pantheon maat --help        Governance and compliance auditing
   pantheon hapi --help        Hardware profiling and accelerator detection
@@ -156,6 +157,7 @@ func init() {
 	rootCmd.AddCommand(thothCmd)
 	rootCmd.AddCommand(maatCmd)
 	rootCmd.AddCommand(seshatCmd)
+	rootCmd.AddCommand(raCmd)
 	rootCmd.AddCommand(anubisCmd)
 	rootCmd.AddCommand(versionCmd)
 }
