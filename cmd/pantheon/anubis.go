@@ -36,6 +36,7 @@ var (
 	appsUninstall string
 	appsComplete  bool
 	appsWindow    bool
+	appsYes       bool
 )
 
 var anubisCmd = &cobra.Command{
@@ -122,6 +123,7 @@ func init() {
 	anubisAppsCmd.Flags().StringVar(&appsUninstall, "uninstall", "", "Uninstall an app by name")
 	anubisAppsCmd.Flags().BoolVar(&appsComplete, "complete", false, "Full removal including all residuals (use with --uninstall)")
 	anubisAppsCmd.Flags().BoolVar(&appsWindow, "window", false, "Open output in a new Terminal.app window")
+	anubisAppsCmd.Flags().BoolVar(&appsYes, "yes", false, "Skip confirmation prompt (use with --uninstall)")
 
 	anubisCmd.AddCommand(anubisWeighCmd)
 	anubisCmd.AddCommand(anubisJudgeCmd)
@@ -434,15 +436,17 @@ func runAnubisUninstall(ctx context.Context, appName string, complete bool) erro
 		}
 	}
 
-	// Ask for confirmation
-	fmt.Fprintf(os.Stderr, "\n  Proceed with removal? Items will be moved to Trash. [y/N] ")
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
+	// Ask for confirmation (skip if --yes)
+	if !appsYes {
+		fmt.Fprintf(os.Stderr, "\n  Proceed with removal? Items will be moved to Trash. [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
 
-	if response != "y" && response != "yes" {
-		output.Info("Canceled.")
-		return nil
+		if response != "y" && response != "yes" {
+			output.Info("Canceled.")
+			return nil
+		}
 	}
 
 	// Phase 2: Actual removal
