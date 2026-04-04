@@ -35,7 +35,7 @@ type Entry struct {
 	Hash  string            `json:"hash"`  // SHA-256 of this entry (computed on write)
 }
 
-// Common event types.
+// Event types — Ra orchestration.
 const (
 	TypeDeployStart = "deploy_start"
 	TypeDeployEnd   = "deploy_end"
@@ -53,12 +53,79 @@ const (
 	TypeFailed      = "failed"
 )
 
+// Event types — deity operations.
+const (
+	// Thoth — memory & persistence
+	TypeThothSync    = "thoth_sync"
+	TypeThothCompact = "thoth_compact"
+	TypeThothPrune   = "thoth_prune"
+
+	// Ma'at — quality & governance
+	TypeMaatWeigh = "maat_weigh"
+	TypeMaatPulse = "maat_pulse"
+	TypeMaatAudit = "maat_audit"
+	TypeMaatHeal  = "maat_heal"
+
+	// Seshat — knowledge grafting
+	TypeSeshatIngest = "seshat_ingest"
+	TypeSeshatExport = "seshat_export"
+
+	// Neith — scope weaving
+	TypeNeithWeave = "neith_weave"
+	TypeNeithDrift = "neith_drift"
+
+	// Ka — ghost detection
+	TypeKaHunt  = "ka_hunt"
+	TypeKaClean = "ka_clean"
+
+	// Anubis — scanning & cleanup
+	TypeAnubisScan  = "anubis_scan"
+	TypeAnubisJudge = "anubis_judge"
+	TypeAnubisClean = "anubis_clean"
+
+	// Guard/Sekhmet — watchdog
+	TypeGuardStart = "guard_start"
+	TypeGuardAlert = "guard_alert"
+	TypeGuardStop  = "guard_stop"
+
+	// Seba — architecture mapping
+	TypeSebaMap    = "seba_map"
+	TypeSebaRender = "seba_render"
+
+	// Hapi — hardware detection
+	TypeHapiDetect = "hapi_detect"
+)
+
 // Ledger manages writes to the Stele file.
 type Ledger struct {
 	mu       sync.Mutex
 	path     string
 	seq      int64
 	prevHash string
+}
+
+// global is the singleton ledger for Inscribe().
+var (
+	globalMu     sync.Mutex
+	globalLedger *Ledger
+)
+
+// Inscribe is the convenience entry point for any deity to write to the Stele.
+// It lazily opens a global ledger on first call. Thread-safe.
+//
+//	stele.Inscribe("thoth", stele.TypeThothSync, "", map[string]string{"facts": "12"})
+func Inscribe(deity, eventType, scope string, data map[string]string) {
+	globalMu.Lock()
+	if globalLedger == nil {
+		l, err := Open(DefaultPath())
+		if err != nil {
+			globalMu.Unlock()
+			return // best-effort — never block a deity on ledger failure
+		}
+		globalLedger = l
+	}
+	globalMu.Unlock()
+	_ = globalLedger.Append(deity, eventType, scope, data)
 }
 
 // DefaultPath returns the default Stele path.

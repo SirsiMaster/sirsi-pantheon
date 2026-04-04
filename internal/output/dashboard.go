@@ -50,6 +50,7 @@ type MainModel struct {
 	focused      int // which scope is focused for log view
 	steleReader  *stele.Reader
 	lastPIDCheck time.Time
+	globalLog    []string // deity-level events with no scope
 }
 
 // scopeView tracks one deployed scope's live state.
@@ -208,8 +209,11 @@ func (m *MainModel) readStele() {
 // applySteleEntry updates scope state from a Stele entry.
 func (m *MainModel) applySteleEntry(e stele.Entry) {
 	scope := e.Scope
+
+	// Deity-level events (no scope) go to the global activity log.
 	if scope == "" {
-		return // global event, no scope to update
+		m.applyGlobalEvent(e)
+		return
 	}
 
 	idx, exists := m.scopeMap[scope]
@@ -249,7 +253,7 @@ func (m *MainModel) applySteleEntry(e stele.Entry) {
 		}
 
 	case stele.TypeCommit:
-		sv.LogTail = append(sv.LogTail, fmt.Sprintf("📦 commit: %s", e.Data["hash"]))
+		sv.LogTail = append(sv.LogTail, fmt.Sprintf("commit: %s", e.Data["hash"]))
 		if len(sv.LogTail) > 8 {
 			sv.LogTail = sv.LogTail[len(sv.LogTail)-8:]
 		}
@@ -261,6 +265,35 @@ func (m *MainModel) applySteleEntry(e stele.Entry) {
 	case stele.TypeFailed:
 		sv.State = "failed"
 		sv.Icon = "❌"
+
+	// Deity events with a scope (e.g., thoth_sync on a specific repo)
+	case stele.TypeThothSync, stele.TypeThothCompact,
+		stele.TypeMaatWeigh, stele.TypeMaatPulse,
+		stele.TypeNeithWeave, stele.TypeNeithDrift,
+		stele.TypeSeshatIngest,
+		stele.TypeKaHunt, stele.TypeKaClean,
+		stele.TypeSebaRender, stele.TypeHapiDetect,
+		stele.TypeGuardStart:
+		sv.LogTail = append(sv.LogTail, fmt.Sprintf("[%s] %s", e.Deity, e.Type))
+		if len(sv.LogTail) > 8 {
+			sv.LogTail = sv.LogTail[len(sv.LogTail)-8:]
+		}
+	}
+}
+
+// applyGlobalEvent handles deity events that have no scope (global operations).
+// These are displayed in the activity feed area of the dashboard.
+func (m *MainModel) applyGlobalEvent(e stele.Entry) {
+	line := fmt.Sprintf("[%s] %s", e.Deity, e.Type)
+	for k, v := range e.Data {
+		if len(v) > 40 {
+			v = v[:40] + "..."
+		}
+		line += fmt.Sprintf(" %s=%s", k, v)
+	}
+	m.globalLog = append(m.globalLog, line)
+	if len(m.globalLog) > 12 {
+		m.globalLog = m.globalLog[len(m.globalLog)-12:]
 	}
 }
 
@@ -355,7 +388,7 @@ func (m MainModel) View() string {
 		Padding(0, 1).
 		Render("𓇶  Ra Command Center")
 
-	version := DimStyle.Render("v0.9.0-rc1")
+	version := DimStyle.Render("v0.10.0")
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Center, header, "  ", version)
 	b.WriteString("\n " + headerLine + "\n")
 	b.WriteString(" " + lipgloss.NewStyle().Foreground(Gold).Render(strings.Repeat("─", min(m.width-2, 90))) + "\n\n")
@@ -368,6 +401,18 @@ func (m MainModel) View() string {
 	// Scope cards
 	for i, sv := range m.scopes {
 		b.WriteString(m.renderScope(i, sv))
+		b.WriteString("\n")
+	}
+
+	// Global deity activity feed
+	if len(m.globalLog) > 0 {
+		b.WriteString(DimStyle.Render("  ── Deity Activity ──") + "\n")
+		for _, line := range m.globalLog {
+			if len(line) > 88 {
+				line = line[:88] + "..."
+			}
+			b.WriteString("  " + DimStyle.Render(line) + "\n")
+		}
 		b.WriteString("\n")
 	}
 

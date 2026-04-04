@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // GPUType identifies the GPU/accelerator vendor.
@@ -69,6 +71,11 @@ func DetectHardware() (*HardwareProfile, error) {
 		detectLinuxHardware(profile)
 	}
 
+	stele.Inscribe("hapi", stele.TypeHapiDetect, "", map[string]string{
+		"cpu":  profile.CPUModel,
+		"arch": profile.CPUArch,
+		"ram":  fmt.Sprintf("%d", profile.TotalRAM),
+	})
 	return profile, nil
 }
 

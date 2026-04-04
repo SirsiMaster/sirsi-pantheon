@@ -31,6 +31,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // Injectable sampler for testability.
@@ -115,6 +117,10 @@ func StartWatch(ctx context.Context, cfg WatchConfig) *Watchdog {
 		stopped: make(chan struct{}),
 	}
 	w.running.Store(true)
+
+	stele.Inscribe("sekhmet", stele.TypeGuardStart, "", map[string]string{
+		"interval": cfg.Interval.String(),
+	})
 
 	// Launch monitor on a dedicated goroutine
 	go w.run()

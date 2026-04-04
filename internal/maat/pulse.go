@@ -41,6 +41,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // PulseMetrics is the canonical metrics structure written to .pantheon/metrics.json.
@@ -169,6 +171,12 @@ func Pulse(cfg *PulseConfig) (*PulseMetrics, error) {
 		}
 	}
 
+	stele.Inscribe("maat", stele.TypeMaatPulse, "", map[string]string{
+		"tests":    fmt.Sprintf("%d", m.Tests),
+		"coverage": fmt.Sprintf("%.1f", m.Coverage),
+		"lines":    fmt.Sprintf("%d", m.SourceLines),
+		"elapsed":  fmt.Sprintf("%dms", m.ElapsedMs),
+	})
 	return m, nil
 }
 

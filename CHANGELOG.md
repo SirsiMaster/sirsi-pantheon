@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.10.0] — 2026-04-04
+
+### Added
+- **Stele Universal Event Bus** — All Pantheon deities now inscribe events to the Stele (`~/.config/ra/stele.jsonl`). Append-only, hash-chained, SHA-256 integrity. Promotes ADR-014 from Ra-only to ecosystem-wide.
+- **`stele.Inscribe()` Convenience API** — Global singleton ledger with lazy initialization. Any deity can write events with one call, no lifecycle management.
+- **30+ New Stele Event Types** — `thoth_sync`, `thoth_compact`, `maat_weigh`, `maat_pulse`, `seshat_ingest`, `neith_weave`, `neith_drift`, `ka_hunt`, `ka_clean`, `guard_start`, `seba_render`, `hapi_detect`, and more.
+- **Ra ProtectGlyph `𓂀`** — Eye of Horus sentinel stamped into Terminal.app window titles. Windows bearing `𓂀` are immune to `KillAll`. Replaces fragile front-window heuristics that killed the Claude Code session.
+- **`ProtectFrontWindow()`** — Stamps the user's Claude Code terminal before deploy.
+- **Command Center Global Activity Feed** — Dashboard now displays deity-level events (Thoth sync, Ma'at weigh, etc.) in a live activity feed below scope cards.
+
+### Changed
+- **Command Center version** — Updated to v0.10.0.
+- **Module versions bumped** — Thoth 1.1.0, Ma'at 1.1.0, Seshat 2.1.0, Hapi 1.1.0, Seba 1.1.0, Sekhmet 1.1.0, Neith 1.1.0, Ra 1.1.0. Stele 1.0.0 registered.
+- **`buildTerminalScript`** — Spawned windows now `; exit` on completion (auto-close) and use `set custom title` inside `tell front window` block for reliable title assignment.
+- **`KillAll`** — Single `𓂀` glyph check replaces TTY/name exclusion chains.
+
+### Fixed
+- **Session crash on `KillAll`** — Broad `osascript` window matching killed the Claude Code terminal. Now protected by ProtectGlyph.
+
+---
+
 ## [0.9.0-rc1] — 2026-04-03
 
 ### Added

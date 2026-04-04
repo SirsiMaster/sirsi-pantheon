@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // SchemaVersion is the normalized conversation format version.
@@ -160,6 +162,10 @@ func WriteKnowledgeItem(paths Paths, name string, ki KnowledgeItem, artifacts ma
 		}
 	}
 
+	stele.Inscribe("seshat", stele.TypeSeshatIngest, "", map[string]string{
+		"name":      name,
+		"artifacts": fmt.Sprintf("%d", len(artifacts)),
+	})
 	return nil
 }
 

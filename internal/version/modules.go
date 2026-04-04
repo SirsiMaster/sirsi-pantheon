@@ -4,17 +4,18 @@ package version
 var Modules = map[string]string{
 	"ka":      "1.1.0", // v1.1.0: multi-layer ghost matching, app enumerator, uninstaller
 	"anubis":  "1.0.0", // scanning, cleaning, safety
-	"thoth":   "1.0.0", // memory, sync, compact
-	"maat":    "1.0.0", // audit, heal, coverage
-	"seshat":  "2.0.0", // v2: universal knowledge grafting, 5+3 adapters, Chrome profiles
-	"hapi":    "1.0.0", // hardware detection, accelerator routing
-	"seba":    "1.0.0", // topology mapping, diagrams
+	"thoth":   "1.1.0", // v1.1.0: Stele integration — sync/compact events inscribed
+	"maat":    "1.1.0", // v1.1.0: Stele integration — weigh/pulse events inscribed
+	"seshat":  "2.1.0", // v2.1.0: Stele integration — ingest events inscribed
+	"hapi":    "1.1.0", // v1.1.0: Stele integration — detect events inscribed
+	"seba":    "1.1.0", // v1.1.0: Stele integration — render events inscribed
 	"horus":   "1.0.0", // filesystem index, sight
-	"sekhmet": "1.0.0", // watchdog, process guard
+	"sekhmet": "1.1.0", // v1.1.0: Stele integration — guard start events inscribed
 	"khepri":  "1.0.0", // network scan, container audit
 	"isis":    "1.0.0", // remediation engine
-	"neith":   "1.0.0", // loom, scope assembly, drift detection
-	"ra":      "1.0.0", // orchestrator, deploy, pipeline
+	"neith":   "1.1.0", // v1.1.0: Stele integration — weave/drift events inscribed
+	"ra":      "1.1.0", // v1.1.0: ProtectGlyph, Stele deploy events
+	"stele":   "1.0.0", // append-only hash-chained event ledger (ADR-014)
 	"osiris":  "0.5.0", // FinalWishes checkpoint (partial)
 	"hathor":  "1.0.0", // mirror dedup
 }

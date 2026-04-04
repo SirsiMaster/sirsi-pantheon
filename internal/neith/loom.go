@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 	"gopkg.in/yaml.v3"
 )
 
@@ -328,6 +329,10 @@ func (l *Loom) WeaveScope(scope ScopeConfig) (string, error) {
 		b.WriteString("\n\n")
 	}
 
+	stele.Inscribe("neith", stele.TypeNeithWeave, scope.Name, map[string]string{
+		"scope": scope.DisplayName,
+		"chars": fmt.Sprintf("%d", b.Len()),
+	})
 	return b.String(), nil
 }
 
@@ -397,6 +402,11 @@ func (l *Loom) EvaluateDrift(scope ScopeConfig, gitDiff string) (*DriftReport, e
 	}
 
 	report.DriftFound = len(report.Findings) > 0
+
+	stele.Inscribe("neith", stele.TypeNeithDrift, scope.Name, map[string]string{
+		"drift":    fmt.Sprintf("%v", report.DriftFound),
+		"findings": fmt.Sprintf("%d", len(report.Findings)),
+	})
 	return report, nil
 }
 

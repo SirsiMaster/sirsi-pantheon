@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // CompactOptions configures the compact behavior.
@@ -60,6 +62,9 @@ func Compact(opts CompactOptions) error {
 		}
 	}
 
+	stele.Inscribe("thoth", stele.TypeThothCompact, opts.RepoRoot, map[string]string{
+		"summary": opts.Summary,
+	})
 	return nil
 }
 

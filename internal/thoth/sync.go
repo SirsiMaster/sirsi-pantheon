@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // SyncOptions configures the auto-sync behavior.
@@ -67,7 +69,16 @@ func Sync(opts SyncOptions) error {
 		newLines = append(newLines, updated)
 	}
 
-	return os.WriteFile(memoryPath, []byte(strings.Join(newLines, "\n")), 0o644)
+	if err := os.WriteFile(memoryPath, []byte(strings.Join(newLines, "\n")), 0o644); err != nil {
+		return err
+	}
+
+	stele.Inscribe("thoth", stele.TypeThothSync, repoRoot, map[string]string{
+		"modules": fmt.Sprintf("%d", moduleCount),
+		"tests":   fmt.Sprintf("%d", testCount),
+		"lines":   fmt.Sprintf("%d", lineCount),
+	})
+	return nil
 }
 
 func countSubdirs(dir string) int {

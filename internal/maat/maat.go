@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // Verdict represents the outcome of a single assessment.
@@ -225,5 +227,12 @@ func Weigh(assessors ...Assessor) (*Report, error) {
 	}
 
 	wg.Wait()
-	return NewReport(all), nil
+
+	report := NewReport(all)
+	stele.Inscribe("maat", stele.TypeMaatWeigh, "", map[string]string{
+		"score":       fmt.Sprintf("%d", report.OverallWeight),
+		"assessments": fmt.Sprintf("%d", len(all)),
+		"verdict":     report.OverallVerdict.String(),
+	})
+	return report, nil
 }

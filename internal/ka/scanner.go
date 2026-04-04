@@ -24,6 +24,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/cleaner"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // Ghost represents a detected Ka — the spirit of a dead application.
@@ -215,6 +216,11 @@ func (s *Scanner) Scan(ctx context.Context, includeSudo bool) ([]Ghost, error) {
 	logging.Debug("ka scan complete", "ghosts", len(ghosts), "orphans", len(orphans), "lsGhosts", len(lsGhosts))
 
 	logging.Info("Ka: scan complete", "ghosts", len(ghosts), "duration", time.Since(start))
+
+	stele.Inscribe("ka", stele.TypeKaHunt, "", map[string]string{
+		"ghosts":   fmt.Sprintf("%d", len(ghosts)),
+		"duration": time.Since(start).String(),
+	})
 	return ghosts, nil
 }
 
@@ -232,6 +238,13 @@ func (s *Scanner) Clean(ghost Ghost, dryRun bool, useTrash bool) (int64, int, er
 		totalCleaned++
 	}
 
+	if !dryRun {
+		stele.Inscribe("ka", stele.TypeKaClean, "", map[string]string{
+			"ghost":   ghost.AppName,
+			"cleaned": fmt.Sprintf("%d", totalCleaned),
+			"freed":   fmt.Sprintf("%d", totalFreed),
+		})
+	}
 	return totalFreed, totalCleaned, nil
 }
 

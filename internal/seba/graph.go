@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // NodeType categorizes nodes in the infrastructure graph.
@@ -385,7 +387,15 @@ document.getElementById('sta').innerHTML=
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
-	return os.WriteFile(outputPath, []byte(html), 0644)
+	if err := os.WriteFile(outputPath, []byte(html), 0644); err != nil {
+		return err
+	}
+	stele.Inscribe("seba", stele.TypeSebaRender, "", map[string]string{
+		"nodes":  fmt.Sprintf("%d", len(g.Nodes)),
+		"edges":  fmt.Sprintf("%d", len(g.Edges)),
+		"output": outputPath,
+	})
+	return nil
 }
 
 func mustJSON(v interface{}) string {
