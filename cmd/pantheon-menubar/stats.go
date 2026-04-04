@@ -50,9 +50,9 @@ type StatsSnapshot struct {
 	DeityCount    int      `json:"deity_count"`
 
 	// Ra Deployment
-	RaDeployed bool              `json:"ra_deployed"`
-	RaScopes   []RaScopeStatus   `json:"ra_scopes"`
-	RaIcon     string            `json:"ra_icon"`
+	RaDeployed bool            `json:"ra_deployed"`
+	RaScopes   []RaScopeStatus `json:"ra_scopes"`
+	RaIcon     string          `json:"ra_icon"`
 
 	// Disk
 	DiskWasteEstimate string `json:"disk_waste_estimate"`
