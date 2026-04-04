@@ -324,6 +324,15 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Streaming Output**: Ra agents MUST use `--output-format stream-json --verbose` with `--print`. Default `--print` mode buffers ALL output until the session completes, making agents appear lifeless for 10+ minutes. The stream-json output is piped through a python filter (`terminal.go`) that extracts human-readable text and tool-use summaries, writing to both the terminal (live progress) and the log file (Ra monitoring).
 *   **Evidence**: Session where `pantheon ra deploy` spawned 4 windows; all 4 agents asked for approval and blocked. Root causes: (1) CLAUDE.md Rule 14 conflict, (2) vague scope descriptions, (3) directive placed after canon context and truncated, (4) `--print` default text mode buffered all output making agents appear dead.
 
+### 2.22 Deity Registry & Attribution (Rule A25)
+> Established April 4, 2026, after pre-push hooks in FinalWishes and Assiduous misattributed deity glyphs and functions.
+
+*   **Rule**: Every deity has one glyph, one domain, and one functional responsibility. These are defined in `docs/DEITY_REGISTRY.md` and are invariant across all Sirsi repos. No repo may reassign a deity's function or glyph.
+*   **Ma'at Owns All Quality Gates**: Every pre-push hook, CI gate, and quality assessment is `𓆄 Ma'at`. Output format: `𓆄 Ma'at pre-push gate... [RepoName]`. No other deity may be attributed for quality gate functions.
+*   **ProtectGlyph Is Ra-Exclusive**: `𓂀` in a Terminal.app window title is Ra's authority to mark windows as immune to `KillAll`. It is not a general-purpose glyph and must not be used as another deity's symbol in functional contexts.
+*   **No Repo-Specific Aliases**: A deity is never renamed for a repo. Correct: `𓆄 Ma'at pre-push gate... [FinalWishes]`. Wrong: `𓁹 Osiris (FinalWishes) pre-push gate...`.
+*   **Evidence**: FinalWishes used `𓂀 Osiris` for its pre-push gate (wrong deity, wrong glyph, wrong function). Assiduous used `𓇼 Seba` (wrong deity for quality gates). Both corrected to `𓆄 Ma'at`.
+
 ---
 
 ## 3. Technology Stack
