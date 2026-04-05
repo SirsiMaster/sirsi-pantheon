@@ -36,7 +36,7 @@ type deityInfo struct {
 // Canonical deity roster — ordered by hierarchy (Rule D6).
 // Two-word roles: verb/adjective + noun. Fits in a 30-col grid cell.
 var deityRoster = []deityInfo{
-	{"ra", "𓇶", "Ra", "Agent Orchestrator"},
+	{"ra", "𓇶", "Ra", "Orchestrator"},
 	{"neith", "𓁯", "Neith", "Context Weaver"},
 	{"thoth", "𓁟", "Thoth", "Session Memory"},
 	{"maat", "𓆄", "Ma'at", "Quality Gate"},
@@ -46,7 +46,7 @@ var deityRoster = []deityInfo{
 	{"anubis", "𓃣", "Anubis", "System Jackal"},
 	{"ka", "𓂓", "Ka", "Ghost Hunter"},
 	{"sekhmet", "𓁵", "Sekhmet", "System Watchdog"},
-	{"hapi", "𓈗", "Hapi", "Hardware Profiler"},
+	{"hapi", "𓈗", "Hapi", "HW Profiler"},
 	{"khepri", "𓆣", "Khepri", "Fleet Scanner"},
 	{"seba", "𓇽", "Seba", "Arch Mapper"},
 	{"osiris", "𓁹", "Osiris", "State Keeper"},
@@ -549,8 +549,9 @@ func (m TUIModel) renderDeityCell(d deityInfo, width int) string {
 	}
 
 	// Fixed-width glyph column normalizes variable-width Egyptian characters.
-	// Budget: dot(1) + sp(1) + glyph(2) + sp(1) + name(8) + sp(1) = 14 fixed.
-	const fixedPrefix = 14
+	// Budget: dot(1) + sp(1) + glyph(2-3) + sp(1) + name(8) + sp(1) = 14-16 fixed.
+	// Egyptian glyphs often render wider than lipgloss measures, so use 16.
+	const fixedPrefix = 16
 	glyph := lipgloss.NewStyle().Width(2).Foreground(nameColor).Render(d.Glyph)
 	name := lipgloss.NewStyle().Width(8).Bold(true).Foreground(nameColor).Render(d.Name)
 
