@@ -90,8 +90,17 @@ func checkDNSConfig(p platform.Platform, report *NetworkReport, fix bool) {
 		if fix {
 			_, fixErr := p.Command("networksetup", "-setdnsservers", "Wi-Fi", "1.1.1.1", "1.0.0.1")
 			if fixErr == nil {
-				finding.Message += " → FIXED: Set to Cloudflare 1.1.1.1"
-				finding.Severity = SeverityOK
+				// Verify the new DNS actually works on this network
+				if dnsReachable(p, "1.1.1.1") {
+					finding.Message += " → FIXED: Set to Cloudflare 1.1.1.1"
+					finding.Severity = SeverityOK
+				} else {
+					// Network blocks external DNS — roll back
+					_, _ = p.Command("networksetup", "-setdnsservers", "Wi-Fi", "empty")
+					finding.Severity = SeverityWarn
+					finding.Message = "Cloudflare DNS unreachable on this network — reverted to network default"
+					finding.Detail = "This network blocks external DNS servers. Use a VPN for encrypted DNS."
+				}
 			} else {
 				finding.Detail = "Auto-fix failed (needs admin): sudo networksetup -setdnsservers Wi-Fi 1.1.1.1 1.0.0.1"
 			}
@@ -109,8 +118,23 @@ func checkDNSConfig(p platform.Platform, report *NetworkReport, fix bool) {
 		}
 
 		if isEncrypted {
-			finding.Severity = SeverityOK
-			finding.Message = fmt.Sprintf("Encrypted DNS configured (%s)", provider)
+			// Verify the encrypted DNS is actually reachable
+			firstDNS := strings.TrimSpace(strings.Split(dns, "\n")[0])
+			if dnsReachable(p, firstDNS) {
+				finding.Severity = SeverityOK
+				finding.Message = fmt.Sprintf("Encrypted DNS configured (%s)", provider)
+			} else {
+				finding.Severity = SeverityCritical
+				finding.Message = fmt.Sprintf("Encrypted DNS configured (%s) but UNREACHABLE — network may be blocking it", provider)
+				finding.Detail = "Fix: sudo networksetup -setdnsservers Wi-Fi empty (reverts to network DNS)"
+				if fix {
+					// Fall back to network default
+					_, _ = p.Command("networksetup", "-setdnsservers", "Wi-Fi", "empty")
+					finding.Severity = SeverityWarn
+					finding.Message = fmt.Sprintf("%s was unreachable — reverted to network default DNS", provider)
+					finding.Detail = "This network blocks external DNS. Use a VPN for encrypted DNS on this network."
+				}
+			}
 		} else {
 			finding.Severity = SeverityWarn
 			finding.Message = "Custom DNS set but not a known encrypted provider"
@@ -218,6 +242,13 @@ func checkTLSConnection(report *NetworkReport) {
 		state.ServerName, cipherName, state.NegotiatedProtocol)
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// dnsReachable tests if a DNS server can resolve a known hostname within 3 seconds.
+func dnsReachable(p platform.Platform, dnsIP string) bool {
+	// Use nslookup with the specific DNS server
+	_, err := p.Command("timeout", "3", "nslookup", "api.anthropic.com", dnsIP)
+	return err == nil
 }
 
 // checkCACertificates audits the system root certificate store.
