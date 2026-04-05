@@ -51,10 +51,10 @@ var commandTree = map[string]deityCommands{
 	"maat": {
 		Subcommands: []string{"audit", "scales", "heal", "pulse"},
 		Flags: map[string][]string{
-			"audit": {"--sudo", "--skip-test"},
+			"audit":  {"--sudo", "--skip-test"},
 			"scales": {"--fix"},
-			"heal":  {"--fix", "--full"},
-			"pulse": {"--skip-test", "--json"},
+			"heal":   {"--fix", "--full"},
+			"pulse":  {"--skip-test", "--json"},
 		},
 	},
 	"seshat": {

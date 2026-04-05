@@ -152,8 +152,8 @@ func NewTUIModel() TUIModel {
 	ti.ShowSuggestions = true
 	ti.CompletionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
 	ti.KeyMap.AcceptSuggestion = key.NewBinding(key.WithKeys("right"))
-	ti.KeyMap.NextSuggestion = key.NewBinding()  // unbind — Up is for history
-	ti.KeyMap.PrevSuggestion = key.NewBinding()  // unbind — Down is for history
+	ti.KeyMap.NextSuggestion = key.NewBinding() // unbind — Up is for history
+	ti.KeyMap.PrevSuggestion = key.NewBinding() // unbind — Down is for history
 	ti.SetSuggestions(topLevelCommands)
 
 	sp := spinner.New()
