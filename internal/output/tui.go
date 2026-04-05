@@ -36,7 +36,7 @@ type deityInfo struct {
 // Canonical deity roster — ordered by hierarchy (Rule D6).
 // Two-word roles: verb/adjective + noun. Fits in a 30-col grid cell.
 var deityRoster = []deityInfo{
-	{"ra", "𓇶", "Ra", "Orchestrator"},
+	{"ra", "𓇶", "Ra", "Agent Orchestrator"},
 	{"neith", "𓁯", "Neith", "Context Weaver"},
 	{"thoth", "𓁟", "Thoth", "Session Memory"},
 	{"maat", "𓆄", "Ma'at", "Quality Gate"},
@@ -46,7 +46,7 @@ var deityRoster = []deityInfo{
 	{"anubis", "𓃣", "Anubis", "System Jackal"},
 	{"ka", "𓂓", "Ka", "Ghost Hunter"},
 	{"sekhmet", "𓁵", "Sekhmet", "System Watchdog"},
-	{"hapi", "𓈗", "Hapi", "HW Profiler"},
+	{"hapi", "𓈗", "Hapi", "Hardware Profiler"},
 	{"khepri", "𓆣", "Khepri", "Fleet Scanner"},
 	{"seba", "𓇽", "Seba", "Arch Mapper"},
 	{"osiris", "𓁹", "Osiris", "State Keeper"},
