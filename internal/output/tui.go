@@ -422,6 +422,9 @@ func (m TUIModel) View() string {
 	desc := lipgloss.NewStyle().Foreground(lipgloss.Color("#999999")).
 		Render("DevOps intelligence for developers and infrastructure teams")
 
+	signage := lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).
+		Render(" Sirsi Technologies, Inc. 2026 (MIT License)")
+
 	if !hasOutput {
 		// ── Single-pane: full roster
 		var b strings.Builder
@@ -433,6 +436,7 @@ func (m TUIModel) View() string {
 		b.WriteString(" " + dim.Render(strings.Repeat("─", maxW)) + "\n")
 		b.WriteString(" " + m.input.View() + "\n")
 		b.WriteString(m.renderHints(false) + "\n")
+		b.WriteString(signage + "\n")
 		return b.String()
 	}
 
@@ -465,6 +469,7 @@ func (m TUIModel) View() string {
 	b.WriteString(" " + dim.Render(strings.Repeat("─", maxW)) + "\n")
 	b.WriteString(" " + m.input.View() + "\n")
 	b.WriteString(m.renderHints(true) + "\n")
+	b.WriteString(signage + "\n")
 	return b.String()
 }
 
@@ -494,10 +499,10 @@ func (m TUIModel) renderRosterColumns(compact bool) string {
 }
 
 // renderDeityCell renders one deity as a fixed-width cell for the grid.
+// Uses fixed-width lipgloss columns to normalize Egyptian glyph widths.
 func (m TUIModel) renderDeityCell(d deityInfo, width int) string {
 	active := m.activeDeity[d.Key]
 
-	// Colors: inactive is readable, active is highlighted
 	var nameColor, roleColor lipgloss.Color
 	if active {
 		nameColor = Gold
@@ -507,19 +512,17 @@ func (m TUIModel) renderDeityCell(d deityInfo, width int) string {
 		roleColor = lipgloss.Color("#777777")
 	}
 
-	// Active indicator: gold dot
 	dot := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("·")
 	if active {
 		dot = lipgloss.NewStyle().Foreground(Gold).Render("●")
 	}
 
-	glyph := lipgloss.NewStyle().Foreground(nameColor).Render(d.Glyph)
-	name := lipgloss.NewStyle().Bold(true).Foreground(nameColor).Render(d.Name)
+	// Fixed-width glyph column normalizes variable-width Egyptian characters
+	glyph := lipgloss.NewStyle().Width(2).Foreground(nameColor).Render(d.Glyph)
+	name := lipgloss.NewStyle().Width(8).Bold(true).Foreground(nameColor).Render(d.Name)
 	role := lipgloss.NewStyle().Foreground(roleColor).Render(d.Role)
 
-	cell := fmt.Sprintf("%s %s %-8s %s", dot, glyph, name, role)
-
-	// Pad to fixed width (approximate — lipgloss styling adds invisible chars)
+	cell := dot + " " + glyph + " " + name + " " + role
 	return lipgloss.NewStyle().Width(width).Render(cell)
 }
 
