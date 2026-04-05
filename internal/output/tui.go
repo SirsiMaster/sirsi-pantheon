@@ -258,6 +258,17 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			return m, nil
 		}
+		// Quick action shortcuts (only before first command)
+		if len(m.history) == 0 {
+			switch raw {
+			case "1":
+				raw = "sekhmet network"
+			case "2":
+				raw = "doctor"
+			case "3":
+				raw = "ra status"
+			}
+		}
 		m.historyIdx = -1
 		return m.executeCommand(raw)
 
@@ -345,7 +356,7 @@ func (m *TUIModel) updateSuggestionList() {
 // ── Command Execution ─────────────────────────────────────────────────
 
 func (m TUIModel) executeCommand(raw string) (TUIModel, tea.Cmd) {
-	deity, args := m.dispatch(raw)
+	deity, args, intentMatched := m.dispatch(raw)
 
 	m.mode = modeRunning
 	m.runningDeity = deity
@@ -358,10 +369,14 @@ func (m TUIModel) executeCommand(raw string) (TUIModel, tea.Cmd) {
 	if deity != "" {
 		m.outputLines = append(m.outputLines,
 			lipgloss.NewStyle().Foreground(Gold).Bold(true).Render(
-				fmt.Sprintf("  %s %s", glyph, name)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(
-				fmt.Sprintf("  %s", raw)),
-			"")
+				fmt.Sprintf("  %s %s", glyph, name)))
+		if intentMatched {
+			// Show the user what their natural language was interpreted as
+			m.outputLines = append(m.outputLines,
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(
+					fmt.Sprintf("  \"%s\" → %s", raw, strings.Join(args, " "))))
+		}
+		m.outputLines = append(m.outputLines, "")
 	}
 	m.viewport.SetContent(strings.Join(m.outputLines, "\n"))
 	m.recalcViewportHeight()
@@ -372,23 +387,26 @@ func (m TUIModel) executeCommand(raw string) (TUIModel, tea.Cmd) {
 	return m, tea.Batch(m.spinner.Tick, m.runCommand(cmd))
 }
 
-func (m *TUIModel) dispatch(raw string) (string, []string) {
+// dispatch routes user input to a deity. Returns (deity, args, intentMatched).
+// intentMatched is true when the input was natural language matched via keywords
+// rather than a direct deity name or CLI alias.
+func (m *TUIModel) dispatch(raw string) (string, []string, bool) {
 	lower := strings.ToLower(raw)
 	tokens := strings.Fields(lower)
 	rawTokens := strings.Fields(raw)
 
 	if len(tokens) == 0 {
-		return "", nil
+		return "", nil, false
 	}
 
 	for _, d := range deityRoster {
 		if tokens[0] == d.Key {
-			return d.Key, rawTokens
+			return d.Key, rawTokens, false
 		}
 	}
 
 	if target, ok := cliAliases[tokens[0]]; ok {
-		return target, rawTokens
+		return target, rawTokens, false
 	}
 
 	bestDeity := ""
@@ -407,10 +425,10 @@ func (m *TUIModel) dispatch(raw string) (string, []string) {
 	}
 
 	if bestDeity != "" {
-		return bestDeity, []string{bestDeity}
+		return bestDeity, []string{bestDeity}, true
 	}
 
-	return "", rawTokens
+	return "", rawTokens, false
 }
 
 func (m TUIModel) runCommand(cmd *exec.Cmd) tea.Cmd {
@@ -531,6 +549,13 @@ func (m TUIModel) View() string {
 		status := m.renderStatusLine()
 		b.WriteString(status)
 		usedLines += strings.Count(status, "\n")
+
+		// Quick actions for first-time users
+		if len(m.history) == 0 {
+			actions := m.renderQuickActions()
+			b.WriteString(actions)
+			usedLines += strings.Count(actions, "\n")
+		}
 
 		b.WriteString(" " + divider + "\n")
 		b.WriteString(" " + m.input.View() + "\n")
@@ -703,6 +728,22 @@ func (m TUIModel) renderHints(splitMode bool) string {
 	hints = append(hints, "clear reset", "ctrl+c quit")
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).
 		Render(" " + strings.Join(hints, " · "))
+}
+
+// renderQuickActions shows three suggested starting points for new users.
+func (m TUIModel) renderQuickActions() string {
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	gold := lipgloss.NewStyle().Foreground(Gold)
+	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#999999"))
+
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(dim.Render("  Quick start:") + "\n")
+	b.WriteString("   " + gold.Render("1") + label.Render("  sekhmet network") + dim.Render("   System Security") + "\n")
+	b.WriteString("   " + gold.Render("2") + label.Render("  doctor") + dim.Render("            System Health") + "\n")
+	b.WriteString("   " + gold.Render("3") + label.Render("  ra status") + dim.Render("         Current Status") + "\n")
+	b.WriteString("\n")
+	return b.String()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
