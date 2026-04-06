@@ -1,91 +1,135 @@
-# 🏛️ PANTHEON — Session 38 Wrap Prompt (v1.0.0-rc1)
-**Conversation ID**: `4a5c62c0-f4e9-4a03-b65e-2cb1b7282085`
-**Last Commit**: Latest on `main`
-**Date**: March 29, 2026
+# PANTHEON — Continuation Prompt (v0.14.0)
+**Last Commit**: `6450ea8` on `main`
+**Date**: April 5, 2026
+**Version**: v0.14.0
+**Total Commits**: 333
+**Test Packages**: 29/29 passing
 
 ---
 
-## 𓆄 I. Strategic Assessment Findings (Session 38)
+## I. What Just Shipped (This Session)
 
-This session conducted a **full ground-truth audit** of the Pantheon platform by cross-referencing all documentation claims against live measurements from `git log`, `go test -v -cover`, and the new `Ma'at Pulse` engine.
+### Deity Consolidation (15 → 10)
+The Pantheon roster was streamlined. Every deity now has a distinct, non-overlapping domain:
 
-### Key Discovery: Documentation Was Ahead of Code
-- **Feather Weight**: 72/100 — The canon was drifting from reality.
-- **Test Count**: BUILD_LOG said "861" — actual count is **1,202**. 40% more tests than documented.
-- **Coverage**: Roadmap said "90.1%" — actual weighted average is **~76.6%**. A 13.5% gap.
-- **Version Tag**: Code says `v1.0.0-rc1` but no git tag exists. Last tag: `v0.4.0-alpha`.
+| Deity | Glyph | Domain | Version |
+|-------|-------|--------|---------|
+| Ra | 𓇶 | Agent Orchestrator | 1.1.0 |
+| Net | 𓁯 | Scope Weaver (was Neith) | 1.1.0 |
+| Thoth | 𓁟 | Session Memory | 1.1.0 |
+| Ma'at | 𓆄 | Quality Gate | 1.1.0 |
+| Isis | 𓁐 | Health & Remedy (absorbed Sekhmet) | 2.0.0 |
+| Seshat | 𓁆 | Knowledge Bridge | 2.1.0 |
+| Anubis | 𓃣 | Hygiene Engine (absorbed Ka + Hathor) | 1.1.0 |
+| Hapi | 𓈗 | Hardware Profiler | 1.1.0 |
+| Seba | 𓇽 | Infra Mapper (absorbed Khepri) | 1.2.0 |
+| Osiris | 𓁹 | Snapshot Keeper | 0.5.0 |
 
-### Session 38 Technical Achievements ✅
-1. **Ma'at Pulse Engine** (`internal/maat/pulse.go`): Dynamic measurement heartbeat. Runs all measurements in **66ms** and writes `.pantheon/metrics.json`. Injectable runners for testability (Rule A16/A21).
-2. **CLI Command** (`pantheon maat pulse`): `--skip-test` for fast mode, `--json` for CI. 10 tests passing.
-3. **CI Integration**: `ci.yml` now runs `maat pulse --skip-test --json` and uploads `metrics.json` as a CI artifact.
-4. **Canon Correction**: Updated PANTHEON_ROADMAP.md and BUILD_LOG.md with measured truth. Badge: 861 → 1,202.
-5. **Strategic Assessment Artifact**: Full gap analysis produced and approved.
-6. **Status Bar Hardening**: Error state now shows last-known RAM metrics. Buffer increased to 1MB.
-7. **Hieroglyphic Finalization**: Root → Great Pyramid (`𓉴`), Initiate → Altar Seal (`𓎿`).
+**Removed**: Sekhmet, Ka, Khepri, Hathor, Horus. No backwards-compat aliases — clean codebase.
+
+### Isis DNS Safety Fix (Critical)
+`pantheon isis network --fix` previously bricked internet on restricted networks (airline WiFi, captive portals). Fixed with three-layer safety:
+1. **Pre-check gate**: TCP probe to DNS server before changing config
+2. **Post-fix watchdog**: Polls resolution 3x over 6s, auto-reverts on failure
+3. **Manual rollback**: `pantheon isis network --rollback`
+
+Case study: `docs/case-studies/isis-dns-safety-rollback.md`
+
+### TUI Polish
+- Intent→subcommand inference (natural language maps to real CLI args)
+- In-TUI `help` command
+- Narrow terminal graceful degradation (<70 cols)
+- Network keyword routing (Isis=security, Seba=topology)
+
+### Test Fixes
+- `TestExtractAgeDays`: timezone boundary bug (UTC vs local date)
+- `TestSmoke_Version`: removed hardcoded version string
 
 ---
 
-## ⚙️ II. Integrated Pillars
+## II. Current State
 
-| Pillar | Glyph | Coverage | Status |
-|:-------|:------|:---------|:-------|
-| **Anubis** | 𓁢 | 85-95% | ✅ Shipped |
-| **Ma'at** | 𓆄 | 79.4% | ✅ Shipped (regressed from 88%) |
-| **Thoth** | 𓁟 | 0.0% | ⚠️ No Go tests |
-| **Hapi** | 𓈗 | 55.3% | ⚠️ Regressed from 84% |
-| **Seba** | 𓇽 | 90.0% | ✅ Shipped |
-| **Seshat** | 𓁆 | 2.1% | ❌ Critical |
-
----
-
-## 📊 III. Live Metrics (Ma'at Pulse)
-
-```json
-{
-  "tests": 1202,
-  "coverage": 76.6,
-  "source_lines": 24532,
-  "go_source_lines": 19786,
-  "source_files": 115,
-  "test_files": 69,
-  "binary_size_human": "11.4 MB",
-  "deities": 6,
-  "modules": 27,
-  "commits": 230,
-  "elapsed_ms": 66
-}
+### What Works (CLI)
+```
+pantheon                    # Interactive TUI (10-deity roster)
+pantheon scan               # Anubis waste scan
+pantheon ghosts             # Anubis ghost hunting (was Ka)
+pantheon dedup [dirs]       # Anubis file dedup (was Hathor)
+pantheon doctor             # Isis system health diagnostic
+pantheon guard              # Isis resource monitoring
+pantheon isis network       # Network security audit (6 checks)
+pantheon isis network --fix # Safe DNS/firewall remediation
+pantheon maat audit         # Governance scan
+pantheon maat heal          # Isis autonomous remediation
+pantheon thoth init/sync    # Project memory
+pantheon seshat ingest      # Knowledge grafting
+pantheon hapi scan/profile  # Hardware detection
+pantheon seba diagram       # Architecture diagrams
+pantheon seba fleet         # Fleet discovery (was Khepri)
+pantheon ra deploy/health   # Multi-repo orchestration
+pantheon net status/align   # Scope alignment (was neith)
+pantheon mcp                # MCP server for IDE integration
+pantheon help <deity>       # Rich terminal guides
+pantheon version            # 10-deity module versions
 ```
 
----
-
-## ⏭️ IV. P0 Remediation Queue (Next Session)
-
-| # | Action | Current | Target |
-|:--|:-------|:--------|:-------|
-| 1 | `git tag v1.0.0-rc1` | No tag | Tagged |
-| 2 | Add tests to `internal/thoth/` | 0% | 60%+ |
-| 3 | Add tests to `internal/neith/` | 0% | 50%+ |
-| 4 | Investigate `hapi` regression | 55.3% | 84%+ |
-| 5 | Add tests to `internal/seshat/` | 2.1% | 50%+ |
-| 6 | Optimize `mcp` test duration | 52s | <10s |
+### What's Partial / Needs Work
+- **Osiris**: Roster entry only, no CLI commands. Needs snapshot/checkpoint implementation.
+- **Hapi profile**: Returns minimal output, needs deeper system profiling.
+- **Seba book**: Project registry output is thin.
+- **Ra watch**: Not in suggestions yet.
+- **docs/pantheon/index.html**: Still has old 15-deity references in the HTML cards/tables. Needs update to match 10-deity roster.
 
 ---
 
-## 🧠 V. Key Files Modified This Session
+## III. Files Changed This Session
 
-| File | Change |
-|:-----|:-------|
-| `internal/maat/pulse.go` | **NEW** — Dynamic measurement engine |
-| `internal/maat/pulse_test.go` | **NEW** — 10 tests for pulse |
-| `cmd/pantheon/maat.go` | Added `pulse` subcommand |
-| `cmd/pantheon/main.go` | Root glyph → Great Pyramid 𓉴 |
-| `cmd/pantheon/initiate.go` | Ritual glyph → Altar Seal 𓎿 |
-| `.github/workflows/ci.yml` | Added Ma'at Pulse step + metrics artifact |
-| `docs/PANTHEON_ROADMAP.md` | Full rewrite with measured truth |
-| `docs/BUILD_LOG.md` | Badge 861→1202, metrics table corrected |
-| `extensions/vscode/src/statusBar.ts` | Error state shows RAM, 1MB buffer |
-| `.gitignore` | Added `.pantheon/` |
+### Go Source (core changes)
+- `internal/guard/network.go` — DNS pre-check + watchdog + TCP probe
+- `internal/guard/isis.go` — Renamed from sekhmet.go
+- `internal/guard/*.go` — All Sekhmet→Isis branding
+- `internal/output/tui.go` — 10-deity roster, inferSubcommand(), help, narrow fallback
+- `internal/output/suggestions.go` — 10-deity command tree
+- `internal/help/help.go` — 10-deity guides, expanded Isis guide
+- `internal/version/modules.go` — 10-deity version registry
+- `internal/stele/stele.go` — Updated event type comments
+- `internal/mcp/resources.go` — Isis branding
+- `internal/neith/tiler.go` — Timezone bug fix
+- `cmd/pantheon/main.go` — Isis CLI commands, version layout
+- `tests/e2e/smoke_test.go` — Version test fix
+
+### Documentation
+- `README.md` — 10-deity roster table, architecture table
+- `CHANGELOG.md` — v0.14.0 entry
+- `docs/DEITY_REGISTRY.md` — Canonical 10-deity registry
+- `docs/PANTHEON_HIERARCHY.md` — Updated hierarchy
+- `docs/case-studies/isis-dns-safety-rollback.md` — NEW case study
+- `docs/pantheon/*.html` — Deleted 6 old pages, updated isis/anubis/seba/neith
+
+### Deleted
+- `docs/pantheon/sekhmet.html`, `khepri.html`, `hathor.html`, `horus.html`, `ka.html`
+- `internal/guard/sekhmet.go` (renamed to isis.go)
 
 ---
-*𓆄 The feather weighs true. Canon corrected. 72/100. 𓉴𓂀𓁢𓆄𓍝𓇽𓈗𓁟𓁆*
+
+## IV. Next Session Priorities
+
+1. **Wire Osiris** — Implement state snapshot/checkpoint commands
+2. **Deepen Hapi** — Richer hardware profiling output
+3. **Update index.html** — 10-deity roster in the HTML landing page
+4. **April 15 deadline** — FinalWishes + Assiduous ship date (10 days out)
+5. **Clean dead packages** — `internal/horus/` and `internal/ka/` are unused (no imports)
+
+---
+
+## V. Key Decisions Made This Session
+
+- **"network" keyword is shared**: Isis owns network security, Seba owns network topology. Multi-keyword scoring resolves ambiguity.
+- **No aliases**: Old deity names are gone from the codebase. Clean break.
+- **DNS fixes must probe before changing**: Transport-level checks only. Never depend on the service being tested.
+- **Neith → Net**: Shorter name, same function. Net defines scope, Ra dispatches.
+- **Isis = detect + fix**: Doctor, guard, network, heal all under one deity. She finds problems and fixes them.
+
+---
+
+*𓁐 Isis heals. 𓃣 Anubis hunts. 𓇽 Seba maps. 𓆄 Ma'at judges. 𓁟 Thoth remembers.*
