@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -55,29 +56,13 @@ Seba maps your infrastructure — hardware, architecture, and fleet topology.
 var sebaScanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "𓇽 Master architecture map of the current system",
-	Run: func(cmd *cobra.Command, args []string) {
-		start := time.Now()
-		output.Banner()
-		output.Header("SEBA — Infrastructure Mapping")
-
-		// Map logic via internal/seba
-		mapper := seba.NewGraph()
-		mapper.AddNode(mapper.Hostname, mapper.Hostname, seba.NodeDevice)
-
-		output.Success("Mapping complete. Use --format to export.")
-		output.Footer(time.Since(start))
-	},
+	RunE:  runSebaScan,
 }
 
 var sebaBookCmd = &cobra.Command{
 	Use:   "book",
 	Short: "𓇽 Build the \"Pantheon Book\" project registry",
-	Run: func(cmd *cobra.Command, args []string) {
-		output.Banner()
-		output.Header("SEBA — The Pantheon Book")
-		output.Info("Building registry to %s", sebaOutput)
-		output.Success("Project registry built.")
-	},
+	RunE:  runSebaBook,
 }
 
 var sebaFleetCmd = &cobra.Command{
@@ -198,6 +183,115 @@ func runSebaDiagram(cmd *cobra.Command, args []string) error {
 		"Diagrams": fmt.Sprintf("%d", len(diagrams)),
 		"Format":   map[bool]string{true: "HTML", false: "Mermaid"}[diagramHTML],
 	})
+	output.Footer(time.Since(start))
+	return nil
+}
+
+func runSebaScan(cmd *cobra.Command, args []string) error {
+	start := time.Now()
+
+	profile, _ := seba.DetectHardware()
+	graph := seba.NewGraph()
+
+	// Device node
+	graph.AddNode(graph.Hostname, graph.Hostname, seba.NodeDevice)
+
+	// Hardware nodes
+	if profile != nil {
+		if profile.CPUModel != "" {
+			graph.AddNode("cpu", profile.CPUModel, seba.NodeProcess)
+			graph.AddEdge(graph.Hostname, "cpu", "runs on")
+		}
+		if profile.GPU.Name != "" && profile.GPU.Name != "Unknown GPU" {
+			graph.AddNode("gpu", profile.GPU.Name, seba.NodeProcess)
+			graph.AddEdge(graph.Hostname, "gpu", "accelerated by")
+		}
+	}
+
+	// Docker containers (non-blocking)
+	audit, err := scarab.AuditContainers()
+	if err == nil && len(audit.Containers) > 0 {
+		for _, c := range audit.Containers {
+			graph.AddNode(c.ID[:12], c.Name, seba.NodeContainer)
+			graph.AddEdge(graph.Hostname, c.ID[:12], "hosts")
+		}
+	}
+
+	if JsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(graph)
+	}
+
+	output.Banner()
+	output.Header("SEBA — Infrastructure Map")
+
+	output.Dashboard(map[string]string{
+		"Hostname": graph.Hostname,
+		"Platform": graph.Platform,
+		"Nodes":    fmt.Sprintf("%d", len(graph.Nodes)),
+		"Edges":    fmt.Sprintf("%d", len(graph.Edges)),
+	})
+
+	// Render HTML if requested
+	if sebaFormat == "html" {
+		htmlPath := filepath.Join(".pantheon", "infra-map.html")
+		os.MkdirAll(filepath.Dir(htmlPath), 0755)
+		if err := graph.RenderHTML(htmlPath); err != nil {
+			return fmt.Errorf("render HTML: %w", err)
+		}
+		abs, _ := filepath.Abs(htmlPath)
+		output.Success("HTML → %s", abs)
+	}
+
+	output.Footer(time.Since(start))
+	return nil
+}
+
+func runSebaBook(cmd *cobra.Command, args []string) error {
+	start := time.Now()
+
+	output.Banner()
+	output.Header("SEBA — Project Registry")
+
+	// Find git repos under current directory (1 level deep)
+	cwd, _ := os.Getwd()
+	entries, err := os.ReadDir(cwd)
+	if err != nil {
+		return fmt.Errorf("read directory: %w", err)
+	}
+
+	var rows [][]string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		gitDir := filepath.Join(cwd, e.Name(), ".git")
+		if _, err := os.Stat(gitDir); err != nil {
+			continue
+		}
+		// Get last commit message
+		msg := "(no commits)"
+		if out, err := exec.Command("git", "-C", filepath.Join(cwd, e.Name()),
+			"log", "-1", "--format=%s", "--no-walk").Output(); err == nil {
+			msg = strings.TrimSpace(string(out))
+			if len(msg) > 50 {
+				msg = msg[:47] + "..."
+			}
+		}
+		rows = append(rows, []string{e.Name(), msg})
+	}
+
+	if len(rows) == 0 {
+		output.Info("No Git repositories found in %s", cwd)
+	} else {
+		output.Table([]string{"Repository", "Last Commit"}, rows)
+		output.Dashboard(map[string]string{
+			"Directory":    cwd,
+			"Repositories": fmt.Sprintf("%d", len(rows)),
+		})
+	}
+
 	output.Footer(time.Since(start))
 	return nil
 }

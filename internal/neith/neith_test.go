@@ -4,8 +4,8 @@ import (
 	"testing"
 )
 
-// ── Neith Test Suite ────────────────────────────────────────────────
-// Tests for the Net (Neith) Weaver module — plan alignment & tapestry.
+// ── Net (Neith) Test Suite ─────────────────────────────────────────
+// Tests for the Net Weaver module — plan alignment & tapestry.
 
 func TestWeave_AssessLogs(t *testing.T) {
 	t.Parallel()
@@ -41,16 +41,16 @@ func TestTapestry_Align_Consistent(t *testing.T) {
 	t.Parallel()
 
 	tap := &Tapestry{
-		MaatConsistent:  true,
-		AnubisCorrect:   true,
-		KaExtinguished:  true,
-		ThothAccurate:   true,
-		SekhmetHardened: true,
+		MaatConsistent: true,
+		AnubisCorrect:  true,
+		HygieneClean:   true,
+		ThothAccurate:  true,
+		IsisHardened:   true,
 	}
 
 	err := tap.Align()
 	if err != nil {
-		t.Errorf("Align() should pass when Ma'at is consistent, got: %v", err)
+		t.Errorf("Align() should pass when all checks true, got: %v", err)
 	}
 }
 
@@ -58,11 +58,11 @@ func TestTapestry_Align_Inconsistent(t *testing.T) {
 	t.Parallel()
 
 	tap := &Tapestry{
-		MaatConsistent:  false,
-		AnubisCorrect:   true,
-		KaExtinguished:  true,
-		ThothAccurate:   true,
-		SekhmetHardened: true,
+		MaatConsistent: false,
+		AnubisCorrect:  true,
+		HygieneClean:   true,
+		ThothAccurate:  true,
+		IsisHardened:   true,
 	}
 
 	err := tap.Align()
@@ -134,7 +134,6 @@ func TestAssessLogs_NoMatch(t *testing.T) {
 func TestAssessLogs_PartialMatch(t *testing.T) {
 	t.Parallel()
 	w := &Weave{Plan: []string{"build pulse engine", "deploy to production"}}
-	// "build" and "engine" match first item (2/3), nothing matches second (0/3)
 	score, err := w.AssessLogs("We build the engine for local testing.")
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -148,7 +147,7 @@ func TestAssessLogs_PartialMatch(t *testing.T) {
 
 func TestAlign_AnubisIncorrect(t *testing.T) {
 	t.Parallel()
-	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: false, KaExtinguished: true, ThothAccurate: true, SekhmetHardened: true}
+	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: false, HygieneClean: true, ThothAccurate: true, IsisHardened: true}
 	err := tap.Align()
 	if err == nil {
 		t.Fatal("expected error for AnubisCorrect=false")
@@ -158,21 +157,21 @@ func TestAlign_AnubisIncorrect(t *testing.T) {
 	}
 }
 
-func TestAlign_KaNotExtinguished(t *testing.T) {
+func TestAlign_HygieneNotClean(t *testing.T) {
 	t.Parallel()
-	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: true, KaExtinguished: false, ThothAccurate: true, SekhmetHardened: true}
+	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: true, HygieneClean: false, ThothAccurate: true, IsisHardened: true}
 	err := tap.Align()
 	if err == nil {
-		t.Fatal("expected error for KaExtinguished=false")
+		t.Fatal("expected error for HygieneClean=false")
 	}
-	if !contains(err.Error(), "Ka") {
-		t.Errorf("error should mention Ka: %v", err)
+	if !contains(err.Error(), "hygiene") {
+		t.Errorf("error should mention hygiene: %v", err)
 	}
 }
 
 func TestAlign_ThothInaccurate(t *testing.T) {
 	t.Parallel()
-	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: true, KaExtinguished: true, ThothAccurate: false, SekhmetHardened: true}
+	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: true, HygieneClean: true, ThothAccurate: false, IsisHardened: true}
 	err := tap.Align()
 	if err == nil {
 		t.Fatal("expected error for ThothAccurate=false")
@@ -182,15 +181,15 @@ func TestAlign_ThothInaccurate(t *testing.T) {
 	}
 }
 
-func TestAlign_SekhmetNotHardened(t *testing.T) {
+func TestAlign_IsisNotHardened(t *testing.T) {
 	t.Parallel()
-	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: true, KaExtinguished: true, ThothAccurate: true, SekhmetHardened: false}
+	tap := &Tapestry{MaatConsistent: true, AnubisCorrect: true, HygieneClean: true, ThothAccurate: true, IsisHardened: false}
 	err := tap.Align()
 	if err == nil {
-		t.Fatal("expected error for SekhmetHardened=false")
+		t.Fatal("expected error for IsisHardened=false")
 	}
-	if !contains(err.Error(), "Sekhmet") {
-		t.Errorf("error should mention Sekhmet: %v", err)
+	if !contains(err.Error(), "Isis") {
+		t.Errorf("error should mention Isis: %v", err)
 	}
 }
 
@@ -222,7 +221,7 @@ func TestCheckDrift_HasDrift(t *testing.T) {
 
 func TestCheckDrift_EmptyPlan(t *testing.T) {
 	t.Parallel()
-	w := &Weave{DriftFound: true} // start true to verify it gets set false
+	w := &Weave{DriftFound: true}
 	w.CheckDrift()
 	if w.DriftFound {
 		t.Error("expected no drift for empty plan")

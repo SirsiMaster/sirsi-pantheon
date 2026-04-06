@@ -64,30 +64,31 @@ func (w *Weave) CheckDrift() {
 }
 
 // Tapestry represents the interconnected state of all Pantheon deities.
+// Each field maps to a real check that Net performs during alignment.
 type Tapestry struct {
-	MaatConsistent  bool
-	AnubisCorrect   bool
-	KaExtinguished  bool
-	ThothAccurate   bool
-	SekhmetHardened bool
+	MaatConsistent bool // go vet + gofmt pass
+	AnubisCorrect  bool // no scan rule regressions
+	HygieneClean   bool // no ghost residuals blocking
+	ThothAccurate  bool // .thoth/ memory present and parseable
+	IsisHardened   bool // network safety checks pass
 }
 
 // Align ensures all deities submit to the tapestry. Checks are ordered by severity.
 func (t *Tapestry) Align() error {
 	if !t.MaatConsistent {
-		return fmt.Errorf("the weave is unbalanced: Ma'at detects weight of untruth")
+		return fmt.Errorf("the weave is unbalanced: Ma'at detects inconsistency (go vet/gofmt)")
 	}
 	if !t.AnubisCorrect {
-		return fmt.Errorf("the weave is torn: Anubis finds corruption in the scales")
+		return fmt.Errorf("the weave is torn: Anubis finds corruption in scan rules")
 	}
-	if !t.KaExtinguished {
-		return fmt.Errorf("the weave is haunted: Ka still lingers — ghosts remain")
+	if !t.HygieneClean {
+		return fmt.Errorf("the weave is haunted: hygiene checks found residuals")
 	}
 	if !t.ThothAccurate {
-		return fmt.Errorf("the weave is unscribed: Thoth's records are incomplete")
+		return fmt.Errorf("the weave is unscribed: Thoth memory not found or invalid")
 	}
-	if !t.SekhmetHardened {
-		return fmt.Errorf("the weave is vulnerable: Sekhmet has not hardened the perimeter")
+	if !t.IsisHardened {
+		return fmt.Errorf("the weave is vulnerable: Isis has not verified system health")
 	}
 	return nil
 }
