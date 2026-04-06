@@ -592,7 +592,7 @@ func (m TUIModel) View() string {
 	desc := lipgloss.NewStyle().Foreground(lipgloss.Color("#999999")).
 		Render("DevOps intelligence for developers and infrastructure teams")
 	signage := lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).
-		Render(" Sirsi Technologies, Inc. 2026 (MIT License)")
+		Render(" Sirsi Technologies, Inc. 2026 (Apache 2.0)")
 
 	var b strings.Builder
 	usedLines := 0

@@ -3,7 +3,7 @@
 **Infrastructure hygiene for your dev machine.** Finds waste that CleanMyMac misses, audits network security, and gives your AI tools persistent memory.
 
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-C8A951?style=flat)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-C8A951?style=flat)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.15.0-1A1A5E?style=flat)](VERSION)
 [![Tests](https://img.shields.io/badge/tests-1%2C663%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 
@@ -197,4 +197,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 [sirsi.ai](https://sirsi.ai) · [GitHub](https://github.com/SirsiMaster) · [Pantheon Hub](https://pantheon.sirsi.ai)
 
-MIT License — free and open source forever.
+Apache License 2.0 — free and open source forever.

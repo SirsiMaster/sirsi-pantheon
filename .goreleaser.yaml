@@ -265,7 +265,7 @@ brews:
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
     description: "Unified DevOps Intelligence Platform — One Install, All Deities"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "pantheon"
       bin.install "pantheon-agent"
@@ -287,7 +287,7 @@ brews:
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
     description: "Infrastructure scanner and cleaner — standalone deity"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "pantheon-anubis"
     test: |
@@ -303,7 +303,7 @@ brews:
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
     description: "Quality assurance and audit engine — standalone deity"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "pantheon-maat"
     test: |
@@ -319,7 +319,7 @@ brews:
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
     description: "AI project memory with context compression — standalone deity"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "pantheon-thoth"
     test: |
@@ -335,7 +335,7 @@ brews:
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
     description: "Fleet sweep and network discovery — standalone deity"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "pantheon-scarab"
     test: |
@@ -351,7 +351,7 @@ brews:
     directory: Formula
     homepage: https://github.com/SirsiMaster/sirsi-pantheon
     description: "System resource monitoring with accelerator detection — standalone deity"
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "pantheon-guard"
     test: |
@@ -405,4 +405,4 @@ release:
     ```
   footer: |
     ---
-    *Built by [Sirsi Technologies](https://sirsi.ai). MIT licensed.*
+    *Built by [Sirsi Technologies](https://sirsi.ai). Apache 2.0 licensed.*
