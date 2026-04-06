@@ -6,7 +6,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/hapi"
 )
 
-// TokenizeResult contains the output of the Sekhmet tokenization service.
+// TokenizeResult contains the output of the Isis tokenization service.
 type TokenizeResult struct {
 	Tokens   []int  `json:"tokens"`
 	Count    int    `json:"count"`
@@ -22,7 +22,7 @@ func Tokenize(text string) (*TokenizeResult, error) {
 	// If ANE is available, use it for "Warrior" class throughput
 	tokens, err := primary.Tokenize(text)
 	if err != nil {
-		return nil, fmt.Errorf("sekhmet tokenize failed: %w", err)
+		return nil, fmt.Errorf("isis tokenize failed: %w", err)
 	}
 
 	return &TokenizeResult{

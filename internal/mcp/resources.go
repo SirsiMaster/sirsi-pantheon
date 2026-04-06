@@ -57,8 +57,8 @@ func registerResources(s *Server) {
 
 	s.RegisterResource(Resource{
 		URI:         "anubis://watchdog-alerts",
-		Name:        "Sekhmet Watchdog Alerts",
-		Description: "Live CPU/memory pressure alerts from the Sekhmet watchdog. Shows recent sustained CPU spikes and IDE starvation events.",
+		Name:        "Isis Watchdog Alerts",
+		Description: "Live CPU/memory pressure alerts from the Isis watchdog. Shows recent sustained CPU spikes and IDE starvation events.",
 		MimeType:    "application/json",
 	}, handleWatchdogResource)
 }
@@ -157,7 +157,7 @@ func handleWatchdogResource() (*ResourceContent, error) {
 		// No bridge active — return dormant status
 		status := map[string]interface{}{
 			"active":        false,
-			"message":       "Sekhmet watchdog not running. Start with 'pantheon guard --watch'.",
+			"message":       "Isis watchdog not running. Start with 'pantheon guard --watch'.",
 			"recent_alerts": []interface{}{},
 		}
 		data, _ := json.MarshalIndent(status, "", "  ")

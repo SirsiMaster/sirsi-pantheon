@@ -38,50 +38,39 @@ type deityInfo struct {
 // Two-word roles: verb/adjective + noun. Fits in a 30-col grid cell.
 var deityRoster = []deityInfo{
 	{"ra", "𓇶", "Ra", "Agent Orchestrator"},
-	{"neith", "𓁯", "Neith", "Context Weaver"},
+	{"net", "𓁯", "Net", "Scope Weaver"},
 	{"thoth", "𓁟", "Thoth", "Session Memory"},
 	{"maat", "𓆄", "Ma'at", "Quality Gate"},
-	{"isis", "𓁐", "Isis", "Code Remedy"},
+	{"isis", "𓁐", "Isis", "Health & Remedy"},
 	{"seshat", "𓁆", "Seshat", "Knowledge Bridge"},
-	{"horus", "𓂀", "Horus", "Storage Index"},
 	{"anubis", "𓃣", "Anubis", "System Jackal"},
-	{"ka", "𓂓", "Ka", "Ghost Hunter"},
-	{"sekhmet", "𓁵", "Sekhmet", "System Watchdog"},
 	{"hapi", "𓈗", "Hapi", "Hardware Profiler"},
-	{"khepri", "𓆣", "Khepri", "Fleet Scanner"},
-	{"seba", "𓇽", "Seba", "Arch Mapper"},
+	{"seba", "𓇽", "Seba", "Infra Mapper"},
 	{"osiris", "𓁹", "Osiris", "State Keeper"},
-	{"hathor", "𓉡", "Hathor", "File Dedup"},
 }
 
 // intentKeywords maps natural-language keywords to deity keys for routing.
 var intentKeywords = map[string][]string{
 	"ra":      {"deploy", "orchestrate", "sprint", "agent", "watch", "command center"},
-	"neith":   {"scope", "weave", "context", "canon", "align", "tile", "drift"},
+	"net":     {"scope", "weave", "context", "canon", "align", "tile", "drift"},
 	"thoth":   {"memory", "sync", "compact", "journal", "remember", "persist"},
 	"maat":    {"quality", "audit", "coverage", "test", "lint", "feather", "gate", "qa"},
-	"isis":    {"fix", "heal", "remediate", "repair", "auto-fix"},
+	"isis":    {"fix", "heal", "remediate", "repair", "auto-fix", "guard", "watchdog", "monitor", "ram", "cpu", "doctor", "process", "network", "dns", "wifi", "firewall", "tls", "vpn", "security"},
 	"seshat":  {"knowledge", "graft", "ingest", "notes", "gemini", "notebooklm"},
-	"horus":   {"index", "storage", "manifest", "filesystem", "launch services"},
-	"anubis":  {"scan", "waste", "clean", "judge", "purge", "hygiene", "infrastructure"},
-	"ka":      {"ghost", "dead", "remnant", "uninstall", "residual", "haunt"},
-	"sekhmet": {"guard", "watchdog", "monitor", "ram", "cpu", "doctor", "process"},
+	"anubis":  {"scan", "waste", "clean", "judge", "purge", "hygiene", "infrastructure", "dedup", "duplicate", "mirror", "ghost", "dead", "remnant", "uninstall", "residual", "haunt"},
 	"hapi":    {"gpu", "vram", "hardware", "accelerator", "ane", "cuda", "metal", "npu"},
-	"khepri":  {"network", "fleet", "subnet", "container", "docker", "kubernetes"},
-	"seba":    {"architecture", "topology", "diagram", "map", "dependency", "graph"},
+	"seba":    {"architecture", "topology", "diagram", "map", "dependency", "graph", "network map", "network topology", "fleet", "subnet", "container", "docker", "kubernetes", "k8s", "pod"},
 	"osiris":  {"checkpoint", "state", "preserve", "restore"},
-	"hathor":  {"dedup", "duplicate", "mirror", "ranking"},
 }
 
 // Top-level CLI aliases that bypass intent matching.
 // These map user shorthand to the deity that owns the verb.
 var cliAliases = map[string]string{
 	"scan":    "anubis",
-	"hunt":    "anubis",
-	"ghosts":  "ka",
+	"ghosts":  "anubis",
 	"dedup":   "anubis",
-	"guard":   "sekhmet",
-	"doctor":  "sekhmet",
+	"guard":   "isis",
+	"doctor":  "isis",
 	"version": "version",
 }
 
@@ -258,11 +247,14 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			return m, nil
 		}
+		if raw == "help" || raw == "?" {
+			return m.showHelp()
+		}
 		// Quick action shortcuts (only before first command)
 		if len(m.history) == 0 {
 			switch raw {
 			case "1":
-				raw = "sekhmet network"
+				raw = "isis network"
 			case "2":
 				raw = "doctor"
 			case "3":
@@ -425,10 +417,80 @@ func (m *TUIModel) dispatch(raw string) (string, []string, bool) {
 	}
 
 	if bestDeity != "" {
-		return bestDeity, []string{bestDeity}, true
+		args := inferSubcommand(bestDeity, lower)
+		return bestDeity, args, true
 	}
 
 	return "", rawTokens, false
+}
+
+// inferSubcommand maps a deity + natural language input to the most likely
+// CLI args. Without this, intent matches dispatch to bare deity names which
+// just show help text.
+func inferSubcommand(deity, lower string) []string {
+	type rule struct {
+		keywords   []string
+		subcommand []string
+	}
+
+	// Order matters — first match wins within a deity.
+	deityRules := map[string][]rule{
+		"isis": {
+			{[]string{"network", "dns", "wifi", "firewall", "tls", "vpn", "security"}, []string{"isis", "network"}},
+			{[]string{"doctor", "health", "diagnostic"}, []string{"doctor"}},
+			{[]string{"heal", "remediate", "fix", "repair"}, []string{"maat", "heal"}},
+			{[]string{"guard", "monitor", "ram", "cpu", "process"}, []string{"guard"}},
+		},
+		"anubis": {
+			{[]string{"ghost", "dead", "remnant", "haunt", "uninstall"}, []string{"anubis", "ka"}},
+			{[]string{"duplicate", "dedup", "mirror"}, []string{"anubis", "mirror"}},
+			{[]string{"clean", "judge", "purge"}, []string{"anubis", "judge", "--dry-run"}},
+			{[]string{"scan", "waste", "hygiene"}, []string{"anubis", "weigh"}},
+		},
+		"thoth": {
+			{[]string{"sync", "memory"}, []string{"thoth", "sync"}},
+			{[]string{"compact", "persist"}, []string{"thoth", "compact"}},
+			{[]string{"init"}, []string{"thoth", "init"}},
+		},
+		"maat": {
+			{[]string{"audit", "quality", "qa"}, []string{"maat", "audit"}},
+			{[]string{"coverage", "test", "lint"}, []string{"maat", "pulse"}},
+		},
+		"seshat": {
+			{[]string{"ingest", "graft", "knowledge"}, []string{"seshat", "ingest"}},
+			{[]string{"notebooklm", "notebook"}, []string{"seshat", "notebooklm"}},
+		},
+		"hapi": {
+			{[]string{"gpu", "vram", "cuda", "metal", "ane", "npu"}, []string{"hapi", "profile"}},
+			{[]string{"hardware", "accelerator"}, []string{"hapi", "scan"}},
+		},
+		"seba": {
+			{[]string{"diagram", "graph"}, []string{"seba", "diagram"}},
+			{[]string{"architecture", "topology", "map"}, []string{"seba", "scan"}},
+		},
+		"ra": {
+			{[]string{"status"}, []string{"ra", "status"}},
+			{[]string{"deploy", "sprint"}, []string{"ra", "deploy"}},
+			{[]string{"health"}, []string{"ra", "health"}},
+		},
+		"net": {
+			{[]string{"align", "drift"}, []string{"neith", "align"}},
+			{[]string{"scope", "status"}, []string{"neith", "status"}},
+		},
+	}
+
+	if rules, ok := deityRules[deity]; ok {
+		for _, r := range rules {
+			for _, kw := range r.keywords {
+				if strings.Contains(lower, kw) {
+					return r.subcommand
+				}
+			}
+		}
+	}
+
+	// Fallback: bare deity name
+	return []string{deity}
 }
 
 func (m TUIModel) runCommand(cmd *exec.Cmd) tea.Cmd {
@@ -560,6 +622,27 @@ func (m TUIModel) View() string {
 		b.WriteString(" " + divider + "\n")
 		b.WriteString(" " + m.input.View() + "\n")
 		b.WriteString(m.renderHints(false) + "\n")
+		usedLines += 3
+	} else if m.width < 70 {
+		// ── Narrow terminal: stack vertically instead of split-pane
+		b.WriteString("\n")
+		b.WriteString(" " + header + "\n")
+		b.WriteString(" " + divider + "\n")
+		usedLines += 3
+
+		if m.mode == modeRunning {
+			glyph, name := deityDisplay(m.runningDeity)
+			b.WriteString(" " + m.spinner.View() + " " +
+				lipgloss.NewStyle().Foreground(Gold).Render(glyph+" "+name) +
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(" running...") + "\n")
+			usedLines++
+		}
+		b.WriteString(m.viewport.View() + "\n")
+		usedLines += m.viewport.Height
+
+		b.WriteString(" " + divider + "\n")
+		b.WriteString(" " + m.input.View() + "\n")
+		b.WriteString(m.renderHints(true) + "\n")
 		usedLines += 3
 	} else {
 		// ── Split-pane: left roster | right output
@@ -726,12 +809,12 @@ func (m TUIModel) renderHints(splitMode bool) string {
 	if m.mode == modeRunning {
 		hints = append(hints, "↑/↓ scroll")
 	} else {
-		hints = append(hints, "→ accept", "↑ history")
+		hints = append(hints, "→ accept", "↑ history", "help")
 		if splitMode {
 			hints = append(hints, "esc back")
 		}
 	}
-	hints = append(hints, "clear reset", "ctrl+c quit")
+	hints = append(hints, "ctrl+c quit")
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).
 		Render(" " + strings.Join(hints, " · "))
 }
@@ -749,6 +832,55 @@ func (m TUIModel) renderQuickActions() string {
 	b.WriteString("   " + gold.Render("3") + dim.Render("  Show the current status of all deities") + "\n")
 	b.WriteString("\n")
 	return b.String()
+}
+
+// showHelp renders an in-TUI help panel listing all available commands.
+func (m TUIModel) showHelp() (TUIModel, tea.Cmd) {
+	gold := lipgloss.NewStyle().Foreground(Gold).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	body := lipgloss.NewStyle().Foreground(White)
+
+	var lines []string
+	lines = append(lines,
+		gold.Render("  Pantheon Commands"),
+		"",
+		body.Render("  Core:"),
+		dim.Render("    scan                  Scan for infrastructure waste"),
+		dim.Render("    ghosts                Detect remnants of uninstalled apps"),
+		dim.Render("    dedup [dirs]          Find duplicate files"),
+		dim.Render("    doctor                System health diagnostic"),
+		dim.Render("    guard                 Monitor system resources"),
+		"",
+		body.Render("  Deities:"),
+		dim.Render("    ra status             Orchestrator status"),
+		dim.Render("    net status            Scope weaver alignment check"),
+		dim.Render("    thoth sync            Sync project memory"),
+		dim.Render("    maat audit            Governance and quality scan"),
+		dim.Render("    isis network          Network security audit"),
+		dim.Render("    isis heal             Auto-remediate failures"),
+		dim.Render("    seshat ingest         Ingest knowledge from sources"),
+		dim.Render("    anubis weigh          Scan for waste"),
+		dim.Render("    hapi scan             Hardware and accelerator profile"),
+		dim.Render("    seba diagram          Architecture diagram generation"),
+		dim.Render("    osiris                State snapshot keeper"),
+		"",
+		body.Render("  Natural Language:"),
+		dim.Render("    Type what you want in plain English and Pantheon"),
+		dim.Render("    will route to the right deity automatically."),
+		"",
+		body.Render("  Navigation:"),
+		dim.Render("    →         Accept inline suggestion"),
+		dim.Render("    ↑/↓       Browse command history / scroll output"),
+		dim.Render("    esc       Clear output pane"),
+		dim.Render("    clear     Reset display"),
+		dim.Render("    ctrl+c    Quit"),
+	)
+
+	m.outputLines = lines
+	m.viewport.SetContent(strings.Join(lines, "\n"))
+	m.recalcViewportHeight()
+	m.viewport.GotoTop()
+	return m, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────

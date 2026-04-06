@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>𓇽 Seba — Star Map | Sirsi Pantheon</title>
-  <meta name="description" content="Draws a visual map of your infrastructure. Part of the Sirsi Pantheon infrastructure hygiene platform.">
+  <title>𓇽 Seba — Infra Mapper | Sirsi Pantheon</title>
+  <meta name="description" content="Infrastructure topology mapping, fleet discovery, and container audit. Part of the Sirsi Pantheon infrastructure hygiene platform.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -117,14 +117,14 @@
   <header class="hero">
     <span class="glyph-big">𓇽</span>
     <h1>Seba</h1>
-    <div class="role">Star Map</div>
-    <div class="domain-tag">Infrastructure Topology</div>
+    <div class="role">Infra Mapper</div>
+    <div class="domain-tag">Infrastructure Topology · Fleet Discovery · Container Audit</div>
     <div class="platform-badge">
       <span class="supported">macOS &#10003;</span>
       <span class="supported">Linux &#10003;</span>
       <span class="supported">Windows &#10003;</span>
     </div>
-    <p class="desc">Seba takes the data from every other deity — network hosts from Khepri, Docker containers from Scarab, filesystems from Horus — and builds an interactive topology graph. See how services connect, where bottlenecks are, and how your infrastructure is structured. Currently the graph data engine is complete; the interactive D3.js visualization is in development.</p>
+    <p class="desc">Seba maps your entire infrastructure into an interactive topology graph. She now includes fleet discovery and container audit (formerly Khepri) — scanning every device on your local network via ARP, auditing Docker containers, and discovering hosts. See how services connect, where bottlenecks are, and how your infrastructure is structured. The graph data engine is complete; the interactive D3.js visualization is in development.</p>
   </header>
 
   <div class="metrics-strip">
@@ -143,7 +143,13 @@
           <p class="f-desc">D3.js-based interactive visualization in the browser</p>
         </div><div class="feature-card">
           <div class="f-header"><span class="f-icon">🔗</span><span class="f-name">Cross-Deity Data</span></div>
-          <p class="f-desc">Aggregates findings from Khepri (network), Horus (filesystem), and Hapi (hardware)</p>
+          <p class="f-desc">Aggregates findings from all deities and its own fleet scanner to build a unified topology graph</p>
+        </div><div class="feature-card">
+          <div class="f-header"><span class="f-icon">🪲</span><span class="f-name">Fleet Discovery (ex-Khepri)</span></div>
+          <p class="f-desc">Scans every device on your local network. Discovers hosts via ARP, audits Docker containers, inspects configurations</p>
+        </div><div class="feature-card">
+          <div class="f-header"><span class="f-icon">🐳</span><span class="f-name">Container Audit (ex-Khepri)</span></div>
+          <p class="f-desc">Inspects running Docker containers, images, volumes, and networks for waste, misconfigurations, and orphaned resources</p>
         </div>
       </div>
     </div>
@@ -238,7 +244,7 @@
         </div>
         <div class="faq-item">
           <div class="faq-q">What data sources does Seba use?</div>
-          <div class="faq-a">Seba aggregates data from Khepri (network hosts), Horus (filesystem), and Docker container data to build a unified topology graph.</div>
+          <div class="faq-a">Seba includes its own fleet discovery and container audit engine (formerly Khepri), and aggregates data from other deities like Hapi (hardware) to build a unified topology graph.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Does Seba send data anywhere?</div>

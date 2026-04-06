@@ -109,7 +109,7 @@ func StartBridge(ctx context.Context, cfg BridgeConfig) *AntigravityBridge {
 
 				entry := AlertEntry{
 					Timestamp:   alert.Timestamp,
-					Source:      "Sekhmet",
+					Source:      "Isis",
 					Severity:    "warn",
 					PID:         alert.Process.PID,
 					ProcessName: alert.Process.Name,

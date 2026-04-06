@@ -83,7 +83,7 @@ const (
 	TypeAnubisJudge = "anubis_judge"
 	TypeAnubisClean = "anubis_clean"
 
-	// Guard/Sekhmet — watchdog
+	// Isis — health, guard, remediation
 	TypeGuardStart = "guard_start"
 	TypeGuardAlert = "guard_alert"
 	TypeGuardStop  = "guard_stop"

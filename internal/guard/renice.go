@@ -160,11 +160,11 @@ func defaultTaskpolicy(pid int) error {
 // FormatReniceReport returns a human-readable summary.
 func FormatReniceReport(r *ReniceResult) string {
 	if r.Reniced == 0 {
-		return "𓁵 Sekhmet: No matching processes found to deprioritize"
+		return "𓁵 Isis: No matching processes found to deprioritize"
 	}
 
 	var sb strings.Builder
-	sb.WriteString("𓁵 Sekhmet — Renice Report\n")
+	sb.WriteString("𓁵 Isis — Renice Report\n")
 	sb.WriteString(strings.Repeat("─", 50) + "\n\n")
 
 	for _, p := range r.Processes {

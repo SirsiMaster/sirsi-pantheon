@@ -1,6 +1,6 @@
 // Package guard — network.go
 //
-// 𓁵 Sekhmet Network Audit: Checks network security posture for public WiFi
+// 𓁐 Isis Network Audit: Checks network security posture for public WiFi
 // safety and transport encryption. Read-only by default; --fix applies safe
 // remediations (encrypted DNS, firewall enable).
 //
@@ -20,10 +20,10 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
-// stateDir returns the Sekhmet state directory, creating it if needed.
+// stateDir returns the Isis state directory, creating it if needed.
 func stateDir() string {
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".config", "pantheon", "sekhmet")
+	dir := filepath.Join(home, ".config", "pantheon", "isis")
 	_ = os.MkdirAll(dir, 0700)
 	return dir
 }
@@ -137,22 +137,30 @@ func checkDNSConfig(p platform.Platform, report *NetworkReport, fix bool) {
 		finding.Message = "No custom DNS — using ISP default (unencrypted, spoofable on public WiFi)"
 
 		if fix {
-			saveNetworkState(p) // preserve current state for rollback
-			_, fixErr := p.Command("networksetup", "-setdnsservers", "Wi-Fi", "1.1.1.1", "1.0.0.1")
-			if fixErr == nil {
-				// Verify the new DNS actually works on this network
-				if dnsReachable(p, "1.1.1.1") {
-					finding.Message += " → FIXED: Set to Cloudflare 1.1.1.1"
-					finding.Severity = SeverityOK
-				} else {
-					// Network blocks external DNS — roll back
-					_, _ = p.Command("networksetup", "-setdnsservers", "Wi-Fi", "empty")
-					finding.Severity = SeverityWarn
-					finding.Message = "Cloudflare DNS unreachable on this network — reverted to network default"
-					finding.Detail = "This network blocks external DNS servers. Use a VPN for encrypted DNS."
-				}
+			// Safety: probe reachability BEFORE changing DNS config.
+			// A failed probe here is harmless; a failed probe after changing
+			// DNS would leave the machine with broken name resolution.
+			if !dnsReachable(p, "1.1.1.1") {
+				finding.Severity = SeverityWarn
+				finding.Message = "Cloudflare DNS (1.1.1.1) unreachable on this network — skipped fix"
+				finding.Detail = "This network blocks external DNS servers. Use a VPN for encrypted DNS."
 			} else {
-				finding.Detail = "Auto-fix failed (needs admin): sudo networksetup -setdnsservers Wi-Fi 1.1.1.1 1.0.0.1"
+				saveNetworkState(p) // preserve current state for rollback
+				_, fixErr := p.Command("networksetup", "-setdnsservers", "Wi-Fi", "1.1.1.1", "1.0.0.1")
+				if fixErr == nil {
+					// Post-fix watchdog: poll resolution 3 times over ~6 seconds.
+					// If DNS never resolves, auto-revert before the user loses connectivity.
+					if verifyDNSOrRollback(p, 3, 2*time.Second) {
+						finding.Message += " → FIXED: Set to Cloudflare 1.1.1.1"
+						finding.Severity = SeverityOK
+					} else {
+						finding.Severity = SeverityWarn
+						finding.Message = "Cloudflare DNS set but resolution failed — auto-reverted to prior config"
+						finding.Detail = "This network accepts connections to 1.1.1.1 but blocks DNS resolution. Use a VPN."
+					}
+				} else {
+					finding.Detail = "Auto-fix failed (needs admin): sudo networksetup -setdnsservers Wi-Fi 1.1.1.1 1.0.0.1"
+				}
 			}
 		}
 	} else {
@@ -178,12 +186,19 @@ func checkDNSConfig(p platform.Platform, report *NetworkReport, fix bool) {
 				finding.Message = fmt.Sprintf("Encrypted DNS configured (%s) but UNREACHABLE — network may be blocking it", provider)
 				finding.Detail = "Fix: sudo networksetup -setdnsservers Wi-Fi empty (reverts to network DNS)"
 				if fix {
-					// Fall back to network default
+					// Fall back to network default and verify resolution recovers
 					saveNetworkState(p)
 					_, _ = p.Command("networksetup", "-setdnsservers", "Wi-Fi", "empty")
-					finding.Severity = SeverityWarn
-					finding.Message = fmt.Sprintf("%s was unreachable — reverted to network default DNS", provider)
-					finding.Detail = "This network blocks external DNS. Use a VPN for encrypted DNS on this network."
+					if verifyDNSOrRollback(p, 3, 2*time.Second) {
+						finding.Severity = SeverityWarn
+						finding.Message = fmt.Sprintf("%s was unreachable — reverted to network default DNS", provider)
+						finding.Detail = "This network blocks external DNS. Use a VPN for encrypted DNS on this network."
+					} else {
+						// Network default also broken — restore what was there before
+						finding.Severity = SeverityCritical
+						finding.Message = fmt.Sprintf("Reverted from %s but network DNS also failing — restored original config", provider)
+						finding.Detail = "Both external and network DNS are failing. Check network connectivity."
+					}
 				}
 			}
 		} else {
@@ -295,11 +310,56 @@ func checkTLSConnection(report *NetworkReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// dnsReachable tests if a DNS server can resolve a known hostname within 3 seconds.
-func dnsReachable(p platform.Platform, dnsIP string) bool {
-	// Use nslookup with the specific DNS server
-	_, err := p.Command("timeout", "3", "nslookup", "api.anthropic.com", dnsIP)
+// dnsReachable tests if a DNS server is reachable at the transport level.
+// Uses a raw TCP connect to port 53 — does NOT depend on DNS resolution,
+// so it works even when the system's DNS is misconfigured or broken.
+func dnsReachable(_ platform.Platform, dnsIP string) bool {
+	conn, err := net.DialTimeout("tcp", dnsIP+":53", 3*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// dnsResolves verifies that the system can actually resolve a hostname.
+// Unlike dnsReachable (transport-level), this confirms end-to-end resolution
+// works after a config change. Uses a hardcoded IP-free lookup so it exercises
+// the full DNS stack.
+func dnsResolves() bool {
+	_, err := net.LookupHost("api.anthropic.com")
 	return err == nil
+}
+
+// verifyDNSOrRollback polls DNS resolution after a config change.
+// If resolution fails across all attempts, it reverts DNS to the prior state.
+// Returns true if DNS is working, false if it rolled back.
+func verifyDNSOrRollback(p platform.Platform, attempts int, interval time.Duration) bool {
+	for i := 0; i < attempts; i++ {
+		if dnsResolves() {
+			return true
+		}
+		if i < attempts-1 {
+			time.Sleep(interval)
+		}
+	}
+	// DNS never came up — revert to prior state
+	path := filepath.Join(stateDir(), "dns_prior.txt")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// No saved state — fall back to DHCP default
+		_, _ = p.Command("networksetup", "-setdnsservers", "Wi-Fi", "empty")
+		return false
+	}
+	prior := strings.TrimSpace(string(data))
+	if prior == "" || strings.Contains(prior, "aren't any") || strings.Contains(prior, "no DNS") {
+		_, _ = p.Command("networksetup", "-setdnsservers", "Wi-Fi", "empty")
+	} else {
+		args := append([]string{"-setdnsservers", "Wi-Fi"}, strings.Fields(prior)...)
+		_, _ = p.Command("networksetup", args...)
+	}
+	_ = os.Remove(path)
+	return false
 }
 
 // checkCACertificates audits the system root certificate store.

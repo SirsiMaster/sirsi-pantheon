@@ -1,8 +1,8 @@
 // Package guard — throttle.go
 //
-// Sekhmet Throttle: Non-destructive CPU pressure relief.
+// Isis Throttle: Non-destructive CPU pressure relief.
 //
-// Instead of killing processes, Sekhmet can "renice" them — lower their
+// Instead of killing processes, Isis can "renice" them — lower their
 // scheduling priority so they yield CPU to interactive apps (like your IDE).
 //
 // This is the gentle alternative to slaying:
@@ -252,11 +252,11 @@ func (t *Throttler) FormatThrottleReport() string {
 	defer t.mu.RUnlock()
 
 	if len(t.throttled) == 0 {
-		return "𓁵 Sekhmet: No processes throttled"
+		return "𓁵 Isis: No processes throttled"
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("𓁵 Sekhmet: %d process(es) throttled\n", len(t.throttled)))
+	sb.WriteString(fmt.Sprintf("𓁵 Isis: %d process(es) throttled\n", len(t.throttled)))
 	for _, event := range t.throttled {
 		sb.WriteString(fmt.Sprintf("  PID %d (%s): renice +%d (was %.0f%% CPU at %s)\n",
 			event.PID, event.ProcessName, event.Level,

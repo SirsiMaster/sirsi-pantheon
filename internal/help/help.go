@@ -60,7 +60,7 @@ func guides() map[string]deityGuide {
 			Platform: "All platforms. Tests require Go toolchain in PATH.",
 		},
 		"anubis": {
-			Name: "Anubis", Glyph: "\U00013062", Tagline: "Infrastructure & Digital Hygiene Engine",
+			Name: "Anubis", Glyph: "\U00013062", Tagline: "Infrastructure Hygiene, Dedup & Digital Cleanliness",
 			Steps: []step{
 				{"Scan for waste", "Run `pantheon scan` (or `pantheon anubis weigh`) to\ndetect infrastructure waste across your workstation."},
 				{"Reclaim storage", "Run `pantheon anubis judge` to move detected artifacts\nto Trash. Always runs in `--dry-run` mode by default."},
@@ -105,7 +105,7 @@ func guides() map[string]deityGuide {
 			Platform: "macOS (Apple Silicon preferred). Neural Engine acceleration on M-series.",
 		},
 		"seba": {
-			Name: "Seba", Glyph: "\U000131BD", Tagline: "Infrastructure Mapping & Project Registry",
+			Name: "Seba", Glyph: "\U000131BD", Tagline: "Infrastructure Mapping, Fleet Discovery & Project Registry",
 			Steps: []step{
 				{"Map architecture", "Run `pantheon seba scan` to build a graph of your\nworkstation's architecture and dependencies."},
 				{"Generate diagrams", "Run `pantheon seba diagram --type all --html` to\ncreate Mermaid diagrams rendered as self-contained HTML."},
@@ -131,53 +131,6 @@ func guides() map[string]deityGuide {
 			},
 			Platform: "macOS primary. Linux support for common package managers.",
 		},
-		"horus": {
-			Name: "Horus", Glyph: "\U00013075", Tagline: "Observability & Monitoring",
-			Steps: []step{
-				{"System observation", "Horus provides the observability layer for Pantheon,\nwatching system metrics and reporting anomalies."},
-				{"Integration with Guard", "Horus feeds data to the Guard sentry for\nreal-time resource monitoring and alerting."},
-			},
-			Examples: []string{
-				"pantheon guard",
-				"pantheon doctor",
-			},
-			Platform: "All platforms.",
-		},
-		"hathor": {
-			Name: "Hathor", Glyph: "\U00013099", Tagline: "Developer Experience & Interface Design",
-			Steps: []step{
-				{"Dashboard experience", "Hathor governs the Pantheon dashboard and\nterminal UI experience using the Gold + Lapis brand language."},
-				{"Terminal rendering", "All styled output flows through Hathor's design\nsystem using lipgloss and the Pantheon color palette."},
-			},
-			Examples: []string{
-				"pantheon  (launches dashboard)",
-			},
-			Platform: "All platforms with terminal color support.",
-		},
-		"sekhmet": {
-			Name: "Sekhmet", Glyph: "\U00013075", Tagline: "System Health & Diagnostics",
-			Steps: []step{
-				{"Run system diagnostics", "Run `pantheon doctor` to execute a one-shot\nhealth check covering RAM, disk, processes, and panics."},
-				{"JSON output for CI", "Run `pantheon doctor --json` for machine-readable\nhealth reports suitable for CI pipelines."},
-			},
-			Examples: []string{
-				"pantheon doctor",
-				"pantheon doctor --json",
-			},
-			Platform: "macOS + Linux. Some checks are OS-specific.",
-		},
-		"khepri": {
-			Name: "Khepri", Glyph: "\U000131A3", Tagline: "Transformation & Build Pipeline",
-			Steps: []step{
-				{"Build pipeline", "Khepri manages the transformation pipeline from\nsource to release, including goreleaser and CI/CD workflows."},
-				{"Cross-compilation", "Khepri ensures static binaries are produced for\nall target platforms (macOS, Linux, Windows)."},
-			},
-			Examples: []string{
-				"go build ./cmd/pantheon/",
-				"goreleaser release --snapshot",
-			},
-			Platform: "All platforms. Requires Go toolchain.",
-		},
 		"ra": {
 			Name: "Ra", Glyph: "\u2600\uFE0F", Tagline: "Supreme Overseer & Cross-Repo Orchestrator",
 			Steps: []step{
@@ -199,16 +152,49 @@ func guides() map[string]deityGuide {
 			Platform: "All platforms. Requires python3 and claude-code-sdk (pip3 install claude-code-sdk).",
 		},
 		"isis": {
-			Name: "Isis", Glyph: "\U00013068", Tagline: "Autonomous Healing & Remediation",
+			Name: "Isis", Glyph: "\U00013050", Tagline: "Health, Remediation & Network Security",
 			Steps: []step{
-				{"Autonomous healing", "Isis is invoked through Ma'at's heal command to\nautomatically remediate governance failures."},
-				{"Targeted remediation", "Run `pantheon maat heal --fix` to apply Isis\nhealing remedies to detected issues."},
+				{"System health diagnostic", "Run `pantheon doctor` to execute a one-shot\nhealth check covering RAM, disk, processes, panics, and Jetsam events."},
+				{"Network security audit", "Run `pantheon isis network` to audit DNS config,\nWiFi security, TLS, CA certificates, VPN, and firewall state."},
+				{"Auto-fix network issues", "Run `pantheon isis network --fix` to safely apply\nencrypted DNS and firewall fixes with automatic rollback on failure."},
+				{"Rollback network changes", "Run `pantheon isis network --rollback` to restore\nDNS to the state before the last --fix."},
+				{"Autonomous healing", "Run `pantheon isis heal` or `pantheon maat heal` to\nautomatically remediate governance failures."},
+				{"Resource monitoring", "Run `pantheon guard` to watch RAM pressure\nand system resource usage in real-time."},
 			},
 			Examples: []string{
-				"pantheon maat heal",
-				"pantheon maat heal --fix --full",
+				"pantheon doctor",
+				"pantheon doctor --json",
+				"pantheon isis network",
+				"pantheon isis network --fix",
+				"pantheon isis network --rollback",
+				"pantheon isis heal --fix --full",
+				"pantheon guard",
 			},
-			Platform: "All platforms. Requires writable project directory.",
+			Platform: "macOS + Linux. Network checks are macOS-specific. Some features require admin.",
+		},
+		"net": {
+			Name: "Net", Glyph: "\U00013070", Tagline: "Scope Weaver & Task Definition",
+			Steps: []step{
+				{"Check alignment", "Run `pantheon net status` (or `pantheon neith status`) to\nverify cross-module alignment and detect drift."},
+				{"Align modules", "Run `pantheon net align` to run consistency checks\nacross all modules and flag mismatches."},
+				{"Scope weaving", "Net defines the task scopes that Ra dispatches.\nScopes are YAML configs in configs/scopes/ that describe work to be done."},
+			},
+			Examples: []string{
+				"pantheon net status",
+				"pantheon net align",
+			},
+			Platform: "All platforms.",
+		},
+		"osiris": {
+			Name: "Osiris", Glyph: "\U00013079", Tagline: "State Snapshots & Checkpoints",
+			Steps: []step{
+				{"State preservation", "Osiris preserves system state snapshots for\nrollback and recovery. Currently in development."},
+				{"Integration with Thoth", "Osiris complements Thoth's session memory by\ncapturing point-in-time infrastructure state."},
+			},
+			Examples: []string{
+				"pantheon osiris  (coming soon)",
+			},
+			Platform: "All platforms.",
 		},
 	}
 }
@@ -216,8 +202,8 @@ func guides() map[string]deityGuide {
 // AllDeities returns the sorted list of deity names with guides.
 func AllDeities() []string {
 	return []string{
-		"anubis", "hapi", "hathor", "horus", "isis",
-		"ka", "khepri", "maat", "ra", "seba", "sekhmet",
+		"anubis", "hapi", "isis",
+		"maat", "net", "osiris", "ra", "seba",
 		"seshat", "thoth",
 	}
 }

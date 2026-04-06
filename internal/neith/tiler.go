@@ -480,8 +480,11 @@ func extractAgeDays(content string) int {
 		// Try to find YYYY-MM-DD pattern
 		for i := 0; i <= len(line)-10; i++ {
 			candidate := line[i : i+10]
-			if t, err := time.Parse("2006-01-02", candidate); err == nil {
-				return int(time.Since(t).Hours() / 24)
+			if parsed, err := time.Parse("2006-01-02", candidate); err == nil {
+				now := time.Now()
+				todayStr := now.Format("2006-01-02")
+				today, _ := time.Parse("2006-01-02", todayStr)
+				return int(today.Sub(parsed).Hours() / 24)
 			}
 		}
 		// Only check first 5 lines for performance

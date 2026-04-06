@@ -1,7 +1,7 @@
 # 𓁢 The Pantheon Hierarchy — Canonical Ruleset
-**Version:** 1.0.0
-**Date:** March 27, 2026
-**Custodian:** 𓁯 Net (The Weaver)
+**Version:** 2.0.0
+**Date:** April 5, 2026
+**Custodian:** 𓁯 Net (Scope Weaver)
 
 > *"Net weaves the timeline; Ra supervises creation; Ma'at weighs the truth; Isis heals the drift."*
 
@@ -12,7 +12,7 @@
 - **Role**: Supreme Orchestrator. 
 - **Subordination**: Even Ra must submit to the weave and tapestry maintained by Net, though he alone supervises the active creation of new infrastructure.
 
-## 𓁯 II. The Weaver of Existence: Net (Neith)
+## 𓁯 II. The Scope Weaver: Net
 **Net** sits below Ra and above the two divine clusters. She is the writer and owner of the planetary alignment.
 - **Ownership**: The **Development Plan**, the **Project Canon**, and all **ADRs**.
 - **The Engine: 🧶 The Loom of Intent**: 
@@ -28,41 +28,37 @@
 
 | Deity | Archetype | Role | Responsibility |
 |:------|:----------|:-----|:---------------|
-| **𓁟 Thoth** | The Memory | Scribe | Context compression & persistent AI knowledge. |
-| **𓆄 Ma'at** | The Standard | Weigher | QA/QC Governance. Weighs the heart (code) against the feather. |
-| **𓆄 Isis** | The Healer | Restorer | **Remediation engine**. Heals findings from Ma'at to restore quality. |
-| **𓁆 Seshat** | The Scribe | Bridge | **Gemini Bridge**. Bidirectional sync: Gemini ↔ NotebookLM ↔ Antigravity. |
+| **𓁟 Thoth** | Session Memory | Scribe | Context compression & persistent AI knowledge. |
+| **𓆄 Ma'at** | Quality Gate | Weigher | QA/QC Governance. Weighs the heart (code) against the feather. |
+| **𓁐 Isis** | Health & Remediation | Restorer | Remediation engine, doctor, network security, process guard, auto-fix. Absorbs former Sekhmet watchdog duties. |
+| **𓁆 Seshat** | Knowledge Bridge | Bridge | Ingestion/export, Gemini Bridge, bidirectional sync: Gemini <> NotebookLM. |
 
 **Dependencies**:
-- **Isis** depends on **Ma'at** (for finding the wounds that need healing).
-- **Net** depends on **Thoth** (for the logs/logs of time) and **Ma'at** (for the current state of truth).
+- **Isis** depends on **Ma'at** (for finding the wounds that need healing) and **Hapi** (for hardware-accelerated operations).
+- **Net** depends on **Thoth** (for the logs of time) and **Ma'at** (for the current state of truth).
 - **Seshat** depends on **Thoth** (for Knowledge Items to bridge) and **Net** (for architecture templates).
 
 ---
 
 ## 𓀰 IV. The Machine Gods (Infrastructure & OS)
-*The cluster of hygiene, safety, resource governance, and hardware flow.*
+*The cluster of hygiene, resource governance, mapping, and state.*
 
 | Deity | Archetype | Role | Responsibility |
 |:------|:----------|:-----|:---------------|
-| **𓂀 Horus** | The Eye | Watcher | Shared filesystem index & high-speed publisher. |
-| **🐺 Anubis** | The Judge | Hygiene | Infrastructure hygiene judge & waste hunter. |
-| **⚠️ Ka** | The Spirit | Hunter | Ghost app detection & LaunchServices repair. |
-| **𓁵 Sekhmet**| The Warrior | Guardian | Watchdog: Process prioritization, RAM safety, & NPU hardening. |
-| **𓈗 Hapi** | The Flow | Optimizer | Hardware accelerator detection (GPU/ANE/CUDA). |
-| **𓆣 Khepri** | The Scarab | Scavenger | Fleet discovery: Subnets, containers, and network hygiene. |
-| **𓇽 Seba** | The Star | Mapper | Visual topology, dependency graphs, and **Architectural Mapping**. |
+| **𓃣 Anubis** | Hygiene Engine | Judge | Infrastructure hygiene, waste scanning, ghost detection, dedup. Absorbs former Ka + Hathor duties. |
+| **𓈗 Hapi** | Hardware Profiler | Optimizer | Hardware accelerator detection (GPU/ANE/CUDA). |
+| **𓇽 Seba** | Infra Mapper | Mapper | Architecture mapping, topology, dependency graphs, fleet discovery. Absorbs former Khepri duties. |
+| **𓁹 Osiris** | Snapshot Keeper | Checkpoint | State preservation, checkpoints, death/rebirth cycles. |
 
 **Dependencies**:
-- **Machine Gods** depend on **Horus** (for the unified filesystem manifest).
-- **Sekhmet** depends on **Hapi** (for hardware-accelerated tokenization).
-- **Anubis/Ka** depend on **Horus** (for sub-second scan performance).
+- **Anubis** operates independently for local scans; benefits from **Seba** for fleet-wide hygiene.
 - **Seba** reports all Architectural Mapping (Gantt, Mermaid, Matrices) to **Net** upon request.
+- **Osiris** depends on **Thoth** (for session state to checkpoint).
 
 ---
 
 ## 🔄 V. The Independence Invariant
-Every deity is **self-contained** and can be implemented, installed, or run independently. However, their efficiency is maximized when the **Weave of Net** is active, allowing them to share the **Manifest of Horus** and the **Memory of Thoth**.
+Every deity is **self-contained** and can be implemented, installed, or run independently. However, their efficiency is maximized when the **Weave of Net** is active, allowing them to share the **Memory of Thoth** and the **Stele** event bus.
 
 ## ⚖️ VI. The Governance Cycle
 1. **Net** publishes the Plan.

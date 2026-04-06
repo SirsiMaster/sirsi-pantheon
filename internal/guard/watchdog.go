@@ -1,6 +1,6 @@
 // Package guard — watchdog.go
 //
-// Sekhmet Watchdog: Lightweight, goroutine-based CPU/memory pressure monitor.
+// Isis Watchdog: Lightweight, goroutine-based CPU/memory pressure monitor.
 //
 // Design principles:
 //   - NEVER block the caller — Watch() launches a background goroutine and returns immediately
@@ -55,7 +55,7 @@ func setSampleFn(fn func(int) ([]ProcessInfo, error)) {
 	sampleTopCPUFn = fn
 }
 
-// WatchConfig configures the Sekhmet watchdog.
+// WatchConfig configures the Isis watchdog.
 type WatchConfig struct {
 	Interval     time.Duration // Polling interval (default: 5s)
 	CPUThreshold float64       // Alert threshold per-process (default: 80.0%)
@@ -85,7 +85,7 @@ type WatchAlert struct {
 	Timestamp  time.Time
 }
 
-// Watchdog is a running Sekhmet monitor instance.
+// Watchdog is a running Isis monitor instance.
 type Watchdog struct {
 	cfg     WatchConfig
 	ctx     context.Context
@@ -102,7 +102,7 @@ type Watchdog struct {
 	lastPoll    time.Time
 }
 
-// StartWatch creates and starts a Sekhmet watchdog on a background goroutine.
+// StartWatch creates and starts a Isis watchdog on a background goroutine.
 // Returns a *Watchdog handle. Consume alerts via watchdog.Alerts().
 // The watchdog runs until ctx is canceled or watchdog.Stop() is called.
 func StartWatch(ctx context.Context, cfg WatchConfig) *Watchdog {
@@ -118,7 +118,7 @@ func StartWatch(ctx context.Context, cfg WatchConfig) *Watchdog {
 	}
 	w.running.Store(true)
 
-	stele.Inscribe("sekhmet", stele.TypeGuardStart, "", map[string]string{
+	stele.Inscribe("isis", stele.TypeGuardStart, "", map[string]string{
 		"interval": cfg.Interval.String(),
 	})
 

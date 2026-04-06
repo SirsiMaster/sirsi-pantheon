@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>𓁐 Isis — The Healer | Sirsi Pantheon</title>
-  <meta name="description" content="Autonomous remediation — automatically fixes lint errors, vet warnings, and formatting issues found by Ma'at. Part of the Sirsi Pantheon infrastructure hygiene platform.">
+  <title>𓁐 Isis — Health & Remedy | Sirsi Pantheon</title>
+  <meta name="description" content="Health diagnostics, network security audit, resource monitoring, and autonomous remediation. Part of the Sirsi Pantheon infrastructure hygiene platform.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -117,21 +117,21 @@
   <header class="hero">
     <span class="glyph-big">𓁐</span>
     <h1>Isis</h1>
-    <div class="role">The Healer</div>
-    <div class="domain-tag">Autonomous Remediation</div>
+    <div class="role">Health & Remedy</div>
+    <div class="domain-tag">Diagnostics · Security · Monitoring · Remediation</div>
     <div class="platform-badge">
       <span class="supported">macOS &#10003;</span>
       <span class="supported">Linux &#10003;</span>
       <span class="supported">Windows &#10003;</span>
     </div>
-    <p class="desc">Isis automatically fixes issues found by Ma'at — lint errors, vet warnings, formatting violations, and coverage gaps. She is the autonomous remediation engine that heals your codebase so you can focus on building, not fixing.</p>
+    <p class="desc">Isis is the unified health and remedy engine for the Pantheon. She performs health diagnostics (doctor), network security auditing (DNS, WiFi, TLS, firewall, VPN), resource monitoring and throttling (guard), and autonomous remediation (heal). She absorbs the former Sekhmet guardian capabilities into a single, comprehensive health deity.</p>
   </header>
 
   <div class="metrics-strip">
-    <div class="metric"><div class="val">Auto</div><div class="lbl">Lint Fixes</div></div>
-    <div class="metric"><div class="val">Auto</div><div class="lbl">Vet Fixes</div></div>
-    <div class="metric"><div class="val">gofmt</div><div class="lbl">Enforcement</div></div>
-    <div class="metric"><div class="val">Full</div><div class="lbl">Coverage Analysis</div></div>
+    <div class="metric"><div class="val">Doctor</div><div class="lbl">Health Diagnostics</div></div>
+    <div class="metric"><div class="val">Network</div><div class="lbl">Security Audit</div></div>
+    <div class="metric"><div class="val">Guard</div><div class="lbl">Resource Monitor</div></div>
+    <div class="metric"><div class="val">Heal</div><div class="lbl">Auto Remediation</div></div>
   </div>
 
   <section>
@@ -139,20 +139,20 @@
       <h2>Features</h2>
       <div class="feature-grid">
         <div class="feature-card">
-          <div class="f-header"><span class="f-icon">🔧</span><span class="f-name">Auto-Fix Lint</span></div>
-          <p class="f-desc">Automatically resolves golangci-lint findings — unused variables, missing error checks, inefficient patterns, and style violations</p>
+          <div class="f-header"><span class="f-icon">🩺</span><span class="f-name">Health Diagnostics (Doctor)</span></div>
+          <p class="f-desc">Comprehensive system health check — disk, memory, swap, load averages, and service status. Identifies degradation before it becomes critical</p>
         </div>
         <div class="feature-card">
-          <div class="f-header"><span class="f-icon">🩺</span><span class="f-name">Auto-Fix Vet</span></div>
-          <p class="f-desc">Resolves go vet warnings including shadowed variables, unreachable code, and incorrect format strings</p>
+          <div class="f-header"><span class="f-icon">🔒</span><span class="f-name">Network Security Audit</span></div>
+          <p class="f-desc">Audits DNS configuration, WiFi security, TLS certificate validity, firewall rules, and VPN status. Flags misconfigurations and vulnerabilities</p>
         </div>
         <div class="feature-card">
-          <div class="f-header"><span class="f-icon">📏</span><span class="f-name">gofmt Enforcement</span></div>
-          <p class="f-desc">Applies canonical Go formatting across the entire codebase. No debates about style — gofmt is the law</p>
+          <div class="f-header"><span class="f-icon">🛡</span><span class="f-name">Resource Monitoring (Guard)</span></div>
+          <p class="f-desc">Guards against CPU and RAM hogs. Monitors crash dumps, detects runaway processes, throttles with renice, and warns before crash cascades. Absorbed from Sekhmet</p>
         </div>
         <div class="feature-card">
-          <div class="f-header"><span class="f-icon">📊</span><span class="f-name">Coverage Analysis</span></div>
-          <p class="f-desc">Identifies untested code paths and generates stub test files to raise coverage toward Ma'at's 85% threshold</p>
+          <div class="f-header"><span class="f-icon">🔧</span><span class="f-name">Autonomous Remediation (Heal)</span></div>
+          <p class="f-desc">Automatically fixes lint errors, vet warnings, formatting violations, and coverage gaps. Also remediates system health issues discovered by doctor and guard</p>
         </div>
       </div>
     </div>
@@ -162,30 +162,39 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat heal</span></code>
-        <code><span class="comment"># Run Isis autonomous remediation on current project</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis doctor</span></code>
+        <code><span class="comment"># Run health diagnostics on the system</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat heal --dry-run</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis network</span></code>
+        <code><span class="comment"># Audit DNS, WiFi, TLS, firewall, and VPN</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis guard</span></code>
+        <code><span class="comment"># Monitor resources — detect runaway processes and CPU/RAM hogs</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis heal</span></code>
+        <code><span class="comment"># Run autonomous remediation on current project and system</span></code>
+      </div>
+      <div class="cmd-block">
+        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis heal --dry-run</span></code>
         <code><span class="comment"># Preview fixes without applying them</span></code>
-      </div>
-      <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat heal --lint-only</span></code>
-        <code><span class="comment"># Only fix lint issues, skip vet and formatting</span></code>
       </div>
     </div>
   </section>
 
   <section>
     <div class="container">
-      <h2>Remediation Pipeline</h2>
+      <h2>Isis Pipeline</h2>
       <table class="surface-table">
         <thead><tr><th>Phase</th><th>Action</th><th>Detail</th></tr></thead>
         <tbody>
-          <tr><td>1. Diagnose</td><td>Ma'at Audit</td><td>Run full code quality audit to identify findings</td></tr>
-          <tr><td>2. Classify</td><td>Triage</td><td>Sort findings by severity and auto-fixability</td></tr>
-          <tr><td>3. Heal</td><td>Isis Fix</td><td>Apply automated fixes for all resolvable findings</td></tr>
-          <tr><td>4. Verify</td><td>Re-Audit</td><td>Re-run Ma'at to confirm all fixes pass</td></tr>
+          <tr><td>1. Doctor</td><td>Health Diagnostics</td><td>System health check — disk, memory, load, services</td></tr>
+          <tr><td>2. Network</td><td>Security Audit</td><td>DNS, WiFi, TLS, firewall, VPN configuration audit</td></tr>
+          <tr><td>3. Guard</td><td>Resource Monitor</td><td>Detect runaway processes, throttle CPU/RAM hogs, monitor crashes</td></tr>
+          <tr><td>4. Heal</td><td>Auto Remediation</td><td>Fix code quality issues and system health problems automatically</td></tr>
+          <tr><td>5. Verify</td><td>Re-Audit</td><td>Re-run diagnostics to confirm all fixes pass</td></tr>
         </tbody>
       </table>
     </div>
@@ -225,23 +234,23 @@
         <h2>How To</h2>
         <div class="step">
           <div class="step-num">Step 1</div>
-          <p><strong>Run auto-heal</strong> — Let Isis fix lint errors, formatting, and vet warnings automatically.</p>
-          <pre><code>pantheon isis heal</code></pre>
+          <p><strong>Run health diagnostics</strong> — Check system health including disk, memory, load, and services.</p>
+          <pre><code>pantheon isis doctor</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 2</div>
-          <p><strong>Review proposed fixes</strong> — Preview what Isis will change before applying.</p>
-          <pre><code>pantheon isis heal --dry-run</code></pre>
+          <p><strong>Audit network security</strong> — Check DNS, WiFi, TLS certificates, firewall, and VPN configuration.</p>
+          <pre><code>pantheon isis network</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
-          <p><strong>Verify fixes</strong> — Run Ma'at after healing to confirm improvements.</p>
-          <pre><code>pantheon isis heal && pantheon maat</code></pre>
+          <p><strong>Monitor resources</strong> — Watch for runaway processes and resource hogs. Throttle automatically.</p>
+          <pre><code>pantheon isis guard --watch</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
-          <p><strong>CI integration</strong> — Add Isis as an auto-fix step before Ma'at in your pipeline.</p>
-          <pre><code># In CI: pantheon isis heal --auto && pantheon maat --fail-under 85</code></pre>
+          <p><strong>Auto-heal</strong> — Let Isis fix code quality issues and system health problems automatically.</p>
+          <pre><code>pantheon isis heal && pantheon maat</code></pre>
         </div>
       </div>
     </div>
@@ -253,19 +262,19 @@
         <h2>Frequently Asked Questions</h2>
         <div class="faq-item">
           <div class="faq-q">Does Isis work on Linux or Windows?</div>
-          <div class="faq-a">Yes. Isis is pure Go and runs on all platforms where Go tooling is available.</div>
+          <div class="faq-a">Yes. Isis is pure Go and runs on all platforms. Network audit and resource monitoring adapt to OS-specific tools automatically.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">What does Isis actually fix?</div>
-          <div class="faq-a">Lint errors, vet warnings, formatting violations (<code>gofmt</code>), and some coverage gaps. Isis applies safe, deterministic fixes only.</div>
+          <div class="faq-q">What does Isis cover?</div>
+          <div class="faq-a">Four domains: health diagnostics (doctor), network security audit (DNS, WiFi, TLS, firewall, VPN), resource monitoring and throttling (guard), and autonomous code/system remediation (heal). She consolidates what was previously split across Sekhmet and Isis.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Does Isis send data anywhere?</div>
-          <div class="faq-a">No. All remediation happens locally on your codebase. Zero telemetry.</div>
+          <div class="faq-a">No. All diagnostics and remediation happen locally. Zero telemetry.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">Will Isis break my code?</div>
-          <div class="faq-a">Isis applies only safe, deterministic fixes. Use <code>--dry-run</code> to preview all changes before applying. Always run Ma'at after healing to verify improvements.</div>
+          <div class="faq-q">Will Isis break my code or system?</div>
+          <div class="faq-a">Isis applies only safe, deterministic fixes. Use <code>--dry-run</code> to preview all changes before applying. Resource guard throttles with renice before escalating.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Can I run Isis in CI?</div>

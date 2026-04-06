@@ -75,32 +75,28 @@ var commandTree = map[string]deityCommands{
 		Subcommands: []string{"scan", "book", "fleet", "diagram"},
 		Flags: map[string][]string{
 			"book":    {"--output"},
-			"fleet":   {"--containers", "--confirm-network"},
+			"fleet":   {"--containers", "--confirm-network", "--subnet"},
 			"diagram": {"--type", "--html"},
 		},
 	},
-	"neith": {
+	"net": {
 		Subcommands: []string{"status", "align"},
 	},
-	"sekhmet": {
-		Subcommands: []string{"network"},
+	"isis": {
+		Subcommands: []string{"network", "heal"},
 		Flags: map[string][]string{
-			"network": {"--fix", "--json"},
+			"network": {"--fix", "--rollback", "--json"},
+			"heal":    {"--fix", "--full"},
 		},
 	},
-	"horus":  {Subcommands: []string{"scan"}},
-	"ka":     {Subcommands: []string{}},
-	"isis":   {Subcommands: []string{}},
 	"osiris": {Subcommands: []string{}},
-	"hathor": {Subcommands: []string{}},
-	"khepri": {Subcommands: []string{}},
 }
 
 // topLevelCommands are available at the root (no deity prefix needed).
 var topLevelCommands = []string{
-	"scan", "ghosts", "dedup", "guard", "doctor", "mcp", "version",
-	"ra", "neith", "thoth", "maat", "isis", "seshat", "horus",
-	"anubis", "ka", "sekhmet", "hapi", "khepri", "seba", "osiris", "hathor",
+	"scan", "ghosts", "dedup", "guard", "doctor", "mcp", "version", "help",
+	"ra", "net", "thoth", "maat", "isis", "seshat",
+	"anubis", "hapi", "seba", "osiris",
 }
 
 // buildSuggestions returns an ordered list of completion candidates for the

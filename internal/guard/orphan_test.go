@@ -198,8 +198,8 @@ func TestFormatOrphanReport_WithOrphans(t *testing.T) {
 	}
 
 	output := FormatOrphanReport(report)
-	if !strings.Contains(output, "Sekhmet") {
-		t.Error("Report should contain Sekhmet branding")
+	if !strings.Contains(output, "Isis") {
+		t.Error("Report should contain Isis branding")
 	}
 	if !strings.Contains(output, "orphaned") {
 		t.Error("Report should mention 'orphaned'")

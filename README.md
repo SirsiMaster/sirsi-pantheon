@@ -14,39 +14,20 @@
 
 **Sirsi Pantheon** is a unified DevOps intelligence platform that brings together every deity in the Sirsi ecosystem into a single, lightweight binary. Install once, get infrastructure hygiene, QA/QC governance, persistent AI knowledge, and more.
 
-### 𓇶 The Hypervisor
+### The Pantheon (10 Deities)
+
 | Glyph | Deity | Domain | What It Does |
 |:------|:------|:-------|:-------------|
-| 𓇶 | **Ra** | Supreme Overseer | The boss — orchestrates all deities automatically (planned) |
-
-### 𓁯 The Weaver
-| Glyph | Deity | Domain | What It Does | Dependencies |
-|:------|:------|:-------|:-------------|:-------------|
-| 𓁯 | **Net (Neith)** | The Weaver | Architecture documentation and decision records | None |
-
-### 𓀭 The Code Gods (Governance & Knowledge)
-*Decision-making, standards, memory, and healing.*
-
-| Glyph | Deity | Roles | What It Does | Dependencies |
-|:------|:------|:------|:-------------|:-------------|
-| 𓁟 | **Thoth** | God of Knowledge | Cuts AI token waste by 98% via persistent memory | None |
-| 𓆄 | **Ma'at** | Goddess of Order | Grades code quality and enforces team standards | None |
-| 𓁐 | **Isis** | The Healer | Autonomous remediation engine — fixes Ma'at findings (lint, vet, formatting) | Ma'at |
-| 𓁆 | **Seshat** | Goddess of Writing | Universal knowledge grafting engine — ingests from Gemini, Claude, Chrome, Apple Notes, Google Workspace; exports to Thoth, GEMINI.md, NotebookLM | Thoth |
-
-### 𓀰 The Machine Gods (Infrastructure & OS)
-*Infrastructure hygiene, safety, and hardware flow.*
-
-| Glyph | Deity | Domain | What It Does | Dependencies |
-|:------|:------|:-------|:-------------|:-------------|
-| 𓃣 | **Anubis** | Judge of Hygiene | Finds junk on your computer that cleaning apps miss | Horus |
-| 𓂓 | **Ka** | Spirit Hunter | Detects apps you deleted that are still secretly running | Horus |
-| 𓁵 | **Sekhmet**| Warrior Guardian | Watchdog: kills runaway processes & NPU acceleration | Hapi |
-| 𓂀 | **Horus** | The All-Seeing Eye| Shared storage index: walk once, query forever | None |
-| 𓆣 | **Khepri** | The Scarab | Network discovery and container audit scavenger | None |
-| 𓁶 | **Hapi** | God of the Flow | Detects GPUs, ANE, and hardware accelerators | None |
-| 𓇼 | **Seba** | Star Map | Draws a visual map of your infrastructure topology | Khepri |
-| 𓉡 | **Hathor**| Goddess of Dedup | Mirror: Finds duplicate files eating your storage | None |
+| 𓇶 | **Ra** | Orchestrator | Dispatches parallel agents across repos, Command Center TUI |
+| 𓁯 | **Net** | Scope Weaver | Defines task scopes for Ra, cross-module alignment, drift detection |
+| 𓁟 | **Thoth** | Session Memory | Cuts AI token waste by 98% via persistent memory |
+| 𓆄 | **Ma'at** | Quality Gate | Grades code quality, enforces standards, pre-push hooks |
+| 𓁐 | **Isis** | Health & Remedy | System diagnostics, network security, DNS fix/rollback, auto-remediation |
+| 𓁆 | **Seshat** | Knowledge Bridge | Ingests from Chrome, Gemini, Claude, Notes; exports to NotebookLM, Thoth |
+| 𓃣 | **Anubis** | Hygiene Engine | Scans waste, cleans artifacts, ghost hunting, file dedup |
+| 𓈗 | **Hapi** | Hardware Profiler | GPU, Neural Engine, CUDA, Metal, accelerator detection |
+| 𓇽 | **Seba** | Infra Mapper | Architecture diagrams, fleet discovery, container audit |
+| 𓁹 | **Osiris** | Snapshot Keeper | State preservation, checkpoints, rollback points |
 
 ---
 
@@ -217,23 +198,16 @@ Pantheon is built on modules named after Egyptian mythology. Every deity maintai
 
 | Module | Deity | Role | Status |
 |:-------|:------|:-----|:-------|
-| **Jackal** | Anubis | Scan engine — 64 rules across 7 domains | ✅ |
-| **Cleaner** | 𓃣 Anubis | Safe deletion with Trash + SHA-256 verification | ✅ |
-| **Ka** | 𓂓 Ka | Ghost app detection — 17 macOS locations | ✅ |
-| **Mirror** | 𓉡 Hathor | File dedup — 27x faster than naive hashing | ✅ |
-| **Guard** | 𓁵 Sekhmet | RAM audit, zombie process management | ✅ |
-| **Sight** | 𓂀 Horus | Launch Services + Spotlight repair | ✅ |
-| **Horus** | 𓂀 Horus | Shared filesystem index — walk once, query forever | ✅ |
-| **Hapi** | 𓁶 Hapi | GPU/Neural Engine/VRAM detection | ✅ |
-| **Scarab** | 𓆣 Khepri | Network discovery + container audit | ✅ |
-| **Brain** | 𓁟 Thoth | On-demand model downloader + classifier | ✅ |
-| **MCP** | 𓁟 Thoth | MCP server for AI IDE integration | ✅ |
-| **Scales** | 𓆄 Ma'at | YAML policy engine + enforcement | ✅ |
-| **Ma'at** | 𓆄 Ma'at | Coverage, canon, pipeline assessments | ✅ |
-| **Seba** | 𓇼 Seba | Infrastructure topology graph | 🚧 |
+| **Ra** | 𓇶 Ra | Multi-repo agent orchestration, Command Center | ✅ |
+| **Net** | 𓁯 Net | Scope weaving, alignment, drift detection | ✅ |
+| **Thoth** | 𓁟 Thoth | Session memory, brain, MCP server | ✅ |
+| **Ma'at** | 𓆄 Ma'at | Coverage, canon, policy enforcement | ✅ |
+| **Isis** | 𓁐 Isis | Health diagnostics, network security, guard, remediation | ✅ |
 | **Seshat** | 𓁆 Seshat | Universal knowledge grafting engine | ✅ |
-| **Isis** | 𓁐 Isis | Autonomous remediation (lint, vet, fmt) | ✅ |
-| **Neith** | 𓁯 Net | Architecture docs and decision records | ✅ |
+| **Anubis** | 𓃣 Anubis | Scan engine (64 rules), ghost hunting, file dedup | ✅ |
+| **Hapi** | 𓈗 Hapi | GPU/Neural Engine/VRAM detection | ✅ |
+| **Seba** | 𓇽 Seba | Architecture mapping, fleet discovery, container audit | ✅ |
+| **Osiris** | 𓁹 Osiris | State snapshots, checkpoints | 🚧 |
 
 ---
 
@@ -547,7 +521,7 @@ MIT License — free and open source forever. See [LICENSE](LICENSE).
 ## 𓃣 Documentation & Registry
 
 - **[FAQ: Which Tool Should I Use?](https://pantheon.sirsi.ai/faq)**: Decision matrix for choosing the right Pantheon tool.
-- **[Deity Registry](https://pantheon.sirsi.ai)**: Interactive hub for all 12 deities.
+- **[Deity Registry](https://pantheon.sirsi.ai)**: Interactive hub for all 10 deities.
 - **[Build Log](docs/build-log.html)**: Real-time chronicle of the Pantheon build.
 - **[Case Studies](docs/case-studies.html)**: Origin stories and post-mortems.
 - **[ADR Index](docs/ADR-INDEX.md)**: Every architectural decision record.

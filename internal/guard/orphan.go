@@ -10,7 +10,7 @@
 //
 // This is distinct from Ka's ghost detection:
 //   - Ka finds remnants of UNINSTALLED APPS (file-level ghosts)
-//   - Sekhmet finds orphaned RUNNING PROCESSES (process-level ghosts)
+//   - Isis finds orphaned RUNNING PROCESSES (process-level ghosts)
 //
 // The orphan detector runs as part of the watchdog cycle or on-demand
 // via `pantheon guard --orphans`.
@@ -234,11 +234,11 @@ func defaultOrphanPs() ([]orphanPsEntry, error) {
 // FormatOrphanReport returns a human-readable summary.
 func FormatOrphanReport(r *OrphanReport) string {
 	if r.TotalOrphans == 0 {
-		return "𓁵 Sekhmet: No orphaned processes detected ✨"
+		return "𓁵 Isis: No orphaned processes detected ✨"
 	}
 
 	var sb strings.Builder
-	sb.WriteString("𓁵 Sekhmet Orphan Report\n")
+	sb.WriteString("𓁵 Isis Orphan Report\n")
 	sb.WriteString(strings.Repeat("─", 50) + "\n")
 	sb.WriteString("\n")
 

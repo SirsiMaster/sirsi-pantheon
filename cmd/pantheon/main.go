@@ -34,21 +34,16 @@ var versionCmd = &cobra.Command{
 			key     string
 		}
 		layout := []entry{
-			{"Ka", "ka"},
-			{"Anubis", "anubis"},
+			{"Ra", "ra"},
+			{"Net", "net"},
 			{"Thoth", "thoth"},
 			{"Ma'at", "maat"},
+			{"Isis", "isis"},
 			{"Seshat", "seshat"},
+			{"Anubis", "anubis"},
 			{"Hapi", "hapi"},
 			{"Seba", "seba"},
-			{"Horus", "horus"},
-			{"Sekhmet", "sekhmet"},
-			{"Khepri", "khepri"},
-			{"Isis", "isis"},
-			{"Neith", "neith"},
-			{"Ra", "ra"},
 			{"Osiris", "osiris"},
-			{"Hathor", "hathor"},
 		}
 		for i := 0; i < len(layout); i += 2 {
 			left := layout[i]
@@ -81,6 +76,7 @@ Core commands:
 Advanced:
   pantheon ra --help          Supreme Overseer — cross-repo orchestration
   pantheon anubis --help      Full hygiene engine (scan, judge, clean)
+  pantheon isis --help        Health & remediation (diagnostics, network, auto-fix)
   pantheon maat --help        Governance and compliance auditing
   pantheon hapi --help        Hardware profiling and accelerator detection
   pantheon seba --help        Architecture mapping and diagrams`,
@@ -129,8 +125,8 @@ var guardCmd = &cobra.Command{
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "𓁵 One-shot system health diagnostic (Sekhmet)",
-	Long: `𓁵 Sekhmet Doctor — System Health Diagnostic
+	Short: "𓁐 One-shot system health diagnostic (Isis)",
+	Long: `𓁐 Isis Doctor — System Health Diagnostic
 
 Runs a comprehensive one-shot health check covering:
   • RAM pressure and swap usage
@@ -144,22 +140,24 @@ Runs a comprehensive one-shot health check covering:
 	RunE: runDoctor,
 }
 
-var sekhmetCmd = &cobra.Command{
-	Use:   "sekhmet",
-	Short: "𓁵 System Watchdog — health diagnostics and network security",
-	Long: `𓁵 Sekhmet — System Watchdog
+var isisCmd = &cobra.Command{
+	Use:   "isis",
+	Short: "𓁐 Health & Remediation — diagnostics, network security, auto-fix",
+	Long: `𓁐 Isis — Health & Remediation
 
-Monitors system health, network security, and resource pressure.
+System health diagnostics, network security auditing, and autonomous remediation.
 
-  pantheon sekhmet network          Network security posture audit
-  pantheon sekhmet network --fix    Audit and auto-fix safe issues
-  pantheon doctor                   One-shot system health diagnostic`,
+  pantheon isis network          Network security posture audit
+  pantheon isis network --fix    Audit and auto-fix safe issues
+  pantheon isis heal             Auto-remediate governance failures
+  pantheon doctor                One-shot system health diagnostic`,
 }
 
-var sekhmetNetworkCmd = &cobra.Command{
+
+var isisNetworkCmd = &cobra.Command{
 	Use:   "network",
 	Short: "Audit network security posture (DNS, WiFi, TLS, firewall, VPN)",
-	Long: `𓁵 Sekhmet Network — Security Posture Audit
+	Long: `𓁐 Isis Network — Security Posture Audit
 
 Checks your network configuration for public WiFi safety:
   • DNS: Is encrypted DNS (DoH/DoT) configured?
@@ -169,30 +167,30 @@ Checks your network configuration for public WiFi safety:
   • VPN: Detects active VPN tunnels
   • Firewall: Is macOS application firewall enabled?
 
-  pantheon sekhmet network          Run audit (read-only)
-  pantheon sekhmet network --fix    Auto-apply safe fixes (DNS, firewall)
-  pantheon sekhmet network --json   Output as JSON`,
-	RunE: runSekhmetNetwork,
+  pantheon isis network          Run audit (read-only)
+  pantheon isis network --fix    Auto-apply safe fixes (DNS, firewall)
+  pantheon isis network --json   Output as JSON`,
+	RunE: runIsisNetwork,
 }
 
-var sekhmetNetworkFix bool
-var sekhmetNetworkRollback bool
+var isisNetworkFix bool
+var isisNetworkRollback bool
 
-func runSekhmetNetwork(cmd *cobra.Command, args []string) error {
+func runIsisNetwork(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
 	// Handle rollback before anything else
-	if sekhmetNetworkRollback {
+	if isisNetworkRollback {
 		if !JsonOutput {
 			output.Banner()
-			output.Header("SEKHMET — Network Rollback")
+			output.Header("ISIS — Network Rollback")
 		}
 		msg, err := guard.RollbackNetwork(platform.Current())
 		if err != nil {
 			return err
 		}
 		if !JsonOutput {
-			output.Success(msg)
+			output.Success("%s", msg)
 			output.Footer(time.Since(start))
 		} else {
 			fmt.Printf("{\"rollback\": %q}\n", msg)
@@ -202,12 +200,12 @@ func runSekhmetNetwork(cmd *cobra.Command, args []string) error {
 
 	if !JsonOutput {
 		output.Banner()
-		output.Header("SEKHMET — Network Security Audit")
+		output.Header("ISIS — Network Security Audit")
 	}
 
 	var report *guard.NetworkReport
 	var err error
-	if sekhmetNetworkFix {
+	if isisNetworkFix {
 		report, err = guard.NetworkAuditFix()
 	} else {
 		report, err = guard.NetworkAudit()
@@ -313,11 +311,12 @@ func init() {
 	rootCmd.AddCommand(benchmarkCmd)
 	rootCmd.AddCommand(versionCmd)
 
-	// Sekhmet — System Watchdog
-	sekhmetNetworkCmd.Flags().BoolVar(&sekhmetNetworkFix, "fix", false, "Auto-apply safe fixes (DNS, firewall)")
-	sekhmetNetworkCmd.Flags().BoolVar(&sekhmetNetworkRollback, "rollback", false, "Restore DNS to pre-fix state")
-	sekhmetCmd.AddCommand(sekhmetNetworkCmd)
-	rootCmd.AddCommand(sekhmetCmd)
+	// Isis — Health & Remediation
+	isisNetworkCmd.Flags().BoolVar(&isisNetworkFix, "fix", false, "Auto-apply safe fixes (DNS, firewall)")
+	isisNetworkCmd.Flags().BoolVar(&isisNetworkRollback, "rollback", false, "Restore DNS to pre-fix state")
+	isisCmd.AddCommand(isisNetworkCmd)
+	rootCmd.AddCommand(isisCmd)
+
 }
 
 func main() {

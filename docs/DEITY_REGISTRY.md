@@ -1,5 +1,5 @@
 # Deity Registry — Canonical Glyph & Domain Reference
-**Version:** 1.0.0 | **Date:** April 4, 2026 | **Custodian:** Neith (The Weaver)
+**Version:** 2.0.0 | **Date:** April 5, 2026 | **Custodian:** Net (The Weaver)
 
 > This document is the single source of truth for deity identities, glyphs, and functional domains across the entire Sirsi portfolio. Every repo, hook, CLI output, and agent prompt must reference this registry. Misattributing a deity's glyph or function is a governance violation.
 
@@ -10,21 +10,16 @@
 | Deity | Glyph | Domain | Functional Responsibility | Reserved Symbols |
 |-------|-------|--------|--------------------------|------------------|
 | **Ra** | 𓇶 | Supreme Overseer | Multi-repo orchestration, agent deployment, window management, sprint governance | `𓂀` (ProtectGlyph — Ra's exclusive authority to mark windows as immune to KillAll) |
-| **Neith** | 𓁯 | The Weaver | Scope assembly, tiled context rendering, canon alignment, drift detection, development plan ownership | |
-| **Thoth** | 𓁟 | The Memory | Context compression, session persistence, memory sync, journal | |
-| **Ma'at** | 𓆄 | The Standard | QA governance, quality gates, pre-push hooks, coverage audits, Feather Weight scoring | All pre-push gates across all repos are Ma'at's domain |
-| **Isis** | 𓁐 | The Healer | Remediation engine, auto-fix lint/vet/coverage/canon drift | |
-| **Seshat** | 𓁆 | The Scribe | Knowledge grafting, Gemini Bridge, NotebookLM sync, cross-platform knowledge | |
-| **Horus** | 𓂀 | The Eye | Filesystem index, Launch Services, shared manifest | Note: `𓂀` is also Ra's ProtectGlyph — context determines meaning |
-| **Anubis** | 𓃣 | The Judge | Infrastructure hygiene, waste scanning, policy enforcement | Jackal head (profile), NOT full-body jackal |
-| **Ka** | 𓂓 | The Spirit | Ghost app detection, residual hunting, uninstaller | Owns Sight + Jackal engine |
-| **Sekhmet** | 𓁵 | The Warrior | Watchdog daemon, CPU/RAM monitoring, process guard, ANE hardening | |
-| **Hapi** | 𓈗 | The Flow | Hardware detection, GPU/ANE/CUDA profiling, resource optimization | |
-| **Khepri** | 𓆣 | The Scarab | Fleet discovery, subnet scanning, container audit | |
-| **Seba** | 𓇽 | The Star | Architecture mapping, topology visualization, dependency graphs | |
-| **Osiris** | 𓁹 | The Checkpoint | Death/rebirth cycles, state preservation, FinalWishes integration | NOT the quality gate — that's Ma'at |
-| **Hathor** | 𓉡 | The Mirror | File deduplication, semantic ranking | |
-| **Stele** | 𓊖 | The Ledger | Append-only hash-chained event bus, universal deity communication | |
+| **Net** | 𓁯 | Scope Weaver | Task definition, scope assembly, tiled context rendering, canon alignment, drift detection, development plan ownership | |
+| **Thoth** | 𓁟 | Session Memory | Context compression, session persistence, memory sync, journal | |
+| **Ma'at** | 𓆄 | Quality Gate | QA governance, quality gates, pre-push hooks, coverage audits, Feather Weight scoring | All pre-push gates across all repos are Ma'at's domain |
+| **Isis** | 𓁐 | Health & Remediation | Doctor, network security, process guard, remediation engine, auto-fix lint/vet/coverage/canon drift, watchdog daemon, CPU/RAM monitoring, ANE hardening | |
+| **Seshat** | 𓁆 | Knowledge Bridge | Knowledge grafting, ingestion/export, Gemini Bridge, NotebookLM sync, cross-platform knowledge | |
+| **Anubis** | 𓃣 | Hygiene Engine | Infrastructure hygiene, waste scanning, policy enforcement, ghost app detection, residual hunting, file deduplication, semantic ranking | Jackal head (profile), NOT full-body jackal |
+| **Hapi** | 𓈗 | Hardware Profiler | Hardware detection, GPU/ANE/CUDA profiling, resource optimization | |
+| **Seba** | 𓇽 | Infra Mapper | Architecture mapping, topology visualization, dependency graphs, fleet discovery, subnet scanning, container audit | |
+| **Osiris** | 𓁹 | Snapshot Keeper | State preservation, checkpoints, death/rebirth cycles, FinalWishes integration | NOT the quality gate — that's Ma'at |
+| **Stele** | 𓊖 | The Ledger | Append-only hash-chained event bus, universal deity communication | Infrastructure, not a deity |
 
 ---
 
@@ -48,11 +43,11 @@ All deities inscribe events to the Stele (`~/.config/ra/stele.jsonl`) via `stele
 ### Rule D6: Hierarchy Is Invariant
 ```
 Ra (Supreme Overseer)
-  └── Neith (The Weaver — owns the plan)
+  └── Net (Scope Weaver — owns the plan)
         ├── Code Gods: Thoth, Ma'at, Isis, Seshat
-        └── Machine Gods: Horus, Anubis, Ka, Sekhmet, Hapi, Khepri, Seba
+        └── Machine Gods: Anubis, Hapi, Seba, Osiris
 ```
-Ra supervises. Neith aligns. Ma'at weighs. Isis heals. This cycle governs all work across all repos.
+Ra supervises. Net aligns. Ma'at weighs. Isis heals. This cycle governs all work across all repos.
 
 ### Rule D7: No Repo-Specific Deity Aliases
 A deity is never renamed for a specific repo. "Osiris (FinalWishes)" is wrong — Osiris is Osiris everywhere. Repos are identified by name in brackets, not by deity reassignment. Correct: `𓆄 Ma'at pre-push gate... [FinalWishes]`. Wrong: `𓁹 Osiris (FinalWishes) pre-push gate...`.

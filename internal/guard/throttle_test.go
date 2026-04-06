@@ -344,8 +344,8 @@ func TestFormatThrottleReport_WithThrottled(t *testing.T) {
 	if !strings.Contains(report, "language_server") {
 		t.Error("Report should contain process name")
 	}
-	if !strings.Contains(report, "Sekhmet") {
-		t.Error("Report should contain Sekhmet branding")
+	if !strings.Contains(report, "Isis") {
+		t.Error("Report should contain Isis branding")
 	}
 }
 

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>𓁢 Anubis — Judge of the Dead | Sirsi Pantheon</title>
-  <meta name="description" content="Finds junk on your computer that cleaning apps miss. Part of the Sirsi Pantheon infrastructure hygiene platform.">
+  <title>𓃣 Anubis — System Jackal | Sirsi Pantheon</title>
+  <meta name="description" content="Finds junk on your computer that cleaning apps miss. Includes ghost hunting and file deduplication. Part of the Sirsi Pantheon infrastructure hygiene platform.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -115,16 +115,16 @@
   </nav>
 
   <header class="hero">
-    <span class="glyph-big">𓁢</span>
+    <span class="glyph-big">𓃣</span>
     <h1>Anubis</h1>
-    <div class="role">Judge of the Dead</div>
-    <div class="domain-tag">Infrastructure Hygiene</div>
+    <div class="role">System Jackal</div>
+    <div class="domain-tag">Infrastructure Hygiene · Ghost Hunting · Deduplication</div>
     <div class="platform-badge">
       <span class="supported">macOS &#10003;</span>
       <span class="supported">Linux &#10003;</span>
       <span class="unsupported">Windows &#10007;</span>
     </div>
-    <p class="desc">Anubis is the scan and cleanup engine at the heart of Pantheon. With 58 rules across 7 domains, it discovers infrastructure waste that macOS built-in tools, CleanMyMac, and OnyX all miss — hidden caches, orphaned build artifacts, stale AI model weights, and phantom Docker volumes. Every finding includes a category, severity, and safe cleanup recommendation.</p>
+    <p class="desc">Anubis is the scan and cleanup engine at the heart of Pantheon. With 58 rules across 7 domains, it discovers infrastructure waste that macOS built-in tools, CleanMyMac, and OnyX all miss — hidden caches, orphaned build artifacts, stale AI model weights, and phantom Docker volumes. Anubis now also includes ghost hunting (detecting dead app remnants, formerly Ka) and file deduplication (3-phase SHA-256, formerly Hathor). Every finding includes a category, severity, and safe cleanup recommendation.</p>
   </header>
 
   <div class="metrics-strip">
@@ -150,6 +150,12 @@
         </div><div class="feature-card">
           <div class="f-header"><span class="f-icon">⚡</span><span class="f-name">Sub-Second Scans</span></div>
           <p class="f-desc">Rule-based matching with early termination — most scans complete in under 2 seconds</p>
+        </div><div class="feature-card">
+          <div class="f-header"><span class="f-icon">👻</span><span class="f-name">Ghost Hunting (ex-Ka)</span></div>
+          <p class="f-desc">Detects dead app remnants — startup files, system registrations, and phantom processes left behind by deleted software</p>
+        </div><div class="feature-card">
+          <div class="f-header"><span class="f-icon">🪞</span><span class="f-name">File Deduplication (ex-Hathor)</span></div>
+          <p class="f-desc">3-phase dedup engine — size grouping, partial hash, full SHA-256. Finds duplicate files eating your storage</p>
         </div><div class="feature-card">
           <div class="f-header"><span class="f-icon">🔌</span><span class="f-name">MCP Integration</span></div>
           <p class="f-desc">scan_workspace tool available in AI IDEs via MCP server</p>

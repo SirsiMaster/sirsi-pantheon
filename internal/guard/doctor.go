@@ -1,6 +1,6 @@
 // Package guard — doctor.go
 //
-// 𓁵 Sekhmet Doctor: One-shot system health diagnostic.
+// 𓁐 Isis Doctor: One-shot system health diagnostic.
 //
 // Runs a comprehensive health check covering RAM pressure, swap usage,
 // disk space, runaway processes, orphan detection, and crash log analysis.

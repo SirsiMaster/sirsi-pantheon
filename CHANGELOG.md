@@ -6,21 +6,47 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.14.0] — 2026-04-05
+
+### Added
+- **Deity Consolidation (15 → 10)** — Sekhmet→Isis (health+remediation), Ka→Anubis (ghost hunting is hygiene), Khepri→Seba (fleet+infra mapping), Hathor→Anubis (dedup is hygiene), Horus removed (empty stub). Neith renamed to Net. Every deity now has a clear, distinct function with zero overlap.
+- **Isis DNS Safety: Three-Layer Protection** — Pre-check gate (TCP probe before changing DNS), post-fix watchdog (polls resolution 3x over 6s, auto-reverts on failure), manual rollback (`pantheon isis network --rollback`). Fixes critical bug where `--fix` bricked internet on restricted networks. See case study: `docs/case-studies/isis-dns-safety-rollback.md`.
+- **TUI `help` command** — Full in-TUI reference panel listing all commands, deities, and navigation keys.
+- **TUI intent→subcommand inference** — Natural language like "check my dns" now dispatches to `isis network`, not bare `isis`. Maps keyword clusters to the most likely CLI args.
+- **Narrow terminal fallback** — TUI gracefully degrades to stacked layout when terminal is <70 columns.
+
+### Fixed
+- **DNS auto-rollback failure (Rule A1 violation)** — `dnsReachable()` replaced nslookup (depends on DNS) with raw TCP connect to port 53 (transport-level, no DNS dependency). Fix path restructured: probe BEFORE changing config, not after.
+- **Network keyword routing** — "network" now correctly routes to Isis (security) vs Seba (topology) based on multi-keyword scoring instead of always hitting the wrong deity.
+- **`TestExtractAgeDays` timezone bug** — Date comparison used UTC midnight vs local time, causing off-by-one on timezone boundaries. Fixed to compare date strings.
+- **`TestSmoke_Version` hardcoded version** — Updated to check for brand name instead of specific version string.
+
+### Changed
+- **Isis v2.0.0** — Absorbs all Sekhmet functionality: `doctor`, `guard`, `network`, `heal`. CLI: `pantheon isis network`, `pantheon doctor`.
+- **Anubis v1.1.0** — Absorbs Ka (ghost hunting) and Hathor (file dedup). `pantheon anubis ka` and `pantheon dedup` both work.
+- **Seba v1.2.0** — Absorbs Khepri (fleet discovery, container audit). `pantheon seba fleet` works.
+- **Net v1.1.0** — Formerly Neith. Scope weaver for Ra task definition.
+
+### Removed
+- Sekhmet, Ka, Khepri, Hathor, Horus from deity roster and version display.
+- All backwards-compatible aliases — clean codebase, no legacy bloat.
+
+---
+
 ## [0.13.0] — 2026-04-05
 
 ### Added
-- **TUI Inline Predictions** — Fish-shell-style ghost text suggestions in the input bar. Context-aware: typing a deity name surfaces its subcommands, typing a subcommand surfaces its flags. Right-arrow accepts the prediction. Up/Down-arrow recalls command history within the session. Static command tree covers all 15 deities, their subcommands, and flags.
-- **Suggestion Engine** (`internal/output/suggestions.go`) — `buildSuggestions()` generates context-aware completions from a static command tree. Priority: history matches → command tree completions → deity names/aliases → intent keywords.
-- **Sekhmet Network Audit** (`pantheon sekhmet network`) — Six-check network security posture audit: DNS configuration (DoH detection), WiFi security (WPA2/WPA3/Open), TLS 1.3 verification to api.anthropic.com, CA certificate store audit, VPN tunnel detection, macOS firewall state. Runs in ~130ms.
-- **`--fix` flag** for `sekhmet network` — Auto-applies safe remediations (encrypted DNS, firewall enable) where admin privileges allow.
-- **`sekhmet` parent command** — Groups system watchdog features under `pantheon sekhmet`. Doctor remains available as top-level `pantheon doctor` alias.
+- **TUI Inline Predictions** — Fish-shell-style ghost text suggestions. Static command tree covers all deities, subcommands, and flags.
+- **Suggestion Engine** (`internal/output/suggestions.go`) — Context-aware completions: history → command tree → deity names → intent keywords.
+- **Network Security Audit** (`pantheon isis network`) — Six-check posture audit: DNS, WiFi, TLS 1.3, CA certs, VPN, firewall. ~130ms.
+- **`--fix` flag** for `isis network` — Auto-applies safe remediations (encrypted DNS, firewall enable).
 
 ### Fixed
-- **Deity roster grid overflow** — Egyptian hieroglyphs have unpredictable terminal widths that broke lipgloss Width/MaxWidth calculations. Replaced with manual measure-then-pad approach: render each part with colors, measure with `lipgloss.Width()`, pad with real spaces. Grid now holds at any terminal width.
+- **Deity roster grid overflow** — Manual measure-then-pad approach for Egyptian hieroglyphs with unpredictable terminal widths.
 
 ### Changed
-- **TUI hints** — Now show `→ accept · ↑ history · clear reset · ctrl+c quit` to reflect new keybindings.
-- **TUI key bindings** — Right-arrow accepts ghost text prediction (replaces Tab). Up/Down-arrow navigate command history (replaces suggestion cycling).
+- **TUI hints** — `→ accept · ↑ history · help · ctrl+c quit`.
+- **TUI key bindings** — Right-arrow accepts ghost text, Up/Down navigate command history.
 
 ---
 
