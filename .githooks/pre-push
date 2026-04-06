@@ -78,9 +78,9 @@ fi
 if [ "$CHANGED_GO_FILES" = "all" ]; then
     CHANGED_PKGS="./..."
 elif [ -n "$CHANGED_GO_FILES" ]; then
-    # Extract unique package directories from changed files
+    # Extract unique package directories from changed files (skip deleted dirs)
     CHANGED_PKGS=$(echo "$CHANGED_GO_FILES" | xargs -I{} dirname {} | sort -u | \
-                   sed 's|^|./|' | tr '\n' ' ')
+                   while read dir; do [ -d "$dir" ] && echo "./$dir"; done | tr '\n' ' ')
 fi
 
 # ── 1. gofmt — formatting must be canonical ─────────────────────────
