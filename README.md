@@ -13,6 +13,34 @@ brew tap SirsiMaster/tools && brew install sirsi-pantheon
 
 ---
 
+## Why Pantheon Exists
+
+Developer machines accumulate waste — orphaned caches, ghost app remnants, insecure DNS configs, build artifacts from frameworks you stopped using months ago. Existing tools either miss the hard stuff (Launch Services phantoms, Spotlight ghosts, captive portal DNS traps) or require you to trust a closed-source app with root access to your filesystem.
+
+Pantheon is different in three ways:
+
+**1. Ghost detection that nobody else does.** `pantheon ghosts` finds remnants of apps you uninstalled — Launch Services phantoms, orphaned plists, leftover caches, Spotlight metadata for apps that no longer exist. CleanMyMac finds caches. AppCleaner catches most files at uninstall time. Neither finds the ghosts that accumulate over months.
+
+**2. Network security with a safety model borrowed from Kubernetes.** `pantheon network --fix` applies encrypted DNS and firewall hardening, but it probes the target with a raw TCP connect before changing anything, polls resolution after, and auto-reverts within 6 seconds if anything breaks. This is the same probe→mutate→verify→revert pattern that Kubernetes uses for rolling deployments and Terraform uses for infrastructure changes. We built it after the tool [bricked internet on airline WiFi](docs/case-studies/isis-dns-safety-rollback.md) — the safety model exists because we learned the hard way.
+
+**3. AI memory as standard infrastructure.** `pantheon thoth` gives AI coding sessions persistent memory via the [Model Context Protocol](https://modelcontextprotocol.io). Instead of re-reading 22,958 lines of source every session, the AI reads 297 lines of compressed project context. This isn't a plugin — it's built into the tool, syncs from git history, and works with Claude, Cursor, and Windsurf out of the box.
+
+### Where This Is Going
+
+Pantheon runs on one machine today. The same scanning architecture — 58 rules, hardware detection, policy enforcement, event ledger — is designed to scale across fleets. **Pantheon Ra** extends the free tool to multi-machine orchestration: subnet scanning, container auditing, cross-repo AI agents that don't just collect metrics but autonomously detect and fix issues.
+
+The free product solves real problems for individual developers. The enterprise product applies the same intelligence across infrastructure.
+
+| | Traditional monitoring (SolarWinds, Datadog) | Pantheon |
+|---|---|---|
+| **Architecture** | Agents collect metrics, dashboards visualize | Agents scan, detect, and remediate autonomously |
+| **AI integration** | Bolt-on copilots | Native — persistent memory, MCP server, AI-dispatched orchestration |
+| **Privacy** | Telemetry to vendor cloud | Zero telemetry. All data stays on your machine. |
+| **Ghost detection** | Not applicable | Launch Services phantoms, orphaned plists, Spotlight ghosts |
+| **Network safety** | Alert on misconfiguration | Probe, fix, verify, auto-revert — safely |
+
+---
+
 ## What It Does
 
 ### Scan for waste

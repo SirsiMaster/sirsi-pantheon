@@ -171,9 +171,9 @@
   <!-- ═══ Hero ═══ -->
   <header class="hero">
     <p class="tagline">pantheon.sirsi.ai</p>
-    <h1>The Deity Registry</h1>
+    <h1>Sirsi Pantheon</h1>
     <p style="font-family:var(--font-heading);font-size:0.9rem;color:var(--gold-dark);letter-spacing:0.15em;margin-bottom:0.8rem;">by Sirsi Technologies</p>
-    <p class="subtitle">Every module in the Pantheon gets a full page — features, metrics, installation, and downloads. Click any card to flip and see developer details.</p>
+    <p class="subtitle">Infrastructure hygiene for your dev machine. Finds waste that CleanMyMac misses, audits network security with auto-rollback, and gives your AI tools persistent memory.</p>
   </header>
 
   <!-- ═══ Install ═══ -->
@@ -185,11 +185,58 @@
     <code><span class="prompt">$</span> go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@latest</code>
   </div>
 
+  <!-- ═══ Why Pantheon ═══ -->
+  <section>
+    <div class="container">
+      <h2>Why Pantheon Exists</h2>
+      <p class="sub">Three capabilities that don't exist anywhere else in one tool</p>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-bottom:3rem;">
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;">
+          <div style="font-size:2rem;margin-bottom:0.8rem;">👻</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:1.1rem;margin-bottom:0.5rem;">Ghost Detection</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Finds remnants of apps you uninstalled months ago — Launch Services phantoms, orphaned plists, Spotlight ghosts. CleanMyMac and AppCleaner miss these. <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">pantheon ghosts</code></p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;">
+          <div style="font-size:2rem;margin-bottom:0.8rem;">🛡️</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:1.1rem;margin-bottom:0.5rem;">Network Safety Model</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Audits DNS, WiFi, TLS, firewall, and VPN. Auto-fixes with the same probe→mutate→verify→revert pattern Kubernetes uses for rolling deployments. Auto-reverts within 6 seconds if anything breaks. <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">pantheon network --fix</code></p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;">
+          <div style="font-size:2rem;margin-bottom:0.8rem;">🧠</div>
+          <div style="font-family:var(--font-heading);color:var(--gold);font-size:1.1rem;margin-bottom:0.5rem;">AI Memory as Infrastructure</div>
+          <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">Persistent project memory via MCP. Your AI coding sessions start with full context instead of re-reading thousands of source lines. Works with Claude, Cursor, and Windsurf. <code style="font-family:var(--font-mono);color:var(--emerald-light);font-size:0.85rem;">pantheon thoth init</code></p>
+        </div>
+
+      </div>
+
+      <h2 style="margin-top:2rem;">Where This Is Going</h2>
+      <p class="sub">The same scanning architecture scales from one machine to an entire fleet</p>
+
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;margin-bottom:2rem;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
+          <div>
+            <div style="font-family:var(--font-heading);color:var(--gold);font-size:1rem;margin-bottom:0.8rem;">Traditional Monitoring</div>
+            <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.7;">Agents collect metrics. Dashboards visualize. Humans investigate. Humans fix. Telemetry sent to vendor cloud.</p>
+          </div>
+          <div>
+            <div style="font-family:var(--font-heading);color:var(--emerald-light);font-size:1rem;margin-bottom:0.8rem;">Pantheon Ra (Enterprise)</div>
+            <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.7;">AI agents scan, detect, and remediate autonomously. Persistent memory across sessions. Zero telemetry — all data stays on your machines. Fleet-wide orchestration with scope-based deployment.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
   <!-- ═══ Deity Grid ═══ -->
   <section>
     <div class="container">
-      <h2>Choose Your Deity</h2>
-      <p class="sub">Each deity can be installed standalone or as part of the full Pantheon · Click to flip</p>
+      <h2>The Modules</h2>
+      <p class="sub">Each module handles a distinct domain — click to flip and see developer details</p>
 
       <div class="deity-grid">
 
