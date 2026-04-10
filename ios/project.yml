@@ -19,6 +19,11 @@ targets:
     platform: iOS
     sources:
       - path: Pantheon
+        excludes:
+          # Re-include when simulator runtimes are installed.
+          # actool requires simulator runtimes even for device-only builds.
+          # To enable: remove this exclude and run `xcodegen generate`.
+          - "Assets.xcassets"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.sirsi.pantheon
