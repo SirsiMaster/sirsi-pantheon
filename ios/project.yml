@@ -46,3 +46,29 @@ targets:
     dependencies:
       - framework: "../bin/ios/PantheonCore.xcframework"
         embed: true
+      - target: PantheonWidgets
+
+  PantheonWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PantheonWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.sirsi.pantheon.widgets
+        INFOPLIST_GENERATION_MODE: GeneratedFile
+        GENERATE_INFOPLIST_FILE: true
+        MARKETING_VERSION: "0.9.0"
+        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_KEY_CFBundleDisplayName: Pantheon Widgets
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/../bin/ios/PantheonCore.xcframework/ios-arm64"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/Frameworks"
+          - "@executable_path/../../Frameworks"
+    dependencies:
+      - framework: "../bin/ios/PantheonCore.xcframework"
+        embed: false
