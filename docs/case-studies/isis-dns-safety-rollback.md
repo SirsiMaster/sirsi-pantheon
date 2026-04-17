@@ -9,7 +9,7 @@
 
 ## The Incident
 
-On April 5, 2026, Pantheon's network security audit (`pantheon isis network --fix`) applied Cloudflare encrypted DNS (1.1.1.1) to a machine connected to in-flight WiFi. The network accepted TCP connections to port 53 but blocked external DNS resolution. The machine lost all internet connectivity. The auto-rollback mechanism failed because it depended on DNS — the very thing that was broken.
+On April 5, 2026, Pantheon's network security audit (`sirsi isis network --fix`) applied Cloudflare encrypted DNS (1.1.1.1) to a machine connected to in-flight WiFi. The network accepted TCP connections to port 53 but blocked external DNS resolution. The machine lost all internet connectivity. The auto-rollback mechanism failed because it depended on DNS — the very thing that was broken.
 
 The user had to manually revert DNS settings via macOS System Preferences to restore connectivity.
 
@@ -79,7 +79,7 @@ The watchdog makes 3 attempts over ~6 seconds. If resolution never succeeds, it 
 ### Layer 3 — Manual Rollback (Escape Hatch)
 
 ```bash
-pantheon isis network --rollback
+sirsi isis network --rollback
 ```
 
 Restores DNS from `~/.config/pantheon/isis/dns_prior.txt`, which is persisted before every `--fix` operation.
@@ -123,7 +123,7 @@ This is especially critical for:
 |:-------|:----------------|:--------------|
 | Risk of connectivity loss | High — changes DNS before verifying | Zero — probes before touching config |
 | Recovery time (auto) | Never — rollback also broken | ~6 seconds (3 polls x 2s) |
-| Recovery time (manual) | Minutes — requires System Preferences | Instant — `pantheon isis network --rollback` |
+| Recovery time (manual) | Minutes — requires System Preferences | Instant — `sirsi isis network --rollback` |
 | Networks safely handled | Only open networks | Captive portals, airline WiFi, corporate firewalls |
 | Dependencies for probe | DNS (circular) | Raw TCP (independent) |
 
@@ -132,7 +132,7 @@ This is especially critical for:
 ## Files Changed
 
 - `internal/guard/network.go` — Pre-check gate, watchdog polling, TCP probe
-- `cmd/pantheon/main.go` — Isis CLI wiring (`pantheon isis network --fix --rollback`)
+- `cmd/pantheon/main.go` — Isis CLI wiring (`sirsi isis network --fix --rollback`)
 - `internal/output/tui.go` — TUI intent routing for network security commands
 
 ---

@@ -171,7 +171,7 @@ func (c *CoverageAssessor) coverageCachePath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "pantheon", "maat", "coverage-cache.json")
+	return filepath.Join(home, ".config", "sirsi", "maat", "coverage-cache.json")
 }
 
 // runCoverage executes coverage — either skip, diff-only, or full scan.

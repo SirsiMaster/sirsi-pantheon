@@ -408,7 +408,7 @@ func checkPantheonProcesses(p platform.Platform, report *DoctorReport) {
 			continue
 		}
 		lower := strings.ToLower(line)
-		if strings.Contains(lower, "pantheon") {
+		if strings.Contains(lower, "sirsi") {
 			fields := strings.Fields(line)
 			if len(fields) >= 3 {
 				pid, _ := strconv.Atoi(fields[0])

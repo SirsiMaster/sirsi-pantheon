@@ -194,13 +194,13 @@ type Reference struct {
 ## 7. CLI Commands (Planned)
 
 ```
-pantheon seshat ingest <source>     Ingest knowledge from a source adapter
-pantheon seshat reconcile           Run reconciliation across all ingested KIs
-pantheon seshat search <query>      Search the knowledge graph
-pantheon seshat list                List all Knowledge Items
-pantheon seshat export <target>     Export reconciled knowledge to a target
-pantheon seshat status              Show ingestion stats, graph size, health
-pantheon seshat adapters            List available source and target adapters
+sirsi seshat ingest <source>     Ingest knowledge from a source adapter
+sirsi seshat reconcile           Run reconciliation across all ingested KIs
+sirsi seshat search <query>      Search the knowledge graph
+sirsi seshat list                List all Knowledge Items
+sirsi seshat export <target>     Export reconciled knowledge to a target
+sirsi seshat status              Show ingestion stats, graph size, health
+sirsi seshat adapters            List available source and target adapters
 ```
 
 ---

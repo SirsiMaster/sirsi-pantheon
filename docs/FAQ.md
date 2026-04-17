@@ -9,9 +9,9 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 | I want to... | Use | Install |
 |:---|:---|:---|
 | **Auto-deprioritize LSPs and monitor RAM in my IDE** | VS Code Extension | `ext install SirsiMaster.sirsi-pantheon` from OpenVSX |
-| **Always see system health in my Mac menu bar** | Menu Bar App | `brew install sirsi-pantheon-menubar` or LaunchAgent |
+| **Always see system health in my Mac menu bar** | Menu Bar App | `brew install sirsi-sirsi-menubar` or LaunchAgent |
 | **Scan for waste, ghosts, and bloat from terminal** | CLI | `brew install sirsi-pantheon` |
-| **Let my AI coding assistant query Pantheon directly** | MCP Server | `pantheon mcp` (stdio mode) |
+| **Let my AI coding assistant query Pantheon directly** | MCP Server | `sirsi mcp` (stdio mode) |
 
 ---
 
@@ -44,7 +44,7 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 
 **Requires AI?** No. Pure native macOS.
 
-**Install**: `brew install sirsi-pantheon` then `pantheon-menubar`, or install the LaunchAgent for auto-start.
+**Install**: `brew install sirsi-pantheon` then `sirsi-menubar`, or install the LaunchAgent for auto-start.
 
 ---
 
@@ -52,12 +52,12 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 **Best for**: Power users, scripts, CI/CD pipelines, automation.
 
 **What you get**:
-- `pantheon weigh` — Full infrastructure scan (58 rules across 7 domains)
-- `pantheon ka` — Ghost detection (17 macOS locations)
-- `pantheon guard` — Process monitoring and resource control
-- `pantheon sekhmet` — **ANE-accelerated tokenization** (high-perf BPE)
-- `pantheon maat` — Quality governance and coverage tracking
-- `pantheon mirror` — File deduplication with GUI
+- `sirsi weigh` — Full infrastructure scan (58 rules across 7 domains)
+- `sirsi ka` — Ghost detection (17 macOS locations)
+- `sirsi guard` — Process monitoring and resource control
+- `sirsi sekhmet` — **ANE-accelerated tokenization** (high-perf BPE)
+- `sirsi maat` — Quality governance and coverage tracking
+- `sirsi mirror` — File deduplication with GUI
 - 18 total commands + JSON output for scripting
 
 **Requires AI?** No. Standard Unix tool.
@@ -82,7 +82,7 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 {
   "mcpServers": {
     "pantheon": {
-      "command": "pantheon",
+      "command": "sirsi",
       "args": ["mcp"]
     }
   }
@@ -106,7 +106,7 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 
 ## Smart Installer Detection (Coming Soon)
 
-The `pantheon install` command will auto-detect your environment and offer the right tools:
+The `sirsi install` command will auto-detect your environment and offer the right tools:
 
 | Detection | Offered |
 |:---|:---|
@@ -122,9 +122,9 @@ The `pantheon install` command will auto-detect your environment and offer the r
 
 | Component | Download | On Disk | Budget |
 |:---|:---|:---|:---|
-| CLI (`pantheon`) | **6.6 MB** | **12 MB** | < 15 MB ✅ |
-| Menu Bar (`pantheon-menubar`) | **2.6 MB** | **4.5 MB** | < 8 MB ✅ |
+| CLI (`sirsi`) | **6.6 MB** | **12 MB** | < 15 MB ✅ |
+| Menu Bar (`sirsi-menubar`) | **2.6 MB** | **4.5 MB** | < 8 MB ✅ |
 | Extension (`.vsix`) | **40 KB** | **40 KB** | < 100 KB ✅ |
-| Agent (`pantheon-agent`) | **~1.2 MB** | **2.1 MB** | < 5 MB ✅ |
+| Agent (`sirsi-agent`) | **~1.2 MB** | **2.1 MB** | < 5 MB ✅ |
 
 Zero external dependencies. Zero telemetry. Zero network calls (except GitHub update check).

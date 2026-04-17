@@ -91,30 +91,30 @@ Each finding is a JSON file with a standard schema:
 }
 ```
 
-### 4. CLI: `pantheon findings`
+### 4. CLI: `sirsi findings`
 
 A new top-level command for browsing and searching past findings:
 
 ```bash
-pantheon findings                    # Show last 10 findings (default)
-pantheon findings --all              # Show all findings
-pantheon findings --deity horus      # Filter by deity
-pantheon findings --severity warning # Filter by severity
-pantheon findings --last 24h         # Last 24 hours
-pantheon findings --json             # Machine-readable output
-pantheon findings --open 3           # Open finding #3 in browser (HTML)
-pantheon findings --clear            # Clear old findings (with confirmation)
+sirsi findings                    # Show last 10 findings (default)
+sirsi findings --all              # Show all findings
+sirsi findings --deity horus      # Filter by deity
+sirsi findings --severity warning # Filter by severity
+sirsi findings --last 24h         # Last 24 hours
+sirsi findings --json             # Machine-readable output
+sirsi findings --open 3           # Open finding #3 in browser (HTML)
+sirsi findings --clear            # Clear old findings (with confirmation)
 ```
 
 ### 5. GUI: Findings Tab in Mirror
 
-The existing Mirror GUI (`pantheon mirror`) already has an HTTP server and
+The existing Mirror GUI (`sirsi mirror`) already has an HTTP server and
 embedded HTML. Add a `/findings` route that renders a browsable dashboard:
 
 - Timeline view of all findings (newest first)
 - Filter by deity, severity, date
 - Click to expand full finding details
-- Referral links ("Ma'at suggests running `pantheon maat --coverage`")
+- Referral links ("Ma'at suggests running `sirsi maat --coverage`")
 
 ### 6. Every Deity Writes Findings
 
@@ -127,7 +127,7 @@ Every deity command must:
 
 Example flow:
 ```
-$ pantheon horus
+$ sirsi horus
 𓅓 Horus — System Health
 
 CPU Pressure:    🔴 HIGH (88% of capacity)
@@ -141,18 +141,18 @@ I/O Pressure:    🟢 NOMINAL
 Network:         🟢 NOMINAL
 
 📋 Finding saved to ~/.config/pantheon/findings/2026-03-23T16-50_horus_health.json
-   View all: pantheon findings
+   View all: sirsi findings
 ```
 
 ## Consequences
 
-- **Positive**: Users always know where to find reports. One command: `pantheon findings`.
+- **Positive**: Users always know where to find reports. One command: `sirsi findings`.
 - **Positive**: Guard gets a proper Egyptian deity name (Horus) and a clear mandate.
 - **Positive**: Cross-deity referrals create a cohesive ecosystem. Horus says "ask Ka."
 - **Positive**: Findings persist — users can review last week's diagnostics.
 - **Positive**: Machine-readable JSON enables integration with CI/CD, dashboards, Grafana.
 - **Negative**: Every command now has a write side-effect (creating the JSON file).
-- **Risk**: Findings directory grows over time. Mitigated by `pantheon findings --clear`.
+- **Risk**: Findings directory grows over time. Mitigated by `sirsi findings --clear`.
 
 ## References
 - [ADR-005](ADR-005-PANTHEON-UNIFICATION.md) — Pantheon vision, principle #7 (referral)

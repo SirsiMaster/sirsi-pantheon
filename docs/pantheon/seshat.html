@@ -166,19 +166,19 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat ingest</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi seshat ingest</span></code>
         <code><span class="comment"># Ingest knowledge from all configured source adapters</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat profiles chrome</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi seshat profiles chrome</span></code>
         <code><span class="comment"># List available Chrome profiles for ingestion</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat notebooklm</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi seshat notebooklm</span></code>
         <code><span class="comment"># Export reconciled knowledge to Google NotebookLM</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon seshat open chrome --profile SirsiMaster</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi seshat open chrome --profile SirsiMaster</span></code>
         <code><span class="comment"># Open Chrome with the SirsiMaster profile for manual ingestion</span></code>
       </div>
     </div>
@@ -238,22 +238,22 @@
         <div class="step">
           <div class="step-num">Step 1</div>
           <p><strong>Ingest knowledge sources</strong> — Pull knowledge from Gemini, Claude, Chrome, or Apple Notes.</p>
-          <pre><code>pantheon seshat ingest --source gemini</code></pre>
+          <pre><code>sirsi seshat ingest --source gemini</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 2</div>
           <p><strong>List profiles</strong> — See all ingested knowledge profiles and their metadata.</p>
-          <pre><code>pantheon seshat list</code></pre>
+          <pre><code>sirsi seshat list</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
           <p><strong>Export to NotebookLM</strong> — Send reconciled knowledge to Google NotebookLM.</p>
-          <pre><code>pantheon seshat export --target notebooklm</code></pre>
+          <pre><code>sirsi seshat export --target notebooklm</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
           <p><strong>Open in browser</strong> — View the knowledge graph in an interactive browser UI.</p>
-          <pre><code>pantheon seshat export --target browser --open</code></pre>
+          <pre><code>sirsi seshat export --target browser --open</code></pre>
         </div>
       </div>
     </div>

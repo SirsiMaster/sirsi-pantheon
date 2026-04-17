@@ -4,15 +4,15 @@
 // All commands are prefixed with "Pantheon:" in the palette.
 //
 // Commands:
-//   pantheon.scan               — Scan workspace via Jackal
-//   pantheon.guard              — Start/restart Guardian
-//   pantheon.reniceLSP          — Manual renice of LSP processes
-//   pantheon.ghostReport        — Ka ghost detection
-//   pantheon.thothContext       — Show Thoth compressed context
-//   pantheon.showMetrics        — Display system metrics dashboard
-//   pantheon.thothAccountability — Full Thoth Accountability Report
-//   pantheon.crashpadReport     — Crashpad stability report
-//   pantheon.applyWorkspaceSettings — Apply optimal IDE settings
+//   sirsi.scan               — Scan workspace via Jackal
+//   sirsi.guard              — Start/restart Guardian
+//   sirsi.reniceLSP          — Manual renice of LSP processes
+//   sirsi.ghostReport        — Ka ghost detection
+//   sirsi.thothContext       — Show Thoth compressed context
+//   sirsi.showMetrics        — Display system metrics dashboard
+//   sirsi.thothAccountability — Full Thoth Accountability Report
+//   sirsi.crashpadReport     — Crashpad stability report
+//   sirsi.applyWorkspaceSettings — Apply optimal IDE settings
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -38,7 +38,7 @@ export function registerCommands(
 
     // ── Scan Workspace ────────────────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.scan', async () => {
+        vscode.commands.registerCommand('sirsi.scan', async () => {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             if (!workspaceRoot) {
                 vscode.window.showWarningMessage('𓃣 Pantheon: No workspace folder open');
@@ -82,7 +82,7 @@ export function registerCommands(
 
     // ── Start Guardian ────────────────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.guard', async () => {
+        vscode.commands.registerCommand('sirsi.guard', async () => {
             const terminal = vscode.window.createTerminal({
                 name: '𓁵 Pantheon Guardian',
                 shellPath: binaryPath,
@@ -97,7 +97,7 @@ export function registerCommands(
     // ── Renice LSP ────────────────────────────────────────────────
     // Uses native renice(1) + taskpolicy(1) — no CLI binary dependency
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.reniceLSP', async () => {
+        vscode.commands.registerCommand('sirsi.reniceLSP', async () => {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
                 title: '𓁵 Renicing LSP processes...',
@@ -121,7 +121,7 @@ export function registerCommands(
 
     // ── Ghost Report (Ka) ─────────────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.ghostReport', async () => {
+        vscode.commands.registerCommand('sirsi.ghostReport', async () => {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
                 title: '𓂓 Scanning for ghost applications...',
@@ -154,7 +154,7 @@ export function registerCommands(
 
     // ── Thoth Context ─────────────────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.thothContext', async () => {
+        vscode.commands.registerCommand('sirsi.thothContext', async () => {
             if (!thothProvider || !thothProvider.isLoaded()) {
                 vscode.window.showWarningMessage(
                     '𓁟 Thoth: No .thoth/memory.yaml found in workspace'
@@ -191,7 +191,7 @@ export function registerCommands(
 
     // ── Thoth Accountability Report ───────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.thothAccountability', async () => {
+        vscode.commands.registerCommand('sirsi.thothAccountability', async () => {
             if (!accountabilityEngine) {
                 vscode.window.showWarningMessage(
                     '𓁟 Thoth Accountability Engine not initialized'
@@ -267,7 +267,7 @@ export function registerCommands(
 
     // ── System Metrics Dashboard ──────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.showMetrics', async () => {
+        vscode.commands.registerCommand('sirsi.showMetrics', async () => {
             if (!statusBar) {
                 vscode.window.showWarningMessage('𓃣 Pantheon: Status bar not initialized');
                 return;
@@ -338,13 +338,13 @@ export function registerCommands(
             if (!selected) { return; }
 
             if (selected.label.includes('Thoth Accountability')) {
-                await vscode.commands.executeCommand('pantheon.thothAccountability');
+                await vscode.commands.executeCommand('sirsi.thothAccountability');
             } else if (selected.label.includes('Crashpad')) {
-                await vscode.commands.executeCommand('pantheon.crashpadReport');
+                await vscode.commands.executeCommand('sirsi.crashpadReport');
             } else if (selected.label.includes('Renice')) {
-                await vscode.commands.executeCommand('pantheon.reniceLSP');
+                await vscode.commands.executeCommand('sirsi.reniceLSP');
             } else if (selected.label.includes('Scan')) {
-                await vscode.commands.executeCommand('pantheon.scan');
+                await vscode.commands.executeCommand('sirsi.scan');
             } else if (selected.label.includes('Refresh')) {
                 statusBar.forceRefresh();
                 vscode.window.showInformationMessage('𓃣 Metrics refreshed');
@@ -354,7 +354,7 @@ export function registerCommands(
 
     // ── Apply Workspace Settings ──────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.applyWorkspaceSettings', async () => {
+        vscode.commands.registerCommand('sirsi.applyWorkspaceSettings', async () => {
             const confirm = await vscode.window.showWarningMessage(
                 '𓃣 Pantheon will apply optimal IDE settings for Go development. This modifies workspace settings.',
                 'Apply',
@@ -399,7 +399,7 @@ export function registerCommands(
 
     // ── Crashpad Stability Report ─────────────────────────────────
     context.subscriptions.push(
-        vscode.commands.registerCommand('pantheon.crashpadReport', async () => {
+        vscode.commands.registerCommand('sirsi.crashpadReport', async () => {
             if (!crashpadMonitor) {
                 vscode.window.showWarningMessage(
                     '𓁵 Crashpad Monitor not initialized'

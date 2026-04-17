@@ -105,7 +105,7 @@ Total: ~60 minutes from first grid fix to all features pushed and passing Ma'at'
 
 3. **System commands lie about their speed.** `system_profiler SPAirPortDataType` is documented as a simple query. In practice it can hang for 10+ seconds. Any command called from a TUI or interactive tool needs a timeout or a faster alternative. `networksetup` does the same job in milliseconds.
 
-4. **Security hardening is a product feature, not a deployment concern.** A CLI tool that sends conversation context over the network has a responsibility to help users verify their network security. `pantheon sekhmet network` makes this a 130ms check instead of a manual audit that most users would never do.
+4. **Security hardening is a product feature, not a deployment concern.** A CLI tool that sends conversation context over the network has a responsibility to help users verify their network security. `sirsi sekhmet network` makes this a 130ms check instead of a manual audit that most users would never do.
 
 ---
 

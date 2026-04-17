@@ -17,7 +17,7 @@ Fold sirsi-thoth into sirsi-pantheon as part of the existing Thoth deity module:
 1. **Subtree merge** sirsi-thoth to preserve git history
 2. **Port init logic** from Node.js (298 lines) to Go as `internal/thoth/init.go`
 3. **Embed templates** via Go's `//go:embed` in `internal/thoth/templates/`
-4. **Wire CLI** as both `thoth init` (standalone deity) and `pantheon thoth init` (bundled)
+4. **Wire CLI** as both `thoth init` (standalone deity) and `sirsi thoth init` (bundled)
 5. **Deprecate** the npm package and archive the sirsi-thoth GitHub repo
 
 ## Consequences

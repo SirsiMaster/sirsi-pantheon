@@ -22,7 +22,7 @@ The Pantheon is organized into six divine pillars, each assigned a canonical Anc
 ```
                     ┌─────────────────────────────┐
                     │         USER / ADMIN         │
-                    │     (runs `pantheon` CLI)    │
+                    │     (runs `sirsi` CLI)    │
                     └──────────────┬──────────────┘
                                    │
                     ┌──────────────▼──────────────┐
@@ -90,7 +90,7 @@ The Pantheon is organized into six divine pillars, each assigned a canonical Anc
 ## 3. Deployment & Distribution
 
 ### 3.1 One Install. All Deities.
-The `pantheon` binary is the single source of truth. It is statically compiled for macOS (ARM64/Intel) and Linux.
+The `sirsi` binary is the single source of truth. It is statically compiled for macOS (ARM64/Intel) and Linux.
 
 ### 3.2 Registry (docs/index.html)
 The public registry provides a high-fidelity visual map of the 6 Master Pillars. All icons and metrics are dynamically reported from the CLI's internal stats engine.

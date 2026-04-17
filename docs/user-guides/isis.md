@@ -6,15 +6,15 @@ Isis diagnoses system health, audits network security, and auto-remediates issue
 
 ### System health diagnostic
 ```bash
-pantheon doctor                  # One-shot health check
-pantheon doctor --json           # JSON output
+sirsi doctor                  # One-shot health check
+sirsi doctor --json           # JSON output
 ```
 
 Checks: RAM pressure, swap usage, disk space, top memory consumers, kernel panics, Jetsam events, and Pantheon background process health.
 
 ### Network security audit
 ```bash
-pantheon isis network            # Read-only security posture audit
+sirsi isis network            # Read-only security posture audit
 ```
 
 Audits 6 areas:
@@ -29,7 +29,7 @@ Returns a security score (0-100) with per-check findings.
 
 ### Auto-fix network issues
 ```bash
-pantheon isis network --fix      # Apply safe fixes (encrypted DNS, firewall)
+sirsi isis network --fix      # Apply safe fixes (encrypted DNS, firewall)
 ```
 
 Three-layer safety model:
@@ -41,24 +41,24 @@ If the fix breaks connectivity, it reverts automatically within seconds.
 
 ### Manual rollback
 ```bash
-pantheon isis network --rollback # Restore DNS to pre-fix state
+sirsi isis network --rollback # Restore DNS to pre-fix state
 ```
 
 ### Autonomous healing
 ```bash
-pantheon isis heal               # Auto-remediate governance failures
-pantheon isis heal --fix --full  # Full remediation pass
+sirsi isis heal               # Auto-remediate governance failures
+sirsi isis heal --fix --full  # Full remediation pass
 ```
 
 Fixes lint, vet, fmt, and coverage issues detected by Ma'at.
 
 ### Resource monitoring
 ```bash
-pantheon guard                   # Real-time RAM/CPU monitoring
+sirsi guard                   # Real-time RAM/CPU monitoring
 ```
 
 ## Output
 ```bash
-pantheon isis network --json     # JSON for scripting/CI
-pantheon doctor --json           # JSON health report
+sirsi isis network --json     # JSON for scripting/CI
+sirsi doctor --json           # JSON health report
 ```

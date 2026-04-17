@@ -69,7 +69,7 @@ export function registerCommands(
                 if (!selected) { return; }
 
                 const config = vscode.workspace.getConfiguration('seshat');
-                const binaryPath = config.get<string>('pantheonBinaryPath', 'pantheon');
+                const binaryPath = config.get<string>('sirsiBinaryPath', 'sirsi');
 
                 if (selected === 'Export All') {
                     await runPantheonCommand(binaryPath, ['seshat', 'export', '--all'], outputChannel);
@@ -114,7 +114,7 @@ export function registerCommands(
                 if (!selected) { return; }
 
                 const config = vscode.workspace.getConfiguration('seshat');
-                const binaryPath = config.get<string>('pantheonBinaryPath', 'pantheon');
+                const binaryPath = config.get<string>('sirsiBinaryPath', 'sirsi');
 
                 if (selected === 'Sync All Relevant') {
                     await runPantheonCommand(binaryPath, ['seshat', 'sync', '--target', targetFile], outputChannel);
@@ -175,7 +175,7 @@ export function registerCommands(
         vscode.commands.registerCommand('seshat.listConversations', async () => {
             try {
                 const config = vscode.workspace.getConfiguration('seshat');
-                const binaryPath = config.get<string>('pantheonBinaryPath', 'pantheon');
+                const binaryPath = config.get<string>('sirsiBinaryPath', 'sirsi');
 
                 const output = await runPantheonCommand(
                     binaryPath,

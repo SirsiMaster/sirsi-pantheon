@@ -109,10 +109,10 @@
           "default": false,
           "description": "Automatically sync Knowledge Items to GEMINI.md on workspace open."
         },
-        "seshat.pantheonBinaryPath": {
+        "seshat.sirsiBinaryPath": {
           "type": "string",
-          "default": "pantheon",
-          "description": "Path to the Pantheon CLI binary (for seshat subcommands)."
+          "default": "sirsi",
+          "description": "Path to the Sirsi CLI binary (for seshat subcommands)."
         },
         "seshat.antigravityDir": {
           "type": "string",

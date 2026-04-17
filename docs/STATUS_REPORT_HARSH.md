@@ -33,7 +33,7 @@ Pantheon is currently a **facade**. It is a collection of 28 high-coverage libra
 
 ### 𓆄 Ma'at (Governance) — **SKELETAL**
 - **Pulse**: Functional as a metric aggregator, but reports on vanity data.
-- **Scales**: **BLANK**. The CLI command `pantheon maat scales` prints a header and exit code 0 without executing policy enforcement.
+- **Scales**: **BLANK**. The CLI command `sirsi maat scales` prints a header and exit code 0 without executing policy enforcement.
 - **Heal**: Non-functional. Depends on Isis logic which is currently mock-heavy.
 
 ### 𓁟 Thoth (Knowledge) — **PRODUCTION READY (Library Only)**

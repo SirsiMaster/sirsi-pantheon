@@ -30,25 +30,25 @@ go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@v0.8.0-beta
 
 ```bash
 # Scan your machine for waste
-pantheon anubis weigh
+sirsi anubis weigh
 
 # Clean up (dry-run first, always)
-pantheon anubis judge --dry-run
+sirsi anubis judge --dry-run
 
 # Run governance audit
-pantheon maat audit
+sirsi maat audit
 
 # Fast audit (cached coverage, instant)
-pantheon maat audit --skip-test
+sirsi maat audit --skip-test
 
 # Initialize project memory
-pantheon thoth init --yes .
+sirsi thoth init --yes .
 
 # Find duplicate files
-pantheon mirror ~/Downloads
+sirsi mirror ~/Downloads
 
 # Check what deities are available
-pantheon --help
+sirsi --help
 ```
 
 ## Key Features
@@ -73,7 +73,7 @@ pantheon --help
 - **AI workflow integration**: designed for cross-session context with Claude, Gemini, Cursor
 
 ### MCP Server
-- `pantheon mcp` exposes tools via Model Context Protocol
+- `sirsi mcp` exposes tools via Model Context Protocol
 - Works with Claude Code, Cursor, Windsurf, and any MCP-compatible IDE
 - Tools: `scan_workspace`, `ghost_report`, `health_check`, `thoth_read_memory`, `classify_files`
 

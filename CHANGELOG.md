@@ -9,9 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ## [0.15.0] — 2026-04-06
 
 ### Added
-- **Osiris CLI**: `pantheon osiris assess` (full checkpoint report with 5-level risk scoring) and `pantheon osiris status` (one-line summary for scripts/menubar). TUI intent routing, suggestions, and help guide all wired.
+- **Osiris CLI**: `sirsi osiris assess` (full checkpoint report with 5-level risk scoring) and `sirsi osiris status` (one-line summary for scripts/menubar). TUI intent routing, suggestions, and help guide all wired.
 - **Seba hardware commands**: `seba hardware` (GPU/CPU/ANE/RAM dashboard), `seba profile` (saves JSON to ~/.config/pantheon/), `seba compute` (ANE tokenization with real latency measurement).
-- **Net CLI registered**: `pantheon net status` and `pantheon net align` now functional. Previously the command existed but was never added to the root command.
+- **Net CLI registered**: `sirsi net status` and `sirsi net align` now functional. Previously the command existed but was never added to the root command.
 
 ### Changed
 - **Hapi folded into Seba** (10 → 9 deities): All hardware profiling now under Seba v2.0.0. Removes a facade layer — Hapi was already just wrappers around Seba's detection code.
@@ -35,7 +35,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Added
 - **Deity Consolidation (15 → 10)** — Sekhmet→Isis (health+remediation), Ka→Anubis (ghost hunting is hygiene), Khepri→Seba (fleet+infra mapping), Hathor→Anubis (dedup is hygiene), Horus removed (empty stub). Neith renamed to Net. Every deity now has a clear, distinct function with zero overlap.
-- **Isis DNS Safety: Three-Layer Protection** — Pre-check gate (TCP probe before changing DNS), post-fix watchdog (polls resolution 3x over 6s, auto-reverts on failure), manual rollback (`pantheon isis network --rollback`). Fixes critical bug where `--fix` bricked internet on restricted networks. See case study: `docs/case-studies/isis-dns-safety-rollback.md`.
+- **Isis DNS Safety: Three-Layer Protection** — Pre-check gate (TCP probe before changing DNS), post-fix watchdog (polls resolution 3x over 6s, auto-reverts on failure), manual rollback (`sirsi isis network --rollback`). Fixes critical bug where `--fix` bricked internet on restricted networks. See case study: `docs/case-studies/isis-dns-safety-rollback.md`.
 - **TUI `help` command** — Full in-TUI reference panel listing all commands, deities, and navigation keys.
 - **TUI intent→subcommand inference** — Natural language like "check my dns" now dispatches to `isis network`, not bare `isis`. Maps keyword clusters to the most likely CLI args.
 - **Narrow terminal fallback** — TUI gracefully degrades to stacked layout when terminal is <70 columns.
@@ -47,9 +47,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **`TestSmoke_Version` hardcoded version** — Updated to check for brand name instead of specific version string.
 
 ### Changed
-- **Isis v2.0.0** — Absorbs all Sekhmet functionality: `doctor`, `guard`, `network`, `heal`. CLI: `pantheon isis network`, `pantheon doctor`.
-- **Anubis v1.1.0** — Absorbs Ka (ghost hunting) and Hathor (file dedup). `pantheon anubis ka` and `pantheon dedup` both work.
-- **Seba v1.2.0** — Absorbs Khepri (fleet discovery, container audit). `pantheon seba fleet` works.
+- **Isis v2.0.0** — Absorbs all Sekhmet functionality: `doctor`, `guard`, `network`, `heal`. CLI: `sirsi isis network`, `sirsi doctor`.
+- **Anubis v1.1.0** — Absorbs Ka (ghost hunting) and Hathor (file dedup). `sirsi anubis ka` and `sirsi dedup` both work.
+- **Seba v1.2.0** — Absorbs Khepri (fleet discovery, container audit). `sirsi seba fleet` works.
 - **Net v1.1.0** — Formerly Neith. Scope weaver for Ra task definition.
 
 ### Removed
@@ -63,7 +63,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ### Added
 - **TUI Inline Predictions** — Fish-shell-style ghost text suggestions. Static command tree covers all deities, subcommands, and flags.
 - **Suggestion Engine** (`internal/output/suggestions.go`) — Context-aware completions: history → command tree → deity names → intent keywords.
-- **Network Security Audit** (`pantheon isis network`) — Six-check posture audit: DNS, WiFi, TLS 1.3, CA certs, VPN, firewall. ~130ms.
+- **Network Security Audit** (`sirsi isis network`) — Six-check posture audit: DNS, WiFi, TLS 1.3, CA certs, VPN, firewall. ~130ms.
 - **`--fix` flag** for `isis network` — Auto-applies safe remediations (encrypted DNS, firewall enable).
 
 ### Fixed
@@ -78,13 +78,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ## [0.12.0] — 2026-04-05
 
 ### Added
-- **Pantheon TUI** — `pantheon` (no args) launches a persistent interactive session. Deity roster in a 3×5 column grid with active highlighting. Universal input bar accepts both natural-language requests ("find ghost processes") and direct CLI commands ("ka hunt ~/Dev"). Commands execute inside the TUI with output in a split-pane viewport. Input bar re-enables on completion. User stays in Pantheon until they quit.
+- **Pantheon TUI** — `sirsi` (no args) launches a persistent interactive session. Deity roster in a 3×5 column grid with active highlighting. Universal input bar accepts both natural-language requests ("find ghost processes") and direct CLI commands ("ka hunt ~/Dev"). Commands execute inside the TUI with output in a split-pane viewport. Input bar re-enables on completion. User stays in Pantheon until they quit.
 - **Intent-based routing** — Natural-language input is scored against deity keyword maps and routed to the best-matching deity command.
 - **Split-pane layout** — On first command, the view splits: left pane (deity roster + status), right pane (scrollable command output). Esc returns to full roster.
 - **Active deity detection** — Reads Stele events and PID files to highlight deities with recent activity (gold dot indicator).
 
 ### Changed
-- **`pantheon` entry point** — Bare `pantheon` now launches the TUI instead of printing help. All subcommands (`pantheon ka hunt`, `pantheon maat audit`, etc.) continue to work unchanged for scripting and CI.
+- **`sirsi` entry point** — Bare `sirsi` now launches the TUI instead of printing help. All subcommands (`sirsi ka hunt`, `sirsi maat audit`, etc.) continue to work unchanged for scripting and CI.
 
 ---
 
@@ -136,16 +136,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Added
 - **Ka v1.1.0 — Multi-Layer Ghost Matching** — Four-layer matching cascade (exact bundle ID, prefix/family, normalized name substring, nested directory scanning) eliminates 91 false positives. WhatsApp, Adobe Acrobat, and CleanMyMac no longer flagged as ghosts. Ghost residual size reduced from 6.2 GB to 165.2 MB. Case study: `docs/case-studies/ka-ghost-matching-v1.1.md`.
-- **Module Versioning System** — `internal/version/modules.go` tracks per-deity module versions. `pantheon version` now displays all 15 module versions in a two-column layout.
+- **Module Versioning System** — `internal/version/modules.go` tracks per-deity module versions. `sirsi version` now displays all 15 module versions in a two-column layout.
 - **Seshat v2.0 — Universal Knowledge Grafting** — 5 source adapters (Gemini, Claude, Chrome, Apple Notes, Google Workspace) + 3 target adapters (Thoth, GEMINI.md, NotebookLM). Secrets filter with regex-based detection and redaction.
-- **Seshat Chrome Profile Support** — `--profile` flag for per-profile ingestion, `--all-profiles` for multi-profile sweep, `pantheon seshat profiles chrome` to list all profiles, `pantheon seshat open chrome --profile <name>` to launch Chrome with a specific profile.
-- **Seshat NotebookLM Export** — `pantheon seshat notebooklm` exports KIs as Markdown and opens NotebookLM in the browser for drag-and-drop upload.
-- **Neith Module** — Plan alignment engine with keyword-based log assessment, full tapestry validation (all 5 deity checks), drift detection, and CLI (`pantheon neith status`, `pantheon neith align`).
+- **Seshat Chrome Profile Support** — `--profile` flag for per-profile ingestion, `--all-profiles` for multi-profile sweep, `sirsi seshat profiles chrome` to list all profiles, `sirsi seshat open chrome --profile <name>` to launch Chrome with a specific profile.
+- **Seshat NotebookLM Export** — `sirsi seshat notebooklm` exports KIs as Markdown and opens NotebookLM in the browser for drag-and-drop upload.
+- **Neith Module** — Plan alignment engine with keyword-based log assessment, full tapestry validation (all 5 deity checks), drift detection, and CLI (`sirsi neith status`, `sirsi neith align`).
 - **Ka Cross-Platform Ghost Detection** — `GhostProvider` interface with platform-specific implementations. macOS (full), Linux (XDG + dpkg + .desktop files), Windows (stub).
 - **5 New MCP Tools** — `thoth_sync`, `maat_audit`, `anubis_weigh`, `judge_cleanup` (dry-run only), `pantheon_status`. Total: 11 tools, 4 resources.
-- **Thoth /compact Integration** — `pantheon thoth compact -s "summary"` persists session decisions before context compression.
+- **Thoth /compact Integration** — `sirsi thoth compact -s "summary"` persists session decisions before context compression.
 - **Sirsi Orchestrator** — Python orchestrator using claude-code-sdk to dispatch parallel Claude sessions across all Sirsi repositories. Commands: health, test, lint, task, broadcast, nightly.
-- **Rich CLI Help System** — `pantheon help <deity>` with lipgloss-styled terminal guides for 12 deities. `--docs` flag opens web docs in browser. `--list` shows all available guides.
+- **Rich CLI Help System** — `sirsi help <deity>` with lipgloss-styled terminal guides for 12 deities. `--docs` flag opens web docs in browser. `--list` shows all available guides.
 - **Per-Deity Binary Builds** — goreleaser now produces standalone binaries: `pantheon-anubis`, `pantheon-maat`, `pantheon-thoth`, `pantheon-scarab`, `pantheon-guard`. Each installable via `brew install SirsiMaster/tools/pantheon-<deity>`.
 - **Getting Started Guide** — Full 7-step HTML walkthrough at pantheon.sirsi.ai/getting-started.
 - **Deity Pages** — New HTML pages for Seshat, Isis, and Neith. All 15 deity pages now have how-to guides, FAQ sections, and platform support badges.
@@ -174,7 +174,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 v0.8.0-beta is the first credible public release of Pantheon. All metrics are verified by `go test -cover ./...` — no hardcoded numbers, no projections presented as measurements. The previous v1.0.0-rc1 claim was premature and has been corrected.
 
 ### Added
-- **Thoth Knowledge System** — Go port of sirsi-thoth folded into Pantheon. `pantheon thoth init --yes <dir>` scaffolds .thoth/ project memory. Detects Go, TypeScript, Next.js, Rust, Python projects.
+- **Thoth Knowledge System** — Go port of sirsi-thoth folded into Pantheon. `sirsi thoth init --yes <dir>` scaffolds .thoth/ project memory. Detects Go, TypeScript, Next.js, Rust, Python projects.
 - **Ma'at Streaming Progress** — `maat audit` now shows per-package test results as they stream in, with color-coded verdicts. No more 2-minute silent waits.
 - **`--skip-test` Flag** — `maat audit --skip-test` uses cached coverage for instant governance results without running the full test suite.
 - **Ma'at Dynamic Module Discovery** — `DefaultThresholds()` now scans `internal/*/` dynamically instead of using a hardcoded registry. All 27 modules are now measured (was missing 10).
@@ -198,7 +198,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 | Packages | 28/28 green | `go test ./...` |
 | Weighted Coverage | ~85% | `go test -cover ./...` |
 | Lint Errors | 0 | `golangci-lint run ./...` |
-| Binary Size | ~12 MB | `go build ./cmd/pantheon/` |
+| Binary Size | ~12 MB | `go build ./cmd/sirsi/` |
 | Scan Rules | 64 | `internal/jackal/rules/` |
 | Internal Modules | 27 | `ls internal/` |
 | E2E Smoke Tests | 9+10 | `scripts/smoke.sh` + `go test ./tests/e2e/` |
@@ -241,7 +241,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - P4: Homebrew Formula update for marketing launch.
 
 ### Session 35 (2026-03-28) — Isis Phase 1 (The Healer) + Thoth CLI
-- **Thoth CLI** (`cmd/pantheon/thoth.go`) — `pantheon thoth sync` wired to CLI.
+- **Thoth CLI** (`cmd/pantheon/thoth.go`) — `sirsi thoth sync` wired to CLI.
   - Two-phase auto-sync: Phase 1 updates memory.yaml identity fields from source analysis. Phase 2 appends journal.md entries from git history.
   - `findRepoRoot()` walks up from cwd to locate `.thoth/` directory.
   - Flags: `--since`, `--dry-run`, `--memory-only`, `--journal-only`.
@@ -253,7 +253,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
   - `coverage.go`: `CoverageStrategy` — uses `go/parser` AST analysis to find exported functions without tests.
   - `canon.go`: `CanonStrategy` — detects memory.yaml/journal drift and triggers `thoth.Sync()`.
   - `bridge.go`: `FromMaatReport()` converts Ma'at `Assessment` verdicts to Isis `Finding` structs.
-- **Isis CLI** (`cmd/pantheon/isis.go`) — `pantheon isis heal`.
+- **Isis CLI** (`cmd/pantheon/isis.go`) — `sirsi isis heal`.
   - Dry-run by default (Rule A1 — safety first). `--fix` to apply changes.
   - Cache-based Ma'at weighing (~3ms) by default. `--full-weigh` for live `go test` (~5min).
   - Strategy filters: `--lint-only`, `--vet-only`, `--coverage-only`, `--canon-only`.
@@ -318,7 +318,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - **HAPI Tokenization** — Extended the `Accelerator` interface with native `Tokenize` support.
 - **Hardware Backends** — Implemented specialized tokenization for AppleANE, Metal, CUDA, and ROCm.
 - **FastTokenize** — Built a deterministic BPE-style pure Go tokenizer as the universal CPU fallback.
-- **Sekhmet CLI** — Integrated `pantheon sekhmet --tokenize` for direct hardware-accelerated testing.
+- **Sekhmet CLI** — Integrated `sirsi sekhmet --tokenize` for direct hardware-accelerated testing.
 - **Global Flags** — Centralized CLI flags in `cmd/pantheon/globals.go` to support modular command files.
 - **Canon Sync** — Updated Thoth, BUILD_LOG, FAQ, and the Deity Registry.
 
@@ -409,7 +409,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 ### Session 19 (2026-03-25) — The Pantheon Extension
 - **VS Code Extension** (`extensions/vscode/`) — Full TypeScript extension replacing JS scaffold (ADR-012).
   - `extension.ts`: Entry point — starts Guardian, status bar, Thoth on activation.
-  - `guardian.ts`: Always-on renice (30s delay, 60s re-apply loop). Spawns `pantheon guard --renice lsp --json`.
+  - `guardian.ts`: Always-on renice (30s delay, 60s re-apply loop). Spawns `sirsi guard --renice lsp --json`.
   - `statusBar.ts`: Ankh (𓃣) icon with live RAM/CPU metrics. Polls `ps` directly (sub-50ms). Color-coded states.
   - `commands.ts`: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
   - `thothProvider.ts`: Context compression from `.thoth/memory.yaml` with file watching.
@@ -423,7 +423,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - **Guard Module (89→91%)** — Full deterministic audit of process termination paths (root-failures, dry-runs).
 - **Ma'at Module (80→88%)** — Deterministic CI pipeline assessment with injectable gh-cli runners.
 - **Sight Module (78→93%)** — Rebuilt `Fix` and `ReindexSpotlight` with mockable system commands.
-- **Antigravity CLI Wiring** — `pantheon guard --watch` now starts the full IPC bridge + AlertRing.
+- **Antigravity CLI Wiring** — `sirsi guard --watch` now starts the full IPC bridge + AlertRing.
 - **MCP Live Alerts** — Bridged watchdog alerts into MCP resources via `anubis://watchdog-alerts`.
 - **Canon Realignment** — `ANUBIS_RULES.md` → `PANTHEON_RULES.md` (v2.0.0). ADR index updated.
 
@@ -462,7 +462,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - **Domain Purge** — Replaced all instances of `sirsinexus.dev` with `sirsi.ai` in SirsiNexusApp
 - **MCP Versioning** — Corrected version reporting to match release tags
 - **gofmt** — Fixed formatting in `yield_test.go`
-- **.gitignore Collision** — Unanchored `pantheon` pattern was ignoring `cmd/pantheon/seba.go`
+- **.gitignore Collision** — Unanchored `sirsi` pattern was ignoring `cmd/sirsi/seba.go`
 
 
 ---

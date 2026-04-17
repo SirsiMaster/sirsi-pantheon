@@ -64,7 +64,7 @@ Pantheon is the single, modular brand for all Sirsi automation deities. The stan
 | **Packages Passing** | 28/28 | `go test ./...` (27 modules + jackal/rules) |
 | **Weighted Coverage** | ~83.5% | `go test -cover ./...` |
 | **Internal Modules** | 27 | `ls internal/` |
-| **Binary Size** | ~12 MB | Compiled `pantheon` binary |
+| **Binary Size** | ~12 MB | Compiled `sirsi` binary |
 | **Lint Errors** | 0 | `golangci-lint run ./...` |
 | **CI Status** | ✅ Green | All 5 jobs passing |
 | **E2E Smoke Tests** | 9 | `scripts/smoke.sh` |

@@ -6,9 +6,9 @@ Osiris detects uncommitted work, measures session drift, and warns before data l
 
 ### Full checkpoint assessment
 ```bash
-pantheon osiris assess                           # Current directory
-pantheon osiris assess /path/to/repo             # Specific repo
-pantheon osiris assess --json                    # JSON output
+sirsi osiris assess                           # Current directory
+sirsi osiris assess /path/to/repo             # Specific repo
+sirsi osiris assess --json                    # JSON output
 ```
 
 Reports:
@@ -20,8 +20,8 @@ Reports:
 
 ### Quick status
 ```bash
-pantheon osiris status                           # One-line summary
-pantheon osiris status --json                    # JSON for scripting
+sirsi osiris status                           # One-line summary
+sirsi osiris status --json                    # JSON for scripting
 ```
 
 Returns a single line like `📄 11 files changed (last commit: 2h48m ago)` — suitable for menu bars, shell prompts, or CI scripts.

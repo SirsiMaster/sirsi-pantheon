@@ -57,7 +57,7 @@ This is the **acquisition funnel**. It must be genuinely useful on first run wit
 | `anubis judge --dry-run` (preview) | Shows what would be cleaned. Builds trust. |
 | `anubis judge --confirm` (clean, limited) | Clean **3 categories max** per run (e.g., caches, logs, crash reports). Enough to be useful but limited. |
 | `anubis guard` (RAM check) | One-shot RAM report. No monitoring. |
-| `pantheon version` | Shows version. |
+| `sirsi version` | Shows version. |
 
 **What's NOT free:**
 - Unlimited category cleaning

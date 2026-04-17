@@ -58,7 +58,7 @@ Context tokens dropped from **100K to 2K (98% reduction)**. AI start time droppe
 **Status:** Guarding | **Deity:** Sekhmet (Guardian) | **Prevented:** Infinite UI Starvation
 
 ### The Incident
-A $3,500 workstation with 58 processing cores froze for 17 minutes. `pantheon guard --audit` revealed:
+A $3,500 workstation with 58 processing cores froze for 17 minutes. `sirsi guard --audit` revealed:
 - **Antigravity Helper (Plugin Host)** locked at 103.9% CPU on a single JS thread.
 - **UI Renderer** starved of CPU cycles waiting for IPC.
 - **GPU/ANE/9 CPU cores** sitting at 0% usage.

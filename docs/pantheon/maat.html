@@ -159,22 +159,22 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi maat</span></code>
         <code><span class="comment"># Full governance assessment</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat --coverage</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi maat --coverage</span></code>
         <code><span class="comment"># Test coverage thresholds per module</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat --canon</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi maat --canon</span></code>
         <code><span class="comment"># Canon document verification</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon maat --pipeline</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi maat --pipeline</span></code>
         <code><span class="comment"># CI pipeline health check</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon scales enforce</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi scales enforce</span></code>
         <code><span class="comment"># Run infrastructure hygiene policies</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon scales enforce -f policy.yaml</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi scales enforce -f policy.yaml</span></code>
         <code><span class="comment"># Custom policy file</span></code>
       </div>
     </div>
@@ -185,7 +185,7 @@
       <h2>Usability Surface</h2>
       <table class="surface-table">
         <thead><tr><th>Interface</th><th>Status</th><th>Detail</th></tr></thead>
-        <tbody><tr><td>CLI</td><td>✅ Full</td><td>pantheon maat, pantheon scales</td></tr><tr><td>Git Hook</td><td>✅ Full</td><td>Pre-push quality gate</td></tr><tr><td>MCP</td><td>✅ Full</td><td>health_check includes Ma'at score</td></tr><tr><td>CI/CD</td><td>✅ Full</td><td>GitHub Actions workflow</td></tr></tbody>
+        <tbody><tr><td>CLI</td><td>✅ Full</td><td>sirsi maat, sirsi scales</td></tr><tr><td>Git Hook</td><td>✅ Full</td><td>Pre-push quality gate</td></tr><tr><td>MCP</td><td>✅ Full</td><td>health_check includes Ma'at score</td></tr><tr><td>CI/CD</td><td>✅ Full</td><td>GitHub Actions workflow</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -225,29 +225,29 @@
         <div class="step">
           <div class="step-num">Step 1</div>
           <p><strong>Run a full audit</strong> — Get Ma'at's Feather Weight score across all quality dimensions.</p>
-          <pre><code>pantheon maat</code></pre>
+          <pre><code>sirsi maat</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 2</div>
           <p><strong>Review the report</strong> — Check coverage, lint, canon, and pipeline metrics individually.</p>
-          <pre><code>pantheon maat --coverage
-pantheon maat --canon</code></pre>
+          <pre><code>sirsi maat --coverage
+sirsi maat --canon</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
           <p><strong>Auto-heal with Isis</strong> — Fix issues Ma'at found automatically.</p>
-          <pre><code>pantheon isis heal</code></pre>
+          <pre><code>sirsi isis heal</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
           <p><strong>Check per-module coverage</strong> — See which modules meet their individual thresholds.</p>
-          <pre><code>pantheon maat --coverage --verbose</code></pre>
+          <pre><code>sirsi maat --coverage --verbose</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 5</div>
           <p><strong>Integrate with CI</strong> — Add Ma'at as a quality gate in your CI pipeline.</p>
           <pre><code># In .github/workflows/ci.yml:
-# - run: pantheon maat --fail-under 85</code></pre>
+# - run: sirsi maat --fail-under 85</code></pre>
         </div>
       </div>
     </div>
@@ -275,7 +275,7 @@ pantheon maat --canon</code></pre>
         </div>
         <div class="faq-item">
           <div class="faq-q">How do I integrate Ma'at with GitHub Actions?</div>
-          <div class="faq-a">Add <code>pantheon maat --fail-under 85</code> as a step in your CI workflow. Ma'at returns a non-zero exit code if the score is below the threshold.</div>
+          <div class="faq-a">Add <code>sirsi maat --fail-under 85</code> as a step in your CI workflow. Ma'at returns a non-zero exit code if the score is below the threshold.</div>
         </div>
       </div>
     </div>

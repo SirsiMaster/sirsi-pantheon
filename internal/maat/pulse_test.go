@@ -18,7 +18,7 @@ func TestPulse_WithMockRunners(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create minimal project structure
-	cmdDir := filepath.Join(tmpDir, "cmd", "pantheon")
+	cmdDir := filepath.Join(tmpDir, "cmd", "sirsi")
 	os.MkdirAll(cmdDir, 0o755)
 	for _, deity := range []string{"anubis.go", "maat.go", "thoth.go", "hapi.go", "seba.go", "seshat.go"} {
 		os.WriteFile(filepath.Join(cmdDir, deity), []byte("package main"), 0o644)
@@ -30,7 +30,7 @@ func TestPulse_WithMockRunners(t *testing.T) {
 	}
 
 	// Create a fake binary
-	binPath := filepath.Join(tmpDir, "pantheon")
+	binPath := filepath.Join(tmpDir, "sirsi")
 	os.WriteFile(binPath, make([]byte, 12*1024*1024), 0o755) // 12 MB
 
 	cfg := &PulseConfig{
@@ -243,7 +243,7 @@ func TestCountDeities(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
-	cmdDir := filepath.Join(tmpDir, "cmd", "pantheon")
+	cmdDir := filepath.Join(tmpDir, "cmd", "sirsi")
 	os.MkdirAll(cmdDir, 0o755)
 
 	// Create exactly 3 deity files

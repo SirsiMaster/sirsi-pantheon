@@ -56,7 +56,7 @@ export class PantheonStatusBar implements vscode.Disposable {
             vscode.StatusBarAlignment.Right,
             200 // High priority — always visible
         );
-        this.statusBarItem.command = 'pantheon.showMetrics';
+        this.statusBarItem.command = 'sirsi.showMetrics';
         this.updateDisplay();
         this.statusBarItem.show();
     }

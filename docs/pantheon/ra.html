@@ -162,31 +162,31 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra health</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra health</span></code>
         <code><span class="comment"># Health check across all repos</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra test</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra test</span></code>
         <code><span class="comment"># Run tests across all repos in parallel</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra lint</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra lint</span></code>
         <code><span class="comment"># Run linters across all repos in parallel</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra task pantheon "fix the seba test failures"</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra task pantheon "fix the seba test failures"</span></code>
         <code><span class="comment"># Dispatch targeted task to a specific repo</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra broadcast "check for security vulnerabilities"</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra broadcast "check for security vulnerabilities"</span></code>
         <code><span class="comment"># Run a prompt across all repos simultaneously</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra nightly</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra nightly</span></code>
         <code><span class="comment"># Full nightly CI: health + lint + test</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon ra status</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi ra status</span></code>
         <code><span class="comment"># Show orchestrator prerequisites and repo fleet</span></code>
       </div>
     </div>
@@ -197,7 +197,7 @@
       <h2>Usability Surface</h2>
       <table class="surface-table">
         <thead><tr><th>Interface</th><th>Status</th><th>Detail</th></tr></thead>
-        <tbody><tr><td>CLI</td><td>✅ Active</td><td>pantheon ra health | test | lint | task | broadcast | nightly | status</td></tr><tr><td>Web Dashboard</td><td>📋 Planned</td><td>Enterprise admin portal</td></tr><tr><td>LSP</td><td>📋 Planned</td><td>Sirsi Language Server</td></tr><tr><td>API</td><td>📋 Planned</td><td>REST + gRPC fleet API</td></tr></tbody>
+        <tbody><tr><td>CLI</td><td>✅ Active</td><td>sirsi ra health | test | lint | task | broadcast | nightly | status</td></tr><tr><td>Web Dashboard</td><td>📋 Planned</td><td>Enterprise admin portal</td></tr><tr><td>LSP</td><td>📋 Planned</td><td>Sirsi Language Server</td></tr><tr><td>API</td><td>📋 Planned</td><td>REST + gRPC fleet API</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -242,17 +242,17 @@
         <div class="step">
           <div class="step-num">Step 2 — Check status</div>
           <p>Verify that the orchestrator, python3, and claude-code-sdk are all available.</p>
-          <pre><code>pantheon ra status</code></pre>
+          <pre><code>sirsi ra status</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3 — Run a health check</div>
           <p>Quick fleet-wide health check: git status, recent commits, and build verification across all repos.</p>
-          <pre><code>pantheon ra health</code></pre>
+          <pre><code>sirsi ra health</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4 — Dispatch targeted work</div>
           <p>Send a task to a specific repo with full tool access (Read, Grep, Bash, Edit, Write).</p>
-          <pre><code>pantheon ra task pantheon "fix the seba test failures"</code></pre>
+          <pre><code>sirsi ra task pantheon "fix the seba test failures"</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 5 — Enterprise integration</div>
@@ -269,7 +269,7 @@
         <h2>Frequently Asked Questions</h2>
         <div class="faq-item">
           <div class="faq-q">Is Ra available now?</div>
-          <div class="faq-a">Yes. The Ra CLI is live as of v0.9.0. Run <code>pantheon ra status</code> to verify your setup, then use <code>pantheon ra health</code> to get started.</div>
+          <div class="faq-a">Yes. The Ra CLI is live as of v0.9.0. Run <code>sirsi ra status</code> to verify your setup, then use <code>sirsi ra health</code> to get started.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Will Ra be free?</div>

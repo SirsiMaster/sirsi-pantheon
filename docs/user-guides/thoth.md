@@ -6,8 +6,8 @@ Thoth gives your AI coding sessions persistent memory. Instead of re-explaining 
 
 ### Initialize in a project
 ```bash
-pantheon thoth init                              # Interactive setup
-pantheon thoth init --yes --name myproject       # Non-interactive
+sirsi thoth init                              # Interactive setup
+sirsi thoth init --yes --name myproject       # Non-interactive
 ```
 
 Creates `.thoth/` in your project root with:
@@ -17,26 +17,26 @@ Creates `.thoth/` in your project root with:
 
 ### Sync memory
 ```bash
-pantheon thoth sync                              # Full sync from source + git
-pantheon thoth sync --since "48 hours ago"       # Sync recent changes only
-pantheon thoth sync --dry-run                    # Preview what would change
+sirsi thoth sync                              # Full sync from source + git
+sirsi thoth sync --since "48 hours ago"       # Sync recent changes only
+sirsi thoth sync --dry-run                    # Preview what would change
 ```
 
 Auto-detects: project type, language, dependencies, recent git history, and updates `memory.yaml`.
 
 ### Compact before context loss
 ```bash
-pantheon thoth compact                           # Persist session decisions
-pantheon thoth compact --summary "key decisions" # With explicit summary
+sirsi thoth compact                           # Persist session decisions
+sirsi thoth compact --summary "key decisions" # With explicit summary
 ```
 
 Run this before your AI session's context window fills up. Saves session decisions to `journal.md` so the next session picks up where you left off.
 
 ### Neural weights (Pro)
 ```bash
-pantheon thoth brain                # Check brain status
-pantheon thoth brain --update       # Fetch latest weights
-pantheon thoth brain --remove       # Clean up weights
+sirsi thoth brain                # Check brain status
+sirsi thoth brain --update       # Fetch latest weights
+sirsi thoth brain --remove       # Clean up weights
 ```
 
 Manages CoreML/ONNX weights for Pro-tier analysis features.
@@ -46,7 +46,7 @@ Manages CoreML/ONNX weights for Pro-tier analysis features.
 Thoth works as an MCP server for AI coding tools:
 
 ```bash
-pantheon mcp                     # Start MCP server
+sirsi mcp                     # Start MCP server
 ```
 
 Configure in your IDE:
@@ -54,7 +54,7 @@ Configure in your IDE:
 {
   "mcpServers": {
     "pantheon": {
-      "command": "pantheon",
+      "command": "sirsi",
       "args": ["mcp"]
     }
   }

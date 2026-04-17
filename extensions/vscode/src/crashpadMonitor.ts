@@ -63,7 +63,7 @@ export class CrashpadMonitor implements vscode.Disposable {
             vscode.StatusBarAlignment.Right,
             95  // Just after the main Pantheon status bar (priority 100)
         );
-        this.statusBarItem.command = 'pantheon.crashpadReport';
+        this.statusBarItem.command = 'sirsi.crashpadReport';
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────
@@ -225,7 +225,7 @@ export class CrashpadMonitor implements vscode.Disposable {
                     'Dismiss'
                 );
                 if (action === 'View Report') {
-                    vscode.commands.executeCommand('pantheon.crashpadReport');
+                    vscode.commands.executeCommand('sirsi.crashpadReport');
                 } else if (action === 'Clear Pending') {
                     await this.clearPendingDumps();
                 }
@@ -237,7 +237,7 @@ export class CrashpadMonitor implements vscode.Disposable {
                     'Dismiss'
                 );
                 if (action === 'View Report') {
-                    vscode.commands.executeCommand('pantheon.crashpadReport');
+                    vscode.commands.executeCommand('sirsi.crashpadReport');
                 }
             }
         }

@@ -159,16 +159,16 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon mcp</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi mcp</span></code>
         <code><span class="comment"># Start MCP server (stdio protocol)</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon install-brain</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi install-brain</span></code>
         <code><span class="comment"># Download neural classification model</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon install-brain --update</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi install-brain --update</span></code>
         <code><span class="comment"># Check for latest model version</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon install-brain --remove</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi install-brain --remove</span></code>
         <code><span class="comment"># Self-delete model weights</span></code>
       </div>
     </div>
@@ -179,7 +179,7 @@
       <h2>Usability Surface</h2>
       <table class="surface-table">
         <thead><tr><th>Interface</th><th>Status</th><th>Detail</th></tr></thead>
-        <tbody><tr><td>MCP</td><td>✅ Full</td><td>5 tools via stdio JSON-RPC</td></tr><tr><td>CLI</td><td>✅ Full</td><td>pantheon mcp, install-brain</td></tr><tr><td>Claude</td><td>✅ Configured</td><td>claude_desktop_config.json</td></tr><tr><td>Cursor</td><td>✅ Configured</td><td>.cursor/mcp.json</td></tr></tbody>
+        <tbody><tr><td>MCP</td><td>✅ Full</td><td>5 tools via stdio JSON-RPC</td></tr><tr><td>CLI</td><td>✅ Full</td><td>sirsi mcp, install-brain</td></tr><tr><td>Claude</td><td>✅ Configured</td><td>claude_desktop_config.json</td></tr><tr><td>Cursor</td><td>✅ Configured</td><td>.cursor/mcp.json</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -219,23 +219,23 @@
         <div class="step">
           <div class="step-num">Step 1</div>
           <p><strong>Initialize in your project</strong> — Thoth creates the three-layer memory structure in your project root.</p>
-          <pre><code>cd your-project && pantheon thoth init</code></pre>
+          <pre><code>cd your-project && sirsi thoth init</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 2</div>
           <p><strong>Sync memory</strong> — Update memory.yaml with current project state. Run after significant changes.</p>
-          <pre><code>pantheon thoth sync</code></pre>
+          <pre><code>sirsi thoth sync</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
           <p><strong>Use in Claude or Cursor</strong> — Configure your IDE to use Thoth's MCP server for instant project context.</p>
-          <pre><code>pantheon mcp
+          <pre><code>sirsi mcp
 # Add to claude_desktop_config.json or .cursor/mcp.json</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
           <p><strong>Compact before context limit</strong> — When your AI session gets long, compact to preserve key context.</p>
-          <pre><code>pantheon thoth compact</code></pre>
+          <pre><code>sirsi thoth compact</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 5</div>

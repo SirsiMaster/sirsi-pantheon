@@ -1,17 +1,17 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-04-04T18:21:08-04:00
+# Last updated: 2026-04-06T02:11:52-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.22+ / TypeScript
 version: 0.7.0b-alpha
-binary_count: 8 (anubis, guard, maat, pantheon, pantheon-agent, pantheon-menubar, scarab, thoth)
-test_count: 1252+
-line_count: ~48,594
+binary_count: 8 (anubis, guard, maat, sirsi, sirsi-agent, sirsi-menubar, scarab, thoth)
+test_count: 1276+
+line_count: ~49,266
 module_count: 31
-command_count: 73
+command_count: 75
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
@@ -120,7 +120,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
 
 # 2026-03-28: Session 35 — Isis (The Healer) Phase 1 + Thoth CLI + Distribution
-#   THOTH CLI: `pantheon thoth sync` wired (cmd/pantheon/thoth.go). Two-phase auto-sync:
+#   THOTH CLI: `sirsi thoth sync` wired (cmd/sirsi/thoth.go). Two-phase auto-sync:
 #     Phase 1: memory.yaml identity fields from source analysis.
 #     Phase 2: journal.md entries from git commits (--since, --dry-run).
 #     findRepoRoot() walks up from cwd to find .thoth/.
@@ -131,11 +131,11 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #     coverage.go: CoverageStrategy — AST-based export/test gap detection.
 #     canon.go: CanonStrategy — triggers thoth sync on drift detection.
 #     bridge.go: FromMaatReport() converts Ma'at assessments to Isis findings.
-#   CLI: `pantheon isis heal` (dry-run default, --fix to apply, --full-weigh for go test).
+#   CLI: `sirsi isis heal` (dry-run default, --fix to apply, --full-weigh for go test).
 #     Fast mode: reads Ma'at coverage cache (~3ms) instead of running go test (~5min).
 #     Strategy filters: --lint-only, --vet-only, --coverage-only, --canon-only.
 #   DISTRIBUTION: thoth-init README.md for npm publish. Local test verified.
-#   DOGFOODING: `pantheon thoth sync` used to update its own memory.yaml. Self-referential.
+#   DOGFOODING: `sirsi thoth sync` used to update its own memory.yaml. Self-referential.
 #   Next: npm publish thoth-init, brew tap marketing, Isis Phase 2 (deeper remediation).
 
 # 2026-03-28: Session 34 — Grand Unification + Seba's Sovereignty
@@ -188,7 +188,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   extended HAPI Accelerator interface with Tokenize(text string).
 #   Implemented backends: AppleANE, Metal, CUDA, ROCm, CPU (FastTokenize).
 #   Created FastTokenize (byte-pair-inspired native Go BPE fallback).
-#   Integrated `pantheon sekhmet --tokenize` command.
+#   Integrated `sirsi sekhmet --tokenize` command.
 #   Centralized CLI flags in cmd/pantheon/globals.go (JsonOutput, quietMode, etc).
 #   Performance: 10-15ms overhead per tokenization chunk on ANE/Metal.
 # 2026-03-26: Session 23 — Crash Forensics + Crashpad Monitor
@@ -242,7 +242,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # 2026-03-25: Session 19 — Pantheon VS Code Extension (OpenVSX)
 #   Full TypeScript extension replacing JS scaffold (ADR-012).
 #   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.
-#   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns pantheon guard --renice lsp.
+#   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns sirsi guard --renice lsp.
 #   statusBar.ts: Ankh (𓃣) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
 #   commands.ts: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
 #   thothProvider.ts: Context compression from .thoth/memory.yaml with file watching.
@@ -252,11 +252,11 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   ADR-011: Deity Alignment — canonical scopes for all 10 deities.
 #   Thoth = context compressor, Horus = publisher + lazy FS index, Guard = process control.
 #   Horus Phase 3: Scoped indexing (14 roots → 8 targeted, 856K → ~50K files).
-#   Guard renice: `pantheon guard --renice lsp` — deprioritizes LSPs to Background QoS.
+#   Guard renice: `sirsi guard --renice lsp` — deprioritizes LSPs to Background QoS.
 #   Live result: language_server_macos_arm (2.7 GB) + 2× gopls (422 MB) → Background QoS.
 #   CRITICAL: language_server_macos_arm added to PROTECTED process list after slay crashed IDE.
 #   IDE Settings: Shell Integration disabled, gopls directory filters, file watcher exclusions.
-#   CI Fix: Removed tracked `pantheon-menubar` binary causing Windows test failures.
+#   CI Fix: Removed tracked `sirsi-menubar` binary causing Windows test failures.
 #   Platform compute.go: Restored M4 family bandwidth values corrupted by sed rename.
 #   Case Study 010: The Hot-Swap Catastrophe (P0 incident post-mortem).
 #   Rule A18 (Incremental Commits) + Rule A19 (No App Bundle Mutations) codified.
@@ -276,14 +276,14 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   - FormatReport, Summary, StatusIcon for menu bar integration
 #   - 92.8% coverage, 15 tests
 #   Module count: 22 → 24 (osiris, horus/publish)
-#   Binary count: 7 → 8 (pantheon-menubar)
+#   Binary count: 7 → 8 (sirsi-menubar)
 #   Test count: 768 → 819+ (51 new tests, all passing)
 #   Makefile: 6 new targets (build-menubar, bundle, publish, install/uninstall-launchagent)
 # 2026-03-24: Session 16b — The Coverage Sprint & Antigravity Bridge (90.1% Hit)
 #   Coverage breakthrough: 87.2% → 90.1% (Rule A16 established).
 #   Injectable Providers: standard interface injection for signals and exec.Command (ADR-009).
 #   Guard (89→91%), Ma'at (80→88%), Sight (78→93%), Profile (84→85%).
-#   Antigravity CLI: `pantheon guard --watch` now starts the full bridge + AlertRing.
+#   Antigravity CLI: `sirsi guard --watch` now starts the full bridge + AlertRing.
 #   Note: Platform coverage is structurally maxed at 73.4% on macOS.
 #   Canon update: ANUBIS_RULES.md → PANTHEON_RULES.md (v2.0.0). ADR-009 added.
 # 2026-03-23: Session 14 — Brain Coverage + Homebrew Verification
@@ -292,7 +292,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   (all branches), manifest JSON round-trips, containsSegment edge cases.
 #   Found: splitPath infinite loop on relative '.' paths (documented, not fixed).
 #   Homebrew verified end-to-end: brew tap SirsiMaster/tools && brew install sirsi-pantheon ✅
-#   Both binaries (pantheon + pantheon-agent) installed to /opt/homebrew/bin/.
+#   Both binaries (sirsi + sirsi-agent) installed to /opt/homebrew/bin/.
 #   Case study updated: Ka 8.5s → 1.08s benchmarks added (Sessions 12–13).
 #   Build log updated: Ka benchmark bar, pre-push gate 5s → 2s, Horus recursive win.
 #   Note: update checker shows false upgrade (0.4.0 → 0.2.0) — version compare bug.
@@ -387,7 +387,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # Rules: A1 (safety first), A3 (fixed agent), A10 (brand colors), A11 (no telemetry)
 
 ## File Map (most important files)
-# cmd/anubis/main.go            — CLI entry point, cobra commands
+# cmd/sirsi/main.go             — CLI entry point, cobra commands
 # internal/mirror/scanner.go    — dedup scanner (the revenue-generating feature)
 # internal/mirror/server.go     — GUI web server (~850 lines, embedded HTML)
 # internal/mirror/types.go      — FileEntry, DuplicateGroup, ScanOptions
@@ -417,6 +417,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-04-06: {"session_id":"e3a963d3-b25b-4a85-a05c-c69aecd0145f","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/e3a963d3-b25b-4a85-a05c-c69aecd0145f.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
 # 2026-04-04: {"session_id":"1b4b4861-83fa-412d-a688-c199b6f4e775","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/1b4b4861-83fa-412d-a688-c199b6f4e775.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
 # 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
 # 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.

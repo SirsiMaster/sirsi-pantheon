@@ -157,7 +157,7 @@ func handleWatchdogResource() (*ResourceContent, error) {
 		// No bridge active — return dormant status
 		status := map[string]interface{}{
 			"active":        false,
-			"message":       "Isis watchdog not running. Start with 'pantheon guard --watch'.",
+			"message":       "Isis watchdog not running. Start with 'sirsi guard --watch'.",
 			"recent_alerts": []interface{}{},
 		}
 		data, _ := json.MarshalIndent(status, "", "  ")

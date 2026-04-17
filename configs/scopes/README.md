@@ -1,6 +1,6 @@
 # Ra Scope Configs
 
-Each YAML file defines one autonomous agent scope for `pantheon ra deploy`.
+Each YAML file defines one autonomous agent scope for `sirsi ra deploy`.
 
 ## Schema
 
@@ -55,14 +55,14 @@ appear lifeless even though they're working.
 
 Ra uses `--output-format stream-json --verbose` to get real-time JSON events, then pipes
 through a python filter that extracts human-readable text and `[tool: Name]` summaries.
-This gives live progress in the terminal window AND captures a log file for `pantheon ra collect`.
+This gives live progress in the terminal window AND captures a log file for `sirsi ra collect`.
 
 Do NOT change this back to default `--print` text mode. See Rule A24 in CLAUDE.md.
 
 ## Testing a Scope
 
 ```bash
-pantheon ra deploy --dry-run --scope your-scope
+sirsi ra deploy --dry-run --scope your-scope
 ```
 
 Verify:

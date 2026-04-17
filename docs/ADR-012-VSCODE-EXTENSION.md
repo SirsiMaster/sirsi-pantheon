@@ -6,7 +6,7 @@
 
 ## Context
 
-Pantheon has matured into a 24-module ecosystem with renice, scoped indexing, context compression, and process control. However, all capabilities require manual CLI invocation. The system cannot operate without oversight — the user must remember to run `pantheon guard --renice lsp` after every IDE restart.
+Pantheon has matured into a 24-module ecosystem with renice, scoped indexing, context compression, and process control. However, all capabilities require manual CLI invocation. The system cannot operate without oversight — the user must remember to run `sirsi guard --renice lsp` after every IDE restart.
 
 ### Problem
 - Renice resets on process restart — needs re-application per IDE session
@@ -47,16 +47,16 @@ extensions/vscode/
 3. **Re-renice loop**: Guardian re-applies renice every 60s to catch respawned/reset processes
 4. **No MCP yet**: Extension spawns CLI commands — MCP integration deferred to future
 5. **Zero telemetry**: All processing stays local (Rule A11)
-6. **Binary dependency**: Extension requires `pantheon` binary (`brew install sirsi-pantheon`). Graceful degradation with ENOENT messaging if not installed.
+6. **Binary dependency**: Extension requires `sirsi` binary (`brew install sirsi-pantheon`). Graceful degradation with ENOENT messaging if not installed.
 
 ### Extension Capabilities
 
 | Capability | Trigger | Mechanism |
 |-----------|---------|-----------|
-| Auto-renice | On activation (30s delay) | `pantheon guard --renice lsp` |
+| Auto-renice | On activation (30s delay) | `sirsi guard --renice lsp` |
 | Status bar metrics | Every 5s | Direct `ps -axo` polling |
-| Workspace scan | Command palette | `pantheon weigh --json` |
-| Ghost report | Command palette | `pantheon ka --json` |
+| Workspace scan | Command palette | `sirsi weigh --json` |
+| Ghost report | Command palette | `sirsi ka --json` |
 | Thoth context | Command palette | Reads `.thoth/memory.yaml` |
 | Workspace optimization | Command palette | VS Code settings API |
 

@@ -79,7 +79,7 @@ Sirsi Technologies (super-repo / company)
 - Pantheon has its own version that tracks the bundle
 - Deities can be installed standalone OR via Pantheon
 - `npx thoth-init` continues to work independently
-- `pantheon` CLI wraps all Go-based deities
+- `sirsi` CLI wraps all Go-based deities
 - Non-Go deities distribute through their native channels AND through Pantheon
 
 ### Investor pitch reframe

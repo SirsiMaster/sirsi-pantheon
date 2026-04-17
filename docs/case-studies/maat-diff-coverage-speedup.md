@@ -76,10 +76,10 @@ Save updated cache to ~/.config/pantheon/maat/coverage-cache.json
 
 ```bash
 # Seed cache (one-time, 55s)
-./pantheon maat --coverage --full
+./sirsi maat --coverage --full
 
 # Subsequent runs (diff mode)
-time ./pantheon maat --coverage --canon
+time ./sirsi maat --coverage --canon
 # Weighed in 56ms
 ```
 

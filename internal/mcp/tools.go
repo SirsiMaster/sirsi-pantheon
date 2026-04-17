@@ -264,19 +264,19 @@ func handleHealthCheck(_ map[string]interface{}) (*ToolResult, error) {
 	sb.WriteString(fmt.Sprintf("GOMAXPROCS: %d\n", runtime.GOMAXPROCS(0)))
 
 	// Scan index status — check if cached index exists.
-	indexPath := filepath.Join(os.Getenv("HOME"), ".config", "pantheon", "index.gob")
+	indexPath := filepath.Join(os.Getenv("HOME"), ".config", "sirsi", "index.gob")
 	if info, err := os.Stat(indexPath); err == nil {
 		sb.WriteString(fmt.Sprintf("Index age: %s\n",
 			time.Since(info.ModTime()).Truncate(time.Second)))
 	} else {
-		sb.WriteString("Scan index: not cached (run 'pantheon scan' to build)\n")
+		sb.WriteString("Scan index: not cached (run 'sirsi scan' to build)\n")
 	}
 
 	// Brain status — instant (file existence check)
 	if brain.IsInstalled() {
 		sb.WriteString("Neural brain: ✅ Installed\n")
 	} else {
-		sb.WriteString("Neural brain: Not installed (run 'pantheon install-brain')\n")
+		sb.WriteString("Neural brain: Not installed (run 'sirsi install-brain')\n")
 	}
 
 	// Watchdog status — instant (ring buffer read)
@@ -289,7 +289,7 @@ func handleHealthCheck(_ map[string]interface{}) (*ToolResult, error) {
 	}
 
 	sb.WriteString(fmt.Sprintf("\nResponse time: %s\n", time.Since(start).Round(time.Microsecond)))
-	sb.WriteString("\nFor full scan: 'pantheon weigh' or call scan_workspace tool.")
+	sb.WriteString("\nFor full scan: 'sirsi weigh' or call scan_workspace tool.")
 
 	return textResult(sb.String(), false), nil
 }

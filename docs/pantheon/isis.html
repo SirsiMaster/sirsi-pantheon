@@ -162,23 +162,23 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis doctor</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi isis doctor</span></code>
         <code><span class="comment"># Run health diagnostics on the system</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis network</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi isis network</span></code>
         <code><span class="comment"># Audit DNS, WiFi, TLS, firewall, and VPN</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis guard</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi isis guard</span></code>
         <code><span class="comment"># Monitor resources — detect runaway processes and CPU/RAM hogs</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis heal</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi isis heal</span></code>
         <code><span class="comment"># Run autonomous remediation on current project and system</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon isis heal --dry-run</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi isis heal --dry-run</span></code>
         <code><span class="comment"># Preview fixes without applying them</span></code>
       </div>
     </div>
@@ -235,22 +235,22 @@
         <div class="step">
           <div class="step-num">Step 1</div>
           <p><strong>Run health diagnostics</strong> — Check system health including disk, memory, load, and services.</p>
-          <pre><code>pantheon isis doctor</code></pre>
+          <pre><code>sirsi isis doctor</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 2</div>
           <p><strong>Audit network security</strong> — Check DNS, WiFi, TLS certificates, firewall, and VPN configuration.</p>
-          <pre><code>pantheon isis network</code></pre>
+          <pre><code>sirsi isis network</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
           <p><strong>Monitor resources</strong> — Watch for runaway processes and resource hogs. Throttle automatically.</p>
-          <pre><code>pantheon isis guard --watch</code></pre>
+          <pre><code>sirsi isis guard --watch</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
           <p><strong>Auto-heal</strong> — Let Isis fix code quality issues and system health problems automatically.</p>
-          <pre><code>pantheon isis heal && pantheon maat</code></pre>
+          <pre><code>sirsi isis heal && sirsi maat</code></pre>
         </div>
       </div>
     </div>
@@ -278,7 +278,7 @@
         </div>
         <div class="faq-item">
           <div class="faq-q">Can I run Isis in CI?</div>
-          <div class="faq-a">Yes. Use <code>pantheon isis heal --auto</code> followed by <code>pantheon maat --fail-under 85</code> for an automated fix-then-verify pipeline.</div>
+          <div class="faq-a">Yes. Use <code>sirsi isis heal --auto</code> followed by <code>sirsi maat --fail-under 85</code> for an automated fix-then-verify pipeline.</div>
         </div>
       </div>
     </div>

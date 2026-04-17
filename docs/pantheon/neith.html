@@ -175,15 +175,15 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon neith audit</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi neith audit</span></code>
         <code><span class="comment"># Audit architecture documents for Triad compliance</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon neith adr --new "Decision Title"</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi neith adr --new "Decision Title"</span></code>
         <code><span class="comment"># Generate a new ADR from the canonical template</span></code>
       </div>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon neith canon-review</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi neith canon-review</span></code>
         <code><span class="comment"># Review all canonical documents for completeness</span></code>
       </div>
     </div>
@@ -224,22 +224,22 @@
         <div class="step">
           <div class="step-num">Step 1</div>
           <p><strong>Apply the Architecture Triad</strong> — Ensure your architecture doc has all three required sections.</p>
-          <pre><code>pantheon neith audit ARCHITECTURE_DESIGN.md</code></pre>
+          <pre><code>sirsi neith audit ARCHITECTURE_DESIGN.md</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 2</div>
           <p><strong>Create an ADR</strong> — Generate a new Architecture Decision Record from Neith's template.</p>
-          <pre><code>pantheon neith adr create --title 'Use gRPC for agent protocol'</code></pre>
+          <pre><code>sirsi neith adr create --title 'Use gRPC for agent protocol'</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
           <p><strong>Review canon compliance</strong> — Check that all canon documents exist and are up to date.</p>
-          <pre><code>pantheon neith canon check</code></pre>
+          <pre><code>sirsi neith canon check</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
           <p><strong>Generate architecture docs</strong> — Auto-generate data flow diagrams from codebase analysis.</p>
-          <pre><code>pantheon neith generate --format mermaid</code></pre>
+          <pre><code>sirsi neith generate --format mermaid</code></pre>
         </div>
       </div>
     </div>

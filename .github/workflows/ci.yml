@@ -51,8 +51,8 @@ jobs:
       - name: Ma'at Pulse — Dynamic Metrics
         shell: bash
         run: |
-          go build -o pantheon ./cmd/pantheon/
-          ./pantheon maat pulse --skip-test --json > metrics.json
+          go build -o sirsi ./cmd/sirsi/
+          ./sirsi maat pulse --skip-test --json > metrics.json
           echo "=== Ma'at Pulse Metrics ==="
           cat metrics.json
 
@@ -76,34 +76,34 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Build pantheon
-        run: go build -o pantheon${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/pantheon/
+      - name: Build sirsi
+        run: go build -o sirsi${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/sirsi/
 
-      - name: Build pantheon-agent
-        run: go build -o pantheon-agent${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/pantheon-agent/
+      - name: Build sirsi-agent
+        run: go build -o sirsi-agent${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/sirsi-agent/
         env:
           CGO_ENABLED: '0'
 
       - name: Binary size guard (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          PANTHEON_SIZE=$(stat -f%z pantheon 2>/dev/null || stat -c%s pantheon)
-          AGENT_SIZE=$(stat -f%z pantheon-agent 2>/dev/null || stat -c%s pantheon-agent)
-          echo "pantheon: ${PANTHEON_SIZE} bytes"
-          echo "pantheon-agent: ${AGENT_SIZE} bytes"
-          if [ "$PANTHEON_SIZE" -gt 26214400 ]; then
-            echo "::warning::pantheon binary exceeds 25MB (${PANTHEON_SIZE} bytes)"
+          SIRSI_SIZE=$(stat -f%z sirsi 2>/dev/null || stat -c%s sirsi)
+          AGENT_SIZE=$(stat -f%z sirsi-agent 2>/dev/null || stat -c%s sirsi-agent)
+          echo "sirsi: ${SIRSI_SIZE} bytes"
+          echo "sirsi-agent: ${AGENT_SIZE} bytes"
+          if [ "$SIRSI_SIZE" -gt 26214400 ]; then
+            echo "::warning::sirsi binary exceeds 25MB (${SIRSI_SIZE} bytes)"
           fi
           if [ "$AGENT_SIZE" -gt 12582912 ]; then
-            echo "::warning::pantheon-agent binary exceeds 12MB (${AGENT_SIZE} bytes)"
+            echo "::warning::sirsi-agent binary exceeds 12MB (${AGENT_SIZE} bytes)"
           fi
 
       - name: Binary size guard (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          $p_size = (Get-Item pantheon.exe).Length
-          $a_size = (Get-Item pantheon-agent.exe).Length
-          Write-Host "pantheon: $p_size bytes"
-          Write-Host "pantheon-agent: $a_size bytes"
-          if ($p_size -gt 26214400) { Write-Output "::warning::pantheon binary exceeds 25MB ($p_size bytes)" }
-          if ($a_size -gt 12582912) { Write-Output "::warning::pantheon-agent binary exceeds 12MB ($a_size bytes)" }
+          $p_size = (Get-Item sirsi.exe).Length
+          $a_size = (Get-Item sirsi-agent.exe).Length
+          Write-Host "sirsi: $p_size bytes"
+          Write-Host "sirsi-agent: $a_size bytes"
+          if ($p_size -gt 26214400) { Write-Output "::warning::sirsi binary exceeds 25MB ($p_size bytes)" }
+          if ($a_size -gt 12582912) { Write-Output "::warning::sirsi-agent binary exceeds 12MB ($a_size bytes)" }

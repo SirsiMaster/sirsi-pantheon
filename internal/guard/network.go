@@ -23,7 +23,7 @@ import (
 // stateDir returns the Isis state directory, creating it if needed.
 func stateDir() string {
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".config", "pantheon", "isis")
+	dir := filepath.Join(home, ".config", "sirsi", "isis")
 	_ = os.MkdirAll(dir, 0700)
 	return dir
 }

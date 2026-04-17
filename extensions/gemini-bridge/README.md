@@ -30,7 +30,7 @@ Part of the [Sirsi Pantheon](https://github.com/SirsiMaster/sirsi-pantheon) ecos
 |---------|---------|-------------|
 | `seshat.defaultProfile` | `SirsiMaster` | Default Chrome profile for extraction |
 | `seshat.autoSync` | `false` | Auto-sync KIs to GEMINI.md on startup |
-| `seshat.pantheonBinaryPath` | `pantheon` | Path to Pantheon CLI binary |
+| `seshat.pantheonBinaryPath` | `sirsi` | Path to Pantheon CLI binary |
 | `seshat.antigravityDir` | `~/.gemini/antigravity` | Override Antigravity data path |
 
 ## Installation

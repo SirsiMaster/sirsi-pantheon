@@ -11,7 +11,7 @@ buttons unclickable. The system had 88% free RAM — this was purely CPU content
 
 **Critical insight**: Pantheon's Guard module can audit RAM and process counts, but it
 CANNOT detect CPU pressure, IDE degradation, or recommend when to stop running tools.
-If a user installs Pantheon and runs `pantheon weigh` during a heavy IDE session, the
+If a user installs Pantheon and runs `sirsi weigh` during a heavy IDE session, the
 scan itself could make things worse. A tool that claims to "guard your machine" but
 makes things worse under load is a product failure.
 
@@ -68,9 +68,9 @@ This tool would:
 When Guard detects resource pressure, it should refer to other deities:
 
 - **High CPU from IDE plugins** → "Consider closing unused agent conversations"
-- **High RAM from ghost apps** → "Run `pantheon ka` to identify ghost remnants"
-- **Disk pressure** → "Run `pantheon weigh` to find waste (when CPU stabilizes)"
-- **Network saturation** → "Run `pantheon scarab` to identify chatty processes"
+- **High RAM from ghost apps** → "Run `sirsi ka` to identify ghost remnants"
+- **Disk pressure** → "Run `sirsi weigh` to find waste (when CPU stabilizes)"
+- **Network saturation** → "Run `sirsi scarab` to identify chatty processes"
 
 This implements the Cross-Agent Referral Logic from ADR-005 principle #7.
 

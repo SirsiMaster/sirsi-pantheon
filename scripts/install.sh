@@ -25,14 +25,14 @@ fi
 
 # 2. Build local binary (or download in future)
 echo "📦 Building Pantheon release binary..."
-go build -o ./dist/pantheon ./cmd/pantheon/
+go build -o ./dist/sirsi ./cmd/sirsi/
 
 # 3. Install to ~/go/bin or /usr/local/bin
 INSTALL_DIR="$HOME/go/bin"
 mkdir -p "$INSTALL_DIR"
 
-echo "🚚 Installing to $INSTALL_DIR/pantheon..."
-cp ./dist/pantheon "$INSTALL_DIR/pantheon"
+echo "🚚 Installing to $INSTALL_DIR/sirsi..."
+cp ./dist/pantheon "$INSTALL_DIR/sirsi"
 
 # 4. Check PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -42,5 +42,5 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo -e "\n${GOLD}✅ Pantheon is now real.${NC}"
-echo "Run 'pantheon' to begin the weighing."
-echo "Run 'pantheon initiate' to grant deep access."
+echo "Run 'sirsi' to begin the weighing."
+echo "Run 'sirsi initiate' to grant deep access."

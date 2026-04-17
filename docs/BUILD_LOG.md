@@ -311,7 +311,7 @@ Commits: 12  |  Modules: 22  |  Tests: 768  |  Coverage: 90.1%
 
 **What happened**: Wired the Thoth auto-sync CLI and built the full Isis autonomous remediation engine. Fixed a critical performance issue where the default `isis heal` was running the entire test suite (~5 minutes) — switched to cache-based Ma'at weighing (~3ms).
 
-**Built**: `pantheon thoth sync` (two-phase auto-sync: memory.yaml from source analysis + journal.md from git log). `pantheon isis heal` (4-strategy remediation engine: lint, vet, coverage gap detection via AST analysis, canon drift detection). `thoth-init` README for npm publication.
+**Built**: `sirsi thoth sync` (two-phase auto-sync: memory.yaml from source analysis + journal.md from git log). `sirsi isis heal` (4-strategy remediation engine: lint, vet, coverage gap detection via AST analysis, canon drift detection). `thoth-init` README for npm publication.
 
 **Tested**: 24 new Isis tests covering all 4 strategies, Healer dispatch, report formatting, Ma'at bridge, and extractModule parsing. All 843+ tests passing.
 
@@ -366,7 +366,7 @@ Commits: 1  |  Files: 14  |  Lines: +1,765  |  Tests: 843+  |  Isis heal: 41ms
 
 ### What Works:
 - [x] **Isis Remediation Cycle**: Ma'at weighs → Isis heals → Ma'at re-weighs (41ms default).
-- [x] **Thoth Auto-Sync**: `pantheon thoth sync` updates memory + journal from source/git.
+- [x] **Thoth Auto-Sync**: `sirsi thoth sync` updates memory + journal from source/git.
 - [x] **AST-Based Coverage Gaps**: Isis parses Go exports to find untested functions.
 - [x] **Cache-Based Assessment**: Isis uses cached Ma'at data for instant cycles.
 

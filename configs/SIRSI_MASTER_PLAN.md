@@ -267,7 +267,7 @@ Pantheon Ra Deploy
 
 ### Scope Priority for Daily Agent Deployment
 
-When running `pantheon ra deploy`, agents should be allocated based on current sprint:
+When running `sirsi ra deploy`, agents should be allocated based on current sprint:
 
 **April 2026:**
 | Scope | Repo | Active Sprint | Priority |

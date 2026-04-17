@@ -434,11 +434,11 @@ func ProtectFrontWindow() {
 
 // isWatchRunning checks if a Ra Command Center process is already running.
 func isWatchRunning() bool {
-	out, err := exec.Command("pgrep", "-f", "pantheon ra watch").Output()
+	out, err := exec.Command("pgrep", "-f", "sirsi ra watch").Output()
 	return err == nil && len(strings.TrimSpace(string(out))) > 0
 }
 
-// SpawnWatchWindow opens a new terminal window running `pantheon ra watch`.
+// SpawnWatchWindow opens a new terminal window running `sirsi ra watch`.
 // Kills any existing Command Center window first to prevent duplicates.
 func SpawnWatchWindow(useITerm2 bool) {
 	// Kill existing Command Center window if running
@@ -453,19 +453,19 @@ func SpawnWatchWindow(useITerm2 bool) {
 	end tell`
 	_ = exec.Command("osascript", "-e", killScript).Run()
 
-	// Find the pantheon binary
-	pantheon := "pantheon"
-	if p, err := exec.LookPath("pantheon"); err == nil {
-		pantheon = p
+	// Find the sirsi binary
+	sirsiBin := "sirsi"
+	if p, err := exec.LookPath("sirsi"); err == nil {
+		sirsiBin = p
 	} else {
 		home, _ := os.UserHomeDir()
-		goPath := filepath.Join(home, "go", "bin", "pantheon")
+		goPath := filepath.Join(home, "go", "bin", "sirsi")
 		if _, err := os.Stat(goPath); err == nil {
-			pantheon = goPath
+			sirsiBin = goPath
 		}
 	}
 
-	shellCmd := fmt.Sprintf("%s ra watch", escapeShell(pantheon))
+	shellCmd := fmt.Sprintf("%s ra watch", escapeShell(sirsiBin))
 	title := ProtectGlyph + " 𓇶 Ra Command Center"
 
 	var script string

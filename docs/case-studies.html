@@ -441,7 +441,7 @@
       </div>
 
       <div class="snapshot">
-        <div class="label">$ pantheon weigh --profile ai-engineer</div>
+        <div class="label">$ sirsi weigh --profile ai-engineer</div>
         <br>
         <div><span class="red">18.2 GB</span>  HuggingFace model cache (~/.cache/huggingface/hub)</div>
         <div><span class="red"> 9.4 GB</span>  Docker: dangling images + unused volumes</div>
@@ -587,7 +587,7 @@
       </div>
 
       <div class="snapshot">
-        <div class="label">$ pantheon guard --audit</div>
+        <div class="label">$ sirsi guard --audit</div>
         <br>
         <div>  PID      RSS        CPU       Process</div>
         <div>  37363   <span class="yellow">787 MB</span>    <span class="red">103.9%</span>    Antigravity Helper (Plugin)    ← <span class="red">STUCK</span></div>
@@ -765,7 +765,7 @@
       </div>
 
       <div class="snapshot">
-        <div class="label">$ time pantheon maat --coverage</div>
+        <div class="label">$ time sirsi maat --coverage</div>
         <br>
         <div><span class="red">Before:</span> 55.321s (Walks all 42 packages)</div>
         <div><span class="green">After:</span>  0.015s  (Queries git diff, walks 2 packages)</div>
@@ -940,7 +940,7 @@
       <div class="narrative">
         <p>The development machine was crashing repeatedly. Kernel panics. Memory kills. Eight reboots in seven days. The instinct was to blame macOS — but the crashes started the same week Pantheon shipped its menubar LaunchAgent, VS Code extension, and Crashpad Monitor. <strong>Was Pantheon itself causing the crashes it was designed to prevent?</strong></p>
         <p>A full regression analysis of 176+ Go files across 27 packages found the answer: yes, partially. The ANE detector was calling <code>ioreg -l -w0</code>, dumping <strong>8 MB of I/O Registry data per call</strong>. The menubar was polling every 10 seconds, spawning <strong>60,000 subprocesses per day</strong>. The <code>lsregister</code> parser was buffering 20-50 MB in memory. Combined with Go's lazy GC, these added up to sustained memory pressure that pushed 32 GB of RAM past the Jetsam kill threshold.</p>
-        <p>Nine fixes were applied. A new <code>pantheon doctor</code> command was born — a one-shot health diagnostic that checks RAM pressure, swap, disk space, crash history, and Pantheon's own process health in under 100 milliseconds.</p>
+        <p>Nine fixes were applied. A new <code>sirsi doctor</code> command was born — a one-shot health diagnostic that checks RAM pressure, swap, disk space, crash history, and Pantheon's own process health in under 100 milliseconds.</p>
       </div>
 
       <div class="metric-row">

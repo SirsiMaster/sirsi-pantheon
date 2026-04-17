@@ -373,7 +373,7 @@
           <h2>First Scan</h2>
         </div>
         <p>Run a scan to discover infrastructure waste across your machine -- caches, build artifacts, orphaned files, and more.</p>
-        <pre><code><span class="cmd-prompt">$</span> pantheon scan</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi scan</code></pre>
 
         <span class="output-label">Example output</span>
         <div class="output-block"><code>  Scanning 58 rules across 7 domains...
@@ -388,7 +388,7 @@
   Total                 25     8.0 GB</code></div>
 
         <p>Want a quick one-shot health check instead? Use <code class="mono">doctor</code>:</p>
-        <pre><code><span class="cmd-prompt">$</span> pantheon doctor</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi doctor</code></pre>
         <p>This runs scan, ghost detection, and resource checks in a single pass and prints a summary health report.</p>
       </div>
 
@@ -399,15 +399,15 @@
           <h2>Clean Up</h2>
         </div>
         <p>Once you know what waste exists, start cleaning interactively:</p>
-        <pre><code><span class="cmd-prompt">$</span> pantheon scan <span class="cmd-flag">--clean</span>    <span class="cmd-comment"># Interactive cleanup -- review each finding before removal</span></code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi scan <span class="cmd-flag">--clean</span>    <span class="cmd-comment"># Interactive cleanup -- review each finding before removal</span></code></pre>
 
         <h3>Find Ghost Apps</h3>
         <p>Detect remnants of applications you already uninstalled -- leftover plists, caches, login items, and support files lurking across 17 macOS locations.</p>
-        <pre><code><span class="cmd-prompt">$</span> pantheon ghosts</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi ghosts</code></pre>
 
         <h3>Find Duplicate Files</h3>
         <p>Scan directories for duplicate files using a three-phase hash engine (27x faster than naive hashing).</p>
-        <pre><code><span class="cmd-prompt">$</span> pantheon dedup ~/Documents</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi dedup ~/Documents</code></pre>
       </div>
 
       <!-- Step 4: Thoth -->
@@ -420,15 +420,15 @@
 
         <h3>Initialize in a project</h3>
         <pre><code><span class="cmd-prompt">$</span> cd ~/my-project
-<span class="cmd-prompt">$</span> pantheon thoth init</code></pre>
+<span class="cmd-prompt">$</span> sirsi thoth init</code></pre>
         <p>This creates a <code class="mono">.thoth/</code> directory with <code class="mono">memory.yaml</code>, <code class="mono">journal.md</code>, and an <code class="mono">artifacts/</code> folder.</p>
 
         <h3>Sync memory from source</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon thoth sync</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi thoth sync</code></pre>
         <p>Reads your source files and git history to build a compressed project state. Run this after major changes.</p>
 
         <h3>Compact before context compression</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon thoth compact <span class="cmd-flag">-s</span> "Refactored auth module, added OAuth2 flow"</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi thoth compact <span class="cmd-flag">-s</span> "Refactored auth module, added OAuth2 flow"</code></pre>
         <p>Use <code class="mono">compact</code> when your AI session is getting long and you want to preserve decisions before context is compressed or the session ends.</p>
       </div>
 
@@ -441,7 +441,7 @@
         <p>Ma'at audits your repository for test coverage, lint errors, vet warnings, and formatting issues -- then grades it on a 0-100 scale.</p>
 
         <h3>Audit a repository</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon maat audit</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi maat audit</code></pre>
 
         <span class="output-label">Example output</span>
         <div class="output-block"><code>  Ma'at Governance Assessment
@@ -454,7 +454,7 @@
   Feather Weight: 94/100</code></div>
 
         <h3>Auto-fix findings</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon maat heal</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi maat heal</code></pre>
         <p>Isis (the healing engine) automatically fixes all remediable lint, vet, and formatting issues found by the audit.</p>
       </div>
 
@@ -467,13 +467,13 @@
         <p>Seshat ingests knowledge from external AI platforms and browsers, then exports it into formats your tools understand.</p>
 
         <h3>Ingest from Gemini</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon seshat ingest <span class="cmd-flag">--source</span> gemini</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi seshat ingest <span class="cmd-flag">--source</span> gemini</code></pre>
 
         <h3>List Chrome profiles</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon seshat profiles chrome</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi seshat profiles chrome</code></pre>
 
         <h3>Export to NotebookLM</h3>
-        <pre><code><span class="cmd-prompt">$</span> pantheon seshat notebooklm <span class="cmd-flag">--profile</span> SirsiMaster</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi seshat notebooklm <span class="cmd-flag">--profile</span> SirsiMaster</code></pre>
         <p>Seshat supports ingestion from Chrome, Gemini, Claude, Apple Notes, and Google Workspace -- and can export to Thoth memory, GEMINI.md, or NotebookLM.</p>
       </div>
 
@@ -484,7 +484,7 @@
           <h2>Hardware Detection (Hapi)</h2>
         </div>
         <p>Hapi detects your hardware accelerators -- CPUs, GPUs, Apple Neural Engine, and VRAM -- so Pantheon and your AI tools know what compute is available.</p>
-        <pre><code><span class="cmd-prompt">$</span> pantheon hapi detect</code></pre>
+        <pre><code><span class="cmd-prompt">$</span> sirsi hapi detect</code></pre>
 
         <span class="output-label">Example output</span>
         <div class="output-block"><code>  Hardware Accelerators

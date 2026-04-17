@@ -44,7 +44,7 @@
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `pantheon.binaryPath` | `"pantheon"` | Path to the Pantheon CLI binary |
+| `pantheon.binaryPath` | `"sirsi"` | Path to the Pantheon CLI binary |
 | `pantheon.guardian.enabled` | `true` | Enable always-on Guardian |
 | `pantheon.guardian.reniceDelay` | `30` | Seconds before first renice |
 | `pantheon.guardian.pollInterval` | `5` | Seconds between metric refreshes |

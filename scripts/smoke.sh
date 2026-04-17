@@ -6,7 +6,7 @@
 # Usage: make smoke  (or: bash scripts/smoke.sh)
 set -e
 
-BINARY=/tmp/pantheon-smoke
+BINARY=/tmp/sirsi-smoke
 PASS=0
 TOTAL=0
 
@@ -20,7 +20,7 @@ echo ""
 
 # ── 1. Build the binary ─────────────────────────────────────────────
 echo "  [1/9] Building binary..."
-go build -o "$BINARY" ./cmd/pantheon/
+go build -o "$BINARY" ./cmd/sirsi/
 pass "Binary compiled ($(du -h "$BINARY" | cut -f1))"
 
 # ── 2. Version check ────────────────────────────────────────────────

@@ -12,57 +12,57 @@ pip3 install claude-code-sdk     # Required for agent deployment
 
 ### Health check
 ```bash
-pantheon ra health               # Verify build, git, and commits across all repos
+sirsi ra health               # Verify build, git, and commits across all repos
 ```
 
 ### Parallel testing
 ```bash
-pantheon ra test                 # Run each repo's test suite in parallel
+sirsi ra test                 # Run each repo's test suite in parallel
 ```
 
 ### Parallel linting
 ```bash
-pantheon ra lint                 # Run linters across all repos
+sirsi ra lint                 # Run linters across all repos
 ```
 
 ### Targeted task
 ```bash
-pantheon ra task pantheon "fix the seba test failures"   # Task to specific repo
+sirsi ra task pantheon "fix the seba test failures"   # Task to specific repo
 ```
 
 Dispatches a focused Claude agent to a single repo with full tool access.
 
 ### Fleet-wide broadcast
 ```bash
-pantheon ra broadcast "check for security vulnerabilities"  # All repos
+sirsi ra broadcast "check for security vulnerabilities"  # All repos
 ```
 
 Runs the same prompt across every configured repository simultaneously.
 
 ### Nightly CI
 ```bash
-pantheon ra nightly              # Three-phase: health → lint → test
+sirsi ra nightly              # Three-phase: health → lint → test
 ```
 
 ### Multi-scope deployment
 ```bash
-pantheon ra deploy               # Deploy scopes defined in configs/scopes/
-pantheon ra deploy --scope auth  # Deploy specific scope
+sirsi ra deploy               # Deploy scopes defined in configs/scopes/
+sirsi ra deploy --scope auth  # Deploy specific scope
 ```
 
 Scopes are YAML configs that define pre-approved task plans. Agents execute them autonomously without asking for confirmation.
 
 ### Monitor deployments
 ```bash
-pantheon ra watch                # Live Command Center TUI
-pantheon ra status               # Show orchestrator status
-pantheon ra collect              # Collect results from completed agents
-pantheon ra kill                 # Terminate all deployed windows
+sirsi ra watch                # Live Command Center TUI
+sirsi ra status               # Show orchestrator status
+sirsi ra collect              # Collect results from completed agents
+sirsi ra kill                 # Terminate all deployed windows
 ```
 
 ### Knowledge pipeline
 ```bash
-pantheon ra health --record      # Record results through Seshat/Thoth pipeline
+sirsi ra health --record      # Record results through Seshat/Thoth pipeline
 ```
 
 ## Scope Configuration

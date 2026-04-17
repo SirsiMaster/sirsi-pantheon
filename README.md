@@ -19,11 +19,11 @@ Developer machines accumulate waste — orphaned caches, ghost app remnants, ins
 
 Pantheon is different in three ways:
 
-**1. Ghost detection that nobody else does.** `pantheon ghosts` finds remnants of apps you uninstalled — Launch Services phantoms, orphaned plists, leftover caches, Spotlight metadata for apps that no longer exist. CleanMyMac finds caches. AppCleaner catches most files at uninstall time. Neither finds the ghosts that accumulate over months.
+**1. Ghost detection that nobody else does.** `sirsi ghosts` finds remnants of apps you uninstalled — Launch Services phantoms, orphaned plists, leftover caches, Spotlight metadata for apps that no longer exist. CleanMyMac finds caches. AppCleaner catches most files at uninstall time. Neither finds the ghosts that accumulate over months.
 
-**2. Network security with a safety model borrowed from Kubernetes.** `pantheon network --fix` applies encrypted DNS and firewall hardening, but it probes the target with a raw TCP connect before changing anything, polls resolution after, and auto-reverts within 6 seconds if anything breaks. This is the same probe→mutate→verify→revert pattern that Kubernetes uses for rolling deployments and Terraform uses for infrastructure changes. We built it after the tool [bricked internet on airline WiFi](docs/case-studies/isis-dns-safety-rollback.md) — the safety model exists because we learned the hard way.
+**2. Network security with a safety model borrowed from Kubernetes.** `sirsi network --fix` applies encrypted DNS and firewall hardening, but it probes the target with a raw TCP connect before changing anything, polls resolution after, and auto-reverts within 6 seconds if anything breaks. This is the same probe→mutate→verify→revert pattern that Kubernetes uses for rolling deployments and Terraform uses for infrastructure changes. We built it after the tool [bricked internet on airline WiFi](docs/case-studies/isis-dns-safety-rollback.md) — the safety model exists because we learned the hard way.
 
-**3. AI memory as standard infrastructure.** `pantheon thoth` gives AI coding sessions persistent memory via the [Model Context Protocol](https://modelcontextprotocol.io). Instead of re-reading 22,958 lines of source every session, the AI reads 297 lines of compressed project context. This isn't a plugin — it's built into the tool, syncs from git history, and works with Claude, Cursor, and Windsurf out of the box.
+**3. AI memory as standard infrastructure.** `sirsi thoth` gives AI coding sessions persistent memory via the [Model Context Protocol](https://modelcontextprotocol.io). Instead of re-reading 22,958 lines of source every session, the AI reads 297 lines of compressed project context. This isn't a plugin — it's built into the tool, syncs from git history, and works with Claude, Cursor, and Windsurf out of the box.
 
 ### Where This Is Going
 
@@ -45,71 +45,71 @@ The free product solves real problems for individual developers. The enterprise 
 
 ### Scan for waste
 ```bash
-pantheon scan                 # 58 rules across 7 domains — caches, build artifacts, orphaned files
-pantheon scan --all           # Deep scan
-pantheon scan --json          # Machine-readable output
+sirsi scan                 # 58 rules across 7 domains — caches, build artifacts, orphaned files
+sirsi scan --all           # Deep scan
+sirsi scan --json          # Machine-readable output
 ```
 
 ### Hunt ghost apps
 ```bash
-pantheon ghosts               # Find remnants of apps you already uninstalled
-pantheon ghosts --sudo        # Include system directories
+sirsi ghosts               # Find remnants of apps you already uninstalled
+sirsi ghosts --sudo        # Include system directories
 ```
 
 Ghost detection catches Launch Services phantoms, orphaned plists, leftover caches, and Spotlight ghosts that standard cleanup tools miss.
 
 ### Deduplicate files
 ```bash
-pantheon dedup ~/Downloads ~/Documents
+sirsi dedup ~/Downloads ~/Documents
 ```
 
 Three-phase scan: size grouping → partial hash (8 KB per file) → full hash. Opens a web UI with smart keep/delete recommendations.
 
 ### System health diagnostic
 ```bash
-pantheon doctor               # RAM pressure, disk space, kernel panics, Jetsam events
-pantheon doctor --json
+sirsi doctor               # RAM pressure, disk space, kernel panics, Jetsam events
+sirsi doctor --json
 ```
 
 ### Network security audit
 ```bash
-pantheon network              # DNS, WiFi, TLS, CA certs, VPN, firewall — read-only
-pantheon network --fix        # Auto-apply encrypted DNS + firewall with safety rollback
-pantheon network --rollback   # Restore DNS to pre-fix state
+sirsi network              # DNS, WiFi, TLS, CA certs, VPN, firewall — read-only
+sirsi network --fix        # Auto-apply encrypted DNS + firewall with safety rollback
+sirsi network --rollback   # Restore DNS to pre-fix state
 ```
 
 The `--fix` command uses a three-layer safety model: TCP probe before changing config, watchdog polling after, auto-revert within 6 seconds if resolution fails. [Case study →](docs/case-studies/isis-dns-safety-rollback.md)
 
 ### Hardware profiling
 ```bash
-pantheon hardware             # CPU, GPU, RAM, Neural Engine, accelerators
-pantheon hardware --json      # Full hardware profile
+sirsi hardware             # CPU, GPU, RAM, Neural Engine, accelerators
+sirsi hardware --json      # Full hardware profile
 ```
 
 Detects Apple Silicon (ANE, Metal), NVIDIA (CUDA), AMD (ROCm), and Intel. Routes ML workloads to the fastest available accelerator.
 
 ### AI project memory
 ```bash
-pantheon thoth init           # Create .thoth/ knowledge system in your project
-pantheon thoth sync           # Sync from source + git history
-pantheon mcp                  # Start MCP server for Claude, Cursor, Windsurf
+sirsi thoth init           # Create .thoth/ knowledge system in your project
+sirsi thoth sync           # Sync from source + git history
+sirsi mcp                  # Start MCP server for Claude, Cursor, Windsurf
 ```
 
 Thoth gives AI coding sessions persistent memory via the [Model Context Protocol](https://modelcontextprotocol.io). Instead of re-explaining your project every session, the AI reads `.thoth/memory.yaml` and starts with full context.
 
 ### Code quality governance
 ```bash
-pantheon quality              # Full governance audit (coverage, formatting, static analysis)
-pantheon quality --skip-test  # Use cached coverage
+sirsi quality              # Full governance audit (coverage, formatting, static analysis)
+sirsi quality --skip-test  # Use cached coverage
 ```
 
 Runs automatically on every `git push` via the pre-push gate. Three depth tiers: fast (10-30s default), standard (60-90s), deep (3-5 min pre-release).
 
 ### Knowledge ingestion
 ```bash
-pantheon seshat ingest --source chrome       # Chrome bookmarks + history
-pantheon seshat ingest --all-profiles        # All Chrome profiles
-pantheon seshat export notebooklm            # Push to Google NotebookLM
+sirsi seshat ingest --source chrome       # Chrome bookmarks + history
+sirsi seshat ingest --all-profiles        # All Chrome profiles
+sirsi seshat export notebooklm            # Push to Google NotebookLM
 ```
 
 Ingests from Chrome, Gemini, Claude, Apple Notes, and Google Workspace. Exports to NotebookLM, Thoth, and Gemini. All data stays local.
@@ -128,7 +128,7 @@ brew install sirsi-pantheon
 ```bash
 git clone https://github.com/SirsiMaster/sirsi-pantheon.git
 cd sirsi-pantheon
-go build -o pantheon ./cmd/pantheon/
+go build -o sirsi ./cmd/sirsi/
 ```
 
 ### Binary
@@ -140,19 +140,19 @@ Download from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/re
 
 | Command | What It Does |
 |:--------|:-------------|
-| `pantheon scan` | Find infrastructure waste (58 rules, 7 domains) |
-| `pantheon ghosts` | Detect remnants of uninstalled apps |
-| `pantheon dedup [dirs]` | Find duplicate files with three-phase hashing |
-| `pantheon doctor` | One-shot system health diagnostic |
-| `pantheon network` | Network security audit (DNS, WiFi, TLS, firewall, VPN) |
-| `pantheon hardware` | CPU, GPU, RAM, Neural Engine detection |
-| `pantheon guard` | Real-time resource monitoring |
-| `pantheon quality` | Code governance audit |
-| `pantheon thoth init/sync` | AI project memory |
-| `pantheon mcp` | MCP server for AI IDEs |
-| `pantheon seshat ingest` | Knowledge ingestion from browsers and AI tools |
-| `pantheon diagram` | Generate architecture diagrams (Mermaid/HTML) |
-| `pantheon version` | Show version and module info |
+| `sirsi scan` | Find infrastructure waste (58 rules, 7 domains) |
+| `sirsi ghosts` | Detect remnants of uninstalled apps |
+| `sirsi dedup [dirs]` | Find duplicate files with three-phase hashing |
+| `sirsi doctor` | One-shot system health diagnostic |
+| `sirsi network` | Network security audit (DNS, WiFi, TLS, firewall, VPN) |
+| `sirsi hardware` | CPU, GPU, RAM, Neural Engine detection |
+| `sirsi guard` | Real-time resource monitoring |
+| `sirsi quality` | Code governance audit |
+| `sirsi thoth init/sync` | AI project memory |
+| `sirsi mcp` | MCP server for AI IDEs |
+| `sirsi seshat ingest` | Knowledge ingestion from browsers and AI tools |
+| `sirsi diagram` | Generate architecture diagrams (Mermaid/HTML) |
+| `sirsi version` | Show version and module info |
 
 Every command supports `--json`, `--quiet`, and `--verbose` flags.
 
@@ -186,7 +186,7 @@ git clone https://github.com/SirsiMaster/sirsi-pantheon.git
 cd sirsi-pantheon
 git config core.hooksPath .githooks    # Enable pre-push quality gate
 go test ./...                          # 1,663 tests across 27 packages
-go build ./cmd/pantheon/
+go build ./cmd/sirsi/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

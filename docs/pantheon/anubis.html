@@ -168,22 +168,22 @@
     <div class="container">
       <h2>Usage</h2>
       <div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon weigh</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi weigh</span></code>
         <code><span class="comment"># Full workstation scan — discovers all waste</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon weigh --dev</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi weigh --dev</span></code>
         <code><span class="comment"># Developer frameworks only (Node, Go, Rust, Python)</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon weigh --ai</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi weigh --ai</span></code>
         <code><span class="comment"># AI/ML caches only (MLX, CUDA, HuggingFace, Ollama)</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon weigh --json</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi weigh --json</span></code>
         <code><span class="comment"># Machine-readable JSON output for scripting</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon judge --dry-run</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi judge --dry-run</span></code>
         <code><span class="comment"># Preview cleanup — shows what WOULD be deleted</span></code>
       </div><div class="cmd-block">
-        <code><span class="prompt">$</span> <span class="cmd-text">pantheon judge --confirm</span></code>
+        <code><span class="prompt">$</span> <span class="cmd-text">sirsi judge --confirm</span></code>
         <code><span class="comment"># Execute cleanup — safely moves waste to Trash</span></code>
       </div>
     </div>
@@ -194,7 +194,7 @@
       <h2>Usability Surface</h2>
       <table class="surface-table">
         <thead><tr><th>Interface</th><th>Status</th><th>Detail</th></tr></thead>
-        <tbody><tr><td>CLI</td><td>✅ Full</td><td>pantheon weigh, pantheon judge</td></tr><tr><td>MCP</td><td>✅ Full</td><td>scan_workspace tool</td></tr><tr><td>GUI</td><td>⚠️ Partial</td><td>Results viewable in Mirror web UI</td></tr><tr><td>Menu Bar</td><td>✅ Active</td><td>Stats in menu bar dropdown</td></tr></tbody>
+        <tbody><tr><td>CLI</td><td>✅ Full</td><td>sirsi weigh, sirsi judge</td></tr><tr><td>MCP</td><td>✅ Full</td><td>scan_workspace tool</td></tr><tr><td>GUI</td><td>⚠️ Partial</td><td>Results viewable in Mirror web UI</td></tr><tr><td>Menu Bar</td><td>✅ Active</td><td>Stats in menu bar dropdown</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -239,24 +239,24 @@
         <div class="step">
           <div class="step-num">Step 2</div>
           <p><strong>Run your first scan</strong> — Scan your entire workstation for infrastructure waste.</p>
-          <pre><code>pantheon weigh</code></pre>
+          <pre><code>sirsi weigh</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 3</div>
           <p><strong>Review findings</strong> — Check what Anubis found across all 7 domains. Use <code>--json</code> for scripting.</p>
-          <pre><code>pantheon weigh --json | jq '.findings | length'</code></pre>
+          <pre><code>sirsi weigh --json | jq '.findings | length'</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 4</div>
           <p><strong>Clean with confirmation</strong> — Preview what will be deleted, then confirm. Everything goes to Trash first.</p>
-          <pre><code>pantheon judge --dry-run
-pantheon judge --confirm</code></pre>
+          <pre><code>sirsi judge --dry-run
+sirsi judge --confirm</code></pre>
         </div>
         <div class="step">
           <div class="step-num">Step 5</div>
           <p><strong>Schedule recurring scans</strong> — Set up a weekly scan to keep your system clean.</p>
           <pre><code># Add to crontab or launchd
-pantheon weigh --json >> ~/Library/Logs/pantheon-weekly.json</code></pre>
+sirsi weigh --json >> ~/Library/Logs/pantheon-weekly.json</code></pre>
         </div>
       </div>
     </div>
@@ -284,7 +284,7 @@ pantheon weigh --json >> ~/Library/Logs/pantheon-weekly.json</code></pre>
         </div>
         <div class="faq-item">
           <div class="faq-q">Can I run Anubis in CI?</div>
-          <div class="faq-a">Yes. Use <code>pantheon weigh --json</code> for machine-readable output. Combine with Ma'at for quality gates.</div>
+          <div class="faq-a">Yes. Use <code>sirsi weigh --json</code> for machine-readable output. Combine with Ma'at for quality gates.</div>
         </div>
       </div>
     </div>

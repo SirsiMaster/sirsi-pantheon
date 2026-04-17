@@ -75,10 +75,10 @@ Not everything was broken. The regression analysis confirmed:
 
 The investigation revealed a gap: Pantheon could monitor resources continuously (Guard watchdog) and enforce policies (Scales), but there was no **one-shot diagnostic** — a single command that checks everything and gives you a health score.
 
-`pantheon doctor` was born as a Sekhmet subcommand:
+`sirsi doctor` was born as a Sekhmet subcommand:
 
 ```
-$ pantheon doctor
+$ sirsi doctor
 
 ┌──┬────────────────────┬──────────────────────────────────────────────────┐
 │  │Check               │Result                                            │
@@ -117,4 +117,4 @@ Seven checks. Sub-100ms. JSON output with `--json` for scripting and CI.
 
 The difference between a good tool and a great one is whether it can catch its own regressions. This case study proves Pantheon can — but only because we had the regression analysis infrastructure (Ma'at), the persistent context (Thoth), and the forensic capability (Guard) to trace symptoms back to root causes.
 
-Rule A18 (incremental commits) saved us from losing the fix session itself. Rule A14 (statistics integrity) ensured every number in this case study is verifiable. And the new `pantheon doctor` command ensures that the next time system health degrades, the diagnosis takes 91 milliseconds instead of 4 hours.
+Rule A18 (incremental commits) saved us from losing the fix session itself. Rule A14 (statistics integrity) ensured every number in this case study is verifiable. And the new `sirsi doctor` command ensures that the next time system health degrades, the diagnosis takes 91 milliseconds instead of 4 hours.

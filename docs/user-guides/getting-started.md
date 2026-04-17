@@ -17,48 +17,48 @@ brew install sirsi-pantheon
 
 ```bash
 # Scan your machine for infrastructure waste
-pantheon scan
+sirsi scan
 
 # Check system health
-pantheon doctor
+sirsi doctor
 
 # Audit network security
-pantheon isis network
+sirsi isis network
 
 # See what hardware you're running
-pantheon seba hardware
+sirsi seba hardware
 
 # Check for uncommitted work at risk
-pantheon osiris assess
+sirsi osiris assess
 
 # Launch the interactive TUI
-pantheon
+sirsi
 ```
 
 ## The 9 Deities
 
 | Command | Deity | What It Does |
 |---------|-------|--------------|
-| `pantheon anubis` | Anubis | Scans waste, cleans artifacts, hunts ghosts, deduplicates files |
-| `pantheon isis` | Isis | System health, network security, auto-remediation |
-| `pantheon seba` | Seba | Hardware profiling, architecture mapping, fleet discovery |
-| `pantheon thoth` | Thoth | Persistent AI memory for coding sessions |
-| `pantheon maat` | Ma'at | Code quality governance, coverage audits |
-| `pantheon seshat` | Seshat | Knowledge ingestion from Chrome, Gemini, Claude, Notes |
-| `pantheon ra` | Ra | Cross-repo orchestration (requires claude-code-sdk) |
-| `pantheon net` | Net | Scope definition and plan alignment |
-| `pantheon osiris` | Osiris | Checkpoint assessment and risk scoring |
+| `sirsi anubis` | Anubis | Scans waste, cleans artifacts, hunts ghosts, deduplicates files |
+| `sirsi isis` | Isis | System health, network security, auto-remediation |
+| `sirsi seba` | Seba | Hardware profiling, architecture mapping, fleet discovery |
+| `sirsi thoth` | Thoth | Persistent AI memory for coding sessions |
+| `sirsi maat` | Ma'at | Code quality governance, coverage audits |
+| `sirsi seshat` | Seshat | Knowledge ingestion from Chrome, Gemini, Claude, Notes |
+| `sirsi ra` | Ra | Cross-repo orchestration (requires claude-code-sdk) |
+| `sirsi net` | Net | Scope definition and plan alignment |
+| `sirsi osiris` | Osiris | Checkpoint assessment and risk scoring |
 
 ## Common Shortcuts
 
 These top-level aliases skip the deity prefix:
 
 ```bash
-pantheon scan       # → anubis weigh
-pantheon ghosts     # → anubis ka
-pantheon dedup      # → anubis mirror
-pantheon guard      # → anubis guard (resource monitor)
-pantheon doctor     # → isis doctor (health diagnostic)
+sirsi scan       # → anubis weigh
+sirsi ghosts     # → anubis ka
+sirsi dedup      # → anubis mirror
+sirsi guard      # → anubis guard (resource monitor)
+sirsi doctor     # → isis doctor (health diagnostic)
 ```
 
 ## Output Modes
@@ -76,7 +76,7 @@ Every command supports these global flags:
 Pantheon exposes scanning, memory, and diagnostics as MCP tools for AI IDEs:
 
 ```bash
-pantheon mcp    # Start MCP server (configure in Claude/Cursor/VS Code)
+sirsi mcp    # Start MCP server (configure in Claude/Cursor/VS Code)
 ```
 
 ## Per-Deity Guides

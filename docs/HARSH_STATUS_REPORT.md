@@ -36,7 +36,7 @@ You have heavily leveraged "The Interface Injection Standard" (Rule A16) to ensu
 
 > [!IMPORTANT]
 > **Mocking is not Integration Testing.** 
-> Your `*sprint_test.go` files (like `hapi_sprint_test.go`) mock out system calls. While excellent for unit testing branch logic, they do not verify if `pantheon` will actually crash a user's machine, silently consume 5GB of memory, or fail to hit actual iOS Developer caches. A true Release Candidate requires end-to-end (E2E) integration tests that hit real file systems and real OS processes.
+> Your `*sprint_test.go` files (like `hapi_sprint_test.go`) mock out system calls. While excellent for unit testing branch logic, they do not verify if `sirsi` will actually crash a user's machine, silently consume 5GB of memory, or fail to hit actual iOS Developer caches. A true Release Candidate requires end-to-end (E2E) integration tests that hit real file systems and real OS processes.
 
 ## 4. Incomplete or "Stubbed" Deities
 A dive into the code reveals that several "Canonized Deities" are little more than architectural stubs.

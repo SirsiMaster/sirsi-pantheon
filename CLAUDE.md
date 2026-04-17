@@ -11,8 +11,8 @@ An open-source CLI tool that scans, judges, and purges infrastructure waste acro
 
 - **GitHub**: `https://github.com/SirsiMaster/sirsi-pantheon`
 - **Local Path**: `/Users/thekryptodragon/Development/sirsi-pantheon`
-- **CLI Binary**: `pantheon`
-- **Agent Binary**: `pantheon-agent`
+- **CLI Binary**: `sirsi`
+- **Agent Binary**: `sirsi-agent`
 
 **This repo is NOT SirsiNexusApp. This repo is NOT FinalWishes. This repo is NOT Assiduous.**
 Rules, design tokens, and business logic from other repositories do NOT apply here unless explicitly inherited through Universal Rules (§1).
@@ -317,12 +317,12 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 ### 2.21 Ra Scope Autonomy (Rule A24)
 > Established April 3, 2026, after 4 Ra-deployed agents blocked indefinitely waiting for sprint plan approval that could never arrive in non-interactive mode.
 
-*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `pantheon ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 14 (Sprint Planning is Mandatory).
+*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 14 (Sprint Planning is Mandatory).
 *   **Scope Authoring**: Scopes MUST be written as directive, numbered task lists — not vague descriptions. Each task must name specific files, paths, or concrete actions. Vague scopes cause agents to ask clarifying questions, which hang forever in `--print` mode. See `configs/scopes/README.md` for the full authoring guide.
 *   **Prompt Structure**: The autonomy directive and scope of work are placed at the **top** of the woven prompt and are **never truncated**. Canon context (CLAUDE.md, Thoth memory, ADRs) fills the remaining token budget and may be truncated.
 *   **Permission Model**: Ra agents run with `--dangerously-skip-permissions` because the scope is pre-approved. This flag MUST NOT be used outside of Ra-deployed agents.
 *   **Streaming Output**: Ra agents MUST use `--output-format stream-json --verbose` with `--print`. Default `--print` mode buffers ALL output until the session completes, making agents appear lifeless for 10+ minutes. The stream-json output is piped through a python filter (`terminal.go`) that extracts human-readable text and tool-use summaries, writing to both the terminal (live progress) and the log file (Ra monitoring).
-*   **Evidence**: Session where `pantheon ra deploy` spawned 4 windows; all 4 agents asked for approval and blocked. Root causes: (1) CLAUDE.md Rule 14 conflict, (2) vague scope descriptions, (3) directive placed after canon context and truncated, (4) `--print` default text mode buffered all output making agents appear dead.
+*   **Evidence**: Session where `sirsi ra deploy` spawned 4 windows; all 4 agents asked for approval and blocked. Root causes: (1) CLAUDE.md Rule 14 conflict, (2) vague scope descriptions, (3) directive placed after canon context and truncated, (4) `--print` default text mode buffered all output making agents appear dead.
 
 ### 2.22 Deity Registry & Attribution (Rule A25)
 > Established April 4, 2026, after pre-push hooks in FinalWishes and Assiduous misattributed deity glyphs and functions.
@@ -402,7 +402,7 @@ These documents are the source of truth for this repo:
 | Element | Value |
 |---------|-------|
 | **Name** | Sirsi Anubis |
-| **CLI** | `anubis` |
+| **CLI** | `sirsi` |
 | **Agent** | `anubis-agent` |
 | **Colors** | Gold (`#C8A951`) + Black (`#0F0F0F`) + Deep Lapis (`#1A1A5E`) |
 | **Icon** | Jackal silhouette in Egyptian profile |

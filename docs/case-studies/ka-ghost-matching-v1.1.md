@@ -38,7 +38,7 @@ Two architectural gaps in Ka v1.0's app-to-residual matching:
 
 - **91 false positives** out of 131 reported ghosts (69.5% false positive rate)
 - **6.2 GB** of data incorrectly flagged as reclaimable
-- Users running `pantheon ghosts --clean` could have **deleted active application data**
+- Users running `sirsi ghosts --clean` could have **deleted active application data**
 - Total app count inflated to 205 (actual: 114) due to missed nested bundles
 
 ---
@@ -106,7 +106,7 @@ All results verified on a production macOS workstation (M1 Max, macOS 15):
 
 ```bash
 # Confirm previously-false-positive apps now show as installed
-pantheon anubis apps
+sirsi anubis apps
 
 # Output confirms:
 #   WhatsApp        — installed, 51,915 residuals correctly attributed
@@ -114,7 +114,7 @@ pantheon anubis apps
 #   CleanMyMac      — installed, 13 residuals correctly attributed
 
 # Ghost scan returns only genuine ghosts
-pantheon ghosts
+sirsi ghosts
 # 20 real ghosts, 165.2 MB total
 # Zero false positives
 ```

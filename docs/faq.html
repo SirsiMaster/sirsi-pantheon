@@ -421,7 +421,7 @@
                     <tr>
                         <td>Let my AI coding assistant query Pantheon directly</td>
                         <td><span class="tool-name">MCP Server</span></td>
-                        <td><span class="install-cmd">pantheon mcp</span></td>
+                        <td><span class="install-cmd">sirsi mcp</span></td>
                     </tr>
                 </tbody>
             </table>
@@ -484,11 +484,11 @@
             <div class="layer-body">
                 <p>18 commands across 10+ modules. JSON output for piping. Works on macOS and Linux.</p>
                 <ul class="feature-list">
-                    <li><code style="color: var(--green);">pantheon weigh</code> — Full infrastructure scan (58 rules, 7 domains)</li>
-                    <li><code style="color: var(--green);">pantheon ka</code> — Ghost detection (17 macOS locations)</li>
-                    <li><code style="color: var(--green);">pantheon guard</code> — Process monitoring and resource control</li>
-                    <li><code style="color: var(--green);">pantheon maat</code> — Quality governance and coverage</li>
-                    <li><code style="color: var(--green);">pantheon mirror</code> — File deduplication with GUI</li>
+                    <li><code style="color: var(--green);">sirsi weigh</code> — Full infrastructure scan (58 rules, 7 domains)</li>
+                    <li><code style="color: var(--green);">sirsi ka</code> — Ghost detection (17 macOS locations)</li>
+                    <li><code style="color: var(--green);">sirsi guard</code> — Process monitoring and resource control</li>
+                    <li><code style="color: var(--green);">sirsi maat</code> — Quality governance and coverage</li>
+                    <li><code style="color: var(--green);">sirsi mirror</code> — File deduplication with GUI</li>
                 </ul>
             </div>
         </div>
@@ -556,7 +556,7 @@
         <!-- Smart Installer -->
         <div class="installer-section">
             <h2>Smart Installer — Coming Soon</h2>
-            <p><code style="color: var(--green);">pantheon install</code> will auto-detect your environment and offer the right tools:</p>
+            <p><code style="color: var(--green);">sirsi install</code> will auto-detect your environment and offer the right tools:</p>
             <div class="detect-grid">
                 <div class="detect-item">VS Code detected <span class="arrow">→</span> <strong>Extension</strong></div>
                 <div class="detect-item">macOS detected <span class="arrow">→</span> <strong>Menu Bar</strong></div>
@@ -635,16 +635,16 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td><span class="tool-name">What's the difference between <code style="color: var(--green);">anubis scan</code> and <code style="color: var(--green);">pantheon scan</code>?</span></td>
-                        <td>They are the same thing. <code style="color: var(--green);">pantheon scan</code> is a convenience shortcut that routes to the Anubis scanner. Both run the same 58 scan rules across the same 7 domains.</td>
+                        <td><span class="tool-name">What's the difference between <code style="color: var(--green);">anubis scan</code> and <code style="color: var(--green);">sirsi scan</code>?</span></td>
+                        <td>They are the same thing. <code style="color: var(--green);">sirsi scan</code> is a convenience shortcut that routes to the Anubis scanner. Both run the same 58 scan rules across the same 7 domains.</td>
                     </tr>
                     <tr>
                         <td><span class="tool-name">Does Thoth work with Claude and Cursor?</span></td>
-                        <td>Yes. Thoth exposes an MCP (Model Context Protocol) server that integrates with any MCP-compatible AI IDE, including <strong>Claude Code</strong>, <strong>Cursor</strong>, and <strong>Windsurf</strong>. Run <code style="color: var(--green);">pantheon mcp</code> to start the server, then configure your IDE to connect.</td>
+                        <td>Yes. Thoth exposes an MCP (Model Context Protocol) server that integrates with any MCP-compatible AI IDE, including <strong>Claude Code</strong>, <strong>Cursor</strong>, and <strong>Windsurf</strong>. Run <code style="color: var(--green);">sirsi mcp</code> to start the server, then configure your IDE to connect.</td>
                     </tr>
                     <tr>
                         <td><span class="tool-name">Can Ma'at run in CI?</span></td>
-                        <td>Yes. Use <code style="color: var(--green);">pantheon maat audit --json</code> for CI/CD pipelines. The JSON output includes the Feather Weight score (0-100), per-package coverage, lint results, and a pass/fail gate. Set a threshold with <code style="color: var(--green);">--min-score 85</code> for automatic enforcement.</td>
+                        <td>Yes. Use <code style="color: var(--green);">sirsi maat audit --json</code> for CI/CD pipelines. The JSON output includes the Feather Weight score (0-100), per-package coverage, lint results, and a pass/fail gate. Set a threshold with <code style="color: var(--green);">--min-score 85</code> for automatic enforcement.</td>
                     </tr>
                     <tr>
                         <td><span class="tool-name">Does Seshat upload anything to NotebookLM automatically?</span></td>
@@ -656,7 +656,7 @@
                     </tr>
                     <tr>
                         <td><span class="tool-name">Can I use Hathor (dedup) on network drives?</span></td>
-                        <td>Yes. Pass the mount path directly: <code style="color: var(--green);">pantheon mirror /Volumes/NAS-Share</code>. Hathor's 3-phase dedup engine (size grouping, partial hash, full SHA-256) works on any mounted filesystem. For large network volumes, consider using <code style="color: var(--green);">--min-size</code> to skip small files.</td>
+                        <td>Yes. Pass the mount path directly: <code style="color: var(--green);">sirsi mirror /Volumes/NAS-Share</code>. Hathor's 3-phase dedup engine (size grouping, partial hash, full SHA-256) works on any mounted filesystem. For large network volumes, consider using <code style="color: var(--green);">--min-size</code> to skip small files.</td>
                     </tr>
                 </tbody>
             </table>
@@ -674,11 +674,11 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td><span class="tool-name"><code style="color: var(--green);">pantheon scan</code> is slow</span></td>
+                        <td><span class="tool-name"><code style="color: var(--green);">sirsi scan</code> is slow</span></td>
                         <td>
                             Use <code style="color: var(--green);">--quick</code> for fast mode, which skips deep directory walks and heavy rules. You can also exclude large directories:
                             <br><br>
-                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">pantheon scan --quick --exclude node_modules,vendor,.git</code>
+                            <code style="color: var(--green); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;">sirsi scan --quick --exclude node_modules,vendor,.git</code>
                             <br><br>
                             A full scan with 58 rules across 7 domains takes 10-30 seconds on most machines. Quick mode finishes in under 5 seconds.
                         </td>

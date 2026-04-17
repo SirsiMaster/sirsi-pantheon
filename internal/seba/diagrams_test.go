@@ -96,7 +96,7 @@ func TestGenerateDiagram_DataFlow(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Create a fake cmd/pantheon/ with deity files
-	cmdDir := filepath.Join(tmp, "cmd", "pantheon")
+	cmdDir := filepath.Join(tmp, "cmd", "sirsi")
 	os.MkdirAll(cmdDir, 0o755)
 	os.WriteFile(filepath.Join(cmdDir, "anubis.go"), []byte("package main"), 0o644)
 	os.WriteFile(filepath.Join(cmdDir, "maat.go"), []byte("package main"), 0o644)
@@ -151,7 +151,7 @@ func TestGenerateAllDiagrams(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	os.MkdirAll(filepath.Join(tmp, "internal", "foo"), 0o755)
-	os.MkdirAll(filepath.Join(tmp, "cmd", "pantheon"), 0o755)
+	os.MkdirAll(filepath.Join(tmp, "cmd", "sirsi"), 0o755)
 
 	results, err := GenerateAllDiagrams(tmp)
 	if err != nil {
@@ -236,7 +236,7 @@ func TestScanModuleDeps_Empty(t *testing.T) {
 func TestDiscoverDeities(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	cmdDir := filepath.Join(tmp, "cmd", "pantheon")
+	cmdDir := filepath.Join(tmp, "cmd", "sirsi")
 	os.MkdirAll(cmdDir, 0o755)
 
 	os.WriteFile(filepath.Join(cmdDir, "anubis.go"), []byte("package main"), 0o644)

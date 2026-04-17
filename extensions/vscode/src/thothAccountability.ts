@@ -150,7 +150,7 @@ export class ThothAccountabilityEngine implements vscode.Disposable {
             vscode.StatusBarAlignment.Right,
             199 // Just below the main PANTHEON status bar (200)
         );
-        this.statusBarItem.command = 'pantheon.thothAccountability';
+        this.statusBarItem.command = 'sirsi.thothAccountability';
     }
 
     // ── Activation ────────────────────────────────────────────────
@@ -919,7 +919,7 @@ export class ThothAccountabilityEngine implements vscode.Disposable {
     // ── Utilities ─────────────────────────────────────────────────
 
     private getConfiguredModel(): PricingModel {
-        const config = vscode.workspace.getConfiguration('pantheon');
+        const config = vscode.workspace.getConfiguration('sirsi');
         const model = config.get<string>('thoth.pricingModel', 'sonnet');
         if (model in PRICING) { return model as PricingModel; }
         return 'sonnet';

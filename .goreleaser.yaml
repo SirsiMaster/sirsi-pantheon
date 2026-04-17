@@ -10,9 +10,9 @@ before:
     - go generate ./...
 
 builds:
-  - id: pantheon
-    main: ./cmd/pantheon/
-    binary: pantheon
+  - id: sirsi
+    main: ./cmd/sirsi/
+    binary: sirsi
     env:
       - CGO_ENABLED=0
     goos:
@@ -28,9 +28,9 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
-  - id: pantheon-agent
-    main: ./cmd/pantheon-agent/
-    binary: pantheon-agent
+  - id: sirsi-agent
+    main: ./cmd/sirsi-agent/
+    binary: sirsi-agent
     env:
       - CGO_ENABLED=0
     goos:
@@ -44,9 +44,9 @@ builds:
       - -s -w
       - -X main.version={{.Version}}
 
-  - id: pantheon-anubis
+  - id: sirsi-anubis
     main: ./cmd/anubis/
-    binary: pantheon-anubis
+    binary: sirsi-anubis
     env:
       - CGO_ENABLED=0
     goos:
@@ -62,9 +62,9 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
-  - id: pantheon-maat
+  - id: sirsi-maat
     main: ./cmd/maat/
-    binary: pantheon-maat
+    binary: sirsi-maat
     env:
       - CGO_ENABLED=0
     goos:
@@ -80,9 +80,9 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
-  - id: pantheon-thoth
+  - id: sirsi-thoth
     main: ./cmd/thoth/
-    binary: pantheon-thoth
+    binary: sirsi-thoth
     env:
       - CGO_ENABLED=0
     goos:
@@ -98,9 +98,9 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
-  - id: pantheon-scarab
+  - id: sirsi-scarab
     main: ./cmd/scarab/
-    binary: pantheon-scarab
+    binary: sirsi-scarab
     env:
       - CGO_ENABLED=0
     goos:
@@ -116,9 +116,9 @@ builds:
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
-  - id: pantheon-guard
+  - id: sirsi-guard
     main: ./cmd/guard/
-    binary: pantheon-guard
+    binary: sirsi-guard
     env:
       - CGO_ENABLED=0
     goos:
@@ -137,13 +137,13 @@ builds:
 archives:
   - id: default
     builds:
-      - pantheon
-      - pantheon-agent
-      - pantheon-anubis
-      - pantheon-maat
-      - pantheon-thoth
-      - pantheon-scarab
-      - pantheon-guard
+      - sirsi
+      - sirsi-agent
+      - sirsi-anubis
+      - sirsi-maat
+      - sirsi-thoth
+      - sirsi-scarab
+      - sirsi-guard
     name_template: >-
       sirsi-pantheon_
       {{- .Version }}_
@@ -164,11 +164,11 @@ archives:
       - configs/example_policy.yaml
       - configs/workspace_template.yaml
 
-  - id: pantheon-anubis
+  - id: sirsi-anubis
     builds:
-      - pantheon-anubis
+      - sirsi-anubis
     name_template: >-
-      pantheon-anubis_
+      sirsi-anubis_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -182,11 +182,11 @@ archives:
     files:
       - LICENSE
 
-  - id: pantheon-maat
+  - id: sirsi-maat
     builds:
-      - pantheon-maat
+      - sirsi-maat
     name_template: >-
-      pantheon-maat_
+      sirsi-maat_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -200,11 +200,11 @@ archives:
     files:
       - LICENSE
 
-  - id: pantheon-thoth
+  - id: sirsi-thoth
     builds:
-      - pantheon-thoth
+      - sirsi-thoth
     name_template: >-
-      pantheon-thoth_
+      sirsi-thoth_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -218,11 +218,11 @@ archives:
     files:
       - LICENSE
 
-  - id: pantheon-scarab
+  - id: sirsi-scarab
     builds:
-      - pantheon-scarab
+      - sirsi-scarab
     name_template: >-
-      pantheon-scarab_
+      sirsi-scarab_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -236,11 +236,11 @@ archives:
     files:
       - LICENSE
 
-  - id: pantheon-guard
+  - id: sirsi-guard
     builds:
-      - pantheon-guard
+      - sirsi-guard
     name_template: >-
-      pantheon-guard_
+      sirsi-guard_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
@@ -267,19 +267,19 @@ brews:
     description: "Unified DevOps Intelligence Platform — One Install, All Deities"
     license: Apache-2.0
     install: |
-      bin.install "pantheon"
-      bin.install "pantheon-agent"
-      bin.install "pantheon-anubis"
-      bin.install "pantheon-maat"
-      bin.install "pantheon-thoth"
-      bin.install "pantheon-scarab"
-      bin.install "pantheon-guard"
+      bin.install "sirsi"
+      bin.install "sirsi-agent"
+      bin.install "sirsi-anubis"
+      bin.install "sirsi-maat"
+      bin.install "sirsi-thoth"
+      bin.install "sirsi-scarab"
+      bin.install "sirsi-guard"
     test: |
-      system "#{bin}/pantheon", "version"
+      system "#{bin}/sirsi", "version"
 
-  - name: pantheon-anubis
+  - name: sirsi-anubis
     ids:
-      - pantheon-anubis
+      - sirsi-anubis
     repository:
       owner: SirsiMaster
       name: homebrew-tools
@@ -289,13 +289,13 @@ brews:
     description: "Infrastructure scanner and cleaner — standalone deity"
     license: Apache-2.0
     install: |
-      bin.install "pantheon-anubis"
+      bin.install "sirsi-anubis"
     test: |
-      system "#{bin}/pantheon-anubis", "version"
+      system "#{bin}/sirsi-anubis", "version"
 
-  - name: pantheon-maat
+  - name: sirsi-maat
     ids:
-      - pantheon-maat
+      - sirsi-maat
     repository:
       owner: SirsiMaster
       name: homebrew-tools
@@ -305,13 +305,13 @@ brews:
     description: "Quality assurance and audit engine — standalone deity"
     license: Apache-2.0
     install: |
-      bin.install "pantheon-maat"
+      bin.install "sirsi-maat"
     test: |
-      system "#{bin}/pantheon-maat", "version"
+      system "#{bin}/sirsi-maat", "version"
 
-  - name: pantheon-thoth
+  - name: sirsi-thoth
     ids:
-      - pantheon-thoth
+      - sirsi-thoth
     repository:
       owner: SirsiMaster
       name: homebrew-tools
@@ -321,13 +321,13 @@ brews:
     description: "AI project memory with context compression — standalone deity"
     license: Apache-2.0
     install: |
-      bin.install "pantheon-thoth"
+      bin.install "sirsi-thoth"
     test: |
-      system "#{bin}/pantheon-thoth", "version"
+      system "#{bin}/sirsi-thoth", "version"
 
-  - name: pantheon-scarab
+  - name: sirsi-scarab
     ids:
-      - pantheon-scarab
+      - sirsi-scarab
     repository:
       owner: SirsiMaster
       name: homebrew-tools
@@ -337,13 +337,13 @@ brews:
     description: "Fleet sweep and network discovery — standalone deity"
     license: Apache-2.0
     install: |
-      bin.install "pantheon-scarab"
+      bin.install "sirsi-scarab"
     test: |
-      system "#{bin}/pantheon-scarab", "version"
+      system "#{bin}/sirsi-scarab", "version"
 
-  - name: pantheon-guard
+  - name: sirsi-guard
     ids:
-      - pantheon-guard
+      - sirsi-guard
     repository:
       owner: SirsiMaster
       name: homebrew-tools
@@ -353,9 +353,9 @@ brews:
     description: "System resource monitoring with accelerator detection — standalone deity"
     license: Apache-2.0
     install: |
-      bin.install "pantheon-guard"
+      bin.install "sirsi-guard"
     test: |
-      system "#{bin}/pantheon-guard", "version"
+      system "#{bin}/sirsi-guard", "version"
 
 checksum:
   name_template: checksums.txt
@@ -401,7 +401,7 @@ release:
     ```bash
     brew tap SirsiMaster/tools && brew install sirsi-pantheon
     # or
-    go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@{{.Tag}}
+    go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@{{.Tag}}
     ```
   footer: |
     ---

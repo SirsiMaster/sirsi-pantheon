@@ -11,8 +11,8 @@ An open-source CLI tool that scans, judges, and purges infrastructure waste acro
 
 - **GitHub**: `https://github.com/SirsiMaster/sirsi-pantheon`
 - **Local Path**: `/Users/thekryptodragon/Development/sirsi-pantheon`
-- **CLI Binary**: `pantheon`
-- **Agent Binary**: `pantheon-agent`
+- **CLI Binary**: `sirsi`
+- **Agent Binary**: `sirsi-agent`
 
 **This repo is NOT SirsiNexusApp. This repo is NOT FinalWishes. This repo is NOT Assiduous.**
 Rules, design tokens, and business logic from other repositories do NOT apply here unless explicitly inherited through Universal Rules (§1).
@@ -383,7 +383,7 @@ These documents are the source of truth for this repo:
 | Element | Value |
 |---------|-------|
 | **Name** | Sirsi Anubis |
-| **CLI** | `anubis` |
+| **CLI** | `sirsi` |
 | **Agent** | `anubis-agent` |
 | **Colors** | Gold (`#C8A951`) + Black (`#0F0F0F`) + Deep Lapis (`#1A1A5E`) |
 | **Icon** | Jackal silhouette in Egyptian profile |

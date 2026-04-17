@@ -61,7 +61,7 @@ Thoth is a deity in the [Sirsi Pantheon](https://github.com/SirsiMaster/sirsi-pa
 brew tap SirsiMaster/tools && brew install sirsi-pantheon
 
 # Auto-sync memory from source code
-pantheon thoth sync
+sirsi thoth sync
 ```
 
 ## License

@@ -50,3 +50,4 @@ ios/Package.swift
 .pantheon/
 *.out
 .firebase/
+ios/.build/

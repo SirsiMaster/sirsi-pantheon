@@ -32,11 +32,11 @@ build-guard:
 	go build $(GO_FLAGS) -o $(BUILD_DIR)/guard ./cmd/guard/
 
 build-agent:
-	go build $(GO_FLAGS) -o $(BUILD_DIR)/pantheon-agent ./cmd/pantheon-agent/
+	go build $(GO_FLAGS) -o $(BUILD_DIR)/sirsi-agent ./cmd/sirsi-agent/
 
 # --- Menu Bar App (ADR-010) ---
 build-menubar:
-	go build $(GO_FLAGS) -o $(BUILD_DIR)/pantheon-menubar ./cmd/pantheon-menubar/
+	go build $(GO_FLAGS) -o $(BUILD_DIR)/sirsi-menubar ./cmd/sirsi-menubar/
 
 # --- macOS .app Bundle ---
 # Creates Pantheon.app suitable for /Applications
@@ -45,24 +45,24 @@ bundle: build-menubar
 	@rm -rf Pantheon.app
 	@mkdir -p Pantheon.app/Contents/MacOS
 	@mkdir -p Pantheon.app/Contents/Resources
-	@cp $(BUILD_DIR)/pantheon-menubar Pantheon.app/Contents/MacOS/pantheon-menubar
-	@cp cmd/pantheon-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
-	@cp cmd/pantheon-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
+	@cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar
+	@cp cmd/sirsi-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
+	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
 	@echo "✅ Pantheon.app created — install with: cp -R Pantheon.app /Applications/"
 
 # --- Horus Auto-Publish ---
 # Generates docs/build-log.html and docs/case-studies.html
 publish:
 	@echo "𓂀 Horus Auto-Publish..."
-	@go run ./cmd/pantheon-menubar/ -publish 2>/dev/null || \
+	@go run ./cmd/sirsi-menubar/ -publish 2>/dev/null || \
 		echo "  ℹ️  Publish via Go: go run -tags publish ./internal/horus/..."
 
 # --- LaunchAgent (auto-start at login) ---
 install-launchagent:
 	@echo "📋 Installing LaunchAgent..."
 	@mkdir -p ~/Library/LaunchAgents
-	@sed "s|BINARY_PATH|$(shell pwd)/$(BUILD_DIR)/pantheon-menubar|g" \
-		cmd/pantheon-menubar/bundle/ai.sirsi.pantheon.plist > \
+	@sed "s|BINARY_PATH|$(shell pwd)/$(BUILD_DIR)/sirsi-menubar|g" \
+		cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist > \
 		~/Library/LaunchAgents/ai.sirsi.pantheon.plist
 	@launchctl load ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
 	@echo "✅ Pantheon will start at login"

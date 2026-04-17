@@ -18,10 +18,10 @@ git clone https://github.com/SirsiMaster/sirsi-pantheon.git
 cd sirsi-pantheon
 
 # Build the CLI
-go build -o anubis ./cmd/anubis/
+go build -o sirsi ./cmd/sirsi/
 
 # Build the agent
-CGO_ENABLED=0 go build -o anubis-agent ./cmd/anubis-agent/
+CGO_ENABLED=0 go build -o sirsi-agent ./cmd/sirsi-agent/
 
 # Run tests
 go test ./...
@@ -34,8 +34,8 @@ golangci-lint run ./...
 
 ```
 cmd/
-  anubis/          CLI entrypoint (weigh, judge, ka commands)
-  anubis-agent/    Lightweight fleet agent (placeholder)
+  sirsi/           CLI entrypoint (weigh, judge, ka commands)
+  sirsi-agent/     Lightweight fleet agent (placeholder)
 internal/
   jackal/          Scan engine + rule interface
   jackal/rules/    34 built-in scan rules
@@ -103,7 +103,7 @@ Changelog: [version entry]
 Every push must pass:
 1. `golangci-lint run ./...` — zero errors
 2. `go test ./...` — zero failures
-3. `go build ./cmd/anubis/` and `go build ./cmd/anubis-agent/` — must succeed
+3. `go build ./cmd/sirsi/` and `go build ./cmd/sirsi-agent/` — must succeed
 
 ## Code Style
 

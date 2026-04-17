@@ -17,7 +17,7 @@ Pantheon iOS is a native SwiftUI application that brings the Pantheon infrastruc
 │                                                              │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐ │
 │  │  macOS CLI   │   │  iOS App     │   │  Ra Fleet Agent  │ │
-│  │  (pantheon)  │   │  (this doc)  │   │  (pantheon-agent)│ │
+│  │  (sirsi)     │   │  (this doc)  │   │  (sirsi-agent)   │ │
 │  └──────┬───────┘   └──────┬───────┘   └──────┬───────────┘ │
 │         │                  │                   │             │
 │         └──────────────────┼───────────────────┘             │

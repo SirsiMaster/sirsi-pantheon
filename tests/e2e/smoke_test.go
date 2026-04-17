@@ -18,23 +18,23 @@ var testBinary string
 // TestMain builds the pantheon binary once and shares it across all tests.
 func TestMain(m *testing.M) {
 	// Create a temp directory for the binary (outside of any test's TempDir).
-	tmpDir, err := os.MkdirTemp("", "pantheon-e2e-*")
+	tmpDir, err := os.MkdirTemp("", "sirsi-e2e-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
 		os.Exit(1)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	binary := filepath.Join(tmpDir, "pantheon")
+	binary := filepath.Join(tmpDir, "sirsi")
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
 
-	cmd := exec.Command("go", "build", "-o", binary, "./cmd/pantheon/")
+	cmd := exec.Command("go", "build", "-o", binary, "./cmd/sirsi/")
 	cmd.Dir = filepath.Join("..", "..") // tests/e2e → repo root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to build pantheon: %v\n%s", err, out)
+		fmt.Fprintf(os.Stderr, "failed to build sirsi: %v\n%s", err, out)
 		os.Exit(1)
 	}
 

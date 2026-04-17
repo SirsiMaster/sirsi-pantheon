@@ -7,7 +7,7 @@
 
 ## Context
 
-Pantheon currently operates as a CLI-only tool. Users interact with it via terminal commands (`pantheon weigh`, `pantheon guard --watch`, etc.). However:
+Pantheon currently operates as a CLI-only tool. Users interact with it via terminal commands (`sirsi weigh`, `sirsi guard --watch`, etc.). However:
 
 1. **Discoverability**: CLI tools are invisible — users forget to run them.
 2. **Real-time monitoring**: The Sekhmet watchdog (`guard --watch`) runs in a terminal tab, not as a background service.

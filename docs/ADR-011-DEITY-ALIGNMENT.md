@@ -51,7 +51,7 @@ and perceptible click latency in the IDE.
 1. **Horus Phase 3**: Reduced from 14 broad roots to 8 targeted hygiene paths.
    Added `FullScanRoots()` for deep scans and `Release()` for context cleanup.
 
-2. **Guard Renice**: New `pantheon guard --renice lsp` command uses `renice(1)`
+2. **Guard Renice**: New `sirsi guard --renice lsp` command uses `renice(1)`
    and `taskpolicy(1)` to deprioritize LSP processes so the Renderer gets
    uncontested P-core access.
 
@@ -63,5 +63,5 @@ and perceptible click latency in the IDE.
 - Horus default scan drops from ~856K files to ~50K files
 - Language Server processes run on E-cores under contention
 - Click latency reduced by eliminating P-core competition
-- `pantheon guard --renice lsp` must be re-run after IDE restart
+- `sirsi guard --renice lsp` must be re-run after IDE restart
   (priority resets with the process)

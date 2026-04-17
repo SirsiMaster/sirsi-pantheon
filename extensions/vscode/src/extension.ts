@@ -32,8 +32,8 @@ export function activate(context: vscode.ExtensionContext): void {
     outputChannel.appendLine('𓃣 Pantheon extension activating...');
 
     // ── Resolve binary path ───────────────────────────────────────────
-    const config = vscode.workspace.getConfiguration('pantheon');
-    const binaryPath = config.get<string>('binaryPath', 'pantheon');
+    const config = vscode.workspace.getConfiguration('sirsi');
+    const binaryPath = config.get<string>('binaryPath', 'sirsi');
 
     // ── Status Bar (Ankh) ─────────────────────────────────────────────
     statusBar = new PantheonStatusBar(binaryPath, outputChannel);
@@ -111,7 +111,7 @@ export function activate(context: vscode.ExtensionContext): void {
             'Dismiss'
         ).then(choice => {
             if (choice === 'Show Metrics') {
-                vscode.commands.executeCommand('pantheon.showMetrics');
+                vscode.commands.executeCommand('sirsi.showMetrics');
             }
         });
         context.globalState.update('pantheon.welcomeShown', true);

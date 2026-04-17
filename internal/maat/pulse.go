@@ -323,7 +323,7 @@ func countDeities(root string) int {
 	}
 	count := 0
 	for _, f := range deityFiles {
-		path := filepath.Join(root, "cmd", "pantheon", f)
+		path := filepath.Join(root, "cmd", "sirsi", f)
 		if _, err := os.Stat(path); err == nil {
 			count++
 		}

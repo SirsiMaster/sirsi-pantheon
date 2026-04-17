@@ -22,7 +22,7 @@
     "governance",
     "performance",
     "mcp",
-    "pantheon",
+    "sirsi",
     "thoth",
     "anubis"
   ],
@@ -38,47 +38,47 @@
   "contributes": {
     "commands": [
       {
-        "command": "pantheon.scan",
+        "command": "sirsi.scan",
         "title": "𓃣 Pantheon: Scan Workspace",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.guard",
+        "command": "sirsi.guard",
         "title": "𓃣 Pantheon: Start Guardian",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.reniceLSP",
+        "command": "sirsi.reniceLSP",
         "title": "𓃣 Pantheon: Renice LSP Processes",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.ghostReport",
+        "command": "sirsi.ghostReport",
         "title": "𓃣 Pantheon: Ghost Report (Ka)",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.thothContext",
+        "command": "sirsi.thothContext",
         "title": "𓁟 Pantheon: Show Thoth Context",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.showMetrics",
+        "command": "sirsi.showMetrics",
         "title": "𓃣 Pantheon: Show System Metrics",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.thothAccountability",
+        "command": "sirsi.thothAccountability",
         "title": "𓁟 Pantheon: Thoth Accountability Report",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.applyWorkspaceSettings",
+        "command": "sirsi.applyWorkspaceSettings",
         "title": "𓃣 Pantheon: Apply Optimal Workspace Settings",
         "category": "Pantheon"
       },
       {
-        "command": "pantheon.crashpadReport",
+        "command": "sirsi.crashpadReport",
         "title": "𓃣 Pantheon: Crashpad Stability Report",
         "category": "Pantheon"
       }
@@ -86,42 +86,42 @@
     "configuration": {
       "title": "Sirsi Pantheon Platform",
       "properties": {
-        "pantheon.binaryPath": {
+        "sirsi.binaryPath": {
           "type": "string",
-          "default": "pantheon",
-          "description": "Path to the pantheon binary. Defaults to searching PATH."
+          "default": "sirsi",
+          "description": "Path to the sirsi binary. Defaults to searching PATH."
         },
-        "pantheon.guardian.enabled": {
+        "sirsi.guardian.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable always-on Guardian (auto-renice on startup)."
         },
-        "pantheon.guardian.reniceDelay": {
+        "sirsi.guardian.reniceDelay": {
           "type": "number",
           "default": 30,
           "description": "Seconds to wait after activation before first renice (LSP needs time to spawn)."
         },
-        "pantheon.guardian.pollInterval": {
+        "sirsi.guardian.pollInterval": {
           "type": "number",
           "default": 5,
           "description": "Seconds between Guardian status bar metric refreshes."
         },
-        "pantheon.guardian.autoRenice": {
+        "sirsi.guardian.autoRenice": {
           "type": "boolean",
           "default": true,
           "description": "Automatically re-apply renice when sustained memory pressure is detected."
         },
-        "pantheon.thoth.enabled": {
+        "sirsi.thoth.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable Thoth context compression (reads .thoth/memory.yaml)."
         },
-        "pantheon.thoth.accountability": {
+        "sirsi.thoth.accountability": {
           "type": "boolean",
           "default": true,
           "description": "Enable Thoth Accountability Engine (cold-start benchmark, token savings, dollar ROI)."
         },
-        "pantheon.thoth.pricingModel": {
+        "sirsi.thoth.pricingModel": {
           "type": "string",
           "default": "sonnet",
           "enum": ["opus", "sonnet", "haiku"],
@@ -132,7 +132,7 @@
           ],
           "description": "AI model pricing tier for dollar savings calculation."
         },
-        "pantheon.workspace.autoOptimize": {
+        "sirsi.workspace.autoOptimize": {
           "type": "boolean",
           "default": false,
           "description": "Automatically apply optimal workspace settings on first activation."
@@ -141,15 +141,15 @@
     },
     "menus": {
       "commandPalette": [
-        { "command": "pantheon.scan", "when": "true" },
-        { "command": "pantheon.guard", "when": "true" },
-        { "command": "pantheon.reniceLSP", "when": "true" },
-        { "command": "pantheon.ghostReport", "when": "true" },
-        { "command": "pantheon.thothContext", "when": "true" },
-        { "command": "pantheon.showMetrics", "when": "true" },
-        { "command": "pantheon.thothAccountability", "when": "true" },
-        { "command": "pantheon.crashpadReport", "when": "true" },
-        { "command": "pantheon.applyWorkspaceSettings", "when": "true" }
+        { "command": "sirsi.scan", "when": "true" },
+        { "command": "sirsi.guard", "when": "true" },
+        { "command": "sirsi.reniceLSP", "when": "true" },
+        { "command": "sirsi.ghostReport", "when": "true" },
+        { "command": "sirsi.thothContext", "when": "true" },
+        { "command": "sirsi.showMetrics", "when": "true" },
+        { "command": "sirsi.thothAccountability", "when": "true" },
+        { "command": "sirsi.crashpadReport", "when": "true" },
+        { "command": "sirsi.applyWorkspaceSettings", "when": "true" }
       ]
     }
   },

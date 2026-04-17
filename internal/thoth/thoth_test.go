@@ -51,7 +51,7 @@ func TestListSubdirs(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 
-	for _, name := range []string{"pantheon", "agent"} {
+	for _, name := range []string{"sirsi", "agent"} {
 		os.MkdirAll(filepath.Join(tmp, name), 0o755)
 	}
 	os.WriteFile(filepath.Join(tmp, "main.go"), []byte("package main"), 0o644)
@@ -208,7 +208,7 @@ func TestSync_UpdatesMemory(t *testing.T) {
 	os.MkdirAll(filepath.Join(tmp, ".thoth"), 0o755)
 	os.MkdirAll(filepath.Join(tmp, "internal", "cleaner"), 0o755)
 	os.MkdirAll(filepath.Join(tmp, "internal", "guard"), 0o755)
-	os.MkdirAll(filepath.Join(tmp, "cmd", "pantheon"), 0o755)
+	os.MkdirAll(filepath.Join(tmp, "cmd", "sirsi"), 0o755)
 
 	memoryContent := `# memory.yaml
 module_count: 0

@@ -5,243 +5,6 @@
 
 ---
 
-## Entry 001 — 2026-03-21 22:00 — "Measure twice, cut once"
-
-**Context**: User asked why the scanner was slow on large files.
-
-**Insight**: The original scanner hashed every file completely with SHA-256. Two 4GB videos with the same file size would cause 8GB of disk reads just to discover they're different. The user suggested "hash the first 4KB then pick a random hash point... could be the last 4KB."
-
-**Decision**: Implemented head+tail 4KB hashing as a pre-filter. The partial hash reads 8KB total per file. Only files matching on both ends get the full SHA-256 read.
-
-**Result**: 27.3x faster, 98.8% less disk I/O. 12 out of 56 candidates eliminated without reading the full file.
-
-**Why head+tail, not head+random**: Random offset would require coordination between sessions — the same file would hash differently each time. Head+tail is deterministic, cacheable, and catches the two most common false-positive scenarios:
-- Same format header (MP4, JPEG, etc.) → head matches
-- Same file footer/trailer → tail matches
-- Both matching means astronomically high probability of true duplicate
-
----
-
-## Entry 002 — 2026-03-21 22:15 — The browser security sandbox problem
-
-**Context**: GUI folder picker returned relative paths. User's friend clicked "Choose Folders" and nothing worked.
-
-**Insight**: Browsers fundamentally cannot give web pages access to absolute file paths. This is a security feature, not a bug. `webkitdirectory` returns `file.webkitRelativePath` which is just `"Photos/vacation/img001.jpg"` — no leading `/Users/...`. The Go scanner needs the absolute path to walk the directory tree.
-
-**Decision**: Instead of fighting the browser, use the Go backend as a bridge. New `/api/pick-folder` endpoint runs `osascript` to open the native macOS Finder "choose folder" dialog. Returns the real absolute path. Clean separation: browser handles rendering, Go handles system access.
-
-**Meta-insight**: This is actually the right architecture for any local-first web UI. The browser is a rendering engine, not an OS interface. System operations should always go through the backend.
-
----
-
-## Entry 003 — 2026-03-21 22:30 — Cleaning should always be reversible
-
-**Context**: User said cleaning "should always require human agreement then have a complete per-file decision history for rollback... put in trash vs delete trash option."
-
-**Insight**: This is a Product-Market Fit insight from a real user conversation. The friend who needs dedup is NOT a power user. She will NOT read a terminal. She WILL panic if files disappear. Every file action needs to be:
-1. Explicitly confirmed by a human
-2. Reversible (trash, not delete)
-3. Logged with full context (what, why, when, hash for verification)
-
-**Decision**: Created `DecisionLog` system. Every cleaning session persists to `~/.config/anubis/mirror/decisions/session-YYYYMMDD-HHMMSS.json`. Each decision records path, size, SHA-256, action, reason, timestamp, and reversibility. macOS always uses Finder Trash (supports "Put Back").
-
-**Design principle**: The cleaning engine should behave like a bank transaction — every action is recorded, auditable, and reversible until explicitly committed.
-
----
-
-## Entry 004 — 2026-03-21 23:15 — Cross-platform honesty
-
-**Context**: User asked if the solution works across all filesystems or is macOS-biased.
-
-**Findings**: 
-- The **core engine** (scanner, hasher, dedup, classifier, recommender, decision log, GUI server) is 100% cross-platform Go.
-- The **system integration** (folder picker, trash, RAM audit, ghost hunting, LaunchServices) is macOS-only.
-- This is ~70% portable as-is.
-
-**Why it's acceptable**: The product's differentiator is Apple Neural Engine (ANE) integration for the Pro tier. macOS-first is the right market entry. Generic dedup tools already exist — Anubis's value is in the smart, device-native layer.
-
-**Path forward**: Create a `Platform` interface with `PickFolder()`, `MoveToTrash()`, `ProtectedDirs()`, `OpenBrowser()`. Implement for darwin first (done), then linux (zenity + freedesktop trash), then windows (PowerShell dialogs + Recycle Bin).
-
----
-
-## Entry 005 — 2026-03-21 23:28 — On AI memory and context persistence
-
-**Context**: User asked about the best method for maintaining context across conversations.
-
-**Insight**: LLMs have no persistent memory. Every session starts from scratch. The user is right that re-reading entire files is wasteful. The solution is a structured knowledge base that functions as "external working memory":
-
-1. **`.anubis-memory.yaml`** — Compact project state file (~100 lines). Read first, always. Contains architecture, decisions, limitations, recent findings.
-2. **Engineering journal** — Running commentary with timestamps. Rich context about WHY decisions were made.
-3. **Artifact documents** — Platform audit, benchmark results, etc. Read on-demand when relevant.
-
-The hierarchy is: Memory file → Journal → Artifacts → Source code.
-
-A future session should read memory (~5 seconds), then only read source files relevant to the current task. This saves ~80% of context window that would otherwise go to re-reading unchanged files.
-
----
-
-## Patterns I've Noticed
-
-### What makes this codebase good:
-- Egyptian naming is consistent and memorable — you know what a module does from its name
-- Every module has a clear doc comment explaining its mythological role
-- Safety is hardcoded, not configurable (can't be misconfigured)
-- Zero external dependencies for the core scanner
-
-### What needs improvement:
-- 9/17 modules have zero tests — this is the biggest quality risk
-- No structured logging — impossible to debug in production
-- Platform-specific code is scattered, not behind an interface
-- GUI is 800+ lines of string literals in a Go file — should be templated
-
-### Meta-observations:
-- The user thinks in product terms, not code terms. "PMF in real time", "she will never learn those commands", "free tier has to have a GUI"
-- This means features should be evaluated by user impact, not technical elegance
-- The best code in this project is invisible to the user (partial hashing, safety protections)
-- The worst code is visible to the user (drag-and-drop that doesn't work, misleading labels)
-
----
-
-## Entry 006 — 2026-03-21 23:45 — "𓁟 Thoth" — naming the knowledge system
-
-**Context**: User saw the three-layer knowledge system (memory → journal → artifacts) and said: "I don't know if that's a global innovation (it seems like it to me based on request for similar solutions on Reddit) but I think it deserves its own naming convention."
-
-**Insight**: The user is right. The problem — AI assistants wasting context re-reading unchanged code — is universal. Every developer using LLMs for coding faces this. The three-layer approach (compressed state → reasoning → deep artifacts) maps cleanly to how human teams share knowledge: briefing → meeting notes → reference docs.
-
-**Decision**: Named it **Thoth** after the Egyptian god of knowledge, writing, and wisdom — the keeper of all records and inventor of hieroglyphics. Built it as:
-
-1. **A specification** (docs/THOTH.md) — standalone document explaining the system
-2. **A project template** (.thoth-template/) — copy into any new project
-3. **A global AI skill** (skills/thoth-knowledge-system/) — applies to ALL repos
-4. **An MCP tool** (thoth_read_memory) — AI IDEs can query it programmatically
-5. **A section in README** — visible to anyone visiting the GitHub page
-
-**Why this matters for Sirsi**: Thoth becomes a differentiator. Every Sirsi product (Anubis, Nexus, future products) ships with Thoth. Developers who adopt Anubis for dedup also get a better AI workflow. This is a Trojan horse — the knowledge system makes people dependent on the Sirsi developer experience even if they don't use the infrastructure hygiene features.
-
-**Why MIT**: The knowledge system should be universally adopted. MIT means no barriers. If it becomes an industry standard, Sirsi benefits from being the origin.
-
-**What I'm proud of**: The 99.3% context reduction is a real number. Reading ~100 lines of YAML instead of ~15,000 lines of Go. This is not a gimmick — it's measurably faster.
-
----
-
-## Entry 007 — 2026-03-22 11:21 — Build in public
-
-**Context**: User wanted a public-facing record of the build-test-fix cycles. Not just a changelog — a narrative that shows the mistakes alongside the successes.
-
-**Insight**: Most developer tools hide the messy middle. They ship a polished website with marketing claims. You never see the bugs that got shipped, the benchmarks that didn't hold up, the architecture decisions that were wrong the first time. Showing all of it builds trust with technical users who can smell manufactured credibility.
-
-**Decision**: Created `docs/BUILD_LOG.md` — a sprint-by-sprint chronicle that includes:
-- What broke and how we fixed it
-- Real benchmark data with verification commands
-- Honest test coverage (93% best, 0% worst for 9 modules)
-- The safety bug that could have trashed the wrong file
-- Dollar cost comparisons for token savings
-
-Added "building in public" badge to README. Linked from CHANGELOG.
-
-**Design principle**: Transparency is the product. If our code is good enough to inspect, our process should be too. This is how you compete with established tools that have more marketing budget — you out-trust them.
-
----
-
-## Entry 008 — 2026-03-22 12:32 — "Canonize the cadence"
-
-**Context**: The build-review-revise-release-in-public cycle had been happening organically — BUILD_LOG, CHANGELOG, Thoth updates — but it wasn't formalized. It was a good habit, not a structural requirement.
-
-**Decision**: Formalized into ADR-003. Every release now *requires* updating seven artifacts: VERSION, CHANGELOG.md, BUILD_LOG.md, build-log.html, memory.yaml, journal.md, and a new ADR when structural decisions are made. Added as Step 6 in the session-start workflow so future AI sessions enforce it automatically.
-
-**Voice rule canonized**: Direct verbs only. "Built. Fixed. Refactored." Never "the user wanted" or "the user suggested." The build log describes what was built, not who asked for it.
-
-**Why this matters**: The build-in-public process is no longer something we "happen to do" — it's a structural part of the release pipeline, captured in governance (ADR-003), enforced by workflow (session-start Step 6), and tracked in memory (Design Decision #9). A future contributor or AI session cannot skip it without violating the architecture.
-
----
-
-## Entry 009 — 2026-03-22 17:45 — "Test everything that matters"
-
-**Context**: 9 out of 17 modules had zero test coverage. The continuation prompt made this Priority 1 — April investor demos require complete product. Testing infrastructure before launch is non-negotiable.
-
-**Approach**: Wrote tests for 7 modules in priority order: ignore → rules → profile → stealth → hapi → scarab → sight. Focused on pure functions and unit tests that don't need real system access (temp dirs, struct validation, parsing). Avoided tests that require network, Docker, or macOS-specific system calls in ways that would break CI.
-
-**Findings**:
-1. **ARP parsing edge case**: macOS `(incomplete)` entries match the same parenthesis-detection logic as IP addresses, causing the IP to get overwritten with "incomplete". Not a bug that affects users (the entry is correctly rejected by `isValidIP`), but documents a fragile parser design.
-2. **Registry comment mismatch**: `darwinRules()` comment says "8 IDEs rules" but only lists 7. Cosmetic discrepancy.
-3. **Rule name inconsistency**: Constructor names don't always match the internal rule name (e.g., `NewRustTargetRule` → `rust_targets`, `NewDockerRule` → `docker_desktop`). Not a bug, but the test caught it.
-4. **All default profiles include "general"** — verified by test, which is good PMF (every scan covers the basics).
-
-**Result**: 303 → ~395 tests. 15/17 modules have tests. Only `mapper` (graph UI) and `output` (terminal rendering) remain untested — both are low priority because they're display-only with no side effects.
-
-**Decision**: Unified Thoth as canonical session manager. Context monitoring is no longer a separate workflow — Thoth owns both project memory and session health tracking.
-
----
-
-## Entry 010 — 2026-03-22 18:30 — "Safety-critical code deserves the most tests"
-
-**Context**: Cleaner module (the code that actually deletes files) was at 49% coverage. Ka (ghost hunter) was at 19.5%. Both are user-facing modules where bugs have real consequences — a cleaner bug could delete the wrong file, a Ka bug could flag system components as ghosts.
-
-**Approach**: Wrote tests targeting the untested code paths first:
-- **Cleaner**: DecisionLog full lifecycle (create → record → save → load → list), DeleteFile in all modes (dry-run, actual delete, directory, protected, non-existent), CleanFile safety integration, DirSize with real files, and verification that all protected path constants contain the critical entries.
-- **Ka**: isInstalled matching logic (bundle ID, name substring, no match), countFiles with real directories, mergeOrphans (4 scenarios covering filesystem-only, LS-only, combined, empty), Clean dry-run + protected path safety, struct zero-value safety, and residual location/type completeness checks.
-
-**Result**: Cleaner 49% → 77.2%. Ka 19.5% → 42.7%. Total 303 → 453 tests across the session. The remaining uncovered code in both modules requires real system access (macOS Finder for trash, lsregister for Launch Services, brew for cask index) — can't be unit-tested without a Platform interface abstraction, which is P3.
-
-**Launch prep verified**: GoReleaser snapshot builds 12 binaries across 6 platforms, all within size budget. Launch copy, investor demo, and all public-facing stats updated.
-
-**Session total**: 10 commits, 27 files modified, 150 tests written, 4 sprints completed.
-
----
-
-## Entry 011 — 2026-03-22 19:45 — "Trust is the product"
-
-**Context**: New session started by running the continuation prompt. Before touching any code, audited every statistical claim in the codebase against real commands. Found 5 categories of inflated or fabricated numbers.
-
-**Findings**:
-1. **Scan rule count**: Every public document said "64 rules." Actual count: 58. The number was wrong in 12+ files including Product Hunt copy, investor demo, README, goreleaser, and the HTML build log.
-2. **Token savings**: Case study title claimed "3 Million Tokens in 11 Sessions." Thoth was created on March 21 at 23:56. Only 2 sessions have started with Thoth available. Actual cumulative savings: ~549K tokens (2 × 274,524).
-3. **Cross-repo claims**: Case study projected savings for SirsiNexus ($111/session), FinalWishes, and Assiduous — but Thoth has never been used in a session on any of those repos. The numbers were pure projection presented as measurement.
-4. **Session counting**: ROI script used `commits / 5` to estimate sessions, producing inflated counts. A session is properly defined as one AI conversation between continuation prompt runs.
-5. **Line counts**: Case study used stale line counts (22,958) when actual is 23,177. Thoth file counts said "297" when actual is 300. Small but sloppy.
-
-**Decision**: Corrected all 12 files. Canonized two new rules:
-- **Rule A14 (Statistics Integrity)**: Every public number must be reproducible. No projections as measurements.
-- **Rule A15 (Session Definition)**: A session = one AI conversation between continuation prompts. Not time gaps, not commit counts.
-
-**Why this matters**: The per-session savings are genuinely impressive ($4.12, 98.7% context reduction). Inflating the cumulative numbers cheapens the real achievement and destroys trust with technical users who will verify claims. Build-in-public means the audit trail is visible — the correction is as much a part of the story as the original error. Transparency IS the product.
-
----
-
-## Entry 012 — 2026-03-22 21:25 — "Polish before launch"
-
-**Context**: Session 7 — continuation from entry 011. After the statistics audit, shifted to launch execution and production polish.
-
-**Key decisions**:
-
-1. **Structured logging (slog, not zerolog)**: Chose Go's built-in `log/slog` (Go 1.21+) over third-party loggers. Rationale: zero dependencies, same API as stdlib, structured key-value pairs, and the leveled handler architecture means we can switch between text and JSON output with a single flag. CLI output (fmt.Printf to stdout) remains untouched — slog goes to stderr for diagnostics only.
-
-2. **Platform interface — interface, not build tags**: Considered using `//go:build darwin` build tags to separate platform code. Chose an explicit `Platform` interface instead because: (a) build tags prevent compilation on other platforms, making CI harder; (b) an interface allows test injection via `Mock`; (c) the implementations are small enough that the overhead of carrying unused code is negligible. The cleaner module still uses direct `runtime.GOOS` checks — wiring it through `platform.Current()` is the next step.
-
-3. **Case studies — anecdotal vs measured**: The Ka case study was tricky. The "23 GB Parallels" number from the origin story couldn't be re-measured (it was a manual cleanup). Per Rule A14, labeled it as anecdotal rather than fabricating a benchmark. The Mirror case study's 27.3x number came from journal entry 001 — real benchmark, reproducible.
-
-**Release**: v0.3.0-alpha published on GitHub with 6 binaries (darwin/linux × amd64/arm64, windows × amd64/arm64). Tests pass on macOS locally and Linux CI after adding platform skip guards.
-
-**Session total**: 10 commits, 30+ files modified, 17 new tests (6 logging + 11 platform), 3 case studies, 2 rules canonized.
-
----
-
-## Entry 013 — 2026-03-23 04:08 — "The feedback loop was broken"
-
-**Context**: Session 8 started with Priority 1 from the continuation prompt: wire `platform.Current()` into cleaner and mirror. Completed — 37 lines net reduction, no new dependencies. Then discovered that CI had been failing across 5 consecutive commits. The lint errors (gofmt alignment, govet/unusedwrite, misspell) were trivial — 30 seconds to fix — but persisted for 6+ hours because nobody checked.
-
-**Root cause**: No local lint gate. `golangci-lint` wasn't even installed locally. The CI linter runs on push but the signal (❌ in `gh run list`) was invisible. Developers (including AI agents) push code, move on to the next thing, and never circle back to see if CI passed.
-
-**Fix (immediate)**: Installed `.githooks/pre-push` that mirrors the CI lint checks locally. Every push now runs through gofmt, go vet, golangci-lint, and go build before bytes leave the machine. This catches 90%+ of the issue class.
-
-**Fix (proposed)**: `anubis maat` — a pipeline purifier module named after the Egyptian goddess of truth and cosmic order. The concept fills a gap no existing tool covers: real-time CI monitoring → failure categorization → auto-fix for lintable issues → actionable reports for everything else. Modes: `--check` (diagnose), `--fix` (auto-remediate), `--watch` (daemon). This extends the Anubis brand naturally: Anubis judges your machine, Maat judges your pipeline.
-
-**Observation on AI agents and CI**: Even with tool access (`gh run list`, `gh run view --log-failed`), AI agents don't spontaneously monitor CI status after pushing code. The push is treated as the end of the action, not the beginning of validation. A pre-push hook converts validation from a post-hoc check into a gate — the same pattern as `ValidatePath` in the cleaner module. Safety by design, not by discipline.
-
-**Session scope**: Platform wiring (Priority 1), CI lint fixes (8 errors, 5 files), pre-push hook, Maat proposal. Net: -37 lines, CI green, 470 tests still passing.
-
----
-
 ## Entry 014 — 2026-03-23 05:33 — "The Pantheon is the product"
 
 **Context**: Session 9 — continuation from entry 013. Priority 1 from the continuation prompt was building Ma'at. Completed that, then the user asked the right question: "are we achieving the Anubis goals across the board?"
@@ -334,7 +97,7 @@ Canonized as ADR-005. Key principles:
 - **PipelineAssessor**: For mocking the GitHub CLI in `maat`.
 - **HOME Overrides**: Using `t.Setenv("HOME", ...)` to test profile logic without touching real user config.
 
-**Antigravity Bridge**: Resolved the "IDE Starvation" issue by wiring the IPC bridge directly into the CLI lifecycle. `pantheon guard --watch` now acts as the heartbeat for the entire ecosystem. AI assistants can now query `anubis://watchdog-alerts` to see real-time system health instead of guessing.
+**Antigravity Bridge**: Resolved the "IDE Starvation" issue by wiring the IPC bridge directly into the CLI lifecycle. `sirsi guard --watch` now acts as the heartbeat for the entire ecosystem. AI assistants can now query `anubis://watchdog-alerts` to see real-time system health instead of guessing.
 
 **Result**: 87.2% → **90.1% weighted coverage**. 13/22 modules now at 90%+. 768 tests. The "boss fight" of the coverage wall was won by making the system more modular, not just writing more tests.
 
@@ -460,8 +223,8 @@ Issues 3 and 4 required modifying files inside `/Applications/Antigravity.app/`.
 **What was built**:
 - Extended `Accelerator` interface with `Tokenize(text string) ([]int, error)` — backends: AppleANE, Metal, CUDA, ROCm, CPU.
 - `FastTokenize` — pure Go BPE using a pre-compiled trie for sub-millisecond lookup.
-- `cmd/pantheon/sekhmet.go` — new `pantheon sekhmet --tokenize` command.
-- `cmd/pantheon/globals.go` — centralized `--json`, `--quiet`, `--verbose` flags (were duplicated per command).
+- `cmd/sirsi/sekhmet.go` — new `sirsi sekhmet --tokenize` command.
+- `cmd/sirsi/globals.go` — centralized `--json`, `--quiet`, `--verbose` flags (were duplicated per command).
 - `cmd/thoth/main.go` — standalone `thoth` binary entry point (the first step toward `thoth sync`).
 - `internal/thoth/sync.go` (171 lines) — auto-sync logic to keep memory.yaml current. **Started but not wired in.**
 
@@ -653,5 +416,14 @@ func setSampleFn(fn func(...)) { sampleMu.Lock(); defer sampleMu.Unlock(); sampl
 
 **Decisions**:
 - {"session_id":"1b4b4861-83fa-412d-a688-c199b6f4e775","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/1b4b4861-83fa-412d-a688-c199b6f4e775.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
+
+---
+
+## Entry 033 — 2026-04-06 02:11 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"e3a963d3-b25b-4a85-a05c-c69aecd0145f","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/e3a963d3-b25b-4a85-a05c-c69aecd0145f.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
 
 ---

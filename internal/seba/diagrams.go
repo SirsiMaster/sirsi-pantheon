@@ -521,7 +521,7 @@ func discoverDeities(projectRoot string) []deityInfo {
 
 	var found []deityInfo
 	for _, d := range known {
-		cmdPath := filepath.Join(projectRoot, "cmd", "pantheon", d.name+".go")
+		cmdPath := filepath.Join(projectRoot, "cmd", "sirsi", d.name+".go")
 		if _, err := os.Stat(cmdPath); err == nil {
 			found = append(found, d)
 		}

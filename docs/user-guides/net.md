@@ -6,14 +6,14 @@ Net (formerly Neith) defines the task scopes that Ra dispatches, tracks plan ali
 
 ### Check plan alignment
 ```bash
-pantheon net status              # Score alignment against BUILD_LOG.md
+sirsi net status              # Score alignment against BUILD_LOG.md
 ```
 
 Loads your project's BUILD_LOG.md and scores how well the build log matches the development plan. Returns an alignment percentage and verdict (ALIGNED or DRIFTING).
 
 ### Validate module consistency
 ```bash
-pantheon net align               # Run real checks across all modules
+sirsi net align               # Run real checks across all modules
 ```
 
 Performs 5 checks:
