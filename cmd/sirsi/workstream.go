@@ -715,8 +715,8 @@ var wsInventoryCmd = &cobra.Command{
 		}
 
 		output.Dashboard(map[string]string{
-			"AI Tools": fmt.Sprintf("%s installed", aiLabel),
-			"IDEs":     fmt.Sprintf("%s installed", ideLabel),
+			"AI Tools":  fmt.Sprintf("%s installed", aiLabel),
+			"IDEs":      fmt.Sprintf("%s installed", ideLabel),
 			"Git Repos": fmt.Sprintf("%d found", len(inv.GitRepos)),
 		})
 

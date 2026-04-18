@@ -200,15 +200,15 @@ func (m *mockPlatform) Getenv(key string) string {
 	}
 	return ""
 }
-func (m *mockPlatform) UserHomeDir() (string, error)                       { return m.home, nil }
-func (m *mockPlatform) Getwd() (string, error)                            { return m.home, nil }
+func (m *mockPlatform) UserHomeDir() (string, error)                        { return m.home, nil }
+func (m *mockPlatform) Getwd() (string, error)                              { return m.home, nil }
 func (m *mockPlatform) Command(name string, args ...string) ([]byte, error) { return nil, nil }
-func (m *mockPlatform) Processes() ([]string, error)                       { return nil, nil }
-func (m *mockPlatform) Name() string                                       { return "mock" }
-func (m *mockPlatform) SupportsTrash() bool                                { return false }
-func (m *mockPlatform) MoveToTrash(path string) error                      { return nil }
-func (m *mockPlatform) ProtectedPrefixes() []string                        { return nil }
-func (m *mockPlatform) OpenBrowser(url string) error                       { return nil }
-func (m *mockPlatform) PickFolder() (string, error)                        { return "", nil }
-func (m *mockPlatform) ReadDir(dirname string) ([]os.DirEntry, error)      { return nil, nil }
-func (m *mockPlatform) Kill(pid int) error                                 { return nil }
+func (m *mockPlatform) Processes() ([]string, error)                        { return nil, nil }
+func (m *mockPlatform) Name() string                                        { return "mock" }
+func (m *mockPlatform) SupportsTrash() bool                                 { return false }
+func (m *mockPlatform) MoveToTrash(path string) error                       { return nil }
+func (m *mockPlatform) ProtectedPrefixes() []string                         { return nil }
+func (m *mockPlatform) OpenBrowser(url string) error                        { return nil }
+func (m *mockPlatform) PickFolder() (string, error)                         { return "", nil }
+func (m *mockPlatform) ReadDir(dirname string) ([]os.DirEntry, error)       { return nil, nil }
+func (m *mockPlatform) Kill(pid int) error                                  { return nil }

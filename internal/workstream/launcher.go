@@ -24,10 +24,10 @@ type Launcher interface {
 
 // IntegrationInfo describes how Sirsi integrates into a tool.
 type IntegrationInfo struct {
-	Note string           // human description shown to user
-	Type IntegrationType  // how integration works
-	Path string           // config file path (for MCP JSON type)
-	Key  string           // JSON key style: "mcpServers" or "servers"
+	Note string          // human description shown to user
+	Type IntegrationType // how integration works
+	Path string          // config file path (for MCP JSON type)
+	Key  string          // JSON key style: "mcpServers" or "servers"
 }
 
 // IntegrationType is the method of integration.
