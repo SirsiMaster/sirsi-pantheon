@@ -1,11 +1,12 @@
 # Sirsi Pantheon
 
-**Infrastructure hygiene for your dev machine.** Finds waste that CleanMyMac misses, audits network security, and gives your AI tools persistent memory.
+**The first product from [Sirsi Technologies](https://sirsi.ai).** Makes AI coding assistants dramatically more efficient — and keeps your infrastructure clean while it works.
 
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-C8A951?style=flat)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.15.0-1A1A5E?style=flat)](VERSION)
-[![Tests](https://img.shields.io/badge/tests-1%2C663%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-1%2C702%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Product Page](https://img.shields.io/badge/sirsi.ai-pantheon-059669?style=flat)](https://sirsi.ai/pantheon)
 
 ```bash
 brew tap SirsiMaster/tools && brew install sirsi-pantheon
@@ -15,15 +16,15 @@ brew tap SirsiMaster/tools && brew install sirsi-pantheon
 
 ## Why Pantheon Exists
 
-Developer machines accumulate waste — orphaned caches, ghost app remnants, insecure DNS configs, build artifacts from frameworks you stopped using months ago. Existing tools either miss the hard stuff (Launch Services phantoms, Spotlight ghosts, captive portal DNS traps) or require you to trust a closed-source app with root access to your filesystem.
+AI coding tools re-read your entire codebase at the start of every session. On a typical project, 80–90% of that context hasn't changed — wasted tokens, wasted window, wasted money. Your dev machine accumulates invisible waste — ghost app remnants, insecure DNS, orphaned caches. Existing tools miss the hard stuff or require closed-source root access.
 
 Pantheon is different in three ways:
 
-**1. Ghost detection that nobody else does.** `sirsi ghosts` finds remnants of apps you uninstalled — Launch Services phantoms, orphaned plists, leftover caches, Spotlight metadata for apps that no longer exist. CleanMyMac finds caches. AppCleaner catches most files at uninstall time. Neither finds the ghosts that accumulate over months.
+**1. AI memory that eliminates cold-start re-reads.** `sirsi thoth` gives AI coding sessions persistent memory via the [Model Context Protocol](https://modelcontextprotocol.io). Thoth compresses your project knowledge into ~2% of the original size — architecture, design decisions, safety rules, recent changes. Your AI starts every session informed, not blank. Works with Claude, Cursor, Windsurf, and any MCP-compatible tool.
 
-**2. Network security with a safety model borrowed from Kubernetes.** `sirsi network --fix` applies encrypted DNS and firewall hardening, but it probes the target with a raw TCP connect before changing anything, polls resolution after, and auto-reverts within 6 seconds if anything breaks. This is the same probe→mutate→verify→revert pattern that Kubernetes uses for rolling deployments and Terraform uses for infrastructure changes. We built it after the tool [bricked internet on airline WiFi](docs/case-studies/isis-dns-safety-rollback.md) — the safety model exists because we learned the hard way.
+**2. Ghost detection that nobody else does.** `sirsi ghosts` finds remnants of apps you uninstalled — Launch Services phantoms, orphaned plists, leftover caches, Spotlight metadata for apps that no longer exist. Typically recovers 10–100 GB of invisible waste per machine. [Case study: we found 64 GB of Docker VM images the founder didn't know existed →](docs/case-studies/docker-ghost-64gb.md)
 
-**3. AI memory as standard infrastructure.** `sirsi thoth` gives AI coding sessions persistent memory via the [Model Context Protocol](https://modelcontextprotocol.io). Instead of re-reading 22,958 lines of source every session, the AI reads 297 lines of compressed project context. This isn't a plugin — it's built into the tool, syncs from git history, and works with Claude, Cursor, and Windsurf out of the box.
+**3. Network security with a safety model borrowed from Kubernetes.** `sirsi network --fix` applies encrypted DNS and firewall hardening using the same probe→mutate→verify→revert pattern as Kubernetes rolling deploys. Auto-reverts within 6 seconds if anything breaks. [Case study: the safety model exists because we bricked internet on airline WiFi →](docs/case-studies/isis-dns-safety-rollback.md)
 
 ### Where This Is Going
 
@@ -152,9 +153,21 @@ Download from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/re
 | `sirsi mcp` | MCP server for AI IDEs |
 | `sirsi seshat ingest` | Knowledge ingestion from browsers and AI tools |
 | `sirsi diagram` | Generate architecture diagrams (Mermaid/HTML) |
+| `sirsi work` | Workstream manager — launch AI sessions across projects |
 | `sirsi version` | Show version and module info |
 
 Every command supports `--json`, `--quiet`, and `--verbose` flags.
+
+---
+
+## Compatibility
+
+| | Supported |
+|:--|:----------|
+| **AI Assistants** | Claude, Gemini, Codex (via MCP) |
+| **IDEs** | VS Code, Cursor, Windsurf, Zed |
+| **Platforms** | macOS, Linux, Windows |
+| **Architecture** | Apple Silicon, ARM, Intel x86 |
 
 ---
 
@@ -162,8 +175,8 @@ Every command supports `--json`, `--quiet`, and `--verbose` flags.
 
 | Edition | Scope | Price |
 |:--------|:------|:------|
-| **Pantheon** | Single machine — all commands above | **Free forever** |
-| **Pantheon Ra** | Fleet management — multi-repo orchestration, subnet scanning, compliance | Contact us |
+| **Anubis** | Single machine — all commands above | **Free forever** |
+| **Ra** | Fleet management — multi-repo orchestration, subnet scanning, compliance | Coming soon |
 
 The free edition has no feature gating, no telemetry, no time limits. MIT licensed.
 

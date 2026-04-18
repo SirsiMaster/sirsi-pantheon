@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "sirsi-nexus-live"
+  },
+  "targets": {
+    "sirsi-nexus-live": {
+      "hosting": {
+        "sirsi-pantheon": ["sirsi-pantheon"]
+      }
+    }
+  }
+}

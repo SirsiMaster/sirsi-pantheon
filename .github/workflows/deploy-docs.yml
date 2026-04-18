@@ -1,0 +1,27 @@
+name: Deploy Docs — Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'firebase.json'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Firebase
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: sirsi-nexus-live
+          channelId: live
+          target: sirsi-pantheon
