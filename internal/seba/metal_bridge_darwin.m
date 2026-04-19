@@ -11,7 +11,7 @@
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
-#include "metal_bridge.h"
+#include "metal_bridge_darwin.h"
 #include <stdlib.h>
 #include <string.h>
 #include <CommonCrypto/CommonDigest.h>

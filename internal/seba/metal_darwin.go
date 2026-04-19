@@ -7,7 +7,7 @@ package seba
 /*
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Foundation -framework Metal -framework CoreGraphics
-#include "metal_bridge.h"
+#include "metal_bridge_darwin.h"
 #include <stdlib.h>
 #include <string.h>
 */
