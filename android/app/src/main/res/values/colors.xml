@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pantheon_gold">#C8A951</color>
+    <color name="pantheon_black">#0F0F0F</color>
+    <color name="pantheon_lapis">#1A1A5E</color>
+    <color name="pantheon_surface">#1A1A1A</color>
+    <color name="pantheon_error">#CF6679</color>
+    <color name="pantheon_success">#4CAF50</color>
+    <color name="pantheon_white">#FFFFFF</color>
+    <color name="pantheon_text_secondary">#B0B0B0</color>
+</resources>

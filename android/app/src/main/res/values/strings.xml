@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pantheon</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_anubis">Anubis</string>
+    <string name="nav_ka">Ka</string>
+    <string name="nav_thoth">Thoth</string>
+    <string name="nav_seba">Seba</string>
+
+    <!-- Home Screen -->
+    <string name="home_title">Pantheon</string>
+    <string name="home_subtitle">Infrastructure Hygiene</string>
+    <string name="home_motto">Weigh. Judge. Purge.</string>
+
+    <!-- Deity Descriptions -->
+    <string name="anubis_name">Anubis</string>
+    <string name="anubis_glyph">\U0001330E3</string>
+    <string name="anubis_subtitle">The Jackal Scanner</string>
+    <string name="anubis_description">Scans your device for infrastructure waste, unused apps, and reclaimable storage.</string>
+
+    <string name="ka_name">Ka</string>
+    <string name="ka_glyph">\U00013093</string>
+    <string name="ka_subtitle">The Spirit</string>
+    <string name="ka_description">Detects ghost app residuals and dead application remnants haunting your device.</string>
+
+    <string name="thoth_name">Thoth</string>
+    <string name="thoth_glyph">\U0001305F</string>
+    <string name="thoth_subtitle">The Scribe</string>
+    <string name="thoth_description">Manages project memory and knowledge synchronization.</string>
+
+    <string name="seba_name">Seba</string>
+    <string name="seba_glyph">\U000133BC</string>
+    <string name="seba_subtitle">The Star</string>
+    <string name="seba_description">Detects hardware capabilities and compute accelerators on your device.</string>
+
+    <string name="seshat_name">Seshat</string>
+    <string name="seshat_glyph">\U00013080</string>
+    <string name="seshat_subtitle">The Keeper of Knowledge</string>
+    <string name="seshat_description">Ingests, indexes, and exports knowledge from multiple sources.</string>
+
+    <!-- Scan States -->
+    <string name="state_idle">Ready to scan</string>
+    <string name="state_scanning">Scanning\u2026</string>
+    <string name="state_complete">Scan complete</string>
+    <string name="state_error">Error</string>
+
+    <!-- Actions -->
+    <string name="action_scan">Start Scan</string>
+    <string name="action_hunt">Hunt Ghosts</string>
+    <string name="action_detect">Detect Hardware</string>
+    <string name="action_sync">Sync Memory</string>
+    <string name="action_ingest">Ingest Knowledge</string>
+    <string name="action_retry">Retry</string>
+
+    <!-- Labels -->
+    <string name="label_findings">Findings</string>
+    <string name="label_reclaimable">Reclaimable</string>
+    <string name="label_rules_ran">Rules Ran</string>
+    <string name="label_ghosts">Ghosts Found</string>
+    <string name="label_residuals">Residuals</string>
+    <string name="label_total_size">Total Size</string>
+    <string name="label_cpu">CPU</string>
+    <string name="label_arch">Architecture</string>
+    <string name="label_cores">Cores</string>
+    <string name="label_ram">RAM</string>
+    <string name="label_gpu">GPU</string>
+    <string name="label_version">Version</string>
+    <string name="label_no_findings">No findings. Your device is clean.</string>
+    <string name="label_no_ghosts">No ghost residuals detected.</string>
+    <string name="label_sources">Sources</string>
+    <string name="label_items">Items</string>
+
+    <!-- Errors -->
+    <string name="error_scan_failed">Scan failed</string>
+    <string name="error_generic">Something went wrong</string>
+</resources>
