@@ -6,6 +6,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.16.1] — 2026-04-18
+
+### Added
+- **Android app scaffold** — Full Kotlin/Jetpack Compose app (`android/`, 27 files). Material 3 theme with Pantheon gold/black/lapis branding. Five deity screens (Anubis, Ka, Thoth, Seba, Seshat) with NavHost navigation. `PantheonBridge.kt` mirrors iOS `PantheonBridge.swift` JSON bridge pattern. Proguard rules, externalized strings, CI workflow.
+- **Android platform implementation** — `internal/platform/android.go` with `//go:build android` tag. Sandbox-aware filesystem, restricted commands, Android-specific protected paths.
+- **Android CI workflow** — `.github/workflows/android.yml` (two-job: build AAR via gomobile + build APK via Gradle).
+- **Android architecture doc** — `docs/ARCHITECTURE_ANDROID.md` following Neith's Triad (data flow, implementation order, decision points).
+- **Makefile `android-aar` target** — `gomobile bind -target=android` builds `bin/android/pantheon.aar`.
+
+### Changed
+- **iOS version bump** — `mobile/mobile.go` version `0.15.0-ios` → `0.16.0-ios`. Marketing version in `project.yml` updated to `0.16.0`. `PantheonCore.xcframework` rebuilt.
+- **go.mod** — Added `golang.org/x/mobile/bind` dependency (required for framework build). Go directive bumped to 1.25.0.
+
+### Verified
+- **Homebrew tap** — All 6 formulas at `v0.16.0-alpha` in `SirsiMaster/homebrew-tools`. `brew install sirsi-pantheon` serves current release. No action needed.
+- **Go build** — `go build ./...` passes. All 1,895+ tests pass (`go test -short ./...`).
+
+---
+
 ## [0.15.0] — 2026-04-06
 
 ### Added

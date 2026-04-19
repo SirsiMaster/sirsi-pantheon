@@ -1,18 +1,21 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-04-17T11:46:42-04:00
+# Last updated: 2026-04-18T22:00:00-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
-language: Go 1.22+ / TypeScript
-version: 0.7.0b-alpha
+language: Go 1.22+ / TypeScript / Kotlin / Swift
+version: 0.16.1-alpha
 binary_count: 8 (anubis, guard, maat, scarab, sirsi, sirsi-agent, sirsi-menubar, thoth)
-test_count: 1255+
-line_count: ~50,250
+test_count: 1895+
+line_count: ~53,000
 module_count: 30
 command_count: 92
 mcp_tools: 5 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts)
+mobile_targets: 2 (iOS xcframework, Android AAR)
+ios_app: ios/ (SwiftUI, 15 Go bindings, WidgetKit, Fastlane)
+android_app: android/ (Jetpack Compose, 15 Go bindings, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
 ## Architecture Quick Reference
@@ -90,7 +93,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # 15. Cross-Agent Referral Logic: deities allude to other deities that
 #     can act upon their findings (cohesive ecosystem, modular design).
 
-## Known Limitations (as of v0.7.0-alpha)
+## Known Limitations (as of v0.16.1-alpha)
 # - GUI folder picker only works on macOS (Linux: zenity/kdialog in platform/linux.go)
 # - Trash integration only works on macOS (Linux: gio trash in platform/linux.go)
 # - 15/22 modules at 90%+ test coverage (weighted avg 90.1%)
@@ -118,6 +121,11 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 #   Valid JSON can crash Extension Host via semantic corruption. No exceptions.
 # - Website: sirsi-pantheon.web.app / pantheon.sirsi.ai (Firebase Hosting)
 # - Deity Registry: 13 HTML pages (index + 12 deities) with flip cards
+# - iOS app: Full SwiftUI app (ios/), PantheonCore.xcframework built, CI workflow, Fastlane
+#   Needs: Apple Developer secrets for TestFlight. Framework rebuilt for v0.16.0.
+# - Android app: Full Kotlin/Compose scaffold (android/, 27 files). Needs: NDK for AAR build.
+#   Bridge, models, screens, theme, navigation all mirror iOS architecture.
+# - Homebrew: All 6 formulas at v0.16.0-alpha in SirsiMaster/homebrew-tools. Verified working.
 
 # 2026-03-28: Session 35 — Isis (The Healer) Phase 1 + Thoth CLI + Distribution
 #   THOTH CLI: `sirsi thoth sync` wired (cmd/sirsi/thoth.go). Two-phase auto-sync:
@@ -400,6 +408,22 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # internal/maat/coverage.go      — coverage governance
 # internal/maat/canon.go         — canon verification
 # internal/maat/pipeline.go      — pipeline monitoring
+# mobile/mobile.go              — gomobile entry point, JSON envelope, version
+# mobile/anubis.go              — AnubisScan, AnubisCategories mobile bindings
+# mobile/ka.go                  — KaHunt, KaEnumerateApps mobile bindings
+# mobile/thoth.go               — ThothInit/Sync/Compact/DetectProject bindings
+# mobile/seba.go                — SebaDetectHardware/Accelerators bindings
+# mobile/seshat.go              — SeshatIngest/ListSources/Targets/Items bindings
+# ios/Pantheon/                  — SwiftUI app (Views, Models, Services, Theme)
+# ios/project.yml                — XcodeGen config (deployment target, signing)
+# android/app/                   — Kotlin/Compose app (screens, models, bridge)
+# android/app/build.gradle.kts   — Android build config (AGP, Compose BOM)
+# internal/platform/ios.go       — iOS Platform impl (sandbox, restricted cmds)
+# internal/platform/android.go   — Android Platform impl (sandbox, restricted cmds)
+# docs/ARCHITECTURE_IOS.md       — iOS architecture (Neith's Triad)
+# docs/ARCHITECTURE_ANDROID.md   — Android architecture (Neith's Triad)
+# .github/workflows/ios.yml      — iOS CI (gomobile + xcodebuild)
+# .github/workflows/android.yml  — Android CI (gomobile + Gradle)
 # .goreleaser.yaml              — release config (brews, not homebrew_casks)
 # .github/workflows/ci.yml      — CI pipeline (lint + test + build)
 # .thoth/memory.yaml            — THIS FILE
@@ -417,6 +441,7 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-04-18: {"session_id":"73458060-7593-4916-9c32-3885e6708be2","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon-Development-sirsi-pantheon/73458060-7593-4916-9c32-3885e6708be2.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
 # 2026-04-06: {"session_id":"e3a963d3-b25b-4a85-a05c-c69aecd0145f","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/e3a963d3-b25b-4a85-a05c-c69aecd0145f.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
 # 2026-04-04: {"session_id":"1b4b4861-83fa-412d-a688-c199b6f4e775","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/1b4b4861-83fa-412d-a688-c199b6f4e775.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
 # 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.

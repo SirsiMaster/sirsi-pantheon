@@ -63,11 +63,10 @@
 - TUI: bubbletea-based (`sirsi` with no args)
 
 ### What Doesn't Work Yet
-- iOS app: scaffold at `ios/`, needs gomobile framework build + TestFlight submission
-- Android app: doesn't exist, needs Kotlin/Jetpack Compose wrapper
+- iOS app: framework rebuilt for v0.16.0, Xcode project regenerated. **Needs:** Apple Developer secrets for TestFlight (`APPLE_ID`, `TEAM_ID`, `ASC_KEY_*`, `MATCH_*`)
+- Android app: full Kotlin/Compose scaffold created (27 files). **Needs:** Java runtime + Android NDK for AAR build (`sdkmanager "ndk;27.2.12479018"`)
 - Ra (enterprise): no fleet orchestration shipped
 - `pantheon.sirsi.ai` custom domain: DNS not resolving (use sirsi-pantheon.web.app)
-- Homebrew: may need formula update for v0.16.0
 
 ### Test Coverage Below 50%
 - workstream: 49.9% (needs launcher/inventory mocks)
@@ -79,11 +78,11 @@
 
 ## Priority Queue
 
-1. **iOS app** — build PantheonCore.xcframework via gomobile, wire to SwiftUI scaffold, TestFlight
-2. **Android app** — new Kotlin project, gomobile bridge, same core
+1. **iOS TestFlight** — secrets configured, then `workflow_dispatch` triggers Fastlane beta lane
+2. **Android AAR build** — install Java + NDK, then `make android-aar` builds pantheon.aar
 3. **FinalWishes** — May 15 deadline (27 days from 2026-04-18)
 4. **Coverage sprint** — workstream to 70%+, add test files for ra/stele/version
-5. **Homebrew tap update** — brew formula needs v0.16.0
+5. ~~**Homebrew tap update**~~ — DONE. All 6 formulas at v0.16.0-alpha
 6. **pantheon.sirsi.ai DNS** — add CNAME record for custom domain
 
 ---
