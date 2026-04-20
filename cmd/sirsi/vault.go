@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	vaultSource   string
-	vaultTag      string
-	vaultLimit    int
+	vaultSource    string
+	vaultTag       string
+	vaultLimit     int
 	vaultOlderThan string
 )
 

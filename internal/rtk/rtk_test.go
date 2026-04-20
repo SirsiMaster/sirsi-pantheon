@@ -61,13 +61,13 @@ func TestDedupRing(t *testing.T) {
 func TestFilter_Apply(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name          string
-		cfg           FilterConfig
-		input         string
-		wantContains  string
+		name           string
+		cfg            FilterConfig
+		input          string
+		wantContains   string
 		wantNotContain string
-		wantTruncated bool
-		wantDups      int
+		wantTruncated  bool
+		wantDups       int
 	}{
 		{
 			name:         "strip ansi",

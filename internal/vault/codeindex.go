@@ -26,9 +26,9 @@ type CodeChunk struct {
 
 // IndexStats holds metrics about the indexing operation.
 type IndexStats struct {
-	FilesIndexed  int   `json:"filesIndexed"`
-	ChunksCreated int   `json:"chunksCreated"`
-	TotalTokens   int64 `json:"totalTokens"`
+	FilesIndexed  int    `json:"filesIndexed"`
+	ChunksCreated int    `json:"chunksCreated"`
+	TotalTokens   int64  `json:"totalTokens"`
 	Duration      string `json:"duration"`
 }
 
@@ -96,26 +96,26 @@ func initCodeSchema(db *sql.DB) error {
 
 // sourceExtensions lists file extensions we index.
 var sourceExtensions = map[string]bool{
-	".go":   true,
-	".py":   true,
-	".js":   true,
-	".ts":   true,
-	".tsx":  true,
-	".jsx":  true,
-	".rs":   true,
-	".java": true,
-	".c":    true,
-	".h":    true,
-	".cpp":  true,
-	".rb":   true,
+	".go":    true,
+	".py":    true,
+	".js":    true,
+	".ts":    true,
+	".tsx":   true,
+	".jsx":   true,
+	".rs":    true,
+	".java":  true,
+	".c":     true,
+	".h":     true,
+	".cpp":   true,
+	".rb":    true,
 	".swift": true,
-	".kt":   true,
-	".yaml": true,
-	".yml":  true,
-	".toml": true,
-	".sql":  true,
-	".sh":   true,
-	".md":   true,
+	".kt":    true,
+	".yaml":  true,
+	".yml":   true,
+	".toml":  true,
+	".sql":   true,
+	".sh":    true,
+	".md":    true,
 }
 
 // skipDirs lists directories to skip during indexing.
