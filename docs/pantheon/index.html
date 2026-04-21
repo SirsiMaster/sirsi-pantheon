@@ -45,8 +45,56 @@
 
     /* ── Flip Card Grid ───────────────────────────────── */
     .deity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
-    @media (max-width: 900px) { .deity-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 600px) { .deity-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) {
+      .deity-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+      .flip-container { height: 300px; }
+      .card-front, .card-back { padding: 1.5rem; }
+      .glyph { font-size: 2.2rem; }
+      .card-title { font-size: 1.2rem; }
+      .card-desc { font-size: 0.9rem; }
+      nav { padding: 1rem 1.5rem; }
+      .nav-links { display: none; }
+      .hero h1 { font-size: 2.5rem; }
+      .hero .subtitle { font-size: 1.1rem; }
+      .hero { padding: 4rem 1.5rem 2rem; }
+      .container { padding: 0 1.5rem; }
+      .install code { font-size: 0.8rem; }
+    }
+    @media (max-width: 600px) {
+      .deity-grid { grid-template-columns: 1fr; }
+      .flip-container { height: auto; min-height: 280px; }
+      .card-front, .card-back { position: relative; padding: 1.25rem; }
+      .card-back { transform: none; }
+      .flipper { transform-style: flat; }
+      .flip-container.flipped .flipper { transform: none; }
+      .card-back { display: none; }
+      .flip-container.flipped .card-front { display: none; }
+      .flip-container.flipped .card-back { display: flex; }
+      .hero h1 { font-size: 2rem; }
+      .hero .subtitle { font-size: 1rem; padding: 0 0.5rem; }
+      .hero { padding: 3rem 1rem 1.5rem; }
+      .hero .tagline { font-size: 0.8rem; }
+      .container { padding: 0 1rem; }
+      section { padding: 2rem 0; }
+      section h2 { font-size: 1.5rem; }
+      .install { padding: 1rem; margin: 1rem; }
+      .install code { font-size: 0.72rem; overflow-x: auto; }
+      .edition-grid { grid-template-columns: 1fr; }
+      .edition-card { padding: 1.5rem; }
+      .card-meta { gap: 0.8rem; }
+      .meta-value { font-size: 0.95rem; }
+      .dev-grid { grid-template-columns: 1fr; gap: 0.6rem; }
+      footer { padding: 2rem 1rem; }
+    }
+    @media (max-width: 375px) {
+      .deity-grid { gap: 0.75rem; }
+      .card-front, .card-back { padding: 1rem; }
+      .glyph { font-size: 1.8rem; }
+      .card-title { font-size: 1rem; }
+      .card-desc { font-size: 0.82rem; line-height: 1.4; }
+      .flip-hint { display: none; }
+      .hero h1 { font-size: 1.6rem; }
+    }
 
     .flip-container {
       perspective: 1000px;
@@ -139,7 +187,7 @@
 
     /* ── Editions ──────────────────────────────────────── */
     .edition-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-    @media (max-width: 700px) { .edition-grid { grid-template-columns: 1fr; } }
+    /* edition-grid handled in 600px breakpoint above */
     .edition-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2rem;
       color: var(--text); display: flex; flex-direction: column;

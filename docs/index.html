@@ -610,12 +610,41 @@
     .reveal-delay-2 { transition-delay: 0.2s; }
     .reveal-delay-3 { transition-delay: 0.3s; }
 
-    /* ── RESPONSIVE ── */
+    /* ── HAMBURGER MENU (mobile) ── */
+    .nav-toggle {
+      display: none;
+      background: none; border: none; cursor: pointer;
+      width: 28px; height: 20px; position: relative; z-index: 101;
+    }
+    .nav-toggle span {
+      display: block; width: 100%; height: 2px; background: var(--text-muted);
+      position: absolute; left: 0; transition: all 0.3s;
+    }
+    .nav-toggle span:nth-child(1) { top: 0; }
+    .nav-toggle span:nth-child(2) { top: 9px; }
+    .nav-toggle span:nth-child(3) { top: 18px; }
+    .nav-toggle.open span:nth-child(1) { top: 9px; transform: rotate(45deg); }
+    .nav-toggle.open span:nth-child(2) { opacity: 0; }
+    .nav-toggle.open span:nth-child(3) { top: 9px; transform: rotate(-45deg); }
+
+    /* ── RESPONSIVE: TABLET (≤ 900px) ── */
     @media (max-width: 900px) {
+      .nav-toggle { display: block; }
       nav { padding: 1rem 1.5rem; }
-      .nav-links { display: none; }
-      .hero { padding: 7rem 1.5rem 4rem; }
-      .hero-jackal { width: 60vw; right: -10vw; opacity: 0.04; }
+      .nav-links {
+        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95); backdrop-filter: blur(24px);
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 2rem; z-index: 100;
+      }
+      .nav-links.open { display: flex; }
+      .nav-links a { font-size: 1.2rem; }
+      .nav-install { font-size: 1rem !important; padding: 0.75rem 1.5rem !important; }
+      .hero { padding: 6rem 1.5rem 3rem; }
+      .hero-jackal { font-size: clamp(8rem, 40vw, 14rem); right: -5vw; opacity: 0.08; }
+      .hero-content { max-width: 100%; }
+      .hero-sub { font-size: 1rem; max-width: 100%; }
+      .hero-pillars { max-width: 100%; }
       .terminal-gutter {
         grid-template-columns: 1fr;
         padding: 0 1.5rem;
@@ -626,15 +655,15 @@
       }
       .terminal-window { margin: 0 0 3rem; }
       .type-break { padding: 4rem 1.5rem; }
-      .type-break h2 { font-size: clamp(2rem, 10vw, 4rem); }
+      .type-break h2 { font-size: clamp(2rem, 8vw, 3.5rem); }
       .feat-card { grid-template-columns: 1fr; }
       .feat-card:nth-child(even) { direction: ltr; }
-      .feat-term { border-left: none !important; border-right: none !important; border-top: 1px solid var(--glass-border); }
+      .feat-term { border-left: none !important; border-right: none !important; border-top: 1px solid var(--glass-border); white-space: pre-wrap; word-break: break-word; }
       .feat-info { padding: 2rem 1.5rem; }
-      .feat-term { padding: 1.5rem; }
+      .feat-term { padding: 1.5rem; font-size: 0.72rem; }
       .features { padding: 3rem 1.5rem; }
       .modules { padding: 3rem 1.5rem; }
-      .mod-grid { grid-template-columns: repeat(2, 1fr); }
+      .mod-grid { grid-template-columns: repeat(3, 1fr); }
       .tier-row { grid-template-columns: 1fr; }
       .tiers { padding: 3rem 1.5rem; }
       .bottom-stack { padding: 3rem 1.5rem 1.5rem; }
@@ -644,9 +673,43 @@
       .footer-links { justify-content: center; }
     }
 
-    @media (max-width: 500px) {
-      .hero h1 { font-size: 2rem; }
-      .terminal-body { font-size: 0.7rem; padding: 1rem; }
+    /* ── RESPONSIVE: PHONE (≤ 600px) ── */
+    @media (max-width: 600px) {
+      .hero { padding: 5rem 1rem 2rem; min-height: auto; }
+      .hero h1 { font-size: clamp(1.6rem, 7vw, 2.5rem); margin-bottom: 1.2rem; }
+      .hero-sub { font-size: 0.95rem; line-height: 1.6; }
+      .hero-eyebrow { font-size: 0.65rem; margin-bottom: 1.2rem; }
+      .hero-pillars { grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+      .hero-jackal { display: none; }
+      .feat-info { padding: 1.5rem 1rem; }
+      .feat-info h3 { font-size: 1rem; }
+      .feat-info p { font-size: 0.85rem; }
+      .feat-term { padding: 1rem; font-size: 0.68rem; }
+      .features { padding: 2rem 1rem; }
+      .features-header { margin-bottom: 2rem; }
+      .mod-grid { grid-template-columns: repeat(2, 1fr); }
+      .mod-glyph { font-size: 1.8rem; }
+      .mod-name { font-size: 0.7rem; }
+      .mod-role { font-size: 0.55rem; }
+      .modules { padding: 2rem 1rem; }
+      .tiers { padding: 2rem 1rem; }
+      .bottom-stack { padding: 2rem 1rem 1rem; }
+      .terminal-gutter { padding: 0 1rem; }
+      .terminal-body { font-size: 0.65rem; padding: 0.75rem; }
+      .terminal-prose h2 { font-size: 1.4rem; }
+      .install-cmd { font-size: 0.6rem; overflow-x: auto; }
+    }
+
+    /* ── RESPONSIVE: SMALL PHONE (≤ 375px) ── */
+    @media (max-width: 375px) {
+      .hero h1 { font-size: 1.5rem; }
+      .hero-sub { font-size: 0.85rem; }
+      .hero-pillar-label { font-size: 0.6rem; }
+      .hero-pillars li { font-size: 0.78rem; padding: 0.2rem 0; }
+      .feat-info h3 { font-size: 0.9rem; }
+      .feat-term { font-size: 0.6rem; }
+      .mod-grid { grid-template-columns: repeat(2, 1fr); gap: 1px; }
+      .mod-cell { padding: 1.2rem 0.5rem; }
     }
   </style>
 </head>
@@ -658,6 +721,9 @@
       <img src="assets/sirsi-logo-white.png" alt="Sirsi">
       <span>Pantheon</span>
     </div>
+    <button class="nav-toggle" onclick="this.classList.toggle('open');document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
     <div class="nav-links">
       <a href="https://sirsi.ai" class="nav-sirsi-link">sirsi.ai</a>
       <a href="getting-started.html">Docs</a>
@@ -745,7 +811,7 @@ Scanned in 833ms</div>
   <section class="features">
     <div class="features-header reveal">
       <h2>What Pantheon Does</h2>
-      <p>Four capabilities, each with a CLI you can run today.</p>
+      <p>Five capabilities, each with a CLI you can run today.</p>
     </div>
 
     <div class="feat-card reveal">
@@ -756,7 +822,7 @@ Scanned in 833ms</div>
       </div>
       <div class="feat-term"><div><span class="t-prompt">$</span> sirsi ghosts
 
-<span class="t-gold">𓃣 Ghost Hunter</span> <span class="t-muted">v0.15.0</span>
+<span class="t-gold">𓃣 Ghost Hunter</span> <span class="t-muted">v0.17.0</span>
 <span class="t-muted">Scanning 17 locations...</span>
 
 <span class="t-white">Docker.app</span>          <span class="t-muted">12 orphaned files</span>
@@ -816,6 +882,25 @@ Scanned in 833ms</div>
 
 <span class="t-gold">Source:</span> <span class="t-white">847 lines → 18 lines</span>
 <span class="t-gold">Reduction:</span> <span style="color:#28c840;">47× smaller</span></div></div>
+    </div>
+
+    <div class="feat-card reveal">
+      <div class="feat-info">
+        <div class="feat-label">Mobile</div>
+        <h3>Your Device, Your Intelligence</h3>
+        <p>Full SwiftUI + Jetpack Compose apps with 9 deity screens each. Go bridge runs all analysis on-device &mdash; scans, ghost detection, code graphs, and neural classification. Zero cloud dependency.</p>
+      </div>
+      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi horus outline --mobile
+
+<span class="t-gold">𓂀 Horus — Mobile Bridge</span>
+<span class="t-muted">Parsing 169 Go files...</span>
+
+<span class="t-white">Symbols:</span> 328 types, 847 functions
+<span class="t-white">Packages:</span> 36
+<span class="t-white">Outlines:</span> 47× avg reduction
+
+iOS: PantheonCore.xcframework <span style="color:#28c840;">✓</span>
+Android: pantheon.aar (37 MB) <span style="color:#28c840;">✓</span></div></div>
     </div>
   </section>
 
