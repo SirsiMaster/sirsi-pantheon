@@ -147,7 +147,7 @@ func runWorkstreamAddInteractive(reader *bufio.Reader, store *workstream.Store) 
 	name, _ := reader.ReadString('\n')
 	name = strings.TrimSpace(name)
 	if name == "" {
-		fmt.Println("Cancelled.")
+		fmt.Println("Canceled.")
 		return nil
 	}
 
@@ -359,20 +359,20 @@ func launchWorkstreamByNum(store *workstream.Store, num int, autoApprove bool, r
 		// Switch AI tool then launch fresh
 		launcher = pickAITool(reader, altAI, gold, dim)
 		if launcher == nil {
-			fmt.Println("Cancelled.")
+			fmt.Println("Canceled.")
 			return nil
 		}
 	case "i":
 		// Open in IDE
 		ideLauncher := pickIDETool(reader, altIDE, gold, dim)
 		if ideLauncher == nil {
-			fmt.Println("Cancelled.")
+			fmt.Println("Canceled.")
 			return nil
 		}
 		_ = store.TouchLastUsed(idx)
 		return ideLauncher.Launch(ws, workstream.LaunchOptions{})
 	default:
-		fmt.Println("Cancelled.")
+		fmt.Println("Canceled.")
 		return nil
 	}
 
@@ -447,7 +447,7 @@ var wsAddCmd = &cobra.Command{
 			return err
 		}
 		name := args[0]
-		dir := "."
+		var dir string
 		if len(args) > 1 {
 			dir = args[1]
 		} else {
@@ -584,7 +584,7 @@ var wsDeleteCmd = &cobra.Command{
 		confirm, _ := reader.ReadString('\n')
 		confirm = strings.TrimSpace(confirm)
 		if confirm != "y" && confirm != "Y" {
-			fmt.Println("Cancelled.")
+			fmt.Println("Canceled.")
 			return nil
 		}
 

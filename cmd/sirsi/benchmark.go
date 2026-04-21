@@ -106,7 +106,7 @@ func runBenchmark(_ *cobra.Command, _ []string) error {
 	// ── Benchmark: Metal GPU SHA-256 ────────────────────────────────
 	output.Info("Running Metal GPU SHA-256...")
 	metalDur := time.Duration(0)
-	metalBackend := "unavailable"
+	var metalBackend string
 	metalMatch := false
 
 	metalHashes, err := seba.MetalHashBatch(blocks)

@@ -236,7 +236,7 @@ func runSebaScan(cmd *cobra.Command, args []string) error {
 	// Render HTML if requested
 	if sebaFormat == "html" {
 		htmlPath := filepath.Join(".pantheon", "infra-map.html")
-		os.MkdirAll(filepath.Dir(htmlPath), 0755)
+		_ = os.MkdirAll(filepath.Dir(htmlPath), 0755)
 		if err := graph.RenderHTML(htmlPath); err != nil {
 			return fmt.Errorf("render HTML: %w", err)
 		}
@@ -377,8 +377,8 @@ func runSebaProfile(cmd *cobra.Command, args []string) error {
 	}
 
 	configDir := filepath.Join(os.Getenv("HOME"), ".config", "sirsi")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("cannot create config dir: %w", err)
+	if mkErr := os.MkdirAll(configDir, 0755); mkErr != nil {
+		return fmt.Errorf("cannot create config dir: %w", mkErr)
 	}
 
 	profilePath := filepath.Join(configDir, "profile.json")

@@ -475,7 +475,6 @@ func TestGhostRegistration_Struct(t *testing.T) {
 	gr := GhostRegistration{
 		BundleID: "com.test.dead",
 		Path:     "/Applications/Dead.app",
-		Name:     "Dead App",
 	}
 	if gr.BundleID != "com.test.dead" {
 		t.Errorf("BundleID = %q", gr.BundleID)

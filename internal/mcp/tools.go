@@ -630,7 +630,7 @@ func handleFilterOutput(args map[string]interface{}) (*ToolResult, error) {
 
 	var sb strings.Builder
 	sb.WriteString(result.Output)
-	sb.WriteString(fmt.Sprintf("\n\n─── RTK Stats ───\n"))
+	sb.WriteString("\n\n─── RTK Stats ───\n")
 	sb.WriteString(fmt.Sprintf("Original: %d bytes → Filtered: %d bytes (%.0f%% reduction)\n",
 		result.OriginalBytes, result.FilteredBytes, (1-result.Ratio)*100))
 	sb.WriteString(fmt.Sprintf("Lines removed: %d (duplicates: %d)\n", result.LinesRemoved, result.DupsCollapsed))
