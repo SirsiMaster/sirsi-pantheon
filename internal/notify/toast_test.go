@@ -64,7 +64,7 @@ func TestToast_Injectable(t *testing.T) {
 	time.Sleep(200 * time.Millisecond) // Let goroutine run.
 
 	mu.Lock()
-got := captured
+	got := captured
 	mu.Unlock()
 	if got == "" {
 		t.Error("expected toast exec to be called")
