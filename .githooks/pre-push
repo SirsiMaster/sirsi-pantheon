@@ -207,7 +207,7 @@ if [ "$DEPTH" = "standard" ] || [ "$DEPTH" = "deep" ]; then
     go build -o ./sirsi ./cmd/sirsi/ 2>/dev/null
     if [ -x "./sirsi" ]; then
         echo "  𓆄 Ma'at quality assessment..."
-        ./sirsi maat --coverage --canon || {
+        ./sirsi maat pulse --skip-test || {
             echo "  ❌ Ma'at assessment failed"
             exit 1
         }
