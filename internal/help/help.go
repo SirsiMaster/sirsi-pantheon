@@ -222,7 +222,7 @@ func ShowGuide(deity string) error {
 	if len(g.Examples) > 0 {
 		fmt.Println(output.HeaderStyle.Render("  Examples"))
 		fmt.Println()
-		codeStyle := output.BoxStyle.Copy()
+		codeStyle := output.BoxStyle
 		var codeLines []string
 		for _, ex := range g.Examples {
 			codeLines = append(codeLines, "  $ "+ex)

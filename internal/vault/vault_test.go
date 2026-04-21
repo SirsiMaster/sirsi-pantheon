@@ -392,12 +392,9 @@ func TestStore_SearchOnEmptyVault(t *testing.T) {
 	defer s.Close()
 
 	// Search on empty vault — FTS5 will return error for empty match on empty table.
-	_, err = s.Search("anything", 10)
 	// May return error or empty results depending on FTS5 implementation.
 	// Just verify it doesn't panic.
-	if err == nil {
-		// Fine — some FTS5 impls return empty results.
-	}
+	_, _ = s.Search("anything", 10)
 }
 
 func TestStore_SearchLimitZero(t *testing.T) {

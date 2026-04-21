@@ -52,9 +52,7 @@ func TestChunkCanon_AllSources(t *testing.T) {
 	if sources["planning"] != 1 {
 		t.Errorf("expected 1 planning chunk, got %d", sources["planning"])
 	}
-	if sources["changelog"] >= 1 {
-		// OK — changelog splits at version headers
-	}
+	// changelog splits at version headers — any count >= 1 is valid.
 	if sources["version"] != 1 {
 		t.Errorf("expected 1 version chunk, got %d", sources["version"])
 	}
