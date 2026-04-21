@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Menu
@@ -54,6 +55,7 @@ import ai.sirsi.pantheon.ui.screens.KaScreen
 import ai.sirsi.pantheon.ui.screens.RTKScreen
 import ai.sirsi.pantheon.ui.screens.SebaScreen
 import ai.sirsi.pantheon.ui.screens.ThothScreen
+import ai.sirsi.pantheon.ui.screens.SteleScreen
 import ai.sirsi.pantheon.ui.screens.VaultScreen
 import ai.sirsi.pantheon.ui.theme.PantheonBlack
 import ai.sirsi.pantheon.ui.theme.PantheonGold
@@ -88,6 +90,7 @@ object Routes {
     const val VAULT = "vault"
     const val HORUS = "horus"
     const val BRAIN = "brain"
+    const val STELE = "stele"
 }
 
 /** Navigation drawer item definition. */
@@ -118,6 +121,7 @@ fun PantheonNavHost() {
         NavItem(Routes.VAULT, R.string.nav_vault, Icons.Default.Warehouse, "advanced"),
         NavItem(Routes.HORUS, R.string.nav_horus, Icons.Default.AccountTree, "advanced"),
         NavItem(Routes.BRAIN, R.string.nav_brain, Icons.Default.Psychology, "advanced"),
+        NavItem(Routes.STELE, R.string.nav_stele, Icons.Default.FormatListBulleted, "advanced"),
     )
 
     ModalNavigationDrawer(
@@ -232,6 +236,7 @@ fun PantheonNavHost() {
                             Routes.VAULT -> R.string.vault_name
                             Routes.HORUS -> R.string.horus_name
                             Routes.BRAIN -> R.string.brain_name
+                            Routes.STELE -> R.string.stele_name
                             else -> R.string.home_title
                         }
                         Text(
@@ -280,6 +285,7 @@ fun PantheonNavHost() {
                 composable(Routes.VAULT) { VaultScreen() }
                 composable(Routes.HORUS) { HorusScreen() }
                 composable(Routes.BRAIN) { BrainScreen() }
+                composable(Routes.STELE) { SteleScreen() }
             }
         }
     }

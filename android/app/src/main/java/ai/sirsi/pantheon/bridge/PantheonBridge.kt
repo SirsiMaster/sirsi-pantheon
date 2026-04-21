@@ -211,6 +211,25 @@ object PantheonBridge {
         return decode(raw)
     }
 
+    // --- Stele ---
+
+    suspend fun steleReadRecent(count: Int): List<SteleEntry> =
+        withContext(Dispatchers.IO) {
+            val raw = Mobile.steleReadRecent(count.toLong())
+            decode(raw)
+        }
+
+    fun steleStats(): SteleStats {
+        val raw = Mobile.steleStats()
+        return decode(raw)
+    }
+
+    suspend fun steleVerify(): SteleVerifyResult =
+        withContext(Dispatchers.IO) {
+            val raw = Mobile.steleVerify()
+            decode(raw)
+        }
+
     // --- Brain ---
 
     suspend fun brainClassify(filePath: String): FileClassification =

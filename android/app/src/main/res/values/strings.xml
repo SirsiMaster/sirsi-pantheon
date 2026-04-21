@@ -148,6 +148,12 @@
     <string name="action_classify">Classify</string>
     <string name="action_batch_classify">Batch Classify</string>
 
+    <!-- Stele -->
+    <string name="nav_stele">Stele</string>
+    <string name="stele_name">Stele</string>
+    <string name="stele_subtitle">Event Ledger</string>
+    <string name="stele_description">Append-only hash-chained event bus for all Pantheon inter-deity communication.</string>
+
     <!-- Errors -->
     <string name="error_scan_failed">Scan failed</string>
     <string name="error_generic">Something went wrong</string>
