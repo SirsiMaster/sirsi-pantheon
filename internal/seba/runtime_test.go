@@ -130,8 +130,7 @@ func TestGenerateNetworkPorts(t *testing.T) {
 }
 
 func TestGenerateSSHConnections(t *testing.T) {
-	t.Parallel()
-	// Test with a temp SSH config
+	// Not parallel — mutates HOME env var.
 	tmp := t.TempDir()
 	sshDir := filepath.Join(tmp, ".ssh")
 	os.MkdirAll(sshDir, 0o700)
@@ -146,10 +145,7 @@ Host staging
     User admin
 `), 0o600)
 
-	// Temporarily override HOME
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmp)
-	defer os.Setenv("HOME", origHome)
+	t.Setenv("HOME", tmp)
 
 	r, err := generateSSHConnections("")
 	if err != nil {
@@ -167,12 +163,10 @@ Host staging
 }
 
 func TestGenerateSSHConnections_NoConfig(t *testing.T) {
-	t.Parallel()
+	// Not parallel — mutates HOME env var.
 	tmp := t.TempDir()
 
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmp)
-	defer os.Setenv("HOME", origHome)
+	t.Setenv("HOME", tmp)
 
 	_, err := generateSSHConnections("")
 	if err == nil {
