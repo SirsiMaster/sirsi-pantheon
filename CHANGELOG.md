@@ -58,9 +58,33 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 - **Deity count:** 9 → 12 operational modules.
 - **Zero new external dependencies.** Built entirely on Go stdlib (`go/ast`, `go/parser`, `go/token`, `regexp`, `hash/fnv`, `encoding/gob`, `database/sql`) + existing `modernc.org/sqlite` v1.44.0.
 
+### Added — Mobile Bridge (iOS + Android)
+- **8 new gomobile bindings** — `mobile/rtk.go`, `mobile/vault.go`, `mobile/horus.go`, `mobile/brain.go` (14 exported functions total). All use standard JSON envelope.
+- **iOS SwiftUI views** — RTKView (output filter), VaultView (FTS5 search + store), HorusView (code graph browser), BrainView (neural classification with file picker, batch analysis, classification legend). All with shimmer loading, error retry, DeityHeader.
+- **iOS models + bridge** — 4 new model files, 14 new bridge methods in PantheonBridge.swift. Deep links for `sirsi://rtk`, `sirsi://vault`, `sirsi://horus`, `sirsi://brain`.
+- **Android Compose screens** — RTKScreen, VaultScreen, HorusScreen, BrainScreen. All with Material 3 cards, coroutine-based bridge calls, proper error handling.
+- **Android nav drawer** — Replaced bottom nav (5 items max) with ModalNavigationDrawer containing "Core" (Home, Anubis, Ka, Thoth, Seba) and "Advanced" (RTK, Vault, Horus, Brain) sections.
+- **Mobile version** — `0.16.0-ios` → `0.17.0`. iOS `project.yml` marketing version → `0.17.0`.
+- **xcframework + AAR rebuilt** — Both artifacts include all new bindings.
+
+### Fixed — CI Pipeline (fully green)
+- **Go version** — All 4 workflows (CI, iOS, Android, Release) upgraded from Go 1.24 → 1.25 to match `go.mod`.
+- **golangci-lint** — Using `install-mode: goinstall` to compile from source with Go 1.25 (pre-built binary was compiled with 1.24).
+- **CoreML Darwin constraint** — Renamed `coreml_bridge.{m,h}` → `coreml_bridge_darwin.{m,h}` (same fix pattern as metal_bridge). Unblocks Linux/Android cross-compilation.
+- **Android NDK** — Added `-androidapi 21` flag (NDK min API requirement).
+- **iOS PantheonWidgets** — Added `CoreML.framework` linker flag (resolves undefined MLModel symbols).
+- **Lint cleanup** — Resolved all errcheck, gosimple, govet shadow, ineffassign, misspell, and staticcheck violations across vault, stele, seba, help, neith, mcp, ka, benchmark, workstream.
+- **Seba SSH test** — Replaced `os.Setenv` + `t.Parallel()` race with `t.Setenv` (fixes CI-only failure).
+
+### Test Coverage
+- **RTK** — 98.7% (12 → 20+ tests with table-driven subtests)
+- **Horus** — 97.0% (10 → 46 tests)
+- **Vault** — 86.7% (9 → 44 tests, structural limit from untestable error paths)
+
 ### Verified
-- **Go build** — `go build ./cmd/sirsi/` passes.
-- **Tests** — All 31 new tests pass. Existing MCP tests pass. Total: 1,926+.
+- **CI** — All 5 jobs green: Lint ✅, Test ✅, Build (ubuntu/macOS/Windows) ✅.
+- **Go build** — `go build ./...` passes.
+- **Tests** — All tests pass. Total: 2,000+.
 - **MCP** — `tools/list` returns all 16 tools.
 - **Horus self-test** — Parsed sirsi-pantheon itself: 169 files, 328 types, 15 interfaces, 36 packages.
 
