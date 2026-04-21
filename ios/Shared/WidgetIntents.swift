@@ -41,6 +41,47 @@ struct SebaWidgetRefreshIntent: AppIntent {
     }
 }
 
+// MARK: - Guard: Refresh Process Stats from Widget
+
+struct GuardWidgetRefreshIntent: AppIntent {
+    static let title: LocalizedStringResource = "Refresh Guard"
+    static let description: IntentDescription = "Refresh process watchdog stats."
+    static let isDiscoverable = false
+
+    func perform() async throws -> some IntentResult {
+        // Collect system memory stats using Mach APIs (available in app extension context).
+        let totalRAM = Int64(ProcessInfo.processInfo.physicalMemory)
+        let usedRAM = estimateUsedRAM(total: totalRAM)
+
+        SharedDataManager.saveGuardStats(
+            totalRAM: totalRAM,
+            usedRAM: usedRAM,
+            processCount: ProcessInfo.processInfo.activeProcessorCount,
+            topProcesses: []
+        )
+        return .result()
+    }
+
+    private func estimateUsedRAM(total: Int64) -> Int64 {
+        var size = mach_msg_type_number_t(
+            MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size
+        )
+        var stats = vm_statistics64_data_t()
+        let result = withUnsafeMutablePointer(to: &stats) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(size)) { intPtr in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, intPtr, &size)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+
+        let pageSize = Int64(vm_kernel_page_size)
+        let active = Int64(stats.active_count) * pageSize
+        let wired = Int64(stats.wire_count) * pageSize
+        let compressed = Int64(stats.compressor_page_count) * pageSize
+        return min(active + wired + compressed, total)
+    }
+}
+
 // MARK: - Decodable helpers (shared between widget intents)
 
 struct WidgetScanResponse: Decodable {

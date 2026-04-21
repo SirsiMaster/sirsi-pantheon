@@ -67,6 +67,20 @@ struct SebaView: View {
             async let accel = appState.bridge.sebaDetectAccelerators()
             hardware = try await hw
             accelerators = try await accel
+
+            // Write hardware JSON to App Group for widgets.
+            // Re-encode the profile so the widget can decode it independently.
+            if let hwResult = hardware,
+               let jsonData = try? JSONEncoder().encode(hwResult) {
+                let envelope: [String: Any] = [
+                    "ok": true,
+                    "data": (try? JSONSerialization.jsonObject(with: jsonData)) as Any,
+                ]
+                if let envelopeData = try? JSONSerialization.data(withJSONObject: envelope),
+                   let envelopeStr = String(data: envelopeData, encoding: .utf8) {
+                    SharedDataManager.saveHardwareJSON(envelopeStr)
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -147,6 +147,7 @@ struct ContentView: View {
         case .rtk:    RTKView()
         case .vault:  VaultView()
         case .horus:  HorusView()
+        case .stele:  SteleView()
         }
     }
 }
@@ -210,6 +211,12 @@ struct GUIContainerView: View {
                     Label("Horus", systemImage: "eye.circle.fill")
                 }
                 .tag(AppState.ActiveDeity.horus)
+
+            SteleView()
+                .tabItem {
+                    Label("Stele", systemImage: "list.bullet.rectangle.fill")
+                }
+                .tag(AppState.ActiveDeity.stele)
         }
     }
 }

@@ -227,6 +227,27 @@ final class PantheonBridge: Sendable {
         }.value
     }
 
+    // MARK: - Stele
+
+    func steleReadRecent(count: Int) async throws -> [SteleEntry] {
+        return try await Task.detached(priority: .userInitiated) {
+            let json = MobileSteleReadRecent(Int64(count))
+            return try self.decode(json) as [SteleEntry]
+        }.value
+    }
+
+    func steleStats() throws -> SteleStats {
+        let json = MobileSteleStats()
+        return try decode(json)
+    }
+
+    func steleVerify() async throws -> SteleVerifyResult {
+        return try await Task.detached(priority: .userInitiated) {
+            let json = MobileSteleVerify()
+            return try self.decode(json) as SteleVerifyResult
+        }.value
+    }
+
     // MARK: - Version
 
     func version() -> String {

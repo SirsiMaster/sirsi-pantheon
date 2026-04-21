@@ -71,9 +71,20 @@ struct AnubisView: View {
 
         do {
             let rootPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
-            scanResult = try await appState.bridge.anubisScan(
+            let result = try await appState.bridge.anubisScan(
                 rootPath: rootPath,
                 categories: Array(selectedCategories)
+            )
+            scanResult = result
+
+            // Write results to App Group for widgets
+            let sorted = result.findings.sorted { $0.sizeBytes > $1.sizeBytes }
+            let topFindings = sorted.prefix(3).map { (name: $0.description, size: $0.sizeBytes) }
+            SharedDataManager.saveScanResults(
+                findingCount: result.findings.count,
+                totalSize: result.totalSize,
+                topFindings: topFindings,
+                rulesRan: result.rulesRan
             )
         } catch {
             errorMessage = error.localizedDescription

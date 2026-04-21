@@ -1,6 +1,5 @@
 import WidgetKit
 import SwiftUI
-import PantheonCore
 
 // MARK: - Timeline Entry
 
@@ -24,6 +23,15 @@ struct AnubisEntry: TimelineEntry {
         rulesRan: 58,
         isStale: false
     )
+
+    static let empty = AnubisEntry(
+        date: .now,
+        findingCount: 0,
+        totalSize: "---",
+        topFindings: [],
+        rulesRan: 0,
+        isStale: true
+    )
 }
 
 // MARK: - Timeline Provider
@@ -34,16 +42,16 @@ struct AnubisTimelineProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (AnubisEntry) -> Void) {
-        completion(.placeholder)
+        completion(fetchFromSharedStorage() ?? .placeholder)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<AnubisEntry>) -> Void) {
-        let entry = fetchFromSharedStorage() ?? fetchLiveScanEntry()
+        let entry = fetchFromSharedStorage() ?? .empty
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: entry.date)!
         completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
     }
 
-    /// Read cached scan results from the App Group shared container (fast, no Go bridge call).
+    /// Read cached scan results from the App Group shared container.
     private func fetchFromSharedStorage() -> AnubisEntry? {
         guard let snapshot = SharedDataManager.loadScanSnapshot() else { return nil }
         let totalSize = ByteCountFormatter.string(fromByteCount: snapshot.totalSize, countStyle: .file)
@@ -57,34 +65,6 @@ struct AnubisTimelineProvider: TimelineProvider {
             topFindings: top,
             rulesRan: snapshot.rulesRan,
             isStale: snapshot.isStale
-        )
-    }
-
-    /// Fallback: run a live scan via PantheonCore if no cached data exists.
-    private func fetchLiveScanEntry() -> AnubisEntry {
-        let json = MobileAnubisScan("", "")
-        guard let data = json.data(using: .utf8),
-              let response = try? JSONDecoder().decode(BridgeEnvelope<ScanData>.self, from: data),
-              response.ok, let scan = response.data else {
-            return AnubisEntry(
-                date: .now, findingCount: 0, totalSize: "—",
-                topFindings: [], rulesRan: 0, isStale: true
-            )
-        }
-
-        let totalSize = ByteCountFormatter.string(fromByteCount: scan.totalSize, countStyle: .file)
-        let sorted = scan.findings.sorted { $0.sizeBytes > $1.sizeBytes }
-        let top = sorted.prefix(3).map { f in
-            (f.description, ByteCountFormatter.string(fromByteCount: f.sizeBytes, countStyle: .file))
-        }
-
-        return AnubisEntry(
-            date: .now,
-            findingCount: scan.findings.count,
-            totalSize: totalSize,
-            topFindings: top,
-            rulesRan: scan.rulesRan,
-            isStale: false
         )
     }
 }
@@ -148,7 +128,7 @@ struct AnubisWidgetView: View {
     private var smallView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Text("𓁢")
+                Text("\u{13062}")
                     .font(.caption)
                 Text("Anubis")
                     .font(.caption.bold())
@@ -177,7 +157,7 @@ struct AnubisWidgetView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 4) {
-                    Text("𓁢")
+                    Text("\u{13062}")
                     Text("Anubis Scan")
                         .font(.caption.bold())
                         .foregroundStyle(gold)
@@ -187,22 +167,18 @@ struct AnubisWidgetView: View {
                     .font(.title.bold())
                     .foregroundStyle(gold)
 
-                Text("\(entry.findingCount) findings · \(entry.rulesRan) rules")
+                Text("\(entry.findingCount) findings \u{00B7} \(entry.rulesRan) rules")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button(intent: AnubisWidgetScanIntent()) {
+                if entry.isStale {
                     HStack(spacing: 4) {
-                        Image(systemName: entry.isStale ? "arrow.clockwise" : "magnifyingglass")
+                        Image(systemName: "arrow.clockwise")
                             .font(.caption2)
-                        Text(entry.isStale ? "Rescan" : "Scan")
-                            .font(.caption2.bold())
+                        Text("Open app to rescan")
+                            .font(.caption2)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(gold.opacity(0.2))
-                    .foregroundStyle(gold)
-                    .clipShape(Capsule())
+                    .foregroundStyle(gold.opacity(0.7))
                 }
             }
 
@@ -246,41 +222,11 @@ struct AnubisScanWidget: Widget {
         StaticConfiguration(kind: kind, provider: AnubisTimelineProvider()) { entry in
             AnubisWidgetView(entry: entry)
         }
-        .configurationDisplayName("𓁢 Anubis Scan")
-        .description("Infrastructure waste summary — reclaimable storage.")
+        .configurationDisplayName("\u{13062} Anubis Scan")
+        .description("Infrastructure waste summary \u{2014} reclaimable storage.")
         .supportedFamilies([
             .systemSmall, .systemMedium,
             .accessoryCircular, .accessoryRectangular
         ])
-    }
-}
-
-// MARK: - Decodable helpers
-
-private struct BridgeEnvelope<T: Decodable>: Decodable {
-    let ok: Bool
-    let data: T?
-    let error: String?
-}
-
-private struct ScanData: Decodable {
-    let findings: [FindingData]
-    let totalSize: Int64
-    let rulesRan: Int
-
-    enum CodingKeys: String, CodingKey {
-        case findings
-        case totalSize = "TotalSize"
-        case rulesRan = "RulesRan"
-    }
-}
-
-private struct FindingData: Decodable {
-    let description: String
-    let sizeBytes: Int64
-
-    enum CodingKeys: String, CodingKey {
-        case description = "Description"
-        case sizeBytes = "SizeBytes"
     }
 }

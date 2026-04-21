@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
         case rtk = "RTK"
         case vault = "Vault"
         case horus = "Horus"
+        case stele = "Stele"
 
         var id: String { rawValue }
 
@@ -34,6 +35,7 @@ final class AppState: ObservableObject {
             case .rtk:    return "⚡"
             case .vault:  return "🏛️"
             case .horus:  return "\u{13080}"
+            case .stele:  return "\u{130BD}"
             }
         }
 
@@ -48,6 +50,7 @@ final class AppState: ObservableObject {
             case .rtk:    return "Output Filter"
             case .vault:  return "Context Keeper"
             case .horus:  return "Code Graph"
+            case .stele:  return "Event Ledger"
             }
         }
 
@@ -62,6 +65,7 @@ final class AppState: ObservableObject {
             case .rtk:    return "bolt.fill"
             case .vault:  return "building.columns.fill"
             case .horus:  return "eye.circle.fill"
+            case .stele:  return "list.bullet.rectangle.fill"
             }
         }
     }
@@ -86,6 +90,7 @@ final class AppState: ObservableObject {
         case "rtk":    activeDeity = .rtk
         case "vault":  activeDeity = .vault
         case "horus":  activeDeity = .horus
+        case "stele":  activeDeity = .stele
         default: break
         }
         viewMode = .gui

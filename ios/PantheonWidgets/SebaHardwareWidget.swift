@@ -1,6 +1,5 @@
 import WidgetKit
 import SwiftUI
-import PantheonCore
 
 // MARK: - Timeline Entry
 
@@ -24,6 +23,17 @@ struct SebaEntry: TimelineEntry {
         hasMetal: true,
         gpuName: "Apple GPU"
     )
+
+    static let empty = SebaEntry(
+        date: .now,
+        cpuModel: "---",
+        cpuCores: 0,
+        cpuArch: "---",
+        ram: "---",
+        hasNeuralEngine: false,
+        hasMetal: false,
+        gpuName: nil
+    )
 }
 
 // MARK: - Timeline Provider
@@ -34,12 +44,12 @@ struct SebaTimelineProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SebaEntry) -> Void) {
-        completion(fetchFromSharedStorage() ?? fetchLiveHardwareEntry())
+        completion(fetchFromSharedStorage() ?? .placeholder)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SebaEntry>) -> Void) {
-        let entry = fetchFromSharedStorage() ?? fetchLiveHardwareEntry()
-        // Hardware doesn't change — refresh once per day.
+        let entry = fetchFromSharedStorage() ?? .empty
+        // Hardware doesn't change -- refresh once per day.
         let nextUpdate = Calendar.current.date(byAdding: .hour, value: 24, to: entry.date)!
         completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
     }
@@ -53,29 +63,6 @@ struct SebaTimelineProvider: TimelineProvider {
             return nil
         }
         let ram = ByteCountFormatter.string(fromByteCount: hw.totalRam, countStyle: .memory)
-        return SebaEntry(
-            date: .now,
-            cpuModel: hw.cpuModel,
-            cpuCores: hw.cpuCores,
-            cpuArch: hw.cpuArch,
-            ram: ram,
-            hasNeuralEngine: hw.neuralEngine,
-            hasMetal: true,
-            gpuName: hw.gpu?.name
-        )
-    }
-
-    /// Fallback: call PantheonCore directly if no cached data exists.
-    private func fetchLiveHardwareEntry() -> SebaEntry {
-        let json = MobileSebaDetectHardware()
-        guard let data = json.data(using: .utf8),
-              let response = try? JSONDecoder().decode(BridgeEnvelope<HWData>.self, from: data),
-              response.ok, let hw = response.data else {
-            return .placeholder
-        }
-
-        let ram = ByteCountFormatter.string(fromByteCount: hw.totalRam, countStyle: .memory)
-
         return SebaEntry(
             date: .now,
             cpuModel: hw.cpuModel,
@@ -152,7 +139,7 @@ struct SebaWidgetView: View {
     private var smallView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Text("𓇽")
+                Text("\u{131FD}")
                     .font(.caption)
                 Text("Seba")
                     .font(.caption.bold())
@@ -175,10 +162,10 @@ struct SebaWidgetView: View {
 
             HStack(spacing: 6) {
                 if entry.hasNeuralEngine {
-                    Badge(text: "ANE", color: green)
+                    SebaBadge(text: "ANE", color: green)
                 }
                 if entry.hasMetal {
-                    Badge(text: "Metal", color: gold)
+                    SebaBadge(text: "Metal", color: gold)
                 }
             }
         }
@@ -190,8 +177,8 @@ struct SebaWidgetView: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 4) {
-                    Text("𓇽")
-                    Text("Seba — Hardware Profile")
+                    Text("\u{131FD}")
+                    Text("Seba \u{2014} Hardware Profile")
                         .font(.caption.bold())
                         .foregroundStyle(gold)
                 }
@@ -209,23 +196,9 @@ struct SebaWidgetView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 6) {
-                StatRow(icon: "cpu", label: "Cores", value: "\(entry.cpuCores)")
-                StatRow(icon: "memorychip", label: "RAM", value: entry.ram)
-                StatRow(icon: "brain", label: "ANE", value: entry.hasNeuralEngine ? "Yes" : "No")
-
-                Button(intent: SebaWidgetRefreshIntent()) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption2)
-                        Text("Refresh")
-                            .font(.caption2.bold())
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(gold.opacity(0.2))
-                    .foregroundStyle(gold)
-                    .clipShape(Capsule())
-                }
+                SebaStatRow(icon: "cpu", label: "Cores", value: "\(entry.cpuCores)")
+                SebaStatRow(icon: "memorychip", label: "RAM", value: entry.ram)
+                SebaStatRow(icon: "brain", label: "ANE", value: entry.hasNeuralEngine ? "Yes" : "No")
             }
         }
         .padding()
@@ -237,7 +210,9 @@ struct SebaWidgetView: View {
     private var darkBg: Color { Color(red: 0.06, green: 0.06, blue: 0.06) }
 }
 
-struct Badge: View {
+// MARK: - Helper Views
+
+struct SebaBadge: View {
     let text: String
     let color: Color
 
@@ -252,7 +227,7 @@ struct Badge: View {
     }
 }
 
-struct StatRow: View {
+struct SebaStatRow: View {
     let icon: String
     let label: String
     let value: String
@@ -277,8 +252,8 @@ struct SebaHardwareWidget: Widget {
         StaticConfiguration(kind: kind, provider: SebaTimelineProvider()) { entry in
             SebaWidgetView(entry: entry)
         }
-        .configurationDisplayName("𓇽 Seba Hardware")
-        .description("Device hardware profile — CPU, GPU, Neural Engine.")
+        .configurationDisplayName("\u{131FD} Seba Hardware")
+        .description("Device hardware profile \u{2014} CPU, GPU, Neural Engine.")
         .supportedFamilies([
             .systemSmall, .systemMedium,
             .accessoryCircular, .accessoryRectangular
