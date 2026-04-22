@@ -61,6 +61,7 @@ func NewBuildOutputRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		minAgeDays:  14,
+		severity:    jackal.SeverityCaution,
 	}
 }
 
@@ -76,6 +77,7 @@ func NewNextJSCacheRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		minAgeDays:  7,
+		severity:    jackal.SeverityCaution,
 	}
 }
 
@@ -91,6 +93,7 @@ func NewTurborepoCache() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    4,
 		minAgeDays:  7,
+		severity:    jackal.SeverityCaution,
 	}
 }
 
@@ -406,7 +409,7 @@ func NewOversizedReposRule() jackal.ScanRule {
 				Path:        repo,
 				SizeBytes:   size,
 				FileCount:   count,
-				Severity:    jackal.SeverityCaution,
+				Severity:    jackal.SeverityWarning,
 				IsDir:       true,
 			}}
 		},
@@ -458,6 +461,7 @@ func NewVenvRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		minAgeDays:  30,
+		severity:    jackal.SeverityCaution,
 	}
 }
 
@@ -473,5 +477,6 @@ func NewDotEnvVenvRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		minAgeDays:  30,
+		severity:    jackal.SeverityCaution,
 	}
 }

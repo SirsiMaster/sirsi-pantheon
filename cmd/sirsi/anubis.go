@@ -158,14 +158,20 @@ func runWeigh(ctx context.Context) error {
 		ghostWaste += g.TotalSize
 		// Add ghost findings to the scan result so they appear in persisted output.
 		for _, r := range g.Residuals {
+			// Caches and logs are safe to delete. Preferences and app data need review.
+			sev := jackal.SeveritySafe
+			rType := string(r.Type)
+			if rType == "preferences" || rType == "application_support" || rType == "containers" || rType == "group_containers" {
+				sev = jackal.SeverityCaution
+			}
 			res.Findings = append(res.Findings, jackal.Finding{
 				RuleName:    "ka_ghost",
 				Category:    jackal.CategoryGeneral,
-				Description: fmt.Sprintf("Ghost: %s (%s)", g.AppName, r.Type),
+				Description: fmt.Sprintf("Ghost: %s (%s)", g.AppName, rType),
 				Path:        r.Path,
 				SizeBytes:   r.SizeBytes,
 				FileCount:   r.FileCount,
-				Severity:    jackal.SeveritySafe,
+				Severity:    sev,
 				IsDir:       true,
 			})
 		}

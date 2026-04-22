@@ -17,9 +17,17 @@ type baseScanRule struct {
 	category    jackal.Category
 	description string
 	platforms   []string
-	paths       []string // Paths to scan (supports ~ expansion)
-	excludes    []string // Paths to exclude
-	minAgeDays  int      // Minimum age in days (0 = no minimum)
+	paths       []string        // Paths to scan (supports ~ expansion)
+	excludes    []string        // Paths to exclude
+	minAgeDays  int             // Minimum age in days (0 = no minimum)
+	severity    jackal.Severity // Default severity for findings (empty = SeveritySafe)
+}
+
+func (r *baseScanRule) effectiveSeverity() jackal.Severity {
+	if r.severity != "" {
+		return r.severity
+	}
+	return jackal.SeveritySafe
 }
 
 func (r *baseScanRule) Name() string              { return r.name }
@@ -80,7 +88,7 @@ func (r *baseScanRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jac
 							Path:        match,
 							SizeBytes:   size,
 							FileCount:   fileCount,
-							Severity:    jackal.SeveritySafe,
+							Severity:    r.effectiveSeverity(),
 							IsDir:       true,
 						})
 					}
@@ -121,7 +129,7 @@ func (r *baseScanRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jac
 				Path:         match,
 				SizeBytes:    size,
 				FileCount:    fileCount,
-				Severity:     jackal.SeveritySafe,
+				Severity:     r.effectiveSeverity(),
 				LastModified: info.ModTime(),
 				IsDir:        isDir,
 			})

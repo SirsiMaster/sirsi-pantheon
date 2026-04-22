@@ -52,6 +52,7 @@ func NewCrashReportsRule() jackal.ScanRule {
 			"~/Library/Logs/DiagnosticReports/*",
 		},
 		minAgeDays: 3,
+		severity:   jackal.SeverityCaution,
 	}
 }
 

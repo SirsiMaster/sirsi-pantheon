@@ -128,11 +128,19 @@ type findRule struct {
 	category    jackal.Category
 	description string
 	platforms   []string
-	targetName  string   // Directory name to find (e.g., "node_modules")
-	searchPaths []string // Root directories to search
-	maxDepth    int      // Maximum search depth
+	targetName  string          // Directory name to find (e.g., "node_modules")
+	searchPaths []string        // Root directories to search
+	maxDepth    int             // Maximum search depth
 	minAgeDays  int
-	matchFile   string // Optional: parent must contain this file
+	matchFile   string          // Optional: parent must contain this file
+	severity    jackal.Severity // Default severity (empty = SeveritySafe)
+}
+
+func (r *findRule) effectiveSeverity() jackal.Severity {
+	if r.severity != "" {
+		return r.severity
+	}
+	return jackal.SeveritySafe
 }
 
 func (r *findRule) Name() string              { return r.name }
@@ -182,7 +190,7 @@ func (r *findRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jackal.
 						Path:        path,
 						SizeBytes:   size,
 						FileCount:   fileCount,
-						Severity:    jackal.SeveritySafe,
+						Severity:    r.effectiveSeverity(),
 						IsDir:       true,
 					})
 					continue
@@ -203,7 +211,7 @@ func (r *findRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jackal.
 					Path:         path,
 					SizeBytes:    size,
 					FileCount:    fileCount,
-					Severity:     jackal.SeveritySafe,
+					Severity:     r.effectiveSeverity(),
 					LastModified: info.ModTime(),
 					IsDir:        true,
 				})
@@ -253,7 +261,7 @@ func (r *findRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jackal.
 					Path:         path,
 					SizeBytes:    size,
 					FileCount:    fileCount,
-					Severity:     jackal.SeveritySafe,
+					Severity:     r.effectiveSeverity(),
 					LastModified: info.ModTime(),
 					IsDir:        true,
 				})
