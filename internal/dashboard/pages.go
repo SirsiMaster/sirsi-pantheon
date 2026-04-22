@@ -231,20 +231,44 @@ function viewHome(){
 }
 
 function viewScan(){
- out('𓁢 Scan — Loading findings...','t-gold');
+ out('𓁢 Scan Results','t-gold');
  fetch('/api/findings').then(r=>r.json()).then(function(data){
   if(!data.findings||!data.findings.length){
    out('');out('No scan results. Type "scan" to run one.','t-dim');return}
-  out('  '+data.findings.length+' findings · '+fmtSize(data.total_size)+' waste · '+ago(data.timestamp),'t-dim');
+
+  /* Count actionable items */
+  let safeCount=0,safeSize=0,cautionCount=0,cautionSize=0;
+  data.findings.forEach(function(f){
+   if(f.severity==='safe'){safeCount++;safeSize+=f.size_bytes}
+   if(f.severity==='caution'){cautionCount++;cautionSize+=f.size_bytes}
+  });
+
+  out('  '+data.findings.length+' findings · '+fmtSize(data.total_size)+' total waste','t-dim');
+  out('  🟢 '+safeCount+' safe to clean ('+fmtSize(safeSize)+') · 🟡 '+cautionCount+' caution ('+fmtSize(cautionSize)+')','t-dim');
   sep();
+
+  /* Bulk actions */
+  if(safeCount>0){
+   out('','t-dim');
+   const bulk=document.createElement('div');bulk.className='t-line';
+   const btn=document.createElement('span');btn.className='t-action';
+   btn.style.cssText='color:#C8A951;font-weight:600;font-size:13px';
+   btn.textContent='▸ CLEAN ALL '+safeCount+' SAFE ITEMS ('+fmtSize(safeSize)+')';
+   btn.addEventListener('click',function(){cleanAllSafe(btn,data.findings)});
+   bulk.appendChild(btn);T.appendChild(bulk);
+   out('','t-dim');
+  }
+  sep();
+
   /* Group by category */
   const cats={};data.findings.forEach(function(f,i){f._i=i;
    if(!cats[f.category])cats[f.category]={items:[],size:0};
    cats[f.category].items.push(f);cats[f.category].size+=f.size_bytes});
+
   Object.keys(cats).sort(function(a,b){return cats[b].size-cats[a].size}).forEach(function(cat){
    const c=cats[cat];
    out('');out('  '+cat.toUpperCase()+' ('+c.items.length+' · '+fmtSize(c.size)+')','t-head');
-   c.items.slice(0,15).forEach(function(f){
+   c.items.forEach(function(f){
     const row=document.createElement('div');row.className='t-line t-row';
     const sev=document.createElement('span');sev.textContent=({safe:'🟢',caution:'🟡',warning:'🟠'}[f.severity]||'⚪');
     sev.style.width='20px';
@@ -255,9 +279,27 @@ function viewScan(){
     row.appendChild(sev);row.appendChild(desc);row.appendChild(size);
     if(f.severity==='safe'||f.severity==='caution')row.appendChild(act);
     T.appendChild(row)});
-   if(c.items.length>15)out('    ... and '+(c.items.length-15)+' more','t-dim')});
-  sep();out('');out('Type "scan" to re-scan. Click [clean] to remove individual items.','t-dim');
+  });
+  sep();out('');
+  out('  🟢 safe = always safe to delete (caches, logs, temp files)','t-dim');
+  out('  🟡 caution = review first (build artifacts, old venvs)','t-dim');
+  out('  🟠 warning = may affect running services (shown but not cleanable)','t-dim');
+  out('');out('  Type "scan" to re-scan · "clean all" for bulk cleanup · click [clean] per item','t-dim');
  }).catch(function(e){out('Error: '+e.message,'t-err')});
+}
+
+function cleanAllSafe(btn,findings){
+ const safeIdx=[];
+ findings.forEach(function(f,i){if(f.severity==='safe')safeIdx.push(i)});
+ if(!safeIdx.length)return;
+ btn.textContent='▸ CLEANING '+safeIdx.length+' ITEMS...';btn.style.color='#C8A951';
+ fetch('/api/clean',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({indices:safeIdx,dry_run:false})
+ }).then(r=>r.json()).then(function(d){
+  btn.textContent='✓ FREED '+d.freed_human+' ('+d.cleaned+' items)';btn.style.color='#44FF88';
+  /* Reload after 2s to show updated state */
+  setTimeout(function(){switchView('scan')},2000);
+ }).catch(function(e){btn.textContent='✗ Error: '+e.message;btn.style.color='#FF4444'});
 }
 
 function cleanIdx(el,idx){
@@ -387,6 +429,23 @@ input.addEventListener('keydown',function(e){
   }).catch(function(e){out('✗ '+e.message,'t-err')});
   return}
 
+ if(raw==='clean all'||raw==='clean safe'){
+  out('▸ Cleaning all safe findings...','t-gold');
+  fetch('/api/findings').then(r=>r.json()).then(function(data){
+   const idx=[];(data.findings||[]).forEach(function(f,i){if(f.severity==='safe')idx.push(i)});
+   if(!idx.length){out('No safe findings to clean.','t-dim');return}
+   out('  Cleaning '+idx.length+' items...','t-dim');
+   return fetch('/api/clean',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({indices:idx,dry_run:false})}).then(r=>r.json()).then(function(d){
+    out('✓ Freed '+d.freed_human+' ('+d.cleaned+' items cleaned)','t-ok');
+    setTimeout(function(){switchView('scan')},1500)})
+  }).catch(function(e){out('✗ '+e.message,'t-err')});
+  return}
+
+ if(raw==='judge'){
+  out('▸ Loading findings for judgment...','t-gold');
+  switchView('scan');return}
+
  if(raw==='renice'||raw==='renice lsp'){
   out('▸ renice lsp','t-gold');
   fetch('/api/guard/renice?target=lsp',{method:'POST'}).then(r=>r.json()).then(function(d){
@@ -447,8 +506,11 @@ if(typeof EventSource!=='undefined'){
    if(d.status==='success')out('✓ '+d.label+' ('+d.duration_ms+'ms)','t-ok');
    else out('✗ '+d.label+': '+(d.error||'failed'),'t-err');
    running=false;
-   /* If we were on scan view, reload findings */
-   if(currentView==='scan')setTimeout(function(){viewScan()},500);
+   /* Auto-switch to actionable view after scan/ghost commands */
+   if(d.key==='scan'){out('');out('Loading findings...','t-dim');
+    setTimeout(function(){switchView('scan')},800)}
+   else if(d.key==='ghosts'){setTimeout(function(){switchView('ghosts')},800)}
+   else if(currentView==='scan'){setTimeout(function(){viewScan()},500)}
   }catch(x){running=false}});
 }
 
