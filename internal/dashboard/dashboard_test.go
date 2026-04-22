@@ -493,3 +493,184 @@ func TestSetOpenBrowserFn(t *testing.T) {
 		t.Fatalf("injected fn not called, got %q", called)
 	}
 }
+
+// ── Module API Tests ─────────────────────────────────────────────────
+
+func TestAPIDoctor_ReturnsJSON(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/doctor")
+	if err != nil {
+		t.Fatalf("GET /api/doctor: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /api/doctor = %d, want 200", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["score"]; !ok {
+		t.Fatal("doctor response missing score field")
+	}
+}
+
+func TestAPISlay_InvalidTarget(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/slay?target=invalid_target", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/slay: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid target = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAPISlay_RequiresPost(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/slay?target=node")
+	if err != nil {
+		t.Fatalf("GET /api/slay: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET slay = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestAPIGuardStats_ReturnsJSON(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/guard/stats")
+	if err != nil {
+		t.Fatalf("GET /api/guard/stats: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("guard stats = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestAPIVaultStats_NoVault(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/vault/stats")
+	if err != nil {
+		t.Fatalf("GET /api/vault/stats: %v", err)
+	}
+	defer resp.Body.Close()
+	// Should return 200 with empty/error JSON, not crash
+	if resp.StatusCode != 200 {
+		t.Fatalf("vault stats = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestAPIVaultSearch_MissingQuery(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/vault/search")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing q = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAPIVaultPrune_RequiresPost(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/vault/prune")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET prune = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestAPIClean_RequiresPost(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/clean")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET clean = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestAPIRunStatus_NoRunner(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/run/status")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("run status = %d, want 200", resp.StatusCode)
+	}
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	if body["running"] != false {
+		t.Fatalf("expected running=false, got %v", body["running"])
+	}
+}
+
+func TestAPIRun_RequiresPost(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/run?cmd=scan")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET run = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestAPIGhostClean_RequiresPost(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/ghosts/clean")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET ghosts/clean = %d, want 405", resp.StatusCode)
+	}
+}
