@@ -81,7 +81,10 @@ color:%s;letter-spacing:2px;margin-bottom:24px}
 
 /* Cards */
 .card{background:%s;border:1px solid %s;border-radius:12px;padding:20px 24px;margin-bottom:16px;
-backdrop-filter:blur(12px);box-shadow:0 4px 20px rgba(0,0,0,.3)}
+backdrop-filter:blur(12px);box-shadow:0 4px 20px rgba(0,0,0,.3);transition:border-color .2s,box-shadow .2s,transform .15s}
+.card-link{cursor:pointer;text-decoration:none;display:block;color:inherit}
+.card-link:hover .card,.card.clickable:hover{border-color:rgba(200,169,81,.45);
+box-shadow:0 4px 24px rgba(200,169,81,.1);transform:translateY(-2px)}
 .card-title{font-size:10px;color:%s;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;font-weight:600}
 .card-value{font-size:28px;font-weight:300;color:%s}
 .card-label{font-size:11px;color:%s;margin-top:4px}
@@ -182,23 +185,24 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	body := fmt.Sprintf(`
 <h1 class="page-title">System Overview</h1>
 <div id="stats-grid" class="grid grid-4" style="margin-bottom:24px">
- <div class="card"><div class="card-title">RAM Pressure</div>
+ <a href="/guard" class="card-link"><div class="card"><div class="card-title">RAM Pressure</div>
   <div class="card-value" id="ram-val">—</div>
-  <div class="card-label" id="ram-label"></div></div>
- <div class="card"><div class="card-title">Git Status</div>
+  <div class="card-label" id="ram-label"></div></div></a>
+ <a href="/notifications" class="card-link"><div class="card"><div class="card-title">Git Status</div>
   <div class="card-value" id="git-val">—</div>
-  <div class="card-label" id="git-label"></div></div>
- <div class="card"><div class="card-title">Active Deities</div>
+  <div class="card-label" id="git-label"></div></div></a>
+ <a href="/scan" class="card-link"><div class="card"><div class="card-title">Active Deities</div>
   <div class="card-value" id="deity-val">0</div>
-  <div class="card-label" id="deity-label">None running</div></div>
- <div class="card"><div class="card-title">Accelerator</div>
+  <div class="card-label" id="deity-label">None running</div></div></a>
+ <a href="/horus" class="card-link"><div class="card"><div class="card-title">Accelerator</div>
   <div class="card-value" id="accel-val">—</div>
-  <div class="card-label" id="accel-label"></div></div>
+  <div class="card-label" id="accel-label"></div></div></a>
 </div>
 
 <div class="grid grid-2">
  <div>
-  <h2 class="page-subtitle">Recent Activity</h2>
+  <a href="/notifications" style="text-decoration:none"><h2 class="page-subtitle" style="cursor:pointer;transition:color .2s"
+   onmouseover="this.style.color='#C8A951'" onmouseout="this.style.color=''">Recent Activity ›</h2></a>
   <div class="card" style="padding:0;overflow:hidden">
    <table class="tbl" id="recent-tbl">
     <thead><tr><th>Source</th><th>Summary</th><th>Status</th><th>Time</th></tr></thead>
@@ -260,6 +264,8 @@ function renderRecent(items){
   td.colSpan=4;td.className='empty';td.textContent='No activity yet';tr.appendChild(td);tb.appendChild(tr);return}
  items.forEach(function(n){
   const tr=document.createElement('tr');
+  tr.style.cursor='pointer';
+  tr.addEventListener('click',function(){window.location.href='/notifications'});
   const tdSrc=document.createElement('td');tdSrc.style.fontWeight='600';tdSrc.textContent=n.source;
   const tdSum=document.createElement('td');const summary=(n.summary||'');
   tdSum.textContent=summary.length>80?summary.substring(0,77)+'…':summary;
