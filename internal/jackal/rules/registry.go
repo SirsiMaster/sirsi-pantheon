@@ -94,6 +94,34 @@ func crossPlatformRules() []jackal.ScanRule {
 		NewComposerCacheRule(),
 		NewRubyGemsCacheRule(),
 
+		// Git & Repo Hygiene (7 rules)
+		NewStaleBranchesRule(),
+		NewGitMergedBranchesRule(),
+		NewGitLargeObjectsRule(),
+		NewGitOrphanedWorktreesRule(),
+		NewGitUntrackedArtifactsRule(),
+		NewGitRerereCacheRule(),
+		NewGitReflogBloatRule(),
+
+		// CI/CD & Build (7 rules)
+		NewGitHubActionsCacheRule(),
+		NewActRunnerCacheRule(),
+		NewBuildOutputRule(),
+		NewNextJSCacheRule(),
+		NewTurborepoCache(),
+		NewDanglingDockerImagesRule(),
+		NewDockerBuildCacheRule(),
+
+		// Repo Hygiene (8 rules)
+		NewEnvFileRule(),
+		NewStaleLockFilesRule(),
+		NewDeadSymlinksRule(),
+		NewOversizedReposRule(),
+		NewCoverageReportsRule(),
+		NewLogFilesRule(),
+		NewVenvRule(),
+		NewDotEnvVenvRule(),
+
 		// AI/ML — cross-platform (9 rules)
 		NewHuggingFaceCacheRule(),
 		NewOllamaModelsRule(),
