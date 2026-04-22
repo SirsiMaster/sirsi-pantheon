@@ -9,6 +9,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 )
 
@@ -69,8 +71,15 @@ func (h *Handler) Execute() error {
 
 // ExecuteWithNotify starts the command in the background and records
 // the result in the notification store when it completes.
+// If an EventBuffer is set, output lines are streamed as SSE events.
 // The caller (event loop) returns immediately — never blocks.
 func (h *Handler) ExecuteWithNotify(store *notify.Store) {
+	h.ExecuteWithNotifyAndEvents(store, nil)
+}
+
+// ExecuteWithNotifyAndEvents is like ExecuteWithNotify but also pushes
+// live output lines into the dashboard SSE event buffer.
+func (h *Handler) ExecuteWithNotifyAndEvents(store *notify.Store, events *dashboard.EventBuffer) {
 	cmd := exec.Command(h.Command, h.Args...)
 
 	var buf bytes.Buffer
@@ -78,6 +87,14 @@ func (h *Handler) ExecuteWithNotify(store *notify.Store) {
 	cmd.Stderr = &buf
 
 	start := time.Now()
+
+	if events != nil {
+		events.Push(dashboard.Event{
+			Type: "status",
+			Data: fmt.Sprintf(`{"handler":%q,"state":"started"}`, h.Name),
+		})
+	}
+
 	if err := cmd.Start(); err != nil {
 		if store != nil {
 			_ = store.Record(notify.Notification{
@@ -87,6 +104,12 @@ func (h *Handler) ExecuteWithNotify(store *notify.Store) {
 				Summary:  fmt.Sprintf("%s failed to start: %v", h.Name, err),
 			})
 		}
+		if events != nil {
+			events.Push(dashboard.Event{
+				Type: "error",
+				Data: fmt.Sprintf(`{"handler":%q,"error":%q}`, h.Name, err.Error()),
+			})
+		}
 		return
 	}
 
@@ -94,6 +117,21 @@ func (h *Handler) ExecuteWithNotify(store *notify.Store) {
 		err := cmd.Wait()
 		elapsed := time.Since(start)
 		output := buf.String()
+
+		// Stream output lines to SSE.
+		if events != nil {
+			for _, line := range strings.Split(output, "\n") {
+				if line == "" {
+					continue
+				}
+				// JSON-encode the line to ensure safe embedding.
+				lineJSON, _ := json.Marshal(line)
+				events.Push(dashboard.Event{
+					Type: "output",
+					Data: fmt.Sprintf(`{"handler":%q,"line":%s}`, h.Name, lineJSON),
+				})
+			}
+		}
 
 		n := notify.Notification{
 			Source:     h.source(),
@@ -112,6 +150,14 @@ func (h *Handler) ExecuteWithNotify(store *notify.Store) {
 
 		if store != nil {
 			_ = store.Record(n)
+		}
+
+		if events != nil {
+			events.Push(dashboard.Event{
+				Type: "complete",
+				Data: fmt.Sprintf(`{"handler":%q,"severity":%q,"summary":%q,"duration_ms":%d}`,
+					h.Name, n.Severity, n.Summary, n.DurationMs),
+			})
 		}
 	}()
 }

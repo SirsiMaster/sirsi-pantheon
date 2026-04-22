@@ -100,9 +100,11 @@ func onReady() {
 
 	// ── Start dashboard server ──────────────────────────────────────
 	cfg := DefaultStatsConfig()
+	eventBuf := dashboard.NewEventBuffer(256)
 	dashSrv := dashboard.New(dashboard.Config{
 		Port:     dashboard.DashboardPort,
 		NotifyDB: nStore,
+		Events:   eventBuf,
 		StatsFn: func() ([]byte, error) {
 			snap := CollectStats(cfg)
 			return json.Marshal(snap)
@@ -170,11 +172,11 @@ func onReady() {
 		case <-mRaHeader.ClickedCh:
 			_ = OpenCommandCenter()
 		case <-mRaDeploy.ClickedCh:
-			raHandlers[0].ExecuteWithNotify(nStore)
+			raHandlers[0].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mRaKill.ClickedCh:
-			raHandlers[1].ExecuteWithNotify(nStore)
+			raHandlers[1].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mRaCollect.ClickedCh:
-			raHandlers[2].ExecuteWithNotify(nStore)
+			raHandlers[2].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-raScopes[0].ClickedCh:
 			snap := CollectStats(cfg)
 			if len(snap.RaScopes) > 0 {
@@ -196,15 +198,15 @@ func onReady() {
 				_ = OpenScopeLog(snap.RaScopes[3].Name)
 			}
 		case <-mScan.ClickedCh:
-			handlers[0].ExecuteWithNotify(nStore)
+			handlers[0].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mJudge.ClickedCh:
-			handlers[1].ExecuteWithNotify(nStore)
+			handlers[1].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mKa.ClickedCh:
-			handlers[3].ExecuteWithNotify(nStore)
+			handlers[3].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mMaat.ClickedCh:
-			handlers[5].ExecuteWithNotify(nStore)
+			handlers[5].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mGuard.ClickedCh:
-			QuickActions()[0].ExecuteWithNotify(nStore)
+			QuickActions()[0].ExecuteWithNotifyAndEvents(nStore, eventBuf)
 		case <-mBuildLog.ClickedCh:
 			_ = OpenBuildLog()
 		case <-mCaseStudies.ClickedCh:

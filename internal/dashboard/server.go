@@ -24,6 +24,9 @@ type Config struct {
 	// StelePath is the path to the Stele JSONL ledger.
 	// If empty, defaults to ~/.config/ra/stele.jsonl.
 	StelePath string
+	// Events is the shared ring buffer for SSE streaming.
+	// If nil, /api/events returns 503.
+	Events *EventBuffer
 }
 
 // Server is the Pantheon local dashboard HTTP server.
@@ -58,6 +61,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/stats", s.apiStats)
 	mux.HandleFunc("/api/notifications", s.apiNotifications)
 	mux.HandleFunc("/api/stele", s.apiStele)
+	mux.HandleFunc("/api/events", s.apiEvents)
 
 	s.srv = &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.Port),

@@ -22,6 +22,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
@@ -103,6 +104,11 @@ type TUIModel struct {
 	activeDeity map[string]bool
 	steleReader *stele.Reader
 	quitting    bool
+
+	// Notification awareness
+	notifyStore       *notify.Store
+	recentNotify      []notify.Notification
+	notifyRefreshTime time.Time
 }
 
 type historyEntry struct {
@@ -558,6 +564,8 @@ func (m *TUIModel) refreshActive() {
 		}
 	}
 
+	m.refreshNotifications()
+
 	home, _ := os.UserHomeDir()
 	pidDir := filepath.Join(home, ".config", "ra", "pids")
 	pidEntries, _ := os.ReadDir(pidDir)
@@ -572,6 +580,23 @@ func (m *TUIModel) refreshActive() {
 			}
 		}
 	}
+}
+
+// refreshNotifications loads the latest notifications from the store.
+func (m *TUIModel) refreshNotifications() {
+	if m.notifyStore == nil {
+		return
+	}
+	now := time.Now()
+	if now.Sub(m.notifyRefreshTime) < 5*time.Second {
+		return
+	}
+	m.notifyRefreshTime = now
+	items, err := m.notifyStore.Recent(5)
+	if err != nil {
+		return
+	}
+	m.recentNotify = items
 }
 
 // ── Layout ────────────────────────────────────────────────────────────
@@ -790,6 +815,30 @@ func (m TUIModel) renderLeftPane() string {
 	var b strings.Builder
 	b.WriteString(m.renderRosterColumns(true))
 	b.WriteString(m.renderStatusLine())
+	b.WriteString(m.renderNotifications())
+	return b.String()
+}
+
+// renderNotifications shows recent notifications in the left pane.
+func (m TUIModel) renderNotifications() string {
+	if len(m.recentNotify) == 0 {
+		return ""
+	}
+
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(Gold).Render(" 🔔 Recent") + "\n")
+
+	for _, n := range m.recentNotify {
+		icon := notify.SeverityIcon(n.Severity)
+		src := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BBBBBB")).Render(n.Source)
+		summary := n.Summary
+		if len(summary) > 28 {
+			summary = summary[:25] + "…"
+		}
+		b.WriteString(fmt.Sprintf(" %s %s %s\n", icon, src, dim.Render(summary)))
+	}
 	return b.String()
 }
 
@@ -922,8 +971,18 @@ func pluralize(word string, n int) string {
 
 // ── Launcher ──────────────────────────────────────────────────────────
 
+// LaunchTUI starts the BubbleTea TUI with optional notification awareness.
 func LaunchTUI() error {
-	p := tea.NewProgram(NewTUIModel(), tea.WithAltScreen())
+	return LaunchTUIWithNotify(nil)
+}
+
+// LaunchTUIWithNotify starts the TUI with an optional notification store.
+// If store is non-nil, recent notifications are shown in the left pane.
+func LaunchTUIWithNotify(store *notify.Store) error {
+	m := NewTUIModel()
+	m.notifyStore = store
+	m.refreshNotifications()
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }

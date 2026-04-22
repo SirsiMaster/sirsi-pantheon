@@ -214,6 +214,11 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
  </div>
 </div>
 
+<h2 class="page-subtitle" style="margin-top:24px">Live Command Output</h2>
+<div class="card" id="live-log" style="max-height:240px;overflow-y:auto;font-family:monospace;font-size:12px;padding:12px 16px">
+ <div style="color:#444;font-size:11px">Waiting for commands…</div>
+</div>
+
 <script>
 (function(){
 'use strict';
@@ -270,6 +275,32 @@ setInterval(function(){
  fetch('/api/stats').then(function(r){return r.json()}).then(renderStats).catch(function(){});
  fetch('/api/notifications?limit=8').then(function(r){return r.json()}).then(renderRecent).catch(function(){});
 },10000);
+
+/* SSE live command output */
+(function(){
+ var logEl=document.getElementById('live-log');
+ if(!logEl||typeof EventSource==='undefined')return;
+ var es=new EventSource('/api/events');
+ es.addEventListener('output',function(e){
+  try{var d=JSON.parse(e.data);
+  var line=document.createElement('div');line.textContent=(d.handler||'')+': '+(d.line||'');
+  line.style.cssText='font-size:12px;font-family:monospace;color:#ccc;padding:2px 0';
+  logEl.appendChild(line);
+  if(logEl.children.length>200)logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight}catch(x){}});
+ es.addEventListener('complete',function(e){
+  try{var d=JSON.parse(e.data);
+  var line=document.createElement('div');
+  line.textContent='✓ '+d.handler+' — '+d.summary;
+  line.style.cssText='font-size:12px;font-family:monospace;color:#44FF88;padding:4px 0';
+  logEl.appendChild(line);logEl.scrollTop=logEl.scrollHeight}catch(x){}});
+ es.addEventListener('error',function(e){
+  try{var d=JSON.parse(e.data);
+  var line=document.createElement('div');
+  line.textContent='✗ '+d.handler+' — '+d.error;
+  line.style.cssText='font-size:12px;font-family:monospace;color:#FF4444;padding:4px 0';
+  logEl.appendChild(line);logEl.scrollTop=logEl.scrollHeight}catch(x){}});
+})();
 })();
 </script>`, safeTextJS, statsJSON, recentJSON)
 

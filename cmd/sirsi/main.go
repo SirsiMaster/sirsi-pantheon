@@ -13,6 +13,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
@@ -414,9 +415,13 @@ func showGateway(cmd *cobra.Command) {
 
 	switch input {
 	case "1":
-		if err := output.LaunchTUI(); err != nil {
+		nStore, _ := notify.Open(notify.DefaultPath())
+		if err := output.LaunchTUIWithNotify(nStore); err != nil {
 			output.Banner()
 			_ = cmd.Help()
+		}
+		if nStore != nil {
+			nStore.Close()
 		}
 	case "3":
 		_ = runSetupFlow()
