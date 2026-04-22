@@ -63,6 +63,7 @@ type WatchConfig struct {
 	MaxAlerts    int           // Stop after N alerts (0 = unlimited)
 	SampleSize   int           // Top-N processes to sample (default: 15)
 	SelfBudget   float64       // Max CPU% the watchdog itself should use (default: 5.0)
+	AutoRenice   bool          // Automatically renice sustained CPU hogs (opt-in, Rule A1)
 }
 
 // DefaultWatchConfig returns sensible defaults.
@@ -234,6 +235,22 @@ func (w *Watchdog) run() {
 							w.mu.Unlock()
 						default:
 							// Consumer too slow — drop this alert silently
+						}
+
+						// Auto-renice: if enabled and sustained for 6+ checks (30s at 5s),
+						// deprioritize the process. Opt-in per Rule A1.
+						if w.cfg.AutoRenice && hotStreak[p.PID] == 0 {
+							// hotStreak was just reset, meaning this is the first alert.
+							// We only renice on first alert — not repeatedly.
+							go func(pid int, name string) {
+								if err := reniceByPID(pid); err == nil {
+									stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
+										"action": "auto_renice",
+										"pid":    fmt.Sprintf("%d", pid),
+										"name":   name,
+									})
+								}
+							}(p.PID, p.Name)
 						}
 
 						// Reset streak to avoid spamming

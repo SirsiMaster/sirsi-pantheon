@@ -145,6 +145,19 @@ func matchesLSP(nameLower string) bool {
 	return false
 }
 
+// reniceByPID deprioritizes a single process by PID (renice +10 + background QoS).
+// Used by the watchdog auto-renice feature.
+func reniceByPID(pid int) error {
+	if pid <= 1 {
+		return fmt.Errorf("refusing to renice PID %d", pid)
+	}
+	if err := reniceFn(pid, 10); err != nil {
+		return err
+	}
+	_ = taskpolicyFn(pid) // best-effort
+	return nil
+}
+
 // defaultRenice calls renice(1) to set a new nice value.
 func defaultRenice(pid int, nice int) error {
 	cmd := exec.Command("renice", strconv.Itoa(nice), "-p", strconv.Itoa(pid))
