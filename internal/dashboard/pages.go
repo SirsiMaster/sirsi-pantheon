@@ -27,6 +27,7 @@ func pageShell(title, activePage, bodyContent string) string {
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
 		{"vault", "🏛", "Vault"},
+		{"ra", "𓇶", "Ra"},
 	}
 
 	var navHTML strings.Builder
@@ -210,7 +211,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  notifications:viewNotifications,horus:viewHorus,vault:viewVault};
+  notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -334,6 +335,32 @@ function viewVault(){
  }).catch(function(){out('Vault not available.','t-dim')});
 }
 
+function viewRa(){
+ out('𓇶 Ra — Orchestrator','t-gold');
+ out('');out('Loading deployment status...','t-dim');
+
+ fetch('/api/ra/scopes').then(r=>r.json()).then(function(scopes){
+  if(scopes.length){
+   out('');out('  Available Scopes:','t-head');
+   scopes.forEach(function(s){
+    const deadline=s.deadline?' · deadline '+s.deadline:'';
+    out('  ['+s.priority+'] '+s.display_name+' — '+s.repo_path+deadline)});
+  }
+ }).catch(function(){});
+
+ fetch('/api/ra/status').then(r=>r.json()).then(function(d){
+  sep();
+  if(!d.deployed){out('');out('  No active deployment.','t-dim');
+   out('');out('  Commands: deploy, ra status, ra collect, ra kill','t-dim');return}
+  out('');out('  Deployment Status (started '+d.started_at+')','t-head');
+  (d.windows||[]).forEach(function(w){
+   const icon=({running:'⟳',completed:'✅',failed:'❌',crashed:'💀'}[w.state]||'⚪');
+   out('  '+icon+' '+w.name+' — '+w.state+' ('+w.duration+')');
+   if(w.log_tail)out('    '+w.log_tail.split('\\n').pop(),'t-dim')});
+  if(d.all_done)out('');out('  All windows completed. Run "ra collect" to gather results.','t-dim');
+ }).catch(function(){out('  Ra not available.','t-dim')});
+}
+
 /* ── Command input ────────────────────────────────────── */
 const input=document.getElementById('term-input');
 input.addEventListener('keydown',function(e){
@@ -346,7 +373,7 @@ input.addEventListener('keydown',function(e){
 
  /* View switches */
  const viewMap={scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
-  notifications:'notifications',horus:'horus',vault:'vault'};
+  notifications:'notifications',horus:'horus',vault:'vault',ra:'ra',deploy:'ra'};
  if(viewMap[raw]){switchView(viewMap[raw]);return}
 
  /* Kill commands */

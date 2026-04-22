@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/neith"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ra"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/vault"
 )
 
@@ -326,4 +330,105 @@ func (s *Server) apiVaultPrune(w http.ResponseWriter, r *http.Request) {
 		"removed":   removed,
 		"older_than": olderThan,
 	})
+}
+
+// ── Ra API ───────────────────────────────────────────────────────────
+
+// apiRaStatus returns the current Ra deployment state.
+// GET /api/ra/status
+func (s *Server) apiRaStatus(w http.ResponseWriter, r *http.Request) {
+	raDir := ra.RADir()
+	status, err := ra.Monitor(raDir)
+	if err != nil {
+		// No deployment — return empty state
+		writeJSON(w, map[string]interface{}{
+			"deployed": false,
+			"windows":  []interface{}{},
+		})
+		return
+	}
+
+	type windowJSON struct {
+		Name     string `json:"name"`
+		PID      int    `json:"pid"`
+		State    string `json:"state"`
+		ExitCode int    `json:"exit_code"`
+		LogTail  string `json:"log_tail"`
+		Duration string `json:"duration"`
+	}
+
+	var windows []windowJSON
+	for _, w := range status.Windows {
+		windows = append(windows, windowJSON{
+			Name:     w.Name,
+			PID:      w.PID,
+			State:    w.State,
+			ExitCode: w.ExitCode,
+			LogTail:  w.LogTail,
+			Duration: w.Duration.Truncate(time.Second).String(),
+		})
+	}
+	if windows == nil {
+		windows = []windowJSON{}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"deployed":   true,
+		"started_at": status.StartedAt.Format(time.RFC3339),
+		"all_done":   status.AllDone,
+		"windows":    windows,
+	})
+}
+
+// apiRaScopes returns available scope configurations.
+// GET /api/ra/scopes
+func (s *Server) apiRaScopes(w http.ResponseWriter, r *http.Request) {
+	// Find scope config directory
+	configDir := filepath.Join(findRepoRoot(), "configs", "scopes")
+	loom := neith.NewLoom(configDir)
+	scopes, err := loom.LoadScopes()
+	if err != nil {
+		writeJSON(w, []interface{}{})
+		return
+	}
+
+	type scopeJSON struct {
+		Name        string `json:"name"`
+		DisplayName string `json:"display_name"`
+		RepoPath    string `json:"repo_path"`
+		Priority    string `json:"priority"`
+		Deadline    string `json:"deadline"`
+		Sprints     int    `json:"sprints"`
+	}
+
+	var result []scopeJSON
+	for _, sc := range scopes {
+		result = append(result, scopeJSON{
+			Name:        sc.Name,
+			DisplayName: sc.DisplayName,
+			RepoPath:    sc.RepoPath,
+			Priority:    sc.Priority,
+			Deadline:    sc.Deadline,
+			Sprints:     sc.Sprints,
+		})
+	}
+	if result == nil {
+		result = []scopeJSON{}
+	}
+	writeJSON(w, result)
+}
+
+// findRepoRoot finds the sirsi-pantheon repo root.
+func findRepoRoot() string {
+	// Try from binary location
+	exe, _ := os.Executable()
+	dir := filepath.Dir(exe)
+	for d := dir; d != "/"; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+			return d
+		}
+	}
+	// Fallback
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Development", "sirsi-pantheon")
 }

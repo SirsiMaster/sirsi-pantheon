@@ -87,6 +87,8 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/vault/search", s.apiVaultSearch)
 	mux.HandleFunc("/api/vault/stats", s.apiVaultStats)
 	mux.HandleFunc("/api/vault/prune", s.apiVaultPrune)
+	mux.HandleFunc("/api/ra/status", s.apiRaStatus)
+	mux.HandleFunc("/api/ra/scopes", s.apiRaScopes)
 
 	s.srv = &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.Port),
