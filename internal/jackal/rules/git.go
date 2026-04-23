@@ -26,6 +26,7 @@ type gitRepoRule struct {
 	searchPaths []string
 	maxDepth    int
 	analyzeRepo func(ctx context.Context, repoPath string) []jackal.Finding
+	cleanFn     func(ctx context.Context, finding jackal.Finding, dryRun bool) (int64, error) // nil = delete file
 }
 
 func (r *gitRepoRule) Name() string              { return r.name }
@@ -57,14 +58,25 @@ func (r *gitRepoRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jack
 func (r *gitRepoRule) Clean(ctx context.Context, findings []jackal.Finding, opts jackal.CleanOptions) (*jackal.CleanResult, error) {
 	result := &jackal.CleanResult{}
 	for _, f := range findings {
-		freed, err := cleaner.DeleteFile(f.Path, opts.DryRun, opts.UseTrash)
-		if err != nil {
-			result.Skipped++
-			result.Errors = append(result.Errors, err)
-			continue
+		if r.cleanFn != nil {
+			freed, err := r.cleanFn(ctx, f, opts.DryRun)
+			if err != nil {
+				result.Skipped++
+				result.Errors = append(result.Errors, err)
+				continue
+			}
+			result.Cleaned++
+			result.BytesFreed += freed
+		} else {
+			freed, err := cleaner.DeleteFile(f.Path, opts.DryRun, opts.UseTrash)
+			if err != nil {
+				result.Skipped++
+				result.Errors = append(result.Errors, err)
+				continue
+			}
+			result.Cleaned++
+			result.BytesFreed += freed
 		}
-		result.Cleaned++
-		result.BytesFreed += freed
 	}
 	return result, nil
 }
@@ -112,6 +124,7 @@ func NewStaleBranchesRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		analyzeRepo: analyzeStaleBranches,
+		cleanFn:     cleanGitBranch,
 	}
 }
 
@@ -161,6 +174,7 @@ func NewGitLargeObjectsRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		analyzeRepo: analyzeLargeGitDir,
+		cleanFn:     cleanGitGC,
 	}
 }
 
@@ -197,6 +211,7 @@ func NewGitOrphanedWorktreesRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		analyzeRepo: analyzeOrphanedWorktrees,
+		cleanFn:     cleanGitWorktreePrune,
 	}
 }
 
@@ -308,6 +323,7 @@ func NewGitMergedBranchesRule() jackal.ScanRule {
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
 		analyzeRepo: analyzeMergedBranches,
+		cleanFn:     cleanGitBranch,
 	}
 }
 
@@ -390,6 +406,7 @@ func NewGitReflogBloatRule() jackal.ScanRule {
 		platforms:   []string{"darwin", "linux"},
 		searchPaths: defaultDevPaths(),
 		maxDepth:    3,
+		cleanFn:     cleanGitReflogExpire,
 		analyzeRepo: func(ctx context.Context, repo string) []jackal.Finding {
 			logsDir := filepath.Join(repo, ".git", "logs")
 			size, count := dirSizeAndCount(logsDir)
@@ -408,6 +425,83 @@ func NewGitReflogBloatRule() jackal.ScanRule {
 			}}
 		},
 	}
+}
+
+// ── Clean Functions (actual git remediations) ────────────────────────
+
+// cleanGitBranch deletes a local git branch by parsing the repo and branch from the finding path.
+func cleanGitBranch(ctx context.Context, f jackal.Finding, dryRun bool) (int64, error) {
+	// Path is like /repo/.git/refs/heads/branch-name
+	// Extract repo root and branch name
+	path := f.Path
+	refsIdx := strings.Index(path, "/.git/refs/heads/")
+	if refsIdx < 0 {
+		return 0, fmt.Errorf("cannot parse branch path: %s", path)
+	}
+	repo := path[:refsIdx]
+	branch := path[refsIdx+len("/.git/refs/heads/"):]
+
+	if dryRun {
+		return 0, nil
+	}
+	_, err := gitCmd(repo, "branch", "-D", branch)
+	return 0, err
+}
+
+// cleanGitGC runs git gc on a repo to compact the .git directory.
+func cleanGitGC(ctx context.Context, f jackal.Finding, dryRun bool) (int64, error) {
+	// Path is the .git directory — repo root is parent
+	repo := filepath.Dir(f.Path)
+	if dryRun {
+		return f.SizeBytes / 2, nil // estimate 50% reduction
+	}
+	sizeBefore, _ := dirSizeAndCount(f.Path)
+	err := exec.Command("git", "-C", repo, "gc", "--aggressive", "--prune=now").Run()
+	if err != nil {
+		return 0, fmt.Errorf("git gc: %w", err)
+	}
+	sizeAfter, _ := dirSizeAndCount(f.Path)
+	freed := sizeBefore - sizeAfter
+	if freed < 0 {
+		freed = 0
+	}
+	return freed, nil
+}
+
+// cleanGitWorktreePrune prunes orphaned worktrees.
+func cleanGitWorktreePrune(ctx context.Context, f jackal.Finding, dryRun bool) (int64, error) {
+	// Find the repo that owns this worktree — walk up to find .git
+	repo := f.Path
+	for repo != "/" {
+		if _, err := os.Stat(filepath.Join(repo, ".git")); err == nil {
+			break
+		}
+		repo = filepath.Dir(repo)
+	}
+	if dryRun {
+		return 0, nil
+	}
+	_, err := gitCmd(repo, "worktree", "prune")
+	return 0, err
+}
+
+// cleanGitReflogExpire expires old reflog entries.
+func cleanGitReflogExpire(ctx context.Context, f jackal.Finding, dryRun bool) (int64, error) {
+	repo := filepath.Dir(filepath.Dir(f.Path)) // .git/logs -> .git -> repo
+	if dryRun {
+		return f.SizeBytes / 2, nil
+	}
+	sizeBefore, _ := dirSizeAndCount(f.Path)
+	err := exec.Command("git", "-C", repo, "reflog", "expire", "--expire=30.days", "--all").Run()
+	if err != nil {
+		return 0, fmt.Errorf("git reflog expire: %w", err)
+	}
+	sizeAfter, _ := dirSizeAndCount(f.Path)
+	freed := sizeBefore - sizeAfter
+	if freed < 0 {
+		freed = 0
+	}
+	return freed, nil
 }
 
 func defaultDevPaths() []string {
