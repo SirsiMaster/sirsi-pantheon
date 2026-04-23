@@ -94,6 +94,9 @@ func crossPlatformRules() []jackal.ScanRule {
 		NewComposerCacheRule(),
 		NewRubyGemsCacheRule(),
 
+		// Ghost cleanup (registered for Clean dispatch — Scan is no-op)
+		NewKaGhostRule(),
+
 		// Git & Repo Hygiene (7 rules)
 		NewStaleBranchesRule(),
 		NewGitMergedBranchesRule(),
