@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 13** | **Next available: ADR-014**
+**Total ADRs: 15** | **Next available: ADR-016**
 
 ---
 
@@ -23,6 +23,8 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-011](ADR-011-DEITY-ALIGNMENT.md) | Deity Alignment & Context Architecture — canonical scopes for all deities | Accepted | 2026-03-25 |
 | [ADR-012](ADR-012-VSCODE-EXTENSION.md) | Pantheon VS Code Extension — always-on Guardian, status bar ankh, Thoth context | Accepted | 2026-03-25 |
 | [ADR-013](ADR-013-TILED-CONTEXT-RENDERING.md) | Tiled Context Rendering — GPU-inspired relevance scoring, token budgets, deferred manifest | Accepted | 2026-04-05 |
+| [ADR-014](ADR-014-STELE-LEDGER.md) | Stele Ledger — append-only hash-chained event log for all deity communications | Accepted | 2026-04-03 |
+| [ADR-015](ADR-015-DEITY-HIERARCHY.md) | Deity Hierarchy — Horus as local workstation lord, Ra as fleet lord | Accepted | 2026-04-24 |
 
 ---
 
@@ -35,6 +37,8 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 - ADR-007: Unified Findings Portal
 - ADR-010: Pantheon Menu Bar Application
 - ADR-012: Pantheon VS Code Extension
+- ADR-014: Stele Ledger
+- ADR-015: Deity Hierarchy
 
 ### Ghost Detection & Indexing
 - ADR-002: Ka Ghost Detection
@@ -69,6 +73,8 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-011 | Active — Deity Alignment |
 | ADR-012 | Active — VS Code Extension |
 | ADR-013 | Active — Tiled Context Rendering |
-| ADR-014+ | Next available |
+| ADR-014 | Active — Stele Ledger |
+| ADR-015 | Active — Deity Hierarchy |
+| ADR-016+ | Next available |
 
-> **Last updated:** April 5, 2026 — ADR-013 accepted (Tiled Context Rendering).
+> **Last updated:** April 24, 2026 — ADR-015 accepted (Deity Hierarchy).

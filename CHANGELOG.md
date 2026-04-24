@@ -6,6 +6,82 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.17.1] — 2026-04-24
+
+### Added — Horus Dashboard, Advisory Intelligence, Deity Hierarchy (32 commits, 8,290 lines)
+
+#### Horus Dashboard (`internal/dashboard/`, SPA)
+- Terminal-first single-page application at localhost:9119 with 29 API endpoints
+- 8 interactive views: Home, Scan, Ghosts, Guard, Notifications, Horus, Vault, Ra
+- SSE streaming for live command output via `/api/events`
+- Command input bar: scan, clean, ghosts, doctor, guard, network, hardware, quality, dedup, kill, renice
+- Auto-switches to findings view after scan completes with bulk "CLEAN ALL SAFE" action
+- Renamed from "Pantheon Dashboard" to "Horus — Local Workstation Monitor" (ADR-015)
+
+#### Advisory Intelligence (`internal/jackal/advisory.go`)
+- Every finding has: Advisory (what it means), Remediation (what Sirsi does), CanFix (bool), Breaking (bool)
+- 77 rules with specific advisories (e.g., "Rebuilds automatically on next use → Move to Trash")
+- 628/628 findings fixable — zero unfixable gaps
+- Demonstrated: cleaned 628 findings down to 4, reclaimed ~30 GB
+
+#### Scan Pipeline Overhaul
+- 81 scan rules (was 58) — added 22 Git, CI/CD, and repo hygiene rules
+- Git rules: stale branches, merged branches, large .git, orphaned worktrees, untracked artifacts, rerere cache, reflog bloat
+- CI/CD rules: GitHub Actions cache, act runner, build output, Next.js/.turbo caches, dangling Docker images, BuildKit
+- Repo hygiene: .env secrets, stale lock files, dead symlinks, oversized repos, coverage reports, Python venvs
+- Severity classification: safe (274), caution (352), warning (2) — not everything is auto-cleanable
+- Git rules use proper git commands: `git branch -D`, `git gc --aggressive`, `git worktree prune`
+- `sirsi scan --json` outputs full structured results
+- `sirsi clean [all|safe]` — bulk cleanup from CLI
+- `sirsi judge` — interactive review with confirm prompt, wired to engine.Clean
+- Findings persisted to `~/.config/pantheon/findings/latest-scan.json`
+- Scan inscribes `anubis_scan` to Stele with category breakdown
+- Scan includes ghost detection (Ka) — ghost residuals folded into findings
+
+#### Deity Hierarchy (ADR-015)
+- Horus 𓂀 = Local Workstation Lord — sees and reports everything on one machine
+- Ra 𓇶 = Fleet Lord — receives Horus reports, orchestrates across all endpoints
+- WorkstationReport struct: aggregated local state (`/api/horus/report`)
+- Neith = Universal Weaver (local + fleet alignment)
+- Thoth/Seshat = Local Memory/Knowledge (per-machine, Ra aggregates)
+
+#### Horus Phase 2 — Live File Watching (`internal/horus/watcher.go`)
+- fsnotify-based watcher for Go source changes
+- 500ms debounced rebuild — batches IDE auto-format + save
+- Skips .git, node_modules, vendor, .next, dist, .turbo
+- Cache-first reads in dashboard `/api/horus/scan`
+
+#### Guard Enhancements
+- Auto-renice: `WatchConfig.AutoRenice` (opt-in, Rule A1)
+- `reniceByPID()` — renice +10 + Background QoS on sustained CPU hogs
+- `/api/guard/renice` — manual LSP renice from dashboard
+- `/api/slay` — process slayer with 6 targets from dashboard
+- `/api/doctor` — full diagnostic from dashboard
+
+#### VS Code Extension (`extensions/vscode/`)
+- PantheonDiagnostics: maps findings to inline VS Code diagnostics
+- PantheonCodeActionProvider: quick-fix code actions for fixable findings
+- New commands: `refreshDiagnostics`, `cleanFinding`
+- Severity mapping: safe→Hint, caution→Info, warning→Warning
+
+#### Distribution
+- Install script rewritten: `curl -fsSL https://sirsi.ai/install.sh | sh` (no Go toolchain required)
+- Homebrew formula fixed: binary names pantheon→sirsi
+- Demo GIF rendered via VHS (`assets/demo.gif`)
+
+### Tests
+- 48 scan rule tests (git.go + ci.go) — all Git/CI/repo hygiene rules covered
+- 7 Stele tests — append, hash chain, offset tracking, concurrent, continuity
+- 9 Ra module tests — RADir, monitor, PID/exit files, deployment meta
+- 13 new dashboard API tests — doctor, slay, guard, vault, clean, run
+- 4 Horus watcher tests — start/stop, file change detection, non-Go skip, vendor skip
+- Ghost rule registered for Clean dispatch (was silently skipping 162 findings)
+
+### Case Study
+- `docs/case-studies/628-of-628-fixable.md` — full remediation report, every finding documented
+
+---
+
 ## [0.17.0] — 2026-04-20
 
 ### Added — Token Optimization Subsumption (3 new packages, 10 new MCP tools)

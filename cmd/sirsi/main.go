@@ -480,6 +480,11 @@ func init() {
 	// Notification history + setup + dashboard
 	rootCmd.AddCommand(notificationsCmd, setupCmd, dashboardCmd)
 
+	// Note: `sirsi dashboard` is branded as Horus (ADR-015).
+	// `sirsi horus` remains the code graph subcommand for backward compat.
+	// When code graph moves under dashboard as a tab, the horus command
+	// will become the dashboard entry point.
+
 	// Workstream manager (sirsi work / sirsi ws)
 	rootCmd.AddCommand(workCmd)
 
