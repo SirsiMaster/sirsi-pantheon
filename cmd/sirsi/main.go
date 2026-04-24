@@ -115,6 +115,19 @@ var judgeCmd = &cobra.Command{
 	RunE:  func(cmd *cobra.Command, args []string) error { return runJudge(cmd.Context()) },
 }
 
+var cleanCmd = &cobra.Command{
+	Use:   "clean [all|safe]",
+	Short: "Clean scan findings (default: safe items only)",
+	Long: `Clean infrastructure waste found by the last scan.
+
+  sirsi clean          Clean safe items only (caches, logs, temp files)
+  sirsi clean all      Clean safe + caution items
+  sirsi clean safe     Clean safe items only (same as default)
+
+Loads findings from the last scan. Run sirsi scan first.`,
+	RunE: runClean,
+}
+
 var dedupCmd = &cobra.Command{
 	Use:   "dedup [directories...]",
 	Short: "Find duplicate files",
@@ -456,7 +469,7 @@ func init() {
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
-	rootCmd.AddCommand(scanCmd, ghostsCmd, dedupCmd, guardCmd, doctorCmd, judgeCmd, mcpCmd)
+	rootCmd.AddCommand(scanCmd, ghostsCmd, dedupCmd, guardCmd, doctorCmd, judgeCmd, cleanCmd, mcpCmd)
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
 	rootCmd.AddCommand(benchmarkCmd, versionCmd)

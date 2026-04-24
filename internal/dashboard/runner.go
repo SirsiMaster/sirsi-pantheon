@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 )
 
 // Runnable defines a command the dashboard can execute.
@@ -35,18 +37,20 @@ func DefaultActions() []Runnable {
 // Runner manages command execution from the dashboard.
 // Only one command runs at a time — queuing is not supported.
 type Runner struct {
-	mu       sync.Mutex
-	running  bool
-	current  string
-	events   *EventBuffer
-	sirsiBin string
+	mu        sync.Mutex
+	running   bool
+	current   string
+	events    *EventBuffer
+	sirsiBin  string
+	notifyDB  *notify.Store
 }
 
 // NewRunner creates a command runner that pushes output to the event buffer.
-func NewRunner(events *EventBuffer, sirsiBin string) *Runner {
+func NewRunner(events *EventBuffer, sirsiBin string, nStore *notify.Store) *Runner {
 	return &Runner{
 		events:   events,
 		sirsiBin: sirsiBin,
+		notifyDB: nStore,
 	}
 }
 
@@ -144,6 +148,23 @@ func (r *Runner) finish(action *Runnable, start time.Time, err error) {
 			"duration_ms": elapsed.Milliseconds(),
 		}),
 	})
+
+	// Record notification for history
+	if r.notifyDB != nil {
+		n := notify.Notification{
+			Source:     "sirsi",
+			Action:     action.Key,
+			DurationMs: elapsed.Milliseconds(),
+		}
+		if err != nil {
+			n.Severity = notify.SeverityError
+			n.Summary = fmt.Sprintf("%s failed (%s)", action.Label, elapsed.Truncate(time.Second))
+		} else {
+			n.Severity = notify.SeveritySuccess
+			n.Summary = fmt.Sprintf("%s completed (%s)", action.Label, elapsed.Truncate(time.Second))
+		}
+		_ = r.notifyDB.Record(n)
+	}
 
 	r.mu.Lock()
 	r.running = false

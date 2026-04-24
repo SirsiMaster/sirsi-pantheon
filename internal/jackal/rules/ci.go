@@ -182,7 +182,7 @@ func (r *dockerImageRule) Clean(ctx context.Context, findings []jackal.Finding, 
 		return result, nil
 	}
 
-	out, err := exec.Command("docker", "image", "prune", "-f").Output()
+	out, err := exec.Command("docker", "image", "prune", "-a", "-f").Output()
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("docker prune: %w", err))
 		return result, nil

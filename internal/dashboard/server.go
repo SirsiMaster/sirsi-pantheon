@@ -52,7 +52,7 @@ func New(cfg Config) *Server {
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
-		s.runner = NewRunner(cfg.Events, cfg.SirsiBin)
+		s.runner = NewRunner(cfg.Events, cfg.SirsiBin, cfg.NotifyDB)
 	}
 
 	mux := http.NewServeMux()

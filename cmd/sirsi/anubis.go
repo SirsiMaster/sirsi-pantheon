@@ -238,7 +238,7 @@ func runWeigh(ctx context.Context) error {
 		output.Table([]string{"Category", "Findings", "Size"}, catRows)
 	}
 
-	// Show top 10 individual findings.
+	// Show top 10 individual findings with advisories.
 	limit := 10
 	if len(res.Findings) < limit {
 		limit = len(res.Findings)
@@ -252,10 +252,17 @@ func runWeigh(ctx context.Context) error {
 			} else if f.Severity == jackal.SeverityWarning {
 				sev = "🟠"
 			}
+			fix := ""
+			if f.CanFix {
+				fix = " → " + f.Remediation
+			}
 			output.Dim("  %s %s — %s (%s)", sev, f.Description, output.ShortenPath(f.Path), jackal.FormatSize(f.SizeBytes))
+			if f.Advisory != "" {
+				output.Dim("    %s%s", f.Advisory, fix)
+			}
 		}
 		if len(res.Findings) > limit {
-			output.Dim("  ... and %d more. Run: sirsi scan --json", len(res.Findings)-limit)
+			output.Dim("  ... and %d more. Run: sirsi scan --json | sirsi judge | sirsi clean all", len(res.Findings)-limit)
 		}
 	}
 
@@ -385,6 +392,111 @@ func runJudge(ctx context.Context) error {
 		"cleaned":    fmt.Sprintf("%d", result.Cleaned),
 		"bytes_freed": fmt.Sprintf("%d", result.BytesFreed),
 		"skipped":    fmt.Sprintf("%d", result.Skipped),
+	})
+
+	output.Footer(time.Since(start))
+	return nil
+}
+
+func runClean(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	start := time.Now()
+
+	mode := "safe"
+	if len(args) > 0 && args[0] == "all" {
+		mode = "all"
+	}
+
+	output.Banner()
+	output.Header("ANUBIS — Automated Cleanup")
+
+	persisted, err := jackal.LoadLatest()
+	if err != nil {
+		output.Error("No scan results found. Run `sirsi scan` first.")
+		return fmt.Errorf("load findings: %w", err)
+	}
+
+	if len(persisted.Findings) == 0 {
+		output.Success("No findings to clean. System is clean.")
+		return nil
+	}
+
+	// Filter by severity
+	var findings []jackal.Finding
+	for _, pf := range persisted.Findings {
+		f := jackal.Finding{
+			RuleName:    pf.RuleName,
+			Category:    pf.Category,
+			Description: pf.Description,
+			Path:        pf.Path,
+			SizeBytes:   pf.SizeBytes,
+			Severity:    pf.Severity,
+			IsDir:       pf.IsDir,
+			FileCount:   pf.FileCount,
+			CanFix:      pf.CanFix,
+			Advisory:    pf.Advisory,
+			Remediation: pf.Remediation,
+		}
+		if pf.LastModified != "" {
+			f.LastModified, _ = time.Parse(time.RFC3339, pf.LastModified)
+		}
+		if !f.CanFix {
+			continue
+		}
+		if mode == "safe" && f.Severity != jackal.SeveritySafe {
+			continue
+		}
+		if f.Severity == jackal.SeverityWarning && mode != "all" {
+			continue
+		}
+		findings = append(findings, f)
+	}
+
+	if len(findings) == 0 {
+		output.Info("No %s findings to clean.", mode)
+		return nil
+	}
+
+	var totalSize int64
+	for _, f := range findings {
+		totalSize += f.SizeBytes
+	}
+
+	output.Info("Cleaning %d %s findings (%s):", len(findings), mode, jackal.FormatSize(totalSize))
+	for i, f := range findings {
+		if i >= 15 {
+			output.Dim("  ... and %d more", len(findings)-15)
+			break
+		}
+		sev := "🟢"
+		if f.Severity == jackal.SeverityCaution {
+			sev = "🟡"
+		}
+		output.Dim("  %s %s (%s) → %s", sev, f.Description, jackal.FormatSize(f.SizeBytes), f.Remediation)
+	}
+
+	// Execute
+	engine := jackal.DefaultEngine()
+	engine.RegisterAll(rules.AllRules()...)
+
+	result, err := engine.Clean(ctx, findings, jackal.CleanOptions{
+		DryRun:   false,
+		Confirm:  true,
+		UseTrash: true,
+	})
+	if err != nil {
+		return fmt.Errorf("clean failed: %w", err)
+	}
+
+	output.Success("Cleaned %d items. Reclaimed %s.", result.Cleaned, jackal.FormatSize(result.BytesFreed))
+	if result.Skipped > 0 {
+		output.Warn("Skipped %d items (protected or errors)", result.Skipped)
+	}
+
+	stele.Inscribe("anubis", stele.TypeAnubisClean, "", map[string]string{
+		"cleaned":     fmt.Sprintf("%d", result.Cleaned),
+		"bytes_freed": fmt.Sprintf("%d", result.BytesFreed),
+		"mode":        mode,
 	})
 
 	output.Footer(time.Since(start))
