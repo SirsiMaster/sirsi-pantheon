@@ -111,8 +111,8 @@ func (r *Runner) execute(action *Runnable) {
 	}
 	cmd.Stderr = cmd.Stdout // merge stderr into stdout
 
-	if err := cmd.Start(); err != nil {
-		r.finish(action, start, fmt.Errorf("start: %w", err))
+	if startErr := cmd.Start(); startErr != nil {
+		r.finish(action, start, fmt.Errorf("start: %w", startErr))
 		return
 	}
 

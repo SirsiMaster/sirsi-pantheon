@@ -1,13 +1,9 @@
 package dashboard
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // ── Shared Layout ───────────────────────────────────────────────────────
@@ -131,10 +127,6 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 		bodyContent,
 	)
 }
-
-// safeTextJS is a JavaScript helper function injected into pages that need to render
-// dynamic data. It escapes HTML entities to prevent XSS when inserting into the DOM.
-const safeTextJS = `function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}`
 
 // ── SPA Entry Point ───────────────────────────────────────────────────
 
@@ -569,33 +561,3 @@ var _ = "legacy page handlers removed"
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 // readSteleByType reads the Stele JSONL file and returns entries matching any of the given types.
-// Returns newest first, up to 100 entries. Read-only — does not advance any consumer offset.
-func (s *Server) readSteleByType(types ...string) []stele.Entry {
-	path := s.stelePath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	typeSet := make(map[string]bool, len(types))
-	for _, t := range types {
-		typeSet[t] = true
-	}
-
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	var entries []stele.Entry
-	for i := len(lines) - 1; i >= 0 && len(entries) < 100; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		var e stele.Entry
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			continue
-		}
-		if typeSet[e.Type] {
-			entries = append(entries, e)
-		}
-	}
-	return entries
-}

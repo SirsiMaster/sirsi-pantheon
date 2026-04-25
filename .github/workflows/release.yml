@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    name: Build & Release
+    name: Build & Release (CLI + Deities)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,4 +36,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+  menubar:
+    name: Build Menu Bar (macOS DMG)
+    runs-on: macos-latest
+    needs: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build DMG (arm64)
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: scripts/build-dmg.sh --version "$BUILD_VERSION" --arch arm64
+
+      - name: Build DMG (amd64)
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: scripts/build-dmg.sh --version "$BUILD_VERSION" --arch amd64
+
+      - name: Upload DMGs to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          gh release upload "$TAG_NAME" \
+            "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg" \
+            "bin/SirsiPantheon-${BUILD_VERSION}-amd64.dmg"
 

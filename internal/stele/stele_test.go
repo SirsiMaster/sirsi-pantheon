@@ -17,9 +17,9 @@ func TestAppendAndRead(t *testing.T) {
 
 	// Write 3 entries
 	for i, deity := range []string{"ra", "maat", "thoth"} {
-		err := ledger.Append(deity, TypeToolUse, "test", map[string]string{"seq": string(rune('0' + i))})
-		if err != nil {
-			t.Fatalf("Append %d: %v", i, err)
+		appendErr := ledger.Append(deity, TypeToolUse, "test", map[string]string{"seq": string(rune('0' + i))})
+		if appendErr != nil {
+			t.Fatalf("Append %d: %v", i, appendErr)
 		}
 	}
 

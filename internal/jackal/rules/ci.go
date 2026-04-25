@@ -213,7 +213,7 @@ func parseDockerSize(s string) int64 {
 	}
 	s = strings.TrimSpace(s)
 	f := 0.0
-	fmt.Sscanf(s, "%f", &f)
+	_, _ = fmt.Sscanf(s, "%f", &f)
 	return int64(f * float64(multiplier))
 }
 

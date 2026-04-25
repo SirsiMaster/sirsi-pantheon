@@ -14,7 +14,7 @@ func collectDashRAM(stats map[string]interface{}) {
 		return
 	}
 	var total int64
-	fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &total)
+	_, _ = fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &total)
 	if total == 0 {
 		return
 	}
@@ -29,7 +29,7 @@ func collectDashRAM(stats map[string]interface{}) {
 	for _, line := range strings.Split(string(vmOut), "\n") {
 		switch {
 		case strings.Contains(line, "page size of"):
-			fmt.Sscanf(line, "Mach Virtual Memory Statistics: (page size of %d bytes)", &pageSize)
+			_, _ = fmt.Sscanf(line, "Mach Virtual Memory Statistics: (page size of %d bytes)", &pageSize)
 		case strings.Contains(line, "Pages free"):
 			free = parseVMLine(line) * pageSize
 		case strings.Contains(line, "Pages active"):
@@ -65,7 +65,7 @@ func parseVMLine(line string) int64 {
 	val := strings.TrimSpace(parts[1])
 	val = strings.TrimSuffix(val, ".")
 	var v int64
-	fmt.Sscanf(val, "%d", &v)
+	_, _ = fmt.Sscanf(val, "%d", &v)
 	return v
 }
 

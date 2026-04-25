@@ -320,6 +320,19 @@ Configure in your IDE:
 		}
 		defer unlock()
 
+		// Hint on stderr (won't interfere with JSON-RPC on stdout).
+		// If stdin is a terminal, the user is running this manually — not from an IDE.
+		if isTerminal(os.Stdin.Fd()) {
+			fmt.Fprintln(os.Stderr, "MCP server starting on stdio. Waiting for IDE connection...")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "This command is designed to be called by an AI IDE (Claude, Cursor, Windsurf).")
+			fmt.Fprintln(os.Stderr, "Add this to your IDE's MCP config:")
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, `  { "mcpServers": { "sirsi": { "command": "sirsi", "args": ["mcp"] } } }`)
+			fmt.Fprintln(os.Stderr, "")
+			fmt.Fprintln(os.Stderr, "Press Ctrl+C to exit.")
+		}
+
 		server := mcp.NewServer()
 		if err := server.Run(); err != nil {
 			output.Error("MCP server error: %v", err)
@@ -418,6 +431,16 @@ func showGateway(cmd *cobra.Command) {
 	// First run or clean install → setup
 	if firstRun || (len(ai) == 0 && len(ides) == 0) {
 		_ = runSetupFlow()
+		fmt.Println()
+		fmt.Println(dim.Render("  Quick start — try any of these right now:"))
+		fmt.Println()
+		fmt.Printf("    %s  %s\n", gold.Render("sirsi scan"), dim.Render("Find waste on your machine"))
+		fmt.Printf("    %s  %s\n", gold.Render("sirsi doctor"), dim.Render("Check system health"))
+		fmt.Printf("    %s  %s\n", gold.Render("sirsi ghosts"), dim.Render("Find remnants of uninstalled apps"))
+		fmt.Printf("    %s  %s\n", gold.Render("sirsi quickstart"), dim.Render("Guided first scan with recommendations"))
+		fmt.Println()
+		fmt.Println(dim.Render("  Run 'sirsi setup' anytime to configure AI tools and IDEs."))
+		fmt.Println()
 		return
 	}
 
@@ -449,6 +472,16 @@ func showGateway(cmd *cobra.Command) {
 	}
 }
 
+// isTerminal returns true if the file descriptor is connected to a terminal
+// (not piped from an IDE or redirected from a file).
+func isTerminal(fd uintptr) bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&JsonOutput, "json", false, "Output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress output")
@@ -472,7 +505,7 @@ func init() {
 	rootCmd.AddCommand(scanCmd, ghostsCmd, dedupCmd, guardCmd, doctorCmd, judgeCmd, cleanCmd, mcpCmd)
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
-	rootCmd.AddCommand(benchmarkCmd, versionCmd)
+	rootCmd.AddCommand(benchmarkCmd, versionCmd, quickstartCmd)
 
 	// Token optimization — RTK, Vault, Horus
 	rootCmd.AddCommand(rtkCmd, vaultCmd, horusCmd)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -121,13 +120,4 @@ func parseIntParam(r *http.Request, key string, defaultVal int) int {
 		return defaultVal
 	}
 	return n
-}
-
-// stelePath returns the resolved Stele file path.
-func (s *Server) stelePath() string {
-	if s.cfg.StelePath != "" {
-		return s.cfg.StelePath
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "ra", "stele.jsonl")
 }
