@@ -76,7 +76,7 @@ func ResolveProfileDir(profileName string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("Chrome profile '%s' not found — run 'pantheon seshat profiles chrome' to list available profiles", profileName)
+	return "", fmt.Errorf("Chrome profile '%s' not found — run 'sirsi seshat profiles chrome' to list available profiles", profileName)
 }
 
 // ListChromeProfiles reads Chrome's Local State file and returns all profiles.

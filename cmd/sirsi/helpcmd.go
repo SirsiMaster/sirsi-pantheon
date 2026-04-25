@@ -18,9 +18,9 @@ var helpCmd = &cobra.Command{
 	Long: `Show a styled terminal guide for any Pantheon deity, or open the
 web documentation in your browser.
 
-  pantheon help thoth          Show terminal guide for Thoth
-  pantheon help seshat --docs  Open Seshat web docs in browser
-  pantheon help --list         List all available guides`,
+  sirsi help thoth          Show terminal guide for Thoth
+  sirsi help seshat --docs  Open Seshat web docs in browser
+  sirsi help --list         List all available guides`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if helpList || len(args) == 0 {

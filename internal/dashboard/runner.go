@@ -14,9 +14,9 @@ import (
 
 // Runnable defines a command the dashboard can execute.
 type Runnable struct {
-	Key   string `json:"key"`
-	Label string `json:"label"`
-	Glyph string `json:"glyph"`
+	Key   string   `json:"key"`
+	Label string   `json:"label"`
+	Glyph string   `json:"glyph"`
 	Args  []string `json:"-"`
 }
 
@@ -37,12 +37,12 @@ func DefaultActions() []Runnable {
 // Runner manages command execution from the dashboard.
 // Only one command runs at a time — queuing is not supported.
 type Runner struct {
-	mu        sync.Mutex
-	running   bool
-	current   string
-	events    *EventBuffer
-	sirsiBin  string
-	notifyDB  *notify.Store
+	mu       sync.Mutex
+	running  bool
+	current  string
+	events   *EventBuffer
+	sirsiBin string
+	notifyDB *notify.Store
 }
 
 // NewRunner creates a command runner that pushes output to the event buffer.

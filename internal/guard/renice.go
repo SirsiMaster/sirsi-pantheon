@@ -177,7 +177,7 @@ func FormatReniceReport(r *ReniceResult) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("𓁵 Isis — Renice Report\n")
+	sb.WriteString("𓁵 Isis — Deprioritize Report (safe, reversible)\n")
 	sb.WriteString(strings.Repeat("─", 50) + "\n\n")
 
 	for _, p := range r.Processes {

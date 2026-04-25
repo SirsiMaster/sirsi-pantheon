@@ -4,8 +4,8 @@
 
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-C8A951?style=flat)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.17.0-1A1A5E?style=flat)](VERSION)
-[![Tests](https://img.shields.io/badge/tests-1%2C926%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/Version-0.17.1-1A1A5E?style=flat)](VERSION)
+[![Tests](https://img.shields.io/badge/tests-2%2C251%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![Product Page](https://img.shields.io/badge/sirsi.ai-pantheon-059669?style=flat)](https://sirsi.ai/pantheon)
 
 ```bash
@@ -28,9 +28,23 @@ Pantheon is different in three ways:
 
 ### Where This Is Going
 
-Pantheon runs on one machine today. The same scanning architecture — 58 rules, hardware detection, policy enforcement, event ledger — is designed to scale across fleets. **Pantheon Ra** extends the free tool to multi-machine orchestration: subnet scanning, container auditing, cross-repo AI agents that don't just collect metrics but autonomously detect and fix issues.
+Pantheon runs on one machine today. The same scanning architecture — 81 rules, hardware detection, policy enforcement, event ledger — is designed to scale across fleets. **Pantheon Ra** extends the free tool to multi-machine orchestration: subnet scanning, container auditing, cross-repo AI agents that don't just collect metrics but autonomously detect and fix issues.
 
 The free product solves real problems for individual developers. The enterprise product applies the same intelligence across infrastructure.
+
+---
+
+## How It Works
+
+Pantheon has three interfaces that work together:
+
+**Menu bar (always on)** — An ankh icon sits in your macOS menu bar. It runs a guard watchdog, periodic infrastructure scan, and shows live state: 🟢 Clean / 🟡 12 GB waste / 🔴 RAM pressure / ⚠️ process alert. Click to open the TUI.
+
+**TUI (interactive)** — `sirsi` with no subcommand opens a full-screen terminal UI. Type commands, see streaming output, browse command history. The TUI reads persisted scan findings from the menubar's background scans.
+
+**Horus Dashboard (web)** — `sirsi horus` opens a terminal-first web app at localhost:9119 with 29 API endpoints, SSE streaming, and a command bar. Optional for power users.
+
+**CLI (scriptable)** — Every command works standalone: `sirsi scan`, `sirsi ghosts`, etc. All support `--json`.
 
 | | Traditional monitoring (SolarWinds, Datadog) | Pantheon |
 |---|---|---|
@@ -46,7 +60,7 @@ The free product solves real problems for individual developers. The enterprise 
 
 ### Scan for waste
 ```bash
-sirsi scan                 # 58 rules across 7 domains — caches, build artifacts, orphaned files
+sirsi scan                 # 81 rules across 7 domains — caches, build artifacts, orphaned files
 sirsi scan --all           # Deep scan
 sirsi scan --json          # Machine-readable output
 ```
@@ -148,7 +162,7 @@ Download from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/re
 
 | Command | What It Does |
 |:--------|:-------------|
-| `sirsi scan` | Find infrastructure waste (58 rules, 7 domains) |
+| `sirsi scan` | Find infrastructure waste (81 rules, 7 domains) |
 | `sirsi ghosts` | Detect remnants of uninstalled apps |
 | `sirsi dedup [dirs]` | Find duplicate files with three-phase hashing |
 | `sirsi doctor` | One-shot system health diagnostic |
@@ -182,10 +196,10 @@ Every command supports `--json`, `--quiet`, and `--verbose` flags.
 
 | Edition | Scope | Price |
 |:--------|:------|:------|
-| **Anubis** | Single machine — all commands above | **Free forever** |
+| **Pantheon** | Single machine — all commands above | **Free forever** |
 | **Ra** | Fleet management — multi-repo orchestration, subnet scanning, compliance | Coming soon |
 
-The free edition has no feature gating, no telemetry, no time limits. MIT licensed.
+The free edition has no feature gating, no telemetry, no time limits. Apache 2.0 licensed.
 
 ---
 
@@ -193,7 +207,7 @@ The free edition has no feature gating, no telemetry, no time limits. MIT licens
 
 - **Zero telemetry.** No analytics, no tracking, no data leaves your machine. Non-negotiable.
 - **Dry-run by default.** Every destructive operation requires explicit `--confirm`.
-- **35 protected paths.** System directories, keychains, and SSH keys are hardcoded as undeletable.
+- **25 protected paths.** System directories, keychains, and SSH keys are hardcoded as undeletable.
 - **Trash-first cleaning.** Removals go to Trash with a full decision log.
 - **DNS safety model.** Network fixes probe before changing config, auto-revert on failure.
 
@@ -205,7 +219,7 @@ The free edition has no feature gating, no telemetry, no time limits. MIT licens
 git clone https://github.com/SirsiMaster/sirsi-pantheon.git
 cd sirsi-pantheon
 git config core.hooksPath .githooks    # Enable pre-push quality gate
-go test ./...                          # 1,663 tests across 27 packages
+go test ./...                          # 2,251 tests across 36 packages
 go build ./cmd/sirsi/
 ```
 

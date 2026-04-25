@@ -366,7 +366,7 @@ function viewGuard(){
    out('  '+icon+' '+f.Check+' — '+f.Message)});
   sep();out('');
   out('Process Slayer — type: kill node | kill electron | kill docker | kill lsp | kill build | kill ai','t-dim');
-  out('Renice LSPs  — type: renice (deprioritize Language Servers, nice +10)','t-dim');
+  out('Deprioritize — type: deprioritize (safe, reversible — lowers background process priority)','t-dim');
  }).catch(function(e){out('Doctor failed: '+e.message,'t-err')});
 }
 
@@ -463,12 +463,12 @@ input.addEventListener('keydown',function(e){
   out('▸ Loading findings for judgment...','t-gold');
   switchView('scan');return}
 
- if(raw==='renice'||raw==='renice lsp'){
-  out('▸ renice lsp','t-gold');
+ if(raw==='renice'||raw==='renice lsp'||raw==='deprioritize'||raw==='deprioritize lsp'){
+  out('▸ Deprioritize background processes (safe, reversible)','t-gold');
   fetch('/api/guard/renice?target=lsp',{method:'POST'}).then(r=>r.json()).then(function(d){
-   if(d.reniced>0){out('✓ Reniced '+d.reniced+' LSP processes (nice +10, Background QoS)','t-ok');
+   if(d.reniced>0){out('✓ Deprioritized '+d.reniced+' background processes (safe, reversible)','t-ok');
     (d.processes||[]).forEach(function(p){out('  PID '+p.pid+' '+p.name+' — '+p.rss_human,'t-dim')})}
-   else out('No LSP processes found to renice','t-dim');
+   else out('No background processes found to deprioritize','t-dim');
   }).catch(function(e){out('✗ '+e.message,'t-err')});
   return}
 
@@ -507,7 +507,7 @@ input.addEventListener('keydown',function(e){
  const cmdMap={scan:'scan',ghosts:'ghosts',doctor:'doctor',guard:'guard',
   network:'network',hardware:'hardware',quality:'quality',dedup:'dedup'};
  const key=cmdMap[raw];
- if(!key){out('Unknown command: '+raw,'t-err');out('Available: scan, ghosts, doctor, guard, network, hardware, quality, dedup, kill <target>, renice','t-dim');return}
+ if(!key){out('Unknown command: '+raw,'t-err');out('Available: scan, ghosts, doctor, guard, network, hardware, quality, dedup, kill <target>, deprioritize','t-dim');return}
  running=true;
  fetch('/api/run?cmd='+key,{method:'POST'}).then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error)});
@@ -548,11 +548,11 @@ func spaRedirect(w http.ResponseWriter, r *http.Request, view string) {
 	fmt.Fprintf(w, `<script>location.replace('/');setTimeout(function(){switchView('%s')},100)</script>`, view)
 }
 
-func (s *Server) handleScan(w http.ResponseWriter, r *http.Request)          { spaRedirect(w, r, "scan") }
-func (s *Server) handleGhosts(w http.ResponseWriter, r *http.Request)        { spaRedirect(w, r, "ghosts") }
-func (s *Server) handleGuard(w http.ResponseWriter, r *http.Request)         { spaRedirect(w, r, "guard") }
-func (s *Server) handleHorus(w http.ResponseWriter, r *http.Request)         { spaRedirect(w, r, "horus") }
-func (s *Server) handleVault(w http.ResponseWriter, r *http.Request)         { spaRedirect(w, r, "vault") }
+func (s *Server) handleScan(w http.ResponseWriter, r *http.Request)   { spaRedirect(w, r, "scan") }
+func (s *Server) handleGhosts(w http.ResponseWriter, r *http.Request) { spaRedirect(w, r, "ghosts") }
+func (s *Server) handleGuard(w http.ResponseWriter, r *http.Request)  { spaRedirect(w, r, "guard") }
+func (s *Server) handleHorus(w http.ResponseWriter, r *http.Request)  { spaRedirect(w, r, "horus") }
+func (s *Server) handleVault(w http.ResponseWriter, r *http.Request)  { spaRedirect(w, r, "vault") }
 
 func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	spaRedirect(w, r, "notifications")

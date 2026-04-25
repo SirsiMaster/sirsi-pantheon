@@ -32,9 +32,9 @@ Runs inference and hashing benchmarks across all available compute paths:
 
 Compares timing, throughput, and correctness across backends.
 
-  pantheon benchmark                    Run with defaults (1000 blocks × 4KB)
-  pantheon benchmark --blocks 5000      Custom block count
-  pantheon benchmark --size 65536       Custom block size (bytes)`,
+  sirsi benchmark                    Run with defaults (1000 blocks × 4KB)
+  sirsi benchmark --blocks 5000      Custom block count
+  sirsi benchmark --size 65536       Custom block size (bytes)`,
 	RunE: runBenchmark,
 }
 

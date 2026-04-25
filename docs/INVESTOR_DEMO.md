@@ -86,7 +86,7 @@ The agent binary is 2 MB. Deploy to any Linux VM, container, or bare metal serve
 
 ### 4:45 — Closing (15 seconds)
 
-"17 commands. 58 rules. 453 tests. ~8 MB binary. MIT licensed. Zero telemetry.
+"17 commands. 81 rules. 453 tests. ~8 MB binary. MIT licensed. Zero telemetry.
 
 We're timing this for Product Hunt and Hacker News in April.
 
@@ -109,4 +109,4 @@ A: CleanMyMac (consumer), Mole (basic OSS), BleachBit (Linux). None understand d
 A: 27M professional developers worldwide. Average workstation has 10-50 GB of reclaimable infrastructure waste.
 
 **Q: What's the moat?**
-A: Rule database (58 rules, growing), neural classification model, MCP integration with Claude/Cursor/Windsurf, and the Egyptian brand identity (Anubis = infrastructure judgment).
+A: Rule database (81 rules, growing), neural classification model, MCP integration with Claude/Cursor/Windsurf, and the Egyptian brand identity (Anubis = infrastructure judgment).

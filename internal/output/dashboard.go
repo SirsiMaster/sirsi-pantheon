@@ -393,7 +393,7 @@ func (m MainModel) View() string {
 	b.WriteString(" " + lipgloss.NewStyle().Foreground(Gold).Render(strings.Repeat("─", min(m.width-2, 90))) + "\n\n")
 
 	if len(m.scopes) == 0 {
-		b.WriteString("  No active deployment. Run: pantheon ra deploy\n")
+		b.WriteString("  No active deployment. Run: sirsi ra deploy\n")
 		return b.String()
 	}
 

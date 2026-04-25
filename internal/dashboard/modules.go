@@ -34,13 +34,13 @@ func (s *Server) apiGhosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ghostJSON struct {
-		AppName    string `json:"app_name"`
-		BundleID   string `json:"bundle_id"`
-		TotalSize  int64  `json:"total_size"`
-		TotalFiles int    `json:"total_files"`
-		SizeHuman  string `json:"size_human"`
-		InLaunchSvc bool  `json:"in_launch_services"`
-		Residuals  []struct {
+		AppName     string `json:"app_name"`
+		BundleID    string `json:"bundle_id"`
+		TotalSize   int64  `json:"total_size"`
+		TotalFiles  int    `json:"total_files"`
+		SizeHuman   string `json:"size_human"`
+		InLaunchSvc bool   `json:"in_launch_services"`
+		Residuals   []struct {
 			Path      string `json:"path"`
 			Type      string `json:"type"`
 			SizeBytes int64  `json:"size_bytes"`
@@ -51,11 +51,11 @@ func (s *Server) apiGhosts(w http.ResponseWriter, r *http.Request) {
 	var result []ghostJSON
 	for _, g := range ghosts {
 		gj := ghostJSON{
-			AppName:    g.AppName,
-			BundleID:   g.BundleID,
-			TotalSize:  g.TotalSize,
-			TotalFiles: g.TotalFiles,
-			SizeHuman:  fmt.Sprintf("%.1f MB", float64(g.TotalSize)/1048576),
+			AppName:     g.AppName,
+			BundleID:    g.BundleID,
+			TotalSize:   g.TotalSize,
+			TotalFiles:  g.TotalFiles,
+			SizeHuman:   fmt.Sprintf("%.1f MB", float64(g.TotalSize)/1048576),
 			InLaunchSvc: g.InLaunchServices,
 		}
 		for _, r := range g.Residuals {
@@ -232,7 +232,7 @@ func (s *Server) apiWorkstationReport(w http.ResponseWriter, r *http.Request) {
 	// Hostname + platform
 	hostname, _ := os.Hostname()
 	report.Hostname = hostname
-	report.OS = "darwin" // runtime.GOOS
+	report.OS = "darwin"  // runtime.GOOS
 	report.Arch = "arm64" // runtime.GOARCH
 
 	// Scan summary
@@ -416,7 +416,7 @@ func (s *Server) apiVaultPrune(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"removed":   removed,
+		"removed":    removed,
 		"older_than": olderThan,
 	})
 }
@@ -507,7 +507,7 @@ func (s *Server) apiRaScopes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, result)
 }
 
-// findRepoRoot finds the sirsi-pantheon repo root.
+// findRepoRoot finds the sirsi-sirsi repo root.
 func findRepoRoot() string {
 	// Try from binary location
 	exe, _ := os.Executable()

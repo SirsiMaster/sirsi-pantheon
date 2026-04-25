@@ -22,6 +22,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
@@ -254,6 +255,9 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if raw == "help" || raw == "?" {
 			return m.showHelp()
+		}
+		if raw == "scan" || raw == "findings" {
+			return m.showFindings()
 		}
 		// Quick action shortcuts (only before first command)
 		if len(m.history) == 0 {
@@ -931,6 +935,115 @@ func (m TUIModel) showHelp() (TUIModel, tea.Cmd) {
 	m.viewport.SetContent(strings.Join(lines, "\n"))
 	m.recalcViewportHeight()
 	m.viewport.GotoTop()
+	return m, nil
+}
+
+// ── Findings View ────────────────────────────────────────────────
+
+// showFindings loads persisted scan results from disk and renders them
+// in the TUI with category breakdown and advisories.
+func (m TUIModel) showFindings() (TUIModel, tea.Cmd) {
+	gold := lipgloss.NewStyle().Foreground(Gold).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	warn := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
+	body := lipgloss.NewStyle().Foreground(White)
+
+	scan, err := jackal.LoadLatest()
+	if err != nil {
+		m.outputLines = []string{
+			gold.Render("  𓁢 Scan Findings"),
+			"",
+			dim.Render("  No scan results found. The menubar runs scans automatically,"),
+			dim.Render("  or run `sirsi weigh` from the terminal for a fresh scan."),
+		}
+		m.viewport.SetContent(strings.Join(m.outputLines, "\n"))
+		m.recalcViewportHeight()
+		return m, nil
+	}
+
+	var lines []string
+	lines = append(lines,
+		gold.Render("  𓁢 Scan Findings"),
+		dim.Render(fmt.Sprintf("  Scanned %s — %d rules, %s total waste",
+			scan.Timestamp.Format("Jan 2 15:04"),
+			scan.RulesRan,
+			jackal.FormatSize(scan.TotalSize))),
+		"",
+	)
+
+	// Category breakdown
+	if len(scan.ByCategory) > 0 {
+		lines = append(lines, body.Render("  Category Breakdown:"))
+		for cat, summary := range scan.ByCategory {
+			icon := "📁"
+			switch string(cat) {
+			case "cache":
+				icon = "🗑"
+			case "logs":
+				icon = "📋"
+			case "build":
+				icon = "🔨"
+			case "containers":
+				icon = "🐳"
+			case "dev-tools":
+				icon = "🔧"
+			case "packages":
+				icon = "📦"
+			}
+			lines = append(lines,
+				fmt.Sprintf("    %s %-14s %s  (%d items)",
+					icon, cat,
+					jackal.FormatSize(summary.TotalSize),
+					summary.Findings))
+		}
+		lines = append(lines, "")
+	}
+
+	// Top findings with advisories
+	shown := 0
+	for _, f := range scan.Findings {
+		if shown >= 15 {
+			remaining := len(scan.Findings) - shown
+			if remaining > 0 {
+				lines = append(lines, dim.Render(fmt.Sprintf("  ... and %d more findings", remaining)))
+			}
+			break
+		}
+		severity := "  "
+		switch f.Severity {
+		case jackal.SeveritySafe:
+			severity = lipgloss.NewStyle().Foreground(Green).Render("safe")
+		case jackal.SeverityCaution:
+			severity = warn.Render("caution")
+		case jackal.SeverityWarning:
+			severity = lipgloss.NewStyle().Foreground(Red).Render("warning")
+		}
+		lines = append(lines,
+			fmt.Sprintf("  %s  %-8s  %s",
+				severity,
+				f.SizeHuman,
+				body.Render(f.Description)))
+		if f.Advisory != "" {
+			lines = append(lines, dim.Render("         → "+f.Advisory))
+		}
+		shown++
+	}
+
+	lines = append(lines, "",
+		dim.Render("  Type `clean` to remove safe items, or `sirsi judge --dry-run` for policy review."))
+
+	m.outputLines = lines
+	m.viewport.SetContent(strings.Join(m.outputLines, "\n"))
+	m.recalcViewportHeight()
+	m.viewport.GotoTop()
+
+	// Record in history
+	m.history = append(m.history, historyEntry{
+		deity: "anubis", command: "scan",
+		output: strings.Join(lines, "\n"),
+	})
+	m.cmdHistory = deduplicateHistory(m.history)
+
 	return m, nil
 }
 

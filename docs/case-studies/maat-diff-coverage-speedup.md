@@ -117,7 +117,7 @@ optimization strategy needed (parallelism, skip-lists).
 ## Files Changed
 
 - `internal/maat/coverage.go` — Diff-based coverage, git integration, JSON cache
-- `cmd/pantheon/maat.go` — `--full` flag, DiffOnly default
+- `cmd/sirsi/maat.go` — `--full` flag, DiffOnly default
 - `.githooks/pre-push` — Tag-push skip, fresh binary build
 
 ---

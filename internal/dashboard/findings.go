@@ -28,8 +28,8 @@ func (s *Server) apiFindings(w http.ResponseWriter, r *http.Request) {
 
 // cleanRequest is the payload for POST /api/clean.
 type cleanRequest struct {
-	Indices []int  `json:"indices"` // finding indices to clean
-	DryRun  bool   `json:"dry_run"`
+	Indices []int `json:"indices"` // finding indices to clean
+	DryRun  bool  `json:"dry_run"`
 }
 
 // apiClean handles POST /api/clean — cleans selected findings.

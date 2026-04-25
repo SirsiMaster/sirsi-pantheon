@@ -374,8 +374,8 @@ func runJudge(ctx context.Context) error {
 	engine.RegisterAll(rules.AllRules()...)
 
 	result, err := engine.Clean(ctx, target, jackal.CleanOptions{
-		DryRun:  false,
-		Confirm: true,
+		DryRun:   false,
+		Confirm:  true,
 		UseTrash: true,
 	})
 	if err != nil {
@@ -389,9 +389,9 @@ func runJudge(ctx context.Context) error {
 
 	// Inscribe judgment to Stele.
 	stele.Inscribe("anubis", stele.TypeAnubisJudge, "", map[string]string{
-		"cleaned":    fmt.Sprintf("%d", result.Cleaned),
+		"cleaned":     fmt.Sprintf("%d", result.Cleaned),
 		"bytes_freed": fmt.Sprintf("%d", result.BytesFreed),
-		"skipped":    fmt.Sprintf("%d", result.Skipped),
+		"skipped":     fmt.Sprintf("%d", result.Skipped),
 	})
 
 	output.Footer(time.Since(start))

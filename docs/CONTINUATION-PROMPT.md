@@ -1,7 +1,69 @@
 # Sirsi Pantheon — Continuation Prompt
-**Session Date:** 2026-04-18
-**Version:** v0.16.0-alpha (tagged and released)
-**Binary:** `sirsi` installed at `~/.local/bin/sirsi`
+**Session Date:** 2026-04-22
+**Version:** v0.17.0-alpha (tagged and released)
+**Binary:** `sirsi` 14MB stripped at `bin/sirsi`
+
+---
+
+## Dashboard Session (Apr 22) — Uncommitted Work
+
+### Files to commit (6 new, 2 modified):
+```
+NEW  internal/dashboard/colors.go    — Brand color constants
+NEW  internal/dashboard/pages.go     — 7 HTML pages (723 lines), DOM-safe JS rendering
+NEW  cmd/sirsi/dashboard.go          — `sirsi dashboard` CLI command
+NEW  cmd/sirsi/dashboard_stats.go    — Lightweight RAM/Git/accelerator/deity collectors
+MOD  cmd/sirsi-menubar/main.go       — Dashboard server startup + "Open Dashboard" menu item
+MOD  cmd/sirsi/main.go               — Added dashboardCmd to root cobra command
+```
+
+Already committed by packaging agent in d9c8d42:
+```
+internal/dashboard/server.go   — HTTP lifecycle, routing, SetOpenBrowserFn
+internal/dashboard/api.go      — /api/stats, /api/notifications, /api/stele
+Makefile                       — -s -w strip flags for 13MB release builds
+```
+
+### Build verified:
+- `go build ./internal/dashboard/` ✅
+- `go build ./cmd/sirsi/` ✅ (14MB stripped)
+- `go build ./cmd/sirsi-menubar/` ✅
+- All 7 dashboard routes return HTTP 200
+- `/api/stats` returns live system data
+
+### NOT done (from original prompt):
+1. **TUI enhancement** — `internal/output/tui.go` needs notifications panel + status bar
+2. **Streaming output** — `ExecuteWithNotify` still fire-and-forget; should stream to dashboard via SSE
+3. **Tests** — `internal/dashboard/dashboard_test.go` not written
+
+### Architecture decisions:
+- `StatsFn func() ([]byte, error)` returns raw JSON — avoids type coupling
+- Stele read directly (not via Reader, which advances offset)
+- All JS uses `textContent` — never `innerHTML` with API data
+- Guard page polls 20s, overview 10s
+- Port 9119 with `platform.TryLock("dashboard")` singleton
+
+---
+
+## Packaging Session (Apr 20-22) — All Committed
+
+### Shipped (20+ commits on main):
+- v0.17.0-alpha: 12 platform binaries on GitHub Releases
+- macOS DMG: `scripts/build-dmg.sh` → 10MB
+- iOS: 8 SwiftUI views + 3 WidgetKit widgets + PantheonCore.xcframework
+- Android: 8 Compose screens + signed APK (70MB) + pantheon.aar
+- CI green: Go 1.25, golangci-lint goinstall mode, all platforms
+- RTK + Vault folded into Thoth as tabbed sections
+- All URLs canonical: `sirsi.ai/pantheon`
+
+### Platform notes:
+- Swift 6: `vm_kernel_page_size` hardcoded 16384 (ARM64)
+- Android: Gradle needs JDK 17, not 25
+- D-U-N-S check for Apple Developer: May 15, 2026
+
+---
+
+## Previous session context (below)
 
 ---
 
@@ -50,7 +112,7 @@
 ## Current State
 
 ### What Works
-- `sirsi scan` — 58 rules, 7 domains, sub-second
+- `sirsi scan` — 81 rules, 7 domains, sub-second
 - `sirsi ghosts` — 17 macOS locations
 - `sirsi network --fix` — encrypted DNS + firewall with auto-revert
 - `sirsi thoth sync` — persistent AI memory via MCP

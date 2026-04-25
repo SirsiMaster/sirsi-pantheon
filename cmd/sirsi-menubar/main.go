@@ -4,15 +4,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"fyne.io/systray"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -47,8 +54,8 @@ func onReady() {
 	systray.SetTitle("Sirsi")
 	systray.SetTooltip("Sirsi Ecosystem Monitor")
 
-	// ── Dashboard ──────────────────────────────────────────────────
-	mDashboard := systray.AddMenuItem("📊 Open Dashboard", "Open Pantheon dashboard in browser")
+	// ── Open TUI ──────────────────────────────────────────────────
+	mDashboard := systray.AddMenuItem("𓂀 Open Horus", "Open TUI in Terminal")
 
 	// ── Stats section ───────────────────────────────────────────────
 	mStats := systray.AddMenuItem("Loading...", "Click to refresh stats")
@@ -116,6 +123,12 @@ func onReady() {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
 	}
 
+	// ── Guard watchdog + periodic scan ─────────────────────────────
+	ctx, cancel := context.WithCancel(context.Background())
+	_ = cancel // used in quit handler
+	startGuardBridge(ctx)
+	startPeriodicScan(ctx)
+
 	// ── Background stats + recent activity loop ─────────────────────
 	go func() {
 		for {
@@ -123,6 +136,12 @@ func onReady() {
 			lines := snap.FormatMenuItems()
 			mStats.SetTitle(lines[0])
 			mStats.SetTooltip(snap.StatusLine())
+
+			// Feed RAM pressure into live state for title updates
+			liveState.mu.Lock()
+			liveState.ramPressure = snap.RAMPressure
+			liveState.mu.Unlock()
+			liveState.updateTitle()
 
 			// Update Ra scope items.
 			for i, item := range raScopes {
@@ -159,7 +178,7 @@ func onReady() {
 	for {
 		select {
 		case <-mDashboard.ClickedCh:
-			_ = dashSrv.OpenPage("/")
+			spawnTUIWindow()
 		case <-mStats.ClickedCh:
 			snap := CollectStats(cfg)
 			lines := snap.FormatMenuItems()
@@ -214,6 +233,7 @@ func onReady() {
 		case <-mCaseStudies.ClickedCh:
 			_ = OpenCaseStudies()
 		case <-mQuit.ClickedCh:
+			cancel()
 			_ = dashSrv.Stop()
 			if nStore != nil {
 				nStore.Close()
@@ -225,6 +245,136 @@ func onReady() {
 }
 
 func onExit() {}
+
+// ── TUI Bridge ─────────────────────────────────────────────────────────
+
+// spawnTUIWindow opens Terminal.app (or iTerm2) running `sirsi` which
+// launches the BubbleTea TUI. Uses the same AppleScript pattern as
+// ra.SpawnWindow but without the agent machinery.
+func spawnTUIWindow() {
+	sirsiBin := findSirsiBinary()
+
+	// Check if iTerm2 is available, prefer it over Terminal.app
+	_, err := exec.LookPath("/Applications/iTerm.app/Contents/MacOS/iTerm2")
+	if err == nil {
+		script := fmt.Sprintf(`tell application "iTerm"
+	activate
+	set newWindow to (create window with default profile)
+	tell current session of newWindow
+		write text "%s"
+		set name to "☥ Sirsi"
+	end tell
+end tell`, escapeAppleScript(sirsiBin))
+		_ = exec.Command("osascript", "-e", script).Start()
+		return
+	}
+
+	script := fmt.Sprintf(`tell application "Terminal"
+	activate
+	do script "%s"
+	delay 0.3
+	tell front window
+		set custom title to "☥ Sirsi"
+	end tell
+end tell`, escapeAppleScript(sirsiBin))
+	_ = exec.Command("osascript", "-e", script).Start()
+}
+
+// escapeAppleScript escapes backslashes and double quotes for AppleScript strings.
+func escapeAppleScript(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return s
+}
+
+// ── Live State ─────────────────────────────────────────────────────────
+
+// menubarState tracks the current state for the menubar title.
+type menubarState struct {
+	mu           sync.RWMutex
+	wasteBytes   int64
+	wasteLabel   string
+	ramPressure  string // "low", "medium", "high"
+	guardAlert   string // latest guard alert process name, or ""
+	guardAlertAt time.Time
+}
+
+var liveState = &menubarState{}
+
+// updateTitle sets the menubar title based on the current live state.
+// Priority: guard alert (if recent) > RAM pressure > waste > clean.
+func (s *menubarState) updateTitle() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Guard alert takes priority if within last 5 minutes
+	if s.guardAlert != "" && time.Since(s.guardAlertAt) < 5*time.Minute {
+		systray.SetTitle("⚠️ " + s.guardAlert)
+		systray.SetTooltip(fmt.Sprintf("Process alert: %s", s.guardAlert))
+		return
+	}
+
+	// High RAM pressure
+	if s.ramPressure == "high" {
+		systray.SetTitle("🔴 RAM")
+		systray.SetTooltip("High RAM pressure detected")
+		return
+	}
+
+	// Waste found (> 1 GB)
+	if s.wasteBytes > 1<<30 {
+		systray.SetTitle("🟡 " + s.wasteLabel)
+		systray.SetTooltip(fmt.Sprintf("Infrastructure waste: %s", s.wasteLabel))
+		return
+	}
+
+	// All clean
+	systray.SetTitle("🟢 Clean")
+	systray.SetTooltip("Sirsi Ecosystem Monitor — all clean")
+}
+
+// startGuardBridge starts the guard watchdog and pipes alerts into live state.
+func startGuardBridge(ctx context.Context) {
+	cfg := guard.DefaultBridgeConfig()
+	cfg.WatchConfig.AutoRenice = true
+	cfg.OnAlert = func(alert guard.AlertEntry) {
+		liveState.mu.Lock()
+		liveState.guardAlert = alert.ProcessName
+		liveState.guardAlertAt = time.Now()
+		liveState.mu.Unlock()
+		liveState.updateTitle()
+	}
+	_ = guard.StartBridge(ctx, cfg)
+}
+
+// startPeriodicScan runs a jackal scan on first launch, then every 4 hours.
+// Persists findings to disk and updates the menubar title.
+func startPeriodicScan(ctx context.Context) {
+	go func() {
+		for {
+			engine := jackal.DefaultEngine()
+			engine.RegisterAll(rules.AllRules()...)
+			start := time.Now()
+			res, err := engine.Scan(ctx, jackal.ScanOptions{})
+			if err == nil {
+				jackal.EnrichAdvisory(res)
+				_ = jackal.Persist(res, time.Since(start))
+
+				liveState.mu.Lock()
+				liveState.wasteBytes = res.TotalSize
+				liveState.wasteLabel = jackal.FormatSize(res.TotalSize) + " waste"
+				liveState.mu.Unlock()
+				liveState.updateTitle()
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(4 * time.Hour):
+			}
+		}
+	}()
+}
 
 // AnkhIcon is the menu bar icon data, generated by the Ankh renderer.
 var AnkhIcon = getIcon()

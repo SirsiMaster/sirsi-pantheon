@@ -5,16 +5,18 @@
 // This keeps the code graph always current without manual re-scans.
 //
 // Architecture:
-//   Watcher monitors a project root for .go file changes.
-//   On create/write/rename of .go files → invalidate cache → re-parse.
-//   On delete → invalidate only (graph shrinks).
-//   Debounced at 500ms to batch rapid saves (IDE auto-format + save).
+//
+//	Watcher monitors a project root for .go file changes.
+//	On create/write/rename of .go files → invalidate cache → re-parse.
+//	On delete → invalidate only (graph shrinks).
+//	Debounced at 500ms to batch rapid saves (IDE auto-format + save).
 //
 // Usage:
-//   w := horus.NewWatcher("/path/to/project")
-//   w.OnUpdate = func(g *SymbolGraph) { /* use fresh graph */ }
-//   w.Start(ctx)
-//   defer w.Stop()
+//
+//	w := horus.NewWatcher("/path/to/project")
+//	w.OnUpdate = func(g *SymbolGraph) { /* use fresh graph */ }
+//	w.Start(ctx)
+//	defer w.Stop()
 package horus
 
 import (

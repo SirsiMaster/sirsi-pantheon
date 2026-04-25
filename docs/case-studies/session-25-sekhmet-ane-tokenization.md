@@ -1,5 +1,7 @@
 # Case Study 013: Sekhmet Phase II — ANE Tokenization Acceleration
 
+> **Module update:** Sekhmet's ANE tokenization capabilities were absorbed into **Seba** (Hardware Profiling & Infrastructure Mapping) as of v0.15.0. Network security functions moved to **Isis**. References to Sekhmet below reflect the architecture at time of writing.
+
 ## The Problem: Tokenization Overhead
 In previous versions of Pantheon, tokenization was performed in Node.js (via `js-tiktoken` or similar). While convenient, this approach had significant drawbacks:
 1. **Latency**: Bridge overhead between the Go CLI and a Node.js helper exceeded 200ms for large buffers.

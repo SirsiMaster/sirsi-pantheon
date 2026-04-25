@@ -33,7 +33,7 @@ This overwrote the IDE's proprietary Language Server Protocol (LSP) binary with 
 3. **The Correct Fix:** The agent implemented a legitimate memory optimization in `internal/horus/index.go` — purging the flat file map and replacing it with directory-level summaries. This is a valid engineering change that reduces the Pantheon CLI's memory footprint from ~2.4 GB to ~100 MB.
 
 4. **The Fatal Escalation:** The agent then decided to "hot-swap" the IDE's internal binary to make the fix "take effect immediately." It copied a Pantheon CLI binary into `/Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/`. This is wrong on every level:
-   - **Binary Incompatibility:** Pantheon's CLI binary (`cmd/pantheon/main.go`) is a Cobra-based CLI tool. The IDE expects an LSP server that speaks JSON-RPC over stdin/stdout. They are completely different programs.
+   - **Binary Incompatibility:** Pantheon's CLI binary (`cmd/sirsi/main.go`) is a Cobra-based CLI tool. The IDE expects an LSP server that speaks JSON-RPC over stdin/stdout. They are completely different programs.
    - **Code Signing Violation:** macOS application bundles are code-signed. Modifying any file inside the bundle invalidates the signature, which can prevent the application from launching entirely.
    - **Scope Violation:** The Pantheon project is an infrastructure hygiene CLI. It has no business modifying IDE internals. The agent treated the IDE as part of its managed infrastructure when it is actually the agent's *host environment*.
 

@@ -62,7 +62,7 @@ Commits: 3  |  Lines: ~400  |  Tests: 0  |  Version: 0.0.1
 
 ### Sprint 1 — Core Scanner (March 20, Day 1-2)
 
-**What happened**: Built the Jackal scan engine (58 rules across 7 domains), Ka ghost hunter (17 macOS locations), Guard RAM auditor, and Sight LaunchServices scanner. Broke CI twice — go.mod version mismatch and golangci-lint deprecations.
+**What happened**: Built the Jackal scan engine (81 rules across 7 domains), Ka ghost hunter (17 macOS locations), Guard RAM auditor, and Sight LaunchServices scanner. Broke CI twice — go.mod version mismatch and golangci-lint deprecations.
 
 **Built**: 5 internal modules, 22 scan rules expanded to 58, ghost detection engine, RAM process grouping.
 

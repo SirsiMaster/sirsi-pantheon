@@ -20,8 +20,8 @@ Grant Anubis the permissions it needs for deep scanning on macOS.
 This walks you through enabling Full Disk Access, which is required
 for scanning protected directories like ~/Library and /var.
 
-  pantheon initiate          Run the permission wizard
-  pantheon initiate --check  Check current permission status
+  sirsi initiate          Run the permission wizard
+  sirsi initiate --check  Check current permission status
 
 After granting access, Anubis can scan every corner of your workstation.`,
 	Run: runInitiate,
@@ -36,7 +36,7 @@ func init() {
 func runInitiate(cmd *cobra.Command, args []string) {
 	if runtime.GOOS != "darwin" {
 		output.Info("𓎿 Initiate is only needed on macOS")
-		output.Info("   On Linux, run pantheon with sudo for full access")
+		output.Info("   On Linux, run sirsi with sudo for full access")
 		return
 	}
 
@@ -83,7 +83,7 @@ func runInitiate(cmd *cobra.Command, args []string) {
 	openPrivacySettings()
 
 	fmt.Println()
-	output.Info("After granting access, run: pantheon initiate --check")
+	output.Info("After granting access, run: sirsi initiate --check")
 }
 
 type permissionStatus struct {

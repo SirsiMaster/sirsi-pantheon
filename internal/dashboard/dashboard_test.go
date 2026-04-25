@@ -70,7 +70,7 @@ func TestOverview_WithStats(t *testing.T) {
 	ts := testServer(t, Config{
 		StatsFn: func() ([]byte, error) {
 			return json.Marshal(map[string]interface{}{
-				"ram_percent": 42.5,
+				"ram_percent":  42.5,
 				"ram_pressure": "low",
 			})
 		},

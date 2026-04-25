@@ -13,7 +13,7 @@
 //   - Isis finds orphaned RUNNING PROCESSES (process-level ghosts)
 //
 // The orphan detector runs as part of the watchdog cycle or on-demand
-// via `pantheon guard --orphans`.
+// via `sirsi guard --orphans`.
 package guard
 
 import (
@@ -267,6 +267,6 @@ func FormatOrphanReport(r *OrphanReport) string {
 		sb.WriteString(strings.Join(parts, ", ") + "\n")
 	}
 
-	sb.WriteString("  Run `pantheon guard --slay` to clean up\n")
+	sb.WriteString("  Run `sirsi guard --slay` to clean up\n")
 	return sb.String()
 }

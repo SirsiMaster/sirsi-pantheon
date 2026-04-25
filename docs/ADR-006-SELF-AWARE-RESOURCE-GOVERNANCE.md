@@ -96,7 +96,7 @@ This implements the Cross-Agent Referral Logic from ADR-005 principle #7.
 
 ## Implementation Priority
 
-1. **Immediate**: Add `shouldYield()` check to `cmd/pantheon/root.go` (gate all heavy commands)
+1. **Immediate**: Add `shouldYield()` check to `cmd/sirsi/root.go` (gate all heavy commands)
 2. **Session 12**: Build `ide_health_check` MCP tool
 3. **Session 13**: Full Guard CPU monitoring with IDE-specific detection
 4. **Session 14**: Cross-deity referral messages in all findings

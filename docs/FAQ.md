@@ -9,7 +9,7 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 | I want to... | Use | Install |
 |:---|:---|:---|
 | **Auto-deprioritize LSPs and monitor RAM in my IDE** | VS Code Extension | `ext install SirsiMaster.sirsi-pantheon` from OpenVSX |
-| **Always see system health in my Mac menu bar** | Menu Bar App | `brew install sirsi-sirsi-menubar` or LaunchAgent |
+| **Always see system health in my Mac menu bar** | Menu Bar App | `brew install sirsi-menubar` or LaunchAgent |
 | **Scan for waste, ghosts, and bloat from terminal** | CLI | `brew install sirsi-pantheon` |
 | **Let my AI coding assistant query Pantheon directly** | MCP Server | `sirsi mcp` (stdio mode) |
 
@@ -21,10 +21,10 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 **Best for**: Any developer using VS Code, Cursor, Windsurf, or Antigravity.
 
 **What you get**:
-- **Guardian**: Auto-renice LSPs to Background QoS (nice +10) — zero config
+- **Guardian**: Auto-deprioritize LSPs to Background QoS (nice +10, safe, reversible) — zero config
 - **Memory GC**: Restarts bloated language servers automatically (>500 MB sustained)
 - **Status Bar**: Live `$(eye) PANTHEON 4.8 GB` metrics, refreshed every 5s
-- **Command Palette**: Scan workspace, ghost report, renice, apply optimal settings
+- **Command Palette**: Scan workspace, ghost report, deprioritize, apply optimal settings
 - **Thoth**: Context compression from `.thoth/memory.yaml`
 
 **Requires AI?** No. Works identically on vanilla VS Code.
@@ -52,7 +52,7 @@ Pantheon runs across **four layers** — use whichever matches your workflow. Mo
 **Best for**: Power users, scripts, CI/CD pipelines, automation.
 
 **What you get**:
-- `sirsi weigh` — Full infrastructure scan (58 rules across 7 domains)
+- `sirsi weigh` — Full infrastructure scan (81 rules across 7 domains)
 - `sirsi ka` — Ghost detection (17 macOS locations)
 - `sirsi guard` — Process monitoring and resource control
 - `sirsi sekhmet` — **ANE-accelerated tokenization** (high-perf BPE)

@@ -957,7 +957,7 @@ func simplifyModName(fullPath string) string {
 	if idx := strings.Index(fullPath, "@"); idx != -1 {
 		fullPath = fullPath[:idx]
 	}
-	// Shorten: github.com/SirsiMaster/sirsi-pantheon → sirsi-pantheon
+	// Shorten: github.com/SirsiMaster/sirsi-sirsi → sirsi-pantheon
 	parts := strings.Split(fullPath, "/")
 	if len(parts) >= 3 {
 		return strings.Join(parts[2:], "/")

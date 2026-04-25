@@ -132,7 +132,7 @@ This is especially critical for:
 ## Files Changed
 
 - `internal/guard/network.go` — Pre-check gate, watchdog polling, TCP probe
-- `cmd/pantheon/main.go` — Isis CLI wiring (`sirsi isis network --fix --rollback`)
+- `cmd/sirsi/main.go` — Isis CLI wiring (`sirsi isis network --fix --rollback`)
 - `internal/output/tui.go` — TUI intent routing for network security commands
 
 ---

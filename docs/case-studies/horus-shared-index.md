@@ -13,7 +13,7 @@ Pantheon has three deities that independently traverse the filesystem:
 
 | Deity | Purpose | Time | Method |
 |-------|---------|------|--------|
-| **Jackal** (Weigh) | Find caches/artifacts | 15.6s | `filepath.Walk` × 58 rules |
+| **Jackal** (Weigh) | Find caches/artifacts | 15.6s | `filepath.Walk` × 81 rules |
 | **Ka** | Find ghost apps | 8.5s | `filepath.Walk` × 17 locations |
 | **Seba** | Infrastructure mapping | ~12s | `filepath.Walk` + commands |
 
@@ -185,7 +185,7 @@ Phase 1 (Horus wiring):     1,080 ms  (7.8×)
 
 ### Ma'at (diff-based coverage)
 - `internal/maat/coverage.go` — git diff detection, coverage cache
-- `cmd/pantheon/maat.go` — `--full` flag, DiffOnly default
+- `cmd/sirsi/maat.go` — `--full` flag, DiffOnly default
 
 ### Horus (shared index)
 - `internal/horus/index.go` — Parallel walk, manifest cache, query API
@@ -196,7 +196,7 @@ Phase 1 (Horus wiring):     1,080 ms  (7.8×)
 - `internal/jackal/types.go` — Manifest interface in ScanOptions
 - `internal/jackal/rules/base.go` — Horus query path + dirSizeAndCount
 - `internal/jackal/rules/dev.go` — WalkDir + Horus wiring
-- `cmd/pantheon/weigh.go` — Horus integration, `--fresh` flag
+- `cmd/sirsi/weigh.go` — Horus integration, `--fresh` flag
 
 ---
 

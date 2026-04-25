@@ -12,7 +12,7 @@ import (
 )
 
 // GoogleWorkspaceAdapter ingests knowledge from Google Workspace (Docs, Sheets, Drive).
-// Requires an OAuth2 token — use `pantheon seshat auth google` to set up.
+// Requires an OAuth2 token — use `sirsi seshat auth google` to set up.
 type GoogleWorkspaceAdapter struct {
 	// TokenFile is the path to the Google OAuth2 token JSON.
 	// If empty, uses ~/.config/seshat/google_token.json
@@ -65,7 +65,7 @@ type driveListResponse struct {
 func (a *GoogleWorkspaceAdapter) loadToken() (*googleToken, error) {
 	data, err := os.ReadFile(a.tokenFile())
 	if err != nil {
-		return nil, fmt.Errorf("no Google token found at %s — run 'pantheon seshat auth google' to authenticate", a.tokenFile())
+		return nil, fmt.Errorf("no Google token found at %s — run 'sirsi seshat auth google' to authenticate", a.tokenFile())
 	}
 	var tok googleToken
 	if err := json.Unmarshal(data, &tok); err != nil {
@@ -148,7 +148,7 @@ func (a *GoogleWorkspaceAdapter) listDriveFiles(token *googleToken, mimeType str
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 401 {
-		return nil, fmt.Errorf("Google token expired — run 'pantheon seshat auth google' to refresh")
+		return nil, fmt.Errorf("Google token expired — run 'sirsi seshat auth google' to refresh")
 	}
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)

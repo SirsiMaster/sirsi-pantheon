@@ -13,7 +13,7 @@ Pantheon is a unified DevOps intelligence CLI. One binary, all deities. It scans
 ```bash
 brew tap SirsiMaster/tools && brew install sirsi-pantheon
 # or
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@v0.8.0-beta
+go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v0.8.0-beta
 ```
 
 ## Deity Pillars
@@ -87,7 +87,7 @@ brew install sirsi-pantheon
 
 ### Go Install
 ```bash
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/pantheon@v0.8.0-beta
+go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v0.8.0-beta
 ```
 
 ### Binary Download

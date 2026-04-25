@@ -33,7 +33,7 @@ Pantheon is the single, modular brand for all Sirsi automation deities. The stan
 | ignore | 91.8% | ✅ | Gitignore-style path matching |
 | isis | 80.1% | ✅ | Diagnostic (lint, vet, AST analysis) |
 | jackal | 94.6% | ✅ | Core scan engine |
-| jackal/rules | 64.5% | ⚠️ | 58 rules, 37 tested |
+| jackal/rules | 64.5% | ⚠️ | 81 rules, 37 tested |
 | ka | 92.6% | ✅ | Ghost app detection (macOS) |
 | logging | 95.2% | ✅ | Structured logging |
 | maat | 79.3% | ⚠️ | Governance engine (dynamic discovery fixed) |
@@ -72,7 +72,7 @@ Pantheon is the single, modular brand for all Sirsi automation deities. The stan
 ## 4. Phase Schedule (2026)
 
 ### Phase 1: Foundation (Anubis Launch) — ✅ March 21
-- CLI, scan engine, safety system, 58 rules, ghost hunter.
+- CLI, scan engine, safety system, 81 rules, ghost hunter.
 
 ### Phase 2: Unification (Pantheon Launch) — ✅ March 23
 - Ma'at, Horus, Thoth integrated into unified CLI.

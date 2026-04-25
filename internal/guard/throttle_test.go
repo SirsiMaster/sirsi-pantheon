@@ -327,7 +327,7 @@ func TestFormatThrottleReport_Empty(t *testing.T) {
 	throttler, _ := newMockThrottler()
 
 	report := throttler.FormatThrottleReport()
-	if !strings.Contains(report, "No processes throttled") {
+	if !strings.Contains(report, "No processes deprioritized") {
 		t.Errorf("Empty report = %q", report)
 	}
 }

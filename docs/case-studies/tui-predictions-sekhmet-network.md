@@ -1,5 +1,7 @@
 # Case Study 020 — From Memorization to Prediction: Making the TUI Usable
 
+> **Module update:** Sekhmet's network audit capabilities were absorbed into **Isis** (Health, Remediation & Network Security) as of v0.15.0. Sekhmet's ANE tokenization moved to **Seba** (Hardware Profiling). References to Sekhmet below reflect the architecture at time of writing.
+
 **Date**: April 5, 2026
 **Scope**: TUI input system + network security hardening
 **What changed**: Users no longer need to memorize Pantheon's 15 deities, 40+ subcommands, and 80+ flags. The TUI predicts what they want as they type. A new Sekhmet network audit protects users on public WiFi.
@@ -116,6 +118,6 @@ Total: ~60 minutes from first grid fix to all features pushed and passing Ma'at'
 | `internal/output/suggestions.go` | +165 | New: command tree + buildSuggestions() |
 | `internal/guard/network.go` | +230 | New: six network security checks |
 | `internal/output/tui.go` | +75 | Predictions, history, key rebindings |
-| `cmd/pantheon/main.go` | +95 | Sekhmet command + network subcommand |
+| `cmd/sirsi/main.go` | +95 | Sekhmet command + network subcommand |
 | `CHANGELOG.md` | +15 | v0.13.0 release notes |
 | `VERSION` | 1 | 0.12.4 → 0.13.0 |

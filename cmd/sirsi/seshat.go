@@ -375,7 +375,7 @@ func seshatAuthGoogle() error {
 	fmt.Println("  4. Download the credentials JSON")
 	fmt.Printf("  5. Save it to: %s\n", credFile)
 	fmt.Println()
-	fmt.Printf("  Then run: pantheon seshat auth google\n")
+	fmt.Printf("  Then run: sirsi seshat auth google\n")
 	fmt.Println()
 
 	if _, err := os.Stat(credFile); os.IsNotExist(err) {

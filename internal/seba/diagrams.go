@@ -14,13 +14,13 @@
 //
 // Usage:
 //
-//	pantheon seba diagram --type hierarchy
-//	pantheon seba diagram --type dataflow
-//	pantheon seba diagram --type modules
-//	pantheon seba diagram --type memory
-//	pantheon seba diagram --type governance
-//	pantheon seba diagram --type pipeline
-//	pantheon seba diagram --type all
+//	sirsi seba diagram --type hierarchy
+//	sirsi seba diagram --type dataflow
+//	sirsi seba diagram --type modules
+//	sirsi seba diagram --type memory
+//	sirsi seba diagram --type governance
+//	sirsi seba diagram --type pipeline
+//	sirsi seba diagram --type all
 package seba
 
 import (
@@ -177,7 +177,7 @@ func generateDataFlow(projectRoot string) (*DiagramResult, error) {
 	var sb strings.Builder
 	sb.WriteString("graph LR\n")
 	sb.WriteString("    User([\"👤 User / CLI\"])\n")
-	sb.WriteString("    Binary[\"🏛️ pantheon binary\"]\n")
+	sb.WriteString("    Binary[\"🏛️ sirsi binary\"]\n")
 	sb.WriteString("    User --> Binary\n\n")
 
 	for _, d := range deities {
@@ -472,7 +472,7 @@ func generatePipeline() (*DiagramResult, error) {
     Metrics["📊 metrics.json"]
     Coverage["📈 coverage.out"]
     Build["go build"]
-    Binary["🏛️ pantheon binary"]
+    Binary["🏛️ sirsi binary"]
 
     Push --> Gate
     Gate --> GFmt

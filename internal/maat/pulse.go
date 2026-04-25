@@ -14,9 +14,9 @@
 //
 // Usage:
 //
-//	pantheon maat pulse              Run all measurements
-//	pantheon maat pulse --skip-test  Skip go test (fast mode)
-//	pantheon maat pulse --json       Output metrics as JSON to stdout
+//	sirsi maat pulse              Run all measurements
+//	sirsi maat pulse --skip-test  Skip go test (fast mode)
+//	sirsi maat pulse --json       Output metrics as JSON to stdout
 //
 // Architecture:
 //

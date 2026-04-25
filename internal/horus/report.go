@@ -29,17 +29,17 @@ type WorkstationReport struct {
 	GhostWaste int64 `json:"ghost_waste_bytes"`
 
 	// Health (Isis/Guard)
-	HealthScore   int    `json:"health_score"`   // 0-100 from Doctor
-	RAMPercent    float64 `json:"ram_percent"`
-	RAMPressure   string `json:"ram_pressure"`    // low/medium/high
+	HealthScore int     `json:"health_score"` // 0-100 from Doctor
+	RAMPercent  float64 `json:"ram_percent"`
+	RAMPressure string  `json:"ram_pressure"` // low/medium/high
 
 	// Quality (Ma'at)
-	QualityScore  int `json:"quality_score,omitempty"` // 0-100 if available
+	QualityScore int `json:"quality_score,omitempty"` // 0-100 if available
 
 	// Code (Horus — self)
-	CodeFiles     int `json:"code_files"`
-	CodePackages  int `json:"code_packages"`
-	CodeSymbols   int `json:"code_symbols"`
+	CodeFiles    int `json:"code_files"`
+	CodePackages int `json:"code_packages"`
+	CodeSymbols  int `json:"code_symbols"`
 
 	// Git
 	GitBranch        string `json:"git_branch"`

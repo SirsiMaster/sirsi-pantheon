@@ -252,13 +252,13 @@ func (t *Throttler) FormatThrottleReport() string {
 	defer t.mu.RUnlock()
 
 	if len(t.throttled) == 0 {
-		return "𓁵 Isis: No processes throttled"
+		return "𓁵 Isis: No processes deprioritized"
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("𓁵 Isis: %d process(es) throttled\n", len(t.throttled)))
+	sb.WriteString(fmt.Sprintf("𓁵 Isis: %d process(es) deprioritized (safe, reversible)\n", len(t.throttled)))
 	for _, event := range t.throttled {
-		sb.WriteString(fmt.Sprintf("  PID %d (%s): renice +%d (was %.0f%% CPU at %s)\n",
+		sb.WriteString(fmt.Sprintf("  PID %d (%s): priority lowered +%d (was %.0f%% CPU at %s)\n",
 			event.PID, event.ProcessName, event.Level,
 			event.CPUBefore, event.Timestamp.Format("15:04:05")))
 	}

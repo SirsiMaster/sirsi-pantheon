@@ -146,7 +146,7 @@ Written in Go. Under 10 MB. Ships today.
 # Install
 brew tap SirsiMaster/tools && brew install sirsi-pantheon
 
-# Scan workstation (58 rules, 7 domains)
+# Scan workstation (81 rules, 7 domains)
 anubis weigh
 
 # Hunt ghost apps

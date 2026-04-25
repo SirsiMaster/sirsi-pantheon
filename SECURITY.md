@@ -1,8 +1,8 @@
-# Security Policy — Sirsi Anubis
+# Security Policy — Sirsi Pantheon
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Sirsi Anubis, please report it responsibly:
+If you discover a security vulnerability in Sirsi Pantheon, please report it responsibly:
 
 1. **DO NOT** open a public GitHub issue for security vulnerabilities
 2. Email: security@sirsitechnologies.com
@@ -12,7 +12,7 @@ We will respond within 48 hours and provide a timeline for the fix.
 
 ## Security Model
 
-Sirsi Anubis is a **filesystem scanning and cleaning tool** that operates with the user's permissions. Understanding its security boundaries is critical.
+Sirsi Pantheon is a **filesystem scanning and cleaning tool** that operates with the user's permissions. Understanding its security boundaries is critical.
 
 ### Threat Model
 
@@ -45,12 +45,12 @@ The following paths are hardcoded as protected and **CANNOT be deleted** under a
 - **File paths** in scan reports are NEVER transmitted externally
 - **Process names/arguments** are sanitized before any fleet reporting
 - **Network scan results** are stored locally only
-- **Audit logs** (`~/.config/anubis/audit.log`) are local-only and NEVER uploaded
-- Anubis has **zero telemetry, zero analytics, zero phone-home**
+- **Audit logs** (`~/.config/pantheon/audit.log`) are local-only and NEVER uploaded
+- Pantheon has **zero telemetry, zero analytics, zero phone-home**
 
 ### Agent Security (Rule A3)
 
-The `anubis-agent` binary (for fleet deployment):
+The `sirsi-agent` binary (for fleet deployment):
 - Statically compiled with `CGO_ENABLED=0`
 - Zero external dependencies
 - Fixed, auditable command set — no arbitrary command execution
@@ -60,7 +60,7 @@ The `anubis-agent` binary (for fleet deployment):
 
 | Version | Supported |
 |:--------|:----------|
-| 0.1.x-alpha | ✅ Current development |
+| 0.17.x | ✅ Current development |
 
 ## Disclosure Timeline
 

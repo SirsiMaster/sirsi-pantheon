@@ -33,7 +33,7 @@ The ANE detection code was calling `ioreg -l -w0`, which dumps the *entire* macO
 
 **The fix:** Replace with `sysctl -n hw.optional.ane` — returns `1` or `0`. ~10 bytes instead of 8 MB.
 
-**Finding 2: The Menubar Storm (`cmd/pantheon-menubar/stats.go`)**
+**Finding 2: The Menubar Storm (`cmd/sirsi-menubar/stats.go`)**
 The menubar was polling system stats every **10 seconds**, spawning 7 subprocesses per cycle: `sysctl`, `memory_pressure`, `vm_stat`, `git rev-parse`, `git status`, `git log`, `ps`. That's:
 - 42 process spawns per minute
 - 2,520 per hour

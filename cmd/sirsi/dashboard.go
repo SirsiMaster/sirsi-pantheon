@@ -91,21 +91,21 @@ func runDashboard(cmd *cobra.Command, args []string) {
 // the same system calls without importing the menubar package.
 func collectDashboardStats() map[string]interface{} {
 	stats := map[string]interface{}{
-		"ram_percent":          0.0,
-		"ram_pressure":         "unknown",
-		"ram_icon":             "⚪",
-		"uncommitted_files":    0,
-		"git_branch":           "—",
-		"time_since_commit":    "",
-		"osiris_risk":          "unknown",
-		"osiris_icon":          "⚪",
-		"primary_accelerator":  "Unknown",
-		"accel_icon":           "💻",
-		"active_deities":       []string{},
-		"deity_count":          0,
-		"ra_deployed":          false,
-		"ra_scopes":            []interface{}{},
-		"ra_icon":              "⚫",
+		"ram_percent":         0.0,
+		"ram_pressure":        "unknown",
+		"ram_icon":            "⚪",
+		"uncommitted_files":   0,
+		"git_branch":          "—",
+		"time_since_commit":   "",
+		"osiris_risk":         "unknown",
+		"osiris_icon":         "⚪",
+		"primary_accelerator": "Unknown",
+		"accel_icon":          "💻",
+		"active_deities":      []string{},
+		"deity_count":         0,
+		"ra_deployed":         false,
+		"ra_scopes":           []interface{}{},
+		"ra_icon":             "⚫",
 	}
 
 	collectDashRAM(stats)

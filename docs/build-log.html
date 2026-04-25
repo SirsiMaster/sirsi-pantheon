@@ -569,7 +569,7 @@
       <p style="color:var(--text-secondary); font-size:0.95rem; line-height:1.9; margin-top:1rem;">
         <strong style="color:var(--color-gold);">𓁢 Anubis</strong> is the foundational module — the reason Pantheon exists.
         <em style="color:var(--color-gold);">Weigh. Judge. Purify.</em>
-        It scans, judges, and purges waste across workstations with 58 rules, ghost app detection,
+        It scans, judges, and purges waste across workstations with 81 rules, ghost app detection,
         file dedup that's <strong style="color:var(--color-gold);">27× faster</strong> than naive hashing,
         and a policy engine for fleet enforcement.
       </p>
@@ -699,7 +699,7 @@
         <span class="sprint-date">March 20 — Days 1–2</span>
         <h3>Core Scanner</h3>
         <p class="sprint-body">
-          Built the scan engine with <strong>58 rules</strong> across 7 categories — developer tools, AI models, virtual machines,
+          Built the scan engine with <strong>81 rules</strong> across 7 categories — developer tools, AI models, virtual machines,
           IDEs, cloud services, storage, and general waste. Added ghost hunting: finding leftovers from apps you already uninstalled.
         </p>
         <div class="callout callout-bug">
@@ -857,7 +857,7 @@
         </p>
         <div class="callout callout-bug">
           <span class="callout-icon">🐛</span>
-          <code>.gitignore</code> pattern <code>pantheon</code> was silently ignoring <code>cmd/pantheon/seba.go</code>
+          <code>.gitignore</code> pattern <code>pantheon</code> was silently ignoring <code>cmd/sirsi/seba.go</code>
           (matching any path containing "pantheon"). CI builds were failing since the Seba rebrand.
           Fix: anchor with <code>/pantheon</code> to match root-level binary only.
         </div>

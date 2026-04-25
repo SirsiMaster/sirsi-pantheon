@@ -11,7 +11,7 @@ Pantheon has three deities that independently traverse the filesystem:
 
 | Deity | Purpose | Time | Method |
 |-------|---------|------|--------|
-| **Jackal** (Weigh) | Find caches/artifacts | 15.6s | `filepath.Walk` × 58 rules |
+| **Jackal** (Weigh) | Find caches/artifacts | 15.6s | `filepath.Walk` × 81 rules |
 | **Ka** | Find ghost apps | 10.9s | `filepath.Walk` × 17 locations |
 | **Seba** | Infrastructure mapping | ~12s | `filepath.Walk` + external commands |
 

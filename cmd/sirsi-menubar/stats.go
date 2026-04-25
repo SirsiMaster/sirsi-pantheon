@@ -266,13 +266,13 @@ func collectAccelerator(snap *StatsSnapshot) {
 // ── Deity Detection ─────────────────────────────────────────────────────
 
 var knownDeities = map[string]string{
-	"sirsi":          "☥ Sirsi",
-	"anubis":         "𓁢 Anubis",
-	"pantheon-agent": "🤖 Agent",
-	"guard":          "🛡 Guard",
-	"maat":           "🪶 Ma'at",
-	"scarab":         "🪲 Scarab",
-	"thoth":          "𓁟 Thoth",
+	"sirsi":       "☥ Sirsi",
+	"anubis":      "𓁢 Anubis",
+	"sirsi-agent": "🤖 Agent",
+	"guard":       "🛡 Guard",
+	"maat":        "🪶 Ma'at",
+	"scarab":      "🪲 Scarab",
+	"thoth":       "𓁟 Thoth",
 }
 
 func collectDeities(snap *StatsSnapshot) {

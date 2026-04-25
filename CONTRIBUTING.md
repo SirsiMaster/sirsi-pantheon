@@ -1,6 +1,6 @@
-# Contributing to Sirsi Anubis
+# Contributing to Sirsi Pantheon
 
-Thank you for considering contributing to Sirsi Anubis! This guide will help you get started.
+Thank you for considering contributing to Sirsi Pantheon! This guide will help you get started.
 
 ## Getting Started
 
@@ -8,7 +8,7 @@ Thank you for considering contributing to Sirsi Anubis! This guide will help you
 
 - **Go 1.22+** installed
 - **Git** with `SirsiMaster` account access
-- Familiarity with the [ANUBIS_RULES.md](ANUBIS_RULES.md) operational directive
+- Familiarity with the [PANTHEON_RULES.md](PANTHEON_RULES.md) operational directive
 
 ### Building
 
@@ -38,7 +38,7 @@ cmd/
   sirsi-agent/     Lightweight fleet agent (placeholder)
 internal/
   jackal/          Scan engine + rule interface
-  jackal/rules/    34 built-in scan rules
+  jackal/rules/    81 built-in scan rules
   ka/              Ghost detection engine
   cleaner/         Safety module + deletion engine
   output/          Terminal UI (lipgloss theme)

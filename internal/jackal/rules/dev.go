@@ -128,9 +128,9 @@ type findRule struct {
 	category    jackal.Category
 	description string
 	platforms   []string
-	targetName  string          // Directory name to find (e.g., "node_modules")
-	searchPaths []string        // Root directories to search
-	maxDepth    int             // Maximum search depth
+	targetName  string   // Directory name to find (e.g., "node_modules")
+	searchPaths []string // Root directories to search
+	maxDepth    int      // Maximum search depth
 	minAgeDays  int
 	matchFile   string          // Optional: parent must contain this file
 	severity    jackal.Severity // Default severity (empty = SeveritySafe)

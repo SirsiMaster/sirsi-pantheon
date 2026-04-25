@@ -280,7 +280,7 @@ func (l *Loom) WeaveScope(scope ScopeConfig) (string, error) {
 		b.WriteString("5. Identify the NEXT incomplete phase/sprint/milestone from the plans.\n")
 		b.WriteString("6. Execute it. Build working code. Do not just verify or audit.\n")
 		b.WriteString("7. When done, update docs/CONTINUATION-PROMPT.md with the new state.\n")
-		b.WriteString("8. Commit, push, and run `pantheon thoth compact`.\n\n")
+		b.WriteString("8. Commit, push, and run `sirsi thoth compact`.\n\n")
 	}
 
 	b.WriteString("---\n\n")

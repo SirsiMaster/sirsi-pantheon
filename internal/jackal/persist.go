@@ -10,12 +10,12 @@ import (
 
 // PersistedScan is a ScanResult with metadata for disk storage.
 type PersistedScan struct {
-	Timestamp  time.Time                  `json:"timestamp"`
-	DurationMs int64                      `json:"duration_ms"`
-	TotalSize  int64                      `json:"total_size"`
-	RulesRan   int                        `json:"rules_ran"`
-	RulesHit   int                        `json:"rules_with_findings"`
-	Findings   []PersistedFinding         `json:"findings"`
+	Timestamp  time.Time                    `json:"timestamp"`
+	DurationMs int64                        `json:"duration_ms"`
+	TotalSize  int64                        `json:"total_size"`
+	RulesRan   int                          `json:"rules_ran"`
+	RulesHit   int                          `json:"rules_with_findings"`
+	Findings   []PersistedFinding           `json:"findings"`
 	ByCategory map[Category]CategorySummary `json:"by_category"`
 }
 
