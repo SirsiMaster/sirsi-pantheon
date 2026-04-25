@@ -54,7 +54,7 @@ fi
 # --- Build binaries ---
 echo "Compiling sirsi-menubar..."
 mkdir -p "${BUILD_DIR}"
-GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi-menubar" ./cmd/sirsi-menubar/
+CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi-menubar" ./cmd/sirsi-menubar/
 
 echo "Compiling sirsi CLI..."
 CGO_ENABLED=0 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi" ./cmd/sirsi/

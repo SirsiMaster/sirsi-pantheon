@@ -1,8 +1,7 @@
 cask "sirsi-pantheon" do
   version "0.17.1"
-  arch arm: "arm64", intel: "amd64"
 
-  url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-#{arch}.dmg"
+  url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-arm64.dmg"
   name "Sirsi Pantheon"
   desc "DevOps intelligence platform — menu bar monitor + CLI"
   homepage "https://github.com/SirsiMaster/sirsi-pantheon"
