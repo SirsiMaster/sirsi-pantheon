@@ -65,7 +65,7 @@ var rootCmd = &cobra.Command{
 	Short: "Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence",
 	Long: `Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence
 
-  sirsi scan               Find infrastructure waste (58 rules, 7 domains)
+  sirsi scan               Find infrastructure waste (81 rules, 7 domains)
   sirsi ghosts             Detect remnants of uninstalled apps
   sirsi dedup [dirs...]    Find duplicate files with three-phase hashing
   sirsi doctor             System health diagnostic
