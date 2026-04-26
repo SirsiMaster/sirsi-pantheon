@@ -1,6 +1,6 @@
 #!/bin/bash
 # 𓁢 Sirsi Pantheon — Binary Installer
-# curl -fsSL https://sirsi.ai/install.sh | sh
+# bash <(curl -fsSL https://raw.githubusercontent.com/SirsiMaster/sirsi-pantheon/main/scripts/install.sh)
 # No Go toolchain required — downloads pre-built binary from GitHub Releases.
 set -e
 
