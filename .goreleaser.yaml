@@ -407,7 +407,7 @@ release:
     |----------|----------|-------|
     | **macOS (Apple Silicon)** | [`Pantheon.app` (DMG)](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/SirsiPantheon-{{.Version}}-arm64.dmg) | Menu bar + CLI. Intel Macs use Rosetta. |
     | **macOS / Linux (CLI)** | `brew tap SirsiMaster/tools && brew install sirsi-pantheon` | 7 CLI tools via Homebrew. |
-    | **Windows** | [`Installer (.exe)`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/SirsiPantheon-{{.Version}}-windows-setup.exe) | Adds `sirsi` to PATH automatically. |
+    | **Windows** | [`Installer (zip)`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/SirsiPantheon-{{.Version}}-windows-setup.zip) | Extract, run `install.bat` — adds `sirsi` to PATH. |
     | **Linux (deb)** | [`sirsi-pantheon_{{.Version}}_linux_amd64.deb`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/sirsi-pantheon_{{.Version}}_linux_amd64.deb) | `sudo dpkg -i sirsi-pantheon_*.deb` |
     | **Linux (rpm)** | [`sirsi-pantheon_{{.Version}}_linux_amd64.rpm`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/sirsi-pantheon_{{.Version}}_linux_amd64.rpm) | `sudo rpm -i sirsi-pantheon_*.rpm` |
     | **From source** | `go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v{{.Version}}` | Requires Go 1.25+. |
