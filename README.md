@@ -1,6 +1,6 @@
 # Sirsi Pantheon
 
-**Find and fix infrastructure waste on your Mac.** Scans caches, ghosts, network security, disk bloat — 81 rules, zero config, zero telemetry.
+**Infrastructure intelligence for developers and operations teams.** Scans, detects, and remediates — from one laptop to a 256-node fleet. 81 rules, zero config, zero telemetry. Works with or without AI.
 
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-C8A951?style=flat)](LICENSE)
@@ -80,17 +80,17 @@ Every command supports `--json`, `--quiet`, and `--verbose` flags.
 
 ## What Makes Pantheon Different
 
+**Works at every scale.** Same tool on one Mac, across a dev team, or orchestrating a 256-node fleet. Scan one machine or scan them all. No separate "enterprise edition" with different commands — same binary, same rules, more reach.
+
 **Ghost detection that nobody else does.** `sirsi ghosts` finds Launch Services phantoms, orphaned plists, leftover caches, and Spotlight metadata for apps that no longer exist. Typically recovers 10–100 GB per machine. [Case study →](docs/case-studies/docker-ghost-64gb.md)
 
 **Network security with auto-revert.** `sirsi network --fix` applies encrypted DNS and firewall hardening using the same probe→mutate→verify→revert pattern as Kubernetes rolling deploys. Auto-reverts within 6 seconds if anything breaks. [Case study →](docs/case-studies/isis-dns-safety-rollback.md)
 
-**AI memory that eliminates cold starts.** `sirsi thoth` gives AI coding sessions persistent memory via MCP. Compresses project knowledge to ~2% of original size. Your AI starts every session informed, not blank.
-
-**Token intelligence.** RTK strips noise from tool output (60–90% smaller). Vault sandboxes large results in SQLite FTS5. Horus serves code outlines instead of full files (8–49x smaller).
+**No AI required.** Every scan, diagnostic, and remediation works without an AI assistant. If you do use AI coding tools, Pantheon adds persistent project memory (Thoth), token optimization (RTK, Vault, Horus), and an MCP server — but the foundation is pure infrastructure.
 
 ### Where This Is Going
 
-The same scanning architecture — 81 rules, hardware detection, policy enforcement — scales to fleets. **Pantheon Ra** extends the free tool to multi-machine orchestration: subnet scanning, container auditing, cross-repo AI agents that autonomously detect and fix issues.
+The same scanning architecture — 81 rules, hardware detection, policy enforcement — scales to fleets. **Pantheon Ra** extends the free tool to multi-machine orchestration: subnet scanning, container auditing, and autonomous agents that detect and fix issues across every node.
 
 ---
 
@@ -105,14 +105,15 @@ The same scanning architecture — 81 rules, hardware detection, policy enforcem
 
 ---
 
-## Editions
+## Scale
 
-| Edition | Scope | Price |
-|:--------|:------|:------|
-| **Pantheon** | Single machine — all commands above | **Free forever** |
-| **Ra** | Fleet management — multi-repo orchestration, subnet scanning, compliance | Coming soon |
+| | What | Example |
+|:--|:------|:--------|
+| **One machine** | Full CLI + menu bar + TUI. All 81 rules, all deities. | Solo developer cleaning up their Mac |
+| **Small team** | Same tool, shared policies via `configs/`. Quality gates on every push. | 3-person startup with shared scan rules |
+| **Fleet (Ra)** | Multi-machine orchestration, subnet scanning, autonomous remediation. | 256-node cluster with cross-repo AI agents |
 
-No feature gating, no telemetry, no time limits. Apache 2.0 licensed.
+One binary at every tier. No feature gating, no telemetry, no time limits. Apache 2.0 licensed.
 
 ---
 

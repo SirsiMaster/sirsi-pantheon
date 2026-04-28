@@ -397,7 +397,7 @@ release:
   header: |
     ## Sirsi Pantheon {{.Version}}
 
-    Find and fix infrastructure waste. 81 rules, zero config, zero telemetry.
+    Infrastructure intelligence from one laptop to a fleet. 81 rules, zero config, zero telemetry.
 
     ---
 
