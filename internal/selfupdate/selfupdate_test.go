@@ -57,7 +57,7 @@ func TestBuildReport_D2SiblingDrift(t *testing.T) {
 func TestBuildReport_IgnoresUnknownAndDevSiblings(t *testing.T) {
 	self := version.Info{Binary: "sirsi", Version: "v0.22.0"}
 	siblings := []Sibling{
-		sib("sirsi-menubar", "dev", "/x/sirsi-menubar"), // unstamped — not a real mismatch
+		sib("sirsi-menubar", "dev", "/x/sirsi-menubar"),                   // unstamped — not a real mismatch
 		{Info: version.Info{Binary: "sirsi-menubar"}, Err: "exec failed"}, // unprobeable
 	}
 	r := BuildReport(self, siblings, "")

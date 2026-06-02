@@ -155,8 +155,8 @@ func TestApiVaultPrune_RequiresConfirm(t *testing.T) {
 		t.Fatalf("POST: %v", err)
 	}
 	var prep PreparedAction
-	if err := json.NewDecoder(resp.Body).Decode(&prep); err != nil {
-		t.Fatalf("decode prepare: %v", err)
+	if decErr := json.NewDecoder(resp.Body).Decode(&prep); decErr != nil {
+		t.Fatalf("decode prepare: %v", decErr)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != 200 || !prep.DryRun || prep.ConfirmToken == "" {
@@ -185,8 +185,8 @@ func TestApiSlay_RealKillRequiresConfirm(t *testing.T) {
 		t.Fatalf("POST: %v", err)
 	}
 	var prep PreparedAction
-	if err := json.NewDecoder(resp.Body).Decode(&prep); err != nil {
-		t.Fatalf("decode prepare: %v", err)
+	if decErr := json.NewDecoder(resp.Body).Decode(&prep); decErr != nil {
+		t.Fatalf("decode prepare: %v", decErr)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != 200 || !prep.DryRun || prep.ConfirmToken == "" {

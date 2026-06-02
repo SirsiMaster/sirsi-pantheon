@@ -209,14 +209,14 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	for _, id := range ns.RegisteredAgents {
 		cfg := reg.Agents[id]
 		check := AgentWakeHealth{AgentID: id, Mechanism: cfg.WakeMechanism(), Ready: true}
-		if err := cfg.Validate(); err != nil {
+		if vErr := cfg.Validate(); vErr != nil {
 			check.Ready = false
-			check.Detail = err.Error()
+			check.Detail = vErr.Error()
 		} else {
 			switch cfg.WakeMechanism() {
 			case WakeCLISpawn:
 				if len(cfg.Command) > 0 {
-					if path, err := exec.LookPath(cfg.Command[0]); err == nil {
+					if path, lookErr := exec.LookPath(cfg.Command[0]); lookErr == nil {
 						check.Detail = path
 					} else {
 						check.Ready = false
@@ -296,7 +296,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	// CTR false-active bug). Scoped to this host; remote tables are unobservable.
 	host, _ := os.Hostname()
 	_, _ = ReapDeadThreads(routerRoot, host)
-	if treg, err := LoadThreadRegistry(routerRoot); err == nil {
+	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		for _, thr := range treg.SortedThreads() {
 			if thr.Status.IsTerminal() {

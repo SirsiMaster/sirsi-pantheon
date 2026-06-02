@@ -268,8 +268,8 @@ func ackLegacyPending(root, agent string, ids []string) error {
 	}
 
 	var state map[string]any
-	if err := json.Unmarshal(data, &state); err != nil {
-		return fmt.Errorf("parse state.json: %w", err)
+	if jerr := json.Unmarshal(data, &state); jerr != nil {
+		return fmt.Errorf("parse state.json: %w", jerr)
 	}
 
 	idSet := make(map[string]struct{}, len(ids))

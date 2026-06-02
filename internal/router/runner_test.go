@@ -192,8 +192,8 @@ func TestRunnerLedgerRedispatchesEditedDocument(t *testing.T) {
 	}
 
 	rr := NewRunner(r, RunnerOptions{RepoRoot: tmp, Agent: "all", Out: io.Discard, Notify: notify, LedgerPath: ledgerPath})
-	if err := rr.Tick(context.Background()); err != nil {
-		t.Fatal(err)
+	if tickErr := rr.Tick(context.Background()); tickErr != nil {
+		t.Fatal(tickErr)
 	}
 
 	doc, err := r.Get(id)
@@ -286,8 +286,8 @@ JSON
 	}
 	exec := NewExecutor(reg, r, wq, io.Discard)
 	rr := NewRunner(r, RunnerOptions{RepoRoot: tmp, Agent: "codex-pantheon", Out: io.Discard, Executor: exec})
-	if err := rr.Tick(context.Background()); err != nil {
-		t.Fatal(err)
+	if tickErr := rr.Tick(context.Background()); tickErr != nil {
+		t.Fatal(tickErr)
 	}
 
 	loaded, err := LoadWorkQueue(routerRoot)

@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/thoth"
@@ -1266,17 +1266,17 @@ func handleRouterPoll(args map[string]interface{}) (*ToolResult, error) {
 	if agent != "" {
 		ack, _ := args["ack"].(bool)
 
-		pending, err := r.PollInbox(agent)
-		if err != nil {
-			return textResult(fmt.Sprintf("Error: %v", err), true), nil
+		pending, pollErr := r.PollInbox(agent)
+		if pollErr != nil {
+			return textResult(fmt.Sprintf("Error: %v", pollErr), true), nil
 		}
 
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Inbox for %s: %d pending\n\n", agent, len(pending)))
 		for _, id := range pending {
-			doc, err := r.Get(id)
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("  [?] %s (could not load: %v)\n", id, err))
+			doc, getErr := r.Get(id)
+			if getErr != nil {
+				sb.WriteString(fmt.Sprintf("  [?] %s (could not load: %v)\n", id, getErr))
 				continue
 			}
 			sb.WriteString(fmt.Sprintf("  [%s] %s — %s (by %s)\n", doc.Type, doc.ID, doc.Title, doc.Author))
@@ -1284,8 +1284,8 @@ func handleRouterPoll(args map[string]interface{}) (*ToolResult, error) {
 		if len(pending) == 0 {
 			sb.WriteString("  No pending work. Inbox is clear.\n")
 		} else if ack {
-			if err := r.AckInbox(agent, pending); err != nil {
-				sb.WriteString(fmt.Sprintf("\nFailed to acknowledge: %v\n", err))
+			if ackErr := r.AckInbox(agent, pending); ackErr != nil {
+				sb.WriteString(fmt.Sprintf("\nFailed to acknowledge: %v\n", ackErr))
 			} else {
 				sb.WriteString(fmt.Sprintf("\nAcknowledged %d items. Use router_get to read details.\n", len(pending)))
 			}
@@ -1304,7 +1304,7 @@ func handleRouterPoll(args map[string]interface{}) (*ToolResult, error) {
 
 	since := time.Now().Add(-24 * time.Hour)
 	if sinceStr != "" {
-		if parsed, err := time.Parse(time.RFC3339, sinceStr); err == nil {
+		if parsed, parseErr := time.Parse(time.RFC3339, sinceStr); parseErr == nil {
 			since = parsed
 		}
 	}

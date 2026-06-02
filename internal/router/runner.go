@@ -80,7 +80,7 @@ func NewRunner(r *Router, opts RunnerOptions) *Runner {
 	return rr
 }
 
-// Run executes the dispatch loop until context is cancelled or --once completes.
+// Run executes the dispatch loop until context is canceled or --once completes.
 func (rr *Runner) Run(ctx context.Context) error {
 	for {
 		if err := rr.Tick(ctx); err != nil {

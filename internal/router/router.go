@@ -337,8 +337,8 @@ func (r *Router) Submit(docType DocType, author, title, content string) (string,
 		return "", fmt.Errorf("path traversal blocked: %q escapes %q", absPath, absDir)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("write %s: %w", path, err)
+	if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr != nil {
+		return "", fmt.Errorf("write %s: %w", path, writeErr)
 	}
 
 	// Update state: mark last read time for the submitting agent

@@ -60,7 +60,7 @@ type DiscoverAction struct {
 // remote-host threads are never matched against local PIDs.
 func ReconcileDiscovery(reg *Registry, threads *ThreadRegistry, procs []DiscoveredProc, host string) []DiscoverAction {
 	// Index active threads on this host by live PID, so a re-run of discover
-	// recognises sessions it (or `register`) already enrolled.
+	// recognizes sessions it (or `register`) already enrolled.
 	activeByPID := make(map[int]*Thread)
 	if threads != nil {
 		for _, t := range threads.Threads {

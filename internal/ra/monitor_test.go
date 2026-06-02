@@ -104,13 +104,6 @@ func TestReadLogTail_OverTenLines(t *testing.T) {
 }
 
 func splitNonEmpty(s string) []string {
-	var result []string
-	for _, line := range filepath.SplitList(s) {
-		if line != "" {
-			result = append(result, line)
-		}
-	}
-	// Use simple split instead
 	parts := make([]string, 0)
 	for _, p := range filepath.SplitList(s) {
 		if p != "" {

@@ -75,8 +75,8 @@ type Thread struct {
 	// (ADR-024 Amendment 1) — the generation half of the (pid, start_time)
 	// composite identity that makes reaping resistant to PID reuse. Empty on
 	// legacy records and platforms without a start-time probe (bare-PID fallback).
-	StartTime     string       `json:"start_time,omitempty"`
-	Host          string       `json:"host,omitempty"`
+	StartTime string `json:"start_time,omitempty"`
+	Host      string `json:"host,omitempty"`
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`

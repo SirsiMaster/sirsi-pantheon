@@ -314,8 +314,8 @@ func TestRegisterThread_IdempotentOnAgentPID(t *testing.T) {
 	}
 
 	// A terminal record must not be reused — closing then re-registering starts fresh.
-	if _, err := Heartbeat(tmp, first.ThreadID, HeartbeatUpdate{Status: ThreadStatusClosed}); err != nil {
-		t.Fatalf("Heartbeat close: %v", err)
+	if _, hbErr := Heartbeat(tmp, first.ThreadID, HeartbeatUpdate{Status: ThreadStatusClosed}); hbErr != nil {
+		t.Fatalf("Heartbeat close: %v", hbErr)
 	}
 	revived, err := RegisterThread(tmp, &Thread{
 		AgentID: "claude-pantheon", Surface: "claude", Repo: "/repo", PID: 4242,

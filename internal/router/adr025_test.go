@@ -253,7 +253,7 @@ func TestPruneStaleSuspended(t *testing.T) {
 			SuspendPayload: &SuspendPayload{SuspendedAt: now.Add(-1 * time.Hour)}},
 		"old-susp-nopayload": {ThreadID: "old-susp-nopayload", AgentID: "claude-pantheon", Status: ThreadStatusSuspended,
 			LastSeenAt: now.Add(-10 * 24 * time.Hour)}, // falls back to LastSeenAt
-		"live": {ThreadID: "live", AgentID: "claude-pantheon", Status: ThreadStatusActive, LastSeenAt: now.Add(-10 * 24 * time.Hour)},
+		"live":   {ThreadID: "live", AgentID: "claude-pantheon", Status: ThreadStatusActive, LastSeenAt: now.Add(-10 * 24 * time.Hour)},
 		"reaped": {ThreadID: "reaped", AgentID: "claude-pantheon", Status: ThreadStatusReaped, LastSeenAt: now.Add(-10 * 24 * time.Hour)},
 	}}
 

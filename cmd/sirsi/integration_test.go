@@ -224,8 +224,8 @@ func TestRouterAckLegacyPending(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got map[string]any
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatal(err)
+	if jerr := json.Unmarshal(data, &got); jerr != nil {
+		t.Fatal(jerr)
 	}
 	pending := got["pending"].(map[string]any)
 	claudePending := pending["claude-pantheon"].([]any)

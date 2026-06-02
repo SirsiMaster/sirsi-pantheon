@@ -144,7 +144,7 @@ func TestStateNormalizePendingKeepsEmptySlices(t *testing.T) {
 	s := &State{
 		Pending: map[string][]string{
 			"claude-pantheon": nil,
-			"codex-pantheon":  []string{"work"},
+			"codex-pantheon":  {"work"},
 		},
 	}
 

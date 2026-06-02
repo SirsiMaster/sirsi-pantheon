@@ -80,9 +80,9 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 		return err
 	}
 
-	if err := cfg.Validate(); err != nil {
-		e.workQueue.UpdateStatus(item.ID, StatusFailed, err.Error())
-		return err
+	if vErr := cfg.Validate(); vErr != nil {
+		e.workQueue.UpdateStatus(item.ID, StatusFailed, vErr.Error())
+		return vErr
 	}
 
 	// Pre-dispatch auth check: fail fast for direct agent CLI launches.
@@ -91,7 +91,7 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 		if lookErr != nil {
 			reason := fmt.Sprintf("%s CLI not found in PATH — install before dispatching", cfg.Command[0])
 			e.workQueue.UpdateStatus(item.ID, StatusBlocked, reason)
-			e.workQueue.Save()
+			_ = e.workQueue.Save()
 			fmt.Fprintf(e.out, "  Blocked: %s\n", reason)
 			return fmt.Errorf("dispatch to %s blocked: %s", item.TargetAgentID, reason)
 		}
@@ -104,7 +104,7 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 				reason = fmt.Sprintf("%s CLI auth check failed: %s", cfg.Type, detail)
 			}
 			e.workQueue.UpdateStatus(item.ID, StatusBlocked, reason)
-			e.workQueue.Save()
+			_ = e.workQueue.Save()
 			fmt.Fprintf(e.out, "  Blocked: %s\n", reason)
 			return fmt.Errorf("dispatch to %s blocked: %s", item.TargetAgentID, reason)
 		}
@@ -127,7 +127,7 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 
 	// Mark dispatched
 	e.workQueue.UpdateStatus(item.ID, StatusDispatched, "")
-	e.workQueue.Save()
+	_ = e.workQueue.Save()
 	fmt.Fprintf(e.out, "  Dispatching to %s (%s)...\n", item.TargetAgentID, cfg.Type)
 
 	// Wake with timeout
@@ -156,12 +156,12 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 		if err != nil {
 			reason := fmt.Sprintf("wake failed: %s", errString(err))
 			e.workQueue.UpdateStatus(item.ID, StatusFailed, reason)
-			e.workQueue.Save()
+			_ = e.workQueue.Save()
 			fmt.Fprintf(e.out, "  Failed: %s\n", reason)
 			return fmt.Errorf("wake %s failed: %w", item.TargetAgentID, err)
 		}
 		e.workQueue.UpdateStatus(item.ID, StatusDispatched, "")
-		e.workQueue.Save()
+		_ = e.workQueue.Save()
 		fmt.Fprintf(e.out, "  Wake sent via %s\n", cfg.WakeMechanism())
 		return nil
 	}
@@ -182,14 +182,14 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 	if err != nil {
 		reason := fmt.Sprintf("agent exited with code %d: %s", exitCode, errString(err))
 		e.workQueue.UpdateStatus(item.ID, StatusFailed, reason)
-		e.workQueue.Save()
+		_ = e.workQueue.Save()
 		fmt.Fprintf(e.out, "  Failed: %s\n", reason)
 		return fmt.Errorf("dispatch to %s failed: %w", item.TargetAgentID, err)
 	}
 
 	if writebackDetected {
 		e.workQueue.UpdateStatus(item.ID, StatusCompleted, "")
-		e.workQueue.Save()
+		_ = e.workQueue.Save()
 		fmt.Fprintf(e.out, "  Completed: %s wrote back to router\n", item.TargetAgentID)
 		return nil
 	}
@@ -197,7 +197,7 @@ func (e *Executor) Dispatch(ctx context.Context, item *WorkItem) error {
 	// Agent exited clean but no writeback detected
 	reason := "agent exited successfully but no router writeback detected"
 	e.workQueue.UpdateStatus(item.ID, StatusFailed, reason)
-	e.workQueue.Save()
+	_ = e.workQueue.Save()
 	fmt.Fprintf(e.out, "  Warning: %s\n", reason)
 	return fmt.Errorf("%s", reason)
 }
@@ -247,7 +247,7 @@ func buildWorkPrompt(item *WorkItem, cfg *AgentConfig) string {
 	sb.WriteString("\nRead the following files in order:\n")
 	sb.WriteString("1. .agents/idea-router/state.json\n")
 	sb.WriteString("2. .agents/idea-router/agents.json\n")
-	sb.WriteString(fmt.Sprintf("3. The addressed work item document\n"))
+	sb.WriteString("3. The addressed work item document\n")
 	sb.WriteString("4. .agents/idea-router/DESIGN.md (for protocol rules)\n\n")
 	sb.WriteString("Then act:\n")
 	sb.WriteString("- Implement the work described in the router item.\n")

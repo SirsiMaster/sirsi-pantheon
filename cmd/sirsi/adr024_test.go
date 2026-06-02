@@ -116,7 +116,6 @@ func TestADR_DashboardActionShapesResolveToRealCLI(t *testing.T) {
 		{"audit"}, {"maat"}, {"risk"}, {"hardware"}, {"scan"}, {"ghosts"}, {"doctor"}, {"quality"},
 	}
 	for _, sh := range shapes {
-		sh := sh
 		t.Run(strings.Join(sh, "_"), func(t *testing.T) {
 			t.Parallel()
 			args := append(append([]string{}, sh...), "--help")
@@ -138,7 +137,7 @@ func TestADR_DashboardActionShapesResolveToRealCLI(t *testing.T) {
 // loop-monitor spec — and MUST supersede the adoption bridge, else the bridge
 // AND /loop both run (duplicate accretion). Simulated here by planting a live
 // bridge pidfile, then self-registering the same (agent, pid): the bridge
-// process must be signalled dead and its pidfile removed.
+// process must be signaled dead and its pidfile removed.
 func TestADR024_SelfRegisterSupersedesDiscoverBridge(t *testing.T) {
 	tmp := setupTempRouter(t)
 
@@ -164,7 +163,7 @@ func TestADR024_SelfRegisterSupersedesDiscoverBridge(t *testing.T) {
 		t.Fatalf("idempotent register must reuse thread: %q != %q", first.ThreadID, second.ThreadID)
 	}
 
-	// The bridge must be superseded: pidfile gone, process signalled to exit.
+	// The bridge must be superseded: pidfile gone, process signaled to exit.
 	if _, err := os.Stat(pidfile); err == nil {
 		t.Errorf("bridge pidfile %s survived self-register — guard did not fire", pidfile)
 	}

@@ -420,8 +420,8 @@ func TestCollectNodeStatus_SurfacesLiveAndStaleThreads(t *testing.T) {
 	}
 	tr, _ := LoadThreadRegistry(routerRoot)
 	tr.Threads[stale.ThreadID].LastSeenAt = time.Now().Add(-1 * time.Hour)
-	if err := SaveThreadRegistry(routerRoot, tr); err != nil {
-		t.Fatal(err)
+	if saveErr := SaveThreadRegistry(routerRoot, tr); saveErr != nil {
+		t.Fatal(saveErr)
 	}
 
 	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))

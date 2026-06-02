@@ -32,7 +32,7 @@ func bestEffortThothSync(repoRoot string) (ref string, ok bool) {
 	}
 	sync := exec.Command(self, "thoth", "sync")
 	sync.Dir = repoRoot
-	if err := sync.Run(); err != nil {
+	if syncErr := sync.Run(); syncErr != nil {
 		return "", false // memory capture failed — caller treats as unrecoverable
 	}
 	out, err := exec.Command("git", "-C", repoRoot, "rev-parse", "--short", "HEAD").Output()
@@ -132,9 +132,9 @@ pause, not a death). Idempotent.`,
 
 		threadID := threadSuspendID
 		if threadSuspendSelf {
-			id, err := resolveSelfThreadID(routerRoot)
-			if err != nil {
-				return err
+			id, resolveErr := resolveSelfThreadID(routerRoot)
+			if resolveErr != nil {
+				return resolveErr
 			}
 			threadID = id
 		}

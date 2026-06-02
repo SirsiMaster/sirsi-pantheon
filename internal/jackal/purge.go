@@ -25,13 +25,13 @@ type ArtifactType string
 const (
 	ArtifactNodeModules ArtifactType = "node_modules"
 	ArtifactTarget      ArtifactType = "target"      // Rust
-	ArtifactBuild       ArtifactType = "build"        // generic
-	ArtifactDist        ArtifactType = "dist"         // frontend
-	ArtifactVenv        ArtifactType = "venv"         // Python
-	ArtifactDotVenv     ArtifactType = ".venv"        // Python (alt)
-	ArtifactDotBuild    ArtifactType = ".build"       // Swift
-	ArtifactPods        ArtifactType = "Pods"         // iOS
-	ArtifactDerived     ArtifactType = "DerivedData"  // Xcode
+	ArtifactBuild       ArtifactType = "build"       // generic
+	ArtifactDist        ArtifactType = "dist"        // frontend
+	ArtifactVenv        ArtifactType = "venv"        // Python
+	ArtifactDotVenv     ArtifactType = ".venv"       // Python (alt)
+	ArtifactDotBuild    ArtifactType = ".build"      // Swift
+	ArtifactPods        ArtifactType = "Pods"        // iOS
+	ArtifactDerived     ArtifactType = "DerivedData" // Xcode
 )
 
 // knownArtifacts maps directory names to their artifact type.
@@ -50,9 +50,9 @@ var knownArtifacts = map[string]ArtifactType{
 // artifactConfirmers are directories that must live alongside a project
 // marker to be considered an artifact (avoids false positives).
 var artifactConfirmers = map[ArtifactType][]string{
-	ArtifactTarget:  {"Cargo.toml", "Cargo.lock"},
-	ArtifactBuild:   {"package.json", "build.gradle", "CMakeLists.txt", "Makefile"},
-	ArtifactDist:    {"package.json", "webpack.config.js", "vite.config.js", "vite.config.ts"},
+	ArtifactTarget:   {"Cargo.toml", "Cargo.lock"},
+	ArtifactBuild:    {"package.json", "build.gradle", "CMakeLists.txt", "Makefile"},
+	ArtifactDist:     {"package.json", "webpack.config.js", "vite.config.js", "vite.config.ts"},
 	ArtifactDotBuild: {"Package.swift"},
 }
 
@@ -61,9 +61,9 @@ const recentThreshold = 7 * 24 * time.Hour
 
 // ProjectArtifact represents a single discovered artifact directory.
 type ProjectArtifact struct {
-	ProjectName string       // parent directory name
-	ProjectPath string       // full path to project
-	ArtifactDir string       // full path to artifact dir
+	ProjectName string // parent directory name
+	ProjectPath string // full path to project
+	ArtifactDir string // full path to artifact dir
 	Type        ArtifactType
 	Size        int64
 	ModTime     time.Time

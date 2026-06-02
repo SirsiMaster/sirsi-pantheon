@@ -132,21 +132,21 @@ var tierAssignments = map[string]CoverageTier{
 	"ignore":  TierA,
 
 	// Tier B — mixed I/O (default, but explicit for documentation)
-	"jackal":    TierB,
-	"mcp":       TierB,
-	"maat":      TierB,
-	"ra":        TierB,
-	"seshat":    TierB,
-	"router":    TierB,
-	"horus":     TierB,
-	"vault":     TierB,
-	"rtk":       TierB,
-	"scarab":    TierB,
-	"seba":      TierB,
-	"osiris":    TierB,
-	"isis":      TierB,
-	"thoth":     TierB,
-	"brain":     TierB,
+	"jackal":     TierB,
+	"mcp":        TierB,
+	"maat":       TierB,
+	"ra":         TierB,
+	"seshat":     TierB,
+	"router":     TierB,
+	"horus":      TierB,
+	"vault":      TierB,
+	"rtk":        TierB,
+	"scarab":     TierB,
+	"seba":       TierB,
+	"osiris":     TierB,
+	"isis":       TierB,
+	"thoth":      TierB,
+	"brain":      TierB,
 	"workstream": TierB,
 
 	// Tier C — interactive/OS shells
@@ -155,18 +155,8 @@ var tierAssignments = map[string]CoverageTier{
 	"stealth":   TierC,
 }
 
-// elevatedThresholds is retained for backwards compatibility but now derived from tiers.
-var elevatedThresholds = map[string]float64{
-	"cleaner": 80,
-	"guard":   80,
-	"scales":  80,
-	"ka":      80,
-	"mirror":  80,
-	"ignore":  80,
-}
-
 // DefaultThresholds dynamically discovers all internal/* packages and returns
-// coverage thresholds for each. Modules not in elevatedThresholds get a default
+// coverage thresholds for each. Modules not in the elevated tier get a default
 // minimum of 50%. This ensures new modules are never invisible to Ma'at.
 func DefaultThresholds() []CoverageThreshold {
 	return DefaultThresholdsFromDir("")

@@ -68,7 +68,7 @@ func NewDaemon(r *Router, opts DaemonOptions) *Daemon {
 	}
 }
 
-// Run starts the daemon loop until ctx is cancelled.
+// Run starts the daemon loop until ctx is canceled.
 func (d *Daemon) Run(ctx context.Context) error {
 	fmt.Fprintln(d.opts.Out, "Autorouter daemon started.")
 	if err := d.runner.Tick(ctx); err != nil {

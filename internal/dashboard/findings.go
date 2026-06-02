@@ -112,8 +112,8 @@ func (s *Server) apiClean(w http.ResponseWriter, r *http.Request) {
 			return // requireConfirm wrote the PreparedAction (token) — caller stops
 		}
 	} else if req.ConfirmToken != "" {
-		if err := s.confirm.Validate(req.ConfirmToken, "clean", target, params, req.ActionHash); err != nil {
-			writeError(w, err.Error(), http.StatusForbidden)
+		if vErr := s.confirm.Validate(req.ConfirmToken, "clean", target, params, req.ActionHash); vErr != nil {
+			writeError(w, vErr.Error(), http.StatusForbidden)
 			return
 		}
 	}

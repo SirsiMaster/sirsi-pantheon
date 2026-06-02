@@ -82,10 +82,7 @@ func (m *Mock) Name() string {
 }
 
 func (m *Mock) SupportsTrash() bool {
-	if m.NoTrash {
-		return false
-	}
-	return true
+	return !m.NoTrash
 }
 
 func (m *Mock) MoveToTrash(path string) error {

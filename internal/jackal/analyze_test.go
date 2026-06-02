@@ -115,7 +115,7 @@ func TestAnalyzeCtx_Cancellation(t *testing.T) {
 	cancel() // cancel immediately
 
 	result, err := AnalyzeCtx(ctx, tmp, 0)
-	// Either error or empty results is acceptable for cancelled context
+	// Either error or empty results is acceptable for canceled context
 	if err != nil {
 		return // error is fine
 	}

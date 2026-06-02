@@ -24,8 +24,8 @@ func LoadDispatchLedger(path string) (*DispatchLedger, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err == nil {
-		if err := json.Unmarshal(data, ledger); err != nil {
-			return nil, fmt.Errorf("parse dispatch ledger: %w", err)
+		if uErr := json.Unmarshal(data, ledger); uErr != nil {
+			return nil, fmt.Errorf("parse dispatch ledger: %w", uErr)
 		}
 		if ledger.Items == nil {
 			ledger.Items = map[string]string{}

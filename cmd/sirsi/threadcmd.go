@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
@@ -31,7 +30,7 @@ func spawnRouterWatcher(threadID, agentID, routerRoot string, parentPID int) err
 	pf := watcherPidfile(threadID)
 	if data, err := os.ReadFile(pf); err == nil {
 		if oldPID, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			if syscall.Kill(oldPID, syscall.Signal(0)) == nil {
+			if processAlive(oldPID) {
 				return nil // existing watcher alive, dedup
 			}
 		}
@@ -48,7 +47,7 @@ func spawnRouterWatcher(threadID, agentID, routerRoot string, parentPID int) err
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach so we survive caller exit
+	cmd.SysProcAttr = detachedSysProcAttr() // detach so we survive caller exit (Unix Setsid; nil on Windows)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -65,7 +64,7 @@ func killRouterWatcher(threadID string) {
 		return
 	}
 	if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = terminateProcess(pid)
 	}
 	_ = os.Remove(pf)
 }
@@ -134,7 +133,7 @@ var threadRegisterCmd = &cobra.Command{
 			repo = absRepo
 		}
 		routerRoot := filepath.Join(repo, ".agents", "idea-router")
-		if _, err := os.Stat(routerRoot); err != nil {
+		if _, statErr := os.Stat(routerRoot); statErr != nil {
 			return fmt.Errorf("router directory not found at %s", routerRoot)
 		}
 
@@ -184,7 +183,7 @@ var threadRegisterCmd = &cobra.Command{
 		}
 		// Fill wake mechanism from registry if not provided.
 		if thr.WakeMechanism == "" {
-			if reg, err := router.LoadRegistry(routerRoot); err == nil {
+			if reg, regErr := router.LoadRegistry(routerRoot); regErr == nil {
 				if cfg, ok := reg.Agents[threadRegAgent]; ok {
 					thr.WakeMechanism = cfg.WakeMechanism()
 					if thr.Workstream == "" {
@@ -363,15 +362,11 @@ accreting unbounded (it skips recent suspends, preserving resume-later).`,
 		}
 		removed := reg.PruneClosed(time.Now().UTC(), cutoff)
 		// ADR-025 opt-in suspended retention: only when the flag is set, never by
-		// default (suspended is resumable). 0 here means "the flag was given as 0"
-		// → prune all suspended regardless of age, mapped to the smallest window.
+		// default (suspended is resumable). Keep retention<=0 as a no-op, matching
+		// PruneStaleSuspended's wipe-all guard.
 		suspRemoved := 0
 		if cmd.Flags().Changed("suspended-older-than") {
-			susp := threadPruneSuspendedOlderT
-			if susp <= 0 {
-				susp = time.Nanosecond
-			}
-			suspRemoved = reg.PruneStaleSuspended(time.Now().UTC(), susp)
+			suspRemoved = reg.PruneStaleSuspended(time.Now().UTC(), threadPruneSuspendedOlderT)
 		}
 		if removed+suspRemoved > 0 {
 			if err := router.SaveThreadRegistry(routerRoot, reg); err != nil {
@@ -435,7 +430,7 @@ var threadWatchRouterCmd = &cobra.Command{
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					if syscall.Kill(watchParentPID, syscall.Signal(0)) != nil {
+					if !processAlive(watchParentPID) {
 						cancel()
 						return
 					}
@@ -510,7 +505,7 @@ func handleRouterEvent(threadID, agentID, routerRoot string) {
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detachedSysProcAttr()
 	if err := cmd.Start(); err == nil {
 		_ = cmd.Process.Release()
 	}

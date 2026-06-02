@@ -90,7 +90,7 @@ func SaveRegistry(routerRoot string, reg *Registry) error {
 	}
 	path := filepath.Join(routerRoot, "agents.json")
 	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
+	if info, statErr := os.Stat(path); statErr == nil {
 		mode = info.Mode().Perm()
 	}
 

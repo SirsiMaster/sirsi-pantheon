@@ -15,13 +15,13 @@ import (
 
 // CommandResult represents the structured output of any Pro command.
 type CommandResult struct {
-	Command     string       `json:"command"`
-	Summary     string       `json:"summary"`
+	Command     string        `json:"command"`
+	Summary     string        `json:"summary"`
 	Duration    time.Duration `json:"duration_ms"`
-	Evidence    []Evidence   `json:"evidence,omitempty"`
-	Warnings    []string     `json:"warnings,omitempty"`
-	Errors      []string     `json:"errors,omitempty"`
-	NextActions []NextAction `json:"next_actions,omitempty"`
+	Evidence    []Evidence    `json:"evidence,omitempty"`
+	Warnings    []string      `json:"warnings,omitempty"`
+	Errors      []string      `json:"errors,omitempty"`
+	NextActions []NextAction  `json:"next_actions,omitempty"`
 }
 
 // Evidence is a single data point from the command result.
@@ -45,7 +45,7 @@ func (r *CommandResult) Render() {
 	if IsJSON() {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(r)
+		_ = enc.Encode(r)
 		return
 	}
 
