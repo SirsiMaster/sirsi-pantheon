@@ -43,7 +43,8 @@ func TestDaemonFSNotifyDispatchesStateChange(t *testing.T) {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	daemonDone := make(chan struct{})
+	t.Cleanup(func() { cancel(); <-daemonDone })
 
 	d := NewDaemon(r, DaemonOptions{
 		RepoRoot:    tmp,
@@ -55,6 +56,7 @@ func TestDaemonFSNotifyDispatchesStateChange(t *testing.T) {
 		UseFSNotify: true,
 	})
 	go func() {
+		defer close(daemonDone)
 		_ = d.Run(ctx)
 	}()
 
@@ -86,7 +88,8 @@ func TestDaemonDebounceCollapsesRepeatedWrites(t *testing.T) {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	daemonDone := make(chan struct{})
+	t.Cleanup(func() { cancel(); <-daemonDone })
 
 	d := NewDaemon(r, DaemonOptions{
 		RepoRoot:    tmp,
@@ -97,6 +100,7 @@ func TestDaemonDebounceCollapsesRepeatedWrites(t *testing.T) {
 		UseFSNotify: true,
 	})
 	go func() {
+		defer close(daemonDone)
 		_ = d.Run(ctx)
 	}()
 
@@ -139,6 +143,7 @@ func TestDaemonPollingFallbackWhenFSNotifyDisabled(t *testing.T) {
 	var mu sync.Mutex
 	var buf bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
+	daemonDone := make(chan struct{})
 
 	d := NewDaemon(r, DaemonOptions{
 		RepoRoot:    tmp,
@@ -148,11 +153,12 @@ func TestDaemonPollingFallbackWhenFSNotifyDisabled(t *testing.T) {
 		UseFSNotify: false,
 	})
 	go func() {
+		defer close(daemonDone)
 		_ = d.Run(ctx)
 	}()
 	time.Sleep(200 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond) // let daemon exit
+	<-daemonDone // wait for the daemon goroutine to fully exit before the test returns + t.TempDir cleanup runs
 
 	mu.Lock()
 	output := buf.String()
