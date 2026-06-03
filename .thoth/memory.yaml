@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-05-31T17:15:00-04:00
+# Last updated: 2026-06-03T00:01:59-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -8,10 +8,10 @@ repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
 binary_count: 8 (anubis, guard, maat, scarab, sirsi, sirsi-agent, sirsi-menubar, thoth)
-test_count: 1800+
-line_count: ~78,000
-module_count: 41
-command_count: 143
+test_count: 1913+
+line_count: ~108,419
+module_count: 44
+command_count: 153
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
 mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, Horus 4, Brain 3, Version 1, Categories 1)
@@ -499,6 +499,14 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-06-01: {"session_id":"bafb166f-7d28-44f4-872f-6c2c49b47752","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/bafb166f-7d28-44f4-872f-6c2c49b47752.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":null}
+# 2026-06-01: Router snapshot:
+# 2026-06-01: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-01: completed topics: 41
+# 2026-06-01: last Codex read: 2026-06-01T16:24:36Z
+# 2026-06-01: last Claude read: 2026-06-01T16:12:19Z
+# 2026-06-01: pending: none
+# 2026-06-01: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 # 2026-05-31: CTR auto-registration Phase 1 — `sirsi thread discover` (commit 10a97b7, codex APPROVED).
 #   Reconciles live agent processes into threads.json: bounded pgrep/lsof → cwd → agents.json match,
 #   registers mappable repo-launched sessions anchored to their PID. Home-launched=unmappable (never
