@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Darwin implements Platform for macOS.
@@ -44,12 +45,27 @@ func (d *Darwin) MoveToTrash(path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve path for trash: %w", err)
 	}
-	script := fmt.Sprintf(
-		`tell application "Finder" to delete POSIX file %q`,
-		absPath,
-	)
-	cmd := exec.Command("osascript", "-e", script)
-	return cmd.Run()
+	// Native move to ~/.Trash — the app's OWN file operation. This needs NO
+	// Automation/Finder permission, so it works from a background launchd agent
+	// (the menubar), where `tell application "Finder"` is rejected by TCC. Items
+	// remain fully recoverable from the Trash. Cross-volume rename fails (EXDEV);
+	// fall back to Finder automation, which works from an interactive context.
+	if home, herr := os.UserHomeDir(); herr == nil {
+		trashDir := filepath.Join(home, ".Trash")
+		if mkErr := os.MkdirAll(trashDir, 0o700); mkErr == nil {
+			dest := filepath.Join(trashDir, filepath.Base(absPath))
+			if _, statErr := os.Lstat(dest); statErr == nil {
+				// Avoid clobbering an existing item of the same name in the Trash.
+				dest = filepath.Join(trashDir, filepath.Base(absPath)+" "+time.Now().Format("2006-01-02 15.04.05"))
+			}
+			if renErr := os.Rename(absPath, dest); renErr == nil {
+				return nil
+			}
+			// rename failed (likely cross-volume EXDEV) — fall through to Finder.
+		}
+	}
+	script := fmt.Sprintf(`tell application "Finder" to delete POSIX file %q`, absPath)
+	return exec.Command("osascript", "-e", script).Run()
 }
 
 func (d *Darwin) ProtectedPrefixes() []string {
