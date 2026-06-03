@@ -81,6 +81,23 @@ func menubarNodeStatus() (*router.NodeStatus, error) {
 	return router.CollectNodeStatus(repoRoot, nil)
 }
 
+// applyFDAState renders the disk-access item to the current all/some/none tier:
+// hidden at full visibility, a partial-access nudge when only some folders are
+// granted, a blunt no-access warning when blind. Re-evaluated each refresh so it
+// disappears the moment the user grants access.
+func applyFDAState(item *systray.MenuItem) {
+	switch platform.CheckDiskAccess().Level {
+	case platform.AccessFull:
+		item.Hide()
+	case platform.AccessSome:
+		item.SetTitle("◐ Partial Visibility — See Everything…")
+		item.Show()
+	default:
+		item.SetTitle("⚠ No Disk Access — Grant Access…")
+		item.Show()
+	}
+}
+
 func onReady() {
 	systray.SetTemplateIcon(AnkhIcon, AnkhIcon)
 	systray.SetTitle("Sirsi")
@@ -88,6 +105,13 @@ func onReady() {
 
 	// ── Open TUI ──────────────────────────────────────────────────
 	mDashboard := systray.AddMenuItem("Open Console", "Open the full Sirsi console in Terminal")
+
+	// ── Full Disk Access (foundational visibility) ─────────────────
+	// Sirsi/Horus is meant to see the WHOLE workstation; without macOS Full Disk
+	// Access it's blind to Desktop/Documents/Mail/app containers. Surface the gap
+	// as a first-class action — shown only when access is missing.
+	mFDA := systray.AddMenuItem("⚠ Grant Full Disk Access…", "Grant disk access so Sirsi can see and clean the whole workstation")
+	applyFDAState(mFDA)
 
 	// ── Stats section ───────────────────────────────────────────────
 	mStats := systray.AddMenuItem("Loading...", "Click to refresh stats")
@@ -247,6 +271,9 @@ func onReady() {
 				}
 			}
 
+			// Re-check disk access — reflect the all/some/none tier, drop it at full.
+			applyFDAState(mFDA)
+
 			// Update Horus ops read-model rows (ADR-026 step 4b). Reduce the same
 			// NodeStatus the in-process dashboard serves into the bounded summary,
 			// then render via the unit-tested opsLeadRow/opsAgentRows. Best-effort:
@@ -273,6 +300,8 @@ func onReady() {
 		select {
 		case <-mDashboard.ClickedCh:
 			spawnTUIWindow()
+		case <-mFDA.ClickedCh:
+			openFullDiskAccessPane(nStore)
 		case <-mOpsHeader.ClickedCh:
 			spawnTUIWindow() // ADR-026 4b: lead ops row opens the full dashboard/TUI
 		case <-mStats.ClickedCh:

@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -19,6 +20,17 @@ import (
 	"fyne.io/systray"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 )
+
+// openFullDiskAccessPane opens System Settings to the Full Disk Access pane and
+// records which binary to add. macOS cannot self-grant FDA (TCC security model) —
+// this makes the one required user action a single click + an explicit path.
+func openFullDiskAccessPane(store *notify.Store) {
+	_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").Start()
+	self, _ := os.Executable()
+	recordNotify(store, "Full Disk Access", "grant", notify.SeverityWarning,
+		"Add this to Full Disk Access, then relaunch: "+self,
+		"System Settings → Privacy & Security → Full Disk Access → + → add the menubar binary above (and the sirsi CLI). Required for Sirsi to see and clean protected folders.")
+}
 
 // actionTimeout bounds an in-place action so a hung command can never wedge the
 // menu item in a running state.
