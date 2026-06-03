@@ -134,7 +134,11 @@ func onReady() {
 
 	// ── Deity Commands (glyphs match internal/deity/registry.go) ───
 	mScan := systray.AddMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
-	mJudge := systray.AddMenuItem("Clean Waste…", "Review and trash waste — opens a confirmation in Terminal")
+	mJudge := systray.AddMenuItem("Clean Waste…", "Preview reclaimable waste, then confirm to move it to Trash")
+	// In-app clean confirm (Rule A1): hidden until a dry-run preview arms it with
+	// the reclaimable amount; clicking it applies the clean (trash-first).
+	mCleanConfirm := systray.AddMenuItem("  ✓ Confirm Clean", "Move the previewed waste to Trash")
+	mCleanConfirm.Hide()
 	mKa := systray.AddMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
 	mMaat := systray.AddMenuItem("Quality Audit", "Run the workstation quality + governance audit")
 	mGuard := systray.AddMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
@@ -294,7 +298,11 @@ func onReady() {
 		case <-mScan.ClickedCh:
 			runActionInPlace(mScan, "Scan for Waste", sirsiBin, "scan", nStore)
 		case <-mJudge.ClickedCh:
-			spawnTUIWithCommand("clean") // destructive — confirm in Terminal
+			// In-app clean (Rule A1): preview (dry-run) → arms the confirm item.
+			runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore)
+		case <-mCleanConfirm.ClickedCh:
+			// Second click = the [y/N] yes → apply (trash-first).
+			runCleanApply(mCleanConfirm, sirsiBin, nStore)
 		case <-mKa.ClickedCh:
 			runActionInPlace(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore)
 		case <-mMaat.ClickedCh:
