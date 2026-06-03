@@ -24,6 +24,9 @@ build-debug:
 install: build
 	@mkdir -p $(INSTALL_DIR)
 	cp $(BUILD_DIR)/sirsi $(INSTALL_DIR)/sirsi
+	@# macOS arm64: cp over a signed binary stales the AMFI cdhash cache → SIGKILL on exec (exit 137).
+	@# Re-sign ad-hoc in place so `sirsi` runs post-install (PANTHEON_RULES.md A6; A27 watcher binary drift).
+	@codesign --force --sign - "$(INSTALL_DIR)/sirsi" 2>/dev/null || true
 	@echo "✅ sirsi installed to $(INSTALL_DIR)/sirsi"
 
 uninstall:
