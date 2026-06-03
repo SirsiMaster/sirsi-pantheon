@@ -87,7 +87,7 @@ func onReady() {
 	systray.SetTooltip("Sirsi Ecosystem Monitor")
 
 	// ── Open TUI ──────────────────────────────────────────────────
-	mDashboard := systray.AddMenuItem("𓂀 Open Pantheon", "Open TUI in Terminal")
+	mDashboard := systray.AddMenuItem("Open Console", "Open the full Sirsi console in Terminal")
 
 	// ── Stats section ───────────────────────────────────────────────
 	mStats := systray.AddMenuItem("Loading...", "Click to refresh stats")
@@ -108,7 +108,7 @@ func onReady() {
 	systray.AddSeparator()
 
 	// ── Ra section ──────────────────────────────────────────────────
-	mRaHeader := systray.AddMenuItem("𓇶 Ra — Fleet Orchestrator", "Click to open Command Center")
+	mRaHeader := systray.AddMenuItem("Agent Fleet", "AI agent orchestration — click for status")
 	mRaDeploy := systray.AddMenuItem("  Deploy All Scopes", "sirsi ra deploy")
 	mRaKill := systray.AddMenuItem("  Kill All Windows", "sirsi ra kill")
 	mRaCollect := systray.AddMenuItem("  Collect Results", "sirsi ra collect")
@@ -133,20 +133,20 @@ func onReady() {
 	systray.AddSeparator()
 
 	// ── Deity Commands (glyphs match internal/deity/registry.go) ───
-	mScan := systray.AddMenuItem("𓃣 Anubis — Scan", "Scan for infrastructure waste")
-	mJudge := systray.AddMenuItem("𓃣 Anubis — Judge", "Policy review before cleanup")
-	mKa := systray.AddMenuItem("𓃣 Anubis — Ghosts", "Detect remnants of dead apps")
-	mMaat := systray.AddMenuItem("𓆄 Ma'at — Quality", "Quality governance audit")
-	mGuard := systray.AddMenuItem("𓁐 Isis — Guard", "Start system watchdog")
+	mScan := systray.AddMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
+	mJudge := systray.AddMenuItem("Clean Waste…", "Review and trash waste — opens a confirmation in Terminal")
+	mKa := systray.AddMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
+	mMaat := systray.AddMenuItem("Quality Audit", "Run the workstation quality + governance audit")
+	mGuard := systray.AddMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
 
 	systray.AddSeparator()
 
 	// ── More Deities ────────────────────────────────────────────────
-	mThoth := systray.AddMenuItem("𓁟 Thoth — Sync Memory", "Sync project context")
-	mSeshat := systray.AddMenuItem("𓁆 Seshat — Knowledge", "Ingest knowledge sources")
-	mSeba := systray.AddMenuItem("𓇽 Seba — Hardware", "Hardware & architecture profile")
-	mOsiris := systray.AddMenuItem("𓁹 Osiris — Risk", "Uncommitted work risk assessment")
-	mNet := systray.AddMenuItem("𓁯 Net — Align", "Cross-module consistency check")
+	mThoth := systray.AddMenuItem("Sync Memory", "Sync project memory from source + git history")
+	mSeshat := systray.AddMenuItem("Ingest Knowledge", "Ingest configured knowledge sources")
+	mSeba := systray.AddMenuItem("Hardware Info", "CPU, GPU, and accelerator summary")
+	mOsiris := systray.AddMenuItem("Uncommitted Risk", "Assess risk from uncommitted work")
+	mNet := systray.AddMenuItem("Consistency Check", "Validate cross-module consistency")
 
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit Sirsi", "Exit menubar app")
@@ -292,29 +292,28 @@ func onReady() {
 		// Anubis — scan/ghosts are read-only → execute in place; clean DELETES →
 		// keep the Terminal/confirm path (Rule A1: no one-click destruction).
 		case <-mScan.ClickedCh:
-			runActionInPlace(mScan, "𓃣 Anubis — Scan", sirsiBin, "scan", nStore)
+			runActionInPlace(mScan, "Scan for Waste", sirsiBin, "scan", nStore)
 		case <-mJudge.ClickedCh:
-			spawnTUIWithCommand("anubis clean") // destructive — confirm in TUI
+			spawnTUIWithCommand("clean") // destructive — confirm in Terminal
 		case <-mKa.ClickedCh:
-			runActionInPlace(mKa, "𓃣 Anubis — Ghosts", sirsiBin, "ghosts", nStore)
-		// Ma'at
+			runActionInPlace(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore)
 		case <-mMaat.ClickedCh:
-			runActionInPlace(mMaat, "𓆄 Ma'at — Quality", sirsiBin, "maat audit", nStore)
+			runActionInPlace(mMaat, "Quality Audit", sirsiBin, "maat audit", nStore)
 		// Isis
 		case <-mGuard.ClickedCh:
 			spawnTUIWithCommand("guard")
 		// Additional deities — safe (non-destructive) actions execute in place
 		// and report into Recent Activity; no Terminal window (user complaint fix).
 		case <-mThoth.ClickedCh:
-			runActionInPlace(mThoth, "𓁟 Thoth — Sync Memory", sirsiBin, "thoth sync", nStore)
+			runActionInPlace(mThoth, "Sync Memory", sirsiBin, "thoth sync", nStore)
 		case <-mSeshat.ClickedCh:
-			runActionInPlace(mSeshat, "𓁆 Seshat — Knowledge", sirsiBin, "seshat ingest", nStore)
+			runActionInPlace(mSeshat, "Ingest Knowledge", sirsiBin, "seshat ingest", nStore)
 		case <-mSeba.ClickedCh:
-			runActionInPlace(mSeba, "𓇽 Seba — Hardware", sirsiBin, "seba hardware", nStore)
+			runActionInPlace(mSeba, "Hardware Info", sirsiBin, "seba hardware", nStore)
 		case <-mOsiris.ClickedCh:
-			runActionInPlace(mOsiris, "𓁹 Osiris — Risk", sirsiBin, "osiris risk", nStore)
+			runActionInPlace(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore)
 		case <-mNet.ClickedCh:
-			runActionInPlace(mNet, "𓁯 Net — Align", sirsiBin, "net align", nStore)
+			runActionInPlace(mNet, "Consistency Check", sirsiBin, "net align", nStore)
 		case <-mQuit.ClickedCh:
 			cancel()
 			closeMenubarThread(menubarRouterRoot, menubarThreadID)
