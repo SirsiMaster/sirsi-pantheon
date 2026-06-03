@@ -280,7 +280,7 @@ func onReady() {
 		case <-mRaKill.ClickedCh:
 			spawnTUIWithCommand("ra kill")
 		case <-mRaCollect.ClickedCh:
-			spawnTUIWithCommand("ra collect")
+			runActionInPlace(mRaCollect, "  Collect Results", sirsiBin, "ra collect", nStore)
 		case <-raScopes[0].ClickedCh:
 			spawnTUIWithCommand("ra status")
 		case <-raScopes[1].ClickedCh:
@@ -289,30 +289,32 @@ func onReady() {
 			spawnTUIWithCommand("ra status")
 		case <-raScopes[3].ClickedCh:
 			spawnTUIWithCommand("ra status")
-		// Anubis
+		// Anubis — scan/ghosts are read-only → execute in place; clean DELETES →
+		// keep the Terminal/confirm path (Rule A1: no one-click destruction).
 		case <-mScan.ClickedCh:
-			spawnTUIWithCommand("scan")
+			runActionInPlace(mScan, "𓃣 Anubis — Scan", sirsiBin, "scan", nStore)
 		case <-mJudge.ClickedCh:
-			spawnTUIWithCommand("anubis clean")
+			spawnTUIWithCommand("anubis clean") // destructive — confirm in TUI
 		case <-mKa.ClickedCh:
-			spawnTUIWithCommand("ghosts")
+			runActionInPlace(mKa, "𓃣 Anubis — Ghosts", sirsiBin, "ghosts", nStore)
 		// Ma'at
 		case <-mMaat.ClickedCh:
-			spawnTUIWithCommand("maat audit")
+			runActionInPlace(mMaat, "𓆄 Ma'at — Quality", sirsiBin, "maat audit", nStore)
 		// Isis
 		case <-mGuard.ClickedCh:
 			spawnTUIWithCommand("guard")
-		// Additional deities
+		// Additional deities — safe (non-destructive) actions execute in place
+		// and report into Recent Activity; no Terminal window (user complaint fix).
 		case <-mThoth.ClickedCh:
-			spawnTUIWithCommand("thoth sync")
+			runActionInPlace(mThoth, "𓁟 Thoth — Sync Memory", sirsiBin, "thoth sync", nStore)
 		case <-mSeshat.ClickedCh:
-			spawnTUIWithCommand("seshat ingest")
+			runActionInPlace(mSeshat, "𓁆 Seshat — Knowledge", sirsiBin, "seshat ingest", nStore)
 		case <-mSeba.ClickedCh:
-			spawnTUIWithCommand("seba hardware")
+			runActionInPlace(mSeba, "𓇽 Seba — Hardware", sirsiBin, "seba hardware", nStore)
 		case <-mOsiris.ClickedCh:
-			spawnTUIWithCommand("osiris risk")
+			runActionInPlace(mOsiris, "𓁹 Osiris — Risk", sirsiBin, "osiris risk", nStore)
 		case <-mNet.ClickedCh:
-			spawnTUIWithCommand("net align")
+			runActionInPlace(mNet, "𓁯 Net — Align", sirsiBin, "net align", nStore)
 		case <-mQuit.ClickedCh:
 			cancel()
 			closeMenubarThread(menubarRouterRoot, menubarThreadID)
