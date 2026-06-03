@@ -1,8 +1,11 @@
 package guard
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -283,6 +286,138 @@ func TestDoctorWith_DiskFull(t *testing.T) {
 }
 
 // ── TestCalculateScore ───────────────────────────────────────────────────
+
+func TestParseCrashReportName(t *testing.T) {
+	tests := []struct {
+		name     string
+		wantProc string
+		wantOK   bool
+	}{
+		{"Google Chrome-2026-06-03-163345.ips", "Google Chrome", true},
+		{"chrome-headless-shell-2026-06-02-210739.ips", "chrome-headless-shell", true},
+		{"Code Helper (Renderer)-2026-06-01-090046.ips", "Code Helper (Renderer)", true},
+		{"chrome_crashpad_handler-2026-06-03-164451.0004.ips", "chrome_crashpad_handler", true},
+		{"garbage.ips", "", false},
+		{"NoDate-file.ips", "", false},
+	}
+	for _, tt := range tests {
+		proc, _, ok := parseCrashReportName(tt.name)
+		if ok != tt.wantOK || (ok && proc != tt.wantProc) {
+			t.Errorf("parseCrashReportName(%q) = (%q, %v), want (%q, %v)", tt.name, proc, ok, tt.wantProc, tt.wantOK)
+		}
+	}
+}
+
+func TestDetectCrashloop(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name        string
+		crashes     []appCrash
+		wantLooping bool
+		wantProc    string
+	}{
+		{
+			name: "three within 5min, recent, is a loop",
+			crashes: []appCrash{
+				{"Chrome", now.Add(-4 * time.Minute)},
+				{"Chrome", now.Add(-3 * time.Minute)},
+				{"Chrome", now.Add(-2 * time.Minute)},
+			},
+			wantLooping: true,
+			wantProc:    "Chrome",
+		},
+		{
+			name: "three recent but spread >5min apart is not a loop",
+			crashes: []appCrash{
+				{"Chrome", now.Add(-25 * time.Minute)},
+				{"Chrome", now.Add(-15 * time.Minute)},
+				{"Chrome", now.Add(-5 * time.Minute)},
+			},
+			wantLooping: false,
+		},
+		{
+			name: "three within 5min but days old is not an ACTIVE loop",
+			crashes: []appCrash{
+				{"Chrome", now.AddDate(0, 0, -2)},
+				{"Chrome", now.AddDate(0, 0, -2).Add(time.Minute)},
+				{"Chrome", now.AddDate(0, 0, -2).Add(2 * time.Minute)},
+			},
+			wantLooping: false,
+		},
+		{
+			name:        "two is below threshold",
+			crashes:     []appCrash{{"Chrome", now.Add(-3 * time.Minute)}, {"Chrome", now.Add(-2 * time.Minute)}},
+			wantLooping: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proc, _, looping := detectCrashloop(tt.crashes, now)
+			if looping != tt.wantLooping {
+				t.Fatalf("detectCrashloop looping = %v, want %v", looping, tt.wantLooping)
+			}
+			if looping && proc != tt.wantProc {
+				t.Errorf("detectCrashloop proc = %q, want %q", proc, tt.wantProc)
+			}
+		})
+	}
+}
+
+func TestCheckAppCrashes(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	// One recent Chrome crash, one stale (8d ago, excluded by cutoff), one
+	// Jetsam (excluded by name — counted by the kernel/Jetsam check instead).
+	mustWrite(t, dir, "Google Chrome-"+now.Format("2006-01-02-150405")+".ips")
+	mustWrite(t, dir, "JetsamEvent-"+now.Format("2006-01-02-150405")+".ips")
+	stale := now.AddDate(0, 0, -8)
+	staleName := filepath.Join(dir, "OldApp-"+stale.Format("2006-01-02-150405")+".ips")
+	mustWrite(t, dir, filepath.Base(staleName))
+	if err := os.Chtimes(staleName, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	old := appCrashDirsFn
+	appCrashDirsFn = func() []string { return []string{dir} }
+	defer func() { appCrashDirsFn = old }()
+
+	report := &DoctorReport{}
+	checkAppCrashes(report)
+	if len(report.Findings) != 1 {
+		t.Fatalf("want 1 finding, got %d", len(report.Findings))
+	}
+	f := report.Findings[0]
+	if f.Severity != SeverityWarn {
+		t.Errorf("severity = %v, want Warn", f.Severity)
+	}
+	if !strings.Contains(f.Message, "Google Chrome") {
+		t.Errorf("message %q should name the crashing process", f.Message)
+	}
+}
+
+func TestScanAppCrashes_DedupFragments(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().Format("2006-01-02-150405")
+	// 5 crashpad fragments of ONE event (same process, same second) must collapse
+	// to a single crash — otherwise they masquerade as a crashloop.
+	for _, suffix := range []string{"", ".000", ".0002", ".0003", ".0004"} {
+		mustWrite(t, dir, "chrome_crashpad_handler-"+now+suffix+".ips")
+	}
+	crashes := scanAppCrashes([]string{dir}, time.Now().AddDate(0, 0, -7))
+	if len(crashes) != 1 {
+		t.Fatalf("want 1 deduped crash, got %d", len(crashes))
+	}
+	if _, _, looping := detectCrashloop(crashes, time.Now()); looping {
+		t.Error("single fragmented event must not register as a crashloop")
+	}
+}
+
+func mustWrite(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestCalculateScore(t *testing.T) {
 	tests := []struct {

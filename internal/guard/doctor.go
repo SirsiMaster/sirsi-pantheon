@@ -108,6 +108,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		{"Disk Space", func() { checkDiskSpace(p, report) }},
 		{"Memory Processes", func() { checkTopMemoryProcesses(p, report) }},
 		{"Crash Logs", func() { checkRecentCrashLogs(report) }},
+		{"App Crashes", func() { checkAppCrashes(report) }},
 		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
 	}
 
@@ -418,6 +419,174 @@ func checkRecentCrashLogs(report *DoctorReport) {
 		jetsamFinding.Message = "No Jetsam memory kills in the last 7 days"
 	}
 	report.Findings = append(report.Findings, jetsamFinding)
+}
+
+// appCrash is a single userspace crash report (EXC_CRASH / SIGABRT etc.).
+type appCrash struct {
+	process string
+	when    time.Time
+}
+
+// appCrashDirsFn returns the DiagnosticReports directories to scan for app
+// crashes. Injectable (Rule A16) so tests can point at a temp dir.
+var appCrashDirsFn = defaultAppCrashDirs
+
+func defaultAppCrashDirs() []string {
+	roots := []string{"/Library/Logs/DiagnosticReports"}
+	if home, err := os.UserHomeDir(); err == nil {
+		// User app crashes (e.g. Chrome SIGABRT) land here, NOT in the system dir.
+		roots = append([]string{filepath.Join(home, "Library/Logs/DiagnosticReports")}, roots...)
+	}
+	// macOS moves older reports to a Retired/ subdir under load — scan both so
+	// the 7-day window doesn't lose crashes that were just retired (parity with
+	// the kernel-panic/Jetsam check).
+	dirs := make([]string, 0, len(roots)*2)
+	for _, r := range roots {
+		dirs = append(dirs, r, filepath.Join(r, "Retired"))
+	}
+	return dirs
+}
+
+// parseCrashReportName extracts the process name and timestamp from a crash
+// report filename of the form "Process Name-YYYY-MM-DD-HHMMSS.ips".
+func parseCrashReportName(name string) (proc string, ts time.Time, ok bool) {
+	base := strings.TrimSuffix(name, ".ips")
+	// Crashpad writes multi-fragment reports for ONE crash event with a trailing
+	// ".NNNN" suffix (e.g. "...-164451.0004"). Strip it so the timestamp parses
+	// and so all fragments collapse to the same second (see scanAppCrashes dedup).
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		if _, err := strconv.Atoi(base[i+1:]); err == nil {
+			base = base[:i]
+		}
+	}
+	parts := strings.Split(base, "-")
+	if len(parts) < 5 {
+		return "", time.Time{}, false
+	}
+	n := len(parts)
+	dateStr := strings.Join(parts[n-4:], "-")
+	t, err := time.ParseInLocation("2006-01-02-150405", dateStr, time.Local)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	return strings.Join(parts[:n-4], "-"), t, true
+}
+
+// scanAppCrashes collects userspace crash reports (.ips) from the given dirs,
+// excluding kernel panics and Jetsam events (counted separately), newer than
+// cutoff. Read-only; tolerant of missing/unreadable dirs.
+func scanAppCrashes(dirs []string, cutoff time.Time) []appCrash {
+	var crashes []appCrash
+	// Collapse multi-fragment reports of one event: same process + same second.
+	seen := map[string]bool{}
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".ips") {
+				continue
+			}
+			if strings.Contains(strings.ToLower(name), "panic") || strings.Contains(name, "JetsamEvent") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil || info.ModTime().Before(cutoff) {
+				continue
+			}
+			proc, ts, ok := parseCrashReportName(name)
+			if !ok {
+				proc, ts = strings.TrimSuffix(name, ".ips"), info.ModTime()
+			}
+			key := proc + "|" + ts.Truncate(time.Second).String()
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			crashes = append(crashes, appCrash{process: proc, when: ts})
+		}
+	}
+	return crashes
+}
+
+// detectCrashloop returns the worst offender if any single process crashed
+// 3+ times within a 5-minute sliding window AND the cluster is still active
+// (its latest abort is within activeRecency of now) — the signature of a LIVE
+// abort loop worth acting on. Historical clusters (e.g. a lockup days ago) are
+// excluded here; they still show up in the 7-day count.
+func detectCrashloop(crashes []appCrash, now time.Time) (proc string, count int, looping bool) {
+	const window = 5 * time.Minute
+	const threshold = 3
+	const activeRecency = 30 * time.Minute
+	cutoff := now.Add(-activeRecency)
+	byProc := map[string][]time.Time{}
+	for _, c := range crashes {
+		if c.when.Before(cutoff) {
+			continue
+		}
+		byProc[c.process] = append(byProc[c.process], c.when)
+	}
+	for p, times := range byProc {
+		sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+		for i := range times {
+			j := i
+			for j < len(times) && times[j].Sub(times[i]) <= window {
+				j++
+			}
+			if n := j - i; n >= threshold && n > count {
+				proc, count, looping = p, n, true
+			}
+		}
+	}
+	return proc, count, looping
+}
+
+// checkAppCrashes surfaces recent userspace application crashes (the class
+// that kernel-panic / Jetsam checks miss — e.g. a SIGABRT in an agent-spawned
+// Chrome). Surface + crashloop guard only; never auto-kills (Rule A1/A5).
+func checkAppCrashes(report *DoctorReport) {
+	now := time.Now()
+	crashes := scanAppCrashes(appCrashDirsFn(), now.AddDate(0, 0, -7))
+
+	finding := DiagnosticFinding{Check: "App Crashes (7d)"}
+
+	if loopProc, loopN, looping := detectCrashloop(crashes, now); looping {
+		finding.Severity = SeverityCritical
+		finding.Message = fmt.Sprintf("%q crashloop — %d aborts in 5 min (active); stop the offending process", loopProc, loopN)
+		report.Findings = append(report.Findings, finding)
+		return
+	}
+
+	// Rank processes by crash count for an actionable detail line.
+	counts := map[string]int{}
+	for _, c := range crashes {
+		counts[c.process]++
+	}
+	var top string
+	var topN int
+	for p, n := range counts {
+		if n > topN {
+			top, topN = p, n
+		}
+	}
+
+	switch {
+	case len(crashes) > 10:
+		finding.Severity = SeverityCritical
+		finding.Message = fmt.Sprintf("%d app crashes in 7 days — top: %q (%d)", len(crashes), top, topN)
+	case len(crashes) > 0:
+		finding.Severity = SeverityWarn
+		finding.Message = fmt.Sprintf("%d app crash(es) in 7 days — top: %q (%d)", len(crashes), top, topN)
+	default:
+		finding.Severity = SeverityOK
+		finding.Message = "No app crashes in the last 7 days"
+	}
+	report.Findings = append(report.Findings, finding)
 }
 
 // checkSirsiProcesses checks for running Sirsi daemons and their health.
