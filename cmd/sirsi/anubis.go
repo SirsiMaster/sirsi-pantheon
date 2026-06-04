@@ -26,11 +26,12 @@ import (
 )
 
 var (
-	anubisSudo    bool
-	anubisAll     bool
-	anubisDryRun  bool
-	anubisConfirm bool
-	anubisDocs    bool
+	anubisSudo           bool
+	anubisAll            bool
+	anubisDryRun         bool
+	anubisConfirm        bool
+	anubisIncludeCaution bool
+	anubisDocs           bool
 
 	// apps subcommand flags
 	appsGhosts    bool
@@ -121,7 +122,8 @@ func init() {
 
 	anubisWeighCmd.Flags().BoolVar(&anubisAll, "all", false, "Scan all categories")
 	anubisJudgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
-	anubisJudgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
+	anubisJudgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply (does NOT change scope — preview matches apply)")
+	anubisJudgeCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (applies to BOTH preview and apply)")
 	anubisKaCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Enable sudo access")
 
 	anubisAppsCmd.Flags().BoolVar(&appsGhosts, "ghosts", false, "Show only apps with ghost residuals")
@@ -368,13 +370,17 @@ func runJudge(ctx context.Context) error {
 		// SeverityWarning items are never auto-cleaned
 	}
 
+	// Scope is governed by --include-caution ONLY (not --confirm). This keeps the
+	// preview (dry-run) and the apply (--confirm) targeting the IDENTICAL set, so
+	// the amount shown is exactly what gets moved to Trash (Rule A1: dry-run must
+	// match apply). --confirm decides whether to apply, never what.
 	target := safe
-	if anubisConfirm {
+	if anubisIncludeCaution {
 		target = append(target, caution...)
 	}
 
 	if len(target) == 0 {
-		output.Info("No safe findings to clean. Use --confirm to include caution items.")
+		output.Info("No safe findings to clean. Use --include-caution to also target caution items.")
 		return nil
 	}
 
