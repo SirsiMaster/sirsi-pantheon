@@ -5,26 +5,6 @@
 
 ---
 
-## Entry 017 — 2026-03-24 20:30 — "The Boss Fight: 99% Coverage and the Interface Wall"
-
-**Context**: Hitting the 90% weighted coverage wall and wiring the Antigravity bridge into the CLI.
-
-**Insight**: Logic only lives if it's testable. But logic that shells out to system commands (`lsregister`, `mdutil`, `kill -9`) or reads from `os.UserHomeDir` is "untouchable" in a standard unit test environment. This creates a "shadow logic" of error handlers and platform-specific branches that are never verified, leaving the most dangerous code (cleanup/process killing) the least tested.
-
-**Decision**: ADR-009 — **Injectable System Providers**. We refactored all core side effects into "With" variants.
-- **CommandRunner**: For shelling out to macOS system utilities.
-- **ProcessKiller**: For surgical signals in `guard`.
-- **PipelineAssessor**: For mocking the GitHub CLI in `maat`.
-- **HOME Overrides**: Using `t.Setenv("HOME", ...)` to test profile logic without touching real user config.
-
-**Antigravity Bridge**: Resolved the "IDE Starvation" issue by wiring the IPC bridge directly into the CLI lifecycle. `sirsi guard --watch` now acts as the heartbeat for the entire ecosystem. AI assistants can now query `anubis://watchdog-alerts` to see real-time system health instead of guessing.
-
-**Result**: 87.2% → **90.1% weighted coverage**. 13/22 modules now at 90%+. 768 tests. The "boss fight" of the coverage wall was won by making the system more modular, not just writing more tests.
-
-**Rule A17 (graduated)**: Side Effect Injection is now a governance requirement. A module that performs a side effect without an injectable provider is a failed build.
-
----
-
 ## Entry 018 — 2026-03-25 10:20 — "The Lost Session: Recovery as a Feature"
 
 **Context**: Session 17 was lost. All 38 file changes (1,350 additions, 2,061 deletions) existed only in the working tree — zero commits, zero pushes. A new session started with no context of what happened.
@@ -750,3 +730,19 @@ User granted blanket authorization for an unending claude+codex loop. Drove ever
 ## 2026-06-03 — Menubar UX overhaul + mds_stores mitigation (session wrap)
 
 Made the menubar ACT, not just inform (user's #1 complaint). Shipped: in-place actions (a2379ab — safe commands run + report to Recent Activity, no Terminal; destructive keep confirm path), function labels not deity names (39a0ec4), in-app two-click clean (b7040ff/154cb3b — dry-run preview arms a Confirm item, confirm pipes y to anubis clean --confirm), native ~/.Trash move replacing osascript-Finder which the launchd menubar can't get Automation TCC for (2710811), disk-visibility spectrum all/some/none (0f7a6a1 — CheckDiskAccess + menubar applyFDAState + FDA grant action). Live mds_stores write-amplification storm mitigated: excluded ~/Development from Spotlight (.metadata_never_index), pruned CTR registry 209→52 (threads.json 124KB→31KB); mds dropped to ~1.3%. BINARY FROZEN per user — no more rebuild+resign (each resign revokes FDA grants by changing the signature hash); durable fix = Developer-ID signing (Apple enrollment pending). Codex offline all session — reviews owed (ADR-025/Amendment-1/stranded/native-trash A1/menubar UX). Continuation: docs/CONTINUATION-PROMPT.md.
+
+## Entry 037 — 2026-06-04 09:22 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e92c9-92fd-70e2-b849-33b23a6d8b83","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-04T12:57:35Z
+- last Claude read: 2026-06-04T13:20:40Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
