@@ -53,7 +53,9 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, sirsiBin, "anubis", "clean").CombinedOutput()
+		// --include-caution so the preview matches the menubar's waste title
+		// (full reclaimable set), and so Confirm clears the whole notice.
+		out, err := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--include-caution").CombinedOutput()
 		text := stripANSI(string(out))
 		judge.SetTitle(judgeTitle)
 		judge.Enable()
@@ -115,7 +117,7 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		// SAFE-ONLY apply (no --include-caution): trash-first, recoverable,
 		// protected paths enforced by internal/cleaner/safety.go (A1). The exact
 		// safe set the preview showed — caution-tier app remnants stay gated.
-		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--dry-run=false")
+		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--include-caution", "--dry-run=false")
 		cmd.Stdin = strings.NewReader("y\n") // the confirm-click is the [y/N] yes
 		out, err := cmd.CombinedOutput()
 		text := stripANSI(string(out))
@@ -129,12 +131,16 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		if summary == "" {
 			summary = "cleaned — items moved to Trash"
 		}
-		recordNotify(store, "Clean Waste", "anubis clean --dry-run=false (safe-only)", sev, summary, text)
+		recordNotify(store, "Clean Waste", "anubis clean --include-caution --dry-run=false", sev, summary, text)
 		if rr != nil {
 			rr.set("Clean Waste", icon, summary, text)
 		}
 		confirm.Enable()
 		confirm.Hide()
+		// Refresh the waste title immediately so the notice reflects the clean
+		// (no waiting for the 4h tick) — this is what makes "8.4 GB → Clean"
+		// happen live in the demo.
+		rescanWaste(context.Background())
 	}()
 }
 

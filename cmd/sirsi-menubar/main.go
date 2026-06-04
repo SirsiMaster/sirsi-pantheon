@@ -491,26 +491,33 @@ func startGuardBridge(ctx context.Context) {
 	_ = guard.StartBridge(ctx, cfg)
 }
 
-// startPeriodicScan runs a jackal scan on first launch, then every 4 hours.
-// Persists findings to disk and updates the menubar title.
+// rescanWaste runs one jackal scan and updates the menubar title to reflect the
+// CURRENT waste. Callable on demand — critically after a clean, so the waste
+// notice clears live instead of persisting until the 4h tick (the "permanent
+// waste notice" bug).
+func rescanWaste(ctx context.Context) {
+	engine := jackal.DefaultEngine()
+	engine.RegisterAll(rules.AllRules()...)
+	start := time.Now()
+	res, err := engine.Scan(ctx, jackal.ScanOptions{})
+	if err != nil {
+		return
+	}
+	jackal.EnrichAdvisory(res)
+	_ = jackal.Persist(res, time.Since(start))
+	liveState.mu.Lock()
+	liveState.wasteBytes = res.TotalSize
+	liveState.wasteLabel = jackal.FormatSize(res.TotalSize) + " waste"
+	liveState.mu.Unlock()
+	liveState.updateTitle()
+}
+
+// startPeriodicScan scans on launch, then every 4 hours. (Clean triggers an
+// immediate rescanWaste so the title never lags reality.)
 func startPeriodicScan(ctx context.Context) {
 	go func() {
 		for {
-			engine := jackal.DefaultEngine()
-			engine.RegisterAll(rules.AllRules()...)
-			start := time.Now()
-			res, err := engine.Scan(ctx, jackal.ScanOptions{})
-			if err == nil {
-				jackal.EnrichAdvisory(res)
-				_ = jackal.Persist(res, time.Since(start))
-
-				liveState.mu.Lock()
-				liveState.wasteBytes = res.TotalSize
-				liveState.wasteLabel = jackal.FormatSize(res.TotalSize) + " waste"
-				liveState.mu.Unlock()
-				liveState.updateTitle()
-			}
-
+			rescanWaste(ctx)
 			select {
 			case <-ctx.Done():
 				return
