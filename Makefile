@@ -8,6 +8,15 @@ INSTALL_DIR ?= $(HOME)/.local/bin
 GO_LDFLAGS ?= -s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v$(VERSION)
 GO_FLAGS ?= -ldflags="$(GO_LDFLAGS)"
 
+# Code-signing identity. Default `-` is ad-hoc (portable, but macOS keys TCC/FDA
+# grants to the cdhash → every rebuild wipes Full Disk Access and re-prompts).
+# Set SIGN_ID to a STABLE identity so grants survive rebuilds:
+#   - a self-signed code-signing cert (free): SIGN_ID="Sirsi Pantheon Code Signing"
+#   - a Developer ID (notarizable):           SIGN_ID="Developer ID Application: …"
+# macOS then keys grants to the signing identity, not the bytes. See
+# docs/APPLE-NOTARIZATION-CHECKLIST.md.
+SIGN_ID ?= -
+
 .PHONY: all clean build build-debug install uninstall build-agent build-menubar bundle dmg publish test test-proof ios ios-framework android-aar brain-train brain-install
 
 all: build
@@ -25,8 +34,9 @@ install: build
 	@mkdir -p $(INSTALL_DIR)
 	cp $(BUILD_DIR)/sirsi $(INSTALL_DIR)/sirsi
 	@# macOS arm64: cp over a signed binary stales the AMFI cdhash cache → SIGKILL on exec (exit 137).
-	@# Re-sign ad-hoc in place so `sirsi` runs post-install (PANTHEON_RULES.md A6; A27 watcher binary drift).
-	@codesign --force --sign - "$(INSTALL_DIR)/sirsi" 2>/dev/null || true
+	@# Re-sign in place so `sirsi` runs post-install (macOS arm64 cdhash cache).
+	@# SIGN_ID="<stable identity>" keeps FDA grants across rebuilds (A6; A27 drift).
+	@codesign --force --sign "$(SIGN_ID)" "$(INSTALL_DIR)/sirsi" 2>/dev/null || true
 	@echo "✅ sirsi installed to $(INSTALL_DIR)/sirsi"
 
 uninstall:
@@ -55,7 +65,7 @@ bundle: build-menubar
 	@cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar
 	@cp cmd/sirsi-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
 	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
-	@codesign --force --deep --sign - Pantheon.app
+	@codesign --force --deep --sign "$(SIGN_ID)" Pantheon.app
 	@echo "✅ Pantheon.app created (ad-hoc signed) — install with: cp -R Pantheon.app /Applications/"
 
 # --- macOS DMG Installer ---

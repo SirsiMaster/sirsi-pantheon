@@ -30,26 +30,59 @@ func TestSlugify(t *testing.T) {
 func TestClaudeMCPLinked(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	claudeCfg := filepath.Join(home, ".claude.json")
+	write := func(s string) {
+		if err := os.WriteFile(claudeCfg, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
-	// No config → not linked.
 	if claudeMCPLinked() {
-		t.Fatal("expected not linked with no config")
+		t.Fatal("no config → must be not linked")
 	}
-	// A .claude.json registering the sirsi MCP server → linked.
-	cfg := `{"mcpServers":{"sirsi":{"command":"sirsi","args":["mcp"]}}}`
-	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+
+	// Top-level proper registration → linked.
+	write(`{"mcpServers":{"sirsi":{"command":"sirsi","args":["mcp"]}}}`)
 	if !claudeMCPLinked() {
-		t.Error("expected linked when ~/.claude.json contains the sirsi server")
+		t.Error("valid top-level sirsi server should be linked")
 	}
 
-	// A config WITHOUT sirsi → not linked (no false positive).
-	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"other":{}}}`), 0o644); err != nil {
+	// Per-project registration (how Claude Code often stores it) → linked.
+	write(`{"projects":{"/x":{"mcpServers":{"sirsi":{"command":"/usr/local/bin/sirsi","args":["mcp"]}}}}}`)
+	if !claudeMCPLinked() {
+		t.Error("valid per-project sirsi server should be linked")
+	}
+
+	// FALSE-POSITIVE GUARDS (codex P0): a stray "sirsi" string must NOT read as linked.
+	write(`{"someNote":"i love sirsi","mcpServers":{"other":{"command":"x","args":["y"]}}}`)
+	if claudeMCPLinked() {
+		t.Error("stray 'sirsi' string must not count as linked")
+	}
+	// sirsi present but wrong command → not linked.
+	write(`{"mcpServers":{"sirsi":{"command":"notsirsi","args":["mcp"]}}}`)
+	if claudeMCPLinked() {
+		t.Error("wrong command must not count as linked")
+	}
+	// sirsi present, right command, but missing the mcp arg → not linked.
+	write(`{"mcpServers":{"sirsi":{"command":"sirsi","args":["serve"]}}}`)
+	if claudeMCPLinked() {
+		t.Error("missing 'mcp' arg must not count as linked")
+	}
+
+	// Cursor config must NOT make Claude read as linked (no cross-client conflation).
+	write(`{"mcpServers":{}}`)
+	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".cursor", "mcp.json"),
+		[]byte(`{"mcpServers":{"sirsi":{"command":"sirsi","args":["mcp"]}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if claudeMCPLinked() {
-		t.Error("expected not linked when sirsi is absent from config")
+		t.Error("Cursor config must not count as Claude linkage")
+	}
+	if !cursorMCPLinked() {
+		t.Error("Cursor config with valid sirsi server should be cursor-linked")
 	}
 }
 

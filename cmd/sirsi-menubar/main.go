@@ -189,8 +189,8 @@ func onReady() {
 	mKa := mAnubis.AddSubMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
 	mGuard := mAnubis.AddSubMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
 	wire(mScan, func() { runService(mScan, "Scan for Waste", sirsiBin, "scan", nStore, rrAnubis) })
-	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore) })
-	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore) })
+	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore, rrAnubis) })
+	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
 	wire(mKa, func() { runService(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore, rrAnubis) })
 	wire(mGuard, func() { spawnTUIWithCommand("guard") })
 

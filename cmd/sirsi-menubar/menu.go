@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -170,24 +171,77 @@ func openRecentDetail(i int) {
 
 // ── About / Surfaces ────────────────────────────────────────────────────────
 
-// claudeMCPLinked reports whether the Sirsi MCP server is registered in the
-// user's Claude config (~/.claude.json) — i.e. Claude Code can actually call
-// Sirsi tools. Honest "linked" vs merely "available" (Rule A23/A14).
+// mcpEntry is one MCP server registration in an IDE config.
+type mcpEntry struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+// hasValidSirsiServer reports whether a server map registers the Sirsi MCP server
+// PROPERLY: command is `sirsi` (or a path ending /sirsi) AND args include "mcp".
+// No string-search shortcuts — a stray "sirsi" elsewhere must not read as linked
+// (Rule A23/A14: never overclaim an integration).
+func hasValidSirsiServer(servers map[string]mcpEntry) bool {
+	s, ok := servers["sirsi"]
+	if !ok {
+		return false
+	}
+	if s.Command != "sirsi" && !strings.HasSuffix(s.Command, "/sirsi") {
+		return false
+	}
+	for _, a := range s.Args {
+		if a == "mcp" {
+			return true
+		}
+	}
+	return false
+}
+
+// mcpLinkedInConfig parses an IDE MCP config file and reports whether Sirsi is a
+// valid registered server — checking both the top-level mcpServers and any
+// per-project mcpServers block (Claude Code stores servers per project).
+func mcpLinkedInConfig(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var cfg struct {
+		MCPServers map[string]mcpEntry `json:"mcpServers"`
+		Projects   map[string]struct {
+			MCPServers map[string]mcpEntry `json:"mcpServers"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal(data, &cfg) != nil {
+		return false
+	}
+	if hasValidSirsiServer(cfg.MCPServers) {
+		return true
+	}
+	for _, p := range cfg.Projects {
+		if hasValidSirsiServer(p.MCPServers) {
+			return true
+		}
+	}
+	return false
+}
+
+// claudeMCPLinked / cursorMCPLinked report per-client linkage from the client's
+// own config — never conflating one client's config as proof for another.
 func claudeMCPLinked() bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false
 	}
-	for _, p := range []string{
-		filepath.Join(home, ".claude.json"),
-		filepath.Join(home, ".config", "claude", "mcp.json"),
-		filepath.Join(home, ".cursor", "mcp.json"),
-	} {
-		if data, err := os.ReadFile(p); err == nil && strings.Contains(string(data), "\"sirsi\"") {
-			return true
-		}
+	return mcpLinkedInConfig(filepath.Join(home, ".claude.json")) ||
+		mcpLinkedInConfig(filepath.Join(home, ".config", "claude", "mcp.json"))
+}
+
+func cursorMCPLinked() bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
 	}
-	return false
+	return mcpLinkedInConfig(filepath.Join(home, ".cursor", "mcp.json"))
 }
 
 // appSearchDirs is the set of macOS application directories. Variable for tests.
@@ -223,6 +277,16 @@ func ideAppInstalled(toolID string) bool {
 		}
 	}
 	return false
+}
+
+// addMCPClientRow adds one IDE's MCP-linkage status row — honest ✓ linked / ○
+// not linked, per that client's own config.
+func addMCPClientRow(about *systray.MenuItem, label string, linked bool) {
+	icon, state := "○", "not linked"
+	if linked {
+		icon, state = "✓", "linked"
+	}
+	about.AddSubMenuItem("  ↳ "+label+" — "+icon+" "+state, label+" registration of the Sirsi MCP server").Disable()
 }
 
 // addAboutSection builds the "About Pantheon" submenu: version + every surface
@@ -263,18 +327,15 @@ func addAboutSection(sirsiBin string) {
 		row.Disable() // status row; the actionable path is Configure Integrations below
 	}
 
-	// MCP bridge — the Claude Code / IDE link. Honest linked vs available.
-	mcpTitle := "  ↳ MCP bridge — available (sirsi mcp)"
-	mcpTip := "Start the MCP server so an IDE can call Sirsi tools — click to configure"
-	if claudeMCPLinked() {
-		mcpTitle = "  ↳ MCP bridge — ✓ linked to Claude Code"
-		mcpTip = "Sirsi is registered in your Claude/Cursor MCP config"
-	}
-	mcpRow := about.AddSubMenuItem(mcpTitle, mcpTip)
+	// MCP bridge — reported PER CLIENT, never conflated (A23/A14). The server is
+	// "available" because sirsi ships the `mcp` subcommand; each IDE is "linked"
+	// only if ITS OWN config registers the sirsi server properly.
+	about.AddSubMenuItem("  ↳ MCP server — available (sirsi mcp)", "Sirsi exposes its tools over MCP").Disable()
+	addMCPClientRow(about, "Claude Code MCP", claudeMCPLinked())
+	addMCPClientRow(about, "Cursor MCP", cursorMCPLinked())
 
 	// Actionable: configure/link integrations (sirsi setup).
 	cfgRow := about.AddSubMenuItem("  ⚙ Configure Integrations…", "Install / link AI assistants, IDEs, and the MCP bridge")
-	wire(mcpRow, func() { spawnTUIWithCommand("setup") })
 	wire(cfgRow, func() { spawnTUIWithCommand("setup") })
 }
 

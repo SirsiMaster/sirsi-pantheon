@@ -44,7 +44,7 @@ var reclaimRE = regexp.MustCompile(`\(([0-9.]+\s*[KMGTP]?B)\)`)
 // and, when there is something to reclaim, ARMS the confirm item with the amount
 // (auto-disarming after a window). This is the first half of the in-app clean
 // flow — preview only, nothing is ever deleted here (Rule A1: dry-run available).
-func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin string, store *notify.Store) {
+func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin string, store *notify.Store, rr *resultRow) {
 	if judge == nil || confirm == nil || sirsiBin == "" {
 		return
 	}
@@ -66,14 +66,21 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 				s = "nothing to clean"
 			}
 			sev := notify.SeverityInfo
+			icon := "•"
 			if err != nil {
-				sev = notify.SeverityError
+				sev, icon = notify.SeverityError, "✗"
 			}
 			recordNotify(store, "Clean Waste", "anubis clean (preview)", sev, s, text)
+			if rr != nil {
+				rr.set("Clean Waste (preview)", icon, s, text)
+			}
 			confirm.Hide()
 			return
 		}
 		recordNotify(store, "Clean Waste", "anubis clean (preview)", notify.SeverityInfo, summary, text)
+		if rr != nil {
+			rr.set("Clean Waste (preview)", "•", summary, text) // visible, clickable detail
+		}
 		amount := "items"
 		if m := reclaimRE.FindStringSubmatch(summary); len(m) == 2 {
 			amount = m[1]
@@ -96,7 +103,7 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 // (`anubis clean`) showed. `--dry-run=false` applies the SAME safe-only set the
 // preview displayed — the amount shown is exactly the amount trashed. (Caution
 // items need their own explicit, separately-previewed flow.)
-func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Store) {
+func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Store, rr *resultRow) {
 	if confirm == nil || sirsiBin == "" {
 		return
 	}
@@ -109,9 +116,9 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		cmd.Stdin = strings.NewReader("y\n") // the confirm-click is the [y/N] yes
 		out, err := cmd.CombinedOutput()
 		text := stripANSI(string(out))
-		sev, summary := notify.SeveritySuccess, firstMeaningfulLine(text)
+		sev, icon, summary := notify.SeveritySuccess, "✓", firstMeaningfulLine(text)
 		if err != nil {
-			sev = notify.SeverityError
+			sev, icon = notify.SeverityError, "✗"
 			if summary == "" {
 				summary = err.Error()
 			}
@@ -120,6 +127,9 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 			summary = "cleaned — items moved to Trash"
 		}
 		recordNotify(store, "Clean Waste", "anubis clean --dry-run=false (safe-only)", sev, summary, text)
+		if rr != nil {
+			rr.set("Clean Waste", icon, summary, text) // the demo's key action now fills its result row
+		}
 		confirm.Enable()
 		confirm.Hide()
 	}()
