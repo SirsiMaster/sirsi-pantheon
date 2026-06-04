@@ -190,6 +190,41 @@ func claudeMCPLinked() bool {
 	return false
 }
 
+// appSearchDirs is the set of macOS application directories. Variable for tests.
+var appSearchDirs = func() []string {
+	dirs := []string{"/Applications"}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, "Applications"))
+	}
+	return dirs
+}
+
+// ideAppNames maps a launcher tool ID to its macOS .app bundle name.
+var ideAppNames = map[string]string{
+	"vscode":   "Visual Studio Code",
+	"code":     "Visual Studio Code",
+	"cursor":   "Cursor",
+	"zed":      "Zed",
+	"windsurf": "Windsurf",
+}
+
+// ideAppInstalled detects a GUI IDE install that has no CLI shim on PATH (e.g.
+// VS Code without the `code` command). Without this, ScanInventory's LookPath-
+// only check shows a false ✗ for an IDE the user clearly has — About must not
+// misrepresent the surfaces (Rule A23/A14).
+func ideAppInstalled(toolID string) bool {
+	name, ok := ideAppNames[toolID]
+	if !ok {
+		return false
+	}
+	for _, base := range appSearchDirs() {
+		if _, err := os.Stat(filepath.Join(base, name+".app")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // addAboutSection builds the "About Pantheon" submenu: version + every surface
 // Pantheon is installed/linked in (this menubar, the CLI, AI assistants, IDEs,
 // the MCP bridge to Claude Code). The TUI surface view, brought to the menubar.
@@ -212,8 +247,12 @@ func addAboutSection(sirsiBin string) {
 	// AI assistants + IDEs detected on this machine.
 	inv := workstream.ScanInventory(platform.Current())
 	for _, t := range inv.Tools {
+		installed := t.Installed
+		if !installed && t.Kind == "ide" {
+			installed = ideAppInstalled(t.ID) // catch GUI installs with no CLI on PATH
+		}
 		icon, state := "✗", "not installed"
-		if t.Installed {
+		if installed {
 			icon, state = "✓", "installed"
 		}
 		kind := "AI"
@@ -262,12 +301,17 @@ func openDetail(title, body string) {
 // slugify reduces a title to a stable filename stem.
 func slugify(s string) string {
 	var b strings.Builder
+	lastHyphen := false
 	for _, r := range strings.ToLower(s) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			b.WriteRune(r)
+			lastHyphen = false
 		case r == ' ', r == '-', r == '_':
-			b.WriteByte('-')
+			if !lastHyphen { // collapse runs of separators (incl. dropped glyphs/em-dashes)
+				b.WriteByte('-')
+				lastHyphen = true
+			}
 		}
 	}
 	out := strings.Trim(b.String(), "-")
