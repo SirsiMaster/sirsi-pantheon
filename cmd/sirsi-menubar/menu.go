@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,9 @@ import (
 
 	"fyne.io/systray"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/workstream"
 )
 
 // wire runs handler on every click of item, each in its own goroutine. This
@@ -162,6 +166,77 @@ func openRecentDetail(i int) {
 		return
 	}
 	openDetail(n.Source+" — "+n.Summary, n.Details)
+}
+
+// ── About / Surfaces ────────────────────────────────────────────────────────
+
+// claudeMCPLinked reports whether the Sirsi MCP server is registered in the
+// user's Claude config (~/.claude.json) — i.e. Claude Code can actually call
+// Sirsi tools. Honest "linked" vs merely "available" (Rule A23/A14).
+func claudeMCPLinked() bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	for _, p := range []string{
+		filepath.Join(home, ".claude.json"),
+		filepath.Join(home, ".config", "claude", "mcp.json"),
+		filepath.Join(home, ".cursor", "mcp.json"),
+	} {
+		if data, err := os.ReadFile(p); err == nil && strings.Contains(string(data), "\"sirsi\"") {
+			return true
+		}
+	}
+	return false
+}
+
+// addAboutSection builds the "About Pantheon" submenu: version + every surface
+// Pantheon is installed/linked in (this menubar, the CLI, AI assistants, IDEs,
+// the MCP bridge to Claude Code). The TUI surface view, brought to the menubar.
+// Every actionable row leads somewhere (Configure, MCP setup); status rows are
+// informational. Built once at onReady — installed-tool state is effectively
+// static for a session.
+func addAboutSection(sirsiBin string) {
+	about := systray.AddMenuItem("ℹ About Pantheon", "Version, surfaces, and integrations")
+
+	ver := modversion.Current("sirsi-menubar").Version
+	about.AddSubMenuItem("𓉴 Sirsi Pantheon "+ver, "Infrastructure hygiene + agent orchestration").Disable()
+	about.AddSubMenuItem("──  Surfaces & Integrations  ──", "Where Pantheon is installed and linked").Disable()
+
+	// The running surface.
+	about.AddSubMenuItem("  𓂀 Menubar — active (this app)", "The Sirsi menubar is running").Disable()
+	if sirsiBin != "" {
+		about.AddSubMenuItem("  ⌘ CLI — "+sirsiBin, "The sirsi command-line tool").Disable()
+	}
+
+	// AI assistants + IDEs detected on this machine.
+	inv := workstream.ScanInventory(platform.Current())
+	for _, t := range inv.Tools {
+		icon, state := "✗", "not installed"
+		if t.Installed {
+			icon, state = "✓", "installed"
+		}
+		kind := "AI"
+		if t.Kind == "ide" {
+			kind = "IDE"
+		}
+		row := about.AddSubMenuItem(fmt.Sprintf("  %s %s — %s (%s)", icon, t.Name, state, kind), t.Name+" "+kind)
+		row.Disable() // status row; the actionable path is Configure Integrations below
+	}
+
+	// MCP bridge — the Claude Code / IDE link. Honest linked vs available.
+	mcpTitle := "  ↳ MCP bridge — available (sirsi mcp)"
+	mcpTip := "Start the MCP server so an IDE can call Sirsi tools — click to configure"
+	if claudeMCPLinked() {
+		mcpTitle = "  ↳ MCP bridge — ✓ linked to Claude Code"
+		mcpTip = "Sirsi is registered in your Claude/Cursor MCP config"
+	}
+	mcpRow := about.AddSubMenuItem(mcpTitle, mcpTip)
+
+	// Actionable: configure/link integrations (sirsi setup).
+	cfgRow := about.AddSubMenuItem("  ⚙ Configure Integrations…", "Install / link AI assistants, IDEs, and the MCP bridge")
+	wire(mcpRow, func() { spawnTUIWithCommand("setup") })
+	wire(cfgRow, func() { spawnTUIWithCommand("setup") })
 }
 
 // ── Detail viewer ───────────────────────────────────────────────────────────

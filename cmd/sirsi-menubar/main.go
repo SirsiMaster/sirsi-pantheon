@@ -250,6 +250,11 @@ func onReady() {
 	}
 
 	systray.AddSeparator()
+
+	// ── About — surfaces & integrations (the TUI surface view) ───────────────
+	addAboutSection(sirsiBin)
+
+	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit Sirsi", "Exit menubar app")
 	wire(mQuit, quit)
 
