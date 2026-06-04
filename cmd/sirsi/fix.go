@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
@@ -76,7 +77,10 @@ func runFix(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 3. Advisory for the issues Pantheon must NOT auto-act on.
+	// 3. Answer EVERY remaining finding with a concrete fix — never "advisory,
+	//    figure it out". Execute what's safe (orphan-kill with preview, brew
+	//    upgrade); give a SPECIFIC, runnable step for what needs your judgment or
+	//    is external (hardware).
 	for _, f := range report.Findings {
 		if f.Severity < guard.SeverityWarn {
 			continue
@@ -84,14 +88,20 @@ func runFix(cmd *cobra.Command, args []string) error {
 		switch {
 		case strings.Contains(f.Check, "Jetsam"), strings.Contains(f.Check, "RAM"),
 			strings.Contains(f.Check, "Swap"), strings.Contains(f.Check, "Memory"):
-			output.Warn("🧠 %s\n     → run `sirsi monitor` to find and quit the memory hogs (won't kill them for you)", f.Message)
-			advisory++
+			if fixMemory(f.Message) {
+				resolved++
+			} else {
+				advisory++
+			}
 		case strings.Contains(f.Check, "Kernel Panic"):
-			output.Warn("💥 %s\n     → hardware/driver issue; `sirsi diagnose --json` has the faulting detail (not auto-fixable)", f.Message)
+			fixPanic(f.Message)
 			advisory++
 		case strings.Contains(f.Check, "drift"):
-			output.Warn("📦 %s\n     → run `brew upgrade sirsi-pantheon`", f.Message)
-			advisory++
+			if fixDrift(f.Message) {
+				resolved++
+			} else {
+				advisory++
+			}
 		}
 	}
 
@@ -106,6 +116,70 @@ func runFix(cmd *cobra.Command, args []string) error {
 		output.Info("Resolved %d automatically; %d need the manual step shown above.", resolved, advisory)
 	}
 	return nil
+}
+
+// fixMemory answers a RAM/Jetsam finding: name the actual hogs (the intelligence
+// that was missing), then free the SAFE part — orphaned dev processes — via the
+// vetted Slay path with a dry-run preview so you see exactly what dies. Active
+// apps are named, not killed (quitting your browser is your call, A1/A5).
+func fixMemory(msg string) bool {
+	output.Warn("🧠 %s", msg)
+	audit, err := guard.Audit()
+	if err != nil || audit == nil {
+		output.Dim("     → run `sirsi monitor` for live memory pressure")
+		return false
+	}
+	output.Info("     Top memory consumers:")
+	for i, g := range audit.Groups {
+		if i >= 3 {
+			break
+		}
+		output.Dim("       %d. %s — %s (%d proc)", i+1, g.Name, guard.FormatBytes(g.TotalRSS), g.TotalCount)
+	}
+	// Free the safe part: orphaned dev processes. Preview, then confirm.
+	if preview, perr := guard.Slay(guard.SlayAll, true); perr == nil && preview != nil && preview.Killed > 0 {
+		output.Info("     %d orphaned process(es) (~%s) are safe to kill (leftover, protected procs excluded).",
+			preview.Killed, guard.FormatBytes(audit.OrphanRSS))
+		if fixYes || confirmFix("Kill the orphaned processes to free memory?") {
+			if res, serr := guard.Slay(guard.SlayAll, false); serr == nil && res != nil {
+				output.Success("     Freed memory — killed %d orphaned process(es).", res.Killed)
+				return true
+			}
+			output.Error("     Could not kill the orphaned processes.")
+		}
+		return false
+	}
+	output.Dim("     → no orphaned processes; quit the largest app above that you're not using")
+	return false
+}
+
+// fixPanic answers a kernel-panic finding with the SPECIFIC remediation path —
+// not "read the JSON". The panic logs themselves are cleared by the reclaim step
+// above; the hardware/driver cause needs these concrete steps.
+func fixPanic(msg string) {
+	output.Warn("💥 %s", msg)
+	output.Dim("     A kernel panic is a driver or hardware fault. Concrete steps:")
+	output.Dim("       1. Reboot into Apple Diagnostics (power on, hold D) to test RAM/hardware")
+	output.Dim("       2. Check third-party kexts:  kextstat | grep -v com.apple")
+	output.Dim("       3. Update macOS and any third-party drivers; remove a kext that recurs")
+	output.Dim("     (The panic logs themselves were reclaimed above.)")
+}
+
+// fixDrift answers a binary-drift finding by running the actual update.
+func fixDrift(msg string) bool {
+	output.Warn("📦 %s", msg)
+	if !fixYes && !confirmFix("Run `brew upgrade sirsi-pantheon` now?") {
+		output.Dim("     → run `brew upgrade sirsi-pantheon` when ready")
+		return false
+	}
+	cmd := exec.Command("brew", "upgrade", "sirsi-pantheon")
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := cmd.Run(); err != nil {
+		output.Error("     brew upgrade failed: %v", err)
+		return false
+	}
+	output.Success("     Sirsi binaries updated.")
+	return true
 }
 
 // confirmFix prompts on stderr (stdout stays clean for piping). Default No.
