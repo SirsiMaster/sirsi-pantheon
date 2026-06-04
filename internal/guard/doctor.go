@@ -557,7 +557,8 @@ func checkAppCrashes(report *DoctorReport) {
 
 	if loopProc, loopN, looping := detectCrashloop(crashes, now); looping {
 		finding.Severity = SeverityCritical
-		finding.Message = fmt.Sprintf("%q crashloop — %d aborts in 5 min (active); stop the offending process", loopProc, loopN)
+		finding.Message = fmt.Sprintf("%q crashloop — %d aborts in 5 min (active)", loopProc, loopN)
+		finding.Detail = fmt.Sprintf("ACTIVE: %q is aborting repeatedly right now — investigate/stop it. Then reclaim the report backlog: sirsi clean", loopProc)
 		report.Findings = append(report.Findings, finding)
 		return
 	}
@@ -575,13 +576,19 @@ func checkAppCrashes(report *DoctorReport) {
 		}
 	}
 
+	// Resolution pointer — these are mostly retired logs; Clean reclaims them
+	// (the crash_reports rule now reaches Retired/). The count is history, not a
+	// live emergency unless detectCrashloop fired above.
+	resolution := fmt.Sprintf("%d crash report(s) accumulated (top: %q ×%d). These are diagnostic logs, not live failures — reclaim them with: sirsi clean", len(crashes), top, topN)
 	switch {
 	case len(crashes) > 10:
-		finding.Severity = SeverityCritical
-		finding.Message = fmt.Sprintf("%d app crashes in 7 days — top: %q (%d)", len(crashes), top, topN)
+		finding.Severity = SeverityWarn // history, not critical — was over-alarming
+		finding.Message = fmt.Sprintf("%d crash reports (7d) — top: %q (%d) · clear with `sirsi clean`", len(crashes), top, topN)
+		finding.Detail = resolution
 	case len(crashes) > 0:
 		finding.Severity = SeverityWarn
-		finding.Message = fmt.Sprintf("%d app crash(es) in 7 days — top: %q (%d)", len(crashes), top, topN)
+		finding.Message = fmt.Sprintf("%d crash report(s) (7d) — top: %q (%d) · clear with `sirsi clean`", len(crashes), top, topN)
+		finding.Detail = resolution
 	default:
 		finding.Severity = SeverityOK
 		finding.Message = "No app crashes in the last 7 days"

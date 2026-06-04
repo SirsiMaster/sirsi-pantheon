@@ -50,6 +50,10 @@ func NewCrashReportsRule() jackal.ScanRule {
 		platforms:   []string{"darwin"},
 		paths: []string{
 			"~/Library/Logs/DiagnosticReports/*",
+			// macOS moves older reports into Retired/ — without this the bulk of
+			// accumulated crash reports is unreachable by Clean (the diagnose
+			// "App Crashes" count piles up with no way to reclaim it).
+			"~/Library/Logs/DiagnosticReports/Retired/*",
 		},
 		minAgeDays: 3,
 		severity:   jackal.SeverityCaution,
