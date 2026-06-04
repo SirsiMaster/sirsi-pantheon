@@ -192,11 +192,13 @@ var monitorCmd = &cobra.Command{
 
 var fixCmd = &cobra.Command{
 	Use:   "fix",
-	Short: "Auto-fix DNS, firewall, and security issues",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		isisNetworkFix = true
-		return runIsisNetwork(cmd, args)
-	},
+	Short: "Assess the system and resolve what's safely fixable (crashes, disk, caches)",
+	Long: `𓁢 Pantheon Fix — assess AND resolve, in one flow.
+
+Diagnoses the workstation, then reclaims the disk/crash backlog (trash-first,
+recoverable) and gives a concrete next step for anything it must not auto-touch
+(memory hogs, kernel panics). Network security auto-fix lives at 'sirsi isis fix'.`,
+	RunE: runFix,
 }
 
 var riskCmd = &cobra.Command{
@@ -700,6 +702,7 @@ func init() {
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
+	fixCmd.Flags().BoolVar(&fixYes, "yes", false, "Apply safe reclaim without the confirmation prompt")
 	// ── User-facing commands (visible in sirsi --help) ──
 	rootCmd.AddCommand(scanCmd, cleanCmd, ghostsCmd, dedupCmd, doctorCmd)
 	rootCmd.AddCommand(purgeCmd, analyzeCmd, installerCmd)
