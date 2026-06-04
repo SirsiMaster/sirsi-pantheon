@@ -357,15 +357,15 @@ func TestDoctor(t *testing.T) {
 		t.Error("expected non-empty JSON output from doctor")
 	}
 
-	// Also test terminal mode for Health Score.
+	// Also test terminal mode for the professional system brief.
 	stdout2, stderr2, err := runSirsi(t, 30*time.Second, "doctor")
 	if err != nil {
 		t.Fatalf("sirsi doctor failed: %v\nstdout: %s\nstderr: %s", err, stdout2, stderr2)
 	}
 
 	combined := stdout2 + stderr2
-	if !strings.Contains(combined, "Health Score") && !strings.Contains(combined, "Completed in") {
-		t.Errorf("doctor output missing 'Health Score' or 'Completed in', got:\n%s", combined)
+	if !strings.Contains(combined, "Pantheon System Brief") || !strings.Contains(combined, "Recommended action") {
+		t.Errorf("doctor output missing system brief contract, got:\n%s", combined)
 	}
 }
 
@@ -767,10 +767,11 @@ func TestUXContract_JSONClean(t *testing.T) {
 	}
 }
 
-// TestUXContract_WhatsNext verifies that normal-mode commands emit
-// "What's Next" section with suggested follow-up commands.
+// TestUXContract_RecommendedAction verifies that normal-mode commands emit
+// an explicit follow-up. Serious diagnostic commands use the professional
+// "Recommended action" brief instead of the legacy "What's Next" block.
 // This directly addresses Codex review blocking finding #4.
-func TestUXContract_WhatsNext(t *testing.T) {
+func TestUXContract_RecommendedAction(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping UX contract tests in short mode")
 	}
@@ -805,8 +806,8 @@ func TestUXContract_WhatsNext(t *testing.T) {
 			}
 
 			combined := stdout + stderr
-			if !strings.Contains(combined, "What's Next") {
-				t.Errorf("command %v missing 'What's Next' section\noutput:\n%s",
+			if !strings.Contains(combined, "What's Next") && !strings.Contains(combined, "Recommended action") {
+				t.Errorf("command %v missing follow-up action section\noutput:\n%s",
 					tt.args, combined[:min(500, len(combined))])
 			}
 		})
@@ -869,9 +870,9 @@ func TestUXContract_StatusCLI(t *testing.T) {
 	if !strings.Contains(combined, "health") && !strings.Contains(combined, "Health") {
 		t.Errorf("status output missing health info\noutput:\n%s", combined)
 	}
-	// Must show next actions
-	if !strings.Contains(combined, "What's Next") {
-		t.Errorf("status output missing 'What's Next' section\noutput:\n%s", combined)
+	// Must show the professional action prompt.
+	if !strings.Contains(combined, "Recommended action") {
+		t.Errorf("status output missing recommended action section\noutput:\n%s", combined)
 	}
 	// Per ADR-018 the TUI was eliminated 2026-05-21; the prior
 	// `--live` suggestion was removed with it. CLI status output is the

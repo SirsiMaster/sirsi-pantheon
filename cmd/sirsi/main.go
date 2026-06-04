@@ -224,11 +224,6 @@ var statusCmd = &cobra.Command{
 func runStatus(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
-	if !JsonOutput {
-		output.Banner()
-		output.Header("System Status")
-	}
-
 	report, err := guard.Doctor()
 	if err != nil {
 		return fmt.Errorf("status check failed: %w", err)
@@ -240,22 +235,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return enc.Encode(report)
 	}
 
-	scoreIcon := "🟢"
-	switch {
-	case report.Score < 50:
-		scoreIcon = "🔴"
-	case report.Score < 75:
-		scoreIcon = "🟡"
-	}
-
 	elapsed := time.Since(start)
 
 	cr := &output.CommandResult{
-		Command:  "sirsi status",
-		Summary:  fmt.Sprintf("System health: %s %d/100 (%d checks)", scoreIcon, report.Score, len(report.Findings)),
-		Duration: elapsed,
+		Command:    "sirsi status",
+		BriefTitle: "Pantheon Status",
+		Summary:    fmt.Sprintf("%d signals checked", len(report.Findings)),
+		Status:     doctorStatus(report.Score),
+		Confidence: "High",
+		Duration:   elapsed,
 	}
-	cr.AddEvidence("Health score", fmt.Sprintf("%d/100", report.Score))
+	cr.AddEvidence("Health", fmt.Sprintf("%d/100", report.Score))
 
 	warnCount := 0
 	for _, f := range report.Findings {
@@ -264,13 +254,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if warnCount > 0 {
-		cr.AddEvidence("Warnings", fmt.Sprintf("%d", warnCount))
+		cr.AddEvidence("Attention", fmt.Sprintf("%d findings", warnCount))
+		cr.Priority = append(cr.Priority, "Run a diagnostic brief before taking action.")
 	} else {
-		cr.AddEvidence("Status", "All checks passing")
+		cr.Priority = append(cr.Priority, "No immediate action required.")
 	}
 
-	cr.AddNextAction("sirsi diagnose", "Detailed health diagnostic with per-check breakdown")
-	cr.AddNextAction("sirsi scan", "Scan for infrastructure waste")
+	cr.AddNextAction("sirsi diagnose", "Open the diagnostic brief.")
 	cr.Render()
 	return nil
 }

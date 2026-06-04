@@ -48,8 +48,9 @@ func (d *Darwin) MoveToTrash(path string) error {
 	// Native move to ~/.Trash — the app's OWN file operation. This needs NO
 	// Automation/Finder permission, so it works from a background launchd agent
 	// (the menubar), where `tell application "Finder"` is rejected by TCC. Items
-	// remain fully recoverable from the Trash. Cross-volume rename fails (EXDEV);
-	// fall back to Finder automation, which works from an interactive context.
+	// remain fully recoverable from the Trash. If the native move fails, fail
+	// closed instead of falling back to Finder automation; unattended cleanup must
+	// never trigger authorization prompts.
 	if home, herr := os.UserHomeDir(); herr == nil {
 		trashDir := filepath.Join(home, ".Trash")
 		if mkErr := os.MkdirAll(trashDir, 0o700); mkErr == nil {
@@ -60,12 +61,12 @@ func (d *Darwin) MoveToTrash(path string) error {
 			}
 			if renErr := os.Rename(absPath, dest); renErr == nil {
 				return nil
+			} else {
+				return fmt.Errorf("move %q to trash: %w", absPath, renErr)
 			}
-			// rename failed (likely cross-volume EXDEV) — fall through to Finder.
 		}
 	}
-	script := fmt.Sprintf(`tell application "Finder" to delete POSIX file %q`, absPath)
-	return exec.Command("osascript", "-e", script).Run()
+	return fmt.Errorf("trash unavailable for %q", absPath)
 }
 
 func (d *Darwin) ProtectedPrefixes() []string {
