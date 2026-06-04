@@ -112,6 +112,9 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
+		// SAFE-ONLY apply (no --include-caution): trash-first, recoverable,
+		// protected paths enforced by internal/cleaner/safety.go (A1). The exact
+		// safe set the preview showed — caution-tier app remnants stay gated.
 		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--dry-run=false")
 		cmd.Stdin = strings.NewReader("y\n") // the confirm-click is the [y/N] yes
 		out, err := cmd.CombinedOutput()
@@ -128,7 +131,7 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		}
 		recordNotify(store, "Clean Waste", "anubis clean --dry-run=false (safe-only)", sev, summary, text)
 		if rr != nil {
-			rr.set("Clean Waste", icon, summary, text) // the demo's key action now fills its result row
+			rr.set("Clean Waste", icon, summary, text)
 		}
 		confirm.Enable()
 		confirm.Hide()

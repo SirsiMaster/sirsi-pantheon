@@ -18,6 +18,10 @@ type CommandResult struct {
 	Command     string        `json:"command"`
 	Summary     string        `json:"summary"`
 	Duration    time.Duration `json:"duration_ms"`
+	BriefTitle  string        `json:"brief_title,omitempty"`
+	Status      string        `json:"status,omitempty"`
+	Confidence  string        `json:"confidence,omitempty"`
+	Priority    []string      `json:"priority,omitempty"`
 	Evidence    []Evidence    `json:"evidence,omitempty"`
 	Warnings    []string      `json:"warnings,omitempty"`
 	Errors      []string      `json:"errors,omitempty"`
@@ -58,6 +62,11 @@ func (r *CommandResult) Render() {
 }
 
 func (r *CommandResult) renderFull() {
+	if r.BriefTitle != "" {
+		r.renderBrief()
+		return
+	}
+
 	gold := TitleStyle
 	dim := DimStyle
 	green := SuccessStyle
@@ -105,6 +114,62 @@ func (r *CommandResult) renderFull() {
 	}
 
 	fmt.Fprintf(os.Stderr, "\n")
+}
+
+func (r *CommandResult) renderBrief() {
+	gold := TitleStyle
+	dim := DimStyle
+	green := SuccessStyle
+	warn := WarningStyle
+	errStyle := ErrorStyle
+
+	fmt.Fprintf(os.Stderr, "\n  %s\n", gold.Render(r.BriefTitle))
+	if r.Summary != "" {
+		fmt.Fprintf(os.Stderr, "  %s\n", dim.Render(r.Summary))
+	}
+	if r.Duration > 0 {
+		fmt.Fprintf(os.Stderr, "  %s\n", dim.Render(fmt.Sprintf("Checked in %s", r.Duration.Truncate(time.Millisecond))))
+	}
+
+	if r.Status != "" || r.Confidence != "" {
+		fmt.Fprintln(os.Stderr)
+		if r.Status != "" {
+			style := green
+			statusLower := strings.ToLower(r.Status)
+			if strings.Contains(statusLower, "critical") || strings.Contains(statusLower, "unstable") {
+				style = errStyle
+			} else if strings.Contains(statusLower, "attention") || strings.Contains(statusLower, "degraded") {
+				style = warn
+			}
+			fmt.Fprintf(os.Stderr, "  %s  %s\n", dim.Render(padRight("Status", 14)), style.Render(r.Status))
+		}
+		if r.Confidence != "" {
+			fmt.Fprintf(os.Stderr, "  %s  %s\n", dim.Render(padRight("Confidence", 14)), r.Confidence)
+		}
+	}
+
+	if len(r.Evidence) > 0 {
+		fmt.Fprintln(os.Stderr)
+		for _, e := range r.Evidence {
+			fmt.Fprintf(os.Stderr, "  %s  %s\n", dim.Render(padRight(e.Label, 14)), e.Value)
+		}
+	}
+
+	if len(r.Priority) > 0 {
+		fmt.Fprintf(os.Stderr, "\n  %s\n", gold.Render("Priority"))
+		for i, p := range r.Priority {
+			fmt.Fprintf(os.Stderr, "  %d. %s\n", i+1, p)
+		}
+	}
+
+	if len(r.NextActions) > 0 {
+		a := r.NextActions[0]
+		fmt.Fprintf(os.Stderr, "\n  %s\n", gold.Render("Recommended action"))
+		fmt.Fprintf(os.Stderr, "  %s\n", a.Description)
+		fmt.Fprintf(os.Stderr, "  %s\n", dim.Render(a.Command))
+	}
+
+	fmt.Fprintln(os.Stderr)
 }
 
 // AddEvidence appends a labeled evidence item.

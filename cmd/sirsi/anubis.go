@@ -427,6 +427,11 @@ func runJudge(ctx context.Context) error {
 		return nil
 	}
 
+	if cleanupApplyPaused() {
+		output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
+		return nil
+	}
+
 	// Execute cleanup.
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
@@ -541,6 +546,11 @@ func runClean(cmd *cobra.Command, args []string) error {
 		output.Dim("  %s %s (%s) → %s", sev, f.Description, jackal.FormatSize(f.SizeBytes), f.Remediation)
 	}
 
+	if cleanupApplyPaused() {
+		output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
+		return nil
+	}
+
 	// Execute
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
@@ -575,6 +585,10 @@ func runClean(cmd *cobra.Command, args []string) error {
 	cr.AddNextAction("sirsi diagnose", "Check overall system health")
 	cr.Render()
 	return nil
+}
+
+func cleanupApplyPaused() bool {
+	return os.Getenv("SIRSI_ALLOW_CLEAN_APPLY") != "1"
 }
 
 func runKa(ctx context.Context) error {
@@ -959,11 +973,6 @@ func runAnubisUninstall(ctx context.Context, appName string, complete bool) erro
 func runDoctor(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
-	if !JsonOutput {
-		output.Banner()
-		output.Header("System Health Diagnostic")
-	}
-
 	report, err := guard.Doctor()
 	if err != nil {
 		return fmt.Errorf("doctor failed: %w", err)
@@ -993,62 +1002,46 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return enc.Encode(report)
 	}
 
-	// Print findings as a table
-	var rows [][]string
-	for _, f := range report.Findings {
-		rows = append(rows, []string{
-			f.Severity.Icon(),
-			f.Check,
-			f.Message,
-		})
-	}
-	if len(rows) > 0 {
-		output.Table([]string{"", "Check", "Result"}, rows)
-	}
-
-	// Print details for non-OK findings
-	for _, f := range report.Findings {
-		if f.Detail != "" && f.Severity >= guard.SeverityWarn {
-			output.Dim("  %s: %s", f.Check, f.Detail)
-		}
-	}
-
-	// Score
-	scoreIcon := "🟢"
-	switch {
-	case report.Score < 50:
-		scoreIcon = "🔴"
-	case report.Score < 75:
-		scoreIcon = "🟡"
-	}
-
 	elapsed := time.Since(start)
 
 	result := &output.CommandResult{
-		Command:  "sirsi diagnose",
-		Summary:  fmt.Sprintf("Health score: %s %d/100 (%d checks run)", scoreIcon, report.Score, len(report.Findings)),
-		Duration: elapsed,
+		Command:    "sirsi diagnose",
+		BriefTitle: "Pantheon System Brief",
+		Summary:    fmt.Sprintf("%d signals checked", len(report.Findings)),
+		Status:     doctorStatus(report.Score),
+		Confidence: "High",
+		Duration:   elapsed,
 	}
-	result.AddEvidence("Health score", fmt.Sprintf("%d/100", report.Score))
-	result.AddEvidence("Checks run", fmt.Sprintf("%d", len(report.Findings)))
+	result.AddEvidence("Health", fmt.Sprintf("%d/100", report.Score))
+	result.AddEvidence("Signals", fmt.Sprintf("%d checked", len(report.Findings)))
 
 	warnCount := 0
 	for _, f := range report.Findings {
 		if f.Severity >= guard.SeverityWarn {
 			warnCount++
-			result.AddWarning("%s: %s", f.Check, f.Message)
+			result.Priority = append(result.Priority, fmt.Sprintf("%s: %s", f.Check, f.Message))
 		}
 	}
 	if warnCount == 0 {
-		result.AddEvidence("Status", "All checks passing")
+		result.Priority = append(result.Priority, "No immediate action required.")
 	}
 
 	if report.Score < 75 {
-		result.AddNextAction("sirsi fix", "Auto-fix DNS, firewall, and security issues")
+		result.AddNextAction("sirsi diagnose --json", "Review the full machine-readable diagnostic before taking action.")
+	} else {
+		result.AddNextAction("sirsi scan", "Run a workstation hygiene scan when ready.")
 	}
-	result.AddNextAction("sirsi monitor", "Watch processes and RAM pressure in real time")
-	result.AddNextAction("sirsi network", "Network security audit")
-	result.AddNextAction("sirsi scan", "Scan for infrastructure waste")
 	result.Render()
 	return nil
+}
+
+func doctorStatus(score int) string {
+	switch {
+	case score < 50:
+		return "Critical"
+	case score < 75:
+		return "Needs Attention"
+	default:
+		return "Operational"
+	}
 }
