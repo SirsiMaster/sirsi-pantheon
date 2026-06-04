@@ -348,7 +348,10 @@ func spawnTUIWithCommand(command string) {
 	} else {
 		commandLine += " status"
 	}
-	commandLine += "; echo; read -n 1 -s -r '?Press any key to close...'"
+	// Portable close-prompt: `read _` reads one line into a throwaway var and works
+	// in BOTH bash and zsh. The previous `read -n 1 -s -r '?…'` is bash-only syntax
+	// that errors in zsh (`zsh: not an identifier: -s`) — the user's default shell.
+	commandLine += "; echo; printf 'Press Enter to close… '; read _"
 
 	// Check if iTerm2 is installed, prefer it over Terminal.app
 	if _, err := os.Stat("/Applications/iTerm.app"); err == nil {
