@@ -38,54 +38,6 @@ const actionTimeout = 90 * time.Second
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
-// runActionInPlace executes `sirsi <command>` off the UI thread, writes the
-// result to the notify store (so it appears in Recent Activity), and gives the
-// clicked item transient ⏳/✓/✗ feedback before restoring its title. Non-blocking:
-// returns immediately; the menu stays responsive while the action runs.
-func runActionInPlace(item *systray.MenuItem, origTitle, sirsiBin, command string, store *notify.Store) {
-	if item == nil || sirsiBin == "" {
-		return
-	}
-	item.SetTitle("⏳ " + origTitle)
-	item.Disable()
-	go func() {
-		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
-		defer cancel()
-		out, err := exec.CommandContext(ctx, sirsiBin, strings.Fields(command)...).CombinedOutput()
-		dur := time.Since(start)
-
-		sev, icon := notify.SeveritySuccess, "✓"
-		summary := firstMeaningfulLine(string(out))
-		if ctx.Err() == context.DeadlineExceeded {
-			sev, icon, summary = notify.SeverityWarning, "⏱", "timed out after "+actionTimeout.String()
-		} else if err != nil {
-			sev, icon = notify.SeverityError, "✗"
-			if summary == "" {
-				summary = err.Error()
-			}
-		}
-		if summary == "" {
-			summary = "done"
-		}
-
-		if store != nil {
-			_ = store.Record(notify.Notification{
-				Source:     origTitle,
-				Action:     command,
-				Severity:   sev,
-				Summary:    truncate(summary, 140),
-				Details:    truncate(stripANSI(string(out)), 4000),
-				DurationMs: dur.Milliseconds(),
-			})
-		}
-		item.SetTitle(icon + " " + origTitle)
-		item.Enable()
-		// Restore the original title after a beat so the menu reads normally again.
-		time.AfterFunc(5*time.Second, func() { item.SetTitle(origTitle) })
-	}()
-}
-
 var reclaimRE = regexp.MustCompile(`\(([0-9.]+\s*[KMGTP]?B)\)`)
 
 // runCleanPreview runs the SAFE dry-run (`anubis clean`, --dry-run defaults true)

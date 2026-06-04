@@ -103,89 +103,14 @@ func onReady() {
 	systray.SetTitle("Sirsi")
 	systray.SetTooltip("Sirsi Ecosystem Monitor")
 
-	// ── Open TUI ──────────────────────────────────────────────────
-	mDashboard := systray.AddMenuItem("Open Console", "Open the full Sirsi console in Terminal")
-
-	// ── Full Disk Access (foundational visibility) ─────────────────
-	// Sirsi/Horus is meant to see the WHOLE workstation; without macOS Full Disk
-	// Access it's blind to Desktop/Documents/Mail/app containers. Surface the gap
-	// as a first-class action — shown only when access is missing.
-	mFDA := systray.AddMenuItem("⚠ Grant Full Disk Access…", "Grant disk access so Sirsi can see and clean the whole workstation")
-	applyFDAState(mFDA)
-
-	// ── Stats section ───────────────────────────────────────────────
-	mStats := systray.AddMenuItem("Loading...", "Click to refresh stats")
-	systray.AddSeparator()
-
-	// ── Horus ops read-model (ADR-026 step 4b) ─────────────────────
-	// One lead row (worst-glyph roll-up, clickable → opens the full dashboard/TUI)
-	// + bounded agent rows, refreshed from the same NodeStatus the in-process
-	// dashboard serves. Read-only projection — no re-aggregation (Summarize is
-	// the canonical reduction). Rows are disabled (informational).
-	mOpsHeader := systray.AddMenuItem("ops: loading…", "Horus local-node status — click to open the full dashboard")
-	const opsRowCount = 12
-	opsRows := make([]*systray.MenuItem, opsRowCount)
-	for i := range opsRows {
-		opsRows[i] = systray.AddMenuItem("  —", "")
-		opsRows[i].Disable()
-	}
-	systray.AddSeparator()
-
-	// ── Ra section ──────────────────────────────────────────────────
-	mRaHeader := systray.AddMenuItem("Agent Fleet", "AI agent orchestration — click for status")
-	mRaDeploy := systray.AddMenuItem("  Deploy All Scopes", "sirsi ra deploy")
-	mRaKill := systray.AddMenuItem("  Kill All Windows", "sirsi ra kill")
-	mRaCollect := systray.AddMenuItem("  Collect Results", "sirsi ra collect")
-
-	// Ra scope status items (updated dynamically, clickable to view logs)
-	raScopes := make([]*systray.MenuItem, 4)
-	for i := range raScopes {
-		raScopes[i] = systray.AddMenuItem("  —", "Click to view scope log")
-	}
-
-	systray.AddSeparator()
-
-	// ── Recent Activity ─────────────────────────────────────────────
-	mRecentHeader := systray.AddMenuItem("Recent Activity", "Last 5 operations")
-	mRecentHeader.Disable()
-	recentItems := make([]*systray.MenuItem, 5)
-	for i := range recentItems {
-		recentItems[i] = systray.AddMenuItem("  —", "")
-		recentItems[i].Disable()
-	}
-
-	systray.AddSeparator()
-
-	// ── Deity Commands (glyphs match internal/deity/registry.go) ───
-	mScan := systray.AddMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
-	mJudge := systray.AddMenuItem("Clean Waste…", "Preview reclaimable waste, then confirm to move it to Trash")
-	// In-app clean confirm (Rule A1): hidden until a dry-run preview arms it with
-	// the reclaimable amount; clicking it applies the clean (trash-first).
-	mCleanConfirm := systray.AddMenuItem("  ✓ Confirm Clean", "Move the previewed waste to Trash")
-	mCleanConfirm.Hide()
-	mKa := systray.AddMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
-	mMaat := systray.AddMenuItem("Quality Audit", "Run the workstation quality + governance audit")
-	mGuard := systray.AddMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
-
-	systray.AddSeparator()
-
-	// ── More Deities ────────────────────────────────────────────────
-	mThoth := systray.AddMenuItem("Sync Memory", "Sync project memory from source + git history")
-	mSeshat := systray.AddMenuItem("Ingest Knowledge", "Ingest configured knowledge sources")
-	mSeba := systray.AddMenuItem("Hardware Info", "CPU, GPU, and accelerator summary")
-	mOsiris := systray.AddMenuItem("Uncommitted Risk", "Assess risk from uncommitted work")
-	mNet := systray.AddMenuItem("Consistency Check", "Validate cross-module consistency")
-
-	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Quit Sirsi", "Exit menubar app")
-
-	// ── Open notification store ─────────────────────────────────────
+	sirsiBin := findSirsiBinary()
 	nStore, _ := notify.Open(notify.DefaultPath())
 
-	// ── Start dashboard server ──────────────────────────────────────
+	// ── Infrastructure: dashboard server, guard, periodic scan, router ──────
+	// Set up BEFORE building the menu so the wired click handlers (closures
+	// below) can capture ctx/cancel/dashSrv/router cleanly.
 	cfg := DefaultStatsConfig()
 	eventBuf := dashboard.NewEventBuffer(256)
-	sirsiBin := findSirsiBinary()
 	dashSrv := dashboard.New(dashboard.Config{
 		Port:     dashboard.DashboardPort,
 		NotifyDB: nStore,
@@ -195,45 +120,140 @@ func onReady() {
 			snap := CollectStats(cfg)
 			return json.Marshal(snap)
 		},
-		// ADR-026 step 4 (surface-chrome lane): serve the Horus ops read-model
-		// from the menubar's in-process dashboard (GET /api/node-status [+ ?view=
-		// summary]). menubarNodeStatus reuses the menubar's own router-root
-		// resolution (launchd cwd=/ case, ADR-021); unresolved → error → 503, the
-		// designed degrade. Read-only, no destructive surface. The 4b refresh loop
-		// reduces the same producer into menu rows (one read-model, one producer).
+		// ADR-026 step 4: serve the Horus ops read-model from the in-process
+		// dashboard. Unresolved root → error → 503 (designed degrade).
 		NodeStatusFn: menubarNodeStatus,
 	})
 	if err := dashSrv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
 	}
 
-	// ── Guard watchdog + periodic scan ─────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
-	_ = cancel // used in quit handler
 	startGuardBridge(ctx)
 	startPeriodicScan(ctx)
-
-	// ── CTR router registration (A26/A27) ──────────────────────────
-	// Register the menubar as a resident, router-visible surface bound to this
-	// process PID, with a bounded heartbeat. Best-effort: skipped if no router
-	// root is reachable. See register.go.
 	menubarRouterRoot, menubarThreadID := registerMenubarThread(ctx)
 
+	quit := func() {
+		cancel()
+		closeMenubarThread(menubarRouterRoot, menubarThreadID)
+		_ = dashSrv.Stop()
+		if nStore != nil {
+			nStore.Close()
+		}
+		systray.Quit()
+	}
+
 	// Close the resident thread cleanly on SIGTERM/SIGINT (launchd kickstart,
-	// logout, shutdown). systray's event loop below does NOT catch signals, so
-	// without this the record would linger active until OS-truth reaping. This
-	// is the "close on shutdown if feasible" path; reaping (ADR-022) is fallback.
+	// logout, shutdown). Reaping (ADR-022) is the fallback if this is missed.
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		<-sigCh
-		cancel()
-		closeMenubarThread(menubarRouterRoot, menubarThreadID)
-		_ = dashSrv.Stop()
-		systray.Quit()
+		quit()
 	}()
 
-	// ── Background stats + recent activity loop ─────────────────────
+	// ── Status header (top level) ───────────────────────────────────────────
+	mStats := systray.AddMenuItem("Loading…", "Workstation status — click for full diagnostics in Terminal")
+	wire(mStats, func() { spawnTUIWithCommand("diagnose") })
+	// Foundational visibility: without macOS Full Disk Access, Sirsi/Horus is
+	// blind to Desktop/Documents/Mail/app containers. Shown only when missing.
+	mFDA := systray.AddMenuItem("⚠ Grant Full Disk Access…", "Grant disk access so Sirsi can see and clean the whole workstation")
+	applyFDAState(mFDA)
+	wire(mFDA, func() { openFullDiskAccessPane(nStore) })
+	systray.AddSeparator()
+
+	// ── 𓂀 Horus — Ops ───────────────────────────────────────────────────────
+	// Local-node read-model (ADR-026 4b): lead roll-up + bounded agent rows,
+	// reduced from the same NodeStatus the dashboard serves. Rows are
+	// informational; the lead + "Open Dashboard" open the full console.
+	mHorus := systray.AddMenuItem("𓂀 Horus — Ops", "Local-node operations overview")
+	mOpsHeader := mHorus.AddSubMenuItem("ops: loading…", "Horus local-node status")
+	const opsRowCount = 12
+	opsRows := make([]*systray.MenuItem, opsRowCount)
+	for i := range opsRows {
+		opsRows[i] = mHorus.AddSubMenuItem("  —", "")
+		opsRows[i].Disable()
+	}
+	mDashboard := mHorus.AddSubMenuItem("↳ Open Full Dashboard…", "Open the full Sirsi console in Terminal")
+	wire(mOpsHeader, spawnTUIWindow)
+	wire(mDashboard, spawnTUIWindow)
+
+	// ── 🐺 Anubis — Hygiene ──────────────────────────────────────────────────
+	mAnubis := systray.AddMenuItem("🐺 Anubis — Hygiene", "Scan, clean, and de-ghost the workstation")
+	rrAnubis := newDeityResult(mAnubis)
+	mScan := mAnubis.AddSubMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
+	mJudge := mAnubis.AddSubMenuItem("Clean Waste…", "Preview reclaimable waste, then confirm to move it to Trash")
+	// In-app clean confirm (Rule A1): hidden until a dry-run preview arms it.
+	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Confirm Clean", "Move the previewed waste to Trash")
+	mCleanConfirm.Hide()
+	mKa := mAnubis.AddSubMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
+	mGuard := mAnubis.AddSubMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
+	wire(mScan, func() { runService(mScan, "Scan for Waste", sirsiBin, "scan", nStore, rrAnubis) })
+	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore) })
+	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore) })
+	wire(mKa, func() { runService(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore, rrAnubis) })
+	wire(mGuard, func() { spawnTUIWithCommand("guard") })
+
+	// ── 𓆄 Ma'at — Quality ────────────────────────────────────────────────────
+	mMaatTop := systray.AddMenuItem("𓆄 Ma'at — Quality", "Quality + governance audit, system diagnostics")
+	rrMaat := newDeityResult(mMaatTop)
+	mMaat := mMaatTop.AddSubMenuItem("Quality Audit", "Run the workstation quality + governance audit")
+	mDiag := mMaatTop.AddSubMenuItem("System Diagnostics", "Run sirsi diagnose — full health checks")
+	wire(mMaat, func() { runService(mMaat, "Quality Audit", sirsiBin, "maat audit", nStore, rrMaat) })
+	wire(mDiag, func() { runService(mDiag, "System Diagnostics", sirsiBin, "diagnose", nStore, rrMaat) })
+
+	// ── 𓁢 Thoth — Memory ─────────────────────────────────────────────────────
+	mThothTop := systray.AddMenuItem("𓁢 Thoth — Memory", "Project memory + knowledge ingestion")
+	rrThoth := newDeityResult(mThothTop)
+	mThoth := mThothTop.AddSubMenuItem("Sync Memory", "Sync project memory from source + git history")
+	mSeshat := mThothTop.AddSubMenuItem("Ingest Knowledge", "Ingest configured knowledge sources")
+	wire(mThoth, func() { runService(mThoth, "Sync Memory", sirsiBin, "thoth sync", nStore, rrThoth) })
+	wire(mSeshat, func() { runService(mSeshat, "Ingest Knowledge", sirsiBin, "seshat ingest", nStore, rrThoth) })
+
+	// ── 𓇶 Ra — Agent Fleet ───────────────────────────────────────────────────
+	// Deploy/Kill spawn/terminate windows → Terminal path (Rule A1: no silent
+	// one-click fleet mutation). Collect is read-only → in-place.
+	mRa := systray.AddMenuItem("𓇶 Ra — Agent Fleet", "AI agent orchestration")
+	rrRa := newDeityResult(mRa)
+	mRaDeploy := mRa.AddSubMenuItem("Deploy All Scopes", "sirsi ra deploy")
+	mRaKill := mRa.AddSubMenuItem("Kill All Windows", "sirsi ra kill")
+	mRaCollect := mRa.AddSubMenuItem("Collect Results", "sirsi ra collect")
+	raScopes := make([]*systray.MenuItem, 4)
+	for i := range raScopes {
+		raScopes[i] = mRa.AddSubMenuItem("  —", "Click to view scope status")
+		raScopes[i].Disable()
+	}
+	wire(mRaDeploy, func() { spawnTUIWithCommand("ra deploy") })
+	wire(mRaKill, func() { spawnTUIWithCommand("ra kill") })
+	wire(mRaCollect, func() { runService(mRaCollect, "Collect Results", sirsiBin, "ra collect", nStore, rrRa) })
+
+	// ── 𓋹 Insight — Hardware / Risk / Consistency ────────────────────────────
+	mInsight := systray.AddMenuItem("𓋹 Insight", "Hardware, uncommitted risk, and consistency")
+	rrInsight := newDeityResult(mInsight)
+	mSeba := mInsight.AddSubMenuItem("Hardware Info", "CPU, GPU, and accelerator summary")
+	mOsiris := mInsight.AddSubMenuItem("Uncommitted Risk", "Assess risk from uncommitted work")
+	mNet := mInsight.AddSubMenuItem("Consistency Check", "Validate cross-module consistency")
+	wire(mSeba, func() { runService(mSeba, "Hardware Info", sirsiBin, "seba hardware", nStore, rrInsight) })
+	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
+	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
+
+	systray.AddSeparator()
+
+	// ── Recent Activity — every result, clickable to read the full detail ────
+	mRecent := systray.AddMenuItem("Recent Activity", "Last 5 results — click any to read the full discovery")
+	recentItems := make([]*systray.MenuItem, 5)
+	for i := range recentItems {
+		recentItems[i] = mRecent.AddSubMenuItem("  —", "")
+		recentItems[i].Disable()
+		idx := i
+		wire(recentItems[idx], func() { openRecentDetail(idx) })
+	}
+
+	systray.AddSeparator()
+	mQuit := systray.AddMenuItem("Quit Sirsi", "Exit menubar app")
+	wire(mQuit, quit)
+
+	// ── Background refresh: stats, Ra scopes, recent activity, ops, FDA ──────
 	go func() {
 		for {
 			snap := CollectStats(cfg)
@@ -241,13 +261,12 @@ func onReady() {
 			mStats.SetTitle(lines[0])
 			mStats.SetTooltip(snap.StatusLine())
 
-			// Feed RAM pressure into live state for title updates
 			liveState.mu.Lock()
 			liveState.ramPressure = snap.RAMPressure
 			liveState.mu.Unlock()
 			liveState.updateTitle()
 
-			// Update Ra scope items.
+			// Ra scope rows.
 			for i, item := range raScopes {
 				if i < len(snap.RaScopes) {
 					s := snap.RaScopes[i]
@@ -257,27 +276,29 @@ func onReady() {
 				}
 			}
 
-			// Update recent activity items.
+			// Recent Activity rows + the click-detail snapshot (drill-in).
 			if nStore != nil {
 				recent, _ := nStore.Recent(5)
+				setRecentSnap(recent)
 				for i, item := range recentItems {
 					if i < len(recent) {
 						r := recent[i]
 						icon := notify.SeverityIcon(r.Severity)
 						item.SetTitle(fmt.Sprintf("  %s %s — %s", icon, r.Source, r.Summary))
+						item.SetTooltip("Click to read the full detail")
+						item.Enable()
 					} else {
 						item.SetTitle("  —")
+						item.Disable()
 					}
 				}
 			}
 
-			// Re-check disk access — reflect the all/some/none tier, drop it at full.
+			// Disk-access tier (all/some/none) — drops to hidden at full access.
 			applyFDAState(mFDA)
 
-			// Update Horus ops read-model rows (ADR-026 step 4b). Reduce the same
-			// NodeStatus the in-process dashboard serves into the bounded summary,
-			// then render via the unit-tested opsLeadRow/opsAgentRows. Best-effort:
-			// an unresolved root / collect error leaves the prior titles in place.
+			// Horus ops read-model rows (ADR-026 4b). Best-effort: an unresolved
+			// root / collect error leaves the prior titles in place.
 			if ns, err := menubarNodeStatus(); err == nil && ns != nil {
 				sum := dashboard.Summarize(ns, opsRowCount)
 				mOpsHeader.SetTitle(opsLeadRow(sum))
@@ -294,74 +315,6 @@ func onReady() {
 			time.Sleep(cfg.Interval)
 		}
 	}()
-
-	// ── Event loop — all user actions route through the TUI (ADR-016) ──
-	for {
-		select {
-		case <-mDashboard.ClickedCh:
-			spawnTUIWindow()
-		case <-mFDA.ClickedCh:
-			openFullDiskAccessPane(nStore)
-		case <-mOpsHeader.ClickedCh:
-			spawnTUIWindow() // ADR-026 4b: lead ops row opens the full dashboard/TUI
-		case <-mStats.ClickedCh:
-			spawnTUIWithCommand("diagnose")
-		case <-mRaHeader.ClickedCh:
-			spawnTUIWithCommand("ra status")
-		case <-mRaDeploy.ClickedCh:
-			spawnTUIWithCommand("ra deploy")
-		case <-mRaKill.ClickedCh:
-			spawnTUIWithCommand("ra kill")
-		case <-mRaCollect.ClickedCh:
-			runActionInPlace(mRaCollect, "  Collect Results", sirsiBin, "ra collect", nStore)
-		case <-raScopes[0].ClickedCh:
-			spawnTUIWithCommand("ra status")
-		case <-raScopes[1].ClickedCh:
-			spawnTUIWithCommand("ra status")
-		case <-raScopes[2].ClickedCh:
-			spawnTUIWithCommand("ra status")
-		case <-raScopes[3].ClickedCh:
-			spawnTUIWithCommand("ra status")
-		// Anubis — scan/ghosts are read-only → execute in place; clean DELETES →
-		// keep the Terminal/confirm path (Rule A1: no one-click destruction).
-		case <-mScan.ClickedCh:
-			runActionInPlace(mScan, "Scan for Waste", sirsiBin, "scan", nStore)
-		case <-mJudge.ClickedCh:
-			// In-app clean (Rule A1): preview (dry-run) → arms the confirm item.
-			runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore)
-		case <-mCleanConfirm.ClickedCh:
-			// Second click = the [y/N] yes → apply (trash-first).
-			runCleanApply(mCleanConfirm, sirsiBin, nStore)
-		case <-mKa.ClickedCh:
-			runActionInPlace(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore)
-		case <-mMaat.ClickedCh:
-			runActionInPlace(mMaat, "Quality Audit", sirsiBin, "maat audit", nStore)
-		// Isis
-		case <-mGuard.ClickedCh:
-			spawnTUIWithCommand("guard")
-		// Additional deities — safe (non-destructive) actions execute in place
-		// and report into Recent Activity; no Terminal window (user complaint fix).
-		case <-mThoth.ClickedCh:
-			runActionInPlace(mThoth, "Sync Memory", sirsiBin, "thoth sync", nStore)
-		case <-mSeshat.ClickedCh:
-			runActionInPlace(mSeshat, "Ingest Knowledge", sirsiBin, "seshat ingest", nStore)
-		case <-mSeba.ClickedCh:
-			runActionInPlace(mSeba, "Hardware Info", sirsiBin, "seba hardware", nStore)
-		case <-mOsiris.ClickedCh:
-			runActionInPlace(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore)
-		case <-mNet.ClickedCh:
-			runActionInPlace(mNet, "Consistency Check", sirsiBin, "net align", nStore)
-		case <-mQuit.ClickedCh:
-			cancel()
-			closeMenubarThread(menubarRouterRoot, menubarThreadID)
-			_ = dashSrv.Stop()
-			if nStore != nil {
-				nStore.Close()
-			}
-			systray.Quit()
-			return
-		}
-	}
 }
 
 func onExit() {}
