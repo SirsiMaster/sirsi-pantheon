@@ -62,16 +62,20 @@ func runFix(cmd *cobra.Command, args []string) error {
 			output.Info("⛏  Reclaimable: %d items (%s) — caches, logs, crash reports, old installers",
 				len(reclaim), jackal.FormatSize(bytes))
 			if fixYes || confirmFix(fmt.Sprintf("Reclaim %s now (moved to Trash, recoverable)?", jackal.FormatSize(bytes))) {
-				res, cerr := engine.Clean(ctx, reclaim, jackal.CleanOptions{DryRun: false, Confirm: true, UseTrash: true})
-				switch {
-				case cerr != nil:
-					output.Error("Cleanup failed: %v", cerr)
-				default:
-					output.Success("Reclaimed %s — %d items moved to Trash.", jackal.FormatSize(res.BytesFreed), res.Cleaned)
-					if res.Skipped > 0 {
-						output.Warn("Skipped %d protected/locked items.", res.Skipped)
+				if cleanupApplyPaused() {
+					output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
+				} else {
+					res, cerr := engine.Clean(ctx, reclaim, jackal.CleanOptions{DryRun: false, Confirm: true, UseTrash: true})
+					switch {
+					case cerr != nil:
+						output.Error("Cleanup failed: %v", cerr)
+					default:
+						output.Success("Reclaimed %s — %d items moved to Trash.", jackal.FormatSize(res.BytesFreed), res.Cleaned)
+						if res.Skipped > 0 {
+							output.Warn("Skipped %d protected/locked items.", res.Skipped)
+						}
+						resolved++
 					}
-					resolved++
 				}
 			}
 		}
@@ -140,13 +144,7 @@ func fixMemory(msg string) bool {
 	if preview, perr := guard.Slay(guard.SlayAll, true); perr == nil && preview != nil && preview.Killed > 0 {
 		output.Info("     %d orphaned process(es) (~%s) are safe to kill (leftover, protected procs excluded).",
 			preview.Killed, guard.FormatBytes(audit.OrphanRSS))
-		if fixYes || confirmFix("Kill the orphaned processes to free memory?") {
-			if res, serr := guard.Slay(guard.SlayAll, false); serr == nil && res != nil {
-				output.Success("     Freed memory — killed %d orphaned process(es).", res.Killed)
-				return true
-			}
-			output.Error("     Could not kill the orphaned processes.")
-		}
+		output.Dim("     → automatic process killing is paused until the orphan filter is narrowed to PPID/stale-parent evidence")
 		return false
 	}
 	output.Dim("     → no orphaned processes; quit the largest app above that you're not using")
