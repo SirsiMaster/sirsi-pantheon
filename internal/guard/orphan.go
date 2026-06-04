@@ -21,7 +21,49 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
+
+// OrphanKillResult records the outcome of KillTrueOrphans.
+type OrphanKillResult struct {
+	Killed  []OrphanProcess // terminated (or would-be, in dry-run)
+	Skipped []OrphanProcess // not killed: not a true orphan, or protected
+}
+
+// orphanKillFn is the injectable process-terminator (A16/A21-safe: replaced only
+// in tests, never concurrently with a live kill).
+var orphanKillFn = func(pid int) error { return platform.Current().Kill(pid) }
+
+// KillTrueOrphans terminates ONLY truly-orphaned processes — IsOrphaned (PPID<=1,
+// parent dead, adopted by launchd) — from an OrphanReport. It NEVER kills a
+// stale-parent orphan (parent still alive) and reuses the slayer's protected
+// filter. This is the narrow, safe kill path `sirsi fix` needs: a process that
+// is actively parented (a running Vite/gopls/docker/electron) is IsOrphaned=false
+// and can never enter the kill set. dryRun returns the would-kill set without
+// signaling.
+func KillTrueOrphans(report *OrphanReport, dryRun bool) *OrphanKillResult {
+	res := &OrphanKillResult{}
+	if report == nil {
+		return res
+	}
+	p := platform.Current()
+	for _, o := range report.Orphans {
+		// Safety gate: PPID<=1 ONLY, and never a protected process.
+		if !o.IsOrphaned || isProtectedProcessWith(p, o.ProcessInfo) {
+			res.Skipped = append(res.Skipped, o)
+			continue
+		}
+		if !dryRun {
+			if err := orphanKillFn(o.PID); err != nil {
+				res.Skipped = append(res.Skipped, o)
+				continue
+			}
+		}
+		res.Killed = append(res.Killed, o)
+	}
+	return res
+}
 
 // OrphanPattern defines a known orphan-producing tool.
 type OrphanPattern struct {

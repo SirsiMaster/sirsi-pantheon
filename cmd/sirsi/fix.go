@@ -128,27 +128,54 @@ func runFix(cmd *cobra.Command, args []string) error {
 // apps are named, not killed (quitting your browser is your call, A1/A5).
 func fixMemory(msg string) bool {
 	output.Warn("🧠 %s", msg)
-	audit, err := guard.Audit()
-	if err != nil || audit == nil {
-		output.Dim("     → run `sirsi monitor` for live memory pressure")
-		return false
-	}
-	output.Info("     Top memory consumers:")
-	for i, g := range audit.Groups {
-		if i >= 3 {
-			break
+
+	// Context: name the actual hogs so the user knows what's eating RAM.
+	if audit, err := guard.Audit(); err == nil && audit != nil {
+		output.Info("     Top memory consumers:")
+		for i, g := range audit.Groups {
+			if i >= 3 {
+				break
+			}
+			output.Dim("       %d. %s — %s (%d proc)", i+1, g.Name, guard.FormatBytes(g.TotalRSS), g.TotalCount)
 		}
-		output.Dim("       %d. %s — %s (%d proc)", i+1, g.Name, guard.FormatBytes(g.TotalRSS), g.TotalCount)
 	}
-	// Free the safe part: orphaned dev processes. Preview, then confirm.
-	if preview, perr := guard.Slay(guard.SlayAll, true); perr == nil && preview != nil && preview.Killed > 0 {
-		output.Info("     %d orphaned process(es) (~%s) are safe to kill (leftover, protected procs excluded).",
-			preview.Killed, guard.FormatBytes(audit.OrphanRSS))
-		output.Dim("     → automatic process killing is paused until the orphan filter is narrowed to PPID/stale-parent evidence")
+
+	// The SAFE executable fix: terminate only TRUE orphans (PPID<=1, parent dead)
+	// from the PPID-aware detector — never the group table, never active parented
+	// tools. Stale-parent orphans are listed as advisory, not auto-killed.
+	report, err := guard.ScanOrphans()
+	if err != nil || report == nil {
+		output.Dim("     → quit the largest app above that you're not using to free RAM")
 		return false
 	}
-	output.Dim("     → no orphaned processes; quit the largest app above that you're not using")
-	return false
+	var trueOrphans, stale []guard.OrphanProcess
+	for _, o := range report.Orphans {
+		if o.IsOrphaned {
+			trueOrphans = append(trueOrphans, o)
+		} else if o.IsStale {
+			stale = append(stale, o)
+		}
+	}
+	if len(stale) > 0 {
+		output.Dim("     %d stale-parent process(es) — review manually (`sirsi guard --orphans`); not auto-killed.", len(stale))
+	}
+	if len(trueOrphans) == 0 {
+		output.Dim("     → no truly-orphaned processes; quit the largest app above you're not using")
+		return false
+	}
+	output.Info("     %d truly-orphaned process(es) (parent dead, PPID 1) — safe to terminate:", len(trueOrphans))
+	for _, o := range trueOrphans {
+		output.Dim("       PID %d  %s  (was %s/%d · %s · %s)", o.PID, o.Name, o.ParentName, o.ParentPID, guard.FormatBytes(o.RSS), o.RunningFor)
+	}
+	// Process kills ALWAYS require explicit confirmation — `--yes` auto-confirms
+	// only disk reclaim, NEVER a kill (codex A1/A12 requirement).
+	if !confirmFix(fmt.Sprintf("Terminate these %d orphaned process(es)?", len(trueOrphans))) {
+		output.Dim("     → left running")
+		return false
+	}
+	res := guard.KillTrueOrphans(report, false)
+	output.Success("     Terminated %d orphaned process(es); %d skipped (protected).", len(res.Killed), len(res.Skipped))
+	return len(res.Killed) > 0
 }
 
 // fixPanic answers a kernel-panic finding with the SPECIFIC remediation path —
