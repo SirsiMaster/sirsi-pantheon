@@ -85,10 +85,17 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 	}()
 }
 
-// runCleanApply executes the real clean (`anubis clean --confirm`), feeding "y"
-// to the interactive [y/N] prompt — the user's click on the (armed, amount-
-// labeled) confirm item IS that yes. Trash-first (recoverable), protected paths
-// enforced in the engine. Second half of the two-click flow.
+// runCleanApply executes the real clean feeding "y" to the interactive [y/N]
+// prompt — the user's click on the (armed, amount-labeled) confirm item IS that
+// yes. Trash-first (recoverable), protected paths enforced in the engine. Second
+// half of the two-click flow.
+//
+// Uses `anubis clean --dry-run=false` (NOT `--confirm`): `--confirm` does double
+// duty in anubis.go — it both applies AND expands the target from safe to
+// safe+caution, so confirming would move MORE than the safe-only preview
+// (`anubis clean`) showed. `--dry-run=false` applies the SAME safe-only set the
+// preview displayed — the amount shown is exactly the amount trashed. (Caution
+// items need their own explicit, separately-previewed flow.)
 func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Store) {
 	if confirm == nil || sirsiBin == "" {
 		return
@@ -98,7 +105,7 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--confirm")
+		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--dry-run=false")
 		cmd.Stdin = strings.NewReader("y\n") // the confirm-click is the [y/N] yes
 		out, err := cmd.CombinedOutput()
 		text := stripANSI(string(out))
@@ -112,7 +119,7 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		if summary == "" {
 			summary = "cleaned — items moved to Trash"
 		}
-		recordNotify(store, "Clean Waste", "anubis clean --confirm", sev, summary, text)
+		recordNotify(store, "Clean Waste", "anubis clean --dry-run=false (safe-only)", sev, summary, text)
 		confirm.Enable()
 		confirm.Hide()
 	}()
