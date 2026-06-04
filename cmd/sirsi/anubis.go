@@ -991,7 +991,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		if !drift.Healthy {
 			f.Severity = guard.SeverityWarn
 			f.Message = "Sirsi binary drift detected"
-			f.Detail = drift.Summary() + " → run `sirsi self-update` (Homebrew: `brew upgrade sirsi-pantheon`)"
+			f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
 		}
 		report.Findings = append(report.Findings, f)
 	}
@@ -1026,13 +1026,63 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		result.Priority = append(result.Priority, "No immediate action required.")
 	}
 
-	if report.Score < 75 {
-		result.AddNextAction("sirsi diagnose --json", "Review the full machine-readable diagnostic before taking action.")
-	} else {
+	// Recommended action = a concrete, runnable remediation for the WORST actual
+	// finding — not "go read the JSON". The brief surfaces NextActions[0], so add
+	// Critical findings first, then Warn; dedup commands. Every command is
+	// verified to exist (A23: never recommend a broken command).
+	// Order remediations by how much they RESOLVE, not by finding order — so the
+	// headline (NextActions[0]) is the most useful action. clean/monitor actually
+	// fix things; `diagnose --json` only inspects (last resort, e.g. kernel panics).
+	rank := map[string]int{
+		"sirsi clean":                 0,
+		"sirsi monitor":               1,
+		"brew upgrade sirsi-pantheon": 2,
+		"sirsi diagnose --json":       3,
+	}
+	type remedy struct{ cmd, desc string }
+	var rems []remedy
+	seen := map[string]bool{}
+	for _, f := range report.Findings {
+		if f.Severity < guard.SeverityWarn {
+			continue
+		}
+		cmd, desc := remediationFor(f.Check)
+		if cmd == "" || seen[cmd] {
+			continue
+		}
+		seen[cmd] = true
+		rems = append(rems, remedy{cmd, desc})
+	}
+	sort.SliceStable(rems, func(i, j int) bool { return rank[rems[i].cmd] < rank[rems[j].cmd] })
+	for _, r := range rems {
+		result.AddNextAction(r.cmd, r.desc)
+	}
+	if len(result.NextActions) == 0 {
 		result.AddNextAction("sirsi scan", "Run a workstation hygiene scan when ready.")
 	}
 	result.Render()
 	return nil
+}
+
+// remediationFor maps a diagnostic check to a concrete, runnable remediation
+// command + description. Empty command = no automatic remediation (skipped).
+// Commands MUST exist (verified: clean, monitor, diagnose, scan, brew upgrade).
+func remediationFor(check string) (string, string) {
+	switch {
+	case strings.Contains(check, "App Crash"), strings.Contains(check, "Crash Report"):
+		return "sirsi clean", "Clear the accumulated crash reports and reclaim their disk space"
+	case strings.Contains(check, "Jetsam"), strings.Contains(check, "RAM"),
+		strings.Contains(check, "Swap"), strings.Contains(check, "Memory"):
+		return "sirsi monitor", "Watch the processes driving memory pressure, then quit the worst offenders"
+	case strings.Contains(check, "Disk"):
+		return "sirsi clean", "Reclaim disk space from caches, logs, and old installers"
+	case strings.Contains(check, "Kernel Panic"):
+		return "sirsi diagnose --json", "Inspect the panic reports for the faulting driver or hardware"
+	case strings.Contains(check, "drift"):
+		return "brew upgrade sirsi-pantheon", "Update the Sirsi binaries to clear version drift"
+	default:
+		return "", ""
+	}
 }
 
 func doctorStatus(score int) string {
