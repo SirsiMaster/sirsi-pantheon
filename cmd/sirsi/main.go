@@ -14,6 +14,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
@@ -127,7 +128,7 @@ var rootCmd = &cobra.Command{
 
 		// First-run FDA check for scan-related commands on macOS.
 		// Warns once if Full Disk Access is not granted.
-		if !JsonOutput && !quietMode && needsFDA(cmd.Name()) && !checkFullDiskAccess() {
+		if !JsonOutput && !quietMode && setup.NeedsFDA(cmd.Name()) && !setup.FullDiskAccessGranted() {
 			fmt.Fprintf(os.Stderr, "\n  ⚠ Full Disk Access not granted — some directories may be inaccessible.\n")
 			fmt.Fprintf(os.Stderr, "    Run 'sirsi permissions' to fix this once.\n\n")
 		}
