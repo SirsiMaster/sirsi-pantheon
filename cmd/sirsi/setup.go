@@ -166,7 +166,6 @@ type setupJSONReport struct {
 	MissingOptional int             `json:"missing_optional"`
 	FullDiskAccess  bool            `json:"full_disk_access"`
 	BinaryPath      string          `json:"binary_path"`
-	AgentsAdded     []string        `json:"agents_added"`
 	Ready           bool            `json:"ready"`
 }
 
@@ -395,10 +394,6 @@ func runSetupJSON() error {
 				rep.MissingOptional++
 			}
 		}
-	}
-	// Agent wake is read-only-ish detection; surface failures as empty.
-	if added, err := setup.RegisterAgentWake(); err == nil {
-		rep.AgentsAdded = added
 	}
 	rep.Ready = rep.MissingRequired == 0 && rep.FullDiskAccess
 

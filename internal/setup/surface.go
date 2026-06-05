@@ -306,9 +306,7 @@ func LaunchSurface(s Surface) (string, error) {
 	case SurfaceCLI:
 		return "CLI is the active surface — run `sirsi <command>` directly.", nil
 	case SurfaceTUI:
-		// The live full-screen TUI app is ADR-020 gated; until it ships, the
-		// menubar config row and direct commands render the same data.
-		return "TUI selected. The full-screen app is in progress (ADR-020); use `sirsi status` for now.", nil
+		return "TUI is the active surface — run `sirsi tui` or `sirsi surface use tui`.", nil
 	case SurfaceIDE:
 		if IDERegistered() {
 			return "IDE surface active — Pantheon is reachable from your AI IDE via MCP.", nil
