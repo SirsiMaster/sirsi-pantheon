@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+### Added
+- **Resident Horus agent-router supervisor is live — one LaunchAgent replaces per-thread heartbeat glue** (claude-pantheon + codex-pantheon, 2026-06-05). Integrated the two parallel-built halves: codex's `sirsi horus supervise` engine (`internal/router/supervisor.go` — `SuperviseOnce`/`SuperviseReport`: inventory `agents.json`, refresh a resident CTR thread, heartbeat, pull local inboxes, classify each surface `wakeable`/`stale`/`blocked`/`manual`; read-model only, no dispatch/merge) wired into the CLI (`cmd/sirsi/horus.go` — `--once` + resident `--interval` loop, default 60s, SIGTERM/Interrupt + context cancel, thread reuse across ticks, JSON mode), guarded by claude's install side (`internal/setup.InstallSupervisor()` → LaunchAgent `ai.sirsi.horus.agent-router`, repo-root WorkingDirectory, installed by `sirsi setup` Step 4). One resident process now does inventory + register + 60s-heartbeat + inbox-pull for every locally-owned agent — the durable codex↔claude continuous-loop fix replacing the Monitor + `/tmp` shell loops (Rule A27). Verified live: `go build`/`vet`/tests green both packages; reloaded LaunchAgent runs (PID stable, empty stderr), registers its own thread, reports `status=active live=85 stale=1`, and surfaces each agent's pending inbox. No `/Applications` writes (Rule A19). Refs: PANTHEON_RULES.md A26/A27, ADR-024; Changelog: Unreleased.
+
+### Fixed
+- **Supervisor LaunchAgent exports an explicit PATH so the wakeability probe resolves agent CLIs** (claude-pantheon, 2026-06-05). On first go-live the supervisor classified every claude/codex agent as `blocked — claude not found in PATH`: launchd hands the LaunchAgent a minimal PATH, and `/bin/zsh -l` (non-interactive login) sources `.zprofile`/`.zshenv` but **not** `.zshrc`, where `~/.local/bin` (home of the agent CLIs) is added — so `exec.LookPath("claude")` failed and every surface was under-reported. Fix: emit an `EnvironmentVariables`/`PATH` key leading with the sirsi binary's own directory (agent CLIs install beside it), then `~/.local/bin`, package-manager prefixes, and system dirs (de-duped). Verified live: reloaded LaunchAgent flips claude-pantheon from `blocked` to `wakeable pending=5`. Refs: PANTHEON_RULES.md A27, A19; Changelog: Unreleased.
+
 ## [0.23.1-beta] — 2026-06-05
 
 ### Fixed

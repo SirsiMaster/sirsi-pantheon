@@ -5,89 +5,6 @@
 
 ---
 
-## Entry 021 — 2026-03-26 23:20 — "The Watchman: Crashpad Monitor Ships"
-
-**Context**: Session 23 continued. After crash forensics and Rule A19 hardening, the user approved building Option (b) — a hardening layer that monitors crash dumps rather than trying to fix upstream bugs.
-
-**What was built**: `extensions/vscode/src/crashpadMonitor.ts` (370+ lines). A module that polls `Crashpad/pending/*.dmp` every 5 minutes, tracks trends, detects Extension Host crashes via 8KB string extraction, and surfaces stability status in the status bar and a webview report.
-
-**Why this is novel**: No VS Code extension monitors Crashpad. Extensions monitor CPU, memory, network — nobody watches the crash dump directory. The Crashpad Monitor is a leading indicator: a growing dump count means your IDE is silently dying. We proved this in Session 22 when 34 pending dumps went unnoticed before the cascade.
-
-**Canonization sprint**: VERSION → 0.7.0-alpha. CHANGELOG, memory.yaml, journal, continuation prompt, build-log.html, README, case studies all updated. PANTHEON_RULES.md, CLAUDE.md, GEMINI.md synced.
-
-**Extension commands**: 8 → 10 (added `crashpadReport`). Modules: 6 → 7 (added `crashpadMonitor`).
-
-**Strategic note**: The user expressed frustration with Antigravity's bundled extension bugs and the realization that they can't be fixed safely. The Crashpad Monitor is the pragmatic answer — you can't fix the upstream bugs, but you can detect when they're about to crash your IDE. This positions Pantheon as the "IDE health insurance" that no other extension provides.
-
----
-
-## Entry 022 — 2026-03-27 00:19 — "Move the heavy work to the right silicon" (RECONSTRUCTED)
-
-> ⚠️ This entry was reconstructed from git commit `bc62920`, case study 013, and memory.yaml after the original conversation was lost due to an upstream Antigravity IDE bug (no `overview.txt` files are written — ever).
-
-**Context**: Session 25. The AG Monitor Pro extension (disabled in Session 22) used `js-tiktoken` for tokenization — a WASM BPE implementation inside the Extension Host. Its 1988ms profile time and 150MB RSS were symptoms of the same root cause: running ML primitives in the wrong runtime.
-
-**Decision**: Move tokenization out of Node.js entirely. Build a native Go BPE tokenizer (`FastTokenize`) that runs as a CPU fallback, then route to Apple Neural Engine via HAPI's `Accelerator` interface.
-
-**What was built**:
-- Extended `Accelerator` interface with `Tokenize(text string) ([]int, error)` — backends: AppleANE, Metal, CUDA, ROCm, CPU.
-- `FastTokenize` — pure Go BPE using a pre-compiled trie for sub-millisecond lookup.
-- `cmd/sirsi/sekhmet.go` — new `sirsi sekhmet --tokenize` command.
-- `cmd/sirsi/globals.go` — centralized `--json`, `--quiet`, `--verbose` flags (were duplicated per command).
-- `cmd/thoth/main.go` — standalone `thoth` binary entry point (the first step toward `thoth sync`).
-- `internal/thoth/sync.go` (171 lines) — auto-sync logic to keep memory.yaml current. **Started but not wired in.**
-
-**Result**: 215ms → 12ms (17.9x faster). 155MB → 4MB (97.4% less memory). Zero UI lag because the work runs on the NPU, not the CPU.
-
-**Lesson**: "Integrated Independence" isn't just an architecture buzzword — it means putting each primitive on the silicon that was designed for it. BPE hashing is embarrassingly parallel. The ANE exists for exactly this.
-
----
-
-## Entry 023 — 2026-03-27 02:31 — "The Triple Ankh Problem" (RECONSTRUCTED)
-
-> ⚠️ This entry was reconstructed from git commits `bc62920` and `6a322ca`, BUILD_LOG.md Session 26, and memory.yaml after the original conversation was lost.
-
-**Context**: Sessions 26-27. Three Pantheon processes were running simultaneously: the Menu Bar app, the Guard CLI daemon, and the MCP server. Each one displayed the ankh (𓃣) icon in the macOS menu bar. The user saw three identical tray icons. This is the "Triple Ankh" problem.
-
-**Root cause**: No process-level exclusion. Each entry point (`cmd/pantheon-menubar/main.go`, `cmd/pantheon/guard.go`, `cmd/pantheon/mcp.go`) started independently without checking if another Pantheon instance was already running.
-
-**Solution**: `internal/platform/singleton.go` (43 lines). Unix domain socket lock at `/tmp/pantheon.<id>.lock`. Each entry point calls `platform.TryLock()` on activation — if the lock is held, it exits cleanly instead of starting a second instance.
-
-**The LaunchAgent subtlety**: The original plist had `KeepAlive: true`, meaning macOS would respawn the process if TryLock caused a clean `exit(0)`. This created an infinite respawn loop — the OS kept launching the menu bar, TryLock kept killing it, the OS kept launching it again. Fix: `KeepAlive: { SuccessfulExit: false }` — only respawn on crash (non-zero exit), not on intentional shutdown.
-
-**Also built**:
-- `internal/brain/hapi_bridge.go` (50 lines) — routes inference to CoreML (ANE) or ONNX based on hardware detection.
-- `internal/guard/bridge.go` (213 lines) — rewrote the Antigravity IPC bridge.
-- `detect_hardware` MCP tool — AI assistants can now query the machine's accelerator profile.
-- Sekhmet watchdog: 1.5GB memory governance threshold integrated into `watchdog.go`.
-
-**Lesson**: Singleton enforcement must happen at the OS level, not the application level. Mutexes don't survive process boundaries. Unix domain sockets do.
-
----
-
-## Entry 024 — 2026-03-27 11:14 — "The conversation logs were never there"
-
-**Context**: Session 28 (this session). User returned after 3 sessions (25-27) with a different agent. Found 4 uncommitted test files. Asked for full recovery.
-
-**Discovery**: While reconstructing the lost sessions, I checked every single conversation directory in `~/.gemini/antigravity/brain/` (90+ conversations). **Not a single one has an `overview.txt` file.** The system prompt claims conversation logs are stored at `.system_generated/logs/overview.txt` — they never were.
-
-**What this means**: Antigravity IDE's conversation persistence is architecturally broken. The browser scratchpads, screenshots, click feedback, and artifacts persist — but the actual conversation transcript is never written to disk. Every "lost conversation" since the project's inception has been lost for the same reason.
-
-**What survived and what didn't**:
-- Git: 100%. Every line of code from all 3 sessions.
-- Thoth memory.yaml: Summaries for all 3 sessions.
-- CHANGELOG + BUILD_LOG.md: Summaries for Sessions 25-26.
-- Case Study 013: Full documentation for Session 25.
-- Test Performance Audit artifact: Full documentation for Session 27.
-- Journal entries: **Missing.** Entries 022-023 were never written.
-- Conversation transcripts: **Missing.** Never existed.
-
-**Strategic implication**: Pantheon's multi-source-of-truth architecture (Git + Thoth + Ma'at + Horus + Case Studies) is the only reason these sessions are recoverable at all. The IDE's own persistence layer failed silently. This validates the "forensics-first" philosophy from Case Study 011 — if you can't trust the tool to save your work, you build your own safety net.
-
-**Action**: The `internal/thoth/sync.go` started in Session 25 needs to be completed and wired in. Thoth should auto-generate journal entries from git diffs at the end of every session. The journal should never depend on the IDE's conversation persistence again.
-
----
-
 ## Entry 025 — 2026-03-27 12:15 — "The Race Condition That Wouldn't Die"
 
 **Context**: Session 29. P0 was CI green. Lint was the easy part — 22 errors across 10 files, all mechanical fixes. The real boss fight was a data race in the Guard module that survived 4 consecutive fix attempts.
@@ -726,3 +643,133 @@ User corrected priority: I was polishing the install/release wrapper around surf
 - **Mac GUI (`sirsi-gui`, commit d505c7b):** the ADR-015 "Ferrari" existed only on paper. Built Go-native (CDD #2: Go HTTP + embedded HTML) — webview_go/WKWebView window over the existing internal/dashboard server; reuses a running menubar dashboard on the fixed port. darwin build file + !darwin stub keeps Linux CI green. Builds: 17MB arm64 Mach-O; linux stub cross-compiles.
 
 All four surfaces now build successfully: CLI (sirsi), TUI (sirsi tui), Menubar (sirsi-menubar), Mac GUI (sirsi-gui) — all faces over the same engine, switchable via `sirsi surface use`. Branch feat/setup-wizard, PR #2. Next iterations (follow-up, not blockers): wire live data into TUI views (currently fixtures); ship sirsi-gui in the DMG; richer GUI chrome. Then the install/release wrapper (which is already built) actually has four real things to install. codex review owed.
+
+## Entry 041 — 2026-06-05 14:27 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e990a-1d54-76c1-856d-495983cbe571","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-05T18:27:37Z
+- last Claude read: 2026-06-05T18:27:37Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 042 — 2026-06-05 14:55 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e9917-a605-7ae0-bc42-13da57ae5a60","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-05T18:50:23Z
+- last Claude read: 2026-06-05T18:48:05Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 043 — 2026-06-05 16:12 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e9968-8236-7091-be92-2b34dfae01e5","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-05T20:12:32Z
+- last Claude read: 2026-06-05T20:12:32Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 044 — 2026-06-05 17:41 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Session compact handoff for codex-pantheon, 2026-06-05.
+- Router/automation state:
+- Codex app automation installed at `/Users/thekryptodragon/.codex/automations/ctr-thread-wake-pantheon/automation.toml`.
+- Automation target app conversation id: `019e8b57-8bb4-7780-ae46-9055105579f9`.
+- CTR thread id: `thr-4f39cd0e9caf5de0`.
+- Agent id: `codex-pantheon`.
+- Automation cadence: every 2 minutes.
+- Temporary LaunchAgent liveness bridge also exists at `~/Library/LaunchAgents/ai.sirsi.codex-pantheon.heartbeat.plist`, but the product target is one Horus supervisor, not per-thread glue.
+- Important correction:
+- The LaunchAgent only heartbeats/logs/pulls. It did not autonomously make Codex act.
+- The Codex app automation is the closer equivalent to Claude loop behavior: scheduled wakeups, not a native Claude-style `/loop`.
+- Completed this session:
+- Sent Claude Pantheon product mandate for Ra/Horus agent-router supervisor.
+- Sent superseding source-audit response to Claude Pantheon; earlier `201616` item was shell-quoted badly and should be ignored in favor of `201659`.
+- Reviewed and blessed Claude's clean-safety evidence after source review and focused tests.
+- Closed stale Codex router cleanup item and clean FYI.
+- Focused verification passed: `go test ./cmd/sirsi ./internal/cleaner ./internal/platform ./internal/jackal`.
+- Open/new work:
+- New router item addressed to `codex-pantheon`: `20260605-213212-claude-pantheon-codex-pantheon-green-light-build-sirsi-horus-supervise-now-i-build-the-setu`.
+- Title: `GREEN LIGHT — build sirsi horus supervise NOW; I build the setup-install side in parallel`.
+- Claude asks Codex to build `sirsi horus supervise`: resident loop that inventories local agents from `agents.json`, registers/refreshes live threads, heartbeats every 60s, pulls Ra inboxes for locally-owned agents, and marks surfaces wakeable/stale/blocked/manual honestly.
+- Claude will build setup/install side in parallel: `internal/setup.InstallSupervisor()`, LaunchAgent `ai.sirsi.horus.agent-router`, setup step, node-status supervisor health.
+- Agreed contract: command `sirsi horus supervise`; LaunchAgent label `ai.sirsi.horus.agent-router`; plist path `~/Library/LaunchAgents/ai.sirsi.horus.agent-router.plist`; runs from repo root; no `/Applications` writes; stale daemon language remains dead.
+- Next action after compact:
+- 1. Open the green-light router item again if needed.
+- 2. Read `cmd/sirsi/horus.go`, `cmd/sirsi/routernodestatus.go`, `internal/router/*`, especially thread registry, watcher spec, node status, and service/supervisor helpers.
+- 3. Implement `sirsi horus supervise` with `--once` and foreground loop behavior.
+- 4. Keep edits scoped; do not collide with Claude's setup/install side.
+- 5. Verify with focused Go tests and route implementation result back to `claude-pantheon`.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-05T21:41:23Z
+- last Claude read: 2026-06-05T21:41:23Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## 2026-06-05 — Resident Horus agent-router supervisor: integrated + LIVE
+
+Resumed "Pantheon CLI shippability" on branch `feat/horus-supervisor-install` (69a4577).
+Goal: integrate the two parallel-built supervisor halves and take the resident
+supervisor live. Done.
+
+- **Integration**: codex's `sirsi horus supervise` engine arrived as untracked
+  files in the shared working tree (`internal/router/supervisor.go` +
+  `supervisor_test.go`) plus uncommitted `cmd/sirsi/horus.go` wiring. No PR — the
+  files were dropped in directly. My install side (`internal/setup/supervisor.go`,
+  `surface.go`) was already committed at 69a4577, with a guard that skips the
+  LaunchAgent until `sirsi horus supervise --help` succeeds (menubar exit-127
+  lesson). Both halves co-resident → build/vet clean, supervisor tests green.
+  Committed engine + wiring scoped (3 files) as `8997d6d`, co-authored to codex.
+- **Go-live bug #1 (AMFI/codesign)**: `cp`-over-existing the fresh binary onto
+  `~/.local/bin/sirsi` → SIGKILL 137 on exec (byte-identical to a working /tmp
+  copy). Cause: kernel cached a code-directory hash for the inode; new bytes fail
+  validation. Fix: rm (new inode) -> cp -> `codesign --force --sign -`. This is the
+  killed-on-exec class (reference_a27_watcher_binary_drift) and matters because
+  launchd re-execs the supervisor binary at every login.
+- **Go-live bug #2 (PATH)**: first live run marked every claude/codex agent
+  `blocked — claude not found in PATH`. launchd's minimal PATH + `/bin/zsh -l`
+  (non-interactive login skips .zshrc where ~/.local/bin lives) -> exec.LookPath
+  fails. Fixed the plist to export explicit EnvironmentVariables/PATH leading with
+  the binary's own dir. Committed as `43f625f`; added supervisorPath() + tests.
+  Reload -> claude-pantheon flips to `wakeable pending=5`.
+- **Result**: `sirsi setup` Step 4 installs+loads `ai.sirsi.horus.agent-router`
+  (repo-root cwd, KeepAlive, Background, no /Applications writes). Verified running:
+  registers its own thread, status=active live=85 stale=1, surfaces each agent's
+  inbox. One resident process replaces per-thread Monitor + /tmp glue.
+- **Honesty (re status-correction 20260605-191735)**: this completes codex's
+  "Monday gap #1" (productize supervisor) ONLY. The broader Monday-ready package
+  audit (footprint, dead code, docs drift, clean-safety evidence) remains OPEN —
+  codex's lane. Not claiming package-audit done.
+- SuperviseOnce is read-model: it does NOT auto-wake or deliver to a live claude
+  session, and it flags my own work thread stale when I lapse — honest by design.
+  Refining wake-delegation is codex's productization lane.
