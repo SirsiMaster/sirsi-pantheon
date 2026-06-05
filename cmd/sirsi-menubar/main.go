@@ -98,6 +98,29 @@ func applyFDAState(item *systray.MenuItem) {
 	}
 }
 
+// maybeFirstRunSetup launches the setup wizard the first time the menubar runs
+// on a machine, so a DMG/GUI install drives the same surface + permission
+// wizard as `sirsi setup` on the CLI. A marker file makes it strictly one-time;
+// the menubar's Configure row re-runs setup on demand thereafter.
+func maybeFirstRunSetup() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	marker := filepath.Join(home, ".config", "sirsi", ".setup-launched")
+	if _, err := os.Stat(marker); err == nil {
+		return // already run once
+	}
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		return
+	}
+	// Write the marker first so a failed/closed wizard never loops the prompt.
+	if err := os.WriteFile(marker, []byte("1\n"), 0o644); err != nil {
+		return
+	}
+	spawnTUIWithCommand("setup")
+}
+
 func onReady() {
 	systray.SetTemplateIcon(AnkhIcon, AnkhIcon)
 	systray.SetTitle("Sirsi")
@@ -105,6 +128,10 @@ func onReady() {
 
 	sirsiBin := findSirsiBinary()
 	nStore, _ := notify.Open(notify.DefaultPath())
+
+	// First launch after a DMG/GUI install drives the same surface + permission
+	// wizard as the CLI, so "the GUI install implements this" is literal.
+	maybeFirstRunSetup()
 
 	// ── Infrastructure: dashboard server, guard, periodic scan, router ──────
 	// Set up BEFORE building the menu so the wired click handlers (closures

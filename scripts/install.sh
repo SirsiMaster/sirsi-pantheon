@@ -100,13 +100,31 @@ else
     exit 1
 fi
 
-# Menubar is installed by default on macOS. The release archive ships
-# sirsi-menubar alongside sirsi; place it on PATH so `sirsi setup` can load
-# the LaunchAgent. (If absent — e.g. older release — the wizard reports it.)
-if [ "$OS" = "darwin" ] && [ -f "${TMPDIR}/sirsi-menubar" ]; then
-    cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
-    chmod +x "${INSTALL_DIR}/sirsi-menubar"
-    echo -e "${DIM}  Installed sirsi-menubar${NC}"
+# Menubar is installed by default on macOS, so `sirsi setup` can load the
+# LaunchAgent. The CGO/Cocoa menubar can't ride in the cross-compiled
+# goreleaser archive, so it's published as a standalone darwin/arm64 asset
+# (Developer-ID signed; Intel runs it via Rosetta). Prefer the archive copy if
+# present, else fetch the standalone asset. Failure here is non-fatal — the
+# wizard reports a missing menubar rather than aborting the whole install.
+if [ "$OS" = "darwin" ]; then
+    if [ -f "${TMPDIR}/sirsi-menubar" ]; then
+        cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
+        chmod +x "${INSTALL_DIR}/sirsi-menubar"
+        echo -e "${DIM}  Installed sirsi-menubar${NC}"
+    else
+        MB_ARCHIVE="sirsi-menubar_${LATEST#v}_darwin_arm64.tar.gz"
+        MB_URL="https://github.com/${REPO}/releases/download/${LATEST}/${MB_ARCHIVE}"
+        echo -e "${DIM}  Fetching menubar (${MB_ARCHIVE})...${NC}"
+        if curl -fsSL -o "${TMPDIR}/${MB_ARCHIVE}" "$MB_URL" 2>/dev/null &&
+            tar xzf "${TMPDIR}/${MB_ARCHIVE}" -C "$TMPDIR" 2>/dev/null &&
+            [ -f "${TMPDIR}/sirsi-menubar" ]; then
+            cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
+            chmod +x "${INSTALL_DIR}/sirsi-menubar"
+            echo -e "${DIM}  Installed sirsi-menubar${NC}"
+        else
+            echo -e "${DIM}  Menubar asset not found for ${LATEST} — 'sirsi setup' will note it.${NC}"
+        fi
+    fi
 fi
 
 # 7. Check PATH
