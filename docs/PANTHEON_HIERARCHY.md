@@ -12,7 +12,7 @@
 - **Role**: Supreme Orchestrator and CTR Hypervisor.
 - **CTR Ownership (ADR-017)**: Ra owns the Idea Router — the Sirsi-wide agent registry, work queue, dispatch protocol, relay verification, super-agent mandates, and portfolio authority. The router is homed in Pantheon at `.agents/idea-router/`. Other repos carry startup pointers only; they must not fork or re-home the router.
 - **Subordination**: Even Ra must submit to the weave and tapestry maintained by Net, though he alone supervises the active creation of new infrastructure.
-- **User Surface**: `sirsi router status`, `sirsi router work`, `sirsi router daemon`. The user types `ctr` to invoke the protocol.
+- **User Surface**: `sirsi router status`, `sirsi router pull`, `sirsi router show`, `sirsi router close`, `sirsi router node-status`. The user types `ctr` to invoke the protocol.
 
 ## 𓁯 II. The Scope Weaver: Net
 **Net** sits below Ra and above the two divine clusters. She is the writer and owner of the planetary alignment.

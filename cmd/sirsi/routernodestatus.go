@@ -24,7 +24,7 @@ var routerNodeStatusCmd = &cobra.Command{
 	Use:   "node-status",
 	Short: "Show the Horus local-node operator view (router queue, threads, drift, auth)",
 	Long: `Aggregates router queue state, the CTR thread registry (with OS-truth
-PID liveness, ADR-022), daemon/binary-drift detection (ADR-023), and agent CLI
+	PID liveness, ADR-022), LaunchAgent/binary-drift detection (ADR-023), and agent CLI
 auth health into one read-model. Mirrors GET /api/node-status (ADR-026);
 --json output is byte-identical to the HTTP body.
 
@@ -65,15 +65,14 @@ func renderNodeStatus(ns *router.NodeStatus) {
 	if len(ns.RecentFailures) > 0 {
 		fmt.Printf("  Recent failures:  %d (newest first)\n", len(ns.RecentFailures))
 	}
-	if ns.DaemonInstalled {
-		state := "configured-binary-missing"
-		switch {
-		case ns.BinaryExists && !ns.BinaryIsGoRun:
-			state = "ok"
-		case ns.BinaryIsGoRun:
-			state = "go-run (dev only)"
+	if len(ns.LaunchAgents) > 0 {
+		installed := 0
+		for _, h := range ns.LaunchAgents {
+			if h.Installed {
+				installed++
+			}
 		}
-		fmt.Printf("  Daemon:           %s — %s (%s)\n", ns.DaemonLabel, state, ns.ConfiguredBinary)
+		fmt.Printf("  LaunchAgents:     %d installed (%d known)\n", installed, len(ns.LaunchAgents))
 	}
 	fmt.Println()
 
@@ -97,6 +96,27 @@ func renderNodeStatus(ns *router.NodeStatus) {
 		fmt.Println("  Pending by agent:")
 		for agent, ids := range ns.PendingByAgent {
 			fmt.Printf("    %s: %d\n", agent, len(ids))
+		}
+		fmt.Println()
+	}
+	if len(ns.LaunchAgents) > 0 {
+		fmt.Println("  Router/App helpers:")
+		for _, h := range ns.LaunchAgents {
+			status := "missing"
+			if h.Installed {
+				status = "installed"
+				if h.Loaded {
+					status = "loaded"
+				}
+			}
+			if h.Legacy && !h.Installed {
+				status = "legacy-missing"
+			}
+			line := fmt.Sprintf("    %s: %s — %s", h.Label, status, h.Role)
+			if h.Program != "" {
+				line += fmt.Sprintf(" (%s)", h.Program)
+			}
+			fmt.Println(line)
 		}
 		fmt.Println()
 	}

@@ -9,6 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ## [Unreleased]
 
 ### Fixed
+- **Router LaunchAgent inventory now matches the pull-model CLI** (codex-pantheon, 2026-06-05). `NodeStatus` now reports known macOS helpers (`ai.sirsi.pantheon`, `com.sirsi.idea-router`, sweep, registry-police, and the legacy router-daemon label) through `launch_agents`, `sirsi router node-status` renders them as Router/App helpers instead of a misleading missing daemon, `sirsi setup --json` includes the same launch-agent inventory on macOS, and watcher specs/canon docs no longer tell headless surfaces to run the removed `sirsi router daemon` verb. Verified: `go test ./internal/router ./internal/setup ./cmd/sirsi`. Refs: ADR-024, ADR-026, router handoff `20260605-183532`; Changelog: v0.23.
 - **Install/workstream drift hardening** (codex-pantheon, 2026-06-05). `sirsi setup --json` now works as a cross-platform read-only status report before the macOS-only interactive guard, MCP registration writes the resolved `sirsi` binary path instead of relying on IDE PATH, Codex workstream auto-approve uses the current CLI bypass flag, release scripts stamp `internal/version.Version`, and `agentguard` tests no longer fail because host crash logs are present. Verified: `go test ./internal/setup ./internal/workstream ./internal/agentguard ./cmd/sirsi`, `go vet ./...`, `go build ./cmd/sirsi ./cmd/sirsi-menubar ./cmd/sirsi-gui`. Refs: workstream/setup audit, ADR-023, Rule A7/A12; Changelog: v0.23.
 
 ## [0.23.0-beta] — 2026-06-04

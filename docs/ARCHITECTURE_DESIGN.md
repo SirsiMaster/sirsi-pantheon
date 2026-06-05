@@ -120,7 +120,7 @@ The CTR (Cross-Team Router) Hypervisor is Ra-owned infrastructure that orchestra
 - `cmd/sirsi/routercmd.go` — Cobra command registration for `sirsi router *`
 - `configs/` — Agent launch configurations
 
-**User surface**: `sirsi router status | work | daemon | install-agent | smoke`
+**User surface**: `sirsi router status | pull | show | send | close | node-status`
 
 ---
 
