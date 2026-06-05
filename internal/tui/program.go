@@ -30,7 +30,7 @@ func RunViews(views []View) error {
 		return err
 	}
 	for _, v := range views {
-		if err := ValidateView(reg, v); err != nil {
+		if err = ValidateView(reg, v); err != nil {
 			return fmt.Errorf("tui: invalid view %q: %w", v.Name(), err)
 		}
 	}
