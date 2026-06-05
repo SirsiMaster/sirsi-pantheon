@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // NodeStatusSchemaVersion is the frozen contract version for the NodeStatus
@@ -262,10 +264,20 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	ns.LastClaudeRead = state.LastClaudeRead
 	ns.LastCodexRead = state.LastCodexRead
 
-	for agent, ids := range state.Pending {
-		if len(ids) > 0 {
-			ns.PendingByAgent[agent] = ids
-			ns.TotalPending += len(ids)
+	if items, listErr := work.ListInbox(routerRoot, ""); listErr == nil && len(items) > 0 {
+		for _, item := range items {
+			ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
+			ns.TotalPending++
+		}
+	} else {
+		// Legacy fallback for pre-ADR-024 routers that have not migrated to
+		// items/*.md yet. The active CLI queue is items/; state.json pending is
+		// no longer authoritative once item files exist.
+		for agent, ids := range state.Pending {
+			if len(ids) > 0 {
+				ns.PendingByAgent[agent] = ids
+				ns.TotalPending += len(ids)
+			}
 		}
 	}
 
@@ -314,6 +326,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		now := time.Now().UTC()
 		for _, thr := range treg.SortedThreads() {
 			if thr.Status.IsTerminal() {
+				continue
+			}
+			if thr.Status == ThreadStatusSuspended {
 				continue
 			}
 			sum := ThreadSummary{
