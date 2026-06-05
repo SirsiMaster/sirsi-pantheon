@@ -170,12 +170,12 @@ type setupJSONReport struct {
 }
 
 func runSetup(_ *cobra.Command, _ []string) error {
-	if runtime.GOOS != "darwin" {
-		return fmt.Errorf("setup currently supports macOS only (detected %s)", runtime.GOOS)
-	}
-
 	if setupJSON {
 		return runSetupJSON()
+	}
+
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("setup currently supports macOS only (detected %s)", runtime.GOOS)
 	}
 
 	interactive := isTerminal(os.Stdin.Fd()) && !setupInstall

@@ -639,7 +639,7 @@ Configure in your IDE:
   {
     "mcpServers": {
       "sirsi": {
-        "command": "sirsi",
+        "command": "/absolute/path/to/sirsi",
         "args": ["mcp"]
       }
     }
@@ -660,7 +660,7 @@ Configure in your IDE:
 			fmt.Fprintln(os.Stderr, "This command is designed to be called by an AI IDE (Claude, Cursor, Windsurf).")
 			fmt.Fprintln(os.Stderr, "Add this to your IDE's MCP config:")
 			fmt.Fprintln(os.Stderr, "")
-			fmt.Fprintln(os.Stderr, `  { "mcpServers": { "sirsi": { "command": "sirsi", "args": ["mcp"] } } }`)
+			fmt.Fprintf(os.Stderr, "  %s\n", setup.MCPConfigSnippet())
 			fmt.Fprintln(os.Stderr, "")
 			fmt.Fprintln(os.Stderr, "Press Ctrl+C to exit.")
 		}

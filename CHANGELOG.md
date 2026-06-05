@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+### Fixed
+- **Install/workstream drift hardening** (codex-pantheon, 2026-06-05). `sirsi setup --json` now works as a cross-platform read-only status report before the macOS-only interactive guard, MCP registration writes the resolved `sirsi` binary path instead of relying on IDE PATH, Codex workstream auto-approve uses the current CLI bypass flag, release scripts stamp `internal/version.Version`, and `agentguard` tests no longer fail because host crash logs are present. Verified: `go test ./internal/setup ./internal/workstream ./internal/agentguard ./cmd/sirsi`, `go vet ./...`, `go build ./cmd/sirsi ./cmd/sirsi-menubar ./cmd/sirsi-gui`. Refs: workstream/setup audit, ADR-023, Rule A7/A12; Changelog: v0.23.
+
 ## [0.23.0-beta] — 2026-06-04
 
 > Cuts as **v0.23** per Codex review `20260521-codex-pantheon-tui-elimination-phase0-review`. Interactive surface direction reopened on 2026-05-29 (ADR-020) and closed as **Hybrid C**: a new Mole-grade TUI ships first cross-platform; Mac native follows later as the polish-bar upgrade. The `v1.0-alpha.0` slot now belongs to the first installable TUI cut, not the first Mac app.

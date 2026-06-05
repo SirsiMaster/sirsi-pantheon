@@ -13,14 +13,14 @@ BUILD_DIR="${PROJECT_ROOT}/bin"
 APP_NAME="Pantheon.app"
 BUNDLE_DIR="${PROJECT_ROOT}/${APP_NAME}"
 DMG_VOLUME="Sirsi Pantheon"
-GO_LDFLAGS="-s -w -X main.version=v${VERSION}"
+GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"
 
 # --- Parse flags ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version)
             VERSION="$2"
-            GO_LDFLAGS="-s -w -X main.version=v${VERSION}"
+            GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"
             shift 2
             ;;
         --arch)
