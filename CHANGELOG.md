@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.23.0-beta] — 2026-06-04
+
 > Cuts as **v0.23** per Codex review `20260521-codex-pantheon-tui-elimination-phase0-review`. Interactive surface direction reopened on 2026-05-29 (ADR-020) and closed as **Hybrid C**: a new Mole-grade TUI ships first cross-platform; Mac native follows later as the polish-bar upgrade. The `v1.0-alpha.0` slot now belongs to the first installable TUI cut, not the first Mac app.
 
 ### Added
