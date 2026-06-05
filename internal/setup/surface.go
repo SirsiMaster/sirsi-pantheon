@@ -82,10 +82,16 @@ type InstallResult struct {
 // menubarPlistLabel is the LaunchAgent label for the menu bar app.
 const menubarPlistLabel = "ai.sirsi.pantheon"
 
-// menubarPlist is the LaunchAgent definition. It self-locates the
-// sirsi-menubar binary on PATH, so it needs no path templating — only that the
-// binary is reachable from a login shell.
-const menubarPlist = `<?xml version="1.0" encoding="UTF-8"?>
+// menubarPlistContent renders the LaunchAgent for a known absolute binary path.
+//
+// It execs the resolved binary directly rather than relying on a login-shell
+// `command -v sirsi-menubar` lookup with an /opt/homebrew fallback: that lookup
+// fails (exit 127) whenever the binary lives somewhere not on the launchd login
+// PATH (e.g. ~/.local/bin) and the hardcoded Homebrew path is absent — the exact
+// reason the menubar silently never started. A login shell still wraps the exec
+// so the menubar inherits a full PATH for the `sirsi` subprocesses it spawns.
+func menubarPlistContent(binPath string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -96,7 +102,7 @@ const menubarPlist = `<?xml version="1.0" encoding="UTF-8"?>
 		<string>/bin/zsh</string>
 		<string>-l</string>
 		<string>-c</string>
-		<string>exec "$(command -v sirsi-menubar || echo /opt/homebrew/bin/sirsi-menubar)"</string>
+		<string>exec %q</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -110,7 +116,8 @@ const menubarPlist = `<?xml version="1.0" encoding="UTF-8"?>
 	<string>Interactive</string>
 </dict>
 </plist>
-`
+`, binPath)
+}
 
 // MenubarBinaryPath returns the resolved path to the sirsi-menubar binary, or
 // empty if it is not installed. It looks on PATH and next to the running sirsi
@@ -157,7 +164,8 @@ func InstallMenubar() InstallResult {
 		res.Status, res.Message = StatusSkipped, "menubar is macOS only"
 		return res
 	}
-	if MenubarBinaryPath() == "" {
+	bin := MenubarBinaryPath()
+	if bin == "" {
 		res.Status = StatusFailed
 		res.Message = "sirsi-menubar binary not found on PATH or beside sirsi"
 		return res
@@ -167,7 +175,7 @@ func InstallMenubar() InstallResult {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
-	if err := os.WriteFile(path, []byte(menubarPlist), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(menubarPlistContent(bin)), 0o644); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
