@@ -700,7 +700,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Debug logging")
 
 	// Feature aliases — the primary user interface
-	auditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Skip go test (use cached coverage only)")
+	auditCmd.Flags().BoolVar(&auditFull, "full", false, "Run a live go test -cover pass (slow); default uses cached coverage")
+	auditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Deprecated: fast/cached is now the default")
+	_ = auditCmd.Flags().MarkHidden("skip-test")
 	networkCmd.Flags().BoolVar(&isisNetworkFix, "fix", false, "Auto-apply safe fixes (DNS, firewall)")
 	networkCmd.Flags().BoolVar(&isisNetworkRollback, "rollback", false, "Restore DNS to pre-fix state")
 	diagramCmd.Flags().StringVar(&diagramType, "type", "all", "Diagram type (hierarchy|dataflow|modules|memory|governance|pipeline|all)")
