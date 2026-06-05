@@ -3,10 +3,12 @@ module github.com/SirsiMaster/sirsi-pantheon
 go 1.25.0
 
 require (
+	charm.land/bubbletea/v2 v2.0.7
 	charm.land/lipgloss/v2 v2.0.3
 	fyne.io/systray v1.12.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/spf13/cobra v1.10.2
+	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.3.8
 	gopkg.in/yaml.v3 v3.0.1
@@ -14,7 +16,6 @@ require (
 )
 
 require (
-	charm.land/bubbletea/v2 v2.0.7 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect

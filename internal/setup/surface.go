@@ -125,6 +125,19 @@ func MenubarBinaryPath() string {
 	return ""
 }
 
+// GUIBinaryPath returns the resolved path to the sirsi-gui binary (the macOS
+// GUI surface), or empty if it is not installed. Looks on PATH and next to the
+// running sirsi binary.
+func GUIBinaryPath() string {
+	if p, err := exec.LookPath("sirsi-gui"); err == nil {
+		return p
+	}
+	if sibling := filepath.Join(filepath.Dir(BinaryPath()), "sirsi-gui"); fileExists(sibling) {
+		return sibling
+	}
+	return ""
+}
+
 // menubarPlistPath is where the LaunchAgent is written.
 func menubarPlistPath() string {
 	home, _ := os.UserHomeDir()
@@ -294,9 +307,22 @@ func LaunchSurface(s Surface) (string, error) {
 		}
 		r := RegisterIDE()
 		return r.Message, nil
-	case SurfaceMenubar, SurfaceGUI:
+	case SurfaceGUI:
 		if runtime.GOOS != "darwin" {
-			return "", fmt.Errorf("the menubar/GUI surface is macOS only")
+			return "", fmt.Errorf("the GUI surface is macOS only")
+		}
+		if bin := GUIBinaryPath(); bin != "" {
+			if err := exec.Command(bin).Start(); err != nil {
+				return "", fmt.Errorf("launch sirsi-gui: %w", err)
+			}
+			return "GUI surface launched — the Pantheon window is opening.", nil
+		}
+		// No GUI binary present; fall back to the menu bar app.
+		_ = exec.Command("open", "-a", "Pantheon").Start()
+		return "sirsi-gui not installed — opened the menu bar app instead.", nil
+	case SurfaceMenubar:
+		if runtime.GOOS != "darwin" {
+			return "", fmt.Errorf("the menubar surface is macOS only")
 		}
 		// Ensure it is installed, then it is already running via the LaunchAgent.
 		if !MenubarInstalled() {
@@ -304,7 +330,6 @@ func LaunchSurface(s Surface) (string, error) {
 				return "", fmt.Errorf("%s", r.Message)
 			}
 		}
-		// Nudge it to the foreground if a bundle exists; harmless otherwise.
 		_ = exec.Command("open", "-a", "Pantheon").Start()
 		return "Menubar surface active — look for the Pantheon glyph in your menu bar.", nil
 	}

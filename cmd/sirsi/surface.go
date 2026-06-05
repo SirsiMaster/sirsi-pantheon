@@ -30,7 +30,7 @@ what Pantheon can do, only how you drive it.
 		rows := [][]string{
 			{marker(active, setup.SurfaceCLI), "cli", setup.SurfaceCLI.Detail()},
 			{marker(active, setup.SurfaceTUI), "tui", setup.SurfaceTUI.Detail()},
-			{marker(active, setup.SurfaceGUI), "gui", "macOS menu bar / native app"},
+			{marker(active, setup.SurfaceGUI), "gui", "Native macOS window over the Pantheon dashboard"},
 			{marker(active, setup.SurfaceIDE), "ide", setup.SurfaceIDE.Detail()},
 		}
 		output.Table([]string{"", "Surface", "What it is"}, rows)
@@ -77,7 +77,9 @@ func parseSurfaceArg(tok string) (setup.Surface, error) {
 		return setup.SurfaceCLI, nil
 	case "tui":
 		return setup.SurfaceTUI, nil
-	case "gui", "menubar":
+	case "gui":
+		return setup.SurfaceGUI, nil
+	case "menubar":
 		return setup.SurfaceMenubar, nil
 	case "ide", "mcp":
 		return setup.SurfaceIDE, nil
