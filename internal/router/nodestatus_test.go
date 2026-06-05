@@ -114,6 +114,43 @@ func TestCollectNodeStatus_BasicFields(t *testing.T) {
 	}
 }
 
+func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plist := RenderLaunchAgentPlist(ServiceOptions{
+		Label:      "ai.sirsi.pantheon",
+		RepoRoot:   "/tmp/repo",
+		BinaryPath: "/bin/zsh",
+		LogPath:    "/tmp/out.log",
+		ErrPath:    "/tmp/err.log",
+		PathEnv:    "/bin",
+	})
+	if err := os.WriteFile(filepath.Join(agentDir, "ai.sirsi.pantheon.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agents := CollectLaunchAgents("/tmp/repo", nil)
+	var found bool
+	for _, h := range agents {
+		if h.Label == "ai.sirsi.pantheon" {
+			found = true
+			if !h.Installed || h.Role != "menubar" || h.Program != "/bin/zsh" || !h.ProgramFound {
+				t.Fatalf("unexpected menubar LaunchAgent health: %+v", h)
+			}
+		}
+		if h.Label == "com.sirsi.router.repo" && !h.Legacy {
+			t.Fatalf("legacy router helper must be marked legacy: %+v", h)
+		}
+	}
+	if !found {
+		t.Fatalf("known menubar LaunchAgent not inventoried: %+v", agents)
+	}
+}
+
 func TestCollectNodeStatus_WakeHealthIncludesMechanisms(t *testing.T) {
 	repoRoot := setupNodeTestRouter(t)
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")

@@ -31,7 +31,7 @@ func TestPreflightAllowsHealthyNarrowCommand(t *testing.T) {
 		Command:      []string{"rg", "--files", "internal/agentguard"},
 		Platform:     healthyPlatform(),
 		LoadProvider: func() (float64, float64, error) { return 1, 1, nil },
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
 	})
 	if report.Verdict != VerdictAllow {
 		t.Fatalf("verdict = %s, want allow; findings=%v", report.Verdict, report.Findings)
@@ -43,7 +43,7 @@ func TestPreflightBlocksHomeScan(t *testing.T) {
 		Command:      []string{"find", "~"},
 		Platform:     healthyPlatform(),
 		LoadProvider: func() (float64, float64, error) { return 1, 1, nil },
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
 	})
 	if report.Verdict != VerdictBlock {
 		t.Fatalf("verdict = %s, want block; findings=%v", report.Verdict, report.Findings)
@@ -55,7 +55,7 @@ func TestPreflightBlocksCodexSessionCat(t *testing.T) {
 		Command:      []string{"cat", "/Users/me/.codex/sessions/2026/05/example.jsonl"},
 		Platform:     healthyPlatform(),
 		LoadProvider: func() (float64, float64, error) { return 1, 1, nil },
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
 	})
 	if report.Verdict != VerdictBlock {
 		t.Fatalf("verdict = %s, want block; findings=%v", report.Verdict, report.Findings)
@@ -67,7 +67,7 @@ func TestPreflightWarnsOnHighLoad(t *testing.T) {
 		Command:      []string{"rg", "--files", "."},
 		Platform:     healthyPlatform(),
 		LoadProvider: func() (float64, float64, error) { return 100, 100, nil },
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
 	})
 	if report.Verdict != VerdictWarn {
 		t.Fatalf("verdict = %s, want warn; findings=%v", report.Verdict, report.Findings)
@@ -81,7 +81,7 @@ func TestSafeRunBlocksHazardousCommand(t *testing.T) {
 		LoadProvider: func() (float64, float64, error) { return 1, 1, nil },
 		// Host crash logs are intentionally ignored here; this test covers command policy.
 		// Real CLI preflight still reports recent Jetsam and panic findings.
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
 	})
 	if err == nil {
 		t.Fatal("expected block error")
@@ -96,7 +96,7 @@ func TestSafeRunTruncatesOutput(t *testing.T) {
 		Command:        []string{"printf", strings.Repeat("x", 128)},
 		Platform:       healthyPlatform(),
 		LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
-		IgnoreChecks:   []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		IgnoreChecks:   []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
 		MaxOutputBytes: 32,
 		MaxOutputLines: 10,
 	})

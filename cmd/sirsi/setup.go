@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
@@ -160,22 +161,23 @@ type depStatusJSON struct {
 }
 
 type setupJSONReport struct {
-	Platform        string          `json:"platform"`
-	Dependencies    []depStatusJSON `json:"dependencies"`
-	MissingRequired int             `json:"missing_required"`
-	MissingOptional int             `json:"missing_optional"`
-	FullDiskAccess  bool            `json:"full_disk_access"`
-	BinaryPath      string          `json:"binary_path"`
-	Ready           bool            `json:"ready"`
+	Platform        string                     `json:"platform"`
+	Dependencies    []depStatusJSON            `json:"dependencies"`
+	LaunchAgents    []router.LaunchAgentHealth `json:"launch_agents,omitempty"`
+	MissingRequired int                        `json:"missing_required"`
+	MissingOptional int                        `json:"missing_optional"`
+	FullDiskAccess  bool                       `json:"full_disk_access"`
+	BinaryPath      string                     `json:"binary_path"`
+	Ready           bool                       `json:"ready"`
 }
 
 func runSetup(_ *cobra.Command, _ []string) error {
-	if runtime.GOOS != "darwin" {
-		return fmt.Errorf("setup currently supports macOS only (detected %s)", runtime.GOOS)
-	}
-
 	if setupJSON {
 		return runSetupJSON()
+	}
+
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("setup currently supports macOS only (detected %s)", runtime.GOOS)
 	}
 
 	interactive := isTerminal(os.Stdin.Fd()) && !setupInstall
@@ -376,6 +378,10 @@ func runSetupJSON() error {
 		Platform:       runtime.GOOS,
 		FullDiskAccess: setup.FullDiskAccessGranted(),
 		BinaryPath:     setup.BinaryPath(),
+	}
+	if runtime.GOOS == "darwin" {
+		repoRoot, _ := router.FindRepoRoot()
+		rep.LaunchAgents = router.CollectLaunchAgents(repoRoot, nil)
 	}
 	for _, d := range deps {
 		ok, ver := d.Installed()

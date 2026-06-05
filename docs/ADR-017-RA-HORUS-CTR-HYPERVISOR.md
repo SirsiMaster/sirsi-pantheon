@@ -66,18 +66,22 @@ Horus owns everything on ONE machine's local experience:
 
 ### Product Surface
 
+The original ADR included a fsnotify daemon and macOS LaunchAgent command family
+(`sirsi router daemon`, `sirsi router install-agent`, `sirsi router
+service-status`). Those commands are now superseded by the ADR-024/ADR-026
+pull-model router surface. Keep this ADR as history, but do not implement new
+surfaces against the removed daemon verbs.
+
 The CTR hypervisor exposes these user-facing commands:
 
 | Command | Description |
 |---------|-------------|
 | `sirsi router status` | Show agent inboxes and active topics |
-| `sirsi router work` | Check router once, launch runnable work |
-| `sirsi router work --poll` | Continuous polling worker |
-| `sirsi router daemon` | Foreground fsnotify-based dispatcher |
-| `sirsi router install-agent --load` | Install macOS launch agent |
-| `sirsi router service-status` | Check launch agent status |
-| `sirsi router smoke` | Verify both CLIs can write to router |
-| `sirsi router smoke --agent-pair` | Full relay test: seed → Claude → Codex → verify |
+| `sirsi router pull <agent>` | Check one agent inbox and print runnable work |
+| `sirsi router show <item>` | Inspect a routed artifact |
+| `sirsi router send` | Create a routed artifact addressed to one registered agent |
+| `sirsi router close <item>` | Close a routed artifact with evidence |
+| `sirsi router node-status` | Report the local Horus node, threads, aliases, and LaunchAgent inventory |
 
 ### User-Facing Summary
 

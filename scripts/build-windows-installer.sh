@@ -8,11 +8,11 @@ VERSION="0.17.2"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/bin"
 WIN_DIR="${BUILD_DIR}/windows"
-GO_LDFLAGS="-s -w -X main.version=v${VERSION}"
+GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --version) VERSION="$2"; GO_LDFLAGS="-s -w -X main.version=v${VERSION}"; shift 2 ;;
+        --version) VERSION="$2"; GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"; shift 2 ;;
         *) echo "Unknown: $1"; exit 1 ;;
     esac
 done

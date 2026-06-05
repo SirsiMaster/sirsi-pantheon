@@ -195,7 +195,7 @@ func InstallMenubar() InstallResult {
 
 // MCPConfigSnippet is the canonical MCP server entry IDEs need.
 func MCPConfigSnippet() string {
-	return `{ "mcpServers": { "sirsi": { "command": "sirsi", "args": ["mcp"] } } }`
+	return fmt.Sprintf(`{ "mcpServers": { "sirsi": { "command": %q, "args": ["mcp"] } } }`, BinaryPath())
 }
 
 // claudeCLIAvailable reports whether the Claude Code CLI is installed (the most
@@ -233,7 +233,7 @@ func RegisterIDE() InstallResult {
 		return res
 	}
 	// `claude mcp add --scope user <name> <command> [args...]`
-	cmd := exec.Command("claude", "mcp", "add", "--scope", "user", "sirsi", "sirsi", "mcp")
+	cmd := exec.Command("claude", "mcp", "add", "--scope", "user", "sirsi", BinaryPath(), "mcp")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		res.Status = StatusFailed
 		res.Message = fmt.Sprintf("claude mcp add failed: %v — add manually: %s", strings.TrimSpace(string(out)), MCPConfigSnippet())

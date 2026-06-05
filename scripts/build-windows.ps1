@@ -28,7 +28,7 @@ Write-Host "Compiling sirsi CLI..."
 $env:CGO_ENABLED = "0"
 $env:GOOS = "windows"
 $env:GOARCH = $Arch
-$LdFlags = "-s -w -X main.version=v${Version}"
+$LdFlags = "-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${Version}"
 
 go build -ldflags="$LdFlags" -o (Join-Path $BuildDir "sirsi.exe") ./cmd/sirsi/
 if ($LASTEXITCODE -ne 0) { throw "Failed to build sirsi" }

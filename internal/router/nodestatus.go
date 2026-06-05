@@ -46,12 +46,13 @@ type NodeStatus struct {
 	WorkItemSummary map[string]int `json:"work_item_summary"` // status → count
 
 	// Daemon
-	DaemonInstalled  bool   `json:"daemon_installed"`
-	DaemonLoaded     bool   `json:"daemon_loaded"`
-	DaemonLabel      string `json:"daemon_label"`
-	ConfiguredBinary string `json:"configured_binary,omitempty"`
-	BinaryExists     bool   `json:"binary_exists"`
-	BinaryIsGoRun    bool   `json:"binary_is_go_run"`
+	DaemonInstalled  bool                `json:"daemon_installed"`
+	DaemonLoaded     bool                `json:"daemon_loaded"`
+	DaemonLabel      string              `json:"daemon_label"`
+	ConfiguredBinary string              `json:"configured_binary,omitempty"`
+	BinaryExists     bool                `json:"binary_exists"`
+	BinaryIsGoRun    bool                `json:"binary_is_go_run"`
+	LaunchAgents     []LaunchAgentHealth `json:"launch_agents,omitempty"`
 
 	// Timestamps
 	LastClaudeRead string `json:"last_claude_read"`
@@ -107,6 +108,19 @@ type AgentWakeHealth struct {
 	Mechanism string `json:"mechanism"`
 	Ready     bool   `json:"ready"`
 	Detail    string `json:"detail,omitempty"`
+}
+
+// LaunchAgentHealth reports installed macOS helpers that affect Pantheon
+// startup, router wakeups, or noisy legacy automation.
+type LaunchAgentHealth struct {
+	Label        string `json:"label"`
+	Role         string `json:"role"`
+	PlistPath    string `json:"plist_path"`
+	Installed    bool   `json:"installed"`
+	Loaded       bool   `json:"loaded"`
+	Program      string `json:"program,omitempty"`
+	ProgramFound bool   `json:"program_found"`
+	Legacy       bool   `json:"legacy,omitempty"`
 }
 
 // AuthProbeFunc probes whether an agent CLI is authenticated.
@@ -328,7 +342,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		ns.LiveThreadCount = len(ns.LiveThreads)
 	}
 
-	// --- Daemon health ---
+	// --- LaunchAgent / helper health ---
 	exe, err := os.Executable()
 	if err == nil {
 		exe, _ = ResolveStableBinary(repoRoot, exe)
@@ -338,6 +352,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	}
 	opts := DefaultServiceOptions(repoRoot, exe)
 	ns.DaemonLabel = opts.Label
+	ns.LaunchAgents = CollectLaunchAgents(repoRoot, launchctlCheck)
 
 	if _, err := os.Stat(opts.PlistPath); err == nil {
 		ns.DaemonInstalled = true
@@ -395,4 +410,43 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	}
 
 	return ns, nil
+}
+
+// CollectLaunchAgents inventories the known macOS LaunchAgents Pantheon may
+// install or inherit from older router automation.
+func CollectLaunchAgents(repoRoot string, launchctlCheck LaunchctlChecker) []LaunchAgentHealth {
+	legacy := DefaultServiceOptions(repoRoot, "sirsi")
+	home, _ := os.UserHomeDir()
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	specs := []LaunchAgentHealth{
+		{Label: "ai.sirsi.pantheon", Role: "menubar"},
+		{Label: "com.sirsi.idea-router", Role: "router-watchpaths"},
+		{Label: "com.sirsi.idea-router-sweep", Role: "router-sweep"},
+		{Label: "ai.sirsi.registry-police", Role: "registry-police"},
+		{Label: legacy.Label, Role: "legacy-router-daemon", Legacy: true},
+	}
+	for i := range specs {
+		if specs[i].Label == "" {
+			continue
+		}
+		if specs[i].PlistPath == "" {
+			specs[i].PlistPath = filepath.Join(agentDir, specs[i].Label+".plist")
+		}
+		if _, err := os.Stat(specs[i].PlistPath); err != nil {
+			continue
+		}
+		specs[i].Installed = true
+		if program, err := LaunchAgentProgram(specs[i].PlistPath); err == nil {
+			specs[i].Program = program
+			if _, statErr := os.Stat(program); statErr == nil {
+				specs[i].ProgramFound = true
+			}
+		}
+		if launchctlCheck != nil {
+			if err := launchctlCheck("print", specs[i].Label); err == nil {
+				specs[i].Loaded = true
+			}
+		}
+	}
+	return specs
 }

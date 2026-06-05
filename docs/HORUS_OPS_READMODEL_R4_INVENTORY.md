@@ -29,10 +29,10 @@ armed at `register`, stopped only at `close` (A27).
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
 | `claude` | `loop-monitor` | `/loop` + Monitor on `items/` | 60s | yes | no | Agent arms `/loop`; idempotent re-arm keyed on **`pgrep -f thr-<thread_id>`** (never the shared `DIR=` body, never TaskList) |
 | `codex` | `app-heartbeat` | codex app heartbeat (`ctr-thread-wake` polling `items/`) | 60s | yes | no | Native app automation; no manual loop |
-| `gemini` `gemma` `qwen` | `surface-loop` | surface-native loop, else `sirsi router daemon` | 60s | yes | no | Surface loop over `items/`, else daemon |
+| `gemini` `gemma` `qwen` | `surface-loop` | surface-native pull loop over `items/` | 60s | yes | no | Surface loop pulls its own inbox |
 | `menubar` `tui` `vscode` `jetbrains` `cursor` `macapp` | `native-runloop` | native runloop heartbeat ping (resident) | ≥60s | **no** | **yes** | Heartbeat from native runloop on a bounded interval; **no inbox poller** unless the surface acts on items; close on graceful shutdown, hard kill → OS-truth reap (ADR-022) |
-| `mcp` `api` `webhook` `worker` | `daemon` | `sirsi router daemon` (or resident launch agent) | 60s | yes | no | Daemon polls `items/` + dispatches |
-| *(unrecognized)* | `daemon` | `sirsi router daemon` (safe fallback) | 60s | yes | no | Fallback: a polling daemon works for any headless surface |
+| `mcp` `api` `webhook` `worker` | `pull-loop` | bounded headless pull loop over `items/` | 60s | yes | no | Loop calls `sirsi router pull <agent>` and heartbeats |
+| *(unrecognized)* | `pull-loop` | generic pull loop over `items/` | 60s | yes | no | Fallback: pull inbox + heartbeat; no daemon verb is exposed |
 
 **Invariants:**
 - **Idempotence** — re-arm only when zero matching watcher processes exist for
@@ -62,7 +62,7 @@ operator-visible signal into one `NodeStatus` in a single pass. This is the
 | Router queue | `PendingByAgent`, `TotalPending`, `ActiveTopics`, `CompletedCount`, `LastClaudeRead`, `LastCodexRead` | `router.ReadState()` (normalized) | Pending-by-agent is the unread-inbox signal per agent |
 | Dispatch failures | `RecentFailures[]` (≤5, newest first) | `LoadWorkQueue` → `StatusFailed`/`StatusBlocked` | Last attempt error surfaced; no silent failure |
 | **Live + stale threads** | `LiveThreads[]`, `StaleThreads[]`, `LiveThreadCount`, each `ThreadSummary.os_state` | `ReapDeadThreads` (host-scoped) then `LoadThreadRegistry` + `PIDStateOf` | **OS-truth liveness (ADR-022)** — a gone/defunct PID can never render live; reap runs *before* read |
-| Daemon + binary drift | `DaemonInstalled`, `DaemonLoaded`, `ConfiguredBinary`, `BinaryExists`, `BinaryIsGoRun` | `os.Stat(plist)` + `LaunchAgentProgram` + `ResolveStableBinary`/`IsGoRunBinary` | **Stale-deploy drift (ADR-023)** — configured vs present vs `go run` |
+| LaunchAgent + binary drift | `LaunchAgents[]` plus legacy `DaemonInstalled`, `DaemonLoaded`, `ConfiguredBinary`, `BinaryExists`, `BinaryIsGoRun` | Known LaunchAgents (`ai.sirsi.pantheon`, `com.sirsi.idea-router`, sweep, registry-police, legacy router daemon) + `LaunchAgentProgram` | **Stale-deploy drift (ADR-023)** — installed helpers vs live pull-model contract |
 | Agent CLI auth | `AgentHealth[]` (`CLIFound`, `AuthOK`, `NeedsLogin`, `BlockedItems`) | `exec.LookPath` + injectable `AuthProbe` | Distinguishes unauthenticated from stripped-env (`USER`/`HOME` missing) false-negatives |
 
 ### Exposure ledger — the R4 gap ADR-026 closes

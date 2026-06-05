@@ -22,6 +22,7 @@ var (
 
 	// Audit flags
 	auditSkipTests bool
+	auditFull      bool
 
 	// Isis / Heal flags
 	healFull bool
@@ -93,7 +94,9 @@ func init() {
 	maatCmd.Flags().BoolVar(&maatDocs, "docs", false, "Open Ma'at web documentation in browser")
 
 	maatAuditCmd.Flags().BoolVar(&maatSudo, "sudo", false, "Scan system-level governance")
-	maatAuditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Skip go test (use cached coverage only)")
+	maatAuditCmd.Flags().BoolVar(&auditFull, "full", false, "Run a live go test -cover pass (slow); default uses cached coverage")
+	maatAuditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Deprecated: fast/cached is now the default")
+	_ = maatAuditCmd.Flags().MarkHidden("skip-test")
 	maatScalesCmd.Flags().BoolVar(&maatFix, "fix", false, "Actually apply policy fixes")
 
 	maatHealCmd.Flags().BoolVar(&maatFix, "fix", false, "Apply healing remedies")
@@ -111,12 +114,16 @@ func init() {
 func runMaatAudit(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
+	// Fast by default (cached coverage); --full runs the slow go test pass.
+	// --skip-test is kept as a back-compat alias for the (now default) fast mode.
+	skipTests := !auditFull || auditSkipTests
+
 	if !JsonOutput {
 		output.Banner()
 		output.Header("Quality & Governance Audit")
 
-		if auditSkipTests {
-			output.Info("Skipping tests — using cached coverage only")
+		if skipTests {
+			output.Info("Using cached coverage (fast). Run with --full for a live go test pass.")
 		} else {
 			output.Info("Running go test -cover ./... (streaming per-package results)")
 		}
@@ -124,8 +131,8 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 
 	assessor := &maat.CoverageAssessor{
 		Thresholds: maat.DefaultThresholds(),
-		DiffOnly:   auditSkipTests,
-		SkipTests:  auditSkipTests,
+		DiffOnly:   skipTests,
+		SkipTests:  skipTests,
 	}
 	if !JsonOutput {
 		assessor.ProgressFn = func(p maat.PackageProgress) {

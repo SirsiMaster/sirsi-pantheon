@@ -53,13 +53,16 @@ func TestWatcherFor_Idempotent(t *testing.T) {
 	}
 }
 
-func TestWatcherFor_UnknownFallsBackToDaemon(t *testing.T) {
+func TestWatcherFor_UnknownFallsBackToPullLoop(t *testing.T) {
 	s := WatcherFor("nonsense", "x", "thr-1")
-	if s.Type != "daemon" {
-		t.Errorf("unknown surface Type = %q, want daemon fallback", s.Type)
+	if s.Type != "pull-loop" {
+		t.Errorf("unknown surface Type = %q, want pull-loop fallback", s.Type)
 	}
 	if !s.WatchesInbox {
-		t.Error("daemon fallback must watch the inbox")
+		t.Error("pull-loop fallback must watch the inbox")
+	}
+	if strings.Contains(s.ArmInstruction, "router daemon") || strings.Contains(s.Mechanism, "router daemon") {
+		t.Fatalf("watcher spec must not prescribe removed router daemon verb: %+v", s)
 	}
 }
 
@@ -68,6 +71,18 @@ func TestWatcherFor_ResidentSurfacesNotInboxWorkers(t *testing.T) {
 		s := WatcherFor(sfc, "x", "thr-1")
 		if !s.Resident || s.WatchesInbox {
 			t.Errorf("surface %q: want resident && !watches_inbox, got resident=%v watches=%v", sfc, s.Resident, s.WatchesInbox)
+		}
+	}
+}
+
+func TestWatcherFor_HeadlessSurfacesDoNotPrescribeDaemon(t *testing.T) {
+	for _, sfc := range []string{"gemini", "gemma", "qwen", "mcp", "api", "webhook", "worker"} {
+		s := WatcherFor(sfc, "x", "thr-1")
+		if strings.Contains(s.ArmInstruction, "router daemon") || strings.Contains(s.Mechanism, "router daemon") {
+			t.Fatalf("surface %q must not prescribe removed router daemon verb: %+v", sfc, s)
+		}
+		if !s.WatchesInbox {
+			t.Errorf("surface %q must still watch/pull its inbox", sfc)
 		}
 	}
 }

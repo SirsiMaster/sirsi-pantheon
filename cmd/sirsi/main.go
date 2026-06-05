@@ -160,16 +160,24 @@ var judgeCmd = &cobra.Command{
 }
 
 var cleanCmd = &cobra.Command{
-	Use:   "clean [all|safe]",
-	Short: "Clean scan findings (default: safe items only)",
+	Use:   "clean [safe|all]",
+	Short: "Preview and clean scan findings (safe by default; --confirm to apply)",
 	Long: `Clean infrastructure waste found by the last scan.
 
-  sirsi clean          Clean safe items only (caches, logs, temp files)
-  sirsi clean all      Clean safe + caution items
-  sirsi clean safe     Clean safe items only (same as default)
+  sirsi clean                     Preview safe items (caches, logs, temp files)
+  sirsi clean --confirm           Apply: move safe items to Trash (asks first)
+  sirsi clean --include-caution   Also target caution-tier items (preview + apply)
+  sirsi clean all                 Alias for --include-caution
 
-Loads findings from the last scan. Run sirsi scan first.`,
-	RunE: runClean,
+Default is a dry-run preview; the amount shown is exactly what --confirm moves
+to Trash (Rule A1: preview matches apply). Run sirsi scan first.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Back-compat: `sirsi clean all` == `--include-caution`.
+		if len(args) > 0 && args[0] == "all" {
+			anubisIncludeCaution = true
+		}
+		return runJudge(cmd.Context())
+	},
 }
 
 var dedupCmd = &cobra.Command{
@@ -317,7 +325,7 @@ Removed items are moved to Trash.
 				}
 				cr.AddEvidence(a.ProjectName, fmt.Sprintf("%s %s%s", jackal.FormatSize(a.Size), string(a.Type), tag))
 			}
-			cr.AddNextAction("sirsi", "Launch TUI to select and purge artifacts")
+			cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 		}
 		cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 		cr.AddNextAction("sirsi analyze", "Disk usage explorer")
@@ -377,7 +385,7 @@ var analyzeCmd = &cobra.Command{
 		if len(res.Entries) > limit {
 			cr.AddEvidence("...", fmt.Sprintf("+%d more entries", len(res.Entries)-limit))
 		}
-		cr.AddNextAction("sirsi", "Launch TUI for drill-down navigation")
+		cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 		cr.AddNextAction("sirsi purge", "Remove stale build artifacts")
 		cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 		cr.Render()
@@ -431,7 +439,7 @@ Finds .dmg, .pkg, .iso, .zip, .tar.gz, and .app.zip files > 10MB.
 			if len(res.Files) > limit {
 				cr.AddEvidence("...", fmt.Sprintf("+%d more files", len(res.Files)-limit))
 			}
-			cr.AddNextAction("sirsi", "Launch TUI to select and remove installers")
+			cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 		}
 		cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 		cr.AddNextAction("sirsi purge", "Remove build artifacts")
@@ -639,7 +647,7 @@ Configure in your IDE:
   {
     "mcpServers": {
       "sirsi": {
-        "command": "sirsi",
+        "command": "/absolute/path/to/sirsi",
         "args": ["mcp"]
       }
     }
@@ -660,7 +668,7 @@ Configure in your IDE:
 			fmt.Fprintln(os.Stderr, "This command is designed to be called by an AI IDE (Claude, Cursor, Windsurf).")
 			fmt.Fprintln(os.Stderr, "Add this to your IDE's MCP config:")
 			fmt.Fprintln(os.Stderr, "")
-			fmt.Fprintln(os.Stderr, `  { "mcpServers": { "sirsi": { "command": "sirsi", "args": ["mcp"] } } }`)
+			fmt.Fprintf(os.Stderr, "  %s\n", setup.MCPConfigSnippet())
 			fmt.Fprintln(os.Stderr, "")
 			fmt.Fprintln(os.Stderr, "Press Ctrl+C to exit.")
 		}
@@ -692,7 +700,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Debug logging")
 
 	// Feature aliases — the primary user interface
-	auditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Skip go test (use cached coverage only)")
+	auditCmd.Flags().BoolVar(&auditFull, "full", false, "Run a live go test -cover pass (slow); default uses cached coverage")
+	auditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Deprecated: fast/cached is now the default")
+	_ = auditCmd.Flags().MarkHidden("skip-test")
 	networkCmd.Flags().BoolVar(&isisNetworkFix, "fix", false, "Auto-apply safe fixes (DNS, firewall)")
 	networkCmd.Flags().BoolVar(&isisNetworkRollback, "rollback", false, "Restore DNS to pre-fix state")
 	diagramCmd.Flags().StringVar(&diagramType, "type", "all", "Diagram type (hierarchy|dataflow|modules|memory|governance|pipeline|all)")
@@ -703,6 +713,11 @@ func init() {
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
+	// Top-level `sirsi clean` shares the one A1-correct engine (runJudge): preview
+	// by default, --confirm to apply (asks first), --include-caution for scope.
+	cleanCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview only (default); use --confirm to apply")
+	cleanCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Apply the cleanup — move items to Trash (asks first)")
+	cleanCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (preview and apply)")
 	fixCmd.Flags().BoolVar(&fixYes, "yes", false, "Apply safe reclaim without the confirmation prompt")
 	// ── User-facing commands (visible in sirsi --help) ──
 	rootCmd.AddCommand(scanCmd, cleanCmd, ghostsCmd, dedupCmd, doctorCmd)

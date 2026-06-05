@@ -66,9 +66,9 @@ mechanism is a function of the **surface**, not of which session got there first
 | :--- | :--- | :--- | :--- | :--- |
 | `claude` | `/loop` + file Monitor on `items/` | per-tick (≤60s) | yes | yes |
 | `codex` | app heartbeat (`ctr-thread-wake`) | native poll | yes | yes |
-| `gemini` `gemma` `qwen` | surface-native loop, else `sirsi router daemon` | loop/daemon | yes | yes |
+| `gemini` `gemma` `qwen` | surface-native pull loop over `items/` | loop | yes | yes |
 | `menubar` `tui` `vscode` `jetbrains` `cursor` `macapp` | native runloop ping | ≥60s, bounded | only if it acts on items | n/a (resident) |
-| `mcp` `api` `webhook` `worker` | `sirsi router daemon` (or resident launch agent) | daemon | yes | n/a |
+| `mcp` `api` `webhook` `worker` | bounded headless pull loop over `items/` | loop | yes | n/a |
 
 ### 2. The router prescribes the watcher — register becomes a handshake
 `sirsi thread register` **stops auto-spawning the fs-watcher.** Instead it
@@ -190,8 +190,8 @@ single sanctioned exception to "register does not spawn a watcher." Rules:
   (superseded by the register handshake + `/loop`).
 - `sirsi thread suspend` (resumable state carrying memory+plans) — A27 lifecycle
   completion, tracked separately.
-- Wire the `sirsi router daemon` CLI verb for non-interactive surfaces (code
-  exists in `internal/router/daemon.go`, no verb).
+- Reconcile or delete the stranded `internal/router/daemon.go` dispatcher code;
+  the active CLI contract is pull-model and no daemon verb is exposed.
 
 ## Acceptance tests (codex edit 3 — required before merge; owner: claude-pantheon)
 - `register --surface claude --json` returns a `watcher` block and does **not**

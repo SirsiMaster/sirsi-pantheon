@@ -110,6 +110,27 @@ func TestScanOrphans_DetectsStaleParent(t *testing.T) {
 	}
 }
 
+func TestScanOrphans_SkipsPIDOne(t *testing.T) {
+	entries := []orphanPsEntry{
+		{PID: 1, PPID: 0, RSS: 1, CPU: 0.0, Name: "gopls", ElapsedTime: "99:00:00"},
+		{PID: 500, PPID: 1, RSS: 200 * 1024, CPU: 12.0, Name: "gopls", ElapsedTime: "03:00:00"},
+	}
+
+	report, err := scanOrphansWithFn(mockOrphanPs(entries))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.TotalOrphans != 1 {
+		t.Errorf("Expected only PID 500 as an orphan, got %d", report.TotalOrphans)
+	}
+	for _, o := range report.Orphans {
+		if o.PID <= 1 {
+			t.Fatalf("PID %d must never enter orphan candidates", o.PID)
+		}
+	}
+}
+
 func TestScanOrphans_IgnoresHealthyProcesses(t *testing.T) {
 	// gopls running under cursor (healthy — not an orphan)
 	entries := []orphanPsEntry{

@@ -84,6 +84,27 @@ jobs:
         env:
           CGO_ENABLED: '0'
 
+      # Builds passing is not the same as the CLI working. Actually EXECUTE the
+      # built binary on every OS: prove it runs, JSON marshals, and every core
+      # command is registered + its help renders. Non-destructive only — no
+      # clean/purge apply, only --help and read-only commands.
+      - name: Runtime smoke (execute the built CLI per OS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="./sirsi${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+          echo "== runtime smoke: $BIN on ${{ runner.os }} =="
+          "$BIN" version
+          "$BIN" version --json >/dev/null
+          "$BIN" --help >/dev/null
+          for c in scan clean ghosts duplicates status setup diagnose audit fix network purge installer hardware risk surface tui router thread; do
+            "$BIN" "$c" --help >/dev/null || { echo "::error::'$c --help' failed on ${{ runner.os }}"; exit 1; }
+          done
+          # Read-only real execution (setup --json is non-mutating). Non-fatal so
+          # an OS-specific quirk warns rather than red-X the matrix.
+          "$BIN" setup --json >/dev/null 2>&1 || echo "::warning::'setup --json' non-zero on ${{ runner.os }}"
+          echo "✅ runtime smoke passed on ${{ runner.os }}"
+
       - name: Binary size guard (Unix)
         if: matrix.os != 'windows-latest'
         run: |

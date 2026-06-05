@@ -53,8 +53,9 @@ func loopArmInstruction(agentID, threadID string) string {
 }
 
 // WatcherFor returns the canonical watcher spec for a surface, templated for the
-// given agent and thread. Unknown surfaces fall back to the daemon mechanism
-// (safe: a polling daemon over items/ works for any headless surface).
+// given agent and thread. Unknown/headless surfaces fall back to a surface-owned
+// pull loop; the active router CLI is pull-model and does not expose a daemon
+// verb.
 func WatcherFor(surface, agentID, threadID string) WatcherSpec {
 	switch surface {
 	case surfaceClaude:
@@ -78,8 +79,8 @@ func WatcherFor(surface, agentID, threadID string) WatcherSpec {
 	case surfaceGemini, surfaceGemma, surfaceQwen:
 		return WatcherSpec{
 			Type:               "surface-loop",
-			Mechanism:          "surface-native loop, else `sirsi router daemon`",
-			ArmInstruction:     "Run a surface-native watch loop over items/ for `to: " + agentID + "`, heartbeating each tick; if none exists, run `sirsi router daemon`.",
+			Mechanism:          "surface-native pull loop over items/",
+			ArmInstruction:     "Run a surface-native watch loop over items/ for `to: " + agentID + "`, heartbeating each tick. Do not call the removed daemon verb; the active CLI is pull-model only.",
 			HeartbeatIntervalS: 60,
 			WatchesInbox:       true,
 			Resident:           false,
@@ -95,18 +96,18 @@ func WatcherFor(surface, agentID, threadID string) WatcherSpec {
 		}
 	case surfaceMCP, surfaceAPI, surfaceWebhook, surfaceWorker:
 		return WatcherSpec{
-			Type:               "daemon",
-			Mechanism:          "`sirsi router daemon` (or resident launch agent)",
-			ArmInstruction:     "Run `sirsi router daemon` (or the resident launch agent) to poll items/ for `to: " + agentID + "` and dispatch.",
+			Type:               "pull-loop",
+			Mechanism:          "headless pull loop over items/",
+			ArmInstruction:     "Run a bounded headless loop that calls `sirsi router pull " + agentID + "` and heartbeats each tick. Do not call the removed daemon verb; the active CLI is pull-model only.",
 			HeartbeatIntervalS: 60,
 			WatchesInbox:       true,
 			Resident:           false,
 		}
 	default:
 		return WatcherSpec{
-			Type:               "daemon",
-			Mechanism:          "`sirsi router daemon` (fallback for unrecognized surface)",
-			ArmInstruction:     "Unrecognized surface; run `sirsi router daemon` to poll items/ for `to: " + agentID + "`.",
+			Type:               "pull-loop",
+			Mechanism:          "generic pull loop over items/",
+			ArmInstruction:     "Unrecognized surface; run a bounded loop that calls `sirsi router pull " + agentID + "` and heartbeats each tick. Do not call the removed daemon verb; the active CLI is pull-model only.",
 			HeartbeatIntervalS: 60,
 			WatchesInbox:       true,
 			Resident:           false,

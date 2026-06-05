@@ -202,11 +202,11 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	// the OS start signature of this PID. Empty on legacy callers / unsupported
 	// platforms, which keeps the bare-PID behavior.
 	newStart := t.StartTime
-	if newStart == "" && t.PID > 0 {
+	if newStart == "" && t.PID >= minAgentPID {
 		newStart = PIDStartTimeOf(t.PID)
 	}
 
-	if t.ThreadID == "" && t.PID > 0 {
+	if t.ThreadID == "" && t.PID >= minAgentPID {
 		for id, existing := range reg.Threads {
 			if existing == nil {
 				continue
@@ -589,7 +589,7 @@ func ReapDeadThreads(routerRoot, host string) ([]ReapedThread, error) {
 		if t.Status == ThreadStatusSuspended {
 			continue
 		}
-		if t.PID <= 0 || (host != "" && t.Host != host) {
+		if t.PID < minAgentPID || (host != "" && t.Host != host) {
 			continue // unverifiable PID or a different host's process table
 		}
 		state := PIDStateOf(t.PID, t.StartTime)

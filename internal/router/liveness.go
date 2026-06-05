@@ -16,6 +16,8 @@ package router
 
 import "sync"
 
+const minAgentPID = 2
+
 // PIDState is the OS-truth liveness of a recorded PID.
 type PIDState string
 
@@ -89,7 +91,7 @@ func setPIDStartFn(fn func(int) string) {
 // PIDStartTimeOf returns the OS start signature of pid (for capture at register
 // time). Empty when the pid is invalid or the start time cannot be read.
 func PIDStartTimeOf(pid int) string {
-	if pid <= 0 {
+	if pid < minAgentPID {
 		return ""
 	}
 	return getPIDStartFn()(pid)
@@ -103,7 +105,7 @@ func PIDStartTimeOf(pid int) string {
 // time than startedAt, the PID was recycled onto another process and the result
 // is PIDRecycled (dead-for-reaping). A non-positive pid is PIDUnknown.
 func PIDStateOf(pid int, startedAt string) PIDState {
-	if pid <= 0 {
+	if pid < minAgentPID {
 		return PIDUnknown
 	}
 	state := getPIDStateFn()(pid)

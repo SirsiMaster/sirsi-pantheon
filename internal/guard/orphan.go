@@ -172,6 +172,9 @@ func scanOrphansWithFn(psFn func() ([]orphanPsEntry, error)) (*OrphanReport, err
 	}
 
 	for _, entry := range entries {
+		if entry.PID <= 1 {
+			continue
+		}
 		for _, pattern := range KnownOrphanPatterns {
 			if matchesPattern(entry.Name, pattern.ProcessNames) {
 				parentName := pidNames[entry.PPID]

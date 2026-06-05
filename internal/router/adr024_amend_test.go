@@ -47,9 +47,12 @@ func TestPIDStateOf_Composite(t *testing.T) {
 			}
 		})
 	}
-	// PIDUnknown for non-positive pid regardless of probers.
-	if got := PIDStateOf(0, "x"); got != PIDUnknown {
-		t.Errorf("PIDStateOf(0) = %q, want unknown", got)
+	// PIDUnknown below the agent PID floor regardless of probers. PID 1 is
+	// launchd/init, not a valid agent-thread anchor.
+	for _, pid := range []int{0, 1} {
+		if got := PIDStateOf(pid, "x"); got != PIDUnknown {
+			t.Errorf("PIDStateOf(%d) = %q, want unknown", pid, got)
+		}
 	}
 }
 

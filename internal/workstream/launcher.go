@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
@@ -87,7 +88,7 @@ func writeMCPConfig(path string, key string) error {
 
 	// Add sirsi entry
 	servers["sirsi"] = map[string]interface{}{
-		"command": "sirsi",
+		"command": sirsiCommand(),
 		"args":    []string{"mcp"},
 	}
 	existing[key] = servers
@@ -135,7 +136,7 @@ func (c ClaudeLauncher) Integration() *IntegrationInfo {
 	return &IntegrationInfo{
 		Note: "Add Sirsi as an MCP server inside Claude Code",
 		Type: IntegrateCLI,
-		Path: "claude mcp add sirsi -- sirsi mcp",
+		Path: fmt.Sprintf("claude mcp add --scope user sirsi %s mcp", shellQuote(sirsiCommand())),
 	}
 }
 
@@ -352,7 +353,7 @@ func (c CodexLauncher) Launch(ws Workstream, opts LaunchOptions) error {
 	}
 	args := []string{"codex"}
 	if opts.AutoApprove {
-		args = append(args, "--full-auto")
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	return syscall.Exec(binary, args, os.Environ())
 }
@@ -458,4 +459,19 @@ func DefaultAILauncher(p platform.Platform) Launcher {
 		}
 	}
 	return nil
+}
+
+func sirsiCommand() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "sirsi"
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		return resolved
+	}
+	return exe
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

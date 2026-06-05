@@ -144,7 +144,7 @@ jobs:
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          GO_LDFLAGS="-s -w -X main.version=v${BUILD_VERSION}"
+          GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${BUILD_VERSION}"
           mkdir -p bin/windows
           for cmd in sirsi sirsi-agent; do
             CGO_ENABLED=0 go build -ldflags="$GO_LDFLAGS" -o "bin/windows/${cmd}.exe" "./cmd/${cmd}/"
@@ -204,4 +204,3 @@ jobs:
       - name: Publish with provenance
         working-directory: tools/thoth-init
         run: npm publish --provenance --access public
-

@@ -317,6 +317,29 @@ func runWeigh(ctx context.Context) error {
 	return nil
 }
 
+// selectCleanTargets returns the findings `sirsi clean` targets, given whether
+// caution-tier items are included. Scope is a function of severity + the
+// include-caution toggle ONLY — there is deliberately NO `confirm` parameter,
+// so the dry-run preview and the --confirm apply operate on the IDENTICAL set
+// (Rule A1: preview must match apply; apply cannot widen scope). SeverityWarning
+// findings are never auto-cleaned.
+func selectCleanTargets(findings []jackal.Finding, includeCaution bool) []jackal.Finding {
+	var safe, caution []jackal.Finding
+	for _, f := range findings {
+		switch f.Severity {
+		case jackal.SeveritySafe:
+			safe = append(safe, f)
+		case jackal.SeverityCaution:
+			caution = append(caution, f)
+		}
+	}
+	target := safe
+	if includeCaution {
+		target = append(target, caution...)
+	}
+	return target
+}
+
 func runJudge(ctx context.Context) error {
 	start := time.Now()
 	output.Banner()
@@ -358,26 +381,11 @@ func runJudge(ctx context.Context) error {
 		findings = append(findings, f)
 	}
 
-	// Filter to safe findings only unless --confirm is set.
-	var safe, caution []jackal.Finding
-	for _, f := range findings {
-		switch f.Severity {
-		case jackal.SeveritySafe:
-			safe = append(safe, f)
-		case jackal.SeverityCaution:
-			caution = append(caution, f)
-		}
-		// SeverityWarning items are never auto-cleaned
-	}
-
-	// Scope is governed by --include-caution ONLY (not --confirm). This keeps the
-	// preview (dry-run) and the apply (--confirm) targeting the IDENTICAL set, so
-	// the amount shown is exactly what gets moved to Trash (Rule A1: dry-run must
-	// match apply). --confirm decides whether to apply, never what.
-	target := safe
-	if anubisIncludeCaution {
-		target = append(target, caution...)
-	}
+	// Scope is governed by --include-caution ONLY (not --confirm), so the preview
+	// (dry-run) and the apply (--confirm) target the IDENTICAL set — the amount
+	// shown is exactly what moves to Trash (Rule A1: preview == apply). The pure
+	// selector has no confirm parameter, so apply structurally cannot widen scope.
+	target := selectCleanTargets(findings, anubisIncludeCaution)
 
 	if len(target) == 0 {
 		output.Info("No safe findings to clean. Use --include-caution to also target caution items.")
@@ -427,12 +435,10 @@ func runJudge(ctx context.Context) error {
 		return nil
 	}
 
-	if cleanupApplyPaused() {
-		output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
-		return nil
-	}
-
-	// Execute cleanup.
+	// Execute cleanup. Safety here is real, not a demo brake: scan-derived
+	// findings only, filtered to safe (or caution via --include-caution),
+	// protected paths hardcoded in internal/cleaner, the user just answered
+	// [y/N], and every move is trash-first (recoverable).
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
 
@@ -450,124 +456,6 @@ func runJudge(ctx context.Context) error {
 		"cleaned":     fmt.Sprintf("%d", cleanResult.Cleaned),
 		"bytes_freed": fmt.Sprintf("%d", cleanResult.BytesFreed),
 		"skipped":     fmt.Sprintf("%d", cleanResult.Skipped),
-	})
-
-	cr := &output.CommandResult{
-		Command:  "sirsi clean",
-		Summary:  fmt.Sprintf("Cleaned %d items. Reclaimed %s.", cleanResult.Cleaned, jackal.FormatSize(cleanResult.BytesFreed)),
-		Duration: time.Since(start),
-	}
-	cr.AddEvidence("Items cleaned", fmt.Sprintf("%d", cleanResult.Cleaned))
-	cr.AddEvidence("Space reclaimed", jackal.FormatSize(cleanResult.BytesFreed))
-	if cleanResult.Skipped > 0 {
-		cr.AddWarning("Skipped %d items (protected or errors)", cleanResult.Skipped)
-	}
-	cr.AddNextAction("sirsi scan", "Verify cleanup with a fresh scan")
-	cr.AddNextAction("sirsi ghosts", "Hunt remaining ghost app residuals")
-	cr.AddNextAction("sirsi diagnose", "Check overall system health")
-	cr.Render()
-	return nil
-}
-
-func runClean(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	start := time.Now()
-
-	mode := "safe"
-	if len(args) > 0 && args[0] == "all" {
-		mode = "all"
-	}
-
-	output.Banner()
-	output.Header("Automated Cleanup")
-
-	persisted, err := jackal.LoadLatest()
-	if err != nil {
-		output.Error("No scan results found. Run `sirsi scan` first.")
-		return fmt.Errorf("load findings: %w", err)
-	}
-
-	if len(persisted.Findings) == 0 {
-		output.Success("No findings to clean. System is clean.")
-		return nil
-	}
-
-	// Filter by severity
-	var findings []jackal.Finding
-	for _, pf := range persisted.Findings {
-		f := jackal.Finding{
-			RuleName:    pf.RuleName,
-			Category:    pf.Category,
-			Description: pf.Description,
-			Path:        pf.Path,
-			SizeBytes:   pf.SizeBytes,
-			Severity:    pf.Severity,
-			IsDir:       pf.IsDir,
-			FileCount:   pf.FileCount,
-			CanFix:      pf.CanFix,
-			Advisory:    pf.Advisory,
-			Remediation: pf.Remediation,
-		}
-		if pf.LastModified != "" {
-			f.LastModified, _ = time.Parse(time.RFC3339, pf.LastModified)
-		}
-		if !f.CanFix {
-			continue
-		}
-		if mode == "safe" && f.Severity != jackal.SeveritySafe {
-			continue
-		}
-		if f.Severity == jackal.SeverityWarning && mode != "all" {
-			continue
-		}
-		findings = append(findings, f)
-	}
-
-	if len(findings) == 0 {
-		output.Info("No %s findings to clean.", mode)
-		return nil
-	}
-
-	var totalSize int64
-	for _, f := range findings {
-		totalSize += f.SizeBytes
-	}
-
-	output.Info("Cleaning %d %s findings (%s):", len(findings), mode, jackal.FormatSize(totalSize))
-	for i, f := range findings {
-		if i >= 15 {
-			output.Dim("  ... and %d more", len(findings)-15)
-			break
-		}
-		sev := "🟢"
-		if f.Severity == jackal.SeverityCaution {
-			sev = "🟡"
-		}
-		output.Dim("  %s %s (%s) → %s", sev, f.Description, jackal.FormatSize(f.SizeBytes), f.Remediation)
-	}
-
-	if cleanupApplyPaused() {
-		output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
-		return nil
-	}
-
-	// Execute
-	engine := jackal.DefaultEngine()
-	engine.RegisterAll(rules.AllRules()...)
-
-	cleanResult, err := engine.Clean(ctx, findings, jackal.CleanOptions{
-		DryRun:   false,
-		Confirm:  true,
-		UseTrash: true,
-	})
-	if err != nil {
-		return fmt.Errorf("clean failed: %w", err)
-	}
-
-	stele.Inscribe("anubis", stele.TypeAnubisClean, "", map[string]string{
-		"cleaned":     fmt.Sprintf("%d", cleanResult.Cleaned),
-		"bytes_freed": fmt.Sprintf("%d", cleanResult.BytesFreed),
-		"mode":        mode,
 	})
 
 	cr := &output.CommandResult{
@@ -629,7 +517,7 @@ func runKa(ctx context.Context) error {
 		result.AddEvidence(g.AppName, fmt.Sprintf("%d residuals, %s", len(g.Residuals), jackal.FormatSize(g.TotalSize)))
 	}
 	if len(ghosts) > 0 {
-		result.AddNextAction("sirsi", "Launch TUI to select and exorcise ghosts")
+		result.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 	}
 	result.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 	result.AddNextAction("sirsi diagnose", "Check system health")
@@ -682,7 +570,7 @@ func runAnubisMirror(cmd *cobra.Command, args []string) error {
 	cr.AddEvidence("Duplicates", fmt.Sprintf("%d", res.TotalDuplicates))
 	cr.AddEvidence("Wasted space", mirror.FormatBytes(res.TotalWasteBytes))
 	if res.TotalDuplicates > 0 {
-		cr.AddNextAction("sirsi", "Launch TUI to review and remove duplicates")
+		cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 	}
 	cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 	cr.AddNextAction("sirsi clean", "Clean safe items from last scan")
