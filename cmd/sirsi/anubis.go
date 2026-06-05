@@ -509,7 +509,7 @@ func runKa(ctx context.Context) error {
 		result.AddEvidence(g.AppName, fmt.Sprintf("%d residuals, %s", len(g.Residuals), jackal.FormatSize(g.TotalSize)))
 	}
 	if len(ghosts) > 0 {
-		result.AddNextAction("sirsi", "Launch TUI to select and exorcise ghosts")
+		result.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 	}
 	result.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 	result.AddNextAction("sirsi diagnose", "Check system health")
@@ -562,7 +562,7 @@ func runAnubisMirror(cmd *cobra.Command, args []string) error {
 	cr.AddEvidence("Duplicates", fmt.Sprintf("%d", res.TotalDuplicates))
 	cr.AddEvidence("Wasted space", mirror.FormatBytes(res.TotalWasteBytes))
 	if res.TotalDuplicates > 0 {
-		cr.AddNextAction("sirsi", "Launch TUI to review and remove duplicates")
+		cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 	}
 	cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 	cr.AddNextAction("sirsi clean", "Clean safe items from last scan")

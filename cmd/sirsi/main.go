@@ -325,7 +325,7 @@ Removed items are moved to Trash.
 				}
 				cr.AddEvidence(a.ProjectName, fmt.Sprintf("%s %s%s", jackal.FormatSize(a.Size), string(a.Type), tag))
 			}
-			cr.AddNextAction("sirsi", "Launch TUI to select and purge artifacts")
+			cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 		}
 		cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 		cr.AddNextAction("sirsi analyze", "Disk usage explorer")
@@ -385,7 +385,7 @@ var analyzeCmd = &cobra.Command{
 		if len(res.Entries) > limit {
 			cr.AddEvidence("...", fmt.Sprintf("+%d more entries", len(res.Entries)-limit))
 		}
-		cr.AddNextAction("sirsi", "Launch TUI for drill-down navigation")
+		cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 		cr.AddNextAction("sirsi purge", "Remove stale build artifacts")
 		cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 		cr.Render()
@@ -439,7 +439,7 @@ Finds .dmg, .pkg, .iso, .zip, .tar.gz, and .app.zip files > 10MB.
 			if len(res.Files) > limit {
 				cr.AddEvidence("...", fmt.Sprintf("+%d more files", len(res.Files)-limit))
 			}
-			cr.AddNextAction("sirsi", "Launch TUI to select and remove installers")
+			cr.AddNextAction("sirsi scan", "Run a full scan, then sirsi clean --confirm to remove (trash-first)")
 		}
 		cr.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 		cr.AddNextAction("sirsi purge", "Remove build artifacts")
