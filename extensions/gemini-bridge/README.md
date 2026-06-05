@@ -41,9 +41,12 @@ Part of the [Sirsi Pantheon](https://github.com/SirsiMaster/sirsi-pantheon) ecos
 ext install SirsiMaster.seshat-gemini-bridge
 ```
 
-### From VSIX
+### Build a local VSIX
 ```bash
-code --install-extension seshat-gemini-bridge-0.1.0.vsix
+cd extensions/gemini-bridge
+npm ci
+npm run package
+code --install-extension seshat-gemini-bridge-*.vsix
 ```
 
 ## Development
