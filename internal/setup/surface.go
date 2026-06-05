@@ -32,6 +32,10 @@ const (
 	// set; it is not a user-facing surface but reuses InstallResult for a uniform
 	// install report.
 	SurfaceSupervisor Surface = "supervisor"
+	// SurfaceMaatGate is the 𓆄 Ma'at pre-push gate (git core.hooksPath →
+	// .githooks). Not a user-facing surface; reuses InstallResult for a uniform
+	// install report. Armed only inside a Pantheon source clone (contributors).
+	SurfaceMaatGate Surface = "maat-gate"
 )
 
 // Selectable returns the surfaces a user opts into at install time
@@ -56,6 +60,8 @@ func (s Surface) Title() string {
 		return "GUI"
 	case SurfaceSupervisor:
 		return "Agent routing"
+	case SurfaceMaatGate:
+		return "Ma'at gate"
 	}
 	return string(s)
 }
@@ -75,6 +81,8 @@ func (s Surface) Detail() string {
 		return "macOS native app"
 	case SurfaceSupervisor:
 		return "Resident Horus agent-router supervisor — installed by default"
+	case SurfaceMaatGate:
+		return "𓆄 Ma'at pre-push gate — gofmt + vet + golangci-lint + tests before push"
 	}
 	return ""
 }

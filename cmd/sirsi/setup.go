@@ -353,6 +353,12 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		printInstallResult(setup.InstallSupervisor())
 	}
 
+	// Arm the 𓆄 Ma'at pre-push gate (Rule A17) when run inside a Pantheon source
+	// clone, so contributors push pre-gated (gofmt + vet + golangci-lint + tests)
+	// instead of finding failures in CI. Cross-platform; skips for end users who
+	// installed the binary outside the repo. Idempotent.
+	printInstallResult(setup.ArmMaatGate())
+
 	// ── Summary ────────────────────────────────────────────────────────────
 	fmt.Println()
 	// Re-evaluate required deps after any installs above.
