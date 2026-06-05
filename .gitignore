@@ -56,6 +56,10 @@ ios/.build/
 /sirsi-agent
 /sirsi-menubar
 
+# Extension package artifacts and embedded CLI copies are generated, not source.
+extensions/**/*.vsix
+extensions/*/sirsi
+
 # Idea Router runtime artifacts
 .agents/idea-router/bin/
 .agents/idea-router/work-queue.json
