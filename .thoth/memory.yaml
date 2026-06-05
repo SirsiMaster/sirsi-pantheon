@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-06-04T16:32:19-04:00
+# Last updated: 2026-06-04T22:54:26-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -9,7 +9,7 @@ language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
 binary_count: 8 (anubis, guard, maat, scarab, sirsi, sirsi-agent, sirsi-menubar, thoth)
 test_count: 1924+
-line_count: ~114,275
+line_count: ~114,790
 module_count: 44
 command_count: 153
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
@@ -499,6 +499,22 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-06-04: Canonicalized machine (1 versioned signed sirsi, zsh completion, no drift); sirsi fix resolver + safe PPID-orphan-kill (funnel BLOCKED pending codex User-metadata gap); menubar zsh close-prompt fix (read _). Open: install wizard, orphan User fix, mds_stores sudo.
+# 2026-06-04: Router snapshot:
+# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-04: completed topics: 41
+# 2026-06-04: last Codex read: 2026-06-05T02:48:24Z
+# 2026-06-04: last Claude read: 2026-06-05T02:51:31Z
+# 2026-06-04: pending: none
+# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-04: sirsi fix heuristic resolver (no LLM) — answers every finding; safe PPID-narrowed orphan-kill (KillTrueOrphans, PPID<=1 only, --yes never kills, 4 regression tests). Funnel diagnose->fix + menubar BLOCKED pending codex re-review (42588a9).
+# 2026-06-04: Router snapshot:
+# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-04: completed topics: 41
+# 2026-06-04: last Codex read: 2026-06-04T20:35:52Z
+# 2026-06-04: last Claude read: 2026-06-04T20:36:02Z
+# 2026-06-04: pending: none
+# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 # 2026-06-04: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e92c9-92fd-70e2-b849-33b23a6d8b83","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
 # 2026-06-04: Router snapshot:
 # 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
