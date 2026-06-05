@@ -40,10 +40,18 @@
    cherry-pick `db6228d` (or set VERSION), push.
 2. **Verify v0.23.1-beta artifacts** — confirm the new DMG/install carries the
    working `clean --confirm` (download + run, don't assume).
-3. **Codex's #1 mandate — productize the router supervisor**: ONE LaunchAgent from
-   `sirsi setup`, replacing ad-hoc per-agent heartbeat glue. This is the durable
-   fix for the codex↔claude continuous work/review loop (so neither agent ever
-   needs manual nudging). Codex owns the build; coordinate via router.
+3. **Router supervisor — IN FLIGHT NOW (integrate, don't restart).** Parallel build
+   kicked off 2026-06-05: **codex** is building the `sirsi horus supervise` command
+   (resident loop: inventory/register/60s-heartbeat/inbox-pull, its Ra/Horus lane);
+   a **claude agent** built the install side on branch **`feat/horus-supervisor-install`**
+   (`internal/setup.InstallSupervisor()` → LaunchAgent `ai.sirsi.horus.agent-router`
+   run from repo root + `sirsi setup` "Agent routing" step). **Contract:** command
+   `sirsi horus supervise`, label `ai.sirsi.horus.agent-router`, repo-root WorkingDirectory,
+   no /Applications writes. NEXT: verify the agent branch builds/lints/tests (it had an
+   in-progress `undefined: SurfaceSupervisor` to resolve), merge codex's supervise PR,
+   wire the two halves, then `sirsi setup` installs ONE resident supervisor that
+   auto-wakes both agents — the durable codex↔claude continuous-loop fix (replaces my
+   Monitor + codex's shell glue).
 4. **Case-study numbers (A14)**: build-log/case-studies claim 64 GB / 27× etc. —
    unreproduced this session. Reproduce or label as historical.
 5. **TUI live Scan view + actions** (it's a viewer; inspect/clean/refresh are inert)
