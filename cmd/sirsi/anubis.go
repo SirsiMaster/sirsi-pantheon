@@ -317,6 +317,29 @@ func runWeigh(ctx context.Context) error {
 	return nil
 }
 
+// selectCleanTargets returns the findings `sirsi clean` targets, given whether
+// caution-tier items are included. Scope is a function of severity + the
+// include-caution toggle ONLY — there is deliberately NO `confirm` parameter,
+// so the dry-run preview and the --confirm apply operate on the IDENTICAL set
+// (Rule A1: preview must match apply; apply cannot widen scope). SeverityWarning
+// findings are never auto-cleaned.
+func selectCleanTargets(findings []jackal.Finding, includeCaution bool) []jackal.Finding {
+	var safe, caution []jackal.Finding
+	for _, f := range findings {
+		switch f.Severity {
+		case jackal.SeveritySafe:
+			safe = append(safe, f)
+		case jackal.SeverityCaution:
+			caution = append(caution, f)
+		}
+	}
+	target := safe
+	if includeCaution {
+		target = append(target, caution...)
+	}
+	return target
+}
+
 func runJudge(ctx context.Context) error {
 	start := time.Now()
 	output.Banner()
@@ -358,26 +381,11 @@ func runJudge(ctx context.Context) error {
 		findings = append(findings, f)
 	}
 
-	// Filter to safe findings only unless --confirm is set.
-	var safe, caution []jackal.Finding
-	for _, f := range findings {
-		switch f.Severity {
-		case jackal.SeveritySafe:
-			safe = append(safe, f)
-		case jackal.SeverityCaution:
-			caution = append(caution, f)
-		}
-		// SeverityWarning items are never auto-cleaned
-	}
-
-	// Scope is governed by --include-caution ONLY (not --confirm). This keeps the
-	// preview (dry-run) and the apply (--confirm) targeting the IDENTICAL set, so
-	// the amount shown is exactly what gets moved to Trash (Rule A1: dry-run must
-	// match apply). --confirm decides whether to apply, never what.
-	target := safe
-	if anubisIncludeCaution {
-		target = append(target, caution...)
-	}
+	// Scope is governed by --include-caution ONLY (not --confirm), so the preview
+	// (dry-run) and the apply (--confirm) target the IDENTICAL set — the amount
+	// shown is exactly what moves to Trash (Rule A1: preview == apply). The pure
+	// selector has no confirm parameter, so apply structurally cannot widen scope.
+	target := selectCleanTargets(findings, anubisIncludeCaution)
 
 	if len(target) == 0 {
 		output.Info("No safe findings to clean. Use --include-caution to also target caution items.")
