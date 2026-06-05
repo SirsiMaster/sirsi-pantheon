@@ -97,9 +97,9 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 	pendingTotal := 0
 	for _, id := range agentIDs {
 		cfg := reg.Agents[id]
-		inbox, err := work.ListInbox(routerRoot, id)
-		if err != nil {
-			return nil, fmt.Errorf("list inbox for %s: %w", id, err)
+		inbox, ierr := work.ListInbox(routerRoot, id)
+		if ierr != nil {
+			return nil, fmt.Errorf("list inbox for %s: %w", id, ierr)
 		}
 
 		status := AgentSurfaceStatus{

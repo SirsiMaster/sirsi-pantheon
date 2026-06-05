@@ -127,7 +127,7 @@ func TestSuperviseOnceMarksStaleAgentThread(t *testing.T) {
 	}
 	reg.Threads["thr-stale-agent"].StartedAt = now.Add(-2 * time.Hour)
 	reg.Threads["thr-stale-agent"].LastSeenAt = now.Add(-time.Hour)
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+	if err = SaveThreadRegistry(routerRoot, reg); err != nil {
 		t.Fatal(err)
 	}
 
