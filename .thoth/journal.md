@@ -5,25 +5,6 @@
 
 ---
 
-## Entry 020 — 2026-03-26 23:05 — "The Third Rail: Never Touch the Bundle"
-
-**Context**: Session 23. IDE crashed catastrophically after Session 22. Required full reinstall + 2 restarts. User couldn't load any agent until recovery. Forensic investigation of Crashpad dumps revealed the root cause.
-
-**The Chain**:
-1. **21:46** — Extension Host V8 OOM. `electron.v8-oom.is_heap_oom`. The manifest patches from Session 22 (adding `title` to Git commands, adding undeclared commands to Antigravity extension) created a state where the Extension Host repeatedly fails validation and leaks memory through error reporting. V8 GC efficiency dropped to `mu = 0.132` (normal: >0.9). Heap exhausted.
-2. **22:24** — macOS Jetsam killed the main Electron process via `libMemoryResourceException.dylib`. Orphan processes + leaked memory triggered kernel-level memory pressure response.
-3. **22:45** — Post-reinstall, same kill. Crashpad `pending/` directory (34 dumps) persisted through reinstall. Second restart finally cleared the stale state.
-
-**Root Cause**: Manifest semantics, not syntax. Adding JSON `command` declarations without corresponding handlers creates an un-realizable state. The Extension Host validates, fails, reports, retries, leaks — until V8 OOM. `codesign` is irrelevant. The JSON is valid. The schema is valid. But the state is impossible.
-
-**Decision**: Rule A19 hardened to **ABSOLUTE PROHIBITION**. The Session 22 exception ("manifest-only patches are safe with re-signing") was wrong. No exceptions for any file type. Case study published at `docs/case-studies/session-23-extension-host-crash-forensics.md`.
-
-**New insight for Guardian**: Monitor `~/Library/Application Support/Antigravity/Crashpad/pending/*.dmp` count. 34 pending dumps is a leading indicator of chronic IDE instability — Guardian should warn before cascade.
-
-**Strategic implication**: The user's IDE has bugs in its bundled extensions that can't be fixed safely. This creates a legitimate case for either (a) forking the IDE, (b) building an extension that hardens against upstream bugs, or (c) advocating for upstream fixes. Option (b) is the pragmatic path — Pantheon's extension already does some of this, and Guardian's Crashpad monitoring would be genuinely novel.
-
----
-
 ## Entry 021 — 2026-03-26 23:20 — "The Watchman: Crashpad Monitor Ships"
 
 **Context**: Session 23 continued. After crash forensics and Rule A19 hardening, the user approved building Option (b) — a hardening layer that monitors crash dumps rather than trying to fix upstream bugs.
@@ -706,3 +687,23 @@ Made the menubar ACT, not just inform (user's #1 complaint). Shipped: in-place a
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
+
+## Entry 040 — 2026-06-04 23:19 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e95cb-0fb7-7621-8396-bd62ca478bcc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-05T03:19:52Z
+- last Claude read: 2026-06-05T03:19:52Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## 2026-06-04 — Guided setup wizard for the Monday VC build
+
+`sirsi setup` was three overlapping report-style commands (setup/initiate/permissions), none of which drove a fresh user to "ready." Rebuilt it as a single guided 3-step wizard (Dependencies → Full Disk Access → Agent wake) over a new shared `internal/setup/` engine — one engine, two surfaces (CDD #5): the CLI renders it and the menubar config row already spawns a terminal running the same `sirsi setup`, so they can't drift. Real TTY → prompts before each action (install tool, open FDA pane, "Press Enter once granted" re-check); pipe/file/dev-null/CI → report only, never opens System Settings or blocks. Fixed a clean-machine embarrassment: the dep list reported thoth-init/sync/compact as "missing" npm tools, but Thoth ships inside the sirsi binary — three false negatives a freshly-downloaded user would see. TTY detection moved to golang.org/x/term (os.ModeCharDevice wrongly classified /dev/null as a terminal and auto-opened Settings unattended). Engine is the single source of truth for main.go's scan-command FDA pre-check too. go build ./... + vet + go test ./internal/setup ./cmd/sirsi ./internal/router green. Commit ff8a448 on branch feat/setup-wizard (pushed). Open call for the user: whether a dedicated fullscreen TUI wizard screen is also wanted (gated by ADR-020 / TUI_DESIGN_PROOF) or the menubar→terminal path suffices. codex review owed (offline since 2026-06-01).
