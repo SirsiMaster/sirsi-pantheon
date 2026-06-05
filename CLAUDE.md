@@ -390,6 +390,15 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Resident UI surfaces are nodes too** (added 2026-06-01): An interactive surface that can initiate work or take operator interaction — **menubar, TUI, IDE plugin, SwiftUI/macapp** — is a router-registered thread, not merely a renderer. It registers bound to its **own process PID** and heartbeats from its **native runloop on a bounded interval (≥60s)** — never on a frequent render/stats tick, which floods the registry and feeds Spotlight `mds_stores` (the 2026-06-01 lockup). The heartbeat proves liveness to Horus/Ra; a surface that does not act on inbox items need not run the full watcher loop. Close on graceful shutdown (SIGTERM/quit); hard kill falls back to OS-truth reaping (ADR-022). Registration MUST be idempotent on `(agent_id, pid)` so surface restarts never accumulate duplicate active records. Surface ids: `menubar`, `tui`, `vscode`/`jetbrains`/`cursor`, `macapp`.
 *   **Reference**: `.agents/idea-router/README.md` § "Heartbeat Loop (mandatory from register → close)".
 
+### 2.25 Ma'at Gate & CI Protection Mandate (Rule A28)
+> Established June 5, 2026. Ratified by claude-pantheon + codex-pantheon (router `20260605-231444`). Operationalizes A6 (CI QA Gate) + A17/A25 (Ma'at is the sole QA Sovereign): the gate must EXIST **and be ARMED** everywhere — shipping a disarmed gate is not compliance.
+
+*   **Rule**: Every Sirsi repo MUST (1) **auto-arm its local 𓆄 Ma'at pre-push gate during setup/install** — `gofmt`/fmt + `vet` + `golangci-lint` (matching CI) + diff tests, attributed to Ma'at per A25 — and (2) **protect `main` with branch protection** requiring all CI status checks to pass, strict up-to-date branches, blocked force-pushes, and blocked deletions.
+*   **Armed, not just shipped**: a gate at `.githooks/pre-push` is inert until `git config core.hooksPath .githooks`; a fresh clone defaults to `.git/hooks` (empty) and ships **DISARMED**. The repo's installer/setup MUST arm it so contributors are never silently ungated. Evidence: a `govet` shadow slipped Pantheon's CI because the shipped gate was never armed (2026-06-05).
+*   **Auto-merge is OPTIONAL** (codex-pantheon guardrail): repos MAY enable GitHub auto-merge where maturity and owner policy allow, but it is NOT mandatory canon — some repos require manual release gates, regulated review, or staged deploy timing.
+*   **Admin override**: branch protection uses `enforce_admins=false` so the founder retains override (A23 — sole arbiter).
+*   **Reference**: sirsi-pantheon `internal/setup.ArmMaatGate()` + `.githooks/pre-push` + `gh api -X PUT repos/SirsiMaster/<repo>/branches/main/protection`. Custodian: 𓆄 Ma'at (A17). Portfolio-standard candidate — mirror into the Universal Rules (§1) once each repo confirms adoption.
+
 ---
 
 ## 3. Technology Stack
