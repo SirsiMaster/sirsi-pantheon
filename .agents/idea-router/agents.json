@@ -91,19 +91,6 @@
       "workstream": "porch-and-alley",
       "wake": {}
     },
-    "claude-sirsinexusapp": {
-      "id": "claude-sirsinexusapp",
-      "type": "claude",
-      "command": [
-        "claude",
-        "--print",
-        "--permission-mode",
-        "auto"
-      ],
-      "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
-      "workstream": "nexus",
-      "wake": {}
-    },
     "codex-assiduous": {
       "id": "codex-assiduous",
       "type": "codex",
@@ -164,21 +151,6 @@
       "workstream": "homebrew",
       "wake": {}
     },
-    "codex-homebrew-tools": {
-      "id": "codex-homebrew-tools",
-      "type": "codex",
-      "command": [
-        "codex",
-        "exec",
-        "-C",
-        "/Users/thekryptodragon/Development/homebrew-tools",
-        "--sandbox",
-        "workspace-write"
-      ],
-      "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
-      "workstream": "homebrew",
-      "wake": {}
-    },
     "codex-nexus": {
       "id": "codex-nexus",
       "type": "codex",
@@ -224,19 +196,30 @@
       "workstream": "porch-and-alley",
       "wake": {}
     },
-    "codex-sirsinexusapp": {
-      "id": "codex-sirsinexusapp",
+    "codex-home": {
+      "id": "codex-home",
       "type": "codex",
       "command": [
-        "codex",
-        "exec",
-        "-C",
-        "/Users/thekryptodragon/Development/SirsiNexusApp",
-        "--sandbox",
-        "workspace-write"
+        "codex"
       ],
-      "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
-      "workstream": "nexus",
+      "cwd": "/Users/thekryptodragon",
+      "workstream": "home",
+      "role": "root",
+      "note": "Codex home root. Defers to claude-home authority unless user grants override.",
+      "wake": {},
+      "defers_to": "claude-home"
+    },
+    "claude-home": {
+      "id": "claude-home",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "workstream": "home",
+      "role": "root-authority",
+      "authority": "All agents and threads adapt to claude-home. claude-home is the registration root and the registry-police monitor. Other agents (repo sub-ids like claude-pantheon, claude-ops, and codex-*) inherit from and defer to claude-home unless the user explicitly grants an override.",
+      "note": "Home-rooted authority. Sessions launched from $HOME register here; repo agents are sub-ids adopted on entering a repo. This is the root monitor \u2014 do not remove.",
       "wake": {}
     }
   }
