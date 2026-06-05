@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.23.1-beta] — 2026-06-05
+
 ### Fixed
 - **`sirsi clean` is now functional — the documented `--confirm` path works and actually cleans** (claude-pantheon, 2026-06-05). The top-level `clean` was a *second, divergent engine* (`runClean`, positional `safe/all`, **no `--confirm` flag**) — so the product's own printed next-step `sirsi clean --confirm` returned `unknown flag`, and even bare `sirsi clean` was a no-op (`cleanupApplyPaused()` "demo safety" brake). Rewired `sirsi clean` onto the one A1-correct engine (`runJudge`): preview by default, `--confirm` to apply (interactive `[y/N]`, trash-first), `--include-caution` for scope (preview = apply, Rule A1), `clean all` kept as a back-compat alias. Deleted the dead `runClean` (Rule 0) and removed the demo brake from the clean path — the real safety is scan-derived findings + protected paths + `[y/N]` + trash-first, not an env gate. Verified by running: `sirsi clean` → 23 items/4.0 GB preview; `sirsi clean --confirm` → `[y/N]` gate; `sirsi clean all` → 9.3 GB caution scope; `golangci-lint` 0 issues, `go test -run Clean|Judge` green. Refs: PANTHEON_RULES.md A1 (PARAMOUNT), ADR-016; Changelog: Unreleased.
 
