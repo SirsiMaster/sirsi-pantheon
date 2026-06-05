@@ -84,6 +84,35 @@ suggest.Commands(ctx Context) []string   // Tab-cycle list
 2. **Menu bar with dynamic items** — Make the systray menu context-aware. Rejected: systray API is limited — can't add/remove items dynamically after initialization.
 3. **Separate suggestion logic per surface** — Keep TUI/CLI/menubar independent. Rejected: led to inconsistent UX and triple maintenance burden.
 
+## Amendment (2026-06-05) — Menubar in-place SAFE ops
+
+`a2379ab` shipped menubar **in-place actions**, a deviation from the original
+"all menubar actions route through the TUI" letter. claude-home RULING (router
+item `…032100`) BLESSED it with codex arch-concurrence; canonized here.
+
+**Amended rule:** The menubar executes **SAFE / idempotent** ops **in-place**,
+off the UI thread, with observable feedback (status glyph ⏳/✓/✗ + the Recent
+Activity notify store). **DESTRUCTIVE and VERBOSE** ops route to the **TUI** or a
+**confirm / Terminal** path. A **single shared action registry** (`Action →
+Runner`) feeds both surfaces — neither forks the action set.
+
+Why the deviation is correct, not a violation:
+1. **User is sole arbiter** (Rule A23) and mandated in-place action.
+2. **The route-to-TUI clause is now satisfiable.** ADR-016's original letter
+   assumed a launchable TUI that did not exist when this was written (Gate-2
+   scaffold, ADR-018/020). As of 2026-06-05 the TUI **is** launchable —
+   `sirsi tui` runs live (commits `4f44dcd` event loop, `f850609` live thread +
+   router-inbox data) — so destructive/verbose ops have a real TUI to route to.
+3. **The deviation honors ADR-016's spirit.** ADR-016 existed to kill
+   fire-and-forget `osascript`-Terminal spawns. In-process exec off the UI
+   thread with observable feedback is *more* aligned (observable, non-orphaning)
+   than the Terminal spawn it replaced.
+4. **Safety preserved (Rule A1).** SAFE/idempotent ops run in-place; DESTRUCTIVE
+   (`clean`, `ra deploy`/`kill`, `guard`) keep the confirm/Terminal path.
+
+Refs: `a2379ab` (in-place actions), `4f44dcd`/`f850609` (live TUI launch path),
+router items `…031942`/`…032100` (ship + ruling), ADR-010, ADR-020.
+
 ## References
 - PANTHEON_RULES.md Rule A10 (Terminal UI Fidelity)
 - ADR-010: Menu Bar Application (companion — menu bar launches TUI)
