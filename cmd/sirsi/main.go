@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
@@ -678,12 +679,11 @@ Configure in your IDE:
 // are no longer registered.
 
 // (not piped from an IDE or redirected from a file).
+// isTerminal reports whether fd is a real terminal. It uses golang.org/x/term
+// rather than an os.ModeCharDevice stat, which wrongly classifies /dev/null
+// (a character device, but not a TTY) as interactive.
 func isTerminal(fd uintptr) bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(fd))
 }
 
 func init() {

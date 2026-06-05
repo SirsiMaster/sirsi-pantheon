@@ -91,13 +91,22 @@ fi
 echo -e "${DIM}  Extracting...${NC}"
 tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
-# 6. Install binary
+# 6. Install binaries (sirsi always; sirsi-menubar on macOS when present)
 if [ -f "${TMPDIR}/sirsi" ]; then
     cp "${TMPDIR}/sirsi" "${INSTALL_DIR}/sirsi"
     chmod +x "${INSTALL_DIR}/sirsi"
 else
     echo -e "${RED}  Binary not found in archive.${NC}"
     exit 1
+fi
+
+# Menubar is installed by default on macOS. The release archive ships
+# sirsi-menubar alongside sirsi; place it on PATH so `sirsi setup` can load
+# the LaunchAgent. (If absent — e.g. older release — the wizard reports it.)
+if [ "$OS" = "darwin" ] && [ -f "${TMPDIR}/sirsi-menubar" ]; then
+    cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
+    chmod +x "${INSTALL_DIR}/sirsi-menubar"
+    echo -e "${DIM}  Installed sirsi-menubar${NC}"
 fi
 
 # 7. Check PATH
@@ -115,4 +124,14 @@ echo -e "${GREEN}${BOLD}  ✅ Sirsi Pantheon installed${NC}"
 echo -e "${DIM}  Binary: ${INSTALL_DIR}/sirsi${NC}"
 echo -e "${DIM}  ${VERSION}${NC}"
 echo ""
-echo -e "${DIM}  Run 'sirsi' to begin.${NC}"
+
+# 9. Hand off to the setup wizard — choose surfaces (CLI/TUI/IDE; menubar
+# default on macOS) and grant permissions once, so nothing stops you later.
+# Only when attached to a terminal; piped installs print the next step instead.
+if [ -t 0 ] && [ -t 1 ]; then
+    echo -e "${GOLD}  Launching the setup wizard...${NC}"
+    echo ""
+    "${INSTALL_DIR}/sirsi" setup || true
+else
+    echo -e "${DIM}  Next: run 'sirsi setup' to choose your surfaces and grant permissions.${NC}"
+fi

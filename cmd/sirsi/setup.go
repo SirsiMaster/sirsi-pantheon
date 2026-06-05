@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
@@ -17,36 +16,108 @@ import (
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Guided first-run wizard — dependencies, permissions, agent wake",
-	Long: `Walk through everything Pantheon needs to run, in order:
+	Short: "Guided first-run wizard — surfaces, dependencies, permissions",
+	Long: `Set up everything Pantheon needs, in order:
 
-  1. Dependencies   — check (and optionally install) the tools Pantheon uses
-  2. Full Disk Access — grant macOS the access scans require, without prompts
-  3. Agent wake     — register installed AI CLIs so the router can reach them
+  1. Surfaces     — choose which faces to install: CLI / TUI / IDE
+                    (the menubar is installed by default on macOS)
+  2. Dependencies — check (and optionally install) the tools Pantheon uses
+  3. Permissions  — grant Full Disk Access once, so scans never hit a prompt
+  4. Agent wake   — register installed AI CLIs so the router can reach them
+
+Every surface is a face over the same engine — install several and switch
+between them anytime with 'sirsi surface use <cli|tui|gui|ide>'.
 
 Run interactively in a terminal and the wizard prompts before each action.
 
-  sirsi setup            Guided wizard (prompts before installing / granting)
-  sirsi setup --install  Non-interactive: install missing tools, open the FDA pane
-  sirsi setup --json     Machine-readable status, no prompts, no actions`,
+  sirsi setup                       Guided wizard (multi-select, prompts)
+  sirsi setup --surfaces cli,ide    Non-interactive: install these surfaces
+  sirsi setup --install             Non-interactive: install everything + open FDA pane
+  sirsi setup --json                Machine-readable status, no prompts, no actions`,
 	RunE: runSetup,
 }
 
 var (
-	setupInstall bool
-	setupJSON    bool
+	setupInstall  bool
+	setupJSON     bool
+	setupSurfaces string
 )
 
 func init() {
-	setupCmd.Flags().BoolVar(&setupInstall, "install", false, "Non-interactive: install missing dependencies and open the FDA pane")
+	setupCmd.Flags().BoolVar(&setupInstall, "install", false, "Non-interactive: install all surfaces + dependencies and open the FDA pane")
 	setupCmd.Flags().BoolVar(&setupJSON, "json", false, "Output status as JSON (no prompts, no actions)")
+	setupCmd.Flags().StringVar(&setupSurfaces, "surfaces", "", "Comma-separated surfaces to install (cli,tui,ide); skips the interactive picker")
 }
 
-// setupInteractive reports whether stdin is a real terminal we can prompt on.
-// A pipe, a file, or /dev/null must all return false so the wizard never opens
-// System Settings or blocks on a prompt in an unattended context.
-func setupInteractive() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
+// chooseSurfaces resolves which surfaces to install. Precedence:
+//
+//	--surfaces flag → that set; --install with no flag → all; interactive TTY →
+//	prompt; otherwise → all selectable (safe non-interactive default).
+func chooseSurfaces(reader *bufio.Reader, interactive bool) []setup.Surface {
+	if setupSurfaces != "" {
+		return parseSurfaces(setupSurfaces)
+	}
+	all := setup.Selectable()
+	if !interactive {
+		return all
+	}
+
+	fmt.Println("  Which surface(s) do you want? The menubar is always installed on macOS.")
+	fmt.Println()
+	for i, s := range all {
+		fmt.Printf("    %d. %-9s %s\n", i+1, s.Title(), s.Detail())
+	}
+	fmt.Println()
+	fmt.Print("  Enter numbers (e.g. 1,3), 'all', or press Enter for all: ")
+	line, _ := reader.ReadString('\n')
+	line = strings.ToLower(strings.TrimSpace(line))
+	if line == "" || line == "all" {
+		return all
+	}
+
+	var picked []setup.Surface
+	seen := map[setup.Surface]bool{}
+	for _, tok := range strings.FieldsFunc(line, func(r rune) bool { return r == ',' || r == ' ' }) {
+		switch tok {
+		case "cli", "1":
+			addSurface(&picked, seen, setup.SurfaceCLI)
+		case "tui", "2":
+			addSurface(&picked, seen, setup.SurfaceTUI)
+		case "ide", "3":
+			addSurface(&picked, seen, setup.SurfaceIDE)
+		}
+	}
+	if len(picked) == 0 {
+		// Unparseable input: default to CLI so the user is never left with nothing.
+		return []setup.Surface{setup.SurfaceCLI}
+	}
+	return picked
+}
+
+func parseSurfaces(csv string) []setup.Surface {
+	var picked []setup.Surface
+	seen := map[setup.Surface]bool{}
+	for _, tok := range strings.Split(csv, ",") {
+		switch strings.ToLower(strings.TrimSpace(tok)) {
+		case "cli":
+			addSurface(&picked, seen, setup.SurfaceCLI)
+		case "tui":
+			addSurface(&picked, seen, setup.SurfaceTUI)
+		case "ide":
+			addSurface(&picked, seen, setup.SurfaceIDE)
+		}
+	}
+	if len(picked) == 0 {
+		return []setup.Surface{setup.SurfaceCLI}
+	}
+	return picked
+}
+
+func addSurface(picked *[]setup.Surface, seen map[setup.Surface]bool, s setup.Surface) {
+	if !seen[s] {
+		seen[s] = true
+		*picked = append(*picked, s)
+	}
 }
 
 // promptYesNo asks a yes/no question, defaulting to def on an empty answer.
@@ -64,6 +135,18 @@ func promptYesNo(reader *bufio.Reader, question string, def bool) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// printInstallResult renders one surface install outcome.
+func printInstallResult(r setup.InstallResult) {
+	switch r.Status {
+	case setup.StatusOK:
+		output.Success("  %s — %s", r.Surface.Title(), r.Message)
+	case setup.StatusSkipped:
+		fmt.Printf("  • %s — %s\n", r.Surface.Title(), r.Message)
+	default:
+		output.Warn("  %s — %s", r.Surface.Title(), r.Message)
 	}
 }
 
@@ -96,15 +179,41 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		return runSetupJSON()
 	}
 
-	interactive := setupInteractive() && !setupInstall
+	interactive := isTerminal(os.Stdin.Fd()) && !setupInstall
 	reader := bufio.NewReader(os.Stdin)
 
 	output.Banner()
 	fmt.Println("Pantheon Setup")
 	fmt.Println()
 
-	// ── Step 1 / 3 — Dependencies ──────────────────────────────────────────
-	fmt.Println("  Step 1 / 3 — Dependencies")
+	// ── Step 1 / 4 — Surfaces ───────────────────────────────────────────────
+	fmt.Println("  Step 1 / 4 — Surfaces")
+	fmt.Println()
+
+	surfaces := chooseSurfaces(reader, interactive)
+	labels := make([]string, len(surfaces))
+	for i, s := range surfaces {
+		labels[i] = s.Title()
+	}
+	fmt.Printf("  Installing: %s", strings.Join(labels, ", "))
+	if runtime.GOOS == "darwin" {
+		fmt.Print(" + Menubar (default)")
+	}
+	fmt.Println()
+	fmt.Println()
+
+	for _, s := range surfaces {
+		r := setup.Install(s)
+		printInstallResult(r)
+	}
+	// Menubar is installed by default on macOS, regardless of selection.
+	if runtime.GOOS == "darwin" {
+		printInstallResult(setup.InstallMenubar())
+	}
+
+	// ── Step 2 / 4 — Dependencies ──────────────────────────────────────────
+	fmt.Println()
+	fmt.Println("  Step 2 / 4 — Dependencies")
 	fmt.Println()
 
 	deps := setup.Dependencies()
@@ -174,9 +283,9 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		fmt.Printf("  %d not installed. Run 'sirsi setup --install' to install automatically.\n", missing)
 	}
 
-	// ── Step 2 / 3 — Full Disk Access ──────────────────────────────────────
+	// ── Step 3 / 4 — Full Disk Access ──────────────────────────────────────
 	fmt.Println()
-	fmt.Println("  Step 2 / 3 — Full Disk Access")
+	fmt.Println("  Step 3 / 4 — Full Disk Access")
 	fmt.Println()
 
 	fdaOK := setup.FullDiskAccessGranted()
@@ -219,9 +328,9 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// ── Step 3 / 3 — Agent wake registration ───────────────────────────────
+	// ── Step 4 / 4 — Agent wake registration ───────────────────────────────
 	fmt.Println()
-	fmt.Println("  Step 3 / 3 — Agent wake registration")
+	fmt.Println("  Step 4 / 4 — Agent wake registration")
 	fmt.Println()
 
 	if added, err := setup.RegisterAgentWake(); err != nil {
