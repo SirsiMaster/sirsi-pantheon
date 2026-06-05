@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
@@ -25,11 +26,15 @@ const supervisorPlistLabel = "ai.sirsi.horus.agent-router"
 // supervisorPlistContent renders the LaunchAgent that runs `sirsi horus
 // supervise` from an explicit WorkingDirectory.
 //
-// It execs the resolved sirsi binary through a login shell (so the supervised
-// loop inherits a full PATH for the subprocesses it spawns) and pins
-// WorkingDirectory to the repo root so router state resolves regardless of the
-// launchd default cwd. ProcessType is Background — the supervisor is a headless
-// resident loop, not an interactive surface.
+// It pins WorkingDirectory to the repo root so router state resolves regardless
+// of the launchd default cwd, and sets an explicit PATH via EnvironmentVariables
+// so the supervisor's wakeability probe (exec.LookPath for `claude`, `codex`,
+// etc.) finds the agent CLIs. A bare `/bin/zsh -l` is NOT enough: a
+// non-interactive login shell sources .zprofile/.zshenv but not .zshrc, where
+// ~/.local/bin is commonly added — so launchd would hand the supervisor a
+// minimal PATH and every agent would be misreported as "not found in PATH".
+// The PATH leads with the sirsi binary's own directory (agent CLIs are usually
+// installed beside it). ProcessType is Background — a headless resident loop.
 func supervisorPlistContent(sirsiBinPath, workDir string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -39,6 +44,11 @@ func supervisorPlistContent(sirsiBinPath, workDir string) string {
 	<string>ai.sirsi.horus.agent-router</string>
 	<key>WorkingDirectory</key>
 	<string>%[2]s</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>%[3]s</string>
+	</dict>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/zsh</string>
@@ -58,7 +68,33 @@ func supervisorPlistContent(sirsiBinPath, workDir string) string {
 	<string>Background</string>
 </dict>
 </plist>
-`, sirsiBinPath, workDir)
+`, sirsiBinPath, workDir, supervisorPath(sirsiBinPath))
+}
+
+// supervisorPath builds the PATH the LaunchAgent exports so the supervisor's
+// wakeability probe (exec.LookPath) can resolve agent CLIs under launchd's
+// minimal default environment. It leads with the sirsi binary's own directory
+// (agent CLIs are typically installed alongside it), then ~/.local/bin, common
+// package-manager prefixes, and the system dirs, de-duplicated in order.
+func supervisorPath(sirsiBinPath string) string {
+	dirs := []string{filepath.Dir(sirsiBinPath)}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".local", "bin"))
+	}
+	dirs = append(dirs,
+		"/opt/homebrew/bin", "/usr/local/bin",
+		"/usr/bin", "/bin", "/usr/sbin", "/sbin",
+	)
+	seen := make(map[string]bool, len(dirs))
+	uniq := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		if d == "" || d == "." || seen[d] {
+			continue
+		}
+		seen[d] = true
+		uniq = append(uniq, d)
+	}
+	return strings.Join(uniq, ":")
 }
 
 // supervisorPlistPath is where the LaunchAgent is written.

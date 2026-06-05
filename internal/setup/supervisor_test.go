@@ -28,13 +28,35 @@ func TestSupervisorPlistContent(t *testing.T) {
 		"<key>RunAtLoad</key>",
 		// Background process type (headless resident loop, not interactive).
 		"<string>Background</string>",
-		// Login-shell exec wrapper so PATH is inherited.
+		// Login-shell exec wrapper.
 		"/bin/zsh",
+		// Explicit PATH so the wakeability probe (exec.LookPath) resolves agent
+		// CLIs under launchd's minimal environment — a bare login shell skips
+		// .zshrc where ~/.local/bin is added.
+		"<key>EnvironmentVariables</key>",
+		"<key>PATH</key>",
+		// The sirsi binary's own directory leads the PATH (agent CLIs sit beside it).
+		"/usr/local/bin",
 	}
 	for _, w := range wants {
 		if !strings.Contains(plist, w) {
 			t.Errorf("supervisor plist missing %q:\n%s", w, plist)
 		}
+	}
+}
+
+func TestSupervisorPathLeadsWithBinDir(t *testing.T) {
+	path := supervisorPath("/Users/dev/.local/bin/sirsi")
+	if !strings.HasPrefix(path, "/Users/dev/.local/bin:") {
+		t.Errorf("supervisorPath should lead with the binary's dir, got %q", path)
+	}
+	// No duplicate entries (binary dir == ~/.local/bin must collapse to one).
+	seen := map[string]bool{}
+	for d := range strings.SplitSeq(path, ":") {
+		if seen[d] {
+			t.Errorf("supervisorPath has duplicate entry %q in %q", d, path)
+		}
+		seen[d] = true
 	}
 }
 
