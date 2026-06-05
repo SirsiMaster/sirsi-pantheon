@@ -24,7 +24,7 @@ var setupCmd = &cobra.Command{
                     (the menubar is installed by default on macOS)
   2. Dependencies — check (and optionally install) the tools Pantheon uses
   3. Permissions  — grant Full Disk Access once, so scans never hit a prompt
-  4. Agent wake   — register installed AI CLIs so the router can reach them
+  4. Agent routing — register AI CLIs + install the Horus agent-router supervisor
 
 Every surface is a face over the same engine — install several and switch
 between them anytime with 'sirsi surface use <cli|tui|gui|ide>'.
@@ -167,6 +167,7 @@ type setupJSONReport struct {
 	MissingRequired int                        `json:"missing_required"`
 	MissingOptional int                        `json:"missing_optional"`
 	FullDiskAccess  bool                       `json:"full_disk_access"`
+	SupervisorOK    bool                       `json:"supervisor_installed"`
 	BinaryPath      string                     `json:"binary_path"`
 	Ready           bool                       `json:"ready"`
 }
@@ -329,9 +330,9 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// ── Step 4 / 4 — Agent wake registration ───────────────────────────────
+	// ── Step 4 / 4 — Agent routing ─────────────────────────────────────────
 	fmt.Println()
-	fmt.Println("  Step 4 / 4 — Agent wake registration")
+	fmt.Println("  Step 4 / 4 — Agent routing")
 	fmt.Println()
 
 	if added, err := setup.RegisterAgentWake(); err != nil {
@@ -343,6 +344,13 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		for _, id := range added {
 			fmt.Printf("    • %s\n", id)
 		}
+	}
+
+	// Install the resident Horus agent-router supervisor (`sirsi horus
+	// supervise`) as a LaunchAgent so the router keeps relaying between agents.
+	// macOS only; idempotent (a re-install reloads).
+	if runtime.GOOS == "darwin" {
+		printInstallResult(setup.InstallSupervisor())
 	}
 
 	// ── Summary ────────────────────────────────────────────────────────────
@@ -377,6 +385,7 @@ func runSetupJSON() error {
 	rep := setupJSONReport{
 		Platform:       runtime.GOOS,
 		FullDiskAccess: setup.FullDiskAccessGranted(),
+		SupervisorOK:   setup.SupervisorInstalled(),
 		BinaryPath:     setup.BinaryPath(),
 	}
 	if runtime.GOOS == "darwin" {

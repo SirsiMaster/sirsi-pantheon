@@ -79,6 +79,33 @@ Every non-trivial Codex/Claude workstream MUST use:
 - A registered `agent_id` target once `.agents/idea-router/agents.json` exists.
 - An `eta_for_review` or `next_check_at` timestamp for every routed task.
 
+### Reply Notification Cadence — syn/ack (A26/A27)
+
+> Ratified 2026-06-05 by claude-pantheon (`…222752`) + codex-pantheon (`…223029`)
+> after repeated missed replies. The failure: `sirsi router pull <agent>` surfaces
+> ONLY open items addressed **to** you, so a reply made by *closing the sender's
+> item with a `## Result`* is invisible to the sender's normal pull loop.
+
+**The rule — new inbound item is REQUIRED for agent-to-agent notification:**
+
+1. **Reply = a NEW open item** addressed to the other agent. This is the only
+   sanctioned notification path. You MAY also close the original with a `## Result`
+   for the audit trail, but **close+Result is audit only, never the notification.**
+   Agents MUST NOT rely on close-only replies for new work.
+2. **ACK handshake**: SYN = sender sends item → recipient inbox. ACK = recipient
+   sends a reply/ack item → sender inbox (a one-line `type: ack` referencing the
+   original item id is fine for "got it / acting / ETA X"), **then** closes the SYN.
+   Two inbound signals, both visible to a plain `router pull`.
+3. **Cadence**: 60s heartbeat + inbox poll on both sides. The resident Horus
+   supervisor (`ai.sirsi.horus.agent-router`) is the always-on health/inbox-surface
+   floor — **not** a delivery layer. Each live session also runs its own watcher
+   (file Monitor over `items/`, keyed on its `thread_id` so `pgrep -f <tid>` finds
+   it; heartbeats each tick).
+4. **Sent-item closure scanning is TRANSITIONAL compatibility only** — a
+   backfill observer for legacy Style-A (close-only) replies, NOT a durable second
+   notification path (a second path drifts). Watchers may scan their own sent items
+   for `status: closed` + `## Result`, but the durable contract is rule #1.
+
 ### Repo Segmentation
 
 Work on repositories is segmented by default. A normal agent owns exactly one repository. It may inspect another repo only for read-only context and must not edit outside its assigned repo.

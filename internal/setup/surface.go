@@ -27,6 +27,11 @@ const (
 	SurfaceMenubar Surface = "menubar"
 	// SurfaceGUI is the macOS native app (later-phase polish surface).
 	SurfaceGUI Surface = "gui"
+	// SurfaceSupervisor is the resident Horus agent-router LaunchAgent. Like the
+	// menubar it is installed by default on macOS and is not part of the opt-in
+	// set; it is not a user-facing surface but reuses InstallResult for a uniform
+	// install report.
+	SurfaceSupervisor Surface = "supervisor"
 )
 
 // Selectable returns the surfaces a user opts into at install time
@@ -49,6 +54,8 @@ func (s Surface) Title() string {
 		return "Menubar"
 	case SurfaceGUI:
 		return "GUI"
+	case SurfaceSupervisor:
+		return "Agent routing"
 	}
 	return string(s)
 }
@@ -66,6 +73,8 @@ func (s Surface) Detail() string {
 		return "macOS menu bar app — installed by default"
 	case SurfaceGUI:
 		return "macOS native app"
+	case SurfaceSupervisor:
+		return "Resident Horus agent-router supervisor — installed by default"
 	}
 	return ""
 }
