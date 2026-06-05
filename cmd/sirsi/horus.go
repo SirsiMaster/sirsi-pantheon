@@ -4,18 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
 )
 
 var (
-	horusKind   string
-	horusFilter string
+	horusKind              string
+	horusFilter            string
+	horusSuperviseOnce     bool
+	horusSuperviseInterval time.Duration
+	horusSuperviseAgentID  string
+	horusSuperviseThreadID string
 )
 
 var horusCmd = &cobra.Command{
@@ -30,7 +37,8 @@ and serves compact outlines and signatures instead of full files.
   sirsi horus scan .                   Build symbol graph
   sirsi horus outline internal/mcp/tools.go   File outline (no bodies)
   sirsi horus symbols --kind=func      List all functions
-  sirsi horus context NewServer        Show symbol context`,
+  sirsi horus context NewServer        Show symbol context
+  sirsi horus supervise --once         Check local router wake surfaces`,
 }
 
 var horusScanCmd = &cobra.Command{
@@ -67,11 +75,29 @@ var horusStatsCmd = &cobra.Command{
 	RunE:  runHorusStats,
 }
 
+var horusSuperviseCmd = &cobra.Command{
+	Use:   "supervise",
+	Short: "Run the Horus resident router supervisor loop",
+	Long: `Runs the local Ra/Horus router supervisor in the foreground.
+
+The supervisor inventories agents.json, refreshes its resident CTR thread,
+heartbeats every interval, pulls local agent inboxes, and reports each surface
+as wakeable, stale, blocked, or manual. It does not dispatch or merge work.
+
+  sirsi horus supervise --once
+  sirsi horus supervise --interval 60s`,
+	RunE: runHorusSupervise,
+}
+
 func init() {
 	horusSymbolsCmd.Flags().StringVar(&horusKind, "kind", "", "Filter by kind: type, func, method, interface, struct, const, var")
 	horusSymbolsCmd.Flags().StringVar(&horusFilter, "filter", "", "Filter by name pattern (glob with *)")
+	horusSuperviseCmd.Flags().BoolVar(&horusSuperviseOnce, "once", false, "Run one supervisor pass and exit")
+	horusSuperviseCmd.Flags().DurationVar(&horusSuperviseInterval, "interval", 60*time.Second, "Heartbeat/pull interval for resident mode")
+	horusSuperviseCmd.Flags().StringVar(&horusSuperviseAgentID, "agent-id", router.SupervisorAgentID, "CTR agent id for the supervisor thread")
+	horusSuperviseCmd.Flags().StringVar(&horusSuperviseThreadID, "thread", "", "Reuse a specific supervisor thread id")
 
-	horusCmd.AddCommand(horusScanCmd, horusOutlineCmd, horusSymbolsCmd, horusContextCmd, horusStatsCmd)
+	horusCmd.AddCommand(horusScanCmd, horusOutlineCmd, horusSymbolsCmd, horusContextCmd, horusStatsCmd, horusSuperviseCmd)
 }
 
 func horusParseDir(path string) (*horus.SymbolGraph, error) {
@@ -221,5 +247,94 @@ func runHorusStats(_ *cobra.Command, args []string) error {
 	output.Info("  Methods:    %d", graph.Stats.Methods)
 	output.Footer(time.Since(start))
 	output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "horus", Subcommand: "stats"}))
+	return nil
+}
+
+func runHorusSupervise(cmd *cobra.Command, _ []string) error {
+	if horusSuperviseInterval <= 0 {
+		return fmt.Errorf("--interval must be positive")
+	}
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return fmt.Errorf("no idea-router found: %w", err)
+	}
+	opts := router.SuperviseOptions{
+		RepoRoot: repoRoot,
+		AgentID:  horusSuperviseAgentID,
+		ThreadID: horusSuperviseThreadID,
+	}
+	if horusSuperviseOnce {
+		report, err := router.SuperviseOnce(opts)
+		if err != nil {
+			return err
+		}
+		return printSuperviseReport(report)
+	}
+
+	fmt.Printf("𓂀 Horus supervisor running (interval=%s, repo=%s)\n", horusSuperviseInterval, repoRoot)
+	fmt.Println("  Press Ctrl-C to stop. LaunchAgent label: ai.sirsi.horus.agent-router")
+	fmt.Println()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+
+	ticker := time.NewTicker(horusSuperviseInterval)
+	defer ticker.Stop()
+
+	for {
+		report, err := router.SuperviseOnce(opts)
+		if err != nil {
+			if JsonOutput {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "supervise: %v\n", err)
+		} else {
+			opts.ThreadID = report.ThreadID
+			if err := printSuperviseReport(report); err != nil {
+				return err
+			}
+		}
+		select {
+		case <-cmd.Context().Done():
+			return cmd.Context().Err()
+		case <-sig:
+			fmt.Println("Horus supervisor stopped.")
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func printSuperviseReport(report *router.SuperviseReport) error {
+	if JsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(report)
+	}
+	fmt.Printf("[%s] supervisor=%s status=%s pending=%d live=%d stale=%d\n",
+		time.Now().Format(time.RFC3339),
+		report.ThreadID,
+		report.Status,
+		report.PendingTotal,
+		report.LiveThreadCount,
+		report.StaleThreadCount,
+	)
+	for _, agent := range report.Agents {
+		if agent.PendingCount == 0 && agent.Status == router.SupervisorStatusWakeable {
+			continue
+		}
+		fmt.Printf("  • %-24s %-8s pending=%d", agent.AgentID, agent.Status, agent.PendingCount)
+		if len(agent.StaleThreads) > 0 {
+			fmt.Printf(" stale=%v", agent.StaleThreads)
+		}
+		if agent.Detail != "" && agent.Status != router.SupervisorStatusWakeable {
+			fmt.Printf(" — %s", agent.Detail)
+		}
+		fmt.Println()
+		for _, id := range agent.PendingItems {
+			fmt.Printf("      inbox: %s\n", id)
+		}
+	}
 	return nil
 }
