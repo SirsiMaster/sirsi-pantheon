@@ -7,6 +7,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/tui"
 )
 
 var surfaceCmd = &cobra.Command{
@@ -47,6 +48,12 @@ var surfaceUseCmd = &cobra.Command{
 		s, err := parseSurfaceArg(args[0])
 		if err != nil {
 			return err
+		}
+		// The TUI runs in this terminal, so launch it directly rather than
+		// returning a message (the engine can't import the cmd-layer program).
+		if s == setup.SurfaceTUI {
+			_ = setup.SaveActiveSurface(setup.SurfaceTUI)
+			return tui.Run()
 		}
 		msg, err := setup.LaunchSurface(s)
 		if err != nil {

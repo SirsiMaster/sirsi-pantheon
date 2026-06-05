@@ -232,11 +232,8 @@ func Install(s Surface) InstallResult {
 	case SurfaceCLI:
 		return InstallResult{Surface: SurfaceCLI, Status: StatusOK, Message: "CLI ready (this binary)"}
 	case SurfaceTUI:
-		// The full-screen TUI live app is gated behind ADR-020
-		// (docs/TUI_DESIGN_PROOF.md). Selecting it records the preference and
-		// routes through `sirsi surface use tui`, which today renders the rich
-		// terminal experience.
-		return InstallResult{Surface: SurfaceTUI, Status: StatusOK, Message: "TUI enabled (sirsi surface use tui)"}
+		// The full-screen TUI is a real runnable app (`sirsi tui`).
+		return InstallResult{Surface: SurfaceTUI, Status: StatusOK, Message: "TUI ready (sirsi tui)"}
 	case SurfaceIDE:
 		return RegisterIDE()
 	case SurfaceMenubar:
