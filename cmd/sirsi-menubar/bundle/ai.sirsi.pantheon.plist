@@ -9,7 +9,7 @@
 		<string>/bin/zsh</string>
 		<string>-l</string>
 		<string>-c</string>
-		<string>exec "$(command -v sirsi-menubar || echo /opt/homebrew/bin/sirsi-menubar)"</string>
+		<string>for p in "$HOME/.local/bin/sirsi-menubar" "/Applications/Pantheon.app/Contents/MacOS/sirsi-menubar" "/opt/homebrew/bin/sirsi-menubar" "$(command -v sirsi-menubar 2>/dev/null)"; do [ -x "$p" ] &amp;&amp; exec "$p"; done; echo "sirsi-menubar not found" &gt;&amp;2; exit 127</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

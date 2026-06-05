@@ -5,25 +5,6 @@
 
 ---
 
-## Entry 020 — 2026-03-26 23:05 — "The Third Rail: Never Touch the Bundle"
-
-**Context**: Session 23. IDE crashed catastrophically after Session 22. Required full reinstall + 2 restarts. User couldn't load any agent until recovery. Forensic investigation of Crashpad dumps revealed the root cause.
-
-**The Chain**:
-1. **21:46** — Extension Host V8 OOM. `electron.v8-oom.is_heap_oom`. The manifest patches from Session 22 (adding `title` to Git commands, adding undeclared commands to Antigravity extension) created a state where the Extension Host repeatedly fails validation and leaks memory through error reporting. V8 GC efficiency dropped to `mu = 0.132` (normal: >0.9). Heap exhausted.
-2. **22:24** — macOS Jetsam killed the main Electron process via `libMemoryResourceException.dylib`. Orphan processes + leaked memory triggered kernel-level memory pressure response.
-3. **22:45** — Post-reinstall, same kill. Crashpad `pending/` directory (34 dumps) persisted through reinstall. Second restart finally cleared the stale state.
-
-**Root Cause**: Manifest semantics, not syntax. Adding JSON `command` declarations without corresponding handlers creates an un-realizable state. The Extension Host validates, fails, reports, retries, leaks — until V8 OOM. `codesign` is irrelevant. The JSON is valid. The schema is valid. But the state is impossible.
-
-**Decision**: Rule A19 hardened to **ABSOLUTE PROHIBITION**. The Session 22 exception ("manifest-only patches are safe with re-signing") was wrong. No exceptions for any file type. Case study published at `docs/case-studies/session-23-extension-host-crash-forensics.md`.
-
-**New insight for Guardian**: Monitor `~/Library/Application Support/Antigravity/Crashpad/pending/*.dmp` count. 34 pending dumps is a leading indicator of chronic IDE instability — Guardian should warn before cascade.
-
-**Strategic implication**: The user's IDE has bugs in its bundled extensions that can't be fixed safely. This creates a legitimate case for either (a) forking the IDE, (b) building an extension that hardens against upstream bugs, or (c) advocating for upstream fixes. Option (b) is the pragmatic path — Pantheon's extension already does some of this, and Guardian's Crashpad monitoring would be genuinely novel.
-
----
-
 ## Entry 021 — 2026-03-26 23:20 — "The Watchman: Crashpad Monitor Ships"
 
 **Context**: Session 23 continued. After crash forensics and Rule A19 hardening, the user approved building Option (b) — a hardening layer that monitors crash dumps rather than trying to fix upstream bugs.
@@ -706,3 +687,42 @@ Made the menubar ACT, not just inform (user's #1 complaint). Shipped: in-place a
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
+
+## Entry 040 — 2026-06-04 23:19 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e95cb-0fb7-7621-8396-bd62ca478bcc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-05T03:19:52Z
+- last Claude read: 2026-06-05T03:19:52Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## 2026-06-04 — Guided setup wizard for the Monday VC build
+
+`sirsi setup` was three overlapping report-style commands (setup/initiate/permissions), none of which drove a fresh user to "ready." Rebuilt it as a single guided 3-step wizard (Dependencies → Full Disk Access → Agent wake) over a new shared `internal/setup/` engine — one engine, two surfaces (CDD #5): the CLI renders it and the menubar config row already spawns a terminal running the same `sirsi setup`, so they can't drift. Real TTY → prompts before each action (install tool, open FDA pane, "Press Enter once granted" re-check); pipe/file/dev-null/CI → report only, never opens System Settings or blocks. Fixed a clean-machine embarrassment: the dep list reported thoth-init/sync/compact as "missing" npm tools, but Thoth ships inside the sirsi binary — three false negatives a freshly-downloaded user would see. TTY detection moved to golang.org/x/term (os.ModeCharDevice wrongly classified /dev/null as a terminal and auto-opened Settings unattended). Engine is the single source of truth for main.go's scan-command FDA pre-check too. go build ./... + vet + go test ./internal/setup ./cmd/sirsi ./internal/router green. Commit ff8a448 on branch feat/setup-wizard (pushed). Open call for the user: whether a dedicated fullscreen TUI wizard screen is also wanted (gated by ADR-020 / TUI_DESIGN_PROOF) or the menubar→terminal path suffices. codex review owed (offline since 2026-06-01).
+
+## 2026-06-04 — Surface-selectable install: one engine, swappable faces
+
+Extended the Monday-VC setup work into the full surface model the user specified: the install flow is now "one engine, many faces." `internal/setup/surface.go` holds the Surface model (CLI/TUI/IDE/Menubar/GUI), per-surface install (menubar LaunchAgent ai.sirsi.pantheon, IDE via `claude mcp add`), and switching (ActiveSurface/SaveActiveSurface/LaunchSurface → ~/.config/sirsi/surface). `sirsi setup` Step 1/4 is now a multi-select surface picker (--surfaces csv, interactive, or all); menubar auto-installs on macOS. New `sirsi surface` / `sirsi surface use <cli|tui|gui|ide>` command. `scripts/install.sh` places sirsi-menubar from the archive and hands off to `sirsi setup` on a TTY. All three callers (install.sh, GUI/DMG installer, sirsi setup) drive the same engine — no drift. isTerminal() fixed repo-wide (golang.org/x/term, not os.ModeCharDevice which mis-classified /dev/null). Commits ff8a448 (wizard) + b009120 (surfaces), branch feat/setup-wizard, pushed. go build ./... + vet + go test ./internal/setup ./cmd/sirsi green.
+
+Release-pipeline reality (the menubar-shipping question): goreleaser runs on ubuntu CGO=0 and CANNOT build sirsi-menubar (fyne/systray needs Cocoa+CGO) — adding it to the builds list would break releases. The menubar already ships via the macos-latest job's DMG (Pantheon.app, Developer-ID signed when secrets present → FDA grants persist). So: DMG path ships menubar+signed (the GUI install); install.sh curl path ships CLI only and needs a separate standalone sirsi-menubar release asset to carry the menubar (follow-up, unverifiable without a release). Open last-mile: (a) how the VC receives it Monday — DMG (recommended, signed, complete) vs curl script; (b) auto-run `sirsi setup` on menubar first-launch so "GUI install implements this" is literal (menubar already has a Configure→setup row, just not automatic); (c) goreleaser standalone menubar asset for the script path. codex review owed (offline since 2026-06-01).
+
+## 2026-06-04 — Both delivery paths complete (menubar everywhere + first-run wizard)
+
+User chose "Both": completed the menubar+wizard across DMG and curl paths. (1) menubar runs `sirsi setup` on first launch (marker ~/.config/sirsi/.setup-launched). (2) release.yml macOS job builds+Developer-ID-signs a standalone sirsi-menubar_<ver>_darwin_arm64.tar.gz asset (additive to the DMG step). (3) install.sh fetches that asset on macOS when not in the archive. Commit c4d4c15. Branch feat/setup-wizard fully pushed (ff8a448 wizard, b009120 surfaces, c4d4c15 both-paths). bash -n + YAML parse + go build ./... + go test green. UNVERIFIABLE-without-release: the standalone menubar asset + DMG artifacts only exist once a tag is pushed and the release workflow runs — the user must cut a release before Monday for the curl/DMG paths to carry the new binaries. Everything else is locally verified. codex review owed (offline since 2026-06-01); PR not yet opened.
+
+## 2026-06-05 — The two missing surfaces are now real Go builds (TUI + Mac GUI)
+
+User corrected priority: I was polishing the install/release wrapper around surfaces that didn't exist. Reality check: CLI + menubar were real; **TUI and Mac app were vaporware**. Built both as real, successful Go builds (Go-first per [[feedback_go_standard]]).
+
+- **TUI (`sirsi tui`, commit 4f44dcd):** internal/tui was a rendering CONTRACT (AppState + pure Reduce + Renderer) with nothing to launch it. Added the live Bubbletea v2 (charm.land/bubbletea/v2) event loop in internal/tui/program.go — thin Elm adapter: key→registry→Reduce→re-render, tab cycles views, q quits, resize reflows. Renders the 3 canonical views (Scan/Ra Fleet/Router Inbox), fixture-backed for now. Headless tests + clean PTY run.
+- **Mac GUI (`sirsi-gui`, commit d505c7b):** the ADR-015 "Ferrari" existed only on paper. Built Go-native (CDD #2: Go HTTP + embedded HTML) — webview_go/WKWebView window over the existing internal/dashboard server; reuses a running menubar dashboard on the fixed port. darwin build file + !darwin stub keeps Linux CI green. Builds: 17MB arm64 Mach-O; linux stub cross-compiles.
+
+All four surfaces now build successfully: CLI (sirsi), TUI (sirsi tui), Menubar (sirsi-menubar), Mac GUI (sirsi-gui) — all faces over the same engine, switchable via `sirsi surface use`. Branch feat/setup-wizard, PR #2. Next iterations (follow-up, not blockers): wire live data into TUI views (currently fixtures); ship sirsi-gui in the DMG; richer GUI chrome. Then the install/release wrapper (which is already built) actually has four real things to install. codex review owed.

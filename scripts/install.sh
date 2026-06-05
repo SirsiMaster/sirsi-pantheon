@@ -91,13 +91,40 @@ fi
 echo -e "${DIM}  Extracting...${NC}"
 tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
-# 6. Install binary
+# 6. Install binaries (sirsi always; sirsi-menubar on macOS when present)
 if [ -f "${TMPDIR}/sirsi" ]; then
     cp "${TMPDIR}/sirsi" "${INSTALL_DIR}/sirsi"
     chmod +x "${INSTALL_DIR}/sirsi"
 else
     echo -e "${RED}  Binary not found in archive.${NC}"
     exit 1
+fi
+
+# Menubar is installed by default on macOS, so `sirsi setup` can load the
+# LaunchAgent. The CGO/Cocoa menubar can't ride in the cross-compiled
+# goreleaser archive, so it's published as a standalone darwin/arm64 asset
+# (Developer-ID signed; Intel runs it via Rosetta). Prefer the archive copy if
+# present, else fetch the standalone asset. Failure here is non-fatal — the
+# wizard reports a missing menubar rather than aborting the whole install.
+if [ "$OS" = "darwin" ]; then
+    if [ -f "${TMPDIR}/sirsi-menubar" ]; then
+        cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
+        chmod +x "${INSTALL_DIR}/sirsi-menubar"
+        echo -e "${DIM}  Installed sirsi-menubar${NC}"
+    else
+        MB_ARCHIVE="sirsi-menubar_${LATEST#v}_darwin_arm64.tar.gz"
+        MB_URL="https://github.com/${REPO}/releases/download/${LATEST}/${MB_ARCHIVE}"
+        echo -e "${DIM}  Fetching menubar (${MB_ARCHIVE})...${NC}"
+        if curl -fsSL -o "${TMPDIR}/${MB_ARCHIVE}" "$MB_URL" 2>/dev/null &&
+            tar xzf "${TMPDIR}/${MB_ARCHIVE}" -C "$TMPDIR" 2>/dev/null &&
+            [ -f "${TMPDIR}/sirsi-menubar" ]; then
+            cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
+            chmod +x "${INSTALL_DIR}/sirsi-menubar"
+            echo -e "${DIM}  Installed sirsi-menubar${NC}"
+        else
+            echo -e "${DIM}  Menubar asset not found for ${LATEST} — 'sirsi setup' will note it.${NC}"
+        fi
+    fi
 fi
 
 # 7. Check PATH
@@ -115,4 +142,14 @@ echo -e "${GREEN}${BOLD}  ✅ Sirsi Pantheon installed${NC}"
 echo -e "${DIM}  Binary: ${INSTALL_DIR}/sirsi${NC}"
 echo -e "${DIM}  ${VERSION}${NC}"
 echo ""
-echo -e "${DIM}  Run 'sirsi' to begin.${NC}"
+
+# 9. Hand off to the setup wizard — choose surfaces (CLI/TUI/IDE; menubar
+# default on macOS) and grant permissions once, so nothing stops you later.
+# Only when attached to a terminal; piped installs print the next step instead.
+if [ -t 0 ] && [ -t 1 ]; then
+    echo -e "${GOLD}  Launching the setup wizard...${NC}"
+    echo ""
+    "${INSTALL_DIR}/sirsi" setup || true
+else
+    echo -e "${DIM}  Next: run 'sirsi setup' to choose your surfaces and grant permissions.${NC}"
+fi

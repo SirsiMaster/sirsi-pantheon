@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-06-04T22:54:26-04:00
+# Last updated: 2026-06-04T23:19:57-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -8,9 +8,9 @@ repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
 binary_count: 8 (anubis, guard, maat, scarab, sirsi, sirsi-agent, sirsi-menubar, thoth)
-test_count: 1924+
-line_count: ~114,790
-module_count: 44
+test_count: 1930+
+line_count: ~114,981
+module_count: 45
 command_count: 153
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
@@ -499,6 +499,21 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-06-04: Setup wizard for Monday VC build (commit ff8a448, branch feat/setup-wizard, pushed).
+#   `sirsi setup` rebuilt: report -> guided 3-step wizard (Dependencies/FDA/Agent-wake) over new
+#   shared internal/setup/ engine (CDD #5: one engine, CLI + menubar-terminal both render it).
+#   Real TTY prompts before each action; pipe/dev-null/CI = report-only (golang.org/x/term, not
+#   os.ModeCharDevice which mis-classified /dev/null). Fixed thoth-init/sync/compact false-missing
+#   (thoth ships in the binary). main.go FDA pre-check now uses engine. Open: dedicated fullscreen
+#   TUI wizard screen? (ADR-020/TUI_DESIGN_PROOF-gated) or menubar->terminal suffices. codex review owed.
+# 2026-06-04: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e95cb-0fb7-7621-8396-bd62ca478bcc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+# 2026-06-04: Router snapshot:
+# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-04: completed topics: 41
+# 2026-06-04: last Codex read: 2026-06-05T03:19:52Z
+# 2026-06-04: last Claude read: 2026-06-05T03:19:52Z
+# 2026-06-04: pending: none
+# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 # 2026-06-04: Canonicalized machine (1 versioned signed sirsi, zsh completion, no drift); sirsi fix resolver + safe PPID-orphan-kill (funnel BLOCKED pending codex User-metadata gap); menubar zsh close-prompt fix (read _). Open: install wizard, orphan User fix, mds_stores sudo.
 # 2026-06-04: Router snapshot:
 # 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep

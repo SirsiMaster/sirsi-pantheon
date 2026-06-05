@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
@@ -14,6 +15,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
@@ -127,7 +129,7 @@ var rootCmd = &cobra.Command{
 
 		// First-run FDA check for scan-related commands on macOS.
 		// Warns once if Full Disk Access is not granted.
-		if !JsonOutput && !quietMode && needsFDA(cmd.Name()) && !checkFullDiskAccess() {
+		if !JsonOutput && !quietMode && setup.NeedsFDA(cmd.Name()) && !setup.FullDiskAccessGranted() {
 			fmt.Fprintf(os.Stderr, "\n  ⚠ Full Disk Access not granted — some directories may be inaccessible.\n")
 			fmt.Fprintf(os.Stderr, "    Run 'sirsi permissions' to fix this once.\n\n")
 		}
@@ -677,12 +679,11 @@ Configure in your IDE:
 // are no longer registered.
 
 // (not piped from an IDE or redirected from a file).
+// isTerminal reports whether fd is a real terminal. It uses golang.org/x/term
+// rather than an os.ModeCharDevice stat, which wrongly classifies /dev/null
+// (a character device, but not a TTY) as interactive.
 func isTerminal(fd uintptr) bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(fd))
 }
 
 func init() {
