@@ -160,16 +160,24 @@ var judgeCmd = &cobra.Command{
 }
 
 var cleanCmd = &cobra.Command{
-	Use:   "clean [all|safe]",
-	Short: "Clean scan findings (default: safe items only)",
+	Use:   "clean [safe|all]",
+	Short: "Preview and clean scan findings (safe by default; --confirm to apply)",
 	Long: `Clean infrastructure waste found by the last scan.
 
-  sirsi clean          Clean safe items only (caches, logs, temp files)
-  sirsi clean all      Clean safe + caution items
-  sirsi clean safe     Clean safe items only (same as default)
+  sirsi clean                     Preview safe items (caches, logs, temp files)
+  sirsi clean --confirm           Apply: move safe items to Trash (asks first)
+  sirsi clean --include-caution   Also target caution-tier items (preview + apply)
+  sirsi clean all                 Alias for --include-caution
 
-Loads findings from the last scan. Run sirsi scan first.`,
-	RunE: runClean,
+Default is a dry-run preview; the amount shown is exactly what --confirm moves
+to Trash (Rule A1: preview matches apply). Run sirsi scan first.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Back-compat: `sirsi clean all` == `--include-caution`.
+		if len(args) > 0 && args[0] == "all" {
+			anubisIncludeCaution = true
+		}
+		return runJudge(cmd.Context())
+	},
 }
 
 var dedupCmd = &cobra.Command{
@@ -703,6 +711,11 @@ func init() {
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
+	// Top-level `sirsi clean` shares the one A1-correct engine (runJudge): preview
+	// by default, --confirm to apply (asks first), --include-caution for scope.
+	cleanCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview only (default); use --confirm to apply")
+	cleanCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Apply the cleanup — move items to Trash (asks first)")
+	cleanCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (preview and apply)")
 	fixCmd.Flags().BoolVar(&fixYes, "yes", false, "Apply safe reclaim without the confirmation prompt")
 	// ── User-facing commands (visible in sirsi --help) ──
 	rootCmd.AddCommand(scanCmd, cleanCmd, ghostsCmd, dedupCmd, doctorCmd)

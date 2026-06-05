@@ -427,12 +427,10 @@ func runJudge(ctx context.Context) error {
 		return nil
 	}
 
-	if cleanupApplyPaused() {
-		output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
-		return nil
-	}
-
-	// Execute cleanup.
+	// Execute cleanup. Safety here is real, not a demo brake: scan-derived
+	// findings only, filtered to safe (or caution via --include-caution),
+	// protected paths hardcoded in internal/cleaner, the user just answered
+	// [y/N], and every move is trash-first (recoverable).
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
 
@@ -450,124 +448,6 @@ func runJudge(ctx context.Context) error {
 		"cleaned":     fmt.Sprintf("%d", cleanResult.Cleaned),
 		"bytes_freed": fmt.Sprintf("%d", cleanResult.BytesFreed),
 		"skipped":     fmt.Sprintf("%d", cleanResult.Skipped),
-	})
-
-	cr := &output.CommandResult{
-		Command:  "sirsi clean",
-		Summary:  fmt.Sprintf("Cleaned %d items. Reclaimed %s.", cleanResult.Cleaned, jackal.FormatSize(cleanResult.BytesFreed)),
-		Duration: time.Since(start),
-	}
-	cr.AddEvidence("Items cleaned", fmt.Sprintf("%d", cleanResult.Cleaned))
-	cr.AddEvidence("Space reclaimed", jackal.FormatSize(cleanResult.BytesFreed))
-	if cleanResult.Skipped > 0 {
-		cr.AddWarning("Skipped %d items (protected or errors)", cleanResult.Skipped)
-	}
-	cr.AddNextAction("sirsi scan", "Verify cleanup with a fresh scan")
-	cr.AddNextAction("sirsi ghosts", "Hunt remaining ghost app residuals")
-	cr.AddNextAction("sirsi diagnose", "Check overall system health")
-	cr.Render()
-	return nil
-}
-
-func runClean(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	start := time.Now()
-
-	mode := "safe"
-	if len(args) > 0 && args[0] == "all" {
-		mode = "all"
-	}
-
-	output.Banner()
-	output.Header("Automated Cleanup")
-
-	persisted, err := jackal.LoadLatest()
-	if err != nil {
-		output.Error("No scan results found. Run `sirsi scan` first.")
-		return fmt.Errorf("load findings: %w", err)
-	}
-
-	if len(persisted.Findings) == 0 {
-		output.Success("No findings to clean. System is clean.")
-		return nil
-	}
-
-	// Filter by severity
-	var findings []jackal.Finding
-	for _, pf := range persisted.Findings {
-		f := jackal.Finding{
-			RuleName:    pf.RuleName,
-			Category:    pf.Category,
-			Description: pf.Description,
-			Path:        pf.Path,
-			SizeBytes:   pf.SizeBytes,
-			Severity:    pf.Severity,
-			IsDir:       pf.IsDir,
-			FileCount:   pf.FileCount,
-			CanFix:      pf.CanFix,
-			Advisory:    pf.Advisory,
-			Remediation: pf.Remediation,
-		}
-		if pf.LastModified != "" {
-			f.LastModified, _ = time.Parse(time.RFC3339, pf.LastModified)
-		}
-		if !f.CanFix {
-			continue
-		}
-		if mode == "safe" && f.Severity != jackal.SeveritySafe {
-			continue
-		}
-		if f.Severity == jackal.SeverityWarning && mode != "all" {
-			continue
-		}
-		findings = append(findings, f)
-	}
-
-	if len(findings) == 0 {
-		output.Info("No %s findings to clean.", mode)
-		return nil
-	}
-
-	var totalSize int64
-	for _, f := range findings {
-		totalSize += f.SizeBytes
-	}
-
-	output.Info("Cleaning %d %s findings (%s):", len(findings), mode, jackal.FormatSize(totalSize))
-	for i, f := range findings {
-		if i >= 15 {
-			output.Dim("  ... and %d more", len(findings)-15)
-			break
-		}
-		sev := "🟢"
-		if f.Severity == jackal.SeverityCaution {
-			sev = "🟡"
-		}
-		output.Dim("  %s %s (%s) → %s", sev, f.Description, jackal.FormatSize(f.SizeBytes), f.Remediation)
-	}
-
-	if cleanupApplyPaused() {
-		output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
-		return nil
-	}
-
-	// Execute
-	engine := jackal.DefaultEngine()
-	engine.RegisterAll(rules.AllRules()...)
-
-	cleanResult, err := engine.Clean(ctx, findings, jackal.CleanOptions{
-		DryRun:   false,
-		Confirm:  true,
-		UseTrash: true,
-	})
-	if err != nil {
-		return fmt.Errorf("clean failed: %w", err)
-	}
-
-	stele.Inscribe("anubis", stele.TypeAnubisClean, "", map[string]string{
-		"cleaned":     fmt.Sprintf("%d", cleanResult.Cleaned),
-		"bytes_freed": fmt.Sprintf("%d", cleanResult.BytesFreed),
-		"mode":        mode,
 	})
 
 	cr := &output.CommandResult{
