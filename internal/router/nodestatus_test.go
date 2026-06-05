@@ -211,6 +211,45 @@ func TestCollectNodeStatus_PendingByAgent(t *testing.T) {
 	}
 }
 
+func TestCollectNodeStatus_PendingByAgentUsesItemsQueue(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	itemsDir := filepath.Join(routerRoot, "items")
+	if err := os.MkdirAll(itemsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	item := `---
+from: "claude-pantheon"
+to: "codex-pantheon"
+title: "canonical queue item"
+status: open
+opened: 2026-06-05T23:20:00Z
+---
+
+## Instructions
+
+Use items/ as the canonical queue.
+`
+	if err := os.WriteFile(filepath.Join(itemsDir, "live-item.md"), []byte(item), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+
+	if ns.TotalPending != 1 {
+		t.Fatalf("TotalPending = %d, want 1", ns.TotalPending)
+	}
+	if got := ns.PendingByAgent["codex-pantheon"]; len(got) != 1 || got[0] != "live-item" {
+		t.Fatalf("PendingByAgent[codex-pantheon] = %v, want [live-item]", got)
+	}
+	if _, ok := ns.PendingByAgent["claude-pantheon"]; ok {
+		t.Fatal("stale state.json pending should not be surfaced when items/ has live work")
+	}
+}
+
 func TestCollectNodeStatus_RegisteredAgentsSorted(t *testing.T) {
 	repoRoot := setupNodeTestRouter(t)
 
@@ -479,5 +518,31 @@ func TestCollectNodeStatus_SurfacesLiveAndStaleThreads(t *testing.T) {
 	}
 	if !ns.StaleThreads[0].Stale {
 		t.Error("stale thread not marked stale=true in summary")
+	}
+}
+
+func TestCollectNodeStatus_DoesNotCountSuspendedThreadsAsLive(t *testing.T) {
+	installFakeAgentCLIs(t)
+	repoRoot := setupNodeTestRouter(t)
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+
+	thr, err := RegisterThread(routerRoot, &Thread{
+		AgentID: "claude-pantheon", Surface: "claude", Repo: repoRoot,
+		Watches: []string{"claude-pantheon"},
+	})
+	if err != nil {
+		t.Fatalf("RegisterThread: %v", err)
+	}
+	if _, err = SuspendThread(routerRoot, thr.ThreadID, &SuspendPayload{ResumePrompt: "resume later"}); err != nil {
+		t.Fatalf("SuspendThread: %v", err)
+	}
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	if ns.LiveThreadCount != 0 || len(ns.LiveThreads) != 0 || len(ns.StaleThreads) != 0 {
+		t.Fatalf("suspended thread surfaced as live/stale: live=%d stale=%d count=%d",
+			len(ns.LiveThreads), len(ns.StaleThreads), ns.LiveThreadCount)
 	}
 }
