@@ -142,6 +142,7 @@ func TestReapDeadThreads_DefunctAndGone(t *testing.T) {
 	defunct := mk("claude-defunct", 4002)
 	alive := mk("claude-alive", 4003)
 	noPID := mk("claude-nopid", 0)
+	pidOne := mk("claude-pid-one", 1)
 
 	old := getPIDStateFn()
 	setPIDStateFn(func(pid int) PIDState {
@@ -178,6 +179,9 @@ func TestReapDeadThreads_DefunctAndGone(t *testing.T) {
 	}
 	if got := reg.Threads[noPID.ThreadID].Status; got != ThreadStatusActive {
 		t.Errorf("no-PID thread: status=%q want active (unverifiable, never reaped)", got)
+	}
+	if got := reg.Threads[pidOne.ThreadID].Status; got != ThreadStatusActive {
+		t.Errorf("PID 1 thread: status=%q want active (below PID floor, never reaped)", got)
 	}
 
 	// A late heartbeat against a reaped thread must be refused (no revival).
