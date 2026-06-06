@@ -22,27 +22,13 @@ echo "  Version: ${VERSION}"
 
 # Build all Windows binaries
 mkdir -p "${WIN_DIR}"
+# Standalone deity binaries removed 2026-06-06 — redundant with `sirsi`
+# subcommands (see .goreleaser.yaml note). Ship sirsi + sirsi-agent only.
 for cmd in sirsi sirsi-agent; do
     dir="./cmd/${cmd}/"
-    # sirsi-anubis etc. have different cmd paths
     echo "  Compiling ${cmd}..."
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
         go build -ldflags="${GO_LDFLAGS}" -o "${WIN_DIR}/${cmd}.exe" "${dir}"
-done
-
-# The deity binaries have different source paths
-declare -A DEITY_PATHS=(
-    ["sirsi-anubis"]="./cmd/anubis/"
-    ["sirsi-maat"]="./cmd/maat/"
-    ["sirsi-thoth"]="./cmd/thoth/"
-    ["sirsi-scarab"]="./cmd/scarab/"
-    ["sirsi-guard"]="./cmd/guard/"
-)
-
-for cmd in "${!DEITY_PATHS[@]}"; do
-    echo "  Compiling ${cmd}..."
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-        go build -ldflags="${GO_LDFLAGS}" -o "${WIN_DIR}/${cmd}.exe" "${DEITY_PATHS[$cmd]}"
 done
 
 echo "  All binaries compiled."
