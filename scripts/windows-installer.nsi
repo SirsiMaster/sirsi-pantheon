@@ -32,11 +32,6 @@ Section "Sirsi Pantheon" SecMain
     ; Copy all binaries
     File "..\bin\windows\sirsi.exe"
     File "..\bin\windows\sirsi-agent.exe"
-    File "..\bin\windows\sirsi-anubis.exe"
-    File "..\bin\windows\sirsi-guard.exe"
-    File "..\bin\windows\sirsi-maat.exe"
-    File "..\bin\windows\sirsi-scarab.exe"
-    File "..\bin\windows\sirsi-thoth.exe"
 
     ; Copy configs
     SetOutPath "$INSTDIR\configs"
@@ -111,6 +106,8 @@ Section "Uninstall"
     ; Remove files
     Delete "$INSTDIR\sirsi.exe"
     Delete "$INSTDIR\sirsi-agent.exe"
+    ; Legacy: clean up standalone deity binaries from pre-2026-06-06 installs
+    ; (removed as redundant with `sirsi` subcommands). Delete is a no-op if absent.
     Delete "$INSTDIR\sirsi-anubis.exe"
     Delete "$INSTDIR\sirsi-guard.exe"
     Delete "$INSTDIR\sirsi-maat.exe"

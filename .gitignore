@@ -71,3 +71,6 @@ extensions/*/sirsi
 
 # Claude local runtime artifacts
 .claude/hooks/__pycache__/
+
+# Claude Code agent worktrees (isolated, never tracked)
+.claude/worktrees/
