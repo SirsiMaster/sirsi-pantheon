@@ -121,14 +121,7 @@ func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plist := RenderLaunchAgentPlist(ServiceOptions{
-		Label:      "ai.sirsi.pantheon",
-		RepoRoot:   "/tmp/repo",
-		BinaryPath: "/bin/zsh",
-		LogPath:    "/tmp/out.log",
-		ErrPath:    "/tmp/err.log",
-		PathEnv:    "/bin",
-	})
+	plist := testLaunchPlist("/bin/zsh")
 	if err := os.WriteFile(filepath.Join(agentDir, "ai.sirsi.pantheon.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
