@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
 // ProtectGlyph is the Eye of Horus — a sentinel stamped into the custom title
@@ -449,17 +451,7 @@ func SpawnWatchWindow(useITerm2 bool) {
 	end tell`
 	_ = exec.Command("osascript", "-e", killScript).Run()
 
-	// Find the sirsi binary
-	sirsiBin := "sirsi"
-	if p, err := exec.LookPath("sirsi"); err == nil {
-		sirsiBin = p
-	} else {
-		home, _ := os.UserHomeDir()
-		goPath := filepath.Join(home, "go", "bin", "sirsi")
-		if _, err := os.Stat(goPath); err == nil {
-			sirsiBin = goPath
-		}
-	}
+	sirsiBin := setup.SirsiBinaryPath()
 
 	shellCmd := fmt.Sprintf("%s ra watch", escapeShell(sirsiBin))
 	title := ProtectGlyph + " 𓇶 Ra Command Center"

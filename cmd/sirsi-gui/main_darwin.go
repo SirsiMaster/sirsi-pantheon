@@ -13,8 +13,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
 
 	webview "github.com/webview/webview_go"
@@ -28,7 +26,7 @@ func main() {
 	runtime.LockOSThread()
 
 	// Reuse a running dashboard (e.g. the menubar's) if present; else start one.
-	srv := dashboard.New(dashboard.Config{SirsiBin: sirsiBinary()})
+	srv := dashboard.New(dashboard.Config{SirsiBin: setup.SirsiBinaryPath()})
 	if err := srv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "sirsi-gui: reusing existing dashboard (%v)\n", err)
 	} else {
@@ -44,23 +42,4 @@ func main() {
 	w.SetSize(1100, 720, webview.HintNone)
 	w.Navigate(srv.URL())
 	w.Run()
-}
-
-// sirsiBinary resolves the sirsi CLI path so the dashboard's command runner and
-// actions work from the GUI. Falls back to the bare name on PATH.
-func sirsiBinary() string {
-	if exe, err := os.Executable(); err == nil {
-		if sibling := filepath.Join(filepath.Dir(exe), "sirsi"); fileExists(sibling) {
-			return sibling
-		}
-	}
-	if p, err := exec.LookPath("sirsi"); err == nil {
-		return p
-	}
-	return "sirsi"
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

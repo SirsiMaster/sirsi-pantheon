@@ -149,6 +149,40 @@ func MenubarBinaryPath() string {
 	return ""
 }
 
+// SirsiBinaryPath resolves the `sirsi` binary without depending on $PATH —
+// LaunchAgent children inherit a stripped PATH that excludes ~/.local/bin.
+// Order: $SIRSI_BINARY env → sibling of os.Executable() → LookPath →
+// well-known install dirs → bare "sirsi" fallback. All bare-sirsi callers
+// MUST use this (cmd/sirsi-menubar, cmd/sirsi-gui, internal/selfupdate,
+// internal/ra).
+func SirsiBinaryPath() string {
+	if env := strings.TrimSpace(os.Getenv("SIRSI_BINARY")); env != "" {
+		return env
+	}
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		if sibling := filepath.Join(filepath.Dir(exe), "sirsi"); fileExists(sibling) {
+			return sibling
+		}
+	}
+	if p, err := exec.LookPath("sirsi"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	for _, c := range []string{
+		filepath.Join(home, ".local", "bin", "sirsi"),
+		"/opt/homebrew/bin/sirsi",
+		"/usr/local/bin/sirsi",
+	} {
+		if fileExists(c) {
+			return c
+		}
+	}
+	return "sirsi"
+}
+
 // GUIBinaryPath returns the resolved path to the sirsi-gui binary (the macOS
 // GUI surface), or empty if it is not installed. Looks on PATH and next to the
 // running sirsi binary.
