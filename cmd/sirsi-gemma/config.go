@@ -1,0 +1,107 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+// Config controls how sirsi-gemma drives a local MLX-Gemma install.
+//
+// Loaded from ~/.config/sirsi/gemma.toml (flat key=value). Missing file
+// or missing keys fall back to the defaults below — operator can run the
+// binary with no config at all, as long as the defaults match the install
+// chip A wrote in docs/setup/MLX_GEMMA_LOCAL.md.
+type Config struct {
+	ModelID     string  // e.g. "mlx-community/gemma-2-27b-it-4bit"
+	VenvPath    string  // absolute path to the Python venv root
+	MaxTokens   int     // default max tokens per generation
+	Temperature float64 // default sampling temperature
+}
+
+// DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
+func DefaultConfig() Config {
+	home, _ := os.UserHomeDir()
+	return Config{
+		ModelID:     "mlx-community/gemma-2-27b-it-4bit",
+		VenvPath:    filepath.Join(home, ".sirsi", "mlx-venv"),
+		MaxTokens:   1024,
+		Temperature: 0.7,
+	}
+}
+
+// DefaultConfigPath is ~/.config/sirsi/gemma.toml.
+func DefaultConfigPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "sirsi", "gemma.toml")
+}
+
+// LoadConfig reads path and overlays values onto DefaultConfig(). A missing
+// file is not an error — defaults are returned. Malformed lines fail loud.
+func LoadConfig(path string) (Config, error) {
+	cfg := DefaultConfig()
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return cfg, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		rawKey, rawVal, ok := strings.Cut(line, "=")
+		if !ok {
+			return cfg, fmt.Errorf("%s:%d: expected key = value", path, lineNo)
+		}
+		key := strings.TrimSpace(rawKey)
+		val := strings.Trim(strings.TrimSpace(rawVal), `"`)
+		if err := cfg.set(key, val); err != nil {
+			return cfg, fmt.Errorf("%s:%d: %w", path, lineNo, err)
+		}
+	}
+	return cfg, scanner.Err()
+}
+
+func (c *Config) set(key, val string) error {
+	switch key {
+	case "model_id":
+		c.ModelID = val
+	case "venv_path":
+		c.VenvPath = expandHome(val)
+	case "max_tokens":
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("max_tokens: %w", err)
+		}
+		c.MaxTokens = n
+	case "temperature":
+		f, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			return fmt.Errorf("temperature: %w", err)
+		}
+		c.Temperature = f
+	default:
+		return fmt.Errorf("unknown key %q", key)
+	}
+	return nil
+}
+
+func expandHome(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, p[2:])
+		}
+	}
+	return p
+}
