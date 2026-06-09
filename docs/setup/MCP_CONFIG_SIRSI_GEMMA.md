@@ -64,9 +64,9 @@ Example with overrides:
 If tool calls return `local MLX-Gemma not configured: ...`, the binary
 started but the health probe failed. Check:
 
-- `python -m mlx_lm.generate --model mlx-community/gemma-2-27b-it-4bit --prompt ping --max-tokens 1` runs from your venv.
+- `~/.venvs/mlx/bin/mlx_lm.generate --model mlx-community/gemma-2-27b-it-bf16-4bit --prompt ping --max-tokens 1 --temp 0.0` runs from your venv (the `bf16-` prefix is required on mlx-lm 0.31+).
 - `~/.config/sirsi/gemma.toml`'s `venv_path` matches the venv `mlx_lm`
-  is installed in.
+  is installed in (chip A installs to `~/.venvs/mlx`).
 
 For deeper diagnosis, run the binary by hand with stderr visible:
 

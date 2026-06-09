@@ -13,13 +13,18 @@ Per Rule A8 both must exist.
 ```
 MCP client (Claude Code)
    ↓ JSON-RPC 2.0 over stdio
-internal/mcp.Server (reused — framing, dispatch, initialize handshake)
+internal/mcp.Server via NewBareServer (framing/dispatch — only our 2 tools)
    ↓ ToolHandler
 makeChatHandler / makeCompleteHandler   (main.go)
    ↓ Runner interface
-MLXRunner ──exec.CommandContext──▶ python -m mlx_lm.generate ▶ stdout text
-                                        (Gemma 2 27B 4-bit on Apple Silicon)
+MLXRunner ──exec.CommandContext──▶ ~/.venvs/mlx/bin/mlx_lm.generate ▶ stdout
+                                   (Gemma 2 27B bf16-4bit on Apple Silicon)
 ```
+
+The server is built with `mcp.NewBareServer` (not `mcp.NewServer`) so it
+advertises **only** `gemma_chat` + `gemma_complete` — not the full Anubis
+toolset. This avoids tool-name collisions when a client also runs the main
+`sirsi-pantheon` MCP server.
 
 Files in this directory:
 
