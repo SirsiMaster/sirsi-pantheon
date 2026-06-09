@@ -331,3 +331,51 @@ func TestRegisterThread_IdempotentOnAgentPID(t *testing.T) {
 		t.Errorf("reused a closed (terminal) thread; expected fresh thread_id")
 	}
 }
+
+func TestReapDeadThreads_PidSanityFloor(t *testing.T) {
+	tmp := t.TempDir()
+	now := time.Now().UTC()
+	reg := &ThreadRegistry{Threads: map[string]*Thread{
+		// pid=0 phantom, stale → reaped.
+		"thr-phantom0": {
+			ThreadID: "thr-phantom0", AgentID: "a", Surface: "claude",
+			Status: ThreadStatusActive, PID: 0, LastSeenAt: now.Add(-2 * time.Hour),
+		},
+		// pid=1 (launchd), stale → reaped.
+		"thr-launchd1": {
+			ThreadID: "thr-launchd1", AgentID: "a", Surface: "claude",
+			Status: ThreadStatusActive, PID: 1, LastSeenAt: now.Add(-2 * time.Hour),
+		},
+		// pid-less surface that is FRESHLY heartbeating → must NOT be reaped.
+		"thr-pidless-fresh": {
+			ThreadID: "thr-pidless-fresh", AgentID: "b", Surface: "mcp",
+			Status: ThreadStatusActive, PID: 0, LastSeenAt: now.Add(-10 * time.Second),
+		},
+	}}
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	reaped, err := ReapDeadThreads(tmp, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range reaped {
+		got[r.ThreadID] = true
+	}
+	if !got["thr-phantom0"] || !got["thr-launchd1"] {
+		t.Errorf("stale phantom pid<=1 records should be reaped, got %+v", reaped)
+	}
+	if got["thr-pidless-fresh"] {
+		t.Error("a freshly-heartbeating pid-less surface must NOT be reaped")
+	}
+
+	out, _ := LoadThreadRegistry(tmp)
+	if out.Threads["thr-phantom0"].Status != ThreadStatusReaped {
+		t.Error("phantom0 should be persisted as reaped")
+	}
+	if out.Threads["thr-pidless-fresh"].Status != ThreadStatusActive {
+		t.Error("fresh pid-less surface should stay active")
+	}
+}
