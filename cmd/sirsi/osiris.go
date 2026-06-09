@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -72,6 +73,11 @@ func runOsirisAssess(cmd *cobra.Command, args []string) error {
 
 	cp, err := osiris.Assess(repoDir)
 	if err != nil {
+		// The common case run outside a project: give an actionable line, not a
+		// raw `exit status 128`. Risk assessment reads git state, so it needs a repo.
+		if strings.Contains(err.Error(), "not a git repository") {
+			return fmt.Errorf("risk assessment needs a git repository — run `sirsi risk` inside a project, or pass a repo path: `sirsi risk <path>`")
+		}
 		return fmt.Errorf("osiris assess: %w", err)
 	}
 
