@@ -649,3 +649,102 @@ func findByCheck(findings []DiagnosticFinding, check string) *DiagnosticFinding 
 	}
 	return nil
 }
+
+func TestClassifyEventTrend(t *testing.T) {
+	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	day := func(d int) time.Time { return now.AddDate(0, 0, -d) }
+
+	tests := []struct {
+		name      string
+		times     []time.Time
+		wantCount int
+		wantDays  int
+		wantTrend bool
+	}{
+		{"none", nil, 0, 0, false},
+		{
+			"transient spike — 5 events, all one day",
+			[]time.Time{day(1), day(1).Add(time.Hour), day(1).Add(2 * time.Hour), day(1).Add(3 * time.Hour), day(1).Add(4 * time.Hour)},
+			5, 1, false,
+		},
+		{
+			"trend — 3 events across 3 days",
+			[]time.Time{day(1), day(3), day(5)},
+			3, 3, true,
+		},
+		{
+			"out-of-window events excluded",
+			[]time.Time{day(1), day(8), day(30)},
+			1, 1, false,
+		},
+		{
+			"future events ignored",
+			[]time.Time{now.AddDate(0, 0, 1), day(2)},
+			1, 1, false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			count, days, trend := classifyEventTrend(tt.times, now)
+			if count != tt.wantCount || days != tt.wantDays || trend != tt.wantTrend {
+				t.Errorf("got (count=%d days=%d trend=%v), want (count=%d days=%d trend=%v)",
+					count, days, trend, tt.wantCount, tt.wantDays, tt.wantTrend)
+			}
+		})
+	}
+}
+
+func TestCheckRecentCrashLogs_TransientVsTrend(t *testing.T) {
+	now := time.Now()
+	day := func(d int) time.Time { return now.AddDate(0, 0, -d) }
+
+	old := crashEventScanFn
+	defer func() { crashEventScanFn = old }()
+
+	// Jetsam clustered in one day = transient → Warn, not a trend.
+	// Panics across 3 days = sustained → Critical trend.
+	crashEventScanFn = func() (panics, jetsams []time.Time) {
+		jetsams = []time.Time{day(1), day(1).Add(time.Hour), day(1).Add(2 * time.Hour)}
+		panics = []time.Time{day(1), day(2), day(4)}
+		return panics, jetsams
+	}
+
+	report := &DoctorReport{}
+	checkRecentCrashLogs(report)
+
+	jet := findByCheck(report.Findings, "Jetsam Events (7d)")
+	if jet == nil {
+		t.Fatal("missing Jetsam finding")
+	}
+	if jet.Severity != SeverityWarn || jet.Trend {
+		t.Errorf("transient jetsam: got severity=%v trend=%v, want Warn/false", jet.Severity, jet.Trend)
+	}
+	if !strings.Contains(jet.Message, "transient") {
+		t.Errorf("transient jetsam message %q should say transient", jet.Message)
+	}
+
+	pan := findByCheck(report.Findings, "Kernel Panics (7d)")
+	if pan == nil {
+		t.Fatal("missing panic finding")
+	}
+	if pan.Severity != SeverityCritical || !pan.Trend {
+		t.Errorf("trend panics: got severity=%v trend=%v, want Critical/true", pan.Severity, pan.Trend)
+	}
+	if !strings.Contains(pan.Message, "sustained trend") {
+		t.Errorf("trend panic message %q should say sustained trend", pan.Message)
+	}
+}
+
+func TestCheckRecentCrashLogs_NoneIsHealthy(t *testing.T) {
+	old := crashEventScanFn
+	defer func() { crashEventScanFn = old }()
+	crashEventScanFn = func() (panics, jetsams []time.Time) { return nil, nil }
+
+	report := &DoctorReport{}
+	checkRecentCrashLogs(report)
+	for _, f := range report.Findings {
+		if f.Severity != SeverityOK {
+			t.Errorf("%s: severity=%v, want OK on a clean host", f.Check, f.Severity)
+		}
+	}
+}

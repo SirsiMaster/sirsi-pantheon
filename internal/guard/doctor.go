@@ -65,6 +65,13 @@ type DiagnosticFinding struct {
 	Severity DiagnosticSeverity `json:"severity"`
 	Message  string             `json:"message"`
 	Detail   string             `json:"detail,omitempty"`
+	// Trend marks event-count findings (Jetsam, panics) that recur across
+	// multiple days — a sustained problem, not a one-off spike. Consumers
+	// (SessionStart line, fail-loud hook) escalate only on trends to avoid
+	// alert fatigue. ActiveDays is the number of distinct days in the window
+	// that saw at least one event.
+	Trend      bool `json:"trend,omitempty"`
+	ActiveDays int  `json:"activeDays,omitempty"`
 }
 
 // DoctorReport is the complete health diagnostic.
@@ -327,98 +334,109 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// checkRecentCrashLogs looks for recent kernel panics and Jetsam events.
-func checkRecentCrashLogs(report *DoctorReport) {
-	diagDir := "/Library/Logs/DiagnosticReports/Retired"
+// crashWindowDays is the look-back window for kernel-panic / Jetsam trends.
+const crashWindowDays = 7
 
-	entries, err := os.ReadDir(diagDir)
-	if err != nil {
-		// Try non-retired
-		entries, err = os.ReadDir("/Library/Logs/DiagnosticReports")
-		if err != nil {
-			return
-		}
-		diagDir = "/Library/Logs/DiagnosticReports"
+// trendDayThreshold is the number of distinct active days within the window
+// at or above which an event count is treated as a sustained TREND rather
+// than a one-off TRANSIENT spike. Kept at 3 so a single bad afternoon (all
+// events clustered in 1-2 days) stays a Warn, while recurrence across the
+// week escalates to Critical.
+const trendDayThreshold = 3
+
+// crashEventScanFn returns the modification times of kernel-panic and Jetsam
+// reports in the system DiagnosticReports dirs. Injectable (Rule A16) so the
+// trend classifier can be tested without real crash logs on the host.
+var crashEventScanFn = defaultCrashEventScan
+
+// defaultCrashEventScan reads the macOS DiagnosticReports directories and
+// returns the event times of kernel panics and Jetsam memory kills.
+func defaultCrashEventScan() (panics, jetsams []time.Time) {
+	dirs := []string{
+		"/Library/Logs/DiagnosticReports",
+		"/Library/Logs/DiagnosticReports/Retired",
 	}
-
-	var recentPanics int
-	var recentJetsams int
-	cutoff := time.Now().AddDate(0, 0, -7)
-
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
+	seen := map[string]bool{}
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-		if info.ModTime().Before(cutoff) {
-			continue
-		}
-
-		name := e.Name()
-		if strings.Contains(name, "panic") {
-			recentPanics++
-		}
-		if strings.Contains(name, "JetsamEvent") {
-			recentJetsams++
-		}
-	}
-
-	// Also check the Retired subdirectory if we started from the parent
-	if diagDir == "/Library/Logs/DiagnosticReports" {
-		retiredEntries, err := os.ReadDir(filepath.Join(diagDir, "Retired"))
-		if err == nil {
-			for _, e := range retiredEntries {
-				info, err := e.Info()
-				if err != nil || info.ModTime().Before(cutoff) {
-					continue
-				}
-				name := e.Name()
-				if strings.Contains(name, "panic") {
-					recentPanics++
-				}
-				if strings.Contains(name, "JetsamEvent") {
-					recentJetsams++
-				}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if seen[name] {
+				continue // same report can appear in both dirs
+			}
+			seen[name] = true
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			switch {
+			case strings.Contains(name, "panic"):
+				panics = append(panics, info.ModTime())
+			case strings.Contains(name, "JetsamEvent"):
+				jetsams = append(jetsams, info.ModTime())
 			}
 		}
 	}
+	return panics, jetsams
+}
 
-	// Panic finding
-	panicFinding := DiagnosticFinding{
-		Check: "Kernel Panics (7d)",
+// classifyEventTrend buckets event times by calendar day within the last
+// crashWindowDays and reports the in-window count, the number of distinct
+// active days, and whether that constitutes a sustained trend.
+func classifyEventTrend(times []time.Time, now time.Time) (count, activeDays int, isTrend bool) {
+	cutoff := now.AddDate(0, 0, -crashWindowDays)
+	days := map[string]bool{}
+	for _, t := range times {
+		if t.Before(cutoff) || t.After(now) {
+			continue
+		}
+		count++
+		days[t.Format("2006-01-02")] = true
 	}
-	switch {
-	case recentPanics > 2:
-		panicFinding.Severity = SeverityCritical
-		panicFinding.Message = fmt.Sprintf("%d kernel panics in the last 7 days — hardware or driver issue", recentPanics)
-	case recentPanics > 0:
-		panicFinding.Severity = SeverityWarn
-		panicFinding.Message = fmt.Sprintf("%d kernel panic(s) in the last 7 days", recentPanics)
-	default:
-		panicFinding.Severity = SeverityOK
-		panicFinding.Message = "No kernel panics in the last 7 days"
-	}
-	report.Findings = append(report.Findings, panicFinding)
+	activeDays = len(days)
+	return count, activeDays, activeDays >= trendDayThreshold
+}
 
-	// Jetsam finding
-	jetsamFinding := DiagnosticFinding{
-		Check: "Jetsam Events (7d)",
-	}
+// checkRecentCrashLogs looks for recent kernel panics and Jetsam events,
+// distinguishing a one-off TRANSIENT spike from a sustained TREND so the
+// SessionStart line and fail-loud hook escalate only on the latter (Rail C —
+// routed flagship sequencing, claude-home 20260609-033900).
+func checkRecentCrashLogs(report *DoctorReport) {
+	panics, jetsams := crashEventScanFn()
+	now := time.Now()
+
+	report.Findings = append(report.Findings,
+		crashEventFinding("Kernel Panics (7d)", "kernel panic", "hardware or driver issue", panics, now),
+		crashEventFinding("Jetsam Events (7d)", "Jetsam memory kill", "system under RAM pressure", jetsams, now),
+	)
+}
+
+// crashEventFinding builds a trend-aware finding for a class of crash events.
+// Transient (clustered) spikes stay Warn; sustained trends across
+// trendDayThreshold+ days escalate to Critical.
+func crashEventFinding(check, noun, trendCause string, times []time.Time, now time.Time) DiagnosticFinding {
+	count, activeDays, isTrend := classifyEventTrend(times, now)
+	f := DiagnosticFinding{Check: check, ActiveDays: activeDays, Trend: isTrend}
 	switch {
-	case recentJetsams > 5:
-		jetsamFinding.Severity = SeverityCritical
-		jetsamFinding.Message = fmt.Sprintf("%d Jetsam memory kills in 7 days — system under severe RAM pressure", recentJetsams)
-	case recentJetsams > 0:
-		jetsamFinding.Severity = SeverityWarn
-		jetsamFinding.Message = fmt.Sprintf("%d Jetsam event(s) in the last 7 days — RAM pressure present", recentJetsams)
+	case count == 0:
+		f.Severity = SeverityOK
+		f.Message = fmt.Sprintf("No %ss in the last %d days", noun, crashWindowDays)
+	case isTrend:
+		f.Severity = SeverityCritical
+		f.Message = fmt.Sprintf("%d %ss across %d of %d days — sustained trend, %s",
+			count, noun, activeDays, crashWindowDays, trendCause)
 	default:
-		jetsamFinding.Severity = SeverityOK
-		jetsamFinding.Message = "No Jetsam memory kills in the last 7 days"
+		f.Severity = SeverityWarn
+		f.Message = fmt.Sprintf("%d %s(s) in the last %d days, clustered in %d day(s) — transient spike, watch for a trend",
+			count, noun, crashWindowDays, activeDays)
 	}
-	report.Findings = append(report.Findings, jetsamFinding)
+	return f
 }
 
 // appCrash is a single userspace crash report (EXC_CRASH / SIGABRT etc.).
