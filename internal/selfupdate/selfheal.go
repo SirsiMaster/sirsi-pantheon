@@ -1,0 +1,159 @@
+// Package selfupdate — selfheal.go
+//
+// The remediation half of ADR-023: the AMFI-safe atomic replace contract for
+// a drifted CLI binary. Detection lives in selfupdate.go; this file performs
+// the fix that answers the `sirsi diagnose` binary-drift finding.
+//
+// Background (the bug this fixes): on macOS, `cp`-ing a fresh Go binary OVER an
+// existing one leaves a stale code-signing cdhash bound to the old inode, so
+// the next exec is SIGKILL'd (137) by AMFI — silently killing LaunchAgents and
+// heartbeats. `sirsi` has been its own #1 crash source on this host because of
+// exactly this. The safe contract is: write a fresh inode, codesign it, then
+// atomically rename it over the old one.
+//
+// SAFETY (PARAMOUNT) — the three guardrails (claude-home router 035409):
+//  1. Detect ≠ apply. HasDrift-style detection is read-only and safe for
+//     non-interactive contexts; SafeReplace is the apply primitive and never
+//     prompts itself — the CALLER previews + confirms (Rule A1, preview≠apply).
+//  2. Atomic, no half-states. Stage to a `.new` sibling, codesign that, then
+//     rename(2) over the target (atomic on a single filesystem). An interrupt
+//     mid-operation leaves the OLD working binary in place, never a gap.
+//  3. Allow-list, not deny-list. SafeReplace writes ONLY to the known CLI bin
+//     dirs (~/.local/bin, /opt/homebrew/bin, ~/go/bin, homebrew prefixes). Any
+//     other path — emphatically including anything inside a `.app` bundle
+//     (Rule A19 absolute) — is refused. Adding a path is a reviewed code change,
+//     never a runtime override.
+package selfupdate
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+)
+
+// ErrAppBundleProtected is returned when a replace targets a path inside a
+// macOS .app bundle. A19 forbids agent writes there — no exception. Reported
+// explicitly (ahead of the generic allow-list error) so the A19 violation is
+// loud and unambiguous.
+var ErrAppBundleProtected = errors.New("refusing to modify a binary inside a .app bundle (Rule A19) — rebuild/relaunch the app instead")
+
+// ErrPathNotAllowed is returned when a replace targets any path outside the
+// hardcoded CLI bin allow-list.
+var ErrPathNotAllowed = errors.New("refusing to replace a binary outside the known CLI bin dirs (allow-list, Rule A19 spirit)")
+
+// healExecFn runs an external command and returns combined output. Injectable
+// (Rule A16) so SafeReplace's contract is unit-tested without mutating the host.
+var healExecFn = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// allowedBinDirsFn returns the allow-list of directories SafeReplace may write
+// to. Injectable (Rule A16) so tests can point it at a temp dir instead of the
+// real CLI bin locations. Production value is the hardcoded standard set below.
+var allowedBinDirsFn = defaultAllowedBinDirs
+
+// defaultAllowedBinDirs is the hardcoded allow-list — the standard
+// user-managed CLI install locations. NOT a config value: extending it is a
+// reviewed code change, per guardrail #3.
+func defaultAllowedBinDirs() []string {
+	home, _ := os.UserHomeDir()
+	return []string{
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, "go", "bin"),
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	}
+}
+
+// guardCLIPath enforces guardrail #3 + A19: dst must live directly in one of
+// the allow-listed CLI bin dirs, and never inside a .app bundle.
+func guardCLIPath(dst string) error {
+	abs, err := filepath.Abs(dst)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", dst, err)
+	}
+	// Explicit, loud A19 check first (clearer than a bare allow-list miss).
+	if strings.Contains(abs+string(os.PathSeparator), ".app"+string(os.PathSeparator)) {
+		return ErrAppBundleProtected
+	}
+	dir := filepath.Dir(abs)
+	if slices.Contains(allowedBinDirsFn(), dir) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s not in %v", ErrPathNotAllowed, dir, allowedBinDirsFn())
+}
+
+// SafeReplace atomically replaces the binary at dst with the fresh binary at
+// src using the AMFI-safe contract (stage .new → codesign → rename over dst).
+//
+// dst MUST be an allow-listed CLI path (guardrail #3 / A19). The caller owns
+// the A1 preview+confirm before invoking this. On non-darwin the codesign step
+// is skipped (the cdhash problem is macOS-only); the staged-rename still
+// applies so the same path works for linux CLI installs.
+func SafeReplace(src, dst string) (err error) {
+	if guardErr := guardCLIPath(dst); guardErr != nil {
+		return guardErr
+	}
+	srcInfo, statErr := os.Stat(src)
+	if statErr != nil {
+		return fmt.Errorf("source binary %s: %w", src, statErr)
+	}
+	if srcInfo.IsDir() {
+		return fmt.Errorf("source %s is a directory, not a binary", src)
+	}
+
+	// Stage a fresh inode beside the target. The fresh inode is what clears the
+	// stale-cdhash binding; codesign signs THIS inode before it goes live.
+	staged := dst + ".new"
+	_ = os.Remove(staged) // clear any leftover from a prior interrupted run
+	if copyErr := copyFile(src, staged); copyErr != nil {
+		return fmt.Errorf("stage %s: %w", staged, copyErr)
+	}
+	// On any failure past this point, don't leave the staged file behind.
+	defer func() {
+		if err != nil {
+			_ = os.Remove(staged)
+		}
+	}()
+	if chmodErr := os.Chmod(staged, 0o755); chmodErr != nil {
+		return fmt.Errorf("chmod %s: %w", staged, chmodErr)
+	}
+
+	// codesign --force --sign - the STAGED inode (macOS only) before it goes
+	// live, so the binary is validly signed the instant rename makes it active.
+	if runtime.GOOS == "darwin" {
+		if out, csErr := healExecFn("codesign", "--force", "--sign", "-", staged); csErr != nil {
+			return fmt.Errorf("codesign %s: %w (%s)", staged, csErr, strings.TrimSpace(string(out)))
+		}
+	}
+
+	// Atomic swap: rename(2) over the target on the same filesystem. If this
+	// fails, the old binary is untouched — never a gap (guardrail #2).
+	if renameErr := os.Rename(staged, dst); renameErr != nil {
+		return fmt.Errorf("rename %s -> %s: %w", staged, dst, renameErr)
+	}
+	return nil
+}
+
+// copyFile copies src to a fresh dst inode (dst must not already exist).
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := out.ReadFrom(in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
