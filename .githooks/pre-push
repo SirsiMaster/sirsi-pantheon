@@ -51,7 +51,14 @@ ZERO_SHA="0000000000000000000000000000000000000000"
 if [ -n "$PUSH_REMOTE_SHA" ] && [ "$PUSH_REMOTE_SHA" != "$ZERO_SHA" ]; then
     DIFF_BASE="$PUSH_REMOTE_SHA"
 elif [ -n "$PUSH_REMOTE_SHA" ] && [ "$PUSH_REMOTE_SHA" = "$ZERO_SHA" ]; then
-    DIFF_BASE=""
+    # New branch (remote_sha=zeros): fall back to the merge-base with the
+    # default integration branch so we test ONLY the packages this branch
+    # actually changes — not every package that ever differed since the
+    # branch root. Previously DIFF_BASE was left empty here, which triggered
+    # the "all packages" path below and over-scoped lint/test to unrelated
+    # subsystems (e.g. an edit in cmd/sirsi tripped flakes in jackal/rules).
+    DIFF_BASE=$(git merge-base HEAD origin/main 2>/dev/null || \
+                git merge-base HEAD origin/master 2>/dev/null || echo "")
 else
     DIFF_BASE=$(git rev-parse --verify @{push} 2>/dev/null || \
                 git rev-parse --verify HEAD~1 2>/dev/null || echo "")

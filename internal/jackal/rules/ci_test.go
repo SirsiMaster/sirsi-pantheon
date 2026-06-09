@@ -212,8 +212,13 @@ func TestDeadSymlinks_SkipsValid(t *testing.T) {
 	}
 }
 
+// TestStaleLockFiles_FindsOldLocks and _SkipsRecent intentionally do NOT call
+// t.Parallel(). They both exercise initGitRepo (git init + git commit fork/exec)
+// and poke at .git/*.lock files, and went heisenflaky under the Ma'at pre-push
+// gate's heavy parallel load — CPU contention raced the freshness threshold and
+// exposed the gate to git's own intermediate locks. Keeping them serial costs
+// ~50 ms of suite wall-time and removes a fleet-wide push blocker.
 func TestStaleLockFiles_FindsOldLocks(t *testing.T) {
-	t.Parallel()
 	repo := initGitRepo(t)
 
 	// Create a stale lock file (2 hours old)
@@ -229,7 +234,6 @@ func TestStaleLockFiles_FindsOldLocks(t *testing.T) {
 }
 
 func TestStaleLockFiles_SkipsRecent(t *testing.T) {
-	t.Parallel()
 	repo := initGitRepo(t)
 
 	// Create a fresh lock file (just now — active git operation)
