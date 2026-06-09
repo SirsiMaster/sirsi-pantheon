@@ -140,6 +140,49 @@ func TestSafeReplace_CodesignFailureLeavesOldBinaryAndNoStaging(t *testing.T) {
 	}
 }
 
+func TestDetectCLIDrift(t *testing.T) {
+	binDir := t.TempDir()
+	withAllowList(t, binDir)
+
+	// Running binary (lives outside the allow-list, e.g. a worktree build).
+	selfDir := t.TempDir()
+	self := filepath.Join(selfDir, "sirsi")
+	writeExe(t, self, "FRESH-BUILD")
+	selfHash, err := FileHash(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A stale copy (different content) and an already-converged copy.
+	stale := filepath.Join(binDir, "sirsi")
+	writeExe(t, stale, "OLD-BUILD")
+
+	got := DetectCLIDrift(self, selfHash)
+	if len(got) != 1 {
+		t.Fatalf("want 1 drift target, got %d: %+v", len(got), got)
+	}
+	if got[0].Path != stale || got[0].Expected != selfHash {
+		t.Errorf("unexpected target: %+v", got[0])
+	}
+
+	// Idempotent: once the copy matches, it is no longer a target.
+	writeExe(t, stale, "FRESH-BUILD")
+	if got := DetectCLIDrift(self, selfHash); len(got) != 0 {
+		t.Errorf("converged copy should not drift, got %+v", got)
+	}
+}
+
+func TestDetectCLIDrift_SkipsRunningBinaryItself(t *testing.T) {
+	binDir := t.TempDir()
+	withAllowList(t, binDir)
+	self := filepath.Join(binDir, "sirsi") // running binary IS in the allow-list
+	writeExe(t, self, "ME")
+	h, _ := FileHash(self)
+	if got := DetectCLIDrift(self, h); len(got) != 0 {
+		t.Errorf("must not list the running binary as drifted against itself, got %+v", got)
+	}
+}
+
 func TestSafeReplace_ExecutesAfterReplace(t *testing.T) {
 	// End-to-end: replace a binary and confirm the result actually runs (the
 	// AMFI-137 regression guard). On darwin real codesign signs it; elsewhere

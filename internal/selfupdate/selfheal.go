@@ -26,8 +26,11 @@
 package selfupdate
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,6 +141,59 @@ func SafeReplace(src, dst string) (err error) {
 		return fmt.Errorf("rename %s -> %s: %w", staged, dst, renameErr)
 	}
 	return nil
+}
+
+// DriftTarget is an allow-listed CLI copy of the binary whose on-disk content
+// differs from the running process — a candidate for self-heal. Present is the
+// on-disk hash, Expected is the running-process hash. (Content sha256 is the
+// portable drift signal; on macOS the cdhash that AMFI checks is derived from
+// this same content, so a content match means a clean, re-signable binary.)
+type DriftTarget struct {
+	Path     string `json:"path"`
+	Present  string `json:"present"`
+	Expected string `json:"expected"`
+}
+
+// FileHash returns the hex sha256 of the file at path.
+func FileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// DetectCLIDrift returns the allow-listed CLI copies whose content differs from
+// selfHash (the running binary's hash). Read-only and SAFE for non-interactive
+// contexts (CI, hooks, the menubar tick). Idempotent: a copy that already
+// matches selfHash is NOT returned (no rewrite of a clean binary). selfPath is
+// skipped so we never list the running binary as drifted against itself.
+func DetectCLIDrift(selfPath, selfHash string) []DriftTarget {
+	selfClean := filepath.Clean(selfPath)
+	var targets []DriftTarget
+	seen := map[string]bool{}
+	for _, dir := range allowedBinDirsFn() {
+		path := filepath.Clean(filepath.Join(dir, "sirsi"))
+		if seen[path] || path == selfClean {
+			continue
+		}
+		seen[path] = true
+		fi, err := os.Stat(path)
+		if err != nil || fi.IsDir() {
+			continue
+		}
+		present, err := FileHash(path)
+		if err != nil || present == selfHash {
+			continue // unreadable, or already converged (idempotent)
+		}
+		targets = append(targets, DriftTarget{Path: path, Present: present, Expected: selfHash})
+	}
+	return targets
 }
 
 // copyFile copies src to a fresh dst inode (dst must not already exist).
