@@ -192,6 +192,16 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 		return nil, err
 	}
 
+	// Opportunistic compaction (A28 residue, the "compaction job"): GC terminal
+	// (closed/reaped) records older than TerminalRetention so the registry
+	// self-cleans on every register — the durable drain for the terminal-record
+	// accretion that feeds the write-amplification → mds_stores → Jetsam class.
+	// No extra write: register already saves below. Safe by construction —
+	// PruneClosed only removes terminal records, never active or suspended
+	// (ADR-025). Now that the per-resume thread-mint ROOT is fixed, this keeps
+	// the post-reap residue from re-accreting.
+	reg.PruneClosed(now, TerminalRetention)
+
 	// Idempotent registration: if the caller did not pin a ThreadID but this
 	// (agent_id, pid) already has a LIVE (non-terminal) record, reuse it instead
 	// of minting a new thread + heartbeat loop. Without this, every register/
@@ -684,6 +694,13 @@ func (r *ThreadRegistry) PruneClosed(now time.Time, maxAge time.Duration) int {
 // unbounded in threads.json (the A27 write-amplification → Spotlight mds_stores
 // class, dogfooded 2026-06-02: 7 orphaned pid=0 suspends from one churny session).
 const SuspendedRetention = 7 * 24 * time.Hour
+
+// TerminalRetention is how long a terminal (closed/reaped) record is kept before
+// opportunistic compaction GCs it on the next RegisterThread. Terminal records
+// are dead history — a few days is ample for audit/debugging while keeping
+// threads.json from accreting the closed/reaped bloat that drives the A27
+// write-amplification → Spotlight mds_stores → Jetsam class.
+const TerminalRetention = 3 * 24 * time.Hour
 
 // PruneStaleSuspended removes suspended records (ADR-025) whose suspend time is
 // older than retention — abandoned pauses that were never resumed. It is the
