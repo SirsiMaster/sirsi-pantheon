@@ -221,6 +221,15 @@ func InstallMenubar() InstallResult {
 		res.Message = "sirsi-menubar binary not found on PATH or beside sirsi"
 		return res
 	}
+	// Stabilize the macOS TCC identity BEFORE loading. A plain `go build`
+	// ad-hoc-signs the menubar with a content-hash-derived identifier
+	// (sirsi-menubar-<hash>), so EVERY rebuild looks like a brand-new app to
+	// Full Disk Access / TCC and re-prompts the user. Re-sign with a stable
+	// identifier matching the Pantheon.app bundle so one grant persists across
+	// reinstalls (the "menubar keeps asking for FDA" bug). Best-effort,
+	// idempotent; failure is non-fatal (the menubar still runs, just unsigned).
+	stableSignMenubarTCC(bin)
+
 	path := menubarPlistPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
@@ -240,6 +249,24 @@ func InstallMenubar() InstallResult {
 	}
 	res.Status, res.Message = StatusOK, "menu bar app installed and started"
 	return res
+}
+
+// menubarTCCIdentifier is the stable code-signing identifier the menubar binary
+// must carry so macOS TCC (Full Disk Access et al.) treats every rebuild as the
+// SAME application instead of re-prompting. It matches the Pantheon.app bundle id
+// so the dev binary (~/.local/bin/sirsi-menubar) and the bundled app share one
+// TCC identity rather than accreting a new grant per build.
+const menubarTCCIdentifier = "ai.sirsi.pantheon"
+
+// stableSignMenubarTCC re-signs the menubar with a stable identifier. Best-effort
+// on darwin only; ad-hoc (no cert needed). A churning hash-identifier is the root
+// cause of the "menubar keeps asking for Full Disk Access" complaint.
+func stableSignMenubarTCC(bin string) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	_ = exec.Command("codesign", "--force", "--sign", "-",
+		"--identifier", menubarTCCIdentifier, bin).Run()
 }
 
 // ── IDE (MCP) ──────────────────────────────────────────────────────────────
