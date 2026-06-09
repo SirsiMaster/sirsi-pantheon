@@ -87,6 +87,14 @@ var versionCmd = &cobra.Command{
 var rootCmd = &cobra.Command{
 	Use:   "sirsi",
 	Short: "Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence",
+	// A failed command must read as a failed command — not as a help dump.
+	// Without these, cobra prints the full usage on every RunE error, so a
+	// command that hit a real error looks like it "just printed help and did
+	// nothing." main() renders the error cleanly instead (one visible failure
+	// line, not a wall of usage). Per-command RunE should still return clear,
+	// actionable errors.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence
 
   Clean My Machine
@@ -776,6 +784,10 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
+		// SilenceErrors is set on root, so cobra prints nothing — we render the
+		// failure as one clean, visible line (styled, JSON-aware) so every
+		// command resolves with an unambiguous outcome instead of a usage dump.
+		output.Error("%v", err)
 		os.Exit(1)
 	}
 }

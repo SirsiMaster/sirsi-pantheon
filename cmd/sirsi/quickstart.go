@@ -108,8 +108,8 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 
 	if safeCount > 0 {
 		fmt.Printf("  %d items are safe to clean. Next steps:\n\n", safeCount)
-		fmt.Printf("    %s  %s\n", gold.Render("sirsi judge --dry-run"), dim.Render("Preview what would be cleaned"))
-		fmt.Printf("    %s  %s\n", gold.Render("sirsi judge --confirm"), dim.Render("Clean safely (moves to Trash)"))
+		fmt.Printf("    %s  %s\n", gold.Render("sirsi clean"), dim.Render("Preview what would be cleaned (safe by default)"))
+		fmt.Printf("    %s  %s\n", gold.Render("sirsi clean --confirm"), dim.Render("Clean safely (moves to Trash)"))
 	} else {
 		fmt.Println("  All findings require review before cleaning.")
 		fmt.Printf("\n    %s  %s\n", gold.Render("sirsi scan --json"), dim.Render("Get detailed findings as JSON"))
