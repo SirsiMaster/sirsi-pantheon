@@ -49,30 +49,7 @@ func (d *DarwinProvider) BuildInstalledIndex(ctx context.Context, s *Scanner) er
 			return ctx.Err()
 		default:
 		}
-
-		entries, err := s.DirReader(dir)
-		if err != nil {
-			continue
-		}
-
-		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".app") {
-				continue
-			}
-
-			appPath := filepath.Join(dir, entry.Name())
-			appName := strings.TrimSuffix(entry.Name(), ".app")
-			s.installedNames[strings.ToLower(appName)] = true
-
-			bundleID, err := s.ReadBundleIDFn(ctx, appPath)
-			if err != nil {
-				continue
-			}
-			if bundleID != "" {
-				s.installedApps[bundleID] = true
-				s.knownBundleIDs[bundleID] = appName
-			}
-		}
+		d.indexAppsIn(ctx, s, dir, 3)
 	}
 
 	if !s.SkipBrew {
@@ -80,6 +57,38 @@ func (d *DarwinProvider) BuildInstalledIndex(ctx context.Context, s *Scanner) er
 	}
 
 	return nil
+}
+
+// indexAppsIn recursively indexes .app bundles under dir, up to maxDepth levels
+// deep. Records every .app it finds AND descends into non-.app subdirectories
+// — /Applications routinely contains both direct .app entries (Microsoft Word.app)
+// AND subfolders that hold apps (WhatsApp.localized/, Adobe Acrobat DC/,
+// Utilities/Adobe Sync/CoreSync/), and we want BOTH. Never descends into a
+// .app bundle's internal directories.
+func (d *DarwinProvider) indexAppsIn(ctx context.Context, s *Scanner, dir string, maxDepth int) {
+	if maxDepth <= 0 {
+		return
+	}
+	entries, err := s.DirReader(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasSuffix(name, ".app") {
+			appPath := filepath.Join(dir, name)
+			appName := strings.TrimSuffix(name, ".app")
+			s.installedNames[strings.ToLower(appName)] = true
+			if bundleID, err := s.ReadBundleIDFn(ctx, appPath); err == nil && bundleID != "" {
+				s.installedApps[bundleID] = true
+				s.knownBundleIDs[bundleID] = appName
+			}
+			continue // do not descend into the .app
+		}
+		if entry.IsDir() {
+			d.indexAppsIn(ctx, s, filepath.Join(dir, name), maxDepth-1)
+		}
+	}
 }
 
 func (d *DarwinProvider) ScanRegistry(ctx context.Context, s *Scanner) map[string]bool {

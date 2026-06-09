@@ -300,27 +300,12 @@ func enumerateAppDirs(ctx context.Context, homeDir string) []InstalledApp {
 			if strings.HasSuffix(entry.Name(), ".app") {
 				// Direct .app at top level
 			} else if entry.IsDir() {
-				// Scan one level deeper for .app inside subdirs
-				// Handles: WhatsApp.localized/WhatsApp.app, Adobe Acrobat DC/Adobe Acrobat.app
-				subEntries, err := os.ReadDir(entryPath)
-				if err != nil {
-					continue
-				}
-				for _, sub := range subEntries {
-					if strings.HasSuffix(sub.Name(), ".app") {
-						subAppPath := filepath.Join(entryPath, sub.Name())
-						subAppName := strings.TrimSuffix(sub.Name(), ".app")
-						subApp := InstalledApp{
-							Name:   subAppName,
-							Path:   subAppPath,
-							Source: d.source,
-						}
-						if bid, err := readBundleIDDefault(ctx, subAppPath); err == nil && bid != "" {
-							subApp.BundleID = bid
-						}
-						apps = append(apps, subApp)
-					}
-				}
+				// Walk up to 3 levels deep looking for .app bundles.
+				// Handles:
+				//   WhatsApp.localized/WhatsApp.app                          (1 level)
+				//   Adobe Acrobat DC/Adobe Acrobat.app                       (1 level)
+				//   Utilities/Adobe Sync/CoreSync/Core Sync.app              (3 levels)
+				apps = append(apps, walkAppsUnder(ctx, entryPath, d.source, 3)...)
 				continue
 			} else {
 				continue
@@ -348,6 +333,41 @@ func enumerateAppDirs(ctx context.Context, homeDir string) []InstalledApp {
 		}
 	}
 
+	return apps
+}
+
+// walkAppsUnder recursively scans dir for .app bundles up to maxDepth levels
+// below the entry point. Records every .app it finds AND descends into
+// non-.app subdirectories so apps like WhatsApp.localized/WhatsApp.app
+// (1 level) and Utilities/Adobe Sync/CoreSync/Core Sync.app (3 levels)
+// both get enumerated. Does not descend into .app bundles themselves.
+func walkAppsUnder(ctx context.Context, dir, source string, maxDepth int) []InstalledApp {
+	if maxDepth <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var apps []InstalledApp
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".app") {
+			appPath := filepath.Join(dir, entry.Name())
+			app := InstalledApp{
+				Name:   strings.TrimSuffix(entry.Name(), ".app"),
+				Path:   appPath,
+				Source: source,
+			}
+			if bid, err := readBundleIDDefault(ctx, appPath); err == nil && bid != "" {
+				app.BundleID = bid
+			}
+			apps = append(apps, app)
+			continue
+		}
+		if entry.IsDir() {
+			apps = append(apps, walkAppsUnder(ctx, filepath.Join(dir, entry.Name()), source, maxDepth-1)...)
+		}
+	}
 	return apps
 }
 
