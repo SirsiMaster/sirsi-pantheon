@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/spf13/cobra"
@@ -22,8 +23,15 @@ Documents, Downloads, iCloud, and app containers.
 This command opens System Settings to the correct pane so you can add
 the sirsi binary once. After granting, all future scans work without prompts.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		start := time.Now()
+
 		if runtime.GOOS != "darwin" {
-			fmt.Println("Full Disk Access is a macOS feature. No action needed on this platform.")
+			cr := &output.CommandResult{
+				Command: "sirsi permissions",
+				Summary: "Full Disk Access is a macOS feature — no action needed on this platform.",
+			}
+			cr.AddNextAction("sirsi scan", "Scan for infrastructure waste")
+			cr.Render()
 			return nil
 		}
 
@@ -60,10 +68,26 @@ the sirsi binary once. After granting, all future scans work without prompts.`,
 		// Open System Settings
 		fmt.Println("  Opening System Settings...")
 		openCmd := exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+		opened := true
 		if err := openCmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "  Could not open System Settings: %v\n", err)
-			fmt.Println("  Open manually: System Settings → Privacy & Security → Full Disk Access")
+			opened = false
 		}
+
+		cr := &output.CommandResult{
+			Command:  "sirsi permissions",
+			Summary:  "Add the path above to Full Disk Access, then re-run a scan to confirm.",
+			Duration: time.Since(start),
+		}
+		cr.AddEvidence("Binary path", exe)
+		if opened {
+			cr.AddEvidence("System Settings", "opened to Privacy & Security → Full Disk Access")
+		} else {
+			cr.AddWarning("Could not open System Settings automatically.")
+			cr.AddEvidence("Open manually", "System Settings → Privacy & Security → Full Disk Access")
+		}
+		cr.AddNextAction("sirsi scan", "Run a scan to confirm prompts are gone")
+		cr.AddNextAction("sirsi setup", "Run the full first-run wizard")
+		cr.Render()
 
 		return nil
 	},
