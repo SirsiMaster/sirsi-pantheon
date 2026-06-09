@@ -40,13 +40,24 @@ func main() {
 
 	runner := selectRunner(cfg, *skipHealth, logger)
 
-	srv := mcp.NewServer()
+	// Bare server — sirsi-gemma exposes ONLY its two tools, not the full
+	// Anubis toolset. A client running both the pantheon MCP server and
+	// sirsi-gemma must not see scan_workspace/vault/code_* duplicated.
+	srv := mcp.NewBareServer("sirsi-gemma", serverVersion,
+		"𓂀 Sirsi Gemma — local MLX-Gemma over MCP. Use gemma_chat for "+
+			"multi-turn chat and gemma_complete for single-shot completion. "+
+			"Runs entirely on this machine via Apple MLX — no tokens billed, "+
+			"no data leaves the host.",
+		"[sirsi-gemma] ")
 	registerGemmaTools(srv, runner)
 
 	if err := srv.Run(); err != nil {
 		logger.Fatalf("server: %v", err)
 	}
 }
+
+// serverVersion is advertised in the MCP initialize handshake.
+const serverVersion = "0.1.0"
 
 // selectRunner builds the production MLX runner and probes it. On probe
 // failure we substitute a disabledRunner so the MCP handshake still works

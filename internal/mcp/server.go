@@ -193,6 +193,11 @@ type Server struct {
 	resources    []Resource
 	resHandlers  map[string]ResourceHandler
 	logger       *log.Logger
+	// Identity advertised in the initialize handshake. Empty fields fall
+	// back to the package ServerName/ServerVersion constants (Anubis).
+	name         string
+	version      string
+	instructions string
 }
 
 // ToolHandler is a function that handles a tool call.
@@ -216,6 +221,23 @@ func NewServer() *Server {
 	registerResources(s)
 
 	return s
+}
+
+// NewBareServer creates an MCP server with the same JSON-RPC/stdio framing but
+// NO pre-registered tools or resources — the caller registers exactly what it
+// wants via RegisterTool. Used by standalone MCP binaries (e.g. sirsi-gemma)
+// that should expose only their own tools, not the full Anubis toolset. The
+// name/version/instructions are advertised in the initialize handshake; pass
+// a logPrefix like "[sirsi-gemma] " for stderr.
+func NewBareServer(name, version, instructions, logPrefix string) *Server {
+	return &Server{
+		toolHandlers: make(map[string]ToolHandler),
+		resHandlers:  make(map[string]ResourceHandler),
+		logger:       log.New(os.Stderr, logPrefix, log.LstdFlags),
+		name:         name,
+		version:      version,
+		instructions: instructions,
+	}
 }
 
 // RegisterTool adds a tool to the server.
@@ -318,6 +340,23 @@ func (s *Server) handleInitialize(req *Request) *Response {
 	s.initialized = true
 	s.mu.Unlock()
 
+	name := s.name
+	if name == "" {
+		name = ServerName
+	}
+	version := s.version
+	if version == "" {
+		version = ServerVersion
+	}
+	instructions := s.instructions
+	if instructions == "" {
+		instructions = "𓁢 Sirsi Anubis — Context Sanitizer for AI Development. " +
+			"Use scan_workspace to check a project directory for waste, " +
+			"ghost_report to find remnants of uninstalled apps, and " +
+			"health_check for a quick system health summary. " +
+			"All operations are local — no data leaves this machine."
+	}
+
 	result := InitializeResult{
 		ProtocolVersion: ProtocolVersion,
 		Capabilities: ServerCaps{
@@ -325,14 +364,10 @@ func (s *Server) handleInitialize(req *Request) *Response {
 			Resources: &ResourcesCap{Subscribe: false, ListChanged: false},
 		},
 		ServerInfo: NameVer{
-			Name:    ServerName,
-			Version: ServerVersion,
+			Name:    name,
+			Version: version,
 		},
-		Instructions: "𓁢 Sirsi Anubis — Context Sanitizer for AI Development. " +
-			"Use scan_workspace to check a project directory for waste, " +
-			"ghost_report to find remnants of uninstalled apps, and " +
-			"health_check for a quick system health summary. " +
-			"All operations are local — no data leaves this machine.",
+		Instructions: instructions,
 	}
 
 	s.logger.Printf("  Initialized (protocol: %s)", ProtocolVersion)
