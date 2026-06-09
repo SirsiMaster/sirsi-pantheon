@@ -181,6 +181,21 @@ func TestStripMLXBanner(t *testing.T) {
 	if got := stripMLXBanner("just text"); got != "just text" {
 		t.Errorf("fallback failed: %q", got)
 	}
+	// Real mlx_lm.generate output: body carries Gemma's <end_of_turn> token,
+	// stats follow the closing banner and must be dropped.
+	real := "==========\nPONG<end_of_turn>\n\n==========\nPrompt: 15 tokens, 28.8 tokens-per-sec\nPeak memory: 15.5 GB"
+	if got := stripMLXBanner(real); got != "PONG" {
+		t.Errorf("real-output strip failed: got %q, want PONG", got)
+	}
+}
+
+func TestStripGemmaTokens(t *testing.T) {
+	if got := stripGemmaTokens("hi<end_of_turn>"); got != "hi" {
+		t.Errorf("got %q", got)
+	}
+	if got := stripGemmaTokens("<start_of_turn>model\nanswer<eos>"); got != "\nanswer" {
+		t.Errorf("got %q", got)
+	}
 }
 
 func TestSelectRunner_FallsBackToDisabledOnHealthFail(t *testing.T) {

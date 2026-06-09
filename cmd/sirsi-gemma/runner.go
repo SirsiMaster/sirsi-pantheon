@@ -45,15 +45,18 @@ func (r *MLXRunner) Generate(ctx context.Context, prompt string, maxTokens int, 
 	if temperature <= 0 {
 		temperature = r.cfg.Temperature
 	}
-	python := filepath.Join(r.cfg.VenvPath, "bin", "python")
+	// Invoke chip A's canonical console script (<venv>/bin/mlx_lm.generate),
+	// matching docs/setup/MLX_GEMMA_LOCAL.md + scripts/gemma-smoke.sh exactly,
+	// rather than `python -m mlx_lm.generate` — no dependency on a python
+	// symlink resolving inside the venv.
+	genBin := filepath.Join(r.cfg.VenvPath, "bin", "mlx_lm.generate")
 	args := []string{
-		"-m", "mlx_lm.generate",
 		"--model", r.cfg.ModelID,
 		"--prompt", prompt,
 		"--max-tokens", strconv.Itoa(maxTokens),
 		"--temp", strconv.FormatFloat(temperature, 'f', -1, 64),
 	}
-	cmd := exec.CommandContext(ctx, python, args...)
+	cmd := exec.CommandContext(ctx, genBin, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -73,7 +76,10 @@ func (r *MLXRunner) Health(ctx context.Context) error {
 }
 
 // stripMLXBanner removes the "==========" framing mlx_lm.generate writes
-// around its output. We want just the model's text.
+// around its output (the text body sits between the two banner lines; the
+// per-call stats — tokens/sec, peak memory — follow the closing banner and
+// are dropped). It also trims Gemma's turn-terminator tokens so the MCP
+// client sees clean text, not raw `<end_of_turn>`/`<eos>` markers.
 func stripMLXBanner(out string) string {
 	lines := strings.Split(out, "\n")
 	var keep []string
@@ -87,10 +93,20 @@ func stripMLXBanner(out string) string {
 			keep = append(keep, ln)
 		}
 	}
+	body := strings.Join(keep, "\n")
 	if len(keep) == 0 {
-		return strings.TrimSpace(out)
+		body = out
 	}
-	return strings.TrimSpace(strings.Join(keep, "\n"))
+	return strings.TrimSpace(stripGemmaTokens(body))
+}
+
+// stripGemmaTokens removes Gemma's special turn/end markers that mlx_lm
+// echoes into the generated text.
+func stripGemmaTokens(s string) string {
+	for _, tok := range []string{"<end_of_turn>", "<eos>", "<start_of_turn>model", "<start_of_turn>"} {
+		s = strings.ReplaceAll(s, tok, "")
+	}
+	return s
 }
 
 // disabledRunner is used when the startup health probe fails. Every tool
