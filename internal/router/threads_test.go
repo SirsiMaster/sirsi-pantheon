@@ -423,3 +423,37 @@ func TestRegisterThread_CompactsOldTerminalRecords(t *testing.T) {
 		t.Error("active record must NEVER be compacted, even if ancient")
 	}
 }
+
+func TestRegisterThread_PidRecycleMintsFreshNotReuse(t *testing.T) {
+	tmp := t.TempDir()
+	// Original session: pid 50000, OS start signature "A".
+	first, err := RegisterThread(tmp, &Thread{
+		AgentID: "a", Surface: "claude", PID: 50000, StartTime: "A",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The OS later recycles pid 50000 onto a DIFFERENT process (start sig "B").
+	// Registering without pinning a thread_id MUST mint a fresh record, not adopt
+	// the stale one — the (pid, start_time) reap-key catching PID reuse.
+	second, err := RegisterThread(tmp, &Thread{
+		AgentID: "a", Surface: "claude", PID: 50000, StartTime: "B",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ThreadID == first.ThreadID {
+		t.Error("pid recycled onto a new process (different start_time) must NOT reuse the old thread record")
+	}
+
+	// Sanity: same pid AND same start sig DOES reuse (the live fast-path).
+	again, err := RegisterThread(tmp, &Thread{
+		AgentID: "a", Surface: "claude", PID: 50000, StartTime: "B",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ThreadID != second.ThreadID {
+		t.Error("same (pid, start_time) should reuse the live record, not mint a new one")
+	}
+}
