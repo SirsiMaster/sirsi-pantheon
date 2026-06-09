@@ -25,6 +25,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
+	"github.com/fsnotify/fsnotify"
 )
 
 // version is sourced from the shared build-version contract, stamped via ldflags.
@@ -158,6 +159,7 @@ func onReady() {
 	ctx, cancel := context.WithCancel(context.Background())
 	startGuardBridge(ctx)
 	startPeriodicScan(ctx)
+	startLiveRefresh(ctx)
 	menubarRouterRoot, menubarThreadID := registerMenubarThread(ctx)
 
 	quit := func() {
@@ -543,7 +545,9 @@ func rescanWaste(ctx context.Context) {
 }
 
 // startPeriodicScan scans on launch, then every 4 hours. (Clean triggers an
-// immediate rescanWaste so the title never lags reality.)
+// immediate rescanWaste so the title never lags reality.) The 4h cadence is the
+// full-rescan fallback; startLiveRefresh makes the label react to persist events
+// in ~seconds, so the tray no longer "hasn't updated in 4h".
 func startPeriodicScan(ctx context.Context) {
 	go func() {
 		for {
@@ -552,6 +556,94 @@ func startPeriodicScan(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(4 * time.Hour):
+			}
+		}
+	}()
+}
+
+// liveRefreshDebounce coalesces a burst of persist writes into one label
+// refresh. Long enough to absorb the multi-write bursts a `sirsi clean` makes,
+// short enough to feel live — and deliberately NOT per-write (per-write refresh
+// would re-amplify the very mds_stores write-storm Rail B addresses).
+const liveRefreshDebounce = 1500 * time.Millisecond
+
+// refreshFromLatest updates the tray label from the PERSISTED scan only — a
+// cheap file read, no rescan, no re-persist (so it can never loop with the
+// fsnotify watch that triggers it).
+func refreshFromLatest() {
+	ps, err := jackal.LoadLatest()
+	if err != nil || ps == nil {
+		return
+	}
+	liveState.mu.Lock()
+	liveState.wasteBytes = ps.TotalSize
+	liveState.wasteLabel = jackal.FormatSize(ps.TotalSize) + " waste"
+	liveState.mu.Unlock()
+	liveState.updateTitle()
+}
+
+// startLiveRefresh makes the menu bar reflect external state changes (e.g. a
+// `sirsi clean` from the CLI re-persisting findings) within ~seconds instead of
+// up to 4 hours — the user's "4 hours is lunacy" complaint. Event-driven, not a
+// tighter timer: it watches the findings dir with fsnotify and refreshes the
+// LABEL (from the persisted file) on a debounced write to latest-scan.json. A
+// SIGUSR1 is an explicit manual trigger (e.g. a post-clean nudge). The label
+// refresh is wholly separate from the resident-surface liveness heartbeat
+// (A27, ≥60s) — do not conflate them.
+func startLiveRefresh(ctx context.Context) {
+	dir := jackal.FindingsDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return
+	}
+	if err := watcher.Add(dir); err != nil {
+		_ = watcher.Close()
+		return
+	}
+	target := filepath.Clean(jackal.LatestScanPath())
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGUSR1)
+
+	go func() {
+		defer watcher.Close()
+		defer signal.Stop(sig)
+		fire := make(chan struct{}, 1)
+		var timer *time.Timer
+		schedule := func() {
+			if timer == nil {
+				timer = time.AfterFunc(liveRefreshDebounce, func() {
+					select {
+					case fire <- struct{}{}:
+					default:
+					}
+				})
+				return
+			}
+			timer.Reset(liveRefreshDebounce)
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if filepath.Clean(ev.Name) == target && ev.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+					schedule()
+				}
+			case <-sig:
+				schedule() // manual nudge, still debounced/serialized
+			case <-fire:
+				refreshFromLatest()
+			case _, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
 			}
 		}
 	}()
