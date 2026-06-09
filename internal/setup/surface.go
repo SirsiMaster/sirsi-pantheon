@@ -337,6 +337,13 @@ func writeMenubarAppBundle(bundleDir, srcBin string) (string, error) {
 		return "", err
 	}
 	execPath := filepath.Join(macOSDir, "sirsi-menubar")
+	// Remove any existing file FIRST so the new write lands on a fresh inode.
+	// Writing over an existing executable's inode (O_TRUNC) leaves a stale
+	// code-signing cdhash bound to that inode → macOS AMFI SIGKILL-137 on the
+	// next exec — the exact class Rail A's SafeReplace (PR #19) eliminates, and
+	// the reason `sirsi` is its own top crasher. os.Remove + WriteFile +
+	// codesign is the canonical AMFI-safe idiom for any binary-install path.
+	_ = os.Remove(execPath) // ignore not-exist (first install)
 	if err := os.WriteFile(execPath, data, 0o755); err != nil {
 		return "", err
 	}
