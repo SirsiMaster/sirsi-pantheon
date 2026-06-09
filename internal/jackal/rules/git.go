@@ -112,6 +112,59 @@ func gitCmd(repo string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// activeDevRepoMaxAgeDays is the staleness threshold beyond which a repo with
+// no working-tree changes is treated as quiescent. 30 days matches the AI
+// cache liveness window — same "user touched it recently" intuition.
+const activeDevRepoMaxAgeDays = 30
+
+// isActiveDevRepo reports whether a repository is in active development.
+// An "active" repo is NOT waste, regardless of total size or .git footprint —
+// the user is mid-work, the bytes are load-bearing. Exclusion-shaped:
+// returning true means findings for this repo are suppressed entirely.
+//
+// Signals (ANY one is sufficient):
+//   - HEAD's last commit landed within the last `activeDevRepoMaxAgeDays`.
+//   - Working tree is dirty (modified / staged / untracked).
+//   - Local HEAD is ahead of its upstream (unpushed work).
+//
+// A repo without a `.git/HEAD` is not a real repo (synthetic test fixtures,
+// half-initialized directories) and never qualifies as active. A real repo
+// whose git commands fail in unexpected ways is treated as active — when
+// uncertain about a populated `.git`, don't flag a user's code as waste.
+func isActiveDevRepo(repo string) bool {
+	if _, err := os.Stat(filepath.Join(repo, ".git", "HEAD")); err != nil {
+		return false
+	}
+
+	recent, err := gitCmd(repo, "log", "-1", "--format=%ct", "HEAD")
+	if err != nil {
+		return true
+	}
+	if recent != "" {
+		var ts int64
+		_, _ = fmt.Sscanf(recent, "%d", &ts)
+		if ts > 0 {
+			ageSeconds := nowUnix() - ts
+			if ageSeconds < int64(activeDevRepoMaxAgeDays)*24*60*60 {
+				return true
+			}
+		}
+	}
+
+	if status, _ := gitCmd(repo, "status", "--porcelain"); status != "" {
+		return true
+	}
+
+	if ahead, _ := gitCmd(repo, "rev-list", "--count", "@{u}..HEAD"); ahead != "" && ahead != "0" {
+		return true
+	}
+
+	return false
+}
+
+// nowUnix is split out so tests can fake the clock.
+var nowUnix = func() int64 { return defaultNowUnix() }
+
 // ── Stale Branches Rule ──────────────────────────────────────────────
 
 // NewStaleBranchesRule finds local branches tracking deleted remote branches.
@@ -184,6 +237,13 @@ func analyzeLargeGitDir(ctx context.Context, repo string) []jackal.Finding {
 
 	// Only flag if .git dir is > 200MB
 	if size < 200*1024*1024 {
+		return nil
+	}
+
+	// An actively-developed repo is NOT waste regardless of .git footprint.
+	// The user is mid-work; recommending git-gc on a hot repo is the kind of
+	// "yellow flag" lie this scanner exists to STOP emitting.
+	if isActiveDevRepo(repo) {
 		return nil
 	}
 

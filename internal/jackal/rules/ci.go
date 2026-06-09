@@ -445,6 +445,13 @@ func NewOversizedReposRule() jackal.ScanRule {
 			if size < 2*1024*1024*1024 { // 2GB threshold
 				return nil
 			}
+			// An actively-developed repo is NOT waste — the whole checkout is
+			// load-bearing user work, not garbage. Audit + structured cleanup
+			// of subtrees belongs in an agent-driven flow, not a permanent
+			// yellow flag.
+			if isActiveDevRepo(repo) {
+				return nil
+			}
 			return []jackal.Finding{{
 				RuleName:    "oversized_repos",
 				Category:    jackal.CategoryDev,
