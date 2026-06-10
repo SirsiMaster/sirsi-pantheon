@@ -589,8 +589,25 @@ func ReapDeadThreads(routerRoot, host string) ([]ReapedThread, error) {
 		if t.Status == ThreadStatusSuspended {
 			continue
 		}
-		if t.PID < minAgentPID || (host != "" && t.Host != host) {
-			continue // unverifiable PID or a different host's process table
+		if host != "" && t.Host != host {
+			continue // a different host's process table — can't verify
+		}
+		// pid-sanity-floor (A28): a recorded PID below minAgentPID (0/1 =
+		// kernel/launchd) can never be a live agent process — it is a phantom
+		// (the empty-PID SessionStart mint class, now fixed at the root). The
+		// (pid, start_time) reap-key can't catch a PID that was never a real
+		// process, so drain it here — but ONLY once it is also past the stale
+		// window, so a legitimately pid-less surface that is actively
+		// heartbeating is never mistaken for a phantom and reaped.
+		if t.PID < minAgentPID {
+			if now.Sub(t.LastSeenAt) <= DefaultThreadStaleAfter {
+				continue // pid-less but freshly heartbeating — leave it alone
+			}
+			t.Status = ThreadStatusReaped
+			t.LastError = fmt.Sprintf("reaped: phantom PID %d (< minAgentPID, never a live process) at %s", t.PID, now.Format(time.RFC3339))
+			t.LastSeenAt = now
+			reaped = append(reaped, ReapedThread{ThreadID: t.ThreadID, AgentID: t.AgentID, PID: t.PID, State: PIDGone})
+			continue
 		}
 		state := PIDStateOf(t.PID, t.StartTime)
 		if !DeadByOSTruth(state) {
