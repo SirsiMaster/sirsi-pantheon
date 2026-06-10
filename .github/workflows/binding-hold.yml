@@ -1,0 +1,41 @@
+name: Binding Hold
+
+# A binding-review hold gate (extends the Ma'at quality gate — Rule A25/A28).
+#
+# Native GitHub auto-merge respects required STATUS CHECKS, not labels — so a
+# label alone can't stop a safety/relay-integrity PR from auto-merging once armed.
+# This job makes the `binding-hold` label a *required check that fails when the
+# label is present*: branch protection then blocks the merge (auto-merge waits)
+# until a binding reviewer removes the label on PASS. Closes the class where a
+# safety-tier change merged before its binding verdict (the #33 bypass).
+#
+# A binding reviewer applies `binding-hold` at open on any A1 / clean-path /
+# binary-mutating / security / migration PR (or any PR explicitly held for
+# arch/binding review), and removes it on PASS. This is a HOLD, not a CI failure.
+#
+# It lives in its own workflow (not ci.yml) so toggling the label re-runs ONLY
+# this lightweight gate — not the full lint/test/build matrix (the heavy jobs'
+# results from the last push stay valid, the commit SHA is unchanged).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  binding-hold:
+    name: binding-hold
+    runs-on: ubuntu-latest
+    steps:
+      - name: Held — a binding reviewer must clear the label
+        if: contains(github.event.pull_request.labels.*.name, 'binding-hold')
+        run: |
+          echo "::error title=Held for binding review::This PR carries the 'binding-hold' label — a binding reviewer (codex / claude-home root-authority) must remove it before merge. This is a SAFETY / relay-integrity HOLD (Rule A25/A28), not a CI failure."
+          exit 1
+
+      - name: Gate open — no binding-hold label
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'binding-hold') }}
+        run: echo "No 'binding-hold' label — gate open, merge not blocked by the binding-review hold."
