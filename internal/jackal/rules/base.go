@@ -27,6 +27,17 @@ func (r *baseScanRule) effectiveSeverity() jackal.Severity {
 	if r.severity != "" {
 		return r.severity
 	}
+	// AI/ML model caches (HuggingFace, PyTorch, Ollama, MLX, vLLM, Stable
+	// Diffusion, …) hold large downloaded WEIGHTS that cost hours + bandwidth to
+	// regenerate — categorically different from node_modules/build caches. They
+	// must NEVER be classified one-click "safe": a cold model cache surfaces as
+	// CAUTION (reviewable, excluded from one-click clean), even past the 30-day
+	// age guard. The age/env guards still suppress *recently-used* caches entirely;
+	// this is the defense for the genuinely-cold ones. (Rule A1 — a one-click
+	// surface must only ever trash trivially-regenerable items.)
+	if r.category == jackal.CategoryAI {
+		return jackal.SeverityCaution
+	}
 	return jackal.SeveritySafe
 }
 
