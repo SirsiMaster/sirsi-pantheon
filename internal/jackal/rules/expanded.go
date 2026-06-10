@@ -136,77 +136,103 @@ func NewRubyGemsCacheRule() jackal.ScanRule {
 // ═══════════════════════════════════════════
 // ADDITIONAL AI/ML CACHES
 // ═══════════════════════════════════════════
+//
+// Same liveness contract as ai.go: every rule carries minAgeDays=30 so a
+// recently-written (actively-used) cache is never reported as waste, and where
+// the runtime exposes a canonical "pin this dir" env var the rule additionally
+// wraps in envGuardedRule. Rules whose tools have NO canonical cache-dir env
+// var (Stable Diffusion, LangChain) rely on the mtime guard alone rather than
+// fabricating env vars that don't exist (A23 — don't imply support we lack).
 
 // NewOnnxCacheRule scans ONNX Runtime caches.
 func NewOnnxCacheRule() jackal.ScanRule {
-	return &baseScanRule{
-		name:        "onnx_cache",
-		displayName: "ONNX Runtime Cache",
-		category:    jackal.CategoryAI,
-		description: "ONNX Runtime model cache and optimization output",
-		platforms:   []string{"darwin", "linux"},
-		paths: []string{
-			"~/.cache/onnxruntime",
+	return &envGuardedRule{
+		baseScanRule: &baseScanRule{
+			name:        "onnx_cache",
+			displayName: "ONNX Runtime Cache",
+			category:    jackal.CategoryAI,
+			description: "Cold ONNX Runtime model/optimization cache (unused 30+ days, no runtime pin)",
+			platforms:   []string{"darwin", "linux"},
+			paths: []string{
+				"~/.cache/onnxruntime",
+			},
+			minAgeDays: aiCacheMinAgeDays,
 		},
+		envVars: []string{"ORT_CACHE_DIR"},
 	}
 }
 
 // NewVLLMCacheRule scans vLLM engine caches.
 func NewVLLMCacheRule() jackal.ScanRule {
-	return &baseScanRule{
-		name:        "vllm_cache",
-		displayName: "vLLM Cache",
-		category:    jackal.CategoryAI,
-		description: "vLLM compiled kernels and model weight cache",
-		platforms:   []string{"darwin", "linux"},
-		paths: []string{
-			"~/.cache/vllm",
+	return &envGuardedRule{
+		baseScanRule: &baseScanRule{
+			name:        "vllm_cache",
+			displayName: "vLLM Cache",
+			category:    jackal.CategoryAI,
+			description: "Cold vLLM compiled kernels and model weight cache (unused 30+ days, no runtime pin)",
+			platforms:   []string{"darwin", "linux"},
+			paths: []string{
+				"~/.cache/vllm",
+			},
+			minAgeDays: aiCacheMinAgeDays,
 		},
+		envVars: []string{"VLLM_CACHE_ROOT"},
 	}
 }
 
 // NewJaxCacheRule scans JAX/Flax caches.
 func NewJaxCacheRule() jackal.ScanRule {
-	return &baseScanRule{
-		name:        "jax_cache",
-		displayName: "JAX / Flax Cache",
-		category:    jackal.CategoryAI,
-		description: "JAX compiled XLA caches and Flax checkpoints",
-		platforms:   []string{"darwin", "linux"},
-		paths: []string{
-			"~/.cache/jax",
-			"~/.cache/flax",
+	return &envGuardedRule{
+		baseScanRule: &baseScanRule{
+			name:        "jax_cache",
+			displayName: "JAX / Flax Cache",
+			category:    jackal.CategoryAI,
+			description: "Cold JAX compiled XLA caches and Flax checkpoints (unused 30+ days, no runtime pin)",
+			platforms:   []string{"darwin", "linux"},
+			paths: []string{
+				"~/.cache/jax",
+				"~/.cache/flax",
+			},
+			minAgeDays: aiCacheMinAgeDays,
 		},
+		envVars: []string{"JAX_COMPILATION_CACHE_DIR"},
 	}
 }
 
-// NewStableDiffusionModelsRule scans Stable Diffusion model caches.
+// NewStableDiffusionModelsRule scans Stable Diffusion model caches. No canonical
+// cache-dir env var exists (ComfyUI/A1111 use CLI flags), so the 30-day mtime
+// guard alone protects actively-used checkpoints — large weights that are rarely
+// re-touched, so a stale mtime is a reliable "cold" signal.
 func NewStableDiffusionModelsRule() jackal.ScanRule {
 	return &baseScanRule{
 		name:        "stable_diffusion",
 		displayName: "Stable Diffusion Models",
 		category:    jackal.CategoryAI,
-		description: "Stable Diffusion model checkpoints, LoRAs, and ComfyUI/Automatic1111 outputs",
+		description: "Cold Stable Diffusion checkpoints, LoRAs, and ComfyUI/Automatic1111 outputs (unused 30+ days)",
 		platforms:   []string{"darwin", "linux"},
 		paths: []string{
 			"~/.cache/stable-diffusion",
 			"~/stable-diffusion-webui/models",
 		},
+		minAgeDays: aiCacheMinAgeDays,
 	}
 }
 
-// NewLangChainCacheRule scans LangChain caches.
+// NewLangChainCacheRule scans LangChain caches. LangChain's cache is in-process
+// (SQLite/in-memory) with no canonical cache-dir env var, so the 30-day mtime
+// guard alone protects an active cache.
 func NewLangChainCacheRule() jackal.ScanRule {
 	return &baseScanRule{
 		name:        "langchain_cache",
 		displayName: "LangChain Cache",
 		category:    jackal.CategoryAI,
-		description: "LangChain embedding caches and vector store temp files",
+		description: "Cold LangChain embedding caches and vector store temp files (unused 30+ days)",
 		platforms:   []string{"darwin", "linux"},
 		paths: []string{
 			"~/.langchain",
 			"~/.cache/langchain",
 		},
+		minAgeDays: aiCacheMinAgeDays,
 	}
 }
 

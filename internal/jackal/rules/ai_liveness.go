@@ -60,6 +60,11 @@ func liveTargetsFromEnv(vars []string, lookup func(string) string) []string {
 	if len(vars) == 0 {
 		return nil
 	}
+	// ExpandPath needs a real home dir to resolve a ~-prefixed env value
+	// (e.g. HF_HOME=~/.cache/huggingface); with an empty home it would expand
+	// to a RELATIVE path that never matches an absolute finding path, silently
+	// defeating the guard. Mirror baseScanRule.Scan's os.UserHomeDir() fallback.
+	homeDir, _ := os.UserHomeDir()
 	var out []string
 	seen := make(map[string]struct{})
 	for _, v := range vars {
@@ -67,7 +72,7 @@ func liveTargetsFromEnv(vars []string, lookup func(string) string) []string {
 		if val == "" {
 			continue
 		}
-		expanded := jackal.ExpandPath(val, "")
+		expanded := jackal.ExpandPath(val, homeDir)
 		clean := filepath.Clean(expanded)
 		if _, ok := seen[clean]; ok {
 			continue
