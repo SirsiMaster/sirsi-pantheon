@@ -37,6 +37,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // ErrAppBundleProtected is returned when a replace targets a path inside a
@@ -49,10 +50,39 @@ var ErrAppBundleProtected = errors.New("refusing to modify a binary inside a .ap
 // hardcoded CLI bin allow-list.
 var ErrPathNotAllowed = errors.New("refusing to replace a binary outside the known CLI bin dirs (allow-list, Rule A19 spirit)")
 
+// ErrHomebrewManaged is returned when a replace targets a Homebrew-managed
+// binary. SafeReplace must NEVER hand-overwrite a brew install (it would leave
+// brew's manifest inconsistent and the next `brew` op would fight it) — the
+// caller should instruct `brew upgrade` instead (binding-review confirm-item,
+// claude-home 185740).
+var ErrHomebrewManaged = errors.New("refusing to replace a Homebrew-managed binary — run `brew upgrade sirsi` instead")
+
 // healExecFn runs an external command and returns combined output. Injectable
 // (Rule A16) so SafeReplace's contract is unit-tested without mutating the host.
-var healExecFn = func(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+// Guarded by healExecMu per Rule A21 (concurrency-safe injectable mocks): a
+// package-level function pointer swapped by a test while another goroutine reads
+// it is a data race, so all access goes through getHealExecFn/setHealExecFn.
+var (
+	healExecMu sync.RWMutex
+	healExecFn = func(name string, args ...string) ([]byte, error) {
+		return exec.Command(name, args...).CombinedOutput()
+	}
+)
+
+func getHealExecFn() func(string, ...string) ([]byte, error) {
+	healExecMu.RLock()
+	defer healExecMu.RUnlock()
+	return healExecFn
+}
+
+// setHealExecFn swaps the runner under the write lock and returns the previous
+// one (test-only; restore with setHealExecFn(old)).
+func setHealExecFn(fn func(string, ...string) ([]byte, error)) func(string, ...string) ([]byte, error) {
+	healExecMu.Lock()
+	defer healExecMu.Unlock()
+	old := healExecFn
+	healExecFn = fn
+	return old
 }
 
 // allowedBinDirsFn returns the allow-list of directories SafeReplace may write
@@ -102,6 +132,13 @@ func SafeReplace(src, dst string) (err error) {
 	if guardErr := guardCLIPath(dst); guardErr != nil {
 		return guardErr
 	}
+	// Never hand-overwrite a Homebrew-managed binary — delegate to `brew
+	// upgrade` (binding-review confirm-item). The allow-list includes
+	// /opt/homebrew/bin as a valid CLI location, but a binary brew actually
+	// manages there must not be replaced out from under brew's manifest.
+	if DetectMethod(dst) == MethodHomebrew {
+		return ErrHomebrewManaged
+	}
 	srcInfo, statErr := os.Stat(src)
 	if statErr != nil {
 		return fmt.Errorf("source binary %s: %w", src, statErr)
@@ -130,7 +167,7 @@ func SafeReplace(src, dst string) (err error) {
 	// codesign --force --sign - the STAGED inode (macOS only) before it goes
 	// live, so the binary is validly signed the instant rename makes it active.
 	if runtime.GOOS == "darwin" {
-		if out, csErr := healExecFn("codesign", "--force", "--sign", "-", staged); csErr != nil {
+		if out, csErr := getHealExecFn()("codesign", "--force", "--sign", "-", staged); csErr != nil {
 			return fmt.Errorf("codesign %s: %w (%s)", staged, csErr, strings.TrimSpace(string(out)))
 		}
 	}

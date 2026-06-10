@@ -20,9 +20,8 @@ func withAllowList(t *testing.T, dir string) {
 // withExec swaps the codesign runner for the duration of the test.
 func withExec(t *testing.T, fn func(name string, args ...string) ([]byte, error)) {
 	t.Helper()
-	old := healExecFn
-	healExecFn = fn
-	t.Cleanup(func() { healExecFn = old })
+	old := setHealExecFn(fn) // A21: swap under the write lock
+	t.Cleanup(func() { setHealExecFn(old) })
 }
 
 func writeExe(t *testing.T, path, body string) {
@@ -204,5 +203,21 @@ func TestSafeReplace_ExecutesAfterReplace(t *testing.T) {
 	}
 	if string(out) != "OK\n" {
 		t.Errorf("ran old binary? got %q", out)
+	}
+}
+
+func TestSafeReplace_RefusesHomebrewManaged(t *testing.T) {
+	// Allow-list includes the brew dir so we get PAST guardCLIPath to the brew
+	// guard — the point being SafeReplace refuses a Homebrew-managed binary even
+	// though /opt/homebrew/bin is an otherwise-allowed CLI location, delegating
+	// to `brew upgrade` instead (binding-review confirm-item).
+	old := allowedBinDirsFn
+	allowedBinDirsFn = func() []string { return []string{"/opt/homebrew/bin"} }
+	defer func() { allowedBinDirsFn = old }()
+
+	src := filepath.Join(t.TempDir(), "fresh")
+	writeExe(t, src, "x")
+	if err := SafeReplace(src, "/opt/homebrew/bin/sirsi"); !errors.Is(err, ErrHomebrewManaged) {
+		t.Fatalf("want ErrHomebrewManaged for a brew path, got %v", err)
 	}
 }
