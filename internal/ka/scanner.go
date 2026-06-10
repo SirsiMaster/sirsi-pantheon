@@ -366,22 +366,78 @@ func (s *Scanner) mergeOrphans(orphans map[string][]Residual, lsGhosts map[strin
 }
 
 // isInstalled checks if a bundle ID or name matches an installed app.
+//
+// Four resolution strategies, in order of confidence:
+//
+//  1. Exact bundle-id match against the enumerated app registry.
+//  2. Parent-bundle walk: a residual id like "com.openai.chat.Widgets" is a
+//     widget/extension whose owner is "com.openai.chat" — if the parent is
+//     installed, the child residual belongs to a live app, not a ghost.
+//     We strip dot-suffixes one at a time until we hit a 2-segment minimum
+//     (so "com.openai" stays a real probe but "com." does not match a TLD).
+//  3. Group container ownership: "group.X.Y..." container ids are shared
+//     state between siblings of an installed app (e.g. group.com.facebook.family
+//     is co-owned by an installed WhatsApp). If ANY installed bundle id has
+//     a matching prefix once "group." is stripped, the container is live.
+//  4. Name fuzzy match (legacy behavior, kept for entries without a usable id).
 func (s *Scanner) isInstalled(bundleID, fileName string) bool {
-	// Check by bundle ID
-	if s.installedApps[bundleID] {
-		return true
+	if bundleID != "" {
+		if s.installedApps[bundleID] {
+			return true
+		}
+		for parent := parentBundleID(bundleID); parent != ""; parent = parentBundleID(parent) {
+			if s.installedApps[parent] {
+				return true
+			}
+		}
+		if strings.HasPrefix(bundleID, "group.") {
+			needle := strings.TrimPrefix(bundleID, "group.")
+			for installed := range s.installedApps {
+				if installed == needle || hasBundlePrefix(installed, needle) || hasBundlePrefix(needle, installed) {
+					return true
+				}
+			}
+		}
 	}
 
-	// Check by name (for entries without standard bundle IDs)
-	nameLower := strings.ToLower(fileName)
-	// Extract app name from various formats
-	for installed := range s.installedNames {
-		if strings.Contains(nameLower, installed) {
-			return true
+	if fileName != "" {
+		nameLower := strings.ToLower(fileName)
+		for installed := range s.installedNames {
+			if strings.Contains(nameLower, installed) {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+// parentBundleID strips the trailing dot-segment from a bundle id, returning
+// "" once stripping would leave fewer than two segments. "com.openai.chat.Widgets"
+// → "com.openai.chat" → "com.openai" → "" (refuse to strip down to "com.").
+func parentBundleID(id string) string {
+	idx := strings.LastIndex(id, ".")
+	if idx <= 0 {
+		return ""
+	}
+	parent := id[:idx]
+	if strings.Count(parent, ".") < 1 {
+		return ""
+	}
+	return parent
+}
+
+// hasBundlePrefix reports whether child's bundle id is a dot-segment-aligned
+// child of parent (so "com.foo.bar" startsWith "com.foo" returns true but
+// "com.foobar" does NOT).
+func hasBundlePrefix(child, parent string) bool {
+	if parent == "" || child == "" {
+		return false
+	}
+	if child == parent {
+		return true
+	}
+	return strings.HasPrefix(child, parent+".")
 }
 
 // indexHomebrewCasks adds Homebrew cask apps to the installed app index.
