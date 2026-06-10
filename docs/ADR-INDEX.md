@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 26** | **Next available: ADR-028**
+**Total ADRs: 27** | **Next available: ADR-029**
 
 ---
 
@@ -37,6 +37,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-025](ADR-025-THOTH-GATED-EXIT.md) | Thoth-Gated Exit + Resumable Thread Suspend — `suspended` (resumable-but-not-live) carrying memory+plans; `thread suspend`/`resume`; SessionEnd hook; SessionStart reconciliation as the authoritative gate (R3) | **Accepted** | 2026-06-01 |
 | [ADR-026](ADR-026-HORUS-OPS-DASHBOARD.md) | Horus Ops-Dashboard — one typed read-model (`router.NodeStatus`) over `GET /api/node-status` + `sirsi router node-status` verb; menubar/TUI read-only projections; realizes ADR-015 "dashboard is Horus" (read companion to the frozen action contract) | **Accepted** (steps 1-3 shipped; codex arch-verify pending; surface chrome 4-5 = claude-pantheon) | 2026-06-02 |
 | [ADR-027](ADR-027-ROUTER-MENUBAR-SURFACE.md) | Router Menubar Surface — per-mailbox drill-down + operator override-act (open / Reroute / Mark stale) + ⚡ Caffeinate-router full-revival (hidden until dead); extends Horus — Ops; direct-FS reads, 60s shared tick | **Proposed** (routed to codex-pantheon for arch-verify) | 2026-06-08 |
+| [ADR-028](ADR-028-OPTIONAL-SQLITE-LEAN-BUILD.md) | Optional SQLite — `nosqlite` lean build variant — keep full Vault/Seshat/notify by default (15 MB); opt-in `-tags nosqlite` for ~10.6 MB with graceful per-package degradation. The one real remaining size lever (Metal gate measured as non-win) | **Proposed** (design-only; codex final review on return; cross-eyes → non-standin claude) | 2026-06-08 |
 | [ADR-029](ADR-029-PER-AGENT-SESSION-WORKTREES.md) | Per-Agent Session Worktrees — every agent session edits source in its own `git worktree` under `.claude/worktrees/<agent>-<session>/`, not the shared root checkout; eliminates the shared-`.git` `core.bare` corruption + cross-branch contamination; shared object store, isolated working tree/index/HEAD; pairs with the SessionStart per-resume thread-mint fix | **Accepted** | 2026-06-09 |
 
 ---
