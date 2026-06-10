@@ -11,13 +11,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"fyne.io/systray"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 )
 
@@ -61,9 +64,12 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
-		// --include-caution so the preview matches the menubar's waste title
-		// (full reclaimable set), and so Confirm clears the whole notice.
-		out, err := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--include-caution").CombinedOutput()
+		// SAFE-ONLY (no --include-caution): a one-click menubar surface must only
+		// ever touch clearly-regenerable, trash-first items (node_modules, caches,
+		// build artifacts). Caution-tier items (app remnants, judgment calls) are
+		// deliberately excluded — they need explicit review, not a blind one-click,
+		// and stay reachable via `sirsi anubis clean --include-caution` in the CLI.
+		out, err := exec.CommandContext(ctx, sirsiBin, "anubis", "clean").CombinedOutput()
 		text := stripANSI(string(out))
 		judge.SetTitle(judgeTitle)
 		judge.Enable()
@@ -106,9 +112,10 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 		confirm.Show()
 		// Tell the user what to do next — the menu closed on their click, so the
 		// armed Confirm item is invisible until they reopen. Without this banner,
-		// the preview's only effect is an unseen menu item = "nothing happened."
-		notify.Toast("Sirsi — "+amount+" ready to clean",
-			"Reopen the Sirsi menu → Anubis → ✓ Confirm Clean to move it to Trash.")
+		// the preview's only effect is an unseen menu item = "nothing happened".
+		// Point them at the full itemized manifest first — consent needs visibility.
+		notify.Toast("Sirsi — "+amount+" safe to clean",
+			"Reopen → Anubis → 'Review what will be cleaned' to see the list, then ✓ Confirm Clean.")
 		// Auto-disarm: never leave a standing one-click delete in the menu.
 		time.AfterFunc(confirmArmWindow, func() { confirm.Hide() })
 	}()
@@ -120,11 +127,10 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 // half of the two-click flow.
 //
 // Uses `anubis clean --dry-run=false` (NOT `--confirm`): `--confirm` does double
-// duty in anubis.go — it both applies AND expands the target from safe to
-// safe+caution, so confirming would move MORE than the safe-only preview
-// (`anubis clean`) showed. `--dry-run=false` applies the SAME safe-only set the
-// preview displayed — the amount shown is exactly the amount trashed. (Caution
-// items need their own explicit, separately-previewed flow.)
+// duty in anubis.go — it both applies AND widens the target from safe to
+// safe+caution, so confirming would move MORE than the safe-only preview showed.
+// `--dry-run=false` applies the SAME safe-only set the preview displayed — the
+// amount shown is exactly the amount trashed (Rule A1: preview == apply).
 func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Store, rr *resultRow) {
 	if confirm == nil || sirsiBin == "" {
 		return
@@ -134,12 +140,12 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		// Apply the SAME set the preview showed: both preview and apply use
-		// --include-caution, so the amount trashed equals the amount displayed
-		// (Rule A1: preview == apply). Trash-first (recoverable), protected paths
-		// enforced by internal/cleaner/safety.go. --dry-run=false (not --confirm,
-		// which would additionally widen scope) does the apply.
-		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--include-caution", "--dry-run=false")
+		// SAFE-ONLY apply — NO --include-caution, matching the safe-only preview
+		// so the set trashed is exactly the set shown (Rule A1: preview == apply).
+		// Trash-first (recoverable); protected system paths enforced in
+		// internal/cleaner/safety.go. Caution-tier items are never one-click
+		// deleted here — they require deliberate review (CLI --include-caution).
+		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--dry-run=false")
 		cmd.Stdin = strings.NewReader("y\n") // the confirm-click is the [y/N] yes
 		out, err := cmd.CombinedOutput()
 		text := stripANSI(string(out))
@@ -153,7 +159,7 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		if summary == "" {
 			summary = "cleaned — items moved to Trash"
 		}
-		recordNotify(store, "Clean Waste", "anubis clean --include-caution --dry-run=false", sev, summary, text)
+		recordNotify(store, "Clean Waste", "anubis clean --dry-run=false", sev, summary, text)
 		if rr != nil {
 			rr.set("Clean Waste", icon, summary, text)
 		}
@@ -170,6 +176,52 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		// happen live in the demo.
 		rescanWaste(context.Background())
 	}()
+}
+
+// reviewCleanList opens the COMPLETE itemized manifest of a one-click clean —
+// every SAFE item that WILL be moved to Trash (full path + size) and every
+// CAUTION item that will NOT be touched — read from the same persisted scan the
+// cleaner uses, so the list is exactly what Confirm Clean will move. This is the
+// visibility half of consent: a total with no manifest is not consent (Rule A1).
+func reviewCleanList() {
+	ps, err := jackal.LoadLatest()
+	if err != nil || ps == nil || len(ps.Findings) == 0 {
+		notify.Toast("Sirsi — Review", "No scan results yet. Run Anubis → Scan for Waste first.")
+		return
+	}
+	var safe, caution []jackal.PersistedFinding
+	var safeBytes, cautionBytes int64
+	for _, f := range ps.Findings {
+		switch f.Severity {
+		case jackal.SeveritySafe:
+			safe = append(safe, f)
+			safeBytes += f.SizeBytes
+		case jackal.SeverityCaution:
+			caution = append(caution, f)
+			cautionBytes += f.SizeBytes
+		}
+	}
+	sort.Slice(safe, func(i, j int) bool { return safe[i].SizeBytes > safe[j].SizeBytes })
+	sort.Slice(caution, func(i, j int) bool { return caution[i].SizeBytes > caution[j].SizeBytes })
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Based on the scan from %s.\n\n", ps.Timestamp.Format("Mon 3:04 PM"))
+	fmt.Fprintf(&b, "■ WILL BE MOVED TO TRASH — what 'Confirm Clean' does (one click)\n")
+	fmt.Fprintf(&b, "  %d safe items · %s · regenerable (caches, node_modules, build artifacts)\n", len(safe), jackal.FormatSize(safeBytes))
+	fmt.Fprintf(&b, "  Recoverable from Trash. Protected system paths are never touched.\n\n")
+	for _, f := range safe {
+		fmt.Fprintf(&b, "  %10s   %s\n", jackal.FormatSize(f.SizeBytes), f.Path)
+	}
+	if len(safe) == 0 {
+		fmt.Fprintf(&b, "  (nothing safe to clean right now)\n")
+	}
+	fmt.Fprintf(&b, "\n\n□ EXCLUDED — NOT cleaned by the menubar (needs your review)\n")
+	fmt.Fprintf(&b, "  %d caution items · %s · app remnants & judgment calls\n", len(caution), jackal.FormatSize(cautionBytes))
+	fmt.Fprintf(&b, "  Clean these deliberately in a terminal:  sirsi anubis clean --include-caution --confirm\n\n")
+	for _, f := range caution {
+		fmt.Fprintf(&b, "  %10s   %s\n", jackal.FormatSize(f.SizeBytes), f.Path)
+	}
+	openDetail("What Clean Waste will do", b.String())
 }
 
 // recordNotify writes a result to the notify store (→ Recent Activity), if any.

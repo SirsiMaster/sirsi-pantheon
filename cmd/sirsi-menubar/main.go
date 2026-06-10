@@ -211,14 +211,18 @@ func onReady() {
 	mAnubis := systray.AddMenuItem("🐺 Anubis — Hygiene", "Scan, clean, and de-ghost the workstation")
 	rrAnubis := newDeityResult(mAnubis)
 	mScan := mAnubis.AddSubMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
-	mJudge := mAnubis.AddSubMenuItem("Clean Waste…", "Preview reclaimable waste, then confirm to move it to Trash")
+	mJudge := mAnubis.AddSubMenuItem("Clean Waste…", "Preview safe reclaimable waste, then confirm to move it to Trash")
+	// Full itemized manifest (Rule A1: consent needs visibility) — every safe
+	// item that will be trashed + the caution items that are excluded.
+	mReview := mAnubis.AddSubMenuItem("  ↳ Review what will be cleaned…", "See the exact list of files before confirming — opens a manifest")
 	// In-app clean confirm (Rule A1): hidden until a dry-run preview arms it.
-	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Confirm Clean", "Move the previewed waste to Trash")
+	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Confirm Clean", "Move the previewed SAFE waste to Trash (recoverable)")
 	mCleanConfirm.Hide()
 	mKa := mAnubis.AddSubMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
 	mGuard := mAnubis.AddSubMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
 	wire(mScan, func() { runService(mScan, "Scan for Waste", sirsiBin, "scan", nStore, rrAnubis) })
 	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore, rrAnubis) })
+	wire(mReview, func() { reviewCleanList() })
 	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
 	wire(mKa, func() { runService(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore, rrAnubis) })
 	wire(mGuard, func() { spawnTUIWithCommand("guard") })
