@@ -379,3 +379,47 @@ func TestReapDeadThreads_PidSanityFloor(t *testing.T) {
 		t.Error("fresh pid-less surface should stay active")
 	}
 }
+
+func TestRegisterThread_CompactsOldTerminalRecords(t *testing.T) {
+	tmp := t.TempDir()
+	now := time.Now().UTC()
+	reg := &ThreadRegistry{Threads: map[string]*Thread{
+		// Old terminal (reaped) — past TerminalRetention → compacted.
+		"thr-old-reaped": {
+			ThreadID: "thr-old-reaped", AgentID: "a", Surface: "claude",
+			Status: ThreadStatusReaped, LastSeenAt: now.Add(-5 * 24 * time.Hour),
+		},
+		// Recent terminal (closed) — within retention → kept.
+		"thr-recent-closed": {
+			ThreadID: "thr-recent-closed", AgentID: "a", Surface: "claude",
+			Status: ThreadStatusClosed, LastSeenAt: now.Add(-1 * time.Hour),
+		},
+		// Ancient but ACTIVE — must NEVER be compacted (only terminal records are).
+		"thr-active": {
+			ThreadID: "thr-active", AgentID: "a", Surface: "claude",
+			Status: ThreadStatusActive, PID: 999999, LastSeenAt: now.Add(-100 * 24 * time.Hour),
+		},
+	}}
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh register triggers the opportunistic compaction.
+	if _, err := RegisterThread(tmp, &Thread{AgentID: "b", Surface: "claude"}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := LoadThreadRegistry(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out.Threads["thr-old-reaped"]; ok {
+		t.Error("old reaped record should be compacted on register")
+	}
+	if _, ok := out.Threads["thr-recent-closed"]; !ok {
+		t.Error("recent closed record (within retention) should be kept")
+	}
+	if _, ok := out.Threads["thr-active"]; !ok {
+		t.Error("active record must NEVER be compacted, even if ancient")
+	}
+}
