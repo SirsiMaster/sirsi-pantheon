@@ -541,7 +541,10 @@ var threadListCmd = &cobra.Command{
 			if t.Status.IsTerminal() && !threadListAll {
 				continue
 			}
-			rows = append(rows, row{thr: t, stale: t.IsStale(now, stale)})
+			// Loop-evidence-aware (A28): a thread with a live watcher loop is NOT
+			// stale even if its heartbeat aged out (harness-gated surfaces). This
+			// is the `.stale` field the registry-police trusts. Write-free.
+			rows = append(rows, row{thr: t, stale: router.EffectiveStale(t, now, stale)})
 		}
 
 		if JsonOutput {
