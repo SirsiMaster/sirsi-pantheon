@@ -37,11 +37,12 @@ it for the bounded, repeatable work where local speed wins.
 Optional config file at `~/.config/sirsi/gemma.toml`:
 
 ```toml
-# Hugging Face model id served from the venv.
-model_id = "mlx-community/gemma-2-27b-it-4bit"
+# Hugging Face model id served from the venv. The bf16- prefix is required
+# on mlx-lm 0.31+ (per chip A's MLX_GEMMA_LOCAL.md).
+model_id = "mlx-community/gemma-2-27b-it-bf16-4bit"
 
-# Path to the Python venv that has `mlx_lm` installed.
-venv_path = "~/.sirsi/mlx-venv"
+# Path to the Python venv that has `mlx_lm` installed (chip A installs here).
+venv_path = "~/.venvs/mlx"
 
 # Generation defaults — clients can override per-call.
 max_tokens  = 1024
@@ -84,10 +85,23 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 You should see the server's `InitializeResult` come back on stdout.
 
+## Performance
+
+Measured by chip A's `scripts/gemma-smoke.sh` on the M5 Max with
+`mlx-community/gemma-2-27b-it-bf16-4bit` (Rule A14 — reproduce with that
+script):
+
+- **Generation**: ~33.4–33.8 tokens/sec (warm)
+- **Prompt eval**: ~234 tokens/sec
+- **Peak memory**: ~15.5 GB
+
 ## Known limits
 
-- **Cold start** — first call after a reboot pays for model load (~6s
-  for 27B 4-bit on M-series). Subsequent calls reuse the warm cache.
+- **Cold start** — every `mlx_lm.generate` call re-loads the model from the
+  HF cache (the CLI is stateless per invocation). The first call after a
+  reboot is slowest; later calls are faster once the weights are warm in the
+  macOS file cache. A long-lived `mlx_lm.server` worker (no per-call reload)
+  is the planned upgrade — see the developer README.
 - **No streaming yet** — responses buffer to completion before the MCP
   client sees them. Streaming via `mlx_lm.server` is on the roadmap; see
   the developer README.

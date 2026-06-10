@@ -23,11 +23,13 @@ type Config struct {
 }
 
 // DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
+// The bf16- prefix on the model id is REQUIRED on mlx-lm 0.31+; the venv
+// lives at ~/.venvs/mlx with the mlx_lm.generate console script in bin/.
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
-		ModelID:     "mlx-community/gemma-2-27b-it-4bit",
-		VenvPath:    filepath.Join(home, ".sirsi", "mlx-venv"),
+		ModelID:     "mlx-community/gemma-2-27b-it-bf16-4bit",
+		VenvPath:    filepath.Join(home, ".venvs", "mlx"),
 		MaxTokens:   1024,
 		Temperature: 0.7,
 	}
