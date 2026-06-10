@@ -694,6 +694,55 @@ func TestClassifyEventTrend(t *testing.T) {
 	}
 }
 
+func TestCheckSpotlightStorm(t *testing.T) {
+	psHeader := "  PID   RSS    VSZ  %CPU USER     COMM\n"
+
+	tests := []struct {
+		name     string
+		ps       string
+		wantSev  DiagnosticSeverity
+		wantWord string
+	}{
+		{
+			name:     "storm — mds_stores + mdworker pinning CPU",
+			ps:       psHeader + "  50 102400 204800 38.0 user /System/Library/Frameworks/mds_stores\n  51  51200 102400 12.0 user mdworker_shared\n 100  20480  40960  1.0 user /usr/bin/node",
+			wantSev:  SeverityWarn,
+			wantWord: "Spotlight indexer busy",
+		},
+		{
+			name:     "idle — mds_stores near zero",
+			ps:       psHeader + "  50 102400 204800  0.2 user mds_stores\n 100  20480  40960  1.0 user /usr/bin/node",
+			wantSev:  SeverityOK,
+			wantWord: "idle",
+		},
+		{
+			name:     "no spotlight processes at all",
+			ps:       psHeader + " 100  20480  40960  1.0 user /usr/bin/node",
+			wantSev:  SeverityOK,
+			wantWord: "idle",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := healthyMock()
+			m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = tt.ps
+
+			report := &DoctorReport{}
+			checkSpotlightStorm(m, report)
+			f := findByCheck(report.Findings, "Spotlight Storm")
+			if f == nil {
+				t.Fatal("missing Spotlight Storm finding")
+			}
+			if f.Severity != tt.wantSev {
+				t.Errorf("severity = %v, want %v (msg: %s)", f.Severity, tt.wantSev, f.Message)
+			}
+			if !strings.Contains(f.Message, tt.wantWord) {
+				t.Errorf("message %q should contain %q", f.Message, tt.wantWord)
+			}
+		})
+	}
+}
+
 func TestCheckRecentCrashLogs_TransientVsTrend(t *testing.T) {
 	now := time.Now()
 	day := func(d int) time.Time { return now.AddDate(0, 0, -d) }

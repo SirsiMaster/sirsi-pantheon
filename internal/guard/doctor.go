@@ -114,6 +114,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		{"Swap Usage", func() { checkSwapUsage(p, report) }},
 		{"Disk Space", func() { checkDiskSpace(p, report) }},
 		{"Memory Processes", func() { checkTopMemoryProcesses(p, report) }},
+		{"Spotlight Storm", func() { checkSpotlightStorm(p, report) }},
 		{"Crash Logs", func() { checkRecentCrashLogs(report) }},
 		{"App Crashes", func() { checkAppCrashes(report) }},
 		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
@@ -336,6 +337,52 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 
 // crashWindowDays is the look-back window for kernel-panic / Jetsam trends.
 const crashWindowDays = 7
+
+// spotlightStormCPUThreshold is the aggregate %CPU across Spotlight indexer
+// processes at or above which we flag a write-amplification storm. A quiet
+// Spotlight sits near 0%; a storm (reindexing a busy dev tree after an agent
+// write-burst) pins mds_stores/mdworker for sustained stretches.
+const spotlightStormCPUThreshold = 30.0
+
+// isSpotlightIndexer reports whether a process name is part of the macOS
+// Spotlight indexing pipeline (the mds family).
+func isSpotlightIndexer(name string) bool {
+	return strings.HasPrefix(name, "mds") || strings.HasPrefix(name, "mdworker")
+}
+
+// checkSpotlightStorm detects the mds_stores write-amplification storm — the
+// read-only half of the Spotlight remediation (flagship Rail B). Agent
+// file-write bursts in heavy dev trees trigger Spotlight reindexing, which
+// pins mds_stores and feeds the RAM-pressure → Jetsam loop. This surfaces the
+// storm from the process table (no Spotlight-internals probing); the opt-in
+// `~/Development` Privacy exclusion that fixes it lands behind its own confirm.
+func checkSpotlightStorm(p platform.Platform, report *DoctorReport) {
+	procs, err := getProcessListWith(p)
+	if err != nil {
+		return
+	}
+	var totalCPU float64
+	var names []string
+	for _, proc := range procs {
+		if isSpotlightIndexer(proc.Name) {
+			totalCPU += proc.CPUPercent
+			if proc.CPUPercent > 0 {
+				names = append(names, fmt.Sprintf("%s %.0f%%", proc.Name, proc.CPUPercent))
+			}
+		}
+	}
+
+	finding := DiagnosticFinding{Check: "Spotlight Storm"}
+	if totalCPU >= spotlightStormCPUThreshold {
+		finding.Severity = SeverityWarn
+		finding.Message = fmt.Sprintf("Spotlight indexer busy (%.0f%% CPU) — likely reindexing a heavy-write dir; this feeds the RAM-pressure → Jetsam loop. Exclude busy dev dirs from Spotlight Privacy.", totalCPU)
+		finding.Detail = strings.Join(names, " | ")
+	} else {
+		finding.Severity = SeverityOK
+		finding.Message = "Spotlight indexer idle — no write-amplification storm"
+	}
+	report.Findings = append(report.Findings, finding)
+}
 
 // trendDayThreshold is the number of distinct active days within the window
 // at or above which an event count is treated as a sustained TREND rather

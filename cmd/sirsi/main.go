@@ -731,6 +731,7 @@ func init() {
 	rootCmd.AddCommand(scanCmd, cleanCmd, ghostsCmd, dedupCmd, doctorCmd)
 	rootCmd.AddCommand(purgeCmd, analyzeCmd, installerCmd)
 	rootCmd.AddCommand(networkCmd, fixCmd, monitorCmd)
+	rootCmd.AddCommand(spotlightExcludeCmd)
 	rootCmd.AddCommand(auditCmd, riskCmd, hardwareCmd, diagramCmd, statusCmd)
 	rootCmd.AddCommand(versionCmd, quickstartCmd, setupCmd, routerCmd, agentCmd, threadCmd)
 
