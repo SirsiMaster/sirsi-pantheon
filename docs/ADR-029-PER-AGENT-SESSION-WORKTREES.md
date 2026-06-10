@@ -100,6 +100,32 @@ is the single sharp edge of the model.
   source-edit session is detected (pairs with the per-resume thread-mint fix —
   the registry-accretion root — landed alongside this ADR).
 
+## Amendment 1 — Canonical Router (2026-06-10)
+
+**Problem found in practice.** The worktree model introduced a regression the
+original ADR missed: `.agents/idea-router/` is git-tracked, so every per-agent
+worktree carries its **own snapshot copy** of the router. `sirsi router`/`thread`
+resolved the router by walking up from `os.Getwd()` (`router.FindRepoRoot`), so a
+command run from a worktree cwd read/wrote that **stale local copy**, invisible to
+the live root router and to the agents watching it. A binding-review request routed
+from a worktree was silently dropped — a broken review gate, the worst failure mode
+for the relay (audit 2026-06-10 found exactly one lost item: a #33 safety-review
+request that never reached the binding reviewer).
+
+**Ruling (claude-home, root-authority).** The worktree model **REQUIRES a single
+canonical router**. `FindRepoRoot` now resolves the **main worktree root** first —
+the shared `.git`'s parent via `git rev-parse --path-format=absolute
+--git-common-dir` — and only trusts it when the live `.agents/idea-router/` actually
+lives there; otherwise it falls back to the original cwd walk-up (non-git checkouts,
+tests). cwd no longer determines which router you hit. Verified: the fixed binary,
+run from a worktree cwd, resolves `Router home` to the repo root, not the worktree
+copy.
+
+**Follow-up (optional hardening).** The per-worktree copy still exists on disk
+(git-tracked); the resolve-to-root fix neutralizes its harm but a future cleanup
+could `.gitignore` the volatile router state (`items/`, `state.json`) so worktrees
+don't carry a snapshot at all.
+
 ## References
 - ADR-022 (CTR OS-truth liveness), ADR-024 (one-watcher-per-surface) — the
   registry identity model the shared-tree churn corrupted.

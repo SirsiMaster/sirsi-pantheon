@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -226,6 +228,23 @@ func New(repoRoot string) (*Router, error) {
 
 // FindRepoRoot walks up from cwd to find a .agents/idea-router/ directory.
 func FindRepoRoot() (string, error) {
+	// Canonical path: the MAIN worktree root (the shared `.git`'s parent), even
+	// when called from inside a per-agent worktree. ADR-029 (per-agent session
+	// worktrees) fixed `core.bare` corruption but each worktree carries its own
+	// git-snapshot copy of `.agents/idea-router/`; resolving the router by a cwd
+	// walk-up therefore lands in that STALE copy and fragments the relay — a
+	// binding reviewer that never receives a routed review request is a broken
+	// gate. The git common dir always points at the main tree, whose
+	// `.agents/idea-router/` is the single live router, so we prefer it. We only
+	// trust it when the live router actually lives there; otherwise we fall back
+	// to the cwd walk-up (non-git checkouts, tests, unusual git dirs).
+	if commonDir, ok := getGitCommonDirFn()(); ok {
+		root := filepath.Dir(commonDir) // <mainroot>/.git -> <mainroot>
+		if info, err := os.Stat(filepath.Join(root, ".agents", "idea-router")); err == nil && info.IsDir() {
+			return root, nil
+		}
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -241,6 +260,45 @@ func FindRepoRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// gitCommonDirFn resolves the absolute path of the shared `.git` directory (the
+// MAIN worktree's `.git`, even when called from a linked worktree). Injectable
+// (Rule A16) and RWMutex-guarded (Rule A21) so tests can exercise the
+// canonical / fallback branches without a real repo. ("", false) means "not a
+// git tree" — callers fall back to the cwd walk-up.
+var (
+	gitCommonDirMu sync.RWMutex
+	gitCommonDirFn = defaultGitCommonDir
+)
+
+func getGitCommonDirFn() func() (string, bool) {
+	gitCommonDirMu.RLock()
+	defer gitCommonDirMu.RUnlock()
+	return gitCommonDirFn
+}
+
+func setGitCommonDirFn(fn func() (string, bool)) func() (string, bool) {
+	gitCommonDirMu.Lock()
+	defer gitCommonDirMu.Unlock()
+	old := gitCommonDirFn
+	gitCommonDirFn = fn
+	return old
+}
+
+// defaultGitCommonDir shells `git rev-parse --git-common-dir` (absolute) to find
+// the shared `.git`. In a linked worktree this returns the main tree's `.git`,
+// so its parent is the canonical repo root.
+func defaultGitCommonDir() (string, bool) {
+	out, err := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return "", false
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return "", false
+	}
+	return dir, true
 }
 
 // ReadState returns the current router state.
