@@ -221,21 +221,30 @@ func InstallMenubar() InstallResult {
 		res.Message = "sirsi-menubar binary not found on PATH or beside sirsi"
 		return res
 	}
-	// Stabilize the macOS TCC identity BEFORE loading. A plain `go build`
-	// ad-hoc-signs the menubar with a content-hash-derived identifier
-	// (sirsi-menubar-<hash>), so EVERY rebuild looks like a brand-new app to
-	// Full Disk Access / TCC and re-prompts the user. Re-sign with a stable
-	// identifier matching the Pantheon.app bundle so one grant persists across
-	// reinstalls (the "menubar keeps asking for FDA" bug). Best-effort,
-	// idempotent; failure is non-fatal (the menubar still runs, just unsigned).
-	stableSignMenubarTCC(bin)
+	// Stabilize the macOS TCC identity BEFORE loading. Two compounding causes
+	// made the menubar re-prompt for Full Disk Access on every reinstall:
+	//  (1) ad-hoc `codesign --sign -` has no Team ID, so TCC saw a new identity
+	//      each re-sign — addressed by signing with a stable --identifier; AND
+	//  (2) the menubar shipped as a BARE Mach-O at ~/.local/bin, which carries
+	//      only a content-hash TCC identity, so every rebuild looked like a new
+	//      app. The structural fix for (2) is to install a real .app bundle with
+	//      a stable CFBundleIdentifier so TCC keys Full Disk Access on the bundle
+	//      id and one grant survives reinstalls; the LaunchAgent then points at
+	//      the bundled executable. Falls back to signing the bare binary if
+	//      bundle creation fails (never worse than before). Failure is non-fatal.
+	target := bin
+	if bundleExec, err := installMenubarAppBundle(bin); err == nil && bundleExec != "" {
+		target = bundleExec
+	} else {
+		stableSignMenubarTCC(bin)
+	}
 
 	path := menubarPlistPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
-	if err := os.WriteFile(path, []byte(menubarPlistContent(bin)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(menubarPlistContent(target)), 0o644); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
@@ -267,6 +276,95 @@ func stableSignMenubarTCC(bin string) {
 	}
 	_ = exec.Command("codesign", "--force", "--sign", "-",
 		"--identifier", menubarTCCIdentifier, bin).Run()
+}
+
+// menubarAppName is the .app bundle the menubar installs into.
+const menubarAppName = "Sirsi Menubar.app"
+
+// menubarAppBundlePath is the .app bundle install location (~/Applications). A
+// real bundle with a stable CFBundleIdentifier is what lets macOS TCC treat the
+// menubar as the SAME app across reinstalls; an unbundled Mach-O has only a
+// content-hash identity, so every rebuild re-prompts for Full Disk Access.
+func menubarAppBundlePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Applications", menubarAppName)
+}
+
+// menubarAppInfoPlist is the bundle Info.plist. CFBundleIdentifier is the stable
+// TCC key; LSUIElement=true marks it an agent (menubar) app with no Dock icon.
+func menubarAppInfoPlist() string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>` + menubarTCCIdentifier + `</string>
+	<key>CFBundleName</key>
+	<string>Sirsi Menubar</string>
+	<key>CFBundleExecutable</key>
+	<string>sirsi-menubar</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+</dict>
+</plist>
+`
+}
+
+// writeMenubarAppBundle scaffolds a .app bundle at bundleDir around srcBin and
+// returns the path to the bundled executable. Pure filesystem work (no signing)
+// so it is unit-testable with temp dirs.
+func writeMenubarAppBundle(bundleDir, srcBin string) (string, error) {
+	macOSDir := filepath.Join(bundleDir, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSDir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(bundleDir, "Contents", "Info.plist"),
+		[]byte(menubarAppInfoPlist()), 0o644); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(srcBin)
+	if err != nil {
+		return "", err
+	}
+	execPath := filepath.Join(macOSDir, "sirsi-menubar")
+	// Remove any existing file FIRST so the new write lands on a fresh inode.
+	// Writing over an existing executable's inode (O_TRUNC) leaves a stale
+	// code-signing cdhash bound to that inode → macOS AMFI SIGKILL-137 on the
+	// next exec — the exact class Rail A's SafeReplace (PR #19) eliminates, and
+	// the reason `sirsi` is its own top crasher. os.Remove + WriteFile +
+	// codesign is the canonical AMFI-safe idiom for any binary-install path.
+	_ = os.Remove(execPath) // ignore not-exist (first install)
+	if err := os.WriteFile(execPath, data, 0o755); err != nil {
+		return "", err
+	}
+	return execPath, nil
+}
+
+// installMenubarAppBundle packages the menubar as a .app bundle at
+// ~/Applications and ad-hoc-signs the bundle with the stable identifier so TCC
+// keys on it across reinstalls. Returns the bundled executable path (the
+// LaunchAgent target), or "" + error so the caller can fall back to the bare
+// binary. Best-effort signing (failure non-fatal).
+func installMenubarAppBundle(srcBin string) (string, error) {
+	execPath, err := writeMenubarAppBundle(menubarAppBundlePath(), srcBin)
+	if err != nil {
+		return "", err
+	}
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("codesign", "--force", "--deep", "--sign", "-",
+			"--identifier", menubarTCCIdentifier, menubarAppBundlePath()).Run()
+	}
+	return execPath, nil
 }
 
 // ── IDE (MCP) ──────────────────────────────────────────────────────────────
