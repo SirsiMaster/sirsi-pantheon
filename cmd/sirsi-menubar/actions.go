@@ -36,6 +36,14 @@ func openFullDiskAccessPane(store *notify.Store) {
 // menu item in a running state.
 const actionTimeout = 90 * time.Second
 
+// confirmArmWindow is how long the "✓ Confirm Clean" item stays armed after a
+// preview. The macOS menu closes the instant "Clean Waste…" is clicked, so the
+// user must REOPEN the menu to see (and click) the armed Confirm item — 25s was
+// far too short for that round-trip and made clean feel like a dead click. A
+// banner toast points the user back to the menu; this window must outlive that
+// human round-trip while still never leaving a standing one-click delete forever.
+const confirmArmWindow = 2 * time.Minute
+
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
 var reclaimRE = regexp.MustCompile(`\(([0-9.]+\s*[KMGTP]?B)\)`)
@@ -76,6 +84,13 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 			if rr != nil {
 				rr.set("Clean Waste (preview)", icon, s, text)
 			}
+			// Always give the click VISIBLE feedback — the menu has already
+			// closed, so without a banner the user sees nothing at all.
+			if err != nil {
+				notify.Toast("Sirsi — Clean Waste", "Couldn't preview: "+s)
+			} else {
+				notify.Toast("Sirsi — Clean Waste", "Nothing to clean right now.")
+			}
 			confirm.Hide()
 			return
 		}
@@ -89,8 +104,13 @@ func runCleanPreview(judge, confirm *systray.MenuItem, judgeTitle, sirsiBin stri
 		}
 		confirm.SetTitle("  ✓ Confirm Clean — " + amount + " → Trash")
 		confirm.Show()
+		// Tell the user what to do next — the menu closed on their click, so the
+		// armed Confirm item is invisible until they reopen. Without this banner,
+		// the preview's only effect is an unseen menu item = "nothing happened."
+		notify.Toast("Sirsi — "+amount+" ready to clean",
+			"Reopen the Sirsi menu → Anubis → ✓ Confirm Clean to move it to Trash.")
 		// Auto-disarm: never leave a standing one-click delete in the menu.
-		time.AfterFunc(25*time.Second, func() { confirm.Hide() })
+		time.AfterFunc(confirmArmWindow, func() { confirm.Hide() })
 	}()
 }
 
@@ -114,9 +134,11 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		// SAFE-ONLY apply (no --include-caution): trash-first, recoverable,
-		// protected paths enforced by internal/cleaner/safety.go (A1). The exact
-		// safe set the preview showed — caution-tier app remnants stay gated.
+		// Apply the SAME set the preview showed: both preview and apply use
+		// --include-caution, so the amount trashed equals the amount displayed
+		// (Rule A1: preview == apply). Trash-first (recoverable), protected paths
+		// enforced by internal/cleaner/safety.go. --dry-run=false (not --confirm,
+		// which would additionally widen scope) does the apply.
 		cmd := exec.CommandContext(ctx, sirsiBin, "anubis", "clean", "--include-caution", "--dry-run=false")
 		cmd.Stdin = strings.NewReader("y\n") // the confirm-click is the [y/N] yes
 		out, err := cmd.CombinedOutput()
@@ -134,6 +156,12 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 		recordNotify(store, "Clean Waste", "anubis clean --include-caution --dry-run=false", sev, summary, text)
 		if rr != nil {
 			rr.set("Clean Waste", icon, summary, text)
+		}
+		// Visible completion feedback — close the loop the user started.
+		if err != nil {
+			notify.Toast("Sirsi — Clean failed", summary)
+		} else {
+			notify.Toast("Sirsi — Clean complete", summary)
 		}
 		confirm.Enable()
 		confirm.Hide()
