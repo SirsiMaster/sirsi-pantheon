@@ -179,5 +179,64 @@ class TestAdoptOrRegister_AnchorPidIdentity(unittest.TestCase):
         self.assertEqual(tid, "thr-NEW")
 
 
+def chain_runner(tree: dict[int, tuple[int, str]]):
+    """subprocess.run stand-in backed by a {pid: (ppid, comm)} process tree.
+
+    Responds to `ps -p <pid> -o ppid=,comm=` like the real ps would.
+    """
+    def _run(args, **_kwargs):
+        pid = int(args[2])  # ["ps", "-p", "<pid>", "-o", "ppid=,comm="]
+        if pid not in tree:
+            return types.SimpleNamespace(returncode=1, stdout="")
+        ppid, comm = tree[pid]
+        return types.SimpleNamespace(returncode=0, stdout=f"{ppid} {comm}\n")
+    return _run
+
+
+class TestClaudeSessionPidWalk(unittest.TestCase):
+    """The per-resume thread-mint root cause: claude_session_pid must resolve the
+    STABLE claude-CLI pid by walking the ancestry, not a fixed depth."""
+
+    def test_walks_through_ephemeral_shells_to_claude(self):
+        # python's parent shell (200) -> wrapper (300) -> claude (400) -> launchd
+        tree = {
+            200: (300, "zsh"),
+            300: (400, "login"),
+            400: (1, "/Users/x/.../claude.app/Contents/MacOS/claude"),
+        }
+        got = hook.claude_session_pid(runner=chain_runner(tree), start_pid=200)
+        self.assertEqual(got, 400)
+
+    def test_stable_across_resumes_different_ephemeral_shell(self):
+        # The whole point: a DIFFERENT fresh shell each resume (201 vs 200) must
+        # still resolve to the SAME claude pid (400) — so adopt matches, no mint.
+        tree_a = {200: (300, "zsh"), 300: (400, "login"),
+                  400: (1, "/x/MacOS/claude")}
+        tree_b = {201: (301, "zsh"), 301: (400, "login"),
+                  400: (1, "/x/MacOS/claude")}
+        a = hook.claude_session_pid(runner=chain_runner(tree_a), start_pid=200)
+        b = hook.claude_session_pid(runner=chain_runner(tree_b), start_pid=201)
+        self.assertEqual(a, 400)
+        self.assertEqual(b, 400)
+        self.assertEqual(a, b)  # stable identity → same thread adopted
+
+    def test_no_claude_ancestor_returns_none(self):
+        tree = {200: (300, "zsh"), 300: (1, "launchd")}
+        got = hook.claude_session_pid(runner=chain_runner(tree), start_pid=200)
+        self.assertIsNone(got)
+
+    def test_does_not_loop_on_cycle(self):
+        tree = {200: (300, "zsh"), 300: (200, "bash")}  # cycle
+        got = hook.claude_session_pid(runner=chain_runner(tree), start_pid=200)
+        self.assertIsNone(got)
+
+    def test_ps_failure_midwalk_returns_none_not_ephemeral_pid(self):
+        # If ps fails partway, return None (caller uses freshness) — never a
+        # wrong/ephemeral pid that would mint a fresh thread.
+        tree = {200: (300, "zsh")}  # 300 absent → lookup fails
+        got = hook.claude_session_pid(runner=chain_runner(tree), start_pid=200)
+        self.assertIsNone(got)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

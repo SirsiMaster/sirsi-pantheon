@@ -139,17 +139,58 @@ def pull_model_open_items(router_root: Path, agent_id: str) -> list[str]:
     return matches
 
 
-def claude_session_pid() -> int | None:
-    """Grandparent of this script (claude → shell → python3) is the CLI process."""
+def _ps_parent_and_comm(pid: int, runner=subprocess.run) -> tuple[int | None, str]:
+    """Return (ppid, basename(comm)) for pid, or (None, "") on any failure."""
     try:
-        shell_pid = os.getppid()
-        out = subprocess.run(
-            ["ps", "-p", str(shell_pid), "-o", "ppid="],
+        out = runner(
+            ["ps", "-p", str(pid), "-o", "ppid=,comm="],
             capture_output=True, text=True, timeout=2,
         )
-        return int(out.stdout.strip()) if out.returncode == 0 else None
-    except (subprocess.TimeoutExpired, ValueError):
-        return None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None, ""
+    if out.returncode != 0 or not (out.stdout or "").strip():
+        return None, ""
+    parts = out.stdout.split(None, 1)
+    try:
+        ppid = int(parts[0])
+    except (ValueError, IndexError):
+        return None, ""
+    comm = parts[1].strip() if len(parts) > 1 else ""
+    return ppid, os.path.basename(comm)
+
+
+def claude_session_pid(runner=subprocess.run, start_pid: int | None = None) -> int | None:
+    """Resolve the long-lived `claude` CLI process by walking the parent chain.
+
+    Identity for the registry is (agent_id, anchor pid); the anchor MUST be the
+    stable claude-CLI pid so the same session adopts the same thread on every
+    wakeup. The previous implementation assumed a FIXED depth (grandparent of
+    this script). But the launch chain (claude -> ... -> shell -> python3)
+    carries a VARIABLE number of intermediate, ephemeral processes -- a fresh
+    shell per hook fire -- so a fixed-depth lookup returned a different pid each
+    resume. That is the registry-accretion root: the (agent_id, pid) adopt never
+    matched, so a new thread + watcher was minted every SessionStart (~130-record
+    churn, daily false A27 alarms, and the write-amplification that feeds the
+    mds_stores -> Jetsam loop the health surface measures).
+
+    Walking up to the process whose basename is `claude` yields the stable
+    per-session identity regardless of how many wrapper shells sit in between.
+    Falls back to None (caller then uses freshness) only if no `claude` ancestor
+    is found within the walk cap -- never a wrong/ephemeral pid.
+    """
+    pid = start_pid if start_pid is not None else os.getppid()
+    seen: set[int] = set()
+    for _ in range(20):  # cap the walk; guard against cycles / runaway chains
+        if pid is None or pid <= 1 or pid in seen:
+            return None
+        seen.add(pid)
+        ppid, comm = _ps_parent_and_comm(pid, runner=runner)
+        if comm == "claude":
+            return pid
+        if ppid is None:
+            return None
+        pid = ppid
+    return None  # no claude ancestor within the cap
 
 
 def supervisor_mode(env: dict | None = None) -> str:
