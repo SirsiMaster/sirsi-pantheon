@@ -82,6 +82,31 @@ Before contributing, understand these non-negotiable safety rules:
 3. Protected paths in `internal/cleaner/safety.go` are **HARDCODED** and CANNOT be overridden
 4. Every deletion passes through `ValidatePath()` — no exceptions
 
+### Binary-write invariant (fresh inode — AMFI-safe)
+
+**Never `os.WriteFile`/`cp` over a live executable's existing inode.** On macOS,
+writing over an existing binary (`O_TRUNC`) leaves a stale code-signing cdhash
+bound to the reused inode, so the next `exec` is SIGKILL'd (137) by AMFI — the
+exact class that makes `sirsi` its own #1 crasher in `sirsi diagnose`, and which
+has silently killed LaunchAgents/heartbeats. See
+`reference_macos_amfi_cp_sigkill`.
+
+Every code path that installs or replaces an executable MUST land it on a
+**fresh inode**, one of:
+
+- **`internal/selfupdate.SafeReplace(src, dst)`** — for CLI binaries in the
+  allow-listed dirs (`~/.local/bin`, `~/go/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`). Staged `.new` → `codesign --force --sign -` → atomic
+  `rename(2)`. It refuses `.app` paths by design (Rule A19).
+- **`os.Remove(dst)` then `os.WriteFile(dst, …)` then `codesign --force
+  --sign -`** — for paths `SafeReplace` won't take (e.g. a user-owned
+  `~/Applications/*.app` bundle the installer creates). The `os.Remove` is what
+  guarantees the new write gets a fresh inode.
+
+A plain `WriteFile`/`cp` over an existing binary path is a **regression of the
+#1-crasher class** and must be caught in review (cross-reference
+`reference_macos_amfi_cp_sigkill` on any PR touching a binary-install path).
+
 ## Commit Protocol (Rule A7)
 
 Every commit must follow the traceability protocol:
