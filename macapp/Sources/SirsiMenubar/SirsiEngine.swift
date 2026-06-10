@@ -29,6 +29,19 @@ struct ScanResult: Decodable {
     }
 }
 
+// DiagFinding mirrors one entry of `sirsi diagnose --json` — the health→cause
+// surface (RAM, Swap, Disk, Spotlight storm, Jetsam/panic trends, binary drift).
+// severity: 0 = OK, 1 = Warn, 2 = Critical.
+struct DiagFinding: Decodable, Identifiable {
+    let id = UUID()
+    let check: String
+    let severity: Int
+    let message: String
+    let detail: String?
+}
+
+struct DiagReport: Decodable { let findings: [DiagFinding] }
+
 // SirsiEngine is the observable model behind every view. All deletion happens in
 // the Go `sirsi` binary (safety-gated, trash-first, protected paths hardcoded);
 // this type only reads the persisted scan and runs the CLI.
@@ -39,6 +52,16 @@ final class SirsiEngine: ObservableObject {
     @Published var scannedAt: String = ""
     @Published var busy = false
     @Published var lastError: String?
+
+    // Health (Horus — Ops): findings from `sirsi diagnose`.
+    @Published var health: [DiagFinding] = []
+    @Published var healthLoading = false
+    var healthWorst: Int { health.map(\.severity).max() ?? 0 }
+    var healthSummary: String {
+        if health.isEmpty { return "tap to check" }
+        let issues = health.filter { $0.severity >= 1 }.count
+        return issues == 0 ? "all healthy" : "\(issues) issue\(issues == 1 ? "" : "s")"
+    }
 
     // Title callback so the AppDelegate can update the menubar label.
     var onTitle: ((String) -> Void)?
@@ -85,6 +108,17 @@ final class SirsiEngine: ObservableObject {
         busy = false
         refresh()
         return Self.firstMeaningful(out)
+    }
+
+    // diagnose runs `sirsi diagnose --json` and parses the health report. Uses a
+    // stdout-only run so a banner on stderr can't corrupt the JSON.
+    func diagnose() async {
+        healthLoading = true
+        let data = await Self.runJSON(args: ["diagnose", "--json"])
+        if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
+            health = rep.findings
+        }
+        healthLoading = false
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -137,6 +171,27 @@ final class SirsiEngine: ObservableObject {
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
                 cont.resume(returning: stripANSI(String(data: data, encoding: .utf8) ?? ""))
+            }
+        }
+    }
+
+    // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
+    // output is never corrupted by a styled banner written to stderr.
+    nonisolated static func runJSON(args: [String]) async -> Data {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: sirsiBinary())
+                p.arguments = args
+                let outPipe = Pipe()
+                p.standardOutput = outPipe
+                p.standardError = FileHandle.nullDevice
+                do { try p.run() } catch {
+                    cont.resume(returning: Data()); return
+                }
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                cont.resume(returning: data)
             }
         }
     }

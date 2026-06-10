@@ -52,9 +52,14 @@ struct HomeView: View {
                                  detail: engine.safeBytes > 0 ? "\(engine.safe.count) items ready" : "clean")
                     }.buttonStyle(.plain)
 
-                    DeityRow(glyph: "𓂀", title: "Horus — Ops", detail: "dashboard").disabledRow()
-                    DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "gate").disabledRow()
-                    DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "sync").disabledRow()
+                    NavigationLink { HorusView(engine: engine) } label: {
+                        DeityRow(glyph: "𓂀", title: "Horus — Ops",
+                                 detail: engine.healthLoading ? "checking…" : engine.healthSummary,
+                                 dot: severityColor(engine.healthWorst))
+                    }.buttonStyle(.plain)
+
+                    DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "soon").disabledRow()
+                    DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "soon").disabledRow()
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
             }
@@ -70,22 +75,103 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
+        .task { await engine.diagnose() }   // load health when the popover opens
+    }
+}
+
+// severityColor maps a diagnose severity (0 OK / 1 Warn / 2 Critical) to a dot.
+func severityColor(_ sev: Int) -> Color {
+    switch sev {
+    case 0: return .green
+    case 1: return .yellow
+    default: return .red
     }
 }
 
 struct DeityRow: View {
     let glyph: String; let title: String; let detail: String
+    var dot: Color? = nil
     var body: some View {
         HStack(spacing: 10) {
             Text(glyph).font(.system(size: 18)).frame(width: 26)
             Text(title).font(.system(size: 13, weight: .medium))
             Spacer()
+            if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
             Text(detail).font(.caption).foregroundStyle(.secondary)
             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 8).padding(.horizontal, 10)
         .contentShape(Rectangle())
         .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+    }
+}
+
+// ── Horus — Ops (health → cause) ─────────────────────────────────────────────
+
+struct HorusView: View {
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if engine.health.isEmpty {
+                VStack(spacing: 10) {
+                    if engine.healthLoading { ProgressView() }
+                    Text(engine.healthLoading ? "Checking system health…" : "No health data")
+                        .font(.callout).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    Section {
+                        ForEach(engine.health) { f in
+                            HealthRow(finding: f)
+                        }
+                    } header: {
+                        let worst = engine.healthWorst
+                        Text(worst == 0 ? "ALL SYSTEMS HEALTHY"
+                             : (worst == 1 ? "ATTENTION — \(engine.health.filter{$0.severity>=1}.count) item(s)"
+                                : "CRITICAL — \(engine.health.filter{$0.severity>=2}.count) item(s)"))
+                            .foregroundStyle(severityColor(engine.healthWorst))
+                    }
+                }
+                .listStyle(.inset)
+            }
+            Divider()
+            HStack {
+                Button { Task { await engine.diagnose() } } label: {
+                    Label("Re-check", systemImage: "arrow.clockwise")
+                }.disabled(engine.healthLoading)
+                if engine.healthLoading { ProgressView().controlSize(.small).padding(.leading, 4) }
+                Spacer()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .navigationTitle("Horus — Ops")
+    }
+}
+
+struct HealthRow: View {
+    let finding: DiagFinding
+    @State private var expanded = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Circle().fill(severityColor(finding.severity)).frame(width: 8, height: 8)
+                Text(finding.check).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if let d = finding.detail, !d.isEmpty {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            Text(finding.message).font(.caption).foregroundStyle(.secondary)
+            if expanded, let d = finding.detail, !d.isEmpty {
+                Text(d).font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                    .padding(.top, 2).textSelection(.enabled)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { if finding.detail?.isEmpty == false { expanded.toggle() } }
     }
 }
 
