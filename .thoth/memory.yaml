@@ -1,15 +1,15 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-06-04T23:19:57-04:00
+# Last updated: 2026-06-10T23:30:00-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
-binary_count: 8 (anubis, guard, maat, scarab, sirsi, sirsi-agent, sirsi-menubar, thoth)
-test_count: 1930+
-line_count: ~114,981
+binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
+test_count: 1992+
+line_count: ~97,284
 module_count: 45
 command_count: 153
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
@@ -499,6 +499,21 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-06-10: Flagship train landed (19 PRs to main) + 2 governance fixes. (claude-pantheon source-edit;
+#   claude-home binding reviewer while codex OOO.) Merged: A28 registry-trust (#24 per-resume-mint fix +
+#   ADR-029 worktrees, #25/#29/#30), Rails A/B/C (#19/#22/#18), UX pains (#26 TCC .app bundle, #27 fsnotify
+#   live-refresh), gemma (#11/#13), #31/#21/#33/#9/#28/#14, #34 sirsi insight. Two silent failures surfaced+fixed:
+#   (1) #33 (A1 safety) auto-merged pre-verdict via rebase-push tripping armed auto-merge → RULE: safety-tier
+#   never auto-merges before binding verdict; (2) router fragmentation — `sirsi router` from a worktree cwd read
+#   the worktree's STALE git-snapshot copy, silently dropping a routed review request. FIX 1 (#35, 4eb6792,
+#   ADR-029 Amendment 1): FindRepoRoot resolves the MAIN worktree root (git --git-common-dir) not cwd; A16/A21
+#   seam + 3 tests; dogfooded. FIX 2 (#36, aa41706): .github/workflows/binding-hold.yml required-check job —
+#   passes unlabeled / FAILS when `binding-hold` labeled → branch protection blocks merge (auto-merge waits) until
+#   a binding reviewer clears it. Added job `binding-hold` to required_status_checks (strict). Proven live:
+#   label→FAIL→BLOCKED→reviewer-clears→re-run→CLEAN→merged. Closes the #33 bypass structurally; extends Ma'at gate
+#   (A25/A28). OPEN: #8 (router -2626 LOC, HOLD-FOR-CODEX, labeled binding-hold), #32 (ADR-030 Swift, operator-GUI
+#   +fresh-codex gated, labeled binding-hold). DEPLOY-PENDING: installed sirsi binary predates the canonical-router
+#   fix (repo-root-cwd workaround meanwhile) — lands on next user-authorized build/reinstall w/ TCC-bundle+self-update.
 # 2026-06-04: Setup wizard for Monday VC build (commit ff8a448, branch feat/setup-wizard, pushed).
 #   `sirsi setup` rebuilt: report -> guided 3-step wizard (Dependencies/FDA/Agent-wake) over new
 #   shared internal/setup/ engine (CDD #5: one engine, CLI + menubar-terminal both render it).
