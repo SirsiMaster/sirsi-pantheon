@@ -58,8 +58,13 @@ struct HomeView: View {
                                  dot: severityColor(engine.healthWorst))
                     }.buttonStyle(.plain)
 
-                    DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "soon").disabledRow()
-                    DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "soon").disabledRow()
+                    NavigationLink { CommandView(title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
+                        DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "governance")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { CommandView(title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
+                        DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
+                    }.buttonStyle(.plain)
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
             }
@@ -320,5 +325,63 @@ struct CleanReviewView: View {
     private func shorten(_ p: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
+    }
+}
+
+// ── CommandView — reusable inline deity surface ──────────────────────────────
+//
+// Shells `sirsi <args>` and renders the result INLINE in the popover (scrollable,
+// monospaced, refreshable) — no kick-out to Terminal, native back button. This is
+// how every remaining deity (Ma'at, Thoth, …) becomes a real, no-dead-end row
+// without a bespoke parser each: Go owns the logic, the surface just renders it.
+struct CommandView: View {
+    let title: String
+    let args: [String]
+    @State private var output = ""
+    @State private var loading = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                if loading {
+                    HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
+                } else {
+                    Text(output.isEmpty ? "No output." : output)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
+            }
+            Divider()
+            HStack {
+                Button { Task { await load() } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }.disabled(loading)
+                if loading { ProgressView().controlSize(.small).padding(.leading, 4) }
+                Spacer()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .navigationTitle(title)
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true
+        let raw = await SirsiEngine.run(args: args, stdin: nil)
+        output = Self.stripBanner(raw)
+        loading = false
+    }
+
+    // stripBanner drops the PANTHEON splash + box-drawing lines the CLI prints, so
+    // the popover shows just the deity's actual content.
+    static func stripBanner(_ s: String) -> String {
+        let drop = ["P A N T H E O N", "One Install", "Infrastructure Hygiene", "───", "═══"]
+        let lines = s.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            return !drop.contains { t.contains($0) }
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
