@@ -44,3 +44,13 @@ func defaultPIDStart(pid int) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// defaultPIDCommand returns the full command line for pid. Empty means
+// unavailable/unknowable; callers must treat that as non-fatal.
+func defaultPIDCommand(pid int) string {
+	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

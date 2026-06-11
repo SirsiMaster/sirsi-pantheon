@@ -12,10 +12,11 @@ import "testing"
 // restore is safe (Rule A21's defer caveat applies only to goroutine readers).
 func probeStubs(t *testing.T, state PIDState, start string) func() {
 	t.Helper()
-	oldState, oldStart := getPIDStateFn(), getPIDStartFn()
+	oldState, oldStart, oldCommand := getPIDStateFn(), getPIDStartFn(), getPIDCommandFn()
 	setPIDStateFn(func(int) PIDState { return state })
 	setPIDStartFn(func(int) string { return start })
-	return func() { setPIDStateFn(oldState); setPIDStartFn(oldStart) }
+	setPIDCommandFn(func(int) string { return "" })
+	return func() { setPIDStateFn(oldState); setPIDStartFn(oldStart); setPIDCommandFn(oldCommand) }
 }
 
 func TestPIDStateOf_Composite(t *testing.T) {
@@ -108,6 +109,58 @@ func TestReapDeadThreads_LiveMatchingStartSurvives(t *testing.T) {
 	reg, _ := LoadThreadRegistry(root)
 	if reg.Threads[thr.ThreadID].Status != ThreadStatusActive {
 		t.Errorf("status = %q, want active (live thread must survive)", reg.Threads[thr.ThreadID].Status)
+	}
+}
+
+func TestReapDeadThreads_LivePIDWrongCommandReaped(t *testing.T) {
+	root := t.TempDir()
+	host := "h1"
+	thr, err := RegisterThread(root, &Thread{
+		AgentID: "claude-pantheon", Surface: "claude", PID: 4242, Host: host, StartTime: "Mon Jun 2 02:00",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := probeStubs(t, PIDAlive, "Mon Jun 2 02:00")
+	defer restore()
+	setPIDCommandFn(func(int) string { return "/bin/zsh" })
+
+	reaped, err := ReapDeadThreads(root, host)
+	if err != nil {
+		t.Fatalf("ReapDeadThreads: %v", err)
+	}
+	if len(reaped) != 1 || reaped[0].ThreadID != thr.ThreadID || reaped[0].State != PIDMismatched {
+		t.Fatalf("reaped = %+v, want one mismatched record for %s", reaped, thr.ThreadID)
+	}
+	reg, _ := LoadThreadRegistry(root)
+	if reg.Threads[thr.ThreadID].Status != ThreadStatusReaped {
+		t.Errorf("status = %q, want reaped", reg.Threads[thr.ThreadID].Status)
+	}
+}
+
+func TestReapDeadThreads_LivePIDMatchingCommandSurvives(t *testing.T) {
+	root := t.TempDir()
+	host := "h1"
+	thr, err := RegisterThread(root, &Thread{
+		AgentID: "claude-pantheon", Surface: "claude", PID: 4242, Host: host, StartTime: "Mon Jun 2 02:00",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := probeStubs(t, PIDAlive, "Mon Jun 2 02:00")
+	defer restore()
+	setPIDCommandFn(func(int) string { return "/Applications/Claude.app/Contents/MacOS/claude --resume abc" })
+
+	reaped, err := ReapDeadThreads(root, host)
+	if err != nil {
+		t.Fatalf("ReapDeadThreads: %v", err)
+	}
+	if len(reaped) != 0 {
+		t.Fatalf("reaped a matching live command: %+v", reaped)
+	}
+	reg, _ := LoadThreadRegistry(root)
+	if reg.Threads[thr.ThreadID].Status != ThreadStatusActive {
+		t.Errorf("status = %q, want active", reg.Threads[thr.ThreadID].Status)
 	}
 }
 

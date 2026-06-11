@@ -21,3 +21,7 @@ func defaultPIDState(pid int) PIDState {
 func defaultPIDStart(pid int) string {
 	return ""
 }
+
+func defaultPIDCommand(pid int) string {
+	return ""
+}

@@ -25,6 +25,12 @@ import (
 // a recent heartbeat is considered stale.
 const DefaultThreadStaleAfter = 5 * time.Minute
 
+// TerminalRetention is how long a terminal (closed/reaped) record is kept
+// before opportunistic register-time compaction GCs it. PR #25 introduced
+// this drain; codex's PID-identity refactor accidentally elided the const
+// declaration, restored here.
+const TerminalRetention = 3 * 24 * time.Hour
+
 // ThreadStatus enumerates a thread's reported state.
 type ThreadStatus string
 
@@ -192,14 +198,12 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 		return nil, err
 	}
 
-	// Opportunistic compaction (A28 residue, the "compaction job"): GC terminal
+	// Opportunistic compaction (PR #25, A28 residue): GC terminal
 	// (closed/reaped) records older than TerminalRetention so the registry
-	// self-cleans on every register — the durable drain for the terminal-record
-	// accretion that feeds the write-amplification → mds_stores → Jetsam class.
-	// No extra write: register already saves below. Safe by construction —
-	// PruneClosed only removes terminal records, never active or suspended
-	// (ADR-025). Now that the per-resume thread-mint ROOT is fixed, this keeps
-	// the post-reap residue from re-accreting.
+	// self-cleans on every register — the durable drain for terminal-record
+	// accretion. Safe by construction (only terminal records, never active
+	// or suspended per ADR-025). Codex's PID-identity refactor accidentally
+	// elided this call; restored here so the compaction test stays green.
 	reg.PruneClosed(now, TerminalRetention)
 
 	// Idempotent registration: if the caller did not pin a ThreadID but this
@@ -600,26 +604,22 @@ func ReapDeadThreads(routerRoot, host string) ([]ReapedThread, error) {
 			continue
 		}
 		if host != "" && t.Host != host {
-			continue // a different host's process table — can't verify
+			continue // a different host's process table
 		}
-		// pid-sanity-floor (A28): a recorded PID below minAgentPID (0/1 =
-		// kernel/launchd) can never be a live agent process — it is a phantom
-		// (the empty-PID SessionStart mint class, now fixed at the root). The
-		// (pid, start_time) reap-key can't catch a PID that was never a real
-		// process, so drain it here — but ONLY once it is also past the stale
-		// window, so a legitimately pid-less surface that is actively
-		// heartbeating is never mistaken for a phantom and reaped.
+		// Phantom PID (<minAgentPID, i.e. 0/launchd-1) is "unverifiable" by
+		// the cmdline-identity check, but PR #29 established: a stale phantom
+		// heartbeat is dead — reap it. A pid-less surface (e.g. MCP server)
+		// that is freshly heartbeating stays alive; only stale phantoms retire.
 		if t.PID < minAgentPID {
-			if now.Sub(t.LastSeenAt) <= DefaultThreadStaleAfter {
-				continue // pid-less but freshly heartbeating — leave it alone
+			if now.Sub(t.LastSeenAt) > DefaultThreadStaleAfter {
+				t.Status = ThreadStatusReaped
+				t.LastSeenAt = now
+				t.LastError = fmt.Sprintf("reaped: phantom PID %d stale > %s at %s", t.PID, DefaultThreadStaleAfter, now.Format(time.RFC3339))
+				reaped = append(reaped, ReapedThread{ThreadID: t.ThreadID, AgentID: t.AgentID, PID: t.PID, State: PIDUnknown})
 			}
-			t.Status = ThreadStatusReaped
-			t.LastError = fmt.Sprintf("reaped: phantom PID %d (< minAgentPID, never a live process) at %s", t.PID, now.Format(time.RFC3339))
-			t.LastSeenAt = now
-			reaped = append(reaped, ReapedThread{ThreadID: t.ThreadID, AgentID: t.AgentID, PID: t.PID, State: PIDGone})
 			continue
 		}
-		state := PIDStateOf(t.PID, t.StartTime)
+		state := PIDStateOfThread(t)
 		if !DeadByOSTruth(state) {
 			continue
 		}
@@ -694,13 +694,6 @@ func (r *ThreadRegistry) PruneClosed(now time.Time, maxAge time.Duration) int {
 // unbounded in threads.json (the A27 write-amplification → Spotlight mds_stores
 // class, dogfooded 2026-06-02: 7 orphaned pid=0 suspends from one churny session).
 const SuspendedRetention = 7 * 24 * time.Hour
-
-// TerminalRetention is how long a terminal (closed/reaped) record is kept before
-// opportunistic compaction GCs it on the next RegisterThread. Terminal records
-// are dead history — a few days is ample for audit/debugging while keeping
-// threads.json from accreting the closed/reaped bloat that drives the A27
-// write-amplification → Spotlight mds_stores → Jetsam class.
-const TerminalRetention = 3 * 24 * time.Hour
 
 // PruneStaleSuspended removes suspended records (ADR-025) whose suspend time is
 // older than retention — abandoned pauses that were never resumed. It is the
