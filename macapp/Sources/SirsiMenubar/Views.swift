@@ -47,6 +47,11 @@ struct HomeView: View {
             // Deity rows
             ScrollView {
                 VStack(spacing: 2) {
+                    NavigationLink { InsightView() } label: {
+                        DeityRow(glyph: "✨", title: "Insight — what to do next",
+                                 detail: "across the platform")
+                    }.buttonStyle(.plain)
+
                     NavigationLink { AnubisView(engine: engine) } label: {
                         DeityRow(glyph: "🐺", title: "Anubis — Hygiene",
                                  detail: engine.safeBytes > 0 ? "\(engine.safe.count) items ready" : "clean")
@@ -383,5 +388,111 @@ struct CommandView: View {
             return !drop.contains { t.contains($0) }
         }
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// ── Insight — the cross-deity "what to do next" (sirsi insight) ───────────────
+//
+// Renders `sirsi insight --json` inline: prioritized next actions (with the exact
+// command), the per-deity platform signals, and — on demand — the optional local
+// Gemma narration. Deterministic by default (instant); "Ask Gemma" adds the
+// natural-language synthesis only if the local backend is installed (AI-optional).
+
+struct InsightSignal: Decodable, Identifiable {
+    let id = UUID()
+    let deity: String
+    let status: String
+    let severity: Int
+    enum CodingKeys: String, CodingKey { case deity, status, severity }
+}
+
+struct InsightAction: Decodable, Identifiable {
+    let id = UUID()
+    let title: String
+    let why: String
+    let command: String
+    enum CodingKeys: String, CodingKey { case title, why, command }
+}
+
+struct InsightReport: Decodable {
+    let signals: [InsightSignal]
+    let actions: [InsightAction]
+    let source: String
+    let narrative: String?
+}
+
+struct InsightView: View {
+    @State private var report: InsightReport?
+    @State private var loading = true
+    @State private var askingGemma = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if loading && report == nil {
+                HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
+            } else if let r = report {
+                List {
+                    if let n = r.narrative, !n.isEmpty {
+                        Section { Text(n).font(.callout) } header: { Text("𓂀 LOCAL GEMMA") }
+                    }
+                    Section {
+                        if r.actions.isEmpty {
+                            Text("Everything healthy — nothing to do right now.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        ForEach(r.actions) { a in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(a.title).font(.system(size: 12, weight: .semibold))
+                                Text(a.why).font(.caption2).foregroundStyle(.secondary)
+                                Text(a.command).font(.caption.monospaced()).foregroundStyle(gold).textSelection(.enabled)
+                            }.padding(.vertical, 1)
+                        }
+                    } header: { Text("DO NEXT") }
+
+                    Section {
+                        ForEach(r.signals) { s in
+                            HStack(spacing: 8) {
+                                Circle().fill(severityColor(min(s.severity, 2))).frame(width: 7, height: 7)
+                                Text(s.deity).font(.caption)
+                                Spacer()
+                                Text(s.status).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    } header: { Text("PLATFORM") } footer: { Text("source: \(r.source)") }
+                }
+                .listStyle(.inset)
+            } else {
+                Text("Couldn't load insight.").foregroundStyle(.secondary).padding(40)
+            }
+
+            Divider()
+            HStack {
+                Button { Task { await load(ai: false) } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }.disabled(loading)
+                Button { Task { await load(ai: true) } } label: {
+                    Label("Ask Gemma", systemImage: "sparkles")
+                }.disabled(loading)
+                if askingGemma { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .navigationTitle("Insight")
+        .task { if report == nil { await load(ai: false) } }
+    }
+
+    private func load(ai: Bool) async {
+        loading = true; askingGemma = ai
+        var args = ["insight", "--json"]
+        if !ai { args.append("--no-ai") }   // deterministic default = instant
+        let raw = await SirsiEngine.run(args: args, stdin: nil)
+        if let r = Self.decode(raw) { report = r }
+        loading = false; askingGemma = false
+    }
+
+    static func decode(_ s: String) -> InsightReport? {
+        guard let start = s.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(InsightReport.self, from: Data(String(s[start...]).utf8))
     }
 }
