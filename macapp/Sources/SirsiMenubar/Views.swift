@@ -2,6 +2,16 @@ import SwiftUI
 
 private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
+// openSystemURL opens a System Settings / file URL (e.g. the Full Disk Access
+// pane). macOS cannot self-grant FDA — this is the one click that gets the user
+// to the right pane so Sirsi can see and clean the whole workstation.
+func openSystemURL(_ url: String) {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    p.arguments = [url]
+    try? p.run()
+}
+
 // RootView is the NavigationStack the popover hosts. Every screen pushes onto it
 // and the native back button returns — the "persistent menubar that can go back"
 // the user asked for. No screen ever kicks out to Terminal or a browser.
@@ -69,6 +79,15 @@ struct HomeView: View {
 
                     NavigationLink { CommandView(title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { CommandView(title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
+                        DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
+                    }.buttonStyle(.plain)
+
+                    Button { openSystemURL("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") } label: {
+                        DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
+                                 detail: "so Sirsi sees everything")
                     }.buttonStyle(.plain)
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
@@ -218,6 +237,11 @@ struct AnubisView: View {
                         ActionCard(glyph: "🔍", title: "Scan for Waste",
                                    sub: engine.busy ? "scanning…" : "re-scan the workstation now")
                     }.buttonStyle(.plain).disabled(engine.busy)
+
+                    NavigationLink { CommandView(title: "Leftover Apps", args: ["ghosts"]) } label: {
+                        ActionCard(glyph: "👻", title: "Find Leftover Apps",
+                                   sub: "detect remnants of uninstalled apps (Ka)")
+                    }.buttonStyle(.plain)
 
                     if engine.cautionBytes > 0 {
                         Text("\(SirsiEngine.human(engine.cautionBytes)) of caution-tier items (app remnants) are excluded from one-click cleaning — review them in a terminal with `sirsi anubis clean --include-caution`.")
