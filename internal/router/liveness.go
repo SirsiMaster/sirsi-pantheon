@@ -35,6 +35,11 @@ const (
 	// gone; this is dead-for-reaping, distinguished from PIDGone so operators can
 	// see that PID reuse (not a clean exit) is why the record was retired.
 	PIDRecycled PIDState = "recycled"
+	// PIDMismatched: a process exists at this PID with the expected start time,
+	// but its command line no longer matches the registered agent surface. This
+	// catches false-alive records where PID existence alone is not enough to
+	// prove the thread still belongs to the recorded agent.
+	PIDMismatched PIDState = "mismatched"
 	// PIDUnknown: pid not recorded (<=0). Cannot verify — never treat as dead.
 	PIDUnknown PIDState = "unknown"
 )
@@ -97,6 +102,28 @@ func PIDStartTimeOf(pid int) string {
 	return getPIDStartFn()(pid)
 }
 
+// pidCommandFn is the injectable command-line prober (Rule A16). It gives the
+// reaper a cheap identity check beyond "some process exists at this PID".
+var (
+	pidCommandMu sync.RWMutex
+	pidCommandFn = defaultPIDCommand
+)
+
+func getPIDCommandFn() func(int) string {
+	pidCommandMu.RLock()
+	defer pidCommandMu.RUnlock()
+	return pidCommandFn
+}
+
+func setPIDCommandFn(fn func(int) string) {
+	pidCommandMu.Lock()
+	defer pidCommandMu.Unlock()
+	if fn == nil {
+		fn = defaultPIDCommand
+	}
+	pidCommandFn = fn
+}
+
 // PIDStateOf returns the OS-truth liveness of pid, keyed on the COMPOSITE
 // identity (pid, startedAt) — never a bare PID (ADR-024 Amendment 1). startedAt
 // is the start signature recorded at registration; pass "" for legacy records
@@ -125,9 +152,98 @@ func PIDStateOf(pid int, startedAt string) PIDState {
 	return PIDAlive
 }
 
+// PIDStateOfThread extends PIDStateOf with a surface command-line check for
+// known agent CLIs. It intentionally skips unknown/worker surfaces and empty
+// command lines so the reaper never kills a legitimate custom integration just
+// because this host cannot prove its command shape.
+func PIDStateOfThread(t *Thread) PIDState {
+	if t == nil {
+		return PIDUnknown
+	}
+	state := PIDStateOf(t.PID, t.StartTime)
+	if state != PIDAlive {
+		return state
+	}
+	want := expectedAgentCommandNeedle(t.Surface, t.AgentID)
+	if want == "" {
+		return PIDAlive
+	}
+	cmd := getPIDCommandFn()(t.PID)
+	if cmd == "" {
+		return PIDAlive
+	}
+	if !containsFold(cmd, want) {
+		return PIDMismatched
+	}
+	return PIDAlive
+}
+
+func expectedAgentCommandNeedle(surface, agentID string) string {
+	switch surface {
+	case "claude":
+		return "claude"
+	case "codex":
+		return "codex"
+	case "gemini":
+		return "gemini"
+	case "gemma":
+		return "gemma"
+	case "qwen":
+		return "qwen"
+	}
+	switch {
+	case containsFold(agentID, "claude"):
+		return "claude"
+	case containsFold(agentID, "codex"):
+		return "codex"
+	case containsFold(agentID, "gemini"):
+		return "gemini"
+	case containsFold(agentID, "gemma"):
+		return "gemma"
+	case containsFold(agentID, "qwen"):
+		return "qwen"
+	default:
+		return ""
+	}
+}
+
+func containsFold(s, substr string) bool {
+	if substr == "" {
+		return true
+	}
+	if len(substr) > len(s) {
+		return false
+	}
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if equalFoldASCII(s[i:i+len(substr)], substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func equalFoldASCII(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		ca, cb := a[i], b[i]
+		if 'A' <= ca && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if 'A' <= cb && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
 // DeadByOSTruth reports whether a recorded PID is confirmed not running: gone
 // entirely, defunct (Z) awaiting reaping, or recycled onto a different process.
 // PIDUnknown is NOT dead — an unverifiable PID must never be reaped.
 func DeadByOSTruth(state PIDState) bool {
-	return state == PIDGone || state == PIDDefunct || state == PIDRecycled
+	return state == PIDGone || state == PIDDefunct || state == PIDRecycled || state == PIDMismatched
 }
