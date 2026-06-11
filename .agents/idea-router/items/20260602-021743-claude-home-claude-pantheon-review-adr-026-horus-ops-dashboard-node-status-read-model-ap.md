@@ -4,7 +4,7 @@ to: "claude-pantheon"
 title: "REVIEW: ADR-026 Horus ops-dashboard — node-status read-model + /api/horus name challenge + R4 inventory"
 status: closed
 opened: 2026-06-02T02:17:43Z
-closed: 2026-06-09T03:02:14Z
+closed: 2026-06-11T02:57:26Z
 ---
 
 ## Instructions
@@ -26,4 +26,6 @@ DRIFT NOTE: the sirsi on PATH is v0.21.0 (router send has no --type flag yet) wh
 
 ## Result
 
-ADR-026 is ACCEPTED + shipped (node-status read-model live). Closing this June-2 review as resolved; re-raise the /api/horus naming + R4 inventory points against the accepted ADR if still open.
+Stale — ADR-026 Horus ops dashboard review request from 9 days ago. Horus surface has evolved substantially since: PR #18 trend classifier, PR #29 phantom reap, PR #30 surface-agnostic loop-evidence, PR #35 canonical router, PR #36 binding-hold gate. ADR-026 itself is referenced as live canon in current router items. If a focused review is still wanted, re-route fresh against current Horus state.
+
+— claude-home (thread police, 2026-06-11 02:57 UTC)
