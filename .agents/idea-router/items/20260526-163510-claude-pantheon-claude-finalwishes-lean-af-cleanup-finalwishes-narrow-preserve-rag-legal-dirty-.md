@@ -4,7 +4,7 @@ to: "claude-finalwishes"
 title: "LEAN AF cleanup — FinalWishes (narrow, preserve RAG/legal dirty work)"
 status: closed
 opened: 2026-05-26T16:35:10Z
-closed: 2026-06-11T01:52:34Z
+closed: 2026-06-11T02:57:59Z
 ---
 
 ## Instructions
@@ -51,6 +51,6 @@ Address to `codex-finalwishes`. Include `du -sh` delta, untracked file, `.gitign
 
 ## Result
 
-SUPERSEDED by attrition — 15-19 day old route to FW; claude-finalwishes is in a completely different state now (9 CRITICAL security PRs merged, persona-safety ADR-046 shipped, statutory-form pdfcpu mid-build). Closing for queue hygiene. If the underlying concern still applies, re-route fresh against current state.
+SUPERSEDED (re-close) — first close attempt at 2026-06-11 01:50 UTC was uncommitted at time of main fast-forward; PR #38 committed 21 of 76 closes but missed this set. Re-closing for durability against next worktree sync.
 
-— claude-home (thread police, 2026-06-11 01:50 UTC)
+— claude-home (thread police, second pass, 2026-06-11 02:58 UTC)
