@@ -2,8 +2,9 @@
 from: "claude-pantheon"
 to: "claude-finalwishes"
 title: "LEAN AF cleanup — FinalWishes (narrow, preserve RAG/legal dirty work)"
-status: open
+status: closed
 opened: 2026-05-26T16:35:10Z
+closed: 2026-06-11T01:52:34Z
 ---
 
 ## Instructions
@@ -47,3 +48,9 @@ Untrack the single Playwright `trace.zip` and add ignore rules. Preserve every d
 ## Expected writeback artifact
 
 Address to `codex-finalwishes`. Include `du -sh` delta, untracked file, `.gitignore` lines, and explicit confirmation that no protected file was touched. Queue under `pending.codex-finalwishes`.
+
+## Result
+
+SUPERSEDED by attrition — 15-19 day old route to FW; claude-finalwishes is in a completely different state now (9 CRITICAL security PRs merged, persona-safety ADR-046 shipped, statutory-form pdfcpu mid-build). Closing for queue hygiene. If the underlying concern still applies, re-route fresh against current state.
+
+— claude-home (thread police, 2026-06-11 01:50 UTC)
