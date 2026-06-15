@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import AppKit
 
 private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
@@ -15,19 +16,26 @@ func openSystemURL(_ url: String) {
 
 // registerForFullDiskAccess forces this app into the Full Disk Access list so
 // there is actually a row to toggle. macOS never *prompts* for FDA: an app only
-// appears in the list after it attempts to read a TCC-protected path and is
-// denied — that denial is what registers it. Without this poke the FDA pane
-// shows no "Sirsi Menubar" row at all, so the button looked like it pointed at
-// nothing. The read is expected to fail (we have no FDA yet); failure is the
-// whole point. Best-effort and silent.
+// appears in the list after it attempts a TCC-guarded `open()` and is denied —
+// that denial is what registers it. Without this the FDA pane shows no
+// "Sirsi Menubar" row at all, so the button looked like it pointed at nothing.
+//
+// We use the raw POSIX open(2) syscall, NOT Data(contentsOf:): Foundation tends
+// to do an access(R_OK) preflight, take the TCC denial as EACCES, and bail
+// before the real open() — but it is open() that TCC intercepts and registers.
+// Fired both at launch (so the row exists before the user ever opens the pane)
+// and on the button. The opens are expected to fail; failure is the point.
 func registerForFullDiskAccess() {
-    let home = FileManager.default.homeDirectoryForCurrentUser
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
     let protectedPaths = [
-        home.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db"),
-        home.appendingPathComponent("Library/Safari/Bookmarks.plist"),
+        home + "/Library/Application Support/com.apple.TCC/TCC.db",
+        home + "/Library/Mail",
+        home + "/Library/Messages/chat.db",
+        home + "/Library/Safari/Bookmarks.plist",
     ]
     for path in protectedPaths {
-        _ = try? Data(contentsOf: path, options: .mappedIfSafe)
+        let fd = open(path, O_RDONLY)   // TCC intercepts; EPERM here registers us
+        if fd >= 0 { close(fd) }
     }
 }
 
@@ -38,6 +46,15 @@ func registerForFullDiskAccess() {
 // `?Privacy_AllFiles` anchor, landing the user on a page with nothing to do.
 let fullDiskAccessPaneURL =
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles"
+
+// revealAppInFinder opens Finder with this app bundle selected, so the user can
+// drag it straight onto the Full Disk Access list. macOS does not let an app add
+// itself to that list — the "+" button (or a drag) is the only sanctioned path —
+// so we make the drag target one click away instead of pretending to self-grant.
+func revealAppInFinder() {
+    let url = URL(fileURLWithPath: Bundle.main.bundlePath)
+    NSWorkspace.shared.activateFileViewerSelecting([url])
+}
 
 // RootView is the NavigationStack the popover hosts. Every screen pushes onto it
 // and the native back button returns — the "persistent menubar that can go back"
@@ -112,12 +129,7 @@ struct HomeView: View {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
                     }.buttonStyle(.plain)
 
-                    Button {
-                        // Poke a protected path first so this app appears in the
-                        // FDA list (with a toggle), then open the correct pane.
-                        registerForFullDiskAccess()
-                        openSystemURL(fullDiskAccessPaneURL)
-                    } label: {
+                    NavigationLink { FDAGuideView() } label: {
                         DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
                                  detail: "so Sirsi sees everything")
                     }.buttonStyle(.plain)
@@ -164,6 +176,70 @@ struct DeityRow: View {
         .padding(.vertical, 8).padding(.horizontal, 10)
         .contentShape(Rectangle())
         .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+    }
+}
+
+// ── Full Disk Access guide ───────────────────────────────────────────────────
+// macOS has no API for an app to grant itself (or even reliably list itself in)
+// Full Disk Access — the list is user-managed via "+". This screen is honest
+// about that: it opens the right pane AND reveals the app for drag-to-add, with
+// the exact steps, instead of a one-click button that silently does nothing.
+struct FDAGuideView: View {
+    @Environment(\.openURL) private var openURL
+
+    private var steps: [(String, String)] {
+        [
+            ("1", "Tap “Open Full Disk Access” below — System Settings opens to the right list."),
+            ("2", "Click the + button (or drag “Sirsi Menubar” in from the Finder window we reveal)."),
+            ("3", "Toggle Sirsi Menubar on. You only do this once."),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Grant Full Disk Access")
+                .font(.headline).foregroundStyle(gold)
+            Text("macOS won’t let Sirsi grant itself disk access — you add it once, by hand. Here’s the quickest way:")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(steps, id: \.0) { step in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(step.0)
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(gold.opacity(0.20)))
+                            .foregroundStyle(gold)
+                        Text(step.1).font(.system(size: 12))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            VStack(spacing: 8) {
+                Button {
+                    registerForFullDiskAccess()
+                    openSystemURL(fullDiskAccessPaneURL)
+                    revealAppInFinder()
+                } label: {
+                    Label("Open Full Disk Access", systemImage: "lock.open")
+                        .frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent).tint(gold)
+
+                Button {
+                    revealAppInFinder()
+                } label: {
+                    Label("Reveal Sirsi Menubar in Finder", systemImage: "folder")
+                        .frame(maxWidth: .infinity)
+                }.buttonStyle(.bordered)
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .navigationTitle("Full Disk Access")
     }
 }
 

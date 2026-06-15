@@ -14,6 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var refreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Proactively register with TCC so "Sirsi Menubar" already has a row in
+        // the Full Disk Access list before the user ever clicks the Grant button.
+        // A TCC-denied open() is what puts an app in that list (see Views.swift).
+        registerForFullDiskAccess()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.title = "𓁢"
