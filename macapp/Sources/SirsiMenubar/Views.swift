@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
@@ -11,6 +12,32 @@ func openSystemURL(_ url: String) {
     p.arguments = [url]
     try? p.run()
 }
+
+// registerForFullDiskAccess forces this app into the Full Disk Access list so
+// there is actually a row to toggle. macOS never *prompts* for FDA: an app only
+// appears in the list after it attempts to read a TCC-protected path and is
+// denied — that denial is what registers it. Without this poke the FDA pane
+// shows no "Sirsi Menubar" row at all, so the button looked like it pointed at
+// nothing. The read is expected to fail (we have no FDA yet); failure is the
+// whole point. Best-effort and silent.
+func registerForFullDiskAccess() {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let protectedPaths = [
+        home.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db"),
+        home.appendingPathComponent("Library/Safari/Bookmarks.plist"),
+    ]
+    for path in protectedPaths {
+        _ = try? Data(contentsOf: path, options: .mappedIfSafe)
+    }
+}
+
+// fullDiskAccessPaneURL is the System Settings deep link for the Full Disk
+// Access list. macOS 13+ (Ventura → macOS 26) replaced the old System
+// Preferences anchor `com.apple.preference.security` with the System Settings
+// extension id below; the legacy id opens Settings but no longer resolves the
+// `?Privacy_AllFiles` anchor, landing the user on a page with nothing to do.
+let fullDiskAccessPaneURL =
+    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles"
 
 // RootView is the NavigationStack the popover hosts. Every screen pushes onto it
 // and the native back button returns — the "persistent menubar that can go back"
@@ -85,7 +112,12 @@ struct HomeView: View {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
                     }.buttonStyle(.plain)
 
-                    Button { openSystemURL("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") } label: {
+                    Button {
+                        // Poke a protected path first so this app appears in the
+                        // FDA list (with a toggle), then open the correct pane.
+                        registerForFullDiskAccess()
+                        openSystemURL(fullDiskAccessPaneURL)
+                    } label: {
                         DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
                                  detail: "so Sirsi sees everything")
                     }.buttonStyle(.plain)
