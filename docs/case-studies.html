@@ -298,7 +298,49 @@
   </header>
 
   <!-- ═══════════════════════════════════════════════════════ -->
-  <!--  CASE STUDY: KA v1.1 GHOST MATCHING (NEWEST — 2026-04) -->
+  <!--  CASE STUDY: SELF-HEALING INFERENCE SUBSTRATE (2026-06) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section class="case-study">
+    <div class="container">
+      <div class="case-header">
+        <span class="case-glyph">Ra</span>
+        <div>
+          <span class="case-label label-solution">Architecture Thesis</span>
+          <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem;">2026-06 &middot; Substrate</span>
+          <h2>The Self-Healing Inference Substrate</h2>
+          <p class="case-subtitle">How Pantheon ran a 31B model on a working dev machine without killing a single other process &mdash; and why that's a capability no inference window has</p>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p><strong>LM Studio, Ollama, and llama.cpp run a model until the machine can't.</strong> They load the weights and hope there's room; when there isn't, <em>you</em> get the memory kill, the swap thrash, the crashed session. They treat the machine as someone else's problem.</p>
+
+        <p>We set out to run the newest local model &mdash; Gemma&nbsp;4, 31B &mdash; on a 48&nbsp;GB Mac that was already running a live fleet of coding agents. The naïve path (grab the biggest quant) measured a <strong>28&nbsp;GB peak</strong> against a machine with ~39&nbsp;GB already in use: a 19&nbsp;GB overcommit that would Jetsam-kill a sibling agent session on <em>every</em> inference.</p>
+
+        <p>So Pantheon did the thing only a machine-aware tool can. It <strong>measured the real footprint</strong> (never trusting the param×bits estimate), <strong>reserved headroom for the fleet</strong>, <strong>load-tested for coherence</strong> (a model that loads garbage isn't advanced &mdash; it's broken), and chose the largest model that runs <em>without harming anything else</em>: a fleet-safe 12B default with the 31B available on-demand, gated on free RAM so even the big model can never overcommit. The lesson that became canon: <strong>fix the machine, don't shrink the ambition.</strong></p>
+
+        <p>This is the moat. Pantheon runs a model <strong>and keeps the machine able to keep running it</strong> &mdash; reclaiming RAM, healing binary drift, protecting every other process while it infers. Not an inference window. A <strong>self-healing inference substrate</strong> &mdash; a claim no GUI wrapper can make, because none of them own the machine underneath.</p>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-value" style="color: #34d399;">31B</div>
+          <div class="metric-label">Local model run on a working 48&nbsp;GB dev machine</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: #34d399;">0</div>
+          <div class="metric-label">Sibling sessions harmed</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: #34d399;">0</div>
+          <div class="metric-label">API tokens &mdash; fully on-device</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  CASE STUDY: KA v1.1 GHOST MATCHING (2026-04) -->
   <!-- ═══════════════════════════════════════════════════════ -->
   <section class="case-study">
     <div class="container">
