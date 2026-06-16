@@ -53,6 +53,24 @@ final class SirsiEngine: ObservableObject {
     @Published var busy = false
     @Published var lastError: String?
 
+    // Whether the app currently holds Full Disk Access. Drives whether the
+    // "Grant Full Disk Access…" row is shown — once granted, the nag disappears.
+    // Re-probed on every refresh()/popover open, so granting then reopening the
+    // panel clears it without a relaunch.
+    @Published var hasFDA = false
+
+    func checkFDA() { hasFDA = Self.probeFullDiskAccess() }
+
+    // probeFullDiskAccess attempts a TCC-guarded open(); success == we have FDA.
+    // TCC.db exists on every Mac and is readable only with Full Disk Access.
+    nonisolated static func probeFullDiskAccess() -> Bool {
+        let probe = FileManager.default.homeDirectoryForCurrentUser.path
+            + "/Library/Application Support/com.apple.TCC/TCC.db"
+        let fd = open(probe, O_RDONLY)
+        if fd >= 0 { close(fd); return true }
+        return false
+    }
+
     // Health (Horus — Ops): findings from `sirsi diagnose`.
     @Published var health: [DiagFinding] = []
     @Published var healthLoading = false
@@ -77,6 +95,7 @@ final class SirsiEngine: ObservableObject {
 
     // refresh re-reads the persisted scan (cheap; no rescan). Drives the title.
     func refresh() {
+        checkFDA()
         guard let data = FileManager.default.contents(atPath: scanPath),
               let res = try? JSONDecoder().decode(ScanResult.self, from: data) else {
             onTitle?("𓁢")

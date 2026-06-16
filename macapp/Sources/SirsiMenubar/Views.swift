@@ -129,10 +129,17 @@ struct HomeView: View {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { FDAGuideView() } label: {
-                        DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
-                                 detail: "so Sirsi sees everything")
-                    }.buttonStyle(.plain)
+                    // Only nag for Full Disk Access while we don't have it. Once
+                    // granted, the row disappears and a quiet confirmation shows.
+                    if !engine.hasFDA {
+                        NavigationLink { FDAGuideView() } label: {
+                            DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
+                                     detail: "so Sirsi sees everything")
+                        }.buttonStyle(.plain)
+                    } else {
+                        DeityRow(glyph: "✅", title: "Full Disk Access",
+                                 detail: "granted")
+                    }
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
             }
