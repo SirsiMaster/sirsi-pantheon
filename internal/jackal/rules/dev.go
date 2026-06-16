@@ -19,6 +19,7 @@ import (
 func NewNodeModulesRule() jackal.ScanRule {
 	return &findRule{
 		name:        "node_modules",
+		severity:    jackal.SeverityCaution,
 		displayName: "Node Modules",
 		category:    jackal.CategoryDev,
 		description: "node_modules directories in development projects (often 100MB+ each)",
@@ -39,6 +40,7 @@ func NewNodeModulesRule() jackal.ScanRule {
 func NewGoModCacheRule() jackal.ScanRule {
 	return &baseScanRule{
 		name:        "go_mod_cache",
+		severity:    jackal.SeverityCaution,
 		displayName: "Go Module Cache",
 		category:    jackal.CategoryDev,
 		description: "Go module download cache",
