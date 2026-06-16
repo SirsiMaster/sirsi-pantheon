@@ -1,7 +1,6 @@
 package router
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -126,82 +125,6 @@ func LaunchAgentProgram(plistPath string) (string, error) {
 	return "", fmt.Errorf("ProgramArguments not found")
 }
 
-// RenderLaunchAgentPlist returns a launchd plist that starts the router daemon.
-func RenderLaunchAgentPlist(opts ServiceOptions) string {
-	args := []string{opts.BinaryPath, "router", "daemon", "--target", "all"}
-	var buf bytes.Buffer
-	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>`)
-	buf.WriteString(xmlEscape(opts.Label))
-	buf.WriteString(`</string>
-  <key>WorkingDirectory</key>
-  <string>`)
-	buf.WriteString(xmlEscape(opts.RepoRoot))
-	buf.WriteString(`</string>
-  <key>ProgramArguments</key>
-  <array>
-`)
-	for _, arg := range args {
-		buf.WriteString("    <string>")
-		buf.WriteString(xmlEscape(arg))
-		buf.WriteString("</string>\n")
-	}
-	buf.WriteString(`  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>SIRSI_ROUTER_NOTIFY</key>
-    <string>1</string>
-    <key>PATH</key>
-    <string>`)
-	buf.WriteString(xmlEscape(opts.PathEnv))
-	buf.WriteString(`</string>
-  </dict>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>`)
-	buf.WriteString(xmlEscape(opts.LogPath))
-	buf.WriteString(`</string>
-  <key>StandardErrorPath</key>
-  <string>`)
-	buf.WriteString(xmlEscape(opts.ErrPath))
-	buf.WriteString(`</string>
-</dict>
-</plist>
-`)
-	return buf.String()
-}
-
-// InstallLaunchAgent writes the launchd plist. Loading is left to the caller.
-func InstallLaunchAgent(opts ServiceOptions) error {
-	if err := os.MkdirAll(filepath.Dir(opts.PlistPath), 0o755); err != nil {
-		return fmt.Errorf("create launch agent dir: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(opts.LogPath), 0o755); err != nil {
-		return fmt.Errorf("create router log dir: %w", err)
-	}
-	if err := os.WriteFile(opts.PlistPath, []byte(RenderLaunchAgentPlist(opts)), 0o644); err != nil {
-		return fmt.Errorf("write launch agent plist: %w", err)
-	}
-	return nil
-}
-
-// Launchctl runs launchctl with the supplied arguments.
-func Launchctl(args ...string) error {
-	cmd := exec.Command("launchctl", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("launchctl %s failed: %w\n%s", strings.Join(args, " "), err, string(out))
-	}
-	return nil
-}
-
 func serviceSlug(repoRoot string) string {
 	cleaned := strings.Trim(filepath.Base(repoRoot), ".")
 	if cleaned == "" || cleaned == string(filepath.Separator) {
@@ -216,17 +139,6 @@ func serviceSlug(repoRoot string) string {
 		b.WriteByte('-')
 	}
 	return strings.Trim(b.String(), "-")
-}
-
-func xmlEscape(s string) string {
-	replacer := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-		`"`, "&quot;",
-		"'", "&apos;",
-	)
-	return replacer.Replace(s)
 }
 
 func xmlUnescape(s string) string {
