@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 27** | **Next available: ADR-029**
+**Total ADRs: 30** | **Next available: ADR-031**
 
 ---
 
@@ -39,6 +39,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-027](ADR-027-ROUTER-MENUBAR-SURFACE.md) | Router Menubar Surface — per-mailbox drill-down + operator override-act (open / Reroute / Mark stale) + ⚡ Caffeinate-router full-revival (hidden until dead); extends Horus — Ops; direct-FS reads, 60s shared tick | **Proposed** (routed to codex-pantheon for arch-verify) | 2026-06-08 |
 | [ADR-028](ADR-028-OPTIONAL-SQLITE-LEAN-BUILD.md) | Optional SQLite — `nosqlite` lean build variant — keep full Vault/Seshat/notify by default (15 MB); opt-in `-tags nosqlite` for ~10.6 MB with graceful per-package degradation. The one real remaining size lever (Metal gate measured as non-win) | **Proposed** (design-only; codex final review on return; cross-eyes → non-standin claude) | 2026-06-08 |
 | [ADR-029](ADR-029-PER-AGENT-SESSION-WORKTREES.md) | Per-Agent Session Worktrees — every agent session edits source in its own `git worktree` under `.claude/worktrees/<agent>-<session>/`, not the shared root checkout; eliminates the shared-`.git` `core.bare` corruption + cross-branch contamination; shared object store, isolated working tree/index/HEAD; pairs with the SessionStart per-resume thread-mint fix | **Accepted** | 2026-06-09 |
+| [ADR-030](ADR-030-NATIVE-MENUBAR-POPOVER.md) | Native macOS Menubar Popover — NSStatusItem + NSPopover + SwiftUI NavigationStack (`macapp/`); persistent panel, drill-in/back, manifest+confirm+result inline; Go stays source-of-truth (Swift reads `latest-scan.json` + shells `sirsi`); supersedes the systray GUI on macOS. Phase 1 (Anubis) + Horus health view shipped | **Accepted** (binding review → codex-pantheon) | 2026-06-10 |
 
 ---
 
