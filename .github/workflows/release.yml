@@ -72,12 +72,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
           rm certificate.p12
 
-      - name: Build DMG (arm64 — Intel Macs use Rosetta)
+      - name: Build + sign + notarize DMG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
           DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: scripts/build-dmg.sh --version "$BUILD_VERSION" --arch arm64
 
       - name: Upload DMG to release
