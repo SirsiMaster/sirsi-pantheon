@@ -599,7 +599,8 @@ struct ResultView: View {
             BackBar(title: title)
             Group {
                 if loading && result == nil && raw.isEmpty {
-                    VStack { Spacer(); ProgressView(); Spacer() }.frame(maxWidth: .infinity)
+                    VStack { Spacer(); ProgressView(); Spacer() }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let r = result {
                     structuredScroll(r)
                 } else {
@@ -623,7 +624,7 @@ struct ResultView: View {
         }
         .task { await load() }
         .confirmationDialog(
-            pendingApply?.label ?? "Apply this change?",
+            "Apply this fix?",
             isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
             titleVisibility: .visible
         ) {
