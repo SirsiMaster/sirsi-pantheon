@@ -44,9 +44,24 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Fresh inode (never cp-over) then ad-hoc sign — avoids the AMFI stale-cdhash
+# Fresh inode (never cp-over) then sign — avoids the AMFI stale-cdhash
 # SIGKILL-137 class (reference_macos_amfi_cp_sigkill).
 cp "$BIN" "$APP/Contents/MacOS/SirsiMenubar"
-codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 || true
+
+# Sign with a STABLE identity, not ad-hoc. Ad-hoc (cdhash-only) signatures are
+# NOT honored by TCC for Full Disk Access across relaunch — the grant toggle
+# reverts. A self-signed code-signing cert gives a stable designated requirement
+# (identifier + certificate leaf) that TCC persists across relaunch AND across
+# rebuilds, so the user grants FDA exactly once. Falls back to ad-hoc only if the
+# cert is missing (FDA will not persist in that case). Create the cert with:
+#   macapp/make-signing-cert.sh   (self-signed, login keychain, no Apple needed)
+SIGN_ID="${SIRSI_SIGN_IDENTITY:-Sirsi Local Code Signing}"
+if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+	codesign --force --deep --sign "$SIGN_ID" --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 \
+		&& echo "▸ signed with: $SIGN_ID"
+else
+	echo "⚠ signing identity '$SIGN_ID' not found — falling back to ad-hoc (FDA will NOT persist)"
+	codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 || true
+fi
 codesign -dv "$APP" 2>&1 | grep -i 'Identifier=' || true
 echo "▸ built $APP"
