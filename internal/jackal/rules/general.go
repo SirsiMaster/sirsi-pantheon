@@ -78,11 +78,20 @@ func NewDownloadsJunkRule() jackal.ScanRule {
 }
 
 // NewTrashRule scans the user's Trash.
+//
+// CAUTION tier, deliberately. The one-click "safe" clean is trash-first — it
+// MOVES items to ~/.Trash. If the Trash itself were SAFE, every cleaned cache
+// would be re-counted here next scan and "cleaned" again (MoveToTrash of an
+// already-trashed item — a no-op), so the reclaimable figure never drops and the
+// tray stays "unclean." Emptying the Trash is also less reversible than clearing
+// a regenerable cache, so it is a deliberate, explicit-opt-in (--include-caution)
+// action, never part of the one-click sweep.
 func NewTrashRule() jackal.ScanRule {
 	return &baseScanRule{
 		name:        "trash",
 		displayName: "Trash",
 		category:    jackal.CategoryGeneral,
+		severity:    jackal.SeverityCaution,
 		description: "Files in the user's Trash folder",
 		platforms:   []string{"darwin"},
 		paths: []string{
