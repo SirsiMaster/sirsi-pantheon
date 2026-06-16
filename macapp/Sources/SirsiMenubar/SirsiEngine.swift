@@ -42,6 +42,48 @@ struct DiagFinding: Decodable, Identifiable {
 
 struct DiagReport: Decodable { let findings: [DiagFinding] }
 
+// CommandResult is the uniform structured output the Go CLI emits for the
+// scan-family commands (clean, audit, maat audit, scan, risk…): a one-line
+// summary, evidence facts, and next_actions — follow-up commands the UI turns
+// into buttons, including the `--confirm` applies. This contract is the spine of
+// one-click remediation: the CLI tells the surface what can be done next.
+struct CRFact: Decodable, Identifiable {
+    let id = UUID()
+    let label: String
+    let value: String
+    enum CodingKeys: String, CodingKey { case label, value }
+}
+
+struct CRAction: Decodable, Identifiable {
+    let id = UUID()
+    let label: String
+    let command: String
+    let description: String?
+    enum CodingKeys: String, CodingKey { case label, command, description }
+    // A --confirm action mutates state (trash, heal) — the UI confirms first.
+    var isApply: Bool { command.contains("--confirm") }
+}
+
+struct CommandResult: Decodable {
+    let command: String?
+    let summary: String
+    let evidence: [CRFact]
+    let nextActions: [CRAction]
+    enum CodingKeys: String, CodingKey { case command, summary, evidence; case nextActions = "next_actions" }
+}
+
+// ActivityEntry is one line of the provenance ledger — every action taken from
+// the UI, with cause + outcome, persisted so the user can see (and trust) what
+// Pantheon did. Reversibility + provenance is what earns autonomy.
+struct ActivityEntry: Codable, Identifiable {
+    var id = UUID()
+    let title: String
+    let command: String
+    let when: String
+    let result: String
+    enum CodingKeys: String, CodingKey { case title, command, when, result }
+}
+
 // SirsiEngine is the observable model behind every view. All deletion happens in
 // the Go `sirsi` binary (safety-gated, trash-first, protected paths hardcoded);
 // this type only reads the persisted scan and runs the CLI.
@@ -58,6 +100,10 @@ final class SirsiEngine: ObservableObject {
     // Re-probed on every refresh()/popover open, so granting then reopening the
     // panel clears it without a relaunch.
     @Published var hasFDA = false
+
+    // Provenance ledger — actions taken from the UI, newest first.
+    @Published var activity: [ActivityEntry] = []
+    private let activityPath = (("~/.config/pantheon/menubar-activity.json") as NSString).expandingTildeInPath
 
     func checkFDA() { hasFDA = Self.probeFullDiskAccess() }
 
@@ -138,6 +184,52 @@ final class SirsiEngine: ObservableObject {
             health = rep.findings
         }
         healthLoading = false
+    }
+
+    // runResult runs `sirsi <args> --json` and decodes the uniform CommandResult,
+    // or nil if this command doesn't emit that shape (caller falls back to raw
+    // text so nothing ever dead-ends). Tolerates a banner before the JSON.
+    nonisolated static func runResult(args: [String]) async -> CommandResult? {
+        var a = args
+        if !a.contains("--json") { a.append("--json") }
+        let data = await runJSON(args: a)
+        guard let s = String(data: data, encoding: .utf8),
+              let i = s.firstIndex(of: "{") else { return nil }
+        let cr = try? JSONDecoder().decode(CommandResult.self, from: Data(String(s[i...]).utf8))
+        guard let cr, !cr.summary.isEmpty else { return nil }
+        return cr
+    }
+
+    // ── provenance ledger ──────────────────────────────────────────────────────
+
+    func loadActivity() {
+        guard let data = FileManager.default.contents(atPath: activityPath),
+              let all = try? JSONDecoder().decode([ActivityEntry].self, from: data) else { return }
+        activity = all.reversed()   // stored oldest-first; show newest-first
+    }
+
+    // recordActivity appends one line to the on-disk ledger and the live list.
+    func recordActivity(title: String, command: String, result: String) {
+        let entry = ActivityEntry(title: title, command: command, when: Self.nowStamp(),
+                                  result: Self.firstMeaningful(result))
+        var all = [ActivityEntry]()
+        if let data = FileManager.default.contents(atPath: activityPath),
+           let existing = try? JSONDecoder().decode([ActivityEntry].self, from: data) {
+            all = existing
+        }
+        all.append(entry)
+        if all.count > 200 { all = Array(all.suffix(200)) }   // bounded ledger
+        let dir = (activityPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        if let out = try? JSONEncoder().encode(all) {
+            try? out.write(to: URL(fileURLWithPath: activityPath))
+        }
+        activity.insert(entry, at: 0)
+    }
+
+    static func nowStamp() -> String {
+        let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"
+        return f.string(from: Date())
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

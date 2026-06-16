@@ -56,6 +56,14 @@ func revealAppInFinder() {
     NSWorkspace.shared.activateFileViewerSelecting([url])
 }
 
+// sirsiArgs turns a CLI command string ("sirsi clean --confirm") into argv for
+// SirsiEngine.run, dropping the leading binary name.
+func sirsiArgs(_ command: String) -> [String] {
+    var toks = command.split(separator: " ").map(String.init)
+    if toks.first == "sirsi" { toks.removeFirst() }
+    return toks
+}
+
 // RootView is the NavigationStack the popover hosts. Every screen pushes onto it
 // and the native back button returns — the "persistent menubar that can go back"
 // the user asked for. No screen ever kicks out to Terminal or a browser.
@@ -101,7 +109,7 @@ struct HomeView: View {
             // Deity rows
             ScrollView {
                 VStack(spacing: 2) {
-                    NavigationLink { InsightView() } label: {
+                    NavigationLink { InsightView(engine: engine) } label: {
                         DeityRow(glyph: "✨", title: "Insight — what to do next",
                                  detail: "across the platform")
                     }.buttonStyle(.plain)
@@ -117,16 +125,21 @@ struct HomeView: View {
                                  dot: severityColor(engine.healthWorst))
                     }.buttonStyle(.plain)
 
-                    NavigationLink { CommandView(title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
+                    NavigationLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
                         DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "governance")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { CommandView(title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
+                    NavigationLink { ResultView(engine: engine, title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { CommandView(title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
+                    NavigationLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { ActivityView(engine: engine) } label: {
+                        DeityRow(glyph: "𓆎", title: "Activity — what Pantheon did",
+                                 detail: engine.activity.isEmpty ? "ledger" : "\(engine.activity.count) logged")
                     }.buttonStyle(.plain)
 
                     // Only nag for Full Disk Access while we don't have it. Once
@@ -155,7 +168,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { await engine.diagnose() }   // load health when the popover opens
+        .task { engine.loadActivity(); await engine.diagnose() }   // health + ledger on open
     }
 }
 
@@ -564,6 +577,206 @@ struct CommandView: View {
     }
 }
 
+// ── ResultView — the unified deity / action screen ───────────────────────────
+// Runs a sirsi command. When the command emits the structured CommandResult, it
+// renders summary + evidence + one-click next-action buttons — the `--confirm`
+// applies confirm first and write to the provenance ledger. Commands without
+// that shape fall back to clean text. Every path is navigable; nothing dead-ends.
+struct ResultView: View {
+    @ObservedObject var engine: SirsiEngine
+    let title: String
+    let args: [String]
+
+    @State private var result: CommandResult?
+    @State private var raw = ""
+    @State private var loading = true
+    @State private var applying = false
+    @State private var pendingApply: CRAction?
+    @State private var toast: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: title)
+            Group {
+                if loading && result == nil && raw.isEmpty {
+                    VStack { Spacer(); ProgressView(); Spacer() }.frame(maxWidth: .infinity)
+                } else if let r = result {
+                    structuredScroll(r)
+                } else {
+                    rawScroll
+                }
+            }
+            if applying {
+                Divider()
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Working…").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
+            Divider()
+            HStack {
+                Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .disabled(loading || applying)
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .task { await load() }
+        .confirmationDialog(
+            pendingApply?.label ?? "Apply this change?",
+            isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Apply", role: .destructive) {
+                if let a = pendingApply { Task { await apply(a) } }
+                pendingApply = nil
+            }
+            Button("Cancel", role: .cancel) { pendingApply = nil }
+        } message: {
+            if let a = pendingApply {
+                Text("Runs `\(a.command)`.\nReversible — items move to Trash, and it's logged in Activity.")
+            }
+        }
+    }
+
+    @ViewBuilder private func structuredScroll(_ r: CommandResult) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let t = toast {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                        Text(t).font(.caption)
+                    }
+                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.green.opacity(0.12)))
+                }
+                Text(r.summary).font(.system(size: 14, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !r.evidence.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(r.evidence) { f in
+                            HStack {
+                                Text(f.label).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Text(f.value).font(.caption.monospaced())
+                            }.padding(.vertical, 7)
+                            if f.id != r.evidence.last?.id { Divider() }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                }
+
+                if !r.nextActions.isEmpty {
+                    Text("WHAT YOU CAN DO").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        ForEach(r.nextActions) { actionButton($0) }
+                    }
+                }
+            }.padding(16)
+        }
+    }
+
+    @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
+        if a.isApply {
+            Button { pendingApply = a } label: { actionLabel(a, prominent: true) }
+                .buttonStyle(.borderedProminent).tint(gold).disabled(applying)
+        } else {
+            Button { Task { await runFollow(a) } } label: { actionLabel(a, prominent: false) }
+                .buttonStyle(.bordered).disabled(applying)
+        }
+    }
+
+    @ViewBuilder private func actionLabel(_ a: CRAction, prominent: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: a.isApply ? "bolt.fill" : "arrow.right.circle")
+            VStack(alignment: .leading, spacing: 1) {
+                Text(a.label).font(.system(size: 12, weight: .semibold))
+                if let d = a.description, !d.isEmpty {
+                    Text(d).font(.caption2)
+                        .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
+                }
+            }
+            Spacer()
+        }.frame(maxWidth: .infinity).padding(.vertical, 2)
+    }
+
+    private var rawScroll: some View {
+        ScrollView {
+            Text(raw.isEmpty ? "No output." : raw)
+                .font(.system(size: 11.5, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+        }
+    }
+
+    private func load() async {
+        loading = true
+        if let r = await SirsiEngine.runResult(args: args) {
+            result = r; raw = ""
+        } else {
+            let out = await SirsiEngine.run(args: args, stdin: nil)
+            raw = CommandView.stripBanner(out); result = nil
+        }
+        loading = false
+    }
+
+    // apply runs a --confirm action, feeding the CLI's [y/N] prompt, logs it to
+    // the provenance ledger, then re-inspects so the screen shows the new state.
+    private func apply(_ a: CRAction) async {
+        applying = true
+        let out = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: "y\n")
+        engine.recordActivity(title: "\(title) — \(a.label)", command: a.command, result: out)
+        toast = "Applied: \(a.label)"
+        applying = false
+        await load()
+        engine.refresh()
+    }
+
+    // runFollow runs a non-destructive next action (e.g. scan) and reloads.
+    private func runFollow(_ a: CRAction) async {
+        applying = true
+        _ = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: nil)
+        applying = false
+        await load()
+        engine.refresh()
+    }
+}
+
+// ── ActivityView — the provenance ledger ─────────────────────────────────────
+struct ActivityView: View {
+    @ObservedObject var engine: SirsiEngine
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Activity")
+            if engine.activity.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath").font(.title).foregroundStyle(.tertiary)
+                    Text("No actions yet").font(.callout).foregroundStyle(.secondary)
+                    Text("Fixes you apply show here — what changed, when, and the command that ran. Everything is reversible.")
+                        .font(.caption2).foregroundStyle(.tertiary).multilineTextAlignment(.center)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
+            } else {
+                List(engine.activity) { e in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(e.title).font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(e.when).font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Text(e.command).font(.caption.monospaced()).foregroundStyle(gold)
+                        if !e.result.isEmpty {
+                            Text(e.result).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                    }.padding(.vertical, 2)
+                }.listStyle(.inset)
+            }
+        }.task { engine.loadActivity() }
+    }
+}
+
 // ── Insight — the cross-deity "what to do next" (sirsi insight) ───────────────
 //
 // Renders `sirsi insight --json` inline: prioritized next actions (with the exact
@@ -595,6 +808,7 @@ struct InsightReport: Decodable {
 }
 
 struct InsightView: View {
+    @ObservedObject var engine: SirsiEngine
     @State private var report: InsightReport?
     @State private var loading = true
     @State private var askingGemma = false
@@ -619,7 +833,7 @@ struct InsightView: View {
                             // a CommandView that executes `sirsi <cmd>` and shows
                             // output (TUI-is-the-session: never a dead command label).
                             NavigationLink {
-                                CommandView(title: a.title, args: Self.commandArgs(a.command))
+                                ResultView(engine: engine, title: a.title, args: Self.commandArgs(a.command))
                             } label: {
                                 HStack(alignment: .top, spacing: 8) {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -643,7 +857,7 @@ struct InsightView: View {
                         ForEach(r.signals) { s in
                             // Platform rows drill into that deity's live view too.
                             NavigationLink {
-                                CommandView(title: s.deity, args: Self.deityArgs(s.deity))
+                                ResultView(engine: engine, title: s.deity, args: Self.deityArgs(s.deity))
                             } label: {
                                 HStack(spacing: 8) {
                                     Circle().fill(severityColor(min(s.severity, 2))).frame(width: 7, height: 7)
