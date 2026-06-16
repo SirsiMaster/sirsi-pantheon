@@ -927,10 +927,11 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// headline (NextActions[0]) is the most useful action. clean/monitor actually
 	// fix things; `diagnose --json` only inspects (last resort, e.g. kernel panics).
 	rank := map[string]int{
-		"sirsi clean":                 0,
-		"sirsi monitor":               1,
-		"brew upgrade sirsi-pantheon": 2,
-		"sirsi diagnose --json":       3,
+		"sirsi clean":                   0,
+		"sirsi clean --include-caution": 0,
+		"sirsi monitor":                 1,
+		"brew upgrade sirsi-pantheon":   2,
+		"sirsi diagnose --json":         3,
 	}
 	type remedy struct{ cmd, desc string }
 	var rems []remedy
@@ -963,7 +964,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 func remediationFor(check string) (string, string) {
 	switch {
 	case strings.Contains(check, "App Crash"), strings.Contains(check, "Crash Report"):
-		return "sirsi clean", "Clear the accumulated crash reports and reclaim their disk space"
+		return "sirsi clean --include-caution", "Preview crash-report cleanup (caution tier); re-run with --confirm to move them to Trash"
 	case strings.Contains(check, "Jetsam"), strings.Contains(check, "RAM"),
 		strings.Contains(check, "Swap"), strings.Contains(check, "Memory"):
 		return "sirsi monitor", "Watch the processes driving memory pressure, then quit the worst offenders"

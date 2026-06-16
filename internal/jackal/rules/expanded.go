@@ -45,6 +45,7 @@ func NewMavenCacheRule() jackal.ScanRule {
 func NewNpmGlobalCacheRule() jackal.ScanRule {
 	return &baseScanRule{
 		name:        "npm_global_cache",
+		severity:    jackal.SeverityCaution,
 		displayName: "npm/yarn/pnpm Cache",
 		category:    jackal.CategoryDev,
 		description: "npm _cacache, yarn cache, and pnpm content-addressable store",
