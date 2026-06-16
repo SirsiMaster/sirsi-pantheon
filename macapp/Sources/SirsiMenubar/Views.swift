@@ -186,6 +186,34 @@ struct DeityRow: View {
     }
 }
 
+// BackBar is the in-content "‹ Back" header every drilled-in screen needs. On
+// macOS a NavigationStack draws its back button in the host window's toolbar —
+// which an NSPopover does not have — so the native control is invisible and the
+// user gets trapped. This calls @Environment(\.dismiss) to pop the stack
+// regardless of toolbar chrome. Put it at the very top of each pushed view.
+struct BackBar: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                Text("Back").font(.system(size: 12))
+            }
+            .buttonStyle(.plain).foregroundStyle(gold)
+            Spacer()
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            Spacer()
+            // invisible spacer mirroring the back button keeps the title centered
+            Image(systemName: "chevron.left").font(.system(size: 12)).opacity(0)
+            Text("Back").font(.system(size: 12)).opacity(0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .contentShape(Rectangle())
+        Divider()
+    }
+}
+
 // ── Full Disk Access guide ───────────────────────────────────────────────────
 // macOS has no API for an app to grant itself (or even reliably list itself in)
 // Full Disk Access — the list is user-managed via "+". This screen is honest
@@ -203,6 +231,8 @@ struct FDAGuideView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+        BackBar(title: "Full Disk Access")
         VStack(alignment: .leading, spacing: 14) {
             Text("Grant Full Disk Access")
                 .font(.headline).foregroundStyle(gold)
@@ -246,6 +276,7 @@ struct FDAGuideView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        }
         .navigationTitle("Full Disk Access")
     }
 }
@@ -257,6 +288,7 @@ struct HorusView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            BackBar(title: "Horus — Ops")
             if engine.health.isEmpty {
                 VStack(spacing: 10) {
                     if engine.healthLoading { ProgressView() }
@@ -331,6 +363,7 @@ struct AnubisView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            BackBar(title: "Anubis — Hygiene")
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
@@ -486,6 +519,7 @@ struct CommandView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            BackBar(title: title)
             ScrollView {
                 if loading {
                     HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
@@ -567,6 +601,7 @@ struct InsightView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            BackBar(title: "Insight")
             if loading && report == nil {
                 HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
             } else if let r = report {
@@ -580,22 +615,46 @@ struct InsightView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         ForEach(r.actions) { a in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(a.title).font(.system(size: 12, weight: .semibold))
-                                Text(a.why).font(.caption2).foregroundStyle(.secondary)
-                                Text(a.command).font(.caption.monospaced()).foregroundStyle(gold).textSelection(.enabled)
-                            }.padding(.vertical, 1)
+                            // Each suggestion RUNS its command in-panel — tap pushes
+                            // a CommandView that executes `sirsi <cmd>` and shows
+                            // output (TUI-is-the-session: never a dead command label).
+                            NavigationLink {
+                                CommandView(title: a.title, args: Self.commandArgs(a.command))
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(a.title).font(.system(size: 12, weight: .semibold))
+                                        Text(a.why).font(.caption2).foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        Text(a.command).font(.caption.monospaced()).foregroundStyle(gold)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "play.circle.fill")
+                                        .foregroundStyle(gold).font(.system(size: 14))
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, 1)
                         }
                     } header: { Text("DO NEXT") }
 
                     Section {
                         ForEach(r.signals) { s in
-                            HStack(spacing: 8) {
-                                Circle().fill(severityColor(min(s.severity, 2))).frame(width: 7, height: 7)
-                                Text(s.deity).font(.caption)
-                                Spacer()
-                                Text(s.status).font(.caption2).foregroundStyle(.secondary)
+                            // Platform rows drill into that deity's live view too.
+                            NavigationLink {
+                                CommandView(title: s.deity, args: Self.deityArgs(s.deity))
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Circle().fill(severityColor(min(s.severity, 2))).frame(width: 7, height: 7)
+                                    Text(s.deity).font(.caption)
+                                    Spacer()
+                                    Text(s.status).font(.caption2).foregroundStyle(.secondary)
+                                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                     } header: { Text("PLATFORM") } footer: { Text("source: \(r.source)") }
                 }
@@ -633,5 +692,25 @@ struct InsightView: View {
     static func decode(_ s: String) -> InsightReport? {
         guard let start = s.firstIndex(of: "{") else { return nil }
         return try? JSONDecoder().decode(InsightReport.self, from: Data(String(s[start...]).utf8))
+    }
+
+    // commandArgs turns the action's exact command string ("sirsi self-update",
+    // "sirsi clean") into argv for SirsiEngine.run, dropping the leading binary.
+    // These are read/preview-safe (sirsi clean previews unless --confirm).
+    static func commandArgs(_ command: String) -> [String] {
+        var toks = command.split(whereSeparator: { $0 == " " }).map(String.init)
+        if toks.first == "sirsi" { toks.removeFirst() }
+        return toks.isEmpty ? ["status"] : toks
+    }
+
+    // deityArgs maps a PLATFORM signal's deity to its safe read command.
+    static func deityArgs(_ deity: String) -> [String] {
+        let d = deity.lowercased()
+        if d.contains("horus") { return ["diagnose"] }
+        if d.contains("anubis") { return ["scan"] }
+        if d.contains("thoth") { return ["thoth", "status"] }
+        if d.contains("ma") && d.contains("at") { return ["maat", "audit"] }
+        if d.contains("ra") { return ["ra", "status"] }
+        return ["status"]
     }
 }
