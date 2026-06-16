@@ -724,16 +724,43 @@ struct ResultView: View {
         loading = false
     }
 
-    // apply runs a --confirm action, feeding the CLI's [y/N] prompt, logs it to
-    // the provenance ledger, then re-inspects so the screen shows the new state.
+    // apply runs a --confirm action, feeding the CLI's [y/N] prompt, then RE-SCANS
+    // so every surface (this screen, Refresh, the menubar title) reflects the new
+    // reality — `clean` does not re-persist findings on its own. The toast and the
+    // provenance ledger report what ACTUALLY happened, never an unconditional
+    // "Applied" (the old lie when the clean had silently canceled).
     private func apply(_ a: CRAction) async {
         applying = true
         let out = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: "y\n")
-        engine.recordActivity(title: "\(title) — \(a.label)", command: a.command, result: out)
-        toast = "Applied: \(a.label)"
+        // Diagnostic: the exact apply output lands in /tmp/sirsi-menubar.log so a
+        // failed apply (FDA, cancel, 0-cleaned) is diagnosable, not guessed.
+        FileHandle.standardError.write(Data("\n[apply \(a.command)] →\n\(out)\n".utf8))
+        let lc = out.lowercased()
+        let canceled = lc.contains("cancel")
+        let didApply = !canceled && (lc.contains("cleaned") || lc.contains("reclaimed")
+                                     || lc.contains("healed") || lc.contains("applied"))
+        let headline = Self.applyHeadline(out)
+        engine.recordActivity(title: "\(title) — \(a.label)", command: a.command,
+                              result: canceled ? "Canceled" : headline)
+        // Refresh findings so stale pre-apply numbers and the tray title update.
+        _ = await SirsiEngine.run(args: ["scan"], stdin: nil)
+        toast = canceled ? "Canceled — nothing changed"
+                         : (didApply ? "Done — \(headline)" : "Ran \(a.label)")
         applying = false
         await load()
         engine.refresh()
+    }
+
+    // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed
+    // 2.9 GB.") out of the CLI output for the toast + ledger.
+    static func applyHeadline(_ out: String) -> String {
+        for line in out.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces).lowercased()
+            if t.contains("cleaned") || t.contains("reclaimed") || t.contains("healed") {
+                return line.trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return "applied"
     }
 
     // runFollow runs a non-destructive next action (e.g. scan) and reloads.

@@ -269,15 +269,19 @@ final class SirsiEngine: ObservableObject {
                 let outPipe = Pipe()
                 p.standardOutput = outPipe
                 p.standardError = outPipe
-                if let stdin {
-                    let inPipe = Pipe()
-                    p.standardInput = inPipe
-                    inPipe.fileHandleForWriting.write(stdin.data(using: .utf8)!)
-                    inPipe.fileHandleForWriting.closeFile()
-                }
+                // Feed stdin AFTER launch. Writing+closing the pipe before
+                // p.run() means the child's stdin can be closed/empty by the time
+                // it reads the [y/N] prompt — so `clean --confirm` silently
+                // cancels and nothing is trashed. Launch first, then answer.
+                let inPipe = Pipe()
+                if stdin != nil { p.standardInput = inPipe }
                 do { try p.run() } catch {
                     cont.resume(returning: "error: \(error.localizedDescription)")
                     return
+                }
+                if let stdin, let d = stdin.data(using: .utf8) {
+                    inPipe.fileHandleForWriting.write(d)
+                    inPipe.fileHandleForWriting.closeFile()
                 }
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
