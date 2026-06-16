@@ -3,19 +3,37 @@
 > Status: canonical north-star. Anchors product, messaging, and roadmap.
 > Last set: 2026-06-16.
 
+> Architecture companion: [ARCHITECTURE.md](ARCHITECTURE.md) (the shape) ·
+> [TRACEABILITY.md](TRACEABILITY.md) (every feature → surface).
+
 ## The thesis
 
-**Pantheon is the operating system for AI-augmented computing** — a self-healing
-compute substrate that keeps your *machine*, your *memory*, and your *agents*
-alive, private, and governed, from laptop to sovereign hardware. It maintains
-itself and hosts the intelligence running on top of it — across **workstations,
-networks, and IDEs**.
+**Sirsi Nexus is the operating system for AI-augmented computing** — the
+location-transparent linchpin that, when it ships, commands every service,
+surface, and device (down to the Sirsi Sleeve and Cube hardware). **Local /
+remote / hybrid is immaterial** to it.
+
+**Pantheon is the node-by-node substrate beneath the Nexus** — the part that
+keeps each machine, its memory, and its agents alive, private, and governed. It
+**cleans, hydrates, and protects every session** on a machine — gamer,
+productivity user, or developer alike — because under load they all hit the same
+kernel-level failures: Jetsam kills, memory pressure, page-fault and swap thrash,
+thread leaks, CPU/GPU contention, and main-thread saturation that surfaces as
+hangs and dropped frames. Pantheon ships *first and standalone* (Mac, July 2026);
+when Nexus launches, Pantheon becomes a module in its Fabric.
 
 Today's framing ("infrastructure hygiene") undersells it. CleanMyMac is hygiene.
 The pinnacle is a *living substrate* that maintains itself and hosts the
-intelligence running on top of it. That reframe is the whole game: the difference
-between a utility you open and a layer you forget is there because it never lets
-anything break.
+intelligence running on top of it — a layer you forget is there because it never
+lets anything break.
+
+Each Pantheon deity owns one job, and **every job is something you can see and
+do**: **Anubis** cleans (waste, ghosts, dedup), **Guard/Seba** hydrates (renice
+hogs, reap orphans, free headroom), **Isis** protects (diagnose + heal crashes,
+pressure, network), while **Horus** sees the machine, **Thoth** remembers it,
+**Ma'at** judges it, **Osiris** guards uncommitted work, **Seshat** bridges
+knowledge, **Ra** orchestrates the fleet, **Net** keeps the plan aligned, and
+**Stele** records every act. (Full map: [TRACEABILITY.md](TRACEABILITY.md).)
 
 ## Three pillars, one loop
 
