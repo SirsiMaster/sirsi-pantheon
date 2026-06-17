@@ -19,7 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // light/dark + Retina). All in code → guaranteed to render, no bundled asset.
     // Authored in a 100×80 design space, uniform-scaled; pupil filled, rest stroked.
     static let eyeImage: NSImage? = {
-        let w: CGFloat = 20, h: CGFloat = 16
+        // Sized to fill the menu bar (≈18–19 pt tall) so the Eye reads clearly —
+        // the first cut at 20×16 with thin strokes was too slight. Uniform 0.24 scale.
+        let w: CGFloat = 24, h: CGFloat = 19.2
         let img = NSImage(size: NSSize(width: w, height: h), flipped: false) { _ in
             let sx = w / 100, sy = h / 80
             func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * sx, y: y * sy) }
@@ -34,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSColor.black.setFill()
 
             let line = NSBezierPath()
-            line.lineWidth = 1.35
+            line.lineWidth = 2.6   // bold — the thin 1.35 stroke read "too slight" in the bar
             line.lineCapStyle = .round
             line.lineJoinStyle = .round
             // eyebrow
@@ -106,11 +108,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.contentTintColor = Self.tint(for: self.engine.titleStatus)
         }
         engine.refresh()
+        // Tint the Eye to REAL health immediately — a health glyph that only colors
+        // after you click it is half-useful. diagnose() sets healthStatus → onTitle.
+        Task { @MainActor in await engine.diagnose() }
 
-        // Cheap periodic re-read of the persisted scan so the label tracks reality
-        // (≥60s — never a tight tick; A27 forbids flooding the registry/Spotlight).
+        // Periodic refresh so the Eye tracks reality at a glance: cheap waste re-read
+        // + a health diagnose (≥60s — never a tight tick; A27 forbids flooding).
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.engine.refresh() }
+            Task { @MainActor in
+                self?.engine.refresh()
+                await self?.engine.diagnose()
+            }
         }
     }
 
