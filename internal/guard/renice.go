@@ -145,16 +145,54 @@ func matchesLSP(nameLower string) bool {
 	return false
 }
 
+// protectedReniceNames are process-name fragments that MUST NEVER be reniced.
+// Deprioritizing any of these can freeze the UI, starve audio/input, or harm
+// Sirsi itself — the opposite of relief. HARDCODED and not overridable by flag
+// or config (A1), mirroring internal/cleaner safety.go's protected-path model.
+// Matched case-insensitively as a substring of the process name.
+var protectedReniceNames = []string{
+	"windowserver",   // the compositor — renicing it IS the freeze
+	"kernel_task",    // kernel
+	"launchd",        // pid 1 / job manager
+	"loginwindow",    // session
+	"systemuiserver", // menu bar / system UI
+	"windowmanager",  // Stage Manager / window management
+	"coreaudiod",     // audio — never starve
+	"sirsi",          // never renice ourselves (sirsi/-agent/-menubar/-gemma)
+}
+
+// isProtectedReniceTarget reports whether a process name must never be reniced.
+func isProtectedReniceTarget(name string) bool {
+	n := strings.ToLower(name)
+	for _, p := range protectedReniceNames {
+		if strings.Contains(n, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // reniceByPID deprioritizes a single process by PID (renice +10 + background QoS).
-// Used by the watchdog auto-renice feature.
-func reniceByPID(pid int) error {
+// Used by the watchdog auto-renice feature. A1: refuses pid<=1 AND any protected
+// process (compositor, kernel, audio, session UI, sirsi itself) so an auto or
+// one-click renice can never starve a critical process and make a freeze worse.
+func reniceByPID(pid int, name string) error {
+	return reniceByPIDWith(pid, name, reniceFn, taskpolicyFn)
+}
+
+// reniceByPIDWith is the injectable core (A16/A21) so the protected-target
+// refusal is unit-tested without touching real processes.
+func reniceByPIDWith(pid int, name string, reniceFnArg func(int, int) error, taskpolicyFnArg func(int) error) error {
 	if pid <= 1 {
 		return fmt.Errorf("refusing to renice PID %d", pid)
 	}
-	if err := reniceFn(pid, 10); err != nil {
+	if isProtectedReniceTarget(name) {
+		return fmt.Errorf("refusing to renice protected process %q (pid %d)", name, pid)
+	}
+	if err := reniceFnArg(pid, 10); err != nil {
 		return err
 	}
-	_ = taskpolicyFn(pid) // best-effort
+	_ = taskpolicyFnArg(pid) // best-effort
 	return nil
 }
 
