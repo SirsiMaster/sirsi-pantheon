@@ -51,7 +51,7 @@ most gamer-facing).
 | **Jetsam terminations** (kernel `memorystatus` kills under memory pressure) | Isis `diagnose` — App-Crashes + crashloop | menubar System Diagnostics · `sirsi diagnose` | ✅ shipped | "crash-to-desktop guard" |
 | **Memory pressure + scheduler contention** | Guard — RAM/CPU auditor + renice | `sirsi guard`/`monitor` | ✅ shipped | "slowdown relief" |
 | **CPU/GPU contention + concurrency races** | Guard CPU/IPC pressure + Seba GPU/ANE | `sirsi guard --audit` | ✅ shipped | "stutter / hitching relief" |
-| **Thread leak / pool exhaustion** *(get #2)* | Orphan Hunter (PPID=1 loneliness) — *25 zombies → 1.1 GB* | `sirsi guard` | ✅ shipped | "background-process reaper" |
+| **Thread leak / pool exhaustion** *(get #2)* | Orphan Hunter (PPID=1 loneliness, *25 zombies → 1.1 GB*) for separate zombie **processes** + **`diagnose` → Thread Leaks** for in-process **thread** pile-up (live counts via `top`, flags anomalous) | `sirsi guard` · `sirsi diagnose` | ✅ shipped | "background-process reaper" |
 | **Abnormal thread termination** *(get #1)* | crash detection in `diagnose` | `sirsi diagnose` | 🟡 partial | "crash forensics" |
 | **Major page faults + swap thrashing / compression churn** | `diagnose` surfaces *Swap Usage* only | `sirsi diagnose` | 🟡 partial — no thrash *relief* | "swap-thrash relief" |
 | **Main-thread saturation → hangs / dropped frames** | **`diagnose` → App Hangs (7d)** — scans `.hang`/`.spin` spindumps + `.cpu_resource.diag`, trend-aware, names the worst offenders; + renice hogs | menubar System Diagnostics · `sirsi diagnose` | ✅ **detection shipped** (🟡 automatic *relief* still a gap) | "frame-drop / freeze detector" |
@@ -59,7 +59,7 @@ most gamer-facing).
 **Committed backlog (in priority order):**
 1. ✅ **Main-thread hang + frame-drop *detection*** — SHIPPED (`diagnose` App Hangs (7d): hang/spin + cpu_resource scan, trend-aware, named offenders). Next: automatic *relief* (renice/disperse the offender), and a menubar one-click action.
 2. 🟡 **Swap-thrash relief** — detect + act on compression/swap churn, not just report.
-3. 🟡 **Thread-leak detector** — distinct from the orphan-process reaper (get #2 vs the in-process leak).
+3. ✅ **Thread-leak detector** — SHIPPED (`diagnose` → Thread Leaks: live per-process thread counts via `top`, conservative thresholds, names the offender; distinct from the orphan-process reaper).
 4. 🟡 **Abnormal-thread-termination forensics** — surface *why* a thread died (get #1).
 
 ---

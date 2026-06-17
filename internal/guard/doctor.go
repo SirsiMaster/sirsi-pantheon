@@ -118,6 +118,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		{"Crash Logs", func() { checkRecentCrashLogs(report) }},
 		{"App Crashes", func() { checkAppCrashes(report) }},
 		{"App Hangs", func() { checkAppHangs(report) }},
+		{"Thread Leaks", func() { checkThreadLeaks(report) }},
 		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
 	}
 
