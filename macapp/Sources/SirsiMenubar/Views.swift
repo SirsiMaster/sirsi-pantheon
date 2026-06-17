@@ -129,7 +129,7 @@ struct HomeView: View {
                     NavigationLink { HorusView(engine: engine) } label: {
                         DeityRow(glyph: "𓂀", title: "Horus — Ops",
                                  detail: engine.healthLoading ? "checking…" : engine.healthSummary,
-                                 dot: severityColor(engine.healthWorst))
+                                 dot: statusColor(engine.healthStatus))
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
@@ -179,8 +179,29 @@ struct HomeView: View {
     }
 }
 
-// severityColor maps a diagnose severity (0 OK / 1 Warn / 2 Critical) to a dot.
-func severityColor(_ sev: Int) -> Color {
+// statusColor maps the canonical green/amber/red roll-up to a dot/label colour.
+func statusColor(_ status: String) -> Color {
+    switch status {
+    case "red": return .red
+    case "amber": return .yellow
+    default: return .green
+    }
+}
+
+// findingColor colours a single finding's dot per the rubric (Go severity scale:
+// 0 OK · 1 Info · 2 Warn · 3 Critical). A 7-day TREND critical is amber, not red —
+// only a LIVE critical is act-now red, matching guard.HealthStatus.
+func findingColor(_ f: DiagFinding) -> Color {
+    switch f.severity {
+    case 0, 1: return .green       // OK / Info
+    case 2: return .yellow         // Warn
+    default: return (f.trend ?? false) ? .yellow : .red  // Critical: trend → amber
+    }
+}
+
+// insightSeverityColor maps an Insight signal's ALREADY-rolled-up severity
+// (0 green · 1 amber · 2 red) to a dot. Distinct from findingColor's raw scale.
+func insightSeverityColor(_ sev: Int) -> Color {
     switch sev {
     case 0: return .green
     case 1: return .yellow
@@ -322,11 +343,13 @@ struct HorusView: View {
                             HealthRow(finding: f)
                         }
                     } header: {
-                        let worst = engine.healthWorst
-                        Text(worst == 0 ? "ALL SYSTEMS HEALTHY"
-                             : (worst == 1 ? "ATTENTION — \(engine.health.filter{$0.severity>=1}.count) item(s)"
-                                : "CRITICAL — \(engine.health.filter{$0.severity>=2}.count) item(s)"))
-                            .foregroundStyle(severityColor(engine.healthWorst))
+                        // Canonical green/amber/red roll-up — NOT raw worst-severity
+                        // (which read CRITICAL on historical 7-day trends).
+                        let n = engine.healthIssueCount
+                        Text(engine.healthStatus == "green" ? "ALL SYSTEMS HEALTHY"
+                             : (engine.healthStatus == "amber" ? "ATTENTION — \(n) item(s)"
+                                : "CRITICAL — \(n) item(s)"))
+                            .foregroundStyle(statusColor(engine.healthStatus))
                     }
                 }
                 .listStyle(.inset)
@@ -351,7 +374,7 @@ struct HealthRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
-                Circle().fill(severityColor(finding.severity)).frame(width: 8, height: 8)
+                Circle().fill(findingColor(finding)).frame(width: 8, height: 8)
                 Text(finding.check).font(.system(size: 12, weight: .semibold))
                 Spacer()
                 if let d = finding.detail, !d.isEmpty {
@@ -896,7 +919,7 @@ struct InsightView: View {
                                 ResultView(engine: engine, title: s.deity, args: Self.deityArgs(s.deity))
                             } label: {
                                 HStack(spacing: 8) {
-                                    Circle().fill(severityColor(min(s.severity, 2))).frame(width: 7, height: 7)
+                                    Circle().fill(insightSeverityColor(min(s.severity, 2))).frame(width: 7, height: 7)
                                     Text(s.deity).font(.caption)
                                     Spacer()
                                     Text(s.status).font(.caption2).foregroundStyle(.secondary)

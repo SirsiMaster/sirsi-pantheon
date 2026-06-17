@@ -184,24 +184,29 @@ func TestDoctorWith_SwapActive(t *testing.T) {
 		wantSubstring string
 	}{
 		{
-			name:          "moderate swap with small total",
+			// A few hundred MB of swap with healthy RAM is routine, NOT pressure.
+			name:          "minimal swap (256 MB) is healthy",
 			swapOutput:    "total = 512.00M  used = 256.00M  free = 256.00M  (encrypted)",
-			wantSeverity:  SeverityWarn,
-			wantSubstring: "Swap active",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "no memory pressure",
 		},
 		{
-			// The parser checks ALL numeric tokens in the line for > 1000.
-			// "total = 2048.00M" alone triggers CRITICAL since 2048 > 1000.
-			name:          "heavy swap — total exceeds 1000M",
+			name:          "moderate swap (2 GB) warns",
 			swapOutput:    "total = 4096.00M  used = 2048.00M  free = 2048.00M  (encrypted)",
+			wantSeverity:  SeverityWarn,
+			wantSubstring: "under memory pressure",
+		},
+		{
+			name:          "heavy swap (6 GB) is critical thrashing",
+			swapOutput:    "total = 12288.00M  used = 6144.00M  free = 6144.00M  (encrypted)",
 			wantSeverity:  SeverityCritical,
-			wantSubstring: "Heavy swapping",
+			wantSubstring: "thrashing",
 		},
 		{
 			name:          "no swap",
 			swapOutput:    "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)",
 			wantSeverity:  SeverityOK,
-			wantSubstring: "No swap",
+			wantSubstring: "no memory pressure",
 		},
 	}
 
