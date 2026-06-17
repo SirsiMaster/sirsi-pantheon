@@ -852,12 +852,15 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 	old := hangReportScanFn
 	defer func() { hangReportScanFn = old }()
 
-	// Spread across 6 distinct days (≥ trendDayThreshold) → sustained Critical
-	// trend, with spotlightknowledged as the named worst offender.
-	hangReportScanFn = func() (times []time.Time, byProcess map[string]int) {
-		times = []time.Time{day(0), day(1), day(2), day(3), day(4), day(5)}
-		byProcess = map[string]int{"spotlightknowledged": 4, "Chrome": 2}
-		return times, byProcess
+	// A REAL user-facing app (Chrome) freezing across 6 distinct days → sustained
+	// Critical trend. Background Spotlight noise on top must NOT count as a freeze,
+	// but is acknowledged as ignored housekeeping.
+	hangReportScanFn = func() []hangEvent {
+		return []hangEvent{
+			{"Chrome", day(0)}, {"Chrome", day(1)}, {"Chrome", day(2)},
+			{"Chrome", day(3)}, {"Chrome", day(4)}, {"Chrome", day(5)},
+			{"spotlightknowledged", day(0)}, {"spotlightknowledged", day(1)},
+		}
 	}
 	report := &DoctorReport{}
 	checkAppHangs(report)
@@ -871,15 +874,36 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 	if !strings.Contains(f.Message, "sustained main-thread saturation") {
 		t.Errorf("trend message %q should name the saturation", f.Message)
 	}
-	if !strings.Contains(f.Detail, "spotlightknowledged ×4") {
-		t.Errorf("detail %q should name the worst offender first", f.Detail)
+	if !strings.Contains(f.Detail, "Chrome ×6") {
+		t.Errorf("detail %q should name the real user-facing offender first", f.Detail)
+	}
+	if !strings.Contains(f.Detail, "background housekeeping events ignored") {
+		t.Errorf("detail %q should acknowledge the ignored background noise", f.Detail)
 	}
 
-	// Clustered in a single day → transient Warn.
-	hangReportScanFn = func() (times []time.Time, byProcess map[string]int) {
-		times = []time.Time{day(1), day(1).Add(time.Hour), day(1).Add(2 * time.Hour)}
-		byProcess = map[string]int{"Dock": 3}
-		return times, byProcess
+	// Background daemons ONLY (Spotlight indexing + cloud sync) → informational,
+	// NOT a freeze. This is the exact case that used to scream Critical.
+	hangReportScanFn = func() []hangEvent {
+		return []hangEvent{
+			{"spotlightknowledged", day(0)}, {"spotlightknowledged", day(1)},
+			{"fileproviderd", day(2)}, {"fileproviderd", day(3)},
+		}
+	}
+	report = &DoctorReport{}
+	checkAppHangs(report)
+	f = findByCheck(report.Findings, "App Hangs (7d)")
+	if f.Severity != SeverityInfo || f.Trend {
+		t.Errorf("daemon-only: got severity=%v trend=%v, want Info/false (housekeeping, not freezes)", f.Severity, f.Trend)
+	}
+	if !strings.Contains(f.Message, "not your apps") {
+		t.Errorf("daemon-only message %q should make clear it isn't the user's apps", f.Message)
+	}
+
+	// A single real user app, clustered in one day → transient Warn.
+	hangReportScanFn = func() []hangEvent {
+		return []hangEvent{
+			{"Dock", day(1)}, {"Dock", day(1).Add(time.Hour)}, {"Dock", day(1).Add(2 * time.Hour)},
+		}
 	}
 	report = &DoctorReport{}
 	checkAppHangs(report)
@@ -892,14 +916,25 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 func TestCheckAppHangs_NoneIsHealthy(t *testing.T) {
 	old := hangReportScanFn
 	defer func() { hangReportScanFn = old }()
-	hangReportScanFn = func() (times []time.Time, byProcess map[string]int) {
-		return nil, map[string]int{}
-	}
+	hangReportScanFn = func() []hangEvent { return nil }
 	report := &DoctorReport{}
 	checkAppHangs(report)
 	f := findByCheck(report.Findings, "App Hangs (7d)")
 	if f == nil || f.Severity != SeverityOK {
 		t.Errorf("clean host: got %+v, want a single OK App Hangs finding", f)
+	}
+}
+
+func TestIsBackgroundCPUDaemon(t *testing.T) {
+	for _, p := range []string{"spotlightknowledged", "fileproviderd", "mds_stores", "cloudd", "photoanalysisd"} {
+		if !isBackgroundCPUDaemon(p) {
+			t.Errorf("%q should be classed as background housekeeping", p)
+		}
+	}
+	for _, p := range []string{"Chrome", "Slack", "com.apple.WebKit.WebContent", "Dock", "Code Helper"} {
+		if isBackgroundCPUDaemon(p) {
+			t.Errorf("%q is user-facing and must NOT be classed as background", p)
+		}
 	}
 }
 
@@ -947,23 +982,29 @@ func TestRemediationCommand(t *testing.T) {
 		check, detail string
 		sev           DiagnosticSeverity
 		want          string
+		wantKind      FixKind
 	}{
-		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean"},
-		{"App Hangs (7d)", "spotlightknowledged ×11", SeverityCritical, "sirsi spotlight-exclude ~/Development"},
-		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi guard"},
-		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard"},
-		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution"},
-		{"Swap Usage", "", SeverityWarn, ""}, // warn swap → no one-click fix
-		{"Swap Usage", "", SeverityCritical, "sirsi guard"},
-		{"RAM Pressure", "", SeverityOK, ""}, // healthy → no fix
-		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development"},
-		{"Thread Leaks", "", SeverityCritical, "sirsi guard"},
-		{"Sirsi Processes", "", SeverityInfo, ""}, // informational → no fix
+		// App Crashes reports are caution-tier → safe `clean` left them, so the
+		// count never dropped. --include-caution clears the backlog (instant).
+		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean --include-caution", FixInstant},
+		{"App Hangs (7d)", "Chrome ×6", SeverityCritical, "sirsi guard", FixRelief},
+		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi guard", FixRelief},
+		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution", FixInstant},
+		{"Swap Usage", "", SeverityWarn, "", FixRelief}, // warn swap → no one-click cmd, but classed relief
+		{"Swap Usage", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"RAM Pressure", "", SeverityOK, "", FixRelief}, // healthy → no cmd; kind still relief
+		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development", FixGuidance},
+		{"Thread Leaks", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"Sirsi Processes", "", SeverityInfo, "", ""}, // informational → no fix, no kind
 	}
 	for _, c := range cases {
 		f := DiagnosticFinding{Check: c.check, Detail: c.detail, Severity: c.sev}
 		if got := remediationCommand(f); got != c.want {
 			t.Errorf("remediationCommand(%q/%v) = %q, want %q", c.check, c.sev, got, c.want)
+		}
+		if got := remediationKind(f); got != c.wantKind {
+			t.Errorf("remediationKind(%q/%v) = %q, want %q", c.check, c.sev, got, c.wantKind)
 		}
 	}
 }

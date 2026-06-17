@@ -41,8 +41,9 @@ struct DiagFinding: Decodable, Identifiable {
     let detail: String?
     let trend: Bool?
     let fix: String?   // safe CLI command that resolves this finding (nil = informational)
+    let fixKind: String?  // "instant" | "relief" | "guidance" — how honest to be about the fix
 
-    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix }
+    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind }
 }
 
 // DiagReport carries the findings plus the CANONICAL roll-up `status`
@@ -158,7 +159,7 @@ final class SirsiEngine: ObservableObject {
         checkFDA()
         guard let data = FileManager.default.contents(atPath: scanPath),
               let res = try? JSONDecoder().decode(ScanResult.self, from: data) else {
-            onTitle?("𓁢")
+            onTitle?("")   // no scan yet → just the Eye, no waste figure
             return
         }
         findings = res.findings
@@ -167,9 +168,22 @@ final class SirsiEngine: ObservableObject {
         onTitle?(titleLabel())
     }
 
+    // Below this, reclaimable waste is trivial and must NOT colour the glyph amber
+    // (230 KB of caches is not "attention"). Only meaningful reclaim counts. 1 GB.
+    static let wasteThreshold: Int64 = 1_073_741_824
+
+    // The menubar glyph is the OVERALL at-a-glance light: the worse of system
+    // health (the green/amber/red rubric) and whether there is MEANINGFUL
+    // reclaimable waste. The waste figure is shown only when it's worth a click.
     func titleLabel() -> String {
-        safeBytes > 0 ? "🟡 \(Self.human(safeBytes))" : "🟢 Clean"
+        return safeBytes >= Self.wasteThreshold ? Self.human(safeBytes) : ""
     }
+
+    // titleStatus is the health band the menu-bar Eye is TINTED with — that tint
+    // (set in AppDelegate) carries green/amber/red, so the icon is a branded mark
+    // (Horus, the watchful protector) and NOT a bare colored dot. Defaults to
+    // healthy until the first diagnose populates healthStatus.
+    var titleStatus: String { healthStatus.isEmpty ? "green" : healthStatus }
 
     // rescan runs a fresh `sirsi scan`, then reloads.
     func rescan() async {
@@ -197,6 +211,7 @@ final class SirsiEngine: ObservableObject {
         if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
             health = rep.findings
             healthStatus = rep.status ?? "green"
+            onTitle?(titleLabel())   // health now drives the glyph, not just waste
         }
         healthLoading = false
     }

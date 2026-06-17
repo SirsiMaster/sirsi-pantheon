@@ -76,6 +76,52 @@ type DiagnosticFinding struct {
 	// no one-click fix). Carried on the finding so EVERY surface (menubar Horus,
 	// SessionStart, dashboard) can offer resolution — not just the Insight panel.
 	Fix string `json:"fix,omitempty"`
+	// FixKind tells a surface how HONEST to be about the Fix button — so it never
+	// promises an instant cure for a historical record (the "I clicked Fix and the
+	// status stayed the same" trap). See the FixKind constants.
+	FixKind FixKind `json:"fixKind,omitempty"`
+}
+
+// FixKind classifies what running a finding's Fix actually does, so surfaces can
+// label the action truthfully instead of always saying "Fix it":
+//
+//	FixInstant   — the command provably changes this finding's state NOW (clears a
+//	               report backlog, replaces a drifted binary, frees disk). Re-running
+//	               diagnose after it WILL show the finding cleared or downgraded.
+//	FixRelief    — the command relieves a LIVE cause (renice a hog, ease memory
+//	               pressure). A finding tagged (7d) is a HISTORICAL count that cannot
+//	               drop retroactively; relief stops it growing and it decays as clean
+//	               days pass. Re-verify may show "still present (history)" — honestly.
+//	FixGuidance  — the command only acts when the condition is live right now (a
+//	               Spotlight storm in progress); otherwise it prints guidance and is
+//	               a no-op. Surfaces must NOT label this "Fix it".
+type FixKind string
+
+const (
+	FixInstant  FixKind = "instant"
+	FixRelief   FixKind = "relief"
+	FixGuidance FixKind = "guidance"
+)
+
+// remediationKind classifies a finding's Fix so surfaces label it honestly.
+// Kept in lockstep with remediationCommand: same Check cases, same gate.
+func remediationKind(f DiagnosticFinding) FixKind {
+	switch f.Check {
+	case "binary-drift":
+		return FixInstant // self-update replaces the drifted binary
+	case "App Crashes (7d)":
+		return FixInstant // clearing the crash-report backlog drops the count
+	case "Disk Space":
+		return FixInstant // clean frees real bytes
+	case "Spotlight Storm":
+		return FixGuidance // acts only during a live storm; else prints guidance
+	case "App Hangs (7d)":
+		return FixRelief // a real user-app freeze → renice the live hog; trend decays
+	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)",
+		"Thread Leaks", "Swap Usage":
+		return FixRelief // eases the live cause; trend counts decay, not drop
+	}
+	return ""
 }
 
 // remediationCommand returns the safe, already-gated CLI command that resolves a
@@ -88,19 +134,20 @@ func remediationCommand(f DiagnosticFinding) string {
 		return "sirsi self-update" // heal the self-crasher
 	case "App Crashes (7d)":
 		if warn {
-			return "sirsi clean" // clear the crash backlog
+			// Crash reports are caution-tier — safe `clean` leaves them, so the
+			// count never dropped (the "Fix did nothing" bug). --include-caution
+			// clears the report backlog so the 7d count actually falls.
+			return "sirsi clean --include-caution"
 		}
 	case "Spotlight Storm":
 		if warn {
 			return "sirsi spotlight-exclude ~/Development"
 		}
 	case "App Hangs (7d)":
+		// Only real user-facing app freezes reach Warn+ now (background-daemon CPU
+		// noise stays Info, no one-click). The remedy is to relieve the live hog.
 		if warn {
-			d := strings.ToLower(f.Detail)
-			if strings.Contains(d, "spotlight") || strings.Contains(d, "mds") {
-				return "sirsi spotlight-exclude ~/Development"
-			}
-			return "sirsi guard" // deprioritize the saturating hog
+			return "sirsi guard"
 		}
 	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
 		if warn {
@@ -271,9 +318,11 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
-	// Attach the safe remediation to each finding so every surface can resolve it.
+	// Attach the safe remediation + its honesty class to each finding so every
+	// surface can resolve it AND label the action truthfully.
 	for i := range report.Findings {
 		report.Findings[i].Fix = remediationCommand(report.Findings[i])
+		report.Findings[i].FixKind = remediationKind(report.Findings[i])
 	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
@@ -628,11 +677,10 @@ func crashEventFinding(check, noun, trendCause string, times []time.Time, now ti
 	return f
 }
 
-// hangReportScanFn returns the times + per-process counts of macOS UI-hang and
-// CPU-saturation reports — the system's record of main-thread stalls (beachballs,
-// frozen UI, dropped frames) and processes that pegged the CPU instead of
-// dispersing work across threads. Injectable (Rule A16) so the trend classifier
-// is testable without real reports on the host.
+// hangReportScanFn returns one record per macOS UI-hang / CPU-saturation report
+// (process + time) — the system's record of main-thread stalls (beachballs,
+// frozen UI, dropped frames) and processes that pegged the CPU. Injectable (Rule
+// A16) so the trend classifier is testable without real reports on the host.
 var hangReportScanFn = defaultHangReportScan
 
 // isHangReport matches the report kinds that signal a stall or saturation:
@@ -664,10 +712,45 @@ func hangReportProcess(name string) string {
 	return name
 }
 
+// hangEvent is one hang/spin/CPU-saturation report: which process, and when.
+// Tagging the process per event lets checkAppHangs separate REAL user-facing app
+// freezes from background OS housekeeping (Spotlight indexing, cloud sync) that
+// routinely trips CPU budgets without the user ever seeing a beachball.
+type hangEvent struct {
+	process string
+	when    time.Time
+}
+
+// backgroundCPUDaemons are macOS system daemons that legitimately exceed CPU
+// budgets during routine housekeeping (indexing, cloud/file sync, media
+// analysis, backup). A .cpu_resource.diag from one of these is NOT the user's app
+// hanging — surfacing it as a "freeze/beachball" alarms about something the user
+// never experienced. Matched case-insensitively as a substring. Deliberately
+// omits short ambiguous tokens (e.g. "bird") that could collide with app names.
+var backgroundCPUDaemons = []string{
+	"spotlightknowledged", "corespotlightd", "knowledge-agent",
+	"mds_stores", "mdworker", "mdsync", "mdbulkimport",
+	"fileproviderd", "cloudd", "brctld", "syncdefaultsd",
+	"photoanalysisd", "mediaanalysisd", "photolibraryd", "amplibraryagent",
+	"backupd", "suggestd", "parsecd", "assistantd", "nsurlsessiond", "triald",
+}
+
+// isBackgroundCPUDaemon reports whether a process is OS housekeeping rather than
+// a user-facing app the user would feel hang.
+func isBackgroundCPUDaemon(process string) bool {
+	p := strings.ToLower(process)
+	for _, d := range backgroundCPUDaemons {
+		if strings.Contains(p, d) {
+			return true
+		}
+	}
+	return false
+}
+
 // defaultHangReportScan reads the same DiagnosticReports dirs as the crash scan
-// and returns hang/spin/CPU-saturation event times + a per-process tally.
-func defaultHangReportScan() (times []time.Time, byProcess map[string]int) {
-	byProcess = map[string]int{}
+// and returns one hangEvent per report (process + modtime).
+func defaultHangReportScan() []hangEvent {
+	var events []hangEvent
 	seen := map[string]bool{}
 	for _, dir := range appCrashDirsFn() {
 		entries, err := os.ReadDir(dir)
@@ -687,11 +770,10 @@ func defaultHangReportScan() (times []time.Time, byProcess map[string]int) {
 			if err != nil {
 				continue
 			}
-			times = append(times, info.ModTime())
-			byProcess[hangReportProcess(name)]++
+			events = append(events, hangEvent{process: hangReportProcess(name), when: info.ModTime()})
 		}
 	}
-	return times, byProcess
+	return events
 }
 
 // topOffenders renders the worst-N process tally as "name ×count | name ×count".
@@ -723,25 +805,56 @@ func topOffenders(byProcess map[string]int, n int) string {
 // checks): a clustered one-off stays Warn; recurrence across the window escalates
 // to Critical. The Detail names the worst offenders so the cause is actionable.
 func checkAppHangs(report *DoctorReport) {
-	times, byProcess := hangReportScanFn()
+	events := hangReportScanFn()
 	now := time.Now()
-	count, activeDays, isTrend := classifyEventTrend(times, now)
+
+	// Separate REAL user-facing app freezes from background OS housekeeping. Only
+	// the former is a beachball the user actually felt; the latter (Spotlight
+	// indexing, cloud sync) routinely trips CPU budgets and must NOT be reported as
+	// "your apps are freezing" — that would alarm a user about a non-event.
+	var userTimes []time.Time
+	userByProc := map[string]int{}
+	daemonByProc := map[string]int{}
+	for _, e := range events {
+		if isBackgroundCPUDaemon(e.process) {
+			daemonByProc[e.process]++
+		} else {
+			userByProc[e.process]++
+			userTimes = append(userTimes, e.when)
+		}
+	}
+	daemonTotal := 0
+	for _, c := range daemonByProc {
+		daemonTotal += c
+	}
+
+	count, activeDays, isTrend := classifyEventTrend(userTimes, now)
 	f := DiagnosticFinding{Check: "App Hangs (7d)", ActiveDays: activeDays, Trend: isTrend}
 	switch {
-	case count == 0:
+	case count == 0 && daemonTotal == 0:
 		f.Severity = SeverityOK
 		f.Message = fmt.Sprintf("No UI hangs or CPU-saturation spikes in the last %d days", crashWindowDays)
+	case count == 0:
+		// Background daemons only — routine housekeeping, not app freezes. Stays
+		// informational (no alarm, scores zero) and is honest about the cause.
+		f.Severity = SeverityInfo
+		f.Message = fmt.Sprintf("No app freezes — %d background CPU-budget event(s) from system housekeeping (indexing/sync), not your apps", daemonTotal)
+		f.Detail = "Background only: " + topOffenders(daemonByProc, 3) + " — normal macOS maintenance. If Spotlight churns often, exclude busy folders from indexing."
 	case isTrend:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("%d hang/CPU-spike events across %d of %d days — sustained main-thread saturation (freezes, beachballs, dropped frames)",
+		f.Message = fmt.Sprintf("%d app freeze event(s) across %d of %d days — sustained main-thread saturation (beachballs, dropped frames)",
 			count, activeDays, crashWindowDays)
+		f.Detail = topOffenders(userByProc, 3)
 	default:
 		f.Severity = SeverityWarn
-		f.Message = fmt.Sprintf("%d hang/CPU-spike event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
+		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
 			count, crashWindowDays, activeDays)
+		f.Detail = topOffenders(userByProc, 3)
 	}
-	if len(byProcess) > 0 {
-		f.Detail = topOffenders(byProcess, 3)
+	// When real hangs coexist with background noise, say so — don't let daemon
+	// events inflate the offender list the user acts on.
+	if count > 0 && daemonTotal > 0 {
+		f.Detail += fmt.Sprintf("  (+%d background housekeeping events ignored: %s)", daemonTotal, topOffenders(daemonByProc, 2))
 	}
 	report.Findings = append(report.Findings, f)
 }
@@ -904,15 +1017,15 @@ func checkAppCrashes(report *DoctorReport) {
 	// Resolution pointer — these are mostly retired logs; Clean reclaims them
 	// (the crash_reports rule now reaches Retired/). The count is history, not a
 	// live emergency unless detectCrashloop fired above.
-	resolution := fmt.Sprintf("%d crash report(s) accumulated (top: %q ×%d). These are diagnostic logs, not live failures — reclaim them with: sirsi clean", len(crashes), top, topN)
+	resolution := fmt.Sprintf("%d crash report(s) accumulated (top: %q ×%d). These are diagnostic logs, not live failures — crash reports are caution-tier, so clear the backlog with: sirsi clean --include-caution", len(crashes), top, topN)
 	switch {
 	case len(crashes) > 10:
 		finding.Severity = SeverityWarn // history, not critical — was over-alarming
-		finding.Message = fmt.Sprintf("%d crash reports (7d) — top: %q (%d) · clear with `sirsi clean`", len(crashes), top, topN)
+		finding.Message = fmt.Sprintf("%d crash reports (7d) — top: %q (%d) · clear with `sirsi clean --include-caution`", len(crashes), top, topN)
 		finding.Detail = resolution
 	case len(crashes) > 0:
 		finding.Severity = SeverityWarn
-		finding.Message = fmt.Sprintf("%d crash report(s) (7d) — top: %q (%d) · clear with `sirsi clean`", len(crashes), top, topN)
+		finding.Message = fmt.Sprintf("%d crash report(s) (7d) — top: %q (%d) · clear with `sirsi clean --include-caution`", len(crashes), top, topN)
 		finding.Detail = resolution
 	default:
 		finding.Severity = SeverityOK

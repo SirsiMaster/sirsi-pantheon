@@ -98,12 +98,14 @@ struct HomeView: View {
             }
             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
 
-            // Status card
+            // Status card — only meaningful reclaim (≥ threshold) reads as waste;
+            // trivial caches read "Clean" so the surface never alarms on 230 KB.
             VStack(spacing: 4) {
-                Text(engine.safeBytes > 0 ? SirsiEngine.human(engine.safeBytes) : "Clean")
+                let hasWaste = engine.safeBytes >= SirsiEngine.wasteThreshold
+                Text(hasWaste ? SirsiEngine.human(engine.safeBytes) : "Clean")
                     .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(engine.safeBytes > 0 ? gold : .green)
-                Text(engine.safeBytes > 0 ? "safe to reclaim" : "nothing to clean")
+                    .foregroundStyle(hasWaste ? gold : .green)
+                Text(hasWaste ? "safe to reclaim" : "nothing significant to clean")
                     .font(.caption).foregroundStyle(.secondary)
                 if !engine.scannedAt.isEmpty {
                     Text("scanned \(engine.scannedAt)").font(.caption2).foregroundStyle(.tertiary)
@@ -123,7 +125,7 @@ struct HomeView: View {
 
                     NavigationLink { AnubisView(engine: engine) } label: {
                         DeityRow(glyph: "🐺", title: "Anubis — Hygiene",
-                                 detail: engine.safeBytes > 0 ? "\(engine.safe.count) items ready" : "clean")
+                                 detail: engine.safeBytes >= SirsiEngine.wasteThreshold ? "\(engine.safe.count) items ready" : "clean")
                     }.buttonStyle(.plain)
 
                     NavigationLink { HorusView(engine: engine) } label: {
@@ -412,6 +414,48 @@ struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
 
+    // The honesty class drives EVERY label so a 7-day history never wears an
+    // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
+    private var kind: String { finding.fixKind ?? "" }
+
+    private var fixIcon: String {
+        switch kind {
+        case "relief": return "gauge.with.dots.needle.bottom.50percent"
+        case "guidance": return "info.circle.fill"
+        default: return "wrench.and.screwdriver.fill"
+        }
+    }
+    private var fixSectionLabel: String {
+        switch kind {
+        case "relief": return "RELIEVE THE LIVE CAUSE"
+        case "guidance": return "HOW TO ADDRESS"
+        default: return "RESOLVE"
+        }
+    }
+    private var fixButtonLabel: String {
+        switch kind {
+        case "relief": return "Relieve the live cause"
+        case "guidance": return "Show how to address"
+        default: return "Fix it"
+        }
+    }
+    // The expectation set BEFORE the click — the heart of the honesty fix.
+    private var fixExpectation: String? {
+        switch kind {
+        case "relief":
+            return "This is a 7-day pattern — a record of what already happened. Relieving the live cause eases it now; the historical count decays as clean days pass, so it won't drop the instant you click."
+        case "guidance":
+            return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
+        case "instant":
+            if finding.check == "App Crashes (7d)" {
+                return "These are the last 7 days of crash reports. Clearing the backlog drops the count now — it won't stop future crashes, but the signal clears."
+            }
+            return nil   // disk / binary-drift: a plain instant fix, no caveat needed
+        default:
+            return nil
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: finding.check)
@@ -430,14 +474,29 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                     }
                     if let fix = finding.fix, !fix.isEmpty {
-                        Text("RESOLVE").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        // Honest framing BEFORE the click: a 7-day history must never
+                        // look like an instant cure — that's the "I clicked Fix and
+                        // nothing changed" trap. The banner sets the true expectation.
+                        if let note = fixExpectation {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: fixIcon).font(.caption)
+                                    .foregroundStyle(.secondary).padding(.top, 1)
+                                Text(note).font(.caption).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        }
+                        Text(fixSectionLabel).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                         NavigationLink {
-                            ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix))
+                            ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
+                                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
                         } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "wrench.and.screwdriver.fill")
+                                Image(systemName: fixIcon)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text("Fix it").font(.system(size: 12, weight: .semibold))
+                                    Text(fixButtonLabel).font(.system(size: 12, weight: .semibold))
                                     Text(fix).font(.caption2.monospaced())
                                         .foregroundStyle(Color.white.opacity(0.85))
                                 }
@@ -677,6 +736,11 @@ struct ResultView: View {
     @ObservedObject var engine: SirsiEngine
     let title: String
     let args: [String]
+    // When set, re-run diagnose after the fix ACTUALLY applies and report the real
+    // post-fix status of this finding — the proof that kills "it says it's fixing
+    // but the status stays the same." nil = a generic command run, no re-verify.
+    var reverifyCheck: String? = nil
+    var reverifyKind: String? = nil
 
     @State private var result: CommandResult?
     @State private var raw = ""
@@ -684,6 +748,8 @@ struct ResultView: View {
     @State private var applying = false
     @State private var pendingApply: CRAction?
     @State private var toast: String?
+    @State private var postFix: String?   // honest verdict after re-verify
+    @State private var didReverify = false // re-verify fires once (across load/apply paths)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -705,6 +771,17 @@ struct ResultView: View {
                     Text("Working…").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
+            if let pf = postFix {
+                Divider()
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: pf.hasPrefix("✓") ? "checkmark.seal.fill" : "info.circle.fill")
+                        .foregroundStyle(pf.hasPrefix("✓") ? .green : .secondary).padding(.top, 1)
+                    Text(pf).font(.caption).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }.padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Color.primary.opacity(0.03))
             }
             Divider()
             HStack {
@@ -813,6 +890,44 @@ struct ResultView: View {
             raw = CommandView.stripBanner(out); result = nil
         }
         loading = false
+        // If the command completed in one step (no Apply to follow — e.g. a relief
+        // or guidance command, not a clean preview), re-verify now. clean-family
+        // results carry next_actions, so we wait for apply() to mutate first.
+        if reverifyCheck != nil, (result?.nextActions.isEmpty ?? true) {
+            await reverify()
+        }
+    }
+
+    // reverify re-runs diagnose after a fix has actually run and reports the REAL
+    // status of this finding — resolved, or an honest reason it persists (a 7-day
+    // history cannot drop retroactively; guidance only bites a live issue).
+    private func reverify() async {
+        guard let check = reverifyCheck, !didReverify else { return }
+        didReverify = true
+        await engine.diagnose()
+        let still = engine.health.first { $0.check == check }
+        let now = Self.statusWord(engine.healthStatus)
+        if still == nil || still!.severity <= 1 {
+            postFix = "✓ Resolved — “\(check)” cleared. Overall health is now \(now)."
+        } else {
+            switch reverifyKind {
+            case "relief":
+                postFix = "Relief applied. “\(check)” is a 7-day history — it decays as clean days pass, so it won't clear the instant you click. Overall health: \(now)."
+            case "guidance":
+                postFix = "“\(check)” only clears when it's happening live. Nothing to undo this moment — the guidance above prevents it recurring. Overall health: \(now)."
+            default:
+                postFix = "Ran. “\(check)” is still present — overall health: \(now)."
+            }
+        }
+    }
+
+    private static func statusWord(_ s: String) -> String {
+        switch s {
+        case "red": return "🔴 red"
+        case "amber": return "🟡 amber"
+        case "green": return "🟢 green"
+        default: return s
+        }
     }
 
     // apply runs a --confirm action, feeding the CLI's [y/N] prompt, then RE-SCANS
@@ -841,6 +956,9 @@ struct ResultView: View {
         applying = false
         await load()
         engine.refresh()
+        // The mutation just landed — re-verify the finding's REAL status so the
+        // user sees what actually changed, not an unconditional "fixed."
+        if reverifyCheck != nil { await reverify() }
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed

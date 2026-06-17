@@ -13,6 +13,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = SirsiEngine()
     private var refreshTimer: Timer?
 
+    // The Eye of Horus (wedjat) — the watchful protector, and unmistakably Sirsi's
+    // mark, not a stock eyeball. Drawn as a vector NSBezierPath into a template
+    // NSImage (so contentTintColor drives the health color and it adapts to
+    // light/dark + Retina). All in code → guaranteed to render, no bundled asset.
+    // Authored in a 100×80 design space, uniform-scaled; pupil filled, rest stroked.
+    static let eyeImage: NSImage? = {
+        let w: CGFloat = 20, h: CGFloat = 16
+        let img = NSImage(size: NSSize(width: w, height: h), flipped: false) { _ in
+            let sx = w / 100, sy = h / 80
+            func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * sx, y: y * sy) }
+            // Append a quadratic (SVG-style) segment as a cubic, since NSBezierPath
+            // is cubic-only.
+            func quad(_ path: NSBezierPath, _ from: NSPoint, _ c: NSPoint, _ to: NSPoint) {
+                let c1 = NSPoint(x: from.x + 2.0 / 3 * (c.x - from.x), y: from.y + 2.0 / 3 * (c.y - from.y))
+                let c2 = NSPoint(x: to.x + 2.0 / 3 * (c.x - to.x), y: to.y + 2.0 / 3 * (c.y - to.y))
+                path.curve(to: to, controlPoint1: c1, controlPoint2: c2)
+            }
+            NSColor.black.setStroke()
+            NSColor.black.setFill()
+
+            let line = NSBezierPath()
+            line.lineWidth = 1.35
+            line.lineCapStyle = .round
+            line.lineJoinStyle = .round
+            // eyebrow
+            line.move(to: P(22, 56)); quad(line, P(22, 56), P(50, 74), P(82, 54))
+            // upper eyelid
+            line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 56), P(78, 42))
+            // lower eyelid (closes the almond)
+            line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 26), P(78, 42))
+            // the elongated outer corner extending toward the temple
+            line.move(to: P(78, 42)); line.line(to: P(95, 45))
+            // the descending straight marking (the "teardrop")
+            line.move(to: P(40, 28)); line.line(to: P(30, 5))
+            // the spiral/curl (the falcon-cheek marking)
+            line.move(to: P(60, 30)); quad(line, P(60, 30), P(70, 10), P(84, 14)); quad(line, P(84, 14), P(92, 16), P(86, 26))
+            line.stroke()
+
+            // pupil
+            let r: CGFloat = 6.5 * sx
+            let c = P(45, 41)
+            NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
+            return true
+        }
+        img.isTemplate = true
+        return img
+    }()
+
+    // tint maps the health band to the Eye's color. Healthy → nil = native
+    // monochrome (the icon sits quiet until something actually needs attention).
+    static func tint(for status: String) -> NSColor? {
+        switch status {
+        case "red":   return .systemRed
+        case "amber": return .systemYellow
+        default:      return nil
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Proactively register with TCC so "Sirsi Menubar" already has a row in
         // the Full Disk Access list before the user ever clicks the Grant button.
@@ -21,7 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.title = "𓁢"
+            // Branded, guaranteed-to-render mark: the Eye (Horus, the watchful
+            // protector) as an SF Symbol TEMPLATE image — vector, adapts to the
+            // menu-bar height + light/dark, and tintable. Its TINT carries health
+            // (monochrome when healthy; amber/red only when something needs you),
+            // so Pantheon is no longer "just a colored dot." ADR-030.
+            button.image = Self.eyeImage
+            button.imagePosition = .imageOnly
             button.action = #selector(togglePopover(_:))
             button.target = self
         }
@@ -34,7 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         engine.onTitle = { [weak self] label in
-            self?.statusItem.button?.title = label
+            guard let self = self, let button = self.statusItem.button else { return }
+            // The Eye is always the icon; the waste figure (≥1 GB) rides beside it.
+            button.title = label.isEmpty ? "" : " \(label)"
+            button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
+            // Tint = health band. nil → native menu-bar monochrome (healthy).
+            button.contentTintColor = Self.tint(for: self.engine.titleStatus)
         }
         engine.refresh()
 
