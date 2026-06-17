@@ -901,7 +901,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		Command:    "sirsi diagnose",
 		BriefTitle: "Pantheon System Brief",
 		Summary:    fmt.Sprintf("%d signals checked", len(report.Findings)),
-		Status:     doctorStatus(report.Score),
+		Status:     doctorStatus(report),
 		Confidence: "High",
 		Duration:   elapsed,
 	}
@@ -979,13 +979,9 @@ func remediationFor(check string) (string, string) {
 	}
 }
 
-func doctorStatus(score int) string {
-	switch {
-	case score < 50:
-		return "Critical"
-	case score < 75:
-		return "Needs Attention"
-	default:
-		return "Operational"
-	}
+// doctorStatus renders the canonical green/amber/red roll-up (the rubric lives in
+// guard.HealthStatus) for a CommandResult Status line. Driven by report.Status,
+// not a raw score threshold, so historical trends don't read as "Critical".
+func doctorStatus(r *guard.DoctorReport) string {
+	return r.Status.Icon() + " " + r.Status.Label()
 }
