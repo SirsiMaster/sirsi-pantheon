@@ -116,11 +116,7 @@ func remediationKind(f DiagnosticFinding) FixKind {
 	case "Spotlight Storm":
 		return FixGuidance // acts only during a live storm; else prints guidance
 	case "App Hangs (7d)":
-		d := strings.ToLower(f.Detail)
-		if strings.Contains(d, "spotlight") || strings.Contains(d, "mds") {
-			return FixGuidance // spotlight-exclude only bites a live storm
-		}
-		return FixRelief // renice the live hog; the 7d count decays over time
+		return FixRelief // a real user-app freeze → renice the live hog; trend decays
 	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)",
 		"Thread Leaks", "Swap Usage":
 		return FixRelief // eases the live cause; trend counts decay, not drop
@@ -148,12 +144,10 @@ func remediationCommand(f DiagnosticFinding) string {
 			return "sirsi spotlight-exclude ~/Development"
 		}
 	case "App Hangs (7d)":
+		// Only real user-facing app freezes reach Warn+ now (background-daemon CPU
+		// noise stays Info, no one-click). The remedy is to relieve the live hog.
 		if warn {
-			d := strings.ToLower(f.Detail)
-			if strings.Contains(d, "spotlight") || strings.Contains(d, "mds") {
-				return "sirsi spotlight-exclude ~/Development"
-			}
-			return "sirsi guard" // deprioritize the saturating hog
+			return "sirsi guard"
 		}
 	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
 		if warn {
@@ -683,11 +677,10 @@ func crashEventFinding(check, noun, trendCause string, times []time.Time, now ti
 	return f
 }
 
-// hangReportScanFn returns the times + per-process counts of macOS UI-hang and
-// CPU-saturation reports — the system's record of main-thread stalls (beachballs,
-// frozen UI, dropped frames) and processes that pegged the CPU instead of
-// dispersing work across threads. Injectable (Rule A16) so the trend classifier
-// is testable without real reports on the host.
+// hangReportScanFn returns one record per macOS UI-hang / CPU-saturation report
+// (process + time) — the system's record of main-thread stalls (beachballs,
+// frozen UI, dropped frames) and processes that pegged the CPU. Injectable (Rule
+// A16) so the trend classifier is testable without real reports on the host.
 var hangReportScanFn = defaultHangReportScan
 
 // isHangReport matches the report kinds that signal a stall or saturation:
@@ -719,10 +712,45 @@ func hangReportProcess(name string) string {
 	return name
 }
 
+// hangEvent is one hang/spin/CPU-saturation report: which process, and when.
+// Tagging the process per event lets checkAppHangs separate REAL user-facing app
+// freezes from background OS housekeeping (Spotlight indexing, cloud sync) that
+// routinely trips CPU budgets without the user ever seeing a beachball.
+type hangEvent struct {
+	process string
+	when    time.Time
+}
+
+// backgroundCPUDaemons are macOS system daemons that legitimately exceed CPU
+// budgets during routine housekeeping (indexing, cloud/file sync, media
+// analysis, backup). A .cpu_resource.diag from one of these is NOT the user's app
+// hanging — surfacing it as a "freeze/beachball" alarms about something the user
+// never experienced. Matched case-insensitively as a substring. Deliberately
+// omits short ambiguous tokens (e.g. "bird") that could collide with app names.
+var backgroundCPUDaemons = []string{
+	"spotlightknowledged", "corespotlightd", "knowledge-agent",
+	"mds_stores", "mdworker", "mdsync", "mdbulkimport",
+	"fileproviderd", "cloudd", "brctld", "syncdefaultsd",
+	"photoanalysisd", "mediaanalysisd", "photolibraryd", "amplibraryagent",
+	"backupd", "suggestd", "parsecd", "assistantd", "nsurlsessiond", "triald",
+}
+
+// isBackgroundCPUDaemon reports whether a process is OS housekeeping rather than
+// a user-facing app the user would feel hang.
+func isBackgroundCPUDaemon(process string) bool {
+	p := strings.ToLower(process)
+	for _, d := range backgroundCPUDaemons {
+		if strings.Contains(p, d) {
+			return true
+		}
+	}
+	return false
+}
+
 // defaultHangReportScan reads the same DiagnosticReports dirs as the crash scan
-// and returns hang/spin/CPU-saturation event times + a per-process tally.
-func defaultHangReportScan() (times []time.Time, byProcess map[string]int) {
-	byProcess = map[string]int{}
+// and returns one hangEvent per report (process + modtime).
+func defaultHangReportScan() []hangEvent {
+	var events []hangEvent
 	seen := map[string]bool{}
 	for _, dir := range appCrashDirsFn() {
 		entries, err := os.ReadDir(dir)
@@ -742,11 +770,10 @@ func defaultHangReportScan() (times []time.Time, byProcess map[string]int) {
 			if err != nil {
 				continue
 			}
-			times = append(times, info.ModTime())
-			byProcess[hangReportProcess(name)]++
+			events = append(events, hangEvent{process: hangReportProcess(name), when: info.ModTime()})
 		}
 	}
-	return times, byProcess
+	return events
 }
 
 // topOffenders renders the worst-N process tally as "name ×count | name ×count".
@@ -778,25 +805,56 @@ func topOffenders(byProcess map[string]int, n int) string {
 // checks): a clustered one-off stays Warn; recurrence across the window escalates
 // to Critical. The Detail names the worst offenders so the cause is actionable.
 func checkAppHangs(report *DoctorReport) {
-	times, byProcess := hangReportScanFn()
+	events := hangReportScanFn()
 	now := time.Now()
-	count, activeDays, isTrend := classifyEventTrend(times, now)
+
+	// Separate REAL user-facing app freezes from background OS housekeeping. Only
+	// the former is a beachball the user actually felt; the latter (Spotlight
+	// indexing, cloud sync) routinely trips CPU budgets and must NOT be reported as
+	// "your apps are freezing" — that would alarm a user about a non-event.
+	var userTimes []time.Time
+	userByProc := map[string]int{}
+	daemonByProc := map[string]int{}
+	for _, e := range events {
+		if isBackgroundCPUDaemon(e.process) {
+			daemonByProc[e.process]++
+		} else {
+			userByProc[e.process]++
+			userTimes = append(userTimes, e.when)
+		}
+	}
+	daemonTotal := 0
+	for _, c := range daemonByProc {
+		daemonTotal += c
+	}
+
+	count, activeDays, isTrend := classifyEventTrend(userTimes, now)
 	f := DiagnosticFinding{Check: "App Hangs (7d)", ActiveDays: activeDays, Trend: isTrend}
 	switch {
-	case count == 0:
+	case count == 0 && daemonTotal == 0:
 		f.Severity = SeverityOK
 		f.Message = fmt.Sprintf("No UI hangs or CPU-saturation spikes in the last %d days", crashWindowDays)
+	case count == 0:
+		// Background daemons only — routine housekeeping, not app freezes. Stays
+		// informational (no alarm, scores zero) and is honest about the cause.
+		f.Severity = SeverityInfo
+		f.Message = fmt.Sprintf("No app freezes — %d background CPU-budget event(s) from system housekeeping (indexing/sync), not your apps", daemonTotal)
+		f.Detail = "Background only: " + topOffenders(daemonByProc, 3) + " — normal macOS maintenance. If Spotlight churns often, exclude busy folders from indexing."
 	case isTrend:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("%d hang/CPU-spike events across %d of %d days — sustained main-thread saturation (freezes, beachballs, dropped frames)",
+		f.Message = fmt.Sprintf("%d app freeze event(s) across %d of %d days — sustained main-thread saturation (beachballs, dropped frames)",
 			count, activeDays, crashWindowDays)
+		f.Detail = topOffenders(userByProc, 3)
 	default:
 		f.Severity = SeverityWarn
-		f.Message = fmt.Sprintf("%d hang/CPU-spike event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
+		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
 			count, crashWindowDays, activeDays)
+		f.Detail = topOffenders(userByProc, 3)
 	}
-	if len(byProcess) > 0 {
-		f.Detail = topOffenders(byProcess, 3)
+	// When real hangs coexist with background noise, say so — don't let daemon
+	// events inflate the offender list the user acts on.
+	if count > 0 && daemonTotal > 0 {
+		f.Detail += fmt.Sprintf("  (+%d background housekeeping events ignored: %s)", daemonTotal, topOffenders(daemonByProc, 2))
 	}
 	report.Findings = append(report.Findings, f)
 }
