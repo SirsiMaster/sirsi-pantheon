@@ -3,6 +3,8 @@ package insight
 import (
 	"sort"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 func TestMapDiagSeverity(t *testing.T) {
@@ -48,5 +50,43 @@ func TestBuildIsDeterministicAndAIFree(t *testing.T) {
 	}
 	if p.Worst != maxSev {
 		t.Errorf("Build().Worst = %d, want %d", p.Worst, maxSev)
+	}
+}
+
+func TestIsSpotlightOffender(t *testing.T) {
+	yes := []string{"spotlightknowledged ×11 | FPCKService ×1", "mds_stores ×3", "mdworker ×2"}
+	no := []string{"Google Chrome ×4 | Slack ×2", ""}
+	for _, d := range yes {
+		if !isSpotlightOffender(d) {
+			t.Errorf("isSpotlightOffender(%q) = false, want true", d)
+		}
+	}
+	for _, d := range no {
+		if isSpotlightOffender(d) {
+			t.Errorf("isSpotlightOffender(%q) = true, want false", d)
+		}
+	}
+}
+
+func TestHorusActions_AppHangsRelief(t *testing.T) {
+	// A Spotlight indexer offender → the Spotlight-exclude relief (renice would
+	// fail on a root daemon).
+	f := guard.DiagnosticFinding{Check: "App Hangs (7d)", Severity: guard.SeverityCritical,
+		Message: "17 hang/CPU-spike events", Detail: "spotlightknowledged ×11"}
+	acts := horusActions(f, 3)
+	if len(acts) != 1 || acts[0].Command != "sirsi spotlight-exclude ~/Development" {
+		t.Fatalf("spotlight hang relief: got %+v, want spotlight-exclude", acts)
+	}
+
+	// A normal CPU hog → guard's renice throttler.
+	f.Detail = "Google Chrome Helper ×6"
+	acts = horusActions(f, 3)
+	if len(acts) != 1 || acts[0].Command != "sirsi guard" {
+		t.Fatalf("generic hang relief: got %+v, want sirsi guard", acts)
+	}
+
+	// Healthy (OK severity) → no action.
+	if a := horusActions(guard.DiagnosticFinding{Check: "App Hangs (7d)", Severity: guard.SeverityOK}, 0); len(a) != 0 {
+		t.Errorf("healthy hangs should yield no action, got %+v", a)
 	}
 }
