@@ -117,6 +117,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		{"Spotlight Storm", func() { checkSpotlightStorm(p, report) }},
 		{"Crash Logs", func() { checkRecentCrashLogs(report) }},
 		{"App Crashes", func() { checkAppCrashes(report) }},
+		{"App Hangs", func() { checkAppHangs(report) }},
 		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
 	}
 
@@ -484,6 +485,124 @@ func crashEventFinding(check, noun, trendCause string, times []time.Time, now ti
 			count, noun, crashWindowDays, activeDays)
 	}
 	return f
+}
+
+// hangReportScanFn returns the times + per-process counts of macOS UI-hang and
+// CPU-saturation reports — the system's record of main-thread stalls (beachballs,
+// frozen UI, dropped frames) and processes that pegged the CPU instead of
+// dispersing work across threads. Injectable (Rule A16) so the trend classifier
+// is testable without real reports on the host.
+var hangReportScanFn = defaultHangReportScan
+
+// isHangReport matches the report kinds that signal a stall or saturation:
+//   - .hang / .spin   — spindumps: the main thread stalled (a UI hang/beachball)
+//   - .cpu_resource.diag — a process exceeded a sustained-CPU budget (the
+//     "main-thread bulging instead of multithread dispersion" signature; on
+//     macOS 26 this is the dominant on-disk evidence of a runaway/saturating app)
+func isHangReport(name string) bool {
+	return strings.HasSuffix(name, ".hang") ||
+		strings.HasSuffix(name, ".spin") ||
+		strings.HasSuffix(name, ".cpu_resource.diag")
+}
+
+// hangReportProcess pulls the offending process from a report filename of the
+// form "<process>_<YYYY-MM-DD-HHMMSS>_<host>.<ext>" or "<process>-<date>.<ext>".
+func hangReportProcess(name string) string {
+	for _, s := range []string{".cpu_resource.diag", ".wakeups_resource.diag", ".hang", ".spin", ".diag"} {
+		name = strings.TrimSuffix(name, s)
+	}
+	// The process is the leading token before the first date stamp (_20.. / -20..).
+	for _, sep := range []string{"_20", "-20"} {
+		if i := strings.Index(name, sep); i > 0 {
+			return name[:i]
+		}
+	}
+	if i := strings.IndexAny(name, "_-"); i > 0 {
+		return name[:i]
+	}
+	return name
+}
+
+// defaultHangReportScan reads the same DiagnosticReports dirs as the crash scan
+// and returns hang/spin/CPU-saturation event times + a per-process tally.
+func defaultHangReportScan() (times []time.Time, byProcess map[string]int) {
+	byProcess = map[string]int{}
+	seen := map[string]bool{}
+	for _, dir := range appCrashDirsFn() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !isHangReport(name) || seen[name] {
+				continue
+			}
+			seen[name] = true
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			times = append(times, info.ModTime())
+			byProcess[hangReportProcess(name)]++
+		}
+	}
+	return times, byProcess
+}
+
+// topOffenders renders the worst-N process tally as "name ×count | name ×count".
+func topOffenders(byProcess map[string]int, n int) string {
+	type pc struct {
+		p string
+		c int
+	}
+	list := make([]pc, 0, len(byProcess))
+	for p, c := range byProcess {
+		list = append(list, pc{p, c})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].c != list[j].c {
+			return list[i].c > list[j].c
+		}
+		return list[i].p < list[j].p
+	})
+	parts := make([]string, 0, n)
+	for i := 0; i < len(list) && i < n; i++ {
+		parts = append(parts, fmt.Sprintf("%s ×%d", list[i].p, list[i].c))
+	}
+	return strings.Join(parts, " | ")
+}
+
+// checkAppHangs surfaces UI hangs and CPU-saturation spikes — the user-facing
+// "freeze / beachball / stutter / dropped-frame" pathology that hits gamers and
+// productivity users as hard as developers. Trend-aware (parity with the crash
+// checks): a clustered one-off stays Warn; recurrence across the window escalates
+// to Critical. The Detail names the worst offenders so the cause is actionable.
+func checkAppHangs(report *DoctorReport) {
+	times, byProcess := hangReportScanFn()
+	now := time.Now()
+	count, activeDays, isTrend := classifyEventTrend(times, now)
+	f := DiagnosticFinding{Check: "App Hangs (7d)", ActiveDays: activeDays, Trend: isTrend}
+	switch {
+	case count == 0:
+		f.Severity = SeverityOK
+		f.Message = fmt.Sprintf("No UI hangs or CPU-saturation spikes in the last %d days", crashWindowDays)
+	case isTrend:
+		f.Severity = SeverityCritical
+		f.Message = fmt.Sprintf("%d hang/CPU-spike events across %d of %d days — sustained main-thread saturation (freezes, beachballs, dropped frames)",
+			count, activeDays, crashWindowDays)
+	default:
+		f.Severity = SeverityWarn
+		f.Message = fmt.Sprintf("%d hang/CPU-spike event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
+			count, crashWindowDays, activeDays)
+	}
+	if len(byProcess) > 0 {
+		f.Detail = topOffenders(byProcess, 3)
+	}
+	report.Findings = append(report.Findings, f)
 }
 
 // appCrash is a single userspace crash report (EXC_CRASH / SIGABRT etc.).

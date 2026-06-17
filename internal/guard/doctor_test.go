@@ -797,3 +797,97 @@ func TestCheckRecentCrashLogs_NoneIsHealthy(t *testing.T) {
 		}
 	}
 }
+
+func TestIsHangReport(t *testing.T) {
+	yes := []string{
+		"WindowServer_2026-06-16-120000_Mac.hang",
+		"Dock-2026-06-16-120000.spin",
+		"spotlightknowledged_2026-06-14-095112_MacBook-Pro-2.cpu_resource.diag",
+	}
+	no := []string{
+		"Chrome-2026-06-16-120000.ips",      // crash, counted elsewhere
+		"Kernel-2026-06-16.panic",           // panic, counted elsewhere
+		"JetsamEvent-2026-06-16-120000.ips", // jetsam, counted elsewhere
+	}
+	for _, n := range yes {
+		if !isHangReport(n) {
+			t.Errorf("isHangReport(%q) = false, want true", n)
+		}
+	}
+	for _, n := range no {
+		if isHangReport(n) {
+			t.Errorf("isHangReport(%q) = true, want false", n)
+		}
+	}
+}
+
+func TestHangReportProcess(t *testing.T) {
+	cases := map[string]string{
+		"spotlightknowledged_2026-06-14-095112_MacBook-Pro-2.cpu_resource.diag": "spotlightknowledged",
+		"WindowServer_2026-06-16-120000_Mac.hang":                               "WindowServer",
+		"Google Chrome Helper-2026-06-16-120000.spin":                           "Google Chrome Helper",
+		"FPCKService_2026-06-14-135557_MacBook-Pro-2.cpu_resource.diag":         "FPCKService",
+	}
+	for name, want := range cases {
+		if got := hangReportProcess(name); got != want {
+			t.Errorf("hangReportProcess(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
+	now := time.Now()
+	day := func(d int) time.Time { return now.AddDate(0, 0, -d) }
+	old := hangReportScanFn
+	defer func() { hangReportScanFn = old }()
+
+	// Spread across 6 distinct days (≥ trendDayThreshold) → sustained Critical
+	// trend, with spotlightknowledged as the named worst offender.
+	hangReportScanFn = func() (times []time.Time, byProcess map[string]int) {
+		times = []time.Time{day(0), day(1), day(2), day(3), day(4), day(5)}
+		byProcess = map[string]int{"spotlightknowledged": 4, "Chrome": 2}
+		return times, byProcess
+	}
+	report := &DoctorReport{}
+	checkAppHangs(report)
+	f := findByCheck(report.Findings, "App Hangs (7d)")
+	if f == nil {
+		t.Fatal("missing App Hangs finding")
+	}
+	if f.Severity != SeverityCritical || !f.Trend {
+		t.Errorf("trend hangs: got severity=%v trend=%v, want Critical/true", f.Severity, f.Trend)
+	}
+	if !strings.Contains(f.Message, "sustained main-thread saturation") {
+		t.Errorf("trend message %q should name the saturation", f.Message)
+	}
+	if !strings.Contains(f.Detail, "spotlightknowledged ×4") {
+		t.Errorf("detail %q should name the worst offender first", f.Detail)
+	}
+
+	// Clustered in a single day → transient Warn.
+	hangReportScanFn = func() (times []time.Time, byProcess map[string]int) {
+		times = []time.Time{day(1), day(1).Add(time.Hour), day(1).Add(2 * time.Hour)}
+		byProcess = map[string]int{"Dock": 3}
+		return times, byProcess
+	}
+	report = &DoctorReport{}
+	checkAppHangs(report)
+	f = findByCheck(report.Findings, "App Hangs (7d)")
+	if f.Severity != SeverityWarn || f.Trend {
+		t.Errorf("transient hangs: got severity=%v trend=%v, want Warn/false", f.Severity, f.Trend)
+	}
+}
+
+func TestCheckAppHangs_NoneIsHealthy(t *testing.T) {
+	old := hangReportScanFn
+	defer func() { hangReportScanFn = old }()
+	hangReportScanFn = func() (times []time.Time, byProcess map[string]int) {
+		return nil, map[string]int{}
+	}
+	report := &DoctorReport{}
+	checkAppHangs(report)
+	f := findByCheck(report.Findings, "App Hangs (7d)")
+	if f == nil || f.Severity != SeverityOK {
+		t.Errorf("clean host: got %+v, want a single OK App Hangs finding", f)
+	}
+}

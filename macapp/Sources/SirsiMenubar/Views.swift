@@ -1,6 +1,13 @@
 import SwiftUI
 import Foundation
 import AppKit
+import os
+
+// applyLog routes one-click-remediation outcomes to the unified logging system
+// (Console.app / `log show --predicate 'subsystem == "ai.sirsi.pantheon"'`) —
+// structured, queryable, and rotated by the OS, rather than an ad-hoc write to a
+// /tmp file. Used to diagnose a failed apply (FDA / cancel / 0-cleaned).
+private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 
 private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
@@ -732,9 +739,10 @@ struct ResultView: View {
     private func apply(_ a: CRAction) async {
         applying = true
         let out = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: "y\n")
-        // Diagnostic: the exact apply output lands in /tmp/sirsi-menubar.log so a
-        // failed apply (FDA, cancel, 0-cleaned) is diagnosable, not guessed.
-        FileHandle.standardError.write(Data("\n[apply \(a.command)] →\n\(out)\n".utf8))
+        // Diagnostic: the exact apply outcome goes to the unified log so a failed
+        // apply (FDA, cancel, 0-cleaned) is diagnosable, not guessed. Public
+        // privacy — this is local CLI output, no PII.
+        applyLog.notice("apply [\(a.command, privacy: .public)] → \(out, privacy: .public)")
         let lc = out.lowercased()
         let canceled = lc.contains("cancel")
         let didApply = !canceled && (lc.contains("cleaned") || lc.contains("reclaimed")
