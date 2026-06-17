@@ -129,7 +129,7 @@ struct HomeView: View {
                     NavigationLink { HorusView(engine: engine) } label: {
                         DeityRow(glyph: "𓂀", title: "Horus — Ops",
                                  detail: engine.healthLoading ? "checking…" : engine.healthSummary,
-                                 dot: severityColor(engine.healthWorst))
+                                 dot: statusColor(engine.healthStatus))
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
@@ -179,8 +179,29 @@ struct HomeView: View {
     }
 }
 
-// severityColor maps a diagnose severity (0 OK / 1 Warn / 2 Critical) to a dot.
-func severityColor(_ sev: Int) -> Color {
+// statusColor maps the canonical green/amber/red roll-up to a dot/label colour.
+func statusColor(_ status: String) -> Color {
+    switch status {
+    case "red": return .red
+    case "amber": return .yellow
+    default: return .green
+    }
+}
+
+// findingColor colours a single finding's dot per the rubric (Go severity scale:
+// 0 OK · 1 Info · 2 Warn · 3 Critical). A 7-day TREND critical is amber, not red —
+// only a LIVE critical is act-now red, matching guard.HealthStatus.
+func findingColor(_ f: DiagFinding) -> Color {
+    switch f.severity {
+    case 0, 1: return .green       // OK / Info
+    case 2: return .yellow         // Warn
+    default: return (f.trend ?? false) ? .yellow : .red  // Critical: trend → amber
+    }
+}
+
+// insightSeverityColor maps an Insight signal's ALREADY-rolled-up severity
+// (0 green · 1 amber · 2 red) to a dot. Distinct from findingColor's raw scale.
+func insightSeverityColor(_ sev: Int) -> Color {
     switch sev {
     case 0: return .green
     case 1: return .yellow
@@ -319,14 +340,16 @@ struct HorusView: View {
                 List {
                     Section {
                         ForEach(engine.health) { f in
-                            HealthRow(finding: f)
+                            HealthRow(engine: engine, finding: f)
                         }
                     } header: {
-                        let worst = engine.healthWorst
-                        Text(worst == 0 ? "ALL SYSTEMS HEALTHY"
-                             : (worst == 1 ? "ATTENTION — \(engine.health.filter{$0.severity>=1}.count) item(s)"
-                                : "CRITICAL — \(engine.health.filter{$0.severity>=2}.count) item(s)"))
-                            .foregroundStyle(severityColor(engine.healthWorst))
+                        // Canonical green/amber/red roll-up — NOT raw worst-severity
+                        // (which read CRITICAL on historical 7-day trends).
+                        let n = engine.healthIssueCount
+                        Text(engine.healthStatus == "green" ? "ALL SYSTEMS HEALTHY"
+                             : (engine.healthStatus == "amber" ? "ATTENTION — \(n) item(s)"
+                                : "CRITICAL — \(n) item(s)"))
+                            .foregroundStyle(statusColor(engine.healthStatus))
                     }
                 }
                 .listStyle(.inset)
@@ -346,28 +369,89 @@ struct HorusView: View {
 }
 
 struct HealthRow: View {
+    @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
-    @State private var expanded = false
+
+    private var hasFix: Bool { !(finding.fix ?? "").isEmpty }
+    private var navigable: Bool { hasFix || !(finding.detail ?? "").isEmpty }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Circle().fill(severityColor(finding.severity)).frame(width: 8, height: 8)
+        if navigable {
+            NavigationLink { FindingView(engine: engine, finding: finding) } label: { row }
+                .buttonStyle(.plain)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 8) {
+            Circle().fill(findingColor(finding)).frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(finding.check).font(.system(size: 12, weight: .semibold))
-                Spacer()
-                if let d = finding.detail, !d.isEmpty {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+                Text(finding.message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(finding.message).font(.caption).foregroundStyle(.secondary)
-            if expanded, let d = finding.detail, !d.isEmpty {
-                Text(d).font(.caption2.monospaced()).foregroundStyle(.tertiary)
-                    .padding(.top, 2).textSelection(.enabled)
+            Spacer()
+            if hasFix {
+                Image(systemName: "wrench.and.screwdriver.fill").font(.caption2).foregroundStyle(gold)
+            } else if navigable {
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
-        .onTapGesture { if finding.detail?.isEmpty == false { expanded.toggle() } }
+    }
+}
+
+// FindingView is the resolution surface for one health finding — "health → cause
+// → fix" made real. It explains the finding and, when a safe remediation exists,
+// offers a one-click "Fix it" that runs it. No finding dead-ends at "here's a
+// problem" with no way to act.
+struct FindingView: View {
+    @ObservedObject var engine: SirsiEngine
+    let finding: DiagFinding
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: finding.check)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
+                        Text(finding.message).font(.system(size: 14, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let d = finding.detail, !d.isEmpty {
+                        Text(d).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                    }
+                    if let fix = finding.fix, !fix.isEmpty {
+                        Text("RESOLVE").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        NavigationLink {
+                            ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix))
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "wrench.and.screwdriver.fill")
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Fix it").font(.system(size: 12, weight: .semibold))
+                                    Text(fix).font(.caption2.monospaced())
+                                        .foregroundStyle(Color.white.opacity(0.85))
+                                }
+                                Spacer()
+                            }.frame(maxWidth: .infinity).padding(.vertical, 2)
+                        }.buttonStyle(.borderedProminent).tint(gold)
+                    } else {
+                        Text("Informational — no one-click fix for this signal.")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                }.padding(16)
+            }
+        }
     }
 }
 
@@ -896,7 +980,7 @@ struct InsightView: View {
                                 ResultView(engine: engine, title: s.deity, args: Self.deityArgs(s.deity))
                             } label: {
                                 HStack(spacing: 8) {
-                                    Circle().fill(severityColor(min(s.severity, 2))).frame(width: 7, height: 7)
+                                    Circle().fill(insightSeverityColor(min(s.severity, 2))).frame(width: 7, height: 7)
                                     Text(s.deity).font(.caption)
                                     Spacer()
                                     Text(s.status).font(.caption2).foregroundStyle(.secondary)

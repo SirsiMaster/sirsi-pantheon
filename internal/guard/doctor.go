@@ -72,6 +72,50 @@ type DiagnosticFinding struct {
 	// that saw at least one event.
 	Trend      bool `json:"trend,omitempty"`
 	ActiveDays int  `json:"activeDays,omitempty"`
+	// Fix is the safe CLI command that resolves this finding (empty = informational,
+	// no one-click fix). Carried on the finding so EVERY surface (menubar Horus,
+	// SessionStart, dashboard) can offer resolution — not just the Insight panel.
+	Fix string `json:"fix,omitempty"`
+}
+
+// remediationCommand returns the safe, already-gated CLI command that resolves a
+// finding (or "" if it is informational). One mapping, read by every surface, so
+// no finding dead-ends at "here's a problem" with no way to act.
+func remediationCommand(f DiagnosticFinding) string {
+	warn := f.Severity >= SeverityWarn
+	switch f.Check {
+	case "binary-drift":
+		return "sirsi self-update" // heal the self-crasher
+	case "App Crashes (7d)":
+		if warn {
+			return "sirsi clean" // clear the crash backlog
+		}
+	case "Spotlight Storm":
+		if warn {
+			return "sirsi spotlight-exclude ~/Development"
+		}
+	case "App Hangs (7d)":
+		if warn {
+			d := strings.ToLower(f.Detail)
+			if strings.Contains(d, "spotlight") || strings.Contains(d, "mds") {
+				return "sirsi spotlight-exclude ~/Development"
+			}
+			return "sirsi guard" // deprioritize the saturating hog
+		}
+	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
+		if warn {
+			return "sirsi guard" // relieve memory pressure — renice hogs
+		}
+	case "Thread Leaks", "Swap Usage":
+		if f.Severity >= SeverityCritical {
+			return "sirsi guard"
+		}
+	case "Disk Space":
+		if warn {
+			return "sirsi clean --include-caution"
+		}
+	}
+	return ""
 }
 
 // DoctorReport is the complete health diagnostic.
@@ -227,6 +271,10 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
+	// Attach the safe remediation to each finding so every surface can resolve it.
+	for i := range report.Findings {
+		report.Findings[i].Fix = remediationCommand(report.Findings[i])
+	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
 	return report, nil
@@ -325,16 +373,19 @@ func checkSwapUsage(p platform.Platform, report *DoctorReport) {
 		usedMB, _ = strconv.ParseFloat(rest, 64)
 	}
 
+	// macOS uses swap proactively — a few hundred MB with healthy RAM is normal,
+	// NOT pressure. Only flag swap that is genuinely large. (Was: any swap > 0 MB
+	// warned "RAM pressure present", which cried wolf on 195 MB.)
 	switch {
-	case usedMB == 0:
+	case usedMB < 1024: // < 1 GB — routine
 		finding.Severity = SeverityOK
-		finding.Message = "No swap in use"
-	case usedMB > 1000:
-		finding.Severity = SeverityCritical
-		finding.Message = "Heavy swapping detected — system is thrashing"
-	default:
+		finding.Message = fmt.Sprintf("Swap minimal (%.0f MB) — no memory pressure", usedMB)
+	case usedMB < 4096: // 1–4 GB — worth a look
 		finding.Severity = SeverityWarn
-		finding.Message = fmt.Sprintf("Swap active (%.0f MB used) — RAM pressure present", usedMB)
+		finding.Message = fmt.Sprintf("Swap active (%.1f GB) — under memory pressure", usedMB/1024)
+	default: // > 4 GB — genuinely heavy
+		finding.Severity = SeverityCritical
+		finding.Message = fmt.Sprintf("Heavy swapping (%.1f GB) — system is thrashing", usedMB/1024)
 	}
 
 	report.Findings = append(report.Findings, finding)

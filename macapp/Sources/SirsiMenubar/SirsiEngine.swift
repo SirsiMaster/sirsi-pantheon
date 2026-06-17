@@ -29,18 +29,28 @@ struct ScanResult: Decodable {
     }
 }
 
-// DiagFinding mirrors one entry of `sirsi diagnose --json` — the health→cause
-// surface (RAM, Swap, Disk, Spotlight storm, Jetsam/panic trends, binary drift).
-// severity: 0 = OK, 1 = Warn, 2 = Critical.
+// DiagFinding mirrors one entry of `sirsi diagnose --json`.
+// severity (Go scale): 0 = OK, 1 = Info, 2 = Warn, 3 = Critical.
+// trend: true for a 7-day historical pattern (Jetsam/crashes/hangs) — amber, not
+// act-now red. See the green/amber/red rubric in guard.HealthStatus.
 struct DiagFinding: Decodable, Identifiable {
     let id = UUID()
     let check: String
     let severity: Int
     let message: String
     let detail: String?
+    let trend: Bool?
+    let fix: String?   // safe CLI command that resolves this finding (nil = informational)
+
+    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix }
 }
 
-struct DiagReport: Decodable { let findings: [DiagFinding] }
+// DiagReport carries the findings plus the CANONICAL roll-up `status`
+// (green/amber/red) the surface must show — never re-derive it from severities.
+struct DiagReport: Decodable {
+    let findings: [DiagFinding]
+    let status: String?
+}
 
 // CommandResult is the uniform structured output the Go CLI emits for the
 // scan-family commands (clean, audit, maat audit, scan, risk…): a one-line
@@ -120,11 +130,15 @@ final class SirsiEngine: ObservableObject {
     // Health (Horus — Ops): findings from `sirsi diagnose`.
     @Published var health: [DiagFinding] = []
     @Published var healthLoading = false
-    var healthWorst: Int { health.map(\.severity).max() ?? 0 }
+    // Canonical green/amber/red roll-up from diagnose --json `status` — the surface
+    // shows THIS, never a re-derived worst-severity (which made trends read red).
+    @Published var healthStatus: String = "green"
+    // Issues = Warn (2) or Critical (3) in the Go severity scale; Info (1) is not.
+    var healthIssueCount: Int { health.filter { $0.severity >= 2 }.count }
     var healthSummary: String {
         if health.isEmpty { return "tap to check" }
-        let issues = health.filter { $0.severity >= 1 }.count
-        return issues == 0 ? "all healthy" : "\(issues) issue\(issues == 1 ? "" : "s")"
+        let n = healthIssueCount
+        return n == 0 ? "all healthy" : "\(n) issue\(n == 1 ? "" : "s")"
     }
 
     // Title callback so the AppDelegate can update the menubar label.
@@ -182,6 +196,7 @@ final class SirsiEngine: ObservableObject {
         let data = await Self.runJSON(args: ["diagnose", "--json"])
         if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
             health = rep.findings
+            healthStatus = rep.status ?? "green"
         }
         healthLoading = false
     }

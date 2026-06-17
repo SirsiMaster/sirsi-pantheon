@@ -885,6 +885,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			f.Severity = guard.SeverityWarn
 			f.Message = "Sirsi binary drift detected"
 			f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
+			f.Fix = "sirsi self-update" // appended after the doctor post-pass; set its remediation here
 		}
 		report.Findings = append(report.Findings, f)
 	}

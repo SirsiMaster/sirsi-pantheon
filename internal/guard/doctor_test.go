@@ -98,8 +98,8 @@ func TestDoctorWith_HealthySystem(t *testing.T) {
 	if swapFinding.Severity != SeverityOK {
 		t.Errorf("Swap Usage severity = %v, want OK", swapFinding.Severity)
 	}
-	if !strings.Contains(swapFinding.Message, "No swap") {
-		t.Errorf("Swap message = %q, want 'No swap' substring", swapFinding.Message)
+	if !strings.Contains(swapFinding.Message, "no memory pressure") {
+		t.Errorf("Swap message = %q, want 'no memory pressure' substring", swapFinding.Message)
 	}
 
 	// Disk should be OK
@@ -184,24 +184,29 @@ func TestDoctorWith_SwapActive(t *testing.T) {
 		wantSubstring string
 	}{
 		{
-			name:          "moderate swap with small total",
+			// A few hundred MB of swap with healthy RAM is routine, NOT pressure.
+			name:          "minimal swap (256 MB) is healthy",
 			swapOutput:    "total = 512.00M  used = 256.00M  free = 256.00M  (encrypted)",
-			wantSeverity:  SeverityWarn,
-			wantSubstring: "Swap active",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "no memory pressure",
 		},
 		{
-			// The parser checks ALL numeric tokens in the line for > 1000.
-			// "total = 2048.00M" alone triggers CRITICAL since 2048 > 1000.
-			name:          "heavy swap — total exceeds 1000M",
+			name:          "moderate swap (2 GB) warns",
 			swapOutput:    "total = 4096.00M  used = 2048.00M  free = 2048.00M  (encrypted)",
+			wantSeverity:  SeverityWarn,
+			wantSubstring: "under memory pressure",
+		},
+		{
+			name:          "heavy swap (6 GB) is critical thrashing",
+			swapOutput:    "total = 12288.00M  used = 6144.00M  free = 6144.00M  (encrypted)",
 			wantSeverity:  SeverityCritical,
-			wantSubstring: "Heavy swapping",
+			wantSubstring: "thrashing",
 		},
 		{
 			name:          "no swap",
 			swapOutput:    "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)",
 			wantSeverity:  SeverityOK,
-			wantSubstring: "No swap",
+			wantSubstring: "no memory pressure",
 		},
 	}
 
@@ -934,5 +939,31 @@ func TestCalculateScore_TrendsDoNotZero(t *testing.T) {
 	live := []DiagnosticFinding{{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"}}
 	if calculateScore(live) >= calculateScore(trends[:1]) {
 		t.Errorf("a live-critical should score lower than a single trend-critical")
+	}
+}
+
+func TestRemediationCommand(t *testing.T) {
+	cases := []struct {
+		check, detail string
+		sev           DiagnosticSeverity
+		want          string
+	}{
+		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean"},
+		{"App Hangs (7d)", "spotlightknowledged ×11", SeverityCritical, "sirsi spotlight-exclude ~/Development"},
+		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi guard"},
+		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard"},
+		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution"},
+		{"Swap Usage", "", SeverityWarn, ""}, // warn swap → no one-click fix
+		{"Swap Usage", "", SeverityCritical, "sirsi guard"},
+		{"RAM Pressure", "", SeverityOK, ""}, // healthy → no fix
+		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development"},
+		{"Thread Leaks", "", SeverityCritical, "sirsi guard"},
+		{"Sirsi Processes", "", SeverityInfo, ""}, // informational → no fix
+	}
+	for _, c := range cases {
+		f := DiagnosticFinding{Check: c.check, Detail: c.detail, Severity: c.sev}
+		if got := remediationCommand(f); got != c.want {
+			t.Errorf("remediationCommand(%q/%v) = %q, want %q", c.check, c.sev, got, c.want)
+		}
 	}
 }
