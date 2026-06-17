@@ -340,7 +340,7 @@ struct HorusView: View {
                 List {
                     Section {
                         ForEach(engine.health) { f in
-                            HealthRow(finding: f)
+                            HealthRow(engine: engine, finding: f)
                         }
                     } header: {
                         // Canonical green/amber/red roll-up — NOT raw worst-severity
@@ -369,28 +369,89 @@ struct HorusView: View {
 }
 
 struct HealthRow: View {
+    @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
-    @State private var expanded = false
+
+    private var hasFix: Bool { !(finding.fix ?? "").isEmpty }
+    private var navigable: Bool { hasFix || !(finding.detail ?? "").isEmpty }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Circle().fill(findingColor(finding)).frame(width: 8, height: 8)
+        if navigable {
+            NavigationLink { FindingView(engine: engine, finding: finding) } label: { row }
+                .buttonStyle(.plain)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 8) {
+            Circle().fill(findingColor(finding)).frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(finding.check).font(.system(size: 12, weight: .semibold))
-                Spacer()
-                if let d = finding.detail, !d.isEmpty {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+                Text(finding.message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(finding.message).font(.caption).foregroundStyle(.secondary)
-            if expanded, let d = finding.detail, !d.isEmpty {
-                Text(d).font(.caption2.monospaced()).foregroundStyle(.tertiary)
-                    .padding(.top, 2).textSelection(.enabled)
+            Spacer()
+            if hasFix {
+                Image(systemName: "wrench.and.screwdriver.fill").font(.caption2).foregroundStyle(gold)
+            } else if navigable {
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
-        .onTapGesture { if finding.detail?.isEmpty == false { expanded.toggle() } }
+    }
+}
+
+// FindingView is the resolution surface for one health finding — "health → cause
+// → fix" made real. It explains the finding and, when a safe remediation exists,
+// offers a one-click "Fix it" that runs it. No finding dead-ends at "here's a
+// problem" with no way to act.
+struct FindingView: View {
+    @ObservedObject var engine: SirsiEngine
+    let finding: DiagFinding
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: finding.check)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
+                        Text(finding.message).font(.system(size: 14, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let d = finding.detail, !d.isEmpty {
+                        Text(d).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                    }
+                    if let fix = finding.fix, !fix.isEmpty {
+                        Text("RESOLVE").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        NavigationLink {
+                            ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix))
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "wrench.and.screwdriver.fill")
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Fix it").font(.system(size: 12, weight: .semibold))
+                                    Text(fix).font(.caption2.monospaced())
+                                        .foregroundStyle(Color.white.opacity(0.85))
+                                }
+                                Spacer()
+                            }.frame(maxWidth: .infinity).padding(.vertical, 2)
+                        }.buttonStyle(.borderedProminent).tint(gold)
+                    } else {
+                        Text("Informational — no one-click fix for this signal.")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                }.padding(16)
+            }
+        }
     }
 }
 

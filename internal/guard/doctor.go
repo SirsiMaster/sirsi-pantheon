@@ -72,6 +72,50 @@ type DiagnosticFinding struct {
 	// that saw at least one event.
 	Trend      bool `json:"trend,omitempty"`
 	ActiveDays int  `json:"activeDays,omitempty"`
+	// Fix is the safe CLI command that resolves this finding (empty = informational,
+	// no one-click fix). Carried on the finding so EVERY surface (menubar Horus,
+	// SessionStart, dashboard) can offer resolution — not just the Insight panel.
+	Fix string `json:"fix,omitempty"`
+}
+
+// remediationCommand returns the safe, already-gated CLI command that resolves a
+// finding (or "" if it is informational). One mapping, read by every surface, so
+// no finding dead-ends at "here's a problem" with no way to act.
+func remediationCommand(f DiagnosticFinding) string {
+	warn := f.Severity >= SeverityWarn
+	switch f.Check {
+	case "binary-drift":
+		return "sirsi self-update" // heal the self-crasher
+	case "App Crashes (7d)":
+		if warn {
+			return "sirsi clean" // clear the crash backlog
+		}
+	case "Spotlight Storm":
+		if warn {
+			return "sirsi spotlight-exclude ~/Development"
+		}
+	case "App Hangs (7d)":
+		if warn {
+			d := strings.ToLower(f.Detail)
+			if strings.Contains(d, "spotlight") || strings.Contains(d, "mds") {
+				return "sirsi spotlight-exclude ~/Development"
+			}
+			return "sirsi guard" // deprioritize the saturating hog
+		}
+	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
+		if warn {
+			return "sirsi guard" // relieve memory pressure — renice hogs
+		}
+	case "Thread Leaks", "Swap Usage":
+		if f.Severity >= SeverityCritical {
+			return "sirsi guard"
+		}
+	case "Disk Space":
+		if warn {
+			return "sirsi clean --include-caution"
+		}
+	}
+	return ""
 }
 
 // DoctorReport is the complete health diagnostic.
@@ -227,6 +271,10 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
+	// Attach the safe remediation to each finding so every surface can resolve it.
+	for i := range report.Findings {
+		report.Findings[i].Fix = remediationCommand(report.Findings[i])
+	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
 	return report, nil
