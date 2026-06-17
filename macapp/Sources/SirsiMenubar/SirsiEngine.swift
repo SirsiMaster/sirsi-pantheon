@@ -41,8 +41,9 @@ struct DiagFinding: Decodable, Identifiable {
     let detail: String?
     let trend: Bool?
     let fix: String?   // safe CLI command that resolves this finding (nil = informational)
+    let fixKind: String?  // "instant" | "relief" | "guidance" — how honest to be about the fix
 
-    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix }
+    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind }
 }
 
 // DiagReport carries the findings plus the CANONICAL roll-up `status`
@@ -167,8 +168,19 @@ final class SirsiEngine: ObservableObject {
         onTitle?(titleLabel())
     }
 
+    // Below this, reclaimable waste is trivial and must NOT colour the glyph amber
+    // (230 KB of caches is not "attention"). Only meaningful reclaim counts. 1 GB.
+    static let wasteThreshold: Int64 = 1_073_741_824
+
+    // The menubar glyph is the OVERALL at-a-glance light: the worse of system
+    // health (the green/amber/red rubric) and whether there is MEANINGFUL
+    // reclaimable waste. The waste figure is shown only when it's worth a click.
     func titleLabel() -> String {
-        safeBytes > 0 ? "🟡 \(Self.human(safeBytes))" : "🟢 Clean"
+        let healthRank = healthStatus == "red" ? 2 : (healthStatus == "amber" ? 1 : 0)
+        let wasteRank = safeBytes >= Self.wasteThreshold ? 1 : 0
+        let glyph = max(healthRank, wasteRank) == 2 ? "🔴"
+            : (max(healthRank, wasteRank) == 1 ? "🟡" : "🟢")
+        return safeBytes >= Self.wasteThreshold ? "\(glyph) \(Self.human(safeBytes))" : glyph
     }
 
     // rescan runs a fresh `sirsi scan`, then reloads.
@@ -197,6 +209,7 @@ final class SirsiEngine: ObservableObject {
         if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
             health = rep.findings
             healthStatus = rep.status ?? "green"
+            onTitle?(titleLabel())   // health now drives the glyph, not just waste
         }
         healthLoading = false
     }

@@ -76,6 +76,56 @@ type DiagnosticFinding struct {
 	// no one-click fix). Carried on the finding so EVERY surface (menubar Horus,
 	// SessionStart, dashboard) can offer resolution — not just the Insight panel.
 	Fix string `json:"fix,omitempty"`
+	// FixKind tells a surface how HONEST to be about the Fix button — so it never
+	// promises an instant cure for a historical record (the "I clicked Fix and the
+	// status stayed the same" trap). See the FixKind constants.
+	FixKind FixKind `json:"fixKind,omitempty"`
+}
+
+// FixKind classifies what running a finding's Fix actually does, so surfaces can
+// label the action truthfully instead of always saying "Fix it":
+//
+//	FixInstant   — the command provably changes this finding's state NOW (clears a
+//	               report backlog, replaces a drifted binary, frees disk). Re-running
+//	               diagnose after it WILL show the finding cleared or downgraded.
+//	FixRelief    — the command relieves a LIVE cause (renice a hog, ease memory
+//	               pressure). A finding tagged (7d) is a HISTORICAL count that cannot
+//	               drop retroactively; relief stops it growing and it decays as clean
+//	               days pass. Re-verify may show "still present (history)" — honestly.
+//	FixGuidance  — the command only acts when the condition is live right now (a
+//	               Spotlight storm in progress); otherwise it prints guidance and is
+//	               a no-op. Surfaces must NOT label this "Fix it".
+type FixKind string
+
+const (
+	FixInstant  FixKind = "instant"
+	FixRelief   FixKind = "relief"
+	FixGuidance FixKind = "guidance"
+)
+
+// remediationKind classifies a finding's Fix so surfaces label it honestly.
+// Kept in lockstep with remediationCommand: same Check cases, same gate.
+func remediationKind(f DiagnosticFinding) FixKind {
+	switch f.Check {
+	case "binary-drift":
+		return FixInstant // self-update replaces the drifted binary
+	case "App Crashes (7d)":
+		return FixInstant // clearing the crash-report backlog drops the count
+	case "Disk Space":
+		return FixInstant // clean frees real bytes
+	case "Spotlight Storm":
+		return FixGuidance // acts only during a live storm; else prints guidance
+	case "App Hangs (7d)":
+		d := strings.ToLower(f.Detail)
+		if strings.Contains(d, "spotlight") || strings.Contains(d, "mds") {
+			return FixGuidance // spotlight-exclude only bites a live storm
+		}
+		return FixRelief // renice the live hog; the 7d count decays over time
+	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)",
+		"Thread Leaks", "Swap Usage":
+		return FixRelief // eases the live cause; trend counts decay, not drop
+	}
+	return ""
 }
 
 // remediationCommand returns the safe, already-gated CLI command that resolves a
@@ -88,7 +138,10 @@ func remediationCommand(f DiagnosticFinding) string {
 		return "sirsi self-update" // heal the self-crasher
 	case "App Crashes (7d)":
 		if warn {
-			return "sirsi clean" // clear the crash backlog
+			// Crash reports are caution-tier — safe `clean` leaves them, so the
+			// count never dropped (the "Fix did nothing" bug). --include-caution
+			// clears the report backlog so the 7d count actually falls.
+			return "sirsi clean --include-caution"
 		}
 	case "Spotlight Storm":
 		if warn {
@@ -271,9 +324,11 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
-	// Attach the safe remediation to each finding so every surface can resolve it.
+	// Attach the safe remediation + its honesty class to each finding so every
+	// surface can resolve it AND label the action truthfully.
 	for i := range report.Findings {
 		report.Findings[i].Fix = remediationCommand(report.Findings[i])
+		report.Findings[i].FixKind = remediationKind(report.Findings[i])
 	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 

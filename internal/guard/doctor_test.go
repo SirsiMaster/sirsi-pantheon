@@ -947,23 +947,29 @@ func TestRemediationCommand(t *testing.T) {
 		check, detail string
 		sev           DiagnosticSeverity
 		want          string
+		wantKind      FixKind
 	}{
-		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean"},
-		{"App Hangs (7d)", "spotlightknowledged ×11", SeverityCritical, "sirsi spotlight-exclude ~/Development"},
-		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi guard"},
-		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard"},
-		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution"},
-		{"Swap Usage", "", SeverityWarn, ""}, // warn swap → no one-click fix
-		{"Swap Usage", "", SeverityCritical, "sirsi guard"},
-		{"RAM Pressure", "", SeverityOK, ""}, // healthy → no fix
-		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development"},
-		{"Thread Leaks", "", SeverityCritical, "sirsi guard"},
-		{"Sirsi Processes", "", SeverityInfo, ""}, // informational → no fix
+		// App Crashes reports are caution-tier → safe `clean` left them, so the
+		// count never dropped. --include-caution clears the backlog (instant).
+		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean --include-caution", FixInstant},
+		{"App Hangs (7d)", "spotlightknowledged ×11", SeverityCritical, "sirsi spotlight-exclude ~/Development", FixGuidance},
+		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi guard", FixRelief},
+		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution", FixInstant},
+		{"Swap Usage", "", SeverityWarn, "", FixRelief}, // warn swap → no one-click cmd, but classed relief
+		{"Swap Usage", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"RAM Pressure", "", SeverityOK, "", FixRelief}, // healthy → no cmd; kind still relief
+		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development", FixGuidance},
+		{"Thread Leaks", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"Sirsi Processes", "", SeverityInfo, "", ""}, // informational → no fix, no kind
 	}
 	for _, c := range cases {
 		f := DiagnosticFinding{Check: c.check, Detail: c.detail, Severity: c.sev}
 		if got := remediationCommand(f); got != c.want {
 			t.Errorf("remediationCommand(%q/%v) = %q, want %q", c.check, c.sev, got, c.want)
+		}
+		if got := remediationKind(f); got != c.wantKind {
+			t.Errorf("remediationKind(%q/%v) = %q, want %q", c.check, c.sev, got, c.wantKind)
 		}
 	}
 }
