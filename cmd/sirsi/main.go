@@ -261,7 +261,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		Command:    "sirsi status",
 		BriefTitle: "Pantheon Status",
 		Summary:    fmt.Sprintf("%d signals checked", len(report.Findings)),
-		Status:     doctorStatus(report.Score),
+		Status:     doctorStatus(report),
 		Confidence: "High",
 		Duration:   elapsed,
 	}

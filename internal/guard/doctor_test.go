@@ -440,25 +440,32 @@ func TestCalculateScore(t *testing.T) {
 			want: 100,
 		},
 		{
-			name: "one info",
+			name: "one info (no penalty)",
 			findings: []DiagnosticFinding{
 				{Severity: SeverityInfo},
 			},
-			want: 98,
+			want: 100,
 		},
 		{
 			name: "one warn",
 			findings: []DiagnosticFinding{
 				{Severity: SeverityWarn},
 			},
-			want: 90,
+			want: 94, // 100 - 6
 		},
 		{
-			name: "one critical",
+			name: "one trend critical (historical, not live)",
 			findings: []DiagnosticFinding{
-				{Severity: SeverityCritical},
+				{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
 			},
-			want: 80,
+			want: 92, // 100 - 8 (a 7-day pattern, not catastrophic)
+		},
+		{
+			name: "one LIVE critical (act-now)",
+			findings: []DiagnosticFinding{
+				{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"},
+			},
+			want: 75, // 100 - 25
 		},
 		{
 			name: "mixed severities",
@@ -466,19 +473,18 @@ func TestCalculateScore(t *testing.T) {
 				{Severity: SeverityOK},
 				{Severity: SeverityInfo},
 				{Severity: SeverityWarn},
-				{Severity: SeverityCritical},
+				{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
 			},
-			want: 68, // 100 - 0 - 2 - 10 - 20
+			want: 86, // 100 - 0(OK) - 0(Info) - 6(Warn) - 8(trend-crit)
 		},
 		{
-			name: "floors at zero",
+			name: "floors at zero (many live criticals)",
 			findings: []DiagnosticFinding{
-				{Severity: SeverityCritical},
-				{Severity: SeverityCritical},
-				{Severity: SeverityCritical},
-				{Severity: SeverityCritical},
-				{Severity: SeverityCritical},
-				{Severity: SeverityCritical}, // 6 * 20 = 120, exceeds 100
+				{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"},
+				{Check: "Disk Space", Severity: SeverityCritical, Message: "full"},
+				{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"},
+				{Check: "Disk Space", Severity: SeverityCritical, Message: "full"},
+				{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"}, // 5 * 25 = 125
 			},
 			want: 0,
 		},
@@ -889,5 +895,44 @@ func TestCheckAppHangs_NoneIsHealthy(t *testing.T) {
 	f := findByCheck(report.Findings, "App Hangs (7d)")
 	if f == nil || f.Severity != SeverityOK {
 		t.Errorf("clean host: got %+v, want a single OK App Hangs finding", f)
+	}
+}
+
+func TestClassifyHealth(t *testing.T) {
+	crit := func(check, msg string) DiagnosticFinding {
+		return DiagnosticFinding{Check: check, Severity: SeverityCritical, Message: msg}
+	}
+	cases := []struct {
+		name string
+		f    []DiagnosticFinding
+		want HealthStatus
+	}{
+		{"all clean → green", []DiagnosticFinding{{Check: "RAM Pressure", Severity: SeverityOK}}, HealthGreen},
+		{"only historical trends → amber", []DiagnosticFinding{crit("Jetsam Events (7d)", "12 kills"), crit("App Hangs (7d)", "saturation")}, HealthAmber},
+		{"a warning → amber", []DiagnosticFinding{{Check: "Swap Usage", Severity: SeverityWarn}}, HealthAmber},
+		{"live RAM critical → red", []DiagnosticFinding{crit("RAM Pressure", "critically high")}, HealthRed},
+		{"disk full → red", []DiagnosticFinding{crit("Disk Space", "full")}, HealthRed},
+		{"active crashloop → red", []DiagnosticFinding{crit("App Crashes (7d)", "Chrome crashloop detected")}, HealthRed},
+	}
+	for _, c := range cases {
+		if got := classifyHealth(c.f); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestCalculateScore_TrendsDoNotZero(t *testing.T) {
+	trends := []DiagnosticFinding{
+		{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
+		{Check: "App Crashes (7d)", Severity: SeverityCritical},
+		{Check: "App Hangs (7d)", Severity: SeverityCritical},
+		{Check: "Kernel Panics (7d)", Severity: SeverityCritical},
+	}
+	if s := calculateScore(trends); s < 60 {
+		t.Errorf("4 historical trend criticals scored %d, want >= 60 (trends are not catastrophic)", s)
+	}
+	live := []DiagnosticFinding{{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"}}
+	if calculateScore(live) >= calculateScore(trends[:1]) {
+		t.Errorf("a live-critical should score lower than a single trend-critical")
 	}
 }

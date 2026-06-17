@@ -25,6 +25,25 @@ you can see and do** on a real surface.
 
 ---
 
+## Health status — when Pantheon is 🟢 / 🟡 / 🔴
+
+The single at-a-glance light (SessionStart line, menubar glyph, Horus) answers
+*"do I need to act, and how urgently"* — never *"how many findings exist."* The
+canonical rubric lives in `internal/guard/doctor.go` (`HealthStatus`); every
+surface reads the `status` field from `sirsi diagnose --json`, never re-derives it.
+
+| Light | Means | Trigger |
+|---|---|---|
+| 🟢 **Green** | Nothing needs you | All checks OK/Info |
+| 🟡 **Amber** | Attention — worth a look, optional fix | Any warning, **or any historical 7-day trend** (Jetsam / crashes / hangs / swap patterns). The machine is usable. |
+| 🔴 **Red** | Act now — a live, session-threatening problem | A **live-critical**: RAM critically high (Jetsam imminent), disk full, or an **active crash loop**. Happening *right now*. |
+
+**The load-bearing distinction is LIVE vs TREND.** A week-old crash pattern is
+amber (informative); it does **not** mean the machine is on fire. The old scoring
+flat-penalized every critical −20, so four 7-day trends read as 🔴 0/100 on a
+perfectly usable machine — crying wolf. Now: live-critical −25, trend-critical −8,
+warn −6, info 0; and the colour is driven by the rubric, not the raw score.
+
 ## Personas
 
 | Persona | How the failure feels to them | The same precise pathology |

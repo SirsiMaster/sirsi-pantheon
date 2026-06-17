@@ -79,7 +79,95 @@ type DoctorReport struct {
 	Timestamp time.Time           `json:"timestamp"`
 	Duration  string              `json:"duration"`
 	Findings  []DiagnosticFinding `json:"findings"`
-	Score     int                 `json:"score"` // 0-100, higher is healthier
+	Score     int                 `json:"score"`  // 0-100, higher is healthier
+	Status    HealthStatus        `json:"status"` // the at-a-glance green/amber/red light
+}
+
+// HealthStatus is the single at-a-glance roll-up every surface shows (SessionStart
+// line, menubar glyph, Horus). It answers "do I need to act, and how urgently" —
+// NOT "how many findings exist."
+//
+// THE RUBRIC (canonical — surfaces must read this, never re-derive from raw
+// severities, which is what made the light scream red on a usable machine):
+//
+//	🔴 RED   — at least one LIVE, session-threatening critical: act now.
+//	           (RAM critically high → Jetsam imminent; disk full; an ACTIVE crash
+//	           loop). These are happening *right now*.
+//	🟡 AMBER — no live-critical, but warnings and/or HISTORICAL trends present
+//	           (7-day Jetsam/crash/hang/swap patterns). Worth a look; optional fix.
+//	🟢 GREEN — everything OK/Info. Nothing needs you.
+//
+// The crucial distinction is LIVE vs TREND: a week-old crash pattern informs
+// (amber); it does not mean the machine is on fire (red).
+type HealthStatus string
+
+const (
+	HealthGreen HealthStatus = "green"
+	HealthAmber HealthStatus = "amber"
+	HealthRed   HealthStatus = "red"
+)
+
+func (h HealthStatus) Icon() string {
+	switch h {
+	case HealthRed:
+		return "🔴"
+	case HealthAmber:
+		return "🟡"
+	default:
+		return "🟢"
+	}
+}
+
+// Label is the human status word shown next to the score.
+func (h HealthStatus) Label() string {
+	switch h {
+	case HealthRed:
+		return "Critical — act now"
+	case HealthAmber:
+		return "Attention"
+	default:
+		return "Healthy"
+	}
+}
+
+// liveCriticalChecks are the checks whose Critical severity reflects a CURRENT,
+// session-threatening condition — the only ones that force RED. Swap and the
+// 7-day trend checks are deliberately excluded: allocated swap and past patterns
+// are amber, not act-now.
+var liveCriticalChecks = map[string]bool{
+	"RAM Pressure": true, // used RAM critically high → Jetsam kills imminent
+	"Disk Space":   true, // volume full → saves fail, system instability
+}
+
+// isLiveCritical reports whether a finding is an act-now RED rather than a
+// historical trend that should only inform (AMBER).
+func isLiveCritical(f DiagnosticFinding) bool {
+	if f.Severity != SeverityCritical {
+		return false
+	}
+	if liveCriticalChecks[f.Check] {
+		return true
+	}
+	// An ACTIVE crash loop (a live abort cluster) is act-now, unlike a 7-day count.
+	return strings.Contains(f.Message, "crashloop") || strings.Contains(f.Message, "abort loop")
+}
+
+// classifyHealth rolls findings up into the single green/amber/red light per the
+// rubric on HealthStatus.
+func classifyHealth(findings []DiagnosticFinding) HealthStatus {
+	amber := false
+	for _, f := range findings {
+		if isLiveCritical(f) {
+			return HealthRed
+		}
+		if f.Severity == SeverityWarn || f.Severity == SeverityCritical {
+			amber = true
+		}
+	}
+	if amber {
+		return HealthAmber
+	}
+	return HealthGreen
 }
 
 // DoctorOpts configures the health diagnostic.
@@ -138,6 +226,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 	}
 
 	report.Score = calculateScore(report.Findings)
+	report.Status = classifyHealth(report.Findings)
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
 	return report, nil
@@ -845,14 +934,15 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 func calculateScore(findings []DiagnosticFinding) int {
 	score := 100
 	for _, f := range findings {
-		switch f.Severity {
-		case SeverityCritical:
-			score -= 20
-		case SeverityWarn:
-			score -= 10
-		case SeverityInfo:
-			score -= 2
+		switch {
+		case isLiveCritical(f):
+			score -= 25 // a live, session-threatening problem
+		case f.Severity == SeverityCritical:
+			score -= 8 // a historical trend — concerning, not catastrophic
+		case f.Severity == SeverityWarn:
+			score -= 6
 		}
+		// Info/OK do not reduce health.
 	}
 	if score < 0 {
 		score = 0
