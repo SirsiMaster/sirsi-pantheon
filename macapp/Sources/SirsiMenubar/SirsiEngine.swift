@@ -159,7 +159,7 @@ final class SirsiEngine: ObservableObject {
         checkFDA()
         guard let data = FileManager.default.contents(atPath: scanPath),
               let res = try? JSONDecoder().decode(ScanResult.self, from: data) else {
-            onTitle?("𓁢")
+            onTitle?("")   // no scan yet → just the Eye, no waste figure
             return
         }
         findings = res.findings
@@ -176,12 +176,14 @@ final class SirsiEngine: ObservableObject {
     // health (the green/amber/red rubric) and whether there is MEANINGFUL
     // reclaimable waste. The waste figure is shown only when it's worth a click.
     func titleLabel() -> String {
-        let healthRank = healthStatus == "red" ? 2 : (healthStatus == "amber" ? 1 : 0)
-        let wasteRank = safeBytes >= Self.wasteThreshold ? 1 : 0
-        let glyph = max(healthRank, wasteRank) == 2 ? "🔴"
-            : (max(healthRank, wasteRank) == 1 ? "🟡" : "🟢")
-        return safeBytes >= Self.wasteThreshold ? "\(glyph) \(Self.human(safeBytes))" : glyph
+        return safeBytes >= Self.wasteThreshold ? Self.human(safeBytes) : ""
     }
+
+    // titleStatus is the health band the menu-bar Eye is TINTED with — that tint
+    // (set in AppDelegate) carries green/amber/red, so the icon is a branded mark
+    // (Horus, the watchful protector) and NOT a bare colored dot. Defaults to
+    // healthy until the first diagnose populates healthStatus.
+    var titleStatus: String { healthStatus.isEmpty ? "green" : healthStatus }
 
     // rescan runs a fresh `sirsi scan`, then reloads.
     func rescan() async {
