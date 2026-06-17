@@ -243,7 +243,7 @@ func (w *Watchdog) run() {
 							// hotStreak was just reset, meaning this is the first alert.
 							// We only renice on first alert — not repeatedly.
 							go func(pid int, name string) {
-								if err := reniceByPID(pid); err == nil {
+								if err := reniceByPID(pid, name); err == nil {
 									stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
 										"action": "auto_renice",
 										"pid":    fmt.Sprintf("%d", pid),
