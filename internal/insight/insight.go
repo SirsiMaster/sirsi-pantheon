@@ -87,18 +87,8 @@ func (p *Platform) addHorus() {
 		if sev > worst {
 			worst = sev
 		}
-		// Turn known critical/warn checks into concrete actions.
-		switch {
-		case f.Check == "App Crashes (7d)" && sev >= 1:
-			p.Actions = append(p.Actions, Action{20, "Clear the crash backlog", f.Message, "sirsi clean"})
-			if containsSelfCrash(f) {
-				p.Actions = append(p.Actions, Action{10, "Heal the sirsi binary (it is its own #1 crasher)", "binary drift on disk → AMFI SIGKILL on exec", "sirsi self-update"})
-			}
-		case f.Check == "Spotlight Storm" && sev >= 1:
-			p.Actions = append(p.Actions, Action{30, "Stop the Spotlight write-storm", f.Message, "sirsi spotlight-exclude ~/Development"})
-		case f.Check == "Jetsam Events (7d)" && sev >= 2:
-			p.Actions = append(p.Actions, Action{15, "Relieve sustained RAM pressure", f.Message, "sirsi diagnose"})
-		}
+		// Turn known critical/warn checks into concrete, prioritized actions.
+		p.Actions = append(p.Actions, horusActions(f, sev)...)
 	}
 	status := "all healthy"
 	if issues > 0 {
@@ -107,8 +97,50 @@ func (p *Platform) addHorus() {
 	p.Signals = append(p.Signals, DeitySignal{"Horus — Ops", "𓂀", status, worst})
 }
 
+// horusActions maps one diagnose finding to the concrete, prioritized relief
+// action(s) it warrants. Pure (no I/O) so the detect→relief mapping is unit
+// tested directly. Lower Priority = surfaced first.
+func horusActions(f guard.DiagnosticFinding, sev int) []Action {
+	var out []Action
+	switch {
+	case f.Check == "App Crashes (7d)" && sev >= 1:
+		out = append(out, Action{20, "Clear the crash backlog", f.Message, "sirsi clean"})
+		if containsSelfCrash(f) {
+			out = append(out, Action{10, "Heal the sirsi binary (it is its own #1 crasher)", "binary drift on disk → AMFI SIGKILL on exec", "sirsi self-update"})
+		}
+	case f.Check == "Spotlight Storm" && sev >= 1:
+		out = append(out, Action{30, "Stop the Spotlight write-storm", f.Message, "sirsi spotlight-exclude ~/Development"})
+	case f.Check == "Jetsam Events (7d)" && sev >= 2:
+		out = append(out, Action{15, "Relieve sustained RAM pressure", f.Message, "sirsi diagnose"})
+	case f.Check == "App Hangs (7d)" && sev >= 1:
+		// Detection → relief. Pick the SAFE existing remediation by who is
+		// saturating: a root-owned Spotlight indexer can't be reniced by the
+		// user (and Spotlight-exclude is the real fix); a normal CPU hog is
+		// deprioritized by guard's renice throttler. Never a kill.
+		title, cmd := "Calm the freeze / stutter", "sirsi guard"
+		if isSpotlightOffender(f.Detail) {
+			title, cmd = "Stop the Spotlight storm (top hang cause)", "sirsi spotlight-exclude ~/Development"
+		}
+		out = append(out, Action{18, title, f.Message, cmd})
+	}
+	return out
+}
+
 func containsSelfCrash(f guard.DiagnosticFinding) bool {
 	return strings.Contains(f.Message, "sirsi") || strings.Contains(f.Detail, "sirsi")
+}
+
+// isSpotlightOffender reports whether the App-Hangs offender detail names a
+// macOS Spotlight/metadata indexer — a root-owned daemon best relieved by
+// Spotlight Privacy exclusion, not a (permission-denied, often harmful) renice.
+func isSpotlightOffender(detail string) bool {
+	d := strings.ToLower(detail)
+	for _, n := range []string{"spotlightknowledged", "mds_stores", "mdworker", "mds ", "mdsync"} {
+		if strings.Contains(d, n) {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Anubis — hygiene ─────────────────────────────────────────────────────────
