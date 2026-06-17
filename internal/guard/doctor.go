@@ -959,15 +959,15 @@ func checkAppCrashes(report *DoctorReport) {
 	// Resolution pointer — these are mostly retired logs; Clean reclaims them
 	// (the crash_reports rule now reaches Retired/). The count is history, not a
 	// live emergency unless detectCrashloop fired above.
-	resolution := fmt.Sprintf("%d crash report(s) accumulated (top: %q ×%d). These are diagnostic logs, not live failures — reclaim them with: sirsi clean", len(crashes), top, topN)
+	resolution := fmt.Sprintf("%d crash report(s) accumulated (top: %q ×%d). These are diagnostic logs, not live failures — crash reports are caution-tier, so clear the backlog with: sirsi clean --include-caution", len(crashes), top, topN)
 	switch {
 	case len(crashes) > 10:
 		finding.Severity = SeverityWarn // history, not critical — was over-alarming
-		finding.Message = fmt.Sprintf("%d crash reports (7d) — top: %q (%d) · clear with `sirsi clean`", len(crashes), top, topN)
+		finding.Message = fmt.Sprintf("%d crash reports (7d) — top: %q (%d) · clear with `sirsi clean --include-caution`", len(crashes), top, topN)
 		finding.Detail = resolution
 	case len(crashes) > 0:
 		finding.Severity = SeverityWarn
-		finding.Message = fmt.Sprintf("%d crash report(s) (7d) — top: %q (%d) · clear with `sirsi clean`", len(crashes), top, topN)
+		finding.Message = fmt.Sprintf("%d crash report(s) (7d) — top: %q (%d) · clear with `sirsi clean --include-caution`", len(crashes), top, topN)
 		finding.Detail = resolution
 	default:
 		finding.Severity = SeverityOK
