@@ -54,10 +54,10 @@ most gamer-facing).
 | **Thread leak / pool exhaustion** *(get #2)* | Orphan Hunter (PPID=1 loneliness) — *25 zombies → 1.1 GB* | `sirsi guard` | ✅ shipped | "background-process reaper" |
 | **Abnormal thread termination** *(get #1)* | crash detection in `diagnose` | `sirsi diagnose` | 🟡 partial | "crash forensics" |
 | **Major page faults + swap thrashing / compression churn** | `diagnose` surfaces *Swap Usage* only | `sirsi diagnose` | 🟡 partial — no thrash *relief* | "swap-thrash relief" |
-| **Main-thread saturation → hangs / dropped frames** | renice hogs (indirect only) | `sirsi guard` | 🔴 gap — no hang/frame-drop *detection* | "frame-drop / freeze detector" |
+| **Main-thread saturation → hangs / dropped frames** | **`diagnose` → App Hangs (7d)** — scans `.hang`/`.spin` spindumps + `.cpu_resource.diag`, trend-aware, names the worst offenders; + renice hogs | menubar System Diagnostics · `sirsi diagnose` | ✅ **detection shipped** (🟡 automatic *relief* still a gap) | "frame-drop / freeze detector" |
 
 **Committed backlog (in priority order):**
-1. 🔴 **Main-thread hang + frame-drop detection** — the headline gamer/productivity feature.
+1. ✅ **Main-thread hang + frame-drop *detection*** — SHIPPED (`diagnose` App Hangs (7d): hang/spin + cpu_resource scan, trend-aware, named offenders). Next: automatic *relief* (renice/disperse the offender), and a menubar one-click action.
 2. 🟡 **Swap-thrash relief** — detect + act on compression/swap churn, not just report.
 3. 🟡 **Thread-leak detector** — distinct from the orphan-process reaper (get #2 vs the in-process leak).
 4. 🟡 **Abnormal-thread-termination forensics** — surface *why* a thread died (get #1).

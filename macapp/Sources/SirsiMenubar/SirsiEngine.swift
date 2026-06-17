@@ -259,7 +259,12 @@ final class SirsiEngine: ObservableObject {
         return "done"
     }
 
-    // run shells the `sirsi` binary off the main actor and returns combined output.
+    // run shells the `sirsi` binary off the main actor and returns combined
+    // (stdout+stderr) output. If `stdin` is non-nil it is written to the child
+    // AFTER `p.run()` and the write end is then closed — the only ordering that
+    // reliably answers an interactive `[y/N]` prompt (e.g. `clean --confirm`);
+    // writing before launch can leave the child's stdin empty/closed, silently
+    // cancelling the apply. Pass `stdin: "y\n"` to auto-confirm, nil otherwise.
     nonisolated static func run(args: [String], stdin: String?) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
