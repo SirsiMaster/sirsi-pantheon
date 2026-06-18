@@ -13,13 +13,14 @@ set -uo pipefail
 ROUTER_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon/.agents/idea-router"
 REPO_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon"
 LOG="$ROUTER_ROOT/logs/sweep.log"
-SIRSI="$HOME/.local/bin/sirsi"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+. "$ROUTER_ROOT/router-env.sh"
 
 ts() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 cd "$REPO_ROOT" || { echo "[$(ts)] sweep FAIL: cannot cd to $REPO_ROOT" >> "$LOG"; exit 1; }
 
-mkdir -p "$(dirname "$LOG")"
+LOG="$(router_ensure_log "$LOG" "/tmp/sirsi-router-sweep.log")" || exit 1
+SIRSI="$(router_resolve_sirsi "$REPO_ROOT")" || { echo "[$(ts)] sweep FAIL: sirsi binary not found" >> "$LOG"; exit 1; }
 fails=()
 fail() { fails+=("$1"); }
 

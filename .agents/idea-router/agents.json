@@ -39,6 +39,16 @@
       "workstream": "finalwishes-web",
       "wake": {}
     },
+    "claude-home": {
+      "id": "claude-home",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "workstream": "home",
+      "wake": {}
+    },
     "claude-homebrew-tools": {
       "id": "claude-homebrew-tools",
       "type": "claude",
@@ -136,6 +146,16 @@
       "workstream": "finalwishes-web",
       "wake": {}
     },
+    "codex-home": {
+      "id": "codex-home",
+      "type": "codex",
+      "command": [
+        "codex"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "workstream": "home",
+      "wake": {}
+    },
     "codex-homebrew": {
       "id": "codex-homebrew",
       "type": "codex",
@@ -196,31 +216,21 @@
       "workstream": "porch-and-alley",
       "wake": {}
     },
-    "codex-home": {
-      "id": "codex-home",
-      "type": "codex",
+    "gemma-pantheon": {
+      "id": "gemma-pantheon",
+      "type": "gemma",
       "command": [
-        "codex"
+        "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh"
       ],
-      "cwd": "/Users/thekryptodragon",
-      "workstream": "home",
-      "role": "root",
-      "note": "Codex home root. Defers to claude-home authority unless user grants override.",
-      "wake": {},
-      "defers_to": "claude-home"
-    },
-    "claude-home": {
-      "id": "claude-home",
-      "type": "claude",
-      "command": [
-        "claude"
-      ],
-      "cwd": "/Users/thekryptodragon",
-      "workstream": "home",
-      "role": "root-authority",
-      "authority": "All agents and threads adapt to claude-home. claude-home is the registration root and the registry-police monitor. Other agents (repo sub-ids like claude-pantheon, claude-ops, and codex-*) inherit from and defer to claude-home unless the user explicitly grants an override.",
-      "note": "Home-rooted authority. Sessions launched from $HOME register here; repo agents are sub-ids adopted on entering a repo. This is the root monitor \u2014 do not remove.",
-      "wake": {}
+      "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "workstream": "pantheon",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh",
+          "--version"
+        ]
+      }
     }
   }
 }

@@ -213,7 +213,10 @@ func TestDeadSymlinks_SkipsValid(t *testing.T) {
 }
 
 func TestStaleLockFiles_FindsOldLocks(t *testing.T) {
-	t.Parallel()
+	// NOT t.Parallel: this test does a real git init/commit (initGitRepo) and then
+	// hand-sets .git/index.lock's mtime. Under the parallel batch's CPU contention a
+	// lagging git op can re-touch index.lock AFTER our Chtimes, making the "stale"
+	// lock look fresh (<1h) → 0 findings → heisenbug. Run serially for determinism.
 	repo := initGitRepo(t)
 
 	// Create a stale lock file (2 hours old)
@@ -229,7 +232,8 @@ func TestStaleLockFiles_FindsOldLocks(t *testing.T) {
 }
 
 func TestStaleLockFiles_SkipsRecent(t *testing.T) {
-	t.Parallel()
+	// NOT t.Parallel: same git-lock-mtime race as TestStaleLockFiles_FindsOldLocks
+	// (real git init/commit + manual .git/index.lock manipulation). Serial = deterministic.
 	repo := initGitRepo(t)
 
 	// Create a fresh lock file (just now — active git operation)

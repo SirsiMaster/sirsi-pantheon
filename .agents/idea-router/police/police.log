@@ -1,2 +1,434 @@
 [2026-06-01T02:07:47Z] police: unmappable=3 stale-loop=2
 [2026-06-01T02:07:47Z] police PASS
+[2026-06-09T02:46:36Z] police: unmappable=1 stale-loop=4
+[2026-06-09T02:46:36Z] police PASS
+[2026-06-09T02:56:36Z] police: unmappable=2 stale-loop=3
+[2026-06-09T02:56:36Z] police PASS
+[2026-06-09T03:06:36Z] police: unmappable=1 stale-loop=6
+[2026-06-09T03:06:36Z] police PASS
+[2026-06-09T03:16:39Z] police: unmappable=1 stale-loop=7
+[2026-06-09T03:16:39Z] police PASS
+[2026-06-09T03:26:39Z] police: unmappable=1 stale-loop=2
+[2026-06-09T03:26:39Z] police PASS
+[2026-06-09T03:36:39Z] police: unmappable=3 stale-loop=2
+[2026-06-09T03:36:39Z] police PASS
+[2026-06-09T03:46:40Z] police: unmappable=1 stale-loop=5
+[2026-06-09T03:46:40Z] police PASS
+[2026-06-09T03:56:40Z] police: unmappable=1 stale-loop=2
+[2026-06-09T03:56:40Z] police PASS
+[2026-06-09T04:06:41Z] police: unmappable=0 stale-loop=4
+[2026-06-09T04:06:41Z] police PASS
+[2026-06-09T04:16:41Z] police: unmappable=0 stale-loop=4
+[2026-06-09T04:16:41Z] police PASS
+[2026-06-09T04:26:42Z] police: unmappable=0 stale-loop=6
+[2026-06-09T04:26:42Z] police PASS
+[2026-06-09T04:36:43Z] police: unmappable=0 stale-loop=4
+[2026-06-09T04:36:43Z] police PASS
+[2026-06-09T04:46:43Z] police: unmappable=0 stale-loop=4
+[2026-06-09T04:46:43Z] police PASS
+[2026-06-09T04:56:43Z] police: unmappable=0 stale-loop=4
+[2026-06-09T04:56:43Z] police PASS
+[2026-06-09T05:06:44Z] police: unmappable=0 stale-loop=4
+[2026-06-09T05:06:44Z] police PASS
+[2026-06-09T05:16:44Z] police: unmappable=0 stale-loop=6
+[2026-06-09T05:16:44Z] police PASS
+[2026-06-09T05:26:45Z] police: unmappable=0 stale-loop=5
+[2026-06-09T05:26:45Z] police PASS
+[2026-06-09T05:36:45Z] police: unmappable=0 stale-loop=4
+[2026-06-09T05:36:45Z] police PASS
+[2026-06-09T05:46:46Z] police: unmappable=0 stale-loop=5
+[2026-06-09T05:46:46Z] police PASS
+[2026-06-09T05:56:46Z] police: unmappable=0 stale-loop=5
+[2026-06-09T05:56:46Z] police PASS
+[2026-06-09T06:06:46Z] police: unmappable=0 stale-loop=4
+[2026-06-09T06:06:46Z] police PASS
+[2026-06-09T06:16:47Z] police: unmappable=0 stale-loop=3
+[2026-06-09T06:16:47Z] police PASS
+[2026-06-09T06:26:47Z] police: unmappable=0 stale-loop=3
+[2026-06-09T06:26:47Z] police PASS
+[2026-06-09T06:36:48Z] police: unmappable=0 stale-loop=4
+[2026-06-09T06:36:48Z] police PASS
+[2026-06-09T06:46:48Z] police: unmappable=0 stale-loop=3
+[2026-06-09T06:46:48Z] police PASS
+[2026-06-09T06:56:48Z] police: unmappable=0 stale-loop=3
+[2026-06-09T06:56:48Z] police PASS
+[2026-06-09T07:06:49Z] police: unmappable=0 stale-loop=3
+[2026-06-09T07:06:49Z] police PASS
+[2026-06-09T07:16:49Z] police: unmappable=0 stale-loop=4
+[2026-06-09T07:16:49Z] police PASS
+[2026-06-09T07:26:50Z] police: unmappable=0 stale-loop=4
+[2026-06-09T07:26:50Z] police PASS
+[2026-06-09T07:36:50Z] police: unmappable=0 stale-loop=2
+[2026-06-09T07:36:50Z] police PASS
+[2026-06-09T07:46:50Z] police: unmappable=0 stale-loop=2
+[2026-06-09T07:46:50Z] police PASS
+[2026-06-09T07:56:51Z] police: unmappable=0 stale-loop=2
+[2026-06-09T07:56:51Z] police PASS
+[2026-06-09T08:06:51Z] police: unmappable=0 stale-loop=2
+[2026-06-09T08:06:51Z] police PASS
+[2026-06-09T08:16:51Z] police: unmappable=0 stale-loop=2
+[2026-06-09T08:16:51Z] police PASS
+[2026-06-09T08:26:52Z] police: unmappable=0 stale-loop=2
+[2026-06-09T08:26:52Z] police PASS
+[2026-06-09T08:36:52Z] police: unmappable=0 stale-loop=2
+[2026-06-09T08:36:52Z] police PASS
+[2026-06-09T08:46:52Z] police: unmappable=0 stale-loop=2
+[2026-06-09T08:46:52Z] police PASS
+[2026-06-09T08:56:53Z] police: unmappable=0 stale-loop=2
+[2026-06-09T08:56:53Z] police PASS
+[2026-06-09T09:06:53Z] police: unmappable=0 stale-loop=2
+[2026-06-09T09:06:53Z] police PASS
+[2026-06-09T09:16:53Z] police: unmappable=0 stale-loop=2
+[2026-06-09T09:16:53Z] police PASS
+[2026-06-09T09:26:54Z] police: unmappable=0 stale-loop=2
+[2026-06-09T09:26:54Z] police PASS
+[2026-06-09T09:36:54Z] police: unmappable=0 stale-loop=2
+[2026-06-09T09:36:54Z] police PASS
+[2026-06-09T09:46:54Z] police: unmappable=0 stale-loop=2
+[2026-06-09T09:46:54Z] police PASS
+[2026-06-09T09:56:55Z] police: unmappable=0 stale-loop=2
+[2026-06-09T09:56:55Z] police PASS
+[2026-06-09T10:06:55Z] police: unmappable=0 stale-loop=2
+[2026-06-09T10:06:55Z] police PASS
+[2026-06-09T10:16:56Z] police: unmappable=0 stale-loop=2
+[2026-06-09T10:16:56Z] police PASS
+[2026-06-09T10:26:56Z] police: unmappable=0 stale-loop=2
+[2026-06-09T10:26:56Z] police PASS
+[2026-06-09T10:36:56Z] police: unmappable=0 stale-loop=2
+[2026-06-09T10:36:56Z] police PASS
+[2026-06-09T10:46:57Z] police: unmappable=0 stale-loop=2
+[2026-06-09T10:46:57Z] police PASS
+[2026-06-09T10:56:57Z] police: unmappable=0 stale-loop=2
+[2026-06-09T10:56:57Z] police PASS
+[2026-06-09T11:06:57Z] police: unmappable=0 stale-loop=2
+[2026-06-09T11:06:57Z] police PASS
+[2026-06-09T11:16:58Z] police: unmappable=0 stale-loop=3
+[2026-06-09T11:16:58Z] police PASS
+[2026-06-09T11:26:58Z] police: unmappable=0 stale-loop=3
+[2026-06-09T11:26:58Z] police PASS
+[2026-06-09T11:36:58Z] police: unmappable=0 stale-loop=3
+[2026-06-09T11:36:58Z] police PASS
+[2026-06-09T11:46:59Z] police: unmappable=0 stale-loop=3
+[2026-06-09T11:46:59Z] police PASS
+[2026-06-09T11:56:59Z] police: unmappable=0 stale-loop=3
+[2026-06-09T11:56:59Z] police PASS
+[2026-06-09T12:06:59Z] police: unmappable=0 stale-loop=3
+[2026-06-09T12:06:59Z] police PASS
+[2026-06-09T12:17:00Z] police: unmappable=0 stale-loop=3
+[2026-06-09T12:17:00Z] police PASS
+[2026-06-09T12:27:00Z] police: unmappable=0 stale-loop=3
+[2026-06-09T12:27:00Z] police PASS
+[2026-06-09T12:37:01Z] police: unmappable=0 stale-loop=3
+[2026-06-09T12:37:01Z] police PASS
+[2026-06-09T12:47:01Z] police: unmappable=0 stale-loop=3
+[2026-06-09T12:47:01Z] police PASS
+[2026-06-09T12:57:01Z] police: unmappable=0 stale-loop=3
+[2026-06-09T12:57:01Z] police PASS
+[2026-06-09T13:07:02Z] police: unmappable=0 stale-loop=3
+[2026-06-09T13:07:02Z] police PASS
+[2026-06-09T13:17:02Z] police: unmappable=0 stale-loop=2
+[2026-06-09T13:17:02Z] police PASS
+[2026-06-09T15:22:19Z] police: unmappable=2 stale-loop=2
+[2026-06-09T15:22:19Z] police PASS
+[2026-06-09T17:55:42Z] police: unmappable=2 stale-loop=4
+[2026-06-09T17:55:42Z] police PASS
+[2026-06-09T18:23:44Z] police: unmappable=2 stale-loop=2
+[2026-06-09T18:23:44Z] police PASS
+[2026-06-09T20:02:48Z] police: unmappable=2 stale-loop=2
+[2026-06-09T20:02:48Z] police PASS
+[2026-06-09T20:21:42Z] police: unmappable=2 stale-loop=3
+[2026-06-09T20:21:42Z] police PASS
+[2026-06-09T20:31:42Z] police: unmappable=2 stale-loop=3
+[2026-06-09T20:31:42Z] police PASS
+[2026-06-09T20:41:43Z] police: unmappable=2 stale-loop=2
+[2026-06-09T20:41:43Z] police PASS
+[2026-06-09T21:53:37Z] police: unmappable=2 stale-loop=4
+[2026-06-09T21:53:37Z] police PASS
+[2026-06-09T23:26:07Z] police: unmappable=2 stale-loop=2
+[2026-06-09T23:26:07Z] police PASS
+[2026-06-09T23:53:53Z] police: unmappable=2 stale-loop=2
+[2026-06-09T23:53:53Z] police PASS
+[2026-06-10T00:03:53Z] police: unmappable=2 stale-loop=2
+[2026-06-10T00:03:53Z] police PASS
+[2026-06-10T00:13:56Z] police: unmappable=2 stale-loop=4
+[2026-06-10T00:13:56Z] police PASS
+[2026-06-10T00:23:57Z] police: unmappable=2 stale-loop=4
+[2026-06-10T00:23:57Z] police PASS
+[2026-06-10T00:33:57Z] police: unmappable=2 stale-loop=4
+[2026-06-10T00:33:57Z] police PASS
+[2026-06-10T00:43:57Z] police: unmappable=2 stale-loop=4
+[2026-06-10T00:43:57Z] police PASS
+[2026-06-10T00:53:58Z] police: unmappable=2 stale-loop=4
+[2026-06-10T00:53:58Z] police PASS
+[2026-06-10T01:03:58Z] police: unmappable=2 stale-loop=3
+[2026-06-10T01:03:58Z] police PASS
+[2026-06-10T01:13:59Z] police: unmappable=2 stale-loop=3
+[2026-06-10T01:13:59Z] police PASS
+[2026-06-10T01:23:59Z] police: unmappable=2 stale-loop=3
+[2026-06-10T01:23:59Z] police PASS
+[2026-06-10T01:33:59Z] police: unmappable=2 stale-loop=3
+[2026-06-10T01:33:59Z] police PASS
+[2026-06-10T01:44:00Z] police: unmappable=2 stale-loop=3
+[2026-06-10T01:44:00Z] police PASS
+[2026-06-10T01:54:00Z] police: unmappable=2 stale-loop=3
+[2026-06-10T01:54:00Z] police PASS
+[2026-06-10T02:04:00Z] police: unmappable=2 stale-loop=3
+[2026-06-10T02:04:00Z] police PASS
+[2026-06-10T02:14:01Z] police: unmappable=2 stale-loop=3
+[2026-06-10T02:14:01Z] police PASS
+[2026-06-10T02:24:01Z] police: unmappable=2 stale-loop=3
+[2026-06-10T02:24:01Z] police PASS
+[2026-06-10T02:34:01Z] police: unmappable=2 stale-loop=3
+[2026-06-10T02:34:01Z] police PASS
+[2026-06-10T02:44:02Z] police: unmappable=2 stale-loop=3
+[2026-06-10T02:44:02Z] police PASS
+[2026-06-10T02:54:02Z] police: unmappable=2 stale-loop=3
+[2026-06-10T02:54:02Z] police PASS
+[2026-06-10T03:04:02Z] police: unmappable=2 stale-loop=3
+[2026-06-10T03:04:02Z] police PASS
+[2026-06-10T03:14:03Z] police: unmappable=2 stale-loop=3
+[2026-06-10T03:14:03Z] police PASS
+[2026-06-10T03:24:03Z] police: unmappable=2 stale-loop=3
+[2026-06-10T03:24:03Z] police PASS
+[2026-06-10T03:34:03Z] police: unmappable=2 stale-loop=3
+[2026-06-10T03:34:03Z] police PASS
+[2026-06-10T03:44:04Z] police: unmappable=2 stale-loop=3
+[2026-06-10T03:44:04Z] police PASS
+[2026-06-10T03:54:04Z] police: unmappable=2 stale-loop=3
+[2026-06-10T03:54:04Z] police PASS
+[2026-06-10T04:04:04Z] police: unmappable=2 stale-loop=3
+[2026-06-10T04:04:04Z] police PASS
+[2026-06-10T04:14:05Z] police: unmappable=2 stale-loop=3
+[2026-06-10T04:14:05Z] police PASS
+[2026-06-10T04:24:05Z] police: unmappable=2 stale-loop=3
+[2026-06-10T04:24:05Z] police PASS
+[2026-06-10T04:34:05Z] police: unmappable=2 stale-loop=2
+[2026-06-10T04:34:05Z] police PASS
+[2026-06-10T04:44:06Z] police: unmappable=2 stale-loop=2
+[2026-06-10T04:44:06Z] police PASS
+[2026-06-10T04:54:06Z] police: unmappable=2 stale-loop=2
+[2026-06-10T04:54:06Z] police PASS
+[2026-06-10T05:04:06Z] police: unmappable=2 stale-loop=2
+[2026-06-10T05:04:06Z] police PASS
+[2026-06-10T05:14:07Z] police: unmappable=2 stale-loop=2
+[2026-06-10T05:14:07Z] police PASS
+[2026-06-10T05:24:07Z] police: unmappable=2 stale-loop=2
+[2026-06-10T05:24:07Z] police PASS
+[2026-06-10T05:34:07Z] police: unmappable=2 stale-loop=2
+[2026-06-10T05:34:07Z] police PASS
+[2026-06-10T05:44:08Z] police: unmappable=2 stale-loop=2
+[2026-06-10T05:44:08Z] police PASS
+[2026-06-10T05:54:08Z] police: unmappable=2 stale-loop=2
+[2026-06-10T05:54:08Z] police PASS
+[2026-06-10T06:04:08Z] police: unmappable=2 stale-loop=2
+[2026-06-10T06:04:08Z] police PASS
+[2026-06-10T06:14:09Z] police: unmappable=2 stale-loop=2
+[2026-06-10T06:14:09Z] police PASS
+[2026-06-10T06:24:09Z] police: unmappable=2 stale-loop=2
+[2026-06-10T06:24:09Z] police PASS
+[2026-06-10T06:34:10Z] police: unmappable=2 stale-loop=2
+[2026-06-10T06:34:10Z] police PASS
+[2026-06-10T06:44:10Z] police: unmappable=2 stale-loop=2
+[2026-06-10T06:44:10Z] police PASS
+[2026-06-10T06:54:10Z] police: unmappable=2 stale-loop=2
+[2026-06-10T06:54:10Z] police PASS
+[2026-06-10T07:04:11Z] police: unmappable=2 stale-loop=2
+[2026-06-10T07:04:11Z] police PASS
+[2026-06-10T07:14:11Z] police: unmappable=2 stale-loop=2
+[2026-06-10T07:14:11Z] police PASS
+[2026-06-10T07:24:11Z] police: unmappable=2 stale-loop=2
+[2026-06-10T07:24:11Z] police PASS
+[2026-06-10T07:34:12Z] police: unmappable=2 stale-loop=2
+[2026-06-10T07:34:12Z] police PASS
+[2026-06-10T07:44:12Z] police: unmappable=2 stale-loop=2
+[2026-06-10T07:44:12Z] police PASS
+[2026-06-10T07:54:12Z] police: unmappable=2 stale-loop=2
+[2026-06-10T07:54:12Z] police PASS
+[2026-06-10T08:04:13Z] police: unmappable=2 stale-loop=2
+[2026-06-10T08:04:13Z] police PASS
+[2026-06-10T08:14:13Z] police: unmappable=2 stale-loop=2
+[2026-06-10T08:14:13Z] police PASS
+[2026-06-10T08:24:13Z] police: unmappable=2 stale-loop=2
+[2026-06-10T08:24:13Z] police PASS
+[2026-06-10T08:34:14Z] police: unmappable=2 stale-loop=2
+[2026-06-10T08:34:14Z] police PASS
+[2026-06-10T08:44:14Z] police: unmappable=2 stale-loop=2
+[2026-06-10T08:44:14Z] police PASS
+[2026-06-10T08:54:14Z] police: unmappable=2 stale-loop=2
+[2026-06-10T08:54:14Z] police PASS
+[2026-06-10T09:28:04Z] police: unmappable=2 stale-loop=2
+[2026-06-10T09:28:04Z] police PASS
+[2026-06-10T11:08:51Z] police: unmappable=2 stale-loop=5
+[2026-06-10T11:08:51Z] police PASS
+[2026-06-10T11:23:06Z] police: unmappable=2 stale-loop=2
+[2026-06-10T11:23:06Z] police PASS
+[2026-06-10T11:38:48Z] police: unmappable=2 stale-loop=2
+[2026-06-10T11:38:48Z] police PASS
+[2026-06-10T11:51:51Z] police: unmappable=2 stale-loop=2
+[2026-06-10T11:51:51Z] police PASS
+[2026-06-10T12:03:31Z] police: unmappable=2 stale-loop=2
+[2026-06-10T12:03:31Z] police PASS
+[2026-06-10T12:15:48Z] police: unmappable=2 stale-loop=2
+[2026-06-10T12:15:48Z] police PASS
+[2026-06-10T12:27:34Z] police: unmappable=2 stale-loop=2
+[2026-06-10T12:27:34Z] police PASS
+[2026-06-10T12:39:26Z] police: unmappable=2 stale-loop=2
+[2026-06-10T12:39:26Z] police PASS
+[2026-06-10T12:55:47Z] police: unmappable=2 stale-loop=2
+[2026-06-10T12:55:47Z] police PASS
+[2026-06-10T13:11:35Z] police: unmappable=2 stale-loop=2
+[2026-06-10T13:11:35Z] police PASS
+[2026-06-10T13:30:05Z] police: unmappable=2 stale-loop=2
+[2026-06-10T13:30:05Z] police PASS
+[2026-06-10T14:23:42Z] police: unmappable=2 stale-loop=2
+[2026-06-10T14:23:42Z] police PASS
+[2026-06-10T14:58:51Z] police: unmappable=2 stale-loop=2
+[2026-06-10T14:58:51Z] police PASS
+[2026-06-10T15:32:15Z] police: unmappable=2 stale-loop=2
+[2026-06-10T15:32:15Z] police PASS
+[2026-06-10T16:05:19Z] police: unmappable=2 stale-loop=2
+[2026-06-10T16:05:19Z] police PASS
+[2026-06-10T16:49:32Z] police: unmappable=0 stale-loop=3
+[2026-06-10T16:49:32Z] police PASS
+[2026-06-10T16:59:32Z] police: unmappable=0 stale-loop=3
+[2026-06-10T16:59:32Z] police PASS
+[2026-06-10T17:09:32Z] police: unmappable=0 stale-loop=3
+[2026-06-10T17:09:32Z] police PASS
+[2026-06-10T17:19:33Z] police: unmappable=3 stale-loop=6
+[2026-06-10T17:19:33Z] police PASS
+[2026-06-10T17:29:33Z] police: unmappable=3 stale-loop=4
+[2026-06-10T17:29:33Z] police PASS
+[2026-06-10T17:39:34Z] police: unmappable=3 stale-loop=4
+[2026-06-10T17:39:34Z] police PASS
+[2026-06-10T17:49:37Z] police: unmappable=2 stale-loop=2
+[2026-06-10T17:49:37Z] police PASS
+[2026-06-10T17:59:37Z] police: unmappable=2 stale-loop=3
+[2026-06-10T17:59:37Z] police PASS
+[2026-06-10T18:09:38Z] police: unmappable=2 stale-loop=4
+[2026-06-10T18:09:38Z] police PASS
+[2026-06-10T18:19:38Z] police: unmappable=2 stale-loop=4
+[2026-06-10T18:19:38Z] police PASS
+[2026-06-10T18:29:39Z] police: unmappable=2 stale-loop=5
+[2026-06-10T18:29:39Z] police PASS
+[2026-06-10T18:39:39Z] police: unmappable=2 stale-loop=4
+[2026-06-10T18:39:39Z] police PASS
+[2026-06-10T18:49:39Z] police: unmappable=2 stale-loop=4
+[2026-06-10T18:49:39Z] police PASS
+[2026-06-10T18:59:40Z] police: unmappable=2 stale-loop=3
+[2026-06-10T18:59:40Z] police PASS
+[2026-06-10T19:09:40Z] police: unmappable=2 stale-loop=3
+[2026-06-10T19:09:40Z] police PASS
+[2026-06-10T19:19:41Z] police: unmappable=2 stale-loop=4
+[2026-06-10T19:19:41Z] police PASS
+[2026-06-10T19:29:41Z] police: unmappable=2 stale-loop=4
+[2026-06-10T19:29:41Z] police PASS
+[2026-06-10T19:39:41Z] police: unmappable=2 stale-loop=5
+[2026-06-10T19:39:41Z] police PASS
+[2026-06-10T19:49:42Z] police: unmappable=2 stale-loop=4
+[2026-06-10T19:49:42Z] police PASS
+[2026-06-10T19:59:42Z] police: unmappable=2 stale-loop=3
+[2026-06-10T19:59:42Z] police PASS
+[2026-06-10T20:09:43Z] police: unmappable=2 stale-loop=3
+[2026-06-10T20:09:43Z] police PASS
+[2026-06-10T20:19:43Z] police: unmappable=2 stale-loop=3
+[2026-06-10T20:19:43Z] police PASS
+[2026-06-10T20:29:44Z] police: unmappable=2 stale-loop=5
+[2026-06-10T20:29:44Z] police PASS
+[2026-06-10T20:39:44Z] police: unmappable=2 stale-loop=5
+[2026-06-10T20:39:44Z] police PASS
+[2026-06-10T20:49:45Z] police: unmappable=2 stale-loop=3
+[2026-06-10T20:49:45Z] police PASS
+[2026-06-10T20:59:45Z] police: unmappable=2 stale-loop=4
+[2026-06-10T20:59:45Z] police PASS
+[2026-06-10T21:09:45Z] police: unmappable=2 stale-loop=4
+[2026-06-10T21:09:45Z] police PASS
+[2026-06-10T21:19:46Z] police: unmappable=2 stale-loop=4
+[2026-06-10T21:19:46Z] police PASS
+[2026-06-10T21:29:46Z] police: unmappable=2 stale-loop=4
+[2026-06-10T21:29:46Z] police PASS
+[2026-06-10T21:39:47Z] police: unmappable=2 stale-loop=4
+[2026-06-10T21:39:47Z] police PASS
+[2026-06-10T21:49:47Z] police: unmappable=2 stale-loop=4
+[2026-06-10T21:49:47Z] police PASS
+[2026-06-10T21:59:47Z] police: unmappable=2 stale-loop=4
+[2026-06-10T21:59:47Z] police PASS
+[2026-06-10T22:09:48Z] police: unmappable=2 stale-loop=4
+[2026-06-10T22:09:48Z] police PASS
+[2026-06-10T22:19:48Z] police: unmappable=2 stale-loop=4
+[2026-06-10T22:19:48Z] police PASS
+[2026-06-10T22:29:49Z] police: unmappable=2 stale-loop=4
+[2026-06-10T22:29:49Z] police PASS
+[2026-06-10T22:39:49Z] police: unmappable=2 stale-loop=4
+[2026-06-10T22:39:49Z] police PASS
+[2026-06-10T22:49:50Z] police: unmappable=2 stale-loop=4
+[2026-06-10T22:49:50Z] police PASS
+[2026-06-10T22:59:50Z] police: unmappable=2 stale-loop=4
+[2026-06-10T22:59:50Z] police PASS
+[2026-06-10T23:09:51Z] police: unmappable=2 stale-loop=4
+[2026-06-10T23:09:51Z] police PASS
+[2026-06-10T23:19:51Z] police: unmappable=2 stale-loop=4
+[2026-06-10T23:19:51Z] police PASS
+[2026-06-10T23:29:51Z] police: unmappable=2 stale-loop=4
+[2026-06-10T23:29:51Z] police PASS
+[2026-06-10T23:39:52Z] police: unmappable=2 stale-loop=3
+[2026-06-10T23:39:52Z] police PASS
+[2026-06-10T23:49:52Z] police: unmappable=2 stale-loop=3
+[2026-06-10T23:49:52Z] police PASS
+[2026-06-10T23:59:53Z] police: unmappable=2 stale-loop=3
+[2026-06-10T23:59:53Z] police PASS
+[2026-06-11T00:09:53Z] police: unmappable=2 stale-loop=3
+[2026-06-11T00:09:53Z] police PASS
+[2026-06-11T00:19:53Z] police: unmappable=2 stale-loop=3
+[2026-06-11T00:19:53Z] police PASS
+[2026-06-11T00:29:54Z] police: unmappable=2 stale-loop=3
+[2026-06-11T00:29:54Z] police PASS
+[2026-06-11T00:39:54Z] police: unmappable=2 stale-loop=3
+[2026-06-11T00:39:54Z] police PASS
+[2026-06-11T00:49:55Z] police: unmappable=2 stale-loop=3
+[2026-06-11T00:49:55Z] police PASS
+[2026-06-11T00:59:55Z] police: unmappable=2 stale-loop=3
+[2026-06-11T00:59:55Z] police PASS
+[2026-06-11T01:09:55Z] police: unmappable=2 stale-loop=3
+[2026-06-11T01:09:55Z] police PASS
+[2026-06-11T01:19:56Z] police: unmappable=2 stale-loop=3
+[2026-06-11T01:19:56Z] police PASS
+[2026-06-11T01:29:56Z] police: unmappable=2 stale-loop=3
+[2026-06-11T01:29:56Z] police PASS
+[2026-06-11T01:39:57Z] police: unmappable=5 stale-loop=3
+[2026-06-11T01:39:57Z] police PASS
+[2026-06-11T01:49:57Z] police: unmappable=5 stale-loop=4
+[2026-06-11T01:49:57Z] police PASS
+[2026-06-11T01:59:58Z] police: unmappable=5 stale-loop=4
+[2026-06-11T01:59:58Z] police PASS
+[2026-06-11T02:09:58Z] police: unmappable=3 stale-loop=2
+[2026-06-11T02:09:58Z] police PASS
+[2026-06-11T02:19:58Z] police: unmappable=3 stale-loop=2
+[2026-06-11T02:19:58Z] police PASS
+[2026-06-11T02:29:59Z] police: unmappable=2 stale-loop=2
+[2026-06-11T02:29:59Z] police PASS
+[2026-06-11T02:39:59Z] police: unmappable=2 stale-loop=1
+[2026-06-11T02:39:59Z] police PASS
+[2026-06-11T02:50:00Z] police: unmappable=2 stale-loop=3
+[2026-06-11T02:50:00Z] police PASS
+[2026-06-11T03:00:00Z] police: unmappable=2 stale-loop=3
+[2026-06-11T03:00:00Z] police PASS
+[2026-06-11T03:10:01Z] police: unmappable=1 stale-loop=4
+[2026-06-11T03:10:01Z] police PASS
+[2026-06-11T03:20:01Z] police: unmappable=1 stale-loop=3
+[2026-06-11T03:20:01Z] police PASS
+[2026-06-11T03:30:02Z] police: unmappable=1 stale-loop=4
+[2026-06-11T03:30:02Z] police PASS
+[2026-06-11T03:40:02Z] police: unmappable=1 stale-loop=3
+[2026-06-11T03:40:02Z] police PASS
+[2026-06-11T03:50:03Z] police: unmappable=1 stale-loop=3
+[2026-06-11T03:50:03Z] police PASS
+[2026-06-11T04:00:03Z] police: unmappable=65 stale-loop=4
+[2026-06-11T04:00:03Z] police PASS
+[2026-06-11T04:10:04Z] police: unmappable=43 stale-loop=3
+[2026-06-11T04:10:04Z] police PASS
+[2026-06-11T04:20:04Z] police: unmappable=45 stale-loop=1
+[2026-06-11T04:20:04Z] police PASS
+[2026-06-11T04:30:05Z] police: unmappable=7 stale-loop=1
+[2026-06-11T04:30:05Z] police PASS
+[2026-06-11T04:40:05Z] police: unmappable=7 stale-loop=1
+[2026-06-11T04:40:05Z] police PASS

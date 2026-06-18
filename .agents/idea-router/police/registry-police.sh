@@ -12,13 +12,15 @@ ROUTER="$REPO/.agents/idea-router"
 LOG="$ROUTER/police/police.log"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cd "$REPO" || exit 1
+. "$ROUTER/router-env.sh"
 
-command -v sirsi >/dev/null 2>&1 || { echo "[$STAMP] ⚠ sirsi not on PATH — police cannot run" >>"$LOG"; exit 0; }
+LOG="$(router_ensure_log "$LOG" "/tmp/sirsi-registry-police.log")" || exit 1
+SIRSI="$(router_resolve_sirsi "$REPO")" || { echo "[$STAMP] ⚠ sirsi binary not found — police cannot run" >>"$LOG"; exit 0; }
 
 # 1. Reconcile registry with reality (auto-registers mappable agent sessions)
-DISCOVER=$(sirsi thread discover --json 2>/dev/null)
+DISCOVER=$("$SIRSI" thread discover --json 2>/dev/null)
 # 2. Record the full process table read-only
-sirsi thread scout >/dev/null 2>&1
+"$SIRSI" thread scout >/dev/null 2>&1
 
 # 3. Count unmappable agent sessions (running agents with no repo identity)
 UNMAPPABLE=$(printf '%s' "$DISCOVER" | python3 -c 'import json,sys
@@ -30,7 +32,7 @@ print(d.get("unmappable",0) if isinstance(d,dict) else 0)' 2>/dev/null || echo 0
 #    `sirsi thread list --json` emits a list of {idle_seconds, stale, thread:{...}}.
 #    Trust the CLI's own `stale` determination — do NOT reinvent heartbeat math on a
 #    guessed field name (an absent field counts every live thread as a violation).
-STALE=$(sirsi thread list --json 2>/dev/null | python3 -c '
+STALE=$("$SIRSI" thread list --json 2>/dev/null | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: print(0); sys.exit()
@@ -58,7 +60,7 @@ if [ "$VIOLATIONS" -gt 0 ]; then
       echo
       echo "Run \`sirsi thread discover\` and \`sirsi thread list\` to inspect. Police is read-only/advisory; no process was killed or steered."
     } > "$BODY"
-    sirsi router send --from registry-police --to claude-pantheon \
+    "$SIRSI" router send --from registry-police --to claude-pantheon \
       --title "Registry police: $VIOLATIONS A27 accountability issue(s)" \
       --instructions @"$BODY" --quiet >/dev/null 2>&1 && touch "$FLAG"
     # prune old day-flags

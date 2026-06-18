@@ -1,17 +1,17 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-06-04T23:19:57-04:00
+# Last updated: 2026-06-17T16:55:25-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
-binary_count: 8 (anubis, guard, maat, scarab, sirsi, sirsi-agent, sirsi-menubar, thoth)
-test_count: 1930+
-line_count: ~114,981
+binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
+test_count: 7880+
+line_count: ~401,169
 module_count: 45
-command_count: 153
+command_count: 150
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
 mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, Horus 4, Brain 3, Version 1, Categories 1)
@@ -499,6 +499,101 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-06-16: {"session_id":"734326c9-8d83-405c-8c9e-bb58e6412a4a","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/734326c9-8d83-405c-8c9e-bb58e6412a4a.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
+# 2026-06-16: Router snapshot:
+# 2026-06-16: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-16: completed topics: 41
+# 2026-06-16: last Codex read: 2026-06-11T04:28:50Z
+# 2026-06-16: last Claude read: 2026-06-16T15:30:16Z
+# 2026-06-16: pending: none
+# 2026-06-16: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-14: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019ec74c-d67f-7751-8795-7bec62cd36b5","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+# 2026-06-14: Router snapshot:
+# 2026-06-14: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-14: completed topics: 41
+# 2026-06-14: last Codex read: 2026-06-11T04:28:50Z
+# 2026-06-14: last Claude read: 2026-06-11T04:40:55Z
+# 2026-06-14: pending:
+# 2026-06-14: claude-home: 20260611-131051-codex-pantheon-claude-home-protocol-ack-codex-routes-through-claude-home-as-router-owner
+# 2026-06-14: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb4d0-a760-7f23-8c95-9fad47974555","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-11T03:55:10Z
+# 2026-06-10: last Claude read: 2026-06-11T03:55:10Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb485-66f4-78e2-9fbd-41b3c550bcb8","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-11T02:31:32Z
+# 2026-06-10: last Claude read: 2026-06-11T02:31:32Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb45e-98fe-7e61-bb4d-e10e2e88c90f","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"manual"}
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-11T01:45:58Z
+# 2026-06-10: last Claude read: 2026-06-11T01:46:08Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: Codex returned to router reviewer role as codex-pantheon. Read Development and repo AGENTS/router law, state.json, agents/README, and pulled codex-pantheon inbox. Reviewed 7 open router items. Post-reviewed PR #33 commit ba9833e: AI/ML baseScanRule defaults to SeverityCaution when no explicit severity is set; explicit severity still wins; non-AI default remains SeveritySafe; one-click clean selects SeveritySafe only unless --include-caution is explicit. Post-reviewed PR #35 commit 4eb6792: FindRepoRoot prefers canonical main worktree router via git common dir and falls back to cwd walk-up when appropriate. Verified in isolated /private/tmp origin/main worktree, then removed temp worktree. Tests passed: go test ./internal/jackal/rules; go test ./cmd/sirsi -run 'TestSelectCleanTargets|TestNextStepsPresent|TestDeityCommands'; go test ./internal/router -run 'TestFindRepoRoot'. Full ./internal/router was blocked by sandbox loopback httptest bind, unrelated to PR #35. Closed all seven codex-pantheon router items. Final router pull: no open items for codex-pantheon. Router state still has active topics but pending queues for codex/claude repo agents are empty; pending_for_user contains 20260522-claude-pantheon-user-dev-root-cleanup-decision. Current checkout is fix/sirsi-gemma-bare-server-chipA and dirty with many unrelated/user/Claude/router changes; do not reset or revert. Recent local code from earlier still includes Ka FDA ghost cleanup command files and router node-status edits; those were not part of this reviewer closeout.
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-11T01:45:58Z
+# 2026-06-10: last Claude read: 2026-06-11T01:46:08Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb44f-4472-7742-af8b-81d2f84e59f9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-11T01:32:19Z
+# 2026-06-10: last Claude read: 2026-06-11T01:32:19Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: Session 2026-06-09→10: standin binding authority during codex OOO (codex back 8:30 PM 2026-06-10).
+# 2026-06-10: Pantheon: 13 PRs bound (6 merged on sweep: #14/#21/#18/#24/#29/#25/#30). 7 awaiting rebase (#19 Rail A unconditional, #22 Rail B, #26 TCC bundle w/ AMFI fix, #27 live-refresh, #28 codify, #31 menubar safe-only manifest, #11/#13/#9). 1 held #8 (-2626 LOC, no-self-pass guard per root-authority 172601). PR #32 (ADR-030 NSPopover Menubar Surface) implemented + LIVE on user Mac in same minute as my refinement notes.
+# 2026-06-10: FinalWishes: 9 CRITICAL + 1 HIGH closed across 6 audit rounds + parallel batch (af15887, 7269017, 008e4cf, e7c625e, fae2b4c, 0c2ba2f, 4e7bc75, etc.). All bound by me, codex-finalwishes post-reviews. 2 design routes shipped: OpenSign CreateEnvelope (PR #4 - cycled NEEDS-CHANGES→fix→PASS-with-followup on Part 4b) + SoulLog sharedWith narrowing (PR #3 - cycled NEEDS-CHANGES→fix→PASS, all 3 paths disambiguated by unique heir.id).
+# 2026-06-10: 3 OWNER ACTIONS surfaced: OPENSIGN_WEBHOOK_SECRET in Secret Manager+Cloud Run; CI SA roles/datastore.indexAdmin; PR #26 TCC reinstall acceptance test.
+# 2026-06-10: Catch-up brief shipped to codex-pantheon + codex-finalwishes (router 193333). Standin binding pattern observed and routed as candidate Rule A29 (router 193210). ADR-030 refinement notes routed (router 191943).
+# 2026-06-10: Key behavioral memories saved: feedback_never_idle, feedback_keep_all_threads_working, feedback_only_code_if_owner, feedback_no_codesign_install_loops, feedback_passack_methodology, feedback_never_put_work_off. User directive 2026-06-10 17:46 "nothing sits, codex post-reviews on return" overrides advisory-only constraint during OOO window.
+# 2026-06-10: Source-deep review caught real gaps siblings missed twice (PR #21 expanded.go incompleteness, PR #4 Part 4 signer-substitution). Cross-validation via parallel sibling claude-home sessions worked as designed.
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-10T19:36:47Z
+# 2026-06-10: last Claude read: 2026-06-10T19:36:47Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-10: {"session_id":"63089fef-dbd3-449f-bb90-08cf1937e6bc","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/63089fef-dbd3-449f-bb90-08cf1937e6bc.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
+# 2026-06-10: Router snapshot:
+# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-10: completed topics: 41
+# 2026-06-10: last Codex read: 2026-06-10T19:17:45Z
+# 2026-06-10: last Claude read: 2026-06-10T19:17:45Z
+# 2026-06-10: pending: none
+# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-09: 2026-06-09 session (claude-pantheon source-edit; codex OOO→~06-10, route to claude-home standin). SHIPPED to main: PR #16 (gate de-flake + new-branch diff-base scoping, fleet unblocker), #17 (menubar TCC stable-sign = FDA-spam fix: go build's content-hash identifier made every rebuild a new TCC identity → re-prompt; now stable ai.sirsi.pantheon), #12 (every command visibly resolves: rootCmd SilenceUsage/SilenceErrors + output.Error in main; risk/duplicates/permissions/quickstart dead-ends), #15 (permissions/quickstart completion), #23 (sirsi continue/resume surfaces the continuation prompt). FLAGSHIP in-flight via concurrent thread (DO NOT duplicate): health→cause→one-click remediation, order C→A→B; PR #18 Rail C (jetsam trend surfacing) + #19 Rail A (AMFI-safe binary-drift self-heal) green, held-for-codex. KILLER DOGFOOD: sirsi is its own #1 crasher (21/61) via binary-drift. HELD FOR CODEX ~06-10: PR #8 (router -2626 LOC), #9 (ADR-028 sqlite), #13 (gemma 2-tool), A1 safety (orphan-narrowing/diagnose-fix/menubar --yes). RAILS: CLI-paths-only/A19, confirm-gated/A1, read-only-first. NEXT (unowned): SessionStart per-resume thread-mint fix (passes empty PID, bypasses idempotent-register; the registry-accretion root) + per-agent worktrees (shared-.git corruption). Resume: sirsi continue.
+# 2026-06-09: Router snapshot:
+# 2026-06-09: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-09: completed topics: 41
+# 2026-06-09: last Codex read: 2026-06-09T05:31:24Z
+# 2026-06-09: last Claude read: 2026-06-09T05:31:24Z
+# 2026-06-09: pending: none
+# 2026-06-09: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-06-08: {"session_id":"ef3523c2-f330-4e4f-9af2-3c1af8cc06b6","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/ef3523c2-f330-4e4f-9af2-3c1af8cc06b6.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
+# 2026-06-08: Router snapshot:
+# 2026-06-08: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-08: completed topics: 41
+# 2026-06-08: last Codex read: 2026-06-09T03:45:08Z
+# 2026-06-08: last Claude read: 2026-06-09T03:45:08Z
+# 2026-06-08: pending: none
+# 2026-06-08: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 # 2026-06-04: Setup wizard for Monday VC build (commit ff8a448, branch feat/setup-wizard, pushed).
 #   `sirsi setup` rebuilt: report -> guided 3-step wizard (Dependencies/FDA/Agent-wake) over new
 #   shared internal/setup/ engine (CDD #5: one engine, CLI + menubar-terminal both render it).

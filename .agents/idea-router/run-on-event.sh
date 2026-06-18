@@ -16,15 +16,16 @@ set -euo pipefail
 REPO="/Users/thekryptodragon/Development/sirsi-pantheon"
 LOG_DIR="${REPO}/.agents/idea-router/logs"
 WAKE_LOG="${LOG_DIR}/wake.log"
+. "${REPO}/.agents/idea-router/router-env.sh"
 
-mkdir -p "${LOG_DIR}"
+WAKE_LOG="$(router_ensure_log "$WAKE_LOG" "/tmp/sirsi-router-wake.log")" || exit 1
 
 {
   echo "=== wake $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
   cd "${REPO}"
-  if [[ -x ./sirsi ]]; then
-    ./sirsi router status --stale 6 2>&1 || true
+  if SIRSI="$(router_resolve_sirsi "$REPO")"; then
+    "$SIRSI" router status --stale 6 2>&1 || true
   else
-    echo "  (./sirsi binary not present — run 'go build ./cmd/sirsi' to enable status)"
+    echo "  (sirsi binary not found — build ./cmd/sirsi or install sirsi to enable status)"
   fi
 } >> "${WAKE_LOG}"
