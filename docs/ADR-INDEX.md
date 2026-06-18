@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 30** | **Next available: ADR-031**
+**Total ADRs: 31** | **Next available: ADR-032**
 
 ---
 
@@ -40,6 +40,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-028](ADR-028-OPTIONAL-SQLITE-LEAN-BUILD.md) | Optional SQLite — `nosqlite` lean build variant — keep full Vault/Seshat/notify by default (15 MB); opt-in `-tags nosqlite` for ~10.6 MB with graceful per-package degradation. The one real remaining size lever (Metal gate measured as non-win) | **Proposed** (design-only; codex final review on return; cross-eyes → non-standin claude) | 2026-06-08 |
 | [ADR-029](ADR-029-PER-AGENT-SESSION-WORKTREES.md) | Per-Agent Session Worktrees — every agent session edits source in its own `git worktree` under `.claude/worktrees/<agent>-<session>/`, not the shared root checkout; eliminates the shared-`.git` `core.bare` corruption + cross-branch contamination; shared object store, isolated working tree/index/HEAD; pairs with the SessionStart per-resume thread-mint fix | **Accepted** | 2026-06-09 |
 | [ADR-030](ADR-030-NATIVE-MENUBAR-POPOVER.md) | Native macOS Menubar Popover — NSStatusItem + NSPopover + SwiftUI NavigationStack (`macapp/`); persistent panel, drill-in/back, manifest+confirm+result inline; Go stays source-of-truth (Swift reads `latest-scan.json` + shells `sirsi`); supersedes the systray GUI on macOS. Phase 1 (Anubis) + Horus health view shipped | **Accepted** (binding review → codex-pantheon) | 2026-06-10 |
+| [ADR-031](ADR-031-LOCAL-MODELS-THROUGH-PANTHEON.md) | Local Models Through Pantheon — Pantheon is the on-device inference broker; local LLMs consumed via three surfaces hitting one resolver + RAM gate (`sirsi-gemma` MCP, `gemma` router worker, `sirsi gemma` CLI #57); consumers never bundle their own runtime; single capability boundary (text-only, no tools/verdicts); A11 local-only choke point; networked broker = future (Nexus location-transparency) | **Accepted** | 2026-06-17 |
 
 ---
 
