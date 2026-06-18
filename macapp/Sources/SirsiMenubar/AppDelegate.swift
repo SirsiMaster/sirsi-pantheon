@@ -54,8 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return img
     }
 
-    // tint maps the health band to the Eye's color. Healthy → nil = native
-    // monochrome (the icon sits quiet until something actually needs attention).
+    // tint maps the health band to the Eye's DRAWN colour: red (live-critical),
+    // amber (warnings / 7-day trends), else labelColor (adaptive white-on-dark).
     static func tint(for status: String) -> NSColor {
         switch status {
         case "red":   return .systemRed
@@ -75,13 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            // Branded, guaranteed-to-render mark: the Eye (Horus, the watchful
-            // protector) as an SF Symbol TEMPLATE image — vector, adapts to the
-            // menu-bar height + light/dark, and tintable. Its TINT carries health
-            // (monochrome when healthy; amber/red only when something needs you),
+            // Branded mark: the Eye of Horus (the watchful protector), drawn in
+            // code in the health colour (makeEye), NOT a template image. Healthy
+            // white at launch; onTitle recolours it amber/red as health changes,
             // so Pantheon is no longer "just a colored dot." ADR-030.
-            button.image = Self.makeEye(.labelColor)   // healthy white at launch; recolored by onTitle
-            button.imagePosition = .imageOnly
+            button.image = Self.makeEye(.labelColor)
+            button.imagePosition = .imageOnly  // becomes .imageLeading when a waste figure rides beside it
             button.action = #selector(togglePopover(_:))
             button.target = self
         }
@@ -98,9 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The Eye is always the icon; the waste figure (≥1 GB) rides beside it.
             button.title = label.isEmpty ? "" : " \(label)"
             button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
-            // Tint = health band. nil → native menu-bar monochrome (healthy).
             // Redraw the Eye in the health colour so it's ALWAYS visible (no
-            // reliance on template tinting, which didn't engage).
+            // reliance on template tinting, which didn't engage on a dark bar).
             button.image = Self.makeEye(Self.tint(for: self.engine.titleStatus))
         }
         engine.refresh()
