@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-06-17T16:55:25-04:00
+# Last updated: 2026-06-18T19:45:03-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -9,7 +9,7 @@ language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
 binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
 test_count: 7880+
-line_count: ~401,169
+line_count: ~401,213
 module_count: 45
 command_count: 150
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
@@ -499,6 +499,14 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-06-18: Pantheon menubar/health + agent-infra session (claude-pantheon, 2026-06-17/18). SHIPPED+MERGED #52-#59: #52 reniceByPID A1 protected-allowlist floor; #53 honest Fix-it (FixKind instant/relief/guidance + post-fix re-verify) + honest App-Hangs (real freezes vs background-daemon CPU noise); #54 bolder self-tinting menubar Eye; #55 EYE-VISIBLE FIX (drawn in health colour via makeEye, isTemplate=false — AppKit template tinting does NOT engage for a runtime-drawn NSImage, so it rendered black/invisible on dark bars); #56 comment cleanup; #57 "sirsi gemma" human CLI to the local MLX model; #58 "sirsi relieve" on-demand renice of the live CPU hog (App-Hangs arc COMPLETE: detect#47 -> floor#52 -> classify#53 -> relieve#58); #59 ADR-031 local-models-through-Pantheon broker. Also: committed 408 stranded router/docs/thoth files to chore/adopt-router-state-20260618 (owner-authorized; did NOT clobber peer branch); gemma worker daemon restarted (was down). Menubar DEPLOYED LIVE (cert f95b4877, FDA preserved; deploy via macapp/build-app.sh + launchctl bootout/bootstrap). CLI installed ~/.local/bin/sirsi. NEXT (the one remaining "all of the above" item): agent-operations-parity = surface ALL agent ops (respond/review/ask/memory/watch/reap + insights) in CLI+menubar, AI-optional; design stub docs/agent-operations/AGENT-OPERATIONS-PARITY-20260616.md; a fresh focused sprint (too big to rush). NOT-mine: main checkout parked on peer branch fix/sirsi-gemma-bare-server-chipA (sirsi-gemma thread) w/ its own WIP. Resume: continue with agent-operations-parity.
+# 2026-06-18: Router snapshot:
+# 2026-06-18: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-06-18: completed topics: 41
+# 2026-06-18: last Codex read: 2026-06-11T04:28:50Z
+# 2026-06-18: last Claude read: 2026-06-16T15:30:16Z
+# 2026-06-18: pending: none
+# 2026-06-18: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 # 2026-06-16: {"session_id":"734326c9-8d83-405c-8c9e-bb58e6412a4a","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/734326c9-8d83-405c-8c9e-bb58e6412a4a.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
 # 2026-06-16: Router snapshot:
 # 2026-06-16: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep

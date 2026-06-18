@@ -5,22 +5,6 @@
 
 ---
 
-## Entry 037 — 2026-06-04 09:22 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e92c9-92fd-70e2-b849-33b23a6d8b83","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-04T12:57:35Z
-- last Claude read: 2026-06-04T13:20:40Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
 ## Entry 038 — 2026-06-04 16:36 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
@@ -440,6 +424,22 @@ supervisor live. Done.
 
 **Decisions**:
 - {"session_id":"734326c9-8d83-405c-8c9e-bb58e6412a4a","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/734326c9-8d83-405c-8c9e-bb58e6412a4a.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 057 — 2026-06-18 19:45 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Pantheon menubar/health + agent-infra session (claude-pantheon, 2026-06-17/18). SHIPPED+MERGED #52-#59: #52 reniceByPID A1 protected-allowlist floor; #53 honest Fix-it (FixKind instant/relief/guidance + post-fix re-verify) + honest App-Hangs (real freezes vs background-daemon CPU noise); #54 bolder self-tinting menubar Eye; #55 EYE-VISIBLE FIX (drawn in health colour via makeEye, isTemplate=false — AppKit template tinting does NOT engage for a runtime-drawn NSImage, so it rendered black/invisible on dark bars); #56 comment cleanup; #57 "sirsi gemma" human CLI to the local MLX model; #58 "sirsi relieve" on-demand renice of the live CPU hog (App-Hangs arc COMPLETE: detect#47 -> floor#52 -> classify#53 -> relieve#58); #59 ADR-031 local-models-through-Pantheon broker. Also: committed 408 stranded router/docs/thoth files to chore/adopt-router-state-20260618 (owner-authorized; did NOT clobber peer branch); gemma worker daemon restarted (was down). Menubar DEPLOYED LIVE (cert f95b4877, FDA preserved; deploy via macapp/build-app.sh + launchctl bootout/bootstrap). CLI installed ~/.local/bin/sirsi. NEXT (the one remaining "all of the above" item): agent-operations-parity = surface ALL agent ops (respond/review/ask/memory/watch/reap + insights) in CLI+menubar, AI-optional; design stub docs/agent-operations/AGENT-OPERATIONS-PARITY-20260616.md; a fresh focused sprint (too big to rush). NOT-mine: main checkout parked on peer branch fix/sirsi-gemma-bare-server-chipA (sirsi-gemma thread) w/ its own WIP. Resume: continue with agent-operations-parity.
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
