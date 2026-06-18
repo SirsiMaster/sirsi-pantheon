@@ -18,58 +18,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // NSImage (so contentTintColor drives the health color and it adapts to
     // light/dark + Retina). All in code → guaranteed to render, no bundled asset.
     // Authored in a 100×80 design space, uniform-scaled; pupil filled, rest stroked.
-    static let eyeImage: NSImage? = {
-        // Sized to fill the menu bar (≈18–19 pt tall) so the Eye reads clearly —
-        // the first cut at 20×16 with thin strokes was too slight. Uniform 0.24 scale.
-        let w: CGFloat = 24, h: CGFloat = 19.2
-        let img = NSImage(size: NSSize(width: w, height: h), flipped: false) { _ in
-            let sx = w / 100, sy = h / 80
-            func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * sx, y: y * sy) }
-            // Append a quadratic (SVG-style) segment as a cubic, since NSBezierPath
-            // is cubic-only.
-            func quad(_ path: NSBezierPath, _ from: NSPoint, _ c: NSPoint, _ to: NSPoint) {
-                let c1 = NSPoint(x: from.x + 2.0 / 3 * (c.x - from.x), y: from.y + 2.0 / 3 * (c.y - from.y))
-                let c2 = NSPoint(x: to.x + 2.0 / 3 * (c.x - to.x), y: to.y + 2.0 / 3 * (c.y - to.y))
-                path.curve(to: to, controlPoint1: c1, controlPoint2: c2)
-            }
-            NSColor.black.setStroke()
-            NSColor.black.setFill()
-
-            let line = NSBezierPath()
-            line.lineWidth = 2.6   // bold — the thin 1.35 stroke read "too slight" in the bar
-            line.lineCapStyle = .round
-            line.lineJoinStyle = .round
-            // eyebrow
-            line.move(to: P(22, 56)); quad(line, P(22, 56), P(50, 74), P(82, 54))
-            // upper eyelid
-            line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 56), P(78, 42))
-            // lower eyelid (closes the almond)
-            line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 26), P(78, 42))
-            // the elongated outer corner extending toward the temple
-            line.move(to: P(78, 42)); line.line(to: P(95, 45))
-            // the descending straight marking (the "teardrop")
-            line.move(to: P(40, 28)); line.line(to: P(30, 5))
-            // the spiral/curl (the falcon-cheek marking)
-            line.move(to: P(60, 30)); quad(line, P(60, 30), P(70, 10), P(84, 14)); quad(line, P(84, 14), P(92, 16), P(86, 26))
-            line.stroke()
-
-            // pupil
-            let r: CGFloat = 6.5 * sx
-            let c = P(45, 41)
-            NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
-            return true
+    static func makeEye(_ color: NSColor) -> NSImage {
+        // Drawn in the health COLOR directly (white/amber/red), isTemplate = false.
+        // A template image's tinting would not engage for this runtime-drawn icon —
+        // it rendered literal-black and vanished on a dark menu bar (across both the
+        // drawingHandler and lockFocus forms). Baking the colour in guarantees it
+        // shows; the icon is redrawn whenever health changes. ~18 pt tall.
+        let s: CGFloat = 0.225
+        let img = NSImage(size: NSSize(width: 100 * s, height: 80 * s))
+        img.lockFocus()
+        func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * s, y: y * s) }
+        func quad(_ path: NSBezierPath, _ from: NSPoint, _ c: NSPoint, _ to: NSPoint) {
+            let c1 = NSPoint(x: from.x + 2.0 / 3 * (c.x - from.x), y: from.y + 2.0 / 3 * (c.y - from.y))
+            let c2 = NSPoint(x: to.x + 2.0 / 3 * (c.x - to.x), y: to.y + 2.0 / 3 * (c.y - to.y))
+            path.curve(to: to, controlPoint1: c1, controlPoint2: c2)
         }
-        img.isTemplate = true
+        color.setStroke()
+        color.setFill()
+        let line = NSBezierPath()
+        line.lineWidth = 2.4
+        line.lineCapStyle = .round
+        line.lineJoinStyle = .round
+        line.move(to: P(22, 56)); quad(line, P(22, 56), P(50, 74), P(82, 54))   // eyebrow
+        line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 56), P(78, 42))   // upper lid
+        line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 26), P(78, 42))   // lower lid
+        line.move(to: P(78, 42)); line.line(to: P(95, 45))                      // outer corner
+        line.move(to: P(40, 28)); line.line(to: P(30, 5))                       // teardrop
+        line.move(to: P(60, 30)); quad(line, P(60, 30), P(70, 10), P(84, 14)); quad(line, P(84, 14), P(92, 16), P(86, 26)) // curl
+        line.stroke()
+        let r: CGFloat = 6.5 * s
+        let c = P(45, 41)
+        NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
+        img.unlockFocus()
+        img.isTemplate = false
         return img
-    }()
+    }
 
     // tint maps the health band to the Eye's color. Healthy → nil = native
     // monochrome (the icon sits quiet until something actually needs attention).
-    static func tint(for status: String) -> NSColor? {
+    static func tint(for status: String) -> NSColor {
         switch status {
         case "red":   return .systemRed
         case "amber": return .systemYellow
-        default:      return nil
+        // Explicit adaptive color (NOT nil) — a status-bar button with a template
+        // image and contentTintColor=nil renders the image's literal black, which
+        // vanishes on a dark menu bar. labelColor is white on dark, black on light.
+        default:      return .labelColor
         }
     }
 
@@ -86,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // menu-bar height + light/dark, and tintable. Its TINT carries health
             // (monochrome when healthy; amber/red only when something needs you),
             // so Pantheon is no longer "just a colored dot." ADR-030.
-            button.image = Self.eyeImage
+            button.image = Self.makeEye(.labelColor)   // healthy white at launch; recolored by onTitle
             button.imagePosition = .imageOnly
             button.action = #selector(togglePopover(_:))
             button.target = self
@@ -105,7 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.title = label.isEmpty ? "" : " \(label)"
             button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
             // Tint = health band. nil → native menu-bar monochrome (healthy).
-            button.contentTintColor = Self.tint(for: self.engine.titleStatus)
+            // Redraw the Eye in the health colour so it's ALWAYS visible (no
+            // reliance on template tinting, which didn't engage).
+            button.image = Self.makeEye(Self.tint(for: self.engine.titleStatus))
         }
         engine.refresh()
         // Tint the Eye to REAL health immediately — a health glyph that only colors
