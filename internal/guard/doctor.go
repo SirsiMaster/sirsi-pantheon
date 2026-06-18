@@ -145,9 +145,10 @@ func remediationCommand(f DiagnosticFinding) string {
 		}
 	case "App Hangs (7d)":
 		// Only real user-facing app freezes reach Warn+ now (background-daemon CPU
-		// noise stays Info, no one-click). The remedy is to relieve the live hog.
+		// noise stays Info, no one-click). The remedy is to relieve the live hog —
+		// renice the process currently saturating the CPU (A1-protected, reversible).
 		if warn {
-			return "sirsi guard"
+			return "sirsi relieve"
 		}
 	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
 		if warn {
