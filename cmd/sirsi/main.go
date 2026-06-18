@@ -748,6 +748,7 @@ func init() {
 	thothCmd.Hidden = true
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
+	rootCmd.AddCommand(gemmaCmd) // human-facing 'sirsi gemma "<prompt>"' → local on-device model
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
 
 	// ── Internal tools (hidden) ──
