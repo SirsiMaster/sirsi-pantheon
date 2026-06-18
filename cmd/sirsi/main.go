@@ -748,7 +748,8 @@ func init() {
 	thothCmd.Hidden = true
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
-	rootCmd.AddCommand(gemmaCmd) // human-facing 'sirsi gemma "<prompt>"' → local on-device model
+	rootCmd.AddCommand(gemmaCmd)   // human-facing 'sirsi gemma "<prompt>"' → local on-device model
+	rootCmd.AddCommand(relieveCmd) // on-demand hang relief: renice the live CPU offender (A1-protected)
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
 
 	// ── Internal tools (hidden) ──

@@ -987,8 +987,8 @@ func TestRemediationCommand(t *testing.T) {
 		// App Crashes reports are caution-tier → safe `clean` left them, so the
 		// count never dropped. --include-caution clears the backlog (instant).
 		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean --include-caution", FixInstant},
-		{"App Hangs (7d)", "Chrome ×6", SeverityCritical, "sirsi guard", FixRelief},
-		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi guard", FixRelief},
+		{"App Hangs (7d)", "Chrome ×6", SeverityCritical, "sirsi relieve", FixRelief},
+		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi relieve", FixRelief},
 		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard", FixRelief},
 		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution", FixInstant},
 		{"Swap Usage", "", SeverityWarn, "", FixRelief}, // warn swap → no one-click cmd, but classed relief
