@@ -98,8 +98,8 @@ func TestDoctorWith_HealthySystem(t *testing.T) {
 	if swapFinding.Severity != SeverityOK {
 		t.Errorf("Swap Usage severity = %v, want OK", swapFinding.Severity)
 	}
-	if !strings.Contains(swapFinding.Message, "no memory pressure") {
-		t.Errorf("Swap message = %q, want 'no memory pressure' substring", swapFinding.Message)
+	if !strings.Contains(swapFinding.Message, "no pressure") {
+		t.Errorf("Swap message = %q, want 'no pressure' substring", swapFinding.Message)
 	}
 
 	// Disk should be OK
@@ -188,17 +188,24 @@ func TestDoctorWith_SwapActive(t *testing.T) {
 			name:          "minimal swap (256 MB) is healthy",
 			swapOutput:    "total = 512.00M  used = 256.00M  free = 256.00M  (encrypted)",
 			wantSeverity:  SeverityOK,
-			wantSubstring: "no memory pressure",
+			wantSubstring: "no pressure",
 		},
 		{
-			name:          "moderate swap (2 GB) warns",
+			// GREEN STANDARD: a few GB of swap on a busy machine is normal paging.
+			name:          "routine swap (2 GB) is GREEN — normal macOS paging",
 			swapOutput:    "total = 4096.00M  used = 2048.00M  free = 2048.00M  (encrypted)",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "normal macOS paging",
+		},
+		{
+			name:          "elevated swap (6 GB) warns",
+			swapOutput:    "total = 12288.00M  used = 6144.00M  free = 6144.00M  (encrypted)",
 			wantSeverity:  SeverityWarn,
 			wantSubstring: "under memory pressure",
 		},
 		{
-			name:          "heavy swap (6 GB) is critical thrashing",
-			swapOutput:    "total = 12288.00M  used = 6144.00M  free = 6144.00M  (encrypted)",
+			name:          "heavy swap (16 GB) is critical thrashing",
+			swapOutput:    "total = 32768.00M  used = 16384.00M  free = 16384.00M  (encrypted)",
 			wantSeverity:  SeverityCritical,
 			wantSubstring: "thrashing",
 		},
@@ -206,7 +213,7 @@ func TestDoctorWith_SwapActive(t *testing.T) {
 			name:          "no swap",
 			swapOutput:    "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)",
 			wantSeverity:  SeverityOK,
-			wantSubstring: "no memory pressure",
+			wantSubstring: "no pressure",
 		},
 	}
 
@@ -776,11 +783,13 @@ func TestCheckRecentCrashLogs_TransientVsTrend(t *testing.T) {
 	if jet == nil {
 		t.Fatal("missing Jetsam finding")
 	}
-	if jet.Severity != SeverityWarn || jet.Trend {
-		t.Errorf("transient jetsam: got severity=%v trend=%v, want Warn/false", jet.Severity, jet.Trend)
+	// GREEN STANDARD: 3 isolated Jetsam kills (<= tolerance, not a multi-day trend)
+	// is normal background — SeverityOK so the machine can be green, NOT a warning.
+	if jet.Severity != SeverityOK || jet.Trend {
+		t.Errorf("transient jetsam: got severity=%v trend=%v, want OK/false (green standard)", jet.Severity, jet.Trend)
 	}
-	if !strings.Contains(jet.Message, "transient") {
-		t.Errorf("transient jetsam message %q should say transient", jet.Message)
+	if !strings.Contains(jet.Message, "no sustained trend") {
+		t.Errorf("transient jetsam message %q should say 'no sustained trend'", jet.Message)
 	}
 
 	pan := findByCheck(report.Findings, "Kernel Panics (7d)")
@@ -908,8 +917,38 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 	report = &DoctorReport{}
 	checkAppHangs(report)
 	f = findByCheck(report.Findings, "App Hangs (7d)")
-	if f.Severity != SeverityWarn || f.Trend {
-		t.Errorf("transient hangs: got severity=%v trend=%v, want Warn/false", f.Severity, f.Trend)
+	// GREEN STANDARD: 3 isolated hangs (<= tolerance, not a trend) → Info, green.
+	if f.Severity != SeverityInfo || f.Trend {
+		t.Errorf("transient hangs: got severity=%v trend=%v, want Info/false (green standard)", f.Severity, f.Trend)
+	}
+}
+
+// TestClassifyHealth_GreenIsReachable is THE owner standard: a real dev machine
+// with isolated background events (a couple of Jetsam kills, a transient hang) and
+// routine swap must be GREEN — green has to be reachable, not perpetually amber.
+// A genuine sustained trend still escalates to amber.
+func TestClassifyHealth_GreenIsReachable(t *testing.T) {
+	healthy := []DiagnosticFinding{
+		{Check: "Swap Usage", Severity: SeverityOK},         // 2 GB routine paging
+		{Check: "Jetsam Events (7d)", Severity: SeverityOK}, // 2 isolated kills, below tolerance
+		{Check: "App Hangs (7d)", Severity: SeverityInfo},   // transient, informational
+		{Check: "RAM Pressure", Severity: SeverityOK},
+		{Check: "Disk Space", Severity: SeverityOK},
+	}
+	if got := classifyHealth(healthy); got != HealthGreen {
+		t.Errorf("classifyHealth = %v, want GREEN — a machine with only isolated background events must reach green", got)
+	}
+
+	// A sustained multi-day trend is still amber (real, not perpetual noise).
+	withTrend := append(healthy, DiagnosticFinding{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true})
+	if got := classifyHealth(withTrend); got != HealthAmber {
+		t.Errorf("classifyHealth with a sustained trend = %v, want amber", got)
+	}
+
+	// A live-critical (RAM/disk) is still red.
+	withRed := append(healthy, DiagnosticFinding{Check: "RAM Pressure", Severity: SeverityCritical})
+	if got := classifyHealth(withRed); got != HealthRed {
+		t.Errorf("classifyHealth with live-critical RAM = %v, want red", got)
 	}
 }
 

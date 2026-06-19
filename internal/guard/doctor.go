@@ -438,13 +438,18 @@ func checkSwapUsage(p platform.Platform, report *DoctorReport) {
 	// NOT pressure. Only flag swap that is genuinely large. (Was: any swap > 0 MB
 	// warned "RAM pressure present", which cried wolf on 195 MB.)
 	switch {
-	case usedMB < 1024: // < 1 GB — routine
+	// GREEN STANDARD: macOS swaps PROACTIVELY — it pages idle memory to disk and
+	// leaves it there even when RAM is fine, so allocated swap ≠ pressure. A busy
+	// dev machine (browsers + multiple AI agents) routinely sits at a few GB of
+	// swap while perfectly healthy. Only genuinely large swap signals real
+	// pressure. (Was: 1 GB warned → amber, so a normal loaded Mac was never green.)
+	case usedMB < 4096: // < 4 GB — routine on a loaded machine
 		finding.Severity = SeverityOK
-		finding.Message = fmt.Sprintf("Swap minimal (%.0f MB) — no memory pressure", usedMB)
-	case usedMB < 4096: // 1–4 GB — worth a look
+		finding.Message = fmt.Sprintf("Swap routine (%.1f GB) — normal macOS paging, no pressure", usedMB/1024)
+	case usedMB < 12288: // 4–12 GB — worth a look
 		finding.Severity = SeverityWarn
-		finding.Message = fmt.Sprintf("Swap active (%.1f GB) — under memory pressure", usedMB/1024)
-	default: // > 4 GB — genuinely heavy
+		finding.Message = fmt.Sprintf("Swap elevated (%.1f GB) — under memory pressure", usedMB/1024)
+	default: // > 12 GB — genuinely heavy
 		finding.Severity = SeverityCritical
 		finding.Message = fmt.Sprintf("Heavy swapping (%.1f GB) — system is thrashing", usedMB/1024)
 	}
@@ -594,6 +599,16 @@ func checkSpotlightStorm(p platform.Platform, report *DoctorReport) {
 // week escalates to Critical.
 const trendDayThreshold = 3
 
+// transientEventTolerance is THE GREEN STANDARD for 7-day trend checks (Jetsam,
+// kernel panics, app hangs): a handful of ISOLATED events over a week is normal
+// background on a busy machine — informational history, NOT a current alarm. At
+// or below this count (and not a multi-day trend) the finding stays SeverityOK so
+// the at-a-glance light can be GREEN. Above it (a real spike) → Warn (amber);
+// recurring across trendDayThreshold+ days → Critical (amber). Without this, a
+// single Jetsam kill 6 days ago pinned the machine amber for a week and green was
+// unreachable on any real dev machine (the owner's "it's always yellow" report).
+const transientEventTolerance = 3
+
 // crashEventScanFn returns the modification times of kernel-panic and Jetsam
 // reports in the system DiagnosticReports dirs. Injectable (Rule A16) so the
 // trend classifier can be tested without real crash logs on the host.
@@ -681,9 +696,15 @@ func crashEventFinding(check, noun, trendCause string, times []time.Time, now ti
 		f.Severity = SeverityCritical
 		f.Message = fmt.Sprintf("%d %ss across %d of %d days — sustained trend, %s",
 			count, noun, activeDays, crashWindowDays, trendCause)
+	case count <= transientEventTolerance:
+		// GREEN STANDARD: a few isolated events over a week is normal background,
+		// not a current problem — informational, keeps the light green.
+		f.Severity = SeverityOK
+		f.Message = fmt.Sprintf("%d %s(s) in the last %d days — isolated, no sustained trend (normal background)",
+			count, noun, crashWindowDays)
 	default:
 		f.Severity = SeverityWarn
-		f.Message = fmt.Sprintf("%d %s(s) in the last %d days, clustered in %d day(s) — transient spike, watch for a trend",
+		f.Message = fmt.Sprintf("%d %ss in the last %d days, clustered in %d day(s) — elevated, watch for a trend",
 			count, noun, crashWindowDays, activeDays)
 	}
 	return f
@@ -857,9 +878,15 @@ func checkAppHangs(report *DoctorReport) {
 		f.Message = fmt.Sprintf("%d app freeze event(s) across %d of %d days — sustained main-thread saturation (beachballs, dropped frames)",
 			count, activeDays, crashWindowDays)
 		f.Detail = topOffenders(userByProc, 3)
+	case count <= transientEventTolerance:
+		// GREEN STANDARD: a few isolated stalls over a week are normal — keep green.
+		f.Severity = SeverityInfo
+		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days — isolated, no sustained trend (normal background)",
+			count, crashWindowDays)
+		f.Detail = topOffenders(userByProc, 3)
 	default:
 		f.Severity = SeverityWarn
-		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
+		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days, clustered in %d day(s) — elevated, watch for a trend",
 			count, crashWindowDays, activeDays)
 		f.Detail = topOffenders(userByProc, 3)
 	}

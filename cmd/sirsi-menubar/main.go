@@ -542,8 +542,12 @@ func rescanWaste(ctx context.Context) {
 	jackal.EnrichAdvisory(res)
 	_ = jackal.Persist(res, time.Since(start))
 	liveState.mu.Lock()
-	liveState.wasteBytes = res.TotalSize
-	liveState.wasteLabel = jackal.FormatSize(res.TotalSize) + " waste"
+	// Show RECLAIMABLE waste, not the full inventory: warning-tier findings (AI
+	// model weights, data) are protected from one-click clean, so counting them
+	// would put a scary 67 GB of Gemma weights in the title that the cleaner will
+	// never remove (the false "76 GB waste" alarm). ReclaimableSize = safe+caution.
+	liveState.wasteBytes = res.ReclaimableSize
+	liveState.wasteLabel = jackal.FormatSize(res.ReclaimableSize) + " waste"
 	liveState.mu.Unlock()
 	liveState.updateTitle()
 }

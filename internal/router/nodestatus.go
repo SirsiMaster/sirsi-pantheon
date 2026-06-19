@@ -91,6 +91,19 @@ type ThreadSummary struct {
 	Stale         bool         `json:"stale,omitempty"`
 	PID           int          `json:"pid,omitempty"`
 	OSState       PIDState     `json:"os_state,omitempty"` // OS-truth liveness of PID
+	// Honest liveness (owner priority 2026-06-19, codex-validated). watcher_type is
+	// the thread's canonical watcher (WatcherFor().Type). loop_state is the
+	// surface-native loop-evidence verdict: "alive"/"dead" for loop-bearing surfaces
+	// (loop-monitor/surface-loop/pull-loop — a pgrep `thr-<id>` loop), "na" for
+	// surfaces that prove liveness by heartbeat (app-heartbeat Codex, resident
+	// native-runloop UI), "unknown" when it can't be probed. armed is the truthful
+	// "is the declared wake mechanism currently present?" verdict; armed_reason is
+	// the short machine string behind it (loop-alive | app-heartbeat-fresh |
+	// resident-runloop-fresh | loop-dead | heartbeat-stale).
+	WatcherType string `json:"watcher_type,omitempty"`
+	LoopState   string `json:"loop_state,omitempty"` // alive | dead | na | unknown
+	Armed       bool   `json:"armed"`
+	ArmedReason string `json:"armed_reason,omitempty"`
 }
 
 // AgentHealthCheck reports whether a local agent CLI is available and authenticated.
@@ -347,6 +360,37 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				Stale:         thr.IsStale(now, DefaultThreadStaleAfter),
 				PID:           thr.PID,
 				OSState:       PIDStateOf(thr.PID, thr.StartTime),
+			}
+			// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
+			//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
+			//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
+			//    be heartbeat-FRESH while the loop is DEAD (armed:false, loop_state:"dead"
+			//    — the owner's "claims live but is idle"). NOT extended to surface-loop/
+			//    pull-loop: their heartbeat is loop-driven (dead loop → stale → caught by
+			//    !stale) and not contractually thr-id-pgrep-able, so requiring it would
+			//    false-negative healthy workers.
+			//  - app-heartbeat (Codex), native-runloop (resident UI), surface-loop,
+			//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
+			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
+			switch {
+			case requiresThreadIDLoop(sum.WatcherType):
+				switch {
+				case thr.ThreadID == "":
+					sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
+				case WatcherAlive(thr.ThreadID):
+					sum.LoopState, sum.Armed, sum.ArmedReason = "alive", true, "loop-alive"
+				default:
+					sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"
+				}
+			case sum.Stale:
+				// Any non-loop-monitor surface gone stale is unarmed regardless of kind.
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", false, "heartbeat-stale"
+			case sum.WatcherType == watcherTypeAppHeartbeat:
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "app-heartbeat-fresh"
+			case sum.WatcherType == watcherTypeNativeRunloop:
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "resident-runloop-fresh"
+			default: // surface-loop / pull-loop / unknown — loop-driven heartbeat is the proof
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "heartbeat-fresh"
 			}
 			if sum.Stale {
 				ns.StaleThreads = append(ns.StaleThreads, sum)

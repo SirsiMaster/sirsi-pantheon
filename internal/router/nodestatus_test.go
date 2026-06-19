@@ -121,7 +121,10 @@ func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plist := testLaunchPlist("/bin/zsh")
+	// /bin/sh exists on macOS AND the Linux release runner (goreleaser job runs on
+	// ubuntu); /bin/zsh is absent on Linux → ProgramFound:false → release-blocking
+	// test failure (the reason v0.23.0/v0.23.1-beta release runs failed at this step).
+	plist := testLaunchPlist("/bin/sh")
 	if err := os.WriteFile(filepath.Join(agentDir, "ai.sirsi.pantheon.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +134,7 @@ func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
 	for _, h := range agents {
 		if h.Label == "ai.sirsi.pantheon" {
 			found = true
-			if !h.Installed || h.Role != "menubar" || h.Program != "/bin/zsh" || !h.ProgramFound {
+			if !h.Installed || h.Role != "menubar" || h.Program != "/bin/sh" || !h.ProgramFound {
 				t.Fatalf("unexpected menubar LaunchAgent health: %+v", h)
 			}
 		}
@@ -537,5 +540,93 @@ func TestCollectNodeStatus_DoesNotCountSuspendedThreadsAsLive(t *testing.T) {
 	if ns.LiveThreadCount != 0 || len(ns.LiveThreads) != 0 || len(ns.StaleThreads) != 0 {
 		t.Fatalf("suspended thread surfaced as live/stale: live=%d stale=%d count=%d",
 			len(ns.LiveThreads), len(ns.StaleThreads), ns.LiveThreadCount)
+	}
+}
+
+// TestCollectNodeStatus_HonestLiveness locks the owner-priority "honest liveness"
+// contract (2026-06-19): node-status must not report a thread armed when its
+// surface-native loop is actually dead, and must not false-flag surfaces that
+// prove liveness by heartbeat. It also confirms OS-dead threads auto-reap on the
+// live CollectNodeStatus path (criterion 3).
+func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	host, _ := os.Hostname()
+
+	// OS truth: pid 10004 is gone (reapable); the rest are alive with matching start.
+	oldState, oldStart, oldCmd := getPIDStateFn(), getPIDStartFn(), getPIDCommandFn()
+	setPIDStateFn(func(pid int) PIDState {
+		if pid == 10004 {
+			return PIDGone
+		}
+		return PIDAlive
+	})
+	setPIDStartFn(func(int) string { return "sig" })
+	setPIDCommandFn(func(int) string { return "" })
+	defer func() { setPIDStateFn(oldState); setPIDStartFn(oldStart); setPIDCommandFn(oldCmd) }()
+
+	mk := func(agent, surface string, pid int) *Thread {
+		thr, err := RegisterThread(routerRoot, &Thread{AgentID: agent, Surface: surface, PID: pid, Host: host, StartTime: "sig"})
+		if err != nil {
+			t.Fatalf("register %s: %v", agent, err)
+		}
+		return thr
+	}
+	aLive := mk("claude-a", "claude", 10001)   // loop-monitor, loop ALIVE
+	bDead := mk("claude-b", "claude", 10002)   // loop-monitor, heartbeat-fresh but loop DEAD
+	cCodex := mk("codex-x", "codex", 10003)    // app-heartbeat — loop-evidence N/A
+	eMenu := mk("menubar-x", "menubar", 10005) // native-runloop resident — loop-evidence N/A
+	fGemma := mk("gemma-x", "gemma", 10006)    // surface-loop — loop-evidence N/A (NOT pgrep-gated)
+	dGone := mk("claude-d", "claude", 10004)   // OS-dead → must auto-reap
+
+	// Only thread A has a live watcher loop.
+	oldWatch := watcherAliveFn
+	watcherAliveFn = func(id string) bool { return id == aLive.ThreadID }
+	defer func() { watcherAliveFn = oldWatch }()
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	find := func(id string) *ThreadSummary {
+		for i := range ns.LiveThreads {
+			if ns.LiveThreads[i].ThreadID == id {
+				return &ns.LiveThreads[i]
+			}
+		}
+		for i := range ns.StaleThreads {
+			if ns.StaleThreads[i].ThreadID == id {
+				return &ns.StaleThreads[i]
+			}
+		}
+		return nil
+	}
+
+	// codex's 5-test matrix:
+	// (1) loop-monitor + live loop → armed, loop_state alive.
+	if s := find(aLive.ThreadID); s == nil || !s.Armed || s.LoopState != "alive" || s.ArmedReason != "loop-alive" || s.WatcherType != "loop-monitor" {
+		t.Errorf("live-looping claude: got %+v, want armed=true loop_state=alive reason=loop-alive type=loop-monitor", s)
+	}
+	// (2) loop-monitor + DEAD loop (heartbeat fresh) → NOT armed, loop_state dead — the false-live bug.
+	if s := find(bDead.ThreadID); s == nil || s.Armed || s.LoopState != "dead" || s.ArmedReason != "loop-dead" {
+		t.Errorf("loop-dead claude: got %+v, want armed=false loop_state=dead reason=loop-dead", s)
+	}
+	// (3) app-heartbeat (codex) → armed by heartbeat, loop_state na — NEVER false-flagged.
+	if s := find(cCodex.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "app-heartbeat-fresh" {
+		t.Errorf("codex app-heartbeat: got %+v, want armed=true loop_state=na reason=app-heartbeat-fresh", s)
+	}
+	// (4) native-runloop resident (menubar) → armed by heartbeat, loop_state na, no inbox-worker expectation.
+	if s := find(eMenu.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "resident-runloop-fresh" {
+		t.Errorf("menubar native-runloop: got %+v, want armed=true loop_state=na reason=resident-runloop-fresh", s)
+	}
+	// (5) OS-dead → auto-reaped off the live path (absent from live + stale), ADR-022 safety preserved.
+	if s := find(dGone.ThreadID); s != nil {
+		t.Errorf("OS-dead thread must auto-reap, still present: %+v", s)
+	}
+	// (6) surface-loop (gemma) → NOT pgrep-gated (loop-monitor-only verdict): armed by
+	// heartbeat, loop_state na. Under a broadened gate this would be armed:false/dead
+	// (no watcher proc) — false-negativing a healthy worker. Locks codex-home's #79 verdict.
+	if s := find(fGemma.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "heartbeat-fresh" {
+		t.Errorf("gemma surface-loop: got %+v, want armed=true loop_state=na reason=heartbeat-fresh", s)
 	}
 }

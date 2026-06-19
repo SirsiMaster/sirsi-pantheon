@@ -52,6 +52,33 @@ func loopArmInstruction(agentID, threadID string) string {
 	)
 }
 
+// Canonical WatcherSpec.Type values (must match the strings WatcherFor returns).
+const (
+	watcherTypeLoopMonitor   = "loop-monitor"   // claude /loop — pgrep thr-id loop
+	watcherTypeAppHeartbeat  = "app-heartbeat"  // codex — native heartbeat, no thr-id loop
+	watcherTypeSurfaceLoop   = "surface-loop"   // gemini/gemma/qwen pull loop
+	watcherTypeNativeRunloop = "native-runloop" // resident UI — heartbeat from runloop
+	watcherTypePullLoop      = "pull-loop"      // headless mcp/api/webhook/worker
+)
+
+// requiresThreadIDLoop reports whether a watcher_type's liveness must be proven by
+// a live thread-id-keyed loop process (`pgrep -f thr-<id>`). This is TRUE for ONLY
+// `loop-monitor` (Claude): its `/loop` arm instruction is explicitly thread-id
+// keyed AND its `thread heartbeat` is harness-gated, so a Claude thread can be
+// heartbeat-FRESH while its loop is DEAD — pgrep evidence is the only honest proof.
+//
+// It is deliberately NOT extended to surface-loop (gemini/gemma/qwen) or pull-loop
+// (mcp/api/webhook/worker): those are loop-DRIVEN heartbeats (a dead loop stops the
+// heartbeat → goes stale → already caught by armed=!stale), and their process
+// cmdlines are not contractually `pgrep -f thr-<id>`-able, so requiring the loop
+// probe would FALSE-NEGATIVE healthy workers (codex-home SME verdict on #79, bound
+// by claude-home). Strengthening those is a future PR that first defines a per-
+// watcher process-identity contract. app-heartbeat (Codex) + native-runloop
+// (resident UI) prove liveness by heartbeat too. [[feedback_liveness_proof_surface_native]].
+func requiresThreadIDLoop(t string) bool {
+	return t == watcherTypeLoopMonitor
+}
+
 // WatcherFor returns the canonical watcher spec for a surface, templated for the
 // given agent and thread. Unknown/headless surfaces fall back to a surface-owned
 // pull loop; the active router CLI is pull-model and does not expose a daemon

@@ -254,7 +254,7 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				// heartbeat-style register and must NOT wipe the existing value.
 				// (Union was rejected: it accretes watches forever and can never narrow.)
 				if len(t.Watches) > 0 {
-					existing.Watches = dedupeWatches(t.Watches)
+					existing.Watches = normalizeWatches(existing.AgentID, t.Watches)
 				}
 				if t.Workstream != "" {
 					existing.Workstream = t.Workstream
@@ -287,11 +287,9 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t.Status == "" {
 		t.Status = ThreadStatusActive
 	}
-	if len(t.Watches) == 0 {
-		t.Watches = []string{t.AgentID}
-	} else {
-		t.Watches = dedupeWatches(t.Watches)
-	}
+	// normalizeWatches puts self first + dedupes, so empty input → just [self] and a
+	// declaration omitting self still watches its own inbox (the A27 contract).
+	t.Watches = normalizeWatches(t.AgentID, t.Watches)
 
 	reg.Threads[t.ThreadID] = t
 	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
@@ -300,22 +298,30 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	return t, nil
 }
 
-// dedupeWatches returns the watch list with duplicates removed, preserving first-
-// seen order (stable). Empty/whitespace entries are dropped so a stray `--watch ""`
-// never bloats the declaration.
-func dedupeWatches(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, w := range in {
+// normalizeWatches returns the watch set with the thread's OWN agent id FIRST,
+// then the declared watches stable-de-duped with blank/whitespace entries dropped.
+// Every thread watches its own inbox (A27), so self is GUARANTEED present and
+// primary even when a register/re-register declares only other agents — that
+// self-watch is the precursor honest liveness depends on (codex-validated #76
+// follow-up: a thread that doesn't watch its own inbox can never be truthfully
+// "armed"). A blank agentID is ignored. Used on both the mint and reuse paths.
+func normalizeWatches(agentID string, watches []string) []string {
+	seen := make(map[string]struct{}, len(watches)+1)
+	out := make([]string, 0, len(watches)+1)
+	add := func(w string) {
 		w = strings.TrimSpace(w)
 		if w == "" {
-			continue
+			return
 		}
 		if _, ok := seen[w]; ok {
-			continue
+			return
 		}
 		seen[w] = struct{}{}
 		out = append(out, w)
+	}
+	add(agentID) // self FIRST — the inbox a thread must always watch
+	for _, w := range watches {
+		add(w)
 	}
 	return out
 }
