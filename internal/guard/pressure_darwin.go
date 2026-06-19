@@ -98,8 +98,13 @@ func fanoutPressure(level PressureLevel) {
 	// aggravates VM pressure). The Hapi loop persists the cross-process cache.
 	lastPressureLevel.Store(int32(level))
 	lastPressureAuth.Store(true)
+	// Copy the subscriber CONTENTS under the lock — not just the slice header. The
+	// ctx.Done teardown removes via an in-place left-shift (append(subs[:i], subs[i+1:]...))
+	// that mutates the backing array, so an aliased header read here would race it
+	// once there are ≥2 subscribers (A21). Channel sends on the copied values are safe.
 	pressureSubMu.Lock()
-	subs := pressureSubs
+	subs := make([]chan<- PressureEvent, len(pressureSubs))
+	copy(subs, pressureSubs)
 	pressureSubMu.Unlock()
 	for _, c := range subs {
 		select {
