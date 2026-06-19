@@ -119,6 +119,10 @@ jobs:
 
   windows-installer:
     name: Build Windows Installer
+    # Mac-first platform roadmap (ADR-032): Windows is deferred 3–6mo, demand-gated.
+    # Gated OFF so a tag release never fails on Windows; set the repo variable
+    # ENABLE_WINDOWS_BUILD=true to re-enable when the platform phase arrives.
+    if: ${{ vars.ENABLE_WINDOWS_BUILD == 'true' }}
     runs-on: windows-latest
     needs: release
     steps:

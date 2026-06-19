@@ -3,6 +3,10 @@
 > Status as of 2026-06-18. Scope: the local-node surface that **cleans, hydrates, and protects** sessions (gamers, productivity, devs, and the AI agents themselves). **Ra (fleet-tier orchestration) is out of scope** for this document and is omitted from the roadmap below.
 >
 > This document is written in the wake of a real failure: Pantheon OOM-crashed a 48 GB M5 Max. The "protect" pillar was advertised but **never built** — Hapi is a stub, the Isis watchdog was not running, and `renice` frees zero RAM. The inventory does not cherry-pick. It states what is real, what is a stub, and what was over-claimed.
+>
+> **UPDATE 2026-06-19:** the "protect" pillar is now real — **Hapi shipped** (`internal/guard/hapi.go`, `sirsi hapi`, ADR-031-A Layer 4, merged in #63): the live memory governor that samples free RAM + per-process RSS and suspends/kills a *governed* runaway before the kernel Jetsams. The Hapi row below is updated accordingly.
+>
+> **Platform scope (ADR-032 — Mac-first):** every feature targets **Mac only** today and advances through the same surface ladder in this order: **CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar). The "CLI state" / "Menubar state" columns below are stages 1–2 of that ladder; TUI and GUI are the subsequent stages for each feature. Windows/Linux are deferred 3–6mo (demand-gated); CI is Mac-only (PR #64).
 
 ---
 
@@ -14,7 +18,7 @@ Runtime legend: **live** = a persistent daemon exists and runs · **on-demand** 
 |---|---|---|---|---|---|
 | **Horus** | 𓂀 | Workstation lord: daemon health, repo status, code graph, operator dashboard | working (`scan/outline/symbols/context/stats/supervise`) | partial | on-demand |
 | **Isis** | 𓁐 | Health & remediation: doctor, auto-fix, watchdog, CPU/RAM monitor | working (`diagnose/isis network/isis fix/relieve`) | partial | on-demand (watchdog code exists, **not running**) |
-| **Hapi** | 🌊 | Compute guard: GPU/VRAM/RAM flow, hardware optimization | **STUB** — no CLI; `hapi_bridge.go` is bridge-only | none | **stub** |
+| **Hapi** | 🌊 | Memory governor: free-RAM + per-process RSS watch, suspend/kill a governed runaway before Jetsam | **working** (`sirsi hapi` status/`watch --govern`/`protect`/`release`; ADR-031-A Layer 4, #63) | next | on-demand (`watch` loop; launchd daemon = next) |
 | **Guard** | 🛡️ | Process protection & CPU-pressure relief (renice) | working (`relieve/monitor`) | partial | on-demand |
 | **Sekhmet** | ⚡ | Alerts & escalation (watchdog `FormatAlert` only) | none (no standalone command) | none | **stub** |
 | **Vitals** | 📊 | Health dashboard / metric streaming / trend | partial (`status/monitor` are snapshots) | none | on-demand |

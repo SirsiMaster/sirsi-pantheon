@@ -1,16 +1,11 @@
 name: Android CI
 
+# Mac-first platform roadmap (ADR-032): Pantheon's GUI path is Mac desktop FROM
+# the menubar, not mobile. This workflow is dormant — manual-only so it never
+# auto-runs and burns CI. Restore the push/pull_request triggers if/when mobile
+# returns to the roadmap (3–6mo, demand-gated).
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'android/**'
-      - 'mobile/**'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'android/**'
-      - 'mobile/**'
+  workflow_dispatch:
 
 jobs:
   build-aar:

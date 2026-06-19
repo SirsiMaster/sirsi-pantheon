@@ -14,6 +14,9 @@ An open-source CLI tool that scans, judges, and purges infrastructure waste acro
 - **CLI Binary**: `sirsi`
 - **Agent Binary**: `sirsi-agent`
 
+### Platform Roadmap (ADR-032 — Mac-first)
+Pantheon is **100% Mac**, built in this exact order: **(1) Mac CLI → (2) Mac Menubar → (3) Mac TUI → (4) Mac desktop GUI** (built FROM the menubar). Windows/Linux are **deferred 3–6 months**, revisited only on demand once all four Mac surfaces are engineered, working, AND selling. CI builds Mac-only (PR #64); off-strategy jobs (Windows installer, Android/iOS) are gated off, not deleted. See `docs/ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md`.
+
 **This repo is NOT SirsiNexusApp. This repo is NOT FinalWishes. This repo is NOT Assiduous.**
 Rules, design tokens, and business logic from other repositories do NOT apply here unless explicitly inherited through Universal Rules (§1).
 
@@ -355,19 +358,21 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 ## 3. Technology Stack
 
+> **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
+
 | Layer | Technology | Decision |
 | :--- | :--- | :--- |
-| **Language** | **Go 1.22+** | Single static binary, cross-compile, contributor-friendly |
+| **Language** | **Go 1.22+** | Single static binary; cross-compile *capable* but **Mac-targeted today** (ADR-032), contributor-friendly |
 | **CLI Framework** | **cobra** | Subcommands, auto-complete, help generation |
 | **Terminal UI** | **lipgloss + table** (charmbracelet) | Styled CLI output (tables, headers, progress) for v0.23. New Mole-grade TUI follows under ADR-020 / Hybrid C. |
-| **Interactive Surface** | **New Mole-grade TUI** (in design) first on macOS/Windows/Linux + CLI on all platforms; native macOS SwiftUI as a later-phase polish-bar upgrade | v0.22 BubbleTea TUI implementation removed in v0.23 per ADR-018; surface direction reopened and closed as Hybrid C per ADR-020 (2026-05-29). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
+| **Interactive Surface** | **Mac-first surface ladder (ADR-032): CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar); native macOS SwiftUI is the GUI path | v0.22 BubbleTea TUI removed in v0.23 per ADR-018; surface direction closed as Hybrid C per ADR-020 (2026-05-29). Mac-only build targets per ADR-032 (Windows/Linux TUI deferred). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
 | **Agent Protocol** | **gRPC** (fallback: SSH+JSON) | Streaming results, bidirectional |
 | **Config** | **viper** (YAML) | User-defined rules, profiles, budgets |
 | **Network Discovery** | **nmap** wrapper + native ARP/mDNS | Subnet/VLAN host discovery |
 | **Docker** | **docker/client** SDK | Native Docker API |
 | **Kubernetes** | **client-go** | Native K8s API |
 | **SSH** | **golang.org/x/crypto/ssh** | Native Go SSH client |
-| **Build** | **goreleaser** | Multi-platform binary releases |
+| **Build** | **goreleaser** | Mac binary releases today (darwin arm64/amd64); multi-platform deferred per ADR-032 |
 | **CI/CD** | **GitHub Actions** | Build, test, release |
 | **Distribution** | **Homebrew tap** + GitHub Releases | `brew install sirsi-pantheon` |
 

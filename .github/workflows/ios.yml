@@ -1,17 +1,10 @@
 name: iOS — Build & TestFlight
 
+# Mac-first platform roadmap (ADR-032): Pantheon's GUI path is Mac desktop FROM
+# the menubar, not mobile. This workflow is dormant — manual-only (workflow_dispatch)
+# so it never auto-runs and burns CI. Restore the push/pull_request triggers if/when
+# mobile returns to the roadmap (3–6mo, demand-gated).
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'ios/**'
-      - 'mobile/**'
-      - 'internal/platform/ios.go'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'ios/**'
-      - 'mobile/**'
   workflow_dispatch:
     inputs:
       deploy_testflight:
