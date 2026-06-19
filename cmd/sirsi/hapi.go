@@ -120,6 +120,18 @@ func runHapiStatus(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	// NodeCapacity (ADR-031-B): show that the governor's numbers are derived from
+	// THIS node, not hardcoded. Concurrency is illustrated for a nominal ~12 GB
+	// model so the scaling is visible (the broker uses its own measured model size).
+	nc := guard.SampleNodeCapacity()
+	const nominalModel = int64(12) << 30
+	res.Evidence = append(res.Evidence,
+		output.Evidence{Label: "Node", Value: fmt.Sprintf("%d CPU cores · %s RAM · GPU %s%s", nc.CPUCores, seba.FormatBytes(nc.TotalRAM), nc.GPUType, map[bool]string{true: " · ANE", false: ""}[nc.NeuralEngine])},
+		output.Evidence{Label: "Dynamic reserve", Value: fmt.Sprintf("%s held back (OS + live agents %s + proportional margin)", seba.FormatBytes(nc.DynamicReserve()), seba.FormatBytes(nc.AgentRSS))},
+		output.Evidence{Label: "Safe concurrency", Value: fmt.Sprintf("%d for a ~12GB model on this node (derived, not hardcoded)", nc.MaxConcurrency(nominalModel))},
+		output.Evidence{Label: "Pressure source", Value: nc.PressureSource},
+	)
+
 	switch tier {
 	case guard.TierOK:
 		res.Summary = fmt.Sprintf("Memory healthy — %s free (%.0f%%). Nothing is pressuring the host.", seba.FormatBytes(s.FreeBytes), s.FreePercent)
