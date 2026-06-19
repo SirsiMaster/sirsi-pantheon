@@ -7,43 +7,6 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
-// TestGemmaSafeConcurrency locks the RAM gate that prevents the broker from
-// OOM-ing the machine (the 2026-06-18 incident: concurrency 4 ballooned a 12 GB
-// model to ~64 GB on a 48 GB box → Jetsam). Each concurrent slot is budgeted at
-// ~a full model; serial (1) is allowed whenever the model + headroom fits.
-func TestGemmaSafeConcurrency(t *testing.T) {
-	const gb = int64(1) << 30
-	cases := []struct {
-		name        string
-		requested   int
-		model, free int64
-		wantSafe    int
-		wantRefuse  bool
-	}{
-		{"12GB model, 40GB free, want 4 → capped to 1", 4, 12 * gb, 40 * gb, 1, false},
-		{"12GB model, 18GB free → REFUSE (model+headroom won't fit)", 4, 12 * gb, 18 * gb, 0, true},
-		{"12GB model, requested 1 → 1", 1, 12 * gb, 40 * gb, 1, false},
-		{"4GB model, 48GB free, want 4 → 4 fits", 4, 4 * gb, 48 * gb, 4, false},
-		{"4GB model, 48GB free, want 2 → 2", 2, 4 * gb, 48 * gb, 2, false},
-		{"unknown model size (0) defaults conservative, 48GB free → 1", 4, 0, 48 * gb, 1, false},
-	}
-	for _, c := range cases {
-		safe, note := gemmaSafeConcurrency(c.requested, c.model, c.free)
-		if c.wantRefuse {
-			if safe != 0 || note == "" {
-				t.Errorf("%s: want refuse (0 + reason), got safe=%d note=%q", c.name, safe, note)
-			}
-			continue
-		}
-		if safe != c.wantSafe {
-			t.Errorf("%s: want safe=%d, got %d (note=%q)", c.name, c.wantSafe, safe, note)
-		}
-		if safe < 1 {
-			t.Errorf("%s: must never return <1 when the model fits", c.name)
-		}
-	}
-}
-
 // TestGemmaNeverAgainInvariants encodes ADR-031-A so no future edit can silently
 // re-introduce the 2026-06-18 footgun (concurrency-4 default + no hard cap).
 func TestGemmaNeverAgainInvariants(t *testing.T) {
@@ -65,10 +28,15 @@ func TestGemmaNeverAgainInvariants(t *testing.T) {
 		t.Error("the cap wrapper must set mx.set_memory_limit + set_cache_limit before launching the server")
 	}
 
-	// 3) The cold path's gate still refuses-rather-than-OOM (2×model serial budget):
-	//    a 12 GB model with only 30 GB free must be REFUSED, not run serial at 1×.
-	if safe, _ := gemmaSafeConcurrency(1, 12*gb, 30*gb); safe != 0 {
-		t.Errorf("cold-path 2× serial budget: 12GB model + 30GB free must refuse (0), got %d", safe)
+	// 3) The cold path now refuses through the SAME NodeCapacity.Fits gate as the
+	//    warm broker (no separate gemmaSafeConcurrency helper) — and the 2×model
+	//    working-memory budget survived the re-point: a 12 GB model on a 48 GB node
+	//    with only 30 GB free + ~4 GB of agents must still REFUSE (2×12 + ~13.5
+	//    reserve = 37.5 > 30). Under the old 1×model gate this would have been
+	//    admitted (12 + 13.5 = 25.5 ≤ 30) and run too tight to serve.
+	coldTight := guard.NodeCapacity{TotalRAM: 48 * gb, FreeRAM: 30 * gb, OSBaseline: 48 * gb / 32, AgentRSS: 4 * gb}
+	if coldTight.Fits(12 * gb) {
+		t.Error("cold-path NodeCapacity gate: 12GB model on 30GB-free/48GB node must refuse (2×model budget)")
 	}
 
 	// 4) The warm broker's node-derived gate (ADR-031-B, claude-home binding guard):
