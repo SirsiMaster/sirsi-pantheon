@@ -106,6 +106,15 @@ func renderNodeStatus(ns *router.NodeStatus) {
 		}
 		fmt.Println()
 	}
+	if len(ns.StrandedInbox) > 0 {
+		// Make stranded work VISIBLE: these agents have open items but no armed
+		// thread watching them — the work sits until they are (re)armed.
+		fmt.Println("  ⚠ Stranded inbox (open items, NO armed watcher):")
+		for _, s := range ns.StrandedInbox {
+			fmt.Printf("    %s: %d item(s) waiting — not armed\n", s.AgentID, s.OpenItems)
+		}
+		fmt.Println()
+	}
 	if len(ns.LaunchAgents) > 0 {
 		fmt.Println("  Router/App helpers:")
 		for _, h := range ns.LaunchAgents {
