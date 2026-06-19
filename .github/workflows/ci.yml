@@ -67,7 +67,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest]   # 100% Mac: CLI→Menubar→TUI→GUI first; Windows/Linux deferred 3-6mo (owner 2026-06-19)
         go-version: ['1.25']
     steps:
       - uses: actions/checkout@v4
