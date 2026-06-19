@@ -181,6 +181,28 @@ func NewThreadID() string {
 
 // RegisterThread upserts a thread record. If t.ThreadID is empty, a new ID
 // is generated and stored on t before saving.
+// normalizeWatches returns the requested watch set de-duplicated with stable
+// order, guaranteeing the agent ALWAYS watches its own inbox first — the core
+// router contract that every thread owns and watches an inbox. Empty/blank
+// entries are dropped. Used by both the mint and the re-registration paths so a
+// thread's declared watches are consistent however it was (re)registered.
+func normalizeWatches(agentID string, watches []string) []string {
+	seen := make(map[string]bool, len(watches)+1)
+	out := make([]string, 0, len(watches)+1)
+	add := func(w string) {
+		if w == "" || seen[w] {
+			return
+		}
+		seen[w] = true
+		out = append(out, w)
+	}
+	add(agentID) // self first — a thread must always watch its own inbox
+	for _, w := range watches {
+		add(w)
+	}
+	return out
+}
+
 func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t == nil {
 		return nil, fmt.Errorf("thread is nil")
@@ -244,6 +266,29 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				if t.CurrentItem != "" {
 					existing.CurrentItem = t.CurrentItem
 				}
+				// Refresh the live declaration on re-registration. The fast-path
+				// used to update only LastSeenAt+CurrentItem, so an agent that
+				// re-registered with NEW --watch values silently kept its old set —
+				// under-declaring what it watches and missing inbox items addressed
+				// to it (reported by codex-home 2026-06-19: a Codex monitor that
+				// re-registered adding `claude-home` never persisted the watch).
+				// A re-register is the agent restating its CURRENT intent, so apply
+				// replace-when-non-empty: a non-empty field wins (lets an agent
+				// tighten OR narrow its declaration), an empty field leaves the
+				// existing value untouched (a bare heartbeat-style register never
+				// wipes). Every thread always watches its own inbox (normalizeWatches).
+				if len(t.Watches) > 0 {
+					existing.Watches = normalizeWatches(existing.AgentID, t.Watches)
+				}
+				if t.Workstream != "" {
+					existing.Workstream = t.Workstream
+				}
+				if t.WakeMechanism != "" {
+					existing.WakeMechanism = t.WakeMechanism
+				}
+				if t.Repo != "" {
+					existing.Repo = t.Repo
+				}
 				if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 					return nil, err
 				}
@@ -266,9 +311,9 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t.Status == "" {
 		t.Status = ThreadStatusActive
 	}
-	if len(t.Watches) == 0 {
-		t.Watches = []string{t.AgentID}
-	}
+	// Every thread watches its own inbox (the core contract: each thread owns
+	// and watches an inbox); de-dupe any extra watches with stable order.
+	t.Watches = normalizeWatches(t.AgentID, t.Watches)
 
 	reg.Threads[t.ThreadID] = t
 	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
