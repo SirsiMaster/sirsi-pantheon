@@ -145,6 +145,12 @@ func runHapiInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	govern := !hapiInstallWarnOnly
+	// A1 clarity (claude-home #66 fast-follow): never let the teeth surprise a user.
+	// State plainly, at install time, what an installed govern-mode daemon will do —
+	// and, just as importantly, what it will NOT touch.
+	if govern {
+		fmt.Fprintln(os.Stderr, "𓁢 Installing an ALWAYS-ON memory governor: under memory pressure it will SIGSTOP→SIGTERM *consented* runaways (only the gemma broker, which registers itself, or PIDs you add via `sirsi hapi protect`). Your apps, WindowServer, the kernel, audio, and live agents are NEVER touched. Suspend is reversible. Use `--warn-only` for observe-only, or `sirsi hapi uninstall` to remove.")
+	}
 	path := hapiDaemonPlistPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		res.Status, res.Errors = "error", []string{err.Error()}
