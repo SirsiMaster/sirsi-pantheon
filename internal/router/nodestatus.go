@@ -126,6 +126,7 @@ type AgentHealthCheck struct {
 type AgentWakeHealth struct {
 	AgentID   string `json:"agent_id"`
 	Mechanism string `json:"mechanism"`
+	Adapter   string `json:"adapter,omitempty"` // adapter that fires when Ready (PR#2 wake pass)
 	Ready     bool   `json:"ready"`
 	Detail    string `json:"detail,omitempty"`
 }

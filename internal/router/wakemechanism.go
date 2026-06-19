@@ -10,4 +10,13 @@ const (
 	WakeCLISpawn        = "cli-spawn"
 	WakeAPICall         = "api-call"
 	WakeMCPNotification = "mcp-notification"
+	// WakeLaunchAgent is the worker/headless pull-loop wake: a per-agent
+	// LaunchAgent that polls items/ and heartbeats. It registers as a
+	// pull-loop watcher (armed by heartbeat freshness), NOT a loop-monitor —
+	// the wake pass must never widen the #79/#80 pgrep gate to it.
+	WakeLaunchAgent = "launchagent"
+	// WakeNone explicitly opts an agent out of waking. Distinct from a missing
+	// mechanism ("" — a legacy command agent that simply has no wake intent):
+	// "none" is a deliberate "do not wake me", "" is "no contract declared".
+	WakeNone = "none"
 )

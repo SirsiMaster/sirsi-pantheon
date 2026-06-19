@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/spf13/cobra"
@@ -28,6 +30,8 @@ var routerDoctorCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("locate repo root: %w", err)
 		}
+		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+		reg, _ := router.LoadRegistry(routerRoot) // best-effort; wake readiness is advisory in report mode
 		ns, err := router.CollectNodeStatus(repoRoot, nil)
 		if err != nil {
 			return fmt.Errorf("collect node-status: %w", err)
@@ -57,9 +61,19 @@ var routerDoctorCmd = &cobra.Command{
 			issues++
 			fmt.Printf("⚠ %d agent(s) with a stranded inbox (open items, no armed watcher):\n", len(ns.StrandedInbox))
 			for _, s := range ns.StrandedInbox {
-				fmt.Printf("    %s: %d item(s) waiting\n", s.AgentID, s.OpenItems)
+				readiness := "no wake mechanism configured — would mark wake-unavailable"
+				if reg != nil {
+					if cfg, lookErr := reg.Lookup(s.AgentID); lookErr == nil {
+						if h := router.ProbeWakeReadiness(*cfg); h.Ready {
+							readiness = fmt.Sprintf("would wake via %s", h.Adapter)
+						} else {
+							readiness = "wake-unavailable: " + h.Detail
+						}
+					}
+				}
+				fmt.Printf("    %s: %d item(s) waiting — %s\n", s.AgentID, s.OpenItems, readiness)
 			}
-			fmt.Println("    → bring that agent up (or it stays stranded until it is).")
+			fmt.Println("    → `sirsi router doctor --fix` runs the wake-or-declare-unavailable pass (never blind-spawns interactive agents).")
 			fmt.Println()
 		}
 		if len(ns.StaleThreads) > 0 {
@@ -83,7 +97,21 @@ var routerDoctorCmd = &cobra.Command{
 			return fmt.Errorf("reap dead threads: %w", rerr)
 		}
 		fmt.Printf("✔ Reaped %d OS-dead thread record(s) (ADR-022 OS-truth — live/suspended/terminal untouched).\n", len(reaped))
-		fmt.Println("  Stranded/unarmed agents are NOT auto-fixed — they need an operator to (re)arm them.")
+
+		// Wake-or-declare-unavailable pass (PR#2). Runs from the DOCTOR tick, never
+		// from `router send`. Wakes agents with a ready, explicit, non-blind-spawn
+		// adapter; records wake-unavailable on every other stranded item so nothing
+		// is silently stranded. Interactive claude-* are never blind-spawned.
+		wp, werr := router.WakePass(routerRoot, time.Now().UTC())
+		if werr != nil {
+			return fmt.Errorf("wake pass: %w", werr)
+		}
+		fmt.Printf("✔ Wake pass: %d woken · %d already-armed · %d wake-unavailable (recorded on the items).\n",
+			len(wp.Attempted), len(wp.Armed), len(wp.Unavailable))
+		for _, u := range wp.Unavailable {
+			fmt.Printf("    ✗ %s → %s: %s\n", u.ItemID, u.AgentID, u.Detail)
+		}
+		fmt.Println("  Interactive agents are never blind-spawned — re-arm their /loop or route via the claude-home conduit.")
 		return nil
 	},
 }
