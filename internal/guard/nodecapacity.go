@@ -8,7 +8,7 @@
 // NodeCapacity is the foundation that replaces those literals: everything that
 // enforces the invariant (broker concurrency, the memory cap, the governor's
 // reserve) reads its NUMBERS from here, derived from the MEASURED node — never from
-// constants. On 48 GB/12 GB-model it yields ~1–2 concurrency; on 256 GB, 15+. The
+// constants. On 48 GB/12 GB-model it yields ~1 concurrency; on 256 GB, 13+. The
 // invariant stays constant; the numbers became functions.
 //
 // It is serializable (JSON) so a future fleet layer (Ra/SirsiNexus) can balance
@@ -119,20 +119,28 @@ func (n NodeCapacity) DynamicReserve() int64 {
 }
 
 // MaxConcurrency is the largest number of concurrent decode slots this node can
-// hold for a model of perModelBytes — derived, not the hardcoded 1 (mapping #1):
+// hold for a model of perModelBytes — derived, not the hardcoded 1 (mapping #1).
 //
-//	floor((FreeRAM − DynamicReserve) / perModelBytes), also capped by VRAM, floor 1.
+// Memory model (the #63 / 2026-06-18 empirical fact, preserved here so the
+// re-point does NOT loosen it): a resident model costs 1×perModelBytes and EACH
+// concurrent decode slot grows ~one more model of working memory. So C concurrent
+// slots cost (1+C)×perModelBytes, NOT C× — concurrency 4 ballooned a 12 GB model
+// to ~64 GB on a 48 GB box → Jetsam. The largest safe C therefore satisfies
 //
-// On 48 GB/12 GB that's ~1; on 256 GB it's 15+ — the warm broker's real value
+//	(1+C)×perModelBytes + DynamicReserve <= FreeRAM,   floored at 1, VRAM-capped.
+//
+// On 48 GB/12 GB that's ~1; on 256 GB it's 13+ — the warm broker's real value
 // (multi-concurrent on the GPU) appears automatically where the node can hold it.
 func (n NodeCapacity) MaxConcurrency(perModelBytes int64) int {
 	if perModelBytes <= 0 {
 		return 1
 	}
-	avail := n.FreeRAM - n.DynamicReserve()
+	// Subtract the resident model FIRST; the remainder holds working memory, one
+	// model's worth per concurrent slot (the resident model is not a free slot).
+	avail := n.FreeRAM - n.DynamicReserve() - perModelBytes
 	slots := int(avail / perModelBytes)
-	if n.VRAMBytes > 0 { // dedicated-VRAM GPUs cap by VRAM too; unified memory (0) skips
-		if vramSlots := int(n.VRAMBytes / perModelBytes); vramSlots < slots {
+	if n.VRAMBytes > 0 { // dedicated-VRAM GPUs cap by VRAM too (resident + working both land in VRAM); unified memory (0) skips
+		if vramSlots := int(n.VRAMBytes/perModelBytes) - 1; vramSlots < slots {
 			slots = vramSlots
 		}
 	}
@@ -143,24 +151,36 @@ func (n NodeCapacity) MaxConcurrency(perModelBytes int64) int {
 }
 
 // Fits reports whether at least ONE model of perModelBytes can run within this
-// node's dynamic reserve. This is the binding refuse gate (claude-home, ADR-031-B):
-// MaxConcurrency floors at 1 and so never refuses on its own — callers MUST check
-// Fits first and refuse-rather-than-OOM when one model won't fit, exactly as
-// ADR-031-A's gemmaSafeConcurrency did with its flat budget. The hard MLX cap is
-// the runtime backstop; Fits is the pre-launch gate, now node-proportional.
+// node's dynamic reserve WITH room to actually serve. This is the binding refuse
+// gate (claude-home, ADR-031-B): MaxConcurrency floors at 1 and so never refuses
+// on its own — callers MUST check Fits first and refuse-rather-than-OOM.
+//
+// Budget = 2×perModelBytes + DynamicReserve: one resident model + one model of
+// working memory (a serial decode) + the OS/agent/margin reserve. This restores
+// ADR-031-A's #63 conservatism — the cold path's 2×model serial budget — that the
+// first re-point dropped to 1×. Host-safety is unchanged either way (the hard MLX
+// cap is the backstop), but a 1× gate admits a launch too tight to serve: it hits
+// the cap and evicts immediately. Fits is the pre-launch gate, now node-proportional.
 func (n NodeCapacity) Fits(perModelBytes int64) bool {
 	if perModelBytes <= 0 {
 		perModelBytes = 14 << 30 // unknown → conservative default
 	}
-	return perModelBytes+n.DynamicReserve() <= n.FreeRAM
+	return 2*perModelBytes+n.DynamicReserve() <= n.FreeRAM
 }
 
 // DynamicCap is the per-node memory ceiling fed to the MLX cap wrapper:
-// FreeRAM − DynamicReserve (mapping #3), floored at one model so a load can start.
+// FreeRAM − DynamicReserve (mapping #3), floored at 2×model so an admitted load
+// has room for resident weights + one model of working memory (matching the Fits
+// gate). MLX evicts/errors at this ceiling instead of growing into Jetsam; Fits
+// already guaranteed free ≥ 2×model + reserve, so the floor only clamps the
+// never-admitted refuse case.
 func (n NodeCapacity) DynamicCap(perModelBytes int64) int64 {
+	if perModelBytes <= 0 {
+		perModelBytes = 14 << 30 // unknown → conservative default
+	}
 	cap := n.FreeRAM - n.DynamicReserve()
-	if cap < perModelBytes {
-		cap = perModelBytes
+	if floor := 2 * perModelBytes; cap < floor {
+		cap = floor
 	}
 	return cap
 }
