@@ -573,6 +573,7 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	bDead := mk("claude-b", "claude", 10002)   // loop-monitor, heartbeat-fresh but loop DEAD
 	cCodex := mk("codex-x", "codex", 10003)    // app-heartbeat — loop-evidence N/A
 	eMenu := mk("menubar-x", "menubar", 10005) // native-runloop resident — loop-evidence N/A
+	fGemma := mk("gemma-x", "gemma", 10006)    // surface-loop — loop-evidence N/A (NOT pgrep-gated)
 	dGone := mk("claude-d", "claude", 10004)   // OS-dead → must auto-reap
 
 	// Only thread A has a live watcher loop.
@@ -618,5 +619,11 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	// (5) OS-dead → auto-reaped off the live path (absent from live + stale), ADR-022 safety preserved.
 	if s := find(dGone.ThreadID); s != nil {
 		t.Errorf("OS-dead thread must auto-reap, still present: %+v", s)
+	}
+	// (6) surface-loop (gemma) → NOT pgrep-gated (loop-monitor-only verdict): armed by
+	// heartbeat, loop_state na. Under a broadened gate this would be armed:false/dead
+	// (no watcher proc) — false-negativing a healthy worker. Locks codex-home's #79 verdict.
+	if s := find(fGemma.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "heartbeat-fresh" {
+		t.Errorf("gemma surface-loop: got %+v, want armed=true loop_state=na reason=heartbeat-fresh", s)
 	}
 }
