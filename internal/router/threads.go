@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	cryptorand "crypto/rand"
@@ -244,6 +245,26 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				if t.CurrentItem != "" {
 					existing.CurrentItem = t.CurrentItem
 				}
+				// REPLACE-when-non-empty (claude-home design call, 2026-06-19): a
+				// re-register with a non-empty declaration AUTHORITATIVELY re-states
+				// the live thread's watches/metadata. This fixes the bug where new
+				// --watch values were silently dropped on the reuse path (codex-home,
+				// item 133134) AND lets an agent NARROW its watch set — "re-register
+				// tightens the live declaration." An empty incoming field is a bare
+				// heartbeat-style register and must NOT wipe the existing value.
+				// (Union was rejected: it accretes watches forever and can never narrow.)
+				if len(t.Watches) > 0 {
+					existing.Watches = dedupeWatches(t.Watches)
+				}
+				if t.Workstream != "" {
+					existing.Workstream = t.Workstream
+				}
+				if t.WakeMechanism != "" {
+					existing.WakeMechanism = t.WakeMechanism
+				}
+				if t.Repo != "" {
+					existing.Repo = t.Repo
+				}
 				if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 					return nil, err
 				}
@@ -268,6 +289,8 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	}
 	if len(t.Watches) == 0 {
 		t.Watches = []string{t.AgentID}
+	} else {
+		t.Watches = dedupeWatches(t.Watches)
 	}
 
 	reg.Threads[t.ThreadID] = t
@@ -275,6 +298,26 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 		return nil, err
 	}
 	return t, nil
+}
+
+// dedupeWatches returns the watch list with duplicates removed, preserving first-
+// seen order (stable). Empty/whitespace entries are dropped so a stray `--watch ""`
+// never bloats the declaration.
+func dedupeWatches(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, w := range in {
+		w = strings.TrimSpace(w)
+		if w == "" {
+			continue
+		}
+		if _, ok := seen[w]; ok {
+			continue
+		}
+		seen[w] = struct{}{}
+		out = append(out, w)
+	}
+	return out
 }
 
 // HeartbeatThread updates LastSeenAt and optionally status/current_item/last_error.
