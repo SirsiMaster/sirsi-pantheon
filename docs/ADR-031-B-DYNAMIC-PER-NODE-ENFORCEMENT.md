@@ -81,3 +81,15 @@ The pressure-source question is **decided**: macOS pressure is observed through 
 - **Action policy with hysteresis:** `NORMAL` → normal scheduling (still honor dynamic cap + measured budget); `WARN` → stop admitting warm starts, lower concurrency, drain (debounce ~1–3 s); `CRITICAL` → refuse new inference, pause admission, shed governed jobs **within the consent invariant** (act immediately). Require sustained `NORMAL` (~10–30 s / N clean samples) before raising caps again. Seed from a snapshot — **do not assume an initial event**; store last level in `NodeCapacity`.
 
 This supersedes the earlier "lean no-cgo" note; the dispatch source is canon for #4.
+
+## Refuse threshold — RESOLVED, option (a) (claude-pantheon author call + claude-home binding, 2026-06-19)
+
+claude-home's source-deep review of the broker re-point (#71) caught that swapping the *source* of the numbers (constants → measured node) had also loosened *where the gate trips*: from ADR-031-A/#63's `2×model + headroom` down to `1×model + DynamicReserve`, with `DynamicCap` flooring at exactly `1×model`. Host-safety was unchanged (the hard MLX `set_wired_limit` cap is the backstop), but the admit window widened to launches too tight to actually serve — they would hit the cap and evict immediately.
+
+**Decision: option (a)** — keep the working-memory budget, made node-proportional. The empirical model (the 2026-06-18 balloon: concurrency 4 grew a 12 GB model to ~64 GB) is that `C` concurrent decode slots cost **`(1+C)×model`** — one resident model plus one model of working memory per slot. So all three `NodeCapacity` methods now budget that:
+
+- `Fits(model)` ⇔ `2×model + DynamicReserve ≤ FreeRAM` (one resident + one working serial decode must fit).
+- `MaxConcurrency(model)` = largest `C` with `(1+C)×model + DynamicReserve ≤ FreeRAM`, floored at 1, VRAM-capped (resident + working both land in dedicated VRAM).
+- `DynamicCap(model)` floors at `2×model`.
+
+A half-fix to only `Fits` was **rejected**: it would relocate the over-commit into `MaxConcurrency` (a node passing `Fits` at exactly `2×model` of free-reserve would still report `C=2`, which OOMs). This makes the warm broker's gate identical in conservatism to the cold path's `gemmaSafeConcurrency` — which the cold re-point then folds onto this same `NodeCapacity`.

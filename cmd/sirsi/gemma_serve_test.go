@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // TestGemmaSafeConcurrency locks the RAM gate that prevents the broker from
@@ -47,9 +49,14 @@ func TestGemmaSafeConcurrency(t *testing.T) {
 func TestGemmaNeverAgainInvariants(t *testing.T) {
 	const gb = int64(1) << 30
 
-	// 1) The default concurrency must be 1 (it shipped as 4 and OOM'd the host).
-	if dv := gemmaServeCmd.Flags().Lookup("concurrency").DefValue; dv != "1" {
-		t.Errorf("default --concurrency must be 1 (was the footgun at 4); got %q", dv)
+	// 1) The default concurrency must be 0 = AUTO-DERIVE from the node (ADR-031-B).
+	//    It shipped as 4 (OOM'd the host), was hardened to a fixed 1 (#60), and is now
+	//    node-derived: 0 means "use NodeCapacity.MaxConcurrency", which is RAM/VRAM-
+	//    gated and floored at 1 — so auto is SAFE (bounded by the box), never the old
+	//    aggressive fixed number. The footgun cannot return: a positive default would
+	//    fail this, and the derivation itself refuses-or-floors (asserts 4/5 below).
+	if dv := gemmaServeCmd.Flags().Lookup("concurrency").DefValue; dv != "0" {
+		t.Errorf("default --concurrency must be 0 (auto-derive from the node, ADR-031-B); got %q", dv)
 	}
 
 	// 2) The broker MUST launch through the hard-cap wrapper that bounds MLX memory
@@ -58,9 +65,24 @@ func TestGemmaNeverAgainInvariants(t *testing.T) {
 		t.Error("the cap wrapper must set mx.set_memory_limit + set_cache_limit before launching the server")
 	}
 
-	// 3) Serial budget is 2×model: a 12 GB model with only 30 GB free must be REFUSED
-	//    (2×12 + 8 headroom = 32 > 30), not allowed to run serial at 1×.
+	// 3) The cold path's gate still refuses-rather-than-OOM (2×model serial budget):
+	//    a 12 GB model with only 30 GB free must be REFUSED, not run serial at 1×.
 	if safe, _ := gemmaSafeConcurrency(1, 12*gb, 30*gb); safe != 0 {
-		t.Errorf("2× serial budget: 12GB model + 30GB free must refuse (0), got %d", safe)
+		t.Errorf("cold-path 2× serial budget: 12GB model + 30GB free must refuse (0), got %d", safe)
+	}
+
+	// 4) The warm broker's node-derived gate (ADR-031-B, claude-home binding guard):
+	//    a node where one model won't fit within the dynamic reserve must NOT fit —
+	//    the broker refuses rather than run the floored-1 that would OOM.
+	tight := guard.NodeCapacity{TotalRAM: 48 * gb, FreeRAM: 18 * gb, OSBaseline: 48 * gb / 32, AgentRSS: 4 * gb}
+	if tight.Fits(12 * gb) {
+		t.Error("node-derived gate: 12GB model must NOT fit on 18GB-free/48GB node — broker must refuse")
+	}
+
+	// 5) And MaxConcurrency NEVER returns <1 (the floor the Fits gate guards), and on
+	//    a node that can't hold the model it still says 1 — which is exactly why (4)'s
+	//    Fits refuse gate must run first.
+	if tight.MaxConcurrency(12*gb) < 1 {
+		t.Error("MaxConcurrency must floor at 1")
 	}
 }

@@ -34,12 +34,26 @@ func TestMaxConcurrencyScalesWithNode(t *testing.T) {
 		{"big RAM but 24GB VRAM caps it", 256, 230, 24, 8, 1, 2},
 	}
 	for _, c := range cases {
-		got := node(c.total, c.free, c.vram, c.agent).MaxConcurrency(model)
+		nc := node(c.total, c.free, c.vram, c.agent)
+		got := nc.MaxConcurrency(model)
 		if got < c.wantAtLeast || got > c.wantAtMost {
 			t.Errorf("%s: MaxConcurrency=%d, want [%d,%d]", c.name, got, c.wantAtLeast, c.wantAtMost)
 		}
 		if got < 1 {
 			t.Errorf("%s: must never return <1", c.name)
+		}
+		// Maximality invariant: C concurrent slots cost (1+C)×model + reserve (1
+		// resident + C working — the #63/06-18 fact). On a node that genuinely fits,
+		// `got` must be the LARGEST C that still fits, and (got+1) must NOT fit. This
+		// is what the broker re-point first dropped (C×model, no resident) — the old
+		// code returned one slot too many here on the 256 GB box and would over-commit.
+		if nc.Fits(model) && nc.VRAMBytes == 0 {
+			if used := int64(1+got)*model + nc.DynamicReserve(); used > nc.FreeRAM {
+				t.Errorf("%s: C=%d over-commits: (1+%d)×model+reserve=%dGB > %dGB free", c.name, got, got, used/gb, nc.FreeRAM/gb)
+			}
+			if int64(2+got)*model+nc.DynamicReserve() <= nc.FreeRAM {
+				t.Errorf("%s: C=%d not maximal — one more slot still fits", c.name, got)
+			}
 		}
 	}
 	// Unknown model size → conservative 1.
@@ -69,17 +83,43 @@ func TestDynamicReserveIsProportional(t *testing.T) {
 	}
 }
 
-// TestDynamicCapFloorsAtModel: the cap never drops below one model (a load can
-// always at least start), and is free−reserve otherwise.
-func TestDynamicCapFloorsAtModel(t *testing.T) {
+// TestDynamicCapFloorsAtTwoModels: the cap never drops below 2×model (resident +
+// one model of working memory, matching the Fits gate), and is free−reserve
+// otherwise. The floor only clamps the refuse case Fits already rejected.
+func TestDynamicCapFloorsAtTwoModels(t *testing.T) {
 	model := int64(12) * gb
-	tight := node(48, 20, 0, 10) // free−reserve goes negative-ish → floor at model
-	if got := tight.DynamicCap(model); got != model {
-		t.Errorf("tight node cap=%d, want floor %d", got, model)
+	tight := node(48, 20, 0, 10) // free−reserve ≈ 0.5GB → floor at 2×model
+	if got := tight.DynamicCap(model); got != 2*model {
+		t.Errorf("tight node cap=%d, want floor %d (2×model)", got, 2*model)
 	}
 	roomy := node(256, 230, 0, 8)
 	if got := roomy.DynamicCap(model); got != roomy.FreeRAM-roomy.DynamicReserve() {
 		t.Errorf("roomy node cap=%d, want free−reserve %d", got, roomy.FreeRAM-roomy.DynamicReserve())
+	}
+}
+
+// TestFitsRefuseGate is claude-home's binding condition: refuse when one model
+// won't fit within the dynamic reserve, even though MaxConcurrency floors at 1.
+func TestFitsRefuseGate(t *testing.T) {
+	model := int64(12) * gb
+	// 48GB box, only 20GB free, agents holding 10GB: reserve ≈ 1.5+10+8 = 19.5GB;
+	// 2×model + reserve = 43.5GB > 20GB free → must NOT fit (refuse).
+	tight := node(48, 20, 0, 10)
+	if tight.Fits(model) {
+		t.Errorf("tight node must refuse: 2×model %dGB + reserve %dGB > %dGB free",
+			2*model/gb, tight.DynamicReserve()/gb, tight.FreeRAM/gb)
+	}
+	// Same node with room: 48GB, 40GB free, 2GB agents → reserve ≈ 1.5+2+8 = 11.5;
+	// 2×12 + 11.5 = 35.5 <= 40 → fits.
+	roomy := node(48, 40, 0, 2)
+	if !roomy.Fits(model) {
+		t.Errorf("roomy node should fit: model %dGB + reserve %dGB <= %dGB free",
+			model/gb, roomy.DynamicReserve()/gb, roomy.FreeRAM/gb)
+	}
+	// The guard's invariant: if Fits is false, the caller must refuse — but if a
+	// caller ignored it, MaxConcurrency would still floor at 1 (the trap Fits guards).
+	if tight.MaxConcurrency(model) != 1 {
+		t.Error("MaxConcurrency floors at 1 even when it doesn't fit — that is exactly why Fits exists")
 	}
 }
 
