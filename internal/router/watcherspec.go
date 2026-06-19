@@ -61,15 +61,22 @@ const (
 	watcherTypePullLoop      = "pull-loop"      // headless mcp/api/webhook/worker
 )
 
-// loopBearingType reports whether a watcher_type proves liveness with a live
-// thread-id-keyed loop process (`pgrep -f thr-<id>`) — loop-monitor, surface-loop,
-// pull-loop. For app-heartbeat (Codex heartbeats natively) and native-runloop
-// (resident UI proves liveness from its runloop), the proof is heartbeat freshness,
-// NOT a pgrep loop, so those are loop-evidence N/A. This is the
-// [[feedback_liveness_proof_surface_native]] rule in code — never mandate one
-// mechanism, so honest liveness never false-flags Codex or a resident UI.
-func loopBearingType(t string) bool {
-	return t == watcherTypeLoopMonitor || t == watcherTypeSurfaceLoop || t == watcherTypePullLoop
+// requiresThreadIDLoop reports whether a watcher_type's liveness must be proven by
+// a live thread-id-keyed loop process (`pgrep -f thr-<id>`). This is TRUE for ONLY
+// `loop-monitor` (Claude): its `/loop` arm instruction is explicitly thread-id
+// keyed AND its `thread heartbeat` is harness-gated, so a Claude thread can be
+// heartbeat-FRESH while its loop is DEAD — pgrep evidence is the only honest proof.
+//
+// It is deliberately NOT extended to surface-loop (gemini/gemma/qwen) or pull-loop
+// (mcp/api/webhook/worker): those are loop-DRIVEN heartbeats (a dead loop stops the
+// heartbeat → goes stale → already caught by armed=!stale), and their process
+// cmdlines are not contractually `pgrep -f thr-<id>`-able, so requiring the loop
+// probe would FALSE-NEGATIVE healthy workers (codex-home SME verdict on #79, bound
+// by claude-home). Strengthening those is a future PR that first defines a per-
+// watcher process-identity contract. app-heartbeat (Codex) + native-runloop
+// (resident UI) prove liveness by heartbeat too. [[feedback_liveness_proof_surface_native]].
+func requiresThreadIDLoop(t string) bool {
+	return t == watcherTypeLoopMonitor
 }
 
 // WatcherFor returns the canonical watcher spec for a surface, templated for the

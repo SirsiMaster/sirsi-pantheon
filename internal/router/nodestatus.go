@@ -361,18 +361,19 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				PID:           thr.PID,
 				OSState:       PIDStateOf(thr.PID, thr.StartTime),
 			}
-			// Honest liveness, classified by watcher_type (codex-validated):
-			//  - loop-bearing (loop-monitor/surface-loop/pull-loop): armed iff a live
-			//    pgrep `thr-<id>` loop exists. A heartbeat-fresh thread whose loop
-			//    died is armed:false / loop_state:"dead" — the owner's "claims live
-			//    but is idle" case made visible, never silently live.
-			//  - app-heartbeat (Codex): loop-evidence N/A; heartbeat freshness IS the
-			//    proof — never require a pgrep loop, never false-flag the Codex fleet.
-			//  - native-runloop (resident UI) + anything else: N/A; heartbeat freshness
-			//    is the proof ("resident heartbeat alive", not "inbox worker armed").
+			// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
+			//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
+			//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
+			//    be heartbeat-FRESH while the loop is DEAD (armed:false, loop_state:"dead"
+			//    — the owner's "claims live but is idle"). NOT extended to surface-loop/
+			//    pull-loop: their heartbeat is loop-driven (dead loop → stale → caught by
+			//    !stale) and not contractually thr-id-pgrep-able, so requiring it would
+			//    false-negative healthy workers.
+			//  - app-heartbeat (Codex), native-runloop (resident UI), surface-loop,
+			//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
 			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 			switch {
-			case loopBearingType(sum.WatcherType):
+			case requiresThreadIDLoop(sum.WatcherType):
 				switch {
 				case thr.ThreadID == "":
 					sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
@@ -381,20 +382,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				default:
 					sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"
 				}
+			case sum.Stale:
+				// Any non-loop-monitor surface gone stale is unarmed regardless of kind.
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", false, "heartbeat-stale"
 			case sum.WatcherType == watcherTypeAppHeartbeat:
-				sum.LoopState = "na"
-				if sum.Stale {
-					sum.Armed, sum.ArmedReason = false, "heartbeat-stale"
-				} else {
-					sum.Armed, sum.ArmedReason = true, "app-heartbeat-fresh"
-				}
-			default: // native-runloop resident + any heartbeat-proved surface
-				sum.LoopState = "na"
-				if sum.Stale {
-					sum.Armed, sum.ArmedReason = false, "heartbeat-stale"
-				} else {
-					sum.Armed, sum.ArmedReason = true, "resident-runloop-fresh"
-				}
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "app-heartbeat-fresh"
+			case sum.WatcherType == watcherTypeNativeRunloop:
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "resident-runloop-fresh"
+			default: // surface-loop / pull-loop / unknown — loop-driven heartbeat is the proof
+				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "heartbeat-fresh"
 			}
 			if sum.Stale {
 				ns.StaleThreads = append(ns.StaleThreads, sum)
