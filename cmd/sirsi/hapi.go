@@ -111,6 +111,7 @@ func runHapiStatus(cmd *cobra.Command, args []string) error {
 	res.Evidence = []output.Evidence{
 		{Label: "Free RAM", Value: fmt.Sprintf("%s of %s (%.1f%%)", seba.FormatBytes(s.FreeBytes), seba.FormatBytes(s.TotalRAM), s.FreePercent)},
 		{Label: "Pressure", Value: tierLabel(tier)},
+		{Label: "Daemon", Value: hapiDaemonStatusLine()},
 	}
 	if runaway != nil {
 		res.Evidence = append(res.Evidence, output.Evidence{
