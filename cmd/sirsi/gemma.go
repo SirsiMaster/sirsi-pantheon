@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -93,6 +94,22 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(mlx); err != nil {
 		return fmt.Errorf("Gemma's local runtime isn't installed (%s missing) — run the MLX/Gemma setup first", mlx)
 	}
+
+	// LAYER 4 (ADR-031-A) — the cold path is the 06-18 OOM culprit: 4 concurrent
+	// `sirsi gemma` calls each forked a full ~12 GB model load (5 at once → Jetsam).
+	// (1) RAM-gate it like the broker; (2) serialize it machine-wide with a file
+	// lock so concurrent callers can NEVER stack N full model loads.
+	_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
+	if safe, note := gemmaSafeConcurrency(1, gemmaEstimateModelBytes(home, model), gemmaFreeRAMBytes()-gemmaAgentReserveBytes()); safe == 0 {
+		return fmt.Errorf("not enough RAM to load Gemma cold (%s) — start the warm broker (`sirsi gemma serve`) or free memory. Refusing rather than OOM the machine", note)
+	}
+	if lf, lerr := os.OpenFile(filepath.Join(home, ".sirsi/gemma-cold.lock"), os.O_CREATE|os.O_RDWR, 0o644); lerr == nil {
+		defer lf.Close()
+		if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX) == nil { // blocks until we hold it
+			defer func() { _ = syscall.Flock(int(lf.Fd()), syscall.LOCK_UN) }()
+		}
+	}
+
 	fmt.Fprintf(os.Stderr, "gemma · %s · cold (reloading — run `sirsi gemma serve` to keep it warm)…\n", gemmaShortModel(model))
 	out, err := exec.Command(mlx, "--model", model, "--max-tokens", fmt.Sprint(gemmaMaxTokens), "--prompt", prompt).Output()
 	if err != nil {

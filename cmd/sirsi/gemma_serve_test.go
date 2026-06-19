@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestGemmaSafeConcurrency locks the RAM gate that prevents the broker from
 // OOM-ing the machine (the 2026-06-18 incident: concurrency 4 ballooned a 12 GB
@@ -36,5 +39,28 @@ func TestGemmaSafeConcurrency(t *testing.T) {
 		if safe < 1 {
 			t.Errorf("%s: must never return <1 when the model fits", c.name)
 		}
+	}
+}
+
+// TestGemmaNeverAgainInvariants encodes ADR-031-A so no future edit can silently
+// re-introduce the 2026-06-18 footgun (concurrency-4 default + no hard cap).
+func TestGemmaNeverAgainInvariants(t *testing.T) {
+	const gb = int64(1) << 30
+
+	// 1) The default concurrency must be 1 (it shipped as 4 and OOM'd the host).
+	if dv := gemmaServeCmd.Flags().Lookup("concurrency").DefValue; dv != "1" {
+		t.Errorf("default --concurrency must be 1 (was the footgun at 4); got %q", dv)
+	}
+
+	// 2) The broker MUST launch through the hard-cap wrapper that bounds MLX memory
+	//    BEFORE the model loads — the layer that makes "never OOM" true at runtime.
+	if !strings.Contains(gemmaCapWrapper, "set_memory_limit") || !strings.Contains(gemmaCapWrapper, "set_cache_limit") {
+		t.Error("the cap wrapper must set mx.set_memory_limit + set_cache_limit before launching the server")
+	}
+
+	// 3) Serial budget is 2×model: a 12 GB model with only 30 GB free must be REFUSED
+	//    (2×12 + 8 headroom = 32 > 30), not allowed to run serial at 1×.
+	if safe, _ := gemmaSafeConcurrency(1, 12*gb, 30*gb); safe != 0 {
+		t.Errorf("2× serial budget: 12GB model + 30GB free must refuse (0), got %d", safe)
 	}
 }
