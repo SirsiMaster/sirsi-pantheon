@@ -52,6 +52,26 @@ func loopArmInstruction(agentID, threadID string) string {
 	)
 }
 
+// Canonical WatcherSpec.Type values (must match the strings WatcherFor returns).
+const (
+	watcherTypeLoopMonitor   = "loop-monitor"   // claude /loop — pgrep thr-id loop
+	watcherTypeAppHeartbeat  = "app-heartbeat"  // codex — native heartbeat, no thr-id loop
+	watcherTypeSurfaceLoop   = "surface-loop"   // gemini/gemma/qwen pull loop
+	watcherTypeNativeRunloop = "native-runloop" // resident UI — heartbeat from runloop
+	watcherTypePullLoop      = "pull-loop"      // headless mcp/api/webhook/worker
+)
+
+// loopBearingType reports whether a watcher_type proves liveness with a live
+// thread-id-keyed loop process (`pgrep -f thr-<id>`) — loop-monitor, surface-loop,
+// pull-loop. For app-heartbeat (Codex heartbeats natively) and native-runloop
+// (resident UI proves liveness from its runloop), the proof is heartbeat freshness,
+// NOT a pgrep loop, so those are loop-evidence N/A. This is the
+// [[feedback_liveness_proof_surface_native]] rule in code — never mandate one
+// mechanism, so honest liveness never false-flags Codex or a resident UI.
+func loopBearingType(t string) bool {
+	return t == watcherTypeLoopMonitor || t == watcherTypeSurfaceLoop || t == watcherTypePullLoop
+}
+
 // WatcherFor returns the canonical watcher spec for a surface, templated for the
 // given agent and thread. Unknown/headless surfaces fall back to a surface-owned
 // pull loop; the active router CLI is pull-model and does not expose a daemon
