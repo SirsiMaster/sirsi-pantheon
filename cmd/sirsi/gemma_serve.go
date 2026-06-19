@@ -281,57 +281,6 @@ func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error
 	return gemmaClean(out.Choices[0].Message.Content), nil
 }
 
-// gemmaFreeRAMBytes returns reclaimable RAM (free + inactive + speculative pages).
-func gemmaFreeRAMBytes() int64 {
-	pageSize := int64(16384)
-	if out, err := exec.Command("sysctl", "-n", "hw.pagesize").Output(); err == nil {
-		if n, e := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); e == nil && n > 0 {
-			pageSize = n
-		}
-	}
-	out, err := exec.Command("vm_stat").Output()
-	if err != nil {
-		return 0
-	}
-	var pages int64
-	for _, line := range strings.Split(string(out), "\n") {
-		if !strings.HasPrefix(line, "Pages free:") &&
-			!strings.HasPrefix(line, "Pages inactive:") &&
-			!strings.HasPrefix(line, "Pages speculative:") {
-			continue
-		}
-		f := strings.Fields(line)
-		v := strings.TrimSuffix(f[len(f)-1], ".")
-		if n, e := strconv.ParseInt(v, 10, 64); e == nil {
-			pages += n
-		}
-	}
-	return pages * pageSize
-}
-
-// gemmaAgentReserveBytes sums the RSS of live AI-agent processes (Claude / Codex)
-// so the broker reserves what they're using instead of counting it as available.
-func gemmaAgentReserveBytes() int64 {
-	out, err := exec.Command("ps", "-axo", "rss,comm").Output()
-	if err != nil {
-		return 0
-	}
-	var total int64
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		name := strings.ToLower(strings.Join(f[1:], " "))
-		if strings.Contains(name, "claude") || strings.Contains(name, "codex") {
-			if kb, e := strconv.ParseInt(f[0], 10, 64); e == nil {
-				total += kb * 1024
-			}
-		}
-	}
-	return total
-}
-
 // gemmaEstimateModelBytes estimates the resident size of a model from its HF cache.
 func gemmaEstimateModelBytes(home, model string) int64 {
 	dir := filepath.Join(home, ".cache/huggingface/hub", "models--"+strings.ReplaceAll(model, "/", "--"))
@@ -343,37 +292,4 @@ func gemmaEstimateModelBytes(home, model string) int64 {
 		}
 	}
 	return 14 << 30 // conservative default ~14 GB
-}
-
-// gemmaSafeConcurrency returns the largest concurrency ≤ requested that fits RAM,
-// or 0 (with a reason) if even the resident model + headroom won't fit. Each
-// concurrent decode slot is budgeted at ~a full model of working memory because
-// that is what was observed when concurrency 4 ballooned a 12 GB model to ~64 GB.
-func gemmaSafeConcurrency(requested int, modelBytes, freeBytes int64) (int, string) {
-	const gb = int64(1) << 30
-	const headroom = 8 * gb // OS + foreground apps + the other agents (Claude/Codex)
-	if modelBytes <= 0 {
-		modelBytes = 14 * gb
-	}
-	// Serial budget is 2×model (resident weights + ~one model of working memory),
-	// not 1× — under-budgeting serial is part of how the 06-18 estimate was too loose.
-	if modelBytes*2+headroom > freeBytes {
-		return 0, fmt.Sprintf("even serial needs ~%d GB (2× the %d GB model) + %d GB headroom > %d GB free", (modelBytes*2)/gb, modelBytes/gb, headroom/gb, freeBytes/gb)
-	}
-	if requested < 1 {
-		requested = 1
-	}
-	safe := 1 // serial (2×model + headroom) just cleared the gate, so 1 is safe
-	for n := requested; n >= 1; n-- {
-		if modelBytes*int64(1+n)+headroom <= freeBytes {
-			safe = n
-			break
-		}
-	}
-	note := ""
-	if safe < requested {
-		note = fmt.Sprintf("capped concurrency %d→%d to fit RAM (model ~%d GB, free ~%d GB, %d GB headroom) — the broker won't OOM the machine",
-			requested, safe, modelBytes/gb, freeBytes/gb, headroom/gb)
-	}
-	return safe, note
 }
