@@ -46,7 +46,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seba"
@@ -322,12 +321,11 @@ func hapiGovernedPIDs() map[int]string {
 	return m
 }
 
-func hapiProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	return syscall.Kill(pid, 0) == nil
-}
+// hapiProcessAlive + the signal-based intervention primitives (hapiSuspend/
+// hapiResume/hapiKill) live in the platform files (hapi_signals_unix.go /
+// hapi_signals_windows.go): POSIX signals (SIGSTOP/SIGCONT/SIGTERM, kill(2)) are
+// Unix-only, so the Windows cross-build (goreleaser) gets stubs that report
+// "unsupported" — the governor's teeth simply no-op there.
 
 // Injectable governed-lookup + intervention seams (Rule A16/A21): tests swap
 // these to verify the governor's decisions without touching real processes.
@@ -358,27 +356,9 @@ func hapiCanAct(pid int, name string) error {
 	return nil
 }
 
-// hapiSuspend sends SIGSTOP — pauses the process so its memory STOPS growing.
-// Reversible (hapiResume / SIGCONT). The non-destructive memory-pressure relief.
-func hapiSuspend(pid int, name string) error {
-	if err := hapiCanAct(pid, name); err != nil {
-		return err
-	}
-	return syscall.Kill(pid, syscall.SIGSTOP)
-}
-
-// hapiResume sends SIGCONT — un-pauses a previously suspended process.
-func hapiResume(pid int) error {
-	return syscall.Kill(pid, syscall.SIGCONT)
-}
-
-// hapiKill sends SIGTERM — the last resort, only for governed compute at emergency.
-func hapiKill(pid int, name string) error {
-	if err := hapiCanAct(pid, name); err != nil {
-		return err
-	}
-	return syscall.Kill(pid, syscall.SIGTERM)
-}
+// hapiSuspend (SIGSTOP), hapiResume (SIGCONT), and hapiKill (SIGTERM) are defined
+// per-platform in hapi_signals_unix.go / hapi_signals_windows.go (see the note
+// above hapiCanAct). They share hapiCanAct as the A1 gate on Unix.
 
 // ── The governor ───────────────────────────────────────────────────────────
 
