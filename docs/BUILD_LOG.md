@@ -19,6 +19,17 @@
 
 ---
 
+## 2026-06-19 — FIX: Hapi made real — the live memory governor (the layer that was missing)
+**What shipped:** the four-layer "never exhaust the host" stack is now complete. Layers 1–3 (RAM gate hardening, hard MLX runtime cap, cold-path flock + 2×model budget) landed in PR #63; **Layer 4 — Hapi — is now built** (`internal/guard/hapi.go`, `cmd/sirsi/hapi.go`).
+
+**Why it's the real fix:** the 06-18 incident wasn't just a config bug — it exposed that Pantheon governed *CPU* (the Isis watchdog) but never *memory*, and renice (its only relief) frees zero bytes of RAM. Hapi is the first guard primitive that targets memory: it samples free RAM (`vm_stat`) + per-process RSS on a bounded tick, classifies pressure (OK/warn/critical/emergency), and intervenes **before the kernel** — `SIGSTOP` a runaway to halt its balloon (reversible), `SIGTERM` as last resort.
+
+**The safety design (consent, not force):** Hapi only uses teeth on processes that **registered as governed**. The gemma broker self-registers its PID at launch — it *consents* to being stopped, so it can never again OOM the host. Every other process is only warned + recommended, never auto-killed. WindowServer, the kernel, audio, the session UI, sirsi itself, and live Claude/Codex agents are refused outright.
+
+**Proof, not claims:** 10 tests including a **real-process** SIGSTOP→`ps` state `T`→SIGCONT check and a protected-refusal gate on a real pid; full `go test ./...` = 0 FAIL; verified live on the M5 Max (`sirsi hapi` reads 23.4 GB free and names the true top process). The broker stays disabled until the complete stack passes binding review (claude-home) and the owner re-enables it. **ADR:** [`docs/ADR-031-A-NEVER-EXHAUST-THE-HOST.md`](ADR-031-A-NEVER-EXHAUST-THE-HOST.md) — Layer 4 marked DONE.
+
+---
+
 ## Session 34: 2026-05-19 — Ra/Horus CTR Hypervisor Canon Completion
 **Objective:** Complete the Ra/Horus CTR Hypervisor canon — code surface, docs propagation, and Codex review resolution.
 
