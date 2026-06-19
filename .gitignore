@@ -68,6 +68,10 @@ extensions/*/sirsi
 .agents/idea-router/.threads.json-*
 .agents/idea-router/processes.json
 .agents/idea-router/locks/
+# Router messages are EPHEMERAL per-machine runtime state (like the queue/registry
+# above), not source. Tracking them churned the worktree (hundreds of modified
+# .md every session) and is the "dirty status" operator clutter. Ignore + untrack.
+.agents/idea-router/items/
 
 # Claude local runtime artifacts
 .claude/hooks/__pycache__/
