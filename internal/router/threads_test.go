@@ -520,3 +520,34 @@ func containsStr(xs []string, s string) bool {
 	}
 	return false
 }
+
+// TestRegisterThread_AlwaysWatchesSelf locks the A27 contract that a thread always
+// watches its OWN inbox, even when the --watch declaration omits self (claude-home
+// #76 follow-up: a `--watch other-agent` that drops self would leave the thread
+// blind to its own inbox). Holds on both the fresh and reuse paths.
+func TestRegisterThread_AlwaysWatchesSelf(t *testing.T) {
+	defer probeStubs(t, PIDAlive, "sig-2")()
+	tmp := t.TempDir()
+	mk := func(watches []string) *Thread {
+		return &Thread{AgentID: "claude-pantheon", Surface: "claude", PID: 8888, StartTime: "sig-2", Watches: watches}
+	}
+	// Fresh register declaring only OTHER agents — self must be added.
+	first, err := RegisterThread(tmp, mk([]string{"claude-home", "codex-pantheon"}))
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if !containsStr(first.Watches, "claude-pantheon") {
+		t.Errorf("fresh register must watch self; got %v", first.Watches)
+	}
+	// Re-register (reuse path) again omitting self — self must remain.
+	second, err := RegisterThread(tmp, mk([]string{"claude-home"}))
+	if err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	if second.ThreadID != first.ThreadID {
+		t.Fatalf("reuse must return same thread_id")
+	}
+	if !containsStr(second.Watches, "claude-pantheon") {
+		t.Errorf("reuse re-register must keep self-watch; got %v", second.Watches)
+	}
+}
