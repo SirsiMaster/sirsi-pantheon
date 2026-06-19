@@ -750,6 +750,7 @@ func init() {
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
 	rootCmd.AddCommand(gemmaCmd)   // human-facing 'sirsi gemma "<prompt>"' → local on-device model
 	rootCmd.AddCommand(relieveCmd) // on-demand hang relief: renice the live CPU offender (A1-protected)
+	rootCmd.AddCommand(hapiCmd)    // 𓁢 Hapi: the live MEMORY governor — stop a runaway before the kernel Jetsams (ADR-031-A Layer 4)
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
 
 	// ── Internal tools (hidden) ──

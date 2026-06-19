@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // `sirsi gemma serve` is the Pantheon inference broker: it loads the local model
@@ -172,6 +174,12 @@ func gemmaServerStart(home string) error {
 	pid := c.Process.Pid
 	_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(pid)), 0o644)
 	_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
+	// Layer 4 (ADR-031-A): register the broker as Hapi-governed compute. This is
+	// the broker CONSENTING to be stopped — if it ever balloons toward Jetsam
+	// despite the hard MLX cap, Hapi suspends (reversibly) then kills THIS pid
+	// before the kernel takes the whole host down. The thing that wasn't true
+	// on 2026-06-18 is now true at the source.
+	_ = guard.HapiRegisterGoverned(pid, "gemma-broker")
 	_ = c.Process.Release() // detach — do not wait/reap
 
 	fmt.Printf("gemma broker starting (pid %d, port %d, model %s, concurrency %d) — loading onto the GPU…\n",
@@ -195,6 +203,7 @@ func gemmaServerStop(home string) error {
 	}
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 	if pid > 0 {
+		_ = guard.HapiUnregisterGoverned(pid) // no longer Hapi's to govern
 		_ = syscall.Kill(-pid, syscall.SIGTERM) // the whole process group
 		_ = syscall.Kill(pid, syscall.SIGTERM)
 	}
