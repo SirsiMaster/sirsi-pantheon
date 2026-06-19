@@ -18,7 +18,7 @@ Runtime legend: **live** = a persistent daemon exists and runs · **on-demand** 
 |---|---|---|---|---|---|
 | **Horus** | 𓂀 | Workstation lord: daemon health, repo status, code graph, operator dashboard | working (`scan/outline/symbols/context/stats/supervise`) | partial | on-demand |
 | **Isis** | 𓁐 | Health & remediation: doctor, auto-fix, watchdog, CPU/RAM monitor | working (`diagnose/isis network/isis fix/relieve`) | partial | on-demand (watchdog code exists, **not running**) |
-| **Hapi** | 🌊 | Memory governor: free-RAM + per-process RSS watch, suspend/kill a governed runaway before Jetsam | **working** (`sirsi hapi` status/`watch --govern`/`protect`/`release`; ADR-031-A Layer 4, #63) | next | on-demand (`watch` loop; launchd daemon = next) |
+| **Hapi** | 🌊 | Memory governor: free-RAM + per-process RSS watch, suspend/kill a governed runaway before Jetsam | **working** (`sirsi hapi` status/`watch --govern`/`protect`/`release`/`install`/`uninstall`; ADR-031-A Layer 4, #63) | next | **live** (always-on LaunchAgent via `sirsi hapi install`; on-demand `watch` too) |
 | **Guard** | 🛡️ | Process protection & CPU-pressure relief (renice) | working (`relieve/monitor`) | partial | on-demand |
 | **Sekhmet** | ⚡ | Alerts & escalation (watchdog `FormatAlert` only) | none (no standalone command) | none | **stub** |
 | **Vitals** | 📊 | Health dashboard / metric streaming / trend | partial (`status/monitor` are snapshots) | none | on-demand |

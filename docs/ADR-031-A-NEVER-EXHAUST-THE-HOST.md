@@ -28,7 +28,9 @@ Enforced by **independent layers** (no single one is the only thing standing bet
    - **KILL** (free < 4%, governed only): `SIGTERM` governed compute — the host comes first.
    It acts with teeth **only on processes that consented** (registered as governed); every other process is warned/recommended, never auto-killed. WindowServer, the kernel, audio, the session UI, sirsi itself, and live Claude/Codex agents are refused at the `hapiCanAct` gate (defense in depth atop `isProtectedReniceTarget`). Surfaced as `sirsi hapi` (status) / `sirsi hapi watch [--govern]` / `protect` / `release`. This is the "protect" pillar generalized beyond the broker — the gap that was open on 06-18 is now closed at the source: the broker can never again OOM the host because it consented to being stopped first.
 
-**Regression guard:** `TestGemmaNeverAgainInvariants` asserts (a) default concurrency = 1, (b) the cap wrapper sets the MLX memory limit, (c) the 2×model serial budget refuses when it won't fit. The concurrency-4 default cannot silently re-enter.
+**Always-on (the daemon):** `sirsi hapi install` runs Layer 4 as a macOS LaunchAgent (`ai.sirsi.hapi`, `RunAtLoad`+`KeepAlive`) so the governor protects the host continuously, not only while a terminal holds `sirsi hapi watch`. It defaults to **govern** mode — safe by construction, since teeth only touch consented (governed) PIDs — with `--warn-only` for observe-only. `sirsi hapi uninstall` removes it. **A5 reconciliation:** A5 says Hapi must be conservative with active GPU/compute processes; the daemon honors that — it suspends (reversible `SIGSTOP`) before any kill, and only ever kills a *consented* runaway, and only at emergency (free < 4%) when the host itself is about to Jetsam. A healthy inference job is never arbitrarily killed.
+
+**Regression guard:** `TestGemmaNeverAgainInvariants` asserts (a) default concurrency = 1, (b) the cap wrapper sets the MLX memory limit, (c) the 2×model serial budget refuses when it won't fit. `TestHapiDaemonPlist` asserts the LaunchAgent runs `hapi watch`, gates `--govern`, and restarts on crash. The concurrency-4 default cannot silently re-enter.
 
 ## Consequences
 
