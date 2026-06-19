@@ -53,15 +53,10 @@ var (
 	lastPressureAuth  atomic.Bool  // a kernel-dispatch level has been observed in THIS process
 )
 
-// recordPressure stores the latest kernel level. Called from the dispatch handler
-// path, so it does ONLY primitive stores — no file I/O, no allocation, no cache
-// traversal (that would aggravate VM pressure). The Hapi loop persists the cache.
-func recordPressure(l PressureLevel) {
-	lastPressureLevel.Store(int32(l))
-	lastPressureAuth.Store(true)
-}
-
 // observedPressure returns the kernel level observed in THIS process, if any.
+// (The level is recorded by the dispatch handler in fanoutPressure — colocated
+// with its only caller in the darwin+cgo build so the !cgo build doesn't see a
+// dead writer.)
 func observedPressure() (PressureLevel, bool) {
 	if !lastPressureAuth.Load() {
 		return PressureUnknown, false

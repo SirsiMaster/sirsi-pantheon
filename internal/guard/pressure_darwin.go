@@ -93,7 +93,11 @@ func fanoutPressure(level PressureLevel) {
 	if level == PressureUnknown {
 		return
 	}
-	recordPressure(level) // tiny state update only — no cache traversal in the handler
+	// Tiny state update only — primitive atomic stores, no file I/O, no allocation,
+	// no cache traversal in the handler (codex SME: enqueue only; cache traversal
+	// aggravates VM pressure). The Hapi loop persists the cross-process cache.
+	lastPressureLevel.Store(int32(level))
+	lastPressureAuth.Store(true)
 	pressureSubMu.Lock()
 	subs := pressureSubs
 	pressureSubMu.Unlock()
