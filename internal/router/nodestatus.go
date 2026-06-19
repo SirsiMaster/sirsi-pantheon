@@ -91,6 +91,16 @@ type ThreadSummary struct {
 	Stale         bool         `json:"stale,omitempty"`
 	PID           int          `json:"pid,omitempty"`
 	OSState       PIDState     `json:"os_state,omitempty"` // OS-truth liveness of PID
+	// Honest liveness (ADR-024 / owner priority 2026-06-19). LoopAlive is the
+	// surface-native loop-evidence verdict: "yes"/"no" for loop-monitor surfaces
+	// (Claude — a live `pgrep -f thr-<id>` loop), "na" for every other surface
+	// where pgrep loop-evidence does not apply (Codex app-heartbeat, resident UI
+	// native-runloop, headless pull-loop). Armed is the TRUTHFUL verdict the
+	// operator reads: for loop-monitor surfaces armed == loop is alive (a
+	// heartbeat-fresh thread whose loop died is armed:false — "claims live but is
+	// idle"); for every other surface armed == heartbeat is fresh (not stale).
+	LoopAlive string `json:"loop_alive,omitempty"` // yes | no | na
+	Armed     bool   `json:"armed"`
 }
 
 // AgentHealthCheck reports whether a local agent CLI is available and authenticated.
@@ -347,6 +357,23 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				Stale:         thr.IsStale(now, DefaultThreadStaleAfter),
 				PID:           thr.PID,
 				OSState:       PIDStateOf(thr.PID, thr.StartTime),
+			}
+			// Honest liveness: a loop-monitor (Claude) thread is armed ONLY if its
+			// thr-id loop is actually alive — a heartbeat-fresh thread whose loop
+			// died is armed:false ("claims live but is idle", the owner's report).
+			// Every other surface proves liveness surface-natively (heartbeat), so
+			// loop-evidence is N/A and armed == not-stale (never false-flag Codex/UI).
+			if requiresThreadIDLoop(thr.Surface) {
+				alive := WatcherAlive(thr.ThreadID)
+				if alive {
+					sum.LoopAlive = "yes"
+				} else {
+					sum.LoopAlive = "no"
+				}
+				sum.Armed = alive
+			} else {
+				sum.LoopAlive = "na"
+				sum.Armed = !sum.Stale
 			}
 			if sum.Stale {
 				ns.StaleThreads = append(ns.StaleThreads, sum)

@@ -539,3 +539,78 @@ func TestCollectNodeStatus_DoesNotCountSuspendedThreadsAsLive(t *testing.T) {
 			len(ns.LiveThreads), len(ns.StaleThreads), ns.LiveThreadCount)
 	}
 }
+
+// TestCollectNodeStatus_HonestLiveness locks the owner-priority "honest liveness"
+// contract (2026-06-19): node-status must not report a thread armed when its
+// surface-native loop is actually dead, and must not false-flag surfaces that
+// prove liveness by heartbeat. It also confirms OS-dead threads auto-reap on the
+// live CollectNodeStatus path (criterion 3).
+func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	host, _ := os.Hostname()
+
+	// OS truth: pid 10004 is gone (reapable); the rest are alive with matching start.
+	oldState, oldStart, oldCmd := getPIDStateFn(), getPIDStartFn(), getPIDCommandFn()
+	setPIDStateFn(func(pid int) PIDState {
+		if pid == 10004 {
+			return PIDGone
+		}
+		return PIDAlive
+	})
+	setPIDStartFn(func(int) string { return "sig" })
+	setPIDCommandFn(func(int) string { return "" })
+	defer func() { setPIDStateFn(oldState); setPIDStartFn(oldStart); setPIDCommandFn(oldCmd) }()
+
+	mk := func(agent, surface string, pid int) *Thread {
+		thr, err := RegisterThread(routerRoot, &Thread{AgentID: agent, Surface: surface, PID: pid, Host: host, StartTime: "sig"})
+		if err != nil {
+			t.Fatalf("register %s: %v", agent, err)
+		}
+		return thr
+	}
+	aLive := mk("claude-a", "claude", 10001) // loop-monitor, loop ALIVE
+	bDead := mk("claude-b", "claude", 10002) // loop-monitor, heartbeat-fresh but loop DEAD
+	cCodex := mk("codex-x", "codex", 10003)  // app-heartbeat — loop-evidence N/A
+	dGone := mk("claude-d", "claude", 10004) // OS-dead → must auto-reap
+
+	// Only thread A has a live watcher loop.
+	oldWatch := watcherAliveFn
+	watcherAliveFn = func(id string) bool { return id == aLive.ThreadID }
+	defer func() { watcherAliveFn = oldWatch }()
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	find := func(id string) *ThreadSummary {
+		for i := range ns.LiveThreads {
+			if ns.LiveThreads[i].ThreadID == id {
+				return &ns.LiveThreads[i]
+			}
+		}
+		for i := range ns.StaleThreads {
+			if ns.StaleThreads[i].ThreadID == id {
+				return &ns.StaleThreads[i]
+			}
+		}
+		return nil
+	}
+
+	// (1) live-looping claude → armed:true, loop_alive:yes.
+	if s := find(aLive.ThreadID); s == nil || !s.Armed || s.LoopAlive != "yes" {
+		t.Errorf("live-looping claude: got %+v, want armed=true loop=yes", s)
+	}
+	// (2) heartbeat-fresh-but-loop-dead claude → armed:false, loop_alive:no (NOT silently live).
+	if s := find(bDead.ThreadID); s == nil || s.Armed || s.LoopAlive != "no" {
+		t.Errorf("loop-dead claude: got %+v, want armed=false loop=no", s)
+	}
+	// (3) codex app-heartbeat → not false-flagged: loop_alive N/A, armed by heartbeat.
+	if s := find(cCodex.ThreadID); s == nil || !s.Armed || s.LoopAlive != "na" {
+		t.Errorf("codex app-heartbeat: got %+v, want armed=true loop=na", s)
+	}
+	// (4) OS-dead claude → auto-reaped off the live path (absent from live + stale).
+	if s := find(dGone.ThreadID); s != nil {
+		t.Errorf("OS-dead thread must auto-reap, still present: %+v", s)
+	}
+}

@@ -52,6 +52,19 @@ func loopArmInstruction(agentID, threadID string) string {
 	)
 }
 
+// requiresThreadIDLoop reports whether a surface's canonical watcher is a
+// thread-id-keyed, pgrep-able loop process — true ONLY for the loop-monitor
+// surface (Claude `/loop`). For every other surface the pgrep `thr-<id>` probe is
+// N/A and heartbeat freshness is the armed truth: app-heartbeat (Codex heartbeats
+// natively, no thr-id loop), native-runloop (menubar/TUI/IDE prove liveness from
+// their runloop heartbeat, not an inbox poller), surface-loop (gemini/gemma/qwen,
+// not guaranteed thr-id-keyed), and pull-loop (headless mcp/api/webhook/worker).
+// This is the [[feedback_liveness_proof_surface_native]] rule in code — never
+// mandate one mechanism, so honest-liveness never false-flags Codex or a resident UI.
+func requiresThreadIDLoop(surface string) bool {
+	return WatcherFor(surface, "", "").Type == "loop-monitor"
+}
+
 // WatcherFor returns the canonical watcher spec for a surface, templated for the
 // given agent and thread. Unknown/headless surfaces fall back to a surface-owned
 // pull loop; the active router CLI is pull-model and does not expose a daemon
