@@ -142,6 +142,19 @@ func (n NodeCapacity) MaxConcurrency(perModelBytes int64) int {
 	return slots
 }
 
+// Fits reports whether at least ONE model of perModelBytes can run within this
+// node's dynamic reserve. This is the binding refuse gate (claude-home, ADR-031-B):
+// MaxConcurrency floors at 1 and so never refuses on its own — callers MUST check
+// Fits first and refuse-rather-than-OOM when one model won't fit, exactly as
+// ADR-031-A's gemmaSafeConcurrency did with its flat budget. The hard MLX cap is
+// the runtime backstop; Fits is the pre-launch gate, now node-proportional.
+func (n NodeCapacity) Fits(perModelBytes int64) bool {
+	if perModelBytes <= 0 {
+		perModelBytes = 14 << 30 // unknown → conservative default
+	}
+	return perModelBytes+n.DynamicReserve() <= n.FreeRAM
+}
+
 // DynamicCap is the per-node memory ceiling fed to the MLX cap wrapper:
 // FreeRAM − DynamicReserve (mapping #3), floored at one model so a load can start.
 func (n NodeCapacity) DynamicCap(perModelBytes int64) int64 {

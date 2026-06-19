@@ -53,7 +53,7 @@ func init() {
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeStop, "stop", false, "Stop the warm Gemma server")
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeStatusFlag, "status", false, "Show whether the warm server is running")
 	gemmaServeCmd.Flags().IntVar(&gemmaServePort, "port", gemmaServerDefaultPort, "Local port for the server")
-	gemmaServeCmd.Flags().IntVar(&gemmaServeConcurrency, "concurrency", 1, "Max concurrent decodes (RAM-gated — each slot grows ~a full model in memory; capped to fit)")
+	gemmaServeCmd.Flags().IntVar(&gemmaServeConcurrency, "concurrency", 0, "Concurrent decodes; 0 = auto-derive from this node (ADR-031-B), >0 requests a specific count capped to what the node can hold")
 	gemmaCmd.AddCommand(gemmaServeCmd)
 }
 
@@ -125,15 +125,27 @@ func gemmaServerStart(home string) error {
 	// (concurrency 4 ballooned a 12 GB model to ~64 GB on a 48 GB box → Jetsam).
 	// Refuse rather than crash; cap concurrency to what fits.
 	modelBytes := gemmaEstimateModelBytes(home, model)
-	// Reserve RAM live agents (Claude/Codex) are using, so the broker never sizes
-	// itself into starving a running agent — cross-agent protection is the point.
-	freeBytes := gemmaFreeRAMBytes() - gemmaAgentReserveBytes()
-	safe, note := gemmaSafeConcurrency(gemmaServeConcurrency, modelBytes, freeBytes)
-	if safe == 0 {
-		return fmt.Errorf("Pantheon refuses to start the broker: %s. Free up memory first — the broker will not OOM your machine", note)
+	// ADR-031-B: the broker's numbers now derive from the MEASURED node, not 48GB
+	// constants. NodeCapacity.DynamicReserve accounts for the OS + live Claude/Codex
+	// RSS + a margin that scales with the box (cross-agent protection is the point).
+	nc := guard.SampleNodeCapacity()
+	// BINDING REFUSE GATE (claude-home): MaxConcurrency floors at 1, so it never
+	// refuses on its own — gate on Fits FIRST and refuse-rather-than-OOM when one
+	// model won't fit within the dynamic reserve.
+	if !nc.Fits(modelBytes) {
+		return fmt.Errorf("Pantheon refuses to start the broker: a ~%d GB model + ~%d GB dynamic reserve (OS + live agents + margin) > %d GB free. Free up memory first — the broker will not OOM your machine",
+			modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
 	}
-	if note != "" {
-		fmt.Printf("⚠ %s\n", note)
+	// Node-derived concurrency (mapping #1). Default flag 0 = auto (use the node max);
+	// a user may request FEWER with --concurrency N, never more than the node can hold.
+	safe := nc.MaxConcurrency(modelBytes)
+	if gemmaServeConcurrency > 0 && gemmaServeConcurrency < safe {
+		safe = gemmaServeConcurrency
+	}
+	if safe < nc.MaxConcurrency(modelBytes) {
+		fmt.Printf("⚠ concurrency %d (node could hold %d for a ~%d GB model)\n", safe, nc.MaxConcurrency(modelBytes), modelBytes/(1<<30))
+	} else if safe > 1 {
+		fmt.Printf("✓ node-derived concurrency %d for a ~%d GB model (this box can hold it)\n", safe, modelBytes/(1<<30))
 	}
 	gemmaServeConcurrency = safe
 
@@ -147,11 +159,10 @@ func gemmaServerStart(home string) error {
 	// it evicts/errors instead of taking the host down. The pre-launch gate already
 	// guaranteed free ≥ 2×model + headroom, so the cap always holds model + working
 	// memory. Launch the server THROUGH the cap wrapper (sets the limit before load).
-	const capHeadroom = int64(8) << 30
-	capBytes := freeBytes - capHeadroom
-	if capBytes < modelBytes*2 {
-		capBytes = modelBytes * 2
-	}
+	// Cap = node free − dynamic reserve (mapping #3), floored at one model. MLX
+	// evicts/errors at this ceiling instead of growing into Jetsam; the Fits gate
+	// above already guaranteed free ≥ model + reserve, so the cap holds the model.
+	capBytes := nc.DynamicCap(modelBytes)
 	wrapper, werr := gemmaWriteCapWrapper(home)
 	if werr != nil {
 		return fmt.Errorf("writing the memory-cap launcher: %w", werr)

@@ -83,6 +83,31 @@ func TestDynamicCapFloorsAtModel(t *testing.T) {
 	}
 }
 
+// TestFitsRefuseGate is claude-home's binding condition: refuse when one model
+// won't fit within the dynamic reserve, even though MaxConcurrency floors at 1.
+func TestFitsRefuseGate(t *testing.T) {
+	model := int64(12) * gb
+	// 48GB box, only 20GB free, agents holding 10GB: reserve ≈ 1.5+10+8 = 19.5GB;
+	// model + reserve = 31.5GB > 20GB free → must NOT fit (refuse).
+	tight := node(48, 20, 0, 10)
+	if tight.Fits(model) {
+		t.Errorf("tight node must refuse: model %dGB + reserve %dGB > %dGB free",
+			model/gb, tight.DynamicReserve()/gb, tight.FreeRAM/gb)
+	}
+	// Same node with room: 48GB, 40GB free, 2GB agents → reserve ≈ 1.5+2+8 = 11.5;
+	// 12 + 11.5 = 23.5 <= 40 → fits.
+	roomy := node(48, 40, 0, 2)
+	if !roomy.Fits(model) {
+		t.Errorf("roomy node should fit: model %dGB + reserve %dGB <= %dGB free",
+			model/gb, roomy.DynamicReserve()/gb, roomy.FreeRAM/gb)
+	}
+	// The guard's invariant: if Fits is false, the caller must refuse — but if a
+	// caller ignored it, MaxConcurrency would still floor at 1 (the trap Fits guards).
+	if tight.MaxConcurrency(model) != 1 {
+		t.Error("MaxConcurrency floors at 1 even when it doesn't fit — that is exactly why Fits exists")
+	}
+}
+
 func TestBootstrapPressureAndString(t *testing.T) {
 	if bootstrapPressure(40) != PressureNormal || bootstrapPressure(6) != PressureWarn || bootstrapPressure(2) != PressureCritical {
 		t.Error("bootstrap pressure tiers wrong")
