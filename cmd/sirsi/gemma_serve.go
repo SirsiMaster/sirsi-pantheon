@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // `sirsi gemma serve` is the Pantheon inference broker: it loads the local model
@@ -58,6 +60,35 @@ func init() {
 func gemmaPidPath(home string) string       { return filepath.Join(home, ".sirsi/gemma-server.pid") }
 func gemmaPortPath(home string) string      { return filepath.Join(home, ".sirsi/gemma-server.port") }
 func gemmaServerLogPath(home string) string { return filepath.Join(home, ".sirsi/gemma-server.log") }
+func gemmaCapWrapperPath(home string) string {
+	return filepath.Join(home, ".sirsi/gemma-capped-server.py")
+}
+
+// gemmaCapWrapper is the LAYER-2 hard runtime cap (ADR-031-A invariant): it sets
+// MLX's memory ceilings BEFORE the model loads, so MLX evicts/errors at the cap
+// instead of growing into Jetsam — the guarantee that makes "never OOM the host"
+// true even when the pre-launch estimate is wrong or the KV cache grows mid-decode.
+// argv: <cap_bytes> <mlx_lm.server args...>
+const gemmaCapWrapper = `import sys, runpy
+import mlx.core as mx
+cap = int(sys.argv[1])
+for fn in ("set_memory_limit", "set_wired_limit"):
+    try: getattr(mx, fn)(cap)
+    except Exception as e: print("WARN: mx.%s(%d): %s" % (fn, cap, e), file=sys.stderr)
+try: mx.set_cache_limit(cap // 4)   # cap the buffer-cache pool (the thing that ballooned on 06-18)
+except Exception as e: print("WARN: mx.set_cache_limit:", e, file=sys.stderr)
+sys.argv = ["mlx_lm.server"] + sys.argv[2:]
+runpy.run_module("mlx_lm.server", run_name="__main__")
+`
+
+// gemmaWriteCapWrapper writes the launcher next to the other broker state.
+func gemmaWriteCapWrapper(home string) (string, error) {
+	p := gemmaCapWrapperPath(home)
+	if err := os.WriteFile(p, []byte(gemmaCapWrapper), 0o644); err != nil {
+		return "", err
+	}
+	return p, nil
+}
 
 func runGemmaServe(cmd *cobra.Command, args []string) error {
 	home, _ := os.UserHomeDir()
@@ -94,7 +125,9 @@ func gemmaServerStart(home string) error {
 	// (concurrency 4 ballooned a 12 GB model to ~64 GB on a 48 GB box → Jetsam).
 	// Refuse rather than crash; cap concurrency to what fits.
 	modelBytes := gemmaEstimateModelBytes(home, model)
-	freeBytes := gemmaFreeRAMBytes()
+	// Reserve RAM live agents (Claude/Codex) are using, so the broker never sizes
+	// itself into starving a running agent — cross-agent protection is the point.
+	freeBytes := gemmaFreeRAMBytes() - gemmaAgentReserveBytes()
 	safe, note := gemmaSafeConcurrency(gemmaServeConcurrency, modelBytes, freeBytes)
 	if safe == 0 {
 		return fmt.Errorf("Pantheon refuses to start the broker: %s. Free up memory first — the broker will not OOM your machine", note)
@@ -110,7 +143,22 @@ func gemmaServerStart(home string) error {
 		return fmt.Errorf("opening server log: %w", err)
 	}
 
-	c := exec.Command(mlxsrv,
+	// LAYER 2 — HARD RUNTIME CAP. MLX may use up to (free − headroom); beyond that
+	// it evicts/errors instead of taking the host down. The pre-launch gate already
+	// guaranteed free ≥ 2×model + headroom, so the cap always holds model + working
+	// memory. Launch the server THROUGH the cap wrapper (sets the limit before load).
+	const capHeadroom = int64(8) << 30
+	capBytes := freeBytes - capHeadroom
+	if capBytes < modelBytes*2 {
+		capBytes = modelBytes * 2
+	}
+	wrapper, werr := gemmaWriteCapWrapper(home)
+	if werr != nil {
+		return fmt.Errorf("writing the memory-cap launcher: %w", werr)
+	}
+	pyBin := filepath.Join(home, ".venvs/mlx/bin/python")
+
+	c := exec.Command(pyBin, wrapper, strconv.FormatInt(capBytes, 10),
 		"--model", model,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(gemmaServePort),
@@ -126,6 +174,12 @@ func gemmaServerStart(home string) error {
 	pid := c.Process.Pid
 	_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(pid)), 0o644)
 	_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
+	// Layer 4 (ADR-031-A): register the broker as Hapi-governed compute. This is
+	// the broker CONSENTING to be stopped — if it ever balloons toward Jetsam
+	// despite the hard MLX cap, Hapi suspends (reversibly) then kills THIS pid
+	// before the kernel takes the whole host down. The thing that wasn't true
+	// on 2026-06-18 is now true at the source.
+	_ = guard.HapiRegisterGoverned(pid, "gemma-broker")
 	_ = c.Process.Release() // detach — do not wait/reap
 
 	fmt.Printf("gemma broker starting (pid %d, port %d, model %s, concurrency %d) — loading onto the GPU…\n",
@@ -149,6 +203,7 @@ func gemmaServerStop(home string) error {
 	}
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 	if pid > 0 {
+		_ = guard.HapiUnregisterGoverned(pid)   // no longer Hapi's to govern
 		_ = syscall.Kill(-pid, syscall.SIGTERM) // the whole process group
 		_ = syscall.Kill(pid, syscall.SIGTERM)
 	}
@@ -243,6 +298,29 @@ func gemmaFreeRAMBytes() int64 {
 	return pages * pageSize
 }
 
+// gemmaAgentReserveBytes sums the RSS of live AI-agent processes (Claude / Codex)
+// so the broker reserves what they're using instead of counting it as available.
+func gemmaAgentReserveBytes() int64 {
+	out, err := exec.Command("ps", "-axo", "rss,comm").Output()
+	if err != nil {
+		return 0
+	}
+	var total int64
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		name := strings.ToLower(strings.Join(f[1:], " "))
+		if strings.Contains(name, "claude") || strings.Contains(name, "codex") {
+			if kb, e := strconv.ParseInt(f[0], 10, 64); e == nil {
+				total += kb * 1024
+			}
+		}
+	}
+	return total
+}
+
 // gemmaEstimateModelBytes estimates the resident size of a model from its HF cache.
 func gemmaEstimateModelBytes(home, model string) int64 {
 	dir := filepath.Join(home, ".cache/huggingface/hub", "models--"+strings.ReplaceAll(model, "/", "--"))
@@ -266,14 +344,16 @@ func gemmaSafeConcurrency(requested int, modelBytes, freeBytes int64) (int, stri
 	if modelBytes <= 0 {
 		modelBytes = 14 * gb
 	}
-	if modelBytes+headroom > freeBytes {
-		return 0, fmt.Sprintf("the ~%d GB model + %d GB headroom exceeds %d GB free", modelBytes/gb, headroom/gb, freeBytes/gb)
+	// Serial budget is 2×model (resident weights + ~one model of working memory),
+	// not 1× — under-budgeting serial is part of how the 06-18 estimate was too loose.
+	if modelBytes*2+headroom > freeBytes {
+		return 0, fmt.Sprintf("even serial needs ~%d GB (2× the %d GB model) + %d GB headroom > %d GB free", (modelBytes*2)/gb, modelBytes/gb, headroom/gb, freeBytes/gb)
 	}
 	if requested < 1 {
 		requested = 1
 	}
-	safe := 1 // model + headroom fits, so serial (1) is always safe here
-	for n := requested; n >= 2; n-- {
+	safe := 1 // serial (2×model + headroom) just cleared the gate, so 1 is safe
+	for n := requested; n >= 1; n-- {
 		if modelBytes*int64(1+n)+headroom <= freeBytes {
 			safe = n
 			break
