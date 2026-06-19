@@ -44,6 +44,11 @@ type NodeStatus struct {
 	ActiveTopics   []string            `json:"active_topics"`
 	CompletedCount int                 `json:"completed_count"`
 
+	// StrandedInbox: agents with open items but NO armed thread to watch them —
+	// work that sits silently until the agent is (re)armed (PR #2 strand
+	// visibility). Empty when every backlogged agent is armed.
+	StrandedInbox []StrandedAgent `json:"stranded_inbox,omitempty"`
+
 	// Work items
 	WorkItemSummary map[string]int `json:"work_item_summary"` // status → count
 
@@ -467,6 +472,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 
 		ns.AgentHealth = append(ns.AgentHealth, check)
 	}
+
+	// Strand visibility (PR #2): backlogged agents with no armed thread.
+	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent)
 
 	return ns, nil
 }
