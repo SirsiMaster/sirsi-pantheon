@@ -364,5 +364,6 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd)
+	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd)
 }
