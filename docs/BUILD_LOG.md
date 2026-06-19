@@ -8,6 +8,17 @@
 
 ---
 
+## 2026-06-18 — INCIDENT: Pantheon OOM'd the host it exists to protect
+**What broke:** while testing a new warm-inference broker (`sirsi gemma serve`), a concurrency-4 default with no RAM gate let ~5 MLX model copies (~53 GB) sit resident at once on a 48 GB machine → macOS Jetsam → host froze. The 4 concurrent `sirsi gemma` calls fell through to the cold path (`mlx_lm.generate`), each loading the full model.
+
+**The hard truth (the mistakes stay in):** the tool whose entire thesis is preventing Jetsam/memory-pressure **prevented nothing**. Its watchdog wasn't running; even running, it only renices CPU hogs (renice frees zero RAM); Hapi — the deity designed for GPU/VRAM control — is a non-running stub; the only "memory protection" is a *post-mortem* 7-day Jetsam count. Owner's verdict: *"clearly Pantheon is NOT ready for primetime."* Agreed.
+
+**Fix (defense in depth, 3 layers):** (1) pre-launch RAM gate — **shipped #60** (default concurrency 1, refuse rather than OOM); (2) **hard runtime cap** (MLX memory limit) — do first, before re-enabling; (3) **live self-governance** — the broker registers under Pantheon's own guard/Hapi watchdog that intervenes (warn → suspend → kill non-critical) before the kernel Jetsams. Plus an invariant regression test. The broker stays disabled until 2+3 ship.
+
+**Full forensics:** [`docs/case-studies/2026-06-18-pantheon-did-not-prevent-oom.md`](case-studies/2026-06-18-pantheon-did-not-prevent-oom.md).
+
+---
+
 ## Session 34: 2026-05-19 — Ra/Horus CTR Hypervisor Canon Completion
 **Objective:** Complete the Ra/Horus CTR Hypervisor canon — code surface, docs propagation, and Codex review resolution.
 
