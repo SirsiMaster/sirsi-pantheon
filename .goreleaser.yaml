@@ -18,7 +18,9 @@ builds:
     goos:
       - darwin
       - linux
-      - windows
+    # windows dropped 2026-06-19: Mac-first (ADR-032, Win/Linux deferred). cmd/sirsi
+    # uses POSIX-only syscalls (hapi SIGSTOP/kill, gemma flock/Setpgid) that don't
+    # cross-compile to Windows; re-add with per-platform build tags when Windows ships.
     goarch:
       - amd64
       - arm64
@@ -36,7 +38,9 @@ builds:
     goos:
       - darwin
       - linux
-      - windows
+    # windows dropped 2026-06-19: Mac-first (ADR-032, Win/Linux deferred). cmd/sirsi
+    # uses POSIX-only syscalls (hapi SIGSTOP/kill, gemma flock/Setpgid) that don't
+    # cross-compile to Windows; re-add with per-platform build tags when Windows ships.
     goarch:
       - amd64
       - arm64
@@ -146,7 +150,6 @@ release:
     |----------|----------|-------|
     | **macOS (Apple Silicon)** | [`Pantheon.app` (DMG)](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/SirsiPantheon-{{.Version}}-arm64.dmg) | Menu bar + CLI. Intel Macs use Rosetta. |
     | **macOS / Linux (CLI)** | `brew tap SirsiMaster/tools && brew install sirsi-pantheon` | The `sirsi` CLI (all deities are `sirsi <deity>` subcommands). |
-    | **Windows** | [`Installer (zip)`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/SirsiPantheon-{{.Version}}-windows-setup.zip) | Extract, run `install.bat` — adds `sirsi` to PATH. |
     | **Linux (deb)** | [`sirsi-pantheon_{{.Version}}_linux_amd64.deb`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/sirsi-pantheon_{{.Version}}_linux_amd64.deb) | `sudo dpkg -i sirsi-pantheon_*.deb` |
     | **Linux (rpm)** | [`sirsi-pantheon_{{.Version}}_linux_amd64.rpm`](https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v{{.Version}}/sirsi-pantheon_{{.Version}}_linux_amd64.rpm) | `sudo rpm -i sirsi-pantheon_*.rpm` |
     | **From source** | `go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v{{.Version}}` | Requires Go 1.25+. |
