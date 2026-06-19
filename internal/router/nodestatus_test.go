@@ -121,7 +121,10 @@ func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	plist := testLaunchPlist("/bin/zsh")
+	// /bin/sh exists on macOS AND the Linux release runner (goreleaser job runs on
+	// ubuntu); /bin/zsh is absent on Linux → ProgramFound:false → release-blocking
+	// test failure (the reason v0.23.0/v0.23.1-beta release runs failed at this step).
+	plist := testLaunchPlist("/bin/sh")
 	if err := os.WriteFile(filepath.Join(agentDir, "ai.sirsi.pantheon.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +134,7 @@ func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
 	for _, h := range agents {
 		if h.Label == "ai.sirsi.pantheon" {
 			found = true
-			if !h.Installed || h.Role != "menubar" || h.Program != "/bin/zsh" || !h.ProgramFound {
+			if !h.Installed || h.Role != "menubar" || h.Program != "/bin/sh" || !h.ProgramFound {
 				t.Fatalf("unexpected menubar LaunchAgent health: %+v", h)
 			}
 		}
