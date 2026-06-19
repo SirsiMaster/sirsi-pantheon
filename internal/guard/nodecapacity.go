@@ -17,10 +17,11 @@
 //
 // Pressure: the AUTHORITATIVE level comes from the kernel's
 // DISPATCH_SOURCE_TYPE_MEMORYPRESSURE (ADR-031-B #4, codex SME) — node-proportional
-// for free. That watcher lands as a follow-up; until then NodeCapacity carries a
-// BOOTSTRAP snapshot level (PressureSource="bootstrap-snapshot") so the model is
-// usable, clearly marked non-authoritative. The free-% seed below is the fallback
-// path the ADR sanctions, NOT the governance contract.
+// for free. That watcher now exists (pressure.go): the Hapi daemon runs it and
+// records the kernel level; SampleNodeCapacity reads it via effectivePressure
+// (this process → the daemon's cross-process cache → bootstrap). The free-% seed
+// (bootstrapPressure) is the fallback the ADR sanctions when no watcher has
+// reported — clearly marked PressureSource="bootstrap-snapshot", NOT the contract.
 package guard
 
 import (
@@ -83,7 +84,7 @@ const (
 // (seba), free RAM + governed set (Hapi), and live agent RSS. Pressure is the
 // bootstrap snapshot until the kernel dispatch watcher is wired (ADR-031-B #4).
 func SampleNodeCapacity() NodeCapacity {
-	n := NodeCapacity{GovernedPIDs: governedFn(), PressureSource: "bootstrap-snapshot"}
+	n := NodeCapacity{GovernedPIDs: governedFn()}
 
 	if hw, err := seba.DetectHardware(); err == nil {
 		n.TotalRAM = hw.TotalRAM
@@ -99,11 +100,10 @@ func SampleNodeCapacity() NodeCapacity {
 	}
 	if n.TotalRAM > 0 {
 		n.OSBaseline = n.TotalRAM / nodeOSBaselineDivisor
-		n.Pressure = bootstrapPressure(float64(n.FreeRAM) / float64(n.TotalRAM) * 100)
-	} else {
-		n.Pressure = PressureUnknown
-		n.PressureSource = "unknown"
 	}
+	// Authoritative kernel level when a watcher has reported (this process or the
+	// Hapi daemon via the cache); the bootstrap free-% snapshot otherwise.
+	n.Pressure, n.PressureSource = effectivePressure(n.FreeRAM, n.TotalRAM)
 	n.AgentRSS = nodeAgentRSS()
 	return n
 }

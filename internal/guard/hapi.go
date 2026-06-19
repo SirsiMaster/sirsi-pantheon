@@ -37,6 +37,7 @@ package guard
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -208,7 +209,10 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 func SampleMemory() (MemSample, error) { return hapiSample() }
 
 // ClassifyMem maps a sample to a pressure tier using the given free-RAM percent
-// thresholds (lower free % = higher tier).
+// thresholds (lower free % = higher tier). This is the FALLBACK path: when the
+// kernel dispatch level is available it RAISES the tier floor (memTierFromPressure
+// in GovernOnce); free-% remains the only source of TierEmergency (the kernel only
+// reports NORMAL/WARN/CRITICAL).
 func ClassifyMem(s MemSample, warnPct, critPct, emergPct float64) MemTier {
 	switch {
 	case s.FreePercent < emergPct:
@@ -216,6 +220,21 @@ func ClassifyMem(s MemSample, warnPct, critPct, emergPct float64) MemTier {
 	case s.FreePercent < critPct:
 		return TierCritical
 	case s.FreePercent < warnPct:
+		return TierWarn
+	default:
+		return TierOK
+	}
+}
+
+// memTierFromPressure maps a kernel memory-pressure level onto the governor's
+// tiers. The kernel reports NORMAL/WARN/CRITICAL only; kill (TierEmergency) stays
+// driven by the free-%/RSS accounting, so the kernel level can RAISE the tier to
+// suspend-governed but never on its own decides a kill.
+func memTierFromPressure(l PressureLevel) MemTier {
+	switch l {
+	case PressureCritical:
+		return TierCritical
+	case PressureWarn:
 		return TierWarn
 	default:
 		return TierOK
@@ -389,22 +408,37 @@ func DefaultMemGovernor() *MemGovernor {
 
 // GovernResult reports one governance pass — what was observed and what was done.
 type GovernResult struct {
-	Sample    MemSample `json:"sample"`
-	Tier      MemTier   `json:"tier"`
-	Runaway   *MemProc  `json:"runaway,omitempty"`
-	Actions   []string  `json:"actions,omitempty"`   // human-readable interventions
-	Suspended []int     `json:"suspended,omitempty"` // PIDs paused this pass
+	Sample         MemSample     `json:"sample"`
+	Tier           MemTier       `json:"tier"`
+	Runaway        *MemProc      `json:"runaway,omitempty"`
+	Actions        []string      `json:"actions,omitempty"`   // human-readable interventions
+	Suspended      []int         `json:"suspended,omitempty"` // PIDs paused this pass
+	Pressure       PressureLevel `json:"pressure,omitempty"`  // kernel level when a watcher reported, else Unknown
+	PressureSource string        `json:"pressure_source,omitempty"`
 }
 
 // GovernOnce samples, classifies, and (when Govern is set) intervenes on GOVERNED
 // compute only. Non-governed processes are surfaced via Runaway, never auto-acted.
+//
+// Pressure source: when the kernel dispatch watcher has reported a level (this
+// process — i.e. the Hapi daemon), it RAISES the tier floor (memTierFromPressure)
+// so the governor reacts to the node-proportional kernel signal, not just the
+// free-% heuristic; free-% remains the fallback and the only path to TierEmergency.
 func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 	s, err := hapiSample()
 	if err != nil {
 		return GovernResult{Sample: s}, err
 	}
 	tier := ClassifyMem(s, g.WarnPercent, g.CriticalPercent, g.EmergencyPercent)
-	res := GovernResult{Sample: s, Tier: tier, Runaway: FindRunaway(s)}
+	pressureSource := "free-percent"
+	pressure := PressureUnknown
+	if kl, ok := observedPressure(); ok {
+		pressure, pressureSource = kl, "kernel-dispatch"
+		if kt := memTierFromPressure(kl); kt > tier {
+			tier = kt
+		}
+	}
+	res := GovernResult{Sample: s, Tier: tier, Runaway: FindRunaway(s), Pressure: pressure, PressureSource: pressureSource}
 
 	// Recovery: pressure cleared → resume everything we paused.
 	if tier == TierOK {
@@ -477,13 +511,38 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 
 // Start runs the governor on a bounded tick until stop is closed. On shutdown it
 // resumes anything it paused, so Hapi never leaves a process suspended.
+//
+// It also subscribes to the kernel memory-pressure watcher (ADR-031-B #4) so the
+// governor reacts the INSTANT the kernel escalates — "act immediately on CRITICAL"
+// — instead of waiting for the next tick, and re-stamps the cross-process pressure
+// cache each pass so one-shot readers (the broker's pre-launch gate, `hapi status`,
+// the menubar) see the live kernel level. Fail-soft: a no-op watcher (non-darwin /
+// no cgo) simply never sends, and the free-% tick remains the fallback.
 func (g *MemGovernor) Start(stop <-chan struct{}, onPass func(GovernResult)) {
 	if g.Interval <= 0 {
 		g.Interval = 3 * time.Second
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { <-stop; cancel() }()
+	events := make(chan PressureEvent, 8)
+	_ = NewPressureWatcher().Subscribe(ctx, events)
+
 	stele.Inscribe("hapi", stele.TypeGuardStart, "", map[string]string{"interval": g.Interval.String(), "govern": strconv.FormatBool(g.Govern)})
 	t := time.NewTicker(g.Interval)
 	defer t.Stop()
+	pass := func() {
+		res, err := g.GovernOnce()
+		if err != nil {
+			return
+		}
+		if lvl, ok := observedPressure(); ok {
+			writePressureCache(lvl) // re-stamp: liveness + current level for one-shot readers
+		}
+		if onPass != nil {
+			onPass(res)
+		}
+	}
 	for {
 		select {
 		case <-stop:
@@ -494,11 +553,10 @@ func (g *MemGovernor) Start(stop <-chan struct{}, onPass func(GovernResult)) {
 			g.mu.Unlock()
 			stele.Inscribe("hapi", stele.TypeGuardStop, "", nil)
 			return
+		case <-events:
+			pass() // kernel transition — govern now, don't wait for the tick
 		case <-t.C:
-			res, err := g.GovernOnce()
-			if err == nil && onPass != nil {
-				onPass(res)
-			}
+			pass()
 		}
 	}
 }
