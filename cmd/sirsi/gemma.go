@@ -11,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // `sirsi gemma` is the human-facing way to talk to Gemma — the local MLX model
@@ -100,8 +102,15 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	// (1) RAM-gate it like the broker; (2) serialize it machine-wide with a file
 	// lock so concurrent callers can NEVER stack N full model loads.
 	_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
-	if safe, note := gemmaSafeConcurrency(1, gemmaEstimateModelBytes(home, model), gemmaFreeRAMBytes()-gemmaAgentReserveBytes()); safe == 0 {
-		return fmt.Errorf("not enough RAM to load Gemma cold (%s) — start the warm broker (`sirsi gemma serve`) or free memory. Refusing rather than OOM the machine", note)
+	// ADR-031-B: the cold path now refuses through the SAME NodeCapacity self-model
+	// as the warm broker — one node-derived budget, not a separate gemmaSafeConcurrency
+	// with its own constants. Fits requires 2×model + DynamicReserve (resident model +
+	// one model of working memory + OS/agents/margin), so the cold path keeps the
+	// #63 2×model conservatism, now node-proportional and cross-agent-aware.
+	modelBytes := gemmaEstimateModelBytes(home, model)
+	if nc := guard.SampleNodeCapacity(); !nc.Fits(modelBytes) {
+		return fmt.Errorf("not enough RAM to load Gemma cold (~%dGB model + ~%dGB dynamic reserve > %dGB free) — start the warm broker (`sirsi gemma serve`) or free memory. Refusing rather than OOM the machine",
+			modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
 	}
 	if lf, lerr := os.OpenFile(filepath.Join(home, ".sirsi/gemma-cold.lock"), os.O_CREATE|os.O_RDWR, 0o644); lerr == nil {
 		defer lf.Close()
