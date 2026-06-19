@@ -569,10 +569,11 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 		}
 		return thr
 	}
-	aLive := mk("claude-a", "claude", 10001) // loop-monitor, loop ALIVE
-	bDead := mk("claude-b", "claude", 10002) // loop-monitor, heartbeat-fresh but loop DEAD
-	cCodex := mk("codex-x", "codex", 10003)  // app-heartbeat — loop-evidence N/A
-	dGone := mk("claude-d", "claude", 10004) // OS-dead → must auto-reap
+	aLive := mk("claude-a", "claude", 10001)   // loop-monitor, loop ALIVE
+	bDead := mk("claude-b", "claude", 10002)   // loop-monitor, heartbeat-fresh but loop DEAD
+	cCodex := mk("codex-x", "codex", 10003)    // app-heartbeat — loop-evidence N/A
+	eMenu := mk("menubar-x", "menubar", 10005) // native-runloop resident — loop-evidence N/A
+	dGone := mk("claude-d", "claude", 10004)   // OS-dead → must auto-reap
 
 	// Only thread A has a live watcher loop.
 	oldWatch := watcherAliveFn
@@ -597,19 +598,24 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 		return nil
 	}
 
-	// (1) live-looping claude → armed:true, loop_alive:yes.
-	if s := find(aLive.ThreadID); s == nil || !s.Armed || s.LoopAlive != "yes" {
-		t.Errorf("live-looping claude: got %+v, want armed=true loop=yes", s)
+	// codex's 5-test matrix:
+	// (1) loop-monitor + live loop → armed, loop_state alive.
+	if s := find(aLive.ThreadID); s == nil || !s.Armed || s.LoopState != "alive" || s.ArmedReason != "loop-alive" || s.WatcherType != "loop-monitor" {
+		t.Errorf("live-looping claude: got %+v, want armed=true loop_state=alive reason=loop-alive type=loop-monitor", s)
 	}
-	// (2) heartbeat-fresh-but-loop-dead claude → armed:false, loop_alive:no (NOT silently live).
-	if s := find(bDead.ThreadID); s == nil || s.Armed || s.LoopAlive != "no" {
-		t.Errorf("loop-dead claude: got %+v, want armed=false loop=no", s)
+	// (2) loop-monitor + DEAD loop (heartbeat fresh) → NOT armed, loop_state dead — the false-live bug.
+	if s := find(bDead.ThreadID); s == nil || s.Armed || s.LoopState != "dead" || s.ArmedReason != "loop-dead" {
+		t.Errorf("loop-dead claude: got %+v, want armed=false loop_state=dead reason=loop-dead", s)
 	}
-	// (3) codex app-heartbeat → not false-flagged: loop_alive N/A, armed by heartbeat.
-	if s := find(cCodex.ThreadID); s == nil || !s.Armed || s.LoopAlive != "na" {
-		t.Errorf("codex app-heartbeat: got %+v, want armed=true loop=na", s)
+	// (3) app-heartbeat (codex) → armed by heartbeat, loop_state na — NEVER false-flagged.
+	if s := find(cCodex.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "app-heartbeat-fresh" {
+		t.Errorf("codex app-heartbeat: got %+v, want armed=true loop_state=na reason=app-heartbeat-fresh", s)
 	}
-	// (4) OS-dead claude → auto-reaped off the live path (absent from live + stale).
+	// (4) native-runloop resident (menubar) → armed by heartbeat, loop_state na, no inbox-worker expectation.
+	if s := find(eMenu.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "resident-runloop-fresh" {
+		t.Errorf("menubar native-runloop: got %+v, want armed=true loop_state=na reason=resident-runloop-fresh", s)
+	}
+	// (5) OS-dead → auto-reaped off the live path (absent from live + stale), ADR-022 safety preserved.
 	if s := find(dGone.ThreadID); s != nil {
 		t.Errorf("OS-dead thread must auto-reap, still present: %+v", s)
 	}

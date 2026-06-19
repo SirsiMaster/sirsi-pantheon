@@ -80,14 +80,14 @@ func renderNodeStatus(ns *router.NodeStatus) {
 		fmt.Println("  Live threads:")
 		for _, t := range ns.LiveThreads {
 			// Honest liveness: make a heartbeat-fresh-but-loop-dead thread visible
-			// instead of silently "live" — that is exactly the "claims live but is
-			// idle" case the owner flagged. loop= is the surface-native verdict.
-			armed := "armed"
+			// instead of silently "live" — exactly the "claims live but is idle" case
+			// the owner flagged. armed_reason is the surface-native verdict.
+			armed := "armed (" + t.ArmedReason + ")"
 			if !t.Armed {
-				armed = "⚠ NOT ARMED (loop dead)"
+				armed = "⚠ NOT ARMED (" + t.ArmedReason + ")"
 			}
 			fmt.Printf("    • %s  agent=%s  surface=%s  pid=%d  os=%s  loop=%s  idle=%.0fs  %s\n",
-				t.ThreadID, t.AgentID, t.Surface, t.PID, t.OSState, t.LoopAlive, t.IdleSeconds, armed)
+				t.ThreadID, t.AgentID, t.Surface, t.PID, t.OSState, t.LoopState, t.IdleSeconds, armed)
 		}
 		fmt.Println()
 	}

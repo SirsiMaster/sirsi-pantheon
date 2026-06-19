@@ -91,16 +91,19 @@ type ThreadSummary struct {
 	Stale         bool         `json:"stale,omitempty"`
 	PID           int          `json:"pid,omitempty"`
 	OSState       PIDState     `json:"os_state,omitempty"` // OS-truth liveness of PID
-	// Honest liveness (ADR-024 / owner priority 2026-06-19). LoopAlive is the
-	// surface-native loop-evidence verdict: "yes"/"no" for loop-monitor surfaces
-	// (Claude — a live `pgrep -f thr-<id>` loop), "na" for every other surface
-	// where pgrep loop-evidence does not apply (Codex app-heartbeat, resident UI
-	// native-runloop, headless pull-loop). Armed is the TRUTHFUL verdict the
-	// operator reads: for loop-monitor surfaces armed == loop is alive (a
-	// heartbeat-fresh thread whose loop died is armed:false — "claims live but is
-	// idle"); for every other surface armed == heartbeat is fresh (not stale).
-	LoopAlive string `json:"loop_alive,omitempty"` // yes | no | na
-	Armed     bool   `json:"armed"`
+	// Honest liveness (owner priority 2026-06-19, codex-validated). watcher_type is
+	// the thread's canonical watcher (WatcherFor().Type). loop_state is the
+	// surface-native loop-evidence verdict: "alive"/"dead" for loop-bearing surfaces
+	// (loop-monitor/surface-loop/pull-loop — a pgrep `thr-<id>` loop), "na" for
+	// surfaces that prove liveness by heartbeat (app-heartbeat Codex, resident
+	// native-runloop UI), "unknown" when it can't be probed. armed is the truthful
+	// "is the declared wake mechanism currently present?" verdict; armed_reason is
+	// the short machine string behind it (loop-alive | app-heartbeat-fresh |
+	// resident-runloop-fresh | loop-dead | heartbeat-stale).
+	WatcherType string `json:"watcher_type,omitempty"`
+	LoopState   string `json:"loop_state,omitempty"` // alive | dead | na | unknown
+	Armed       bool   `json:"armed"`
+	ArmedReason string `json:"armed_reason,omitempty"`
 }
 
 // AgentHealthCheck reports whether a local agent CLI is available and authenticated.
@@ -358,22 +361,40 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				PID:           thr.PID,
 				OSState:       PIDStateOf(thr.PID, thr.StartTime),
 			}
-			// Honest liveness: a loop-monitor (Claude) thread is armed ONLY if its
-			// thr-id loop is actually alive — a heartbeat-fresh thread whose loop
-			// died is armed:false ("claims live but is idle", the owner's report).
-			// Every other surface proves liveness surface-natively (heartbeat), so
-			// loop-evidence is N/A and armed == not-stale (never false-flag Codex/UI).
-			if requiresThreadIDLoop(thr.Surface) {
-				alive := WatcherAlive(thr.ThreadID)
-				if alive {
-					sum.LoopAlive = "yes"
-				} else {
-					sum.LoopAlive = "no"
+			// Honest liveness, classified by watcher_type (codex-validated):
+			//  - loop-bearing (loop-monitor/surface-loop/pull-loop): armed iff a live
+			//    pgrep `thr-<id>` loop exists. A heartbeat-fresh thread whose loop
+			//    died is armed:false / loop_state:"dead" — the owner's "claims live
+			//    but is idle" case made visible, never silently live.
+			//  - app-heartbeat (Codex): loop-evidence N/A; heartbeat freshness IS the
+			//    proof — never require a pgrep loop, never false-flag the Codex fleet.
+			//  - native-runloop (resident UI) + anything else: N/A; heartbeat freshness
+			//    is the proof ("resident heartbeat alive", not "inbox worker armed").
+			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
+			switch {
+			case loopBearingType(sum.WatcherType):
+				switch {
+				case thr.ThreadID == "":
+					sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
+				case WatcherAlive(thr.ThreadID):
+					sum.LoopState, sum.Armed, sum.ArmedReason = "alive", true, "loop-alive"
+				default:
+					sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"
 				}
-				sum.Armed = alive
-			} else {
-				sum.LoopAlive = "na"
-				sum.Armed = !sum.Stale
+			case sum.WatcherType == watcherTypeAppHeartbeat:
+				sum.LoopState = "na"
+				if sum.Stale {
+					sum.Armed, sum.ArmedReason = false, "heartbeat-stale"
+				} else {
+					sum.Armed, sum.ArmedReason = true, "app-heartbeat-fresh"
+				}
+			default: // native-runloop resident + any heartbeat-proved surface
+				sum.LoopState = "na"
+				if sum.Stale {
+					sum.Armed, sum.ArmedReason = false, "heartbeat-stale"
+				} else {
+					sum.Armed, sum.ArmedReason = true, "resident-runloop-fresh"
+				}
 			}
 			if sum.Stale {
 				ns.StaleThreads = append(ns.StaleThreads, sum)
