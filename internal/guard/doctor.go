@@ -398,6 +398,17 @@ func checkRAMPressure(p platform.Platform, report *DoctorReport) {
 		finding.Message = fmt.Sprintf("RAM healthy at %.0f%%", usedPct)
 	}
 
+	// ADR-031-B: surface Hapi's NodeCapacity pressure level + its SOURCE. The
+	// menubar renders finding.Detail, so this is the Hapi pressure surface with no
+	// Swift rebuild / no FDA churn: it shows whether pressure is the authoritative
+	// kernel DISPATCH_SOURCE_MEMORYPRESSURE level ("kernel-dispatch", once the Hapi
+	// daemon's watcher is live) or the bootstrap free-% estimate ("bootstrap-snapshot").
+	// Darwin-only so the mock-platform diagnose tests stay deterministic.
+	if p.Name() == "darwin" {
+		nc := SampleNodeCapacity()
+		finding.Detail += fmt.Sprintf(" | Pressure: %s (source: %s)", nc.Pressure, nc.PressureSource)
+	}
+
 	report.Findings = append(report.Findings, finding)
 }
 
