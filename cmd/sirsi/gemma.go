@@ -74,13 +74,26 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	}
 
 	home, _ := os.UserHomeDir()
+	model := gemmaResolveModel(home)
+
+	// Prefer the WARM Pantheon broker if it's up: no model reload, instant answer,
+	// concurrent with other requests on the GPU. Falls through to the cold path on
+	// any error so a single prompt never fails just because the server hiccuped.
+	if base := gemmaServerBase(home); base != "" {
+		fmt.Fprintf(os.Stderr, "gemma · %s · warm broker, thinking…\n", gemmaShortModel(model))
+		if ans, err := gemmaWarmComplete(base, model, prompt, gemmaMaxTokens); err == nil && ans != "" {
+			fmt.Println(ans)
+			return nil
+		}
+	}
+
+	// Cold path: shell mlx_lm.generate (reloads the model each call). Nudge the user
+	// toward `sirsi gemma serve` for instant, concurrent answers.
 	mlx := filepath.Join(home, ".venvs/mlx/bin/mlx_lm.generate")
 	if _, err := os.Stat(mlx); err != nil {
 		return fmt.Errorf("Gemma's local runtime isn't installed (%s missing) — run the MLX/Gemma setup first", mlx)
 	}
-	model := gemmaResolveModel(home)
-
-	fmt.Fprintf(os.Stderr, "gemma · %s · local, thinking…\n", gemmaShortModel(model))
+	fmt.Fprintf(os.Stderr, "gemma · %s · cold (reloading — run `sirsi gemma serve` to keep it warm)…\n", gemmaShortModel(model))
 	out, err := exec.Command(mlx, "--model", model, "--max-tokens", fmt.Sprint(gemmaMaxTokens), "--prompt", prompt).Output()
 	if err != nil {
 		return fmt.Errorf("gemma generation failed: %w (first run downloads the model — that can take a while)", err)
