@@ -203,7 +203,7 @@ func gemmaServerStop(home string) error {
 	}
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 	if pid > 0 {
-		_ = guard.HapiUnregisterGoverned(pid) // no longer Hapi's to govern
+		_ = guard.HapiUnregisterGoverned(pid)   // no longer Hapi's to govern
 		_ = syscall.Kill(-pid, syscall.SIGTERM) // the whole process group
 		_ = syscall.Kill(pid, syscall.SIGTERM)
 	}
