@@ -146,6 +146,26 @@ struct HomeView: View {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
                     }.buttonStyle(.plain)
 
+                    NavigationLink { ResultView(engine: engine, title: "Osiris — Checkpoints", args: ["osiris", "risk"]) } label: {
+                        DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints", detail: "uncommitted risk")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) } label: {
+                        DeityRow(glyph: "𓁆", title: "Seshat — Knowledge", detail: "ingestion")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) } label: {
+                        DeityRow(glyph: "𓁯", title: "Net — Plan", detail: "alignment")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) } label: {
+                        DeityRow(glyph: "🏛️", title: "Vault — Context", detail: "code search")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) } label: {
+                        DeityRow(glyph: "⚡", title: "RTK — Output Filter", detail: "noise sieve")
+                    }.buttonStyle(.plain)
+
                     NavigationLink { ActivityView(engine: engine) } label: {
                         DeityRow(glyph: "𓆎", title: "Activity — what Pantheon did",
                                  detail: engine.activity.isEmpty ? "ledger" : "\(engine.activity.count) logged")
