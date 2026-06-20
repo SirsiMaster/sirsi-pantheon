@@ -28,6 +28,26 @@ type Item struct {
 	Closed       string // RFC3339, empty if open
 	Instructions string
 	Result       string
+
+	// Wake-delivery truth (PR#2 wake-or-declare-unavailable). The supervisor/
+	// doctor wake pass records the outcome HERE — in the item itself, not a
+	// sidecar — so a stranded item is never silent. Additive frontmatter:
+	// wake_status ∈ {pending|wake-attempted|wake-unavailable|armed}.
+	WakeStatus      string // "" when the wake pass has never touched this item
+	WakeAttemptedAt string // RFC3339, set when an adapter was invoked
+	WakeAdapter     string // the adapter that fired (cli-spawn/api-call/launchagent/...)
+	WakeError       string // why the item is wake-unavailable, when it is
+}
+
+// WakeAnnotation is the wake-pass outcome written onto an item's frontmatter by
+// SetWake. Empty fields are REMOVED from the frontmatter (so an armed item drops
+// a stale wake_error), making the annotation a full, idempotent replace of the
+// wake_* block rather than an accreting append.
+type WakeAnnotation struct {
+	Status      string
+	AttemptedAt string
+	Adapter     string
+	Error       string
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -203,6 +223,50 @@ func Close(root, id, result string) error {
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
+// SetWake upserts the wake_* frontmatter fields on an item, idempotently. Empty
+// annotation fields are removed (clearing stale state, e.g. an item that became
+// armed drops its prior wake_error). It rewrites only the frontmatter block; the
+// instructions/result body is untouched. Safe to call repeatedly — the wake pass
+// keys re-invocation idempotency off wake_attempted_at, not off this writer.
+func SetWake(root, id string, w WakeAnnotation) error {
+	path := filepath.Join(itemsDir(root), id+".md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") {
+		return fmt.Errorf("missing frontmatter")
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	if end < 0 {
+		return fmt.Errorf("unterminated frontmatter")
+	}
+	fm := content[4 : 4+end]
+	rest := content[4+end:] // begins with "\n---\n" + body — preserved verbatim
+	lines := strings.Split(fm, "\n")
+
+	set := func(key, val string) {
+		filtered := make([]string, 0, len(lines)+1)
+		for _, l := range lines {
+			if strings.HasPrefix(strings.TrimSpace(l), key+":") {
+				continue
+			}
+			filtered = append(filtered, l)
+		}
+		if val != "" {
+			filtered = append(filtered, key+": "+quoteYAML(val))
+		}
+		lines = filtered
+	}
+	set("wake_status", w.Status)
+	set("wake_attempted_at", w.AttemptedAt)
+	set("wake_adapter", w.Adapter)
+	set("wake_error", w.Error)
+
+	return os.WriteFile(path, []byte("---\n"+strings.Join(lines, "\n")+rest), 0o644)
+}
+
 // parse extracts an Item from frontmatter + body text.
 func parse(id, content string) (Item, error) {
 	it := Item{ID: id}
@@ -237,6 +301,14 @@ func parse(id, content string) (Item, error) {
 			it.Opened = v
 		case "closed":
 			it.Closed = v
+		case "wake_status":
+			it.WakeStatus = v
+		case "wake_attempted_at":
+			it.WakeAttemptedAt = v
+		case "wake_adapter":
+			it.WakeAdapter = v
+		case "wake_error":
+			it.WakeError = v
 		}
 	}
 	if instr, rest, ok := strings.Cut(body, "## Instructions"); ok {
