@@ -23,6 +23,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -102,11 +103,12 @@ func ProbeWakeReadiness(cfg AgentConfig) AgentWakeHealth {
 			h.Ready, h.Adapter, h.Detail = true, WakeAPICall, cfg.Wake.Endpoint
 		}
 	case WakeMCPNotification:
-		if strings.TrimSpace(cfg.Wake.MCPServer) == "" {
-			h.Detail = "mcp-notification configured but wake.mcp_server is empty"
-		} else {
-			h.Ready, h.Adapter, h.Detail = true, WakeMCPNotification, cfg.Wake.MCPServer
-		}
+		// MCP wake is not yet wired in the pull-model CLI — there is no invoker
+		// that can deliver an MCP notification, so readiness MUST report not-ready.
+		// The doctor's report view and the acted-on pass must agree; claiming
+		// "ready" here while the invoker always fails is dishonest readiness
+		// (codex SME #89, finding 3). Wire an adapter before flipping this.
+		h.Detail = "mcp-notification wake is not yet wired in the pull-model CLI — use launchagent or api-call"
 	case WakeLaunchAgent:
 		label := WakeLaunchAgentLabel(cfg.ID)
 		if !launchAgentInstalled(label) {
@@ -157,7 +159,14 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		for k, v := range cfg.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
-		return cmd.Start() // detached nudge; the worker's own loop takes over
+		// Detach (Unix Setsid) + Release so the nudged worker survives this
+		// short-lived doctor tick and leaves no zombie — the established
+		// cmd/sirsi router-event spawn pattern (codex SME #89, finding 2).
+		cmd.SysProcAttr = detachedSysProcAttr()
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		return cmd.Process.Release()
 	case WakeAPICall:
 		req, err := http.NewRequest(http.MethodPost, cfg.Wake.Endpoint, nil)
 		if err != nil {
@@ -180,9 +189,9 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		label := WakeLaunchAgentLabel(cfg.ID)
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
 		return exec.Command("launchctl", "kickstart", "-k", target).Run()
-	case WakeMCPNotification:
-		return fmt.Errorf("mcp-notification wake is not wired in the pull-model CLI; use launchagent or api-call")
 	default:
+		// Includes mcp-notification: ProbeWakeReadiness never yields it as a
+		// ready adapter (not yet wired), so this is the honest failure if reached.
 		return fmt.Errorf("no invoker for adapter %q", adapter)
 	}
 }
@@ -289,6 +298,55 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 	return rep, nil
 }
 
+// DefaultWakeLoopInterval is the pull-loop heartbeat cadence (A27 bounded ≥60s).
+const DefaultWakeLoopInterval = 60 * time.Second
+
+// RunWakeLoop is the foreground bounded pull-loop for a worker/headless agent
+// (A27: "a bounded headless pull loop over items/ plus sirsi thread heartbeat").
+// It registers a concrete pull-loop thread (surface=worker, bound to THIS
+// process's pid, so it stays armed by heartbeat freshness and is not OS-reaped
+// between heartbeats), then each interval pulls the agent's inbox and heartbeats.
+// It runs until ctx is canceled (SIGTERM/SIGINT from launchd), then closes the
+// thread. It is meant to be RUN BY the wake LaunchAgent — external automation
+// (A26 Automation Boundary) — and does NOT self-daemonize: it is a plain
+// foreground loop, not a reintroduced daemon verb.
+func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.Duration) error {
+	if interval <= 0 {
+		interval = DefaultWakeLoopInterval
+	}
+	host, _ := os.Hostname()
+	thr, err := RegisterThread(routerRoot, &Thread{
+		AgentID:       agentID,
+		Surface:       surfaceWorker,
+		WakeMechanism: WakeLaunchAgent,
+		PID:           os.Getpid(),
+		Host:          host,
+		Status:        ThreadStatusActive,
+	})
+	if err != nil {
+		return fmt.Errorf("register wake-loop thread: %w", err)
+	}
+	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
+
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		// Surface the inbox depth into the heartbeat status; the worker surface's
+		// own logic processes the items — this loop only proves liveness + watches.
+		status := ThreadStatusIdle
+		if items, lerr := work.ListInbox(routerRoot, agentID); lerr == nil && len(items) > 0 {
+			status = ThreadStatusActive
+		}
+		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: status})
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+		}
+	}
+}
+
 // ── LaunchAgent pull-loop install (constraint 2 + 7) ─────────────────────────
 
 const wakeLaunchAgentPrefix = "ai.sirsi.router.wake."
@@ -322,9 +380,15 @@ func launchAgentInstalled(label string) bool {
 // heartbeats — a pull-loop watcher armed by heartbeat freshness, never a
 // loop-monitor (constraint 2). Deterministic for a given (label, agent, bin) so
 // InstallWakeLaunchAgent is idempotent by content comparison.
+//
+// ProgramArguments is a DIRECT argv (no `/bin/sh -c`): the loop is the real
+// `sirsi router wake-loop <agent>` verb, so there is no shell to break on a path
+// with spaces or to inject via a metacharacter-bearing agent id (codex SME #89,
+// finding 4 — and finding 1: the prior `thread heartbeat --agent` flag did not
+// exist). KeepAlive (not StartInterval) keeps ONE long-lived process whose stable
+// pid is not OS-reaped between heartbeats; launchd restarts it if it exits. Both
+// values are XML-escaped for the plist text.
 func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string {
-	script := fmt.Sprintf("%s router pull %s && %s thread heartbeat --agent %s",
-		sirsiBin, cfg.ID, sirsiBin, cfg.ID)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -333,21 +397,32 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
   <string>%s</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/sh</string>
-    <string>-c</string>
+    <string>%s</string>
+    <string>router</string>
+    <string>wake-loop</string>
     <string>%s</string>
   </array>
-  <key>StartInterval</key>
-  <integer>60</integer>
-  <key>ThrottleInterval</key>
-  <integer>60</integer>
+  <key>KeepAlive</key>
+  <true/>
   <key>RunAtLoad</key>
   <true/>
   <key>ProcessType</key>
   <string>Background</string>
 </dict>
 </plist>
-`, label, script)
+`, escapeXML(label), escapeXML(sirsiBin), escapeXML(cfg.ID))
+}
+
+// escapeXML escapes the five XML predefined entities so a sirsi path or agent id
+// containing &, <, >, ", or ' cannot break (or inject into) the plist text.
+func escapeXML(s string) string {
+	return strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&apos;",
+	).Replace(s)
 }
 
 // InstallWakeLaunchAgent writes (idempotently) the per-agent pull-loop LaunchAgent

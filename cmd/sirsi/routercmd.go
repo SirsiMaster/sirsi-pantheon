@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -391,6 +394,28 @@ var routerWakeInstallCmd = &cobra.Command{
 	},
 }
 
+// routerWakeLoopCmd runs a worker/headless agent's bounded pull-loop (A27). It is
+// the long-lived foreground loop the wake LaunchAgent (`router wake-install`)
+// invokes via KeepAlive — NOT a self-daemonizing verb (it blocks; launchd owns
+// the lifecycle). Hidden because it is machine-run, not a human-facing command.
+// It registers a concrete pull-loop thread, heartbeats each interval, and closes
+// the thread on SIGINT/SIGTERM.
+var routerWakeLoopCmd = &cobra.Command{
+	Use:    "wake-loop <agent>",
+	Short:  "Run a worker agent's bounded pull-loop (machine-run by the wake LaunchAgent)",
+	Hidden: true,
+	Args:   cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root, err := workRootEnsure()
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		return router.RunWakeLoop(ctx, root, args[0], router.DefaultWakeLoopInterval)
+	},
+}
+
 func init() {
 	routerSendCmd.Flags().StringVar(&sendFrom, "from", "", "Sender agent id (e.g., claude-pantheon)")
 	routerSendCmd.Flags().StringVar(&sendTo, "to", "", "Recipient agent id (e.g., codex-pantheon)")
@@ -400,5 +425,5 @@ func init() {
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd)
 }

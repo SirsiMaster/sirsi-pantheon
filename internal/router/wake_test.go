@@ -1,8 +1,11 @@
 package router
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -208,6 +211,92 @@ func TestWakePassExplicitCliSpawnReadyVsUnready(t *testing.T) {
 	}
 	if got := wakeStatusOf(t, root, cID).WakeStatus; got != WakeStatusUnavailable {
 		t.Fatalf("interactive claude item wake_status = %q, want %q (never blind-spawned)", got, WakeStatusUnavailable)
+	}
+}
+
+// codex SME #89, finding 1+4: the rendered plist must invoke the REAL `wake-loop`
+// verb as direct argv (no /bin/sh, no non-existent `--agent` flag) and XML-escape
+// the bin path + agent id so spaces and shell/XML metacharacters can't break it.
+func TestWakeLaunchAgentPlistUsesRealArgv(t *testing.T) {
+	cfg := AgentConfig{ID: `ag&nt <x>`, Type: "gemma"}
+	plist := wakeLaunchAgentPlist(WakeLaunchAgentLabel(cfg.ID), cfg, "/opt/sirsi bin/sirsi")
+
+	if strings.Contains(plist, "/bin/sh") {
+		t.Error("plist must not shell out (/bin/sh) — direct argv only (finding 4)")
+	}
+	if strings.Contains(plist, "--agent") {
+		t.Error("plist must not use the non-existent `thread heartbeat --agent` flag (finding 1)")
+	}
+	if !strings.Contains(plist, "<string>wake-loop</string>") {
+		t.Error("plist must invoke the real `router wake-loop` verb")
+	}
+	if !strings.Contains(plist, "<string>/opt/sirsi bin/sirsi</string>") {
+		t.Error("a bin path with a space must remain ONE argv element")
+	}
+	if !strings.Contains(plist, "&amp;") || !strings.Contains(plist, "&lt;x&gt;") {
+		t.Error("agent id metacharacters must be XML-escaped in the plist (finding 4)")
+	}
+}
+
+// codex SME #89, finding 1: the LaunchAgent loop must maintain a CONCRETE pull-loop
+// thread with a real heartbeat. RunWakeLoop registers a worker thread, heartbeats,
+// and closes it on ctx cancel.
+func TestRunWakeLoopRegistersAndCloses(t *testing.T) {
+	root := wakeTestRoot(t, AgentConfig{ID: "gemma-pull", Type: "gemma"})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel: the loop registers + heartbeats once, then exits
+	if err := RunWakeLoop(ctx, root, "gemma-pull", time.Hour); err != nil {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatalf("load threads: %v", err)
+	}
+	var found *Thread
+	for _, thr := range reg.Threads {
+		if thr.AgentID == "gemma-pull" && thr.Surface == surfaceWorker {
+			found = thr
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("wake-loop did not register a worker pull-loop thread")
+	}
+	if !found.Status.IsTerminal() {
+		t.Fatalf("wake-loop thread must be closed on exit; status=%q", found.Status)
+	}
+	if found.WakeMechanism != WakeLaunchAgent {
+		t.Fatalf("wake mechanism=%q, want %q", found.WakeMechanism, WakeLaunchAgent)
+	}
+}
+
+// codex SME #89, finding 2: the default cli-spawn invoker must Start()+Release()
+// (detached) — return promptly without hanging or leaving a zombie.
+func TestDefaultWakeInvokeCliSpawnReleases(t *testing.T) {
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("`true` not on PATH")
+	}
+	cfg := AgentConfig{ID: "w", Type: "gemma", Cwd: t.TempDir(), Command: []string{truePath}}
+	done := make(chan error, 1)
+	go func() { done <- defaultWakeInvoke(cfg, WakeCLISpawn) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("cli-spawn invoke: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("defaultWakeInvoke(cli-spawn) hung — Start()+Release() must return immediately")
+	}
+}
+
+// codex SME #89, finding 3: mcp-notification readiness must be honest — it is not
+// wired, so ProbeWakeReadiness must report NOT ready (report mode and the acted-on
+// pass must agree).
+func TestProbeWakeReadinessMCPNotReady(t *testing.T) {
+	cfg := AgentConfig{ID: "m", Type: "worker", Wake: WakeConfig{Mechanism: WakeMCPNotification, MCPServer: "srv"}}
+	if h := ProbeWakeReadiness(cfg); h.Ready {
+		t.Fatalf("mcp-notification must report NOT ready until an invoker is wired; got ready (%q)", h.Detail)
 	}
 }
 
