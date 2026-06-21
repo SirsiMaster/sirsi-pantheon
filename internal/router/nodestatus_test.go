@@ -166,6 +166,14 @@ func TestCollectNodeStatus_WakeHealthIncludesMechanisms(t *testing.T) {
 					"mcp_server": "sirsi",
 				},
 			},
+			// A legacy command-only agent (no explicit wake.mechanism). The honest
+			// view must report it NOT ready — it would only be blind-spawnable, which
+			// the wake pass refuses (PR #89).
+			"legacy-agent": map[string]interface{}{
+				"type":    "gemini",
+				"command": []string{"echo"},
+				"cwd":     repoRoot,
+			},
 		},
 	}
 	regData, _ := json.MarshalIndent(reg, "", "  ")
@@ -182,11 +190,19 @@ func TestCollectNodeStatus_WakeHealthIncludesMechanisms(t *testing.T) {
 	for _, h := range ns.WakeHealth {
 		got[h.AgentID] = h
 	}
+	// api-call with an endpoint is honestly wakeable.
 	if got["api-agent"].Mechanism != WakeAPICall || !got["api-agent"].Ready {
 		t.Fatalf("api wake health = %+v", got["api-agent"])
 	}
-	if got["mcp-agent"].Mechanism != WakeMCPNotification || got["mcp-agent"].Detail != "sirsi" {
-		t.Fatalf("mcp wake health = %+v", got["mcp-agent"])
+	// mcp-notification is NOT yet wired, so the honest view reports not-ready
+	// (the surface must match the acted-on readiness — PR #89 finding 3).
+	if got["mcp-agent"].Mechanism != WakeMCPNotification || got["mcp-agent"].Ready {
+		t.Fatalf("mcp wake health should be not-ready (unwired) = %+v", got["mcp-agent"])
+	}
+	// A legacy command-only agent has no explicit wake mechanism → not ready
+	// (never blind-spawned). This is the honesty the permissive view masked.
+	if got["legacy-agent"].Ready || got["legacy-agent"].Mechanism != "" {
+		t.Fatalf("legacy command agent must be not-ready with no explicit mechanism = %+v", got["legacy-agent"])
 	}
 }
 

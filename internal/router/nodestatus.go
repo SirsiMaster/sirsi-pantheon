@@ -242,29 +242,14 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	sort.Strings(ns.RegisteredAgents)
 	ns.AgentCount = len(ns.RegisteredAgents)
 	for _, id := range ns.RegisteredAgents {
-		cfg := reg.Agents[id]
-		check := AgentWakeHealth{AgentID: id, Mechanism: cfg.WakeMechanism(), Ready: true}
-		if vErr := cfg.Validate(); vErr != nil {
-			check.Ready = false
-			check.Detail = vErr.Error()
-		} else {
-			switch cfg.WakeMechanism() {
-			case WakeCLISpawn:
-				if len(cfg.Command) > 0 {
-					if path, lookErr := exec.LookPath(cfg.Command[0]); lookErr == nil {
-						check.Detail = path
-					} else {
-						check.Ready = false
-						check.Detail = fmt.Sprintf("%s not found in PATH", cfg.Command[0])
-					}
-				}
-			case WakeAPICall:
-				check.Detail = cfg.Wake.Endpoint
-			case WakeMCPNotification:
-				check.Detail = cfg.Wake.MCPServer
-			}
-		}
-		ns.WakeHealth = append(ns.WakeHealth, check)
+		// node-status now surfaces the HONEST wake readiness — the same
+		// ProbeWakeReadiness view the wake pass + doctor act on (PR #89 follow-up,
+		// claude-home-acked). The old permissive view treated a bare Command array
+		// as "cli-spawn ready" and an unwired mcp-notification as ready; the honest
+		// view reports a legacy-command agent (no explicit wake.mechanism) and an
+		// unwired mcp adapter as NOT ready, so the surface and the acted-on
+		// readiness can never disagree.
+		ns.WakeHealth = append(ns.WakeHealth, ProbeWakeReadiness(reg.Agents[id]))
 	}
 
 	// --- Router state ---
