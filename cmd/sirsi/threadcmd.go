@@ -202,6 +202,13 @@ var threadRegisterCmd = &cobra.Command{
 			return err
 		}
 
+		// Thread-liveness piece 1: record session→agent so the PRD-keepalive Stop
+		// hook can resolve this session's agent even when cwd=$HOME (CCD sessions).
+		// Best-effort: a marker failure must never fail registration.
+		if mErr := router.WriteSessionAgentMarker(router.CurrentSessionID(), out.AgentID); mErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not write session→agent marker: %v\n", mErr)
+		}
+
 		// ADR-024: register is a pure handshake. It no longer auto-spawns an
 		// fs-watcher; it RETURNS the canonical watcher the surface must arm.
 		// The router owns the surface→watcher mapping (R4 inventory in code);
@@ -319,6 +326,10 @@ var threadCloseCmd = &cobra.Command{
 			return err
 		}
 		killRouterWatcher(threadCloseID)
+		// Thread-liveness piece 1: drop this session's marker on close (idempotent).
+		if mErr := router.RemoveSessionAgentMarker(router.CurrentSessionID()); mErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not remove session→agent marker: %v\n", mErr)
+		}
 		fmt.Printf("Closed thread %s (agent=%s)\n", thr.ThreadID, thr.AgentID)
 		return nil
 	},
