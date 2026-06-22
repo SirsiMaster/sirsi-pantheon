@@ -1,6 +1,0 @@
-.git
-.github
-node_modules
-*.test.js
-*.spec.js
-.DS_Store

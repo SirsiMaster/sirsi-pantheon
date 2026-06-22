@@ -1,9 +1,0 @@
-app_identifier("ai.sirsi.pantheon")
-apple_id(ENV["APPLE_ID"] || "cylton@sirsi.ai")
-team_id(ENV["TEAM_ID"])
-
-for_platform :ios do
-  for_lane :beta do
-    app_identifier("ai.sirsi.pantheon")
-  end
-end

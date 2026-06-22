@@ -1,8 +1,0 @@
-name: nexus
-display_name: "SirsiNexusApp"
-repo_path: "~/Development/SirsiNexusApp"
-deadline: ""
-priority: "P2"
-max_turns: 50
-sprints: 3
-scope_of_work: ""

@@ -1,4 +1,0 @@
-scikit-learn>=1.4
-coremltools>=8.0
-pandas>=2.0
-numpy>=1.26
