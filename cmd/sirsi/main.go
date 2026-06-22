@@ -785,6 +785,9 @@ func init() {
 	isisCmd.AddCommand(isisFixCmd)
 	rootCmd.AddCommand(isisCmd)
 
+	// PRD — canon-derived completion contracts (sirsi prd sync).
+	rootCmd.AddCommand(prdCmd)
+
 }
 
 func main() {
