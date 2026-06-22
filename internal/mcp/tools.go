@@ -411,6 +411,87 @@ func registerTools(s *Server) {
 			Required: []string{"id"},
 		},
 	}, handleRouterGet)
+
+	// ── Router: File-Based Work Queue (internal/work) ──────────────
+	// Thin wrappers over the file-based router plus router_wait, the blocking
+	// long-poll that keeps a session non-idle while waiting for inbox work
+	// (anti-idle leg 2, Rule A27). These reuse internal/work — the items/ dir
+	// of markdown files stays the single source of truth.
+
+	s.RegisterTool(Tool{
+		Name:        "router_send",
+		Description: "Send a work item from one agent to another in the file-based router. Writes an open item under .agents/idea-router/items/ that the recipient picks up via router_pull or router_wait.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"from":         {Type: "string", Description: "Sender agent id (e.g., claude-pantheon)."},
+				"to":           {Type: "string", Description: "Recipient agent id (e.g., codex-pantheon)."},
+				"title":        {Type: "string", Description: "Short title for the work item."},
+				"type":         {Type: "string", Description: "Optional message type: proposal, review, or decision."},
+				"instructions": {Type: "string", Description: "Instructions / body of the work item."},
+			},
+			Required: []string{"from", "to", "title"},
+		},
+	}, handleRouterSend)
+
+	s.RegisterTool(Tool{
+		Name:        "router_pull",
+		Description: "List open work items addressed to an agent in the file-based router. Non-blocking — returns immediately. Use router_wait to block until work arrives.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"agent": {Type: "string", Description: "Your agent id. Lists open items addressed to you."},
+			},
+			Required: []string{"agent"},
+		},
+	}, handleRouterPull)
+
+	s.RegisterTool(Tool{
+		Name:        "router_show",
+		Description: "Print the full text (frontmatter + instructions + result) of a file-based router work item by ID.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"id": {Type: "string", Description: "Work item ID (filename stem under items/)."},
+			},
+			Required: []string{"id"},
+		},
+	}, handleRouterShow)
+
+	s.RegisterTool(Tool{
+		Name:        "router_close",
+		Description: "Mark a file-based router work item closed, appending an optional result section.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"id":     {Type: "string", Description: "Work item ID to close."},
+				"result": {Type: "string", Description: "Optional result body recorded on the item."},
+			},
+			Required: []string{"id"},
+		},
+	}, handleRouterClose)
+
+	s.RegisterTool(Tool{
+		Name:        "router_status",
+		Description: "Read-only summary of the file-based work queue: open/closed counts and open items by recipient.",
+		InputSchema: InputSchema{
+			Type:       "object",
+			Properties: map[string]SchemaField{},
+		},
+	}, handleRouterStatus)
+
+	s.RegisterTool(Tool{
+		Name:        "router_wait",
+		Description: "BLOCK until an open work item addressed to you exists, or the timeout elapses. The anti-idle long-poll (Rule A27): call it on wake to stay parked — not idle — until real inbox work arrives. Returns matching items, or empty on timeout. timeout_s is capped at 50.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"agent":     {Type: "string", Description: "Your agent id. Blocks until an open item addressed to you appears."},
+				"timeout_s": {Type: "number", Description: "Max seconds to block (default 50, capped at 50)."},
+			},
+			Required: []string{"agent"},
+		},
+	}, handleRouterWait)
 }
 
 // handleScanWorkspace runs the Jackal scan engine on a workspace.
