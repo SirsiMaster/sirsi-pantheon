@@ -124,7 +124,7 @@ func (c ClaudeLauncher) Name() string { return "Claude Code" }
 func (c ClaudeLauncher) Kind() string { return "ai" }
 
 func (c ClaudeLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("claude")
+	_, err := lookPath("claude")
 	return err == nil
 }
 
@@ -141,7 +141,7 @@ func (c ClaudeLauncher) Integration() *IntegrationInfo {
 }
 
 func (c ClaudeLauncher) Launch(ws Workstream, opts LaunchOptions) error {
-	binary, err := exec.LookPath("claude")
+	binary, err := lookPath("claude")
 	if err != nil {
 		return fmt.Errorf("claude not found in PATH: %w", err)
 	}
@@ -185,7 +185,7 @@ func (v VSCodeLauncher) Name() string { return "VS Code" }
 func (v VSCodeLauncher) Kind() string { return "ide" }
 
 func (v VSCodeLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("code")
+	_, err := lookPath("code")
 	return err == nil
 }
 
@@ -207,7 +207,11 @@ func (v VSCodeLauncher) Launch(ws Workstream, opts LaunchOptions) error {
 	if dir == "" {
 		dir = ExpandDir(ws.Dir)
 	}
-	cmd := exec.Command("code", dir)
+	binary, err := lookPath("code")
+	if err != nil {
+		return fmt.Errorf("code not found in PATH: %w", err)
+	}
+	cmd := exec.Command(binary, dir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -222,7 +226,7 @@ func (c CursorLauncher) Name() string { return "Cursor" }
 func (c CursorLauncher) Kind() string { return "ide" }
 
 func (c CursorLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("cursor")
+	_, err := lookPath("cursor")
 	return err == nil
 }
 
@@ -244,7 +248,11 @@ func (c CursorLauncher) Launch(ws Workstream, opts LaunchOptions) error {
 	if dir == "" {
 		dir = ExpandDir(ws.Dir)
 	}
-	cmd := exec.Command("cursor", dir)
+	binary, err := lookPath("cursor")
+	if err != nil {
+		return fmt.Errorf("cursor not found in PATH: %w", err)
+	}
+	cmd := exec.Command(binary, dir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -259,7 +267,7 @@ func (w WindsurfLauncher) Name() string { return "Windsurf" }
 func (w WindsurfLauncher) Kind() string { return "ide" }
 
 func (w WindsurfLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("windsurf")
+	_, err := lookPath("windsurf")
 	return err == nil
 }
 
@@ -281,7 +289,11 @@ func (w WindsurfLauncher) Launch(ws Workstream, opts LaunchOptions) error {
 	if dir == "" {
 		dir = ExpandDir(ws.Dir)
 	}
-	cmd := exec.Command("windsurf", dir)
+	binary, err := lookPath("windsurf")
+	if err != nil {
+		return fmt.Errorf("windsurf not found in PATH: %w", err)
+	}
+	cmd := exec.Command(binary, dir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -296,7 +308,7 @@ func (z ZedLauncher) Name() string { return "Zed" }
 func (z ZedLauncher) Kind() string { return "ide" }
 
 func (z ZedLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("zed")
+	_, err := lookPath("zed")
 	return err == nil
 }
 
@@ -311,7 +323,11 @@ func (z ZedLauncher) Launch(ws Workstream, opts LaunchOptions) error {
 	if dir == "" {
 		dir = ExpandDir(ws.Dir)
 	}
-	cmd := exec.Command("zed", dir)
+	binary, err := lookPath("zed")
+	if err != nil {
+		return fmt.Errorf("zed not found in PATH: %w", err)
+	}
+	cmd := exec.Command(binary, dir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -328,7 +344,7 @@ func (c CodexLauncher) Name() string { return "Codex" }
 func (c CodexLauncher) Kind() string { return "ai" }
 
 func (c CodexLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("codex")
+	_, err := lookPath("codex")
 	return err == nil
 }
 
@@ -339,7 +355,7 @@ func (c CodexLauncher) InstallCmd() string {
 func (c CodexLauncher) Integration() *IntegrationInfo { return nil }
 
 func (c CodexLauncher) Launch(ws Workstream, opts LaunchOptions) error {
-	binary, err := exec.LookPath("codex")
+	binary, err := lookPath("codex")
 	if err != nil {
 		return fmt.Errorf("codex not found in PATH: %w", err)
 	}
@@ -366,7 +382,7 @@ func (g GeminiLauncher) Name() string { return "Gemini CLI" }
 func (g GeminiLauncher) Kind() string { return "ai" }
 
 func (g GeminiLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("gemini")
+	_, err := lookPath("gemini")
 	return err == nil
 }
 
@@ -377,7 +393,7 @@ func (g GeminiLauncher) InstallCmd() string {
 func (g GeminiLauncher) Integration() *IntegrationInfo { return nil }
 
 func (g GeminiLauncher) Launch(ws Workstream, opts LaunchOptions) error {
-	binary, err := exec.LookPath("gemini")
+	binary, err := lookPath("gemini")
 	if err != nil {
 		return fmt.Errorf("gemini not found in PATH: %w", err)
 	}
@@ -400,7 +416,7 @@ func (a AntigravityLauncher) Name() string { return "Antigravity" }
 func (a AntigravityLauncher) Kind() string { return "ide" }
 
 func (a AntigravityLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("antigravity")
+	_, err := lookPath("antigravity")
 	return err == nil
 }
 
@@ -415,7 +431,11 @@ func (a AntigravityLauncher) Launch(ws Workstream, opts LaunchOptions) error {
 	if dir == "" {
 		dir = ExpandDir(ws.Dir)
 	}
-	cmd := exec.Command("antigravity", dir)
+	binary, err := lookPath("antigravity")
+	if err != nil {
+		return fmt.Errorf("antigravity not found in PATH: %w", err)
+	}
+	cmd := exec.Command(binary, dir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -474,4 +494,59 @@ func sirsiCommand() string {
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// lookPath resolves an executable by name. It first honors the inherited PATH
+// via exec.LookPath, then falls back to the canonical user bin directories that
+// launchd-spawned GUI agents (like the menubar LaunchAgent) don't inherit.
+//
+// launchd hands GUI agents a sanitized PATH (typically
+// /usr/bin:/bin:/usr/sbin:/sbin), so exec.LookPath alone reports CLIs installed
+// under ~/.local/bin or Homebrew (claude, codex, gemini, code, …) as missing —
+// which is why the menubar showed installed tools as "not installed". The
+// fallback restores detection and launch regardless of the inherited PATH.
+func lookPath(name string) (string, error) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	// A name containing a separator is already a path; the bin-dir fallback
+	// only applies to bare command names.
+	if strings.ContainsRune(name, os.PathSeparator) {
+		return "", fmt.Errorf("%s not found", name)
+	}
+	for _, dir := range augmentedBinDirs() {
+		candidate := filepath.Join(dir, name)
+		if isExecutableFile(candidate) {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found in PATH or standard bin directories", name)
+}
+
+// augmentedBinDirs returns the canonical directories where user-installed CLIs
+// and GUI tools live but which launchd's sanitized PATH omits.
+func augmentedBinDirs() []string {
+	var dirs []string
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+		)
+	}
+	// Homebrew (Apple Silicon, then Intel/common) and the system-local bin.
+	dirs = append(dirs,
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	)
+	return dirs
+}
+
+// isExecutableFile reports whether path is a regular file with an executable bit set.
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode().Perm()&0111 != 0
 }
