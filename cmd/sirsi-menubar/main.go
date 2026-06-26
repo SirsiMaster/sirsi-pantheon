@@ -510,15 +510,13 @@ func (s *menubarState) updateTitle() {
 		return
 	}
 
-	// 🟡 YELLOW — needs YOU: an action only the user can take. Disk access is
-	// the canonical case — Pantheon is blind until you grant it.
+	// 🟡 YELLOW — needs YOU: only when Sirsi is FULLY blind (no disk access).
+	// Partial access still works, so it stays calm — the "see everything" prompt
+	// remains a quiet menu item rather than a standing alarm. Yellow must mean a
+	// real, required action, not "you could grant more."
 	switch platform.CheckDiskAccess().Level {
-	case platform.AccessSome:
-		systray.SetTitle("🟡 Partial Access")
-		systray.SetTooltip("Partial disk access — grant Full Disk Access so Sirsi sees everything")
-		return
-	case platform.AccessFull:
-		// healthy — fall through to green/white
+	case platform.AccessFull, platform.AccessSome:
+		// healthy enough — fall through to green/white
 	default:
 		systray.SetTitle("🟡 Grant Access")
 		systray.SetTooltip("No disk access — Sirsi is blind until you grant Full Disk Access")
