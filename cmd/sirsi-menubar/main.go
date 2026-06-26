@@ -481,36 +481,57 @@ type menubarState struct {
 
 var liveState = &menubarState{}
 
-// updateTitle sets the menubar title based on the current live state.
-// Priority: guard alert (if recent) > RAM pressure > waste > clean.
+// updateTitle paints the menubar dot with a calm, meaningful color model
+// (owner 2026-06-26). The dot only "yells" (yellow) when something genuinely
+// needs the human. Precedence, worst first:
+//
+//	🔴 red    active + bad:  failing now (rogue process, high RAM pressure)
+//	🟡 yellow needs YOU:     an action only you can take (grant disk access)
+//	🟢 green  active + good: running and healthy, nothing needs you
+//	⚪️ white  active + idle: not yet reporting (startup / unknown)
+//
+// Reclaimable cache ("waste") is deliberately NOT a dot state: there is always
+// some and Pantheon cleans it itself, so it must never paint the dot yellow —
+// that was the old false alarm that kept the menubar permanently yellow.
 func (s *menubarState) updateTitle() {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	guardAlert, guardAt, ramPressure := s.guardAlert, s.guardAlertAt, s.ramPressure
+	s.mu.RUnlock()
 
-	// Guard alert takes priority if within last 5 minutes
-	if s.guardAlert != "" && time.Since(s.guardAlertAt) < 5*time.Minute {
-		systray.SetTitle("⚠️ " + s.guardAlert)
-		systray.SetTooltip(fmt.Sprintf("Process alert: %s", s.guardAlert))
+	// 🔴 RED — active + bad: something is failing right now.
+	if guardAlert != "" && time.Since(guardAt) < 5*time.Minute {
+		systray.SetTitle("🔴 " + guardAlert)
+		systray.SetTooltip(fmt.Sprintf("Process alert: %s — Sirsi is relieving it", guardAlert))
 		return
 	}
-
-	// High RAM pressure
-	if s.ramPressure == "high" {
+	if ramPressure == "high" {
 		systray.SetTitle("🔴 RAM")
-		systray.SetTooltip("High RAM pressure detected")
+		systray.SetTooltip("High RAM pressure — memory is strained")
 		return
 	}
 
-	// Waste found (> 1 GB)
-	if s.wasteBytes > 1<<30 {
-		systray.SetTitle("🟡 " + s.wasteLabel)
-		systray.SetTooltip(fmt.Sprintf("Infrastructure waste: %s", s.wasteLabel))
+	// 🟡 YELLOW — needs YOU: only when Sirsi is FULLY blind (no disk access).
+	// Partial access still works, so it stays calm — the "see everything" prompt
+	// remains a quiet menu item rather than a standing alarm. Yellow must mean a
+	// real, required action, not "you could grant more."
+	switch platform.CheckDiskAccess().Level {
+	case platform.AccessFull, platform.AccessSome:
+		// healthy enough — fall through to green/white
+	default:
+		systray.SetTitle("🟡 Grant Access")
+		systray.SetTooltip("No disk access — Sirsi is blind until you grant Full Disk Access")
 		return
 	}
 
-	// All clean
-	systray.SetTitle("🟢 Clean")
-	systray.SetTooltip("Sirsi Ecosystem Monitor — all clean")
+	// 🟢 GREEN / ⚪️ WHITE — nothing needs you. White until the first refresh
+	// populates a snapshot (idle/unknown), green once confirmed healthy.
+	if ramPressure == "" {
+		systray.SetTitle("⚪️ Sirsi")
+		systray.SetTooltip("Sirsi — starting up")
+		return
+	}
+	systray.SetTitle("🟢 Sirsi")
+	systray.SetTooltip("Sirsi — healthy, nothing needs you")
 }
 
 // startGuardBridge starts the guard watchdog and pipes alerts into live state.
