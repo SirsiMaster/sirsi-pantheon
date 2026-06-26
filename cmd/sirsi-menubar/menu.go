@@ -286,7 +286,7 @@ func addMCPClientRow(about *systray.MenuItem, label string, linked bool) {
 	if linked {
 		icon, state = "✓", "linked"
 	}
-	about.AddSubMenuItem("  ↳ "+label+" — "+icon+" "+state, label+" registration of the Sirsi MCP server").Disable()
+	about.AddSubMenuItem("  ↳ "+label+" — "+icon+" "+state, label+" registration of the Sirsi MCP server")
 }
 
 // addAboutSection builds the "About Pantheon" submenu: version + every surface
@@ -303,9 +303,9 @@ func addAboutSection(sirsiBin string) {
 	about.AddSubMenuItem("──  Surfaces & Integrations  ──", "Where Pantheon is installed and linked").Disable()
 
 	// The running surface.
-	about.AddSubMenuItem("  𓂀 Menubar — active (this app)", "The Sirsi menubar is running").Disable()
+	about.AddSubMenuItem("  𓂀 Menubar — active (this app)", "The Sirsi menubar is running")
 	if sirsiBin != "" {
-		about.AddSubMenuItem("  ⌘ CLI — "+sirsiBin, "The sirsi command-line tool").Disable()
+		about.AddSubMenuItem("  ⌘ CLI — "+sirsiBin, "The sirsi command-line tool")
 	}
 
 	// AI assistants + IDEs detected on this machine.
@@ -323,14 +323,17 @@ func addAboutSection(sirsiBin string) {
 		if t.Kind == "ide" {
 			kind = "IDE"
 		}
-		row := about.AddSubMenuItem(fmt.Sprintf("  %s %s — %s (%s)", icon, t.Name, state, kind), t.Name+" "+kind)
-		row.Disable() // status row; the actionable path is Configure Integrations below
+		// Status row — left enabled so live install-state renders crisp, not greyed
+		// out (a true listing shouldn't look dead). fyne drops clicks on unwired
+		// items via a non-blocking send, so it's inert without being disabled. The
+		// actionable path is Configure Integrations below.
+		about.AddSubMenuItem(fmt.Sprintf("  %s %s — %s (%s)", icon, t.Name, state, kind), t.Name+" "+kind)
 	}
 
 	// MCP bridge — reported PER CLIENT, never conflated (A23/A14). The server is
 	// "available" because sirsi ships the `mcp` subcommand; each IDE is "linked"
 	// only if ITS OWN config registers the sirsi server properly.
-	about.AddSubMenuItem("  ↳ MCP server — available (sirsi mcp)", "Sirsi exposes its tools over MCP").Disable()
+	about.AddSubMenuItem("  ↳ MCP server — available (sirsi mcp)", "Sirsi exposes its tools over MCP")
 	addMCPClientRow(about, "Claude Code MCP", claudeMCPLinked())
 	addMCPClientRow(about, "Cursor MCP", cursorMCPLinked())
 
