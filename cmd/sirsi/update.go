@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,7 +37,13 @@ signed release, not a hand-rebuilt binary.`,
 }
 
 func runUpdate(_ *cobra.Command, _ []string) error {
-	res := updater.Check(version)
+	// An explicit `sirsi update` tolerates a slower call than the 3s background
+	// version-check, whose tight timeout trips on the full releases list. Use a
+	// generous client for both the check and the release fetch.
+	c := updater.NewClient()
+	c.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+
+	res := c.Check(version)
 	if res.Error != nil {
 		return fmt.Errorf("update check failed: %w", res.Error)
 	}
@@ -55,7 +63,7 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	rel, err := updater.NewClient().NewestRelease()
+	rel, err := c.NewestRelease()
 	if err != nil {
 		return fmt.Errorf("fetch release: %w", err)
 	}
