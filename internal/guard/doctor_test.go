@@ -1033,9 +1033,9 @@ func TestCalculateScore_TrendsDoNotZero(t *testing.T) {
 func TestDemoteTrendsToInfo(t *testing.T) {
 	f := []DiagnosticFinding{
 		{Check: "Swap Usage", Severity: SeverityCritical},                      // current → untouched
-		{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true}, // trend → Info
-		{Check: "App Hangs (7d)", Severity: SeverityWarn, Trend: true},         // trend → Info
-		{Check: "App Crashes (7d)", Severity: SeverityInfo, Trend: true},       // already Info → stays
+		{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true}, // sustained trend → Info
+		{Check: "App Hangs (7d)", Severity: SeverityWarn, Trend: true},         // sustained trend → Info
+		{Check: "App Crashes (7d)", Severity: SeverityWarn},                    // 7d but NOT flagged trend → still Info
 		{Check: "RAM Pressure", Severity: SeverityWarn},                        // current → untouched
 	}
 	demoteTrendsToInfo(f)
@@ -1043,9 +1043,10 @@ func TestDemoteTrendsToInfo(t *testing.T) {
 	if f[0].Severity != SeverityCritical || f[4].Severity != SeverityWarn {
 		t.Errorf("current findings were demoted: swap=%v ram=%v", f[0].Severity, f[4].Severity)
 	}
+	// All three "(7d)" findings demote — including the non-trend elevated count.
 	for _, i := range []int{1, 2, 3} {
 		if f[i].Severity != SeverityInfo {
-			t.Errorf("trend finding %q not Info after demotion: %v", f[i].Check, f[i].Severity)
+			t.Errorf("7-day finding %q not Info after demotion: %v", f[i].Check, f[i].Severity)
 		}
 	}
 }

@@ -1141,16 +1141,21 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// demoteTrendsToInfo strips the alarm from 7-day trend findings (Jetsam/crash/
-// hang/panic counts). A trend is HISTORY — it cannot be acted on now and no
-// click can clear it — so it must never read as "attention". Demoting to Info
-// keeps the finding visible (its Message carries the count + cause for the
+// demoteTrendsToInfo strips the alarm from EVERY 7-day-window finding
+// (Jetsam/kernel-panic/app-crash/app-hang counts). The whole "(7d)" category is
+// HISTORY — last week's events can't be acted on now and no click can clear them
+// — so none of it may read as "attention", whether or not it crossed the
+// sustained-trend threshold (3 clustered crashes is still history). Demoting to
+// Info keeps each finding visible (its Message carries the count + cause for the
 // history/dashboard view) while removing the yellow/red on every surface. The
-// CURRENT signals (live RAM/Swap/Disk/etc., Trend=false) are untouched.
+// CURRENT signals (live RAM/Swap/Disk/etc.) have no "(7d)" suffix and aren't
+// trends, so they keep their severity and still alarm.
 func demoteTrendsToInfo(findings []DiagnosticFinding) {
 	for i := range findings {
-		if findings[i].Trend && findings[i].Severity > SeverityInfo {
-			findings[i].Severity = SeverityInfo
+		f := &findings[i]
+		historical := f.Trend || strings.HasSuffix(f.Check, "(7d)")
+		if historical && f.Severity > SeverityInfo {
+			f.Severity = SeverityInfo
 		}
 	}
 }
