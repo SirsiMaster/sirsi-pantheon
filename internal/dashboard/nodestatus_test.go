@@ -107,6 +107,35 @@ func TestNodeStatus_Summary_BoundedAndDerived(t *testing.T) {
 	}
 }
 
+// TestNodeStatus_StaleRegistrations_DoNotAlarm locks the fix for the long-standing
+// "Horus is permanently yellow and no click clears it" bug: stale (old-session)
+// thread registrations are cruft, not a current problem, so they must NOT turn
+// the ops surface yellow. The count is still surfaced for transparency.
+func TestNodeStatus_StaleRegistrations_DoNotAlarm(t *testing.T) {
+	ns := &router.NodeStatus{
+		SchemaVersion: router.NodeStatusSchemaVersion,
+		StaleThreads: []router.ThreadSummary{
+			{ThreadID: "thr-old1", AgentID: "claude-home", Status: router.ThreadStatusStale, PID: 200},
+			{ThreadID: "thr-old2", AgentID: "claude-home", Status: router.ThreadStatusStale, PID: 201},
+		},
+	}
+	cfg := Config{NodeStatusFn: func() (*router.NodeStatus, error) { return ns, nil }}
+	s := New(cfg)
+	rec := httptest.NewRecorder()
+	s.apiNodeStatus(rec, httptest.NewRequest(http.MethodGet, "/api/node-status?view=summary", nil))
+
+	var got OpsSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.StaleThreadCount != 2 {
+		t.Fatalf("StaleThreadCount = %d, want 2 (count still surfaced)", got.StaleThreadCount)
+	}
+	if got.WorstIcon != "🟢" {
+		t.Errorf("WorstIcon = %q, want 🟢 — stale registrations alone must not alarm", got.WorstIcon)
+	}
+}
+
 func TestNodeStatus_Summary_Bounded_Truncates(t *testing.T) {
 	ns := sampleNodeStatus()
 	// Inflate registered list past the cap to prove truncation + MoreAgents.

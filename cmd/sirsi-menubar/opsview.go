@@ -38,7 +38,8 @@ func opsLeadRow(s dashboard.OpsSummary) string {
 // opsAgentRows renders one indented row per bounded agent, matching the menubar's
 // existing "  <icon> <name> — <state>" style, plus a final overflow row when the
 // summary collapsed agents (MoreAgents > 0). Icon precedence: needs-login (🔑) >
-// stale (🟡) > healthy (🟢).
+// healthy (🟢). Stale (old-session) registrations are shown in the state text
+// but never alarm — they're cruft, not a current problem.
 func opsAgentRows(s dashboard.OpsSummary) []string {
 	rows := make([]string, 0, len(s.Agents)+1)
 	for _, a := range s.Agents {
@@ -50,8 +51,10 @@ func opsAgentRows(s dashboard.OpsSummary) []string {
 		default:
 			state = fmt.Sprintf("%d live", a.LiveThreads)
 			if a.StaleThreads > 0 {
-				icon = "🟡"
-				state += fmt.Sprintf(", %d stale", a.StaleThreads)
+				// Stale = leftover registrations from ended sessions (cruft),
+				// not a live problem — surface the count, but don't alarm (the
+				// icon stays 🟢). A yellow here was a permanent false alarm.
+				state += fmt.Sprintf(", %d old", a.StaleThreads)
 			}
 			if a.PendingItems > 0 {
 				state += fmt.Sprintf(", %d pending", a.PendingItems)
