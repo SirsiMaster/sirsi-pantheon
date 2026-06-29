@@ -1027,6 +1027,29 @@ func TestCalculateScore_TrendsDoNotZero(t *testing.T) {
 	}
 }
 
+// TestDemoteTrendsToInfo locks the "trends never alarm" fix at the data source:
+// every Trend finding drops to Info (so no surface shows it as attention), while
+// CURRENT findings keep their severity.
+func TestDemoteTrendsToInfo(t *testing.T) {
+	f := []DiagnosticFinding{
+		{Check: "Swap Usage", Severity: SeverityCritical},                      // current → untouched
+		{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true}, // trend → Info
+		{Check: "App Hangs (7d)", Severity: SeverityWarn, Trend: true},         // trend → Info
+		{Check: "App Crashes (7d)", Severity: SeverityInfo, Trend: true},       // already Info → stays
+		{Check: "RAM Pressure", Severity: SeverityWarn},                        // current → untouched
+	}
+	demoteTrendsToInfo(f)
+
+	if f[0].Severity != SeverityCritical || f[4].Severity != SeverityWarn {
+		t.Errorf("current findings were demoted: swap=%v ram=%v", f[0].Severity, f[4].Severity)
+	}
+	for _, i := range []int{1, 2, 3} {
+		if f[i].Severity != SeverityInfo {
+			t.Errorf("trend finding %q not Info after demotion: %v", f[i].Check, f[i].Severity)
+		}
+	}
+}
+
 func TestRemediationCommand(t *testing.T) {
 	cases := []struct {
 		check, detail string
