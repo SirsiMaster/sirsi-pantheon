@@ -1133,15 +1133,25 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// calculateScore derives a 0-100 health score from findings.
+// calculateScore derives a 0-100 health score from the CURRENT state.
+//
+// The score is point-in-time — "how healthy is this Mac RIGHT NOW" — not a
+// credit-score-style rap sheet of the past week. Historical 7-day trend
+// findings (Jetsam/crash/hang/panic counts) are therefore EXCLUDED from the
+// score: a machine that is currently fine reads as fine even if last week was
+// rough. Those trends are still produced as findings and belong on a dashboard
+// for longitudinal analysis — they inform, they don't deduct.
 func calculateScore(findings []DiagnosticFinding) int {
 	score := 100
 	for _, f := range findings {
+		if f.Trend {
+			continue // historical 7-day trend → dashboard, never the live score
+		}
 		switch {
 		case isLiveCritical(f):
 			score -= 25 // a live, session-threatening problem
 		case f.Severity == SeverityCritical:
-			score -= 8 // a historical trend — concerning, not catastrophic
+			score -= 12 // a current critical condition
 		case f.Severity == SeverityWarn:
 			score -= 6
 		}
