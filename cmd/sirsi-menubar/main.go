@@ -207,26 +207,6 @@ func onReady() {
 	wire(mOpsHeader, spawnTUIWindow)
 	wire(mDashboard, spawnTUIWindow)
 
-	// ── 🐺 Anubis — Hygiene ──────────────────────────────────────────────────
-	mAnubis := systray.AddMenuItem("🐺 Anubis — Hygiene", "Scan, clean, and de-ghost the workstation")
-	rrAnubis := newDeityResult(mAnubis)
-	mScan := mAnubis.AddSubMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
-	mJudge := mAnubis.AddSubMenuItem("Clean Waste…", "Preview safe reclaimable waste, then confirm to move it to Trash")
-	// Full itemized manifest (Rule A1: consent needs visibility) — every safe
-	// item that will be trashed + the caution items that are excluded.
-	mReview := mAnubis.AddSubMenuItem("  ↳ Review what will be cleaned…", "See the exact list of files before confirming — opens a manifest")
-	// In-app clean confirm (Rule A1): hidden until a dry-run preview arms it.
-	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Confirm Clean", "Move the previewed SAFE waste to Trash (recoverable)")
-	mCleanConfirm.Hide()
-	mKa := mAnubis.AddSubMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
-	mGuard := mAnubis.AddSubMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
-	wire(mScan, func() { runService(mScan, "Scan for Waste", sirsiBin, "scan", nStore, rrAnubis) })
-	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore, rrAnubis) })
-	wire(mReview, func() { reviewCleanList() })
-	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
-	wire(mKa, func() { runService(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore, rrAnubis) })
-	wire(mGuard, func() { spawnTUIWithCommand("guard") })
-
 	// ── 𓆄 Ma'at — Quality ────────────────────────────────────────────────────
 	mMaatTop := systray.AddMenuItem("𓆄 Ma'at — Quality", "Quality + governance audit, system diagnostics")
 	rrMaat := newDeityResult(mMaatTop)
@@ -269,6 +249,24 @@ func onReady() {
 	wire(mSeba, func() { runService(mSeba, "Hardware Info", sirsiBin, "seba hardware", nStore, rrInsight) })
 	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
 	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
+
+	// ── 🐺 Anubis — Cleanup (secondary: storage upkeep lives BELOW the live view) ─
+	// Memory is the pre-eminent view; disk cleanup is demoted here, plain-English.
+	mAnubis := systray.AddMenuItem("🐺 Anubis — Cleanup", "Find and clear files you don't need")
+	rrAnubis := newDeityResult(mAnubis)
+	mScan := mAnubis.AddSubMenuItem("Find stuff to clear", "Look for files you can safely remove")
+	mJudge := mAnubis.AddSubMenuItem("Clear stuff…", "Preview what's safe to remove, then confirm")
+	mReview := mAnubis.AddSubMenuItem("  ↳ See exactly what will be removed…", "Review the full list before anything moves")
+	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Move it to Trash", "Move the previewed items to Trash (you can undo)")
+	mCleanConfirm.Hide()
+	mKa := mAnubis.AddSubMenuItem("Find leftover app files", "Find bits left behind by apps you deleted")
+	mGuard := mAnubis.AddSubMenuItem("Watch for problems…", "Keep an eye on apps using too much")
+	wire(mScan, func() { runService(mScan, "Find stuff to clear", sirsiBin, "scan", nStore, rrAnubis) })
+	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clear stuff…", sirsiBin, nStore, rrAnubis) })
+	wire(mReview, func() { reviewCleanList() })
+	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
+	wire(mKa, func() { runService(mKa, "Find leftover app files", sirsiBin, "ghosts", nStore, rrAnubis) })
+	wire(mGuard, func() { spawnTUIWithCommand("guard") })
 
 	systray.AddSeparator()
 
@@ -501,12 +499,12 @@ func (s *menubarState) updateTitle() {
 	// 🔴 RED — active + bad: something is failing right now.
 	if guardAlert != "" && time.Since(guardAt) < 5*time.Minute {
 		systray.SetTitle("🔴 " + guardAlert)
-		systray.SetTooltip(fmt.Sprintf("Process alert: %s — Sirsi is relieving it", guardAlert))
+		systray.SetTooltip(fmt.Sprintf("%s is using too much — Sirsi is calming it down", guardAlert))
 		return
 	}
 	if ramPressure == "high" {
-		systray.SetTitle("🔴 RAM")
-		systray.SetTooltip("High RAM pressure — memory is strained")
+		systray.SetTitle("🔴 Memory")
+		systray.SetTooltip("Your Mac is running low on memory")
 		return
 	}
 
@@ -518,8 +516,8 @@ func (s *menubarState) updateTitle() {
 	case platform.AccessFull, platform.AccessSome:
 		// healthy enough — fall through to green/white
 	default:
-		systray.SetTitle("🟡 Grant Access")
-		systray.SetTooltip("No disk access — Sirsi is blind until you grant Full Disk Access")
+		systray.SetTitle("🟡 Needs access")
+		systray.SetTooltip("Let Sirsi see your Mac so it can keep it healthy")
 		return
 	}
 
@@ -531,7 +529,7 @@ func (s *menubarState) updateTitle() {
 		return
 	}
 	systray.SetTitle("🟢 Sirsi")
-	systray.SetTooltip("Sirsi — healthy, nothing needs you")
+	systray.SetTooltip("Your Mac is healthy")
 }
 
 // startGuardBridge starts the guard watchdog and pipes alerts into live state.

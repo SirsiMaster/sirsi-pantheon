@@ -317,6 +317,14 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		}
 	}
 
+	// A 7-day trend is HISTORY, not a live alarm — demote every trend finding to
+	// Info BEFORE scoring/classifying so NO surface (the score, the health light,
+	// the menubar, the Horus "Attention" brief) treats it as a current issue. The
+	// count + cause stay in the finding's Message for the history/dashboard view;
+	// only the alarm is removed. Owner's law: an element alarms ONLY for a
+	// current, actionable issue — trends inform, they don't alarm.
+	demoteTrendsToInfo(report.Findings)
+
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
 	// Attach the safe remediation + its honesty class to each finding so every
@@ -1133,15 +1141,44 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// calculateScore derives a 0-100 health score from findings.
+// demoteTrendsToInfo strips the alarm from EVERY 7-day-window finding
+// (Jetsam/kernel-panic/app-crash/app-hang counts). The whole "(7d)" category is
+// HISTORY — last week's events can't be acted on now and no click can clear them
+// — so none of it may read as "attention", whether or not it crossed the
+// sustained-trend threshold (3 clustered crashes is still history). Demoting to
+// Info keeps each finding visible (its Message carries the count + cause for the
+// history/dashboard view) while removing the yellow/red on every surface. The
+// CURRENT signals (live RAM/Swap/Disk/etc.) have no "(7d)" suffix and aren't
+// trends, so they keep their severity and still alarm.
+func demoteTrendsToInfo(findings []DiagnosticFinding) {
+	for i := range findings {
+		f := &findings[i]
+		historical := f.Trend || strings.HasSuffix(f.Check, "(7d)")
+		if historical && f.Severity > SeverityInfo {
+			f.Severity = SeverityInfo
+		}
+	}
+}
+
+// calculateScore derives a 0-100 health score from the CURRENT state.
+//
+// The score is point-in-time — "how healthy is this Mac RIGHT NOW" — not a
+// credit-score-style rap sheet of the past week. Historical 7-day trend
+// findings (Jetsam/crash/hang/panic counts) are therefore EXCLUDED from the
+// score: a machine that is currently fine reads as fine even if last week was
+// rough. Those trends are still produced as findings and belong on a dashboard
+// for longitudinal analysis — they inform, they don't deduct.
 func calculateScore(findings []DiagnosticFinding) int {
 	score := 100
 	for _, f := range findings {
+		if f.Trend {
+			continue // historical 7-day trend → dashboard, never the live score
+		}
 		switch {
 		case isLiveCritical(f):
 			score -= 25 // a live, session-threatening problem
 		case f.Severity == SeverityCritical:
-			score -= 8 // a historical trend — concerning, not catastrophic
+			score -= 12 // a current critical condition
 		case f.Severity == SeverityWarn:
 			score -= 6
 		}

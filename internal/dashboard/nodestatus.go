@@ -124,7 +124,13 @@ func Summarize(ns *router.NodeStatus, max int) OpsSummary {
 	}
 	if sum.HasDriftOrAuthIssue {
 		sum.WorstIcon = "🔴"
-	} else if sum.StaleThreadCount > 0 || sum.RecentFailureCount > 0 {
+	} else if sum.RecentFailureCount > 0 {
+		// Only a CURRENT, actionable signal turns Horus yellow — a recent
+		// failure. Stale thread registrations (ended sessions whose records
+		// weren't reaped) are registry cruft, not a problem the user can act
+		// on, so they must NOT paint Horus yellow — that was a permanent
+		// false alarm no click could clear. The count is still surfaced in the
+		// per-agent rows as plain information.
 		sum.WorstIcon = "🟡"
 	} else {
 		sum.WorstIcon = "🟢"

@@ -304,24 +304,33 @@ func isAlive(pid int) bool {
 
 // FormatMenuItems returns the stats as menu item strings.
 func (s *StatsSnapshot) FormatMenuItems() []string {
+	// Memory leads — plain English, no jargon (pressure/swap stay in the CLI).
+	// This is the pre-eminent line of the menubar.
+	memWord := "healthy"
+	switch s.RAMPressure {
+	case "medium":
+		memWord = "getting full"
+	case "high":
+		memWord = "running low"
+	}
 	items := []string{
-		fmt.Sprintf("%s RAM: %.0f%% (%s)", s.RAMIcon, s.RAMPercent, s.RAMPressure),
-		fmt.Sprintf("%s Files: %d uncommitted", s.OsirisIcon, s.UncommittedFiles),
+		fmt.Sprintf("%s Memory — %s (%.0f%% in use)", s.RAMIcon, memWord, s.RAMPercent),
+		fmt.Sprintf("%s %d files with unsaved changes", s.OsirisIcon, s.UncommittedFiles),
 	}
 
 	if s.TimeSinceCommit != "" {
-		items = append(items, fmt.Sprintf("⏱ Last commit: %s ago", s.TimeSinceCommit))
+		items = append(items, fmt.Sprintf("⏱ Last saved: %s ago", s.TimeSinceCommit))
 	}
 
-	items = append(items, fmt.Sprintf("🌿 Branch: %s", s.GitBranch))
+	items = append(items, fmt.Sprintf("🌿 Working on: %s", s.GitBranch))
 
 	if s.DeityCount > 0 {
-		items = append(items, fmt.Sprintf("🏛 Active: %s", strings.Join(s.ActiveDeities, ", ")))
+		items = append(items, fmt.Sprintf("🏛 Running: %s", strings.Join(s.ActiveDeities, ", ")))
 	} else {
-		items = append(items, "🏛 No deities running")
+		items = append(items, "🏛 Nothing running in the background")
 	}
 
-	items = append(items, fmt.Sprintf("%s Accelerator: %s", s.AccelIcon, s.PrimaryAccelerator))
+	items = append(items, fmt.Sprintf("%s Graphics: %s", s.AccelIcon, s.PrimaryAccelerator))
 
 	// Ra deployment status
 	if s.RaDeployed && len(s.RaScopes) > 0 {
