@@ -103,3 +103,33 @@ func TestExtractSirsiBinary_Missing(t *testing.T) {
 		t.Error("expected error when no sirsi binary is present")
 	}
 }
+
+// TestExtractSirsiBinary_RejectsOversize proves the fix for codex's #98 finding:
+// a binary larger than the cap must ERROR, not be silently truncated.
+func TestExtractSirsiBinary_RejectsOversize(t *testing.T) {
+	orig := maxCLIBinarySize
+	maxCLIBinarySize = 10 // shrink the cap so a tiny fixture trips it
+	defer func() { maxCLIBinarySize = orig }()
+
+	dir := t.TempDir()
+	tgz := filepath.Join(dir, "big.tar.gz")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := bytes.Repeat([]byte("X"), 50) // 50 bytes > 10-byte cap
+	_ = tw.WriteHeader(&tar.Header{Name: "sirsi", Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg})
+	_, _ = tw.Write(body)
+	_ = tw.Close()
+	_ = gz.Close()
+	if err := os.WriteFile(tgz, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := ExtractSirsiBinary(tgz, dir)
+	if err == nil {
+		t.Fatalf("expected error for oversized binary, got out=%q (silent truncation regression)", out)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "sirsi")); statErr == nil {
+		t.Error("a truncated sirsi file was left behind; an oversized extract must write nothing")
+	}
+}
