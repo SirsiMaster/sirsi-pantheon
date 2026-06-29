@@ -466,11 +466,18 @@ func TestCalculateScore(t *testing.T) {
 			want: 94, // 100 - 6
 		},
 		{
-			name: "one trend critical (historical, not live)",
+			name: "trend critical is EXCLUDED from the current score",
 			findings: []DiagnosticFinding{
-				{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
+				{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true},
 			},
-			want: 92, // 100 - 8 (a 7-day pattern, not catastrophic)
+			want: 100, // a 7-day trend never lowers the CURRENT health score
+		},
+		{
+			name: "current (non-trend) critical deducts",
+			findings: []DiagnosticFinding{
+				{Check: "Thread Leaks", Severity: SeverityCritical},
+			},
+			want: 88, // 100 - 12 (current critical: not a trend, not live-critical)
 		},
 		{
 			name: "one LIVE critical (act-now)",
@@ -480,14 +487,14 @@ func TestCalculateScore(t *testing.T) {
 			want: 75, // 100 - 25
 		},
 		{
-			name: "mixed severities",
+			name: "mixed: trend excluded, current warn still counts",
 			findings: []DiagnosticFinding{
 				{Severity: SeverityOK},
 				{Severity: SeverityInfo},
 				{Severity: SeverityWarn},
-				{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
+				{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true},
 			},
-			want: 86, // 100 - 0(OK) - 0(Info) - 6(Warn) - 8(trend-crit)
+			want: 94, // 100 - 6(Warn); the 7d trend-crit is excluded from the score
 		},
 		{
 			name: "floors at zero (many live criticals)",
@@ -1001,18 +1008,22 @@ func TestClassifyHealth(t *testing.T) {
 }
 
 func TestCalculateScore_TrendsDoNotZero(t *testing.T) {
+	// Historical 7-day trends never lower the CURRENT score — they are dashboard
+	// data, not deductions. (In production a 7d finding is only Critical/Warn when
+	// it IS a sustained trend, so it always carries Trend:true.)
 	trends := []DiagnosticFinding{
-		{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
-		{Check: "App Crashes (7d)", Severity: SeverityCritical},
-		{Check: "App Hangs (7d)", Severity: SeverityCritical},
-		{Check: "Kernel Panics (7d)", Severity: SeverityCritical},
+		{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true},
+		{Check: "App Crashes (7d)", Severity: SeverityCritical, Trend: true},
+		{Check: "App Hangs (7d)", Severity: SeverityCritical, Trend: true},
+		{Check: "Kernel Panics (7d)", Severity: SeverityCritical, Trend: true},
 	}
-	if s := calculateScore(trends); s < 60 {
-		t.Errorf("4 historical trend criticals scored %d, want >= 60 (trends are not catastrophic)", s)
+	if s := calculateScore(trends); s != 100 {
+		t.Errorf("4 historical trends scored %d, want 100 (trends never lower the current score)", s)
 	}
+	// A live-critical lowers the score; an excluded trend does not.
 	live := []DiagnosticFinding{{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"}}
 	if calculateScore(live) >= calculateScore(trends[:1]) {
-		t.Errorf("a live-critical should score lower than a single trend-critical")
+		t.Errorf("a live-critical should score lower than a trend-only set")
 	}
 }
 
