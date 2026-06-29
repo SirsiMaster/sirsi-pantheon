@@ -7,6 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **router_wait MCP tool** — blocking long-poll counterpart to router_poll; a session stays active waiting for inbox work instead of going idle (anti-idle leg 2, capped 50s). Thin wrapper over PollInbox; files stay source of truth. Refs: PANTHEON_RULES.md A27.
 
 ### Added
 - **`sirsi thread register` now records a session→agent marker so the PRD-keepalive Stop hook can find a CCD session's agent** (claude-pantheon, 2026-06-21; thread-liveness guarantee piece 1, claude-home 20260621-015502). The Stop hook that blocks an agent from going idle while its PRD has open work resolves the session's agent via `$SIRSI_AGENT_ID`, then a session→agent marker, then a cwd match. CCD sessions run with `cwd=$HOME`, so the cwd match can't tell them apart — the marker is what lets the hook fire for them. `thread register` now writes `~/.claude/run/agent-by-session/<$CLAUDE_CODE_SESSION_ID> = <agent_id>` and `thread close` removes it (both best-effort — a marker failure never fails register/close). New `internal/router/sessionmarker.go` (Write/Read/Remove + session-id sanitization that blocks path traversal), injectable marker dir for tests. 3 tests (write→read→remove + idempotent remove; empty inputs are a no-op; crafted `../` session id stays a flat in-dir file). `go test ./internal/router` + gofmt + golangci-lint(0) green. Piece 2 (`sirsi supervise` LaunchAgent backstop) follows. Refs: PANTHEON_RULES.md A27, claude-home 20260621-015502; Changelog: Unreleased.
