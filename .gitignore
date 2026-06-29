@@ -78,3 +78,6 @@ extensions/*/sirsi
 
 # Claude Code agent worktrees (isolated, never tracked)
 .claude/worktrees/
+
+# Idea-router review artifacts — ephemeral runtime output, local-only
+.agents/idea-router/reviews/
