@@ -24,6 +24,11 @@ import (
 // 3s version check.
 const downloadTimeout = 5 * time.Minute
 
+// maxCLIBinarySize caps the extracted sirsi binary — defends against a malicious
+// archive exhausting disk, while being far above any real CLI (tens of MB). A
+// var (not const) so tests can shrink it without a multi-hundred-MB fixture.
+var maxCLIBinarySize int64 = 512 << 20 // 512 MB
+
 // NewestRelease exposes the newest release (highest semver, pre-releases
 // included) for callers that need its assets, not just the version compare.
 func (c *Client) NewestRelease() (*Release, error) {
@@ -120,15 +125,24 @@ func ExtractSirsiBinary(tarballPath, destDir string) (string, error) {
 		if hdr.Typeflag != tar.TypeReg || base != "sirsi" {
 			continue
 		}
+		// Reject an implausibly large binary UP FRONT rather than silently
+		// truncating it (codex review of #98). The cap is far above any real
+		// sirsi CLI (tens of MB); anything larger is bogus, so error instead of
+		// installing a half-written binary.
+		if hdr.Size > maxCLIBinarySize {
+			return "", fmt.Errorf("`sirsi` binary in %s is %d bytes, over the %d-byte safety cap — refusing to install a truncated binary", filepath.Base(tarballPath), hdr.Size, maxCLIBinarySize)
+		}
 		out := filepath.Join(destDir, "sirsi")
 		dst, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 		if err != nil {
 			return "", err
 		}
-		// Cap the copy so a malicious archive can't exhaust disk.
-		if _, err := io.Copy(dst, io.LimitReader(tr, 512<<20)); err != nil {
+		// Copy EXACTLY the declared size — io.CopyN never truncates a valid
+		// binary and errors on a short/corrupt stream.
+		if _, err := io.CopyN(dst, tr, hdr.Size); err != nil {
 			dst.Close()
-			return "", err
+			_ = os.Remove(out)
+			return "", fmt.Errorf("extract sirsi: %w", err)
 		}
 		if err := dst.Close(); err != nil {
 			return "", err
