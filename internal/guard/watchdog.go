@@ -376,12 +376,26 @@ func Watch(ctx context.Context, cfg WatchConfig, onAlert AlertFunc) error {
 	defer w.Stop()
 
 	for {
+		// Honor cancellation deterministically. On cancel, the watchdog's run()
+		// exits and CLOSES the alerts channel, so both this select's ctx.Done()
+		// and the closed-Alerts cases become ready at once — and Go picks a ready
+		// case at random, which made Watch return ctx.Err() OR nil nondeterminis-
+		// tically (flaky TestWatch_ImmediateCancel). Checking ctx.Err() first
+		// makes a canceled context always return its error.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case alert, ok := <-w.Alerts():
 			if !ok {
-				return nil // Channel closed — watchdog stopped
+				// Channel closed. If it closed because the context was canceled,
+				// report the cancellation rather than a clean stop.
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return nil // watchdog stopped cleanly
 			}
 			if onAlert != nil {
 				onAlert(alert)
