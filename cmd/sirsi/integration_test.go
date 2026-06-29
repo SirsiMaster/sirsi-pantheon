@@ -52,6 +52,41 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// sirsiTestEnv returns the parent environment with every GIT_* variable removed
+// and PWD pinned to dir, for handing to a sirsi subprocess.
+//
+// Stripping GIT_* is what makes per-test router roots actually isolated. When
+// the suite runs under a git hook — most importantly the Ma'at pre-push gate,
+// which executes inside `git push` — git exports GIT_DIR, GIT_INDEX_FILE,
+// GIT_PREFIX, GIT_COMMON_DIR, etc. into the environment, and `go test` (and
+// every subprocess it spawns) inherits them. The sirsi binary resolves the
+// router root via router.FindRepoRoot, which shells `git rev-parse
+// --git-common-dir`; git honors GIT_DIR over the process working directory, so
+// a binary launched in an isolated t.TempDir() would resolve the REAL repo's
+// router root instead of the temp one — writing there and leaving the temp
+// state.json untouched. That is the TestRouterAckLegacyPending gate flake:
+// green under a bare `go test` (no GIT_* in the env, so FindRepoRoot falls back
+// to the cwd walk-up) but red under the pre-push gate. Removing GIT_* forces
+// the subprocess to resolve from its own cwd. Pinning PWD additionally keeps any
+// os.Getwd()-based resolution consistent with cmd.Dir.
+func sirsiTestEnv(dir string, extra ...string) []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+len(extra)+1)
+	for _, kv := range base {
+		if strings.HasPrefix(kv, "GIT_") {
+			continue
+		}
+		if dir != "" && strings.HasPrefix(kv, "PWD=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	if dir != "" {
+		out = append(out, "PWD="+dir)
+	}
+	return append(out, extra...)
+}
+
 // runSirsi executes the test binary with the given args and a timeout.
 // It returns stdout, stderr, and any error (including non-zero exit).
 func runSirsi(t *testing.T, timeout time.Duration, args ...string) (stdout, stderr string, err error) {
@@ -66,7 +101,7 @@ func runSirsiWithEnv(t *testing.T, timeout time.Duration, env []string, args ...
 
 	cmd := exec.CommandContext(ctx, testBinary, args...)
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = sirsiTestEnv(repoRoot, env...)
 	// Prevent interactive prompts by closing stdin.
 	cmd.Stdin = nil
 
@@ -99,7 +134,10 @@ func runSirsiInDir(t *testing.T, dir string, timeout time.Duration, args ...stri
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	// Strip GIT_* (e.g. GIT_DIR leaked by the pre-push gate) and pin PWD so the
+	// subprocess resolves its router root from dir, not the gate's repo. See
+	// sirsiTestEnv for the full rationale (TestRouterAckLegacyPending flake).
+	cmd.Env = sirsiTestEnv(dir)
 	cmd.Stdin = nil
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
