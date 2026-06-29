@@ -389,6 +389,19 @@ func registerTools(s *Server) {
 	}, handleRouterPoll)
 
 	s.RegisterTool(Tool{
+		Name:        "router_wait",
+		Description: "BLOCK until inbox work addressed to you arrives, or until timeout (max 50s). The blocking version of router_poll: stay active while waiting for the next item instead of going idle. Returns the pending items the moment they land, or a clear-inbox note on timeout.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"agent":     {Type: "string", Description: "Your agent name. Required. Blocks until items addressed to you appear."},
+				"timeout_s": {Type: "number", Description: "Max seconds to block, capped at 50. Default 50. Returns early when an item arrives."},
+			},
+			Required: []string{"agent"},
+		},
+	}, handleRouterWait)
+
+	s.RegisterTool(Tool{
 		Name:        "router_list",
 		Description: "List all idea-router topics, their status, and recent documents.",
 		InputSchema: InputSchema{
