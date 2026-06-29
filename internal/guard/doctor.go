@@ -317,6 +317,14 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		}
 	}
 
+	// A 7-day trend is HISTORY, not a live alarm — demote every trend finding to
+	// Info BEFORE scoring/classifying so NO surface (the score, the health light,
+	// the menubar, the Horus "Attention" brief) treats it as a current issue. The
+	// count + cause stay in the finding's Message for the history/dashboard view;
+	// only the alarm is removed. Owner's law: an element alarms ONLY for a
+	// current, actionable issue — trends inform, they don't alarm.
+	demoteTrendsToInfo(report.Findings)
+
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
 	// Attach the safe remediation + its honesty class to each finding so every
@@ -1131,6 +1139,20 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// demoteTrendsToInfo strips the alarm from 7-day trend findings (Jetsam/crash/
+// hang/panic counts). A trend is HISTORY — it cannot be acted on now and no
+// click can clear it — so it must never read as "attention". Demoting to Info
+// keeps the finding visible (its Message carries the count + cause for the
+// history/dashboard view) while removing the yellow/red on every surface. The
+// CURRENT signals (live RAM/Swap/Disk/etc., Trend=false) are untouched.
+func demoteTrendsToInfo(findings []DiagnosticFinding) {
+	for i := range findings {
+		if findings[i].Trend && findings[i].Severity > SeverityInfo {
+			findings[i].Severity = SeverityInfo
+		}
+	}
 }
 
 // calculateScore derives a 0-100 health score from the CURRENT state.
