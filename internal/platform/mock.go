@@ -10,7 +10,14 @@ import (
 type Mock struct {
 	// State for recording calls
 	TrashCalls     []string
+	KillCalls      []int
 	OpenBrowserURL string
+
+	// Error injection for failure-path tests (Rule A16): when set, the
+	// corresponding operation still records the call, then returns the error —
+	// so a test can exercise the "trash/kill failed" branch deterministically.
+	TrashErr error
+	KillErr  error
 
 	// State for simulating returns
 	NameStr         string
@@ -87,7 +94,7 @@ func (m *Mock) SupportsTrash() bool {
 
 func (m *Mock) MoveToTrash(path string) error {
 	m.TrashCalls = append(m.TrashCalls, path)
-	return nil
+	return m.TrashErr
 }
 
 func (m *Mock) ProtectedPrefixes() []string {
@@ -108,5 +115,6 @@ func (m *Mock) OpenBrowser(url string) error {
 }
 
 func (m *Mock) Kill(pid int) error {
-	return nil
+	m.KillCalls = append(m.KillCalls, pid)
+	return m.KillErr
 }
