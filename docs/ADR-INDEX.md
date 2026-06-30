@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 31** | **Next available: ADR-032**
+**Total ADRs: 32 (+ ADR-031-A/B sub-decisions)** | **Next available: ADR-033**
 
 ---
 
@@ -41,6 +41,9 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-029](ADR-029-PER-AGENT-SESSION-WORKTREES.md) | Per-Agent Session Worktrees — every agent session edits source in its own `git worktree` under `.claude/worktrees/<agent>-<session>/`, not the shared root checkout; eliminates the shared-`.git` `core.bare` corruption + cross-branch contamination; shared object store, isolated working tree/index/HEAD; pairs with the SessionStart per-resume thread-mint fix | **Accepted** | 2026-06-09 |
 | [ADR-030](ADR-030-NATIVE-MENUBAR-POPOVER.md) | Native macOS Menubar Popover — NSStatusItem + NSPopover + SwiftUI NavigationStack (`macapp/`); persistent panel, drill-in/back, manifest+confirm+result inline; Go stays source-of-truth (Swift reads `latest-scan.json` + shells `sirsi`); supersedes the systray GUI on macOS. Phase 1 (Anubis) + Horus health view shipped | **Accepted** (binding review → codex-pantheon) | 2026-06-10 |
 | [ADR-031](ADR-031-LOCAL-MODELS-THROUGH-PANTHEON.md) | Local Models Through Pantheon — Pantheon is the on-device inference broker; local LLMs consumed via three surfaces hitting one resolver + RAM gate (`sirsi-gemma` MCP, `gemma` router worker, `sirsi gemma` CLI #57); consumers never bundle their own runtime; single capability boundary (text-only, no tools/verdicts); A11 local-only choke point; networked broker = future (Nexus location-transparency) | **Accepted** | 2026-06-17 |
+| [ADR-031-A](ADR-031-A-NEVER-EXHAUST-THE-HOST.md) | Pantheon Must Never Exhaust the Host — defense-in-depth for spawned compute (RAM gate, governor teeth, hard MLX cap) | **Accepted** | 2026-06-18 |
+| [ADR-031-B](ADR-031-B-DYNAMIC-PER-NODE-ENFORCEMENT.md) | Dynamic Per-Node Enforcement — the never-exhaust numbers become functions of the measured node (NodeCapacity) + kernel memory-pressure watcher | **Accepted** | 2026-06-19 |
+| [ADR-032](ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md) | Mac-First Platform Roadmap — CLI → Menubar → TUI → GUI on macOS first; Windows/Linux deferred; CI macOS-only | **Accepted** | 2026-06-19 |
 
 ---
 
@@ -111,6 +114,15 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-023 | **Accepted** — One Build-Version Contract + Local Drift Detection |
 | ADR-024 | **Accepted** — One Watcher Per Surface — Router-Prescribed Heartbeat |
 | ADR-025 | **Accepted** — Thoth-Gated Exit + Resumable Thread Suspend |
-| ADR-024+ | Next available |
+| ADR-026 | Active — Horus Ops-Dashboard (one typed read-model) |
+| ADR-027 | Active — Router Menubar Surface (operator inbox + caffeinate) |
+| ADR-028 | Active — Optional SQLite (`nosqlite` lean build variant) |
+| ADR-029 | Active — Per-Agent Session Worktrees for source edits |
+| ADR-030 | Active — Native macOS Menubar Popover (NSStatusItem + NSPopover + SwiftUI) |
+| ADR-031 | Active — Local Models Through Pantheon (on-device inference broker) |
+| ADR-031-A | **Accepted** — Pantheon Must Never Exhaust the Host (defense-in-depth) |
+| ADR-031-B | **Accepted** — Dynamic Per-Node Enforcement (numbers become functions of the node) |
+| ADR-032 | **Accepted** — Mac-First Platform Roadmap (CLI → Menubar → TUI → GUI) |
+| ADR-033 | Next available |
 
-> **Last updated:** June 1, 2026 — ADR-023 **accepted**: one build-version contract (`internal/version`) replaces seven scattered `var version` literals; ldflags unified across all binaries; `internal/selfupdate` detects sibling (D2) and PATH (D3) drift locally with no network; `sirsi doctor` emits a `binary-drift` finding that surfaces in the SessionStart health line. Fixes the CTR deploy-drift class behind ADR-022 (`docs/ADR-023-BINARY-VERSION-CONTRACT.md`).
+> **Last updated:** June 30, 2026 — registry reconciled with disk (full-repo audit): added the previously-unregistered ADR-026 through ADR-032 (Horus ops-dashboard, router menubar, optional-SQLite, per-agent worktrees, native menubar popover, local-models-through-Pantheon + ADR-031-A/B resource governance, Mac-first roadmap); corrected the count and next-available pointer (ADR-032 was already taken on disk). Earlier milestone — ADR-023 **accepted**: one build-version contract (`internal/version`) replaces seven scattered `var version` literals; ldflags unified across all binaries; `internal/selfupdate` detects sibling (D2) and PATH (D3) drift locally with no network; `sirsi doctor` emits a `binary-drift` finding (`docs/ADR-023-BINARY-VERSION-CONTRACT.md`).

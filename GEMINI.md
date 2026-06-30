@@ -55,7 +55,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | Resource Optimizer | **Hapi** 🌊 | The Flow | Controls VRAM, GPU memory, and storage flow |
 | Output Filter | **RTK** ⚡ | The Sieve | Strips noise from tool output before it hits AI context |
 | Context Vault | **Vault** 🏛️ | The Keeper | Sandboxes large output in SQLite FTS5, indexes code for BM25 search |
-| Code Graph | **Horus** 𓂀 | The All-Seeing | Extracts structural code symbols, serves outlines instead of full files |
+| Code Graph | **Horus** 𓂀 | The All-Seeing | The all-seeing Local Lord — structural code graph, live file watching, AND the workstation ops dashboard (ADR-015/026) |
 
 ---
 
@@ -92,7 +92,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 
 *   **Scan Rule Isolation (Rule A2)**: Each scan rule is a self-contained Go file implementing the `ScanRule` interface. Rules MUST NOT have side effects during the `Scan()` phase — they may only read the filesystem and report findings. Side effects (deletion, modification) happen ONLY during the `Clean()` phase, which requires explicit user confirmation.
 
-*   **Cross-Platform Safety (Rule A3)**: Agent binaries (`anubis-agent`) must be statically compiled with `CGO_ENABLED=0` and zero external dependencies. They run on untrusted targets (customer VMs, containers, remote hosts). The agent MUST NOT execute arbitrary commands received from the controller — it implements a fixed, auditable command set.
+*   **Cross-Platform Safety (Rule A3)**: Agent binaries (`sirsi-agent`) must be statically compiled with `CGO_ENABLED=0` and zero external dependencies. They run on untrusted targets (customer VMs, containers, remote hosts). The agent MUST NOT execute arbitrary commands received from the controller — it implements a fixed, auditable command set.
 
 *   **Network Safety (Rule A4)**: Fleet sweep operations (`anubis scarab`) require explicit opt-in via `--confirm-network` flag. Anubis MUST NEVER auto-discover and scan network targets without user initiation. Subnet scanning requires the user to explicitly provide the target range. No "scan everything" defaults.
 
@@ -112,8 +112,8 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 *   **Pre-merge checks** (automated on every push/PR):
     1. **Lint** — `golangci-lint run ./...` must pass with zero errors.
     2. **Test** — `go test ./...` must pass with zero failures.
-    3. **Build** — `go build ./cmd/anubis/` and `go build ./cmd/anubis-agent/` must succeed.
-    4. **Binary Size Guard** — Warning if `anubis` > 25MB or `anubis-agent` > 12MB.
+    3. **Build** — `go build ./cmd/sirsi/` and `go build ./cmd/sirsi-agent/` must succeed.
+    4. **Binary Size Guard** — Warning if `sirsi` > 25MB or `sirsi-agent` > 12MB.
 *   **Agent Responsibility**: After ANY `go get` that modifies `go.sum`, the agent MUST commit and push the updated sum file immediately.
 
 ### 2.4 Commit Traceability Protocol (Rule A7)
@@ -405,7 +405,7 @@ These documents are the source of truth for this repo:
 |---------|-------|
 | **Name** | Sirsi Anubis |
 | **CLI** | `sirsi` |
-| **Agent** | `anubis-agent` |
+| **Agent** | `sirsi-agent` |
 | **Colors** | Gold (`#C8A951`) + Black (`#0F0F0F`) + Deep Lapis (`#1A1A5E`) |
 | **Icon** | Jackal silhouette in Egyptian profile |
 | **Motto** | *"Weigh. Judge. Purge."* |
@@ -425,7 +425,7 @@ These documents are the source of truth for this repo:
 *   **Pipeline Visibility**: Full CI/CD pipeline access via `gh` CLI.
 *   **Push Protocol**: ALWAYS run `git status` -> `git add` -> `git commit` -> `git push`.
 *   **Identity**: `SirsiMaster` account exclusively.
-*   **Build Verification**: After ANY code change, run `go build ./cmd/anubis/` and `go test ./...` before committing.
+*   **Build Verification**: After ANY code change, run `go build ./cmd/sirsi/` and `go test ./...` before committing.
 
 ---
 
