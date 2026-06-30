@@ -432,7 +432,7 @@ func TestCleanFile_BlockedPathLogsSkip(t *testing.T) {
 	}
 
 	// Try to clean a protected path (/System/ is in Mock's protected prefixes)
-	_, err = CleanFile("/System/Library/something", "test", "grp", "hash", dl)
+	_, err = CleanFile("/System/Library/something", false, "test", "grp", "hash", dl)
 	if err == nil {
 		t.Error("CleanFile on protected path should return error")
 	}
@@ -455,7 +455,7 @@ func TestCleanFile_NonExistentFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	freed, err := CleanFile(filepath.Join(tmp, "nonexistent.txt"), "test", "", "", dl)
+	freed, err := CleanFile(filepath.Join(tmp, "nonexistent.txt"), false, "test", "", "", dl)
 	if err != nil {
 		t.Errorf("CleanFile on non-existent should not error, got: %v", err)
 	}

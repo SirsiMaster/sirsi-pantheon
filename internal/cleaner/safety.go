@@ -225,10 +225,12 @@ func DeleteFileReversible(path string, dryRun bool) (int64, error) {
 // CleanFile removes a file with full decision logging.
 // Policy:
 //   - Always requires human-confirmed decision (no auto-delete)
+//   - dryRun previews without touching the file (Rule A1 — every destructive op
+//     has a no-op preview), recording a "dry-run" decision instead of removing
 //   - Always trash first on macOS (reversible)
 //   - Records every action with path, size, hash, reason, timestamp
 //   - Permanent delete only via explicit EmptyTrash after review
-func CleanFile(path string, reason string, groupID string, hash string, log *DecisionLog) (int64, error) {
+func CleanFile(path string, dryRun bool, reason string, groupID string, hash string, log *DecisionLog) (int64, error) {
 	// SAFETY: Validate path before ANY operation
 	if err := ValidatePath(path); err != nil {
 		_ = log.Record(Decision{
@@ -248,6 +250,22 @@ func CleanFile(path string, reason string, groupID string, hash string, log *Dec
 		return 0, fmt.Errorf("cannot stat %q: %w", path, err)
 	}
 	size := info.Size()
+
+	// Dry-run: report what WOULD be removed without touching it, and record a
+	// "dry-run" decision so the ledger shows the preview rather than a removal
+	// that never happened (Rule A1: a destructive op must have a no-op preview).
+	if dryRun {
+		logging.Debug("Dry-run: would clean", "path", path, "size", size)
+		_ = log.Record(Decision{
+			Path:       path,
+			Size:       size,
+			Action:     "dry-run",
+			Reason:     reason,
+			DupGroupID: groupID,
+			SHA256:     hash,
+		})
+		return size, nil
+	}
 
 	// Always trash on platforms that support it (reversible)
 	if platform.Current().SupportsTrash() {
