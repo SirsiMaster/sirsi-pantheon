@@ -72,13 +72,15 @@ type seamCalls struct {
 
 func withSeams(t *testing.T, governed map[int]string, fn func(c *seamCalls)) {
 	t.Helper()
-	og, os1, or, ok := governedFn, suspendFn, resumeFn, killFn
-	defer func() { governedFn, suspendFn, resumeFn, killFn = og, os1, or, ok }()
+	// A21: save via getters, swap + restore via setters (all under hapiFnMu) —
+	// the governor goroutine may read these concurrently with the swap.
+	og, os1, or, ok := getGovernedFn(), getSuspendFn(), getResumeFn(), getKillFn()
+	defer func() { setGovernedFn(og); setSuspendFn(os1); setResumeFn(or); setKillFn(ok) }()
 	c := &seamCalls{}
-	governedFn = func() map[int]string { return governed }
-	suspendFn = func(pid int, name string) error { c.suspended = append(c.suspended, pid); return nil }
-	resumeFn = func(pid int) error { c.resumed = append(c.resumed, pid); return nil }
-	killFn = func(pid int, name string) error { c.killed = append(c.killed, pid); return nil }
+	setGovernedFn(func() map[int]string { return governed })
+	setSuspendFn(func(pid int, name string) error { c.suspended = append(c.suspended, pid); return nil })
+	setResumeFn(func(pid int) error { c.resumed = append(c.resumed, pid); return nil })
+	setKillFn(func(pid int, name string) error { c.killed = append(c.killed, pid); return nil })
 	fn(c)
 }
 

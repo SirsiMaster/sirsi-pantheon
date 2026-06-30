@@ -329,12 +329,50 @@ func hapiGovernedPIDs() map[int]string {
 
 // Injectable governed-lookup + intervention seams (Rule A16/A21): tests swap
 // these to verify the governor's decisions without touching real processes.
+// They MUST be read via the get*Fn accessors and swapped via set*Fn under
+// hapiFnMu — the MemGovernor's goroutine (Start) reads them concurrently with a
+// test's swap, so raw assignment is a data race (Rule A21), mirroring the
+// hapiSampleMu/setHapiSampleFn pattern above.
 var (
+	hapiFnMu   sync.RWMutex
 	governedFn = hapiGovernedPIDs
 	suspendFn  = hapiSuspend
 	resumeFn   = hapiResume
 	killFn     = hapiKill
 )
+
+func getGovernedFn() func() map[int]string {
+	hapiFnMu.RLock()
+	defer hapiFnMu.RUnlock()
+	return governedFn
+}
+func getSuspendFn() func(int, string) error {
+	hapiFnMu.RLock()
+	defer hapiFnMu.RUnlock()
+	return suspendFn
+}
+func getResumeFn() func(int) error {
+	hapiFnMu.RLock()
+	defer hapiFnMu.RUnlock()
+	return resumeFn
+}
+func getKillFn() func(int, string) error {
+	hapiFnMu.RLock()
+	defer hapiFnMu.RUnlock()
+	return killFn
+}
+func setGovernedFn(fn func() map[int]string) {
+	hapiFnMu.Lock()
+	defer hapiFnMu.Unlock()
+	governedFn = fn
+}
+func setSuspendFn(fn func(int, string) error) {
+	hapiFnMu.Lock()
+	defer hapiFnMu.Unlock()
+	suspendFn = fn
+}
+func setResumeFn(fn func(int) error)       { hapiFnMu.Lock(); defer hapiFnMu.Unlock(); resumeFn = fn }
+func setKillFn(fn func(int, string) error) { hapiFnMu.Lock(); defer hapiFnMu.Unlock(); killFn = fn }
 
 // ── Intervention primitives ────────────────────────────────────────────────
 
@@ -424,7 +462,7 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 	if tier == TierOK {
 		g.mu.Lock()
 		for pid, name := range g.suspended {
-			if resumeFn(pid) == nil {
+			if getResumeFn()(pid) == nil {
 				res.Actions = append(res.Actions, fmt.Sprintf("resumed governed %s (pid %d) — pressure cleared", name, pid))
 				stele.Inscribe("hapi", stele.TypeGuardAlert, "", map[string]string{"action": "resume", "pid": strconv.Itoa(pid), "name": name})
 			}
@@ -438,7 +476,7 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 		return res, nil // warn-only: the caller surfaces tier + runaway
 	}
 
-	governed := governedFn()
+	governed := getGovernedFn()()
 	rssOf := map[int]int64{}
 	for _, p := range s.Top {
 		rssOf[p.PID] = p.RSS
@@ -462,7 +500,7 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 			}
 		}
 		if target != 0 {
-			if suspendFn(target, tname) == nil {
+			if getSuspendFn()(target, tname) == nil {
 				g.mu.Lock()
 				g.suspended[target] = tname
 				g.mu.Unlock()
@@ -477,7 +515,7 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 	// compute (it consented; the host comes first). Never a non-governed process.
 	if tier >= TierEmergency {
 		for pid, name := range governed {
-			if killFn(pid, name) == nil {
+			if getKillFn()(pid, name) == nil {
 				g.mu.Lock()
 				delete(g.suspended, pid)
 				g.mu.Unlock()
@@ -528,7 +566,7 @@ func (g *MemGovernor) Start(stop <-chan struct{}, onPass func(GovernResult)) {
 		case <-stop:
 			g.mu.Lock()
 			for pid := range g.suspended {
-				_ = resumeFn(pid)
+				_ = getResumeFn()(pid)
 			}
 			g.mu.Unlock()
 			stele.Inscribe("hapi", stele.TypeGuardStop, "", nil)
