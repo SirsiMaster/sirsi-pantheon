@@ -608,18 +608,30 @@ struct ActionCard: View {
 
 struct CleanReviewView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.dismiss) private var dismiss
     @State private var resultLine: String?
     @State private var showCaution = false
 
     var body: some View {
         VStack(spacing: 0) {
+            // BackBar is mandatory on every pushed view — an NSPopover has no
+            // toolbar, so the native NavigationStack back button is invisible and
+            // the user gets trapped. This was the ONE view missing it, which is why
+            // the post-clean result screen dead-ended ("no progression, no return").
+            BackBar(title: "Review & Clean")
             if let resultLine {
-                // Result state — inline, no kick-out.
-                VStack(spacing: 10) {
+                // Result state — inline, no kick-out. Both the ‹ Back above and an
+                // explicit Done return to Anubis so a finished clean never traps.
+                VStack(spacing: 14) {
                     Text("✓").font(.system(size: 40)).foregroundStyle(.green)
                     Text(resultLine).font(.callout).multilineTextAlignment(.center)
                     Text("Moved to Trash — recoverable until you empty it.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button { dismiss() } label: {
+                        Text("Done").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).tint(gold)
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity).padding(24)
             } else {
