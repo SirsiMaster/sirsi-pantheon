@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -99,13 +100,29 @@ func (d *Darwin) ReadDir(dirname string) ([]os.DirEntry, error) {
 	return os.ReadDir(dirname)
 }
 
+// killGrace bounds how long Kill waits for a SIGTERM'd process to exit on its
+// own before escalating to SIGKILL. A var so tests can shrink it.
+var killGrace = 2 * time.Second
+
 func (d *Darwin) Kill(pid int) error {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return err
 	}
-	// Note: We use the system command "kill" to be more portable across environments
-	// than syscall package on some platforms.
+	// Graceful termination: SIGTERM, then poll for exit up to killGrace before
+	// SIGKILL — honoring the "SIGTERM first" contract instead of sending both
+	// back-to-back. platform.Kill's only caller is SlayWith (the Hapi emergency
+	// OOM path uses a direct syscall, NOT this), so the grace lets a slayed
+	// editor/tool flush and exit cleanly rather than losing unsaved work.
 	_ = exec.Command("kill", "-15", fmt.Sprintf("%d", pid)).Run()
-	return proc.Kill() // Force kill if it's still there
+	deadline := time.Now().Add(killGrace)
+	for time.Now().Before(deadline) {
+		// Signal 0 probes liveness without delivering a signal: a non-nil error
+		// means the process is gone, so SIGTERM was enough.
+		if proc.Signal(syscall.Signal(0)) != nil {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return proc.Kill() // still alive after the grace window — force kill
 }
