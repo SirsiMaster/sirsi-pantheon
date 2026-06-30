@@ -61,13 +61,46 @@ var protectedHomeDirs = []string{
 
 // ValidatePath checks if a path is safe to delete.
 // Returns an error if the path is protected.
+//
+// It validates BOTH the lexical absolute path AND the symlink-resolved real
+// target: a symlink (or a symlinked parent directory) whose name looks innocent
+// must not be able to smuggle a delete into a protected location it points at.
+// The protected-path guarantee (Rule A1: "cannot be overridden") would otherwise
+// be bypassable with a link named e.g. "cache" pointing into ~/.ssh, or a scan
+// root that is itself a symlink into /System.
 func ValidatePath(path string) error {
-	// Resolve to absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("cannot resolve path %q: %w", path, err)
 	}
 
+	// Lexical check first.
+	if err := checkProtected(absPath); err != nil {
+		return err
+	}
+
+	// Then the symlink-resolved real target. Resolve the full path when it
+	// exists; otherwise resolve the parent and re-attach the base so a symlinked
+	// parent directory is still caught even when the leaf is already gone.
+	realPath := absPath
+	if resolved, e := filepath.EvalSymlinks(absPath); e == nil {
+		realPath = resolved
+	} else if parent, pe := filepath.EvalSymlinks(filepath.Dir(absPath)); pe == nil {
+		realPath = filepath.Join(parent, filepath.Base(absPath))
+	}
+	if realPath != absPath {
+		if err := checkProtected(realPath); err != nil {
+			return fmt.Errorf("%w (resolved via symlink from %q)", err, absPath)
+		}
+	}
+
+	return nil
+}
+
+// checkProtected runs the protected prefix/suffix/name/exact matrix against a
+// single absolute path. ValidatePath applies it to both the lexical path and the
+// symlink-resolved real target.
+func checkProtected(absPath string) error {
 	// Check platform-specific protected prefixes
 	for _, prefix := range platform.Current().ProtectedPrefixes() {
 		if strings.HasPrefix(absPath, prefix) {
