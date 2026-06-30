@@ -84,7 +84,7 @@ const (
 // (seba), free RAM + governed set (Hapi), and live agent RSS. Pressure is the
 // bootstrap snapshot until the kernel dispatch watcher is wired (ADR-031-B #4).
 func SampleNodeCapacity() NodeCapacity {
-	n := NodeCapacity{GovernedPIDs: governedFn()}
+	n := NodeCapacity{GovernedPIDs: getGovernedFn()()}
 
 	if hw, err := seba.DetectHardware(); err == nil {
 		n.TotalRAM = hw.TotalRAM
