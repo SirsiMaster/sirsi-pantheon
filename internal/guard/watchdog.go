@@ -166,6 +166,7 @@ func (w *Watchdog) run() {
 
 	hotStreak := make(map[int]int)
 	firstSeen := make(map[int]time.Time)
+	reniced := make(map[int]bool) // PIDs already auto-reniced this hot streak
 	currentInterval := w.cfg.Interval
 
 	ticker := time.NewTicker(currentInterval)
@@ -237,13 +238,16 @@ func (w *Watchdog) run() {
 							// Consumer too slow — drop this alert silently
 						}
 
-						// Auto-renice: if enabled and sustained for 6+ checks (30s at 5s),
-						// deprioritize the process. Opt-in per Rule A1.
-						if w.cfg.AutoRenice && hotStreak[p.PID] == 0 {
-							// hotStreak was just reset, meaning this is the first alert.
-							// We only renice on first alert — not repeatedly.
+						// Auto-renice (opt-in, Rule A1): on the FIRST sustained alert for
+						// this PID, deprioritize it once. Tracked via `reniced` (cleared
+						// when the process cools). The previous `hotStreak[p.PID] == 0`
+						// guard was DEAD CODE — this block only runs when hotStreak >=
+						// SustainCount, so it was never 0 here and auto-renice never fired.
+						if w.cfg.AutoRenice && !reniced[p.PID] {
+							reniced[p.PID] = true
+							renice := getReniceByPIDFn() // captured here (A21: goroutine never reads the global)
 							go func(pid int, name string) {
-								if err := reniceByPID(pid, name); err == nil {
+								if err := renice(pid, name); err == nil {
 									stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
 										"action": "auto_renice",
 										"pid":    fmt.Sprintf("%d", pid),
@@ -273,6 +277,7 @@ func (w *Watchdog) run() {
 				if !currentHot[pid] {
 					delete(hotStreak, pid)
 					delete(firstSeen, pid)
+					delete(reniced, pid) // cooled down — eligible to renice again if it re-spikes
 				}
 			}
 		}
