@@ -9,7 +9,11 @@ package updater
 
 import (
 	"archive/tar"
+	"bufio"
+	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +27,12 @@ import (
 // downloadTimeout is generous — release artifacts are tens of MB, unlike the
 // 3s version check.
 const downloadTimeout = 5 * time.Minute
+
+// maxDownloadSize caps any single release download (tarball or DMG). A buggy or
+// malicious server can otherwise stream unbounded bytes via io.Copy and exhaust
+// disk before the extracted-binary cap (maxCLIBinarySize) ever applies. A var so
+// tests can shrink it; 1 GB is far above any real artifact (the DMG is ~tens MB).
+var maxDownloadSize int64 = 1 << 30 // 1 GB
 
 // maxCLIBinarySize caps the extracted sirsi binary — defends against a malicious
 // archive exhausting disk, while being far above any real CLI (tens of MB). A
@@ -67,6 +77,8 @@ func AppDMGAsset(rel *Release) *Asset {
 
 // Download streams url to destPath (created/truncated), returning the bytes
 // written. A non-200 status is an error and never leaves a partial file behind.
+// The body is bounded by maxDownloadSize: a server that streams more is an error
+// (no truncated/partial artifact is left), defending against disk exhaustion.
 func Download(url, destPath string) (int64, error) {
 	client := &http.Client{Timeout: downloadTimeout}
 	resp, err := client.Get(url)
@@ -82,7 +94,9 @@ func Download(url, destPath string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("create %s: %w", destPath, err)
 	}
-	n, err := io.Copy(f, resp.Body)
+	// LimitReader to maxDownloadSize+1 so a body AT the cap succeeds but anything
+	// over it is detected (n > cap) and rejected — never silently truncated.
+	n, err := io.Copy(f, io.LimitReader(resp.Body, maxDownloadSize+1))
 	cerr := f.Close()
 	if err != nil {
 		_ = os.Remove(destPath)
@@ -92,7 +106,63 @@ func Download(url, destPath string) (int64, error) {
 		_ = os.Remove(destPath)
 		return 0, cerr
 	}
+	if n > maxDownloadSize {
+		_ = os.Remove(destPath)
+		return 0, fmt.Errorf("download %s: exceeds %d-byte safety cap — refusing", url, maxDownloadSize)
+	}
 	return n, nil
+}
+
+// ChecksumsAsset returns the goreleaser checksums.txt asset for a release, or
+// nil if absent. Used to verify a downloaded artifact's SHA-256 before install.
+func ChecksumsAsset(rel *Release) *Asset {
+	for i := range rel.Assets {
+		if rel.Assets[i].Name == "checksums.txt" {
+			return &rel.Assets[i]
+		}
+	}
+	return nil
+}
+
+// VerifyChecksum computes the SHA-256 of filePath and matches it against the
+// entry for assetName inside a goreleaser checksums.txt body (lines of
+// "<hex>  <name>"). It is the authenticity gate the CLI self-update path was
+// missing: a corrupted, truncated, MITM'd, or swapped artifact fails here before
+// it can replace the running binary. Returns an error if the asset is absent
+// from the manifest (fail-closed) or the digest does not match.
+//
+// Threat model: this defends integrity over the HTTPS transport + a naive
+// single-asset swap. A fully compromised release that also rewrites
+// checksums.txt is out of scope here — that needs a signed manifest verified
+// against a pubkey pinned in the binary (tracked as a follow-up).
+func VerifyChecksum(filePath, assetName string, checksums []byte) error {
+	want := ""
+	sc := bufio.NewScanner(bytes.NewReader(checksums))
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) == 2 && fields[1] == assetName {
+			want = strings.ToLower(fields[0])
+			break
+		}
+	}
+	if want == "" {
+		return fmt.Errorf("no checksum for %q in checksums.txt — refusing to install unverified", assetName)
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("hash %s: %w", filePath, err)
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != want {
+		return fmt.Errorf("checksum mismatch for %s: got %s, want %s — refusing to install", assetName, got, want)
+	}
+	return nil
 }
 
 // ExtractSirsiBinary pulls the `sirsi` executable out of a goreleaser .tar.gz

@@ -100,6 +100,27 @@ func installCLIRelease(rel *updater.Release) error {
 		return err
 	}
 
+	// Verify the tarball's SHA-256 against the release's checksums.txt BEFORE we
+	// extract or install anything — the CLI self-update path previously replaced
+	// the running binary with zero authenticity check (a poisoned/MITM'd asset
+	// = arbitrary code execution). Fail closed if the manifest is absent.
+	cksumAsset := updater.ChecksumsAsset(rel)
+	if cksumAsset == nil {
+		return fmt.Errorf("release %s has no checksums.txt — refusing to install an unverified CLI binary", rel.TagName)
+	}
+	cksumPath := filepath.Join(tmp, "checksums.txt")
+	if _, err = updater.Download(cksumAsset.BrowserDownloadURL, cksumPath); err != nil {
+		return fmt.Errorf("download checksums: %w", err)
+	}
+	cksums, err := os.ReadFile(cksumPath)
+	if err != nil {
+		return err
+	}
+	if err = updater.VerifyChecksum(tarball, asset.Name, cksums); err != nil {
+		return err
+	}
+	fmt.Printf("  ✓ verified %s against checksums.txt\n", asset.Name)
+
 	bin, err := updater.ExtractSirsiBinary(tarball, tmp)
 	if err != nil {
 		return err
