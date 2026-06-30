@@ -26,7 +26,7 @@ func TestCleanFile_TrashFailureSurfacedAndNotRecorded(t *testing.T) {
 	}
 	log := &DecisionLog{SessionID: "t", path: filepath.Join(dir, "d.json")}
 
-	if _, err := CleanFile(fp, "reason", "g", "h", log); err == nil {
+	if _, err := CleanFile(fp, false, "reason", "g", "h", log); err == nil {
 		t.Fatal("CleanFile must surface the MoveToTrash error")
 	}
 	// A failed trash must NOT be recorded as a successful 'trash' decision —

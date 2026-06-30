@@ -28,7 +28,7 @@ func TestCleanFile_Success(t *testing.T) {
 	}
 
 	// CleanFile should succeed — Mock platform returns nil for MoveToTrash
-	size, err := CleanFile(filePath, "test reason", "group-1", "abc123", log)
+	size, err := CleanFile(filePath, false, "test reason", "group-1", "abc123", log)
 	if err != nil {
 		t.Fatalf("CleanFile: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestCleanFile_ProtectedPath(t *testing.T) {
 	}
 
 	// Try to clean a protected path
-	_, err := CleanFile("/usr/bin/ls", "test", "g1", "hash", log)
+	_, err := CleanFile("/usr/bin/ls", false, "test", "g1", "hash", log)
 	if err == nil {
 		t.Error("Expected error for protected path")
 	}
@@ -88,7 +88,7 @@ func TestCleanFile_NonExistent(t *testing.T) {
 	dir := t.TempDir()
 	log := &DecisionLog{SessionID: "test", path: filepath.Join(dir, "log.json")}
 
-	size, err := CleanFile(filepath.Join(dir, "nonexistent.txt"), "test", "g1", "h", log)
+	size, err := CleanFile(filepath.Join(dir, "nonexistent.txt"), false, "test", "g1", "h", log)
 	if err != nil {
 		t.Errorf("CleanFile for nonexistent file should not error: %v", err)
 	}
