@@ -154,11 +154,18 @@ func remediationCommand(f DiagnosticFinding) string {
 		}
 	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
 		if warn {
-			return "sirsi guard" // relieve memory pressure — renice hogs
+			// Flush inactive caches — the safe, non-destructive memory lever
+			// (renice frees CPU, not RAM). Was `sirsi guard`, which is just the
+			// MONITOR — tapping "Relieve" opened a dashboard, not an action.
+			return "sirsi relieve --memory"
 		}
-	case "Thread Leaks", "Swap Usage":
+	case "Swap Usage":
 		if f.Severity >= SeverityCritical {
-			return "sirsi guard"
+			return "sirsi relieve --memory" // genuine pressure → flush caches
+		}
+	case "Thread Leaks":
+		if f.Severity >= SeverityCritical {
+			return "sirsi relieve" // renice the offender (a real action, not a monitor)
 		}
 	case "Disk Space":
 		if warn {
