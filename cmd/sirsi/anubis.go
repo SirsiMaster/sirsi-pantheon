@@ -31,6 +31,7 @@ var (
 	anubisDryRun         bool
 	anubisConfirm        bool
 	anubisIncludeCaution bool
+	anubisOnly           []string
 	anubisDocs           bool
 
 	// apps subcommand flags
@@ -124,6 +125,7 @@ func init() {
 	anubisJudgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	anubisJudgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply (does NOT change scope — preview matches apply)")
 	anubisJudgeCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (applies to BOTH preview and apply)")
+	anubisJudgeCmd.Flags().StringArrayVar(&anubisOnly, "only", nil, "Restrict cleanup to these exact paths (repeatable). Can only NARROW scope, never widen — lets a UI clean a user-curated subset. Applies to BOTH preview and apply.")
 	anubisKaCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Enable sudo access")
 
 	anubisAppsCmd.Flags().BoolVar(&appsGhosts, "ghosts", false, "Show only apps with ghost residuals")
@@ -340,6 +342,29 @@ func selectCleanTargets(findings []jackal.Finding, includeCaution bool) []jackal
 	return target
 }
 
+// narrowToPaths restricts an already-selected clean target to the exact paths in
+// `only`. It is a pure INTERSECTION: the result is always a subset of `target`,
+// so it can only reduce scope, never widen it — the safety property that lets a
+// UI hand the user a per-item selection without ever expanding what `clean`
+// touches. An empty `only` means "no restriction" and returns target unchanged.
+// A path in `only` that isn't in target is simply ignored (can't add findings).
+func narrowToPaths(target []jackal.Finding, only []string) []jackal.Finding {
+	if len(only) == 0 {
+		return target
+	}
+	want := make(map[string]bool, len(only))
+	for _, p := range only {
+		want[p] = true
+	}
+	var out []jackal.Finding
+	for _, f := range target {
+		if want[f.Path] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func runJudge(ctx context.Context) error {
 	start := time.Now()
 	output.Banner()
@@ -386,8 +411,16 @@ func runJudge(ctx context.Context) error {
 	// shown is exactly what moves to Trash (Rule A1: preview == apply). The pure
 	// selector has no confirm parameter, so apply structurally cannot widen scope.
 	target := selectCleanTargets(findings, anubisIncludeCaution)
+	// --only narrows the set to a UI-curated subset. It runs BEFORE the
+	// dry-run/confirm split, so preview and apply target the identical set
+	// (Rule A1). Intersection-only: it can never widen scope.
+	target = narrowToPaths(target, anubisOnly)
 
 	if len(target) == 0 {
+		if len(anubisOnly) > 0 {
+			output.Info("None of the selected paths are cleanable in the latest scan. Run `sirsi scan` to refresh.")
+			return nil
+		}
 		output.Info("No safe findings to clean. Use --include-caution to also target caution items.")
 		return nil
 	}
