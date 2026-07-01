@@ -5,8 +5,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
+
+// healthyDoctor is the injected system-health report for command-policy tests:
+// a clean machine with zero findings. Injecting it (Rule A16) makes the preflight
+// deterministic — guard.DoctorWith reads some state directly (not via Platform),
+// so on a loaded CI box a live Critical would BLOCK an otherwise-safe command and
+// flake TestPreflightAllows*/TestSafeRun*. These tests exercise COMMAND policy;
+// live-health gating is covered separately against the real doctor.
+func healthyDoctor(platform.Platform) (*guard.DoctorReport, error) {
+	return &guard.DoctorReport{}, nil
+}
 
 func healthyPlatform() *platform.Mock {
 	return &platform.Mock{
@@ -28,10 +39,10 @@ Pages occupied by compressor: 25000.`,
 
 func TestPreflightAllowsHealthyNarrowCommand(t *testing.T) {
 	report := Preflight(PreflightOptions{
-		Command:      []string{"rg", "--files", "internal/agentguard"},
-		Platform:     healthyPlatform(),
-		LoadProvider: func() (float64, float64, error) { return 1, 1, nil },
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
+		Command:        []string{"rg", "--files", "internal/agentguard"},
+		Platform:       healthyPlatform(),
+		LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
+		HealthProvider: healthyDoctor,
 	})
 	if report.Verdict != VerdictAllow {
 		t.Fatalf("verdict = %s, want allow; findings=%v", report.Verdict, report.Findings)
@@ -64,10 +75,10 @@ func TestPreflightBlocksCodexSessionCat(t *testing.T) {
 
 func TestPreflightWarnsOnHighLoad(t *testing.T) {
 	report := Preflight(PreflightOptions{
-		Command:      []string{"rg", "--files", "."},
-		Platform:     healthyPlatform(),
-		LoadProvider: func() (float64, float64, error) { return 100, 100, nil },
-		IgnoreChecks: []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
+		Command:        []string{"rg", "--files", "."},
+		Platform:       healthyPlatform(),
+		LoadProvider:   func() (float64, float64, error) { return 100, 100, nil },
+		HealthProvider: healthyDoctor,
 	})
 	if report.Verdict != VerdictWarn {
 		t.Fatalf("verdict = %s, want warn; findings=%v", report.Verdict, report.Findings)
@@ -96,7 +107,7 @@ func TestSafeRunTruncatesOutput(t *testing.T) {
 		Command:        []string{"printf", strings.Repeat("x", 128)},
 		Platform:       healthyPlatform(),
 		LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
-		IgnoreChecks:   []string{"Kernel Panics (7d)", "Jetsam Events (7d)", "App Crashes (7d)"},
+		HealthProvider: healthyDoctor,
 		MaxOutputBytes: 32,
 		MaxOutputLines: 10,
 	})
