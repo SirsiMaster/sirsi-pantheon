@@ -724,7 +724,11 @@ func crashEventFinding(check, noun, trendCause string, times []time.Time, now ti
 		f.Message = fmt.Sprintf("No %ss in the last %d days", noun, crashWindowDays)
 	case isTrend:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("%d %ss across %d of %d days — sustained trend, %s",
+		// A "(7d)" trend is HISTORY (demoteTrendsToInfo greens it), so the message
+		// must read as a record, not a present-tense alarm — "%s" is what was true
+		// AT THE TIME, not now. A green dot saying "system under RAM pressure" was
+		// the exact contradiction the owner flagged.
+		f.Message = fmt.Sprintf("%d %ss on %d of the last %d days — a 7-day record (%s at the time); not happening now",
 			count, noun, activeDays, crashWindowDays, trendCause)
 	case count <= transientEventTolerance:
 		// GREEN STANDARD: a few isolated events over a week is normal background,
@@ -905,7 +909,8 @@ func checkAppHangs(report *DoctorReport) {
 		f.Detail = "Background only: " + topOffenders(daemonByProc, 3) + " — normal macOS maintenance. If Spotlight churns often, exclude busy folders from indexing."
 	case isTrend:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("%d app freeze event(s) across %d of %d days — sustained main-thread saturation (beachballs, dropped frames)",
+		// History (demoted to green), not a present-tense claim of current saturation.
+		f.Message = fmt.Sprintf("%d app freeze event(s) on %d of the last %d days — a 7-day record of main-thread stalls (beachballs); not happening now",
 			count, activeDays, crashWindowDays)
 		f.Detail = topOffenders(userByProc, 3)
 	case count <= transientEventTolerance:
