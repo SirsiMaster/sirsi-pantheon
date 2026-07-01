@@ -1071,14 +1071,16 @@ func TestRemediationCommand(t *testing.T) {
 		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean --include-caution", FixInstant},
 		{"App Hangs (7d)", "Chrome ×6", SeverityCritical, "sirsi relieve", FixRelief},
 		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi relieve", FixRelief},
-		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard", FixRelief},
+		// Memory findings now route to a REAL action (flush caches), not the
+		// `sirsi guard` MONITOR that used to dead-end at a dashboard.
+		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi relieve --memory", FixRelief},
 		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution", FixInstant},
 		{"Swap Usage", "", SeverityWarn, "", FixRelief}, // warn swap → no one-click cmd, but classed relief
-		{"Swap Usage", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"Swap Usage", "", SeverityCritical, "sirsi relieve --memory", FixRelief},
 		{"RAM Pressure", "", SeverityOK, "", FixRelief}, // healthy → no cmd; kind still relief
 		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development", FixGuidance},
-		{"Thread Leaks", "", SeverityCritical, "sirsi guard", FixRelief},
-		{"Sirsi Processes", "", SeverityInfo, "", ""}, // informational → no fix, no kind
+		{"Thread Leaks", "", SeverityCritical, "sirsi relieve", FixRelief}, // renice offender (real action, not the monitor)
+		{"Sirsi Processes", "", SeverityInfo, "", ""},                      // informational → no fix, no kind
 	}
 	for _, c := range cases {
 		f := DiagnosticFinding{Check: c.check, Detail: c.detail, Severity: c.sev}
