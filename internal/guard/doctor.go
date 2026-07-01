@@ -113,6 +113,8 @@ func remediationKind(f DiagnosticFinding) FixKind {
 		return FixInstant // clearing the crash-report backlog drops the count
 	case "Disk Space":
 		return FixInstant // clean frees real bytes
+	case "Local Snapshots":
+		return FixInstant // thinning reclaims real disk immediately
 	case "Spotlight Storm":
 		return FixGuidance // acts only during a live storm; else prints guidance
 	case "App Hangs (7d)":
@@ -169,6 +171,8 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi clean --include-caution"
 		}
+	case "Local Snapshots":
+		return "sirsi reclaim-snapshots" // optional disk reclaim, offered even at Info
 	}
 	return ""
 }
@@ -307,6 +311,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		{"App Hangs", func() { checkAppHangs(report) }},
 		{"Thread Leaks", func() { checkThreadLeaks(report) }},
 		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
+		{"Local Snapshots", func() { checkLocalSnapshots(report) }},
 	}
 
 	for i, c := range checks {
