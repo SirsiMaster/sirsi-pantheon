@@ -811,8 +811,10 @@ func TestCheckRecentCrashLogs_TransientVsTrend(t *testing.T) {
 	if pan.Severity != SeverityCritical || !pan.Trend {
 		t.Errorf("trend panics: got severity=%v trend=%v, want Critical/true", pan.Severity, pan.Trend)
 	}
-	if !strings.Contains(pan.Message, "sustained trend") {
-		t.Errorf("trend panic message %q should say sustained trend", pan.Message)
+	// A 7d trend is demoted to green info — the message must read as history, not
+	// a present-tense alarm (owner-flagged contradiction).
+	if !strings.Contains(pan.Message, "7-day record") || strings.Contains(pan.Message, "sustained trend") {
+		t.Errorf("trend panic message %q should read as a 7-day record, not a present-tense alarm", pan.Message)
 	}
 }
 
@@ -892,8 +894,9 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 	if f.Severity != SeverityCritical || !f.Trend {
 		t.Errorf("trend hangs: got severity=%v trend=%v, want Critical/true", f.Severity, f.Trend)
 	}
-	if !strings.Contains(f.Message, "sustained main-thread saturation") {
-		t.Errorf("trend message %q should name the saturation", f.Message)
+	// History framing, not a present-tense "saturation" claim on a green finding.
+	if !strings.Contains(f.Message, "7-day record") || strings.Contains(f.Message, "sustained main-thread saturation") {
+		t.Errorf("trend hang message %q should read as a 7-day record, not a present-tense alarm", f.Message)
 	}
 	if !strings.Contains(f.Detail, "Chrome ×6") {
 		t.Errorf("detail %q should name the real user-facing offender first", f.Detail)
