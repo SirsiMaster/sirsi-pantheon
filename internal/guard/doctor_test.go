@@ -198,16 +198,21 @@ func TestDoctorWith_SwapActive(t *testing.T) {
 			wantSubstring: "normal macOS paging",
 		},
 		{
-			name:          "elevated swap (6 GB) warns",
+			// Under HEALTHY RAM pressure, swap of any size is residue, not an alarm
+			// — macOS keeps it allocated after using it, so the gate demotes to OK.
+			name:          "elevated swap (6 GB) is OK while RAM is healthy",
 			swapOutput:    "total = 12288.00M  used = 6144.00M  free = 6144.00M  (encrypted)",
-			wantSeverity:  SeverityWarn,
-			wantSubstring: "under memory pressure",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "memory pressure is normal",
 		},
 		{
-			name:          "heavy swap (16 GB) is critical thrashing",
+			// 16 GB swap with healthy RAM is NOT thrashing — the recurring false
+			// alarm. Genuine thrashing (heavy swap + high pressure) is covered by
+			// TestGateSwapOnPressure.
+			name:          "heavy swap (16 GB) is OK while RAM is healthy (residue, not thrashing)",
 			swapOutput:    "total = 32768.00M  used = 16384.00M  free = 16384.00M  (encrypted)",
-			wantSeverity:  SeverityCritical,
-			wantSubstring: "thrashing",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "memory pressure is normal",
 		},
 		{
 			name:          "no swap",
