@@ -135,7 +135,7 @@ func runRelieveMemory() error {
 		}
 		res.Evidence = append(res.Evidence,
 			output.Evidence{Label: "Free memory", Value: fmt.Sprintf("%.1f GB", freeBefore)},
-			output.Evidence{Label: "Pressure", Value: fmt.Sprintf("%s", before.Pressure)},
+			output.Evidence{Label: "Pressure", Value: before.Pressure.String()},
 		)
 		guidance := ""
 		if hog != "" {
