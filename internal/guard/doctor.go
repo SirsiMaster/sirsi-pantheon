@@ -325,13 +325,28 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 	// current, actionable issue — trends inform, they don't alarm.
 	demoteTrendsToInfo(report.Findings)
 
+	// Swap is STICKY on macOS — the kernel keeps it allocated after using it — so a
+	// large swap reading while RAM pressure is normal is RESIDUE, not active
+	// thrashing. Cap the Swap alarm at the CURRENT memory-pressure severity so it
+	// only reads red when memory is genuinely pressured NOW. (Owner's law, the one
+	// that has recurred: alarm ONLY on a current, actionable condition — and you
+	// cannot clear swap while memory is calm; it drains as pressure stays low.)
+	gateSwapOnPressure(report.Findings)
+
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
 	// Attach the safe remediation + its honesty class to each finding so every
 	// surface can resolve it AND label the action truthfully.
 	for i := range report.Findings {
 		report.Findings[i].Fix = remediationCommand(report.Findings[i])
-		report.Findings[i].FixKind = remediationKind(report.Findings[i])
+		// Only carry an honesty-class when there is an actual action — a healthy
+		// finding (e.g. swap capped to OK because pressure is normal) must NOT show
+		// a "relief / 7-day pattern" banner for a fix that isn't offered.
+		if report.Findings[i].Fix == "" {
+			report.Findings[i].FixKind = ""
+		} else {
+			report.Findings[i].FixKind = remediationKind(report.Findings[i])
+		}
 	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
@@ -1158,6 +1173,53 @@ func demoteTrendsToInfo(findings []DiagnosticFinding) {
 			f.Severity = SeverityInfo
 		}
 	}
+}
+
+// gateSwapOnPressure caps the "Swap Usage" alarm at the CURRENT memory-pressure
+// severity. macOS keeps swap ALLOCATED after using it, so a large swap reading
+// while RAM pressure is normal is residue — not active thrashing. "Heavy
+// swapping — system is thrashing" in red, while RAM Pressure reads healthy, is
+// the recurring false alarm: nothing the user can do clears swap while memory is
+// calm (it drains only as pressure stays low). So swap may never alarm higher
+// than the live RAM Pressure finding; when capped, its message is rewritten to
+// the truth. If there is no RAM Pressure reading, swap is left untouched.
+func gateSwapOnPressure(findings []DiagnosticFinding) {
+	pressureSev := SeverityOK
+	havePressure := false
+	for i := range findings {
+		if findings[i].Check == "RAM Pressure" {
+			pressureSev = findings[i].Severity
+			havePressure = true
+		}
+	}
+	if !havePressure {
+		return
+	}
+	for i := range findings {
+		f := &findings[i]
+		if f.Check != "Swap Usage" || f.Severity <= pressureSev {
+			continue
+		}
+		usedGB := parseSwapUsedGB(f.Detail)
+		f.Severity = pressureSev
+		if pressureSev <= SeverityInfo {
+			f.Message = fmt.Sprintf("Swap in use (%.1f GB) — memory pressure is normal; macOS keeps swap allocated after using it", usedGB)
+		} else {
+			f.Message = fmt.Sprintf("Swap elevated (%.1f GB) — memory is under some pressure", usedGB)
+		}
+	}
+}
+
+// parseSwapUsedGB extracts the "used = X.XXM" value (in GB) from a vm.swapusage
+// detail line: "total = …  used = 12986.31M  free = …  (encrypted)".
+func parseSwapUsedGB(detail string) float64 {
+	if idx := strings.Index(detail, "used = "); idx >= 0 {
+		if fields := strings.Fields(detail[idx+len("used = "):]); len(fields) > 0 {
+			mb, _ := strconv.ParseFloat(strings.TrimSuffix(fields[0], "M"), 64)
+			return mb / 1024
+		}
+	}
+	return 0
 }
 
 // calculateScore derives a 0-100 health score from the CURRENT state.
