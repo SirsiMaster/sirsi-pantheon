@@ -39,6 +39,13 @@ type PreflightOptions struct {
 	Platform     platform.Platform
 	LoadProvider yield.LoadProvider
 	IgnoreChecks []string
+	// HealthProvider yields the system-health report the preflight gates on.
+	// Injectable (Rule A16) because guard.DoctorWith reads some system state
+	// directly rather than through Platform (thread counts, Spotlight/mds CPU,
+	// etc.), so a "healthy" mock Platform alone can't make the preflight
+	// deterministic — on a loaded box a live Critical finding would BLOCK an
+	// otherwise-safe command and flake the tests. Defaults to guard.DoctorWith.
+	HealthProvider func(platform.Platform) (*guard.DoctorReport, error)
 }
 
 type Report struct {
@@ -52,6 +59,7 @@ type RunOptions struct {
 	Platform       platform.Platform
 	LoadProvider   yield.LoadProvider
 	IgnoreChecks   []string
+	HealthProvider func(platform.Platform) (*guard.DoctorReport, error)
 	Timeout        time.Duration
 	MaxOutputBytes int
 	MaxOutputLines int
@@ -89,7 +97,11 @@ func Preflight(opts PreflightOptions) *Report {
 	}
 
 	ignore := ignoreSet(opts.IgnoreChecks)
-	if doctor, err := guard.DoctorWith(p); err == nil {
+	doctorFn := opts.HealthProvider
+	if doctorFn == nil {
+		doctorFn = guard.DoctorWith
+	}
+	if doctor, err := doctorFn(p); err == nil {
 		for _, f := range doctor.Findings {
 			if ignore[f.Check] {
 				continue
@@ -186,10 +198,11 @@ func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	}
 
 	report := Preflight(PreflightOptions{
-		Command:      opts.Command,
-		Platform:     opts.Platform,
-		LoadProvider: opts.LoadProvider,
-		IgnoreChecks: opts.IgnoreChecks,
+		Command:        opts.Command,
+		Platform:       opts.Platform,
+		LoadProvider:   opts.LoadProvider,
+		IgnoreChecks:   opts.IgnoreChecks,
+		HealthProvider: opts.HealthProvider,
 	})
 	if report.Verdict == VerdictBlock && !opts.Force {
 		return &RunResult{Report: report, ExitCode: 126}, fmt.Errorf("agent safety preflight blocked command")
