@@ -81,6 +81,34 @@ func DetectHardware() (*HardwareProfile, error) {
 
 // detectDarwinHardware detects macOS hardware (Apple Silicon, Metal, Neural Engine).
 // All system queries run concurrently on dedicated OS threads.
+// TotalRAMBytes returns physical RAM using the SAME probe DetectHardware runs
+// (sysctl hw.memsize on Darwin, free -b on Linux), extracted so fast paths —
+// the Hapi memory sampler, `sirsi vitals` — get the one number they need
+// without paying the full detection's GPU probe (system_profiler, ~600ms).
+// Returns 0 when the probe fails, matching DetectHardware's zero-value.
+func TotalRAMBytes() int64 {
+	switch runtime.GOOS {
+	case "darwin":
+		if out, err := exec.Command("sysctl", "-n", "hw.memsize").Output(); err == nil {
+			total, _ := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+			return total
+		}
+	case "linux":
+		if out, err := exec.Command("free", "-b").Output(); err == nil {
+			for _, line := range strings.Split(string(out), "\n") {
+				if strings.HasPrefix(line, "Mem:") {
+					fields := strings.Fields(line)
+					if len(fields) >= 2 {
+						total, _ := strconv.ParseInt(fields[1], 10, 64)
+						return total
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
 func detectDarwinHardware(p *HardwareProfile) {
 	var wg sync.WaitGroup
 

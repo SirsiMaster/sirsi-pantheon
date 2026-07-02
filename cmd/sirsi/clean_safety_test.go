@@ -53,6 +53,33 @@ func TestSelectCleanTargets_PreviewEqualsApply(t *testing.T) {
 	}
 }
 
+// TestDecideCleanAction pins the --yes gate (TUI design proof gap V2): --yes
+// suppresses ONLY the interactive [y/N] prompt; it never converts a dry-run
+// into an apply and never widens scope (scope lives in selectCleanTargets,
+// which --yes cannot reach).
+func TestDecideCleanAction(t *testing.T) {
+	cases := []struct {
+		name                 string
+		dryRun, confirm, yes bool
+		want                 cleanAction
+	}{
+		{"default is a dry-run preview", true, false, false, cleanActionPreview},
+		{"--yes without --confirm STAYS a dry-run", true, false, true, cleanActionPreview},
+		{"--confirm alone prompts interactively", true, true, false, cleanActionPrompt},
+		{"--confirm --yes applies without the prompt", true, true, true, cleanActionApply},
+		{"--dry-run=false alone still prompts (unchanged)", false, false, false, cleanActionPrompt},
+		{"--dry-run=false --yes skips the prompt", false, false, true, cleanActionApply},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := decideCleanAction(tc.dryRun, tc.confirm, tc.yes); got != tc.want {
+				t.Errorf("decideCleanAction(dryRun=%v, confirm=%v, yes=%v) = %v, want %v",
+					tc.dryRun, tc.confirm, tc.yes, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestSelectCleanTargets_Empty confirms an empty/clean machine yields no targets
 // (no spurious deletions).
 func TestSelectCleanTargets_Empty(t *testing.T) {
