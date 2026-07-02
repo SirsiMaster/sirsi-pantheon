@@ -291,6 +291,10 @@ func OpenDocs(deity string) error {
 	return openBrowser(url)
 }
 
+// startCommand launches the given command. It is a package-level var so
+// tests can swap it out and avoid actually opening a browser.
+var startCommand = func(cmd *exec.Cmd) error { return cmd.Start() }
+
 // openBrowser opens a URL in the system default browser.
 func openBrowser(url string) error {
 	var cmd *exec.Cmd
@@ -306,7 +310,7 @@ func openBrowser(url string) error {
 		return fmt.Errorf("unsupported platform %q — open manually: %s", runtime.GOOS, url)
 	}
 
-	if err := cmd.Start(); err != nil {
+	if err := startCommand(cmd); err != nil {
 		return fmt.Errorf("failed to open browser: %w", err)
 	}
 	return nil
