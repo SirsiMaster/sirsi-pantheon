@@ -1,0 +1,44 @@
+# Gitleaks baseline — Sirsi Pantheon
+#
+# Added 2026-07-02 alongside the CI + pre-push secrets-scan gate (PANTHEON_RULES.md A28,
+# the Ma'at Gate & CI Protection Mandate; SECURITY.md). Mirrors SirsiMaster/SirsiNexusApp
+# PR #111, adapted to this repo's conventions.
+#
+# Status of the tree when this baseline was written: a FULL-HISTORY scan (1057 commits,
+# 33.72 MB, `gitleaks detect` with default rules) found ZERO leaks. This repo has no
+# committed secrets. The allowlist below is DEFENSE-IN-DEPTH, not a suppression of live
+# findings — every entry is a path that legitimately carries secret-SHAPED test/example
+# strings (never real credentials) so that a future edit to one of these fixtures, or a
+# run under a stricter ruleset, does not produce a false positive that blocks a merge.
+#
+# Do NOT blanket-allowlist. Each entry is scoped to an exact file (or a doc-example
+# regex) and documents WHY it is benign. Anything not listed here stays fully scanned.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified-benign secret-SHAPED fixtures/examples — full-tree scan is 0 findings (2026-07-02)"
+
+paths = [
+  # Seshat conversation-filter test suites. These deliberately exercise the in-repo
+  # secret-detection scanner (internal/seshat/filter.go) and therefore contain secret-
+  # SHAPED literals BY DESIGN:
+  #   - AWS: the canonical AWS-docs example access-key-id (the one ending in the EXAMPLE
+  #     stopword). Not a real credential; gitleaks' default AWS rule already treats it as
+  #     clean via that stopword.
+  #   - GitHub token / Stripe key: built at RUNTIME via string concatenation
+  #     (prefix + suffix) specifically so no literal secret appears in the file.
+  #   - A truncated, non-functional PEM header placeholder for the private-key rule path.
+  # Allowlisted so extending these fixtures with a rule-tripping literal can't false-block.
+  '''^internal/seshat/filter_test\.go$''',
+  '''^internal/seshat/coverage_boost_test\.go$''',
+]
+
+regexes = [
+  # Documentation / router-proposal examples that show a credential's SHAPE with an ellipsis
+  # or env-var-NAME placeholder, never a literal value. E.g. the FinalWishes owner-readiness
+  # proposal shows a Stripe key elided with a Unicode ellipsis in a curl example. A real
+  # Stripe key is [A-Za-z0-9]{24,}; the trailing ellipsis proves this is a placeholder.
+  '''sk_(live|test)_(…|\.\.\.)''',
+]

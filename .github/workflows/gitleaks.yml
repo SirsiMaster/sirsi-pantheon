@@ -1,0 +1,47 @@
+name: Secrets Scan — gitleaks
+
+# Mechanical secrets-scanning backstop for PANTHEON_RULES.md A28 (Ma'at Gate & CI
+# Protection Mandate) and SECURITY.md. A behavioral rule ("don't commit secrets") is not
+# sufficient on its own; this is the automated gate that fires on every push/PR regardless
+# of which agent or human wrote the code, plus a scheduled full-history sweep to catch
+# anything that predates this gate. Mirrors SirsiMaster/SirsiNexusApp PR #111.
+#
+# This job is designed to be a REQUIRED status check. Owner / claude-home should add
+# "Secrets Scan (gitleaks)" to branch protection on main once this merges (see PR body).
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  # Manual + weekly full-history sweep. Diff-scoped push/PR runs only see new commits;
+  # this catches secrets that may already exist in history (or that a force-push rewrote).
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'   # Mondays 09:00 UTC
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gitleaks:
+    name: Secrets Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so scheduled/dispatch runs scan every commit, not just the tip.
+          # gitleaks-action auto-scopes push/PR events to their new commits; the schedule
+          # and manual dispatch get the whole repo.
+          fetch-depth: 0
+
+      - name: Gitleaks — scan for committed secrets
+        # Pinned to a specific release (not @latest) so the gate is reproducible and a new
+        # upstream version can't change behavior under us without an explicit bump.
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use the repo's committed baseline so verified-benign test fixtures / doc
+          # examples don't false-positive. Anything outside that precise allowlist blocks.
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
