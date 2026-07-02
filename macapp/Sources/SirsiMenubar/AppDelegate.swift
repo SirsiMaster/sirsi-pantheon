@@ -13,6 +13,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = SirsiEngine()
     private var refreshTimer: Timer?
 
+    // retireOlderInstances terminates every OTHER running process with our bundle
+    // identifier that launched before us. Uses launchDate (not PID magnitude —
+    // PIDs recycle) to decide seniority; falls back to "any other instance" when
+    // a launchDate is unreadable. terminate() is the polite AppKit path (runs the
+    // peer's teardown); forceTerminate only if the peer ignores it for 3s.
+    private func retireOlderInstances() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let me = NSRunningApplication.current
+        let peers = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != me.processIdentifier }
+        guard !peers.isEmpty else { return }
+        let myLaunch = me.launchDate ?? Date()
+        for peer in peers {
+            let peerLaunch = peer.launchDate ?? .distantPast
+            guard peerLaunch <= myLaunch else { continue }  // never retire a newer peer
+            peer.terminate()
+            let deadline = Date().addingTimeInterval(3)
+            DispatchQueue.global().async {
+                while !peer.isTerminated && Date() < deadline {
+                    usleep(200_000)
+                }
+                if !peer.isTerminated { peer.forceTerminate() }
+            }
+        }
+    }
+
     // The Eye of Horus (wedjat) — the watchful protector, and unmistakably Sirsi's
     // mark, not a stock eyeball. Drawn as a vector NSBezierPath into a template
     // NSImage (so contentTintColor drives the health color and it adapts to
@@ -68,6 +94,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single-instance guard: a relaunch RETIRES the older instance instead of
+        // stacking a second eye in the menu bar (the 2026-07-02 double-icon bug:
+        // the LaunchAgent-managed app + a manually-opened copy both ran). Newest
+        // PID wins — every older process with our bundle id is terminated. If the
+        // retired one was LaunchAgent-managed (KeepAlive), launchd respawns it as
+        // the newest and this same guard retires the manual copy — converging to
+        // exactly one, agent-managed instance within a bounce.
+        retireOlderInstances()
+
         // Proactively register with TCC so "Sirsi Menubar" already has a row in
         // the Full Disk Access list before the user ever clicks the Grant button.
         // A TCC-denied open() is what puts an app in that list (see Views.swift).
