@@ -68,6 +68,12 @@ var (
 	prevNetTime time.Time
 )
 
+// runCommand executes a command and returns its stdout. It is a
+// package-level var so tests can feed canned output instead of shelling out.
+var runCommand = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).Output()
+}
+
 // Collect gathers a fresh vitals snapshot. Designed to be fast (< 200ms).
 func Collect() Snapshot {
 	var s Snapshot
@@ -85,7 +91,7 @@ func Collect() Snapshot {
 }
 
 func collectRAM(s *Snapshot) {
-	out, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
+	out, err := runCommand("sysctl", "-n", "hw.memsize")
 	if err != nil {
 		return
 	}
@@ -95,7 +101,7 @@ func collectRAM(s *Snapshot) {
 		return
 	}
 
-	vmOut, err := exec.Command("vm_stat").Output()
+	vmOut, err := runCommand("vm_stat")
 	if err != nil {
 		return
 	}
@@ -137,10 +143,10 @@ func collectRAM(s *Snapshot) {
 }
 
 func collectGit(s *Snapshot) {
-	if out, err := exec.Command("git", "branch", "--show-current").Output(); err == nil {
+	if out, err := runCommand("git", "branch", "--show-current"); err == nil {
 		s.GitBranch = strings.TrimSpace(string(out))
 	}
-	if out, err := exec.Command("git", "status", "--porcelain").Output(); err == nil {
+	if out, err := runCommand("git", "status", "--porcelain"); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) == 1 && lines[0] == "" {
 			s.Uncommitted = 0
@@ -148,13 +154,13 @@ func collectGit(s *Snapshot) {
 			s.Uncommitted = len(lines)
 		}
 	}
-	if out, err := exec.Command("git", "log", "-1", "--format=%cr").Output(); err == nil {
+	if out, err := runCommand("git", "log", "-1", "--format=%cr"); err == nil {
 		s.LastCommit = strings.TrimSpace(string(out))
 	}
 }
 
 func collectAccelerator(s *Snapshot) {
-	out, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output()
+	out, err := runCommand("sysctl", "-n", "machdep.cpu.brand_string")
 	if err != nil {
 		return
 	}
@@ -171,7 +177,7 @@ func collectAccelerator(s *Snapshot) {
 
 func collectCPU(s *Snapshot) {
 	// Get overall CPU usage from top -l 1
-	out, err := exec.Command("top", "-l", "1", "-n", "0", "-s", "0").Output()
+	out, err := runCommand("top", "-l", "1", "-n", "0", "-s", "0")
 	if err != nil {
 		return
 	}
@@ -193,7 +199,7 @@ func collectCPU(s *Snapshot) {
 	}
 
 	// Per-core: approximate from core count
-	coreOut, err := exec.Command("sysctl", "-n", "hw.logicalcpu").Output()
+	coreOut, err := runCommand("sysctl", "-n", "hw.logicalcpu")
 	if err != nil {
 		return
 	}
@@ -210,7 +216,7 @@ func collectCPU(s *Snapshot) {
 
 func collectTopProcs(s *Snapshot) {
 	// ps -Ao %cpu,rss,pid,comm -r — sorted by CPU descending
-	out, err := exec.Command("ps", "-Ao", "%cpu,rss,pid,comm", "-r").Output()
+	out, err := runCommand("ps", "-Ao", "%cpu,rss,pid,comm", "-r")
 	if err != nil {
 		return
 	}
@@ -253,7 +259,7 @@ func collectTopProcs(s *Snapshot) {
 }
 
 func collectNetwork(s *Snapshot) {
-	out, err := exec.Command("netstat", "-ib").Output()
+	out, err := runCommand("netstat", "-ib")
 	if err != nil {
 		return
 	}
@@ -301,7 +307,7 @@ func collectNetwork(s *Snapshot) {
 }
 
 func collectDisk(s *Snapshot) {
-	out, err := exec.Command("df", "-g", "/").Output()
+	out, err := runCommand("df", "-g", "/")
 	if err != nil {
 		return
 	}
@@ -325,7 +331,7 @@ func collectDisk(s *Snapshot) {
 }
 
 func collectLoadAvg(s *Snapshot) {
-	out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+	out, err := runCommand("sysctl", "-n", "vm.loadavg")
 	if err != nil {
 		return
 	}
@@ -341,7 +347,7 @@ func collectLoadAvg(s *Snapshot) {
 }
 
 func collectUptime(s *Snapshot) {
-	out, err := exec.Command("sysctl", "-n", "kern.boottime").Output()
+	out, err := runCommand("sysctl", "-n", "kern.boottime")
 	if err != nil {
 		return
 	}
@@ -371,7 +377,7 @@ func collectUptime(s *Snapshot) {
 }
 
 func collectMachineInfo(s *Snapshot) {
-	if out, err := exec.Command("sysctl", "-n", "hw.model").Output(); err == nil {
+	if out, err := runCommand("sysctl", "-n", "hw.model"); err == nil {
 		model := strings.TrimSpace(string(out))
 		// Map model identifiers to friendly names
 		switch {
@@ -389,7 +395,7 @@ func collectMachineInfo(s *Snapshot) {
 			s.ModelName = model
 		}
 	}
-	if out, err := exec.Command("sw_vers", "-productVersion").Output(); err == nil {
+	if out, err := runCommand("sw_vers", "-productVersion"); err == nil {
 		s.OSVersion = "macOS " + strings.TrimSpace(string(out))
 	}
 }

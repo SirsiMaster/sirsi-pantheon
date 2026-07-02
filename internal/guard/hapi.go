@@ -127,11 +127,19 @@ func defaultHapiSample() (MemSample, error) {
 	return s, nil
 }
 
+// hapiVMStatFn / hapiPsFn are the raw command seams (Rule A16) so the vm_stat/ps
+// parsers below are unit-testable with canned output, without reading real
+// system state. Production keeps the real commands.
+var (
+	hapiVMStatFn = func() ([]byte, error) { return exec.Command("vm_stat").Output() }
+	hapiPsFn     = func() ([]byte, error) { return exec.Command("ps", "-axo", "pid,rss,comm").Output() }
+)
+
 // hapiFreeRAMBytes reads vm_stat and returns reclaimable memory: free + inactive
 // + speculative pages × page size. This mirrors the broker's RAM gate
 // (gemmaFreeRAMBytes) so the gate and the governor agree on "free".
 func hapiFreeRAMBytes() int64 {
-	out, err := exec.Command("vm_stat").Output()
+	out, err := hapiVMStatFn()
 	if err != nil {
 		return 0
 	}
@@ -172,7 +180,7 @@ func hapiFreeRAMBytes() int64 {
 
 // hapiTopByRSS returns the top-N processes by resident memory, descending.
 func hapiTopByRSS(topN int) ([]MemProc, error) {
-	out, err := exec.Command("ps", "-axo", "pid,rss,comm").Output()
+	out, err := hapiPsFn()
 	if err != nil {
 		return nil, err
 	}
