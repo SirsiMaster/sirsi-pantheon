@@ -5,6 +5,7 @@ package notify
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -59,6 +60,15 @@ func setToastExecFn(fn func(string) error) {
 }
 
 func defaultToastExec(script string) error {
+	// A test binary must NEVER post a real user notification: every `go test`
+	// of a package that reaches Toast (directly or through the dashboard/menubar
+	// paths) was banner-spamming the owner "Sirsi — anubis" on each worker
+	// verify cycle (2026-07-02). Injected fakes (setToastExecFn) are unaffected —
+	// this guards only the real osascript sink. SIRSI_NO_TOAST=1 is the same
+	// mute for headless automation that legitimately runs the real binary.
+	if strings.HasSuffix(os.Args[0], ".test") || os.Getenv("SIRSI_NO_TOAST") == "1" {
+		return nil
+	}
 	return exec.Command("osascript", "-e", script).Run()
 }
 

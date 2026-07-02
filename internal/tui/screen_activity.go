@@ -34,6 +34,10 @@ func (s *activityScreen) Sigil() string    { return "bullet" } // ledger (neutra
 func (s *activityScreen) Layout() Layout   { return LayoutSurvey }
 func (s *activityScreen) State() loadState { return s.state }
 
+// Busy reports an in-flight ledger load. Activity is read-only — it never
+// dispatches an action, so loading is its only busy state (quit guard, P2#8).
+func (s *activityScreen) Busy() bool { return s.state == stateLoading }
+
 func (s *activityScreen) HintIDs() []CommandID {
 	return []CommandID{CmdMoveDown, CmdInspect, CmdRefresh, CmdTab, CmdQuit}
 }
@@ -141,11 +145,11 @@ func (s *activityScreen) View(width, height int, caps Capabilities) []string {
 			selected: i == s.selected,
 		})
 	}
-	lines = append(lines, renderTable(cols, rows, caps, false)...)
-
+	// Tail first, so the table window's line budget is exact (P2#6).
+	var tail []string
 	if s.detail >= 0 && s.detail < len(s.report.Entries) {
 		e := s.report.Entries[s.detail]
-		lines = append(lines,
+		tail = append(tail,
 			"",
 			"  "+Paint("── "+e.Action+" ", TokAccent, caps),
 			"  "+Paint("when:   ", TokDim, caps)+e.Time,
@@ -154,7 +158,11 @@ func (s *activityScreen) View(width, height int, caps Capabilities) []string {
 			"  "+Paint("source: ", TokDim, caps)+e.Source,
 		)
 	}
-	lines = append(lines, "", "  "+Paint("read-only audit ledger · enter for detail · r refresh", TokDim, caps))
+	// u is the update/refresh key (P1#2 rebinding: r = relieve, u = update).
+	tail = append(tail, "", "  "+Paint("read-only audit ledger · enter for detail · u update", TokDim, caps))
+
+	lines = append(lines, renderTableWindow(cols, rows, caps, false, height-len(lines)-len(tail))...)
+	lines = append(lines, tail...)
 	return lines
 }
 

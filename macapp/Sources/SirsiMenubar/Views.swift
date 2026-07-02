@@ -138,12 +138,18 @@ struct HomeView: View {
                         DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "governance")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
+                    NavigationLink { ThothMemoryInfoView() } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
+                    }.buttonStyle(.plain)
+
+                    NavigationLink { RouterView(engine: engine) } label: {
+                        DeityRow(glyph: "🛰️", title: "Router — Fabric",
+                                 detail: engine.routerSummary,
+                                 dot: statusColor(engine.routerStatus))
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Osiris — Checkpoints", args: ["osiris", "risk"]) } label: {
@@ -197,7 +203,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { engine.loadActivity(); await engine.diagnose() }   // health + ledger on open
+        .task { engine.loadActivity(); await engine.diagnose(); await engine.loadRouterBoard() }   // health + ledger + fabric on open
     }
 }
 
@@ -537,6 +543,284 @@ struct FindingView: View {
 extension View {
     // Visually mark a not-yet-ported deity row without a dead-looking control.
     func disabledRow() -> some View { self.opacity(0.45) }
+}
+
+// ── Router — Fabric (liveness + wake-enablement) ─────────────────────────────
+//
+// The Router view is the owner-actionable board: it leads with BLOCKERS (only
+// current, fixable conditions — a real logout, a broken router daemon), then
+// stranded inboxes (per-agent open-item counts, each with a one-click "Arm wake
+// channel"). A degraded/inconclusive auth probe is shown as plain INFO, never an
+// alarm — nothing the user clicks would clear it, so it must not read red
+// (feedback_surfaces_current_actionable_only). A healthy fabric reads calm green.
+
+// copyToClipboard puts a string on the general pasteboard (for the re-auth
+// command — we never authenticate programmatically, we hand the operator the
+// exact command to run themselves).
+func copyToClipboard(_ s: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(s, forType: .string)
+}
+
+// openTerminal launches Terminal.app so the operator can re-auth by hand. We open
+// the app (not a command) — authentication is the user's action, never ours.
+func openTerminal() {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    p.arguments = ["-a", "Terminal"]
+    try? p.run()
+}
+
+struct RouterView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var resultLine: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Router — Fabric")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+
+                    // ── Blockers (current + fixable ONLY) ───────────────────
+                    if engine.routerHasBlockers {
+                        SectionLabel("BLOCKERS — FIX TO UNSTRAND WORK", tint: .red)
+
+                        ForEach(engine.routerAuthBlockers) { h in
+                            AuthBlockerCard(engine: engine, health: h)
+                        }
+                        if !engine.routerDaemonBlockers.isEmpty {
+                            DaemonBlockerCard(engine: engine,
+                                              broken: engine.routerDaemonBlockers,
+                                              onResult: { resultLine = $0 })
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            Circle().fill(.green).frame(width: 8, height: 8)
+                            Text("Fabric healthy — no blockers")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
+                    }
+
+                    // ── Stranded inboxes (work-to-do, not an alarm) ─────────
+                    if !engine.routerStranded.isEmpty {
+                        SectionLabel("STRANDED INBOXES — OPEN ITEMS, NO WATCHER")
+                        Text("These agents have work waiting but no armed session watching. Arm a wake channel so their inbox is pulled automatically.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ForEach(engine.routerStranded) { s in
+                            NavigationLink {
+                                StrandedAgentView(engine: engine, agent: s)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text("📥").font(.system(size: 16)).frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(s.agentId).font(.system(size: 13, weight: .medium))
+                                        Text("\(s.openItems) item\(s.openItems == 1 ? "" : "s") waiting")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                .padding(.vertical, 8).padding(.horizontal, 10)
+                                .contentShape(Rectangle())
+                                .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+                            }.buttonStyle(.plain)
+                        }
+                    }
+
+                    // ── Inconclusive probes (plain info, never an alarm) ────
+                    if !engine.routerDegraded.isEmpty {
+                        SectionLabel("PROBE INCONCLUSIVE — INFORMATIONAL")
+                        ForEach(engine.routerDegraded) { h in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("🛈").font(.callout)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(h.agentType) — auth check inconclusive")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("The CLI didn't answer in time (a cold start), so we can't confirm login. This is not a logout — it clears on its own and blocks nothing.")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        }
+                    }
+
+                    if let line = resultLine {
+                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Spacer()
+                }.padding(16)
+            }
+            if engine.busy {
+                HStack { ProgressView().controlSize(.small); Text("Working…").font(.caption).foregroundStyle(.secondary); Spacer() }
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+            }
+        }
+        .task { await engine.loadRouterBoard() }
+    }
+}
+
+// SectionLabel is a small caption header used across the Router view.
+struct SectionLabel: View {
+    let text: String
+    var tint: Color = .secondary
+    init(_ text: String, tint: Color = .secondary) { self.text = text; self.tint = tint }
+    var body: some View {
+        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// AuthBlockerCard surfaces a REAL logout (needs_login) with a re-auth affordance.
+// We never authenticate programmatically — we open Terminal and hand the operator
+// the exact command to run, and offer to copy it.
+struct AuthBlockerCard: View {
+    @ObservedObject var engine: SirsiEngine
+    let health: RBAgentHealth
+    private var reauthCmd: String { "\(health.agentType)  # then run /login inside it" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("🔑").font(.system(size: 18))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(health.agentType) needs re-login")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(blockedNote).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button {
+                    openTerminal()
+                } label: {
+                    Label("Open Terminal", systemImage: "terminal").frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent).tint(gold)
+                Button {
+                    copyToClipboard(health.agentType)
+                } label: {
+                    Label("Copy command", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
+                }.buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+    }
+
+    private var blockedNote: String {
+        let n = health.blockedItems ?? 0
+        return n > 0 ? "blocking \(n) item\(n == 1 ? "" : "s")" : "some work can't dispatch"
+    }
+}
+
+// DaemonBlockerCard surfaces missing/broken router LaunchAgents with a one-click
+// `sirsi router install-daemons` repair.
+struct DaemonBlockerCard: View {
+    @ObservedObject var engine: SirsiEngine
+    let broken: [RBLaunchAgent]
+    let onResult: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("⚙️").font(.system(size: 18))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(broken.count) router daemon\(broken.count == 1 ? "" : "s") missing")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Work can't relay while a session is closed.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            ForEach(broken) { d in
+                Text("• \(friendlyDaemon(d.role)) (\(d.label))")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                Task { onResult(await engine.installRouterDaemons()) }
+            } label: {
+                Label("Install router daemons", systemImage: "wrench.and.screwdriver.fill")
+                    .frame(maxWidth: .infinity)
+            }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+    }
+}
+
+// friendlyDaemon turns a router role into plain English.
+func friendlyDaemon(_ role: String) -> String {
+    switch role {
+    case "router-watchpaths": return "Live dispatch (on change)"
+    case "router-sweep": return "Hourly queue sweep"
+    case "registry-police": return "Thread cleanup"
+    default: return role
+    }
+}
+
+// StrandedAgentView drills into one stranded agent: the open-item count and the
+// one-click "Arm wake channel" (sirsi router wake-install <agent>).
+struct StrandedAgentView: View {
+    @ObservedObject var engine: SirsiEngine
+    let agent: RBStranded
+    @State private var resultLine: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: agent.agentId)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(spacing: 4) {
+                        Text("\(agent.openItems)").font(.system(size: 34, weight: .bold)).foregroundStyle(gold)
+                        Text("item\(agent.openItems == 1 ? "" : "s") waiting").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+
+                    Text("This agent has work in its inbox but no armed session watching. Arming a wake channel installs a pull-loop that checks its inbox automatically, so the work no longer waits for someone to open the session.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        Task { resultLine = await engine.installWake(agent: agent.agentId) }
+                    } label: {
+                        Label("Arm wake channel", systemImage: "bolt.horizontal.circle")
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+
+                    Text("Runs: sirsi router wake-install \(agent.agentId)")
+                        .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+
+                    if let line = resultLine {
+                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                    }
+                    if engine.busy {
+                        HStack { ProgressView().controlSize(.small); Text("Arming…").font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Spacer()
+                }.padding(16)
+            }
+        }
+    }
 }
 
 // ── Anubis ───────────────────────────────────────────────────────────────────
@@ -1441,9 +1725,12 @@ struct InsightView: View {
 
                     Section {
                         ForEach(r.signals) { s in
-                            // Platform rows drill into that deity's live view too.
+                            // Platform rows drill into that deity's NATIVE view.
+                            // Never a raw CLI run for the big three: `scan` from
+                            // the app used to spin forever (full-disk walk) and
+                            // `thoth status` was a jargon dump with wrong advice.
                             NavigationLink {
-                                ResultView(engine: engine, title: s.deity, args: Self.deityArgs(s.deity))
+                                Self.deityDestination(engine: engine, deity: s.deity)
                             } label: {
                                 HStack(spacing: 8) {
                                     Circle().fill(insightSeverityColor(min(s.severity, 2))).frame(width: 7, height: 7)
@@ -1503,14 +1790,62 @@ struct InsightView: View {
         return toks.isEmpty ? ["status"] : toks
     }
 
-    // deityArgs maps a PLATFORM signal's deity to its safe read command.
+    // deityDestination routes a PLATFORM signal to its NATIVE in-app view where
+    // one exists — instant, actionable, no subprocess. Only deities without a
+    // native view fall back to a fast read-only CLI render.
+    @ViewBuilder
+    static func deityDestination(engine: SirsiEngine, deity: String) -> some View {
+        let d = deity.lowercased()
+        if d.contains("anubis") {
+            AnubisView(engine: engine)
+        } else if d.contains("horus") {
+            HorusView(engine: engine)
+        } else if d.contains("thoth") {
+            ThothMemoryInfoView()
+        } else {
+            ResultView(engine: engine, title: deity, args: Self.deityArgs(deity))
+        }
+    }
+
+    // deityArgs maps the REMAINING deities to a fast, read-only command.
     static func deityArgs(_ deity: String) -> [String] {
         let d = deity.lowercased()
-        if d.contains("horus") { return ["diagnose"] }
-        if d.contains("anubis") { return ["scan"] }
-        if d.contains("thoth") { return ["thoth", "status"] }
         if d.contains("ma") && d.contains("at") { return ["maat", "audit"] }
         if d.contains("ra") { return ["ra", "status"] }
         return ["status"]
+    }
+}
+
+// ── Thoth (menubar) — plain-English explainer, not a CLI dump ─────────────────
+//
+// Thoth's memory lives inside each project folder; the menu bar app doesn't run
+// inside a project, so a raw `thoth status` here said ".thoth/ not found — run
+// sirsi thoth init", which is wrong advice for this surface (it would create
+// /.thoth). Say what's true in plain English instead.
+struct ThothMemoryInfoView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Thoth — Memory")
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Project memory lives with each project.")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Thoth keeps a small memory file inside every project folder so AI sessions can pick up exactly where the last one left off — no re-reading the whole codebase.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("The menu bar isn't inside a project, so there's nothing to show here. In a project folder, use:")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("sirsi thoth init").font(.caption.monospaced()).foregroundStyle(gold)
+                    Text("sirsi thoth sync").font(.caption.monospaced()).foregroundStyle(gold)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                Spacer()
+            }
+            .padding(16)
+        }
+        .navigationTitle("Thoth — Memory")
     }
 }
