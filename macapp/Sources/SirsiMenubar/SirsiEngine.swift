@@ -11,10 +11,18 @@ struct Finding: Decodable, Identifiable {
     let sizeBytes: Int64
     let severity: String
     let description: String
+    // Optional richer fields the Go scanner already persists — used by the
+    // drill-in detail so every row can answer "what / where / whose is this."
+    let rule: String?
+    let category: String?
+    let advisory: String?
+    let remediation: String?
+    let fileCount: Int?
 
     enum CodingKeys: String, CodingKey {
-        case path, severity, description
+        case path, severity, description, rule, category, advisory, remediation
         case sizeBytes = "size_bytes"
+        case fileCount = "file_count"
     }
 }
 
@@ -198,6 +206,22 @@ final class SirsiEngine: ObservableObject {
     func cleanSafe() async -> String {
         busy = true; lastError = nil
         let out = await Self.run(args: ["anubis", "clean", "--dry-run=false"], stdin: "y\n")
+        busy = false
+        refresh()
+        return Self.firstMeaningful(out)
+    }
+
+    // cleanSelected trashes ONLY the given paths, via the Go `--only` flag (one
+    // per path). The flag is intersection-only in Go — it can never widen scope
+    // beyond the safe set the scanner already approved — so a user-curated subset
+    // is safe by construction. Empty selection is treated as a no-op by the
+    // caller (the button is disabled), never as "clean everything."
+    func cleanSelected(paths: [String]) async -> String {
+        guard !paths.isEmpty else { return "Nothing selected." }
+        busy = true; lastError = nil
+        var args = ["anubis", "clean", "--dry-run=false"]
+        for p in paths { args.append("--only"); args.append(p) }
+        let out = await Self.run(args: args, stdin: "y\n")
         busy = false
         refresh()
         return Self.firstMeaningful(out)

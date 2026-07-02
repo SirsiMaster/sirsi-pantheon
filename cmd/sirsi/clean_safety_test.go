@@ -53,6 +53,47 @@ func TestSelectCleanTargets_PreviewEqualsApply(t *testing.T) {
 	}
 }
 
+// TestNarrowToPaths_IntersectionOnly proves the safety property behind per-item
+// UI selection: `--only` can only NARROW a clean target, never widen it. The
+// result is always a subset of the input, unknown paths are ignored, and an
+// empty selection is a no-op (no restriction) — never a silent "clean nothing"
+// or, worse, a silent "clean everything else."
+func TestNarrowToPaths_IntersectionOnly(t *testing.T) {
+	target := []jackal.Finding{
+		{Path: "/a/safe1", Severity: jackal.SeveritySafe},
+		{Path: "/d/safe2", Severity: jackal.SeveritySafe},
+		{Path: "/b/caution1", Severity: jackal.SeverityCaution},
+	}
+
+	// Empty selection = no restriction: return the full target unchanged.
+	if got := narrowToPaths(target, nil); len(got) != len(target) {
+		t.Fatalf("empty --only must be a no-op, got %d want %d", len(got), len(target))
+	}
+
+	// A curated subset returns exactly that subset — and only paths that were
+	// already in target.
+	got := narrowToPaths(target, []string{"/d/safe2", "/a/safe1"})
+	if len(got) != 2 {
+		t.Fatalf("selected 2 known paths, got %d", len(got))
+	}
+	for _, f := range got {
+		if f.Path != "/a/safe1" && f.Path != "/d/safe2" {
+			t.Errorf("narrowToPaths returned an unselected finding: %s", f.Path)
+		}
+	}
+
+	// A path NOT in target can never add a finding (can't widen scope).
+	if got := narrowToPaths(target, []string{"/a/safe1", "/not/in/scan"}); len(got) != 1 {
+		t.Errorf("unknown paths must be ignored (subset invariant), got %d want 1", len(got))
+	}
+
+	// Selecting a path outside scope entirely yields nothing — never a fallback
+	// to cleaning the whole set.
+	if got := narrowToPaths(target, []string{"/totally/unknown"}); len(got) != 0 {
+		t.Errorf("all-unknown selection must clean nothing, got %d", len(got))
+	}
+}
+
 // TestDecideCleanAction pins the --yes gate (TUI design proof gap V2): --yes
 // suppresses ONLY the interactive [y/N] prompt; it never converts a dry-run
 // into an apply and never widens scope (scope lives in selectCleanTargets,

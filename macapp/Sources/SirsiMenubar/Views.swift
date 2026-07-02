@@ -559,25 +559,24 @@ struct AnubisView: View {
                     }
                     .padding(.top, 6)
 
-                    NavigationLink { CleanReviewView(engine: engine) } label: {
-                        ActionCard(glyph: "🧹", title: "Review & Clean Waste",
-                                   sub: "See every file, then move safe items to Trash")
-                    }.buttonStyle(.plain).disabled(engine.safe.isEmpty)
-
-                    Button { Task { await engine.rescan() } } label: {
-                        ActionCard(glyph: "🔍", title: "Scan for Waste",
-                                   sub: engine.busy ? "scanning…" : "re-scan the workstation now")
-                    }.buttonStyle(.plain).disabled(engine.busy)
-
-                    NavigationLink { CommandView(title: "Leftover Apps", args: ["ghosts"]) } label: {
-                        ActionCard(glyph: "👻", title: "Find Leftover Apps",
-                                   sub: "detect remnants of uninstalled apps (Ka)")
+                    // ONE unified flow (was two split, confusing buttons): scan
+                    // with visible progress → review every item → clean the ones
+                    // you pick. ScanCleanView owns the whole workflow.
+                    NavigationLink { ScanCleanView(engine: engine) } label: {
+                        ActionCard(glyph: "🧹", title: "Scan & Clean Waste",
+                                   sub: "Find waste, review every item, move what you choose to Trash")
                     }.buttonStyle(.plain)
 
+                    // A real structured screen — the list of leftover apps and what
+                    // to do — not a terminal transcript dumped into the popover.
+                    NavigationLink { GhostsView(engine: engine) } label: {
+                        ActionCard(glyph: "👻", title: "Find Leftover Apps",
+                                   sub: "Remnants of apps you've uninstalled (Ka)")
+                    }.buttonStyle(.plain)
+
+                    // Legible, plain-English note about what's held back (was tiny).
                     if engine.cautionBytes > 0 {
-                        Text("\(SirsiEngine.human(engine.cautionBytes)) of caution-tier items (app remnants) are excluded from one-click cleaning — review them in a terminal with `sirsi anubis clean --include-caution`.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .padding(.top, 4)
+                        ExclusionNote(bytes: engine.cautionBytes, count: engine.caution.count)
                     }
                 }
                 .padding(16)
@@ -604,99 +603,401 @@ struct ActionCard: View {
     }
 }
 
-// ── Clean Review — the inline manifest + confirm + result ────────────────────
+// shortenPath renders a path with $HOME collapsed to ~ for legibility.
+func shortenPath(_ p: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
+}
 
-struct CleanReviewView: View {
+// prettyBundle turns a bundle id / folder name into a friendly app name:
+// "com.google.Chrome" → "Chrome", "com.apple.Safari" → "Safari".
+func prettyBundle(_ s: String) -> String {
+    let parts = s.components(separatedBy: ".")
+    if parts.count >= 2, ["com", "org", "io", "net", "app"].contains(parts[0]) {
+        return (parts.last ?? s).replacingOccurrences(of: "-", with: " ")
+    }
+    return s
+}
+
+// owningEntity answers "whose is this?" for a finding — the app, project, or
+// developer tool the file belongs to — derived from the path and rule. This is
+// what makes each row drillable and honest ("Google Chrome", "FinalWishes
+// (project)", "Go (developer tool)") instead of an opaque path.
+func owningEntity(_ f: Finding) -> String {
+    let p = f.path
+    let comps = p.components(separatedBy: "/")
+    // Project-scoped dev artifacts → the project folder name.
+    for marker in ["node_modules", ".next", "target", "build", "dist", "DerivedData"] {
+        if let i = comps.firstIndex(of: marker), i > 0 {
+            return comps[i - 1] + " (project)"
+        }
+    }
+    // App-scoped caches/support/containers → the owning app.
+    for anchor in ["/Library/Caches/", "/Library/Application Support/", "/Library/Containers/", "/Library/Group Containers/"] {
+        if let r = p.range(of: anchor) {
+            let first = String(p[r.upperBound...]).components(separatedBy: "/").first ?? ""
+            if !first.isEmpty { return prettyBundle(first) }
+        }
+    }
+    // Developer-tool caches identified by rule/description.
+    let d = (f.rule ?? "").lowercased() + " " + f.description.lowercased()
+    if d.contains("npm") || d.contains("yarn") || d.contains("pnpm") || d.contains("node") { return "npm / Node (developer tool)" }
+    if d.contains("go_mod") || d.contains("go module") || d.contains("golang") { return "Go (developer tool)" }
+    if d.contains("cargo") || d.contains("rust") { return "Rust / Cargo (developer tool)" }
+    if d.contains("pip") || d.contains("python") { return "Python (developer tool)" }
+    if d.contains("docker") { return "Docker" }
+    if d.contains("xcode") || d.contains("deriveddata") { return "Xcode" }
+    if d.contains("brew") || d.contains("homebrew") { return "Homebrew" }
+    return f.category?.capitalized ?? "System"
+}
+
+// ExclusionNote — legible, plain-English explanation of what's held back from
+// one-click cleaning and why (was an unreadably tiny caption2 before).
+struct ExclusionNote: View {
+    let bytes: Int64; let count: Int
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("🛈").font(.callout)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(SirsiEngine.human(bytes)) held back for now")
+                    .font(.callout.weight(.semibold))
+                Text("\(count) caution-tier items (things like package caches and app remnants) aren't cleaned with one click, because they take longer to rebuild. Open Scan & Clean to review them.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
+    }
+}
+
+// ── Scan & Clean — the ONE unified flow: scan → review each item → clean ─────
+//
+// Replaces the old split "Scan for Waste" (silent, no screen) + "Review & Clean"
+// (no per-item control) with a single drillable workflow: visible scan progress,
+// a per-item checklist you curate, per-row drill-in, and a clean scoped to
+// exactly what you picked (Go `--only`, intersection-only).
+struct ScanCleanView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.dismiss) private var dismiss
+    @State private var selected: Set<String> = []
     @State private var resultLine: String?
     @State private var showCaution = false
+    @State private var didInit = false
+
+    private var selectedSafe: [Finding] { engine.safe.filter { selected.contains($0.path) } }
+    private var selectedBytes: Int64 { selectedSafe.reduce(0) { $0 + $1.sizeBytes } }
 
     var body: some View {
         VStack(spacing: 0) {
-            // BackBar is mandatory on every pushed view — an NSPopover has no
-            // toolbar, so the native NavigationStack back button is invisible and
-            // the user gets trapped. This was the ONE view missing it, which is why
-            // the post-clean result screen dead-ended ("no progression, no return").
-            BackBar(title: "Review & Clean")
-            if let resultLine {
-                // Result state — inline, no kick-out. Both the ‹ Back above and an
-                // explicit Done return to Anubis so a finished clean never traps.
-                VStack(spacing: 14) {
-                    Text("✓").font(.system(size: 40)).foregroundStyle(.green)
-                    Text(resultLine).font(.callout).multilineTextAlignment(.center)
-                    Text("Moved to Trash — recoverable until you empty it.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button { dismiss() } label: {
-                        Text("Done").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent).tint(gold)
-                    .padding(.top, 4)
+            BackBar(title: "Scan & Clean")
+            content
+        }
+        .navigationTitle("Scan & Clean")
+        .task { if !didInit { didInit = true; syncSelection() } }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let resultLine {
+            resultState(resultLine)
+        } else if engine.busy {
+            progressState
+        } else if engine.safe.isEmpty {
+            emptyState
+        } else {
+            reviewList
+            Divider()
+            bottomBar
+        }
+    }
+
+    // Progress — scanning OR cleaning; both read as visible work, never silent.
+    private var progressState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(engine.safe.isEmpty ? "Scanning your Mac for waste…" : "Moving selected items to Trash…")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.top, 60)
+    }
+
+    // Empty — no scan yet, or nothing safe to clean. Always offers the next step.
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Text(engine.scannedAt.isEmpty ? "🔍" : "✓")
+                .font(.system(size: 40))
+                .foregroundStyle(engine.scannedAt.isEmpty ? Color.secondary : .green)
+            Text(engine.scannedAt.isEmpty
+                 ? "Scan your Mac to find reclaimable waste."
+                 : "Nothing safe to clean right now.")
+                .font(.callout).multilineTextAlignment(.center)
+            Button { Task { await engine.rescan(); syncSelection() } } label: {
+                Label("Scan now", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(gold)
+        }
+        .frame(maxWidth: .infinity).padding(24)
+    }
+
+    private func resultState(_ line: String) -> some View {
+        VStack(spacing: 14) {
+            Text("✓").font(.system(size: 40)).foregroundStyle(.green)
+            Text(line).font(.callout).multilineTextAlignment(.center)
+            Text("Moved to Trash — recoverable until you empty it.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button { dismiss() } label: { Text("Done").frame(maxWidth: .infinity) }
+                .buttonStyle(.borderedProminent).tint(gold).padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity).padding(24)
+    }
+
+    private var reviewList: some View {
+        List {
+            Section {
+                ForEach(engine.safe) { f in
+                    itemRow(f, toggleable: true)
                 }
-                .frame(maxWidth: .infinity).padding(24)
-            } else {
-                List {
-                    Section {
-                        ForEach(engine.safe) { f in
-                            HStack {
-                                Text(SirsiEngine.human(f.sizeBytes))
-                                    .font(.caption.monospaced()).foregroundStyle(gold)
-                                    .frame(width: 64, alignment: .trailing)
-                                Text(shorten(f.path)).font(.caption).lineLimit(1).truncationMode(.middle)
-                                Spacer()
-                            }
-                        }
-                    } header: {
-                        Text("WILL MOVE TO TRASH — \(engine.safe.count) items · \(SirsiEngine.human(engine.safeBytes))")
-                    } footer: {
-                        Text("Regenerable caches, node_modules, build artifacts. Protected system paths are never touched.")
+            } header: {
+                Text("REVIEW — \(selected.count) of \(engine.safe.count) selected · \(SirsiEngine.human(selectedBytes))")
+            } footer: {
+                Text("Regenerable caches, node_modules and build artifacts. Protected system paths are never touched. Tap a row for details.")
+            }
+
+            if !engine.caution.isEmpty {
+                Section {
+                    DisclosureGroup(isExpanded: $showCaution) {
+                        ForEach(engine.caution) { f in itemRow(f, toggleable: false) }
+                    } label: {
+                        Text("Held back — \(engine.caution.count) caution items · \(SirsiEngine.human(engine.cautionBytes))")
+                            .font(.callout.weight(.semibold))
+                    }
+                } footer: {
+                    Text("Not cleaned with one click — these take longer to rebuild. Tap any item to see what it is; clean deliberately in Terminal with `sirsi anubis clean --include-caution --confirm`.")
+                }
+            }
+        }
+        .listStyle(.inset)
+    }
+
+    // One row: an optional checkbox (safe items only) + a drillable label that
+    // says what it is and whose it is, plus its size.
+    private func itemRow(_ f: Finding, toggleable: Bool) -> some View {
+        HStack(spacing: 8) {
+            if toggleable {
+                Button { toggle(f.path) } label: {
+                    Image(systemName: selected.contains(f.path) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(selected.contains(f.path) ? gold : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            NavigationLink { ItemDetailView(engine: engine, finding: f) } label: {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(f.description).font(.caption).lineLimit(1)
+                        Text(owningEntity(f)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                    Text(SirsiEngine.human(f.sizeBytes))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(toggleable ? gold : .secondary)
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            Button(selected.count == engine.safe.count ? "Select none" : "Select all") {
+                if selected.count == engine.safe.count { selected.removeAll() }
+                else { syncSelection() }
+            }
+            .font(.caption).buttonStyle(.plain).foregroundStyle(gold)
+            Spacer()
+            Button {
+                Task { resultLine = await engine.cleanSelected(paths: selectedSafe.map { $0.path }) }
+            } label: {
+                Text("Move \(selected.count) (\(SirsiEngine.human(selectedBytes))) to Trash")
+            }
+            .buttonStyle(.borderedProminent).tint(gold)
+            .disabled(selected.isEmpty)
+        }
+        .padding(12)
+    }
+
+    private func toggle(_ path: String) {
+        if selected.contains(path) { selected.remove(path) } else { selected.insert(path) }
+    }
+
+    // Default selection = every safe item (opt-out curation). Re-synced after a
+    // fresh scan so newly-found items start selected.
+    private func syncSelection() { selected = Set(engine.safe.map { $0.path }) }
+}
+
+// DetailRow — one labelled fact in the item drill-in.
+struct DetailRow: View {
+    let label: String; let value: String; var mono = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label.uppercased()).font(.caption2).foregroundStyle(.tertiary)
+            Text(value)
+                .font(mono ? .caption.monospaced() : .callout)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// ── Item detail — drill-in: what it is, where, whose, what happens if removed ─
+struct ItemDetailView: View {
+    @ObservedObject var engine: SirsiEngine
+    let finding: Finding
+    @Environment(\.dismiss) private var dismiss
+    @State private var resultLine: String?
+
+    private var isSafe: Bool { finding.severity == "safe" }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Item")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(finding.description).font(.headline)
+
+                    DetailRow(label: "Size", value: SirsiEngine.human(finding.sizeBytes)
+                              + (finding.fileCount.map { " · \($0) files" } ?? ""))
+                    DetailRow(label: "Belongs to", value: owningEntity(finding))
+                    DetailRow(label: "Where", value: shortenPath(finding.path), mono: true)
+                    if let cat = finding.category, !cat.isEmpty {
+                        DetailRow(label: "Kind", value: cat.capitalized)
+                    }
+                    if let adv = finding.advisory, !adv.isEmpty {
+                        DetailRow(label: "What happens if removed", value: adv)
                     }
 
-                    if !engine.caution.isEmpty {
+                    Button {
+                        NSWorkspace.shared.selectFile(finding.path, inFileViewerRootedAtPath: "")
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder").font(.caption)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(gold).padding(.top, 2)
+                }
+                .padding(16)
+            }
+
+            Divider()
+            if let resultLine {
+                HStack {
+                    Text("✓ \(resultLine)").font(.caption).foregroundStyle(.green)
+                    Spacer()
+                    Button("Done") { dismiss() }.font(.caption)
+                }.padding(12)
+            } else if isSafe {
+                Button {
+                    Task { resultLine = await engine.cleanSelected(paths: [finding.path]) }
+                } label: {
+                    if engine.busy {
+                        HStack { ProgressView().controlSize(.small); Text("Moving to Trash…").font(.caption) }
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Move this to Trash (\(SirsiEngine.human(finding.sizeBytes)))")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy).padding(12)
+            } else {
+                Text("Held back from one-click cleaning — rebuild it deliberately.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(12)
+            }
+        }
+        .navigationTitle("Item")
+    }
+}
+
+// ── Ghosts (Ka) — structured leftover-app screen, not a CLI transcript ───────
+//
+// Renders `sirsi ghosts --json` via the shared CommandResult contract: a summary,
+// the leftover apps found (each with its residual count + reclaimable size), and
+// the real next steps as buttons — so the user always has a way forward.
+struct GhostsView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var result: CommandResult?
+    @State private var loading = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Leftover Apps")
+            if loading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Scanning for remnants of uninstalled apps…")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Text("This can take a minute.").font(.caption2).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity).padding(.top, 60)
+            } else if let r = result {
+                List {
+                    Section { Text(r.summary).font(.callout) } header: { Text("RESULT") }
+                    if !r.evidence.isEmpty {
                         Section {
-                            DisclosureGroup("Excluded — \(engine.caution.count) caution items · \(SirsiEngine.human(engine.cautionBytes))", isExpanded: $showCaution) {
-                                ForEach(engine.caution) { f in
-                                    HStack {
-                                        Text(SirsiEngine.human(f.sizeBytes))
-                                            .font(.caption.monospaced()).foregroundStyle(.secondary)
-                                            .frame(width: 64, alignment: .trailing)
-                                        Text(shorten(f.path)).font(.caption).lineLimit(1).truncationMode(.middle)
-                                        Spacer()
-                                    }
+                            ForEach(r.evidence) { e in
+                                HStack {
+                                    Text(e.label).font(.caption).lineLimit(1)
+                                    Spacer(minLength: 8)
+                                    Text(e.value).font(.caption2.monospaced())
+                                        .foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                                 }
-                            }.font(.caption)
-                        } footer: {
-                            Text("Not cleaned here. Review deliberately: sirsi anubis clean --include-caution --confirm")
-                        }
+                            }
+                        } header: { Text("DETAILS") }
+                    }
+                    if !r.nextActions.isEmpty {
+                        Section {
+                            ForEach(r.nextActions) { a in
+                                NavigationLink {
+                                    ResultView(engine: engine, title: a.label,
+                                               args: InsightView.commandArgs(a.command))
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(a.label).font(.caption.weight(.semibold))
+                                            if let d = a.description {
+                                                Text(d).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                            }
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } header: { Text("WHAT YOU CAN DO") }
                     }
                 }
                 .listStyle(.inset)
-
-                Divider()
-                HStack(spacing: 10) {
-                    if engine.busy {
-                        ProgressView().controlSize(.small)
-                        Text("Moving to Trash…").font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Button {
-                            Task { resultLine = await engine.cleanSafe() }
-                        } label: {
-                            Text("Move \(engine.safe.count) items (\(SirsiEngine.human(engine.safeBytes))) to Trash")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent).tint(gold)
-                        .disabled(engine.safe.isEmpty)
-                    }
+            } else {
+                VStack(spacing: 8) {
+                    Text("Couldn't scan for leftover apps.").foregroundStyle(.secondary)
+                    Button("Try again") { Task { await load() } }.font(.caption)
                 }
-                .padding(12)
+                .frame(maxWidth: .infinity).padding(40)
             }
         }
-        .navigationTitle("Review & Clean")
+        .navigationTitle("Leftover Apps")
+        .task { await load() }
     }
 
-    private func shorten(_ p: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
+    private func load() async {
+        loading = true
+        result = await SirsiEngine.runResult(args: ["ghosts"])
+        loading = false
     }
 }
 
@@ -1075,6 +1376,21 @@ struct InsightReport: Decodable {
     let actions: [InsightAction]
     let source: String
     let narrative: String?
+
+    // Lenient decode: `sirsi insight --json` emits `"actions": null` (a nil Go
+    // slice) whenever the platform is healthy — the common case. Swift's
+    // synthesized Decodable treats null for a non-optional [T] as a hard error,
+    // which surfaced as "Couldn't load insight." on a perfectly healthy Mac.
+    // Treat null/missing arrays as empty, and default source, so a healthy
+    // report always renders.
+    enum CodingKeys: String, CodingKey { case signals, actions, source, narrative }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        signals = try c.decodeIfPresent([InsightSignal].self, forKey: .signals) ?? []
+        actions = try c.decodeIfPresent([InsightAction].self, forKey: .actions) ?? []
+        source = try c.decodeIfPresent(String.self, forKey: .source) ?? "rules"
+        narrative = try c.decodeIfPresent(String.self, forKey: .narrative)
+    }
 }
 
 struct InsightView: View {
