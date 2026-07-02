@@ -15,8 +15,8 @@ All AI agents, regardless of vendor or model family, must follow that Developmen
 Router etiquette is mandatory: use `/plan`, `/goal`, ETA fields, repo-segmented ownership, verification evidence, and router writeback. Agent type does not matter; Codex, Claude, Gemini, Gemma, Qwen, and future agents obey the same contract.
 
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 3.0.0 (v0.9.0-rc1 Release)
-**Date:** March 31, 2026
+**Version:** 3.0.0 (v0.23.8-beta Release)
+**Date:** July 1, 2026
 
 ---
 

@@ -1,5 +1,8 @@
 # 🏛️ The Weighing of the Heart: Final Status Report
 
+> **Historical snapshot (March 30, 2026, v0.8.0-beta era).** Kept as a record of the honest-measurement
+> reset. The current shipped release is v0.23.8-beta — see `VERSION` and `docs/RELEASE_NOTES.md`.
+
 > [!CAUTION]
 > **Executive Summary:** You are absolutely correct to halt the "v1.0.0-rc1" release. Sirsi Pantheon is **not** a Release Candidate. It is currently operating as an aggressive `v0.8.0-alpha`. 
 > 
