@@ -91,6 +91,93 @@ struct CommandResult: Decodable {
     enum CodingKeys: String, CodingKey { case command, summary, evidence; case nextActions = "next_actions" }
 }
 
+// ── Router board (fabric liveness) ───────────────────────────────────────────
+//
+// The Router view reads ~/.sirsi/router-board.json — the lean board the
+// claude-home conduit regenerates each cycle — falling back to shelling
+// `sirsi router node-status --json` when that file is absent. Both share the
+// NodeStatus contract (schema_version 1.0.0), so ONE set of Decodables covers
+// both sources. The surface only RENDERS what Go already decided; it never
+// re-aggregates fabric state.
+
+// RBAgentHealth mirrors agent_health[]. The three auth outcomes are distinct on
+// purpose (honest-auth, ADR-026): only needsLogin is an ACTIONABLE blocker the
+// operator can clear by re-authing. degraded is an inconclusive probe (a cold CLI
+// start that timed out) — informational, never an alarm. authOk==false alone is
+// ambiguous, so the surface branches on needsLogin / degraded, never authOk.
+struct RBAgentHealth: Decodable, Identifiable {
+    var id: String { agentType }
+    let agentType: String
+    let cliFound: Bool
+    let authOk: Bool
+    let needsLogin: Bool?
+    let degraded: Bool?
+    let blockedItems: Int?
+    let authError: String?
+    enum CodingKeys: String, CodingKey {
+        case agentType = "agent_type"
+        case cliFound = "cli_found"
+        case authOk = "auth_ok"
+        case needsLogin = "needs_login"
+        case degraded
+        case blockedItems = "blocked_items"
+        case authError = "auth_error"
+    }
+}
+
+// RBLaunchAgent mirrors launch_agents[]. A router daemon that is NOT installed (or
+// installed but its program is missing) is a CURRENT, fixable blocker: work
+// strands until it is installed. The menubar's "router" daemons exclude the
+// menubar app itself and the legacy daemon.
+struct RBLaunchAgent: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let role: String
+    let installed: Bool
+    let programFound: Bool?
+    let legacy: Bool?
+    enum CodingKeys: String, CodingKey {
+        case label, role, installed
+        case programFound = "program_found"
+        case legacy
+    }
+    // A router-relay daemon (not the menubar app, not the legacy daemon) that is
+    // missing or broken — the actionable set `sirsi router install-daemons` fixes.
+    var isRouterDaemon: Bool {
+        !(legacy ?? false) && role != "menubar"
+    }
+    var isBroken: Bool { isRouterDaemon && (!installed || !(programFound ?? true)) }
+}
+
+// RBStranded mirrors stranded_inbox[]: an agent with open items and no armed
+// thread to watch them — work that sits until the agent is (re)armed.
+struct RBStranded: Decodable, Identifiable {
+    var id: String { agentId }
+    let agentId: String
+    let openItems: Int
+    enum CodingKeys: String, CodingKey {
+        case agentId = "agent_id"
+        case openItems = "open_items"
+    }
+}
+
+// RouterBoard is the decoded fabric view. Only the fields the surface renders are
+// modeled; unknown fields are ignored (additive-tolerant, ADR-026).
+struct RouterBoard: Decodable {
+    let schemaVersion: String?
+    let totalPending: Int?
+    let agentHealth: [RBAgentHealth]?
+    let launchAgents: [RBLaunchAgent]?
+    let strandedInbox: [RBStranded]?
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case totalPending = "total_pending"
+        case agentHealth = "agent_health"
+        case launchAgents = "launch_agents"
+        case strandedInbox = "stranded_inbox"
+    }
+}
+
 // ActivityEntry is one line of the provenance ledger — every action taken from
 // the UI, with cause + outcome, persisted so the user can see (and trust) what
 // Pantheon did. Reversibility + provenance is what earns autonomy.
@@ -148,6 +235,84 @@ final class SirsiEngine: ObservableObject {
         if health.isEmpty { return "tap to check" }
         let n = healthIssueCount
         return n == 0 ? "all healthy" : "\(n) issue\(n == 1 ? "" : "s")"
+    }
+
+    // ── Router board (fabric liveness) ───────────────────────────────────────
+    @Published var routerBoard: RouterBoard?
+    @Published var routerLoading = false
+    private let routerBoardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
+
+    // Blockers = CURRENT, fixable conditions only (feedback_surfaces_current_
+    // actionable_only). A real logout (needsLogin) and a broken router daemon are
+    // blockers; a degraded/inconclusive auth probe is NOT (nothing to click clears
+    // it), and neither is a stranded inbox (that's its own drillable section).
+    var routerAuthBlockers: [RBAgentHealth] {
+        (routerBoard?.agentHealth ?? []).filter { $0.cliFound && ($0.needsLogin ?? false) }
+    }
+    var routerDaemonBlockers: [RBLaunchAgent] {
+        (routerBoard?.launchAgents ?? []).filter { $0.isBroken }
+    }
+    // Degraded (inconclusive) probes — surfaced as plain INFO, never an alarm.
+    var routerDegraded: [RBAgentHealth] {
+        (routerBoard?.agentHealth ?? []).filter { $0.cliFound && !$0.authOk && !($0.needsLogin ?? false) }
+    }
+    var routerStranded: [RBStranded] {
+        (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
+    }
+    var routerHasBlockers: Bool { !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty }
+    // Home-row status: red if a real blocker, green otherwise (stranded inboxes are
+    // work-to-do, not an alarm — they show a count, not a red dot).
+    var routerStatus: String { routerHasBlockers ? "red" : "green" }
+    var routerSummary: String {
+        if routerLoading && routerBoard == nil { return "checking…" }
+        if routerHasBlockers {
+            let n = routerAuthBlockers.count + routerDaemonBlockers.count
+            return "\(n) blocker\(n == 1 ? "" : "s")"
+        }
+        let pending = routerBoard?.totalPending ?? 0
+        if pending > 0 { return "\(pending) pending" }
+        return "healthy"
+    }
+
+    // loadRouterBoard reads ~/.sirsi/router-board.json; if absent, shells
+    // `sirsi router node-status --json` (same contract). Never blocks the UI.
+    func loadRouterBoard() async {
+        routerLoading = true
+        defer { routerLoading = false }
+        if let data = FileManager.default.contents(atPath: routerBoardPath),
+           let board = try? JSONDecoder().decode(RouterBoard.self, from: data) {
+            routerBoard = board
+            return
+        }
+        // Fallback: the conduit hasn't written the lean board — read the live fabric
+        // directly. runJSON captures stdout only so a banner can't corrupt the JSON.
+        let out = await Self.runJSON(args: ["router", "node-status", "--json"])
+        if let board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
+            routerBoard = board
+        }
+    }
+
+    // installWake shells `sirsi router wake-install <agent>` to arm a stranded
+    // agent's pull-loop wake channel. Returns the CLI's first line for inline
+    // feedback; records provenance. Re-loads the board so the row updates.
+    func installWake(agent: String) async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "wake-install", agent], stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Arm wake channel — \(agent)", command: "router wake-install \(agent)", result: line)
+        await loadRouterBoard()
+        return line
+    }
+
+    // installRouterDaemons shells `sirsi router install-daemons` to (re)install the
+    // missing router LaunchAgents. Records provenance and re-loads the board.
+    func installRouterDaemons() async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "install-daemons"], stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Install router daemons", command: "router install-daemons", result: line)
+        await loadRouterBoard()
+        return line
     }
 
     // Title callback so the AppDelegate can update the menubar label.
