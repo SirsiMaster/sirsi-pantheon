@@ -1,134 +1,55 @@
-# Sirsi Pantheon v0.9.0-rc1 Release Notes
+# Sirsi Pantheon v0.23.8-beta Release Notes
 
-**Date:** March 31, 2026
-**Status:** Release Candidate
-**Platform:** macOS Apple Silicon (primary), Linux, Windows (CLI only)
+**Date:** June 30, 2026 (tag `v0.23.8-beta`)
+**Status:** Beta — signed + notarized macOS release
+**Platform:** macOS Apple Silicon (primary, per ADR-032 Mac-first); Linux CLI builds; Windows deferred
 
 ---
 
 ## What is Pantheon?
 
-Pantheon is a unified DevOps intelligence CLI. One binary, all deities. It scans, judges, and purges infrastructure waste across workstations, containers, and development environments.
+Pantheon is a unified infrastructure-intelligence CLI + native macOS menubar. One binary, all deities. It monitors, identifies, and **fixes** infrastructure waste and resource problems on developer workstations.
 
 ```bash
 brew tap SirsiMaster/tools && brew install sirsi-pantheon
 # or
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v0.8.0-beta
+go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v0.23.8-beta
 ```
 
-## Deity Pillars
+Or download the signed + notarized DMG from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/releases/tag/v0.23.8-beta).
 
-| Deity | Glyph | What It Does |
-|-------|-------|-------------|
-| **Anubis** | 𓁢 | Infrastructure hygiene — scan, judge, purge waste |
-| **Ma'at** | 𓆄 | Governance — test coverage, lint, policy enforcement |
-| **Thoth** | 𓁟 | Project memory — cross-session knowledge for AI workflows |
-| **Seba** | 𓇽 | Mapping — Mermaid diagrams, hardware detection |
-| **Seshat** | 𓁆 | Knowledge export — MCP bridge for AI IDEs |
+## Highlights of the v0.23.x line
 
-## Quick Start
+- **Signed + notarized DMG releases** (since v0.23.3-beta) — stable TCC/Full Disk Access identity; no re-approval churn on update.
+- **`sirsi update`** (#98) — self-update that installs signed releases and verifies the download.
+- **Native macOS menubar** (ADR-030) — NSStatusItem + NSPopover + SwiftUI; Eye of Horus health icon that tints to real machine state.
+- **Surfaces honesty arc** — an element alarms only for a *current, fixable* condition: 7-day trends are plain Info, never alarms (#107, #108, #127); stale thread registrations no longer paint Horus yellow (#105); waste titles no longer count protected AI model weights.
+- **Router/thread hardening** — truthful per-thread liveness, stranded-inbox surfacing, `sirsi router doctor`, blocking `router_wait` MCP tool (#103).
+- **Menubar clean-result screen no longer dead-ends** (#112, the tagged commit) — every pushed view has a BackBar + Done.
 
-```bash
-# Scan your machine for waste
-sirsi anubis weigh
+## Landed on `main` since the tag (ships in the next release)
 
-# Clean up (dry-run first, always)
-sirsi anubis judge --dry-run
+The **ADR-033 remediation arc** (#113–#131) — "every finding maps to a real macOS lever, never a monitor" ([ADR-033](ADR-033-REMEDIATION-CATALOG.md), accepted 2026-06-30):
 
-# Run governance audit
-sirsi maat audit
+- **Security:** `sirsi update --cli` verifies the downloaded binary's SHA-256; the cleaner is symlink-safe (#113).
+- **Real memory remediation** — flush caches + name the hog, instead of opening a monitor (#124).
+- **`sirsi reclaim-snapshots`** — thins local Time Machine (APFS) snapshots via the macOS admin-auth dialog, with before/after disk-free proof (#126).
+- **Honest swap alarm** — gated on live memory pressure + real RAM stats, not the Go heap (#123).
+- **Watchdog fixes** — `AutoRenice` actually fires (was dead code) via an A21-safe seam (#121); `Darwin.Kill` SIGTERMs, waits, then SIGKILLs (#120); `CleanFile` gained a dry-run preview (Rule A1 parity, #122).
+- **Test honesty** — failure-path coverage for the kill/trash/update engines (#114, #118, #119); deterministic agentguard preflight (#131); flaky-test fixes (#129); canon reconciled with reality (#116).
 
-# Fast audit (cached coverage, instant)
-sirsi maat audit --skip-test
+Full detail: [CHANGELOG.md](../CHANGELOG.md).
 
-# Initialize project memory
-sirsi thoth init --yes .
+## Verified Metrics (2026-07-01)
 
-# Find duplicate files
-sirsi mirror ~/Downloads
-
-# Check what deities are available
-sirsi --help
-```
-
-## Key Features
-
-### Anubis — Infrastructure Hygiene
-- **64 scan rules** covering caches, logs, AI models, IDE data, cloud tools, VMs
-- **Safety system** with 29 protected paths — never deletes system files
-- **Trash-first cleaning** — moves to trash by default, permanent delete opt-in
-- **Mirror dedup** — finds duplicate files with 27x partial hash speedup
-- **Ka ghost hunter** — detects dead app remnants on macOS
-- **Guard watchdog** — monitors RAM pressure and zombie processes
-
-### Ma'at — Governance
-- **Streaming audit** — per-package test results as they happen
-- **Dynamic module discovery** — automatically measures all internal packages
-- **Scales policy engine** — YAML-based infrastructure policies
-- **Isis remediation** — auto-fix lint, formatting, coverage gaps
-
-### Thoth — Project Memory
-- **3-layer knowledge**: `memory.yaml` (identity) -> `journal.md` (history) -> `artifacts/` (exports)
-- **Auto-detection**: Go, TypeScript, Next.js, Rust, Python projects
-- **AI workflow integration**: designed for cross-session context with Claude, Gemini, Cursor
-
-### MCP Server
-- `sirsi mcp` exposes tools via Model Context Protocol
-- Works with Claude Code, Cursor, Windsurf, and any MCP-compatible IDE
-- Tools: `scan_workspace`, `ghost_report`, `health_check`, `thoth_read_memory`, `classify_files`
-
-## Installation
-
-### Homebrew (recommended)
-```bash
-brew tap SirsiMaster/tools
-brew install sirsi-pantheon
-```
-
-### Go Install
-```bash
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v0.8.0-beta
-```
-
-### Binary Download
-Download from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/releases/tag/v0.8.0-beta).
-
-Available for: macOS (arm64/amd64), Linux (arm64/amd64), Windows (amd64/arm64).
-
-### Individual Deities
-Each deity is also available as a standalone binary:
-```bash
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/anubis@v0.8.0-beta
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/maat@v0.8.0-beta
-go install github.com/SirsiMaster/sirsi-pantheon/cmd/thoth@v0.8.0-beta
-```
-
-## Known Limitations
-
-- **macOS-first**: Ghost detection (Ka) and some scan rules are macOS-only
-- **No GUI**: CLI only in this release. macOS GUI and cross-platform GUI planned for v1.0
-- **Neith stub**: Orchestration deity is deferred to v1.0
-- **Ra not started**: Web portal (inside SirsiNexusApp) is a future goal
-
-## Verified Metrics
-
-All numbers verified by `go test -cover ./...` on March 31, 2026:
-
-- 1,500+ tests passing across 28 packages
-- ~85% weighted test coverage
-- 0 lint errors (`golangci-lint run ./...`)
-- 64 scan rules across 7 categories
-- 27 internal modules
-- ~12 MB compiled binary
+- `VERSION` file = `0.23.8-beta` = latest tag `v0.23.8-beta`
+- 2,078 test functions (`grep -r '^func Test' --include='*_test.go' | wc -l`)
+- Go 1.25 (`go.mod`)
+- CI: macOS-first (ADR-032)
 
 ## What's Next
 
-v1.0.0-rc1 will be **earned through dogfooding**, not declared:
-1. 30-day production use on real machines
-2. Cross-platform testing (Linux, Windows)
-3. Neith orchestration
-4. MCP plugin for Claude Code users
-5. macOS GUI (menubar app)
+**v1.0.0-rc1 — the Star-Grade sprint.** Earned through the release PRD (`docs/prd/RELEASE_V1_STAR_GRADE.md`, PR #132), not declared.
 
 ---
 

@@ -1,7 +1,7 @@
 # PANTHEON_RULES.md
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 3.0.0 (v0.19.0 — TUI UX Overhaul)
-**Date:** May 6, 2026
+**Version:** 3.0.0 (v0.23.8-beta Release)
+**Date:** July 1, 2026
 
 ---
 

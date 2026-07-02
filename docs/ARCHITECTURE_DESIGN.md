@@ -201,9 +201,13 @@ gantt
 
 ---
 
-## 7. TUI Architecture (v0.19.0)
+## 7. TUI Architecture (v0.19.0 — historical; TUI removed in v0.23 per ADR-018)
 
-The TUI (`internal/output/tui.go`) is the primary interactive interface, launched via `sirsi` with no arguments.
+> **Historical.** The BubbleTea TUI described below shipped in v0.19.0 and was removed in v0.23
+> (ADR-018 sunset). The interactive surface today is the native macOS menubar (ADR-030); a new
+> TUI is in design under ADR-020 (Hybrid C).
+
+The TUI (`internal/output/tui.go`) was the primary interactive interface, launched via `sirsi` with no arguments.
 
 ### 7.1 Core Components
 - **BubbleTea Model** — `TUIModel` struct with viewport, input bar, deity roster, view stack
