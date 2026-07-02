@@ -104,3 +104,12 @@ sirsi mcp    # Start MCP server (configure in Claude/Cursor/VS Code)
 - [Ra — Agent Orchestrator](ra.md)
 - [Net — Scope Weaver](net.md)
 - [Osiris — Snapshot Keeper](osiris.md)
+
+## Feature Guides
+
+- [`sirsi clean` — reclaim storage, safely](clean.md)
+- [`sirsi relieve` — hand the CPU (or memory) back](relieve.md)
+- [`sirsi reclaim-snapshots` — free disk from local Time Machine snapshots](reclaim-snapshots.md)
+- [`sirsi insight` — cross-deity state of the union](insight.md)
+- [`sirsi vitals` — the fast read on memory right now](vitals.md)
+- [`sirsi activity` — the trust ledger](activity.md)
