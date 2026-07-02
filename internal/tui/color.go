@@ -1,6 +1,10 @@
 package tui
 
-import "os"
+import (
+	"os"
+
+	"charm.land/lipgloss/v2"
+)
 
 // Color & capability model (docs/TUI_DESIGN_PROOF.md §2.4, §5).
 //
@@ -120,4 +124,116 @@ func DetectCapabilities(env func(string) string) Capabilities {
 	}
 
 	return caps
+}
+
+// Brand hex values (§2.4). Truecolor path only; lower rungs degrade below.
+const (
+	hexBrand  = "#C8A951" // gold
+	hexAccent = "#1A1A5E" // deep lapis
+	hexOK     = "#3FB950" // green
+	hexWarn   = "#D2A24C" // amber
+	hexDanger = "#F04747" // red
+	hexDim    = "#888888" // gray
+	hexBlack  = "#0F0F0F" // near-black background
+	hexWhite  = "#FAFAFA" // body text
+)
+
+// hex maps a token to its truecolor hex.
+func (t Token) hex() string {
+	switch t {
+	case TokBrand:
+		return hexBrand
+	case TokAccent:
+		return hexAccent
+	case TokOK:
+		return hexOK
+	case TokWarn:
+		return hexWarn
+	case TokDanger:
+		return hexDanger
+	default:
+		return hexDim
+	}
+}
+
+// ansi256 maps a token to its xterm-256 fallback (§2.4 ladder).
+func (t Token) ansi256() string {
+	switch t {
+	case TokBrand:
+		return "179"
+	case TokAccent:
+		return "17"
+	case TokOK:
+		return "35"
+	case TokWarn:
+		return "214"
+	case TokDanger:
+		return "196"
+	default:
+		return "244"
+	}
+}
+
+// ansi16 maps a token to a base ANSI color name (§2.4 ladder).
+func (t Token) ansi16() string {
+	switch t {
+	case TokBrand, TokWarn:
+		return "3" // yellow
+	case TokAccent:
+		return "4" // blue
+	case TokOK:
+		return "2" // green
+	case TokDanger:
+		return "1" // red
+	default:
+		return "7" // default/gray
+	}
+}
+
+// Paint applies the semantic token to s at the surface's color depth. At
+// ColorNone it degrades to an attribute (bold) so meaning survives without color
+// (§2.4, §5); color is never the sole carrier of meaning — severities always
+// also carry a text token (SeverityLabel).
+func Paint(s string, tok Token, caps Capabilities) string {
+	switch caps.Color {
+	case ColorTrue:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(tok.hex())).Render(s)
+	case Color256:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(tok.ansi256())).Render(s)
+	case Color16:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(tok.ansi16())).Render(s)
+	default:
+		// Attribute-only: brand/headers bold, danger reverse, everything else plain.
+		switch tok {
+		case TokBrand:
+			return lipgloss.NewStyle().Bold(true).Render(s)
+		case TokDanger:
+			return lipgloss.NewStyle().Reverse(true).Render(s)
+		default:
+			return s
+		}
+	}
+}
+
+// Chip renders a lapis-background mode chip with white text (§2.4: lapis is a
+// background, never text-on-black). At ColorNone it degrades to reverse video.
+func Chip(s string, caps Capabilities) string {
+	label := " " + s + " "
+	switch caps.Color {
+	case ColorTrue:
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color(hexAccent)).
+			Foreground(lipgloss.Color(hexWhite)).
+			Bold(true).Render(label)
+	case Color256:
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color("17")).
+			Foreground(lipgloss.Color("231")).Render(label)
+	case Color16:
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color("4")).
+			Foreground(lipgloss.Color("15")).Render(label)
+	default:
+		return lipgloss.NewStyle().Reverse(true).Render(label)
+	}
 }

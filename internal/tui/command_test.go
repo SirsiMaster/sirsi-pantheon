@@ -12,17 +12,22 @@ func TestDefaultRegistryBuilds(t *testing.T) {
 	}
 }
 
-// The §7 delta-2 guarantee, made executable: every status-bar hint each proof
-// view advertises must resolve to a registered, keyed command. A view that
-// surfaces an unwired key fails here — a dead hint cannot ship.
+// The §7 delta-2 guarantee, made executable: every status-bar hint each of the
+// five screens advertises must resolve to a registered, keyed command. A screen
+// that surfaces an unwired key fails here — a dead hint cannot ship. This is the
+// keymap-completeness test.
 func TestNoHintReferencesUnregisteredCommand(t *testing.T) {
 	reg, err := DefaultRegistry()
 	if err != nil {
 		t.Fatalf("DefaultRegistry() error = %v", err)
 	}
-	for _, v := range ProofViews() {
-		if err := ValidateView(reg, v); err != nil {
-			t.Errorf("view %q advertises an invalid hint: %v", v.Name(), err)
+	screens := []Screen{
+		newPulseScreen(), newWasteScreen(), newGhostsScreen(),
+		newHealthScreen(), newActivityScreen(),
+	}
+	for _, s := range screens {
+		if _, err := reg.Hints(s.HintIDs()); err != nil {
+			t.Errorf("screen %q advertises an invalid hint: %v", s.Name(), err)
 		}
 	}
 }

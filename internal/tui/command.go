@@ -8,56 +8,60 @@ import "fmt"
 // every binding resolves through this registry, and — the structural guarantee
 // — the status-bar hints are GENERATED from registered commands. A hint cannot
 // exist for an unwired key, because the hint is a projection of the registry,
-// not a hand-written string. ValidateHints turns that guarantee into a test.
+// not a hand-written string. ValidateScreen turns that guarantee into a test.
 
 // CommandID is a stable command identifier. Where a command mirrors a CLI verb
 // it uses the same id, so there is no parallel TUI verb list to drift (delta 5).
 type CommandID string
 
-// Canonical command IDs. The verb subset mirrors the live cobra tree
-// (scan, clean, status, audit, risk, hardware, ra, thread, router, maat) so the
-// palette is a projection of the real command set; navigation/meta IDs are
-// console-local.
+// Canonical command IDs for the five-screen operator console. Global keys are
+// the reserved set (§3.2); per-screen verbs mirror the live CLI (scan, clean,
+// relieve, ghosts, diagnose) so the console dispatches the same engine the CLI
+// does — there is no parallel TUI verb list to drift (delta 5).
 const (
-	CmdScan      CommandID = "scan"
-	CmdClean     CommandID = "clean" // destructive — confirm modal required
-	CmdStatus    CommandID = "status"
-	CmdAudit     CommandID = "audit"
-	CmdRisk      CommandID = "risk"
-	CmdRaDeploy  CommandID = "ra.deploy"
-	CmdRaStatus  CommandID = "ra.status"
-	CmdRaKill    CommandID = "ra.kill" // destructive — confirm modal required
-	CmdRouterAck CommandID = "router.ack"
+	// Screen jumps (1–5) — one per screen, always wired.
+	CmdScreenPulse    CommandID = "screen.pulse"
+	CmdScreenWaste    CommandID = "screen.waste"
+	CmdScreenGhosts   CommandID = "screen.ghosts"
+	CmdScreenHealth   CommandID = "screen.health"
+	CmdScreenActivity CommandID = "screen.activity"
 
-	// Console-local navigation / meta commands.
-	CmdInspect   CommandID = "inspect"
-	CmdFilter    CommandID = "filter"
-	CmdRefresh   CommandID = "refresh"
-	CmdBack      CommandID = "back"
-	CmdPalette   CommandID = "palette"
-	CmdHelp      CommandID = "help"
-	CmdQuit      CommandID = "quit"
-	CmdFocusNext CommandID = "focus.next"
-	CmdMoveUp    CommandID = "move.up"
-	CmdMoveDown  CommandID = "move.down"
-	CmdTop       CommandID = "top"
-	CmdBottom    CommandID = "bottom"
+	// Global navigation / meta.
+	CmdTab      CommandID = "tab"     // next screen
+	CmdRefresh  CommandID = "refresh" // u — reload/update the focused screen (proof §3.2: "u update")
+	CmdHelp     CommandID = "help"    // ? — help overlay
+	CmdQuit     CommandID = "quit"    // q — quit
+	CmdBack     CommandID = "back"    // esc — pop detail / dismiss overlay
+	CmdMoveUp   CommandID = "move.up"
+	CmdMoveDown CommandID = "move.down"
+	CmdTop      CommandID = "top"    // g
+	CmdBottom   CommandID = "bottom" // G
+
+	// Per-screen verbs — mirror the CLI cobra tree.
+	CmdInspect CommandID = "inspect" // enter — drill into the selected row
+	CmdRelieve CommandID = "relieve" // r — memory relief (Pulse hero beat; proof §3.2: "r relieve")
+	CmdScan    CommandID = "scan"    // s — rescan (Waste)
+	CmdToggle  CommandID = "toggle"  // space — toggle a review item
+	CmdClean   CommandID = "clean"   // c — clean (destructive; confirm-gated)
+	CmdFix     CommandID = "fix"     // f — apply a finding's one-key fix (Health)
+	CmdDiag    CommandID = "diagnose"
 )
 
 // Command is a single wired action. Key is the zero-keystroke binding shown in
-// the status bar (empty means palette-only). Hint is the terse verb shown
-// beside the key. Destructive commands never execute from the keystroke alone —
-// the reducer routes them to a confirm modal (§4, Rule A1).
+// the status bar (empty means the command is action-only, dispatched by the
+// screen without a status hint). Hint is the terse verb shown beside the key.
+// Destructive commands never execute from the keystroke alone — the reducer
+// routes them to a confirm modal (§4, Rule A1).
 type Command struct {
 	ID          CommandID
 	Title       string // palette / fuzzy-search name
-	Key         string // status-bar key, e.g. "enter", "c", "/"; "" = palette-only
+	Key         string // status-bar key, e.g. "enter", "c", "/"; "" = no hint
 	Hint        string // status-bar verb, e.g. "inspect"
 	Destructive bool
 }
 
 // Registry is the single source of truth for wired commands. It is the backing
-// that every rendered affordance (status hint, palette entry) projects from.
+// that every rendered affordance (status hint) projects from.
 type Registry struct {
 	byID  map[CommandID]Command
 	byKey map[string]CommandID
@@ -71,9 +75,9 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register wires a command. A duplicate id or a key already bound to a
-// different command is a programming error and returns an error so wiring
-// mistakes surface in tests rather than as silent dead keys.
+// Register wires a command. A duplicate id or a key already bound to a different
+// command is a programming error and returns an error so wiring mistakes surface
+// in tests rather than as silent dead keys.
 func (r *Registry) Register(c Command) error {
 	if c.ID == "" {
 		return fmt.Errorf("tui: command with empty id")
@@ -107,7 +111,7 @@ func (r *Registry) ResolveKey(key string) (Command, bool) {
 	return r.byID[id], true
 }
 
-// IDs returns every registered command id (palette source).
+// IDs returns every registered command id.
 func (r *Registry) IDs() []CommandID {
 	out := make([]CommandID, 0, len(r.byID))
 	for id := range r.byID {
@@ -116,34 +120,40 @@ func (r *Registry) IDs() []CommandID {
 	return out
 }
 
-// DefaultRegistry wires the canonical console command set once. Views reference
-// these ids by name; they never re-register, so there is a single source of
-// truth for every wired key. Destructive verbs (clean, ra.kill) are flagged so
+// DefaultRegistry wires the canonical console command set once. Screens
+// reference these ids by name; they never re-register, so there is a single
+// source of truth for every wired key. Destructive verbs (clean) are flagged so
 // the reducer routes them through a confirm modal rather than firing on a key.
 func DefaultRegistry() (*Registry, error) {
 	reg := NewRegistry()
 	cmds := []Command{
-		{ID: CmdMoveUp, Title: "Move up", Key: "up", Hint: "move"},
-		{ID: CmdMoveDown, Title: "Move down", Key: "down", Hint: "move"},
-		{ID: CmdInspect, Title: "Inspect selection", Key: "enter", Hint: "inspect"},
-		{ID: CmdFilter, Title: "Filter table", Key: "/", Hint: "filter"},
-		{ID: CmdRefresh, Title: "Refresh view", Key: "r", Hint: "refresh"},
-		{ID: CmdBack, Title: "Back / dismiss", Key: "esc", Hint: "back"},
-		{ID: CmdPalette, Title: "Command palette", Key: "ctrl+k", Hint: "palette"},
+		// Screen jumps.
+		{ID: CmdScreenPulse, Title: "Pulse (memory)", Key: "1", Hint: "pulse"},
+		{ID: CmdScreenWaste, Title: "Waste (scan & clean)", Key: "2", Hint: "waste"},
+		{ID: CmdScreenGhosts, Title: "Ghosts (app residuals)", Key: "3", Hint: "ghosts"},
+		{ID: CmdScreenHealth, Title: "Health (diagnose)", Key: "4", Hint: "health"},
+		{ID: CmdScreenActivity, Title: "Activity (ledger)", Key: "5", Hint: "activity"},
+
+		// Global navigation / meta.
+		{ID: CmdTab, Title: "Next screen", Key: "tab", Hint: "next"},
+		{ID: CmdRefresh, Title: "Update screen data", Key: "u", Hint: "update"},
 		{ID: CmdHelp, Title: "Help", Key: "?", Hint: "help"},
 		{ID: CmdQuit, Title: "Quit", Key: "q", Hint: "quit"},
-		{ID: CmdFocusNext, Title: "Focus next pane", Key: "tab", Hint: "pane"},
-		{ID: CmdTop, Title: "Top of table", Key: "g", Hint: "top"},
-		{ID: CmdBottom, Title: "Bottom of table", Key: "G", Hint: "bottom"},
-		{ID: CmdScan, Title: "Scan workstation", Hint: "scan"},
-		{ID: CmdClean, Title: "Clean findings", Key: "c", Hint: "clean", Destructive: true},
-		{ID: CmdStatus, Title: "System status", Hint: "status"},
-		{ID: CmdAudit, Title: "Quality audit", Hint: "audit"},
-		{ID: CmdRisk, Title: "Risk assessment", Hint: "risk"},
-		{ID: CmdRaDeploy, Title: "Ra deploy scope", Hint: "deploy"},
-		{ID: CmdRaStatus, Title: "Ra fleet status", Hint: "fleet"},
-		{ID: CmdRaKill, Title: "Ra kill node", Hint: "kill", Destructive: true},
-		{ID: CmdRouterAck, Title: "Ack router item", Key: "a", Hint: "ack"},
+		{ID: CmdBack, Title: "Back / dismiss", Key: "esc", Hint: "back"},
+		{ID: CmdMoveUp, Title: "Move up", Key: "up", Hint: "move"},
+		{ID: CmdMoveDown, Title: "Move down", Key: "down", Hint: "move"},
+		{ID: CmdTop, Title: "Top of list", Key: "g", Hint: "top"},
+		{ID: CmdBottom, Title: "Bottom of list", Key: "G", Hint: "bottom"},
+
+		// Per-screen verbs.
+		{ID: CmdInspect, Title: "Inspect selection", Key: "enter", Hint: "inspect"},
+		{ID: CmdScan, Title: "Rescan for waste", Key: "s", Hint: "rescan"},
+		{ID: CmdToggle, Title: "Toggle item", Key: " ", Hint: "toggle"},
+		{ID: CmdClean, Title: "Clean selected", Key: "c", Hint: "clean", Destructive: true},
+		{ID: CmdFix, Title: "Apply fix", Key: "f", Hint: "fix"},
+		{ID: CmdDiag, Title: "Re-run diagnostics", Key: "d", Hint: "diagnose"},
+		// Relieve is the Pulse hero beat, bound to r (proof §3.2: "r relieve").
+		{ID: CmdRelieve, Title: "Relieve memory pressure", Key: "r", Hint: "relieve"},
 	}
 	for _, c := range cmds {
 		if err := reg.Register(c); err != nil {
@@ -171,9 +181,18 @@ func (r *Registry) Hints(ids []CommandID) ([]Hint, error) {
 			return nil, fmt.Errorf("tui: hint references unregistered command %q", id)
 		}
 		if c.Key == "" {
-			return nil, fmt.Errorf("tui: hint references palette-only command %q (no key)", id)
+			return nil, fmt.Errorf("tui: hint references action-only command %q (no key)", id)
 		}
-		hints = append(hints, Hint{Key: c.Key, Label: c.Hint})
+		hints = append(hints, Hint{Key: displayKey(c.Key), Label: c.Hint})
 	}
 	return hints, nil
+}
+
+// displayKey renders a key for the status bar. The space key prints as "spc" so
+// the hint is legible rather than an invisible gap.
+func displayKey(k string) string {
+	if k == " " {
+		return "spc"
+	}
+	return k
 }

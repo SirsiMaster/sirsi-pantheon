@@ -16,6 +16,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/tui"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
@@ -128,9 +129,17 @@ var rootCmd = &cobra.Command{
   sirsi ra <verb>          Fleet orchestration module
   sirsi version            Show version`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// sirsi no-args prints help. The interactive surface is the
-		// forthcoming native macOS app (ADR-018); the terminal TUI was
-		// eliminated 2026-05-21.
+		// sirsi no-args launches the interactive operator console (the TUI,
+		// ADR-020) when it is on a real terminal. It falls back to printing help
+		// verbatim in every non-interactive context — piped, redirected, JSON,
+		// quiet, or when SIRSI_NO_TUI=1 opts out — so scripts and CI see the exact
+		// same help text they did before (CLI_COMPATIBILITY: help is byte-stable).
+		if shouldLaunchTUI() {
+			if err := tui.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "sirsi: %v\n", err)
+			}
+			return
+		}
 		_ = cmd.Help()
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -702,6 +711,22 @@ Configure in your IDE:
 // (a character device, but not a TTY) as interactive.
 func isTerminal(fd uintptr) bool {
 	return term.IsTerminal(int(fd))
+}
+
+// shouldLaunchTUI decides whether `sirsi` with no args opens the interactive
+// operator console. It launches ONLY on a genuine interactive terminal (both
+// stdin and stdout are TTYs) and never when output is being consumed by a tool
+// or a human wants the plain help: JSON/quiet flags, or the SIRSI_NO_TUI opt-out
+// each force the help path. This keeps `echo "" | sirsi` and `sirsi > f` printing
+// help byte-for-byte unchanged.
+func shouldLaunchTUI() bool {
+	if os.Getenv("SIRSI_NO_TUI") != "" {
+		return false
+	}
+	if JsonOutput || quietMode {
+		return false
+	}
+	return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd())
 }
 
 func init() {

@@ -1,29 +1,38 @@
-// Package tui is the Phase-2 batch-2 Gate-2 scaffold for the Pantheon
-// operator console, "Horus" 𓂀 (ADR-015 deity hierarchy, ADR-020 Hybrid C).
+// Package tui is the Pantheon operator console, "Horus" 𓂀 (ADR-015 deity
+// hierarchy, ADR-020 Hybrid C) — the interactive terminal surface.
 //
-// Scope (gate-bounded). This package is a SCAFFOLD only, approved by
-// codex-pantheon's "TUI Design Proof Gate 1" review and the user's Gate-2
-// sign-off (2026-05-31). It contains:
+// It renders exactly FIVE screens (the cap is LAW, ADR-020), each a projection
+// of a merged `sirsi <verb> --json` contract read through an injectable runner
+// (Rule A16). Go stays the brain: the TUI never re-implements probing logic — it
+// dispatches CLI verbs and renders their JSON.
 //
-//   - the five layout primitives (Frame, Pane, Table, Palette, Toast)
-//   - the binary split-tree layout model and the three named layouts
-//   - the Command registry with data-driven status-bar hints
-//   - the app state model and the View/reducer contract
-//   - the renderer contract, with a first-class linear (no-altscreen) renderer
-//   - the three proof screens (Scan, Ra deploy, Router inbox) as fixtures
+//   - Pulse    — memory-first home: RAM gauge, pressure, top hogs (vitals),
+//     one-key relief with a before/after delta (relieve).
+//   - Waste    — scan → per-item review with toggles + drill-in → tier-honest
+//     clean, with a freed-space proof (scan, clean).
+//   - Ghosts   — per-app residuals of uninstalled apps → clean (ghosts, clean).
+//   - Health   — diagnose findings, each with its HONEST one-key fix classified
+//     by FixKind (instant/relief/guidance); a guidance no-op is never offered as
+//     a fix (ADR-033) (diagnose).
+//   - Activity — read-only provenance ledger of what sirsi actually changed
+//     (activity).
 //
-// What this package is NOT:
+// Structural guarantees carried from docs/TUI_DESIGN_PROOF.md:
 //
-//   - It is NOT a functional resurrection of the deleted v0.22 BubbleTea TUI
-//     (ADR-018). The deleted code is not the foundation (ADR-020 §"What Stays
-//     True"); this is a new design grown from docs/TUI_DESIGN_PROOF.md.
-//   - It wires NO operator-facing launch path. `sirsi` with no arguments still
-//     prints help (docs/CLI_COMPATIBILITY.md). A default-surface decision is a
-//     separate gate and is explicitly out of scope here.
+//   - Every status-bar hint is generated from the command Registry, so a shown
+//     key is provably wired — a dead hint cannot render (§7 delta 2).
+//   - Deity/status identity uses BMP-safe sigils, never layout-bearing
+//     hieroglyphs, so terminal-font tofu can never break the grid (Rules G1–G3,
+//     glyph.go).
+//   - Color is semantic with a truecolor→256→16→attribute ladder; severities
+//     also carry a text token so meaning survives NO_COLOR and colorblindness
+//     (§2.4, §5).
+//   - Destructive verbs (clean) never fire from one keystroke — a confirm modal
+//     names the targets and requires a deliberate second confirmation (Rule A1,
+//     §4).
 //
-// Governance. Glyph policy follows Rules G1–G3 (see glyph.go) so that no
-// terminal-font tofu can break the cell grid — the failure mode that helped
-// sink v0.22. Deity attribution is table-driven from the Deity Registry
-// (Rule A25). Destructive verbs are never wired to a single keystroke; the
-// scaffold models confirmation as state, not as an immediate command.
+// Launch. `sirsi` with no arguments opens the console on a genuine terminal;
+// every non-interactive context (piped, redirected, --json, --quiet, or
+// SIRSI_NO_TUI=1) prints help unchanged. Startup is lazy: only the first screen
+// loads on Init, so the first frame is never blocked on a scan.
 package tui
