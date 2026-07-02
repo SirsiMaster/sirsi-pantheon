@@ -119,7 +119,7 @@ func remediationKind(f DiagnosticFinding) FixKind {
 		return FixGuidance // acts only during a live storm; else prints guidance
 	case "App Hangs (7d)":
 		return FixRelief // a real user-app freeze → renice the live hog; trend decays
-	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)",
+	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)",
 		"Thread Leaks", "Swap Usage":
 		return FixRelief // eases the live cause; trend counts decay, not drop
 	}
@@ -152,11 +152,15 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
-	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
+	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)":
 		if warn {
 			// Flush inactive caches — the safe, non-destructive memory lever
 			// (renice frees CPU, not RAM). Was `sirsi guard`, which is just the
 			// MONITOR — tapping "Relieve" opened a dashboard, not an action.
+			// NOTE the check name: the memory-hog finding is emitted as
+			// "Top Memory Consumers". This case once said "Memory Processes" —
+			// the PROGRESS label, not the finding name — so the hog warning
+			// dead-ended with no lever (the owner's menubar QA defect).
 			return "sirsi relieve --memory"
 		}
 	case "Swap Usage":
@@ -289,6 +293,59 @@ func DoctorWith(p platform.Platform) (*DoctorReport, error) {
 	return DoctorWithOpts(p, DoctorOpts{})
 }
 
+// doctorCheck is one entry in the doctor's canonical check registry: the
+// progress label surfaces show while it runs, the finding Check name(s) it can
+// emit, and the runner itself.
+type doctorCheck struct {
+	name  string   // progress label (what's being checked)
+	emits []string // every finding Check name this check can append
+	run   func(p platform.Platform, report *DoctorReport)
+}
+
+// doctorChecks is THE canonical registry of health checks. DoctorWithOpts runs
+// exactly this list, and FindingChecks derives the finding-name catalog from
+// the same table — so a new check cannot ship without registering here, and
+// registering here automatically puts it under the ADR-033 enforcement tests
+// (remediation_enforcement_test.go), forcing its author to declare a
+// remediation contract. The hand-maintained duplicate list this replaces is
+// how "Top Memory Consumers" shipped as an alarm with no lever.
+var doctorChecks = []doctorCheck{
+	{"RAM Pressure", []string{"RAM Pressure"}, checkRAMPressure},
+	{"Swap Usage", []string{"Swap Usage"}, checkSwapUsage},
+	{"Disk Space", []string{"Disk Space"}, checkDiskSpace},
+	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
+	{"Spotlight Storm", []string{"Spotlight Storm"}, checkSpotlightStorm},
+	{"Crash Logs", []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		func(_ platform.Platform, r *DoctorReport) { checkRecentCrashLogs(r) }},
+	{"App Crashes", []string{"App Crashes (7d)"},
+		func(_ platform.Platform, r *DoctorReport) { checkAppCrashes(r) }},
+	{"App Hangs", []string{"App Hangs (7d)"},
+		func(_ platform.Platform, r *DoctorReport) { checkAppHangs(r) }},
+	{"Thread Leaks", []string{"Thread Leaks"},
+		func(_ platform.Platform, r *DoctorReport) { checkThreadLeaks(r) }},
+	{"Sirsi Processes", []string{"Sirsi Processes"}, checkSirsiProcesses},
+	{"Local Snapshots", []string{"Local Snapshots"},
+		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
+}
+
+// externalFindingChecks are finding Check names appended to the report OUTSIDE
+// DoctorWithOpts but resolved through the same remediation catalog, so the
+// enforcement tests must cover them too.
+var externalFindingChecks = []string{
+	"binary-drift", // appended by `sirsi diagnose` (cmd/sirsi/anubis.go) from selfupdate.ScanHost
+}
+
+// FindingChecks returns the canonical list of every finding Check name the
+// diagnostic can emit — derived from the registry the doctor actually runs,
+// never hand-maintained. The ADR-033 enforcement tests walk this list.
+func FindingChecks() []string {
+	out := make([]string, 0, len(doctorChecks)+len(externalFindingChecks))
+	for _, c := range doctorChecks {
+		out = append(out, c.emits...)
+	}
+	return append(out, externalFindingChecks...)
+}
+
 // DoctorWithOpts runs the diagnostic with progress reporting.
 func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error) {
 	start := time.Now()
@@ -296,27 +353,9 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		Timestamp: start,
 	}
 
-	type checkFunc struct {
-		name string
-		fn   func()
-	}
-	checks := []checkFunc{
-		{"RAM Pressure", func() { checkRAMPressure(p, report) }},
-		{"Swap Usage", func() { checkSwapUsage(p, report) }},
-		{"Disk Space", func() { checkDiskSpace(p, report) }},
-		{"Memory Processes", func() { checkTopMemoryProcesses(p, report) }},
-		{"Spotlight Storm", func() { checkSpotlightStorm(p, report) }},
-		{"Crash Logs", func() { checkRecentCrashLogs(report) }},
-		{"App Crashes", func() { checkAppCrashes(report) }},
-		{"App Hangs", func() { checkAppHangs(report) }},
-		{"Thread Leaks", func() { checkThreadLeaks(report) }},
-		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
-		{"Local Snapshots", func() { checkLocalSnapshots(report) }},
-	}
-
-	for i, c := range checks {
+	for i, c := range doctorChecks {
 		prevCount := len(report.Findings)
-		c.fn()
+		c.run(p, report)
 		if opts.OnCheck != nil {
 			sev := SeverityOK
 			msg := "healthy"
@@ -325,7 +364,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 				sev = last.Severity
 				msg = last.Message
 			}
-			opts.OnCheck(c.name, sev, msg, i+1, len(checks))
+			opts.OnCheck(c.name, sev, msg, i+1, len(doctorChecks))
 		}
 	}
 
