@@ -380,7 +380,7 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 | **Terminal UI** | **lipgloss + table** (charmbracelet) | Styled CLI output (tables, headers, progress) for v0.23. New Mole-grade TUI follows under ADR-020 / Hybrid C. |
 | **Interactive Surface** | **Mac-first surface ladder (ADR-032): CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar); native macOS SwiftUI is the GUI path | v0.22 BubbleTea TUI removed in v0.23 per ADR-018; surface direction closed as Hybrid C per ADR-020 (2026-05-29). Mac-only build targets per ADR-032 (Windows/Linux TUI deferred). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
 | **Agent Protocol** | **gRPC** (fallback: SSH+JSON) | Streaming results, bidirectional |
-| **Config** | **viper** (YAML) | User-defined rules, profiles, budgets |
+| **Config** | **yaml.v3** (structured YAML) | User-defined rules, profiles, budgets. (viper was listed aspirationally but never adopted — every config consumer uses gopkg.in/yaml.v3; ADR-034 Alt 5) |
 | **Network Discovery** | **nmap** wrapper + native ARP/mDNS | Subnet/VLAN host discovery |
 | **Docker** | **docker/client** SDK | Native Docker API |
 | **Kubernetes** | **client-go** | Native K8s API |

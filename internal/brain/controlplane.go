@@ -36,6 +36,20 @@ type Dispatcher interface {
 	WakeReadiness() ([]router.AgentWakeHealth, error)
 }
 
+// UnreachableDispatcher is the degrade-don't-die Dispatcher for a machine with
+// no reachable router fabric (fresh install, no .agents/idea-router anywhere up
+// the tree). Every method returns the constructor error, so Collect/Doctor's
+// existing degradation paths render config + level and a plain-English
+// registry/wake diagnosis instead of the whole verb dying — "a dead router must
+// not blank the brain view" (the contract above), now true from the constructor
+// down.
+type UnreachableDispatcher struct{ Err error }
+
+func (u UnreachableDispatcher) NodeStatus() (*router.NodeStatus, error) { return nil, u.Err }
+func (u UnreachableDispatcher) WakeReadiness() ([]router.AgentWakeHealth, error) {
+	return nil, u.Err
+}
+
 // RouterDispatcher is the production Dispatcher backed by the existing file
 // router. It holds only the repo root; every call reads live from disk so the
 // brain never caches a stale registry.

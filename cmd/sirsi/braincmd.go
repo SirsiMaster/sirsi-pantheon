@@ -47,9 +47,14 @@ var brainStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		d, err := brain.NewRouterDispatcher()
-		if err != nil {
-			return err
+		var d brain.Dispatcher
+		if rd, derr := brain.NewRouterDispatcher(); derr != nil {
+			// Degrade, don't die: no router fabric on this machine (fresh
+			// install) still renders config + level, with the registry/wake
+			// diagnosis explaining what's unreachable and how to fix it.
+			d = brain.UnreachableDispatcher{Err: derr}
+		} else {
+			d = rd
 		}
 		st := brain.Collect(cfg, d)
 		if brainStatusJSON {
@@ -130,9 +135,14 @@ system — it never wakes or mutates anything. Repairs stay with
 		if err != nil {
 			return err
 		}
-		d, err := brain.NewRouterDispatcher()
-		if err != nil {
-			return err
+		var d brain.Dispatcher
+		if rd, derr := brain.NewRouterDispatcher(); derr != nil {
+			// Degrade, don't die: no router fabric on this machine (fresh
+			// install) still renders config + level, with the registry/wake
+			// diagnosis explaining what's unreachable and how to fix it.
+			d = brain.UnreachableDispatcher{Err: derr}
+		} else {
+			d = rd
 		}
 		diags := brain.Doctor(cfg, d)
 		if brainDoctorJSON {
