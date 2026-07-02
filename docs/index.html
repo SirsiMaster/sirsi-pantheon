@@ -3,1122 +3,710 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sirsi Pantheon — Infrastructure Intelligence</title>
-  <meta name="description" content="Sirsi's infrastructure intelligence suite. Finds ghost apps, hardens networks, gives AI persistent memory. Zero telemetry.">
-  <meta name="theme-color" content="#022c22">
-  <link rel="icon" href="assets/glyphs/anubis.svg" type="image/svg+xml">
+  <title>Sirsi Pantheon — Infrastructure intelligence that heals your Mac</title>
+  <meta name="description" content="Sirsi Pantheon scans your Mac, names the cause in plain English, and fixes it with proof. 100% local, zero telemetry, trash-first, open source.">
+  <link rel="canonical" href="https://sirsi-pantheon.web.app/">
+  <link rel="icon" href="assets/pantheon-icon.png" type="image/png">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sirsi-pantheon.web.app/">
+  <meta property="og:title" content="Sirsi Pantheon — Infrastructure intelligence that heals your Mac">
+  <meta property="og:description" content="Scans your Mac, names the cause in plain English, fixes it with proof. 100% local, zero telemetry, trash-first, Apache-2.0.">
+  <meta property="og:image" content="https://sirsi-pantheon.web.app/assets/sirsi-icon-512.png">
+  <meta name="twitter:card" content="summary">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
   <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
     :root {
-      --bg-primary: #022c22;
-      --bg-secondary: #011a14;
-      --bg-gradient: radial-gradient(ellipse at top right, #022c22 0%, #000000 100%);
-      --color-primary: #059669;
-      --color-primary-light: #10B981;
-      --color-gold: #C8A951;
-      --color-gold-bright: #E2C76B;
-      --glass-bg: rgba(2, 44, 34, 0.4);
-      --glass-border: rgba(255,255,255,0.08);
-      --card-bg: rgba(2, 44, 34, 0.6);
-      --text-primary: #ffffff;
-      --text-secondary: rgba(255,255,255,0.85);
-      --text-muted: rgba(255,255,255,0.5);
+      --gold: #C8A951;
+      --gold-bright: #E3C878;
+      --gold-dim: #9A7B3A;
+      --lapis: #1A1A5E;
+      --lapis-light: #34349E;
+      --black: #0F0F0F;
+      --surface: #161613;
+      --surface-2: #1C1C18;
+      --line: #2A2A24;
+      --text: #EDEAE2;
+      --text-dim: #A39F93;
+      --text-faint: #6E6B61;
+      --green: #6FBF8F;
+      --amber: #D9A441;
+      --font-display: 'Cinzel', 'Times New Roman', serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     }
 
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: 'Inter', sans-serif;
-      color: var(--text-primary);
-      background: var(--bg-gradient);
-      background-attachment: fixed;
-      line-height: 1.6;
-      overflow-x: hidden;
+      background: var(--black);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.65;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
 
-    /* ── NAV ── */
-    nav {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 100;
-      padding: 1.25rem 3rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      backdrop-filter: blur(24px);
-      background: rgba(0,0,0,0.3);
-      border-bottom: 1px solid var(--glass-border);
-    }
-    .nav-left { display: flex; align-items: center; gap: 1rem; }
-    .nav-left img { height: 40px; }
-    .nav-left span {
-      font-family: 'Cinzel', serif;
-      font-size: 0.85rem;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    .nav-links { display: flex; gap: 2rem; align-items: center; }
-    .nav-links a {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      text-decoration: none;
-      letter-spacing: 0.04em;
-      transition: color 0.3s;
-    }
-    .nav-links a:hover { color: var(--text-primary); }
-    .nav-sirsi-link {
-      color: var(--color-gold) !important;
-      font-weight: 500;
-    }
-    .nav-sirsi-link:hover { color: var(--color-gold-bright) !important; }
-    .nav-install {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8rem;
-      padding: 0.5rem 1.2rem;
-      border: 1px solid var(--color-primary);
-      color: var(--color-primary-light) !important;
-      border-radius: 4px;
-      transition: background 0.3s, color 0.3s;
-    }
-    .nav-install:hover {
-      background: var(--color-primary);
-      color: var(--text-primary) !important;
-    }
+    a { color: var(--gold); text-decoration: none; }
+    a:hover { color: var(--gold-bright); }
+    ::selection { background: var(--gold); color: var(--black); }
 
-    /* ── HERO ── */
-    .hero {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      position: relative;
-      padding: 8rem 3rem 4rem;
-    }
-    .hero-jackal {
-      position: absolute;
-      right: 3vw;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: clamp(14rem, 24vw, 20rem);
-      line-height: 1;
-      color: var(--color-gold-bright);
-      opacity: 0.25;
-      text-shadow: 0 0 80px rgba(200, 169, 81, 0.15);
-      pointer-events: none;
-      user-select: none;
-    }
-    .hero-content {
-      max-width: 700px;
-      position: relative;
-      z-index: 2;
-    }
-    .hero-eyebrow {
-      font-family: 'Cinzel', serif;
-      font-size: 0.75rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--color-gold);
-      margin-bottom: 2rem;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-    .hero-eyebrow::before {
-      content: '';
-      display: block;
-      width: 40px;
-      height: 1px;
-      background: var(--color-gold);
-    }
-    .hero h1 {
-      font-family: 'Cinzel', serif;
-      font-size: clamp(2.5rem, 5vw, 4.2rem);
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      line-height: 1.15;
-      text-transform: uppercase;
-      margin-bottom: 2rem;
-    }
-    .hero h1 em {
-      font-style: normal;
-      color: var(--color-primary-light);
-    }
-    .hero-sub {
-      font-size: 1.15rem;
-      color: var(--text-secondary);
-      line-height: 1.75;
-      max-width: 560px;
-      font-weight: 300;
-      margin-bottom: 0.5rem;
-    }
-    .hero-sub strong {
-      color: var(--text-primary);
-      font-weight: 500;
-    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
-    /* ── HERO PILLARS ── */
-    .hero-pillars {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 2rem;
-      margin-top: 2rem;
-      max-width: 580px;
+    /* ───────────────────────── NAV ───────────────────────── */
+    .nav {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(15, 15, 15, 0.88);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
     }
-    .hero-pillar-label {
-      font-family: 'Cinzel', serif;
-      font-size: 0.65rem;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--color-gold);
-      margin-bottom: 0.75rem;
+    .nav-inner {
+      max-width: 1120px; margin: 0 auto; padding: 0 24px;
+      height: 60px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .hero-pillars ul {
-      list-style: none;
-      padding: 0;
-    }
-    .hero-pillars li {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      padding: 0.3rem 0;
-      line-height: 1.5;
-      font-weight: 300;
-      border-left: 1px solid rgba(200,169,81,0.2);
-      padding-left: 0.875rem;
-      margin-bottom: 0.25rem;
-    }
-    @media (max-width: 600px) {
-      .hero-pillars { grid-template-columns: 1fr; gap: 2rem; }
-    }
-
-    /* ── DIVIDER LINES ── */
-    .rule-gold {
-      border: none;
-      height: 1px;
-      background: linear-gradient(90deg, var(--color-gold) 0%, transparent 70%);
-      margin: 0;
-    }
-    .rule-center {
-      border: none;
-      height: 1px;
-      background: linear-gradient(90deg, transparent 10%, var(--color-gold) 50%, transparent 90%);
-      max-width: 200px;
-      margin: 0 auto;
-    }
-
-    /* ── TERMINAL ── full bleed, breaks rhythm */
-    .terminal-section {
-      padding: 0;
-      position: relative;
-    }
-    .terminal-gutter {
-      display: grid;
-      grid-template-columns: 1fr minmax(0, 640px) 1fr;
-      align-items: start;
-    }
-    .terminal-prose {
-      padding: 5rem 3rem 5rem 0;
-      text-align: right;
-      align-self: center;
-    }
-    .terminal-prose h2 {
-      font-family: 'Cinzel', serif;
-      font-size: 1.1rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--color-gold);
-      margin-bottom: 1rem;
-    }
-    .terminal-prose p {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      line-height: 1.7;
-      font-weight: 300;
-    }
-    .terminal-prose p strong {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .terminal-window {
-      background: #0a0a0a;
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 10px;
-      overflow: hidden;
-      margin: 4rem 0;
-      box-shadow: 0 40px 80px rgba(0,0,0,0.5);
-    }
-    .terminal-chrome {
-      padding: 0.75rem 1rem;
-      background: #1a1a1a;
-      display: flex;
-      gap: 7px;
-      align-items: center;
-    }
-    .terminal-dot { width: 11px; height: 11px; border-radius: 50%; }
-    .terminal-dot:nth-child(1) { background: #ff5f57; }
-    .terminal-dot:nth-child(2) { background: #febc2e; }
-    .terminal-dot:nth-child(3) { background: #28c840; }
-    .terminal-body {
-      padding: 1.5rem 2rem 2rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.82rem;
-      line-height: 1.7;
-      color: #e0e0e0;
-      white-space: pre;
-      overflow-x: auto;
-    }
-    .t-prompt { color: var(--color-primary-light); }
-    .t-gold { color: var(--color-gold); }
-    .t-muted { color: #666; }
-    .t-white { color: #fff; font-weight: 500; }
-    .t-size { color: var(--color-gold-bright); }
-    .terminal-empty { padding: 3rem; }
-
-    /* ── FEATURE CARDS: contained glass panels with inline terminals ── */
-    .features {
-      padding: 5rem 3rem;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-    .features-header {
-      text-align: center;
-      margin-bottom: 3.5rem;
-    }
-    .features-header h2 {
-      font-family: 'Cinzel', serif;
-      font-size: 0.7rem;
-      letter-spacing: 0.25em;
-      text-transform: uppercase;
-      color: var(--color-gold);
-      margin-bottom: 1rem;
-    }
-    .features-header p {
-      font-size: 1.05rem;
-      color: var(--text-muted);
-      max-width: 500px;
-      margin: 0 auto;
-      font-weight: 300;
-    }
-    .feat-card {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0;
-      border: 1px solid var(--glass-border);
-      border-radius: 12px;
-      overflow: hidden;
-      background: var(--glass-bg);
-      backdrop-filter: blur(20px);
-      margin-bottom: 1.5rem;
-      transition: border-color 0.3s;
-    }
-    .feat-card:last-child { margin-bottom: 0; }
-    .feat-card:hover { border-color: rgba(200,169,81,0.2); }
-    .feat-info {
-      padding: 2.5rem 3rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-    .feat-label {
-      font-family: 'Cinzel', serif;
-      font-size: 0.65rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--color-gold);
-      margin-bottom: 0.75rem;
-    }
-    .feat-info h3 {
-      font-family: 'Cinzel', serif;
-      font-size: 1.25rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      margin-bottom: 0.75rem;
-      line-height: 1.3;
-    }
-    .feat-info p {
-      font-size: 0.9375rem;
-      color: var(--text-secondary);
-      line-height: 1.7;
-      font-weight: 300;
-    }
-    .feat-term {
-      background: #0a0a0a;
-      border-left: 1px solid var(--glass-border);
-      padding: 2rem 2rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      line-height: 1.7;
-      color: #ccc;
-      white-space: pre;
-      overflow-x: auto;
-      display: flex;
-      align-items: center;
-    }
-    .feat-card:nth-child(even) { direction: rtl; }
-    .feat-card:nth-child(even) > * { direction: ltr; }
-    .feat-card:nth-child(even) .feat-term { border-left: none; border-right: 1px solid var(--glass-border); }
-
-    /* ── PANTHEON MODULES ── */
-    .modules {
-      padding: 5rem 3rem;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-    .modules-header {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
-    .modules-header h2 {
-      font-family: 'Cinzel', serif;
-      font-size: 0.7rem;
-      letter-spacing: 0.25em;
-      text-transform: uppercase;
-      color: var(--color-gold);
-      margin-bottom: 0.75rem;
-    }
-    .modules-header p {
-      font-size: 0.9375rem;
-      color: var(--text-muted);
-      font-weight: 300;
-    }
-    .mod-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1px;
-      background: var(--glass-border);
-      border: 1px solid var(--glass-border);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .mod-cell {
-      background: var(--card-bg);
-      padding: 2rem 1.5rem;
-      text-align: center;
-      transition: background 0.3s;
-    }
-    .mod-cell:hover { background: rgba(2, 44, 34, 0.8); }
-    .mod-glyph {
-      font-size: 1.8rem;
-      display: block;
-      margin-bottom: 0.6rem;
-      line-height: 1;
-    }
-    .mod-name {
-      font-family: 'Cinzel', serif;
-      font-size: 0.75rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      margin-bottom: 0.25rem;
-    }
-    .mod-role {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-weight: 300;
-    }
-
-    /* ── TIERS ── */
-    .tiers {
-      padding: 5rem 3rem;
-      max-width: 1000px;
-      margin: 0 auto;
-    }
-    .tiers-header {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
-    .tiers-header h2 {
-      font-family: 'Cinzel', serif;
-      font-size: 0.7rem;
-      letter-spacing: 0.25em;
-      text-transform: uppercase;
-      color: var(--color-gold);
-      margin-bottom: 0.75rem;
-    }
-    .tiers-header p {
-      font-size: 0.9375rem;
-      color: var(--text-muted);
-      font-weight: 300;
-    }
-    .tier-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-    }
-    .tier {
-      padding: 2.5rem;
-      border: 1px solid var(--glass-border);
-      border-radius: 12px;
-      backdrop-filter: blur(20px);
-      background: var(--glass-bg);
-    }
-    .tier-ra { border-color: rgba(200,169,81,0.15); }
-    .tier-badge {
-      font-family: 'Cinzel', serif;
-      font-size: 0.65rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      display: inline-block;
-      padding: 0.3rem 0.8rem;
-      border-radius: 3px;
-      margin-bottom: 1.25rem;
-    }
-    .tier-anubis .tier-badge { color: var(--color-primary-light); border: 1px solid var(--color-primary); }
-    .tier-ra .tier-badge { color: var(--color-gold); border: 1px solid var(--color-gold); }
-    .tier h3 {
-      font-family: 'Cinzel', serif;
-      font-size: 1.4rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      margin-bottom: 0.4rem;
-    }
-    .tier-price {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      margin-bottom: 1.5rem;
-      font-weight: 300;
-    }
-    .tier ul { list-style: none; padding: 0; }
-    .tier li {
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-      padding: 0.45rem 0;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      font-weight: 300;
-    }
-    .tier li:last-child { border-bottom: none; }
-    .tier-anubis li::before { content: '𓃣 '; margin-right: 0.4rem; }
-    .tier-ra li::before { content: '𓇶 '; margin-right: 0.4rem; }
-
-    /* ── INSTALL + ECOSYSTEM + FOOTER: tight bottom stack ── */
-    .bottom-stack {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 4rem 3rem 2rem;
-      text-align: center;
-    }
-    .install-block { display: inline-block; position: relative; margin-bottom: 3rem; }
-    .install-cmd {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: clamp(0.75rem, 1.5vw, 0.9rem);
-      padding: 1rem 3.5rem 1rem 1.5rem;
-      background: rgba(0,0,0,0.5);
-      border: 1px solid var(--glass-border);
-      border-radius: 8px;
-      color: var(--color-primary-light);
-      cursor: pointer;
-      transition: border-color 0.3s;
-      display: block;
-      text-align: left;
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-family: var(--font-display); font-weight: 700;
+      font-size: 1.02rem; letter-spacing: 0.08em; color: var(--text);
       white-space: nowrap;
     }
-    .install-cmd:hover { border-color: var(--color-primary); }
-    .install-copy {
-      position: absolute;
-      right: 0.75rem; top: 50%; transform: translateY(-50%);
-      background: none; border: none;
-      color: var(--text-muted); cursor: pointer;
-      font-size: 0.75rem; transition: color 0.3s;
+    .nav-brand .glyph { color: var(--gold); font-size: 1.25rem; line-height: 1; }
+    .nav-links { display: flex; align-items: center; gap: 22px; }
+    .nav-links a {
+      color: var(--text-dim); font-size: 0.86rem; font-weight: 500;
+      letter-spacing: 0.02em;
     }
-    .install-copy:hover { color: var(--text-primary); }
-    .install-note {
-      font-size: 0.78rem; color: var(--text-muted); font-weight: 300;
-      margin-top: 0.75rem;
+    .nav-links a:hover, .nav-links a[aria-current="page"] { color: var(--gold); }
+    .nav-release {
+      font-family: var(--font-mono); font-size: 0.72rem;
+      color: var(--gold); border: 1px solid var(--gold-dim);
+      border-radius: 999px; padding: 3px 10px; white-space: nowrap;
     }
-    .ecosystem {
-      padding: 2.5rem 0;
-      border-top: 1px solid var(--glass-border);
-      margin-top: 1rem;
+    @media (max-width: 720px) {
+      .nav-links a.nav-hide-sm { display: none; }
+      .nav-links { gap: 14px; }
+      .nav-release { display: none; }
     }
-    .ecosystem-label {
-      font-family: 'Cinzel', serif;
-      font-size: 0.6rem;
-      letter-spacing: 0.25em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      margin-bottom: 1rem;
+    @media (max-width: 520px) {
+      .nav-brand { font-size: 0.9rem; gap: 8px; }
+      .nav-links a.nav-hide-xs { display: none; }
     }
-    .ecosystem-items {
-      display: flex;
-      justify-content: center;
-      gap: 2.5rem;
-      flex-wrap: wrap;
-    }
-    .ecosystem-item {
-      font-family: 'Cinzel', serif;
-      font-size: 0.8rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    .ecosystem-item.active { color: var(--color-primary-light); }
 
-    footer {
-      padding: 2.5rem 3rem 2rem;
-      border-top: 1px solid var(--glass-border);
-      margin-top: 1rem;
+    /* ───────────────────────── HERO ───────────────────────── */
+    .hero {
+      position: relative;
+      padding: 84px 0 72px;
+      background:
+        radial-gradient(1100px 500px at 75% -10%, rgba(26, 26, 94, 0.45), transparent 65%),
+        radial-gradient(700px 420px at 10% 15%, rgba(200, 169, 81, 0.07), transparent 60%);
+      border-bottom: 1px solid var(--line);
     }
-    .footer-inner {
-      max-width: 1100px;
-      margin: 0 auto;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1.5rem;
+    .hero-grid {
+      display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+      gap: 56px; align-items: center;
     }
-    .footer-brand img { height: 22px; opacity: 0.6; }
-    .footer-brand p {
-      font-size: 0.78rem; color: var(--text-muted); font-weight: 300; margin-top: 0.4rem;
+    .hero-grid > div { min-width: 0; }
+    .install-row code { min-width: 0; }
+    .hero-eyebrow {
+      font-family: var(--font-display);
+      color: var(--gold); font-size: 0.86rem; font-weight: 600;
+      letter-spacing: 0.32em; text-transform: uppercase;
+      margin-bottom: 20px;
     }
-    .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-    .footer-links a {
-      font-size: 0.78rem; color: var(--text-muted);
-      text-decoration: none; transition: color 0.3s;
+    .hero h1 {
+      font-family: var(--font-display); font-weight: 700;
+      font-size: clamp(1.9rem, 4.6vw, 3.1rem);
+      line-height: 1.16; letter-spacing: 0.01em;
+      margin-bottom: 20px;
     }
-    .footer-links a:hover { color: var(--text-secondary); }
-    .footer-copy {
-      width: 100%;
+    .hero h1 em { font-style: normal; color: var(--gold); }
+    .hero-sub {
+      color: var(--text-dim); font-size: 1.06rem; max-width: 34em;
+      margin-bottom: 30px;
+    }
+    .hero-sub strong { color: var(--text); font-weight: 600; }
+
+    .install-row {
+      display: flex; align-items: stretch; max-width: 560px;
+      border: 1px solid var(--gold-dim); border-radius: 8px;
+      background: var(--surface); overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .install-row code {
+      font-family: var(--font-mono); font-size: 0.82rem; color: var(--gold-bright);
+      padding: 13px 16px; overflow-x: auto; white-space: nowrap; flex: 1;
+      display: flex; align-items: center;
+    }
+    .copy-btn {
+      font-family: var(--font-body); font-size: 0.78rem; font-weight: 600;
+      color: var(--black); background: var(--gold); border: none; cursor: pointer;
+      padding: 0 18px; letter-spacing: 0.04em; min-width: 74px;
+      transition: background 0.15s ease;
+    }
+    .copy-btn:hover { background: var(--gold-bright); }
+    .install-note { color: var(--text-faint); font-size: 0.8rem; margin-bottom: 26px; }
+    .install-note a { color: var(--text-dim); text-decoration: underline; text-underline-offset: 3px; }
+    .install-note a:hover { color: var(--gold); }
+
+    .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+    .btn {
+      display: inline-block; border-radius: 8px; font-weight: 600;
+      font-size: 0.9rem; padding: 11px 22px; letter-spacing: 0.02em;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-gold { background: var(--gold); color: var(--black); }
+    .btn-gold:hover { background: var(--gold-bright); color: var(--black); }
+    .btn-line { border: 1px solid var(--line); color: var(--text-dim); background: var(--surface); }
+    .btn-line:hover { border-color: var(--gold-dim); color: var(--gold); }
+
+    /* ─────────────────────── TERMINAL ─────────────────────── */
+    .terminal {
+      background: #101010;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(200, 169, 81, 0.08);
+      overflow: hidden;
+      font-family: var(--font-mono);
+    }
+    .terminal-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 11px 14px; background: var(--surface-2);
+      border-bottom: 1px solid var(--line);
+    }
+    .terminal-bar .dot { width: 11px; height: 11px; border-radius: 50%; background: #3A3A32; }
+    .terminal-bar .dot:nth-child(1) { background: #B3554D; }
+    .terminal-bar .dot:nth-child(2) { background: #C0913F; }
+    .terminal-bar .dot:nth-child(3) { background: #5F9E6E; }
+    .terminal-title {
+      margin-left: auto; margin-right: auto;
+      color: var(--text-faint); font-size: 0.7rem; letter-spacing: 0.06em;
+    }
+    .terminal-body {
+      padding: 18px 18px 20px;
+      font-size: 0.76rem; line-height: 1.75;
+      min-height: 396px;
+    }
+    /* Lines are FULLY VISIBLE by default. JS may hide them momentarily to
+       animate typing; without JS the whole session reads as static text. */
+    .t-line { white-space: pre-wrap; word-break: break-word; }
+    .t-line.t-hidden { display: none; }
+    .t-prompt { color: var(--gold); font-weight: 700; }
+    .t-cmd { color: var(--text); font-weight: 500; }
+    .t-out { color: var(--text-dim); }
+    .t-gold { color: var(--gold); }
+    .t-green { color: var(--green); }
+    .t-amber { color: var(--amber); }
+    .t-faint { color: var(--text-faint); }
+    .t-strong { color: var(--text); font-weight: 700; }
+    .t-caret {
+      display: inline-block; width: 0.55em; height: 1.05em;
+      background: var(--gold); vertical-align: text-bottom;
+      animation: caret-blink 1s steps(1) infinite;
+    }
+    @keyframes caret-blink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .t-caret { animation: none; }
+    }
+    .terminal-caption {
+      text-align: center; color: var(--text-faint); font-size: 0.74rem;
+      margin-top: 12px; font-family: var(--font-body);
+    }
+
+    /* ─────────────────────── SECTIONS ─────────────────────── */
+    section { padding: 76px 0; border-bottom: 1px solid var(--line); }
+    .sec-eyebrow {
+      font-family: var(--font-display); color: var(--gold);
+      font-size: 0.76rem; font-weight: 600; letter-spacing: 0.3em;
+      text-transform: uppercase; margin-bottom: 12px; text-align: center;
+    }
+    .sec-title {
+      font-family: var(--font-display); font-weight: 700;
+      font-size: clamp(1.4rem, 3vw, 2rem); text-align: center;
+      margin-bottom: 14px;
+    }
+    .sec-sub {
+      color: var(--text-dim); text-align: center; max-width: 42em;
+      margin: 0 auto 48px; font-size: 0.98rem;
+    }
+
+    /* Three surfaces */
+    .surfaces { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .surface {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 12px; padding: 28px 26px;
+      transition: border-color 0.2s ease;
+    }
+    .surface:hover { border-color: var(--gold-dim); }
+    .surface .s-glyph { font-size: 1.6rem; color: var(--gold); display: block; margin-bottom: 14px; }
+    .surface h3 {
+      font-family: var(--font-display); font-size: 1.02rem; font-weight: 600;
+      letter-spacing: 0.04em; margin-bottom: 4px;
+    }
+    .surface .s-tag {
+      font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-faint);
+      display: block; margin-bottom: 12px;
+    }
+    .surface p { color: var(--text-dim); font-size: 0.88rem; }
+    .surface code {
+      font-family: var(--font-mono); font-size: 0.78rem; color: var(--gold-bright);
+      background: var(--surface-2); padding: 1px 6px; border-radius: 4px;
+    }
+
+    /* Pantheon grid */
+    .pantheon {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 1px; background: var(--line);
+      border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    }
+    .deity {
+      background: var(--black); padding: 26px 22px;
+      transition: background 0.2s ease;
+    }
+    .deity:hover { background: var(--surface); }
+    .deity .d-glyph { font-size: 1.7rem; color: var(--gold); line-height: 1; display: block; margin-bottom: 12px; }
+    .deity h3 {
+      font-family: var(--font-display); font-size: 0.95rem; font-weight: 600;
+      letter-spacing: 0.06em; margin-bottom: 2px;
+    }
+    .deity .d-role {
+      font-size: 0.7rem; color: var(--gold-dim); text-transform: uppercase;
+      letter-spacing: 0.12em; display: block; margin-bottom: 10px;
+    }
+    .deity p { color: var(--text-dim); font-size: 0.83rem; line-height: 1.6; }
+    .deity .d-soon {
+      font-family: var(--font-mono); font-size: 0.64rem; color: var(--lapis-light);
+      border: 1px solid var(--lapis); border-radius: 999px; padding: 2px 8px;
+      margin-left: 6px; vertical-align: middle; white-space: nowrap;
+    }
+
+    /* Trust */
+    .trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+    .trust-card {
+      background: linear-gradient(180deg, var(--surface) 0%, var(--black) 100%);
+      border: 1px solid var(--line); border-radius: 12px; padding: 26px 24px;
       text-align: center;
-      font-size: 0.7rem;
-      color: rgba(255,255,255,0.2);
-      margin-top: 1.5rem;
-      padding-top: 1rem;
-      border-top: 1px solid rgba(255,255,255,0.04);
     }
+    .trust-card .t-icon { font-size: 1.5rem; color: var(--gold); display: block; margin-bottom: 12px; }
+    .trust-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.02em; }
+    .trust-card p { color: var(--text-dim); font-size: 0.84rem; }
 
-    /* ── ANIMATIONS ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.8s cubic-bezier(0.25, 0.1, 0.25, 1),
-                  transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    .reveal-delay-1 { transition-delay: 0.1s; }
-    .reveal-delay-2 { transition-delay: 0.2s; }
-    .reveal-delay-3 { transition-delay: 0.3s; }
+    /* CTA */
+    .cta { text-align: center; }
+    .cta .install-row { margin: 0 auto 12px; }
+    .cta .install-note { margin-bottom: 30px; }
+    .cta-links { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
-    /* ── HAMBURGER MENU (mobile) ── */
-    .nav-toggle {
-      display: none;
-      background: none; border: none; cursor: pointer;
-      width: 28px; height: 20px; position: relative; z-index: 101;
+    /* Footer */
+    footer { padding: 44px 0 56px; }
+    .foot-inner {
+      display: flex; flex-wrap: wrap; gap: 24px;
+      align-items: center; justify-content: space-between;
     }
-    .nav-toggle span {
-      display: block; width: 100%; height: 2px; background: var(--text-muted);
-      position: absolute; left: 0; transition: all 0.3s;
+    .foot-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-family: var(--font-display); font-weight: 600; letter-spacing: 0.08em;
+      color: var(--text-dim); font-size: 0.9rem;
     }
-    .nav-toggle span:nth-child(1) { top: 0; }
-    .nav-toggle span:nth-child(2) { top: 9px; }
-    .nav-toggle span:nth-child(3) { top: 18px; }
-    .nav-toggle.open span:nth-child(1) { top: 9px; transform: rotate(45deg); }
-    .nav-toggle.open span:nth-child(2) { opacity: 0; }
-    .nav-toggle.open span:nth-child(3) { top: 9px; transform: rotate(-45deg); }
+    .foot-brand .glyph { color: var(--gold); font-size: 1.15rem; }
+    .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+    .foot-links a { color: var(--text-dim); font-size: 0.84rem; }
+    .foot-links a:hover { color: var(--gold); }
+    .foot-meta {
+      width: 100%; margin-top: 18px; padding-top: 18px;
+      border-top: 1px solid var(--line);
+      display: flex; flex-wrap: wrap; gap: 12px;
+      justify-content: space-between; align-items: center;
+      color: var(--text-faint); font-size: 0.78rem;
+    }
+    .foot-meta .mono { font-family: var(--font-mono); font-size: 0.72rem; }
 
-    /* ── RESPONSIVE: TABLET (≤ 900px) ── */
-    @media (max-width: 900px) {
-      .nav-toggle { display: block; }
-      nav { padding: 1rem 1.5rem; }
-      .nav-links {
-        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.95); backdrop-filter: blur(24px);
-        flex-direction: column; align-items: center; justify-content: center;
-        gap: 2rem; z-index: 100;
-      }
-      .nav-links.open { display: flex; }
-      .nav-links a { font-size: 1.2rem; }
-      .nav-install { font-size: 1rem !important; padding: 0.75rem 1.5rem !important; }
-      .hero { padding: 6rem 1.5rem 3rem; }
-      .hero-jackal { font-size: clamp(8rem, 40vw, 14rem); right: -5vw; opacity: 0.08; }
-      .hero-content { max-width: 100%; }
-      .hero-sub { font-size: 1rem; max-width: 100%; }
-      .hero-pillars { max-width: 100%; }
-      .terminal-gutter {
-        grid-template-columns: 1fr;
-        padding: 0 1.5rem;
-      }
-      .terminal-prose {
-        text-align: left;
-        padding: 3rem 0 1.5rem;
-      }
-      .terminal-window { margin: 0 0 3rem; }
-      .type-break { padding: 4rem 1.5rem; }
-      .type-break h2 { font-size: clamp(2rem, 8vw, 3.5rem); }
-      .feat-card { grid-template-columns: 1fr; }
-      .feat-card:nth-child(even) { direction: ltr; }
-      .feat-term { border-left: none !important; border-right: none !important; border-top: 1px solid var(--glass-border); white-space: pre-wrap; word-break: break-word; }
-      .feat-info { padding: 2rem 1.5rem; }
-      .feat-term { padding: 1.5rem; font-size: 0.72rem; }
-      .features { padding: 3rem 1.5rem; }
-      .modules { padding: 3rem 1.5rem; }
-      .mod-grid { grid-template-columns: repeat(3, 1fr); }
-      .tier-row { grid-template-columns: 1fr; }
-      .tiers { padding: 3rem 1.5rem; }
-      .bottom-stack { padding: 3rem 1.5rem 1.5rem; }
-      .install-cmd { font-size: 0.7rem; padding-right: 3rem; }
-      footer { padding: 2rem 1.5rem; }
-      .footer-inner { flex-direction: column; text-align: center; }
-      .footer-links { justify-content: center; }
+    /* ─────────────────────── RESPONSIVE ─────────────────────── */
+    @media (max-width: 960px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 44px; }
+      .surfaces { grid-template-columns: 1fr; }
+      .pantheon { grid-template-columns: repeat(2, 1fr); }
+      .trust { grid-template-columns: repeat(2, 1fr); }
     }
-
-    /* ── RESPONSIVE: PHONE (≤ 600px) ── */
-    @media (max-width: 600px) {
-      .hero { padding: 5rem 1rem 2rem; min-height: auto; }
-      .hero h1 { font-size: clamp(1.6rem, 7vw, 2.5rem); margin-bottom: 1.2rem; }
-      .hero-sub { font-size: 0.95rem; line-height: 1.6; }
-      .hero-eyebrow { font-size: 0.65rem; margin-bottom: 1.2rem; }
-      .hero-pillars { grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1.5rem; }
-      .hero-jackal { display: none; }
-      .feat-info { padding: 1.5rem 1rem; }
-      .feat-info h3 { font-size: 1rem; }
-      .feat-info p { font-size: 0.85rem; }
-      .feat-term { padding: 1rem; font-size: 0.68rem; }
-      .features { padding: 2rem 1rem; }
-      .features-header { margin-bottom: 2rem; }
-      .mod-grid { grid-template-columns: repeat(2, 1fr); }
-      .mod-glyph { font-size: 1.8rem; }
-      .mod-name { font-size: 0.7rem; }
-      .mod-role { font-size: 0.55rem; }
-      .modules { padding: 2rem 1rem; }
-      .tiers { padding: 2rem 1rem; }
-      .bottom-stack { padding: 2rem 1rem 1rem; }
-      .terminal-gutter { padding: 0 1rem; }
-      .terminal-body { font-size: 0.65rem; padding: 0.75rem; }
-      .terminal-prose h2 { font-size: 1.4rem; }
-      .install-cmd { font-size: 0.6rem; overflow-x: auto; }
-    }
-
-    /* ── RESPONSIVE: SMALL PHONE (≤ 375px) ── */
-    @media (max-width: 375px) {
-      .hero h1 { font-size: 1.5rem; }
-      .hero-sub { font-size: 0.85rem; }
-      .hero-pillar-label { font-size: 0.6rem; }
-      .hero-pillars li { font-size: 0.78rem; padding: 0.2rem 0; }
-      .feat-info h3 { font-size: 0.9rem; }
-      .feat-term { font-size: 0.6rem; }
-      .mod-grid { grid-template-columns: repeat(2, 1fr); gap: 1px; }
-      .mod-cell { padding: 1.2rem 0.5rem; }
-      #architecture > div { grid-template-columns: 1fr !important; }
+    @media (max-width: 480px) {
+      .hero { padding: 56px 0 52px; }
+      section { padding: 56px 0; }
+      .pantheon { grid-template-columns: 1fr; }
+      .trust { grid-template-columns: 1fr; }
+      .terminal-body { font-size: 0.68rem; min-height: 360px; }
+      .install-row code { font-size: 0.7rem; }
     }
   </style>
 </head>
 <body>
 
-  <!-- NAV -->
-  <nav>
-    <div class="nav-left">
-      <img src="assets/sirsi-logo-white.png" alt="Sirsi">
-      <span>Pantheon</span>
+  <!-- ══════════════════════ NAV ══════════════════════ -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-brand">
+        <span class="glyph" aria-hidden="true">𓂀</span>
+        <span>SIRSI&nbsp;PANTHEON</span>
+      </a>
+      <nav class="nav-links" aria-label="Site">
+        <a href="index.html" aria-current="page" class="nav-hide-sm">Overview</a>
+        <a href="getting-started.html" class="nav-hide-xs">Getting Started</a>
+        <a href="faq.html">FAQ</a>
+        <a href="build-log.html" class="nav-hide-sm">Build Log</a>
+        <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
+        <span class="nav-release mono" data-release>v0.23.8-beta</span>
+      </nav>
     </div>
-    <button class="nav-toggle" onclick="this.classList.toggle('open');document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="nav-links">
-      <a href="https://sirsi.ai" class="nav-sirsi-link">sirsi.ai</a>
-      <a href="getting-started.html">Docs</a>
-      <a href="faq.html">FAQ</a>
-      <a href="build-log.html">Build Log</a>
-      <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
-      <a href="getting-started.html" class="nav-install">brew install sirsi-pantheon</a>
-    </div>
-  </nav>
+  </header>
 
-  <!-- HERO -->
+  <main>
+
+  <!-- ══════════════════════ HERO ══════════════════════ -->
   <section class="hero">
-    <span class="hero-jackal" aria-hidden="true">𓁢</span>
-    <div class="hero-content">
-      <div class="hero-eyebrow reveal">The Operating System for AI Agents</div>
-      <h1 class="reveal reveal-delay-1">One install. <em>Every agent orchestrated.</em></h1>
-      <p class="hero-sub reveal reveal-delay-2">
-        <strong>Pantheon</strong> by
-        <strong><a href="https://sirsi.ai" style="color:var(--color-gold);text-decoration:none;">Sirsi Technologies</a></strong>
-        is a developer workstation platform that keeps your machine clean, your environment healthy,
-        and your AI agents working together autonomously.
-      </p>
-      <div class="hero-pillars reveal reveal-delay-3">
-        <div class="hero-pillar">
-          <div class="hero-pillar-label">Agent Orchestration</div>
-          <ul>
-            <li>Register any AI: Claude, Codex, Gemini, Qwen, Kimi &mdash; or your own</li>
-            <li>Ra routes work across agents and repos automatically</li>
-            <li>Horus monitors every agent on your machine</li>
-            <li>Agents hand off work until the goal is met &mdash; no manual shuttling</li>
-            <li>MCP server for IDE integration (Cursor, VS Code, Windsurf)</li>
-          </ul>
-        </div>
-        <div class="hero-pillar">
-          <div class="hero-pillar-label">Machine Hygiene</div>
-          <ul>
-            <li>Scan, clean, and purge infrastructure waste (81 rules)</li>
-            <li>Ghost app detection &amp; removal</li>
-            <li>Health diagnostics, network hardening, resource monitoring</li>
-            <li>Every command ends with a clear result and next actions</li>
-          </ul>
-        </div>
-        <div class="hero-pillar">
-          <div class="hero-pillar-label">AI Memory</div>
-          <ul>
-            <li>Persistent context across sessions (Thoth)</li>
-            <li>Token optimization &mdash; 60-98% context savings</li>
-            <li>Quality governance with tiered coverage thresholds</li>
-            <li>Session state that survives restarts</li>
-          </ul>
-        </div>
-        <div class="hero-pillar">
-          <div class="hero-pillar-label">Self-Healing Substrate</div>
-          <ul>
-            <li>Runs your heaviest workload &mdash; a local model, a build, a fleet of agents</li>
-            <li>And keeps the machine able to keep running it: reclaims RAM, heals binary drift, excludes write-storms</li>
-            <li>Protects every other process on the box while the heavy work happens</li>
-            <li>Not an inference window. Not a cleanup tool. The floor that heals.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <hr class="rule-gold">
-
-  <!-- TERMINAL: full-bleed asymmetric -->
-  <section class="terminal-section">
-    <div class="terminal-gutter">
-      <div class="terminal-prose reveal">
-        <h2>One Scan</h2>
-        <p>
-          <strong>81 rules</strong> across 7 domains.
-          Built with <strong>1,926+ tests</strong> across <strong>33 modules</strong>.
-          63,000+ lines of Go. Zero telemetry. Scans in under a second.
+    <div class="wrap hero-grid">
+      <div>
+        <p class="hero-eyebrow">Weigh &middot; Judge &middot; Purge</p>
+        <h1>Infrastructure intelligence that <em>heals your Mac</em>.</h1>
+        <p class="hero-sub">
+          <strong>Sirsi Pantheon</strong> scans your machine, names the cause of what's
+          slowing it down in plain English, and fixes it with proof &mdash; every change
+          previewed first, everything recoverable from the Trash, nothing sent anywhere.
         </p>
-      </div>
-      <div class="terminal-window reveal reveal-delay-1">
-        <div class="terminal-chrome">
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
+
+        <div class="install-row">
+          <code id="install-cmd">brew tap SirsiMaster/tools &amp;&amp; brew install sirsi-pantheon</code>
+          <button class="copy-btn" data-copy="install-cmd" aria-label="Copy install command">Copy</button>
         </div>
-        <div class="terminal-body"><span class="t-prompt">$</span> sirsi scan
-<span class="t-gold">𓃣 Sirsi Pantheon v0.17.0</span>
-<span class="t-muted">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-Scanning 81 rules across 7 domains...
+        <p class="install-note">
+          Built for macOS &middot; one small binary &middot; or grab it from
+          <a href="https://github.com/SirsiMaster/sirsi-pantheon/releases">GitHub Releases</a>
+        </p>
 
-<span class="t-muted">■</span> Docker Desktop VM images     <span class="t-size">64.2 GB</span>
-<span class="t-muted">■</span> Xcode derived data           <span class="t-size">12.8 GB</span>
-<span class="t-muted">■</span> Homebrew cache (stale)        <span class="t-size">3.1 GB</span>
-<span class="t-muted">■</span> npm/yarn global cache         <span class="t-size">1.9 GB</span>
-<span class="t-muted">■</span> CocoaPods cache               <span class="t-size">847 MB</span>
-
-<span class="t-muted">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-<span class="t-white">Findings 341   Reclaimable 82.9 GB</span>
-Scanned in 833ms</div>
+        <div class="hero-actions">
+          <a class="btn btn-gold" href="getting-started.html">Get started</a>
+          <a class="btn btn-line" href="https://github.com/SirsiMaster/sirsi-pantheon">View source</a>
+        </div>
       </div>
-      <div class="terminal-empty"></div>
-    </div>
-  </section>
 
-  <!-- FEATURES: glass cards with inline terminals -->
-  <section class="features">
-    <div class="features-header reveal">
-      <h2>What Pantheon Does</h2>
-      <p>Six capabilities, each accessible from the interactive TUI or CLI.</p>
-    </div>
-
-    <div class="feat-card reveal">
-      <div class="feat-info">
-        <div class="feat-label">Ghost Detection</div>
-        <h3>The Dead Leave Traces</h3>
-        <p>Finds remnants of apps you uninstalled &mdash; Launch Services phantoms, orphaned plists, Spotlight ghosts. 17 macOS locations no other tool checks.</p>
-      </div>
-      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi ghosts
-
-<span class="t-gold">𓃣 Ghost Hunter</span> <span class="t-muted">v0.17.0</span>
-<span class="t-muted">Scanning 17 locations...</span>
-
-<span class="t-white">Docker.app</span>          <span class="t-muted">12 orphaned files</span>
-<span class="t-white">Parallels.app</span>       <span class="t-muted">8 plists, 3 agents</span>
-<span class="t-white">Sketch.app</span>           <span class="t-muted">Launch Services phantom</span>
-
-<span class="t-gold">Ghosts found:</span> <span class="t-white">23</span></div></div>
-    </div>
-
-    <div class="feat-card reveal">
-      <div class="feat-info">
-        <div class="feat-label">Network Safety</div>
-        <h3>Probe Before You Cut</h3>
-        <p>Encrypted DNS and firewall hardening. Probes before changing, verifies after, auto-reverts within 6 seconds if anything breaks.</p>
-      </div>
-      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi network --fix
-
-<span class="t-gold">🛡 Network Safety</span>
-<span class="t-muted">Probing current DNS...</span>
-<span class="t-white">DNS:</span> 192.168.1.1 <span class="t-muted">(unencrypted)</span>
-<span class="t-white">Firewall:</span> <span style="color:#ff5f57;">disabled</span>
-
-<span class="t-muted">Applying encrypted DNS...</span>
-<span style="color:#28c840;">✓</span> DNS → 1.1.1.1 (Cloudflare DoH)
-<span style="color:#28c840;">✓</span> Firewall enabled (stealth mode)</div></div>
-    </div>
-
-    <div class="feat-card reveal">
-      <div class="feat-info">
-        <div class="feat-label">AI Memory</div>
-        <h3>Your Tools Should Remember</h3>
-        <p>22,958 lines of source compressed to 297 lines of persistent context via MCP. Works with Claude, Cursor, and Windsurf out of the box.</p>
-      </div>
-      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi thoth sync
-
-<span class="t-gold">𓁟 Thoth</span> <span class="t-muted">syncing memory...</span>
-<span class="t-muted">Phase 1:</span> <span class="t-white">identity fields</span>  <span style="color:#28c840;">✓</span>
-<span class="t-muted">Phase 2:</span> <span class="t-white">journal from git</span> <span style="color:#28c840;">✓</span>
-
-<span class="t-gold">Context:</span> <span class="t-white">22,958 → 297 lines</span>
-<span class="t-gold">Savings:</span> <span style="color:#28c840;">98.7% reduction</span></div></div>
-    </div>
-
-    <div class="feat-card reveal">
-      <div class="feat-info">
-        <div class="feat-label">Token Optimization</div>
-        <h3>Every Token Counts</h3>
-        <p>RTK strips output noise. Vault sandboxes large results in SQLite. Horus serves code outlines instead of full files. Together they cut AI context costs by 60-98%.</p>
-      </div>
-      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi horus outline src/file.go
-
-<span class="t-gold">𓂀 Horus</span> <span class="t-muted">structural outline</span>
-<span class="t-muted">func</span> <span class="t-white">NewServer</span>(cfg Config) *Server
-<span class="t-muted">func</span> <span class="t-white">(*Server) Start</span>(ctx context.Context)
-<span class="t-muted">type</span> <span class="t-white">Config</span> struct { ... }
-<span class="t-muted">type</span> <span class="t-white">Server</span> struct { ... }
-
-<span class="t-gold">Source:</span> <span class="t-white">847 lines → 18 lines</span>
-<span class="t-gold">Reduction:</span> <span style="color:#28c840;">47× smaller</span></div></div>
-    </div>
-
-    <div class="feat-card reveal">
-      <div class="feat-info">
-        <div class="feat-label">Mobile</div>
-        <h3>Your Device, Your Intelligence</h3>
-        <p>Full SwiftUI + Jetpack Compose apps with 9 deity screens each. Go bridge runs all analysis on-device &mdash; scans, ghost detection, code graphs, and neural classification. Zero cloud dependency.</p>
-      </div>
-      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi horus outline --mobile
-
-<span class="t-gold">𓂀 Horus — Mobile Bridge</span>
-<span class="t-muted">Parsing 169 Go files...</span>
-
-<span class="t-white">Symbols:</span> 328 types, 847 functions
-<span class="t-white">Packages:</span> 36
-<span class="t-white">Outlines:</span> 47× avg reduction
-
-iOS: PantheonCore.xcframework <span style="color:#28c840;">✓</span>
-Android: pantheon.aar (37 MB) <span style="color:#28c840;">✓</span></div></div>
-    </div>
-
-    <div class="feat-card reveal">
-      <div class="feat-info">
-        <div class="feat-label">Interactive TUI</div>
-        <h3>Type sirsi. That's It.</h3>
-        <p>A full BubbleTea-powered terminal UI with streaming output, view stack navigation, deity state indicators, and "What's Next" suggestions after every command. State persists across sessions.</p>
-      </div>
-      <div class="feat-term"><div><span class="t-prompt">$</span> sirsi
-
-<span class="t-gold">Sirsi Pantheon</span> <span class="t-muted">v0.19.0</span>
-<span class="t-muted">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-<span class="t-muted">Modules:</span>
-  <span style="color:#28c840;">●</span> Cleanup  <span style="color:#28c840;">●</span> Quality
-  <span style="color:#28c840;">●</span> Memory   <span class="t-muted">●</span> Health
-
-<span class="t-gold">What's Next:</span>
-  <span class="t-white">sirsi scan</span>   <span class="t-muted">— find waste</span>
-  <span class="t-white">sirsi audit</span>  <span class="t-muted">— check quality</span>
-  <span class="t-white">sirsi ghosts</span> <span class="t-muted">— hunt dead apps</span></div></div>
-    </div>
-  </section>
-
-  <hr class="rule-gold">
-
-  <!-- ARCHITECTURE DIAGRAMS -->
-  <section class="features" id="architecture">
-    <div class="features-header reveal">
-      <h2>Architecture</h2>
-      <p>How the modules connect — from CLI to fleet.</p>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;" class="reveal">
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Core Architecture</div>
-        <img src="diagrams/rendered/01-core-architecture.svg" alt="Pantheon Core Architecture" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Deity Hierarchy</div>
-        <img src="diagrams/rendered/02-deity-hierarchy.svg" alt="Deity Hierarchy" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;" class="reveal reveal-delay-1">
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Token Intelligence</div>
-        <img src="diagrams/rendered/03-token-intelligence.svg" alt="Token Intelligence Pipeline" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Thoth Memory System</div>
-        <img src="diagrams/rendered/04-thoth-memory.svg" alt="Thoth Memory Architecture" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem;" class="reveal reveal-delay-2">
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Local Workstation</div>
-        <img src="diagrams/rendered/05-local-workstation.svg" alt="Local Workstation Architecture" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Fleet Architecture</div>
-        <img src="diagrams/rendered/06-fleet-architecture.svg" alt="Fleet Architecture" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1.5rem;" class="reveal reveal-delay-3">
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Governance Cycle</div>
-        <img src="diagrams/rendered/07-governance-cycle.svg" alt="Ma'at Governance Cycle" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
-      </div>
-      <div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:1.5rem;backdrop-filter:blur(20px);">
-        <div style="font-family:'Cinzel',serif;font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--color-gold);margin-bottom:0.75rem;">Scan Pipeline</div>
-        <img src="diagrams/rendered/08-scan-pipeline.svg" alt="Anubis Scan Pipeline" style="max-width:100%;border-radius:8px;background:#0a0a0a;padding:0.5rem;">
+      <div>
+        <div class="terminal" id="terminal">
+          <div class="terminal-bar" aria-hidden="true">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="terminal-title">sirsi &mdash; zsh</span>
+          </div>
+          <div class="terminal-body" id="terminal-body">
+            <div class="t-line" data-kind="cmd"><span class="t-prompt">$ </span><span class="t-cmd">sirsi scan</span></div>
+            <div class="t-line t-out" data-kind="out"><span class="t-gold">𓁢 Infrastructure Scan</span> <span class="t-faint">&mdash; 81 rules, 7 domains</span></div>
+            <div class="t-line t-out" data-kind="out">&nbsp;</div>
+            <div class="t-line t-out" data-kind="out">  Waste found   <span class="t-strong">8.6 GB</span>   Findings <span class="t-strong">374</span>   Ghosts <span class="t-strong">12</span></div>
+            <div class="t-line t-out" data-kind="out">&nbsp;</div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-amber">&#9679;</span> npm cache          <span class="t-faint">~/.npm/_cacache</span>          <span class="t-strong">2.4 GB</span></div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-green">&#9679;</span> Firebase CLI cache <span class="t-faint">~/.cache/firebase</span>        <span class="t-strong">1.0 GB</span></div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-amber">&#9679;</span> node_modules       <span class="t-faint">~/Development/&hellip;</span>         <span class="t-strong">812 MB</span></div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-amber">&#9679;</span> Go module cache    <span class="t-faint">~/go/pkg/mod/cache</span>       <span class="t-strong">744 MB</span></div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-faint">&hellip; every finding says what it is, and why it's safe</span></div>
+            <div class="t-line t-out" data-kind="out">&nbsp;</div>
+            <div class="t-line" data-kind="cmd"><span class="t-prompt">$ </span><span class="t-cmd">sirsi clean</span></div>
+            <div class="t-line t-out" data-kind="out">  Preview: <span class="t-strong">214 safe items &rarr; 5.8 GB</span> would move to Trash.</div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-faint">Preview matches apply &mdash; exactly.</span></div>
+            <div class="t-line" data-kind="cmd"><span class="t-prompt">$ </span><span class="t-cmd">sirsi clean --confirm</span></div>
+            <div class="t-line t-out" data-kind="out">  <span class="t-green">&#10003; Freed 5.8 GB.</span> Everything is in the Trash, nothing deleted outright.</div>
+            <div class="t-line t-out" data-kind="out"><span class="t-prompt">$ </span><span class="t-caret" aria-hidden="true"></span></div>
+          </div>
+        </div>
+        <p class="terminal-caption">A real session &mdash; numbers from an actual scan, trimmed to fit.</p>
       </div>
     </div>
   </section>
 
-  <hr class="rule-gold">
+  <!-- ══════════════════════ THREE SURFACES ══════════════════════ -->
+  <section id="surfaces">
+    <div class="wrap">
+      <p class="sec-eyebrow">Three Surfaces</p>
+      <h2 class="sec-title">Use it the way you work</h2>
+      <p class="sec-sub">One binary, three ways in. Each surface tells you the same truth about your machine.</p>
 
-  <!-- MODULES -->
-  <section class="modules">
-    <div class="modules-header reveal">
-      <h2>The Pantheon</h2>
-      <p>Twelve modules. One install. Each owns one domain.</p>
-    </div>
-    <div class="mod-grid reveal">
-      <div class="mod-cell"><span class="mod-glyph">𓃣</span><div class="mod-name">Anubis</div><div class="mod-role">Hygiene</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓆄</span><div class="mod-name">Ma'at</div><div class="mod-role">Governance</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓁟</span><div class="mod-name">Thoth</div><div class="mod-role">Memory</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓁐</span><div class="mod-name">Isis</div><div class="mod-role">Remediation</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓇶</span><div class="mod-name">Ra</div><div class="mod-role">Orchestration</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓁯</span><div class="mod-name">Neith</div><div class="mod-role">Architecture</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓇽</span><div class="mod-name">Seba</div><div class="mod-role">Topology</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓁆</span><div class="mod-name">Seshat</div><div class="mod-role">Bridge</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓁹</span><div class="mod-name">Osiris</div><div class="mod-role">Checkpoints</div></div>
-      <div class="mod-cell"><span class="mod-glyph">⚡</span><div class="mod-name">RTK</div><div class="mod-role">Output Filter</div></div>
-      <div class="mod-cell"><span class="mod-glyph">🏛️</span><div class="mod-name">Vault</div><div class="mod-role">Context Sandbox</div></div>
-      <div class="mod-cell"><span class="mod-glyph">𓂀</span><div class="mod-name">Horus</div><div class="mod-role">Local Workstation Lord</div></div>
-    </div>
-  </section>
-
-  <!-- TIERS -->
-  <section class="tiers">
-    <div class="tiers-header reveal">
-      <h2>Two Tiers</h2>
-      <p>Anubis ships free today. Ra is coming for enterprise.</p>
-    </div>
-    <div class="tier-row">
-      <div class="tier tier-anubis reveal">
-        <span class="tier-badge">𓃣 Anubis</span>
-        <h3>Free</h3>
-        <div class="tier-price">Solo developer. One machine. Full power.</div>
-        <ul>
-          <li>58 scan rules across 7 domains</li>
-          <li>Ghost detection (17 macOS locations)</li>
-          <li>Network hardening with auto-revert</li>
-          <li>AI memory via MCP</li>
-          <li>Three-phase deduplication</li>
-          <li>Process watchdog</li>
-        </ul>
-      </div>
-      <div class="tier tier-ra reveal reveal-delay-1">
-        <span class="tier-badge">𓇶 Ra</span>
-        <h3>Enterprise</h3>
-        <div class="tier-price">Fleet orchestration. Idea Router. Agent dispatch at scale.</div>
-        <ul>
-          <li>Multi-agent work queue (CTR / Idea Router)</li>
-          <li>Multi-machine orchestration</li>
-          <li>Subnet and VLAN scanning</li>
-          <li>Container and K8s auditing</li>
-          <li>Cross-repo AI dispatch</li>
-          <li>YAML policy engine</li>
-          <li>SAN, NAS, and S3 backends</li>
-        </ul>
+      <div class="surfaces">
+        <div class="surface">
+          <span class="s-glyph" aria-hidden="true">&#10095;_</span>
+          <h3>Command Line</h3>
+          <span class="s-tag">the primary surface &middot; scriptable</span>
+          <p>
+            Every command stands alone: <code>sirsi scan</code>, <code>sirsi ghosts</code>,
+            <code>sirsi diagnose</code>. Each one ends with a plain-English summary and what
+            to do next. Add <code>--json</code> and pipe it anywhere.
+          </p>
+        </div>
+        <div class="surface">
+          <span class="s-glyph" aria-hidden="true">&#9765;</span>
+          <h3>Menu Bar</h3>
+          <span class="s-tag">always on &middot; macOS</span>
+          <p>
+            An ankh in your menu bar keeps watch: green when the machine is clean, amber when
+            there's waste worth reclaiming, red when memory is under real pressure. Click it
+            for the details.
+          </p>
+        </div>
+        <div class="surface">
+          <span class="s-glyph" aria-hidden="true">𓂀</span>
+          <h3>Horus Dashboard</h3>
+          <span class="s-tag">local web app &middot; for power users</span>
+          <p>
+            <code>sirsi dashboard</code> opens a live view at <code>localhost:9119</code> &mdash;
+            findings, health, and history streaming in one place. It runs on your machine and
+            only your machine.
+          </p>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- BOTTOM STACK: install, ecosystem, footer -->
-  <div class="bottom-stack">
-    <div class="install-block reveal">
-      <code class="install-cmd" id="install-cmd">brew tap SirsiMaster/tools && brew install sirsi-pantheon</code>
-      <button class="install-copy" onclick="copyInstall()" aria-label="Copy" id="copy-btn">Copy</button>
-    </div>
-    <div class="install-note">macOS &middot; Apple Silicon &middot; Zero dependencies</div>
+  <!-- ══════════════════════ THE PANTHEON ══════════════════════ -->
+  <section id="pantheon">
+    <div class="wrap">
+      <p class="sec-eyebrow">The Pantheon</p>
+      <h2 class="sec-title">Every job has a name</h2>
+      <p class="sec-sub">
+        Pantheon is built as a house of specialists. Each deity does one thing well,
+        and they all report what they find in plain English.
+      </p>
 
-    <div class="ecosystem">
-      <div class="ecosystem-label">The Sirsi Ecosystem &mdash; <a href="https://sirsi.ai" style="color:var(--color-gold);text-decoration:none;">sirsi.ai</a></div>
-      <div class="ecosystem-items">
-        <span class="ecosystem-item active">Pantheon</span>
-        <span class="ecosystem-item">NexusApp</span>
-        <span class="ecosystem-item">FinalWishes</span>
-        <span class="ecosystem-item">Assiduous</span>
+      <div class="pantheon">
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓁢</span>
+          <h3>Anubis</h3>
+          <span class="d-role">The Scanner</span>
+          <p>Finds the waste &mdash; caches, build leftovers, forgotten downloads &mdash; with 81 rules and a reason for each finding.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓂓</span>
+          <h3>Ka</h3>
+          <span class="d-role">The Ghost Hunter</span>
+          <p>Finds what uninstalled apps left behind: stray settings, launch entries, and caches for software that's already gone.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓂀</span>
+          <h3>Horus</h3>
+          <span class="d-role">The Watcher</span>
+          <p>Sees the whole machine &mdash; every scan, alert, and diagnosis gathered into one local dashboard.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓆄</span>
+          <h3>Ma'at</h3>
+          <span class="d-role">The Standard</span>
+          <p>Holds work to a standard before it ships &mdash; test coverage, honest docs, and quality gates for your repos.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓁟</span>
+          <h3>Thoth</h3>
+          <span class="d-role">The Memory</span>
+          <p>Remembers your projects so AI assistants don't start from zero every session &mdash; and read far less to catch up.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓁐</span>
+          <h3>Isis</h3>
+          <span class="d-role">The Guardian</span>
+          <p>Hardens your network and watches system health &mdash; and automatically undoes any fix that breaks something, within seconds.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓇽</span>
+          <h3>Seba</h3>
+          <span class="d-role">The Surveyor</span>
+          <p>Knows your hardware, chip to memory, so every recommendation fits the machine it runs on.</p>
+        </div>
+        <div class="deity">
+          <span class="d-glyph" aria-hidden="true">𓇳</span>
+          <h3>Ra <span class="d-soon">fleet &middot; in development</span></h3>
+          <span class="d-role">The Fleet Lord</span>
+          <p>Extends everything above from one machine to a whole fleet &mdash; the same rules, across every node you run.</p>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- FOOTER -->
+  <!-- ══════════════════════ TRUST ══════════════════════ -->
+  <section id="trust">
+    <div class="wrap">
+      <p class="sec-eyebrow">Built to be Trusted</p>
+      <h2 class="sec-title">Your machine. Your data. Your call.</h2>
+      <p class="sec-sub">A tool that touches your files has to earn the right to. These aren't settings &mdash; they're how Pantheon is built.</p>
+
+      <div class="trust">
+        <div class="trust-card">
+          <span class="t-icon" aria-hidden="true">𓉐</span>
+          <h3>100% local</h3>
+          <p>Everything runs on your machine. No accounts, no cloud, no data leaving the house.</p>
+        </div>
+        <div class="trust-card">
+          <span class="t-icon" aria-hidden="true">𓁹</span>
+          <h3>Zero telemetry</h3>
+          <p>Pantheon phones no one. There is no analytics endpoint to opt out of &mdash; it doesn't exist.</p>
+        </div>
+        <div class="trust-card">
+          <span class="t-icon" aria-hidden="true">𓊽</span>
+          <h3>Trash-first</h3>
+          <p>Nothing is deleted outright. Cleanups preview first, then move items to the Trash &mdash; your undo button.</p>
+        </div>
+        <div class="trust-card">
+          <span class="t-icon" aria-hidden="true">𓂋</span>
+          <h3>Open source</h3>
+          <p>Apache-2.0, built in Go, <a href="build-log.html">developed in public</a> &mdash; mistakes and all. Read every line.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ CTA ══════════════════════ -->
+  <section id="install" class="cta">
+    <div class="wrap">
+      <p class="sec-eyebrow">Get Started</p>
+      <h2 class="sec-title">One install. Everything clean.</h2>
+      <p class="sec-sub">Install it, run <code style="font-family:var(--font-mono);color:var(--gold-bright);">sirsi scan</code>, and see what your Mac has been carrying.</p>
+
+      <div class="install-row">
+        <code id="install-cmd-2">brew tap SirsiMaster/tools &amp;&amp; brew install sirsi-pantheon</code>
+        <button class="copy-btn" data-copy="install-cmd-2" aria-label="Copy install command">Copy</button>
+      </div>
+      <p class="install-note">Latest release: <span class="mono" data-release>v0.23.8-beta</span></p>
+
+      <div class="cta-links">
+        <a class="btn btn-gold" href="getting-started.html">Read the getting-started guide</a>
+        <a class="btn btn-line" href="https://github.com/SirsiMaster/sirsi-pantheon/releases">Download from GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ══════════════════════ FOOTER ══════════════════════ -->
   <footer>
-    <div class="footer-inner">
-      <div class="footer-brand">
-        <img src="assets/sirsi-logo-white.png" alt="Sirsi">
-        <p>Infrastructure intelligence, not infrastructure anxiety.</p>
+    <div class="wrap foot-inner">
+      <div class="foot-brand">
+        <span class="glyph" aria-hidden="true">𓂀</span>
+        <span>SIRSI&nbsp;PANTHEON</span>
       </div>
-      <div class="footer-links">
+      <nav class="foot-links" aria-label="Footer">
         <a href="getting-started.html">Getting Started</a>
         <a href="faq.html">FAQ</a>
         <a href="build-log.html">Build Log</a>
         <a href="case-studies.html">Case Studies</a>
         <a href="https://github.com/SirsiMaster/sirsi-pantheon">GitHub</a>
         <a href="https://sirsi.ai">sirsi.ai</a>
+      </nav>
+      <div class="foot-meta">
+        <span>&copy; 2026 Sirsi Technologies &middot; Apache-2.0</span>
+        <span class="mono">Weigh. Judge. Purge. &middot; <span data-release>v0.23.8-beta</span></span>
       </div>
-      <div class="footer-copy">&copy; 2026 Sirsi Technologies</div>
     </div>
   </footer>
 
   <script>
-    // Scroll reveal
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) {
-          e.target.classList.add('visible');
-          observer.unobserve(e.target);
+    /* Everything below is progressive enhancement. The page is complete and
+       fully readable before this script runs — never hide content in CSS. */
+
+    // ── Copy buttons ──
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var code = document.getElementById(btn.getAttribute('data-copy'));
+        if (!code) return;
+        var text = code.textContent;
+        var done = function () {
+          btn.textContent = 'Copied';
+          setTimeout(function () { btn.textContent = 'Copy'; }, 2000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {});
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+          document.body.removeChild(ta);
         }
       });
-    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+    });
 
-    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    // ── Live version: fetch the newest release tag (the releases list
+    //    includes pre-releases; /releases/latest would skip our betas).
+    //    Falls back to the hardcoded text already in the HTML. ──
+    (function () {
+      try {
+        fetch('https://api.github.com/repos/SirsiMaster/sirsi-pantheon/releases?per_page=1', {
+          headers: { 'Accept': 'application/vnd.github+json' }
+        })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (data && data.length && data[0].tag_name) {
+              document.querySelectorAll('[data-release]').forEach(function (el) {
+                el.textContent = data[0].tag_name;
+              });
+            }
+          })
+          .catch(function () { /* keep fallback */ });
+      } catch (e) { /* keep fallback */ }
+    })();
 
-    // Copy to clipboard
-    function copyInstall() {
-      const text = document.getElementById('install-cmd').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('copy-btn');
-        btn.textContent = 'Copied';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
-      });
-    }
+    // ── Terminal typewriter. Lines are visible by default; we only hide
+    //    them here, at runtime, so no-JS visitors always see the full session.
+    //    A watchdog restores everything if animation is ever interrupted. ──
+    (function () {
+      var body = document.getElementById('terminal-body');
+      if (!body) return;
+      var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced || !('IntersectionObserver' in window)) return; // leave static
+
+      var lines = Array.prototype.slice.call(body.querySelectorAll('.t-line'));
+      var lastIdx = lines.length - 1; // keep the final prompt+caret visible
+      var animLines = lines.slice(0, lastIdx);
+      animLines.forEach(function (l) { l.classList.add('t-hidden'); });
+
+      var showAll = function () {
+        animLines.forEach(function (l) { l.classList.remove('t-hidden'); });
+      };
+      var watchdog = setTimeout(showAll, 25000); // safety: never stay hidden
+
+      function typeCommand(line, next) {
+        var cmdSpan = line.querySelector('.t-cmd');
+        var full = cmdSpan.textContent;
+        cmdSpan.textContent = '';
+        line.classList.remove('t-hidden');
+        var i = 0;
+        var tick = setInterval(function () {
+          i++;
+          cmdSpan.textContent = full.slice(0, i);
+          if (i >= full.length) { clearInterval(tick); setTimeout(next, 320); }
+        }, 45);
+      }
+
+      function playFrom(idx) {
+        if (idx >= animLines.length) { clearTimeout(watchdog); return; }
+        var line = animLines[idx];
+        if (line.getAttribute('data-kind') === 'cmd') {
+          typeCommand(line, function () { playFrom(idx + 1); });
+        } else {
+          line.classList.remove('t-hidden');
+          setTimeout(function () { playFrom(idx + 1); }, 110);
+        }
+      }
+
+      var seen = false;
+      var obs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting && !seen) {
+            seen = true;
+            obs.disconnect();
+            setTimeout(function () { playFrom(0); }, 350);
+          }
+        });
+      }, { threshold: 0.35 });
+      obs.observe(body);
+    })();
   </script>
 
 </body>
