@@ -300,6 +300,61 @@ func TestProbeWakeReadinessMCPNotReady(t *testing.T) {
 	}
 }
 
+// Test 7: uninstall removes an installed wake LaunchAgent and is a clean no-op
+// when nothing is installed (A27: install AND clean uninstall). Injected writer
+// dir (Rule A16) so no real ~/Library/LaunchAgents or launchd domain is touched —
+// the override also suppresses the launchctl bootout side effect.
+func TestUninstallWakeLaunchAgent(t *testing.T) {
+	dir := t.TempDir()
+	launchAgentsDirOverride = dir
+	t.Cleanup(func() { launchAgentsDirOverride = "" })
+
+	cfg := AgentConfig{ID: "gemma-pull", Type: "gemma"}
+
+	// Uninstall with nothing installed → clean no-op (removed=false, no error).
+	removed0, path0, err := UninstallWakeLaunchAgent(cfg)
+	if err != nil {
+		t.Fatalf("uninstall (absent): %v", err)
+	}
+	if removed0 {
+		t.Fatalf("uninstall with nothing installed must report removed=false")
+	}
+	if WakeLaunchAgentInstalled(cfg.ID) {
+		t.Fatalf("nothing should be installed before the first install")
+	}
+	want := filepath.Join(dir, WakeLaunchAgentLabel(cfg.ID)+".plist")
+	if path0 != want {
+		t.Fatalf("uninstall path = %q, want %q", path0, want)
+	}
+
+	// Install, then uninstall → removed=true and the plist is gone.
+	if _, _, ierr := InstallWakeLaunchAgent(cfg, "/usr/local/bin/sirsi"); ierr != nil {
+		t.Fatalf("install: %v", ierr)
+	}
+	if !WakeLaunchAgentInstalled(cfg.ID) {
+		t.Fatalf("plist must exist after install")
+	}
+	removed1, _, err := UninstallWakeLaunchAgent(cfg)
+	if err != nil {
+		t.Fatalf("uninstall (present): %v", err)
+	}
+	if !removed1 {
+		t.Fatalf("uninstall of an installed agent must report removed=true")
+	}
+	if WakeLaunchAgentInstalled(cfg.ID) {
+		t.Fatalf("plist must be gone after uninstall")
+	}
+
+	// Second uninstall is idempotent (no error, removed=false).
+	removed2, _, err := UninstallWakeLaunchAgent(cfg)
+	if err != nil {
+		t.Fatalf("uninstall (repeat): %v", err)
+	}
+	if removed2 {
+		t.Fatalf("repeat uninstall must be a no-op (removed=false)")
+	}
+}
+
 // Test 6: LaunchAgent install is idempotent — second install reports no change.
 func TestInstallWakeLaunchAgentIdempotent(t *testing.T) {
 	dir := t.TempDir()

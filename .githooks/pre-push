@@ -148,6 +148,32 @@ else
 fi
 echo ""
 
+# ── 0. gitleaks — committed-secret scan (PANTHEON_RULES.md A28, SECURITY.md) ──
+# Scans only the commits being pushed (fast; no full-history rescan) using git's
+# pre-push contract. New branch (remote_sha=zeros) → scan from the merge-base with
+# origin/main so we don't rescan all of history. CI runs the same scan and is the
+# authoritative gate, so a missing gitleaks binary here only warns — never blocks.
+if command -v gitleaks >/dev/null 2>&1; then
+    echo "  🔑 gitleaks — scanning pushed commits for secrets..."
+    if [ -n "$PUSH_LOCAL_SHA" ] && [ "$PUSH_LOCAL_SHA" != "$ZERO_SHA" ]; then
+        if [ -n "$PUSH_REMOTE_SHA" ] && [ "$PUSH_REMOTE_SHA" != "$ZERO_SHA" ]; then
+            GL_RANGE="${PUSH_REMOTE_SHA}..${PUSH_LOCAL_SHA}"
+        else
+            GL_BASE=$(git merge-base HEAD origin/main 2>/dev/null || \
+                      git merge-base HEAD origin/master 2>/dev/null || echo "")
+            GL_RANGE="${GL_BASE:+$GL_BASE..}${PUSH_LOCAL_SHA}"
+        fi
+        if ! gitleaks detect --log-opts="$GL_RANGE" --no-banner --redact 2>/dev/null; then
+            echo "  ❌ gitleaks found a committed secret in $GL_RANGE — fix before pushing."
+            echo "     Do NOT --no-verify past this. If it's a false positive, add a"
+            echo "     precise, documented entry to .gitleaks.toml (never blanket-allowlist)."
+            exit 1
+        fi
+    fi
+else
+    echo "  ⚠️  gitleaks not installed — secret scan SKIPPED (install: brew install gitleaks). CI still gates this."
+fi
+
 # ── 1. gofmt — formatting must be canonical ─────────────────────────
 BAD_FMT=$(gofmt -l ./internal/ ./cmd/ 2>/dev/null || true)
 if [ -n "$BAD_FMT" ]; then
