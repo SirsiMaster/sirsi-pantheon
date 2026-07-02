@@ -1,14 +1,43 @@
 name: Deploy Docs — Firebase Hosting
 
+# Deploys docs/ to Firebase Hosting site "sirsi-pantheon" (project sirsi-nexus-live).
+#
+# History: the previous FirebaseExtended/action-hosting-deploy@v0 step failed on
+# every push since 2026-06-29 with 400 FAILED_PRECONDITION:
+#   "supplied version ... is the current active version."
+# Root cause (from run logs): upload + finalize succeed, then the release POST
+# hits a premature connection close; firebase-tools retries the non-idempotent
+# POST, and the retry is rejected because the FIRST attempt already released
+# that exact version. The deploy actually lands — the run just reports failure.
+# Compounding it: firebase.json ignores **/*.md, so markdown-only docs pushes
+# upload byte-identical content (a pure no-op) and still went red.
+#
+# This workflow therefore:
+#   1. Only triggers on docs changes that actually ship (md is ignored by hosting).
+#   2. Pins firebase-tools to a known-good major instead of floating latest.
+#   3. Treats "is the current active version" as success (the release landed).
+#   4. Fails with a plain-English diagnosis instead of a raw 400.
+#   5. Smoke-checks the live site after deploying.
+
 on:
   push:
     branches: [main]
     paths:
       - 'docs/**'
+      - '!docs/**/*.md'
       - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
+
+# Never run two releases at once — overlapping releases can also trigger
+# "is the current active version" rejections.
+concurrency:
+  group: deploy-docs-live
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -17,11 +46,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: sirsi-nexus-live
-          channelId: live
-          target: sirsi-pantheon
+      - name: Check service-account secret
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error title=Missing FIREBASE_SERVICE_ACCOUNT secret::Owner action required: create a service account with the 'Firebase Hosting Admin' role in project sirsi-nexus-live, download its JSON key, and save it as the FIREBASE_SERVICE_ACCOUNT repository secret (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          echo "Service-account key written."
+
+      - name: Deploy to Firebase Hosting (live channel)
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          set +e
+          npx --yes firebase-tools@^14 deploy \
+            --only hosting \
+            --project sirsi-nexus-live \
+            --non-interactive 2>&1 | tee deploy.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "Deploy released cleanly."
+            exit 0
+          fi
+
+          # Known benign failure: the release POST was retried after a dropped
+          # connection and the first attempt had already gone live. The site IS
+          # updated; do not fail the run.
+          if grep -q "is the current active version" deploy.log; then
+            echo "::notice title=Release already live::The uploaded version is already the active version on the live channel (firebase-tools retried a release that had already succeeded, or the content was byte-identical to what is live). Treating as success."
+            exit 0
+          fi
+
+          echo "::error title=Firebase Hosting deploy failed::See deploy.log output above. Common causes: (1) FIREBASE_SERVICE_ACCOUNT key revoked or lacking the 'Firebase Hosting Admin' role on project sirsi-nexus-live — owner fixes this in Google Cloud Console → IAM; (2) hosting site 'sirsi-pantheon' deleted or renamed — owner checks Firebase Console → Hosting; (3) transient Google API failure — re-run the workflow."
+          exit 1
+
+      - name: Smoke-check live site
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 20 https://sirsi-pantheon.web.app/ | grep -qi "Sirsi Pantheon"; then
+              echo "Live site responds and contains expected content."
+              exit 0
+            fi
+            echo "Attempt $i failed; retrying in 10s..."
+            sleep 10
+          done
+          echo "::warning title=Smoke check failed::Deploy reported success but https://sirsi-pantheon.web.app/ did not return expected content within the check window. Verify manually."

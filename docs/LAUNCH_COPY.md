@@ -1,5 +1,9 @@
 # 𓁢 Sirsi Anubis — Launch Copy
 
+> **Historical artifact.** This copy was drafted for the spring-2026 launches (v0.17–v0.19 era);
+> version references below are period-accurate, not current. Current release: see `VERSION`
+> and `docs/RELEASE_NOTES.md`.
+
 ## Product Hunt Copy
 
 **Tagline:** Infrastructure hygiene for the AI era — Anubis cleans what AI agents leave behind.

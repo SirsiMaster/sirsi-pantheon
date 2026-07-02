@@ -3,20 +3,21 @@ package thoth
 import (
 	"fmt"
 	"testing"
-	"time"
 )
 
 // ── delegate.go Tests ──────────────────────────────────────────────
-// Uses injectable mocks per Rule A16 + A21 (mutex-protected function pointers).
+// Uses injectable mocks per Rule A16 + A21. These tests swap the package
+// globals lookPathFn/runCmdFn, so they MUST run serially — never t.Parallel().
+// The setters are mutex-guarded (no data race), but two parallel tests would
+// still clobber each other's active mock, so a sibling could observe the real
+// exec.LookPath ("file not found") mid-test. Serial execution is the fix.
 
 func TestBinaryAvailable_Found(t *testing.T) {
-	t.Parallel()
-
 	old := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "/usr/local/bin/" + name, nil
 	})
-	defer func() { setLookPathFn(old) }()
+	defer setLookPathFn(old)
 
 	if !BinaryAvailable("thoth-init") {
 		t.Error("BinaryAvailable should return true when binary exists")
@@ -24,16 +25,11 @@ func TestBinaryAvailable_Found(t *testing.T) {
 }
 
 func TestBinaryAvailable_NotFound(t *testing.T) {
-	t.Parallel()
-
 	old := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "", fmt.Errorf("not found")
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(old)
-	}()
+	defer setLookPathFn(old)
 
 	if BinaryAvailable("thoth-init") {
 		t.Error("BinaryAvailable should return false when binary missing")
@@ -41,16 +37,11 @@ func TestBinaryAvailable_NotFound(t *testing.T) {
 }
 
 func TestTryDelegateInit_BinaryMissing(t *testing.T) {
-	t.Parallel()
-
 	old := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "", fmt.Errorf("not found")
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(old)
-	}()
+	defer setLookPathFn(old)
 
 	delegated, err := TryDelegateInit(InitOptions{RepoRoot: "/tmp", Yes: true})
 	if delegated {
@@ -62,16 +53,11 @@ func TestTryDelegateInit_BinaryMissing(t *testing.T) {
 }
 
 func TestTryDelegateInit_BinarySuccess(t *testing.T) {
-	t.Parallel()
-
 	oldLook := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "/usr/local/bin/" + name, nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(oldLook)
-	}()
+	defer setLookPathFn(oldLook)
 
 	oldRun := getRunCmdFn()
 	var capturedArgs []string
@@ -79,10 +65,7 @@ func TestTryDelegateInit_BinarySuccess(t *testing.T) {
 		capturedArgs = append([]string{name}, args...)
 		return "init done\n", "", nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setRunCmdFn(oldRun)
-	}()
+	defer setRunCmdFn(oldRun)
 
 	delegated, err := TryDelegateInit(InitOptions{
 		RepoRoot: "/tmp/project",
@@ -103,25 +86,17 @@ func TestTryDelegateInit_BinarySuccess(t *testing.T) {
 }
 
 func TestTryDelegateInit_BinaryFails(t *testing.T) {
-	t.Parallel()
-
 	oldLook := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "/usr/local/bin/" + name, nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(oldLook)
-	}()
+	defer setLookPathFn(oldLook)
 
 	oldRun := getRunCmdFn()
 	setRunCmdFn(func(name string, args ...string) (string, string, error) {
 		return "", "segfault", fmt.Errorf("exit 1")
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setRunCmdFn(oldRun)
-	}()
+	defer setRunCmdFn(oldRun)
 
 	delegated, err := TryDelegateInit(InitOptions{Yes: true})
 	if !delegated {
@@ -133,16 +108,11 @@ func TestTryDelegateInit_BinaryFails(t *testing.T) {
 }
 
 func TestTryDelegateSync_BinaryMissing(t *testing.T) {
-	t.Parallel()
-
 	old := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "", fmt.Errorf("not found")
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(old)
-	}()
+	defer setLookPathFn(old)
 
 	delegated, err := TryDelegateSync(SyncOptions{RepoRoot: "/tmp"})
 	if delegated {
@@ -154,25 +124,17 @@ func TestTryDelegateSync_BinaryMissing(t *testing.T) {
 }
 
 func TestTryDelegateSync_BinarySuccess(t *testing.T) {
-	t.Parallel()
-
 	oldLook := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "/usr/local/bin/" + name, nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(oldLook)
-	}()
+	defer setLookPathFn(oldLook)
 
 	oldRun := getRunCmdFn()
 	setRunCmdFn(func(name string, args ...string) (string, string, error) {
 		return "", "", nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setRunCmdFn(oldRun)
-	}()
+	defer setRunCmdFn(oldRun)
 
 	delegated, err := TryDelegateSync(SyncOptions{RepoRoot: "/tmp", UpdateDate: true})
 	if !delegated {
@@ -184,16 +146,11 @@ func TestTryDelegateSync_BinarySuccess(t *testing.T) {
 }
 
 func TestTryDelegateCompact_BinaryMissing(t *testing.T) {
-	t.Parallel()
-
 	old := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "", fmt.Errorf("not found")
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(old)
-	}()
+	defer setLookPathFn(old)
 
 	delegated, err := TryDelegateCompact(CompactOptions{RepoRoot: "/tmp", Summary: "test"})
 	if delegated {
@@ -205,16 +162,11 @@ func TestTryDelegateCompact_BinaryMissing(t *testing.T) {
 }
 
 func TestTryDelegateCompact_BinarySuccess(t *testing.T) {
-	t.Parallel()
-
 	oldLook := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
 		return "/usr/local/bin/" + name, nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setLookPathFn(oldLook)
-	}()
+	defer setLookPathFn(oldLook)
 
 	oldRun := getRunCmdFn()
 	var capturedArgs []string
@@ -222,10 +174,7 @@ func TestTryDelegateCompact_BinarySuccess(t *testing.T) {
 		capturedArgs = append([]string{name}, args...)
 		return "", "", nil
 	})
-	defer func() {
-		time.Sleep(10 * time.Millisecond)
-		setRunCmdFn(oldRun)
-	}()
+	defer setRunCmdFn(oldRun)
 
 	delegated, err := TryDelegateCompact(CompactOptions{
 		RepoRoot: "/tmp",
