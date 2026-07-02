@@ -1,12 +1,17 @@
 package routerstore
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // newTestStore opens an isolated in-memory store with a fixed clock so opened/
@@ -34,7 +39,7 @@ func TestOpenAndMigrateIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
-	if _, sendErr := s1.Send("a", "b", "hello", "task", "", "do it"); sendErr != nil {
+	if _, sendErr := s1.Send("a", "b", "hello", "review", "do it"); sendErr != nil {
 		t.Fatalf("Send: %v", sendErr)
 	}
 	if closeErr := s1.Close(); closeErr != nil {
@@ -58,7 +63,7 @@ func TestOpenAndMigrateIdempotent(t *testing.T) {
 func TestSendGetClose(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.Send("claude-pantheon", "codex-pantheon", "Router v2 review", "review", "sirsi-pantheon", "please bind")
+	id, err := s.Send("claude-pantheon", "codex-pantheon", "Router v2 review", "review", "please bind")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -70,8 +75,13 @@ func TestSendGetClose(t *testing.T) {
 	if got.From != "claude-pantheon" || got.To != "codex-pantheon" {
 		t.Errorf("routing mismatch: from=%q to=%q", got.From, got.To)
 	}
-	if got.Type != "review" || got.Repo != "sirsi-pantheon" {
-		t.Errorf("type/repo mismatch: type=%q repo=%q", got.Type, got.Repo)
+	if got.Type != "review" {
+		t.Errorf("type mismatch: type=%q", got.Type)
+	}
+	// A new item has never been wake-touched — mirrors work.SendTyped writing
+	// no wake_* frontmatter.
+	if got.WakeStatus != "" || got.WakeAttemptedAt != "" || got.WakeAdapter != "" || got.WakeError != "" {
+		t.Errorf("new item carries wake state: %+v", got)
 	}
 	if got.Status != "open" {
 		t.Errorf("new item status = %q, want open", got.Status)
@@ -108,7 +118,7 @@ func TestCloseErrors(t *testing.T) {
 		t.Errorf("CloseItem(unknown) = %v, want ErrNotFound", err)
 	}
 
-	id, err := s.Send("a", "b", "t", "", "", "i")
+	id, err := s.Send("a", "b", "t", "", "i")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -122,7 +132,7 @@ func TestCloseErrors(t *testing.T) {
 
 func TestCloseEmptyResultPlaceholder(t *testing.T) {
 	s := newTestStore(t)
-	id, _ := s.Send("a", "b", "t", "", "", "i")
+	id, _ := s.Send("a", "b", "t", "", "i")
 	if err := s.CloseItem(id, "   "); err != nil {
 		t.Fatalf("CloseItem: %v", err)
 	}
@@ -146,15 +156,20 @@ func TestSendValidation(t *testing.T) {
 		from, to, mtyp string
 		wantErr        bool
 	}{
-		{"ok", "a", "b", "task", false},
+		{"ok proposal", "a", "b", "proposal", false},
+		{"ok review", "a", "b", "review", false},
+		{"ok decision", "a", "b", "decision", false},
 		{"ok empty type", "a", "b", "", false},
 		{"missing from", "", "b", "", true},
 		{"missing to", "a", "", "", true},
 		{"bad type", "a", "b", "gossip", true},
+		// "task" is NOT in the ADR-024 §5 vocabulary (proposal|review|decision)
+		// — Send holds the documented line even though work.SendTyped is lax.
+		{"task rejected", "a", "b", "task", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := s.Send(tc.from, tc.to, "title", tc.mtyp, "", "instr")
+			_, err := s.Send(tc.from, tc.to, "title", tc.mtyp, "instr")
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Send err = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -423,12 +438,12 @@ func TestSlugifyParity(t *testing.T) {
 
 func TestSendIDShape(t *testing.T) {
 	s := newTestStore(t)
-	id, err := s.Send("claude-pantheon", "codex-pantheon", "Router v2 review", "review", "", "x")
+	id, err := s.Send("claude-pantheon", "codex-pantheon", "Router v2 review", "review", "x")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	// Fixed clock is 2026-07-02 15:04:05 UTC → prefix must match the
-	// timestamp-from-to-slug convention (same as internal/work.SendScoped).
+	// timestamp-from-to-slug convention (same as internal/work.SendTyped).
 	want := "20260702-150405-claude-pantheon-codex-pantheon-router-v2-review"
 	if id != want {
 		t.Errorf("Send id = %q, want %q", id, want)
@@ -453,5 +468,350 @@ func mustPut(t *testing.T, s *Store, it Item) {
 	t.Helper()
 	if err := s.Put(it); err != nil {
 		t.Fatalf("Put(%s): %v", it.ID, err)
+	}
+}
+
+// columnFor maps each routerstore.Item field to its items-table column. It is
+// the single declared field↔column correspondence; TestFieldFidelityWithWorkItem
+// checks it is a bijection against the live schema.
+var columnFor = map[string]string{
+	"ID":              "id",
+	"From":            "from_agent",
+	"To":              "to_agent",
+	"Title":           "title",
+	"Type":            "type",
+	"Status":          "status",
+	"Opened":          "opened",
+	"Closed":          "closed",
+	"Instructions":    "instructions",
+	"Result":          "result",
+	"WakeStatus":      "wake_status",
+	"WakeAttemptedAt": "wake_attempted_at",
+	"WakeAdapter":     "wake_adapter",
+	"WakeError":       "wake_error",
+}
+
+func fieldNames(t reflect.Type) map[string]bool {
+	names := make(map[string]bool, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		names[t.Field(i).Name] = true
+	}
+	return names
+}
+
+// TestFieldFidelityWithWorkItem is the durable schema-fidelity guarantee
+// (PRD /goal #4, zero data loss). It enforces, structurally:
+//
+//  1. routerstore.Item carries EXACTLY the fields of internal/work.Item —
+//     every work.Item field is persisted (frontmatter or body), so a field
+//     added to work.Item FAILS here until the mirror catches up, and a field
+//     invented on the store side (the old Repo column) fails the reverse check;
+//  2. every Item field maps to a real column in the live schema, and the
+//     schema has no unmapped columns;
+//  3. every field actually round-trips through Put→Get (a column that exists
+//     but isn't wired into the SQL would fail here).
+func TestFieldFidelityWithWorkItem(t *testing.T) {
+	workT := reflect.TypeOf(work.Item{})
+	storeT := reflect.TypeOf(Item{})
+
+	// 1. Field-set equality, both directions.
+	workFields := fieldNames(workT)
+	storeFields := fieldNames(storeT)
+	for f := range workFields {
+		if !storeFields[f] {
+			t.Errorf("work.Item field %q missing from routerstore.Item — Phase-4 backfill would silently drop it (PRD /goal #4)", f)
+		}
+	}
+	for f := range storeFields {
+		if !workFields[f] {
+			t.Errorf("routerstore.Item field %q does not exist in work.Item — invented columns break schema fidelity", f)
+		}
+	}
+
+	// 2. Field↔column bijection against the live schema.
+	s := newTestStore(t)
+	rows, err := s.db.Query(`PRAGMA table_info(items);`)
+	if err != nil {
+		t.Fatalf("table_info: %v", err)
+	}
+	defer rows.Close()
+	schemaCols := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             any
+		)
+		if scanErr := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); scanErr != nil {
+			t.Fatalf("scan table_info: %v", scanErr)
+		}
+		schemaCols[name] = true
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatalf("table_info rows: %v", rowsErr)
+	}
+	for f := range storeFields {
+		col, ok := columnFor[f]
+		if !ok {
+			t.Errorf("Item field %q has no declared column mapping — add it to columnFor and the schema", f)
+			continue
+		}
+		if !schemaCols[col] {
+			t.Errorf("Item field %q maps to column %q which is missing from the items schema", f, col)
+		}
+	}
+	mapped := map[string]bool{}
+	for _, col := range columnFor {
+		mapped[col] = true
+	}
+	for col := range schemaCols {
+		if !mapped[col] {
+			t.Errorf("schema column %q maps to no work.Item field — invented columns are forbidden", col)
+		}
+	}
+
+	// 3. Every field round-trips through Put→Get with a distinct value.
+	in := Item{}
+	v := reflect.ValueOf(&in).Elem()
+	for i := 0; i < storeT.NumField(); i++ {
+		v.Field(i).SetString("v-" + storeT.Field(i).Name)
+	}
+	in.ID = "fidelity-item"
+	in.Status = "closed" // must be a valid status to pass Put validation
+	if putErr := s.Put(in); putErr != nil {
+		t.Fatalf("Put: %v", putErr)
+	}
+	got, err := s.Get(in.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !reflect.DeepEqual(in, got) {
+		t.Errorf("field round-trip mismatch:\n put: %+v\n got: %+v", in, got)
+	}
+}
+
+// TestCloseItemConcurrentDoubleClose proves the close guard is atomic: two
+// goroutines racing to close the same item must yield EXACTLY one success and
+// one ErrAlreadyClosed, every trial. The pre-fix Get→check→UPDATE window let
+// both closers win (TOCTOU). Run with -race.
+func TestCloseItemConcurrentDoubleClose(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	const trials = 200
+	for i := 0; i < trials; i++ {
+		id := fmt.Sprintf("race-%03d", i)
+		if err := s.Put(Item{ID: id, From: "a", To: "b", Title: "t", Status: "open", Opened: "t"}); err != nil {
+			t.Fatalf("trial %d: Put: %v", i, err)
+		}
+		start := make(chan struct{})
+		errs := make(chan error, 2)
+		var wg sync.WaitGroup
+		for g := 0; g < 2; g++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs <- s.CloseItem(id, "winner")
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		var nilCount, alreadyClosed int
+		for err := range errs {
+			switch {
+			case err == nil:
+				nilCount++
+			case errors.Is(err, ErrAlreadyClosed):
+				alreadyClosed++
+			default:
+				t.Fatalf("trial %d: unexpected error: %v", i, err)
+			}
+		}
+		if nilCount != 1 || alreadyClosed != 1 {
+			t.Fatalf("trial %d: nil=%d alreadyClosed=%d, want exactly one of each", i, nilCount, alreadyClosed)
+		}
+	}
+}
+
+// adaptWorkItem is the Phase-4 importer adaptation, spelled out field-for-field.
+// TestFieldFidelityWithWorkItem guarantees this list is complete.
+func adaptWorkItem(w work.Item) Item {
+	return Item{
+		ID:              w.ID,
+		From:            w.From,
+		To:              w.To,
+		Title:           w.Title,
+		Type:            w.Type,
+		Status:          w.Status,
+		Opened:          w.Opened,
+		Closed:          w.Closed,
+		Instructions:    w.Instructions,
+		Result:          w.Result,
+		WakeStatus:      w.WakeStatus,
+		WakeAttemptedAt: w.WakeAttemptedAt,
+		WakeAdapter:     w.WakeAdapter,
+		WakeError:       w.WakeError,
+	}
+}
+
+// TestExportMarkdownRoundTrip proves the PRD recovery path honestly:
+// real file-router items (written by work.SendTyped/Close/SetWake) →
+// work.ListAll → Backfill → ExportMarkdown must reproduce the ORIGINAL FILES
+// BYTE-FOR-BYTE, and work.ListAll over the exported tree must parse back to
+// equal items. If the SQLite index is ever corrupted or distrusted, this is
+// the proof the dump is readable by the existing file router with zero loss.
+func TestExportMarkdownRoundTrip(t *testing.T) {
+	root := t.TempDir()
+
+	// Items written by the REAL file-router writers, covering: typed + wake
+	// annotation (open), untyped + closed with result, typed + wake-unavailable
+	// + closed without result (placeholder).
+	id1, err := work.SendTyped(root, "claude-pantheon", "codex-pantheon", "review the store", "review", "please bind\n\nwith care")
+	if err != nil {
+		t.Fatalf("SendTyped: %v", err)
+	}
+	if wakeErr := work.SetWake(root, id1, work.WakeAnnotation{
+		Status: "wake-attempted", AttemptedAt: "2026-07-02T15:04:05Z", Adapter: "cli-spawn",
+	}); wakeErr != nil {
+		t.Fatalf("SetWake: %v", wakeErr)
+	}
+	id2, err := work.Send(root, "alice", "bob", "plain item", "just do it")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if closeErr := work.Close(root, id2, "done & merged"); closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
+	}
+	id3, err := work.SendTyped(root, "x-agent", "y-agent", "third: a decision", "decision", "decide")
+	if err != nil {
+		t.Fatalf("SendTyped: %v", err)
+	}
+	if wakeErr := work.SetWake(root, id3, work.WakeAnnotation{
+		Status: "wake-unavailable", AttemptedAt: "2026-07-02T15:04:06Z", Adapter: "launchagent", Error: "no adapter for y-agent",
+	}); wakeErr != nil {
+		t.Fatalf("SetWake: %v", wakeErr)
+	}
+	if closeErr := work.Close(root, id3, ""); closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
+	}
+
+	// file → Backfill (the Phase-4 importer spine).
+	fileItems, err := work.ListAll(root)
+	if err != nil {
+		t.Fatalf("work.ListAll: %v", err)
+	}
+	if len(fileItems) != 3 {
+		t.Fatalf("fixture items = %d, want 3", len(fileItems))
+	}
+	items := make([]Item, 0, len(fileItems))
+	for _, w := range fileItems {
+		items = append(items, adaptWorkItem(w))
+	}
+	s := newTestStore(t)
+	rep, err := s.Backfill(items)
+	if err != nil || rep.Inserted != 3 || len(rep.Errors) != 0 {
+		t.Fatalf("Backfill = %+v, err=%v", rep, err)
+	}
+
+	// Backfill → ExportMarkdown into a fresh root's items/ dir.
+	exportRoot := t.TempDir()
+	n, err := s.ExportMarkdown(filepath.Join(exportRoot, "items"))
+	if err != nil {
+		t.Fatalf("ExportMarkdown: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("ExportMarkdown wrote %d files, want 3", n)
+	}
+
+	// Byte-comparable: exported file == original file, for every item.
+	for _, w := range fileItems {
+		orig, readErr := os.ReadFile(filepath.Join(root, "items", w.ID+".md"))
+		if readErr != nil {
+			t.Fatalf("read original %s: %v", w.ID, readErr)
+		}
+		exported, readErr := os.ReadFile(filepath.Join(exportRoot, "items", w.ID+".md"))
+		if readErr != nil {
+			t.Fatalf("read exported %s: %v", w.ID, readErr)
+		}
+		if !bytes.Equal(orig, exported) {
+			t.Errorf("%s not byte-identical after round-trip:\n--- original ---\n%s\n--- exported ---\n%s", w.ID, orig, exported)
+		}
+	}
+
+	// Parse-equal: the file router itself reads the export back losslessly.
+	reparsed, err := work.ListAll(exportRoot)
+	if err != nil {
+		t.Fatalf("work.ListAll(export): %v", err)
+	}
+	if !reflect.DeepEqual(fileItems, reparsed) {
+		t.Errorf("re-parsed export differs:\n orig: %+v\n export: %+v", fileItems, reparsed)
+	}
+}
+
+// TestExportMarkdownErrors covers the empty-store and unwritable-dir paths.
+func TestExportMarkdownErrors(t *testing.T) {
+	s := newTestStore(t)
+	n, err := s.ExportMarkdown(filepath.Join(t.TempDir(), "empty"))
+	if err != nil || n != 0 {
+		t.Errorf("empty export = (%d, %v), want (0, nil)", n, err)
+	}
+	// A regular FILE at the target path makes MkdirAll fail.
+	blocker := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+	if _, err := s.Send("a", "b", "t", "", "i"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if _, err := s.ExportMarkdown(blocker); err == nil {
+		t.Error("export into a file path should error")
+	}
+}
+
+// TestCloseNilStore covers the nil-receiver guard on Store.Close.
+func TestCloseNilStore(t *testing.T) {
+	var s *Store
+	if err := s.Close(); err != nil {
+		t.Errorf("nil Store.Close = %v, want nil", err)
+	}
+}
+
+func TestSetStateEmptyKey(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SetState("", "v"); err == nil {
+		t.Error("SetState with empty key should error")
+	}
+}
+
+// TestMigrateVersioning proves the user_version machinery: a fresh database
+// lands on the current schema version, and a database stamped with a FUTURE
+// version is refused loudly instead of being half-migrated.
+func TestMigrateVersioning(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version;`).Scan(&version); err != nil {
+		t.Fatalf("read user_version: %v", err)
+	}
+	if version != len(migrations) {
+		t.Errorf("fresh db user_version = %d, want %d", version, len(migrations))
+	}
+	// Stamp a future version and re-open: must refuse.
+	if _, err := s.db.Exec(`PRAGMA user_version = 99;`); err != nil {
+		t.Fatalf("stamp future version: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("Open of a future-versioned db should refuse, got nil error")
 	}
 }

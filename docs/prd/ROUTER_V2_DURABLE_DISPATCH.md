@@ -6,7 +6,7 @@
 **Governs:** PANTHEON_RULES.md A26 (Idea Router Workstream), A27 (Heartbeat Loop)
 
 ### Phase checklist (for the next lane)
-- [x] **Phase 1 — SQLite state store** (`internal/routerstore`): store, item CRUD, agents, state, `Backfill`, `-race` tests, 85%+ coverage, lint clean. Wired to nothing (zero risk). *Done 2026-07-02.*
+- [x] **Phase 1 — SQLite state store** (`internal/routerstore`): store (user_version-numbered migrations), item CRUD (atomic status-guarded close), agents, state, `Backfill`, `ExportMarkdown(dir)` (byte-fidelity recovery path, round-trip tested), `work.Item` field-fidelity enforced by reflection test (incl. wake_* delivery truth), `-race` tests, 85%+ coverage, lint clean. Wired to nothing (zero risk). *Done 2026-07-02; review blockers fixed same day.*
 - [ ] **Phase 2 — Event-driven dispatch**: one dispatcher signals the addressed agent's wait channel (in-process) + per-agent notify FIFO/socket for cross-process; `router_wait` becomes a real blocking wait (< 250ms wake). *Depends on Phase 1.*
 - [ ] **Phase 3 — MCP owns dispatch, CLI is a thin client**: move send/poll/get/close/register/heartbeat behind ONE facade over `internal/routerstore`; `sirsi router *` and the six `router_*` MCP handlers both call it (no duplicated logic). *Depends on Phase 1.*
 - [ ] **Phase 4 — Migration + cutover + back-compat**: `sirsi router migrate` (adapt `work.Item` → `routerstore.Item`, call `Backfill`, report count-in==count-out); dual-read window (store first, legacy file fallback with `DEPRECATED` warning); stop writing files after a deprecation window; ADR + README/A26/A27 updates. *Depends on Phases 1–3.*
@@ -39,8 +39,8 @@ Router v2 is DONE when ALL hold:
 
 ### Phase 1 — SQLite state store (foundation)
 - **New package** `internal/routerstore` (SQLite via `modernc.org/sqlite`, CGO-free — honors Rule A3 static-binary mandate). DB at `~/.sirsi/router.db` (outside any repo).
-- **Schema:** `items(id TEXT PK, from_agent, to_agent, type, title, status, body, result, created_at, closed_at)`; index on `(to_agent, status)`; `agents(id, registered_at, last_seen, pid)`; `state(key, value)` for the old state.json keys.
-- **CRUD API:** `Send`, `Inbox(agent)`, `Get(id)`, `Close(id, result)`, `RegisterAgent`, `Heartbeat`, plus `ExportMarkdown(dir)` for audit/debug.
+- **Schema (as built — mirrors `internal/work.Item` field-for-field, incl. wake-delivery truth):** `items(id TEXT PK, from_agent, to_agent, title, type, status, opened, closed, instructions, result, wake_status, wake_attempted_at, wake_adapter, wake_error)`; index on `(to_agent, status)`; `agents(id, registered_at, last_seen, pid)`; `state(key, value)` for the old state.json keys. Versioned via the SQLite `user_version` pragma + numbered migrations so future column adds work against existing DBs. A reflection test (`TestFieldFidelityWithWorkItem`) fails the build if `work.Item` grows a field the schema doesn't carry.
+- **CRUD API:** `Send`, `Inbox(agent)`, `Get(id)`, `CloseItem(id, result)` (atomic `status='open'` guard — concurrent double-close yields exactly one winner), `RegisterAgent`, `Heartbeat`, plus `ExportMarkdown(dir)` for audit/debug — it emits the file router's exact frontmatter+body bytes, round-trip proven (file → `Backfill` → `ExportMarkdown` → byte-identical).
 - **Tests:** table-driven CRUD; concurrent-write safety (WAL mode + a single writer goroutine or `sync.Mutex` per Rule A21); inbox filtering.
 - **Acceptance:** store passes tests in isolation; nothing wired to it yet (zero risk to live router).
 
