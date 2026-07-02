@@ -425,6 +425,43 @@ func escapeXML(s string) string {
 	).Replace(s)
 }
 
+// WakeLaunchAgentInstalled reports whether the per-agent pull-loop LaunchAgent
+// plist for agentID is present on disk. Exported so thread-scoped callers can show
+// install status without re-deriving the label/dir convention.
+func WakeLaunchAgentInstalled(agentID string) bool {
+	return launchAgentInstalled(WakeLaunchAgentLabel(agentID))
+}
+
+// UninstallWakeLaunchAgent removes the per-agent pull-loop LaunchAgent installed by
+// InstallWakeLaunchAgent — the clean-off path (A27: install AND clean uninstall).
+// It is the exact inverse of Install: it best-effort boots out the running launchd
+// job (so the resident wake-loop stops immediately) and then removes the plist.
+// Idempotent: removed=false when there is nothing installed, so re-running is a
+// no-op. The bootout is best-effort — an unloaded-but-present plist still gets its
+// file removed, and a missing plist never errors.
+func UninstallWakeLaunchAgent(cfg AgentConfig) (removed bool, path string, err error) {
+	label := WakeLaunchAgentLabel(cfg.ID)
+	path = filepath.Join(launchAgentsDir(), label+".plist")
+	if _, statErr := os.Stat(path); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return false, path, nil // nothing installed — clean no-op
+		}
+		return false, path, fmt.Errorf("stat wake LaunchAgent: %w", statErr)
+	}
+	// Best-effort: stop the resident loop before deleting its definition. Ignore
+	// the error — the job may already be unloaded, and file removal is what makes
+	// the uninstall durable across a relaunch. Guarded so tests that redirect
+	// launchAgentsDirOverride to a temp dir don't touch the real launchd domain.
+	if launchAgentsDirOverride == "" {
+		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+		_ = exec.Command("launchctl", "bootout", target).Run()
+	}
+	if rmErr := os.Remove(path); rmErr != nil {
+		return false, path, fmt.Errorf("remove wake LaunchAgent plist: %w", rmErr)
+	}
+	return true, path, nil
+}
+
 // InstallWakeLaunchAgent writes (idempotently) the per-agent pull-loop LaunchAgent
 // for a worker/headless agent. Returns changed=false when the plist already exists
 // with identical content — re-running setup is a no-op (constraint 7 idempotency
