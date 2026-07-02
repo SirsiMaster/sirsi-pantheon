@@ -28,7 +28,7 @@ const (
 
 	// Global navigation / meta.
 	CmdTab      CommandID = "tab"     // next screen
-	CmdRefresh  CommandID = "refresh" // r — reload the focused screen
+	CmdRefresh  CommandID = "refresh" // u — reload/update the focused screen (proof §3.2: "u update")
 	CmdHelp     CommandID = "help"    // ? — help overlay
 	CmdQuit     CommandID = "quit"    // q — quit
 	CmdBack     CommandID = "back"    // esc — pop detail / dismiss overlay
@@ -39,7 +39,7 @@ const (
 
 	// Per-screen verbs — mirror the CLI cobra tree.
 	CmdInspect CommandID = "inspect" // enter — drill into the selected row
-	CmdRelieve CommandID = "relieve" // r on Pulse doubles as memory relief action
+	CmdRelieve CommandID = "relieve" // r — memory relief (Pulse hero beat; proof §3.2: "r relieve")
 	CmdScan    CommandID = "scan"    // s — rescan (Waste)
 	CmdToggle  CommandID = "toggle"  // space — toggle a review item
 	CmdClean   CommandID = "clean"   // c — clean (destructive; confirm-gated)
@@ -136,7 +136,7 @@ func DefaultRegistry() (*Registry, error) {
 
 		// Global navigation / meta.
 		{ID: CmdTab, Title: "Next screen", Key: "tab", Hint: "next"},
-		{ID: CmdRefresh, Title: "Refresh screen", Key: "r", Hint: "refresh"},
+		{ID: CmdRefresh, Title: "Update screen data", Key: "u", Hint: "update"},
 		{ID: CmdHelp, Title: "Help", Key: "?", Hint: "help"},
 		{ID: CmdQuit, Title: "Quit", Key: "q", Hint: "quit"},
 		{ID: CmdBack, Title: "Back / dismiss", Key: "esc", Hint: "back"},
@@ -152,9 +152,8 @@ func DefaultRegistry() (*Registry, error) {
 		{ID: CmdClean, Title: "Clean selected", Key: "c", Hint: "clean", Destructive: true},
 		{ID: CmdFix, Title: "Apply fix", Key: "f", Hint: "fix"},
 		{ID: CmdDiag, Title: "Re-run diagnostics", Key: "d", Hint: "diagnose"},
-		// Action-only (no status hint / no key clash): relieve is triggered by the
-		// Pulse screen's own key handling, palette-reachable by name.
-		{ID: CmdRelieve, Title: "Relieve memory pressure"},
+		// Relieve is the Pulse hero beat, bound to r (proof §3.2: "r relieve").
+		{ID: CmdRelieve, Title: "Relieve memory pressure", Key: "r", Hint: "relieve"},
 	}
 	for _, c := range cmds {
 		if err := reg.Register(c); err != nil {

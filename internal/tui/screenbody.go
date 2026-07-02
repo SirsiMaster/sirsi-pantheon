@@ -33,7 +33,7 @@ func errorLines(err error, caps Capabilities) []string {
 		"",
 		"  " + Paint("BLOCK "+msg, TokDanger, caps),
 		"",
-		"  " + Paint("press r to retry", TokDim, caps),
+		"  " + Paint("press u to retry", TokDim, caps),
 	}
 }
 
@@ -49,10 +49,11 @@ func emptyLines(msg string, caps Capabilities) []string {
 // listRow is one selectable row in a screen's list: cells already formatted, a
 // severity token for its status column, and a selected flag.
 type listRow struct {
-	cells    []string
-	token    Token // severity color for the row's status cell (TokDim = neutral)
-	selected bool
-	checked  bool // review-item toggle (Waste); false-safe for other screens
+	cells     []string
+	token     Token // severity color for the row's status cell (TokDim = neutral)
+	selected  bool
+	checked   bool // review-item toggle (Waste); false-safe for other screens
+	checkable bool // whether a checkbox is drawn at all; BLOCK rows render "  -  "
 }
 
 // renderTable renders a column-aligned, selectable list with a header rule. It
@@ -92,11 +93,17 @@ func renderTable(cols []Column, rows []listRow, caps Capabilities, checkbox bool
 		}
 		prefix := "  "
 		if checkbox {
-			box := "[ ] "
-			if row.checked {
-				box = "[" + Sigil("check", caps) + "] "
+			switch {
+			case !row.checkable:
+				// BLOCK rows carry no checkbox — they can never be selected for
+				// cleaning, and the empty box makes that unmistakable.
+				box := "[-] "
+				prefix = box
+			case row.checked:
+				prefix = "[" + Sigil("check", caps) + "] "
+			default:
+				prefix = "[ ] "
 			}
-			prefix = box
 		}
 		line := prefix + strings.Join(cells, "  ")
 		if row.selected {
@@ -162,12 +169,13 @@ func severityToken(sev int) Token {
 	}
 }
 
-// scanSeverityToken maps a scan finding's severity string to a token. "safe" is
-// reclaimable (warn-tier reclaimable, not danger), "caution" is warn, "protected"
-// is a danger block (never cleanable).
+// scanSeverityToken maps a scan finding's severity string to a token. The
+// jackal.Severity vocab is safe | caution | warning (there is no "protected"):
+// "warning" is a danger BLOCK (data/config that may break — never auto-cleaned),
+// "safe" and "caution" are reclaimable (shown warn per proof §6.1).
 func scanSeverityToken(sev string) Token {
 	switch strings.ToLower(sev) {
-	case "protected":
+	case "warning":
 		return TokDanger
 	case "caution":
 		return TokWarn

@@ -38,6 +38,102 @@ func withStub(t *testing.T, stub stubRunner, fn func()) {
 	fn()
 }
 
+// capturedCall records one dispatch through the runner seam: the verb and its
+// args (excluding the runner-appended --json). It is the evidence for the
+// per-item --only dispatch and the confirm-gated Health fix.
+type capturedCall struct {
+	verb string
+	args []string
+}
+
+// captureRunner wraps a body-source with a recorded call log so a test can assert
+// the EXACT verb+args a screen dispatched. It never shells out.
+type captureRunner struct {
+	body  func(verb string, args []string) string
+	calls *[]capturedCall
+}
+
+func (c captureRunner) RunJSON(_ context.Context, verb string, args ...string) ([]byte, error) {
+	*c.calls = append(*c.calls, capturedCall{verb: verb, args: append([]string(nil), args...)})
+	body := "{}"
+	if c.body != nil {
+		body = c.body(verb, args)
+	}
+	return []byte(body), nil
+}
+
+// withCapture installs a capturing runner that returns fullStub() bodies for the
+// data verbs (so screens load) and records every call. fn receives the live call
+// log pointer.
+func withCapture(t *testing.T, fn func(calls *[]capturedCall)) {
+	t.Helper()
+	stub := fullStub()
+	var calls []capturedCall
+	cr := captureRunner{
+		calls: &calls,
+		body: func(verb string, _ []string) string {
+			if body, ok := stub[verb]; ok {
+				return body
+			}
+			return `{}`
+		},
+	}
+	old := getRunner()
+	setRunner(cr)
+	defer setRunner(old)
+	fn(&calls)
+}
+
+// firstCallOf returns the first recorded call whose verb == verb (an action
+// dispatch, before any post-action reload), or fails.
+func firstCallOf(t *testing.T, calls []capturedCall, verb string) capturedCall {
+	t.Helper()
+	for _, c := range calls {
+		if c.verb == verb {
+			return c
+		}
+	}
+	t.Fatalf("no runner call for verb %q; recorded: %+v", verb, calls)
+	return capturedCall{}
+}
+
+// runTeaCmd executes a tea.Cmd (and each cmd in a batch) purely for its side
+// effects — the runner call it makes is recorded. It does NOT deliver the result
+// back, so no post-action reload fires; the recorded call is exactly the action
+// dispatch under test.
+func runTeaCmd(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			runTeaCmd(c)
+		}
+	}
+}
+
+// hasArg reports whether args contains v.
+func hasArg(args []string, v string) bool {
+	for _, a := range args {
+		if a == v {
+			return true
+		}
+	}
+	return false
+}
+
+// onlyPaths extracts every value following an --only flag in args.
+func onlyPaths(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--only" && i+1 < len(args) {
+			out = append(out, args[i+1])
+		}
+	}
+	return out
+}
+
 // testCaps is a deterministic, ASCII-only, color-free capability profile so
 // golden frames are stable across terminals (no ANSI bytes to diff).
 func testCaps() Capabilities {
@@ -61,6 +157,14 @@ func newTestApp(t *testing.T) *App {
 func drive(app *App, msg tea.Msg) {
 	next, _ := app.activeScreen().Update(msg, app.caps)
 	app.screens[app.active] = next
+}
+
+// driveCmd is drive but returns the screen's follow-up command so a test can run
+// an action dispatch (the runner call fires when the command is executed).
+func driveCmd(app *App, msg tea.Msg) tea.Cmd {
+	next, cmd := app.activeScreen().Update(msg, app.caps)
+	app.screens[app.active] = next
+	return cmd
 }
 
 // --- canned contract fixtures ---
@@ -119,10 +223,20 @@ func TestGoldenPulse(t *testing.T) {
 		app := newTestApp(t) // active = Pulse
 		loadScreen(app)
 		frame := strings.Join(app.render(), "\n")
-		for _, want := range []string{"Horus", "Pulse", "MEMORY", "TOP MEMORY USERS", "mediaanalysisd", "PRESSURE", "press f"} {
+		for _, want := range []string{"Horus", "Pulse", "MEMORY", "TOP MEMORY USERS", "mediaanalysisd", "PRESSURE", "press r"} {
 			if !strings.Contains(strings.ToUpper(frame), strings.ToUpper(want)) {
 				t.Errorf("Pulse frame missing %q\n---\n%s", want, frame)
 			}
+		}
+		// The relieve hero beat is surfaced (bound to r, proof §3.2: "r relieve").
+		// The status bar wraps the key glyph in bold, so assert on the hint LABEL;
+		// the r=relieve binding itself is proven by TestPulseRelieveBoundToR /
+		// TestRefreshBoundToU_NotR.
+		if !strings.Contains(frame, "relieve") {
+			t.Errorf("Pulse status bar missing the relieve hint\n---\n%s", frame)
+		}
+		if strings.Contains(frame, "refresh") {
+			t.Errorf("Pulse still advertises the old refresh hint (r should be relieve)\n---\n%s", frame)
 		}
 	})
 }
@@ -133,7 +247,7 @@ func TestGoldenWaste(t *testing.T) {
 		app.focus(1) // Waste
 		loadScreen(app)
 		frame := strings.Join(app.render(), "\n")
-		for _, want := range []string{"Waste", "npm/yarn/pnpm Cache", "reclaimable", "RULE", "TIER", "space toggles"} {
+		for _, want := range []string{"Waste", "npm/yarn/pnpm Cache", "reclaimable", "RULE", "TIER", "space checks", "0 selected"} {
 			if !strings.Contains(frame, want) {
 				t.Errorf("Waste frame missing %q\n---\n%s", want, frame)
 			}
@@ -277,8 +391,21 @@ func TestCleanRequiresSecondConfirmation(t *testing.T) {
 		if ws.confirm {
 			t.Fatal("confirm armed before pressing c")
 		}
-		// Press c: arms the confirm modal, does NOT dispatch a clean.
+		// With nothing checked, c is a no-op — there is no set to confirm.
 		clean, _ := app.reg.ResolveKey("c")
+		drive(app, keyMsg{cmd: clean})
+		ws = app.activeScreen().(*wasteScreen)
+		if ws.confirm {
+			t.Error("c armed the confirm modal with an empty selection")
+		}
+		// Check the selected (first, largest) row, then press c.
+		toggle, _ := app.reg.ResolveKey(" ")
+		drive(app, keyMsg{cmd: toggle})
+		ws = app.activeScreen().(*wasteScreen)
+		if ws.checkedCount() != 1 {
+			t.Fatalf("space did not check a row (checked=%d)", ws.checkedCount())
+		}
+		// Press c: arms the confirm modal, does NOT dispatch a clean.
 		drive(app, keyMsg{cmd: clean})
 		ws = app.activeScreen().(*wasteScreen)
 		if !ws.confirm {
@@ -418,4 +545,424 @@ func TestExactlyFiveScreens(t *testing.T) {
 			t.Errorf("screen %d = %q, want %q", i, names[i], want[i])
 		}
 	}
+}
+
+// ============================================================================
+// P0+P1 review-fix tests (review 20260702-030841). Each maps to a ship-blocker.
+// ============================================================================
+
+// fxScanMixed exercises the P0#1 safety boundary: one safe row (cleanable), one
+// caution row (cleanable), one warning row (BLOCK — data/config), and one
+// caution+AI model-weights row (BLOCK — excluded from the reclaimable headline
+// and the one-click cleaner). The reclaimable headline counts ONLY the safe +
+// caution non-AI rows (2.4 GB + 1.1 GB); the 67 GB AI weights and the warning row
+// are NOT reclaimable.
+const fxScanMixed = `{"Findings":[` +
+	`{"RuleName":"npm_global_cache","Category":"dev","Description":"npm Cache","Path":"/Users/x/.npm/_cacache","SizeBytes":2554200676,"FileCount":12258,"Severity":"caution","CanFix":true},` +
+	`{"RuleName":"firebase_caches","Category":"cloud","Description":"Firebase CLI","Path":"/Users/x/.cache/firebase","SizeBytes":1133483950,"FileCount":35,"Severity":"safe","CanFix":true},` +
+	`{"RuleName":"ollama_weights","Category":"ai","Description":"Ollama model weights","Path":"/Users/x/.ollama/models","SizeBytes":71940702208,"FileCount":40,"Severity":"caution","CanFix":true},` +
+	`{"RuleName":"vscode_config","Category":"ides","Description":"VS Code settings","Path":"/Users/x/.vscode/settings.json","SizeBytes":4096,"FileCount":1,"Severity":"warning","CanFix":false}` +
+	`],"TotalSize":75632390930,"ReclaimableSize":3687684626,"RulesRan":81}`
+
+func mixedStub() stubRunner {
+	s := fullStub()
+	s["scan"] = fxScanMixed
+	return s
+}
+
+// loadWasteMixed focuses Waste, loads the mixed fixture, and returns the screen.
+func loadWasteMixed(t *testing.T) (*App, *wasteScreen) {
+	t.Helper()
+	app := newTestApp(t)
+	app.focus(1) // Waste
+	loadScreen(app)
+	return app, app.activeScreen().(*wasteScreen)
+}
+
+// findRow returns the index of the finding whose Path contains sub.
+func findRow(t *testing.T, ws *wasteScreen, sub string) int {
+	t.Helper()
+	for i, f := range ws.report.Findings {
+		if strings.Contains(f.Path, sub) {
+			return i
+		}
+	}
+	t.Fatalf("no finding with path containing %q", sub)
+	return -1
+}
+
+// checkRow selects and toggles the row whose path contains sub, via the real key
+// path (space through the registry) so the test drives what a user drives.
+func checkRow(app *App, ws *wasteScreen, idx int) {
+	ws.selected = idx
+	toggle, _ := app.reg.ResolveKey(" ")
+	drive(app, keyMsg{cmd: toggle})
+}
+
+// --- P1#2: r = relieve (the hero beat), not refresh; f is no longer relief ---
+
+func TestPulseRelieveBoundToR(t *testing.T) {
+	withCapture(t, func(calls *[]capturedCall) {
+		app := newTestApp(t) // Pulse
+		loadScreen(app)
+		// r resolves to CmdRelieve and dispatches `relieve --memory --confirm`.
+		m, cmd := app.handleKey("r")
+		app = m.(*App)
+		ps := app.activeScreen().(*pulseScreen)
+		if !ps.relieving {
+			t.Fatal("pressing r did not start a relieve dispatch")
+		}
+		runTeaCmd(cmd) // execute the dispatch so the runner call is recorded
+		call := firstCallOf(t, *calls, "relieve")
+		if !hasArg(call.args, "--memory") || !hasArg(call.args, "--confirm") {
+			t.Errorf("relieve args = %v, want --memory --confirm", call.args)
+		}
+	})
+}
+
+func TestRefreshBoundToU_NotR(t *testing.T) {
+	reg, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	// r must resolve to relieve, u to refresh — the exact P1#2 rebinding.
+	if c, ok := reg.ResolveKey("r"); !ok || c.ID != CmdRelieve {
+		t.Errorf("ResolveKey(r) = %v (ok=%v), want CmdRelieve", c.ID, ok)
+	}
+	if c, ok := reg.ResolveKey("u"); !ok || c.ID != CmdRefresh {
+		t.Errorf("ResolveKey(u) = %v (ok=%v), want CmdRefresh", c.ID, ok)
+	}
+	// f must NOT be relief anymore — it is the Health apply-fix key.
+	if c, ok := reg.ResolveKey("f"); !ok || c.ID != CmdFix {
+		t.Errorf("ResolveKey(f) = %v (ok=%v), want CmdFix", c.ID, ok)
+	}
+}
+
+// --- P0#1 + P1#4: per-item toggles dispatch clean via anubis clean --only ---
+
+func TestWasteBlockRowsNotCheckable(t *testing.T) {
+	withStub(t, mixedStub(), func() {
+		app, ws := loadWasteMixed(t)
+		// Warning-tier and AI rows are BLOCK — toggling them is a no-op.
+		warnIdx := findRow(t, ws, ".vscode/settings.json")
+		aiIdx := findRow(t, ws, ".ollama/models")
+		checkRow(app, ws, warnIdx)
+		checkRow(app, ws, aiIdx)
+		if ws.checkedCount() != 0 {
+			t.Errorf("BLOCK rows (warning, AI) must not be checkable; checked=%d", ws.checkedCount())
+		}
+		// A safe row IS checkable.
+		safeIdx := findRow(t, ws, ".cache/firebase")
+		checkRow(app, ws, safeIdx)
+		if ws.checkedCount() != 1 {
+			t.Errorf("safe row must be checkable; checked=%d", ws.checkedCount())
+		}
+	})
+}
+
+func TestWasteCleanDispatchesOnlyCheckedPaths(t *testing.T) {
+	withCapture(t, func(calls *[]capturedCall) {
+		// Use the mixed fixture through the capture runner.
+		stub := mixedStub()
+		setRunner(captureRunner{calls: calls, body: func(verb string, _ []string) string {
+			if b, ok := stub[verb]; ok {
+				return b
+			}
+			return `{}`
+		}})
+		app := newTestApp(t)
+		app.focus(1)
+		loadScreen(app)
+		ws := app.activeScreen().(*wasteScreen)
+
+		// Check the safe row (Firebase) and the caution row (npm); leave AI + warning.
+		checkRow(app, ws, findRow(t, ws, ".cache/firebase"))
+		checkRow(app, ws, findRow(t, ws, ".npm/_cacache"))
+		if ws.checkedCount() != 2 {
+			t.Fatalf("expected 2 checked rows, got %d", ws.checkedCount())
+		}
+
+		// Arm confirm (c) then apply (enter).
+		clean, _ := app.reg.ResolveKey("c")
+		drive(app, keyMsg{cmd: clean})
+		if !ws.confirm {
+			t.Fatal("c did not arm the confirm modal for a non-empty selection")
+		}
+		enter, _ := app.reg.ResolveKey("enter")
+		cmd := driveCmd(app, keyMsg{cmd: enter})
+		runTeaCmd(cmd) // execute the clean dispatch
+
+		call := firstCallOf(t, *calls, "anubis")
+		if len(call.args) == 0 || call.args[0] != "clean" {
+			t.Fatalf("anubis args[0] = %v, want clean", call.args)
+		}
+		// Exactly the two checked paths are passed as --only; AI + warning are absent.
+		got := onlyPaths(call.args)
+		want := map[string]bool{"/Users/x/.cache/firebase": true, "/Users/x/.npm/_cacache": true}
+		if len(got) != len(want) {
+			t.Fatalf("--only paths = %v, want the 2 checked paths", got)
+		}
+		for _, p := range got {
+			if !want[p] {
+				t.Errorf("--only included an unchecked path: %s", p)
+			}
+		}
+		if hasArg(call.args, "/Users/x/.ollama/models") {
+			t.Error("AI model weights path leaked into the --only dispatch (P0#1)")
+		}
+		if hasArg(call.args, "/Users/x/.vscode/settings.json") {
+			t.Error("warning-tier path leaked into the --only dispatch (P0#1)")
+		}
+		// A caution row is checked → --include-caution must be present so
+		// narrowToPaths keeps it in scope.
+		if !hasArg(call.args, "--include-caution") {
+			t.Error("a caution row is checked but --include-caution was not passed")
+		}
+		// Apply is real, not a preview: --confirm --yes present.
+		if !hasArg(call.args, "--confirm") || !hasArg(call.args, "--yes") {
+			t.Errorf("clean dispatch missing --confirm --yes: %v", call.args)
+		}
+	})
+}
+
+func TestWasteCleanOmitsIncludeCautionWhenOnlySafeChecked(t *testing.T) {
+	withCapture(t, func(calls *[]capturedCall) {
+		stub := mixedStub()
+		setRunner(captureRunner{calls: calls, body: func(verb string, _ []string) string {
+			if b, ok := stub[verb]; ok {
+				return b
+			}
+			return `{}`
+		}})
+		app := newTestApp(t)
+		app.focus(1)
+		loadScreen(app)
+		ws := app.activeScreen().(*wasteScreen)
+		// Only the safe row checked → no --include-caution.
+		checkRow(app, ws, findRow(t, ws, ".cache/firebase"))
+		clean, _ := app.reg.ResolveKey("c")
+		drive(app, keyMsg{cmd: clean})
+		enter, _ := app.reg.ResolveKey("enter")
+		runTeaCmd(driveCmd(app, keyMsg{cmd: enter}))
+		call := firstCallOf(t, *calls, "anubis")
+		if hasArg(call.args, "--include-caution") {
+			t.Errorf("safe-only selection must NOT pass --include-caution: %v", call.args)
+		}
+	})
+}
+
+// --- P0#1 (Rule A1): the confirm-modal total EQUALS the checked-set total, and
+// EQUALS the sum of the exact --only paths dispatched. Preview == apply. ---
+
+func TestConfirmTotalEqualsCheckedSetTotal(t *testing.T) {
+	withStub(t, mixedStub(), func() {
+		app, ws := loadWasteMixed(t)
+		// Check the safe (1,133,483,950 B) and caution (2,554,200,676 B) rows.
+		checkRow(app, ws, findRow(t, ws, ".cache/firebase"))
+		checkRow(app, ws, findRow(t, ws, ".npm/_cacache"))
+
+		wantBytes := int64(1133483950 + 2554200676)
+		if got := ws.checkedBytes(); got != wantBytes {
+			t.Fatalf("checkedBytes = %d, want %d", got, wantBytes)
+		}
+		// The confirm modal renders exactly checkedBytes — never the full
+		// reclaimable/scan total (which would include unchecked rows).
+		clean, _ := app.reg.ResolveKey("c")
+		drive(app, keyMsg{cmd: clean})
+		frame := strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "CONFIRM CLEAN") {
+			t.Fatalf("confirm modal not shown:\n%s", frame)
+		}
+		if !strings.Contains(frame, fmtBytes(wantBytes)) {
+			t.Errorf("confirm total %q not in modal (preview != apply):\n%s", fmtBytes(wantBytes), frame)
+		}
+		// The modal must NOT show the full reclaimable headline as the amount to
+		// clean (that would be the P0#1 preview!=apply bug).
+		if strings.Contains(frame, fmtBytes(ws.report.ReclaimableSize)) && ws.report.ReclaimableSize != wantBytes {
+			t.Errorf("confirm modal showed the reclaimable headline %q, not the checked total", fmtBytes(ws.report.ReclaimableSize))
+		}
+		// Structural proof: the dispatched --only paths' sizes sum to the confirm
+		// total — the applied set is exactly the checked set (Rule A1).
+		args := ws.cleanArgs()
+		var dispatched int64
+		for _, p := range onlyPaths(args) {
+			for _, f := range ws.report.Findings {
+				if f.Path == p {
+					dispatched += f.SizeBytes
+				}
+			}
+		}
+		if dispatched != wantBytes {
+			t.Errorf("sum of dispatched --only sizes = %d, want checked total %d (preview != apply)", dispatched, wantBytes)
+		}
+	})
+}
+
+// --- P1#3: Health fix applies for real (--confirm --yes) and routes destructive
+// fixes through the confirm modal; self-update is special-cased (no confirm). ---
+
+func TestHealthDestructiveFixGoesThroughModal(t *testing.T) {
+	withCapture(t, func(calls *[]capturedCall) {
+		// A diagnose report whose worst finding's fix is a destructive clean.
+		stub := fullStub()
+		stub["diagnose"] = `{"timestamp":"t","duration":"1s","findings":[{"check":"Disk Space","severity":1,"message":"disk low","fix":"sirsi clean --include-caution","fixKind":"instant"}]}`
+		setRunner(captureRunner{calls: calls, body: func(verb string, _ []string) string {
+			if b, ok := stub[verb]; ok {
+				return b
+			}
+			return `{}`
+		}})
+		app := newTestApp(t)
+		app.focus(3) // Health
+		loadScreen(app)
+		hs := app.activeScreen().(*healthScreen)
+
+		// First f arms the confirm modal — it does NOT dispatch.
+		before := len(*calls)
+		f, _ := app.reg.ResolveKey("f")
+		drive(app, keyMsg{cmd: f})
+		if !hs.confirm {
+			t.Fatal("destructive fix did not arm the confirm modal")
+		}
+		if hs.fixing {
+			t.Error("destructive fix dispatched without the second confirmation")
+		}
+		if len(*calls) != before {
+			t.Errorf("a runner call fired before confirmation: %+v", (*calls)[before:])
+		}
+		frame := strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "CONFIRM FIX") {
+			t.Errorf("confirm-fix modal not shown:\n%s", frame)
+		}
+		// enter applies it, with real apply flags.
+		enter, _ := app.reg.ResolveKey("enter")
+		runTeaCmd(driveCmd(app, keyMsg{cmd: enter}))
+		call := firstCallOf(t, *calls, "clean")
+		if !hasArg(call.args, "--confirm") || !hasArg(call.args, "--yes") {
+			t.Errorf("destructive fix must apply for real (--confirm --yes): %v", call.args)
+		}
+	})
+}
+
+func TestHealthReclaimFixConfirmNoYes(t *testing.T) {
+	withCapture(t, func(calls *[]capturedCall) {
+		stub := fullStub()
+		stub["diagnose"] = `{"timestamp":"t","duration":"1s","findings":[{"check":"Local Snapshots","severity":1,"message":"snapshots","fix":"sirsi reclaim-snapshots","fixKind":"instant"}]}`
+		setRunner(captureRunner{calls: calls, body: func(verb string, _ []string) string {
+			if b, ok := stub[verb]; ok {
+				return b
+			}
+			return `{}`
+		}})
+		app := newTestApp(t)
+		app.focus(3)
+		loadScreen(app)
+		f, _ := app.reg.ResolveKey("f")
+		drive(app, keyMsg{cmd: f}) // arms modal (destructive)
+		enter, _ := app.reg.ResolveKey("enter")
+		runTeaCmd(driveCmd(app, keyMsg{cmd: enter})) // applies
+		call := firstCallOf(t, *calls, "reclaim-snapshots")
+		if !hasArg(call.args, "--confirm") {
+			t.Errorf("reclaim-snapshots fix must pass --confirm to apply: %v", call.args)
+		}
+		// reclaim-snapshots rejects --yes — dispatching it would error. Never pass it.
+		if hasArg(call.args, "--yes") {
+			t.Errorf("reclaim-snapshots does not accept --yes; must not be passed: %v", call.args)
+		}
+	})
+}
+
+func TestHealthSelfUpdateFixIsSpecialCased(t *testing.T) {
+	withCapture(t, func(calls *[]capturedCall) {
+		stub := fullStub()
+		stub["diagnose"] = `{"timestamp":"t","duration":"1s","findings":[{"check":"binary-drift","severity":2,"message":"drift","fix":"sirsi self-update","fixKind":"instant"}]}`
+		setRunner(captureRunner{calls: calls, body: func(verb string, _ []string) string {
+			if b, ok := stub[verb]; ok {
+				return b
+			}
+			return `{}`
+		}})
+		app := newTestApp(t)
+		app.focus(3)
+		loadScreen(app)
+		hs := app.activeScreen().(*healthScreen)
+		f, _ := app.reg.ResolveKey("f")
+		cmd := driveCmd(app, keyMsg{cmd: f})
+		// self-update is NOT destructive → no modal, dispatches immediately, verbatim.
+		if hs.confirm {
+			t.Error("self-update must not arm the confirm modal (special-cased)")
+		}
+		runTeaCmd(cmd)
+		call := firstCallOf(t, *calls, "self-update")
+		if hasArg(call.args, "--confirm") || hasArg(call.args, "--yes") {
+			t.Errorf("self-update must run verbatim (no injected --confirm/--yes): %v", call.args)
+		}
+	})
+}
+
+func TestFixPlanFlagsPerVerb(t *testing.T) {
+	cases := []struct {
+		fix         string
+		wantVerb    string
+		wantArgs    []string
+		destructive bool
+	}{
+		{"sirsi clean --include-caution", "clean", []string{"--include-caution", "--confirm", "--yes"}, true},
+		{"sirsi clean", "clean", []string{"--confirm", "--yes"}, true},
+		{"sirsi reclaim-snapshots", "reclaim-snapshots", []string{"--confirm"}, true},
+		{"sirsi relieve --memory", "relieve", []string{"--memory", "--confirm"}, false},
+		{"sirsi self-update", "self-update", nil, false},
+		{"sirsi spotlight-exclude ~/Development", "spotlight-exclude", []string{"~/Development"}, false},
+	}
+	for _, tc := range cases {
+		p := fixPlan(tc.fix)
+		if p.verb != tc.wantVerb {
+			t.Errorf("fixPlan(%q).verb = %q, want %q", tc.fix, p.verb, tc.wantVerb)
+		}
+		if p.destructive != tc.destructive {
+			t.Errorf("fixPlan(%q).destructive = %v, want %v", tc.fix, p.destructive, tc.destructive)
+		}
+		if strings.Join(p.args, " ") != strings.Join(tc.wantArgs, " ") {
+			t.Errorf("fixPlan(%q).args = %v, want %v", tc.fix, p.args, tc.wantArgs)
+		}
+	}
+}
+
+// --- P1#5: ctrl+c quits gracefully (bubbletea v2 does not auto-quit) ---
+
+func TestCtrlCQuits(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		m, cmd := app.handleKey("ctrl+c")
+		app = m.(*App)
+		if !app.quitting {
+			t.Error("ctrl+c did not set quitting")
+		}
+		if cmd == nil {
+			t.Fatal("ctrl+c returned no command (expected tea.Quit)")
+		}
+		// ctrl+c wins even over an open help overlay / a screen mode.
+		app2 := newTestApp(t)
+		app2.helpOpen = true
+		m2, cmd2 := app2.handleKey("ctrl+c")
+		app2 = m2.(*App)
+		if !app2.quitting || cmd2 == nil {
+			t.Error("ctrl+c must quit even with the help overlay open")
+		}
+	})
+}
+
+// TestCtrlCIsQuitMsg confirms the returned command is tea.Quit (a QuitMsg), so the
+// program actually exits — not just a state flag.
+func TestCtrlCIsQuitMsg(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		_, cmd := app.handleKey("ctrl+c")
+		if cmd == nil {
+			t.Fatal("no command from ctrl+c")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Error("ctrl+c command is not tea.Quit")
+		}
+	})
 }

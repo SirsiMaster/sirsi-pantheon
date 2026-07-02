@@ -182,6 +182,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // unresolved key is a no-op (never a silent partial action). The help overlay
 // captures the next key: any key dismisses it.
 func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
+	// ctrl+c is the universal interrupt: bubbletea v2 does NOT auto-quit, so bind
+	// it here to a graceful quit. It takes precedence over the help overlay and any
+	// screen-local mode so the operator can always get out.
+	if key == "ctrl+c" {
+		a.quitting = true
+		return a, tea.Quit
+	}
 	if a.helpOpen {
 		a.helpOpen = false
 		return a, nil
@@ -369,13 +376,13 @@ func (a *App) renderHelp() []string {
 		"    5  Activity   provenance ledger — what sirsi actually changed",
 		"",
 		Paint("  GLOBAL", TokBrand, a.caps),
-		"    tab  next screen      r  refresh        ? help",
+		"    tab  next screen      u  update         ? help",
 		"    ↑↓   move             enter  inspect     esc back",
-		"    g/G  top / bottom     q  quit",
+		"    g/G  top / bottom     q  quit           ctrl+c quit",
 		"",
 		Paint("  PER SCREEN", TokBrand, a.caps),
-		"    s  rescan (Waste)     spc toggle item    c  clean (confirm)",
-		"    f  apply fix (Health) d  re-diagnose",
+		"    r  relieve (Pulse)    s  rescan (Waste)  spc check item",
+		"    c  clean checked      f  apply fix       d  re-diagnose",
 		"",
 		Paint("  press any key to close", TokDim, a.caps),
 	}

@@ -12,10 +12,10 @@ import (
 //
 // RAM is the pre-eminent view: a determinate gauge, the live pressure level, and
 // the named top memory hogs, read from `sirsi vitals --json` (built for a 2s
-// tick). The one action is relief: `f` runs `sirsi relieve --memory --confirm`
-// and the screen shows the before/after free-memory delta inline plus a toast.
-// Relief is FixRelief-honest — it eases a live cause; it never claims to have
-// killed anything.
+// tick). The one action is relief: `r` runs `sirsi relieve --memory --confirm`
+// (proof §3.2: "r relieve") and the screen shows the before/after free-memory
+// delta inline plus a toast. Relief is FixRelief-honest — it eases a live cause;
+// it never claims to have killed anything.
 
 const pulseTick = 2 * time.Second
 
@@ -47,7 +47,7 @@ func (s *pulseScreen) Layout() Layout   { return LayoutSurvey }
 func (s *pulseScreen) State() loadState { return s.state }
 
 func (s *pulseScreen) HintIDs() []CommandID {
-	return []CommandID{CmdRefresh, CmdFix, CmdTab, CmdHelp, CmdQuit}
+	return []CommandID{CmdRelieve, CmdRefresh, CmdTab, CmdHelp, CmdQuit}
 }
 
 func (s *pulseScreen) RightMeta() string {
@@ -118,7 +118,7 @@ func (s *pulseScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd) {
 		switch m.cmd.ID {
 		case CmdRefresh:
 			return s, loadVitals()
-		case CmdFix:
+		case CmdRelieve:
 			if s.relieving {
 				return s, nil
 			}
@@ -193,7 +193,7 @@ func (s *pulseScreen) View(width, height int, caps Capabilities) []string {
 	case s.reliefDelta != "":
 		lines = append(lines, "  "+Paint(Sigil("check", caps)+" relieved · "+s.reliefDelta, TokOK, caps))
 	default:
-		lines = append(lines, "  "+Paint("press f to flush inactive caches and ease pressure", TokDim, caps))
+		lines = append(lines, "  "+Paint("press r to flush inactive caches and ease pressure", TokDim, caps))
 	}
 	return lines
 }

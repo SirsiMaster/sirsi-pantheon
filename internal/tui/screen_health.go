@@ -31,6 +31,13 @@ type healthScreen struct {
 	fixing bool
 	fixMsg string
 	fixErr error
+
+	// confirm is armed when the selected finding's fix is DESTRUCTIVE (moves data
+	// to Trash / thins snapshots): f arms the modal, a second enter applies it
+	// (Rule A1). Non-destructive fixes (self-update, relieve, spotlight-exclude)
+	// bypass the modal — but every applied fix carries the flags that make it
+	// actually APPLY, never a preview no-op (ADR-033).
+	confirm bool
 }
 
 func newHealthScreen() *healthScreen { return &healthScreen{state: stateIdle, detail: -1} }
@@ -112,6 +119,18 @@ func (s *healthScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd) 
 
 func (s *healthScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 	n := len(s.report.Findings)
+	// A pending confirm captures the next decision for a DESTRUCTIVE fix (Rule A1:
+	// a Trash-deleting fix never fires from one key).
+	if s.confirm {
+		switch cmd.ID {
+		case CmdFix, CmdInspect: // f again, or enter = deliberate second confirmation
+			s.confirm = false
+			return s, s.dispatchFix(s.report.Findings[s.selected])
+		case CmdBack:
+			s.confirm = false
+		}
+		return s, nil
+	}
 	switch cmd.ID {
 	case CmdMoveDown:
 		s.selected = clampSelection(s.selected+1, n)
@@ -140,19 +159,32 @@ func (s *healthScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 			s.fixErr = fmt.Errorf("no one-key fix for %q — see detail for guidance", f.Check)
 			return s, nil
 		}
-		s.fixing = true
-		s.fixErr = nil
-		fixCmd := f.Fix
-		return s, runCmd("fix", func() (any, error) {
-			var r cleanReport
-			// The Fix is a full sirsi command string, e.g. "sirsi self-update" or
-			// "sirsi clean --include-caution". Run it verb+args through the seam.
-			verb, args := splitFixCommand(fixCmd)
-			err := decode(verb, &r, args...)
-			return r, err
-		})
+		// Destructive fixes (clean / reclaim-snapshots) route through the confirm
+		// modal; f only arms it. Non-destructive fixes apply immediately.
+		if plan := fixPlan(f.Fix); plan.destructive {
+			s.confirm = true
+			s.fixErr = nil
+			return s, nil
+		}
+		return s, s.dispatchFix(f)
 	}
 	return s, nil
+}
+
+// dispatchFix runs the finding's fix with the flags that make it actually APPLY
+// (never a preview no-op — the ADR-033 trap). The plan encodes, per verb, exactly
+// which apply flags the CLI accepts: clean gets --confirm --yes, reclaim-snapshots
+// and relieve get --confirm (they reject --yes), self-update and spotlight-exclude
+// run verbatim. Dispatch flows through the injectable runner seam.
+func (s *healthScreen) dispatchFix(f diagFinding) tea.Cmd {
+	s.fixing = true
+	s.fixErr = nil
+	plan := fixPlan(f.Fix)
+	return runCmd("fix", func() (any, error) {
+		var r cleanReport
+		err := decode(plan.verb, &r, plan.args...)
+		return r, err
+	})
 }
 
 func (s *healthScreen) View(width, height int, caps Capabilities) []string {
@@ -164,6 +196,11 @@ func (s *healthScreen) View(width, height int, caps Capabilities) []string {
 	}
 	if len(s.report.Findings) == 0 {
 		return emptyLines("no diagnostics returned", caps)
+	}
+
+	// Confirm modal takes over the body for a destructive fix (Rule A1).
+	if s.confirm {
+		return s.confirmLines(caps)
 	}
 
 	lines := []string{
@@ -214,6 +251,8 @@ func (s *healthScreen) fixHintForSelection() string {
 	switch {
 	case f.Fix == "":
 		return "no fix needed — enter for detail"
+	case fixPlan(f.Fix).destructive:
+		return "f cleans this (confirm first) · " + f.Fix
 	case f.FixKind == "instant":
 		return "f fixes this now · " + f.Fix
 	case f.FixKind == "relief":
@@ -222,6 +261,23 @@ func (s *healthScreen) fixHintForSelection() string {
 		return "no one-key fix — f only acts if the condition is live now"
 	default:
 		return "f runs · " + f.Fix
+	}
+}
+
+// confirmLines renders the destructive-fix confirmation (Rule A1): it names the
+// exact command that will run so the operator sees precisely what applies.
+func (s *healthScreen) confirmLines(caps Capabilities) []string {
+	f := s.report.Findings[s.selected]
+	return []string{
+		"",
+		"  " + Paint("CONFIRM FIX", TokWarn, caps),
+		"",
+		fmt.Sprintf("  This applies the fix for %q:", f.Check),
+		"  " + Paint(f.Fix, TokBrand, caps),
+		"  Destructive items move to Trash first — recoverable until you empty it.",
+		"",
+		"  " + Paint("enter", TokBrand, caps) + Paint("  confirm and apply", TokDim, caps),
+		"  " + Paint("esc", TokBrand, caps) + Paint("    cancel — nothing changes", TokDim, caps),
 	}
 }
 
@@ -280,6 +336,45 @@ func splitFixCommand(cmd string) (string, []string) {
 		return "diagnose", nil
 	}
 	return fields[0], fields[1:]
+}
+
+// healthFixPlan is the resolved dispatch for a finding's fix: the verb, the exact
+// args (the fix's own args PLUS the apply flags the verb accepts), and whether it
+// is destructive (must route through the confirm modal).
+type healthFixPlan struct {
+	verb        string
+	args        []string
+	destructive bool
+}
+
+// fixPlan turns a diagnose Fix string into a dispatch that actually APPLIES the
+// fix (never a preview no-op — the ADR-033 "Fix applied but nothing changed"
+// trap) using only flags the target verb accepts:
+//
+//	self-update       → verbatim (instant; replaces the drifted binary itself).
+//	clean [args…]     → + --confirm --yes (destructive: moves to Trash).
+//	reclaim-snapshots → + --confirm       (destructive: thins snapshots; no --yes flag).
+//	relieve [args…]   → + --confirm       (relief: eases a live cause; no --yes flag).
+//	spotlight-exclude → verbatim          (config change; the fix string has no --json).
+//	anything else     → verbatim.
+//
+// Only clean and reclaim-snapshots (Trash / disk deletion) are flagged
+// destructive, so only they gate on the confirm modal (Rule A1). --confirm/--yes
+// are appended by verb allow-list, never blindly, because relieve and
+// reclaim-snapshots REJECT --yes and would error on an unknown flag.
+func fixPlan(fix string) healthFixPlan {
+	verb, args := splitFixCommand(fix)
+	switch verb {
+	case "clean":
+		return healthFixPlan{verb: verb, args: append(args, "--confirm", "--yes"), destructive: true}
+	case "reclaim-snapshots":
+		return healthFixPlan{verb: verb, args: append(args, "--confirm"), destructive: true}
+	case "relieve":
+		return healthFixPlan{verb: verb, args: append(args, "--confirm"), destructive: false}
+	default:
+		// self-update, spotlight-exclude, and any other verb apply verbatim.
+		return healthFixPlan{verb: verb, args: args, destructive: false}
+	}
 }
 
 // sortFindingsBySeverity orders findings critical → attention → ok so the items

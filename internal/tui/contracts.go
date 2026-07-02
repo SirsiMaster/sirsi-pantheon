@@ -29,12 +29,12 @@ type vitalsReport struct {
 
 type scanFinding struct {
 	RuleName    string `json:"RuleName"`
-	Category    string `json:"Category"`
+	Category    string `json:"Category"` // read: "ai" model-weights are BLOCK, never cleanable
 	Description string `json:"Description"`
 	Path        string `json:"Path"`
 	SizeBytes   int64  `json:"SizeBytes"`
 	FileCount   int    `json:"FileCount"`
-	Severity    string `json:"Severity"` // safe | caution | protected
+	Severity    string `json:"Severity"` // safe | caution | warning (jackal.Severity vocab)
 	CanFix      bool   `json:"CanFix"`
 	Breaking    bool   `json:"Breaking"`
 }
