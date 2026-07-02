@@ -144,3 +144,11 @@ func effectivePressure(freeRAM, totalRAM int64) (PressureLevel, string) {
 	}
 	return PressureUnknown, "unknown"
 }
+
+// EffectivePressure exposes the resolved pressure level + source for callers
+// that already hold a memory sample (the `sirsi vitals` fast path, gap V1) —
+// the same resolution SampleNodeCapacity uses, without re-running the full
+// hardware/agent sampling it performs.
+func EffectivePressure(freeRAM, totalRAM int64) (PressureLevel, string) {
+	return effectivePressure(freeRAM, totalRAM)
+}

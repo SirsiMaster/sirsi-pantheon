@@ -460,14 +460,7 @@ func checkSwapUsage(p platform.Platform, report *DoctorReport) {
 		Detail: line,
 	}
 
-	// Parse "used = X.XXM" specifically from the swap usage line
-	// Format: "total = 2048.00M  used = 150.00M  free = 1898.00M  (encrypted)"
-	usedMB := 0.0
-	if idx := strings.Index(line, "used = "); idx >= 0 {
-		rest := line[idx+len("used = "):]
-		rest = strings.TrimSuffix(strings.Fields(rest)[0], "M")
-		usedMB, _ = strconv.ParseFloat(rest, 64)
-	}
+	usedMB := parseSwapUsedMB(line)
 
 	// macOS uses swap proactively — a few hundred MB with healthy RAM is normal,
 	// NOT pressure. Only flag swap that is genuinely large. (Was: any swap > 0 MB
@@ -490,6 +483,34 @@ func checkSwapUsage(p platform.Platform, report *DoctorReport) {
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// parseSwapUsedMB extracts the "used = X.XXM" value from a sysctl vm.swapusage
+// line. Format: "total = 2048.00M  used = 150.00M  free = 1898.00M  (encrypted)".
+// Shared by checkSwapUsage and SwapUsedBytes — one parse for the one probe.
+func parseSwapUsedMB(line string) float64 {
+	idx := strings.Index(line, "used = ")
+	if idx < 0 {
+		return 0
+	}
+	rest := line[idx+len("used = "):]
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return 0
+	}
+	usedMB, _ := strconv.ParseFloat(strings.TrimSuffix(fields[0], "M"), 64)
+	return usedMB
+}
+
+// SwapUsedBytes returns the swap "used" bytes via sysctl vm.swapusage — the
+// SAME probe checkSwapUsage runs, exposed for the fast vitals surface (TUI
+// design proof gap V1). Returns 0 when the probe or parse fails.
+func SwapUsedBytes(p platform.Platform) int64 {
+	out, err := p.Command("sysctl", "-n", "vm.swapusage")
+	if err != nil {
+		return 0
+	}
+	return int64(parseSwapUsedMB(strings.TrimSpace(string(out))) * 1024 * 1024)
 }
 
 // checkDiskSpace checks available disk space on the boot volume.
