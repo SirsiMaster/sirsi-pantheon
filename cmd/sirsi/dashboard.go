@@ -12,6 +12,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 var dashboardPort int
@@ -56,6 +57,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
+		NodeStatusFn: collectDashboardNodeStatus,
 	})
 
 	if err := srv.Start(); err != nil {
@@ -86,11 +88,28 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	}
 }
 
+// collectDashboardNodeStatus wires GET /api/node-status (ADR-026) to the
+// SAME collector `sirsi router node-status` uses — one read-model, no
+// re-aggregation. Repo root is resolved per request so a dashboard started
+// before/after a repo appears stays correct; if no router repo is reachable
+// the error propagates and the endpoint degrades to an honest 5xx instead of
+// serving a fabricated NodeStatus.
+func collectDashboardNodeStatus() (*router.NodeStatus, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return nil, fmt.Errorf("locate repo root: %w", err)
+	}
+	return router.CollectNodeStatus(repoRoot, nil)
+}
+
 // collectDashboardStats gathers system metrics for the dashboard.
 // This is a lightweight version of the menubar's CollectStats — reuses
 // the same system calls without importing the menubar package.
 func collectDashboardStats() map[string]interface{} {
 	stats := map[string]interface{}{
+		"total_ram":           int64(0),
+		"used_ram":            int64(0),
+		"free_ram":            int64(0),
 		"ram_percent":         0.0,
 		"ram_pressure":        "unknown",
 		"ram_icon":            "⚪",
