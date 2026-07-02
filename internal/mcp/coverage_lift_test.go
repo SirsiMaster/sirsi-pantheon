@@ -41,12 +41,32 @@ func resultText(t *testing.T, res *ToolResult) string {
 	return res.Content[0].Text
 }
 
+// clearGitEnv unsets every GIT_* variable for the duration of the test.
+// Under the Ma'at pre-push gate the suite runs inside `git push`, which
+// exports GIT_DIR/GIT_PREFIX/GIT_INDEX_FILE/… — router.FindRepoRoot shells
+// `git rev-parse`, which honors GIT_DIR over the working directory and
+// would resolve the REAL repo instead of the sandbox (the in-process
+// counterpart of the leak fixed for subprocess helpers in
+// sirsi-pantheon#99). t.Setenv snapshots each value for restore.
+func clearGitEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			continue
+		}
+		key, _, _ := strings.Cut(kv, "=")
+		t.Setenv(key, "") // registers restore of the original value
+		os.Unsetenv(key)
+	}
+}
+
 // setupRouterRepoRoot builds a throwaway repo root with a minimal
 // .agents/idea-router layout, chdirs into it, and VERIFIES that
 // router.FindRepoRoot resolves to it — refusing to run if resolution would
 // land on a live router (e.g. via a leaked GIT_DIR).
 func setupRouterRepoRoot(t *testing.T) string {
 	t.Helper()
+	clearGitEnv(t)
 	root := t.TempDir()
 	rdir := filepath.Join(root, ".agents", "idea-router")
 	for _, d := range []string{"proposals", "reviews", "decisions", "items"} {
