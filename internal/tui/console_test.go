@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -933,21 +934,22 @@ func TestFixPlanFlagsPerVerb(t *testing.T) {
 func TestCtrlCQuits(t *testing.T) {
 	withStub(t, fullStub(), func() {
 		app := newTestApp(t)
-		m, cmd := app.handleKey("ctrl+c")
-		app = m.(*App)
-		if !app.quitting {
-			t.Error("ctrl+c did not set quitting")
-		}
+		_, cmd := app.handleKey("ctrl+c")
 		if cmd == nil {
 			t.Fatal("ctrl+c returned no command (expected tea.Quit)")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Error("ctrl+c command is not tea.Quit")
 		}
 		// ctrl+c wins even over an open help overlay / a screen mode.
 		app2 := newTestApp(t)
 		app2.helpOpen = true
-		m2, cmd2 := app2.handleKey("ctrl+c")
-		app2 = m2.(*App)
-		if !app2.quitting || cmd2 == nil {
-			t.Error("ctrl+c must quit even with the help overlay open")
+		_, cmd2 := app2.handleKey("ctrl+c")
+		if cmd2 == nil {
+			t.Fatal("ctrl+c must quit even with the help overlay open")
+		}
+		if _, ok := cmd2().(tea.QuitMsg); !ok {
+			t.Error("ctrl+c with the help overlay open is not tea.Quit")
 		}
 	})
 }
@@ -963,6 +965,398 @@ func TestCtrlCIsQuitMsg(t *testing.T) {
 		}
 		if _, ok := cmd().(tea.QuitMsg); !ok {
 			t.Error("ctrl+c command is not tea.Quit")
+		}
+	})
+}
+
+// ============================================================================
+// P2 polish tests (review 20260702-030841 P2#6/#7/#8).
+// ============================================================================
+
+// --- P2#6: viewport windowing — the selected row can never scroll off-frame ---
+
+// TestTableWindowInvariants exhaustively pins the pure window math: for every
+// list length, budget, and selection, the selected row is inside the window,
+// the indicator counts are exactly the clipped rows, and the block (rows +
+// shown indicators) consumes exactly the budget when clipping — never more.
+func TestTableWindowInvariants(t *testing.T) {
+	mk := func(n, sel int) []listRow {
+		rows := make([]listRow, n)
+		if sel >= 0 && sel < n {
+			rows[sel].selected = true
+		}
+		return rows
+	}
+	for n := 1; n <= 60; n++ {
+		for budget := 3; budget <= 30; budget++ {
+			for sel := 0; sel < n; sel++ {
+				start, end, above, below := tableWindow(mk(n, sel), budget)
+				if sel < start || sel >= end {
+					t.Fatalf("n=%d budget=%d sel=%d: selection outside window [%d,%d)", n, budget, sel, start, end)
+				}
+				if above != start || below != n-end {
+					t.Fatalf("n=%d budget=%d sel=%d: dishonest indicators above=%d below=%d for window [%d,%d)", n, budget, sel, above, below, start, end)
+				}
+				used := end - start
+				if above > 0 {
+					used++
+				}
+				if below > 0 {
+					used++
+				}
+				if n <= budget {
+					if used != n || above != 0 || below != 0 {
+						t.Fatalf("n=%d budget=%d sel=%d: list fits but was windowed (used=%d above=%d below=%d)", n, budget, sel, used, above, below)
+					}
+				} else if used != budget {
+					t.Fatalf("n=%d budget=%d sel=%d: block uses %d slots, want exactly %d", n, budget, sel, used, budget)
+				}
+			}
+		}
+	}
+	// budget < 0 disables windowing entirely.
+	if start, end, above, below := tableWindow(mk(50, 49), -1); start != 0 || end != 50 || above != 0 || below != 0 {
+		t.Errorf("tableWindow(budget<0) windowed: [%d,%d) above=%d below=%d", start, end, above, below)
+	}
+}
+
+// bigScanStub builds a scan fixture with n findings so the Waste list far
+// exceeds the viewport. Sizes strictly descend with the index, so sortFindings
+// keeps this order and row i is finding "Cache %03d"==i.
+func bigScanStub(n int) stubRunner {
+	items := make([]string, n)
+	for i := 0; i < n; i++ {
+		items[i] = fmt.Sprintf(
+			`{"RuleName":"rule_%03d","Category":"dev","Description":"Cache %03d","Path":"/Users/x/cache/%03d","SizeBytes":%d,"FileCount":1,"Severity":"safe","CanFix":true}`,
+			i, i, i, int64(n-i)*1000000)
+	}
+	s := fullStub()
+	s["scan"] = `{"Findings":[` + strings.Join(items, ",") + `],"TotalSize":0,"ReclaimableSize":0,"RulesRan":81}`
+	return s
+}
+
+// TestViewportKeepsSelectionVisible drives an 80-row Waste list through top,
+// bottom (G), and middle positions at 100x30 and asserts the selected row is
+// always inside the rendered frame with honest clip indicators. Geometry at
+// 100x30: 28 interior − 2 headline − 2 footer = 24 table lines − 2 header =
+// 22 row slots; a one-sided window shows 21 rows + 1 indicator, a two-sided
+// window 20 rows + 2 indicators. ASCII caps render ↑/↓ as ^/v.
+func TestViewportKeepsSelectionVisible(t *testing.T) {
+	withStub(t, bigScanStub(80), func() {
+		app := newTestApp(t)
+		app.focus(1) // Waste
+		loadScreen(app)
+
+		// Top: first row selected and visible; 59 rows clipped below.
+		frame := strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "Cache 000") {
+			t.Errorf("top window missing the selected first row:\n%s", frame)
+		}
+		if !strings.Contains(frame, "v 59 more") {
+			t.Errorf("top window missing the below-clip indicator (want %q):\n%s", "v 59 more", frame)
+		}
+		if strings.Contains(frame, "^ ") {
+			t.Errorf("top window shows an above-clip indicator with nothing clipped above:\n%s", frame)
+		}
+
+		// Bottom (G): last row visible, 59 clipped above — before this fix the
+		// cursor sat 50+ rows below the frame.
+		bottom, _ := app.reg.ResolveKey("G")
+		drive(app, keyMsg{cmd: bottom})
+		frame = strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "Cache 079") {
+			t.Errorf("selected bottom row not visible after G:\n%s", frame)
+		}
+		if !strings.Contains(frame, "^ 59 more") {
+			t.Errorf("bottom window missing the above-clip indicator (want %q):\n%s", "^ 59 more", frame)
+		}
+		if strings.Contains(frame, "Cache 000") {
+			t.Errorf("bottom window still shows the first row (not windowed):\n%s", frame)
+		}
+
+		// Middle (up 39x from the bottom → row 40): both indicators, selection
+		// centered — 20 row slots, rows 30..49 visible, 30 clipped each side.
+		up, _ := app.reg.ResolveKey("up")
+		for i := 0; i < 39; i++ {
+			drive(app, keyMsg{cmd: up})
+		}
+		frame = strings.Join(app.render(), "\n")
+		for _, want := range []string{"Cache 040", "^ 30 more", "v 30 more"} {
+			if !strings.Contains(frame, want) {
+				t.Errorf("middle window missing %q:\n%s", want, frame)
+			}
+		}
+		for _, clip := range []string{"Cache 029", "Cache 050"} {
+			if strings.Contains(frame, clip) {
+				t.Errorf("middle window shows %q, which should be clipped:\n%s", clip, frame)
+			}
+		}
+	})
+}
+
+// TestViewportResizeSafe shrinks the window mid-session (tea.WindowSizeMsg) and
+// asserts the selection is re-windowed into the smaller frame — the offset is
+// recomputed per render, so no stale scroll state can strand the cursor.
+func TestViewportResizeSafe(t *testing.T) {
+	withStub(t, bigScanStub(80), func() {
+		app := newTestApp(t)
+		app.focus(1)
+		loadScreen(app)
+		bottom, _ := app.reg.ResolveKey("G")
+		drive(app, keyMsg{cmd: bottom})
+
+		m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		app = m.(*App)
+		lines := app.render()
+		if len(lines) != 24 {
+			t.Fatalf("render at 80x24 produced %d lines, want 24", len(lines))
+		}
+		frame := strings.Join(lines, "\n")
+		// 22 interior − 4 chrome = 18 table lines − 2 header = 16 slots: bottom
+		// window shows 15 rows (65..79) + "^ 65 more".
+		if !strings.Contains(frame, "Cache 079") {
+			t.Errorf("selected row lost after shrink to 80x24:\n%s", frame)
+		}
+		if !strings.Contains(frame, "^ 65 more") {
+			t.Errorf("shrunk window missing the recomputed clip indicator (want %q):\n%s", "^ 65 more", frame)
+		}
+	})
+}
+
+// --- P2#7: the runner ERROR path renders the error frame, never spinner-forever ---
+
+// failRunner is the injected runner ERROR path: every verb fails with err.
+type failRunner struct{ err error }
+
+func (f failRunner) RunJSON(context.Context, string, ...string) ([]byte, error) {
+	return nil, f.err
+}
+
+// TestGoldenErrorStateEveryScreen drives every screen's load command through a
+// failing runner and asserts the golden error frame: the error banner with the
+// reason (never swallowed) plus the retry hint — not a spinner forever, not a
+// panic, not a blank frame.
+func TestGoldenErrorStateEveryScreen(t *testing.T) {
+	old := getRunner()
+	setRunner(failRunner{err: errTest}) // every verb fails with "boom"
+	defer setRunner(old)
+
+	screens := []string{"Pulse", "Waste", "Ghosts", "Health", "Activity"}
+	loading := []string{"sampling memory", "scanning for waste", "hunting ghost apps", "running diagnostics", "reading operations ledger"}
+	for i, name := range screens {
+		app := newTestApp(t)
+		app.focus(i)
+		loadScreen(app) // executes Load; the injected runner returns the error
+		if got := app.activeScreen().State(); got != stateError {
+			t.Errorf("%s: state = %v after failed load, want stateError", name, got)
+		}
+		frame := strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "BLOCK boom") {
+			t.Errorf("%s error frame missing the error banner with the reason:\n%s", name, frame)
+		}
+		if !strings.Contains(frame, "press u to retry") {
+			t.Errorf("%s error frame missing the retry hint:\n%s", name, frame)
+		}
+		if strings.Contains(frame, loading[i]) {
+			t.Errorf("%s error frame still shows the loading state %q (spinner-forever):\n%s", name, loading[i], frame)
+		}
+	}
+}
+
+// TestErrorStateRetryRecovers proves the "press u to retry" hint is honest: a
+// failed load followed by u against a recovered runner reaches ready.
+func TestErrorStateRetryRecovers(t *testing.T) {
+	old := getRunner()
+	defer setRunner(old)
+	setRunner(failRunner{err: errTest})
+
+	app := newTestApp(t)
+	app.focus(1) // Waste
+	loadScreen(app)
+	if app.activeScreen().State() != stateError {
+		t.Fatal("setup: failed load did not reach stateError")
+	}
+
+	setRunner(fullStub()) // the runner recovers
+	m, cmd := app.handleKey("u")
+	app = m.(*App)
+	if cmd == nil {
+		t.Fatal("u in the error state produced no reload command")
+	}
+	deliver(app, cmd())
+	if got := app.activeScreen().State(); got != stateReady {
+		t.Fatalf("retry did not recover: state = %v, want stateReady", got)
+	}
+	frame := strings.Join(app.render(), "\n")
+	if !strings.Contains(frame, "npm/yarn/pnpm Cache") {
+		t.Errorf("recovered frame missing loaded data:\n%s", frame)
+	}
+}
+
+// --- P2#8: q mid-operation confirms instead of quitting; ctrl+c stays immediate ---
+
+// makeWasteCleaning drives Waste into a REAL in-flight clean via the key path
+// (space → c → enter) WITHOUT executing the dispatched command, so cleaning
+// stays true — exactly the mid-operation window the quit guard protects.
+func makeWasteCleaning(t *testing.T, app *App) *wasteScreen {
+	t.Helper()
+	app.focus(1)
+	loadScreen(app)
+	ws := app.activeScreen().(*wasteScreen)
+	checkRow(app, ws, 0)
+	c, _ := app.reg.ResolveKey("c")
+	drive(app, keyMsg{cmd: c})
+	enter, _ := app.reg.ResolveKey("enter")
+	_ = driveCmd(app, keyMsg{cmd: enter}) // clean dispatched; result never delivered
+	if !ws.Busy() {
+		t.Fatal("setup: dispatched clean did not mark the screen busy")
+	}
+	return ws
+}
+
+func TestQuitGuardMidOperation(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		makeWasteCleaning(t, app)
+
+		// First q does NOT quit: it arms the confirm and says so.
+		m, _ := app.handleKey("q")
+		app = m.(*App)
+		if !app.quitArmed {
+			t.Fatal("q mid-operation did not arm the quit confirm")
+		}
+		if app.toast == nil {
+			t.Fatal("quit guard raised no confirm toast")
+		}
+		frame := strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "operation running — q again to quit, esc to stay") {
+			t.Errorf("quit-guard hint not rendered:\n%s", frame)
+		}
+
+		// Second q quits for real.
+		m, cmd := app.handleKey("q")
+		app = m.(*App)
+		if cmd == nil {
+			t.Fatal("second q returned no command")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Error("second q is not tea.Quit")
+		}
+		if app.quitArmed {
+			t.Error("quit left the confirm armed")
+		}
+	})
+}
+
+func TestQuitGuardEscStays(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		ws := makeWasteCleaning(t, app)
+
+		m, _ := app.handleKey("q") // arm
+		app = m.(*App)
+		m, cmd := app.handleKey("esc") // "esc to stay"
+		app = m.(*App)
+		if app.quitArmed {
+			t.Error("esc did not disarm the quit confirm")
+		}
+		if app.toast != nil {
+			t.Error("esc did not clear the confirm hint toast")
+		}
+		if cmd != nil {
+			t.Error("esc while armed must be consumed, not forwarded")
+		}
+		if !ws.cleaning {
+			t.Error("staying must not touch the in-flight operation")
+		}
+	})
+}
+
+func TestQuitGuardDuringScanLoad(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		app.focus(1) // Waste Load dispatched, result not yet delivered: scan running
+		if !app.activeScreen().Busy() {
+			t.Fatal("setup: loading screen not busy")
+		}
+		m, _ := app.handleKey("q")
+		app = m.(*App)
+		if !app.quitArmed {
+			t.Error("q during a running scan load did not arm the quit confirm")
+		}
+	})
+}
+
+func TestQuitImmediateWhenIdle(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		app.focus(1)
+		loadScreen(app) // ready — nothing in flight
+		m, cmd := app.handleKey("q")
+		app = m.(*App)
+		if app.quitArmed {
+			t.Error("idle q armed the confirm instead of quitting")
+		}
+		if cmd == nil {
+			t.Fatal("idle q returned no command")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Error("idle q is not tea.Quit")
+		}
+	})
+}
+
+func TestCtrlCImmediateMidOperation(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		makeWasteCleaning(t, app)
+		_, cmd := app.handleKey("ctrl+c")
+		if cmd == nil {
+			t.Fatal("ctrl+c mid-operation returned no command")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Error("ctrl+c mid-operation must quit immediately, without the confirm")
+		}
+	})
+}
+
+// TestQuitGuardArmExpiresWithToast pins the arm's lifetime to its visible hint:
+// once the toast expires, a later single q must re-arm visibly, never quit
+// silently while the operation still runs.
+func TestQuitGuardArmExpiresWithToast(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		makeWasteCleaning(t, app)
+		m, _ := app.handleKey("q") // arm
+		app = m.(*App)
+		m, _ = app.Update(toastExpireMsg{})
+		app = m.(*App)
+		if app.quitArmed {
+			t.Fatal("toast expiry did not disarm the quit confirm")
+		}
+		m, _ = app.handleKey("q") // must RE-arm, not quit
+		app = m.(*App)
+		if !app.quitArmed || app.toast == nil {
+			t.Error("q after expiry did not re-arm the visible confirm")
+		}
+	})
+}
+
+// TestQuitGuardOtherKeyDisarms: any non-q, non-esc key drops the pending
+// confirm and runs normally — a stale arm cannot linger behind other work.
+func TestQuitGuardOtherKeyDisarms(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		makeWasteCleaning(t, app)
+		m, _ := app.handleKey("q") // arm
+		app = m.(*App)
+		m, _ = app.handleKey("tab") // disarms AND still switches screens
+		app = m.(*App)
+		if app.quitArmed {
+			t.Error("another key did not disarm the quit confirm")
+		}
+		if got := app.activeScreen().Name(); got != "Ghosts" {
+			t.Errorf("tab while armed did not run normally: active = %q, want Ghosts", got)
 		}
 	})
 }

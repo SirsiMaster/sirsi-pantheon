@@ -54,6 +54,8 @@ var layoutGlyphs = []Glyph{
 	{Name: "check", R: '✓', Width: 1, ASCII: "x"},
 	{Name: "bullet", R: '·', Width: 1, ASCII: "-"},
 	{Name: "arrow-right", R: '→', Width: 1, ASCII: ">"},
+	{Name: "arrow-up", R: '↑', Width: 1, ASCII: "^"},
+	{Name: "arrow-down", R: '↓', Width: 1, ASCII: "v"},
 	{Name: "spinner-static", R: '⠿', Width: 1, ASCII: "*"},
 
 	// Box-drawing light set (§2.3) — universally present, but still measured

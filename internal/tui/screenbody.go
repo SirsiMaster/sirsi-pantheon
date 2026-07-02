@@ -56,12 +56,29 @@ type listRow struct {
 	checkable bool // whether a checkbox is drawn at all; BLOCK rows render "  -  "
 }
 
-// renderTable renders a column-aligned, selectable list with a header rule. It
-// reuses the primitives' Column/cell budgeting so truncation is exact and the
-// grid never wraps (§2.2). The focus marker is a width-1 sigil so the grid holds
-// with or without Unicode.
+// renderTable renders a column-aligned, selectable list with a header rule,
+// showing every row unwindowed. It is for lists whose length is bounded by
+// construction (Pulse's --top 5); unbounded selectable lists go through
+// renderTableWindow so the cursor can never scroll off-viewport (P2#6).
 func renderTable(cols []Column, rows []listRow, caps Capabilities, checkbox bool) []string {
-	lines := make([]string, 0, len(rows)+2)
+	return renderTableWindow(cols, rows, caps, checkbox, -1)
+}
+
+// renderTableWindow renders the table windowed to fit budget terminal lines
+// (the 2 header lines + data rows + clip-indicator lines). It reuses the
+// primitives' Column/cell budgeting so truncation is exact and the grid never
+// wraps (§2.2). The focus marker is a width-1 sigil so the grid holds with or
+// without Unicode.
+//
+// Windowing (P2#6): the selected row is ALWAYS inside the window — the scroll
+// offset follows the selection — and rows clipped above/below are declared by
+// honest "↑ N more" / "↓ N more" indicator lines (TokDim), never silently
+// dropped off the frame. The window is a pure function of the current selection
+// and budget, recomputed every render, so it is resize-safe by construction: a
+// tea.WindowSizeMsg changes the height the screen passes down and the next
+// render re-windows. budget < 0 disables windowing (render everything).
+func renderTableWindow(cols []Column, rows []listRow, caps Capabilities, checkbox bool, budget int) []string {
+	lines := make([]string, 0, len(rows)+4)
 
 	// Header.
 	head := make([]string, len(cols))
@@ -76,8 +93,17 @@ func renderTable(cols []Column, rows []listRow, caps Capabilities, checkbox bool
 	lines = append(lines, Paint(header, TokDim, caps))
 	lines = append(lines, Paint(strings.Repeat(Sigil("box-h", caps), visibleWidth(header)), TokDim, caps))
 
+	rowBudget := budget
+	if rowBudget >= 0 {
+		rowBudget -= 2 // the two header lines just drawn
+	}
+	start, end, above, below := tableWindow(rows, rowBudget)
+	if above > 0 {
+		lines = append(lines, clipIndicator("arrow-up", above, prefixW, caps))
+	}
+
 	marker := Sigil("focus-marker", caps)
-	for _, row := range rows {
+	for _, row := range rows[start:end] {
 		cells := make([]string, len(cols))
 		for ci, c := range cols {
 			val := ""
@@ -113,7 +139,61 @@ func renderTable(cols []Column, rows []listRow, caps Capabilities, checkbox bool
 		}
 		lines = append(lines, line)
 	}
+	if below > 0 {
+		lines = append(lines, clipIndicator("arrow-down", below, prefixW, caps))
+	}
 	return lines
+}
+
+// tableWindow computes the visible row window [start, end) for a slot budget
+// (data rows + indicator lines — each shown indicator consumes one slot, so the
+// block never exceeds the budget). The selected row is always inside the
+// window; above/below are the exact clipped-row counts the indicators declare.
+// budget < 0, or a list that fits, disables windowing.
+func tableWindow(rows []listRow, budget int) (start, end, above, below int) {
+	n := len(rows)
+	if budget < 0 || n <= budget {
+		return 0, n, 0, 0
+	}
+	if budget < 3 {
+		// Floor: one data row plus up to two indicators. A real frame never gets
+		// this tight (the console min-size gates at 80x24 and screens keep their
+		// chrome small); the floor just keeps the selection visible if one does —
+		// the console clamps any overflow.
+		budget = 3
+	}
+	sel := 0
+	for i, r := range rows {
+		if r.selected {
+			sel = i
+			break
+		}
+	}
+	// Selection near the top: nothing clipped above; one slot feeds the
+	// below-indicator.
+	if k := budget - 1; sel < k {
+		return 0, k, 0, n - k
+	}
+	// Selection near the bottom: nothing clipped below.
+	if k := budget - 1; sel >= n-k {
+		return n - k, n, n - k, 0
+	}
+	// Middle: both indicators show; center the selection in the remaining slots.
+	k := budget - 2
+	start = sel - k/2
+	if start < 1 {
+		start = 1
+	}
+	if start > n-k-1 {
+		start = n - k - 1
+	}
+	return start, start + k, start, n - start - k
+}
+
+// clipIndicator is the honest "rows are clipped here" line: a direction arrow
+// and the exact hidden-row count, dimmed, aligned under the row prefix.
+func clipIndicator(arrowSigil string, n, prefixW int, caps Capabilities) string {
+	return Paint(strings.Repeat(" ", prefixW)+Sigil(arrowSigil, caps)+fmt.Sprintf(" %d more", n), TokDim, caps)
 }
 
 // gauge renders a determinate bar: [####····] pct%. It is motion-free and

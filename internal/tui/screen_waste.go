@@ -60,6 +60,10 @@ func (s *wasteScreen) Sigil() string    { return "focus-marker" } // Jackal hunt
 func (s *wasteScreen) Layout() Layout   { return LayoutInspect }
 func (s *wasteScreen) State() loadState { return s.state }
 
+// Busy reports an in-flight operation: a scan loading or a dispatched clean not
+// yet resolved — the quit guard (P2#8) consults this before q may quit.
+func (s *wasteScreen) Busy() bool { return s.state == stateLoading || s.cleaning }
+
 func (s *wasteScreen) HintIDs() []CommandID {
 	return []CommandID{CmdMoveDown, CmdInspect, CmdToggle, CmdClean, CmdScan}
 }
@@ -301,27 +305,31 @@ func (s *wasteScreen) View(width, height int, caps Capabilities) []string {
 			checkable: cleanable(f),
 		})
 	}
-	// Cap rows to available height, keeping the selection visible.
-	bodyLines := renderTable(cols, rows, caps, true)
-	lines = append(lines, bodyLines...)
+	// Build the lines below the table FIRST so the table's line budget is exact:
+	// the selected row can never scroll off-viewport, and clipped rows are
+	// declared by honest ↑/↓ indicators (P2#6).
+	var tail []string
 
 	// Detail drill-in.
 	if s.detail >= 0 && s.detail < len(s.report.Findings) {
-		lines = append(lines, s.detailLines(caps)...)
+		tail = append(tail, s.detailLines(caps)...)
 	}
 
 	// Clean result / offer.
-	lines = append(lines, "")
+	tail = append(tail, "")
 	switch {
 	case s.cleaning:
-		lines = append(lines, "  "+Paint(Sigil("spinner-static", caps)+" cleaning…", TokDim, caps))
+		tail = append(tail, "  "+Paint(Sigil("spinner-static", caps)+" cleaning…", TokDim, caps))
 	case s.cleanErr != nil:
-		lines = append(lines, "  "+Paint("BLOCK clean failed: "+s.cleanErr.Error(), TokDanger, caps))
+		tail = append(tail, "  "+Paint("BLOCK clean failed: "+s.cleanErr.Error(), TokDanger, caps))
 	case s.cleanProof != "":
-		lines = append(lines, "  "+Paint(Sigil("check", caps)+" "+s.cleanProof, TokOK, caps))
+		tail = append(tail, "  "+Paint(Sigil("check", caps)+" "+s.cleanProof, TokOK, caps))
 	default:
-		lines = append(lines, "  "+Paint("space checks the selected item · enter drills in · c cleans the checked set", TokDim, caps))
+		tail = append(tail, "  "+Paint("space checks the selected item · enter drills in · c cleans the checked set", TokDim, caps))
 	}
+
+	lines = append(lines, renderTableWindow(cols, rows, caps, true, height-len(lines)-len(tail))...)
+	lines = append(lines, tail...)
 	return lines
 }
 
