@@ -4,12 +4,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// clearGitEnv unsets every GIT_* variable for the duration of the test.
+// Under the Ma'at pre-push gate the suite runs inside `git push`, which
+// exports GIT_DIR/GIT_PREFIX/GIT_INDEX_FILE/… — git subprocesses spawned
+// by ArmMaatGate would then operate on the REAL repo instead of the test
+// sandbox (the in-process counterpart of the leak fixed for subprocess
+// helpers in sirsi-pantheon#99). t.Setenv snapshots each value for restore.
+func clearGitEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			continue
+		}
+		key, _, _ := strings.Cut(kv, "=")
+		t.Setenv(key, "") // registers restore of the original value
+		os.Unsetenv(key)
+	}
+}
 
 // TestArmMaatGate verifies the gate arms inside a source clone that ships
 // .githooks/pre-push, is idempotent, and writes core.hooksPath=.githooks.
 func TestArmMaatGate(t *testing.T) {
+	clearGitEnv(t)
 	dir := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
@@ -59,6 +79,7 @@ func TestArmMaatGate(t *testing.T) {
 // TestArmMaatGateSkipsNonClone verifies a directory without the shipped gate
 // skips cleanly rather than arming or failing.
 func TestArmMaatGateSkipsNonClone(t *testing.T) {
+	clearGitEnv(t)
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".agents", "idea-router"), 0o755); err != nil {
 		t.Fatal(err)

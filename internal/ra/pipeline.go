@@ -114,6 +114,11 @@ func (p *Pipeline) RunAndRecord(ctx context.Context, task Task) (*PipelineResult
 	}, nil
 }
 
+// execCommandContext is an injectable seam for tests (mirrors internal/ka's
+// ExecCommand pattern) so unit tests never spawn a real python3 orchestrator.
+// Production always uses exec.CommandContext.
+var execCommandContext = exec.CommandContext
+
 // executeOrchestrator runs the orchestrator script and captures stdout/stderr separately.
 func (p *Pipeline) executeOrchestrator(ctx context.Context, task Task) (string, string, error) {
 	scriptPath := p.OrchestratorPath
@@ -126,7 +131,7 @@ func (p *Pipeline) executeOrchestrator(ctx context.Context, task Task) (string, 
 	}
 
 	args := append([]string{scriptPath, task.Subcmd}, task.ExtraArgs...)
-	cmd := exec.CommandContext(ctx, "python3", args...)
+	cmd := execCommandContext(ctx, "python3", args...)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	// Tee to os.Stdout/Stderr so the user still sees live output.

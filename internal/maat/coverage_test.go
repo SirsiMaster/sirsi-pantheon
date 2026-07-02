@@ -1,6 +1,7 @@
 package maat
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -93,8 +94,10 @@ func TestCoverageAssessorPass(t *testing.T) {
 	if assessments[0].Verdict != VerdictPass {
 		t.Errorf("verdict = %v, want pass", assessments[0].Verdict)
 	}
-	if assessments[0].FeatherWeight != 85 {
-		t.Errorf("weight = %d, want 85", assessments[0].FeatherWeight)
+	// Weight is threshold-normalized compliance: 85% against an 80%
+	// threshold fully meets the declared standard → 100.
+	if assessments[0].FeatherWeight != 100 {
+		t.Errorf("weight = %d, want 100 (compliant with threshold)", assessments[0].FeatherWeight)
 	}
 }
 
@@ -205,6 +208,151 @@ func TestCoverageAssessorMultipleModules(t *testing.T) {
 	// mirror: 60% >= 50% → pass
 	if assessments[2].Verdict != VerdictPass {
 		t.Errorf("mirror verdict = %v, want pass", assessments[2].Verdict)
+	}
+}
+
+// --- Go 1.20+ bare no-test-with-cover format ---
+
+func TestParseCoverageOutputBareNoTestLines(t *testing.T) {
+	// Under -cover, modern Go emits a bare status-less line for packages
+	// with no test files. These must be detected as NoTests, not dropped.
+	input := "ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/gemma\t1.377s\tcoverage: 53.7% of statements\n" +
+		"\tgithub.com/SirsiMaster/sirsi-pantheon/internal/help\t\tcoverage: 0.0% of statements\n" +
+		"\tgithub.com/SirsiMaster/sirsi-pantheon/internal/vitals\t\tcoverage: 0.0% of statements\n" +
+		"ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/horus\t2.345s\tcoverage: 88.6% of statements"
+
+	results := ParseCoverageOutput(input)
+	if len(results) != 4 {
+		t.Fatalf("got %d results, want 4", len(results))
+	}
+
+	byPkg := make(map[string]CoverageResult)
+	for _, r := range results {
+		byPkg[r.Package] = r
+	}
+	if r := byPkg["help"]; !r.NoTests {
+		t.Errorf("help: NoTests = false, want true (bare -cover no-test line)")
+	}
+	if r := byPkg["vitals"]; !r.NoTests {
+		t.Errorf("vitals: NoTests = false, want true (bare -cover no-test line)")
+	}
+	if r := byPkg["gemma"]; r.NoTests || r.Coverage != 53.7 {
+		t.Errorf("gemma: got noTests=%v cov=%.1f, want tested/53.7", r.NoTests, r.Coverage)
+	}
+}
+
+func TestParseCoverageOutputZeroCoverageWithTests(t *testing.T) {
+	// A package WITH tests that covers 0.0% still has an "ok" status column
+	// and must be reported as measured 0.0, not NoTests.
+	input := "ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/foo\t0.1s\tcoverage: 0.0% of statements"
+	results := ParseCoverageOutput(input)
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].NoTests {
+		t.Error("foo: NoTests = true, want false (has tests, zero coverage)")
+	}
+	if results[0].Coverage != 0.0 {
+		t.Errorf("foo: coverage = %.1f, want 0.0", results[0].Coverage)
+	}
+}
+
+// --- SkipTests cache-fallback tests ---
+
+func TestSkipTestsFallsBackWhenCacheIncomplete(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "coverage-cache.json")
+	// Cache only knows about "cleaner" — "ka" is missing.
+	if err := saveCoverageCache(cachePath, []CoverageResult{
+		{Package: "cleaner", Coverage: 85.0},
+	}); err != nil {
+		t.Fatalf("saveCoverageCache: %v", err)
+	}
+
+	runnerCalled := false
+	ca := &CoverageAssessor{
+		Thresholds: []CoverageThreshold{
+			{Module: "cleaner", MinCoverage: 80},
+			{Module: "ka", MinCoverage: 80},
+		},
+		CachePath: cachePath,
+		SkipTests: true,
+		Runner: func() (string, error) {
+			runnerCalled = true
+			return "ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/cleaner\t0.2s\tcoverage: 85.0% of statements\n" +
+				"ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/ka\t0.3s\tcoverage: 90.0% of statements", nil
+		},
+	}
+
+	assessments, err := ca.Assess()
+	if err != nil {
+		t.Fatalf("Assess: %v", err)
+	}
+	if !runnerCalled {
+		t.Error("expected fallback to a real scan when cache does not cover all thresholds")
+	}
+	for _, a := range assessments {
+		if strings.Contains(a.Message, "no coverage data found") {
+			t.Errorf("module %s reported no coverage data despite fallback", a.Subject)
+		}
+	}
+}
+
+func TestSkipTestsUsesCompleteCache(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "coverage-cache.json")
+	if err := saveCoverageCache(cachePath, []CoverageResult{
+		{Package: "cleaner", Coverage: 85.0},
+		{Package: "ka", Coverage: 90.0},
+	}); err != nil {
+		t.Fatalf("saveCoverageCache: %v", err)
+	}
+
+	ca := &CoverageAssessor{
+		Thresholds: []CoverageThreshold{
+			{Module: "cleaner", MinCoverage: 80},
+			{Module: "ka", MinCoverage: 80},
+		},
+		CachePath: cachePath,
+		SkipTests: true,
+		Runner: func() (string, error) {
+			t.Error("Runner must not be called when the cache covers all thresholds")
+			return "", nil
+		},
+	}
+
+	assessments, err := ca.Assess()
+	if err != nil {
+		t.Fatalf("Assess: %v", err)
+	}
+	if len(assessments) != 2 {
+		t.Fatalf("got %d assessments, want 2", len(assessments))
+	}
+	for _, a := range assessments {
+		if a.Verdict != VerdictPass {
+			t.Errorf("module %s verdict = %v, want pass (from cache)", a.Subject, a.Verdict)
+		}
+	}
+}
+
+// --- weightAgainst (threshold-normalized feather weight) ---
+
+func TestWeightAgainst(t *testing.T) {
+	tests := []struct {
+		name string
+		cov  float64
+		min  float64
+		want int
+	}{
+		{"tier C compliant weighs 100", 45, 30, 100},
+		{"exactly at threshold weighs 100", 80, 80, 100},
+		{"tier A shortfall is proportional", 45, 80, 56},
+		{"warning band lands 80-99", 70, 80, 87},
+		{"zero coverage weighs 0", 0, 80, 0},
+		{"zero threshold weighs 100", 12, 0, 100},
+	}
+	for _, tt := range tests {
+		if got := weightAgainst(tt.cov, tt.min); got != tt.want {
+			t.Errorf("%s: weightAgainst(%.0f, %.0f) = %d, want %d", tt.name, tt.cov, tt.min, got, tt.want)
+		}
 	}
 }
 
