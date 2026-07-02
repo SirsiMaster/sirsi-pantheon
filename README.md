@@ -50,13 +50,11 @@ Every command supports `--json` for scripting and ends with a plain-English summ
 
 ## Surfaces
 
-<!-- Screenshots pending capture — see docs/prd/RELEASE_V1_STAR_GRADE.md Phase 2C -->
+<p align="center"><img src="assets/screenshot-cli.png" alt="Pantheon CLI — a sirsi scan render" width="720"></p>
 
-| | |
-|:--|:--|
-| <img src="assets/screenshot-cli.png" alt="Pantheon CLI" width="420"> | **CLI** — the primary surface. Every command works standalone and scripts cleanly with `--json`. Findings come with evidence counts, warnings when they matter, and a "what's next" suggestion after every run. |
-| <img src="assets/screenshot-menubar.png" alt="Pantheon menu bar app" width="420"> | **Menu bar (macOS)** — an ankh in your menu bar with live status: clean, reclaimable waste, or RAM pressure. One click scans, cleans (with per-item toggles), and opens the dashboard. Ships as a notarized DMG. |
-| <img src="assets/screenshot-dashboard.png" alt="Horus dashboard" width="420"> | **Dashboard** — `sirsi dashboard` opens Horus at `localhost:9119`: a local web view of system health with live updates. No server, no account — it's your machine talking to your browser. |
+- **CLI** — the primary surface. Every command works standalone and scripts cleanly with `--json`. Findings come with evidence counts, warnings when they matter, and a "what's next" suggestion after every run.
+- **Menu bar (macOS)** — 𓋹 an ankh in your menu bar with live status: clean, reclaimable waste, or RAM pressure. One click scans, cleans (with per-item toggles), and opens the dashboard. Ships as a notarized DMG.
+- **Dashboard** — `sirsi dashboard` opens Horus at `localhost:9119`: a local web view of system health with live updates. No server, no account — it's your machine talking to your browser.
 
 **MCP server** — `sirsi mcp` exposes scans, diagnostics, and project memory to any MCP client, so your AI IDE can ask "what's eating this machine?" and act on the answer.
 
