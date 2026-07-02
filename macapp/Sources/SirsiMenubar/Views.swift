@@ -138,7 +138,7 @@ struct HomeView: View {
                         DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "governance")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
+                    NavigationLink { ThothMemoryInfoView() } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
@@ -1441,9 +1441,12 @@ struct InsightView: View {
 
                     Section {
                         ForEach(r.signals) { s in
-                            // Platform rows drill into that deity's live view too.
+                            // Platform rows drill into that deity's NATIVE view.
+                            // Never a raw CLI run for the big three: `scan` from
+                            // the app used to spin forever (full-disk walk) and
+                            // `thoth status` was a jargon dump with wrong advice.
                             NavigationLink {
-                                ResultView(engine: engine, title: s.deity, args: Self.deityArgs(s.deity))
+                                Self.deityDestination(engine: engine, deity: s.deity)
                             } label: {
                                 HStack(spacing: 8) {
                                     Circle().fill(insightSeverityColor(min(s.severity, 2))).frame(width: 7, height: 7)
@@ -1503,14 +1506,62 @@ struct InsightView: View {
         return toks.isEmpty ? ["status"] : toks
     }
 
-    // deityArgs maps a PLATFORM signal's deity to its safe read command.
+    // deityDestination routes a PLATFORM signal to its NATIVE in-app view where
+    // one exists — instant, actionable, no subprocess. Only deities without a
+    // native view fall back to a fast read-only CLI render.
+    @ViewBuilder
+    static func deityDestination(engine: SirsiEngine, deity: String) -> some View {
+        let d = deity.lowercased()
+        if d.contains("anubis") {
+            AnubisView(engine: engine)
+        } else if d.contains("horus") {
+            HorusView(engine: engine)
+        } else if d.contains("thoth") {
+            ThothMemoryInfoView()
+        } else {
+            ResultView(engine: engine, title: deity, args: Self.deityArgs(deity))
+        }
+    }
+
+    // deityArgs maps the REMAINING deities to a fast, read-only command.
     static func deityArgs(_ deity: String) -> [String] {
         let d = deity.lowercased()
-        if d.contains("horus") { return ["diagnose"] }
-        if d.contains("anubis") { return ["scan"] }
-        if d.contains("thoth") { return ["thoth", "status"] }
         if d.contains("ma") && d.contains("at") { return ["maat", "audit"] }
         if d.contains("ra") { return ["ra", "status"] }
         return ["status"]
+    }
+}
+
+// ── Thoth (menubar) — plain-English explainer, not a CLI dump ─────────────────
+//
+// Thoth's memory lives inside each project folder; the menu bar app doesn't run
+// inside a project, so a raw `thoth status` here said ".thoth/ not found — run
+// sirsi thoth init", which is wrong advice for this surface (it would create
+// /.thoth). Say what's true in plain English instead.
+struct ThothMemoryInfoView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Thoth — Memory")
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Project memory lives with each project.")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Thoth keeps a small memory file inside every project folder so AI sessions can pick up exactly where the last one left off — no re-reading the whole codebase.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("The menu bar isn't inside a project, so there's nothing to show here. In a project folder, use:")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("sirsi thoth init").font(.caption.monospaced()).foregroundStyle(gold)
+                    Text("sirsi thoth sync").font(.caption.monospaced()).foregroundStyle(gold)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                Spacer()
+            }
+            .padding(16)
+        }
+        .navigationTitle("Thoth — Memory")
     }
 }
