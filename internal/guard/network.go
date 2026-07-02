@@ -67,6 +67,15 @@ func RollbackNetwork(p platform.Platform) (string, error) {
 	return fmt.Sprintf("Restored DNS to: %s", prior), nil
 }
 
+// Injectable seams (Rule A16) so the DNS fix/verify paths and the TLS probe are
+// unit-testable without live network I/O: tests swap the probe functions and
+// point the TLS audit at a local address; production keeps the real behavior.
+var (
+	dnsReachableFn = dnsReachable
+	dnsResolvesFn  = dnsResolves
+	tlsAuditAddr   = "api.anthropic.com:443"
+)
+
 // NetworkReport is the complete network security audit.
 type NetworkReport struct {
 	Timestamp time.Time           `json:"timestamp"`
@@ -140,7 +149,7 @@ func checkDNSConfig(p platform.Platform, report *NetworkReport, fix bool) {
 			// Safety: probe reachability BEFORE changing DNS config.
 			// A failed probe here is harmless; a failed probe after changing
 			// DNS would leave the machine with broken name resolution.
-			if !dnsReachable(p, "1.1.1.1") {
+			if !dnsReachableFn(p, "1.1.1.1") {
 				finding.Severity = SeverityWarn
 				finding.Message = "Cloudflare DNS (1.1.1.1) unreachable on this network — skipped fix"
 				finding.Detail = "This network blocks external DNS servers. Use a VPN for encrypted DNS."
@@ -178,7 +187,7 @@ func checkDNSConfig(p platform.Platform, report *NetworkReport, fix bool) {
 		if isEncrypted {
 			// Verify the encrypted DNS is actually reachable
 			firstDNS := strings.TrimSpace(strings.Split(dns, "\n")[0])
-			if dnsReachable(p, firstDNS) {
+			if dnsReachableFn(p, firstDNS) {
 				finding.Severity = SeverityOK
 				finding.Message = fmt.Sprintf("Encrypted DNS configured (%s)", provider)
 			} else {
@@ -288,7 +297,7 @@ func checkTLSConnection(report *NetworkReport) {
 	conn, err := tls.DialWithDialer(
 		&net.Dialer{Timeout: 5 * time.Second},
 		"tcp",
-		"api.anthropic.com:443",
+		tlsAuditAddr,
 		&tls.Config{MinVersion: tls.VersionTLS13},
 	)
 	if err != nil {
@@ -336,7 +345,7 @@ func dnsResolves() bool {
 // Returns true if DNS is working, false if it rolled back.
 func verifyDNSOrRollback(p platform.Platform, attempts int, interval time.Duration) bool {
 	for i := 0; i < attempts; i++ {
-		if dnsResolves() {
+		if dnsResolvesFn() {
 			return true
 		}
 		if i < attempts-1 {

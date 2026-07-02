@@ -16,6 +16,11 @@ import (
 // glyph before closing windows; if present, the window is untouchable.
 const ProtectGlyph = "𓂀"
 
+// execCommand is an injectable seam for tests (mirrors internal/ka's
+// ExecCommand pattern) so unit tests never spawn real osascript/pgrep
+// processes. Production always uses exec.Command.
+var execCommand = exec.Command
+
 // SpawnConfig describes how to spawn a terminal window for a Ra scope.
 type SpawnConfig struct {
 	Name       string // scope name
@@ -301,7 +306,7 @@ chmod +x %s && claude %s --print < %s 2>/dev/null | %s`,
 		script = buildTerminalScript(shellCmd, cfg.Title)
 	}
 
-	cmd := exec.Command("osascript", "-e", script)
+	cmd := execCommand("osascript", "-e", script)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -407,7 +412,7 @@ func KillAll(raDir string) error {
 			end try
 		end repeat
 	end tell`, ProtectGlyph)
-	_ = exec.Command("osascript", "-e", closeScript).Run()
+	_ = execCommand("osascript", "-e", closeScript).Run()
 
 	if len(errs) > 0 {
 		return fmt.Errorf("ra kill-all: %d errors: %s", len(errs), strings.Join(errs, "; "))
@@ -427,12 +432,12 @@ func ProtectFrontWindow() {
 			set custom title of front window to "%s Claude Code"
 		end try
 	end tell`, ProtectGlyph, ProtectGlyph)
-	_ = exec.Command("osascript", "-e", script).Run()
+	_ = execCommand("osascript", "-e", script).Run()
 }
 
 // isWatchRunning checks if a Ra Command Center process is already running.
 func isWatchRunning() bool {
-	out, err := exec.Command("pgrep", "-f", "sirsi ra watch").Output()
+	out, err := execCommand("pgrep", "-f", "sirsi ra watch").Output()
 	return err == nil && len(strings.TrimSpace(string(out))) > 0
 }
 
@@ -449,7 +454,7 @@ func SpawnWatchWindow(useITerm2 bool) {
 			end try
 		end repeat
 	end tell`
-	_ = exec.Command("osascript", "-e", killScript).Run()
+	_ = execCommand("osascript", "-e", killScript).Run()
 
 	sirsiBin := setup.SirsiBinaryPath()
 
@@ -463,7 +468,7 @@ func SpawnWatchWindow(useITerm2 bool) {
 		script = buildTerminalScript(shellCmd, title)
 	}
 
-	cmd := exec.Command("osascript", "-e", script)
+	cmd := execCommand("osascript", "-e", script)
 	_ = cmd.Run()
 }
 
