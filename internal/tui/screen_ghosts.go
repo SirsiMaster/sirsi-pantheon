@@ -40,6 +40,10 @@ func (s *ghostsScreen) Sigil() string    { return "spinner-static" } // Ka spiri
 func (s *ghostsScreen) Layout() Layout   { return LayoutInspect }
 func (s *ghostsScreen) State() loadState { return s.state }
 
+// Busy reports an in-flight operation: the residual scan loading or a
+// dispatched clean not yet resolved (quit guard, P2#8).
+func (s *ghostsScreen) Busy() bool { return s.state == stateLoading || s.cleaning }
+
 func (s *ghostsScreen) HintIDs() []CommandID {
 	return []CommandID{CmdMoveDown, CmdInspect, CmdClean, CmdRefresh, CmdTab}
 }
@@ -182,23 +186,26 @@ func (s *ghostsScreen) View(width, height int, caps Capabilities) []string {
 			selected: i == s.selected,
 		})
 	}
-	lines = append(lines, renderTable(cols, rows, caps, false)...)
-
+	// Tail first, so the table window's line budget is exact (P2#6).
+	var tail []string
 	if s.detail >= 0 && s.detail < len(s.report.Ghosts) {
-		lines = append(lines, s.detailLines(caps)...)
+		tail = append(tail, s.detailLines(caps)...)
 	}
 
-	lines = append(lines, "")
+	tail = append(tail, "")
 	switch {
 	case s.cleaning:
-		lines = append(lines, "  "+Paint(Sigil("spinner-static", caps)+" clearing residuals…", TokDim, caps))
+		tail = append(tail, "  "+Paint(Sigil("spinner-static", caps)+" clearing residuals…", TokDim, caps))
 	case s.cleanErr != nil:
-		lines = append(lines, "  "+Paint("BLOCK clean failed: "+s.cleanErr.Error(), TokDanger, caps))
+		tail = append(tail, "  "+Paint("BLOCK clean failed: "+s.cleanErr.Error(), TokDanger, caps))
 	case s.cleanProof != "":
-		lines = append(lines, "  "+Paint(Sigil("check", caps)+" "+s.cleanProof, TokOK, caps))
+		tail = append(tail, "  "+Paint(Sigil("check", caps)+" "+s.cleanProof, TokOK, caps))
 	default:
-		lines = append(lines, "  "+Paint("enter shows residual files · c clears them (caution tier)", TokDim, caps))
+		tail = append(tail, "  "+Paint("enter shows residual files · c clears them (caution tier)", TokDim, caps))
 	}
+
+	lines = append(lines, renderTableWindow(cols, rows, caps, false, height-len(lines)-len(tail))...)
+	lines = append(lines, tail...)
 	return lines
 }
 

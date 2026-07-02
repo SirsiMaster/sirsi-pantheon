@@ -46,6 +46,10 @@ func (s *pulseScreen) Sigil() string    { return "horus" } // memory lord surfac
 func (s *pulseScreen) Layout() Layout   { return LayoutSurvey }
 func (s *pulseScreen) State() loadState { return s.state }
 
+// Busy reports an in-flight operation: the initial load or a running relieve.
+// The 2s auto-refresh keeps state at ready and never counts as busy.
+func (s *pulseScreen) Busy() bool { return s.state == stateLoading || s.relieving }
+
 func (s *pulseScreen) HintIDs() []CommandID {
 	return []CommandID{CmdRelieve, CmdRefresh, CmdTab, CmdHelp, CmdQuit}
 }
