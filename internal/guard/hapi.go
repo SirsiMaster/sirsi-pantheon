@@ -111,11 +111,11 @@ func setHapiSampleFn(fn func() (MemSample, error)) {
 }
 
 func defaultHapiSample() (MemSample, error) {
-	var total int64
-	if p, err := seba.DetectHardware(); err == nil {
-		total = p.TotalRAM
-	}
-	s := MemSample{TotalRAM: total, FreeBytes: hapiFreeRAMBytes()}
+	// TotalRAMBytes is the same hw.memsize probe DetectHardware runs, minus the
+	// ~600ms system_profiler GPU detour a memory sample never needed — this keeps
+	// the `sirsi vitals` fast path (and every Hapi tick) well under its budget.
+	s := MemSample{TotalRAM: seba.TotalRAMBytes(), FreeBytes: hapiFreeRAMBytes()}
+	total := s.TotalRAM
 	if total > 0 {
 		s.FreePercent = float64(s.FreeBytes) / float64(total) * 100
 	}
