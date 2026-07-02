@@ -5,7 +5,11 @@
 #
 #   cd <repo root> && go build -o bin/sirsi ./cmd/sirsi/ && PATH="$PWD/bin:$PATH" vhs scripts/record-demo.tape
 #
-# Arc (~15s): scan → findings table → clean (dry-run preview) → diagnose → ghosts.
+# Arc (~20s): scan → findings table → clean (dry-run preview) → diagnose → ghosts.
+# Sleeps are tuned to real command durations on a warm machine (scan is a full
+# home-dir sweep and genuinely takes ~10s; clean reads cached scan results and is
+# instant; diagnose ~1s; ghosts ~3s). Nothing here is faked — the GIF shows exactly
+# what these commands print.
 # Theme: Pantheon gold (#C8A951) on black (#0F0F0F), lapis accents.
 
 Output assets/demo.gif
@@ -20,23 +24,23 @@ Set Theme { "name": "sirsi-gold", "background": "#0F0F0F", "foreground": "#C8A95
 
 Sleep 300ms
 
-# 1. Find the waste (81 rules)
+# 1. Find the waste (81 rules) — full home-dir sweep, ~10s to complete + pause to read
 Type "sirsi scan"
 Enter
-Sleep 4.5s
+Sleep 10.5s
 
 # 2. Preview the fix — sirsi clean is the preferred alias of `sirsi anubis clean`;
-#    it is a dry-run by default (--confirm applies, trash-first).
+#    it is a dry-run by default (--confirm applies, trash-first). Reads cached scan.
 Type "sirsi clean"
 Enter
-Sleep 3.5s
+Sleep 3s
 
 # 3. Name the cause
 Type "sirsi diagnose"
 Enter
-Sleep 3.5s
+Sleep 2.5s
 
 # 4. Find remnants of uninstalled apps
 Type "sirsi ghosts"
 Enter
-Sleep 3s
+Sleep 4s
