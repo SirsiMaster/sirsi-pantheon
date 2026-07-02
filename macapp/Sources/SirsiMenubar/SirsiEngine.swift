@@ -323,6 +323,10 @@ final class SirsiEngine: ObservableObject {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
+                // Run from $HOME, never the app's launchd cwd (/): a path-scoped
+                // command like `sirsi scan` launched from / walks the entire disk
+                // (the 2026-07-02 infinite-spinner bug).
+                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
                 p.executableURL = URL(fileURLWithPath: sirsiBinary())
                 p.arguments = args
                 let outPipe = Pipe()
@@ -355,6 +359,10 @@ final class SirsiEngine: ObservableObject {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
+                // Run from $HOME, never the app's launchd cwd (/): a path-scoped
+                // command like `sirsi scan` launched from / walks the entire disk
+                // (the 2026-07-02 infinite-spinner bug).
+                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
                 p.executableURL = URL(fileURLWithPath: sirsiBinary())
                 p.arguments = args
                 let outPipe = Pipe()
