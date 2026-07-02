@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 33 (+ ADR-031-A/B sub-decisions)** | **Next available: ADR-034**
+**Total ADRs: 34 (+ ADR-031-A/B sub-decisions)** | **Next available: ADR-035**
 
 ---
 
@@ -45,6 +45,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-031-B](ADR-031-B-DYNAMIC-PER-NODE-ENFORCEMENT.md) | Dynamic Per-Node Enforcement — the never-exhaust numbers become functions of the measured node (NodeCapacity) + kernel memory-pressure watcher | **Accepted** | 2026-06-19 |
 | [ADR-032](ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md) | Mac-First Platform Roadmap — CLI → Menubar → TUI → GUI on macOS first; Windows/Linux deferred; CI macOS-only | **Accepted** | 2026-06-19 |
 | [ADR-033](ADR-033-REMEDIATION-CATALOG.md) | Remediation Catalog — every finding maps to a real macOS lever, never a monitor; three-outcome law (ACTION / GUIDANCE / INFO); governs the monitor→identify→fix loop | **Accepted** | 2026-06-30 |
+| [ADR-034](ADR-034-ORCHESTRATION-BRAIN.md) | Orchestration Brain — tiered (T0 dispatch / T1 triage / T2 execution), pluggable, user-navigable LLM spectrum (Level 0–3); deterministic Tier-0 floor; **surfaces + enforces** the Registry/Wake invariant over the EXISTING wake substrate (does not rebuild it); governs A29 | **Accepted** | 2026-07-02 |
 
 ---
 
@@ -125,6 +126,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-031-B | **Accepted** — Dynamic Per-Node Enforcement (numbers become functions of the node) |
 | ADR-032 | **Accepted** — Mac-First Platform Roadmap (CLI → Menubar → TUI → GUI) |
 | ADR-033 | **Accepted** — Remediation Catalog (real macOS levers; three-outcome law) |
-| ADR-034 | Next available |
+| ADR-034 | **Accepted** — Orchestration Brain (tiered/pluggable/user-navigable; deterministic Tier-0 floor; surfaces+enforces the Registry/Wake invariant over the EXISTING wake substrate; governs A29) |
+| ADR-035 | Next available |
 
-> **Last updated:** July 1, 2026 — version-truth sweep: indexed ADR-033 (Remediation Catalog, accepted 2026-06-30, PR #125); next available advanced to ADR-034. Earlier — June 30, 2026: registry reconciled with disk (full-repo audit): added the previously-unregistered ADR-026 through ADR-032 (Horus ops-dashboard, router menubar, optional-SQLite, per-agent worktrees, native menubar popover, local-models-through-Pantheon + ADR-031-A/B resource governance, Mac-first roadmap); corrected the count and next-available pointer (ADR-032 was already taken on disk). Earlier milestone — ADR-023 **accepted**: one build-version contract (`internal/version`) replaces seven scattered `var version` literals; ldflags unified across all binaries; `internal/selfupdate` detects sibling (D2) and PATH (D3) drift locally with no network; `sirsi doctor` emits a `binary-drift` finding (`docs/ADR-023-BINARY-VERSION-CONTRACT.md`).
+> **Last updated:** July 2, 2026 — indexed ADR-034 (Orchestration Brain, accepted 2026-07-02; governs PANTHEON_RULES A29; codifies + surfaces the existing `internal/router` wake substrate rather than rebuilding it); next available advanced to ADR-035. Earlier — July 1, 2026 — version-truth sweep: indexed ADR-033 (Remediation Catalog, accepted 2026-06-30, PR #125); next available advanced to ADR-034. Earlier — June 30, 2026: registry reconciled with disk (full-repo audit): added the previously-unregistered ADR-026 through ADR-032 (Horus ops-dashboard, router menubar, optional-SQLite, per-agent worktrees, native menubar popover, local-models-through-Pantheon + ADR-031-A/B resource governance, Mac-first roadmap); corrected the count and next-available pointer (ADR-032 was already taken on disk). Earlier milestone — ADR-023 **accepted**: one build-version contract (`internal/version`) replaces seven scattered `var version` literals; ldflags unified across all binaries; `internal/selfupdate` detects sibling (D2) and PATH (D3) drift locally with no network; `sirsi doctor` emits a `binary-drift` finding (`docs/ADR-023-BINARY-VERSION-CONTRACT.md`).
