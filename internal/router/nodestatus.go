@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,6 +185,24 @@ type LaunchctlChecker func(args ...string) error
 // (needsLogin=false), never as a logout.
 const claudeAuthProbeTimeout = 30 * time.Second
 
+// authProbeTimeoutEnv lets a harness cap the Claude probe timeout (milliseconds).
+// Production leaves it unset → the full 30s cold-start budget. Tests and CI that
+// shell `doctor`/`node-status` (which run the real probe against an absent or
+// slow `claude`) set it low so a package's test timeout is never consumed by a
+// single 30s probe — a raised production budget must not slow the test suite.
+const authProbeTimeoutEnv = "SIRSI_AUTH_PROBE_TIMEOUT_MS"
+
+// claudeProbeTimeout returns the Claude auth-probe timeout, honoring an override
+// from authProbeTimeoutEnv (ms) when it is a positive integer.
+func claudeProbeTimeout() time.Duration {
+	if v := os.Getenv(authProbeTimeoutEnv); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return claudeAuthProbeTimeout
+}
+
 // DefaultAuthProbe runs a minimal command to test whether an agent CLI is authenticated.
 // For Claude: `claude --print "respond with OK"` prints a "not logged in" / /login
 // signature if unauthenticated. For Codex: `codex --version` is sufficient (codex
@@ -205,7 +224,7 @@ const claudeAuthProbeTimeout = 30 * time.Second
 // exist on disk; we demote that to the inconclusive state and name the missing
 // env in the detail so operators can tell an env problem from a real logout.
 func DefaultAuthProbe(cliPath, agentType string) (bool, bool, string) {
-	timeout := claudeAuthProbeTimeout
+	timeout := claudeProbeTimeout()
 	if agentType != "claude" {
 		timeout = 8 * time.Second // `--version` is instant; no cold-start concern
 	}
