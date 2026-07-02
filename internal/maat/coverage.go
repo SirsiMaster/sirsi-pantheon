@@ -245,7 +245,14 @@ func (c *CoverageAssessor) coverageCachePath() string {
 // runCoverage executes coverage — either skip, diff-only, or full scan.
 func (c *CoverageAssessor) runCoverage() (string, error) {
 	if c.SkipTests {
-		return c.runSkipTests()
+		if out, ok := c.runSkipTests(); ok {
+			return out, nil
+		}
+		// The cache is missing or does not cover every threshold module.
+		// Fall through to a real scan: a fast verdict built on missing data
+		// would report "no coverage data found" for perfectly healthy
+		// modules and drag the feather weight down. The scan repopulates
+		// the cache, so subsequent fast runs stay fast.
 	}
 
 	if c.Runner != nil {
@@ -260,22 +267,24 @@ func (c *CoverageAssessor) runCoverage() (string, error) {
 }
 
 // runSkipTests returns cached coverage without running any tests.
-func (c *CoverageAssessor) runSkipTests() (string, error) {
+// The second return is false when the cache is absent or incomplete
+// (i.e. it lacks entries for one or more threshold modules), signaling
+// the caller to fall back to a real coverage scan.
+func (c *CoverageAssessor) runSkipTests() (string, bool) {
 	cache := c.coverageCachePath()
 	cached, err := loadCoverageCache(cache)
-	if err == nil && len(cached) > 0 {
-		var lines []string
-		for _, r := range cached {
-			if r.NoTests {
-				lines = append(lines, fmt.Sprintf("?\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t[no test files]", r.Package))
-			} else {
-				lines = append(lines, fmt.Sprintf("ok\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t(cached)\tcoverage: %.1f%% of statements", r.Package, r.Coverage))
-			}
-		}
-		return strings.Join(lines, "\n"), nil
+	if err != nil || !c.cacheCoversThresholds(cached) {
+		return "", false
 	}
-	// No cache available — return empty so evaluate() gives warnings, not crashes.
-	return "", nil
+	var lines []string
+	for _, r := range cached {
+		if r.NoTests {
+			lines = append(lines, fmt.Sprintf("?\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t[no test files]", r.Package))
+		} else {
+			lines = append(lines, fmt.Sprintf("ok\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t(cached)\tcoverage: %.1f%% of statements", r.Package, r.Coverage))
+		}
+	}
+	return strings.Join(lines, "\n"), true
 }
 
 // runFullCoverage runs go test -cover on all packages, streaming results
@@ -328,15 +337,21 @@ func (c *CoverageAssessor) runFullCoverage() (string, error) {
 				Total:    total,
 				Failed:   strings.HasPrefix(line, "FAIL"),
 			})
-		} else if matches := noTestRegex.FindStringSubmatch(line); len(matches) == 2 {
-			count++
-			pkg := normalizePackageName(matches[1])
-			c.ProgressFn(PackageProgress{
-				Package: pkg,
-				NoTests: true,
-				Current: count,
-				Total:   total,
-			})
+		} else {
+			matches := noTestRegex.FindStringSubmatch(line)
+			if matches == nil {
+				matches = bareNoTestRegex.FindStringSubmatch(line)
+			}
+			if len(matches) == 2 {
+				count++
+				pkg := normalizePackageName(matches[1])
+				c.ProgressFn(PackageProgress{
+					Package: pkg,
+					NoTests: true,
+					Current: count,
+					Total:   total,
+				})
+			}
 		}
 	}
 
@@ -528,6 +543,18 @@ var noTestRegex = regexp.MustCompile(
 	`\?\s+\S+/internal/(\S+)\s+\[no test files\]`,
 )
 
+// bareNoTestRegex matches the format Go emits under -cover for packages
+// that have NO test files (instead of the classic "? ... [no test files]"):
+//
+//	github.com/SirsiMaster/sirsi-pantheon/internal/help		coverage: 0.0% of statements
+//
+// The line starts with whitespace (no "ok"/"FAIL"/"?" status column), so it
+// matches neither coverageRegex nor noTestRegex — without this pattern such
+// modules are invisible to Ma'at and surface as "no coverage data found".
+var bareNoTestRegex = regexp.MustCompile(
+	`^\s+\S+/internal/(\S+)\s+coverage:\s+0\.0%`,
+)
+
 // ParseCoverageOutput extracts coverage results from go test -cover output.
 func ParseCoverageOutput(output string) []CoverageResult {
 	var results []CoverageResult
@@ -551,8 +578,12 @@ func ParseCoverageOutput(output string) []CoverageResult {
 			continue
 		}
 
-		// Match no-test-files lines
-		if matches := noTestRegex.FindStringSubmatch(line); len(matches) == 2 {
+		// Match no-test-files lines (classic "?" form and bare -cover form)
+		matches := noTestRegex.FindStringSubmatch(line)
+		if matches == nil {
+			matches = bareNoTestRegex.FindStringSubmatch(line)
+		}
+		if len(matches) == 2 {
 			pkg := normalizePackageName(matches[1])
 			if !seen[pkg] {
 				results = append(results, CoverageResult{
@@ -626,19 +657,19 @@ func (c *CoverageAssessor) evaluate(results []CoverageResult) []Assessment {
 
 		case cov >= t.MinCoverage:
 			a.Verdict = VerdictPass
-			a.FeatherWeight = clampWeight(int(cov))
+			a.FeatherWeight = weightAgainst(cov, t.MinCoverage)
 			a.Message = fmt.Sprintf("%s: %.1f%% coverage (threshold: %.0f%%)", t.Module, cov, t.MinCoverage)
 
 		case cov >= t.MinCoverage*0.8:
 			// Within 80% of the threshold — warning.
 			a.Verdict = VerdictWarning
-			a.FeatherWeight = clampWeight(int(cov))
+			a.FeatherWeight = weightAgainst(cov, t.MinCoverage)
 			a.Message = fmt.Sprintf("%s: %.1f%% coverage (threshold: %.0f%%)", t.Module, cov, t.MinCoverage)
 			a.Remediation = fmt.Sprintf("Add tests to bring %s from %.1f%% to %.0f%%", t.Module, cov, t.MinCoverage)
 
 		default:
 			a.Verdict = VerdictFail
-			a.FeatherWeight = clampWeight(int(cov))
+			a.FeatherWeight = weightAgainst(cov, t.MinCoverage)
 			a.Message = fmt.Sprintf("%s: %.1f%% coverage (threshold: %.0f%%)", t.Module, cov, t.MinCoverage)
 			a.Remediation = fmt.Sprintf("Add tests to bring %s from %.1f%% to %.0f%%", t.Module, cov, t.MinCoverage)
 		}
@@ -647,6 +678,21 @@ func (c *CoverageAssessor) evaluate(results []CoverageResult) []Assessment {
 	}
 
 	return assessments
+}
+
+// weightAgainst converts measured coverage into a feather weight relative
+// to the module's declared threshold. The feather IS the standard: weight
+// measures COMPLIANCE with the tier threshold, not raw statement coverage.
+// A Tier C module at 45% (threshold 30%) is fully compliant and weighs 100;
+// a Tier A module at 45% (threshold 80%) weighs 56. This keeps the overall
+// audit score meaningful — modules that meet their declared standard no
+// longer drag the average down just because their tier tolerates lower
+// raw coverage.
+func weightAgainst(cov, minCoverage float64) int {
+	if minCoverage <= 0 {
+		return 100
+	}
+	return clampWeight(int(cov / minCoverage * 100))
 }
 
 // clampWeight ensures a weight is between 0 and 100.
