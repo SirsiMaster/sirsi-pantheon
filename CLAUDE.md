@@ -18,8 +18,8 @@ Use the router for `/plan`, `/goal`, ETA, repo ownership, verification evidence,
 
 # PANTHEON_RULES.md
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 3.0.0 (v0.9.0-rc1 Release)
-**Date:** March 31, 2026
+**Version:** 3.0.0 (v0.23.8-beta Release)
+**Date:** July 1, 2026
 
 ---
 

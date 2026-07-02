@@ -3,6 +3,9 @@
 **Version:** v0.8.0-beta (honest)  
 **Assessment:** Post-remediation  
 
+> **Historical snapshot.** This assessment describes the v0.8.0-beta era (March 30, 2026).
+> The current shipped release is v0.23.8-beta — see `VERSION` and `docs/RELEASE_NOTES.md`.
+
 ---
 
 ## 🛑 Harsh Re-Evaluation: What Actually Works

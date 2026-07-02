@@ -2,10 +2,10 @@
 
 **Infrastructure intelligence for developers and operations teams.** Scans, detects, and remediates — from one laptop to a 256-node fleet. 81 rules, zero config, zero telemetry. Works with or without AI.
 
-[![Go 1.22+](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
+[![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-C8A951?style=flat)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.19.0-1A1A5E?style=flat)](VERSION)
-[![Tests](https://img.shields.io/badge/tests-2%2C200%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/Version-0.23.8--beta-1A1A5E?style=flat)](VERSION)
+[![Tests](https://img.shields.io/badge/tests-2%2C000%2B%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![Product Page](https://img.shields.io/badge/sirsi.ai-pantheon-059669?style=flat)](https://sirsi.ai/pantheon)
 
 ---
