@@ -108,10 +108,12 @@ var rootCmd = &cobra.Command{
 
   Fix My Environment
   sirsi diagnose           Full system health check
+  sirsi vitals             Fast memory snapshot (RAM, pressure, top hogs)
   sirsi fix                Auto-fix DNS, firewall, security
   sirsi network            Network security audit
   sirsi monitor            Watch processes and RAM pressure
   sirsi status             Live system dashboard
+  sirsi activity           Recent operations — what sirsi actually changed
 
   Keep Shipping
   sirsi audit              Code quality and governance scan
@@ -721,16 +723,22 @@ func init() {
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
+	judgeCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm)")
 	// Top-level `sirsi clean` shares the one A1-correct engine (runJudge): preview
 	// by default, --confirm to apply (asks first), --include-caution for scope.
+	// --yes suppresses ONLY the [y/N] stdin prompt — for dispatchers (TUI/menubar/
+	// dashboard) that render their own confirmation; scope is untouched and
+	// --yes without --confirm stays a dry-run (TUI design proof gap V2).
 	cleanCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview only (default); use --confirm to apply")
 	cleanCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Apply the cleanup — move items to Trash (asks first)")
+	cleanCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm; for dispatchers that confirmed already)")
 	cleanCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (preview and apply)")
 	fixCmd.Flags().BoolVar(&fixYes, "yes", false, "Apply safe reclaim without the confirmation prompt")
 	// ── User-facing commands (visible in sirsi --help) ──
 	rootCmd.AddCommand(scanCmd, cleanCmd, ghostsCmd, dedupCmd, doctorCmd)
 	rootCmd.AddCommand(purgeCmd, analyzeCmd, installerCmd)
 	rootCmd.AddCommand(networkCmd, fixCmd, monitorCmd)
+	rootCmd.AddCommand(vitalsCmd, activityCmd)
 	rootCmd.AddCommand(spotlightExcludeCmd)
 	rootCmd.AddCommand(auditCmd, riskCmd, hardwareCmd, diagramCmd, statusCmd)
 	rootCmd.AddCommand(versionCmd, quickstartCmd, setupCmd, routerCmd, agentCmd, threadCmd)

@@ -30,6 +30,7 @@ var (
 	anubisAll            bool
 	anubisDryRun         bool
 	anubisConfirm        bool
+	anubisYes            bool
 	anubisIncludeCaution bool
 	anubisOnly           []string
 	anubisDocs           bool
@@ -124,6 +125,7 @@ func init() {
 	anubisWeighCmd.Flags().BoolVar(&anubisAll, "all", false, "Scan all categories")
 	anubisJudgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	anubisJudgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply (does NOT change scope — preview matches apply)")
+	anubisJudgeCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm; for dispatchers that confirmed already)")
 	anubisJudgeCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (applies to BOTH preview and apply)")
 	anubisJudgeCmd.Flags().StringArrayVar(&anubisOnly, "only", nil, "Restrict cleanup to these exact paths (repeatable). Can only NARROW scope, never widen — lets a UI clean a user-curated subset. Applies to BOTH preview and apply.")
 	anubisKaCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Enable sudo access")
@@ -365,6 +367,31 @@ func narrowToPaths(target []jackal.Finding, only []string) []jackal.Finding {
 	return out
 }
 
+// cleanAction is what runJudge does after target selection.
+type cleanAction int
+
+const (
+	cleanActionPreview cleanAction = iota // dry-run: render the plan, change nothing
+	cleanActionPrompt                     // interactive [y/N] on stdin, then apply
+	cleanActionApply                      // apply without the prompt (--yes)
+)
+
+// decideCleanAction is the pure gate for the clean flow (TUI design proof gap
+// V2). --yes ONLY suppresses the interactive stdin prompt — for programmatic
+// dispatchers (TUI/menubar/dashboard) that rendered their OWN confirmation and
+// would otherwise deadlock on the [y/N] read. It never changes WHAT is cleaned:
+// scope stays a function of severity + --include-caution alone (Rule A1,
+// selectCleanTargets), and --yes without --confirm remains a dry-run.
+func decideCleanAction(dryRun, confirm, yes bool) cleanAction {
+	if dryRun && !confirm {
+		return cleanActionPreview
+	}
+	if yes {
+		return cleanActionApply
+	}
+	return cleanActionPrompt
+}
+
 func runJudge(ctx context.Context) error {
 	start := time.Now()
 	output.Banner()
@@ -443,8 +470,11 @@ func runJudge(ctx context.Context) error {
 		output.Dim("  ... and %d more", len(target)-limit)
 	}
 
-	// Dry-run mode (default) — just show the plan.
-	if anubisDryRun && !anubisConfirm {
+	// The gate: dry-run preview, interactive prompt, or prompt-free apply.
+	// --yes only skips the stdin read — the target set above is already final.
+	switch decideCleanAction(anubisDryRun, anubisConfirm, anubisYes) {
+	case cleanActionPreview:
+		// Dry-run mode (default) — just show the plan.
 		cr := &output.CommandResult{
 			Command:  "sirsi clean",
 			Summary:  fmt.Sprintf("Dry run: %d items (%s) would be cleaned", len(target), jackal.FormatSize(totalCleanable)),
@@ -456,22 +486,24 @@ func runJudge(ctx context.Context) error {
 		cr.AddNextAction("sirsi scan", "Run a fresh scan to update findings")
 		cr.Render()
 		return nil
-	}
 
-	// Confirm interactively.
-	fmt.Fprintf(os.Stderr, "\n  Proceed? Items will be moved to Trash. [y/N] ")
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "y" && response != "yes" {
-		output.Info("Canceled.")
-		return nil
+	case cleanActionPrompt:
+		// Confirm interactively.
+		fmt.Fprintf(os.Stderr, "\n  Proceed? Items will be moved to Trash. [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			output.Info("Canceled.")
+			return nil
+		}
 	}
 
 	// Execute cleanup. Safety here is real, not a demo brake: scan-derived
 	// findings only, filtered to safe (or caution via --include-caution),
-	// protected paths hardcoded in internal/cleaner, the user just answered
-	// [y/N], and every move is trash-first (recoverable).
+	// protected paths hardcoded in internal/cleaner, the user confirmed
+	// ([y/N] above, or their dispatcher's own confirmation via --yes), and
+	// every move is trash-first (recoverable).
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
 
@@ -512,10 +544,94 @@ func cleanupApplyPaused() bool {
 	return os.Getenv("SIRSI_ALLOW_CLEAN_APPLY") != "1"
 }
 
+// ghostResidualJSON is one residual path in the structured ghosts contract —
+// field names match the dashboard's /api/ghosts shape (the established
+// structured-ghost convention in this repo).
+type ghostResidualJSON struct {
+	Path      string `json:"path"`
+	Type      string `json:"type"`
+	SizeBytes int64  `json:"size_bytes"`
+	FileCount int    `json:"file_count"`
+}
+
+// ghostJSON is one ghost app with its residuals.
+type ghostJSON struct {
+	AppName          string              `json:"app_name"`
+	BundleID         string              `json:"bundle_id"`
+	TotalSizeBytes   int64               `json:"total_size_bytes"`
+	TotalFiles       int                 `json:"total_files"`
+	InLaunchServices bool                `json:"in_launch_services"`
+	Residuals        []ghostResidualJSON `json:"residuals"`
+}
+
+// ghostReport is the `sirsi ghosts --json` contract (TUI design proof gap V3):
+// real paths, kinds, and sizes for per-app drill-in and per-item toggles —
+// not display strings. Follows the scan --json convention of emitting the
+// structured payload directly (jackal.ScanResult), not CommandResult evidence.
+type ghostReport struct {
+	Command         string      `json:"command"`
+	Summary         string      `json:"summary"`
+	GhostCount      int         `json:"ghost_count"`
+	TotalWasteBytes int64       `json:"total_waste_bytes"`
+	TotalWaste      string      `json:"total_waste"`
+	Ghosts          []ghostJSON `json:"ghosts"`
+	Warnings        []string    `json:"warnings,omitempty"`
+}
+
+// buildGhostReport assembles the structured contract from a ka scan — pure,
+// so tests pin the shape without scanning a real filesystem. Ghosts are
+// sorted by size (largest waste first, ties by name) because the scanner
+// merges from a map: a stable order is part of the contract.
+func buildGhostReport(ghosts []ka.Ghost, scanErr error) ghostReport {
+	r := ghostReport{
+		Command: "sirsi ghosts",
+		Ghosts:  []ghostJSON{},
+	}
+	for _, g := range ghosts {
+		gj := ghostJSON{
+			AppName:          g.AppName,
+			BundleID:         g.BundleID,
+			TotalSizeBytes:   g.TotalSize,
+			TotalFiles:       g.TotalFiles,
+			InLaunchServices: g.InLaunchServices,
+			Residuals:        []ghostResidualJSON{},
+		}
+		for _, res := range g.Residuals {
+			gj.Residuals = append(gj.Residuals, ghostResidualJSON{
+				Path:      res.Path,
+				Type:      string(res.Type),
+				SizeBytes: res.SizeBytes,
+				FileCount: res.FileCount,
+			})
+		}
+		r.Ghosts = append(r.Ghosts, gj)
+		r.TotalWasteBytes += g.TotalSize
+	}
+	sort.SliceStable(r.Ghosts, func(i, j int) bool {
+		if r.Ghosts[i].TotalSizeBytes != r.Ghosts[j].TotalSizeBytes {
+			return r.Ghosts[i].TotalSizeBytes > r.Ghosts[j].TotalSizeBytes
+		}
+		return r.Ghosts[i].AppName < r.Ghosts[j].AppName
+	})
+	r.GhostCount = len(r.Ghosts)
+	r.TotalWaste = jackal.FormatSize(r.TotalWasteBytes)
+	if r.GhostCount == 0 {
+		r.Summary = "No ghost app remnants detected"
+	} else {
+		r.Summary = fmt.Sprintf("Found %d ghost apps with %s of reclaimable waste", r.GhostCount, r.TotalWaste)
+	}
+	if scanErr != nil {
+		r.Warnings = append(r.Warnings, fmt.Sprintf("Scan completed with errors: %v", scanErr))
+	}
+	return r
+}
+
 func runKa(ctx context.Context) error {
 	start := time.Now()
-	output.Banner()
-	output.Header("Ghost App Detection")
+	if !JsonOutput {
+		output.Banner()
+		output.Header("Ghost App Detection")
+	}
 
 	stopSpin := output.Spinner("Detecting ghost app remnants...")
 	scanner := ka.NewScanner()
@@ -523,6 +639,14 @@ func runKa(ctx context.Context) error {
 	stopSpin()
 	if err != nil {
 		output.Warn("Ghost scan error: %v", err)
+	}
+
+	// JSON mode — the structured contract (paths + kinds + sizes), not
+	// CommandResult display strings (TUI design proof gap V3).
+	if JsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(buildGhostReport(ghosts, err))
 	}
 
 	var totalWaste int64
