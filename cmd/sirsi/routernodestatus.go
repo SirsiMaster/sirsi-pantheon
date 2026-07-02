@@ -142,11 +142,12 @@ func renderNodeStatus(ns *router.NodeStatus) {
 			status := "ok"
 			if !h.CLIFound {
 				status = "not-found"
-			} else if h.NeedsLogin {
-				status = "needs-login"
-			} else if h.Degraded {
-				// Inconclusive probe (cold-start timeout / env) — NOT a logout.
-				status = "probe-inconclusive"
+			} else if !h.AuthOK {
+				if h.NeedsLogin {
+					status = "needs-login"
+				} else {
+					status = "auth-error"
+				}
 			}
 			line := fmt.Sprintf("    %s: %s", h.AgentType, status)
 			if h.AuthError != "" {

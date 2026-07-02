@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 	"github.com/spf13/cobra"
 )
@@ -417,73 +416,6 @@ var routerWakeLoopCmd = &cobra.Command{
 	},
 }
 
-// routerInstallDaemonsCmd idempotently (re)installs the router helper
-// LaunchAgents node-status reports as missing (com.sirsi.idea-router,
-// com.sirsi.idea-router-sweep, ai.sirsi.registry-police) for this clone. These
-// relay work between agents while no session is open; when one is missing, work
-// silently strands. Permissions/installs belong in setup — this is the same
-// installer `sirsi setup` runs, exposed as a direct verb for repair. macOS only.
-var routerInstallDaemonsCmd = &cobra.Command{
-	Use:   "install-daemons",
-	Short: "Install the router helper LaunchAgents (dispatch, sweep, registry-police) — macOS",
-	Long: `Idempotently (re)installs the three router helper LaunchAgents this clone
-relies on to relay work while no session is open:
-
-  com.sirsi.idea-router        FSEvents dispatch on router state/items change
-  com.sirsi.idea-router-sweep  hourly queue reconciliation sweep
-  ai.sirsi.registry-police     periodic OS-dead thread-registry reap
-
-An already-correct daemon is left untouched; a missing or drifted one is
-rewritten (pointing at this clone's script paths) and loaded. A daemon whose
-backing script is absent is skipped, never installed broken. macOS only.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		res := setup.InstallRouterDaemons()
-		switch res.Status {
-		case setup.StatusOK:
-			fmt.Printf("✔ %s\n", res.Message)
-		case setup.StatusSkipped:
-			fmt.Printf("• Skipped: %s\n", res.Message)
-		default:
-			return fmt.Errorf("%s", res.Message)
-		}
-		return nil
-	},
-}
-
-// routerBoardCmd prints the owner-actionable router board the conduit regenerates
-// at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
-// threads). Read-only convenience mirror of what the menubar Router view renders.
-var routerBoardCmd = &cobra.Command{
-	Use:   "board",
-	Short: "Print the owner-actionable router board (~/.sirsi/router-board.md)",
-	Long: `Prints ~/.sirsi/router-board.md — the lean, owner-actionable board the
-router conduit regenerates each cycle (blockers, stranded inboxes, live threads).
-
-This is a read-only convenience mirror of the menubar's Router view. If the board
-file is absent (no conduit has run), it points you at 'sirsi router node-status'.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolve home: %w", err)
-		}
-		boardPath := filepath.Join(home, ".sirsi", "router-board.md")
-		data, err := os.ReadFile(boardPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("No router board yet (no conduit run recorded).")
-				fmt.Println("Run `sirsi router node-status` for the live fabric view.")
-				return nil
-			}
-			return fmt.Errorf("read board: %w", err)
-		}
-		fmt.Print(string(data))
-		if !strings.HasSuffix(string(data), "\n") {
-			fmt.Println()
-		}
-		return nil
-	},
-}
-
 func init() {
 	routerSendCmd.Flags().StringVar(&sendFrom, "from", "", "Sender agent id (e.g., claude-pantheon)")
 	routerSendCmd.Flags().StringVar(&sendTo, "to", "", "Recipient agent id (e.g., codex-pantheon)")
@@ -493,5 +425,5 @@ func init() {
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd)
 }

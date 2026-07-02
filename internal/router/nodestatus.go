@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -113,21 +112,6 @@ type ThreadSummary struct {
 }
 
 // AgentHealthCheck reports whether a local agent CLI is available and authenticated.
-//
-// The three auth outcomes are distinct on purpose (ADR-026 honest-auth):
-//   - AuthOK          → the probe confirmed the CLI is logged in.
-//   - NeedsLogin      → the probe saw an unambiguous "not authenticated" / /login
-//     signature — the operator MUST re-auth. This is the ONLY state that alarms
-//     and the ONLY state BlockedItems counts against.
-//   - Degraded        → the probe could not conclude (timeout on a cold CLI start,
-//     env-propagation problem, transient error). "Inconclusive", never "logged
-//     out": it does NOT alarm and does NOT count blocked items. A cold Claude CLI
-//     that takes >8s to answer used to be mis-reported as logged-out; a degraded
-//     probe now says so honestly instead.
-//
-// AuthOK==false alone is ambiguous (it's true for both NeedsLogin and Degraded) —
-// surfaces must branch on NeedsLogin / Degraded, never on AuthOK==false, to decide
-// whether to alarm.
 type AgentHealthCheck struct {
 	AgentType    string `json:"agent_type"` // "claude", "codex"
 	CLIFound     bool   `json:"cli_found"`
@@ -135,7 +119,6 @@ type AgentHealthCheck struct {
 	AuthOK       bool   `json:"auth_ok"`
 	AuthError    string `json:"auth_error,omitempty"`
 	NeedsLogin   bool   `json:"needs_login,omitempty"`
-	Degraded     bool   `json:"degraded,omitempty"` // probe inconclusive (timeout/transient) — NOT logged out
 	BlockedItems int    `json:"blocked_items,omitempty"`
 }
 
@@ -176,66 +159,18 @@ type WorkItemFailure struct {
 // LaunchctlChecker abstracts launchctl probing for testability.
 type LaunchctlChecker func(args ...string) error
 
-// claudeAuthProbeTimeout is how long DefaultAuthProbe waits for the Claude CLI to
-// answer the auth ping. A cold Claude CLI (first invocation after boot, or after
-// the model process was reaped) routinely takes well over the old 8s to print its
-// first token, so an 8s ceiling turned a slow-but-authenticated CLI into a false
-// "logged out". 30s is generous enough to clear a cold start while still bounding
-// a genuinely hung probe. A timeout here is reported as an INCONCLUSIVE probe
-// (needsLogin=false), never as a logout.
-const claudeAuthProbeTimeout = 30 * time.Second
-
-// authProbeTimeoutEnv lets a harness cap the Claude probe timeout (milliseconds).
-// Production leaves it unset → the full 30s cold-start budget. Tests and CI that
-// shell `doctor`/`node-status` (which run the real probe against an absent or
-// slow `claude`) set it low so a package's test timeout is never consumed by a
-// single 30s probe — a raised production budget must not slow the test suite.
-const authProbeTimeoutEnv = "SIRSI_AUTH_PROBE_TIMEOUT_MS"
-
-// claudeProbeTimeout returns the Claude auth-probe timeout, honoring an override
-// from authProbeTimeoutEnv (ms) when it is a positive integer.
-func claudeProbeTimeout() time.Duration {
-	if v := os.Getenv(authProbeTimeoutEnv); v != "" {
-		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
-			return time.Duration(ms) * time.Millisecond
-		}
-	}
-	return claudeAuthProbeTimeout
-}
-
 // DefaultAuthProbe runs a minimal command to test whether an agent CLI is authenticated.
-// For Claude: `claude --print "respond with OK"` prints a "not logged in" / /login
-// signature if unauthenticated. For Codex: `codex --version` is sufficient (codex
-// uses env-based API keys).
-//
-// Return contract (authOK, needsLogin, detail):
-//   - (true,  false, "")     → authenticated.
-//   - (false, true,  detail) → the output carried an unambiguous auth-failure
-//     signature (isAuthError). Only THIS state means "re-auth required".
-//   - (false, false, detail) → the probe could NOT conclude: a timeout on a cold
-//     CLI start, a stripped-env credential-resolution problem, or any other
-//     non-auth error. Callers treat this as DEGRADED / inconclusive — never as a
-//     logout, and it must not count blocked items. Distinguishing these two
-//     failure modes is the whole point (the 8s-timeout false-positive fix).
+// For Claude: `claude --print "ping"` fails with "Not logged in" if unauthenticated.
+// For Codex: `codex --version` is sufficient (codex uses env-based API keys).
 //
 // Note: the Claude CLI requires USER and HOME to be present in the environment
 // to locate its credential store. A probe that runs with a stripped env (e.g.
-// inside a tightened sandbox) reports an auth failure even when valid credentials
-// exist on disk; we demote that to the inconclusive state and name the missing
-// env in the detail so operators can tell an env problem from a real logout.
+// inside a tightened sandbox) will report "Not logged in" even when valid
+// credentials exist on disk. We surface that distinction in the returned
+// detail so operators can tell an unauthenticated CLI from an env-propagation
+// problem.
 func DefaultAuthProbe(cliPath, agentType string) (bool, bool, string) {
-	timeout := claudeProbeTimeout()
-	if agentType != "claude" {
-		timeout = 8 * time.Second // `--version` is instant; no cold-start concern
-	}
-	return probeAuthWithTimeout(cliPath, agentType, timeout)
-}
-
-// probeAuthWithTimeout is the timeout-parameterized core of DefaultAuthProbe.
-// Split out so tests can drive the real deadline-exceeded branch with a short,
-// fast timeout instead of waiting 30s. Same return contract as DefaultAuthProbe.
-func probeAuthWithTimeout(cliPath, agentType string, timeout time.Duration) (bool, bool, string) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
 	var cmd *exec.Cmd
@@ -249,25 +184,13 @@ func probeAuthWithTimeout(cliPath, agentType string, timeout time.Duration) (boo
 	out, err := cmd.CombinedOutput()
 	outStr := strings.TrimSpace(string(out))
 	if err != nil {
-		// A deadline-exceeded is inconclusive by definition — the CLI never got to
-		// tell us whether it was authenticated. Report it as such, never a logout.
-		if ctx.Err() == context.DeadlineExceeded {
-			return false, false, fmt.Sprintf("auth probe timed out after %s (cold CLI start — inconclusive, not logged out)", timeout)
-		}
-		// Only an explicit auth-failure signature in the output means "needs login".
-		// Any other error (non-zero exit without an auth signature, env problem, a
-		// transient failure) is inconclusive — a degraded probe, never a logout.
-		if isAuthError(outStr) {
-			if agentType == "claude" {
-				if missing := missingClaudeEnv(); missing != "" {
-					// Env-resolution failure masquerades as an auth error. Demote to
-					// inconclusive (needsLogin=false) and name the missing vars.
-					return false, false, fmt.Sprintf("%s (missing env: %s — credentials cannot be located, probe inconclusive)", outStr, missing)
-				}
+		needsLogin := isAuthError(outStr)
+		if needsLogin && agentType == "claude" {
+			if missing := missingClaudeEnv(); missing != "" {
+				return false, false, fmt.Sprintf("%s (missing env: %s — credentials cannot be located)", outStr, missing)
 			}
-			return false, true, outStr
 		}
-		return false, false, outStr
+		return false, needsLogin, outStr
 	}
 	return true, false, ""
 }
@@ -517,28 +440,19 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			authOK, needsLogin, detail := probe(path, agentType)
 			check.AuthOK = authOK
 			check.NeedsLogin = needsLogin
-			// Degraded = the probe ran but could not conclude (timeout / transient /
-			// env problem). NOT logged out — inconclusive. A surface must not alarm
-			// on this and blocked-item counting must not count against it.
-			check.Degraded = !authOK && !needsLogin
 			if !authOK {
 				if needsLogin {
 					check.AuthError = fmt.Sprintf("not authenticated — run '%s' then /login", agentType)
 				} else if detail != "" {
-					check.AuthError = fmt.Sprintf("auth probe inconclusive: %s", detail)
+					check.AuthError = fmt.Sprintf("CLI check failed: %s", detail)
 				}
 			}
 		}
 
-		// Count how many pending items are blocked by this agent type. Only a REAL
-		// logout (NeedsLogin) blocks work — an inconclusive/degraded probe must not
-		// mark otherwise-deliverable items as blocked (the 8s-timeout false-positive
-		// used to strand every pending item behind a cold CLI start).
-		if check.NeedsLogin {
-			for agent, ids := range ns.PendingByAgent {
-				if strings.Contains(agent, agentType) && len(ids) > 0 {
-					check.BlockedItems += len(ids)
-				}
+		// Count how many pending items are blocked by this agent type
+		for agent, ids := range ns.PendingByAgent {
+			if strings.Contains(agent, agentType) && len(ids) > 0 && !check.AuthOK {
+				check.BlockedItems += len(ids)
 			}
 		}
 

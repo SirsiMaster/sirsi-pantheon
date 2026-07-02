@@ -351,10 +351,6 @@ func runSetup(_ *cobra.Command, _ []string) error {
 	// macOS only; idempotent (a re-install reloads).
 	if runtime.GOOS == "darwin" {
 		printInstallResult(setup.InstallSupervisor())
-		// Install the router helper LaunchAgents (dispatch, sweep, registry-police)
-		// so work keeps relaying while no session is open. Permissions/installs
-		// belong in setup (feedback_permissions_in_install); idempotent.
-		printInstallResult(setup.InstallRouterDaemons())
 	}
 
 	// Arm the 𓆄 Ma'at pre-push gate (Rule A17) when run inside a Pantheon source
