@@ -670,8 +670,8 @@ func TestDeploy_FullRunHermetic(t *testing.T) {
 	}
 
 	// Deployment metadata landed in the temp home.
-	if _, err := os.Stat(filepath.Join(home, ".config", "ra", "deployment.json")); err != nil {
-		t.Errorf("deployment.json not written: %v", err)
+	if _, statErr := os.Stat(filepath.Join(home, ".config", "ra", "deployment.json")); statErr != nil {
+		t.Errorf("deployment.json not written: %v", statErr)
 	}
 	// --record ran the Seshat → Thoth pipeline into the repo root.
 	entries, err := os.ReadDir(filepath.Join(repo, ".thoth", "seshat"))

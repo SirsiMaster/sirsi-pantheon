@@ -634,17 +634,17 @@ func TestHandleNotificationHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("notify.Open: %v", err)
 	}
-	if err := store.Record(notify.Notification{
+	if recErr := store.Record(notify.Notification{
 		Source: "ka", Action: "scan", Severity: "info",
 		Summary: "found two ghosts", DurationMs: 42,
-	}); err != nil {
-		t.Fatalf("record ka: %v", err)
+	}); recErr != nil {
+		t.Fatalf("record ka: %v", recErr)
 	}
-	if err := store.Record(notify.Notification{
+	if recErr := store.Record(notify.Notification{
 		Source: "maat", Action: "gate", Severity: "success",
 		Summary: "push allowed",
-	}); err != nil {
-		t.Fatalf("record maat: %v", err)
+	}); recErr != nil {
+		t.Fatalf("record maat: %v", recErr)
 	}
 	store.Close()
 
@@ -690,12 +690,12 @@ func TestHandleThothSync_GoFallback(t *testing.T) {
 
 	// With a memory file the sync succeeds; journal sync failure is non-fatal.
 	proj := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(proj, ".thoth"), 0o755); err != nil {
-		t.Fatalf("mkdir .thoth: %v", err)
+	if mkErr := os.MkdirAll(filepath.Join(proj, ".thoth"), 0o755); mkErr != nil {
+		t.Fatalf("mkdir .thoth: %v", mkErr)
 	}
-	if err := os.WriteFile(filepath.Join(proj, ".thoth", "memory.yaml"),
-		[]byte("project: coverage-test\nmodule_count: 0\n"), 0o644); err != nil {
-		t.Fatalf("write memory.yaml: %v", err)
+	if wErr := os.WriteFile(filepath.Join(proj, ".thoth", "memory.yaml"),
+		[]byte("project: coverage-test\nmodule_count: 0\n"), 0o644); wErr != nil {
+		t.Fatalf("write memory.yaml: %v", wErr)
 	}
 
 	res, err = handleThothSync(map[string]interface{}{"path": proj})
@@ -728,8 +728,8 @@ func TestHandleThothSync_DelegatesToNpmBinary(t *testing.T) {
 	}
 
 	// A failing binary surfaces as an error result.
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
-		t.Fatalf("rewrite fake binary: %v", err)
+	if wErr := os.WriteFile(script, []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); wErr != nil {
+		t.Fatalf("rewrite fake binary: %v", wErr)
 	}
 	res, err = handleThothSync(map[string]interface{}{"path": t.TempDir()})
 	if err != nil {
@@ -817,15 +817,15 @@ func TestServerRun_StdioLoop(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.Run() }()
 
-	if _, err := inW.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}` + "\n")); err != nil {
-		t.Fatalf("write request: %v", err)
+	if _, wErr := inW.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}` + "\n")); wErr != nil {
+		t.Fatalf("write request: %v", wErr)
 	}
 	inW.Close() // EOF ends the serve loop
 
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run returned error: %v", err)
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run returned error: %v", runErr)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not exit on stdin EOF")
