@@ -384,7 +384,7 @@ struct HorusView: View {
             }
             Divider()
             HStack {
-                Button { Task { await engine.diagnose() } } label: {
+                Button { Task { await engine.diagnose(force: true) } } label: {
                     Label("Re-check", systemImage: "arrow.clockwise")
                 }.disabled(engine.healthLoading)
                 if engine.healthLoading { ProgressView().controlSize(.small).padding(.leading, 4) }
@@ -1586,7 +1586,7 @@ struct ResultView: View {
     private func reverify() async {
         guard let check = reverifyCheck, !didReverify else { return }
         didReverify = true
-        await engine.diagnose()
+        await engine.diagnose(force: true)
         let still = engine.health.first { $0.check == check }
         let now = Self.statusWord(engine.healthStatus)
         if still == nil || still!.severity <= 1 {
