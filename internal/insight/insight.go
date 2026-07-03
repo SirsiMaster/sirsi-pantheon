@@ -179,7 +179,7 @@ func (p *Platform) addThoth(repoRoot string) {
 	mem := filepath.Join(repoRoot, ".thoth", "memory.yaml")
 	info, err := os.Stat(mem)
 	if err != nil {
-		p.Signals = append(p.Signals, DeitySignal{"Thoth — Memory", "𓁟", "no .thoth memory", 0})
+		p.Signals = append(p.Signals, DeitySignal{"Thoth — Memory", "𓁟", "no project memory in this folder", 0})
 		return
 	}
 	age := nowFn().Sub(info.ModTime())

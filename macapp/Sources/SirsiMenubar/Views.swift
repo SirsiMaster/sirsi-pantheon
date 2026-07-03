@@ -138,7 +138,7 @@ struct HomeView: View {
                         DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "governance")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Thoth — Memory", args: ["thoth", "status"]) } label: {
+                    NavigationLink { ThothMemoryInfoView() } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
@@ -430,6 +430,37 @@ struct HealthRow: View {
 // → fix" made real. It explains the finding and, when a safe remediation exists,
 // offers a one-click "Fix it" that runs it. No finding dead-ends at "here's a
 // problem" with no way to act.
+// FindingDetailEntry is one parsed row of a pipe-separated finding detail —
+// "Name (SIZE) | Name (SIZE) | …" (the Top Memory Consumers shape) or
+// "name 45% | name 12%" (the Spotlight shape, no parenthesised value).
+private struct FindingDetailEntry: Identifiable {
+    let id: Int
+    let name: String
+    let value: String? // trailing "(…)" content, right-aligned when present
+}
+
+// parseFindingDetailList turns a pipe-separated detail string into rows so it
+// renders as a legible list instead of one caption-monospaced blob (the owner's
+// "tiny unreadable pipe-string" defect). Returns nil unless the string is
+// genuinely a list (2+ pipe-separated items) so prose details keep wrapped text.
+private func parseFindingDetailList(_ detail: String) -> [FindingDetailEntry]? {
+    let parts = detail.components(separatedBy: "|")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    guard parts.count >= 2 else { return nil }
+    return parts.enumerated().map { i, part in
+        // A trailing "(…)" is a value column (e.g. "Python (6.2 GB)").
+        if part.hasSuffix(")"), let open = part.range(of: "(", options: .backwards) {
+            let name = String(part[..<open.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let value = String(part[part.index(after: open.lowerBound)..<part.index(before: part.endIndex)])
+            if !name.isEmpty && !value.isEmpty {
+                return FindingDetailEntry(id: i, name: name, value: value)
+            }
+        }
+        return FindingDetailEntry(id: i, name: part, value: nil)
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -437,6 +468,10 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
+
+    // Warn (2) and Critical (3) are alarms (guard.DiagnosticSeverity). An alarm
+    // without a fix must say so honestly — never "Informational".
+    private var isAlarm: Bool { finding.severity >= 2 }
 
     private var fixIcon: String {
         switch kind {
@@ -487,11 +522,34 @@ struct FindingView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let d = finding.detail, !d.isEmpty {
-                        Text(d).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        // Live data is never tiny or greyed: a pipe-separated
+                        // detail ("Python (6.2 GB) | node (1.1 GB) | …") becomes
+                        // one readable row per item; prose wraps at .callout.
+                        if let entries = parseFindingDetailList(d) {
+                            VStack(spacing: 0) {
+                                ForEach(entries) { e in
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(e.name).font(.callout)
+                                            .lineLimit(1).truncationMode(.middle)
+                                        Spacer(minLength: 12)
+                                        if let v = e.value {
+                                            Text(v).font(.callout.monospaced())
+                                        }
+                                    }
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    if e.id != entries.count - 1 { Divider() }
+                                }
+                            }
                             .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        } else {
+                            Text(d).font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        }
                     }
                     if let fix = finding.fix, !fix.isEmpty {
                         // Honest framing BEFORE the click: a 7-day history must never
@@ -523,9 +581,16 @@ struct FindingView: View {
                                 Spacer()
                             }.frame(maxWidth: .infinity).padding(.vertical, 2)
                         }.buttonStyle(.borderedProminent).tint(gold)
+                    } else if isAlarm {
+                        // An alarm without a lever must SAY so — calling a warn
+                        // or critical finding "Informational" was the dead-end
+                        // the owner flagged (ADR-033: alarm ⇒ way to act).
+                        Text("This needs attention but has no one-click fix yet.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Informational — no one-click fix for this signal.")
-                            .font(.caption).foregroundStyle(.tertiary)
+                        Text("Informational.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
                 }.padding(16)
@@ -1441,9 +1506,12 @@ struct InsightView: View {
 
                     Section {
                         ForEach(r.signals) { s in
-                            // Platform rows drill into that deity's live view too.
+                            // Platform rows drill into that deity's NATIVE view.
+                            // Never a raw CLI run for the big three: `scan` from
+                            // the app used to spin forever (full-disk walk) and
+                            // `thoth status` was a jargon dump with wrong advice.
                             NavigationLink {
-                                ResultView(engine: engine, title: s.deity, args: Self.deityArgs(s.deity))
+                                Self.deityDestination(engine: engine, deity: s.deity)
                             } label: {
                                 HStack(spacing: 8) {
                                     Circle().fill(insightSeverityColor(min(s.severity, 2))).frame(width: 7, height: 7)
@@ -1503,14 +1571,62 @@ struct InsightView: View {
         return toks.isEmpty ? ["status"] : toks
     }
 
-    // deityArgs maps a PLATFORM signal's deity to its safe read command.
+    // deityDestination routes a PLATFORM signal to its NATIVE in-app view where
+    // one exists — instant, actionable, no subprocess. Only deities without a
+    // native view fall back to a fast read-only CLI render.
+    @ViewBuilder
+    static func deityDestination(engine: SirsiEngine, deity: String) -> some View {
+        let d = deity.lowercased()
+        if d.contains("anubis") {
+            AnubisView(engine: engine)
+        } else if d.contains("horus") {
+            HorusView(engine: engine)
+        } else if d.contains("thoth") {
+            ThothMemoryInfoView()
+        } else {
+            ResultView(engine: engine, title: deity, args: Self.deityArgs(deity))
+        }
+    }
+
+    // deityArgs maps the REMAINING deities to a fast, read-only command.
     static func deityArgs(_ deity: String) -> [String] {
         let d = deity.lowercased()
-        if d.contains("horus") { return ["diagnose"] }
-        if d.contains("anubis") { return ["scan"] }
-        if d.contains("thoth") { return ["thoth", "status"] }
         if d.contains("ma") && d.contains("at") { return ["maat", "audit"] }
         if d.contains("ra") { return ["ra", "status"] }
         return ["status"]
+    }
+}
+
+// ── Thoth (menubar) — plain-English explainer, not a CLI dump ─────────────────
+//
+// Thoth's memory lives inside each project folder; the menu bar app doesn't run
+// inside a project, so a raw `thoth status` here said ".thoth/ not found — run
+// sirsi thoth init", which is wrong advice for this surface (it would create
+// /.thoth). Say what's true in plain English instead.
+struct ThothMemoryInfoView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Thoth — Memory")
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Project memory lives with each project.")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Thoth keeps a small memory file inside every project folder so AI sessions can pick up exactly where the last one left off — no re-reading the whole codebase.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("The menu bar isn't inside a project, so there's nothing to show here. In a project folder, use:")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("sirsi thoth init").font(.caption.monospaced()).foregroundStyle(gold)
+                    Text("sirsi thoth sync").font(.caption.monospaced()).foregroundStyle(gold)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                Spacer()
+            }
+            .padding(16)
+        }
+        .navigationTitle("Thoth — Memory")
     }
 }

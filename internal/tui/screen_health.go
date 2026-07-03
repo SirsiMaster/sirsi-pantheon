@@ -47,6 +47,10 @@ func (s *healthScreen) Sigil() string    { return "check" } // Ma'at order (safe
 func (s *healthScreen) Layout() Layout   { return LayoutInspect }
 func (s *healthScreen) State() loadState { return s.state }
 
+// Busy reports an in-flight operation: diagnostics loading or a dispatched fix
+// not yet resolved (quit guard, P2#8).
+func (s *healthScreen) Busy() bool { return s.state == stateLoading || s.fixing }
+
 func (s *healthScreen) HintIDs() []CommandID {
 	return []CommandID{CmdMoveDown, CmdInspect, CmdFix, CmdDiag, CmdTab}
 }
@@ -221,23 +225,26 @@ func (s *healthScreen) View(width, height int, caps Capabilities) []string {
 			selected: i == s.selected,
 		})
 	}
-	lines = append(lines, renderTable(cols, rows, caps, false)...)
-
+	// Tail first, so the table window's line budget is exact (P2#6).
+	var tail []string
 	if s.detail >= 0 && s.detail < len(s.report.Findings) {
-		lines = append(lines, s.detailLines(caps)...)
+		tail = append(tail, s.detailLines(caps)...)
 	}
 
-	lines = append(lines, "")
+	tail = append(tail, "")
 	switch {
 	case s.fixing:
-		lines = append(lines, "  "+Paint(Sigil("spinner-static", caps)+" applying fix…", TokDim, caps))
+		tail = append(tail, "  "+Paint(Sigil("spinner-static", caps)+" applying fix…", TokDim, caps))
 	case s.fixErr != nil:
-		lines = append(lines, "  "+Paint("WARN "+s.fixErr.Error(), TokWarn, caps))
+		tail = append(tail, "  "+Paint("WARN "+s.fixErr.Error(), TokWarn, caps))
 	case s.fixMsg != "":
-		lines = append(lines, "  "+Paint(Sigil("check", caps)+" "+s.fixMsg, TokOK, caps))
+		tail = append(tail, "  "+Paint(Sigil("check", caps)+" "+s.fixMsg, TokOK, caps))
 	default:
-		lines = append(lines, "  "+Paint(s.fixHintForSelection(), TokDim, caps))
+		tail = append(tail, "  "+Paint(s.fixHintForSelection(), TokDim, caps))
 	}
+
+	lines = append(lines, renderTableWindow(cols, rows, caps, false, height-len(lines)-len(tail))...)
+	lines = append(lines, tail...)
 	return lines
 }
 

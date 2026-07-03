@@ -58,6 +58,10 @@ type Screen interface {
 	RightMeta() string
 	// State reports the load lifecycle so the console can validate transitions.
 	State() loadState
+	// Busy reports whether an operation is in flight on this screen (a load/scan
+	// running, or a dispatched clean/fix/relieve not yet resolved). The quit
+	// guard consults it so q cannot silently abandon a running operation (P2#8).
+	Busy() bool
 }
 
 // App is the whole-console bubbletea model. It owns the five screens, the active
@@ -74,7 +78,12 @@ type App struct {
 	height   int
 	toast    *Toast
 	helpOpen bool
-	quitting bool
+
+	// quitArmed is the two-step quit guard (P2#8): q was pressed once while the
+	// active screen had an operation in flight. The next q quits; esc (or the
+	// hint toast expiring, or any other command) disarms. ctrl+c never consults
+	// it — the universal interrupt stays immediate.
+	quitArmed bool
 }
 
 // NewApp builds the console over the five screens with the canonical registry.
@@ -145,6 +154,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toastExpireMsg:
 		a.toast = nil
+		// The quit-confirm arm lives exactly as long as its hint toast: once the
+		// hint is gone, a later single q must re-arm visibly, never quit silently.
+		a.quitArmed = false
 		return a, nil
 
 	case pulseTickMsg:
@@ -183,10 +195,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // captures the next key: any key dismisses it.
 func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
 	// ctrl+c is the universal interrupt: bubbletea v2 does NOT auto-quit, so bind
-	// it here to a graceful quit. It takes precedence over the help overlay and any
-	// screen-local mode so the operator can always get out.
+	// it here to a graceful quit. It takes precedence over the help overlay, any
+	// screen-local mode, AND the mid-operation quit guard — always immediate, so
+	// the operator can always get out.
 	if key == "ctrl+c" {
-		a.quitting = true
 		return a, tea.Quit
 	}
 	if a.helpOpen {
@@ -197,9 +209,29 @@ func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
 	if !ok {
 		return a, nil
 	}
+	// An armed quit confirm captures the next decision (P2#8): q again quits,
+	// esc stays (consumed), any other command disarms and then runs normally.
+	if a.quitArmed {
+		a.quitArmed = false
+		switch cmd.ID {
+		case CmdQuit:
+			return a, tea.Quit
+		case CmdBack:
+			a.toast = nil // "esc to stay" — drop the hint, stay put
+			return a, nil
+		}
+		a.toast = nil // any other key disarms; fall through and run it
+	}
 	switch cmd.ID {
 	case CmdQuit:
-		a.quitting = true
+		// q never quits from one key while an operation is in flight (scan/clean/
+		// fix/relieve running): the first q arms a confirm toast, a second q quits,
+		// esc stays. ctrl+c above remains the immediate escape hatch (P2#8).
+		if a.activeScreen().Busy() {
+			a.quitArmed = true
+			a.setToast(&Toast{Text: "operation running — q again to quit, esc to stay", Token: TokWarn})
+			return a, tea.Tick(toastLife, func(time.Time) tea.Msg { return toastExpireMsg{} })
+		}
 		return a, tea.Quit
 	case CmdHelp:
 		a.helpOpen = true

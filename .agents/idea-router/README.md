@@ -56,6 +56,15 @@ Rules:
 - Prefer event-driven waking (file Monitor on `items/`) over fixed polling; keep a long fallback tick so the loop survives a missed event.
 - One loop per thread. De-registering (`thread close`) is the only clean way to end it.
 
+**Durable cross-session watcher (A27) — one channel, two front doors.** For worker/headless surfaces the persistent heartbeat loop is a per-agent launchd pull-loop: a `KeepAlive` LaunchAgent (`ai.sirsi.router.wake.<agent>`) that runs `sirsi router wake-loop <agent>`, which each interval pulls the agent's inbox and heartbeats — surviving session restarts because launchd owns its lifecycle. There is exactly ONE such channel; it has two equivalent front doors:
+
+| Command | Scope | Use when |
+| :--- | :--- | :--- |
+| `sirsi router wake-install <agent>` | agent-scoped (explicit id) | installing for a named agent (setup/topology) |
+| `sirsi thread watch --install` | thread-scoped (self-resolving) | a session arming its OWN durable watcher without knowing its agent id |
+
+`sirsi thread watch --install` == `sirsi router wake-install <that agent>` — the thread verb resolves the current thread's agent (via `--agent`, `$SIRSI_AGENT_ID`, the session→agent marker, or a sole live thread) and delegates to the SAME `InstallWakeLaunchAgent` path. It is a thin alias, not a second watcher subsystem. `sirsi thread watch` (no flag) reports whether the channel is installed; `--uninstall` cleanly removes it. Interactive `claude` sessions do NOT use this — they heartbeat via `/loop` (row 1 above).
+
 ## Protocol
 
 1. Read `state.json` and latest proposals/reviews before starting work
