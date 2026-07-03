@@ -102,11 +102,15 @@ func Summarize(ns *router.NodeStatus, max int) OpsSummary {
 		}
 	}
 
-	// Drift / auth — true if any agent CLI has auth failures or any wake
+	// Drift / auth — true if any agent CLI needs a real re-login, or any wake
 	// mechanism is not ready, or daemon is installed but its configured binary
-	// does not exist (ADR-023 drift class).
+	// does not exist (ADR-023 drift class). Only a confirmed logout (NeedsLogin)
+	// counts — a DEGRADED/inconclusive probe (cold-start timeout) is NOT an
+	// actionable auth issue and must never paint Horus red (the 8s-timeout false
+	// alarm: nothing the user could click would clear it). See feedback
+	// "surfaces_current_actionable_only".
 	for _, h := range ns.AgentHealth {
-		if h.CLIFound && !h.AuthOK {
+		if h.CLIFound && h.NeedsLogin {
 			sum.HasDriftOrAuthIssue = true
 			break
 		}
