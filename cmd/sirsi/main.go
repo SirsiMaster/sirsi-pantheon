@@ -782,6 +782,7 @@ func init() {
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
 	rootCmd.AddCommand(gemmaCmd)   // human-facing 'sirsi gemma "<prompt>"' → local on-device model
+	rootCmd.AddCommand(brainCmd)   // 𓁟 Orchestration Brain control plane (A29, ADR-034): tiered/pluggable LLM spectrum over the EXISTING router+wake substrate
 	rootCmd.AddCommand(relieveCmd) // on-demand hang relief: renice the live CPU offender (A1-protected)
 	rootCmd.AddCommand(hapiCmd)    // 𓁢 Hapi: the live MEMORY governor — stop a runaway before the kernel Jetsams (ADR-031-A Layer 4)
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
