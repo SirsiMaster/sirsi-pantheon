@@ -354,6 +354,19 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Admin override**: branch protection uses `enforce_admins=false` so the founder retains override (A23 — sole arbiter).
 *   **Reference**: sirsi-pantheon `internal/setup.ArmMaatGate()` + `.githooks/pre-push` + `gh api -X PUT repos/SirsiMaster/<repo>/branches/main/protection`. Custodian: 𓆄 Ma'at (A17). Portfolio-standard candidate — mirror into the Universal Rules (§1) once each repo confirms adoption.
 
+### 2.26 Orchestration Brain: Tiered & Pluggable (Rule A29)
+> Established July 2, 2026. Co-authored claude-home ↔ claude-pantheon (router bind `20260630-190342`, all 6 amendments + the 7th Registry/Wake invariant). Custodian: 𓁟 the Brain (control plane) + 𓁢 the Router (Tier-0 substrate). Full design: `docs/prd/ORCHESTRATION_BRAIN.md`; decision: ADR-034.
+
+*   **Rule**: Pantheon's orchestration intelligence is a **tiered, pluggable, user-navigable brain**, not a single always-on model. It has three tiers — **Tier-0 Dispatch** (watch/route/heartbeat/ack), **Tier-1 Triage** (classify ambiguous items), **Tier-2 Execution** (agentic build/review/bind) — over an LLM spectrum **Level 0–3** (0 Deterministic → 1 +local triage → 2 +agentic execution → 3 +hosted). The Level is **derived** from per-role provider config, never separately stored.
+*   **The deterministic floor (mandatory)**: **Tier-0 dispatch MUST run with zero LLM** and ships **ON at Level 0** on a fresh public install — dispatch/route/heartbeat/ack all work with no AI, no keys, no cost. The model is *invoked by* the loop, never *is* the loop. The config layer and `sirsi brain doctor` both **reject a model plugged into dispatch**.
+*   **Per-role pluggable**: each role independently selects a provider — `none` (floor) · `local:<model-id>` (zero-token) · `hosted:<provider-id>` (opt-in, the only per-token path). Config lives in **`~/.sirsi/brain.yaml`** (structured YAML via the repo's yaml.v3 standard — not a bespoke `.conf`, not a new viper dependency; Rule 0). Swaps take effect on **next read — no restart**.
+*   **Tier-0 Registry/Wake invariant (7th amendment — ENFORCE, don't rebuild)**: "the router can always see and wake every registered thread." Registration binds a **persistent wake-channel**; a registered thread with no live channel is a broken contract (the zombie state). This invariant is **already implemented** in `internal/router` (`WakePass`, `ProbeWakeReadiness`, `InstallWakeLaunchAgent`, `RunWakeLoop`, `wakemechanism.go`; `sirsi router doctor --fix` runs the wake pass). A29 **codifies that existing system** — it MUST NOT be reimplemented (Rule 0). The brain's control plane **surfaces + enforces** it: `sirsi brain status`/`doctor` read the existing wake API to flag every registered-but-unwakeable agent and every stranded inbox, and point the fix at the **existing** verbs (`sirsi router wake-install`, `sirsi router doctor --fix`). Waking + repair stay the router's job; the brain observes. Honest boundary preserved: a fully-closed interactive Claude process cannot be resurrected locally → **"needs-owner"**, stated not faked. This makes A27 (Heartbeat Loop Mandate) *enforced*, not advisory.
+*   **Resource-broker consumer (RAM gate)**: before loading a local model the brain consults `guard.NodeCapacity.Fits()`; `doctor` reports "**won't fit — N GB short**" instead of letting it OOM (defense-in-depth with ADR-031-A/B).
+*   **Hosted-key handling (A11 + safety)**: Level-3 keys live in the OS keychain or `~/.sirsi/` 0600 — **never in brain.yaml, never logged**, transmitted only to the chosen provider. `doctor` reports "auth present" without printing the key.
+*   **Visible + modifiable + troubleshootable**: the active tier + per-role model MUST be visible and swappable in the **CLI** (`sirsi brain {status,use,levels,doctor,test}`) and the **menubar**, and visible in **SirsiNexus** (`--json` read-model). "No black box" — brain decisions append to the Activity/stele provenance ledger.
+*   **Decoupled from Router v2**: the brain is built against a `Dispatcher` interface over the **current** router; Router v2 swaps in underneath the same interface later (Amendment 1) — the brain never blocks on that rewrite.
+*   **Reference**: `internal/brain/{config.go,controlplane.go}` + `cmd/sirsi/braincmd.go` (P1b control plane, shipped); ADR-034; PRD `docs/prd/ORCHESTRATION_BRAIN.md`. Custodian: 𓁟 the Brain.
+
 ---
 
 ## 3. Technology Stack
@@ -367,7 +380,7 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 | **Terminal UI** | **lipgloss + table** (charmbracelet) | Styled CLI output (tables, headers, progress) for v0.23. New Mole-grade TUI follows under ADR-020 / Hybrid C. |
 | **Interactive Surface** | **Mac-first surface ladder (ADR-032): CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar); native macOS SwiftUI is the GUI path | v0.22 BubbleTea TUI removed in v0.23 per ADR-018; surface direction closed as Hybrid C per ADR-020 (2026-05-29). Mac-only build targets per ADR-032 (Windows/Linux TUI deferred). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
 | **Agent Protocol** | **gRPC** (fallback: SSH+JSON) | Streaming results, bidirectional |
-| **Config** | **viper** (YAML) | User-defined rules, profiles, budgets |
+| **Config** | **yaml.v3** (structured YAML) | User-defined rules, profiles, budgets. (viper was listed aspirationally but never adopted — every config consumer uses gopkg.in/yaml.v3; ADR-034 Alt 5) |
 | **Network Discovery** | **nmap** wrapper + native ARP/mDNS | Subnet/VLAN host discovery |
 | **Docker** | **docker/client** SDK | Native Docker API |
 | **Kubernetes** | **client-go** | Native K8s API |
