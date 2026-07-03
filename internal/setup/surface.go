@@ -36,9 +36,12 @@ const (
 	// .githooks). Not a user-facing surface; reuses InstallResult for a uniform
 	// install report. Armed only inside a Pantheon source clone (contributors).
 	SurfaceMaatGate Surface = "maat-gate"
-	// SurfaceRouterDaemons is the trio of router helper LaunchAgents (idea-router,
-	// sweep, registry-police). Installed by default on macOS; reuses InstallResult
-	// for a uniform install report.
+	// SurfaceRouterDaemons is the router background automation. Since the
+	// single-backstop fold it means: the ONE resident supervisor carries the
+	// dispatch, sweep, and registry-police duties, and any legacy per-duty
+	// LaunchAgents are migrated away. Installed by default on macOS; reuses
+	// InstallResult for a uniform install report. The constant keeps its
+	// historical value for report/JSON stability.
 	SurfaceRouterDaemons Surface = "router-daemons"
 )
 
@@ -67,7 +70,7 @@ func (s Surface) Title() string {
 	case SurfaceMaatGate:
 		return "Ma'at gate"
 	case SurfaceRouterDaemons:
-		return "Router daemons"
+		return "Router automation"
 	}
 	return string(s)
 }
@@ -90,7 +93,7 @@ func (s Surface) Detail() string {
 	case SurfaceMaatGate:
 		return "𓆄 Ma'at pre-push gate — gofmt + vet + golangci-lint + tests before push"
 	case SurfaceRouterDaemons:
-		return "Router helper LaunchAgents (dispatch, sweep, registry-police) — relay work while no session is open"
+		return "Background router automation, folded into the one resident supervisor"
 	}
 	return ""
 }

@@ -44,6 +44,9 @@ type SuperviseReport struct {
 	LiveThreadCount  int                  `json:"live_thread_count"`
 	StaleThreadCount int                  `json:"stale_thread_count"`
 	Agents           []AgentSurfaceStatus `json:"agents"`
+	// Duties are the folded single-backstop passes (dispatch pump, sweep,
+	// registry police) this tick ran, skipped, or failed — see supervisorduties.go.
+	Duties []DutyResult `json:"duties,omitempty"`
 }
 
 type AgentSurfaceStatus struct {
@@ -173,6 +176,11 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		return nil, fmt.Errorf("heartbeat supervisor thread: %w", err)
 	}
 
+	// Single-backstop duty passes (backlog ruling 20260629-230327): the work the
+	// three legacy router LaunchAgents used to do runs HERE, cadence-gated,
+	// bounded, and error-isolated — a failing duty is reported, never fatal.
+	duties := runSupervisorDuties(routerRoot, repoRoot, now)
+
 	liveCount, staleCount := 0, 0
 	if refreshed, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		for _, thread := range refreshed.SortedThreads() {
@@ -196,6 +204,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		LiveThreadCount:  liveCount,
 		StaleThreadCount: staleCount,
 		Agents:           agents,
+		Duties:           duties,
 	}, nil
 }
 

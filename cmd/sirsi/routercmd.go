@@ -417,25 +417,28 @@ var routerWakeLoopCmd = &cobra.Command{
 	},
 }
 
-// routerInstallDaemonsCmd idempotently (re)installs the router helper
-// LaunchAgents node-status reports as missing (com.sirsi.idea-router,
-// com.sirsi.idea-router-sweep, ai.sirsi.registry-police) for this clone. These
-// relay work between agents while no session is open; when one is missing, work
-// silently strands. Permissions/installs belong in setup — this is the same
-// installer `sirsi setup` runs, exposed as a direct verb for repair. macOS only.
+// routerInstallDaemonsCmd ensures the single-backstop router automation
+// (backlog ruling 20260629-230327): the ONE resident supervisor LaunchAgent
+// installed and loaded, and the three legacy per-duty LaunchAgents migrated
+// away when present. The duties those agents carried (dispatch pump, hourly
+// sweep, registry police) now run inside `sirsi horus supervise` — see
+// internal/router/supervisorduties.go. Idempotent; macOS only.
 var routerInstallDaemonsCmd = &cobra.Command{
 	Use:   "install-daemons",
-	Short: "Install the router helper LaunchAgents (dispatch, sweep, registry-police) — macOS",
-	Long: `Idempotently (re)installs the three router helper LaunchAgents this clone
-relies on to relay work while no session is open:
+	Short: "Ensure the single router supervisor and migrate away legacy per-duty agents — macOS",
+	Long: `Ensures the single-backstop router automation:
 
-  com.sirsi.idea-router        FSEvents dispatch on router state/items change
-  com.sirsi.idea-router-sweep  hourly queue reconciliation sweep
-  ai.sirsi.registry-police     periodic OS-dead thread-registry reap
+  1. Installs (or confirms) the ONE resident supervisor LaunchAgent
+     (ai.sirsi.horus.agent-router). Its loop now carries the dispatch pump,
+     the hourly queue sweep, and the registry-police pass — cadence-gated
+     and error-isolated.
+  2. Migrates away the three legacy per-duty LaunchAgents when present
+     (com.sirsi.idea-router, com.sirsi.idea-router-sweep,
+     ai.sirsi.registry-police): each is unloaded and its plist removed,
+     and the migration is reported.
 
-An already-correct daemon is left untouched; a missing or drifted one is
-rewritten (pointing at this clone's script paths) and loaded. A daemon whose
-backing script is absent is skipped, never installed broken. macOS only.`,
+Idempotent — a second run confirms the supervisor and finds nothing to
+migrate. macOS only.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		res := setup.InstallRouterDaemons()
 		switch res.Status {
@@ -460,7 +463,11 @@ var routerBoardCmd = &cobra.Command{
 router conduit regenerates each cycle (blockers, stranded inboxes, live threads).
 
 This is a read-only convenience mirror of the menubar's Router view. If the board
-file is absent (no conduit has run), it points you at 'sirsi router node-status'.`,
+file is absent (no conduit has run), it points you at 'sirsi router node-status'.
+
+With --json the verb emits a real JSON envelope ({path, exists, content,
+modified_at}) instead of raw markdown, so scripted callers never have to
+scrape human output.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -468,13 +475,33 @@ file is absent (no conduit has run), it points you at 'sirsi router node-status'
 		}
 		boardPath := filepath.Join(home, ".sirsi", "router-board.md")
 		data, err := os.ReadFile(boardPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("No router board yet (no conduit run recorded).")
-				fmt.Println("Run `sirsi router node-status` for the live fabric view.")
-				return nil
-			}
+		exists := err == nil
+		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("read board: %w", err)
+		}
+		// The root --json flag must yield machine output here too — before this
+		// branch existed it was silently swallowed (markdown printed, exit 0),
+		// which is a contract violation for scripted callers (#147 review, minor 5).
+		if JsonOutput {
+			envelope := map[string]any{
+				"path":    boardPath,
+				"exists":  exists,
+				"content": string(data),
+			}
+			if info, serr := os.Stat(boardPath); serr == nil {
+				envelope["modified_at"] = info.ModTime().UTC().Format(time.RFC3339)
+			}
+			if !exists {
+				envelope["hint"] = "no conduit run recorded — use `sirsi router node-status --json` for the live fabric view"
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(envelope)
+		}
+		if !exists {
+			fmt.Println("No router board yet (no conduit run recorded).")
+			fmt.Println("Run `sirsi router node-status` for the live fabric view.")
+			return nil
 		}
 		fmt.Print(string(data))
 		if !strings.HasSuffix(string(data), "\n") {

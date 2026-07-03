@@ -6,103 +6,51 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
-// TestRouterDaemonPlist_ProgramFoundByNodeStatus proves the generated plist's
-// ProgramArguments round-trips through router.LaunchAgentProgram — the exact
-// parser node-status uses for program_found. The older hand-installed plists
-// wrote ProgramArguments inline, which that parser cannot read, so an installed
-// daemon read program_found=false forever. This guards that regression.
-func TestRouterDaemonPlist_ProgramFoundByNodeStatus(t *testing.T) {
-	dir := t.TempDir()
-	spec := routerDaemonSpec{Label: "com.sirsi.idea-router-sweep", Trigger: "interval", IntervalS: 3600, ScriptRel: "sweep.sh"}
-	scriptPath := filepath.Join(dir, "sweep.sh")
-	plist := routerDaemonPlist(spec, scriptPath, dir, filepath.Join(dir, "logs"), "/bin")
-	plistPath := filepath.Join(dir, spec.Label+".plist")
-	if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil {
+// stubSupervisorInstall replaces installSupervisorFn for one test.
+func stubSupervisorInstall(t *testing.T, res InstallResult) *int {
+	t.Helper()
+	var calls int
+	orig := installSupervisorFn
+	installSupervisorFn = func() InstallResult {
+		calls++
+		return res
+	}
+	t.Cleanup(func() { installSupervisorFn = orig })
+	return &calls
+}
+
+// stubLaunchctl replaces launchctlExecFn for one test, recording invocations.
+func stubLaunchctl(t *testing.T) *[][]string {
+	t.Helper()
+	var calls [][]string
+	orig := launchctlExecFn
+	launchctlExecFn = func(args ...string) error {
+		calls = append(calls, args)
+		return nil
+	}
+	t.Cleanup(func() { launchctlExecFn = orig })
+	return &calls
+}
+
+// writeLegacyPlists drops the three legacy per-duty plists into a temp HOME
+// and returns their paths keyed by label.
+func writeLegacyPlists(t *testing.T, home string) map[string]string {
+	t.Helper()
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prog, err := router.LaunchAgentProgram(plistPath)
-	if err != nil {
-		t.Fatalf("LaunchAgentProgram could not resolve the program: %v", err)
-	}
-	if prog != scriptPath {
-		t.Errorf("resolved program = %q, want %q", prog, scriptPath)
-	}
-}
-
-// TestRouterDaemonPlist_WatchShape asserts the FSEvents dispatch daemon renders a
-// WatchPaths-driven plist with a throttle and no StartInterval.
-func TestRouterDaemonPlist_WatchShape(t *testing.T) {
-	routerRoot := "/repo/.agents/idea-router"
-	specs := routerDaemonSpecs(routerRoot)
-	var watch routerDaemonSpec
-	for _, s := range specs {
-		if s.Label == "com.sirsi.idea-router" {
-			watch = s
+	paths := map[string]string{}
+	for _, label := range legacyRouterDaemonLabels {
+		p := filepath.Join(agentDir, label+".plist")
+		if err := os.WriteFile(p, []byte("<plist/>\n"), 0o644); err != nil {
+			t.Fatal(err)
 		}
+		paths[label] = p
 	}
-	if watch.Label == "" {
-		t.Fatal("idea-router spec not found")
-	}
-	plist := routerDaemonPlist(watch, filepath.Join(routerRoot, watch.ScriptRel), "/repo", filepath.Join(routerRoot, "logs"), "/bin")
-
-	for _, want := range []string{
-		"<key>Label</key><string>com.sirsi.idea-router</string>",
-		"<key>WatchPaths</key>",
-		filepath.Join(routerRoot, "state.json"),
-		filepath.Join(routerRoot, "items"),
-		"<key>ThrottleInterval</key><integer>10</integer>",
-		"run-on-event.sh",
-		"<key>PATH</key>",
-	} {
-		if !strings.Contains(plist, want) {
-			t.Errorf("watch plist missing %q:\n%s", want, plist)
-		}
-	}
-	if strings.Contains(plist, "StartInterval") {
-		t.Error("watch daemon must NOT use StartInterval (it is FSEvents-driven)")
-	}
-}
-
-// TestRouterDaemonPlist_IntervalShape asserts the sweep/police daemons render
-// StartInterval-driven plists with no WatchPaths.
-func TestRouterDaemonPlist_IntervalShape(t *testing.T) {
-	routerRoot := "/repo/.agents/idea-router"
-	specs := routerDaemonSpecs(routerRoot)
-	for _, label := range []string{"com.sirsi.idea-router-sweep", "ai.sirsi.registry-police"} {
-		var spec routerDaemonSpec
-		for _, s := range specs {
-			if s.Label == label {
-				spec = s
-			}
-		}
-		if spec.Label == "" {
-			t.Fatalf("%s spec not found", label)
-		}
-		plist := routerDaemonPlist(spec, filepath.Join(routerRoot, spec.ScriptRel), "/repo", filepath.Join(routerRoot, "logs"), "/bin")
-		if !strings.Contains(plist, "<key>StartInterval</key>") {
-			t.Errorf("%s must use StartInterval:\n%s", label, plist)
-		}
-		if strings.Contains(plist, "WatchPaths") {
-			t.Errorf("%s must NOT use WatchPaths (it is interval-driven)", label)
-		}
-	}
-}
-
-// TestRouterDaemonPlist_XMLEscapesPaths proves a path with XML-hostile characters
-// cannot break (or inject into) the plist.
-func TestRouterDaemonPlist_XMLEscapesPaths(t *testing.T) {
-	spec := routerDaemonSpec{Label: "com.sirsi.idea-router-sweep", Trigger: "interval", IntervalS: 3600, ScriptRel: "sweep.sh"}
-	plist := routerDaemonPlist(spec, "/re&po/<x>/sweep.sh", "/re&po/<x>", "/re&po/<x>/logs", "/bin")
-	if strings.Contains(plist, "/re&po/<x>") {
-		t.Error("raw & or < leaked into plist — must be XML-escaped")
-	}
-	if !strings.Contains(plist, "/re&amp;po/&lt;x&gt;/sweep.sh") {
-		t.Errorf("expected escaped script path in plist:\n%s", plist)
-	}
+	return paths
 }
 
 // TestInstallRouterDaemons_NonDarwinSkips guards the platform gate.
@@ -119,107 +67,103 @@ func TestInstallRouterDaemons_NonDarwinSkips(t *testing.T) {
 	}
 }
 
-// TestInstallRouterDaemons_InstallsAndIdempotent exercises the real installer on
-// darwin against a scaffolded clone with a stubbed launchctl and a temp HOME.
-// First run installs all three; second run reports them unchanged (idempotent).
-func TestInstallRouterDaemons_InstallsAndIdempotent(t *testing.T) {
+// TestInstallRouterDaemons_MigratesLegacyAgentsAway is the single-backstop
+// contract (backlog ruling 20260629-230327): install-daemons ensures the ONE
+// supervisor and unloads+removes the three legacy per-duty plists, reporting
+// the migration. A second run finds nothing to migrate (idempotent).
+func TestInstallRouterDaemons_MigratesLegacyAgentsAway(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		t.Skip("router daemons are macOS only")
+		t.Skip("router automation is macOS only")
 	}
-
-	// Scaffold a clone with the router scripts present and chdir into it so
-	// FindRepoRoot's cwd walk-up resolves here.
-	repo := t.TempDir()
-	routerRoot := filepath.Join(repo, ".agents", "idea-router", "police")
-	if err := os.MkdirAll(routerRoot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rr := filepath.Join(repo, ".agents", "idea-router")
-	for _, rel := range []string{"run-on-event.sh", "sweep.sh", filepath.Join("police", "registry-police.sh")} {
-		if err := os.WriteFile(filepath.Join(rr, rel), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Isolate HOME so plists land in a temp LaunchAgents dir. Drive the
-	// root-parameterized core directly so this never touches the real checkout.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	plists := writeLegacyPlists(t, home)
+	launchctl := stubLaunchctl(t)
+	supCalls := stubSupervisorInstall(t, InstallResult{
+		Surface: SurfaceSupervisor, Status: StatusOK, Message: "agent-router supervisor installed and started",
+	})
 
-	// Stub launchctl so no real load happens.
-	var loaded []string
-	orig := launchctlExecFn
-	launchctlExecFn = func(args ...string) error {
-		if len(args) > 0 && args[0] == "load" {
-			loaded = append(loaded, args[len(args)-1])
-		}
-		return nil
-	}
-	t.Cleanup(func() { launchctlExecFn = orig })
-
-	res := installRouterDaemonsAt(repo)
+	res := InstallRouterDaemons()
 	if res.Status != StatusOK {
-		t.Fatalf("first install status = %v (%s), want StatusOK", res.Status, res.Message)
+		t.Fatalf("status = %v (%s), want StatusOK", res.Status, res.Message)
 	}
-	// All three plists written under the temp HOME.
-	for _, label := range []string{"com.sirsi.idea-router", "com.sirsi.idea-router-sweep", "ai.sirsi.registry-police"} {
-		p := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
-		if !fileExists(p) {
-			t.Errorf("expected %s to be written", p)
+	if *supCalls != 1 {
+		t.Errorf("supervisor installer called %d times, want 1 (the single backstop)", *supCalls)
+	}
+	// All three legacy plists gone, each unloaded first.
+	unloads := map[string]bool{}
+	for _, call := range *launchctl {
+		if len(call) == 2 && call[0] == "unload" {
+			unloads[call[1]] = true
 		}
 	}
-	if len(loaded) != 3 {
-		t.Errorf("expected 3 launchctl loads on first install, got %d", len(loaded))
+	for label, p := range plists {
+		if fileExists(p) {
+			t.Errorf("legacy plist %s still present after migration", label)
+		}
+		if !unloads[p] {
+			t.Errorf("legacy agent %s was removed without an unload", label)
+		}
+	}
+	if !strings.Contains(res.Message, "migrated away 3 legacy agent(s)") {
+		t.Errorf("message should report the migration, got %q", res.Message)
 	}
 
-	// Second run: identical content → unchanged, no reload.
-	loaded = nil
-	res2 := installRouterDaemonsAt(repo)
+	// Second run: nothing left to migrate; still OK.
+	res2 := InstallRouterDaemons()
 	if res2.Status != StatusOK {
-		t.Fatalf("second install status = %v (%s), want StatusOK", res2.Status, res2.Message)
+		t.Fatalf("second run status = %v (%s), want StatusOK", res2.Status, res2.Message)
 	}
-	if !strings.Contains(res2.Message, "no change") && !strings.Contains(res2.Message, "unchanged") {
-		t.Errorf("second install should report no change, got %q", res2.Message)
-	}
-	if len(loaded) != 0 {
-		t.Errorf("idempotent re-install must not reload, got %d loads", len(loaded))
+	if !strings.Contains(res2.Message, "no legacy agents to migrate") {
+		t.Errorf("second run should report no migration needed, got %q", res2.Message)
 	}
 }
 
-// TestInstallRouterDaemons_SkipsMissingScript proves a daemon whose backing
-// script is absent is skipped, never installed broken.
-func TestInstallRouterDaemons_SkipsMissingScript(t *testing.T) {
+// TestInstallRouterDaemons_SupervisorFailureIsFailed proves the report is
+// honest when the one backstop cannot be installed.
+func TestInstallRouterDaemons_SupervisorFailureIsFailed(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		t.Skip("router daemons are macOS only")
-	}
-	repo := t.TempDir()
-	rr := filepath.Join(repo, ".agents", "idea-router")
-	if err := os.MkdirAll(filepath.Join(rr, "police"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Only the sweep script exists; the other two are missing → skipped.
-	if err := os.WriteFile(filepath.Join(rr, "sweep.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
+		t.Skip("router automation is macOS only")
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	orig := launchctlExecFn
-	launchctlExecFn = func(args ...string) error { return nil }
-	t.Cleanup(func() { launchctlExecFn = orig })
+	stubLaunchctl(t)
+	stubSupervisorInstall(t, InstallResult{
+		Surface: SurfaceSupervisor, Status: StatusFailed, Message: "launchctl load failed",
+	})
 
-	res := installRouterDaemonsAt(repo)
-	// One installed (sweep) → partial success is StatusOK, message names the skips.
-	if res.Status != StatusOK {
-		t.Fatalf("status = %v (%s), want StatusOK (sweep installs, others skip)", res.Status, res.Message)
+	res := InstallRouterDaemons()
+	if res.Status != StatusFailed {
+		t.Errorf("status = %v, want StatusFailed when the supervisor install fails", res.Status)
 	}
-	if !strings.Contains(res.Message, "skipped") {
-		t.Errorf("message should note skipped daemons, got %q", res.Message)
+}
+
+// TestRouterAutomationHealthy_RequiresSupervisorAndNoLegacy covers the
+// health predicate both ways on darwin.
+func TestRouterAutomationHealthy_RequiresSupervisorAndNoLegacy(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("router automation is macOS only")
 	}
-	// The missing-script daemons must NOT have been written.
-	for _, label := range []string{"com.sirsi.idea-router", "ai.sirsi.registry-police"} {
-		p := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
-		if fileExists(p) {
-			t.Errorf("%s should NOT be installed (script missing)", label)
-		}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if RouterAutomationHealthy() {
+		t.Error("healthy without a supervisor plist — must be false")
+	}
+	// Install the supervisor plist → healthy.
+	if err := os.WriteFile(filepath.Join(agentDir, supervisorPlistLabel+".plist"), []byte("<plist/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !RouterAutomationHealthy() {
+		t.Error("supervisor installed and no legacy plists — must be healthy")
+	}
+	// A lingering legacy plist breaks the single-backstop shape.
+	writeLegacyPlists(t, home)
+	if RouterAutomationHealthy() {
+		t.Error("legacy plists present — must not report healthy")
 	}
 }

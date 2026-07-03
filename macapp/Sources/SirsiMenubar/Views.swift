@@ -752,7 +752,6 @@ struct SectionLabel: View {
 struct AuthBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let health: RBAgentHealth
-    private var reauthCmd: String { "\(health.agentType)  # then run /login inside it" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -832,6 +831,7 @@ struct DaemonBlockerCard: View {
 // friendlyDaemon turns a router role into plain English.
 func friendlyDaemon(_ role: String) -> String {
     switch role {
+    case "router-supervisor": return "Background router supervisor"
     case "router-watchpaths": return "Live dispatch (on change)"
     case "router-sweep": return "Hourly queue sweep"
     case "registry-police": return "Thread cleanup"

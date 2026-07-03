@@ -265,6 +265,11 @@ final class SirsiEngine: ObservableObject {
     var routerStatus: String { routerHasBlockers ? "red" : "green" }
     var routerSummary: String {
         if routerLoading && routerBoard == nil { return "checking…" }
+        // Honesty gate (#147 review, minor 6): a board that never loaded is
+        // UNKNOWN, not healthy — "healthy" may only describe data we actually
+        // read. Without this guard a missing board file + failed CLI fallback
+        // rendered a false-green "healthy".
+        guard routerBoard != nil else { return "no data yet" }
         if routerHasBlockers {
             let n = routerAuthBlockers.count + routerDaemonBlockers.count
             return "\(n) blocker\(n == 1 ? "" : "s")"

@@ -553,15 +553,23 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 
 // CollectLaunchAgents inventories the known macOS LaunchAgents Pantheon may
 // install or inherit from older router automation.
+//
+// Single-backstop shape (backlog ruling 20260629-230327): the resident Horus
+// supervisor is THE router automation — its duties (dispatch pump, sweep,
+// registry police) run inside `sirsi horus supervise`. The three per-duty
+// LaunchAgents that used to carry them are LEGACY: still inventoried so an
+// operator can see stragglers `sirsi router install-daemons` will migrate
+// away, but marked legacy so no surface alarms on their (expected) absence.
 func CollectLaunchAgents(repoRoot string, launchctlCheck LaunchctlChecker) []LaunchAgentHealth {
 	legacy := DefaultServiceOptions(repoRoot, "sirsi")
 	home, _ := os.UserHomeDir()
 	agentDir := filepath.Join(home, "Library", "LaunchAgents")
 	specs := []LaunchAgentHealth{
 		{Label: "ai.sirsi.pantheon", Role: "menubar"},
-		{Label: "com.sirsi.idea-router", Role: "router-watchpaths"},
-		{Label: "com.sirsi.idea-router-sweep", Role: "router-sweep"},
-		{Label: "ai.sirsi.registry-police", Role: "registry-police"},
+		{Label: "ai.sirsi.horus.agent-router", Role: "router-supervisor"},
+		{Label: "com.sirsi.idea-router", Role: "router-watchpaths", Legacy: true},
+		{Label: "com.sirsi.idea-router-sweep", Role: "router-sweep", Legacy: true},
+		{Label: "ai.sirsi.registry-police", Role: "registry-police", Legacy: true},
 		{Label: legacy.Label, Role: "legacy-router-daemon", Legacy: true},
 	}
 	for i := range specs {

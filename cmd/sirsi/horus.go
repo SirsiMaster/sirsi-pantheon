@@ -258,6 +258,9 @@ func runHorusSupervise(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("no idea-router found: %w", err)
 	}
+	// Root-ful invocation (supervisor start): persist the clone root so
+	// app-context callers resolve it when no dev shell is open (B2).
+	router.RememberRepoRoot(repoRoot)
 	opts := router.SuperviseOptions{
 		RepoRoot: repoRoot,
 		AgentID:  horusSuperviseAgentID,
