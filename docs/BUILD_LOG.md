@@ -8,6 +8,17 @@
 
 ---
 
+## 2026-07-03 — RECURRENCE: the broker was correct, but two callers never went through it
+**What broke:** the owner reported the machine repeatedly "churning and effectively shutting down" while running `codex`. Independent diagnosis (claude-home) found 96% swap used and ~1 GB free of 51.5 GB — a symptom nearly identical to 2026-06-18. Codex itself turned out to be a mostly cloud-API-driven CLI, not the actual RAM driver — just what was running when the machine tipped over.
+
+**The hard truth (the mistakes stay in):** this was NOT a repeat of the same design failure. `guard.NodeCapacity.Fits()`, the 2×model serial budget, `DynamicReserve()` (which already accounts for live Claude/Codex RSS), the cold-path file lock, and Hapi's governed suspend/kill ladder were all read from source and confirmed correct. The gate works. **Two pieces of local automation were never wired to call through it**: `sirsi-gemma-worker.sh` (the router-triage daemon) shelled `mlx_lm.generate` directly on its default path with zero RAM check, and — more pointedly — **the LaunchAgent that starts the warm broker itself** invoked raw `mlx_lm.server`, with zero references anywhere in the Go codebase (`git grep "ai.sirsi.gemma" -- '*.go'` → nothing). The process actually serving the warm model was invisible to the code meant to govern it. A gate with a door beside it is not a gate.
+
+**Fix (verified live, not claimed):** `sirsi-gemma-worker.sh` now calls `sirsi gemma` — confirmed it correctly *refused* a cold load at ~1 GB free instead of blindly loading. The `ai.sirsi.gemma` LaunchAgent now runs `sirsi gemma serve --port 11434` (`KeepAlive` corrected `true`→`false` — this command is a one-shot ensure-warm launcher that forks a detached, Hapi-governed child and exits, not a persistent process itself) — confirmed it correctly refused to start past its own `2×model + DynamicReserve` boundary rather than being forced past it. Owner's verdict, verbatim: *"this situation is exactly what the pantheon and router are supposed to prevent and then remedy."* Agreed — and now it does, in both places it previously didn't.
+
+**Full canon:** [`docs/ADR-031-C-BROKER-ENFORCEMENT-UNIVERSAL.md`](ADR-031-C-BROKER-ENFORCEMENT-UNIVERSAL.md); addendum to [`docs/case-studies/2026-06-18-pantheon-did-not-prevent-oom.md`](case-studies/2026-06-18-pantheon-did-not-prevent-oom.md) §6. Regression guard (CI/lint audit for direct `mlx_lm.*` calls outside `cmd/sirsi/gemma*.go`) recommended, not yet built.
+
+---
+
 ## 2026-06-18 — INCIDENT: Pantheon OOM'd the host it exists to protect
 **What broke:** while testing a new warm-inference broker (`sirsi gemma serve`), a concurrency-4 default with no RAM gate let ~5 MLX model copies (~53 GB) sit resident at once on a 48 GB machine → macOS Jetsam → host froze. The 4 concurrent `sirsi gemma` calls fell through to the cold path (`mlx_lm.generate`), each loading the full model.
 
