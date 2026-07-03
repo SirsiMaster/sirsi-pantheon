@@ -146,12 +146,6 @@ struct HomeView: View {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { RouterView(engine: engine) } label: {
-                        DeityRow(glyph: "🛰️", title: "Router — Fabric",
-                                 detail: engine.routerSummary,
-                                 dot: statusColor(engine.routerStatus))
-                    }.buttonStyle(.plain)
-
                     NavigationLink { ResultView(engine: engine, title: "Osiris — Checkpoints", args: ["osiris", "risk"]) } label: {
                         DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints", detail: "uncommitted risk")
                     }.buttonStyle(.plain)
@@ -203,7 +197,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { engine.loadActivity(); await engine.diagnose(); await engine.loadRouterBoard() }   // health + ledger + fabric on open
+        .task { engine.loadActivity(); await engine.diagnose() }   // health + ledger on open
     }
 }
 
@@ -436,6 +430,37 @@ struct HealthRow: View {
 // → fix" made real. It explains the finding and, when a safe remediation exists,
 // offers a one-click "Fix it" that runs it. No finding dead-ends at "here's a
 // problem" with no way to act.
+// FindingDetailEntry is one parsed row of a pipe-separated finding detail —
+// "Name (SIZE) | Name (SIZE) | …" (the Top Memory Consumers shape) or
+// "name 45% | name 12%" (the Spotlight shape, no parenthesised value).
+private struct FindingDetailEntry: Identifiable {
+    let id: Int
+    let name: String
+    let value: String? // trailing "(…)" content, right-aligned when present
+}
+
+// parseFindingDetailList turns a pipe-separated detail string into rows so it
+// renders as a legible list instead of one caption-monospaced blob (the owner's
+// "tiny unreadable pipe-string" defect). Returns nil unless the string is
+// genuinely a list (2+ pipe-separated items) so prose details keep wrapped text.
+private func parseFindingDetailList(_ detail: String) -> [FindingDetailEntry]? {
+    let parts = detail.components(separatedBy: "|")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    guard parts.count >= 2 else { return nil }
+    return parts.enumerated().map { i, part in
+        // A trailing "(…)" is a value column (e.g. "Python (6.2 GB)").
+        if part.hasSuffix(")"), let open = part.range(of: "(", options: .backwards) {
+            let name = String(part[..<open.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let value = String(part[part.index(after: open.lowerBound)..<part.index(before: part.endIndex)])
+            if !name.isEmpty && !value.isEmpty {
+                return FindingDetailEntry(id: i, name: name, value: value)
+            }
+        }
+        return FindingDetailEntry(id: i, name: part, value: nil)
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -443,6 +468,10 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
+
+    // Warn (2) and Critical (3) are alarms (guard.DiagnosticSeverity). An alarm
+    // without a fix must say so honestly — never "Informational".
+    private var isAlarm: Bool { finding.severity >= 2 }
 
     private var fixIcon: String {
         switch kind {
@@ -493,11 +522,34 @@ struct FindingView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let d = finding.detail, !d.isEmpty {
-                        Text(d).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        // Live data is never tiny or greyed: a pipe-separated
+                        // detail ("Python (6.2 GB) | node (1.1 GB) | …") becomes
+                        // one readable row per item; prose wraps at .callout.
+                        if let entries = parseFindingDetailList(d) {
+                            VStack(spacing: 0) {
+                                ForEach(entries) { e in
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(e.name).font(.callout)
+                                            .lineLimit(1).truncationMode(.middle)
+                                        Spacer(minLength: 12)
+                                        if let v = e.value {
+                                            Text(v).font(.callout.monospaced())
+                                        }
+                                    }
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    if e.id != entries.count - 1 { Divider() }
+                                }
+                            }
                             .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        } else {
+                            Text(d).font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        }
                     }
                     if let fix = finding.fix, !fix.isEmpty {
                         // Honest framing BEFORE the click: a 7-day history must never
@@ -529,9 +581,16 @@ struct FindingView: View {
                                 Spacer()
                             }.frame(maxWidth: .infinity).padding(.vertical, 2)
                         }.buttonStyle(.borderedProminent).tint(gold)
+                    } else if isAlarm {
+                        // An alarm without a lever must SAY so — calling a warn
+                        // or critical finding "Informational" was the dead-end
+                        // the owner flagged (ADR-033: alarm ⇒ way to act).
+                        Text("This needs attention but has no one-click fix yet.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Informational — no one-click fix for this signal.")
-                            .font(.caption).foregroundStyle(.tertiary)
+                        Text("Informational.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
                 }.padding(16)
@@ -543,284 +602,6 @@ struct FindingView: View {
 extension View {
     // Visually mark a not-yet-ported deity row without a dead-looking control.
     func disabledRow() -> some View { self.opacity(0.45) }
-}
-
-// ── Router — Fabric (liveness + wake-enablement) ─────────────────────────────
-//
-// The Router view is the owner-actionable board: it leads with BLOCKERS (only
-// current, fixable conditions — a real logout, a broken router daemon), then
-// stranded inboxes (per-agent open-item counts, each with a one-click "Arm wake
-// channel"). A degraded/inconclusive auth probe is shown as plain INFO, never an
-// alarm — nothing the user clicks would clear it, so it must not read red
-// (feedback_surfaces_current_actionable_only). A healthy fabric reads calm green.
-
-// copyToClipboard puts a string on the general pasteboard (for the re-auth
-// command — we never authenticate programmatically, we hand the operator the
-// exact command to run themselves).
-func copyToClipboard(_ s: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(s, forType: .string)
-}
-
-// openTerminal launches Terminal.app so the operator can re-auth by hand. We open
-// the app (not a command) — authentication is the user's action, never ours.
-func openTerminal() {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    p.arguments = ["-a", "Terminal"]
-    try? p.run()
-}
-
-struct RouterView: View {
-    @ObservedObject var engine: SirsiEngine
-    @State private var resultLine: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            BackBar(title: "Router — Fabric")
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-
-                    // ── Blockers (current + fixable ONLY) ───────────────────
-                    if engine.routerHasBlockers {
-                        SectionLabel("BLOCKERS — FIX TO UNSTRAND WORK", tint: .red)
-
-                        ForEach(engine.routerAuthBlockers) { h in
-                            AuthBlockerCard(engine: engine, health: h)
-                        }
-                        if !engine.routerDaemonBlockers.isEmpty {
-                            DaemonBlockerCard(engine: engine,
-                                              broken: engine.routerDaemonBlockers,
-                                              onResult: { resultLine = $0 })
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            Circle().fill(.green).frame(width: 8, height: 8)
-                            Text("Fabric healthy — no blockers")
-                                .font(.system(size: 13, weight: .semibold))
-                            Spacer()
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
-                    }
-
-                    // ── Stranded inboxes (work-to-do, not an alarm) ─────────
-                    if !engine.routerStranded.isEmpty {
-                        SectionLabel("STRANDED INBOXES — OPEN ITEMS, NO WATCHER")
-                        Text("These agents have work waiting but no armed session watching. Arm a wake channel so their inbox is pulled automatically.")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        ForEach(engine.routerStranded) { s in
-                            NavigationLink {
-                                StrandedAgentView(engine: engine, agent: s)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Text("📥").font(.system(size: 16)).frame(width: 24)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(s.agentId).font(.system(size: 13, weight: .medium))
-                                        Text("\(s.openItems) item\(s.openItems == 1 ? "" : "s") waiting")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                                }
-                                .padding(.vertical, 8).padding(.horizontal, 10)
-                                .contentShape(Rectangle())
-                                .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
-                            }.buttonStyle(.plain)
-                        }
-                    }
-
-                    // ── Inconclusive probes (plain info, never an alarm) ────
-                    if !engine.routerDegraded.isEmpty {
-                        SectionLabel("PROBE INCONCLUSIVE — INFORMATIONAL")
-                        ForEach(engine.routerDegraded) { h in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("🛈").font(.callout)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(h.agentType) — auth check inconclusive")
-                                        .font(.system(size: 12, weight: .medium))
-                                    Text("The CLI didn't answer in time (a cold start), so we can't confirm login. This is not a logout — it clears on its own and blocks nothing.")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-                        }
-                    }
-
-                    if let line = resultLine {
-                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Spacer()
-                }.padding(16)
-            }
-            if engine.busy {
-                HStack { ProgressView().controlSize(.small); Text("Working…").font(.caption).foregroundStyle(.secondary); Spacer() }
-                    .padding(.horizontal, 16).padding(.bottom, 8)
-            }
-        }
-        .task { await engine.loadRouterBoard() }
-    }
-}
-
-// SectionLabel is a small caption header used across the Router view.
-struct SectionLabel: View {
-    let text: String
-    var tint: Color = .secondary
-    init(_ text: String, tint: Color = .secondary) { self.text = text; self.tint = tint }
-    var body: some View {
-        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(tint)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// AuthBlockerCard surfaces a REAL logout (needs_login) with a re-auth affordance.
-// We never authenticate programmatically — we open Terminal and hand the operator
-// the exact command to run, and offer to copy it.
-struct AuthBlockerCard: View {
-    @ObservedObject var engine: SirsiEngine
-    let health: RBAgentHealth
-    private var reauthCmd: String { "\(health.agentType)  # then run /login inside it" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("🔑").font(.system(size: 18))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(health.agentType) needs re-login")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(blockedNote).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button {
-                    openTerminal()
-                } label: {
-                    Label("Open Terminal", systemImage: "terminal").frame(maxWidth: .infinity)
-                }.buttonStyle(.borderedProminent).tint(gold)
-                Button {
-                    copyToClipboard(health.agentType)
-                } label: {
-                    Label("Copy command", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
-                }.buttonStyle(.bordered)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
-    }
-
-    private var blockedNote: String {
-        let n = health.blockedItems ?? 0
-        return n > 0 ? "blocking \(n) item\(n == 1 ? "" : "s")" : "some work can't dispatch"
-    }
-}
-
-// DaemonBlockerCard surfaces missing/broken router LaunchAgents with a one-click
-// `sirsi router install-daemons` repair.
-struct DaemonBlockerCard: View {
-    @ObservedObject var engine: SirsiEngine
-    let broken: [RBLaunchAgent]
-    let onResult: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("⚙️").font(.system(size: 18))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(broken.count) router daemon\(broken.count == 1 ? "" : "s") missing")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Work can't relay while a session is closed.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            ForEach(broken) { d in
-                Text("• \(friendlyDaemon(d.role)) (\(d.label))")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button {
-                Task { onResult(await engine.installRouterDaemons()) }
-            } label: {
-                Label("Install router daemons", systemImage: "wrench.and.screwdriver.fill")
-                    .frame(maxWidth: .infinity)
-            }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
-    }
-}
-
-// friendlyDaemon turns a router role into plain English.
-func friendlyDaemon(_ role: String) -> String {
-    switch role {
-    case "router-watchpaths": return "Live dispatch (on change)"
-    case "router-sweep": return "Hourly queue sweep"
-    case "registry-police": return "Thread cleanup"
-    default: return role
-    }
-}
-
-// StrandedAgentView drills into one stranded agent: the open-item count and the
-// one-click "Arm wake channel" (sirsi router wake-install <agent>).
-struct StrandedAgentView: View {
-    @ObservedObject var engine: SirsiEngine
-    let agent: RBStranded
-    @State private var resultLine: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            BackBar(title: agent.agentId)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(spacing: 4) {
-                        Text("\(agent.openItems)").font(.system(size: 34, weight: .bold)).foregroundStyle(gold)
-                        Text("item\(agent.openItems == 1 ? "" : "s") waiting").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-
-                    Text("This agent has work in its inbox but no armed session watching. Arming a wake channel installs a pull-loop that checks its inbox automatically, so the work no longer waits for someone to open the session.")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button {
-                        Task { resultLine = await engine.installWake(agent: agent.agentId) }
-                    } label: {
-                        Label("Arm wake channel", systemImage: "bolt.horizontal.circle")
-                            .frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
-
-                    Text("Runs: sirsi router wake-install \(agent.agentId)")
-                        .font(.caption2.monospaced()).foregroundStyle(.tertiary)
-
-                    if let line = resultLine {
-                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-                    }
-                    if engine.busy {
-                        HStack { ProgressView().controlSize(.small); Text("Arming…").font(.caption).foregroundStyle(.secondary) }
-                    }
-                    Spacer()
-                }.padding(16)
-            }
-        }
-    }
 }
 
 // ── Anubis ───────────────────────────────────────────────────────────────────

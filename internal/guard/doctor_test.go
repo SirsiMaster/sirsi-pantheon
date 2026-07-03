@@ -597,6 +597,16 @@ func TestDoctorWith_MemoryHog(t *testing.T) {
 	if !strings.Contains(memFinding.Message, "Memory hog") {
 		t.Errorf("message = %q, want 'Memory hog' substring", memFinding.Message)
 	}
+	// The owner-reported dead-end: a warn-level memory hog MUST carry its lever
+	// through the report post-pass (ADR-033 — an alarm without an action is a
+	// monitor). The mapping once keyed on the phantom name "Memory Processes",
+	// so this stayed empty and the menubar said "Informational" about a 6 GB hog.
+	if memFinding.Fix != "sirsi relieve --memory" {
+		t.Errorf("Top Memory Consumers WARN Fix = %q, want %q", memFinding.Fix, "sirsi relieve --memory")
+	}
+	if memFinding.FixKind != FixRelief {
+		t.Errorf("Top Memory Consumers WARN FixKind = %q, want %q", memFinding.FixKind, FixRelief)
+	}
 }
 
 // ── TestDoctorWith_SirsiProcesses ────────────────────────────────────────
