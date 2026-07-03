@@ -466,6 +466,172 @@ func TestDefaultAuthProbe_FlagsMissingClaudeEnv(t *testing.T) {
 	}
 }
 
+// TestDefaultAuthProbe_TimeoutIsDegradedNotLoggedOut is the regression test for
+// the 8s-timeout false-positive: a cold Claude CLI that takes longer than the
+// probe deadline to answer must be reported as INCONCLUSIVE (needsLogin=false),
+// never as "logged out". It drives probeAuthWithTimeout — the
+// timeout-parameterized core DefaultAuthProbe wraps — against a fake `claude`
+// that sleeps past a short deadline the test controls, so the REAL
+// deadline-exceeded branch is exercised in milliseconds instead of waiting out
+// the production 30s budget. The contract asserted: a deadline-exceeded
+// returns (false, false, "…timed out…").
+func TestDefaultAuthProbe_TimeoutIsDegradedNotLoggedOut(t *testing.T) {
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "claude-slow")
+	// Sleep past the probe deadline, then print an auth-looking line. The probe
+	// must NEVER read that line — it must time out first and report inconclusive,
+	// proving a timeout is not conflated with a logout. `exec sleep` replaces the
+	// shell so the context's kill terminates the sleep directly (no lingering
+	// shell parent holding the output pipe open past the deadline).
+	script := "#!/bin/sh\nexec sleep 5\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run the probe with a short deadline via a wrapper so the test is fast. We
+	// exercise the exact deadline-exceeded branch DefaultAuthProbe uses.
+	authOK, needsLogin, detail := probeAuthWithTimeout(fake, "claude", 300*time.Millisecond)
+	if authOK {
+		t.Error("authOK should be false on a probe timeout")
+	}
+	if needsLogin {
+		t.Error("needsLogin must be FALSE on a timeout — a timeout is inconclusive, not a logout")
+	}
+	if !strings.Contains(strings.ToLower(detail), "timed out") {
+		t.Errorf("detail should say the probe timed out, got %q", detail)
+	}
+
+	// And the collector must classify it as Degraded, NOT count blocked items.
+	installFakeAgentCLIs(t)
+	repoRoot := setupNodeTestRouter(t)
+	// Probe that mimics a timeout outcome: not ok, not needs-login, timeout detail.
+	timeoutProbe := mockAuthProbe(false, false, "auth probe timed out after 30s (cold CLI start — inconclusive, not logged out)")
+	ns, err := CollectNodeStatus(repoRoot, nil, timeoutProbe)
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	for _, h := range ns.AgentHealth {
+		if !h.CLIFound {
+			continue
+		}
+		if h.NeedsLogin {
+			t.Errorf("%s: NeedsLogin must be false on an inconclusive probe", h.AgentType)
+		}
+		if !h.Degraded {
+			t.Errorf("%s: Degraded must be true on an inconclusive probe", h.AgentType)
+		}
+		if h.BlockedItems != 0 {
+			t.Errorf("%s: BlockedItems = %d, want 0 — an inconclusive probe must not strand work", h.AgentType, h.BlockedItems)
+		}
+	}
+}
+
+// TestDefaultAuthProbe_EnvTimeoutOverride proves SIRSI_AUTH_PROBE_TIMEOUT_MS
+// caps the FULL DefaultAuthProbe path (not just the parameterized core): with
+// the env set to 500ms and an injected slow `claude` (sleeps far past the
+// deadline), DefaultAuthProbe must return promptly with the DEGRADED
+// (inconclusive) verdict — never NeedsLogin, and never the production 30s
+// budget. This is the override's only behavioral contract; without this test
+// a regression could silently pin the probe back to 30s and consume a test
+// suite's entire timeout on one cold probe.
+func TestDefaultAuthProbe_EnvTimeoutOverride(t *testing.T) {
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "claude-slow")
+	// The injectable slow probe: blocks well past the overridden deadline.
+	// `exec sleep` replaces the shell so the context kill reaps it directly.
+	script := "#!/bin/sh\nexec sleep 30\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_AUTH_PROBE_TIMEOUT_MS", "500")
+
+	start := time.Now()
+	authOK, needsLogin, detail := DefaultAuthProbe(fake, "claude")
+	elapsed := time.Since(start)
+
+	if elapsed > 5*time.Second {
+		t.Fatalf("DefaultAuthProbe took %v — the 500ms env override was not honored", elapsed)
+	}
+	if authOK {
+		t.Error("authOK must be false on a probe timeout")
+	}
+	if needsLogin {
+		t.Error("needsLogin must be FALSE — a timeout is Degraded/inconclusive, never a logout")
+	}
+	if !strings.Contains(strings.ToLower(detail), "timed out") {
+		t.Errorf("detail should say the probe timed out, got %q", detail)
+	}
+}
+
+// TestClaudeProbeTimeout_EnvParsing pins the override's parse rules: a positive
+// integer (ms) is honored; junk, zero, and negatives fall back to the 30s
+// production budget.
+func TestClaudeProbeTimeout_EnvParsing(t *testing.T) {
+	cases := []struct {
+		env  string
+		want time.Duration
+	}{
+		{"500", 500 * time.Millisecond},
+		{"", claudeAuthProbeTimeout},
+		{"0", claudeAuthProbeTimeout},
+		{"-100", claudeAuthProbeTimeout},
+		{"not-a-number", claudeAuthProbeTimeout},
+	}
+	for _, tc := range cases {
+		t.Setenv("SIRSI_AUTH_PROBE_TIMEOUT_MS", tc.env)
+		if got := claudeProbeTimeout(); got != tc.want {
+			t.Errorf("claudeProbeTimeout() with env %q = %v, want %v", tc.env, got, tc.want)
+		}
+	}
+}
+
+// TestDefaultAuthProbe_LoginSignatureNeedsLogin proves the honest opposite: a
+// real /login signature in the CLI output IS a logout (needsLogin=true), so a
+// genuine re-auth blocker is still surfaced (and still counts blocked items).
+func TestDefaultAuthProbe_LoginSignatureNeedsLogin(t *testing.T) {
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "claude-loggedout")
+	// Answer instantly with an unambiguous /login signature and a non-zero exit.
+	script := "#!/bin/sh\necho 'Not logged in · Please run /login'\nexit 1\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Ensure env is present so this is classified as a real logout, not demoted
+	// to the missing-env inconclusive branch.
+	t.Setenv("USER", "tester")
+	t.Setenv("HOME", binDir)
+
+	authOK, needsLogin, detail := DefaultAuthProbe(fake, "claude")
+	if authOK {
+		t.Error("authOK should be false when the CLI reports /login")
+	}
+	if !needsLogin {
+		t.Errorf("needsLogin should be TRUE on a real /login signature, got detail %q", detail)
+	}
+
+	// And the collector must count it as a blocker (the fixture has 1 claude item).
+	installFakeAgentCLIs(t)
+	repoRoot := setupNodeTestRouter(t)
+	loginProbe := mockAuthProbe(false, true, "Not logged in · Please run /login")
+	ns, err := CollectNodeStatus(repoRoot, nil, loginProbe)
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	for _, h := range ns.AgentHealth {
+		if h.AgentType == "claude" && h.CLIFound {
+			if !h.NeedsLogin {
+				t.Error("claude NeedsLogin should be true")
+			}
+			if h.Degraded {
+				t.Error("claude Degraded should be false when it's a real logout")
+			}
+			if h.BlockedItems != 1 {
+				t.Errorf("claude BlockedItems = %d, want 1 (a real logout blocks the pending item)", h.BlockedItems)
+			}
+		}
+	}
+}
+
 func TestIsAuthError(t *testing.T) {
 	tests := []struct {
 		output string

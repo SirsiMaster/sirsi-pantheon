@@ -256,6 +256,14 @@ func FindRepoRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
+			// LAST resort: the persisted marker (~/.sirsi/pantheon-repo). This is
+			// what keeps app-context callers alive — a menubar lever spawned by
+			// launchd has cwd=/ and no git tree, so both probes above fail even
+			// though a perfectly good clone exists. The marker is validated on
+			// read (.agents/idea-router must exist there); see reporootmarker.go.
+			if root, ok := repoRootFromMarker(); ok {
+				return root, nil
+			}
 			return "", fmt.Errorf("no .agents/idea-router/ found in any parent directory")
 		}
 		dir = parent

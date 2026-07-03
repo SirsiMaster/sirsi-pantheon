@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 	"github.com/spf13/cobra"
 )
@@ -416,6 +417,100 @@ var routerWakeLoopCmd = &cobra.Command{
 	},
 }
 
+// routerInstallDaemonsCmd ensures the single-backstop router automation
+// (backlog ruling 20260629-230327): the ONE resident supervisor LaunchAgent
+// installed and loaded, and the three legacy per-duty LaunchAgents migrated
+// away when present. The duties those agents carried (dispatch pump, hourly
+// sweep, registry police) now run inside `sirsi horus supervise` — see
+// internal/router/supervisorduties.go. Idempotent; macOS only.
+var routerInstallDaemonsCmd = &cobra.Command{
+	Use:   "install-daemons",
+	Short: "Ensure the single router supervisor and migrate away legacy per-duty agents — macOS",
+	Long: `Ensures the single-backstop router automation:
+
+  1. Installs (or confirms) the ONE resident supervisor LaunchAgent
+     (ai.sirsi.horus.agent-router). Its loop now carries the dispatch pump,
+     the hourly queue sweep, and the registry-police pass — cadence-gated
+     and error-isolated.
+  2. Migrates away the three legacy per-duty LaunchAgents when present
+     (com.sirsi.idea-router, com.sirsi.idea-router-sweep,
+     ai.sirsi.registry-police): each is unloaded and its plist removed,
+     and the migration is reported.
+
+Idempotent — a second run confirms the supervisor and finds nothing to
+migrate. macOS only.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		res := setup.InstallRouterDaemons()
+		switch res.Status {
+		case setup.StatusOK:
+			fmt.Printf("✔ %s\n", res.Message)
+		case setup.StatusSkipped:
+			fmt.Printf("• Skipped: %s\n", res.Message)
+		default:
+			return fmt.Errorf("%s", res.Message)
+		}
+		return nil
+	},
+}
+
+// routerBoardCmd prints the owner-actionable router board the conduit regenerates
+// at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
+// threads). Read-only convenience mirror of what the menubar Router view renders.
+var routerBoardCmd = &cobra.Command{
+	Use:   "board",
+	Short: "Print the owner-actionable router board (~/.sirsi/router-board.md)",
+	Long: `Prints ~/.sirsi/router-board.md — the lean, owner-actionable board the
+router conduit regenerates each cycle (blockers, stranded inboxes, live threads).
+
+This is a read-only convenience mirror of the menubar's Router view. If the board
+file is absent (no conduit has run), it points you at 'sirsi router node-status'.
+
+With --json the verb emits a real JSON envelope ({path, exists, content,
+modified_at}) instead of raw markdown, so scripted callers never have to
+scrape human output.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home: %w", err)
+		}
+		boardPath := filepath.Join(home, ".sirsi", "router-board.md")
+		data, err := os.ReadFile(boardPath)
+		exists := err == nil
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("read board: %w", err)
+		}
+		// The root --json flag must yield machine output here too — before this
+		// branch existed it was silently swallowed (markdown printed, exit 0),
+		// which is a contract violation for scripted callers (#147 review, minor 5).
+		if JsonOutput {
+			envelope := map[string]any{
+				"path":    boardPath,
+				"exists":  exists,
+				"content": string(data),
+			}
+			if info, serr := os.Stat(boardPath); serr == nil {
+				envelope["modified_at"] = info.ModTime().UTC().Format(time.RFC3339)
+			}
+			if !exists {
+				envelope["hint"] = "no conduit run recorded — use `sirsi router node-status --json` for the live fabric view"
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(envelope)
+		}
+		if !exists {
+			fmt.Println("No router board yet (no conduit run recorded).")
+			fmt.Println("Run `sirsi router node-status` for the live fabric view.")
+			return nil
+		}
+		fmt.Print(string(data))
+		if !strings.HasSuffix(string(data), "\n") {
+			fmt.Println()
+		}
+		return nil
+	},
+}
+
 func init() {
 	routerSendCmd.Flags().StringVar(&sendFrom, "from", "", "Sender agent id (e.g., claude-pantheon)")
 	routerSendCmd.Flags().StringVar(&sendTo, "to", "", "Recipient agent id (e.g., codex-pantheon)")
@@ -425,5 +520,5 @@ func init() {
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd)
 }

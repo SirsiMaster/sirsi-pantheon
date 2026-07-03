@@ -346,11 +346,14 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Install the resident Horus agent-router supervisor (`sirsi horus
-	// supervise`) as a LaunchAgent so the router keeps relaying between agents.
-	// macOS only; idempotent (a re-install reloads).
+	// Single-backstop router automation (backlog ruling 20260629-230327):
+	// install/confirm the ONE resident supervisor LaunchAgent (`sirsi horus
+	// supervise`, whose loop now carries the dispatch/sweep/registry-police
+	// duties) and migrate away any legacy per-duty LaunchAgents.
+	// Permissions/installs belong in setup (feedback_permissions_in_install);
+	// macOS only; idempotent.
 	if runtime.GOOS == "darwin" {
-		printInstallResult(setup.InstallSupervisor())
+		printInstallResult(setup.InstallRouterDaemons())
 	}
 
 	// Arm the 𓆄 Ma'at pre-push gate (Rule A17) when run inside a Pantheon source

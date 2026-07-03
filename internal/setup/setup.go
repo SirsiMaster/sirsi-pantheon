@@ -149,5 +149,8 @@ func RegisterAgentWake() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Root-ful invocation: persist the clone root so app-context callers (the
+	// menubar's launchd-spawned levers, cwd=/) can resolve it later (B2).
+	router.RememberRepoRoot(root)
 	return router.DetectInstalledAgents(root)
 }
