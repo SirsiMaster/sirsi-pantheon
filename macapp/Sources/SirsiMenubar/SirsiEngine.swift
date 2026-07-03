@@ -397,9 +397,22 @@ final class SirsiEngine: ObservableObject {
         return Self.firstMeaningful(out)
     }
 
+    // lastDiagnoseAt throttles diagnose to once per 5 minutes: the popover used
+    // to spawn a full multi-second `sirsi diagnose` on EVERY open (the 2026-07-03
+    // "menubar feels slow" report — same storm class as the session-hook cache).
+    // Reopens inside the window render the last-known health instantly; a fresh
+    // run happens in the background only when the cache has aged out.
+    private var lastDiagnoseAt: Date?
+    static let diagnoseTTL: TimeInterval = 300
+
     // diagnose runs `sirsi diagnose --json` and parses the health report. Uses a
     // stdout-only run so a banner on stderr can't corrupt the JSON.
-    func diagnose() async {
+    func diagnose(force: Bool = false) async {
+        if !force, let t = lastDiagnoseAt, Date().timeIntervalSince(t) < Self.diagnoseTTL,
+           !health.isEmpty {
+            return  // fresh enough — render last-known instantly
+        }
+        lastDiagnoseAt = Date()
         healthLoading = true
         let data = await Self.runJSON(args: ["diagnose", "--json"])
         if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
