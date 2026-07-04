@@ -13,30 +13,48 @@ set -uo pipefail
 ROUTER_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon/.agents/idea-router"
 REPO_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon"
 LOG="$ROUTER_ROOT/logs/sweep.log"
-SIRSI="$HOME/.local/bin/sirsi"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+. "$ROUTER_ROOT/router-env.sh"
 
 ts() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 cd "$REPO_ROOT" || { echo "[$(ts)] sweep FAIL: cannot cd to $REPO_ROOT" >> "$LOG"; exit 1; }
 
-mkdir -p "$(dirname "$LOG")"
+LOG="$(router_ensure_log "$LOG" "/tmp/sirsi-router-sweep.log")" || exit 1
+SIRSI="$(router_resolve_sirsi "$REPO_ROOT")" || { echo "[$(ts)] sweep FAIL: sirsi binary not found" >> "$LOG"; exit 1; }
 fails=()
 fail() { fails+=("$1"); }
 
-# 1. launchd dispatcher loaded
-if ! launchctl list | awk '{print $3}' | grep -qx com.sirsi.idea-router; then
-  fail "launchd job com.sirsi.idea-router NOT loaded"
+# 1. router daemon of record loaded — since PR #155 the single backstop is the
+#    Horus supervisor (ai.sirsi.horus.agent-router); the legacy trio
+#    (com.sirsi.idea-router, -sweep, ai.sirsi.registry-police) was deliberately
+#    migrated away and MUST NOT be alarmed on (that alarm fired hourly forever
+#    on correct state — the 2026-07-04 noise class).
+if ! launchctl list | awk '{print $3}' | grep -qx ai.sirsi.horus.agent-router; then
+  fail "launchd job ai.sirsi.horus.agent-router (router supervisor) NOT loaded"
 fi
 
-# 2. dispatch.sh recent activity (any fire within 24h)
-last_dispatch=$(grep -E '^\[[0-9-]+T' "$ROUTER_ROOT/logs/dispatch.log" 2>/dev/null | tail -1 | head -c 25)
-if [ -z "$last_dispatch" ]; then
-  fail "dispatch.log empty or unreadable"
-else
-  last_epoch=$(date -j -f "[%Y-%m-%dT%H:%M:%S" "$last_dispatch" "+%s" 2>/dev/null || echo 0)
-  now_epoch=$(date "+%s")
-  if [ $((now_epoch - last_epoch)) -gt 86400 ]; then
-    fail "dispatch.sh has not fired in 24h+ (last: $last_dispatch)"
+# 2. dispatch.sh recent activity — dispatch.sh auto-spawns codex-* agents ONLY
+#    (interactive claude agents are pull-model and never blind-spawned). Under the
+#    pull-only observer model a stale dispatch.log is EXPECTED when no codex work is
+#    queued, so alarm ONLY when codex items are actually waiting to be dispatched —
+#    otherwise this fires forever on a moot condition (surfaces: current+actionable only).
+codex_pending=0
+for _f in "$ROUTER_ROOT"/items/*.md; do
+  [ -f "$_f" ] || continue
+  grep -qE '^to:[[:space:]]*"?codex-' "$_f" || continue
+  grep -qE '^status:[[:space:]]*"?open"?[[:space:]]*$' "$_f" || continue
+  codex_pending=$((codex_pending+1))
+done
+if [ "$codex_pending" -gt 0 ]; then
+  last_dispatch=$(grep -E '^\[[0-9-]+T' "$ROUTER_ROOT/logs/dispatch.log" 2>/dev/null | tail -1 | head -c 25)
+  if [ -z "$last_dispatch" ]; then
+    fail "dispatch.log empty but $codex_pending codex item(s) pending"
+  else
+    last_epoch=$(date -j -f "[%Y-%m-%dT%H:%M:%S" "$last_dispatch" "+%s" 2>/dev/null || echo 0)
+    now_epoch=$(date "+%s")
+    if [ $((now_epoch - last_epoch)) -gt 86400 ]; then
+      fail "dispatch.sh stale 24h+ with $codex_pending codex item(s) waiting (last: $last_dispatch)"
+    fi
   fi
 fi
 
