@@ -1,7 +1,7 @@
 # PRD — Router v2: Durable Dispatch
 
 **Owner thread:** gemma (decompose + draft) → repo thread implements → claude-home binds
-**Status:** IN PROGRESS (2026-06-29) — Phase 1 built (2026-07-02, claude-fable, `feat/router-v2-increment`)
+**Status:** IN PROGRESS (2026-06-29) — Phase 1 built (2026-07-02); Phase 2 contract BOUND (2026-07-04, codex APPROVE — §2b)
 **Supersedes the bootstrap:** the file-based markdown pull-model router (still source of truth until cutover)
 **Governs:** PANTHEON_RULES.md A26 (Idea Router Workstream), A27 (Heartbeat Loop)
 
@@ -62,6 +62,68 @@ Router v2 is DONE when ALL hold:
 - Stop *writing* files; keep reading legacy for one deprecation window, then remove.
 - Update `.agents/idea-router/README.md` + PANTHEON_RULES A26/A27 references; add an ADR (`docs/adr/ADR-0XX-router-v2-durable-dispatch.md`) capturing the decision + rejected alternatives (Rule A22 triad if it's an architecture doc).
 - **Acceptance:** `/goal` #2, #4, #5, #6 all met.
+
+## 2b. Phase 2 Dispatch Contract (BINDING — codex-SME APPROVED 2026-07-04)
+
+Provenance: two runaway incidents (2026-07-03: 19,195 agentic sessions, 0 closed;
+2026-07-04: 11,564 escalation-item flood) → adversarial design bounce
+claude-pantheon ⇄ codex (round 1 relayed via claude-home: FAIL-as-stated;
+round 2 direct, session 019f2f6c-207f: **APPROVE**). This section is the
+converged contract; Phase 2 implements it verbatim. The claude build-worker
+stays OFF until the acceptance bar below passes.
+
+**The law: the routerstore is the ONLY executable dispatch authority.**
+Any second path around the lock (file writes, raw `router send`, interactive
+pulls, sidecar workers) merely relocates the failure mode.
+
+1. **Lifecycle** — `open → claimed → working → blocked | dead_letter | completed`.
+   Terminal states are terminal. "Give up" = `dead_letter` with owner/action
+   metadata — never an item left open forever.
+2. **Fenced leases** — `ClaimNext` / `RenewLease` / `Complete` / `Fail` /
+   `Block` are atomic (BEGIN IMMEDIATE, WAL, busy_timeout) and token-checked:
+   claim returns a lease token; EVERY lifecycle mutation rejects missing,
+   expired, or mismatched tokens — including owner-session closes.
+   `--force-owner` is human-only, audited, and requires an explicit reason.
+3. **Claim is the only door to execution** — `sirsi router claim <id>` is the
+   sole transition into executable ownership. Pull stays read-only
+   (observation ≠ execution). Claim-on-pull rejected (punishes read UX).
+4. **One send facade** — `router send` + MCP send route through a single
+   facade enforcing an idempotency key `(from, to, type, subject_key,
+   source_item_id, time_bucket)` and per-sender quotas. Over-quota UPDATES a
+   singleton throttle item; it never appends.
+5. **Escalations are keyed singletons** — update-in-place or deduped on
+   `(source_item, failure_class)`, bounded (compacted counters + first/last
+   seen), never timestamp-keyed new items.
+6. **Circuit breakers by failure domain** — per sender, per target, per error
+   class, and global; a tripped breaker pauses dispatch and writes ONE bounded
+   operator item. N distinct failures ≠ N escalations.
+7. **Budgets & backpressure** — max concurrent claims per target (initial: 2),
+   max new items per sender per window, max retries per item, max total
+   active work.
+8. **Files are non-authoritative by definition** (Phase 2 migration stance):
+   item content dual-writes to `items/*.md` as the human audit view, but
+   store commit is primary — no store row, no dispatch; a stale or mutated
+   file cannot change lifecycle; sweep flags inert/orphan files. Full file
+   cutover remains Phase 4.
+9. **GC + observability** — retention rules for expired leases, attempts,
+   throttle buckets, closed items; counters (claims, lease expiries, retries,
+   rate-limit drops, dead letters, breaker state) surfaced in `node-status`
+   as ONE aggregate. The next incident must be one red number, not 11,564 files.
+10. **Executor policy** — the tiered Brain (rules → gemma → claude) is an
+    executor policy ABOVE this contract, never a bypass: tier selection happens
+    after claim (or in a non-mutating budgeted classifier), and any tier that
+    emits items uses the same facade. The gemma FYI-close tier may run pre-Phase-2
+    only while bounded + idempotent, and must adopt the facade when it lands.
+
+**Acceptance bar (before any build-worker re-arms):**
+- `ClaimNext`/`RenewLease`/`Complete`/`Fail`/`Block` with token fencing, tested.
+- Send facade enforces idempotency + quotas before insert.
+- Escalation = update-in-place / keyed singleton, tested.
+- Breaker pauses dispatch on systemic failure with one operator item.
+- File-router executable writes disabled (dual-read-only during migration).
+- Safety tests reproduce BOTH incidents and pass: duplicate-claim race;
+  stuck-item ⇒ at most one terminal/escalation record; sender flood rejected;
+  restart mid-lease; expired worker cannot complete newer-leased work.
 
 ## 3. Key decision points (Rule A22 matrix)
 
