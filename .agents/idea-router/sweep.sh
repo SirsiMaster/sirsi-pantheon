@@ -24,6 +24,20 @@ SIRSI="$(router_resolve_sirsi "$REPO_ROOT")" || { echo "[$(ts)] sweep FAIL: sirs
 fails=()
 fail() { fails+=("$1"); }
 
+# 0. Orphaned-build-tree reaper (2026-07-04 incident: killed `go test` runs leave
+#    go-build*/sirsi-integration-* trees in $TMPDIR forever — 7,689 of them ate
+#    1.3 TB in 36h during the worker runaway). Reap the two known-orphan patterns
+#    older than 24h; live builds are younger and untouched. Self-heals silently
+#    (surfaces canon: only alarm on what an operator must act on).
+TMPT=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)
+if [ -n "$TMPT" ] && [ -d "$TMPT" ]; then
+  reaped=$(find "$TMPT" -maxdepth 1 \( -name "go-build*" -o -name "sirsi-integration-*" \) -mmin +1440 2>/dev/null | wc -l | tr -d " ")
+  if [ "$reaped" -gt 0 ]; then
+    find "$TMPT" -maxdepth 1 \( -name "go-build*" -o -name "sirsi-integration-*" \) -mmin +1440 -exec rm -rf {} + 2>/dev/null
+    echo "[$(ts)] reaped $reaped orphaned build tree(s) >24h from $TMPT" >> "$LOG"
+  fi
+fi
+
 # 1. router daemon of record loaded — since PR #155 the single backstop is the
 #    Horus supervisor (ai.sirsi.horus.agent-router); the legacy trio
 #    (com.sirsi.idea-router, -sweep, ai.sirsi.registry-police) was deliberately
