@@ -56,6 +56,14 @@ func Open(repoRoot string) (*Facade, error) {
 		}
 		dbPath = filepath.Join(home, ".sirsi", "router.db")
 	}
+	// A fresh HOME has no ~/.sirsi yet — SQLite cannot create the db file in a
+	// missing directory (SQLITE_CANTOPEN, surfaced as CI's "unable to open
+	// database file"). Create the parent first.
+	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("dispatch: create store dir: %w", err)
+		}
+	}
 	store, err := routerstore.Open(dbPath)
 	if err != nil {
 		return nil, err

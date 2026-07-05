@@ -140,3 +140,19 @@ func TestClosePreFacadeItemStillWorks(t *testing.T) {
 		t.Fatalf("closing a pre-store item must succeed: %v", err)
 	}
 }
+
+// TestOpenCreatesStoreDirOnFreshHome: a brand-new HOME (CI runners, first
+// run on a new machine) has no ~/.sirsi — Open must create the store's
+// parent directory instead of failing SQLITE_CANTOPEN (the CI-only
+// TestRouterPullModelRoundtrip failure this reproduces).
+func TestOpenCreatesStoreDirOnFreshHome(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "nested", "never-made", "router.db"))
+	f, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open on a fresh home must create the store dir: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.Send("a", "b", "first ever send", "", "x"); err != nil {
+		t.Fatalf("send on fresh store: %v", err)
+	}
+}
