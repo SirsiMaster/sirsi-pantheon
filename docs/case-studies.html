@@ -298,6 +298,48 @@
   </header>
 
   <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  CASE STUDY: THE RUNAWAY EXECUTOR (NEWEST — 2026-07-04) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section class="case-study">
+    <div class="container">
+      <div class="case-header">
+        <span class="case-glyph">𓁵</span>
+        <div>
+          <span class="case-label label-crisis">Incident Autopsy</span>
+          <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem;">2026-07-04 &middot; Sekhmet</span>
+          <h2>The Runaway Executor: 19,195 Sessions, 1.3&nbsp;TB, Zero Alarms</h2>
+          <p class="case-subtitle">Six weeks of "the agents never stay armed" turned out to be a healthy watcher fleet serving a diseased executor &mdash; and the fix became canon</p>
+        </div>
+      </div>
+
+      <div class="narrative">
+        <p><strong>The theory was an arming gap. The theory was wrong.</strong> A build-worker agent spawned a full headless AI session for <em>every</em> open work item and never closed any of them: <strong>19,195 sessions started, 0 completed</strong>. Every poll re-pulled the same items forever. The watchers everyone kept re-arming were fine &mdash; the executor they fed was the disease.</p>
+
+        <p>Then the first patch made it worse. A retry cap sounded right, but its give-up path wasn't idempotent, and it flooded <strong>11,564 escalation items in one night</strong>. Then the worker's timeout-killed test runs orphaned <strong>~1.3&nbsp;TB of build trees in 36 hours</strong>, filling the disk to 100%. Nothing on the host alarmed at any point &mdash; the disease ran silent until the disk was full.</p>
+
+        <p>The permanent fix is three independent layers. A <strong>fenced dispatch contract</strong> (adversarially reviewed and approved by a second AI team): one dispatch authority, lease-token claims, idempotent sends, bounded budgets, circuit breakers &mdash; and the worker stays <em>off</em> until safety tests reproduce both incidents and pass. An <strong>hourly reaper</strong> that drains orphaned build trees. And <strong>𓁵 Sekhmet's host backstop</strong>: a doctor finding that alarms on the two live signatures of a runaway executor, carrying a one-command kill switch that stops the worker tier durably and never touches the watchers.</p>
+
+        <p>The lesson that became ADR-035: <strong>idempotency precedes autonomy</strong> &mdash; and the next incident must be one red number, not 11,564 files.</p>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-value" style="color: #f87171;">19,195 &rarr; 0</div>
+          <div class="metric-label">Sessions spawned &rarr; sessions completed</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: #f87171;">1.3 TB</div>
+          <div class="metric-label">Orphaned build trees in 36 hours</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" style="color: #34d399;">1</div>
+          <div class="metric-label">Command to stop the disease (quarantine-worker)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
   <!--  CASE STUDY: SELF-HEALING INFERENCE SUBSTRATE (2026-06) -->
   <!-- ═══════════════════════════════════════════════════════ -->
   <section class="case-study">

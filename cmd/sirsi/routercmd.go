@@ -453,6 +453,53 @@ migrate. macOS only.`,
 	},
 }
 
+// routerQuarantineWorkerCmd is 𓁵 Sekhmet's kill switch for the runaway-executor
+// class (ADR-035; the 2026-07-03/04 incident: 19,195 sessions spawned, 0 closed,
+// 1.3 TB of orphaned build trees). It stops every claude build-worker LaunchAgent
+// now (bootout) and keeps it stopped across logins (plist → .quarantined rename).
+// It is the remediation behind the doctor's "Runaway Executor" finding, and the
+// OFF state the Dispatch Contract requires until the Phase-2 acceptance bar
+// passes (PRD ROUTER_V2_DURABLE_DISPATCH §2b). Wake-loop watchers and the router
+// supervisor are NEVER touched — the incident's watchers were healthy.
+var quarantineWorkerDryRun bool
+
+var routerQuarantineWorkerCmd = &cobra.Command{
+	Use:   "quarantine-worker",
+	Short: "𓁵 Stop every claude build-worker LaunchAgent — bootout now, quarantine its plist (macOS)",
+	Long: `Stops the claude build-worker executor tier, durably:
+
+  1. Boots every loaded ai.sirsi.claude-worker.* job out of launchd (stops it now).
+  2. Renames its plist to *.plist.quarantined so login/RunAtLoad cannot bring it
+     back. Rename it back by hand to re-arm — but per the Dispatch Contract
+     (docs/prd/ROUTER_V2_DURABLE_DISPATCH.md §2b) the worker stays OFF until the
+     Phase-2 acceptance bar passes.
+
+Wake-loop watchers (ai.sirsi.router.wake.*) and the router supervisor are never touched.
+Idempotent; --dry-run reports the full plan without changing anything.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		res, err := router.QuarantineWorkers(quarantineWorkerDryRun, nil)
+		if err != nil {
+			return err
+		}
+		if len(res.BootedOut) == 0 && len(res.Quarantined) == 0 {
+			fmt.Println("✓ No claude build-worker LaunchAgents found — nothing to quarantine.")
+			return nil
+		}
+		verb := ""
+		if res.DryRun {
+			verb = "would be "
+		}
+		for _, label := range res.BootedOut {
+			fmt.Printf("✔ %sbooted out: %s\n", verb, label)
+		}
+		for _, p := range res.Quarantined {
+			fmt.Printf("✔ %squarantined: %s → %s.quarantined\n", verb, p, filepath.Base(p))
+		}
+		fmt.Println("  Wake-loops and the supervisor were not touched.")
+		return nil
+	},
+}
+
 // routerBoardCmd prints the owner-actionable router board the conduit regenerates
 // at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
 // threads). Read-only convenience mirror of what the menubar Router view renders.
@@ -520,5 +567,6 @@ func init() {
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd)
+	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd)
 }
