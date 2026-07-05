@@ -8,6 +8,17 @@
 
 ---
 
+## 2026-07-04 — INCIDENT: the runaway executor — 19,195 sessions, 11,564 items, 1.3 TB
+**What broke:** for six weeks the visible symptom was "agent threads never stay armed" — and the theory (an arming gap) was wrong. The watchers were healthy. A build-worker LaunchAgent spawned a full headless agentic session for EVERY open router item and closed none: **19,195 sessions started, 0 completed**. Then the first stopgap (a retry cap) flooded **11,564 escalation items in one night** because its give-up path wasn't idempotent. Then the worker's timeout-killed `go test` runs orphaned **~1.3 TB of build trees in 36 hours**, filling the disk to 100% — the owner hit ENOSPC, and *nothing alarmed at any point*.
+
+**The hard truth (the mistakes stay in):** we spent six weeks re-arming healthy watchers because delivery was measurable and completion wasn't. The executor's design — one full agentic session per item, no closure protocol, no idempotency, no budget — was the disease, and a stopgap bolted onto a runaway system inherited the runaway.
+
+**Fix (three independent layers, worker stays OFF):** (1) the **Dispatch Contract** (PRD §2b, PR #160, codex-SME APPROVED after an adversarial round-1 FAIL): the routerstore becomes the only executable dispatch authority — fenced lease tokens, claim-only execution, idempotent send facade + quotas, keyed-singleton escalations, circuit breakers, budgets; the claude build-worker stays OFF until safety tests reproduce BOTH incidents and pass. (2) The hourly sweep **reaps orphaned build trees** >24h old (PR #161) and checks the supervisor of record, not a migrated-away daemon (PR #159). (3) **𓁵 Sekhmet's host backstop** (ADR-035, this entry's PR): a "Runaway Executor" doctor finding that alarms on the two live disease signatures — headless-session flood and fresh build-tree churn — carrying a real lever, `sirsi router quarantine-worker`, which stops every claude build-worker LaunchAgent durably and never touches the wake-loops.
+
+**Full canon:** [`docs/ADR-035-RUNAWAY-PROOF-EXECUTION.md`](ADR-035-RUNAWAY-PROOF-EXECUTION.md) · [`docs/case-studies/2026-07-04-runaway-executor.md`](case-studies/2026-07-04-runaway-executor.md) · [`docs/prd/ROUTER_V2_DURABLE_DISPATCH.md`](prd/ROUTER_V2_DURABLE_DISPATCH.md) §2b.
+
+---
+
 ## 2026-07-03 — RECURRENCE: the broker was correct, but two callers never went through it
 **What broke:** the owner reported the machine repeatedly "churning and effectively shutting down" while running `codex`. Independent diagnosis (claude-home) found 96% swap used and ~1 GB free of 51.5 GB — a symptom nearly identical to 2026-06-18. Codex itself turned out to be a mostly cloud-API-driven CLI, not the actual RAM driver — just what was running when the machine tipped over.
 
