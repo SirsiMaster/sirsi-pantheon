@@ -222,8 +222,10 @@ func (c *CoverageAssessor) Assess() ([]Assessment, error) {
 
 	results := ParseCoverageOutput(output)
 
-	// Save fresh results to cache for future diff runs.
-	if cache := c.coverageCachePath(); cache != "" {
+	// Save fresh results to cache for future diff runs — but never from fast
+	// mode: its output IS the cache round-tripped, and re-saving a parse of it
+	// can only preserve or degrade the cache, never improve it.
+	if cache := c.coverageCachePath(); cache != "" && !c.SkipTests {
 		_ = saveCoverageCache(cache, results)
 	}
 
@@ -243,16 +245,19 @@ func (c *CoverageAssessor) coverageCachePath() string {
 }
 
 // runCoverage executes coverage — either skip, diff-only, or full scan.
+//
+// Fast mode (SkipTests — the DEFAULT for `sirsi audit`) NEVER runs the test
+// suite. It used to fall through to a full `go test -cover ./...` when the
+// cache was cold "so the score wouldn't be built on missing data" — which
+// silently upgraded a documented ~2s verb into a 5+ minute full-suite run on
+// any cold-cache machine: it blew the UX contract's 120s budget
+// (TestUXContract_JSONClean/audit_json), stalled every surface that shells
+// `sirsi audit` (the #158 menubar disease class), and blocked the Ma'at
+// pre-push gate (2026-07-04). Cold-cache modules now surface as honest
+// warnings naming `--full` as the remedy instead of a silent stall.
 func (c *CoverageAssessor) runCoverage() (string, error) {
 	if c.SkipTests {
-		if out, ok := c.runSkipTests(); ok {
-			return out, nil
-		}
-		// The cache is missing or does not cover every threshold module.
-		// Fall through to a real scan: a fast verdict built on missing data
-		// would report "no coverage data found" for perfectly healthy
-		// modules and drag the feather weight down. The scan repopulates
-		// the cache, so subsequent fast runs stay fast.
+		return c.runSkipTests(), nil
 	}
 
 	if c.Runner != nil {
@@ -266,15 +271,14 @@ func (c *CoverageAssessor) runCoverage() (string, error) {
 	return c.runFullCoverage()
 }
 
-// runSkipTests returns cached coverage without running any tests.
-// The second return is false when the cache is absent or incomplete
-// (i.e. it lacks entries for one or more threshold modules), signaling
-// the caller to fall back to a real coverage scan.
-func (c *CoverageAssessor) runSkipTests() (string, bool) {
+// runSkipTests returns whatever cached coverage exists without running any
+// tests — possibly partial, possibly empty. Threshold modules absent from the
+// cache score as cold-cache warnings in evaluate (never a silent scan).
+func (c *CoverageAssessor) runSkipTests() string {
 	cache := c.coverageCachePath()
 	cached, err := loadCoverageCache(cache)
-	if err != nil || !c.cacheCoversThresholds(cached) {
-		return "", false
+	if err != nil {
+		return "" // cold cache — every threshold module reports honestly cold
 	}
 	var lines []string
 	for _, r := range cached {
@@ -284,7 +288,7 @@ func (c *CoverageAssessor) runSkipTests() (string, bool) {
 			lines = append(lines, fmt.Sprintf("ok\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t(cached)\tcoverage: %.1f%% of statements", r.Package, r.Coverage))
 		}
 	}
-	return strings.Join(lines, "\n"), true
+	return strings.Join(lines, "\n")
 }
 
 // runFullCoverage runs go test -cover on all packages, streaming results
@@ -440,6 +444,9 @@ func (c *CoverageAssessor) runDiffCoverage() (string, error) {
 }
 
 // cacheCoversThresholds checks if the cache has data for all threshold modules.
+// Used by DIFF mode only: diff mode explicitly runs tests, so falling back to
+// a full scan there is a scope widening, not a mode violation. Fast mode
+// (SkipTests) never consults this — it never scans (see runCoverage).
 func (c *CoverageAssessor) cacheCoversThresholds(cached []CoverageResult) bool {
 	if len(cached) == 0 {
 		return false
@@ -647,6 +654,15 @@ func (c *CoverageAssessor) evaluate(results []CoverageResult) []Assessment {
 			a.FeatherWeight = 0
 			a.Message = fmt.Sprintf("%s: no test files", t.Module)
 			a.Remediation = fmt.Sprintf("Add tests to internal/%s/", t.Module)
+
+		case !hasCov && c.SkipTests:
+			// Fast mode with this module absent from the coverage cache: the
+			// honest state is "unmeasured", not "unhealthy" — and fast mode
+			// never runs the suite to find out (see runCoverage).
+			a.Verdict = VerdictWarning
+			a.FeatherWeight = 50
+			a.Message = fmt.Sprintf("%s: coverage cache cold (fast mode never runs tests)", t.Module)
+			a.Remediation = "Run `sirsi maat audit --full` to measure coverage and warm the cache"
 
 		case !hasCov:
 			// Module not found in the output — might not exist or might be skipped.
