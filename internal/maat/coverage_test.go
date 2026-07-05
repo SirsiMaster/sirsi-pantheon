@@ -257,45 +257,10 @@ func TestParseCoverageOutputZeroCoverageWithTests(t *testing.T) {
 	}
 }
 
-// --- SkipTests cache-fallback tests ---
-
-func TestSkipTestsFallsBackWhenCacheIncomplete(t *testing.T) {
-	cachePath := filepath.Join(t.TempDir(), "coverage-cache.json")
-	// Cache only knows about "cleaner" — "ka" is missing.
-	if err := saveCoverageCache(cachePath, []CoverageResult{
-		{Package: "cleaner", Coverage: 85.0},
-	}); err != nil {
-		t.Fatalf("saveCoverageCache: %v", err)
-	}
-
-	runnerCalled := false
-	ca := &CoverageAssessor{
-		Thresholds: []CoverageThreshold{
-			{Module: "cleaner", MinCoverage: 80},
-			{Module: "ka", MinCoverage: 80},
-		},
-		CachePath: cachePath,
-		SkipTests: true,
-		Runner: func() (string, error) {
-			runnerCalled = true
-			return "ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/cleaner\t0.2s\tcoverage: 85.0% of statements\n" +
-				"ok  \tgithub.com/SirsiMaster/sirsi-pantheon/internal/ka\t0.3s\tcoverage: 90.0% of statements", nil
-		},
-	}
-
-	assessments, err := ca.Assess()
-	if err != nil {
-		t.Fatalf("Assess: %v", err)
-	}
-	if !runnerCalled {
-		t.Error("expected fallback to a real scan when cache does not cover all thresholds")
-	}
-	for _, a := range assessments {
-		if strings.Contains(a.Message, "no coverage data found") {
-			t.Errorf("module %s reported no coverage data despite fallback", a.Subject)
-		}
-	}
-}
+// --- SkipTests (fast mode) cache tests ---
+// The old TestSkipTestsFallsBackWhenCacheIncomplete pinned the silent
+// full-suite fallback removed on 2026-07-05 — its inverse now lives in
+// coverage_fastmode_test.go (fast mode NEVER scans; cold modules warn).
 
 func TestSkipTestsUsesCompleteCache(t *testing.T) {
 	cachePath := filepath.Join(t.TempDir(), "coverage-cache.json")
