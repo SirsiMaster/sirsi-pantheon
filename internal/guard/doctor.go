@@ -122,6 +122,8 @@ func remediationKind(f DiagnosticFinding) FixKind {
 	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)",
 		"Thread Leaks", "Swap Usage":
 		return FixRelief // eases the live cause; trend counts decay, not drop
+	case "Runaway Executor":
+		return FixRelief // quarantine stops the spawner; artifacts drain via the hourly sweep
 	}
 	return ""
 }
@@ -177,6 +179,12 @@ func remediationCommand(f DiagnosticFinding) string {
 		}
 	case "Local Snapshots":
 		return "sirsi reclaim-snapshots" // optional disk reclaim, offered even at Info
+	case "Runaway Executor":
+		if warn {
+			// 𓁵 Sekhmet's kill switch (ADR-035): bootout + quarantine ONLY the
+			// claude build-worker LaunchAgents; wake-loops/supervisor untouched.
+			return "sirsi router quarantine-worker"
+		}
 	}
 	return ""
 }
@@ -324,6 +332,7 @@ var doctorChecks = []doctorCheck{
 	{"Thread Leaks", []string{"Thread Leaks"},
 		func(_ platform.Platform, r *DoctorReport) { checkThreadLeaks(r) }},
 	{"Sirsi Processes", []string{"Sirsi Processes"}, checkSirsiProcesses},
+	{"Runaway Executor", []string{"Runaway Executor"}, checkRunawayExecutor},
 	{"Local Snapshots", []string{"Local Snapshots"},
 		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
 }
