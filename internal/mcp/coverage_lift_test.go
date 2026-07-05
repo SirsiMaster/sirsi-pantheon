@@ -67,6 +67,9 @@ func clearGitEnv(t *testing.T) {
 func setupRouterRepoRoot(t *testing.T) string {
 	t.Helper()
 	clearGitEnv(t)
+	// Sandbox the dispatch store too: without this a test send would write a
+	// row into the LIVE ~/.sirsi/router.db (the test-side-effects storm class).
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 	root := t.TempDir()
 	rdir := filepath.Join(root, ".agents", "idea-router")
 	for _, d := range []string{"proposals", "reviews", "decisions", "items"} {
@@ -119,7 +122,9 @@ func extractDocID(t *testing.T, text string) string {
 func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 	setupRouterRepoRoot(t)
 
-	// Plain submit.
+	// Phase 3: an UNADDRESSED submit is refused — every item is addressed to
+	// ONE inbox (ADR-024; the proposals/ directory this used to write to was
+	// retired).
 	res, err := handleRouterSubmit(map[string]interface{}{
 		"type":    "proposal",
 		"author":  "claude",
@@ -129,12 +134,11 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleRouterSubmit: %v", err)
 	}
-	if res.IsError {
-		t.Fatalf("submit failed: %s", resultText(t, res))
+	if !res.IsError || !strings.Contains(resultText(t, res), "addressed_to is required") {
+		t.Fatalf("unaddressed submit must be refused with guidance, got: %s", resultText(t, res))
 	}
-	plainID := extractDocID(t, resultText(t, res))
 
-	// Addressed submit lands in the target inbox.
+	// Addressed submit lands in the target's items/ inbox via the facade.
 	res, err = handleRouterSubmit(map[string]interface{}{
 		"type":         "review",
 		"author":       "claude",
@@ -149,56 +153,32 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 		t.Fatalf("addressed submit failed: %s", resultText(t, res))
 	}
 	text := resultText(t, res)
-	if !strings.Contains(text, "Added to codex's inbox") {
-		t.Errorf("expected inbox note, got: %s", text)
+	if !strings.Contains(text, "Added to codex's inbox (items/)") {
+		t.Errorf("expected items/ inbox note, got: %s", text)
 	}
 	addressedID := extractDocID(t, text)
 
-	// Peek: item pending, not cleared.
+	// Poll lists the canonical items/ inbox — the same view as `router pull`.
 	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex"})
 	if err != nil {
-		t.Fatalf("handleRouterPoll peek: %v", err)
+		t.Fatalf("handleRouterPoll: %v", err)
 	}
 	text = resultText(t, res)
-	if !strings.Contains(text, "1 pending") || !strings.Contains(text, addressedID) {
-		t.Errorf("peek should list the pending item, got: %s", text)
-	}
-	if !strings.Contains(text, "Items remain pending") {
-		t.Errorf("peek must not clear the inbox, got: %s", text)
+	if !strings.Contains(text, "1 open item(s)") || !strings.Contains(text, addressedID) {
+		t.Errorf("poll should list the open item, got: %s", text)
 	}
 
-	// Ack clears it.
+	// ack only clears LEGACY state.json pending entries — the items/ inbox is
+	// closed by `sirsi router close`, never by an ack.
 	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex", "ack": true})
 	if err != nil {
 		t.Fatalf("handleRouterPoll ack: %v", err)
 	}
-	if !strings.Contains(resultText(t, res), "Acknowledged 1 items") {
-		t.Errorf("expected ack confirmation, got: %s", resultText(t, res))
+	if !strings.Contains(resultText(t, res), "1 open item(s)") {
+		t.Errorf("ack must not clear the items/ inbox, got: %s", resultText(t, res))
 	}
 
-	// Inbox now clear.
-	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex"})
-	if err != nil {
-		t.Fatalf("handleRouterPoll after ack: %v", err)
-	}
-	if !strings.Contains(resultText(t, res), "No pending work") {
-		t.Errorf("inbox should be clear after ack, got: %s", resultText(t, res))
-	}
-
-	// Time-based poll (no agent) sees both docs.
-	res, err = handleRouterPoll(map[string]interface{}{
-		"since": time.Now().Add(-time.Hour).Format(time.RFC3339),
-		"limit": float64(10),
-	})
-	if err != nil {
-		t.Fatalf("handleRouterPoll time-based: %v", err)
-	}
-	text = resultText(t, res)
-	if !strings.Contains(text, plainID) || !strings.Contains(text, addressedID) {
-		t.Errorf("time-based poll should list both docs, got: %s", text)
-	}
-
-	// Invalid since falls back to the 24h default.
+	// Invalid since falls back to the 24h default (legacy time-based view).
 	res, err = handleRouterPoll(map[string]interface{}{"since": "not-a-timestamp"})
 	if err != nil {
 		t.Fatalf("handleRouterPoll bad since: %v", err)
@@ -207,26 +187,26 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 		t.Errorf("bad since should fall back to default, got error: %s", resultText(t, res))
 	}
 
-	// router_list shows topics, read markers, and documents.
+	// router_list still renders the legacy status view.
 	res, err = handleRouterList(nil)
 	if err != nil {
 		t.Fatalf("handleRouterList: %v", err)
 	}
 	text = resultText(t, res)
-	for _, want := range []string{"Idea Router Status", "test-topic", "done-topic", "All Documents (2)"} {
+	for _, want := range []string{"Idea Router Status", "test-topic", "done-topic"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("router_list missing %q in: %s", want, text)
 		}
 	}
 
-	// router_get returns the full document.
-	res, err = handleRouterGet(map[string]interface{}{"id": plainID})
+	// router_get serves the canonical items/ file for the dispatched id.
+	res, err = handleRouterGet(map[string]interface{}{"id": addressedID})
 	if err != nil {
 		t.Fatalf("handleRouterGet: %v", err)
 	}
 	text = resultText(t, res)
-	if !strings.Contains(text, "Body of the proposal.") {
-		t.Errorf("router_get should include content, got: %s", text)
+	if !strings.Contains(text, "Please read.") || !strings.Contains(text, "## Instructions") {
+		t.Errorf("router_get should serve the items/ markdown, got: %s", text)
 	}
 
 	// Missing and unknown IDs are error results.
@@ -243,24 +223,30 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 func TestHandleRouterSubmit_InvalidAuthorAndType(t *testing.T) {
 	setupRouterRepoRoot(t)
 
+	// Phase 3: the legacy two-agent author whitelist is gone — the items
+	// model carries the full multi-agent id space (claude-pantheon, gemma,
+	// registry-police, …), exactly like `sirsi router send --from`.
 	res, err := handleRouterSubmit(map[string]interface{}{
-		"type":    "proposal",
-		"author":  "mallory",
-		"title":   "Bad Author",
-		"content": "x",
+		"type":         "proposal",
+		"author":       "mallory",
+		"title":        "Any Agent Id",
+		"content":      "x",
+		"addressed_to": "claude-home",
 	})
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
 	}
-	if !res.IsError {
-		t.Error("non-whitelisted author should be rejected")
+	if res.IsError {
+		t.Errorf("arbitrary agent ids are valid senders in the items model, got: %s", resultText(t, res))
 	}
 
+	// The ADR-024 §5 type vocabulary is still enforced (by the store facade).
 	res, _ = handleRouterSubmit(map[string]interface{}{
-		"type":    "junk-type",
-		"author":  "claude",
-		"title":   "Bad Type",
-		"content": "x",
+		"type":         "junk-type",
+		"author":       "claude",
+		"title":        "Bad Type",
+		"content":      "x",
+		"addressed_to": "codex",
 	})
 	if !res.IsError {
 		t.Error("unknown doc type should be rejected")
@@ -295,11 +281,11 @@ func TestHandleRouterWait_PendingItemsReturnImmediately(t *testing.T) {
 		t.Fatalf("router_wait blocked %v despite a pending item", elapsed)
 	}
 	text := resultText(t, res)
-	if res.IsError || !strings.Contains(text, "item(s) arrived for codex") {
-		t.Errorf("expected arrival notice, got: %s", text)
+	if res.IsError || !strings.Contains(text, "item(s) waiting for codex") {
+		t.Errorf("expected waiting notice, got: %s", text)
 	}
 	if !strings.Contains(text, "Wake Up Codex") {
-		t.Errorf("expected document title in arrival list, got: %s", text)
+		t.Errorf("expected document title in waiting list, got: %s", text)
 	}
 }
 

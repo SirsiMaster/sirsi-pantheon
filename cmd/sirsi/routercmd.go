@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
@@ -185,15 +186,26 @@ recipient picks it up next time they run sirsi router pull <their-id>.
 		if err != nil {
 			return fmt.Errorf("--instructions: %w", err)
 		}
-		root, err := workRootEnsure()
+		// Router v2 Phase 3: THE send facade (store-first guards — idempotency,
+		// quotas, breakers — then the items/*.md audit view; §2b axiom 8).
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		id, err := work.SendTyped(root, sendFrom, sendTo, sendTitle, sendType, instr)
+		defer func() { _ = f.Close() }()
+		res, err := f.Send(sendFrom, sendTo, sendTitle, sendType, instr)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, id)
+		if res.Deduped {
+			fmt.Printf("  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", sendFrom, sendTo, res.ID)
+		} else {
+			fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, res.ID)
+		}
 		return nil
 	},
 }
@@ -348,11 +360,18 @@ var routerCloseCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("--result: %w", err)
 		}
-		root, err := workRootEnsure()
+		// Phase 3: the facade closes the canonical file AND mirrors the close
+		// into the store, so the durable index never lies about liveness.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		if err := work.Close(root, args[0], result); err != nil {
+		defer func() { _ = f.Close() }()
+		if err := f.CloseItem(args[0], result); err != nil {
 			return err
 		}
 		fmt.Printf("  Closed %s\n", args[0])

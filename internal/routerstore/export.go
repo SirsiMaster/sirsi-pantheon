@@ -91,3 +91,22 @@ func renderMarkdown(it Item) string {
 	}
 	return b.String()
 }
+
+// ExportItem writes ONE item's canonical markdown into dir and returns the
+// file path — the §2b axiom-8 dual-write: the store row is the dispatch
+// authority; the file is the human audit view, byte-identical to what the
+// file router's own writers would have produced.
+func (s *Store) ExportItem(dir, id string) (string, error) {
+	it, err := s.Get(id)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("routerstore: ExportItem: mkdir %q: %w", dir, err)
+	}
+	path := filepath.Join(dir, it.ID+".md")
+	if err := os.WriteFile(path, []byte(renderMarkdown(it)), 0o644); err != nil {
+		return "", fmt.Errorf("routerstore: ExportItem %q: %w", id, err)
+	}
+	return path, nil
+}
