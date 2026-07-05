@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
@@ -310,32 +311,32 @@ func registerTools(s *Server) {
 
 	s.RegisterTool(Tool{
 		Name:        "router_submit",
-		Description: "Write a proposal, review, or decision to the idea-router. Optionally address it to the other agent so they see it in their inbox via router_poll.",
+		Description: "Send a work item (proposal, review, or decision) to another agent's inbox through the guarded dispatch facade — the same path as `sirsi router send`. Idempotent duplicates dedupe; floods are quota-refused.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
 				"type": {
 					Type:        "string",
-					Description: "Document type: proposal, review, or decision.",
+					Description: "Item type: proposal, review, or decision.",
 				},
 				"author": {
 					Type:        "string",
-					Description: "Who is submitting: codex or claude.",
+					Description: "Sending agent id (e.g. claude-pantheon, codex-home).",
 				},
 				"title": {
 					Type:        "string",
-					Description: "Title of the document.",
+					Description: "Title of the work item.",
 				},
 				"content": {
 					Type:        "string",
-					Description: "Full markdown content of the document.",
+					Description: "Full markdown instructions for the recipient.",
 				},
 				"addressed_to": {
 					Type:        "string",
-					Description: "Agent who should see this in their inbox: codex or claude. Optional.",
+					Description: "Recipient agent id — every item is addressed to ONE inbox (ADR-024).",
 				},
 			},
-			Required: []string{"type", "author", "title", "content"},
+			Required: []string{"type", "author", "title", "content", "addressed_to"},
 		},
 	}, handleRouterSubmit)
 
@@ -1198,6 +1199,12 @@ func handleNotificationHistory(args map[string]interface{}) (*ToolResult, error)
 
 // ── Router Handlers ──────────────────────────────────────────────
 
+// handleRouterSubmit routes through THE dispatch facade (Router v2 Phase 3):
+// the same store-first guarded path the CLI's `sirsi router send` uses —
+// idempotency, per-sender quotas, and breakers run BEFORE dispatch, then the
+// items/<id>.md audit view is dual-written. The pre-ADR-024 path this
+// replaces wrote to the retired proposals//reviews//decisions/ directories
+// + state.json inboxes, which nothing watches anymore.
 func handleRouterSubmit(args map[string]interface{}) (*ToolResult, error) {
 	docType, _ := args["type"].(string)
 	author, _ := args["author"].(string)
@@ -1207,34 +1214,29 @@ func handleRouterSubmit(args map[string]interface{}) (*ToolResult, error) {
 	if docType == "" || author == "" || title == "" || content == "" {
 		return textResult("Error: type, author, title, and content are all required.", true), nil
 	}
+	addressedTo, _ := args["addressed_to"].(string)
+	if addressedTo == "" {
+		return textResult("Error: addressed_to is required — every router item is addressed to ONE agent inbox (ADR-024; the unaddressed proposals/ directory was retired).", true), nil
+	}
 
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
-
-	r, err := router.New(repoRoot)
+	f, err := dispatch.Open(repoRoot)
 	if err != nil {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
+	defer func() { _ = f.Close() }()
 
-	addressedTo, _ := args["addressed_to"].(string)
-
-	var id string
-	if addressedTo != "" {
-		id, err = r.SubmitAddressed(router.DocType(docType), author, title, content, addressedTo)
-	} else {
-		id, err = r.Submit(router.DocType(docType), author, title, content)
-	}
+	res, err := f.Send(author, addressedTo, title, docType, content)
 	if err != nil {
-		return textResult(fmt.Sprintf("Error writing document: %v", err), true), nil
+		return textResult(fmt.Sprintf("Dispatch refused: %v", err), true), nil
 	}
-
-	result := fmt.Sprintf("Submitted %s %q (ID: %s)", docType, title, id)
-	if addressedTo != "" {
-		result += fmt.Sprintf("\nAdded to %s's inbox. They will see it via router_poll.", addressedTo)
+	if res.Deduped {
+		return textResult(fmt.Sprintf("Deduped: an identical %s to %s already exists this window (ID: %s). Nothing was appended.", docType, addressedTo, res.ID), false), nil
 	}
-	return textResult(result, false), nil
+	return textResult(fmt.Sprintf("Submitted %s %q (ID: %s)\nAdded to %s's inbox (items/). They will see it via router_poll or `sirsi router pull`.", docType, title, res.ID, addressedTo), false), nil
 }
 
 func handleRouterNotify(args map[string]interface{}) (*ToolResult, error) {
@@ -1275,35 +1277,44 @@ func handleRouterPoll(args map[string]interface{}) (*ToolResult, error) {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
 
-	// If agent is set, use inbox semantics (peek without clearing)
+	// If agent is set, list the ONE canonical inbox — items/ (ADR-024) — via
+	// the same facade the CLI's `sirsi router pull` uses (Phase 3). The old
+	// path listed state.json pending ids, a parallel inbox nothing fills now.
 	if agent != "" {
 		ack, _ := args["ack"].(bool)
 
-		pending, pollErr := r.PollInbox(agent)
-		if pollErr != nil {
-			return textResult(fmt.Sprintf("Error: %v", pollErr), true), nil
+		f, fErr := dispatch.Open(repoRoot)
+		if fErr != nil {
+			return textResult(fmt.Sprintf("Error: %v", fErr), true), nil
+		}
+		defer func() { _ = f.Close() }()
+		items, listErr := f.Inbox(agent)
+		if listErr != nil {
+			return textResult(fmt.Sprintf("Error: %v", listErr), true), nil
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Inbox for %s: %d pending\n\n", agent, len(pending)))
-		for _, id := range pending {
-			doc, getErr := r.Get(id)
-			if getErr != nil {
-				sb.WriteString(fmt.Sprintf("  [?] %s (could not load: %v)\n", id, getErr))
-				continue
+		sb.WriteString(fmt.Sprintf("Inbox for %s: %d open item(s)\n\n", agent, len(items)))
+		for _, it := range items {
+			kind := it.Type
+			if kind == "" {
+				kind = "item"
 			}
-			sb.WriteString(fmt.Sprintf("  [%s] %s — %s (by %s)\n", doc.Type, doc.ID, doc.Title, doc.Author))
+			sb.WriteString(fmt.Sprintf("  [%s] %s — %s (from %s)\n", kind, it.ID, it.Title, it.From))
 		}
-		if len(pending) == 0 {
-			sb.WriteString("  No pending work. Inbox is clear.\n")
-		} else if ack {
-			if ackErr := r.AckInbox(agent, pending); ackErr != nil {
-				sb.WriteString(fmt.Sprintf("\nFailed to acknowledge: %v\n", ackErr))
-			} else {
-				sb.WriteString(fmt.Sprintf("\nAcknowledged %d items. Use router_get to read details.\n", len(pending)))
-			}
+		if len(items) == 0 {
+			sb.WriteString("  No open work. Inbox is clear.\n")
 		} else {
-			sb.WriteString("\nItems remain pending. Call with ack=true to clear, or use router_get to read first.\n")
+			sb.WriteString("\nUse router_get <id> to read; close with `sirsi router close <id> --result …` when done.\n")
+		}
+		// Legacy state.json pending entries (pre-ADR-024) can still be acked
+		// away as a migration helper; this never touches items/*.md.
+		if ack {
+			if pending, pErr := r.PollInbox(agent); pErr == nil && len(pending) > 0 {
+				if ackErr := r.AckInbox(agent, pending); ackErr == nil {
+					sb.WriteString(fmt.Sprintf("\nAcknowledged %d LEGACY state.json pending entr(y/ies) (migration helper; items/ is the inbox).\n", len(pending)))
+				}
+			}
 		}
 		return textResult(sb.String(), false), nil
 	}
@@ -1393,6 +1404,17 @@ func handleRouterGet(args map[string]interface{}) (*ToolResult, error) {
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	// Phase 3: the canonical items/ inbox first (same read the CLI's
+	// `router show` serves), then the legacy proposals//reviews//decisions/
+	// directories so pre-ADR-024 ids stay readable.
+	if f, fErr := dispatch.Open(repoRoot); fErr == nil {
+		text, showErr := f.Show(id)
+		_ = f.Close()
+		if showErr == nil {
+			return textResult(text, false), nil
+		}
 	}
 
 	r, err := router.New(repoRoot)

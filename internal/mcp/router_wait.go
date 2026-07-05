@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
@@ -13,28 +15,14 @@ import (
 // (capped at 50s to stay under the MCP tool-call ceiling). This is the anti-idle
 // primitive: instead of ending a turn and going idle on an empty inbox, a
 // session calls router_wait to stay active until the next item lands.
+//
+// Router v2 Phase 3: this is now a REAL blocking wait over the dispatch
+// facade — an item sent through the facade wakes the waiter event-driven in
+// well under 250ms (PRD /goal #1); legacy file-only writers are caught by the
+// facade's bounded 5s re-check. The 1-second poll loop this replaces was the
+// PRD's "honest poll loop in a long-poll costume".
 
 const routerWaitMaxTimeout = 50
-
-// waitForInbox polls the agent's inbox roughly once per second until it is
-// non-empty or the deadline passes. Returns the pending item IDs, which may be
-// empty if the deadline arrived first. Files remain the source of truth; this is
-// a thin blocking wrapper over the same PollInbox that router_poll uses.
-func waitForInbox(r *router.Router, agent string, deadline time.Time) ([]string, error) {
-	for {
-		pending, err := r.PollInbox(agent)
-		if err != nil {
-			return nil, err
-		}
-		if len(pending) > 0 {
-			return pending, nil
-		}
-		if !time.Now().Before(deadline) {
-			return nil, nil
-		}
-		time.Sleep(time.Second)
-	}
-}
 
 func handleRouterWait(args map[string]interface{}) (*ToolResult, error) {
 	agent, _ := args["agent"].(string)
@@ -54,29 +42,29 @@ func handleRouterWait(args map[string]interface{}) (*ToolResult, error) {
 	if err != nil {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
-	r, err := router.New(repoRoot)
+	f, err := dispatch.Open(repoRoot)
 	if err != nil {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
+	defer func() { _ = f.Close() }()
 
-	pending, err := waitForInbox(r, agent, time.Now().Add(time.Duration(timeout)*time.Second))
+	items, err := f.Wait(context.Background(), agent, time.Duration(timeout)*time.Second)
 	if err != nil {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
-	if len(pending) == 0 {
+	if len(items) == 0 {
 		return textResult(fmt.Sprintf("router_wait: no inbox items for %s after %ds. Inbox is clear; re-call to keep waiting.", agent, timeout), false), nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("router_wait: %d item(s) arrived for %s\n\n", len(pending), agent))
-	for _, id := range pending {
-		doc, getErr := r.Get(id)
-		if getErr != nil {
-			sb.WriteString(fmt.Sprintf("  [?] %s (could not load: %v)\n", id, getErr))
-			continue
+	sb.WriteString(fmt.Sprintf("router_wait: %d item(s) waiting for %s\n\n", len(items), agent))
+	for _, it := range items {
+		kind := it.Type
+		if kind == "" {
+			kind = "item"
 		}
-		sb.WriteString(fmt.Sprintf("  [%s] %s — %s (by %s)\n", doc.Type, doc.ID, doc.Title, doc.Author))
+		sb.WriteString(fmt.Sprintf("  [%s] %s — %s (from %s)\n", kind, it.ID, it.Title, it.From))
 	}
-	sb.WriteString("\nUse router_get to read, or router_poll with ack=true to clear.\n")
+	sb.WriteString("\nUse router_get to read; close with `sirsi router close <id> --result …` when done.\n")
 	return textResult(sb.String(), false), nil
 }
