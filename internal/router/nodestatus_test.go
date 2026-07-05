@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,7 +130,11 @@ func TestCollectLaunchAgentsInventoriesKnownHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	agents := CollectLaunchAgents("/tmp/repo", nil)
+	// Deterministic stub: nothing loaded. (nil now means "shell the real
+	// launchctl", which would make this test depend on the host's launchd.)
+	agents := CollectLaunchAgents("/tmp/repo", func(args ...string) error {
+		return fmt.Errorf("stub: not loaded")
+	})
 	var found bool
 	for _, h := range agents {
 		if h.Label == "ai.sirsi.pantheon" {

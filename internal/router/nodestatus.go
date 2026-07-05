@@ -176,6 +176,16 @@ type WorkItemFailure struct {
 // LaunchctlChecker abstracts launchctl probing for testability.
 type LaunchctlChecker func(args ...string) error
 
+// DefaultLaunchctlChecker shells the real launchctl. CollectNodeStatus and
+// CollectLaunchAgents fall back to this when the caller passes nil — before
+// this default existed every production caller (CLI node-status, doctor,
+// dashboard, menubar) passed nil, so Loaded/DaemonLoaded were never probed at
+// all and the fabric board reported loaded=false for daemons launchctl showed
+// running with live PIDs (owner screenshot 2026-07-04).
+func DefaultLaunchctlChecker(args ...string) error {
+	return exec.Command("launchctl", args...).Run()
+}
+
 // claudeAuthProbeTimeout is how long DefaultAuthProbe waits for the Claude CLI to
 // answer the auth ping. A cold Claude CLI (first invocation after boot, or after
 // the model process was reaped) routinely takes well over the old 8s to print its
@@ -298,6 +308,9 @@ func isAuthError(output string) bool {
 // CollectNodeStatus gathers the Horus local-node view from all sources.
 // Pass nil for authProbe to use DefaultAuthProbe.
 func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authProbe ...AuthProbeFunc) (*NodeStatus, error) {
+	if launchctlCheck == nil {
+		launchctlCheck = DefaultLaunchctlChecker
+	}
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 
 	ns := &NodeStatus{
@@ -492,12 +505,13 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		}
 	}
 
-	if launchctlCheck != nil {
-		userDomain := "" // caller provides the full argument
-		// We check by calling print on the label
-		if err := launchctlCheck("print", userDomain+ns.DaemonLabel); err == nil {
-			ns.DaemonLoaded = true
-		}
+	// `launchctl list <label>` targets the caller's own session domain and
+	// exits 0 iff the job is loaded (113 when it is not). The previous probe,
+	// `launchctl print <label>`, requires a full domain target (gui/<uid>/…)
+	// and without one ALWAYS exits 64 — so even an injected checker could
+	// never report a loaded daemon.
+	if err := launchctlCheck("list", ns.DaemonLabel); err == nil {
+		ns.DaemonLoaded = true
 	}
 
 	// --- Agent CLI health ---
@@ -561,6 +575,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 // operator can see stragglers `sirsi router install-daemons` will migrate
 // away, but marked legacy so no surface alarms on their (expected) absence.
 func CollectLaunchAgents(repoRoot string, launchctlCheck LaunchctlChecker) []LaunchAgentHealth {
+	if launchctlCheck == nil {
+		launchctlCheck = DefaultLaunchctlChecker
+	}
 	legacy := DefaultServiceOptions(repoRoot, "sirsi")
 	home, _ := os.UserHomeDir()
 	agentDir := filepath.Join(home, "Library", "LaunchAgents")
@@ -589,10 +606,10 @@ func CollectLaunchAgents(repoRoot string, launchctlCheck LaunchctlChecker) []Lau
 				specs[i].ProgramFound = true
 			}
 		}
-		if launchctlCheck != nil {
-			if err := launchctlCheck("print", specs[i].Label); err == nil {
-				specs[i].Loaded = true
-			}
+		// `list <label>` is the domain-correct loaded probe; `print <label>`
+		// (no domain target) always exits 64 — see CollectNodeStatus.
+		if err := launchctlCheck("list", specs[i].Label); err == nil {
+			specs[i].Loaded = true
 		}
 	}
 	return specs
