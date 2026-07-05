@@ -29,3 +29,21 @@
 - Pantheon = shared bare repo + multi-worktree; lanes live under /private/tmp/lane-*. lane-incident was reused for 3 branches this session — check `git status -sb` before committing.
 - The menubar home-row Router badge caches its blocker count; drill-in refreshes. Owner runs the SwiftUI `~/Applications/Sirsi Menubar.app` (built Jul 2 23:14, has the legacy filter — no rebuild needed).
 - Sekhmet thresholds: sessions 6/12, trees 1500/4000 (post-#165). Baseline data: heavy dev day = 389 trees.
+
+---
+
+## 2026-07-05 UPDATE — Phase 3 DONE (same thread, post-crash resume)
+
+**Landed since the section above:**
+- **#164, #165, #166 MERGED** (Phase 2 + thresholds + docs).
+- **#167 MERGED** — maat fast mode NEVER runs the test suite: cold coverage cache warns honestly (`--full` named as remedy), fast runs don't rewrite the cache. Proof: cold-cache `audit_json` 120s-timeout-kill → 0.38s. This was the gate flake that blocked pushes.
+- **#168 MERGED** — Router v2 **Phase 3**: `internal/dispatch` is THE facade for `sirsi router send/close` AND MCP `router_submit/poll/get/wait`. Store-first §2b guards at both surfaces (no store row, no dispatch; floods quota-refused; retries deduped), byte-identical `items/*.md` audit dual-write (`routerstore.ExportItem`), `router_wait` = real blocking wait (<250ms facade wake; 5s bounded re-check for legacy writers). The MCP pre-ADR-024 write path (proposals//reviews//decisions/ + state.json) is retired from writes; legacy ids readable. `router_submit` now REQUIRES `addressed_to`; author whitelist replaced by the full agent-id space. Cross-path tests prove /goal #3. `SIRSI_ROUTER_DB` env override sandboxes tests (one polluted live-store row from a pre-override run was purged). CI-only catch fixed: `dispatch.Open` MkdirAlls the store dir (fresh HOME = SQLITE_CANTOPEN otherwise).
+
+**Session crash note:** the CCD session host was silently killed (no crash report = SIGKILL signature) during the concurrent full-test+lint memory-pressure window; no Pantheon process crashed (supervisor KeepAlive respawned; menubar + 9 wake-loops uninterrupted). Lesson: don't run multiple full `go test -cover ./...` suites concurrently with lint on this host.
+
+**Live state:** deployed `~/.local/bin/sirsi` = main @ #168 (v0.23.8-beta stamped); supervisor kickstarted onto it; doctor 100 🟢; Sekhmet OK (1,129 fresh trees from the day's builds — below the #165 threshold, reaper drains); claude-pantheon inbox cleared (10 probes closed with relay proof). Worker still OFF + quarantined.
+
+## Next actions (updated order)
+1. **Phase 4 — migration + cutover** (PRD): `sirsi router migrate` importer (count-in==count-out), dual-read window, stop file writes after deprecation, README/A26/A27 + ADR updates. Then the owner-verified end-to-end §2b bar → worker re-arm decision (owner-gated).
+2. **Board-writer into the binary** (spawn-task chip task_3bea877f): replace `~/.local/bin/sirsi-router-board.sh` with a `sirsi` verb + field-fidelity test vs the menubar decoders.
+3. **v1.0.0-rc1 tag** — owner-gated; evidence standing (Ma'at 100/100, CI green, doctor 100).
