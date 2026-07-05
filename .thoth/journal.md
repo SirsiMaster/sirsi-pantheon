@@ -785,3 +785,15 @@ supervisor live. Done.
 - **Fix 2 — binding-hold gate (#36, `aa41706`)**: native GitHub auto-merge respects required CHECKS, not labels — so a `binding-hold` label alone can't hold a PR. New `.github/workflows/binding-hold.yml` job `binding-hold` passes unlabeled / FAILS when labeled; added (the JOB name) to `required_status_checks` → branch protection blocks merge (auto-merge waits) until a binding reviewer removes the label. Own workflow so relabel re-runs only the gate. Proven live end-to-end: label #35 → gate FAIL → `mergeStateStatus: BLOCKED`; claude-home (reviewer) cleared the label → re-run → CLEAN → merged. Closes the #33 bypass STRUCTURALLY. Extends the Ma'at gate (A25/A28).
 - **Net**: a gate (#36) AND the relay that feeds it (#35), both structural. Remaining open: #8 (router −2,626 LOC, HOLD-FOR-CODEX, `binding-hold` labeled) + #32 (ADR-030 NSPopover Swift, arch-PASS but operator-GUI + fresh-codex gated, `binding-hold` labeled). **Deploy-pending**: installed `sirsi` binary still predates the canonical-router fix (repo-root-cwd workaround holds the relay meanwhile) — goes live on next user-authorized build/reinstall, with the TCC-bundle + self-update deploys.
 - **Lessons**: test-file rebase collisions ≠ pick-a-side (reconstruct both); auto-merge-overrides-hold fires on rebase-push too (gate safety-tier with a required-check label, don't rely on discipline); per-worktree router copies fragment the relay (resolve-to-root). Co-authored to claude-home (binding) + codex (arch post-review on return).
+
+---
+
+## Entry — 2026-07-04 — "The Watchers Were Healthy; the Executor Was the Disease"
+
+**Context**: claude-pantheon session d8b52186. The runaway-executor incident (19,195 sessions/0 closed; 11,564-item flood; 1.3 TB of orphaned build trees → ENOSPC) became canon and got its guards.
+
+**Landed**: #162 fabric-board truth (launchctl `list` probe + real default checker); #163 incident canon (case study + ADR-035 + Sekhmet "Runaway Executor" doctor check + `sirsi router quarantine-worker`); #164 Router-v2 Phase 2 — the §2b Dispatch Contract implemented verbatim in internal/routerstore (fenced leases, send-facade idempotency+quotas, keyed singletons AS DATABASE INVARIANTS, breakers, budgets, <250ms event-driven Wait) with acceptance-bar tests reproducing both incidents under -race; #165 same-day threshold recalibration (a heavy dev day = 389 young trees; warn was 300 → amber on healthy work; now 1500/4000).
+
+**The deeper lesson, again**: every layer that lied to the owner today was an UN-VERSIONED sidecar (the worker script, the board jq that dropped `legacy`). ADR-035 axiom: no executor around the store. Same law, smaller organisms. Board-writer adoption filed as follow-up.
+
+**State**: worker OFF (quarantined durably); re-arm gates on Phase 3 (one facade over the store for CLI+MCP). rc1 evidence: Ma'at 100/100, CI green, TUI merged — tag remains owner-gated.
