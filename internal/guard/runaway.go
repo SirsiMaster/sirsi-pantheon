@@ -22,15 +22,18 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
-// Thresholds sit far above healthy peaks and unmistakably below incident
-// scale. Healthy: the owner's ONE interactive session plus a handful of
-// short-lived headless calls; a parallel `go test ./...` makes tens of build
-// trees. The incident: dozens of concurrent sessions, thousands of trees.
+// Thresholds sit far above heavy-but-legitimate peaks and unmistakably below
+// incident scale. Measured baseline 2026-07-04: a HEAVY dev day — a dozen
+// full-repo builds/tests across four worktrees plus a full `go test -cover
+// ./...` sweep — left 389 trees under 24h, and the original warn=300 read
+// amber on healthy work (the recurring false-alarm class the surfaces canon
+// forbids). The incident produced 7,689 trees in 36h (~5,000+/day). Warn is
+// set ~4× the measured heavy-day peak; a real runaway crosses it in hours.
 const (
 	runawaySessionsWarn     = 6
 	runawaySessionsCritical = 12
-	runawayTreesWarn        = 300
-	runawayTreesCritical    = 1500
+	runawayTreesWarn        = 1500
+	runawayTreesCritical    = 4000
 )
 
 // checkRunawayExecutor emits the "Runaway Executor" finding.
