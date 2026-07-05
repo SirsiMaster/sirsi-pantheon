@@ -564,8 +564,19 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 	for _, col := range columnFor {
 		mapped[col] = true
 	}
+	// Phase-2 §2b dispatch-contract columns are STORE-ONLY lifecycle state
+	// (fenced leases, idempotency keys, singleton keys, bounded counters) —
+	// deliberately NOT mirrored into work.Item: the markdown file is the human
+	// audit view, and a stale or mutated file must never be able to change
+	// lifecycle (§2b axiom 8). Every column outside this documented set stays
+	// under the strict no-invented-columns law.
+	dispatchContractCols := map[string]bool{
+		"lease_token": true, "lease_expires": true, "claimed_by": true,
+		"attempts": true, "idem_key": true, "source_item": true,
+		"failure_class": true, "occurrences": true, "first_seen": true, "last_seen": true,
+	}
 	for col := range schemaCols {
-		if !mapped[col] {
+		if !mapped[col] && !dispatchContractCols[col] {
 			t.Errorf("schema column %q maps to no work.Item field — invented columns are forbidden", col)
 		}
 	}

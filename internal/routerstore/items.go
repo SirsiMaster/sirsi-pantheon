@@ -13,9 +13,15 @@ import (
 // TestFieldFidelityWithWorkItem enforces the columns↔Item-fields bijection.
 const itemCols = "id, from_agent, to_agent, title, type, status, opened, closed, instructions, result, wake_status, wake_attempted_at, wake_adapter, wake_error"
 
-// validStatus reports whether status is one of the accepted item states.
+// validStatus reports whether status is one of the accepted item states —
+// the file-router pair (open/closed) plus the Phase-2 §2b lifecycle states,
+// so a store export/backfill round-trips lifecycle rows without loss.
 func validStatus(status string) bool {
-	return status == "open" || status == "closed"
+	switch status {
+	case StatusOpen, StatusClosed, StatusClaimed, StatusWorking, StatusBlocked, StatusDeadLetter, StatusCompleted:
+		return true
+	}
+	return false
 }
 
 // Put inserts or replaces (upserts) an item by id. It is the low-level mirror

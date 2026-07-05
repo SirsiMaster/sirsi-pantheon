@@ -29,6 +29,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite" // CGO-free SQLite driver (Rule A3)
@@ -73,6 +74,14 @@ type Item struct {
 type Store struct {
 	db  *sql.DB
 	now func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
+
+	// Event-driven dispatch (Phase 2): in-process waiters per agent, woken by
+	// SendGuarded/NotifyAgent. Guarded by waitMu per Rule A21.
+	waitMu  sync.Mutex
+	waiters map[string][]chan struct{}
+	// notifyDir overrides the cross-process FIFO directory (tests); empty
+	// means ~/.sirsi/notify.
+	notifyDir string
 }
 
 // Open opens (creating if absent) the SQLite store at path and applies the
@@ -158,6 +167,48 @@ CREATE TABLE agents (
 CREATE TABLE state (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
+);
+`,
+
+	// v2 — Phase 2 Dispatch Contract (PRD §2b, codex-SME APPROVED 2026-07-04;
+	// ADR-035). Fenced-lease lifecycle columns, idempotency + singleton keys
+	// (enforced as DATABASE invariants via partial unique indexes — the
+	// property whose absence produced the 11,564-item flood), send quotas,
+	// circuit breakers, and dispatch counters.
+	`
+ALTER TABLE items ADD COLUMN lease_token   TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN lease_expires TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN claimed_by    TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN attempts      INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE items ADD COLUMN idem_key      TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN source_item   TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN failure_class TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN occurrences   INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE items ADD COLUMN first_seen    TEXT    NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN last_seen     TEXT    NOT NULL DEFAULT '';
+
+CREATE UNIQUE INDEX idx_items_idem ON items(idem_key) WHERE idem_key <> '';
+CREATE UNIQUE INDEX idx_items_singleton ON items(source_item, failure_class)
+    WHERE source_item <> '' AND failure_class <> '';
+CREATE INDEX idx_items_lease ON items(status, lease_expires);
+
+CREATE TABLE breakers (
+    domain        TEXT PRIMARY KEY,
+    failures      INTEGER NOT NULL DEFAULT 0,
+    tripped_at    TEXT    NOT NULL DEFAULT '',
+    operator_item TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE TABLE send_quota (
+    sender TEXT NOT NULL,
+    bucket TEXT NOT NULL,
+    count  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (sender, bucket)
+);
+
+CREATE TABLE counters (
+    name  TEXT PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0
 );
 `,
 }
