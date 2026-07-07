@@ -89,6 +89,17 @@ struct CommandResult: Decodable {
     let evidence: [CRFact]
     let nextActions: [CRAction]
     enum CodingKeys: String, CodingKey { case command, summary, evidence; case nextActions = "next_actions" }
+
+    // Some results omit evidence/next_actions entirely (e.g. `maat audit`'s
+    // honest "not inside a code repository"). Treat absent as empty so those
+    // still render as the structured summary card, not the raw-text fallback.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        command = try c.decodeIfPresent(String.self, forKey: .command)
+        summary = try c.decode(String.self, forKey: .summary)
+        evidence = try c.decodeIfPresent([CRFact].self, forKey: .evidence) ?? []
+        nextActions = try c.decodeIfPresent([CRAction].self, forKey: .nextActions) ?? []
+    }
 }
 
 // ── Router board (fabric liveness) ───────────────────────────────────────────
@@ -320,6 +331,74 @@ final class SirsiEngine: ObservableObject {
         return line
     }
 
+    // ── project root (repo-scoped verbs) ─────────────────────────────────────
+    //
+    // Ma'at and Net weigh a CODE REPOSITORY, but the app shells `sirsi` from
+    // $HOME (see run/runJSON), where those verbs honestly report "unmeasured —
+    // not inside a code repository" (#170). The optional project root lets the
+    // owner point them at a repo: stored in UserDefaults under the app's domain,
+    // so it is settable from the UI picker or the command line:
+    //   defaults write ai.sirsi.pantheon projectRoot -string ~/Development/sirsi-pantheon
+    // No project configured (or an invalid path) keeps the honest unmeasured
+    // default — the surface never silently weighs the wrong thing.
+    nonisolated static let projectRootKey = "projectRoot"
+
+    // The verbs that measure a repository. Everything else stays pinned to $HOME.
+    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net"]
+
+    // Validated project root (or nil), mirrored for the views.
+    @Published var projectRoot: String?
+    var projectName: String? { projectRoot.map { ($0 as NSString).lastPathComponent } }
+
+    func loadProjectRoot() { projectRoot = Self.validatedProjectRoot() }
+
+    func setProjectRoot(_ path: String?) {
+        if let path, !path.isEmpty {
+            UserDefaults.standard.set(path, forKey: Self.projectRootKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.projectRootKey)
+        }
+        loadProjectRoot()
+    }
+
+    // validatedProjectRoot returns the configured root only when it is an
+    // existing directory that is a git repository (.git may be a dir or, in a
+    // worktree, a file). Anything else → nil, i.e. the honest default.
+    nonisolated static func validatedProjectRoot() -> String? {
+        guard let raw = UserDefaults.standard.string(forKey: projectRootKey), !raw.isEmpty
+        else { return nil }
+        let path = (raw as NSString).expandingTildeInPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
+              FileManager.default.fileExists(atPath: path + "/.git")
+        else { return nil }
+        return path
+    }
+
+    // discoverProjectRoots lists git repositories one level under ~/Development —
+    // the picker's candidate set. Cheap: one directory listing + a .git probe.
+    nonisolated static func discoverProjectRoots() -> [String] {
+        let dev = FileManager.default.homeDirectoryForCurrentUser.path + "/Development"
+        guard let kids = try? FileManager.default.contentsOfDirectory(atPath: dev) else { return [] }
+        return kids.compactMap { name in
+            guard !name.hasPrefix(".") else { return nil }
+            let p = dev + "/" + name
+            return FileManager.default.fileExists(atPath: p + "/.git") ? p : nil
+        }.sorted()
+    }
+
+    // workingDirectory picks the child's cwd: a repo-scoped verb with a valid
+    // project root runs from that repo; everything else runs from $HOME — never
+    // the app's launchd cwd (/), where a path-scoped `sirsi scan` walks the
+    // entire disk (the 2026-07-02 infinite-spinner bug).
+    nonisolated static func workingDirectory(for args: [String]) -> URL {
+        if let verb = args.first, repoScopedVerbs.contains(verb),
+           let root = validatedProjectRoot() {
+            return URL(fileURLWithPath: root)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+
     // Title callback so the AppDelegate can update the menubar label.
     var onTitle: ((String) -> Void)?
 
@@ -506,10 +585,12 @@ final class SirsiEngine: ObservableObject {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
-                // Run from $HOME, never the app's launchd cwd (/): a path-scoped
-                // command like `sirsi scan` launched from / walks the entire disk
-                // (the 2026-07-02 infinite-spinner bug).
-                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                // Repo-scoped verbs (maat, net) run from the configured project
+                // root so they weigh a real repository; everything else runs
+                // from $HOME, never the app's launchd cwd (/), where a
+                // path-scoped `sirsi scan` walks the entire disk (the
+                // 2026-07-02 infinite-spinner bug).
+                p.currentDirectoryURL = workingDirectory(for: args)
                 p.executableURL = URL(fileURLWithPath: sirsiBinary())
                 p.arguments = args
                 let outPipe = Pipe()
@@ -542,10 +623,9 @@ final class SirsiEngine: ObservableObject {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
-                // Run from $HOME, never the app's launchd cwd (/): a path-scoped
-                // command like `sirsi scan` launched from / walks the entire disk
-                // (the 2026-07-02 infinite-spinner bug).
-                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                // Repo-scoped verbs (maat, net) run from the configured project
+                // root; everything else from $HOME — see run() above.
+                p.currentDirectoryURL = workingDirectory(for: args)
                 p.executableURL = URL(fileURLWithPath: sirsiBinary())
                 p.arguments = args
                 let outPipe = Pipe()
