@@ -7,9 +7,16 @@ import AppKit
 // Top-level main.swift runs on the main thread; assert main-actor isolation so
 // we can touch the @MainActor AppDelegate / NSApplication APIs. app.run() blocks.
 MainActor.assumeIsolated {
-    let app = NSApplication.shared
-    let delegate = AppDelegate()
-    app.delegate = delegate
-    app.setActivationPolicy(.accessory)
-    app.run()
+    // `--snapshot <dir>` renders the popover's key screens to PNGs and exits —
+    // headless QA proof of what the surface really shows (see Snapshot.swift).
+    let argv = CommandLine.arguments
+    if let i = argv.firstIndex(of: "--snapshot"), i + 1 < argv.count {
+        runSnapshotMode(outDir: argv[i + 1])   // configures NSApp and runs it
+    } else {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
+        app.run()
+    }
 }

@@ -89,6 +89,8 @@ struct RootView: View {
 
 struct HomeView: View {
     @ObservedObject var engine: SirsiEngine
+    // Snapshot QA renders ScrollView viewports empty — swap for a plain stack.
+    @Environment(\.snapshotMode) private var snapshotMode
 
     var body: some View {
         VStack(spacing: 0) {
@@ -116,7 +118,7 @@ struct HomeView: View {
             Divider().padding(.horizontal, 12)
 
             // Deity rows
-            ScrollView {
+            maybeScroll {
                 VStack(spacing: 2) {
                     NavigationLink { InsightView(engine: engine) } label: {
                         DeityRow(glyph: "✨", title: "Insight — what to do next",
@@ -135,7 +137,8 @@ struct HomeView: View {
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
-                        DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: "governance")
+                        DeityRow(glyph: "𓆄", title: "Ma'at — Quality",
+                                 detail: engine.projectName ?? "governance")
                     }.buttonStyle(.plain)
 
                     NavigationLink { ThothMemoryInfoView() } label: {
@@ -161,7 +164,8 @@ struct HomeView: View {
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) } label: {
-                        DeityRow(glyph: "𓁯", title: "Net — Plan", detail: "alignment")
+                        DeityRow(glyph: "𓁯", title: "Net — Plan",
+                                 detail: engine.projectName ?? "alignment")
                     }.buttonStyle(.plain)
 
                     NavigationLink { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) } label: {
@@ -203,7 +207,15 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { engine.loadActivity(); await engine.diagnose(); await engine.loadRouterBoard() }   // health + ledger + fabric on open
+        .task { engine.loadProjectRoot(); engine.loadActivity(); await engine.diagnose(); await engine.loadRouterBoard() }   // project + health + ledger + fabric on open
+    }
+
+    @ViewBuilder private func maybeScroll<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if snapshotMode {
+            content().frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { content() }
+        }
     }
 }
 
@@ -1448,6 +1460,82 @@ struct CommandView: View {
     }
 }
 
+// ── ProjectBar — which project a repo-scoped deity is weighing ────────────────
+// Ma'at and Net measure a code project, but the app runs `sirsi` from the home
+// folder, where they honestly say "unmeasured." This bar names the project being
+// weighed and offers an in-popover picker (git projects one level under
+// ~/Development). A modal file dialog would close the transient popover, so the
+// picker is a Menu. "None" returns to the honest unmeasured default. The same
+// setting is scriptable:
+//   defaults write ai.sirsi.pantheon projectRoot -string ~/Development/<repo>
+struct ProjectBar: View {
+    @ObservedObject var engine: SirsiEngine
+    var onChange: () -> Void   // re-runs the command after the project changes
+    @State private var candidates: [String] = []
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "shippingbox")
+                .font(.system(size: 13)).foregroundStyle(gold)
+            VStack(alignment: .leading, spacing: 1) {
+                if let name = engine.projectName {
+                    Text("Weighing \(name)").font(.caption.weight(.semibold))
+                    Text(abbreviatedRoot).font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("No project selected").font(.caption.weight(.semibold))
+                    Text("Pick a project to see its real score.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Menu {
+                ForEach(candidates, id: \.self) { path in
+                    Button {
+                        engine.setProjectRoot(path)
+                        onChange()
+                    } label: {
+                        let name = (path as NSString).lastPathComponent
+                        if path == engine.projectRoot {
+                            Label(name, systemImage: "checkmark")
+                        } else {
+                            Text(name)
+                        }
+                    }
+                }
+                if engine.projectRoot != nil {
+                    Divider()
+                    Button("None — stop weighing a project") {
+                        engine.setProjectRoot(nil)
+                        onChange()
+                    }
+                }
+            } label: {
+                Text(engine.projectRoot == nil ? "Choose…" : "Change…")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Color.primary.opacity(0.03))
+        .task {
+            engine.loadProjectRoot()
+            candidates = SirsiEngine.discoverProjectRoots()
+            // Keep a valid root configured outside ~/Development choosable too.
+            if let root = engine.projectRoot, !candidates.contains(root) {
+                candidates.insert(root, at: 0)
+            }
+        }
+        Divider()
+    }
+
+    private var abbreviatedRoot: String {
+        guard let root = engine.projectRoot else { return "" }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return root.hasPrefix(home) ? "~" + root.dropFirst(home.count) : root
+    }
+}
+
 // ── ResultView — the unified deity / action screen ───────────────────────────
 // Runs a sirsi command. When the command emits the structured CommandResult, it
 // renders summary + evidence + one-click next-action buttons — the `--confirm`
@@ -1472,9 +1560,33 @@ struct ResultView: View {
     @State private var postFix: String?   // honest verdict after re-verify
     @State private var didReverify = false // re-verify fires once (across load/apply paths)
 
+    init(engine: SirsiEngine, title: String, args: [String],
+         reverifyCheck: String? = nil, reverifyKind: String? = nil,
+         preloaded: CommandResult? = nil) {
+        self.engine = engine
+        self.title = title
+        self.args = args
+        self.reverifyCheck = reverifyCheck
+        self.reverifyKind = reverifyKind
+        // Snapshot mode (Snapshot.swift) pre-fetches the CommandResult and
+        // injects it: ImageRenderer draws the view synchronously and never runs
+        // .task, so a self-loading view would render as an eternal spinner.
+        _result = State(initialValue: preloaded)
+        _loading = State(initialValue: preloaded == nil)
+    }
+
+    // Repo-scoped commands (maat, net) weigh a project — show WHICH one, and the
+    // picker to change it. Workstation commands never show the bar.
+    private var isRepoScoped: Bool {
+        args.first.map { SirsiEngine.repoScopedVerbs.contains($0) } ?? false
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: title)
+            if isRepoScoped {
+                ProjectBar(engine: engine) { Task { await load() } }
+            }
             Group {
                 if loading && result == nil && raw.isEmpty {
                     VStack { Spacer(); ProgressView(); Spacer() }
@@ -1511,7 +1623,7 @@ struct ResultView: View {
                 Spacer()
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { await load() }
+        .task { if result == nil && raw.isEmpty { await load() } }   // preloaded → already have it
         .confirmationDialog(
             "Apply this fix?",
             isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
@@ -1529,8 +1641,19 @@ struct ResultView: View {
         }
     }
 
+    // ImageRenderer (snapshot QA) draws ScrollView viewports empty, so snapshot
+    // mode renders the same content in a plain stack. See Snapshot.swift.
+    @Environment(\.snapshotMode) private var snapshotMode
+
     @ViewBuilder private func structuredScroll(_ r: CommandResult) -> some View {
-        ScrollView {
+        if snapshotMode {
+            structuredBody(r).frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { structuredBody(r) }
+        }
+    }
+
+    @ViewBuilder private func structuredBody(_ r: CommandResult) -> some View {
             VStack(alignment: .leading, spacing: 14) {
                 if let t = toast {
                     HStack(spacing: 6) {
@@ -1565,7 +1688,6 @@ struct ResultView: View {
                     }
                 }
             }.padding(16)
-        }
     }
 
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
@@ -1592,14 +1714,20 @@ struct ResultView: View {
         }.frame(maxWidth: .infinity).padding(.vertical, 2)
     }
 
-    private var rawScroll: some View {
-        ScrollView {
+    @ViewBuilder private var rawScroll: some View {
+        if snapshotMode {
+            rawBody.frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { rawBody }
+        }
+    }
+
+    private var rawBody: some View {
             Text(raw.isEmpty ? "No output." : raw)
                 .font(.system(size: 11.5, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-        }
     }
 
     private func load() async {
