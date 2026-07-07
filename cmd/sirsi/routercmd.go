@@ -519,6 +519,46 @@ Idempotent; --dry-run reports the full plan without changing anything.`,
 	},
 }
 
+// routerMigrateCmd is the Phase-4 one-shot importer (PRD /goal #4): every
+// canonical items/*.md lands in the durable store with verification evidence
+// (count-in == count-out + spot-checked bodies). Idempotent — safe to re-run
+// any time; rows upsert by id. File writes are NOT stopped here: the cutover
+// (stop tracking runtime items in git) is a separate, owner-visible step at
+// the end of the deprecation window.
+var routerMigrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Import every items/*.md into the durable router store (idempotent, verified)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		rep, err := f.Migrate()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  Files seen:   %d\n", rep.FilesSeen)
+		fmt.Printf("  Imported:     %d new, %d refreshed (count-out %d)\n", rep.Inserted, rep.Updated, rep.CountOut())
+		fmt.Printf("  Spot-checked: %d item(s) byte-compared file↔store\n", rep.SpotChecked)
+		if len(rep.Errors) > 0 {
+			for _, e := range rep.Errors {
+				fmt.Printf("  ✗ %s\n", e)
+			}
+			return fmt.Errorf("migration completed with %d error(s) — zero-loss NOT proven", len(rep.Errors))
+		}
+		if rep.CountOut() != rep.FilesSeen {
+			return fmt.Errorf("count-in %d != count-out %d — zero-loss NOT proven", rep.FilesSeen, rep.CountOut())
+		}
+		fmt.Println("  ✔ Zero-loss verified: count-in == count-out, spot-checks match.")
+		return nil
+	},
+}
+
 // routerBoardCmd prints the owner-actionable router board the conduit regenerates
 // at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
 // threads). Read-only convenience mirror of what the menubar Router view renders.
@@ -587,5 +627,5 @@ func init() {
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd)
 }

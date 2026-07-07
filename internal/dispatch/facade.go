@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
@@ -112,9 +113,48 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	return SendResult{ID: id, Deduped: deduped, AuditPath: path}, nil
 }
 
-// Inbox lists open items addressed to agent from the canonical files.
+// Inbox lists open items addressed to agent — the Phase-4 dual-read window:
+// the canonical files (which legacy writers still produce) merged with the
+// store's open rows (the dispatch authority), union by id. A store row whose
+// audit file failed to write — or predates a file that was mutated by hand —
+// is therefore never invisible (§2b axiom 8: a stale or missing file cannot
+// change lifecycle). File items keep their exact work.Item shape; store-only
+// rows are adapted into it.
 func (f *Facade) Inbox(agent string) ([]work.Item, error) {
-	return work.ListInbox(f.root, agent)
+	items, err := work.ListInbox(f.root, agent)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := f.store.Inbox(agent)
+	if err != nil {
+		// The store is additive infrastructure during the dual-read window —
+		// a broken store must not strand the canonical file inbox.
+		return items, nil //nolint:nilerr // deliberate: files stay readable
+	}
+	seen := make(map[string]bool, len(items))
+	for _, it := range items {
+		seen[it.ID] = true
+	}
+	for _, r := range rows {
+		if seen[r.ID] {
+			continue
+		}
+		items = append(items, work.Item{
+			ID: r.ID, From: r.From, To: r.To, Title: r.Title, Type: r.Type,
+			Status: r.Status, Opened: r.Opened, Closed: r.Closed,
+			Instructions: r.Instructions, Result: r.Result,
+			WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
+			WakeAdapter: r.WakeAdapter, WakeError: r.WakeError,
+		})
+	}
+	sortItemsByID(items)
+	return items, nil
+}
+
+// sortItemsByID keeps the merged inbox in the file router's oldest-first
+// order (ids sort chronologically by construction).
+func sortItemsByID(items []work.Item) {
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 }
 
 // Show returns one item's full markdown from the canonical file.
