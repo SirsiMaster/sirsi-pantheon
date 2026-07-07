@@ -77,8 +77,15 @@ for pf in /tmp/sirsi-router-watch-*.pid; do
   [ -f "$pf" ] || continue
   pid=$(cat "$pf" 2>/dev/null)
   if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-    fail "watcher pidfile $pf points to dead PID $pid (removing)"
+    # Self-healed cruft, NOT an alarm (surfaces canon: if nothing remains for
+    # an operator to act on, it must not alarm). Session watchers die with
+    # their CLI sessions by design; the sweep reaps the leftover pidfile and
+    # logs it. 2026-07-07: 26 of these raised a FAIL + an inbox alarm item
+    # for a condition this very loop had already fixed. The ALARMING check
+    # stays below: an ACTIVE thread with NO watcher pidfile persists after
+    # this sweep and genuinely needs action.
     rm -f "$pf"
+    echo "[$(ts)] reaped dead watcher pidfile $pf (pid $pid gone — self-heal, no alarm)" >> "$LOG"
   fi
 done
 
