@@ -1,10 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -47,77 +48,125 @@ func init() {
 	netCmd.AddCommand(netAlignCmd)
 }
 
+// findGoRepoRoot walks up from the working directory to the nearest
+// directory containing go.mod. Repo-scoped verbs (net status/align, maat
+// audit) MUST anchor here: the menubar and other surfaces shell these verbs
+// from $HOME, and running `go vet`/log lookups against the user's home
+// directory produced fabricated failures on an owner-facing surface
+// (2026-07-05 popover: "0.0% DRIFTING", "go vet failed" — against $HOME).
+func findGoRepoRoot() (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+// runNetStatus reports plan-alignment state HONESTLY (Rule A14: no number
+// that cannot be independently verified). The previous implementation scored
+// a hardcoded three-item demo plan against whatever BUILD_LOG.md happened to
+// be in the cwd, promised "1.0" in a warning, and rendered "0.0% DRIFTING"
+// in the same breath. There is no recorded session plan to align against
+// yet, so NO score is emitted — the build log's presence and freshness are
+// reported instead, and the output says exactly what would make alignment
+// measurable. Emits the CommandResult contract every surface renders.
 func runNetStatus(cmd *cobra.Command, args []string) error {
 	start := time.Now()
+	res := &output.CommandResult{Command: "sirsi net status", BriefTitle: "Plan Alignment"}
 
-	logContent := ""
-	for _, path := range []string{"BUILD_LOG.md", "docs/BUILD_LOG.md"} {
-		data, err := os.ReadFile(path)
-		if err == nil {
-			logContent = string(data)
+	root, inRepo := findGoRepoRoot()
+	if !inRepo {
+		res.Summary = "Not inside a code repository — plan alignment has nothing to weigh here."
+		res.Status = "unmeasured"
+		res.NextActions = append(res.NextActions, output.NextAction{
+			Label:       "Run from a repository",
+			Command:     "cd <your-repo> && sirsi net status",
+			Description: "Plan alignment reads a repo's build log; run it from a repo root.",
+		})
+		res.Duration = time.Since(start)
+		res.Render()
+		return nil
+	}
+
+	logPath := ""
+	for _, rel := range []string{"docs/BUILD_LOG.md", "BUILD_LOG.md"} {
+		if _, err := os.Stat(filepath.Join(root, rel)); err == nil {
+			logPath = rel
 			break
 		}
 	}
-
-	w := &neith.Weave{
-		SessionID: "cli-session",
-		StartedAt: time.Now(),
-		Plan:      []string{"Build all modules", "Pass all tests", "Ship release"},
-	}
-
-	score, err := w.AssessLogs(logContent)
-	if err != nil {
-		return fmt.Errorf("assess logs: %w", err)
-	}
-
-	verdict := "ALIGNED"
-	if score < 0.5 {
-		verdict = "DRIFTING"
-	}
-
-	if JsonOutput {
-		result := map[string]interface{}{
-			"alignment_score": score,
-			"verdict":         verdict,
-			"plan_items":      len(w.Plan),
-			"plan":            w.Plan,
-			"elapsed_ms":      time.Since(start).Milliseconds(),
-		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(result)
-	}
-
-	output.Banner()
-	output.Header("Plan Alignment")
-
-	if logContent != "" {
-		output.Info("Loaded BUILD_LOG.md")
+	res.AddEvidence("Repository", root)
+	if logPath == "" {
+		res.Summary = "This repository has no build log yet — alignment is not measurable, so no score is shown."
+		res.Status = "unmeasured"
+		res.AddEvidence("Build log", "not found (looked for docs/BUILD_LOG.md and BUILD_LOG.md)")
 	} else {
-		output.Warn("No BUILD_LOG.md found — alignment will report 1.0 (no log to compare)")
+		full := filepath.Join(root, logPath)
+		info, _ := os.Stat(full)
+		data, _ := os.ReadFile(full)
+		entries := strings.Count(string(data), "\n## ")
+		res.Summary = fmt.Sprintf("Build log found (%d entries) — alignment scoring needs a recorded session plan, and none is recorded yet, so no score is shown.", entries)
+		res.Status = "unmeasured"
+		res.AddEvidence("Build log", logPath)
+		res.AddEvidence("Entries", fmt.Sprintf("%d", entries))
+		if info != nil {
+			res.AddEvidence("Last updated", info.ModTime().Format("Jan 2, 2006"))
+		}
 	}
-
-	output.Dashboard(map[string]string{
-		"Alignment Score": fmt.Sprintf("%.1f%%", score*100),
-		"Verdict":         verdict,
-		"Plan Items":      fmt.Sprintf("%d", len(w.Plan)),
-	})
-
-	output.Footer(time.Since(start))
-	output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "net", Subcommand: "status"}))
+	res.NextActions = append(res.NextActions,
+		output.NextAction{Label: "Validate cross-module consistency", Command: "sirsi net align", Description: "Run vet/build/format checks against this repository."},
+		output.NextAction{Label: "Run governance quality check", Command: "sirsi maat audit", Description: "Ma'at weighs coverage, canon, and pipeline health."},
+	)
+	res.Duration = time.Since(start)
+	res.Render()
 	return nil
 }
 
 func runNetAlign(cmd *cobra.Command, args []string) error {
 	start := time.Now()
+
+	// Anchor to the repo root — these are repo checks, and surfaces shell
+	// this verb from $HOME (see findGoRepoRoot).
+	root, inRepo := findGoRepoRoot()
+	if !inRepo {
+		res := &output.CommandResult{
+			Command:    "sirsi net align",
+			BriefTitle: "Module Consistency",
+			Summary:    "Not inside a code repository — nothing to check here.",
+			Status:     "unmeasured",
+			Duration:   time.Since(start),
+		}
+		res.NextActions = append(res.NextActions, output.NextAction{
+			Label:       "Run from a repository",
+			Command:     "cd <your-repo> && sirsi net align",
+			Description: "Consistency checks (vet, build, format) run against a repo root.",
+		})
+		res.Render()
+		return nil
+	}
+
 	output.Banner()
 	output.Header("Module Consistency Check")
 
-	// Real checks against the current project state
+	// Real checks against the repository (never the caller's cwd).
 	tap := &neith.Tapestry{}
+	inRepoCmd := func(name string, args ...string) *exec.Cmd {
+		c := exec.Command(name, args...)
+		c.Dir = root
+		return c
+	}
 
 	// Ma'at: go vet passes
-	if err := exec.Command("go", "vet", "./...").Run(); err == nil {
+	if err := inRepoCmd("go", "vet", "./...").Run(); err == nil {
 		tap.MaatConsistent = true
 		output.Success("Ma'at: go vet passes")
 	} else {
@@ -125,7 +174,7 @@ func runNetAlign(cmd *cobra.Command, args []string) error {
 	}
 
 	// Anubis: build succeeds (no scan rule regressions)
-	if err := exec.Command("go", "build", "./...").Run(); err == nil {
+	if err := inRepoCmd("go", "build", "./...").Run(); err == nil {
 		tap.AnubisCorrect = true
 		output.Success("Anubis: build succeeds")
 	} else {
@@ -133,7 +182,7 @@ func runNetAlign(cmd *cobra.Command, args []string) error {
 	}
 
 	// Hygiene: gofmt clean
-	out, _ := exec.Command("gofmt", "-l", "./internal/", "./cmd/").Output()
+	out, _ := inRepoCmd("gofmt", "-l", "./internal/", "./cmd/").Output()
 	if len(out) == 0 {
 		tap.HygieneClean = true
 		output.Success("Hygiene: gofmt clean")
@@ -142,7 +191,7 @@ func runNetAlign(cmd *cobra.Command, args []string) error {
 	}
 
 	// Thoth: .thoth/ memory present
-	if _, err := os.Stat(".thoth/memory.yaml"); err == nil {
+	if _, err := os.Stat(filepath.Join(root, ".thoth", "memory.yaml")); err == nil {
 		tap.ThothAccurate = true
 		output.Success("Thoth: memory present")
 	} else {

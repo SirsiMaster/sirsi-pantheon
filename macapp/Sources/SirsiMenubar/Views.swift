@@ -1272,12 +1272,55 @@ struct ItemDetailView: View {
 
 // ── Ghosts (Ka) — structured leftover-app screen, not a CLI transcript ───────
 //
-// Renders `sirsi ghosts --json` via the shared CommandResult contract: a summary,
-// the leftover apps found (each with its residual count + reclaimable size), and
-// the real next steps as buttons — so the user always has a way forward.
+// Ghost report contract — mirrors cmd/sirsi/anubis.go `ghostReport`, the shape
+// `sirsi ghosts --json` actually emits (pinned by ghosts_json_test.go). The
+// previous view decoded CommandResult, a contract ghosts NEVER emitted — so
+// every scan "failed" with a decode nil, and the owner saw "Couldn't scan"
+// over a scan that had succeeded (2026-07-05 popover).
+struct GhostReport: Decodable {
+    let summary: String
+    let ghostCount: Int
+    let totalWaste: String
+    let ghosts: [GhostApp]
+    enum CodingKeys: String, CodingKey {
+        case summary, ghosts
+        case ghostCount = "ghost_count"
+        case totalWaste = "total_waste"
+    }
+}
+
+struct GhostApp: Decodable, Identifiable {
+    var id: String { bundleID.isEmpty ? appName : bundleID }
+    let appName: String
+    let bundleID: String
+    let totalSizeBytes: Int64
+    let totalFiles: Int
+    let residuals: [GhostResidual]
+    enum CodingKeys: String, CodingKey {
+        case residuals
+        case appName = "app_name"
+        case bundleID = "bundle_id"
+        case totalSizeBytes = "total_size_bytes"
+        case totalFiles = "total_files"
+    }
+}
+
+struct GhostResidual: Decodable, Identifiable {
+    var id: String { path }
+    let path: String
+    let type: String
+    let sizeBytes: Int64
+    enum CodingKeys: String, CodingKey {
+        case path, type
+        case sizeBytes = "size_bytes"
+    }
+}
+
+// Renders `sirsi ghosts --json`: the summary, one section per leftover app
+// (name, reclaimable size, residual count) with its leftover paths inline.
 struct GhostsView: View {
     @ObservedObject var engine: SirsiEngine
-    @State private var result: CommandResult?
+    @State private var report: GhostReport?
     @State private var loading = true
 
     var body: some View {
@@ -1290,44 +1333,37 @@ struct GhostsView: View {
                         .font(.callout).foregroundStyle(.secondary)
                     Text("This can take a minute.").font(.caption2).foregroundStyle(.tertiary)
                 }
-                .frame(maxWidth: .infinity).padding(.top, 60)
-            } else if let r = result {
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
+            } else if let r = report {
                 List {
                     Section { Text(r.summary).font(.callout) } header: { Text("RESULT") }
-                    if !r.evidence.isEmpty {
+                    if r.ghosts.isEmpty {
                         Section {
-                            ForEach(r.evidence) { e in
-                                HStack {
-                                    Text(e.label).font(.caption).lineLimit(1)
-                                    Spacer(minLength: 8)
-                                    Text(e.value).font(.caption2.monospaced())
-                                        .foregroundStyle(.secondary).multilineTextAlignment(.trailing)
-                                }
-                            }
-                        } header: { Text("DETAILS") }
-                    }
-                    if !r.nextActions.isEmpty {
-                        Section {
-                            ForEach(r.nextActions) { a in
-                                NavigationLink {
-                                    ResultView(engine: engine, title: a.label,
-                                               args: InsightView.commandArgs(a.command))
-                                } label: {
+                            Text("Nothing left behind — every uninstalled app cleaned up after itself.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ForEach(r.ghosts) { g in
+                            Section {
+                                ForEach(g.residuals) { res in
                                     HStack {
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(a.label).font(.caption.weight(.semibold))
-                                            if let d = a.description {
-                                                Text(d).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                                            }
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                        Text(res.path).font(.caption2.monospaced())
+                                            .foregroundStyle(.secondary).lineLimit(1)
+                                            .truncationMode(.middle)
+                                        Spacer(minLength: 8)
+                                        Text(SirsiEngine.human(res.sizeBytes))
+                                            .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                                     }
-                                    .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                            } header: {
+                                HStack {
+                                    Text(g.appName)
+                                    Spacer()
+                                    Text("\(g.totalFiles) file\(g.totalFiles == 1 ? "" : "s") · \(SirsiEngine.human(g.totalSizeBytes))")
+                                        .font(.caption2)
+                                }
                             }
-                        } header: { Text("WHAT YOU CAN DO") }
+                        }
                     }
                 }
                 .listStyle(.inset)
@@ -1336,7 +1372,7 @@ struct GhostsView: View {
                     Text("Couldn't scan for leftover apps.").foregroundStyle(.secondary)
                     Button("Try again") { Task { await load() } }.font(.caption)
                 }
-                .frame(maxWidth: .infinity).padding(40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             }
         }
         .navigationTitle("Leftover Apps")
@@ -1345,7 +1381,10 @@ struct GhostsView: View {
 
     private func load() async {
         loading = true
-        result = await SirsiEngine.runResult(args: ["ghosts"])
+        let data = await SirsiEngine.runJSON(args: ["ghosts", "--json"])
+        if let s = String(data: data, encoding: .utf8), let i = s.firstIndex(of: "{") {
+            report = try? JSONDecoder().decode(GhostReport.self, from: Data(String(s[i...]).utf8))
+        }
         loading = false
     }
 }
