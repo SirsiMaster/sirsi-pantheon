@@ -797,3 +797,15 @@ supervisor live. Done.
 **The deeper lesson, again**: every layer that lied to the owner today was an UN-VERSIONED sidecar (the worker script, the board jq that dropped `legacy`). ADR-035 axiom: no executor around the store. Same law, smaller organisms. Board-writer adoption filed as follow-up.
 
 **State**: worker OFF (quarantined durably); re-arm gates on Phase 3 (one facade over the store for CLI+MCP). rc1 evidence: Ma'at 100/100, CI green, TUI merged — tag remains owner-gated.
+
+---
+
+## Entry — 2026-07-07 — "Point Ma'at at the Repo (and prove the popover without a display)"
+
+**Context**: claude-pantheon. After #170 the menubar's Ma'at — Quality and Net — Plan honestly said "unmeasured — not inside a code repository" — correct, because run/runJSON pin cwd to $HOME (the launchd-cwd=/ disk-walk fix). The owner-visible gap: no way to see real repo scores from the popover.
+
+**Landed (#172)**: optional project root. `SirsiEngine` reads UserDefaults `projectRoot` (settable via `defaults write ai.sirsi.pantheon projectRoot -string ~/Development/sirsi-pantheon` or the new in-popover picker), validates it (existing dir + `.git`, worktree-tolerant), and applies it as cwd ONLY to the repo-scoped verbs (`maat`, `net`). ProjectBar on those drill-ins names the repo being weighed; home rows show it; "None" returns to the honest unmeasured default. CommandResult decoding treats absent evidence/next_actions as empty so honest-unmeasured JSON still renders structured. Picker is a Menu, not NSOpenPanel — a modal panel dismisses the transient popover.
+
+**The QA lesson worth keeping**: display-gated verification WITHOUT the display. Screen Recording TCC and computer-use were unavailable, so `SirsiMenubar --snapshot <dir>` now renders home/Ma'at/Net to PNGs. Three dead ends first: (1) NSHostingView + cacheDisplay CANNOT composite SwiftUI render-server content — captures come back with only tint-colored glyphs, at any window alpha; (2) ImageRenderer never runs `.task`, so self-loading views render as an eternal spinner → pre-fetch the CommandResult and inject via a new ResultView initializer; (3) ImageRenderer draws ScrollView viewports EMPTY → a `snapshotMode` environment flag swaps scroll containers for plain stacks. Proof PNGs: Ma'at weighing sirsi-pantheon at 51/100 with heal/pulse/scan actions; Net reading the build log (10 entries).
+
+**State**: merged (auto-merge on green), app rebuilt via build-app.sh (stable cert, FDA intact) and relaunched; projectRoot set on the owner's machine. Post-review routed to claude-home (item 20260707-145232).
