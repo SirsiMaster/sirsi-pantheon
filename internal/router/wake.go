@@ -389,6 +389,15 @@ func launchAgentInstalled(label string) bool {
 // pid is not OS-reaped between heartbeats; launchd restarts it if it exits. Both
 // values are XML-escaped for the plist text.
 func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string {
+	// Observability + crash-loop bounds, learned the hard way (2026-07-07:
+	// nine loops dead-respawning ~15k times with NO log file to say why):
+	//   - StandardOut/ErrorPath: every start/exit leaves evidence under
+	//     ~/.sirsi/logs/wake-<agent>.log.
+	//   - ThrottleInterval 60: a crashing loop respawns once a minute, not
+	//     at launchd's default burn rate.
+	//   - The binary path is absolute (InstallWakeLaunchAgent enforces it).
+	home, _ := os.UserHomeDir()
+	logPath := filepath.Join(home, ".sirsi", "logs", "wake-"+slugifyLabelPart(cfg.ID)+".log")
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -406,11 +415,23 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
   <true/>
   <key>RunAtLoad</key>
   <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
   <key>ProcessType</key>
   <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>%s</string>
+  <key>StandardErrorPath</key>
+  <string>%s</string>
 </dict>
 </plist>
-`, escapeXML(label), escapeXML(sirsiBin), escapeXML(cfg.ID))
+`, escapeXML(label), escapeXML(sirsiBin), escapeXML(cfg.ID), escapeXML(logPath), escapeXML(logPath))
+}
+
+// slugifyLabelPart mirrors WakeLaunchAgentLabel's id sanitization for log
+// filenames, so the label and its log always correspond.
+func slugifyLabelPart(id string) string {
+	return labelUnsafe.ReplaceAllString(strings.TrimSpace(id), "-")
 }
 
 // escapeXML escapes the five XML predefined entities so a sirsi path or agent id
@@ -468,16 +489,39 @@ func UninstallWakeLaunchAgent(cfg AgentConfig) (removed bool, path string, err e
 // at the install layer; flock/pidfile keep the loop single-instance at runtime).
 func InstallWakeLaunchAgent(cfg AgentConfig, sirsiBin string) (changed bool, path string, err error) {
 	if strings.TrimSpace(sirsiBin) == "" {
-		if p, lerr := exec.LookPath("sirsi"); lerr == nil {
+		// Resolution order: the RUNNING binary first (always absolute, always
+		// exists — and it is exactly the code the caller just exercised),
+		// then PATH. A bare name in ProgramArguments[0] is unspawnable under
+		// launchd (its PATH has no ~/.local/bin): the job "runs", dies
+		// instantly, and KeepAlive respawns it forever — 15,189 silent
+		// restarts per loop before anyone noticed (2026-07-07). PATH lookup
+		// alone is also the ADR-023 D3 drift vector. Refuse loudly rather
+		// than write an unspawnable plist.
+		if self, serr := os.Executable(); serr == nil && strings.Contains(filepath.Base(self), "sirsi") {
+			sirsiBin = self
+		} else if p, lerr := exec.LookPath("sirsi"); lerr == nil {
 			sirsiBin = p
 		} else {
-			sirsiBin = "sirsi"
+			return false, "", fmt.Errorf("cannot resolve an absolute sirsi binary for the LaunchAgent (launchd cannot spawn a bare name): %w", lerr)
+		}
+	}
+	if !filepath.IsAbs(sirsiBin) {
+		if abs, aerr := filepath.Abs(sirsiBin); aerr == nil {
+			sirsiBin = abs
 		}
 	}
 	label := WakeLaunchAgentLabel(cfg.ID)
 	dir := launchAgentsDir()
 	if err = os.MkdirAll(dir, 0o755); err != nil {
 		return false, "", fmt.Errorf("create LaunchAgents dir: %w", err)
+	}
+	// launchd creates the log FILES but not their parent directory — a
+	// missing ~/.sirsi/logs would turn StandardErrorPath into another
+	// silent-death mode.
+	if home, herr := os.UserHomeDir(); herr == nil {
+		if err = os.MkdirAll(filepath.Join(home, ".sirsi", "logs"), 0o755); err != nil {
+			return false, "", fmt.Errorf("create wake log dir: %w", err)
+		}
 	}
 	path = filepath.Join(dir, label+".plist")
 	content := wakeLaunchAgentPlist(label, cfg, sirsiBin)
