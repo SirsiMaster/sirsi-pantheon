@@ -84,6 +84,12 @@ func sirsiTestEnv(dir string, extra ...string) []string {
 	if dir != "" {
 		out = append(out, "PWD="+dir)
 	}
+	// Sandbox the router store: without this, every test send lands in the
+	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07, and
+	// the idempotency window made TestRouterPullModelRoundtrip dedupe against
+	// a PREVIOUS run's row — flaky by the hour bucket). Per-process temp file;
+	// an explicit SIRSI_ROUTER_DB in extra still wins (append order).
+	out = append(out, "SIRSI_ROUTER_DB="+filepath.Join(os.TempDir(), fmt.Sprintf("sirsi-test-router-%d.db", os.Getpid())))
 	return append(out, extra...)
 }
 
