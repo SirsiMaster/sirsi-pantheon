@@ -387,3 +387,14 @@ sirsi router status
 ```
 
 If no automation runner is active, the pending item is still the source of truth. Agents must check `state.json` and the latest router files at session start.
+
+## Router v2 — durable store, one facade, migration (ADR-036)
+
+Dispatch authority lives in `~/.sirsi/router.db` (outside git). `sirsi router
+send/close/pull` and the MCP `router_*` tools share one facade: writes commit
+to the store first (idempotency, quotas, breakers — no store row, no
+dispatch), then dual-write the `items/*.md` audit view here. Reads are the
+union of files and store rows, so neither a legacy writer nor a failed audit
+write can hide work. `sirsi router migrate` imports every existing item with
+zero-loss verification (idempotent). Files remain written and tracked until
+the owner-gated cutover at the end of the deprecation window.
