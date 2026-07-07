@@ -489,15 +489,21 @@ func UninstallWakeLaunchAgent(cfg AgentConfig) (removed bool, path string, err e
 // at the install layer; flock/pidfile keep the loop single-instance at runtime).
 func InstallWakeLaunchAgent(cfg AgentConfig, sirsiBin string) (changed bool, path string, err error) {
 	if strings.TrimSpace(sirsiBin) == "" {
-		p, lerr := exec.LookPath("sirsi")
-		if lerr != nil {
-			// A bare name in ProgramArguments[0] is unspawnable under launchd
-			// (its PATH has no ~/.local/bin): the job "runs", dies instantly,
-			// and KeepAlive respawns it forever — 15,189 silent restarts per
-			// loop before anyone noticed (2026-07-07). Refuse loudly instead.
+		// Resolution order: the RUNNING binary first (always absolute, always
+		// exists — and it is exactly the code the caller just exercised),
+		// then PATH. A bare name in ProgramArguments[0] is unspawnable under
+		// launchd (its PATH has no ~/.local/bin): the job "runs", dies
+		// instantly, and KeepAlive respawns it forever — 15,189 silent
+		// restarts per loop before anyone noticed (2026-07-07). PATH lookup
+		// alone is also the ADR-023 D3 drift vector. Refuse loudly rather
+		// than write an unspawnable plist.
+		if self, serr := os.Executable(); serr == nil && strings.Contains(filepath.Base(self), "sirsi") {
+			sirsiBin = self
+		} else if p, lerr := exec.LookPath("sirsi"); lerr == nil {
+			sirsiBin = p
+		} else {
 			return false, "", fmt.Errorf("cannot resolve an absolute sirsi binary for the LaunchAgent (launchd cannot spawn a bare name): %w", lerr)
 		}
-		sirsiBin = p
 	}
 	if !filepath.IsAbs(sirsiBin) {
 		if abs, aerr := filepath.Abs(sirsiBin); aerr == nil {
