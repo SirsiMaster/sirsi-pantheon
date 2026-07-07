@@ -108,11 +108,26 @@ fi
 "$SIRSI" thread discover --json >/dev/null 2>&1 || fail "thread discover failed"
 "$SIRSI" thread scout --json >/dev/null 2>&1 || fail "thread scout failed"
 
-# 5. Probe round-trip: send → confirm seen by dispatcher → close
+# 5. Probe round-trip: send → confirm seen by dispatcher → close.
+# 5a. SELF-CLEANING FIRST (§2b bounded-emitters law, ADR-035): any open probe
+#     older than this sweep is a leftover from a run whose close step broke
+#     (2026-07-05/07: the wake-loop crash-loop window left 45 open probes and
+#     the fabric board read "46 items waiting"). Close stale probes BEFORE
+#     emitting a new one so the probe backlog can never exceed 1 regardless
+#     of past failures — a timestamp-keyed emitter without a reaper is the
+#     11,564-item flood in miniature.
+for stale in "$ROUTER_ROOT"/items/*-claude-pantheon-claude-pantheon-sweep-probe-*.md; do
+  [ -f "$stale" ] || continue
+  grep -q "^status: open" "$stale" || continue
+  stale_id="$(basename "$stale" .md)"
+  "$SIRSI" router close "$stale_id" --result "stale sweep probe — superseded by the current sweep (self-clean)" >/dev/null 2>&1 \
+    && echo "[$(ts)] closed stale probe $stale_id" >> "$LOG"
+done
+
 probe_title="sweep-probe-$(date +%s)"
 probe_id=$("$SIRSI" router send --from claude-pantheon --to claude-pantheon \
   --title "$probe_title" --instructions "automated sweep probe — close on receive" 2>&1 \
-  | awk -F': ' '/Sent/{print $NF}')
+  | awk -F': ' '/Sent|Deduped/{print $NF}' | awk '{print $1}')
 if [ -z "$probe_id" ]; then
   fail "probe send failed"
 else
@@ -120,7 +135,10 @@ else
   if ! grep -q "$probe_title\|claude-pantheon.*item.*to dispatch" "$ROUTER_ROOT/logs/dispatch.log" 2>/dev/null; then
     : # not an error per se — dispatcher only logs when items found, may have processed silently
   fi
-  "$SIRSI" router close "$probe_id" --result "sweep ok" >/dev/null 2>&1 || true
+  if ! "$SIRSI" router close "$probe_id" --result "sweep ok" >/dev/null 2>&1; then
+    # A failed close must be VISIBLE — a silent one is how probes piled up.
+    fail "probe close failed for $probe_id"
+  fi
 fi
 
 # Report
