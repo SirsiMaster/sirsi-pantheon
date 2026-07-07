@@ -114,6 +114,28 @@ func init() {
 func runMaatAudit(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
+	// Ma'at weighs a REPOSITORY. Outside one (the menubar shells this verb
+	// from $HOME) the old path fell back to a hardcoded threshold set and
+	// weighed the user's home directory — fabricating "❌ 59/100 fail" on an
+	// owner-facing surface (2026-07-05 popover). Unmeasured is not unhealthy:
+	// say so plainly and point at the fix (Rule A14; surfaces canon).
+	if _, inRepo := findGoRepoRoot(); !inRepo {
+		res := &output.CommandResult{
+			Command:    "sirsi maat audit",
+			BriefTitle: "Quality & Governance",
+			Summary:    "Not inside a code repository — Ma'at has nothing to weigh here.",
+			Status:     "unmeasured",
+			Duration:   time.Since(start),
+		}
+		res.NextActions = append(res.NextActions, output.NextAction{
+			Label:       "Audit a repository",
+			Command:     "cd <your-repo> && sirsi maat audit",
+			Description: "Ma'at weighs a repo's coverage, canon, and pipeline health from its root.",
+		})
+		res.Render()
+		return nil
+	}
+
 	// Fast by default (cached coverage); --full runs the slow go test pass.
 	// --skip-test is kept as a back-compat alias for the (now default) fast mode.
 	skipTests := !auditFull || auditSkipTests
