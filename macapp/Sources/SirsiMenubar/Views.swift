@@ -1161,9 +1161,13 @@ struct ScanCleanView: View {
         HStack(spacing: 8) {
             if toggleable {
                 Button { toggle(f.path) } label: {
+                    // 15pt glyph in a padded region — a bare icon toggle was a
+                    // ~15pt target you had to poke at (same class as BackBar).
                     Image(systemName: selected.contains(f.path) ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 15))
                         .foregroundStyle(selected.contains(f.path) ? gold : Color.secondary)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
