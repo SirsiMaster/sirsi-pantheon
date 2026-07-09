@@ -1960,7 +1960,18 @@ struct ResultView: View {
     // runFollow runs a non-destructive next action (e.g. scan) and reloads.
     private func runFollow(_ a: CRAction) async {
         applying = true
-        _ = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: nil)
+        // The follow-up command's OUTPUT is the whole point — discarding it and
+        // silently reloading made every "WHAT YOU CAN DO" button read as dead
+        // (owner, 2026-07-09: "NONE are actually interactive"). Surface the
+        // result summary as a toast, record it in the activity ledger, THEN
+        // re-measure so the score reflects what just ran.
+        // Run with --json so the toast shows the verb's real SUMMARY line, not
+        // its styled banner/header (which firstMeaningful would otherwise grab).
+        let jsonData = await SirsiEngine.runJSON(args: sirsiArgs(a.command) + ["--json"])
+        let out = String(data: jsonData, encoding: .utf8) ?? ""
+        engine.recordActivity(title: a.label, command: a.command, result: out)
+        let summary = SirsiEngine.summaryLine(out)
+        toast = summary.isEmpty ? "\(a.label): done." : summary
         applying = false
         await load()
         engine.refresh()
