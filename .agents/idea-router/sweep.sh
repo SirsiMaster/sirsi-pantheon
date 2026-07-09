@@ -154,7 +154,19 @@ if [ ${#fails[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Alarm: write to log + drop a router item
+# Alarm: write to log + drop a router item.
+# KEYED SINGLETON (§2b axiom 5, ADR-035): one persisting condition = ONE open
+# alarm item. Before emitting, close every prior open sweep-alarm — 2026-07-09:
+# a single stale-dispatch condition emitted 23 identical hourly items into the
+# claude-pantheon inbox. The fresh alarm below carries the CURRENT issue list;
+# history lives in the log, not the queue.
+for prior in "$ROUTER_ROOT"/items/*-sweep-bot-claude-pantheon-sweep-alarm-*.md; do
+  [ -f "$prior" ] || continue
+  grep -q "^status: open" "$prior" || continue
+  prior_id="$(basename "$prior" .md)"
+  "$SIRSI" router close "$prior_id" --result "superseded by the current sweep's alarm (keyed-singleton self-clean; condition history is in logs/sweep.log)" >/dev/null 2>&1     && echo "[$(ts)] superseded prior alarm $prior_id" >> "$LOG"
+done
+
 {
   echo "[$(ts)] sweep FAIL — ${#fails[@]} issue(s):"
   for f in "${fails[@]}"; do echo "  - $f"; done
