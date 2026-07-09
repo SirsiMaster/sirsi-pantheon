@@ -1370,24 +1370,39 @@ struct RiskView: View {
                     if let w = r.warning, !w.isEmpty {
                         Section { Text(w).font(.caption).foregroundStyle(.secondary) } header: { Text("NOTE") }
                     }
+                    if let line = actionResult {
+                        Section {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: line.contains("Checkpointed") ? "checkmark.seal.fill" : "info.circle.fill")
+                                    .foregroundStyle(line.contains("Checkpointed") ? .green : .secondary)
+                                Text(line).font(.caption).fixedSize(horizontal: false, vertical: true)
+                            }
+                        } header: { Text("RESULT") }
+                    }
                     Section {
-                        Button {
-                            Task { await checkpoint() }
-                        } label: {
-                            HStack {
-                                if checkpointing { ProgressView().controlSize(.small) }
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("Checkpoint now").font(.caption.weight(.semibold))
-                                    Text("Commit all changes locally — nothing is pushed, undo with git reset.")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }.contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(checkpointing || r.uncommittedFiles == 0)
-                        if let line = actionResult {
-                            Text(line).font(.caption2).foregroundStyle(.secondary)
+                        if r.uncommittedFiles == 0 {
+                            // Resolved state — celebrate it, never a greyed dead-end.
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                Text("All work is checkpointed — nothing at risk right now.")
+                                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            Button {
+                                Task { await checkpoint() }
+                            } label: {
+                                HStack {
+                                    if checkpointing { ProgressView().controlSize(.small) }
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Checkpoint now").font(.caption.weight(.semibold))
+                                        Text("Commit all changes locally — nothing is pushed, undo with git reset.")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }.contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(checkpointing)
                         }
                     } header: { Text("WHAT YOU CAN DO") }
                 }
@@ -1400,6 +1415,15 @@ struct RiskView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                 }
             }
+            Divider()
+            HStack {
+                Button { Task { await load() } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }.disabled(loading || checkpointing)
+                if loading || checkpointing { ProgressView().controlSize(.small).padding(.leading, 4) }
+                Spacer()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .navigationTitle("Osiris — Checkpoints")
         .task { await load() }
@@ -1407,9 +1431,11 @@ struct RiskView: View {
 
     private func riskGlyph(_ risk: String) -> String {
         switch risk.lowercased() {
+        case "none", "clean", "": return "🟢" // resolved — never a red alarm
         case "low": return "🟢"
         case "medium", "moderate": return "🟡"
-        default: return "🔴"
+        case "high", "critical": return "🔴"
+        default: return "🟢" // unknown/clean states must not fabricate an alarm
         }
     }
 
