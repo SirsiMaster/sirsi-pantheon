@@ -578,6 +578,19 @@ final class SirsiEngine: ObservableObject {
         return out.string(from: d)
     }
 
+    // summaryLine pulls a human result line from a command's output: the
+    // CommandResult JSON "summary" when present (structured verbs), else the
+    // first meaningful text line. Used to toast what a follow-up action did.
+    static func summaryLine(_ out: String) -> String {
+        if let i = out.firstIndex(of: "{"),
+           let data = String(out[i...]).data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let summary = obj["summary"] as? String, !summary.isEmpty {
+            return summary
+        }
+        return firstMeaningful(stripANSI(out))
+    }
+
     static func firstMeaningful(_ s: String) -> String {
         for line in s.split(separator: "\n") {
             let t = line.trimmingCharacters(in: .whitespaces)
@@ -621,9 +634,28 @@ final class SirsiEngine: ObservableObject {
                     inPipe.fileHandleForWriting.write(d)
                     inPipe.fileHandleForWriting.closeFile()
                 }
+                // HARD RUNTIME BOUND. A popover button must never spin
+                // forever: `maat heal` on a cold coverage cache silently ran
+                // the full test suite for minutes behind a greyed screen with
+                // no result and no cancel (owner, 2026-07-09: "no interaction
+                // whatsoever"). The verb side is fixed to be fast, but the
+                // SURFACE enforces its own bound — defense in depth, same
+                // shape as the supervisor's duty timeout.
+                let deadline = DispatchTime.now() + .seconds(120)
+                let timeoutWork = DispatchWorkItem {
+                    if p.isRunning {
+                        p.terminate()
+                    }
+                }
+                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
-                cont.resume(returning: stripANSI(String(data: data, encoding: .utf8) ?? ""))
+                timeoutWork.cancel()
+                var text = stripANSI(String(data: data, encoding: .utf8) ?? "")
+                if p.terminationReason == .uncaughtSignal {
+                    text = "Stopped after 2 minutes — this action is taking too long for the menubar. Run `sirsi \(args.joined(separator: " "))` in a terminal to let it finish.\n" + text
+                }
+                cont.resume(returning: text)
             }
         }
     }

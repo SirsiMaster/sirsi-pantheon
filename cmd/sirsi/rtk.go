@@ -76,6 +76,22 @@ func runRTKFilter(_ *cobra.Command, _ []string) error {
 }
 
 func runRTKStats(_ *cobra.Command, _ []string) error {
+	// RTK is a PIPE filter — stats only mean something with piped input. The
+	// popover (and any tty caller) shells this with no stdin, which used to
+	// "measure" an empty string and dump nonsense text. On a tty, render the
+	// honest tool card instead (owner law 2026-07-09: no dead-end screens).
+	if fi, statErr := os.Stdin.Stat(); statErr == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
+		res := &output.CommandResult{
+			Command:    "sirsi rtk stats",
+			BriefTitle: "RTK — Output Filter",
+			Summary:    "RTK is a pipe filter: it strips ANSI noise, deduplicates, and truncates tool output before it reaches an AI context. Pipe something through it to measure savings.",
+			Status:     "ok",
+		}
+		res.AddEvidence("Filter usage", "some-command | sirsi rtk filter")
+		res.AddEvidence("Measure savings", "some-command | sirsi rtk stats")
+		res.Render()
+		return nil
+	}
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return fmt.Errorf("read stdin: %w", err)

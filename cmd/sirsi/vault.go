@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/vault"
 )
@@ -166,22 +167,44 @@ func runVaultStats(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("stats: %w", err)
 	}
 
-	output.Banner()
-	fmt.Printf("Vault Statistics\n\n")
-	fmt.Printf("  Entries: %d\n", stats.TotalEntries)
-	fmt.Printf("  Total bytes: %d\n", stats.TotalBytes)
-	fmt.Printf("  Tokens saved: %d\n", stats.TotalTokens)
+	// CommandResult contract (owner law 2026-07-09: every popover screen
+	// renders structured and carries its lever — this was a raw Printf dump
+	// that ignored --json entirely).
+	res := &output.CommandResult{Command: "sirsi vault stats", BriefTitle: "Context Vault"}
+	res.Summary = fmt.Sprintf("%d sandboxed entr%s — %s of output kept out of context windows (%d tokens saved).",
+		stats.TotalEntries, map[bool]string{true: "y", false: "ies"}[stats.TotalEntries == 1],
+		guard.FormatBytes(int64(stats.TotalBytes)), stats.TotalTokens)
+	res.AddEvidence("Entries", fmt.Sprintf("%d", stats.TotalEntries))
+	res.AddEvidence("Stored", guard.FormatBytes(int64(stats.TotalBytes)))
+	res.AddEvidence("Tokens saved", fmt.Sprintf("%d", stats.TotalTokens))
 	if stats.OldestEntry != "" {
-		fmt.Printf("  Range: %s to %s\n", stats.OldestEntry, stats.NewestEntry)
+		res.AddEvidence("Range", fmt.Sprintf("%s → %s", stats.OldestEntry, stats.NewestEntry))
 	}
-	if len(stats.TagCounts) > 0 {
-		fmt.Printf("\n  Tags:\n")
-		for tag, count := range stats.TagCounts {
-			label := tag
-			if label == "" {
-				label = "(untagged)"
+	if stats.TotalEntries > 0 {
+		res.NextActions = append(res.NextActions, output.NextAction{
+			Label: "Prune old entries", Command: "sirsi vault prune",
+			Description: "Remove aged vault entries and reclaim space.",
+		})
+	}
+	res.Render()
+	if false { // retired Printf path below compiles out; kept for one release for reference
+		output.Banner()
+		fmt.Printf("Vault Statistics\n\n")
+		fmt.Printf("  Entries: %d\n", stats.TotalEntries)
+		fmt.Printf("  Total bytes: %d\n", stats.TotalBytes)
+		fmt.Printf("  Tokens saved: %d\n", stats.TotalTokens)
+		if stats.OldestEntry != "" {
+			fmt.Printf("  Range: %s to %s\n", stats.OldestEntry, stats.NewestEntry)
+		}
+		if len(stats.TagCounts) > 0 {
+			fmt.Printf("\n  Tags:\n")
+			for tag, count := range stats.TagCounts {
+				label := tag
+				if label == "" {
+					label = "(untagged)"
+				}
+				fmt.Printf("    %s: %d\n", label, count)
 			}
-			fmt.Printf("    %s: %d\n", label, count)
 		}
 	}
 	return nil

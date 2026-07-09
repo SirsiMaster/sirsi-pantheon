@@ -229,29 +229,49 @@ func runMaatScales(cmd *cobra.Command, args []string) error {
 
 func runMaatHeal(cmd *cobra.Command, args []string) error {
 	start := time.Now()
-	output.Banner()
-	output.Header("Auto-Remediation")
+	res := &output.CommandResult{Command: "sirsi maat heal", BriefTitle: "Auto-Remediation"}
 
-	// Step 1: Weigh
-	report, _ := maat.Weigh(&maat.CoverageAssessor{Thresholds: maat.DefaultThresholds(), DiffOnly: !healFull})
+	// Fast by default: weigh from CACHED coverage (SkipTests), exactly like
+	// audit post-#167. DiffOnly's cold-cache path falls back to the FULL
+	// go test suite — behind the popover's heal button that was a silent
+	// multi-minute "Working…" with no result, no cancel (owner, 2026-07-09:
+	// "no interaction whatsoever"). The mechanical remediations heal can
+	// apply don't need fresh coverage; --full opts into the deep weigh.
+	report, _ := maat.Weigh(&maat.CoverageAssessor{
+		Thresholds: maat.DefaultThresholds(),
+		DiffOnly:   healFull,
+		SkipTests:  !healFull,
+	})
 
-	// Step 2: Heal
 	findings := isis.FromMaatReport(report)
 	if len(findings) == 0 {
-		output.Success("The feather is balanced. No healing required.")
+		res.Summary = "The feather is balanced — no healing required."
+		res.Status = "ok"
+		res.Duration = time.Since(start)
+		res.Render()
 		return nil
 	}
 
 	healer := isis.NewHealer(".")
-	res := healer.Heal(findings, !maatFix)
+	hr := healer.Heal(findings, !maatFix)
 
-	output.Dashboard(map[string]string{
-		"Findings": fmt.Sprintf("%d", len(findings)),
-		"Healed":   fmt.Sprintf("%d", res.Healed),
-		"Failed":   fmt.Sprintf("%d", res.Failed),
-	})
-	output.Footer(time.Since(start))
-	output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "maat", Subcommand: "heal"}))
+	verb := "would be healed (pass --fix to apply)"
+	if maatFix {
+		verb = "healed"
+	}
+	res.Summary = fmt.Sprintf("%d finding(s): %d %s, %d cannot be auto-fixed.", len(findings), hr.Healed, verb, hr.Failed)
+	res.Status = "ok"
+	res.AddEvidence("Findings", fmt.Sprintf("%d", len(findings)))
+	res.AddEvidence("Healed", fmt.Sprintf("%d", hr.Healed))
+	res.AddEvidence("Not auto-fixable", fmt.Sprintf("%d", hr.Failed))
+	if !healFull {
+		res.NextActions = append(res.NextActions, output.NextAction{
+			Label: "Deep heal (runs the test suite)", Command: "sirsi maat heal --full",
+			Description: "Re-measures coverage live before healing — minutes, terminal-recommended.",
+		})
+	}
+	res.Duration = time.Since(start)
+	res.Render()
 	return nil
 }
 

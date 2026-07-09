@@ -278,18 +278,32 @@ struct BackBar: View {
     var body: some View {
         HStack(spacing: 6) {
             Button { dismiss() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
-                Text("Back").font(.system(size: 12))
+                // The LABEL is the hit area for a .plain button — the bare
+                // chevron+text was a ~40×16pt target the owner had to "click
+                // around a few times to actuate" (2026-07-09). Pad it to a
+                // 44pt-class target and make the whole padded region tappable.
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                    Text("Back").font(.system(size: 12))
+                }
+                .padding(.vertical, 10)
+                .padding(.leading, 12)
+                .padding(.trailing, 24)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(gold)
             Spacer()
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
             Spacer()
             // invisible spacer mirroring the back button keeps the title centered
-            Image(systemName: "chevron.left").font(.system(size: 12)).opacity(0)
-            Text("Back").font(.system(size: 12)).opacity(0)
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.left").font(.system(size: 12))
+                Text("Back").font(.system(size: 12))
+            }
+            .padding(.leading, 12).padding(.trailing, 24)
+            .opacity(0)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.vertical, 0)
         .contentShape(Rectangle())
         Divider()
     }
@@ -1322,6 +1336,8 @@ struct RiskView: View {
     @State private var report: RiskReport?
     @State private var rawFallback: String?
     @State private var loading = true
+    @State private var checkpointing = false
+    @State private var actionResult: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1350,6 +1366,26 @@ struct RiskView: View {
                     if let w = r.warning, !w.isEmpty {
                         Section { Text(w).font(.caption).foregroundStyle(.secondary) } header: { Text("NOTE") }
                     }
+                    Section {
+                        Button {
+                            Task { await checkpoint() }
+                        } label: {
+                            HStack {
+                                if checkpointing { ProgressView().controlSize(.small) }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Checkpoint now").font(.caption.weight(.semibold))
+                                    Text("Commit all changes locally — nothing is pushed, undo with git reset.")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(checkpointing || r.uncommittedFiles == 0)
+                        if let line = actionResult {
+                            Text(line).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } header: { Text("WHAT YOU CAN DO") }
                 }
                 .listStyle(.inset)
             } else {
@@ -1370,6 +1406,17 @@ struct RiskView: View {
         case "medium", "moderate": return "🟡"
         default: return "🔴"
         }
+    }
+
+    // checkpoint pulls the lever (sirsi osiris checkpoint), reports the result
+    // line, and re-measures — the screen RESOLVES what it found.
+    private func checkpoint() async {
+        checkpointing = true
+        let out = await SirsiEngine.run(args: ["osiris", "checkpoint"], stdin: nil)
+        actionResult = SirsiEngine.firstMeaningful(out)
+        engine.recordActivity(title: "Checkpoint commit", command: "osiris checkpoint", result: out)
+        checkpointing = false
+        await load()
     }
 
     private func load() async {
@@ -1927,7 +1974,18 @@ struct ResultView: View {
     // runFollow runs a non-destructive next action (e.g. scan) and reloads.
     private func runFollow(_ a: CRAction) async {
         applying = true
-        _ = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: nil)
+        // The follow-up command's OUTPUT is the whole point — discarding it and
+        // silently reloading made every "WHAT YOU CAN DO" button read as dead
+        // (owner, 2026-07-09: "NONE are actually interactive"). Surface the
+        // result summary as a toast, record it in the activity ledger, THEN
+        // re-measure so the score reflects what just ran.
+        // Run with --json so the toast shows the verb's real SUMMARY line, not
+        // its styled banner/header (which firstMeaningful would otherwise grab).
+        let jsonData = await SirsiEngine.runJSON(args: sirsiArgs(a.command) + ["--json"])
+        let out = String(data: jsonData, encoding: .utf8) ?? ""
+        engine.recordActivity(title: a.label, command: a.command, result: out)
+        let summary = SirsiEngine.summaryLine(out)
+        toast = summary.isEmpty ? "\(a.label): done." : summary
         applying = false
         await load()
         engine.refresh()

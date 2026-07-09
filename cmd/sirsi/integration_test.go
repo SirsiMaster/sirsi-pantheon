@@ -883,7 +883,34 @@ func TestUXContract_NoDeityVocab(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			stdout, stderr, err := runSirsi(t, 60*time.Second, tt.args...)
+			// `risk` ECHOES repo data (branch name, last commit message) — a
+			// host checkout whose tip commit mentions a deity is DATA, not UI
+			// chrome, and must not fail the vocab law. Run it against a
+			// controlled fixture repo so the test owns every string it greps
+			// (2026-07-09: the pushed tip "feat(menubar): Osiris — …" made
+			// this test unpassable in its own feature worktree).
+			dir := repoRoot
+			if tt.name == "risk" {
+				dir = t.TempDir()
+				for _, ga := range [][]string{
+					{"init", "-q"},
+					{"config", "user.email", "vocab@test"},
+					{"config", "user.name", "vocab-test"},
+					{"commit", "--allow-empty", "-q", "-m", "plain fixture commit"},
+				} {
+					gc := exec.Command("git", ga...)
+					gc.Dir = dir
+					for _, kv := range os.Environ() {
+						if !strings.HasPrefix(kv, "GIT_") {
+							gc.Env = append(gc.Env, kv)
+						}
+					}
+					if out, gerr := gc.CombinedOutput(); gerr != nil {
+						t.Fatalf("fixture git %v: %v\n%s", ga, gerr, out)
+					}
+				}
+			}
+			stdout, stderr, err := runSirsiInDir(t, dir, 60*time.Second, tt.args...)
 			if err != nil {
 				t.Fatalf("command %v failed: %v", tt.args, err)
 			}
