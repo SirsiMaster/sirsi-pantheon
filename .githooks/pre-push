@@ -18,35 +18,43 @@ set -e
 
 DEPTH="${MAAT_DEPTH:-fast}"
 
-# ── Detect tag-only pushes + capture push refs ───────────────────────
+# ── Detect no-content pushes + capture push refs ─────────────────────
 # Git pre-push hook receives: <local-ref> <local-sha> <remote-ref> <remote-sha>
 # on stdin. remote_sha is what the remote has NOW — the correct base
-# for our diff. If remote_sha is all zeros, this is a new branch.
-TAG_ONLY=true
+# for our diff. If remote_sha is all zeros, this is a new branch; if
+# local_sha is all zeros, this ref is being DELETED (git push --delete).
+# A push carrying only tag refs and/or ref-deletions changes zero code, so
+# it skips the full fmt/vet/lint/build pipeline (bulk branch hygiene via
+# `git push --delete` otherwise ran the whole gate per deleted branch).
+ZERO_SHA="0000000000000000000000000000000000000000"
+NO_CONTENT_PUSH=true
 PUSH_LOCAL_SHA=""
 PUSH_REMOTE_SHA=""
 while read local_ref local_sha remote_ref remote_sha; do
     case "$local_ref" in
-        refs/tags/*) ;;
+        refs/tags/*) ;;                    # tag push — no code content
         *)
-            TAG_ONLY=false
-            PUSH_LOCAL_SHA="$local_sha"
-            PUSH_REMOTE_SHA="$remote_sha"
+            if [ "$local_sha" = "$ZERO_SHA" ]; then
+                : # branch/ref deletion — no code content, nothing to check
+            else
+                NO_CONTENT_PUSH=false
+                PUSH_LOCAL_SHA="$local_sha"
+                PUSH_REMOTE_SHA="$remote_sha"
+            fi
             ;;
     esac
 done
 
-if [ "$TAG_ONLY" = "true" ]; then
+if [ "$NO_CONTENT_PUSH" = "true" ]; then
     echo ""
     echo "  𓆄 Ma'at pre-push gate... [Pantheon | depth: fast]"
     echo ""
-    echo "  ⏭️  Tag push — fast pass"
+    echo "  ⏭️  Tag / ref-deletion only — nothing to check, fast pass"
     exit 0
 fi
 
 # ── Detect changed files (for diff-based testing + auto-escalation) ──
 CHANGED_PKGS=""
-ZERO_SHA="0000000000000000000000000000000000000000"
 
 if [ -n "$PUSH_REMOTE_SHA" ] && [ "$PUSH_REMOTE_SHA" != "$ZERO_SHA" ]; then
     DIFF_BASE="$PUSH_REMOTE_SHA"
