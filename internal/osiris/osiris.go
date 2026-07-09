@@ -17,6 +17,7 @@ package osiris
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -66,6 +67,21 @@ var runCommand = defaultRunCommand
 func defaultRunCommand(dir, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	// Scrub GIT_* from the child env. This package's contract is "operate on
+	// dir" — but git honors GIT_DIR/GIT_WORK_TREE OVER the process cwd, so an
+	// inherited pointer (the Ma'at pre-push gate exports one into `go test`)
+	// silently retargets every git call at a DIFFERENT repo. That exact leak
+	// made `osiris checkpoint`'s own test suite commit 1,126 files onto the
+	// feature branch it ships on, twice, from inside the push gate
+	// (2026-07-09; the #99 class). Environment redirection is never this
+	// package's contract; explicit dir is.
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }

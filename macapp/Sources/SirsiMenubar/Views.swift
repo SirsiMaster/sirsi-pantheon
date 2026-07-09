@@ -1322,6 +1322,8 @@ struct RiskView: View {
     @State private var report: RiskReport?
     @State private var rawFallback: String?
     @State private var loading = true
+    @State private var checkpointing = false
+    @State private var actionResult: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1350,6 +1352,26 @@ struct RiskView: View {
                     if let w = r.warning, !w.isEmpty {
                         Section { Text(w).font(.caption).foregroundStyle(.secondary) } header: { Text("NOTE") }
                     }
+                    Section {
+                        Button {
+                            Task { await checkpoint() }
+                        } label: {
+                            HStack {
+                                if checkpointing { ProgressView().controlSize(.small) }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Checkpoint now").font(.caption.weight(.semibold))
+                                    Text("Commit all changes locally — nothing is pushed, undo with git reset.")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(checkpointing || r.uncommittedFiles == 0)
+                        if let line = actionResult {
+                            Text(line).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } header: { Text("WHAT YOU CAN DO") }
                 }
                 .listStyle(.inset)
             } else {
@@ -1370,6 +1392,17 @@ struct RiskView: View {
         case "medium", "moderate": return "🟡"
         default: return "🔴"
         }
+    }
+
+    // checkpoint pulls the lever (sirsi osiris checkpoint), reports the result
+    // line, and re-measures — the screen RESOLVES what it found.
+    private func checkpoint() async {
+        checkpointing = true
+        let out = await SirsiEngine.run(args: ["osiris", "checkpoint"], stdin: nil)
+        actionResult = SirsiEngine.firstMeaningful(out)
+        engine.recordActivity(title: "Checkpoint commit", command: "osiris checkpoint", result: out)
+        checkpointing = false
+        await load()
     }
 
     private func load() async {
