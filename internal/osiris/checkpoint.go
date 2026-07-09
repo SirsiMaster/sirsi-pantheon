@@ -21,6 +21,16 @@ type CheckpointResult struct {
 // CommitCheckpoint stages everything and commits a Rule-A18 checkpoint in
 // repoDir. A clean tree is a successful no-op, not an error.
 func CommitCheckpoint(repoDir string) (*CheckpointResult, error) {
+	// Bare repos have no work tree — checkpoint the dirtiest linked worktree,
+	// the SAME target Assess reports on (2026-07-09: the button errored on the
+	// bare sirsi-pantheon root while the view showed real worktree risk).
+	if bare, _ := runCommand(repoDir, "git", "rev-parse", "--is-bare-repository"); bare == "true" {
+		if wt := dirtiestWorktree(repoDir); wt != "" {
+			repoDir = wt
+		} else {
+			return nil, fmt.Errorf("%s is a bare repository with no linked worktrees", repoDir)
+		}
+	}
 	if out, err := runCommand(repoDir, "git", "rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(out) != "true" {
 		return nil, fmt.Errorf("not a git work tree: %s", repoDir)
 	}

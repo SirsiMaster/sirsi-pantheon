@@ -86,6 +86,40 @@ func defaultRunCommand(dir, name string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// dirtiestWorktree returns the linked worktree path with the most uncommitted
+// changes for a bare repo (or the first one if all are clean). Empty if none.
+func dirtiestWorktree(repoDir string) string {
+	out, err := runCommand(repoDir, "git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok {
+			// Skip the bare repo's own entry (it has no working tree).
+			if b, _ := runCommand(p, "git", "rev-parse", "--is-bare-repository"); b == "true" {
+				continue
+			}
+			paths = append(paths, p)
+		}
+	}
+	best, bestN := "", -1
+	for _, p := range paths {
+		status, err := runCommand(p, "git", "status", "--porcelain")
+		if err != nil {
+			continue
+		}
+		n := 0
+		if strings.TrimSpace(status) != "" {
+			n = len(strings.Split(strings.TrimSpace(status), "\n"))
+		}
+		if n > bestN {
+			best, bestN = p, n
+		}
+	}
+	return best
+}
+
 // Assess evaluates the current repository state and returns a Checkpoint.
 // If repoDir is empty, it uses the current working directory.
 func Assess(repoDir string) (*Checkpoint, error) {
@@ -94,6 +128,20 @@ func Assess(repoDir string) (*Checkpoint, error) {
 	}
 
 	cp := &Checkpoint{}
+
+	// A BARE repository has no work tree of its own — its uncommitted work
+	// lives in LINKED worktrees (the sirsi-pantheon multi-worktree layout).
+	// `git rev-parse --show-toplevel` fails there ("this operation must be run
+	// in a work tree"), which surfaced as Osiris saying "needs a git
+	// repository" for a perfectly valid project (owner, 2026-07-09). Redirect
+	// to the worktree with the most uncommitted work so the risk is real.
+	if bare, _ := runCommand(repoDir, "git", "rev-parse", "--is-bare-repository"); bare == "true" {
+		if wt := dirtiestWorktree(repoDir); wt != "" {
+			repoDir = wt
+		} else {
+			return nil, fmt.Errorf("osiris: %s is a bare repository with no linked worktrees to assess", repoDir)
+		}
+	}
 
 	// Find repo root
 	root, err := runCommand(repoDir, "git", "rev-parse", "--show-toplevel")

@@ -1161,9 +1161,13 @@ struct ScanCleanView: View {
         HStack(spacing: 8) {
             if toggleable {
                 Button { toggle(f.path) } label: {
+                    // 15pt glyph in a padded region — a bare icon toggle was a
+                    // ~15pt target you had to poke at (same class as BackBar).
                     Image(systemName: selected.contains(f.path) ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 15))
                         .foregroundStyle(selected.contains(f.path) ? gold : Color.secondary)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -1390,7 +1394,8 @@ struct RiskView: View {
                 .listStyle(.inset)
             } else {
                 ScrollView {
-                    Text(rawFallback ?? "Couldn't read checkpoint risk.")
+                    let msg = (rawFallback?.isEmpty == false) ? rawFallback! : "Couldn't read checkpoint risk."
+                    Text(msg)
                         .font(.caption.monospaced())
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                 }
@@ -1412,8 +1417,9 @@ struct RiskView: View {
     // line, and re-measures — the screen RESOLVES what it found.
     private func checkpoint() async {
         checkpointing = true
-        let out = await SirsiEngine.run(args: ["osiris", "checkpoint"], stdin: nil)
-        actionResult = SirsiEngine.firstMeaningful(out)
+        let data = await SirsiEngine.runJSON(args: ["osiris", "checkpoint", "--json"])
+        let out = String(data: data, encoding: .utf8) ?? ""
+        actionResult = SirsiEngine.summaryLine(out)
         engine.recordActivity(title: "Checkpoint commit", command: "osiris checkpoint", result: out)
         checkpointing = false
         await load()
@@ -1421,14 +1427,23 @@ struct RiskView: View {
 
     private func load() async {
         loading = true
+        report = nil
+        rawFallback = nil
         let data = await SirsiEngine.runJSON(args: ["risk", "--json"])
         let text = String(data: data, encoding: .utf8) ?? ""
         if let i = text.firstIndex(of: "{"),
            let r = try? JSONDecoder().decode(RiskReport.self, from: Data(String(text[i...]).utf8)) {
             report = r
-        } else {
-            rawFallback = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            loading = false
+            return
         }
+        // No JSON on stdout — risk prints its guidance ("needs a git
+        // repository…") to STDERR, which runJSON drops. run() captures both, so
+        // the screen shows the real message instead of a blank void (the bug:
+        // an empty stdout became Text("") — transparent nothing, 2026-07-09).
+        let combined = await SirsiEngine.run(args: ["risk"], stdin: nil)
+        let cleaned = CommandView.stripBanner(combined).trimmingCharacters(in: .whitespacesAndNewlines)
+        rawFallback = cleaned.isEmpty ? "Couldn't read checkpoint risk here. Set a project in a repo folder, or run `sirsi risk` in a terminal." : cleaned
         loading = false
     }
 }
