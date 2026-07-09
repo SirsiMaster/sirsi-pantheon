@@ -41,6 +41,19 @@ func stubDutyRun(t *testing.T, fn func(script, repoRoot string) error) *[]string
 	return &calls
 }
 
+// stubSessionReaper replaces the native session-reaper duty body for the
+// duration of a test — the duty table must be executable in tests WITHOUT
+// shelling ps/SIGTERM on the host (the #151 test-side-effects class; the
+// first run of this suite executed the real reaper before this stub existed).
+func stubSessionReaper(t *testing.T) *int {
+	t.Helper()
+	runs := 0
+	orig := getSessionReaperImpl()
+	setSessionReaperImpl(func(routerRoot, repoRoot string) error { runs++; return nil })
+	t.Cleanup(func() { setSessionReaperImpl(orig) })
+	return &runs
+}
+
 // TestRunSupervisorDuties_CadenceGating proves the fold's scheduler contract:
 // the dispatch pump runs every tick; sweep and registry-police run once and
 // are then cadence-skipped until their interval elapses — the same cadences
@@ -48,11 +61,12 @@ func stubDutyRun(t *testing.T, fn func(script, repoRoot string) error) *[]string
 func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	routerRoot, repoRoot := scaffoldDutyScripts(t)
 	calls := stubDutyRun(t, nil)
+	stubSessionReaper(t)
 	now := time.Now()
 
 	first := runSupervisorDuties(routerRoot, repoRoot, now)
-	if len(first) != 3 {
-		t.Fatalf("first pass duties = %d, want 3", len(first))
+	if len(first) != 4 {
+		t.Fatalf("first pass duties = %d, want 4 (3 scripts + native session-reaper)", len(first))
 	}
 	for _, d := range first {
 		if !d.Ran || d.Skipped != "" || d.Error != "" {
@@ -136,15 +150,26 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := stubDutyRun(t, nil)
+	reaperRuns := stubSessionReaper(t)
 
 	results := runSupervisorDuties(routerRoot, repoRoot, time.Now())
 	if len(*calls) != 0 {
 		t.Fatalf("no script should run when none exist: %v", *calls)
 	}
 	for _, d := range results {
+		if d.Name == "session-reaper" {
+			// Native duty: no script to be missing — it runs.
+			if !d.Ran || d.Skipped != "" {
+				t.Errorf("session-reaper = %+v, want ran (native, script-independent)", d)
+			}
+			continue
+		}
 		if d.Ran || d.Skipped != "script missing" {
 			t.Errorf("%s = %+v, want skipped (script missing)", d.Name, d)
 		}
+	}
+	if *reaperRuns != 1 {
+		t.Fatalf("stubbed reaper runs = %d, want 1", *reaperRuns)
 	}
 }
 
@@ -158,6 +183,7 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	}
 	writeSupervisorRegistry(t, routerRoot, repoRoot)
 	calls := stubDutyRun(t, nil)
+	stubSessionReaper(t)
 
 	report, err := SuperviseOnce(SuperviseOptions{
 		RepoRoot: repoRoot,
@@ -168,8 +194,8 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Duties) != 3 {
-		t.Fatalf("report.Duties = %d, want 3: %+v", len(report.Duties), report.Duties)
+	if len(report.Duties) != 4 {
+		t.Fatalf("report.Duties = %d, want 4: %+v", len(report.Duties), report.Duties)
 	}
 	if len(*calls) != 3 {
 		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)

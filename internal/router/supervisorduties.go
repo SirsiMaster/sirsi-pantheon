@@ -31,9 +31,10 @@ const dutyTimeout = 2 * time.Minute
 
 // SupervisorDuty describes one folded duty pass.
 type SupervisorDuty struct {
-	Name      string        // duty id, stable (used for the cadence stamp file)
-	ScriptRel string        // script path relative to the router root
-	Cadence   time.Duration // 0 = every tick
+	Name      string                                  // duty id, stable (used for the cadence stamp file)
+	ScriptRel string                                  // script path relative to the router root ("" for Go duties)
+	GoRun     func(routerRoot, repoRoot string) error // native duty; takes precedence over ScriptRel
+	Cadence   time.Duration                           // 0 = every tick
 }
 
 // supervisorDuties returns the three folded duties. Cadences mirror the legacy
@@ -45,6 +46,9 @@ func supervisorDuties() []SupervisorDuty {
 		{Name: "dispatch-pump", ScriptRel: "run-on-event.sh", Cadence: 0},
 		{Name: "sweep", ScriptRel: "sweep.sh", Cadence: time.Hour},
 		{Name: "registry-police", ScriptRel: filepath.Join("police", "registry-police.sh"), Cadence: 10 * time.Minute},
+		// Session reaper (2026-07-08 wakeup-leak RCA): native Go — it needs
+		// process grouping + SIGTERM, not a shell subroutine. See sessionreaper.go.
+		{Name: "session-reaper", GoRun: runSessionReaperDuty, Cadence: 10 * time.Minute},
 	}
 }
 
@@ -119,11 +123,12 @@ func runSupervisorDuties(routerRoot, repoRoot string, now time.Time) []DutyResul
 	results := make([]DutyResult, 0, len(duties))
 	for _, d := range duties {
 		res := DutyResult{Name: d.Name}
-		script := filepath.Join(routerRoot, d.ScriptRel)
-		if _, err := os.Stat(script); err != nil {
-			res.Skipped = "script missing"
-			results = append(results, res)
-			continue
+		if d.GoRun == nil {
+			if _, err := os.Stat(filepath.Join(routerRoot, d.ScriptRel)); err != nil {
+				res.Skipped = "script missing"
+				results = append(results, res)
+				continue
+			}
 		}
 		if !dutyDue(routerRoot, d, now) {
 			res.Skipped = "cadence"
@@ -131,7 +136,11 @@ func runSupervisorDuties(routerRoot, repoRoot string, now time.Time) []DutyResul
 			continue
 		}
 		start := time.Now()
-		if err := dutyRunFn(script, repoRoot); err != nil {
+		if d.GoRun != nil {
+			if err := d.GoRun(routerRoot, repoRoot); err != nil {
+				res.Error = err.Error()
+			}
+		} else if err := dutyRunFn(filepath.Join(routerRoot, d.ScriptRel), repoRoot); err != nil {
 			res.Error = err.Error()
 		}
 		res.Ran = true
