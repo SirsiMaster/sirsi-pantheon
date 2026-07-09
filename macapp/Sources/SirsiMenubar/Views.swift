@@ -500,6 +500,20 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
+    @State private var copied = false
+
+    // recommendedCommand pulls a `sirsi …` command the finding names in its
+    // message/detail (backtick-quoted) so guidance findings become actionable.
+    private var recommendedCommand: String? {
+        for text in [finding.message, finding.detail ?? ""] {
+            // Prefer a backtick-quoted command.
+            if let open = text.range(of: "`sirsi "), let close = text.range(of: "`", range: open.upperBound..<text.endIndex) {
+                let cmd = String(text[open.upperBound..<close.lowerBound])
+                if !cmd.isEmpty { return "sirsi " + cmd.replacingOccurrences(of: "sirsi ", with: "") }
+            }
+        }
+        return nil
+    }
 
     // Warn (2) and Critical (3) are alarms (guard.DiagnosticSeverity). An alarm
     // without a fix must say so honestly — never "Informational".
@@ -620,8 +634,24 @@ struct FindingView: View {
                         Text("This needs attention but has no one-click fix yet.")
                             .font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    } else if let cmd = recommendedCommand {
+                        // Guidance-tier (e.g. caution items cleared deliberately
+                        // in Terminal): the command it names must be actionable,
+                        // not buried in prose ending at "Informational."
+                        Text("RECOMMENDED — RUN IN TERMINAL").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(cmd).font(.caption.monospaced()).foregroundStyle(gold)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+                        HStack(spacing: 8) {
+                            Button {
+                                copyToClipboard(cmd)
+                                copied = true
+                            } label: { Label(copied ? "Copied" : "Copy command", systemImage: copied ? "checkmark" : "doc.on.doc") }
+                            Button { openTerminal() } label: { Label("Open Terminal", systemImage: "terminal") }
+                        }.font(.caption)
                     } else {
-                        Text("Informational.")
+                        Text("Informational — nothing to act on.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
