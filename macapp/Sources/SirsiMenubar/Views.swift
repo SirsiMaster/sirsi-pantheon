@@ -155,7 +155,7 @@ struct HomeView: View {
                                  dot: statusColor(engine.routerStatus))
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Osiris — Checkpoints", args: ["osiris", "risk"]) } label: {
+                    NavigationLink { RiskView(engine: engine) } label: {
                         DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints", detail: "uncommitted risk")
                     }.buttonStyle(.plain)
 
@@ -1284,6 +1284,108 @@ struct ItemDetailView: View {
 
 // ── Ghosts (Ka) — structured leftover-app screen, not a CLI transcript ───────
 //
+// Checkpoint risk contract — mirrors `sirsi risk --json` (bespoke shape, kept
+// stable for its TUI/script consumers; the popover decodes it natively rather
+// than forcing the CLI onto CommandResult).
+struct RiskReport: Decodable {
+    let uncommittedFiles: Int
+    let untrackedFiles: Int
+    let modifiedFiles: Int
+    let linesAdded: Int
+    let linesDeleted: Int
+    let lastCommitTime: String
+    let lastCommitMessage: String
+    let timeSinceCommit: Double // Go time.Duration NANOSECONDS (verified live: 1.79e15 ≈ 20.8d)
+    let risk: String
+    let warning: String?
+    let branch: String
+    let repoRoot: String
+    enum CodingKeys: String, CodingKey {
+        case risk, warning, branch
+        case uncommittedFiles = "uncommitted_files"
+        case untrackedFiles = "untracked_files"
+        case modifiedFiles = "modified_files"
+        case linesAdded = "lines_added"
+        case linesDeleted = "lines_deleted"
+        case lastCommitTime = "last_commit_time"
+        case lastCommitMessage = "last_commit_message"
+        case timeSinceCommit = "time_since_commit"
+        case repoRoot = "repo_root"
+    }
+}
+
+// Osiris — Checkpoints: uncommitted-work risk for the configured project.
+// Honest states: no project configured → guidance; project configured → the
+// real numbers (files at risk, line churn, time since the last checkpoint).
+struct RiskView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var report: RiskReport?
+    @State private var rawFallback: String?
+    @State private var loading = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Osiris — Checkpoints")
+            if loading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
+            } else if let r = report {
+                List {
+                    Section {
+                        HStack {
+                            Text(riskGlyph(r.risk)).font(.system(size: 18))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(r.uncommittedFiles) file\(r.uncommittedFiles == 1 ? "" : "s") not checkpointed")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Last commit \(SirsiEngine.humanDuration(r.timeSinceCommit / 1_000_000_000)) ago — \(r.lastCommitMessage)")
+                                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        }
+                    } header: { Text("RISK: \(r.risk.uppercased())") }
+                    Section {
+                        LabeledContent("Repository") { Text(r.repoRoot).font(.caption2.monospaced()).lineLimit(1).truncationMode(.middle) }
+                        LabeledContent("Branch") { Text(r.branch).font(.caption2.monospaced()) }
+                        LabeledContent("Modified / untracked") { Text("\(r.modifiedFiles) / \(r.untrackedFiles)").font(.caption2.monospaced()) }
+                        LabeledContent("Line churn") { Text("+\(r.linesAdded) −\(r.linesDeleted)").font(.caption2.monospaced()) }
+                    } header: { Text("DETAILS") }
+                    if let w = r.warning, !w.isEmpty {
+                        Section { Text(w).font(.caption).foregroundStyle(.secondary) } header: { Text("NOTE") }
+                    }
+                }
+                .listStyle(.inset)
+            } else {
+                ScrollView {
+                    Text(rawFallback ?? "Couldn't read checkpoint risk.")
+                        .font(.caption.monospaced())
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                }
+            }
+        }
+        .navigationTitle("Osiris — Checkpoints")
+        .task { await load() }
+    }
+
+    private func riskGlyph(_ risk: String) -> String {
+        switch risk.lowercased() {
+        case "low": return "🟢"
+        case "medium", "moderate": return "🟡"
+        default: return "🔴"
+        }
+    }
+
+    private func load() async {
+        loading = true
+        let data = await SirsiEngine.runJSON(args: ["risk", "--json"])
+        let text = String(data: data, encoding: .utf8) ?? ""
+        if let i = text.firstIndex(of: "{"),
+           let r = try? JSONDecoder().decode(RiskReport.self, from: Data(String(text[i...]).utf8)) {
+            report = r
+        } else {
+            rawFallback = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        loading = false
+    }
+}
+
 // Ghost report contract — mirrors cmd/sirsi/anubis.go `ghostReport`, the shape
 // `sirsi ghosts --json` actually emits (pinned by ghosts_json_test.go). The
 // previous view decoded CommandResult, a contract ghosts NEVER emitted — so

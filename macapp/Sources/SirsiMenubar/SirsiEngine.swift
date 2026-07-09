@@ -344,7 +344,7 @@ final class SirsiEngine: ObservableObject {
     nonisolated static let projectRootKey = "projectRoot"
 
     // The verbs that measure a repository. Everything else stays pinned to $HOME.
-    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net"]
+    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net", "risk", "osiris"]
 
     // Validated project root (or nil), mirrored for the views.
     @Published var projectRoot: String?
@@ -549,6 +549,17 @@ final class SirsiEngine: ObservableObject {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    // humanDuration renders seconds as "3w2d" / "5h12m" / "4m" — plain reading
+    // for "time since last checkpoint".
+    static func humanDuration(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        let w = s / 604_800, d = (s % 604_800) / 86_400, h = (s % 86_400) / 3_600, m = (s % 3_600) / 60
+        if w > 0 { return "\(w)w\(d)d" }
+        if d > 0 { return "\(d)d\(h)h" }
+        if h > 0 { return "\(h)h\(m)m" }
+        return "\(max(m, 1))m"
+    }
 
     static func human(_ bytes: Int64) -> String {
         let units = ["B", "KB", "MB", "GB", "TB"]
