@@ -403,7 +403,23 @@ var (
 	watchParentPID  int
 	watchDebounce   = 800 * time.Millisecond
 	watchAliveCheck = 30 * time.Second
+	// store-wake goroutine pacing (fork-storm guards, ADR-036/037 cutover):
+	watchWaitBackoff = 30 * time.Second // after a failed `router wait`, before retry
+	watchDrainPoll   = 5 * time.Second  // between drain checks after a wake, before re-arming
 )
+
+// sleepCtx sleeps for d or until ctx is canceled. Returns false if canceled
+// (caller should stop), true if the full duration elapsed.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
 
 var threadWatchRouterCmd = &cobra.Command{
 	Use:    "watch-router",
@@ -459,22 +475,52 @@ var threadWatchRouterCmd = &cobra.Command{
 		// Post-cutover (ADR-036/037) the items/ directory is no longer written,
 		// so fsnotify never fires for router items and this durable watcher would
 		// go deaf. When the store-wake flag is on, park a goroutine on the store's
-		// per-agent wake FIFO (`router wait`, <250ms) and feed its wakes into the
-		// SAME debounce+fire path — so the RunAtLoad watcher wakes on store rows,
-		// while fsnotify still covers state.json / proposals / any legacy files.
+		// per-agent wake FIFO (`router wait`) and feed its wakes into the SAME
+		// debounce+fire path — so the RunAtLoad watcher wakes on store rows, while
+		// fsnotify still covers state.json / proposals / any legacy files.
 		storeEvents := make(chan struct{}, 1)
 		if routercfg.StoreWake() {
 			if self, err := os.Executable(); err == nil {
+				// `router wait` resolves the repo via FindRepoRoot (cwd/git), NOT the
+				// --router-root we were handed; a launchd cwd of / or $HOME would make
+				// it error every iteration. Anchor the subprocess to this repo.
+				repoDir := filepath.Dir(filepath.Dir(watchRouterRoot)) // <repo> from <repo>/.agents/idea-router
 				go func() {
 					for ctx.Err() == nil {
-						out, _ := exec.CommandContext(ctx, self, "router", "wait", watchAgentID, "--timeout", "50").CombinedOutput()
+						c := exec.CommandContext(ctx, self, "router", "wait", watchAgentID, "--timeout", "50")
+						c.Dir = repoDir
+						out, waitErr := c.CombinedOutput()
 						if ctx.Err() != nil {
 							return
 						}
-						if strings.Contains(string(out), "• ") {
-							select {
-							case storeEvents <- struct{}{}:
-							default:
+						if waitErr != nil {
+							// wait failed (repo resolution, store open, …). Back off so a
+							// persistent failure can't become a fork-storm.
+							sleepCtx(ctx, watchWaitBackoff)
+							continue
+						}
+						if !strings.Contains(string(out), "• ") {
+							continue // timed out with an empty inbox — re-block, no event
+						}
+						// Work is present. Deliver ONE wake, then wait for the dispatched
+						// session to DRAIN the inbox before re-arming. `router wait` is
+						// level-triggered (returns instantly while any item is open), so
+						// without this the loop would re-fork `router wait` continuously
+						// for the whole time the item stays open — a fork-storm that also
+						// keeps resetting the debounce so fire() never runs.
+						select {
+						case storeEvents <- struct{}{}:
+						default:
+						}
+						for ctx.Err() == nil {
+							if !sleepCtx(ctx, watchDrainPoll) {
+								return
+							}
+							p := exec.CommandContext(ctx, self, "router", "pull", watchAgentID)
+							p.Dir = repoDir
+							pout, _ := p.CombinedOutput()
+							if !strings.Contains(string(pout), "• ") {
+								break // inbox drained — safe to re-arm the wait
 							}
 						}
 					}

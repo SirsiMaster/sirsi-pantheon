@@ -133,9 +133,14 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 	}
 	rows, err := f.store.Inbox(agent)
 	if err != nil {
-		// The store is additive infrastructure during the dual-read window —
-		// a broken store must not strand the canonical file inbox.
-		return items, nil //nolint:nilerr // deliberate: files stay readable
+		// Pre-cutover the store is additive: a broken store must not strand the
+		// canonical file inbox, so we degrade to files. Post-cutover the store IS
+		// the authority and open items are store-only — degrading to files would
+		// report a FALSE-EMPTY inbox and strand work, so the error must surface.
+		if routercfg.StoreWake() {
+			return items, fmt.Errorf("store inbox unavailable (store is the cutover authority): %w", err)
+		}
+		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))
 	for _, it := range items {
@@ -168,7 +173,12 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	}
 	rows, err := f.store.ListAll()
 	if err != nil {
-		return items, nil //nolint:nilerr // deliberate: a broken store must not blind the file view
+		// Same rule as Inbox: post-cutover a broken store must surface, not blind
+		// the caller with a files-only (empty) view.
+		if routercfg.StoreWake() {
+			return items, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
+		}
+		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))
 	for _, it := range items {
