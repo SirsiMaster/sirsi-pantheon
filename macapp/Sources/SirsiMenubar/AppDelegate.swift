@@ -9,7 +9,12 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private let popover = NSPopover()
+    // The surface is a real, movable, RESIZABLE floating panel — not a locked
+    // NSPopover. An NSPopover cannot be moved or resized by the user, which is
+    // wrong for a 20-screen app (owner, 2026-07-09). The panel remembers its
+    // frame (position + size) across opens via setFrameAutosaveName.
+    private var panel: NSPanel!
+    private var panelObserver: Any?
     private let engine = SirsiEngine()
     private var refreshTimer: Timer?
 
@@ -120,12 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
-        popover.behavior = .transient                  // closes when you click away…
-        popover.animates = true
-        popover.contentSize = NSSize(width: 380, height: 520)
-        popover.contentViewController = NSHostingController(
-            rootView: RootView(engine: engine)
-        )
+        buildPanel()
 
         engine.onTitle = { [weak self] label in
             guard let self = self, let button = self.statusItem.button else { return }
@@ -151,16 +151,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // buildPanel constructs the movable, resizable floating panel once. Titled +
+    // closable + resizable gives the user a drag handle (transparent title bar,
+    // isMovableByWindowBackground) and standard resize edges; the frame is
+    // autosaved so position + size persist across opens and relaunches.
+    private func buildPanel() {
+        let hosting = NSHostingView(rootView: RootView(engine: engine))
+        // CRITICAL for resize: NSHostingView otherwise pins Auto Layout
+        // constraints to its content's intrinsic (fitting) size, which locks the
+        // window at a fixed size no matter the .resizable mask. Clearing
+        // sizingOptions and letting it fill via the autoresizing mask lets the
+        // user resize freely (the 2026-07-09 'not sizable' report).
+        if #available(macOS 13.0, *) { hosting.sizingOptions = [] }
+        hosting.translatesAutoresizingMaskIntoConstraints = true
+        hosting.autoresizingMask = [.width, .height]
+
+        let p = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 560),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+            backing: .buffered, defer: false)
+        p.title = "Sirsi Pantheon"
+        p.titleVisibility = .hidden
+        p.titlebarAppearsTransparent = true
+        p.isMovableByWindowBackground = true          // drag from anywhere
+        p.isFloatingPanel = true
+        p.level = .floating
+        p.hidesOnDeactivate = false
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 560))
+        hosting.frame = container.bounds
+        container.addSubview(hosting)
+        p.contentView = container
+        p.minSize = NSSize(width: 360, height: 420)   // resizable, with a sane floor
+        p.maxSize = NSSize(width: 900, height: 1400)
+        p.isReleasedWhenClosed = false
+        p.setFrameAutosaveName("SirsiPantheonPanel")  // persist position + size
+        panel = p
+    }
+
     @objc private func togglePopover(_ sender: Any?) {
-        guard let button = statusItem.button else { return }
-        if popover.isShown {
-            popover.performClose(sender)
-        } else {
-            engine.refresh()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Bring the popover to the front so text fields / scrolling get events.
-            popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        guard panel != nil else { return }
+        if panel.isVisible {
+            panel.orderOut(sender)
+            return
         }
+        engine.refresh()
+        // First open with no saved frame: anchor under the status item. After
+        // that, respect wherever the user moved/sized it (autosaved frame).
+        if panel.frameAutosaveName.isEmpty || !panel.setFrameUsingName("SirsiPantheonPanel") {
+            positionUnderStatusItem()
+        } else if let button = statusItem.button, button.window == nil {
+            positionUnderStatusItem()
+        }
+        // If the saved frame would place it off-screen (display changed), recenter.
+        if let screen = NSScreen.main, !screen.visibleFrame.intersects(panel.frame) {
+            positionUnderStatusItem()
+        }
+        panel.makeKeyAndOrderFront(sender)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // positionUnderStatusItem places the panel just below the menu-bar icon,
+    // right-aligned to it (the natural first-open location).
+    private func positionUnderStatusItem() {
+        guard let button = statusItem.button, let bwin = button.window else {
+            if let screen = NSScreen.main { panel.center(); _ = screen } // fallback
+            return
+        }
+        let btnRectScreen = bwin.convertToScreen(button.convert(button.bounds, to: nil))
+        var f = panel.frame
+        f.origin.x = btnRectScreen.maxX - f.width
+        f.origin.y = btnRectScreen.minY - f.height - 6
+        if let vis = NSScreen.main?.visibleFrame {
+            f.origin.x = min(max(f.origin.x, vis.minX + 8), vis.maxX - f.width - 8)
+            f.origin.y = min(max(f.origin.y, vis.minY + 8), vis.maxY - f.height - 8)
+        }
+        panel.setFrame(f, display: false)
     }
 }
