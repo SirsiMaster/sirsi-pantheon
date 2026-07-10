@@ -111,24 +111,38 @@ struct RootView: View {
     @ObservedObject var engine: SirsiEngine
     @StateObject private var nav = Nav()
 
+    // The whole UI is designed at this width; everything (fonts, dividers,
+    // spacing, structures) scales geometrically from it, so resizing the window
+    // resizes the ELEMENTS too — not just the container (owner, 2026-07-10).
+    private let baseWidth: CGFloat = 380
+
     var body: some View {
         // Wrapping the content in an explicit VStack (instead of a bare Group)
         // is what finally lets each pushed view's BackBar render — a bare Group
         // under the NSHostingView (sizingOptions: []) dropped the top row. The
         // leading Color.clear reserves the window titlebar strip so the BackBar
-        // (and Home's title) clear the traffic-light buttons and stay clickable
-        // (they were overlapping the drag region before).
-        VStack(spacing: 0) {
-            Color.clear.frame(height: 50)
-            Group {
-                if let top = nav.stack.last {
-                    top.view
-                } else {
-                    HomeView(engine: engine)
+        // (and Home's title) clear the traffic-light buttons and stay clickable.
+        GeometryReader { geo in
+            // Scale factor = how much wider the window is than the base design.
+            // The window's minSize (360) keeps scale ≳ 0.95 so the 50pt titlebar
+            // clearance never shrinks below the ~28pt traffic-light strip.
+            let scale = max(0.5, geo.size.width / baseWidth)
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 50)
+                Group {
+                    if let top = nav.stack.last {
+                        top.view
+                    } else {
+                        HomeView(engine: engine)
+                    }
                 }
             }
+            // Design at the base width and a base-unit height that fills the
+            // window once scaled; .scaleEffect then blows up every element —
+            // font, divider, padding — by the same factor, anchored top-left.
+            .frame(width: baseWidth, height: max(1, geo.size.height / scale), alignment: .top)
+            .scaleEffect(scale, anchor: .topLeading)
         }
-        .frame(width: 380, height: 520)
         .environmentObject(nav)
     }
 }
@@ -189,7 +203,7 @@ struct HomeView: View {
                                  detail: engine.projectName ?? "governance")
                     }.buttonStyle(.plain)
 
-                    NavLink { ThothMemoryInfoView() } label: {
+                    NavLink { ThothMemoryInfoView(engine: engine) } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
@@ -201,6 +215,11 @@ struct HomeView: View {
                         DeityRow(glyph: "🛰️", title: "Router — Fabric",
                                  detail: engine.routerSummary,
                                  dot: statusColor(engine.routerStatus))
+                    }.buttonStyle(.plain)
+
+                    NavLink { ThreadsView(engine: engine) } label: {
+                        DeityRow(glyph: "💓", title: "Threads — Heartbeat",
+                                 detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live" : "live threads")
                     }.buttonStyle(.plain)
 
                     NavLink { RiskView(engine: engine) } label: {
@@ -1602,6 +1621,10 @@ struct GhostsView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var report: GhostReport?
     @State private var loading = true
+    @State private var cleaning = false
+    @State private var confirmClean = false
+    @State private var toast: String?
+    @State private var toastOK = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1654,9 +1677,48 @@ struct GhostsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             }
+            if let toast {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: toastOK ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(toastOK ? .green : .orange)
+                    Text(toast).font(.caption); Spacer()
+                }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
+            // The lever the audit asked for: a SAFE clean (Go `ghosts clean` —
+            // dry-run/trash-first/protected-aware). Only shown when there's
+            // something to reclaim; confirms first (trash is recoverable).
+            if let r = report, !r.ghosts.isEmpty {
+                Divider()
+                HStack {
+                    Button { confirmClean = true } label: {
+                        Label("Move remnants to Trash", systemImage: "trash")
+                    }.disabled(cleaning)
+                    if cleaning { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Text("recoverable").font(.caption2).foregroundStyle(.tertiary)
+                }.padding(.horizontal, 14).padding(.vertical, 10)
+            }
         }
         .navigationTitle("Leftover Apps")
         .task { await load() }
+        .confirmationDialog("Move ghost remnants to Trash?",
+                            isPresented: $confirmClean, titleVisibility: .visible) {
+            Button("Move to Trash", role: .destructive) { Task { await clean() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Residuals of uninstalled apps move to the Trash — recoverable until you empty it. Protected system paths and items needing admin rights are left alone.")
+        }
+    }
+
+    private func clean() async {
+        cleaning = true
+        let out = String(data: await SirsiEngine.runJSON(args: ["ghosts", "clean", "--confirm", "--json"]), encoding: .utf8) ?? ""
+        toastOK = SirsiEngine.resultOK(out)
+        toast = SirsiEngine.summaryLine(out)
+        engine.recordActivity(title: "Clean ghost remnants", command: "ghosts clean --confirm", result: toast ?? "")
+        cleaning = false
+        await load()
     }
 
     private func load() async {
@@ -2114,6 +2176,144 @@ struct ResultView: View {
     }
 }
 
+// ── Threads — the ambient CTR live-thread board + heartbeat ──────────────────
+// Owner directive 20260709-182003: make the `sirsi thread list` CTR board an
+// always-visible passive surface with a heartbeat graphic — see liveness WITHOUT
+// running a query. One row per agent (the raw list is ~72 threads, mostly
+// claude-home CCD sessions); each row shows a live/idle/stale roll-up, the
+// freshest last-seen (the heartbeat), and a pulse bar. Surfaces-current+actionable:
+// ⚠️ only for a genuinely stale agent; live data never greyed; plain English.
+struct ThreadsView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var question = ""
+    @State private var answer: String?
+    @State private var asking = false
+
+    private func ago(_ s: Double) -> String {
+        if s < 60 { return "\(Int(s))s ago" }
+        if s < 3600 { return "\(Int(s / 60))m ago" }
+        return "\(Int(s / 3600))h ago"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Threads — Heartbeat")
+            HStack(spacing: 6) {
+                Text("\(engine.threadsTotal)").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("live thread\(engine.threadsTotal == 1 ? "" : "s")").font(.caption).foregroundStyle(.primary)
+                    Text("\(engine.threadRoster.count) agent\(engine.threadRoster.count == 1 ? "" : "s") on the fabric").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }.padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+            if engine.threadRoster.isEmpty {
+                VStack(spacing: 8) {
+                    if engine.threadsLoading { ProgressView() }
+                    Text(engine.threadsLoading ? "Reading the fabric…" : "No live threads right now.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(engine.threadRoster) { a in
+                            HStack(spacing: 10) {
+                                Text(a.glyph).font(.system(size: 15))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(a.agent).font(.system(size: 12, weight: .semibold))
+                                    Text(rollup(a)).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 3) {
+                                    Text(ago(a.freshestIdle)).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                    PulseBar(pulse: a.pulse, stale: a.isStale)
+                                }
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            if a.id != engine.threadRoster.last?.id { Divider().padding(.leading, 40) }
+                        }
+                    }
+                }
+            }
+            // Ask Sirsi in plain English — answered ON-DEVICE, never a cloud
+            // model (owner directive: local-LLM every time). "Sirsi" is the
+            // brand; the model under it (Gemma today) is a switchable fabric —
+            // the user never sees the model name (owner, 2026-07-10).
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.caption).foregroundStyle(gold)
+                    TextField("Ask about the fabric — e.g. \"what's stale?\"", text: $question)
+                        .textFieldStyle(.plain).font(.system(size: 12))
+                        .onSubmit { ask() }
+                    if asking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(gold)
+                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                if let answer {
+                    Text(answer).font(.caption).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("answered on-device by Sirsi — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }.padding(.horizontal, 14).padding(.vertical, 8)
+
+            Divider()
+            HStack {
+                Button { Task { await engine.loadThreads() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .disabled(engine.threadsLoading)
+                Spacer()
+                Text("updates every 60s").font(.caption2).foregroundStyle(.tertiary)
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .task { await engine.loadThreads() }
+    }
+
+    private func ask() {
+        let q = question.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, !asking else { return }
+        asking = true
+        Task {
+            let a = await engine.askAboutThreads(q)
+            answer = a
+            asking = false
+        }
+    }
+
+    private func rollup(_ a: AgentHeartbeat) -> String {
+        var parts: [String] = []
+        if a.live > 0 { parts.append("\(a.live) live") }
+        if a.idle > 0 { parts.append("\(a.idle) idle") }
+        if a.staleN > 0 { parts.append("\(a.staleN) stale") }
+        let counts = parts.joined(separator: " · ")
+        let surf = a.surfaces.isEmpty ? "" : " — \(a.surfaces.joined(separator: "/"))"
+        return counts + surf
+    }
+}
+
+// PulseBar is the heartbeat graphic: a short bar that's full + green when the
+// agent was just seen and shrinks/dims as it goes quiet; amber when stale.
+struct PulseBar: View {
+    let pulse: Double   // 1 = just seen → 0 = quiet (~10 min)
+    let stale: Bool
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.08))
+                Capsule()
+                    .fill(stale ? Color.orange : Color.green)
+                    .frame(width: max(4, geo.size.width * CGFloat(stale ? 0.35 : pulse)))
+                    .opacity(stale ? 0.7 : (0.4 + 0.6 * pulse))
+            }
+        }
+        .frame(width: 48, height: 5)
+    }
+}
+
 // ── ActivityView — the provenance ledger ─────────────────────────────────────
 struct ActivityView: View {
     @ObservedObject var engine: SirsiEngine
@@ -2270,7 +2470,7 @@ struct InsightView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }.disabled(loading)
                 Button { Task { await load(ai: true) } } label: {
-                    Label("Ask Gemma", systemImage: "sparkles")
+                    Label("Ask Sirsi", systemImage: "sparkles")
                 }.disabled(loading)
                 if askingGemma { ProgressView().controlSize(.small) }
                 Spacer()
@@ -2315,7 +2515,7 @@ struct InsightView: View {
         } else if d.contains("horus") {
             HorusView(engine: engine)
         } else if d.contains("thoth") {
-            ThothMemoryInfoView()
+            ThothMemoryInfoView(engine: engine)
         } else {
             ResultView(engine: engine, title: deity, args: Self.deityArgs(deity))
         }
@@ -2336,30 +2536,116 @@ struct InsightView: View {
 // inside a project, so a raw `thoth status` here said ".thoth/ not found — run
 // sirsi thoth init", which is wrong advice for this surface (it would create
 // /.thoth). Say what's true in plain English instead.
+// ThothMemoryInfoView is project-aware (owner, 2026-07-10): like Ma'at/Net it
+// weighs the ProjectBar-selected repo, showing that project's .thoth/memory.yaml
+// — the compact "resume where the last session left off" state — with a Sync
+// lever, instead of a generic "not in a project" dead-end.
 struct ThothMemoryInfoView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var memory: String?
+    @State private var lineCount = 0
+    @State private var modified: String?
+    @State private var busy = false
+    @State private var toast: String?
+
+    private var memoryPath: String? { engine.projectRoot.map { $0 + "/.thoth/memory.yaml" } }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Thoth — Memory")
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Project memory lives with each project.")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Thoth keeps a small memory file inside every project folder so AI sessions can pick up exactly where the last one left off — no re-reading the whole codebase.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("The menu bar isn't inside a project, so there's nothing to show here. In a project folder, use:")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("sirsi thoth init").font(.caption.monospaced()).foregroundStyle(gold)
-                    Text("sirsi thoth sync").font(.caption.monospaced()).foregroundStyle(gold)
+            ProjectBar(engine: engine) { load() }
+            Group {
+                if engine.projectRoot == nil {
+                    noProject
+                } else if let mem = memory {
+                    hasMemory(mem)
+                } else {
+                    noMemoryYet
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
-                Spacer()
             }
-            .padding(16)
+            if let toast {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                    Text(toast).font(.caption); Spacer()
+                }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
         }
+        .task { load() }
         .navigationTitle("Thoth — Memory")
+    }
+
+    private var noProject: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Project memory lives with each project.").font(.system(size: 13, weight: .semibold))
+            Text("Thoth keeps a small memory file inside every project so a new session picks up where the last one left off — no re-reading the whole codebase.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Pick a project above to see its memory.").font(.callout).foregroundStyle(.secondary)
+            Spacer()
+        }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder private func hasMemory(_ mem: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("📖").font(.system(size: 14))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(engine.projectName ?? "project") memory").font(.system(size: 13, weight: .semibold))
+                    Text("\(lineCount) lines\(modified.map { " · synced \($0)" } ?? "")").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+            Divider()
+            ScrollView {
+                Text(mem).font(.caption.monospaced()).foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
+            Divider()
+            HStack {
+                Button { runThoth(["thoth", "sync"], "Memory synced") } label: { Label("Sync memory", systemImage: "arrow.triangle.2.circlepath") }.disabled(busy)
+                Button { reveal() } label: { Label("Reveal file", systemImage: "folder") }
+                if busy { ProgressView().controlSize(.small) }
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+        }
+    }
+
+    private var noMemoryYet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("No Thoth memory in \(engine.projectName ?? "this project") yet.").font(.system(size: 13, weight: .semibold))
+            Text("Initialize it so future sessions resume from a compact project state instead of re-reading everything.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button { runThoth(["thoth", "init"], "Memory initialized") } label: { Label("Initialize memory", systemImage: "sparkles") }.disabled(busy)
+            if busy { ProgressView().controlSize(.small) }
+            Spacer()
+        }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func load() {
+        guard let path = memoryPath, let data = FileManager.default.contents(atPath: path),
+              let s = String(data: data, encoding: .utf8) else { memory = nil; return }
+        memory = s
+        lineCount = s.split(separator: "\n", omittingEmptySubsequences: false).count
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           let d = attrs[.modificationDate] as? Date {
+            let f = DateFormatter(); f.dateFormat = "MMM d, HH:mm"; modified = f.string(from: d)
+        }
+    }
+
+    private func runThoth(_ args: [String], _ okMsg: String) {
+        busy = true
+        Task {
+            let out = await SirsiEngine.run(args: args, stdin: nil)
+            engine.recordActivity(title: okMsg, command: "sirsi " + args.joined(separator: " "), result: SirsiEngine.firstMeaningful(out))
+            toast = okMsg
+            busy = false
+            load()
+        }
+    }
+
+    private func reveal() {
+        guard let path = memoryPath else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 }
