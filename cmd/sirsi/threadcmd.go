@@ -406,6 +406,12 @@ var (
 	// store-wake goroutine pacing (fork-storm guards, ADR-036/037 cutover):
 	watchWaitBackoff = 30 * time.Second // after a failed `router wait`, before retry
 	watchDrainPoll   = 5 * time.Second  // between drain checks after a wake, before re-arming
+	// Cap the post-wake drain wait so a poison item (unroutable, an agent with no
+	// spawn command, an item no handler ever closes) can't wedge the loop forever
+	// and silence later items for this agent. After the cap we re-arm anyway; a
+	// still-open item just re-wakes at most once per cap window — bounded, not a
+	// storm — and re-arming re-reads ALL open items so item B is never stranded.
+	watchDrainMaxPolls = 60 // 60 × 5s = 5 min
 )
 
 // sleepCtx sleeps for d or until ctx is canceled. Returns false if canceled
@@ -512,7 +518,7 @@ var threadWatchRouterCmd = &cobra.Command{
 						case storeEvents <- struct{}{}:
 						default:
 						}
-						for ctx.Err() == nil {
+						for polls := 0; ctx.Err() == nil && polls < watchDrainMaxPolls; polls++ {
 							if !sleepCtx(ctx, watchDrainPoll) {
 								return
 							}
@@ -522,6 +528,8 @@ var threadWatchRouterCmd = &cobra.Command{
 							if !strings.Contains(string(pout), "• ") {
 								break // inbox drained — safe to re-arm the wait
 							}
+							// else keep polling until drained or the cap — then re-arm
+							// anyway so a poison item can't permanently wedge this agent.
 						}
 					}
 				}()

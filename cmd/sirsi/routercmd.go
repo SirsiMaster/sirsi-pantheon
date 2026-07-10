@@ -584,13 +584,24 @@ loop tick (the arm instruction is regenerated store-aware). Reversible with
 			if err != nil {
 				return fmt.Errorf("load agents: %w", err)
 			}
-			rearmed := 0
+			rearmed, skipped := 0, 0
 			for _, a := range reg.Agents {
+				// Same leak guard as `router wake-install` (owner finding 2026-07-10):
+				// arming a background wake channel on an agent that has a LIVE session
+				// spawns duplicate processes each tick. Only re-arm headless agents.
+				if router.AgentHasLiveThread(root, a.ID) {
+					skipped++
+					continue
+				}
 				if changed, _, iErr := router.InstallWakeLaunchAgent(a, ""); iErr == nil && changed {
 					rearmed++
 				}
 			}
-			fmt.Printf("  Re-armed %d headless wake LaunchAgent(s) into store-wake mode.\n", rearmed)
+			fmt.Printf("  Re-armed %d headless wake LaunchAgent(s) into store-wake mode", rearmed)
+			if skipped > 0 {
+				fmt.Printf("; skipped %d with a live session (their /loop re-arms itself)", skipped)
+			}
+			fmt.Println(".")
 		}
 		fmt.Printf("  Live sessions re-arm on their next loop tick; run `sirsi router cutover status` to verify.\n")
 		return nil
