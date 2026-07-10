@@ -47,3 +47,33 @@ func TestComputeStranded_FlagsUnarmedBacklog(t *testing.T) {
 		t.Error("loop-dead + no-thread agents must report unarmed")
 	}
 }
+
+// TestAgentHasLiveThread guards the wake-install leak fix (owner finding
+// 2026-07-10): a live thread means a running session, so arming a background
+// wake LaunchAgent on top would spawn duplicates. A freshly registered thread is
+// live; a suspended one is not (so a fully-suspended agent may still be armed to
+// wake a headless worker for its backlog); an absent agent is not live.
+func TestAgentHasLiveThread(t *testing.T) {
+	root := t.TempDir()
+
+	if _, err := RegisterThread(root, &Thread{AgentID: "claude-live", Surface: "claude", PID: 6001, StartTime: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	if !AgentHasLiveThread(root, "claude-live") {
+		t.Error("a freshly registered active thread must count as live")
+	}
+	if AgentHasLiveThread(root, "claude-absent") {
+		t.Error("an agent with no threads must not be live")
+	}
+
+	susp, err := RegisterThread(root, &Thread{AgentID: "claude-susp", Surface: "claude", PID: 6002, StartTime: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SuspendThread(root, susp.ThreadID, &SuspendPayload{}); err != nil {
+		t.Fatal(err)
+	}
+	if AgentHasLiveThread(root, "claude-susp") {
+		t.Error("an agent with only a suspended thread must not be live")
+	}
+}

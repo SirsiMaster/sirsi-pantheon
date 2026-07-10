@@ -198,6 +198,51 @@ struct RouterBoard: Decodable {
     }
 }
 
+// ── CTR thread roster — the ambient "live threads / heartbeat" board ──────────
+// Owner directive 20260709-182003: the CTR board must be an ALWAYS-VISIBLE
+// passive surface, not something you run `sirsi thread list` to see. TWRow is
+// one raw per-thread record from `sirsi thread list --json`; AgentHeartbeat
+// aggregates them by agent (the raw list is ~72 rows, many claude-home CCD
+// sessions — reference_claude_home_ccd_duplicate_records — so a per-agent roll-up
+// is the at-a-glance ambient view the owner asked for).
+struct TWRow: Decodable {
+    let idleSeconds: Double
+    let stale: Bool
+    let thread: Inner
+    struct Inner: Decodable {
+        let agentId: String?
+        let surface: String?
+        let status: String?
+        let watches: [String]?
+        enum CodingKeys: String, CodingKey { case agentId = "agent_id", surface, status, watches }
+    }
+    enum CodingKeys: String, CodingKey { case idleSeconds = "idle_seconds", stale, thread }
+}
+
+// AgentHeartbeat is one roster row: an agent, its thread liveness counts, the
+// freshest thread's idle age (the heartbeat), and the surfaces it runs on.
+struct AgentHeartbeat: Identifiable {
+    let agent: String
+    let live: Int
+    let idle: Int
+    let staleN: Int
+    let freshestIdle: Double     // seconds since the freshest thread was last seen
+    let surfaces: [String]
+    var id: String { agent }
+    var total: Int { live + idle + staleN }
+    // Status semantics match the rest of the surface (surfaces-current+actionable):
+    // 🟢 something live, 💤 only idle, ⚠️ only stale (the one genuinely actionable
+    // state — a stale thread may need reaping).
+    var glyph: String {
+        if live > 0 { return "🟢" }
+        if idle > 0 { return "💤" }
+        return "⚠️"
+    }
+    var isStale: Bool { live == 0 && idle == 0 && staleN > 0 }
+    // Heartbeat pulse fraction (1 = just seen, →0 as it goes quiet over ~10 min).
+    var pulse: Double { max(0, min(1, 1 - freshestIdle / 600)) }
+}
+
 // ActivityEntry is one line of the provenance ledger — every action taken from
 // the UI, with cause + outcome, persisted so the user can see (and trust) what
 // Pantheon did. Reversibility + provenance is what earns autonomy.
@@ -261,6 +306,51 @@ final class SirsiEngine: ObservableObject {
     @Published var routerBoard: RouterBoard?
     @Published var routerLoading = false
     private let routerBoardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
+
+    // ── CTR thread roster (ambient heartbeat board) ──────────────────────────
+    @Published var threadRoster: [AgentHeartbeat] = []
+    @Published var threadsLoading = false
+    @Published var threadsTotal = 0   // total live threads across all agents
+
+    // loadThreads reads the live CTR board (`sirsi thread list --json`) and rolls
+    // it up per agent for the ambient roster. Read-only; never blocks the UI.
+    func loadThreads() async {
+        threadsLoading = true
+        defer { threadsLoading = false }
+        let out = await Self.runJSON(args: ["thread", "list", "--json"])
+        guard let rows = try? JSONDecoder().decode([TWRow].self, from: out) else {
+            threadRoster = []
+            return
+        }
+        // Aggregate by agent. "live" = active & fresh; "stale" honors the CLI's
+        // own stale flag; everything else counts as idle.
+        var byAgent: [String: (live: Int, idle: Int, staleN: Int, fresh: Double, surf: Set<String>)] = [:]
+        for r in rows {
+            let agent = r.thread.agentId ?? "unknown"
+            var acc = byAgent[agent] ?? (0, 0, 0, .greatestFiniteMagnitude, [])
+            if r.stale {
+                acc.staleN += 1
+            } else if (r.thread.status ?? "") == "active" {
+                acc.live += 1
+            } else {
+                acc.idle += 1
+            }
+            acc.fresh = min(acc.fresh, r.idleSeconds)
+            if let s = r.thread.surface, !s.isEmpty { acc.surf.insert(s) }
+            byAgent[agent] = acc
+        }
+        let roster = byAgent.map { agent, a in
+            AgentHeartbeat(agent: agent, live: a.live, idle: a.idle, staleN: a.staleN,
+                           freshestIdle: a.fresh == .greatestFiniteMagnitude ? 0 : a.fresh,
+                           surfaces: a.surf.sorted())
+        }
+        // Liveliest first: live agents by freshness, then idle, then stale.
+        threadRoster = roster.sorted {
+            if ($0.live > 0) != ($1.live > 0) { return $0.live > 0 }
+            return $0.freshestIdle < $1.freshestIdle
+        }
+        threadsTotal = roster.reduce(0) { $0 + $1.live }
+    }
 
     // Blockers = CURRENT, fixable conditions only (feedback_surfaces_current_
     // actionable_only). A real logout (needsLogin) and a broken router daemon are
@@ -426,6 +516,9 @@ final class SirsiEngine: ObservableObject {
     // refresh re-reads the persisted scan (cheap; no rescan). Drives the title.
     func refresh() {
         checkFDA()
+        // Ambient CTR roster: keep the live-thread count fresh for the Home row +
+        // Threads surface without the user querying (owner directive 20260709-182003).
+        Task { await loadThreads() }
         guard let data = FileManager.default.contents(atPath: scanPath),
               let res = try? JSONDecoder().decode(ScanResult.self, from: data) else {
             onTitle?("")   // no scan yet → just the Eye, no waste figure
@@ -686,6 +779,66 @@ final class SirsiEngine: ObservableObject {
                 cont.resume(returning: text)
             }
         }
+    }
+
+    // ── Local-LLM query (on-device, NEVER cloud) ─────────────────────────────
+    // Owner directive 20260709-182003: NL questions about system state route to
+    // local Gemma every time (127.0.0.1:11434 warm MLX server via ~/.local/bin/gemma),
+    // never a cloud model. Cloud is only ever reached on an explicit escalate.
+    nonisolated static func gemmaBinary() -> String {
+        NSHomeDirectory() + "/.local/bin/gemma"
+    }
+    nonisolated static func runGemma(prompt: String, system: String) async -> String {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let bin = gemmaBinary()
+                guard FileManager.default.isExecutableFile(atPath: bin) else {
+                    cont.resume(returning: "Sirsi's on-device model isn't set up yet. This query stays on-device — never cloud.")
+                    return
+                }
+                let p = Process()
+                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                p.executableURL = URL(fileURLWithPath: bin)
+                p.arguments = ["-s", system, prompt]
+                let outPipe = Pipe(); let errPipe = Pipe()
+                p.standardOutput = outPipe
+                p.standardError = errPipe   // captured as a fallback so refusals
+                                            // ("start the warm broker") reach the user
+                do { try p.run() } catch {
+                    cont.resume(returning: "Couldn't reach Sirsi's on-device model: \(error.localizedDescription)")
+                    return
+                }
+                let deadline = DispatchTime.now() + .seconds(60)
+                let timeoutWork = DispatchWorkItem { if p.isRunning { p.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                timeoutWork.cancel()
+                let text = stripANSI(String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { cont.resume(returning: text); return }
+                // No stdout — the on-device model didn't answer (commonly: its
+                // broker isn't running or there isn't enough free RAM to load it).
+                // Keep the message BRAND-neutral: the user never sees the model
+                // name (Gemma today) — Sirsi is a switchable fabric (owner,
+                // 2026-07-10). The specific cause stays in errData/logs.
+                let refusedForRAM = stripANSI(String(data: errData, encoding: .utf8) ?? "").lowercased().contains("ram")
+                cont.resume(returning: refusedForRAM
+                    ? "Sirsi's on-device model needs more free memory to answer right now. Your query stayed on-device — never cloud."
+                    : "Sirsi's on-device model isn't running right now. Your query stayed on-device — never cloud.")
+            }
+        }
+    }
+
+    // askAboutThreads answers an NL question about the live fabric using the
+    // current roster as context — on-device, zero cloud tokens.
+    func askAboutThreads(_ question: String) async -> String {
+        let ctx = threadRoster.map { a in
+            "\(a.agent): \(a.live) live, \(a.idle) idle, \(a.staleN) stale; freshest seen \(Int(a.freshestIdle))s ago; surfaces \(a.surfaces.joined(separator: "/"))"
+        }.joined(separator: "\n")
+        let system = "You answer questions about the Sirsi router thread fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
+        let prompt = "Live thread fabric (\(threadsTotal) live threads across \(threadRoster.count) agents):\n\(ctx.isEmpty ? "(no agents)" : ctx)\n\nQuestion: \(question)"
+        return await Self.runGemma(prompt: prompt, system: system)
     }
 
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
