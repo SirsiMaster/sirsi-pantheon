@@ -1602,6 +1602,10 @@ struct GhostsView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var report: GhostReport?
     @State private var loading = true
+    @State private var cleaning = false
+    @State private var confirmClean = false
+    @State private var toast: String?
+    @State private var toastOK = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1654,9 +1658,48 @@ struct GhostsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             }
+            if let toast {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: toastOK ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(toastOK ? .green : .orange)
+                    Text(toast).font(.caption); Spacer()
+                }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
+            // The lever the audit asked for: a SAFE clean (Go `ghosts clean` —
+            // dry-run/trash-first/protected-aware). Only shown when there's
+            // something to reclaim; confirms first (trash is recoverable).
+            if let r = report, !r.ghosts.isEmpty {
+                Divider()
+                HStack {
+                    Button { confirmClean = true } label: {
+                        Label("Move remnants to Trash", systemImage: "trash")
+                    }.disabled(cleaning)
+                    if cleaning { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Text("recoverable").font(.caption2).foregroundStyle(.tertiary)
+                }.padding(.horizontal, 14).padding(.vertical, 10)
+            }
         }
         .navigationTitle("Leftover Apps")
         .task { await load() }
+        .confirmationDialog("Move ghost remnants to Trash?",
+                            isPresented: $confirmClean, titleVisibility: .visible) {
+            Button("Move to Trash", role: .destructive) { Task { await clean() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Residuals of uninstalled apps move to the Trash — recoverable until you empty it. Protected system paths and items needing admin rights are left alone.")
+        }
+    }
+
+    private func clean() async {
+        cleaning = true
+        let out = String(data: await SirsiEngine.runJSON(args: ["ghosts", "clean", "--confirm", "--json"]), encoding: .utf8) ?? ""
+        toastOK = SirsiEngine.resultOK(out)
+        toast = SirsiEngine.summaryLine(out)
+        engine.recordActivity(title: "Clean ghost remnants", command: "ghosts clean --confirm", result: toast ?? "")
+        cleaning = false
+        await load()
     }
 
     private func load() async {
