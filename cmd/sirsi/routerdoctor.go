@@ -44,8 +44,9 @@ var routerDoctorCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Printf("𓂀 Router Doctor — %d agents registered · %d live · %d stale\n\n",
+		fmt.Printf("𓂀 Router Doctor — %d agents registered · %d live · %d stale\n",
 			ns.AgentCount, ns.LiveThreadCount, len(ns.StaleThreads))
+		fmt.Printf("   Dispatch authority: %s\n\n", cutoverModeLine())
 
 		issues := 0
 		if len(unarmed) > 0 {

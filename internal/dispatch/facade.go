@@ -133,9 +133,14 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 	}
 	rows, err := f.store.Inbox(agent)
 	if err != nil {
-		// The store is additive infrastructure during the dual-read window —
-		// a broken store must not strand the canonical file inbox.
-		return items, nil //nolint:nilerr // deliberate: files stay readable
+		// Pre-cutover the store is additive: a broken store must not strand the
+		// canonical file inbox, so we degrade to files. Post-cutover the store IS
+		// the authority and open items are store-only — degrading to files would
+		// report a FALSE-EMPTY inbox and strand work, so the error must surface.
+		if routercfg.StoreWake() {
+			return items, fmt.Errorf("store inbox unavailable (store is the cutover authority): %w", err)
+		}
+		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))
 	for _, it := range items {
@@ -168,7 +173,12 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	}
 	rows, err := f.store.ListAll()
 	if err != nil {
-		return items, nil //nolint:nilerr // deliberate: a broken store must not blind the file view
+		// Same rule as Inbox: post-cutover a broken store must surface, not blind
+		// the caller with a files-only (empty) view.
+		if routercfg.StoreWake() {
+			return items, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
+		}
+		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))
 	for _, it := range items {
@@ -188,6 +198,18 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	}
 	sortItemsByID(items)
 	return items, nil
+}
+
+// SetWake records a wake-pass annotation on an item, routing to whichever
+// store holds it: the canonical file when one exists (legacy items), else the
+// store row (the post-cutover authority, where a store-only item has no file to
+// annotate). This lets WakePass annotate — and therefore stay idempotent about —
+// items regardless of the cutover state.
+func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
+	if _, err := os.Stat(filepath.Join(f.root, "items", id+".md")); err == nil {
+		return work.SetWake(f.root, id, ann)
+	}
+	return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
 }
 
 // sortItemsByID keeps the merged inbox in the file router's oldest-first

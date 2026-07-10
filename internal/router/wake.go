@@ -35,6 +35,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -50,6 +52,24 @@ const (
 // wake_attempted_at, the pass will not invoke its adapter again until this long
 // has elapsed. Keeps repeated supervisor ticks from spawning a worker per tick.
 const DefaultWakeRetryAfter = 10 * time.Minute
+
+// inboxUnion lists open items for agent (all agents if agent==""), unioning the
+// store with the files when the ADR-036/037 cutover is active so store-only
+// items are visible to the internal/router surfaces (node-status, supervisor,
+// wake pass). Default-off it is exactly work.ListInbox — byte-identical — and if
+// the store cannot open it degrades to files rather than failing the surface.
+func inboxUnion(routerRoot, agent string) ([]work.Item, error) {
+	if !routercfg.StoreWake() {
+		return work.ListInbox(routerRoot, agent)
+	}
+	repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // <repo> from <repo>/.agents/idea-router
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return work.ListInbox(routerRoot, agent)
+	}
+	defer func() { _ = f.Close() }()
+	return f.Inbox(agent)
+}
 
 // AgentWakeHealth (the readiness verdict) is defined in nodestatus.go — it is the
 // per-agent wake-readiness type the node-status surface already exposes. The wake
@@ -244,7 +264,33 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 		armed[t.AgentID] = true
 	}
 
-	items, err := work.ListInbox(routerRoot, "") // all open items
+	// Post-cutover (ADR-036/037) open items live only as store rows, and a
+	// store-only item has no file to annotate — so both the READ (which items are
+	// waiting) and the WRITE (idempotent wake_status) must go through the facade,
+	// which unions files+store and routes SetWake to whichever holds the item.
+	// Default-off stays byte-identical: f == nil → the exact legacy file calls.
+	var f *dispatch.Facade
+	if routercfg.StoreWake() {
+		repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // <repo> from <repo>/.agents/idea-router
+		if fac, ferr := dispatch.Open(repoRoot); ferr == nil {
+			f = fac
+			defer func() { _ = f.Close() }()
+		}
+	}
+	setWake := func(id string, ann work.WakeAnnotation) {
+		if f != nil {
+			_ = f.SetWake(id, ann)
+			return
+		}
+		_ = work.SetWake(routerRoot, id, ann)
+	}
+
+	var items []work.Item
+	if f != nil {
+		items, err = f.Inbox("") // all open items (store ∪ files)
+	} else {
+		items, err = work.ListInbox(routerRoot, "") // all open items
+	}
 	if err != nil {
 		return rep, fmt.Errorf("list inbox: %w", err)
 	}
@@ -258,7 +304,7 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 		}
 
 		if armed[agentID] {
-			_ = work.SetWake(routerRoot, item.ID, work.WakeAnnotation{Status: WakeStatusArmed})
+			setWake(item.ID, work.WakeAnnotation{Status: WakeStatusArmed})
 			rep.Armed = append(rep.Armed, WakeOutcome{ItemID: item.ID, AgentID: agentID})
 			continue
 		}
@@ -271,7 +317,7 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 		}
 
 		if !health.Ready {
-			_ = work.SetWake(routerRoot, item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
+			setWake(item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Detail: health.Detail})
 			continue
 		}
@@ -288,11 +334,11 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 		ann := work.WakeAnnotation{Status: WakeStatusAttempted, AttemptedAt: now.Format(time.RFC3339), Adapter: health.Adapter}
 		if ierr := invoke(*cfg, health.Adapter); ierr != nil {
 			ann = work.WakeAnnotation{Status: WakeStatusUnavailable, Error: fmt.Sprintf("%s adapter failed: %v", health.Adapter, ierr)}
-			_ = work.SetWake(routerRoot, item.ID, ann)
+			setWake(item.ID, ann)
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Adapter: health.Adapter, Detail: ann.Error})
 			continue
 		}
-		_ = work.SetWake(routerRoot, item.ID, ann)
+		setWake(item.ID, ann)
 		rep.Attempted = append(rep.Attempted, WakeOutcome{ItemID: item.ID, AgentID: agentID, Adapter: health.Adapter})
 	}
 	return rep, nil
