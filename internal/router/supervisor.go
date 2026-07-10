@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 const (
@@ -100,7 +98,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 	pendingTotal := 0
 	for _, id := range agentIDs {
 		cfg := reg.Agents[id]
-		inbox, ierr := work.ListInbox(routerRoot, id)
+		inbox, ierr := inboxUnion(routerRoot, id)
 		if ierr != nil {
 			return nil, fmt.Errorf("list inbox for %s: %w", id, ierr)
 		}

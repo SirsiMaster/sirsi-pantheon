@@ -105,6 +105,41 @@ func TestStoreWakeCutover(t *testing.T) {
 	}
 }
 
+// TestSetWakeRoutesToStoreForFilelessItem covers the wake-authority gap the
+// review flagged: post-cutover WakePass must be able to annotate a store-only
+// item (no file), or it loses idempotency and re-wakes every pass. SetWake must
+// route to the store when there is no file, and that annotation must read back.
+func TestSetWakeRoutesToStoreForFilelessItem(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	f := testFacade(t)
+
+	res, err := f.Send("a", "b", "fileless wake", "review", "do it")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	// No file was written (cutover mode) — SetWake must still land, on the store.
+	if werr := f.SetWake(res.ID, work.WakeAnnotation{Status: "wake-attempted", AttemptedAt: "2026-07-10T00:00:00Z", Adapter: "launchagent"}); werr != nil {
+		t.Fatalf("SetWake store-only: %v", werr)
+	}
+	inbox, err := f.Inbox("b")
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(inbox) != 1 {
+		t.Fatalf("inbox = %d, want 1", len(inbox))
+	}
+	if got := inbox[0].WakeStatus; got != "wake-attempted" {
+		t.Fatalf("WakeStatus = %q, want wake-attempted (annotation did not persist to the store)", got)
+	}
+	if got := inbox[0].WakeAdapter; got != "launchagent" {
+		t.Fatalf("WakeAdapter = %q, want launchagent", got)
+	}
+	// An unknown id has neither file nor row — the store reports not-found.
+	if werr := f.SetWake("20260101-000000-x-y-nope", work.WakeAnnotation{Status: "armed"}); werr == nil {
+		t.Fatal("SetWake(unknown) should error, got nil")
+	}
+}
+
 // TestWaitDetectsStoreOnlyItem proves the wake path survives the ADR-036
 // file-write cutover: with the store row present but NO items/<id>.md audit
 // file (the steady state after file writes stop), Wait must still surface the

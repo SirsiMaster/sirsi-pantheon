@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // NodeStatusSchemaVersion is the frozen contract version for the NodeStatus
@@ -358,7 +356,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	ns.LastClaudeRead = state.LastClaudeRead
 	ns.LastCodexRead = state.LastCodexRead
 
-	if items, listErr := work.ListInbox(routerRoot, ""); listErr == nil && len(items) > 0 {
+	if items, listErr := inboxUnion(routerRoot, ""); listErr == nil && len(items) > 0 {
 		for _, item := range items {
 			ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
 			ns.TotalPending++
