@@ -29,6 +29,45 @@ func TestWatcherFor_Claude(t *testing.T) {
 	}
 }
 
+// TestWatcherFor_StoreWakeCutover: with the ADR-036 cutover flag on, the Claude
+// /loop and the surface-loop arm instructions must direct wake to `sirsi router
+// wait` (the store FIFO) and explicitly stop watching the items/ directory —
+// while keeping the thread-id idempotency signature.
+func TestWatcherFor_StoreWakeCutover(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_STORE_WAKE", "1")
+
+	claude := WatcherFor("claude", "claude-pantheon", "thr-abc123")
+	if !strings.Contains(claude.ArmInstruction, "sirsi router wait claude-pantheon") {
+		t.Errorf("cutover claude arm must call `router wait`; got: %s", claude.ArmInstruction)
+	}
+	if strings.Contains(claude.ArmInstruction, "watching items/") {
+		t.Errorf("cutover claude arm must NOT watch items/; got: %s", claude.ArmInstruction)
+	}
+	if !strings.Contains(claude.ArmInstruction, "pgrep -f thr-abc123") {
+		t.Errorf("cutover claude arm must keep the thread-id signature; got: %s", claude.ArmInstruction)
+	}
+
+	gemma := WatcherFor("gemma", "gemma-4", "thr-xyz")
+	if !strings.Contains(gemma.ArmInstruction, "sirsi router wait gemma-4") {
+		t.Errorf("cutover surface-loop arm must call `router wait`; got: %s", gemma.ArmInstruction)
+	}
+}
+
+// TestWatcherFor_LegacyDefaultWatchesItems: with the flag OFF (default), the arm
+// instruction stays the legacy items/-directory watch — a binary shipped with
+// the flag off behaves exactly as before.
+func TestWatcherFor_LegacyDefaultWatchesItems(t *testing.T) {
+	// Ensure the env is unset for this test regardless of ambient state.
+	t.Setenv("SIRSI_ROUTER_STORE_WAKE", "0")
+	claude := WatcherFor("claude", "claude-pantheon", "thr-abc123")
+	if !strings.Contains(claude.ArmInstruction, "watching items/") {
+		t.Errorf("legacy claude arm must watch items/; got: %s", claude.ArmInstruction)
+	}
+	if strings.Contains(claude.ArmInstruction, "router wait") {
+		t.Errorf("legacy claude arm must NOT reference router wait; got: %s", claude.ArmInstruction)
+	}
+}
+
 func TestWatcherFor_MenubarResident(t *testing.T) {
 	s := WatcherFor("menubar", "sirsi-menubar", "thr-x")
 	if s.Type != "native-runloop" {

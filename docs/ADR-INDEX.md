@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 36 (+ ADR-031-A/B/C sub-decisions)** | **Next available: ADR-037**
+**Total ADRs: 37 (+ ADR-031-A/B/C sub-decisions)** | **Next available: ADR-038**
 
 ---
 
@@ -132,7 +132,8 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-033 | **Accepted** — Remediation Catalog (real macOS levers; three-outcome law) |
 | ADR-034 | **Accepted** — Orchestration Brain (tiered/pluggable/user-navigable; deterministic Tier-0 floor; surfaces+enforces the Registry/Wake invariant over the EXISTING wake substrate; governs A29) |
 | ADR-035 | **Accepted** — Runaway-Proof Execution (fenced dispatch authority; idempotency-first stopgaps; Sekhmet Runaway Executor check + quarantine-worker kill switch; worker OFF until the §2b acceptance bar) |
-| ADR-036 | **Accepted** — Router v2 Durable Dispatch (store authority, one facade, event wake, migration+dual-read; cutover owner-gated) |
-| ADR-037 | Next available |
+| ADR-036 | **Accepted** — Router v2 Durable Dispatch (store authority, one facade, event wake, migration+dual-read; cutover mechanism shipped behind `SIRSI_ROUTER_STORE_WAKE`, flip is a live-verified deploy step) |
+| ADR-037 | **Accepted** — Daemon-Owned Fabric (the ship-complete control plane: Tier-0 daemon + store authority; MCP/CLI/hooks are thin adapters; self-healing via `doctor`; the completion-proof — every conversation-exercised capability must become a shipped, deterministic, test-enforced lever) |
+| ADR-038 | Next available |
 
 > **Last updated:** July 7, 2026 — indexed ADR-036 (Router v2 Durable Dispatch, accepted 2026-07-07; Phases 1-4 shipped #144/#164/#168/#174-era; cutover deliberately deferred to an owner-gated step); next available advanced to ADR-037. Earlier — July 4, 2026 — indexed ADR-035 (Runaway-Proof Execution, accepted 2026-07-04; canonizes the codex-APPROVED Phase-2 Dispatch Contract axioms at the architecture level and adds Sekhmet's independent host backstop — the "Runaway Executor" doctor finding + `sirsi router quarantine-worker`; provenance: the 2026-07-03/04 runaway-executor incident, case study `docs/case-studies/2026-07-04-runaway-executor.md`); next available advanced to ADR-036. Earlier — July 3, 2026 — indexed ADR-031-C (Broker Enforcement Must Be Universal, accepted 2026-07-03; a router-triage daemon and the warm-server's own LaunchAgent both bypassed the ADR-031-A/B broker by invoking `mlx_lm.*` directly — neither layer failed, neither was in the call path; both fixed and verified live; case study `docs/case-studies/2026-06-18-pantheon-did-not-prevent-oom.md` §6 updated same commit). Earlier — July 2, 2026 — indexed ADR-034 (Orchestration Brain, accepted 2026-07-02; governs PANTHEON_RULES A29; codifies + surfaces the existing `internal/router` wake substrate rather than rebuilding it); next available advanced to ADR-035. Earlier — July 1, 2026 — version-truth sweep: indexed ADR-033 (Remediation Catalog, accepted 2026-06-30, PR #125); next available advanced to ADR-034. Earlier — June 30, 2026: registry reconciled with disk (full-repo audit): added the previously-unregistered ADR-026 through ADR-032 (Horus ops-dashboard, router menubar, optional-SQLite, per-agent worktrees, native menubar popover, local-models-through-Pantheon + ADR-031-A/B resource governance, Mac-first roadmap); corrected the count and next-available pointer (ADR-032 was already taken on disk). Earlier milestone — ADR-023 **accepted**: one build-version contract (`internal/version`) replaces seven scattered `var version` literals; ldflags unified across all binaries; `internal/selfupdate` detects sibling (D2) and PATH (D3) drift locally with no network; `sirsi doctor` emits a `binary-drift` finding (`docs/ADR-023-BINARY-VERSION-CONTRACT.md`).

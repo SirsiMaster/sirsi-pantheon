@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -51,6 +52,56 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != res.ID {
 		t.Fatalf("file router does not see the dispatched item: %+v", items)
+	}
+}
+
+// TestStoreWakeCutover exercises the full post-cutover steady state: with
+// SIRSI_ROUTER_STORE_WAKE=1, Send writes NO items/<id>.md (the store row is the
+// record), yet Show/Inbox/Close all work store-only. This is what makes it safe
+// to stop writing files — the whole read/close path is store-capable.
+func TestStoreWakeCutover(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	f := testFacade(t)
+
+	res, err := f.Send("a", "b", "cutover item", "review", "do it")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	// No audit file written, and none on disk.
+	if res.AuditPath != "" {
+		t.Fatalf("StoreWake Send should not write an audit file, got %q", res.AuditPath)
+	}
+	if _, statErr := os.Stat(filepath.Join(f.root, "items", res.ID+".md")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no items/%s.md on disk, stat err = %v", res.ID, statErr)
+	}
+	// Inbox surfaces it (from the store).
+	inbox, err := f.Inbox("b")
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(inbox) != 1 || inbox[0].ID != res.ID {
+		t.Fatalf("Inbox store-only = %+v, want the one item", inbox)
+	}
+	// Show renders from the store (no file).
+	md, err := f.Show(res.ID)
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	for _, want := range []string{`from: "a"`, `to: "b"`, "## Instructions", "do it"} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("store-rendered Show missing %q:\n%s", want, md)
+		}
+	}
+	// Close lands in the store even with no file.
+	if err := f.CloseItem(res.ID, "done"); err != nil {
+		t.Fatalf("CloseItem store-only: %v", err)
+	}
+	if remaining, _ := f.Inbox("b"); len(remaining) != 0 {
+		t.Fatalf("after close, inbox = %d, want 0", len(remaining))
+	}
+	// Closing a genuinely unknown id still errors (exists nowhere).
+	if err := f.CloseItem("20260101-000000-x-y-nope", "x"); err == nil {
+		t.Fatal("CloseItem(unknown) should error, got nil")
 	}
 }
 
