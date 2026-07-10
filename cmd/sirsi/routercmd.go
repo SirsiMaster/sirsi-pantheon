@@ -75,11 +75,18 @@ var routerStatusCmd = &cobra.Command{
 missing — safe to run in sandboxed or audit-only contexts. Use --stale to
 list open items older than N hours (default 24).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := workRoot()
+		// Summarize through the facade (files ∪ store) so the counts are accurate
+		// after the cutover, when open items live only as store rows.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		all, err := work.ListAll(root)
+		defer func() { _ = f.Close() }()
+		all, err := f.ListAll()
 		if err != nil {
 			return err
 		}
@@ -215,11 +222,18 @@ var routerPullCmd = &cobra.Command{
 	Short: "Pull open work items addressed to an agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := workRoot()
+		// Read through the facade (store rows ∪ file items) so store-only items
+		// — the post-cutover steady state — are visible to pull, not just wait.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		items, err := work.ListInbox(root, args[0])
+		defer func() { _ = f.Close() }()
+		items, err := f.Inbox(args[0])
 		if err != nil {
 			return err
 		}
@@ -292,16 +306,22 @@ var routerShowCmd = &cobra.Command{
 	Short: "Print the full text of a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := workRoot()
+		// Read through the facade so `show` renders a store-only item (no file)
+		// after the cutover, falling back to the file when one exists.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(root, "items", args[0]+".md")
-		data, err := os.ReadFile(path)
+		defer func() { _ = f.Close() }()
+		md, err := f.Show(args[0])
 		if err != nil {
-			return fmt.Errorf("read item: %w", err)
+			return err
 		}
-		_, _ = os.Stdout.Write(data)
+		fmt.Print(md)
 		return nil
 	},
 }

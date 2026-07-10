@@ -96,6 +96,17 @@ func renderMarkdown(it Item) string {
 // file path — the §2b axiom-8 dual-write: the store row is the dispatch
 // authority; the file is the human audit view, byte-identical to what the
 // file router's own writers would have produced.
+// Render returns the markdown view of one item straight from the store, with
+// no file involved — the read path for Show after the ADR-036 cutover, where
+// items/<id>.md is no longer written. Returns ErrNotFound if the id is unknown.
+func (s *Store) Render(id string) (string, error) {
+	it, err := s.Get(id)
+	if err != nil {
+		return "", err
+	}
+	return renderMarkdown(it), nil
+}
+
 func (s *Store) ExportItem(dir, id string) (string, error) {
 	it, err := s.Get(id)
 	if err != nil {

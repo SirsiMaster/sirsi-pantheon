@@ -1,6 +1,10 @@
 package router
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+)
 
 // WatcherSpec is the router's prescription for the single liveness/wake
 // mechanism a registered thread must run (ADR-024 Decision 2). `register`
@@ -42,6 +46,22 @@ const (
 // loops on a shared host) and never TaskList (it falsely reports empty). See
 // ADR-024 §3 + F2, and claude-deck's correction (commit 838ad66).
 func loopArmInstruction(agentID, threadID string) string {
+	// Post-cutover (ADR-036/037): wake rides the store, so the loop BLOCKS on
+	// `sirsi router wait` (the per-agent FIFO, <250ms) instead of watching the
+	// items/ directory — which is no longer written. Idempotency is unchanged:
+	// still thread-id keyed via `pgrep -f thr-<id>`.
+	if routercfg.StoreWake() {
+		return fmt.Sprintf(
+			"Arm /loop calling `sirsi router wait %s` (it blocks on the store until work lands, then returns); "+
+				"act on the returned items, then emit `sirsi thread heartbeat --thread %s` and loop. "+
+				"Do NOT watch the items/ directory — after the store cutover it is not written. "+
+				"Re-assert idempotently on every SessionStart/wakeup, keyed on the thread_id "+
+				"(`pgrep -f %s`) — NOT the shared loop body / `router wait` string (it matches other "+
+				"agents' loops on a shared host), NOT TaskList (it falsely reports empty). "+
+				"Re-arm only when zero matching watcher processes exist for this thread.",
+			agentID, threadID, threadID,
+		)
+	}
 	return fmt.Sprintf(
 		"Arm /loop watching items/ for `to: %s`; emit `sirsi thread heartbeat --thread %s` each tick. "+
 			"Re-assert idempotently on every SessionStart/wakeup, keyed on the thread_id "+
@@ -49,6 +69,18 @@ func loopArmInstruction(agentID, threadID string) string {
 			"(it matches other agents' loops on a shared host), NOT TaskList (it falsely reports empty). "+
 			"Re-arm only when zero matching watcher processes exist for this thread.",
 		agentID, threadID, threadID,
+	)
+}
+
+// pullArmInstruction renders the store-wake arm text for the non-Claude pull
+// surfaces (codex, gemini/gemma/qwen). Same store-blocking primitive, phrased
+// for a surface-native loop rather than Claude's `/loop`.
+func pullArmInstruction(agentID string) string {
+	return fmt.Sprintf(
+		"Run a surface-native loop calling `sirsi router wait %s` (blocks on the store until work lands), "+
+			"act on the returned items, and heartbeat each return. Do NOT poll the items/ directory — after "+
+			"the store cutover it is not written.",
+		agentID,
 	)
 }
 
@@ -95,19 +127,31 @@ func WatcherFor(surface, agentID, threadID string) WatcherSpec {
 			Resident:           false,
 		}
 	case surfaceCodex:
+		mech := "codex app heartbeat (ctr-thread-wake polling items/)"
+		arm := "Use the codex app heartbeat automation (ctr-thread-wake); it polls items/ for `to: " + agentID + "` and heartbeats natively. No manual loop to arm."
+		if routercfg.StoreWake() {
+			mech = "codex app heartbeat waking via `sirsi router wait`"
+			arm = "Wake via `sirsi router wait " + agentID + "` (blocks on the store) and heartbeat each return; the items/ directory is not written post-cutover."
+		}
 		return WatcherSpec{
 			Type:               "app-heartbeat",
-			Mechanism:          "codex app heartbeat (ctr-thread-wake polling items/)",
-			ArmInstruction:     "Use the codex app heartbeat automation (ctr-thread-wake); it polls items/ for `to: " + agentID + "` and heartbeats natively. No manual loop to arm.",
+			Mechanism:          mech,
+			ArmInstruction:     arm,
 			HeartbeatIntervalS: 60,
 			WatchesInbox:       true,
 			Resident:           false,
 		}
 	case surfaceGemini, surfaceGemma, surfaceQwen:
+		mech := "surface-native pull loop over items/"
+		arm := "Run a surface-native watch loop over items/ for `to: " + agentID + "`, heartbeating each tick. Do not call the removed daemon verb; the active CLI is pull-model only."
+		if routercfg.StoreWake() {
+			mech = "surface-native loop over `sirsi router wait`"
+			arm = pullArmInstruction(agentID)
+		}
 		return WatcherSpec{
 			Type:               "surface-loop",
-			Mechanism:          "surface-native pull loop over items/",
-			ArmInstruction:     "Run a surface-native watch loop over items/ for `to: " + agentID + "`, heartbeating each tick. Do not call the removed daemon verb; the active CLI is pull-model only.",
+			Mechanism:          mech,
+			ArmInstruction:     arm,
 			HeartbeatIntervalS: 60,
 			WatchesInbox:       true,
 			Resident:           false,
