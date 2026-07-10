@@ -778,6 +778,62 @@ final class SirsiEngine: ObservableObject {
         }
     }
 
+    // ── Local-LLM query (on-device, NEVER cloud) ─────────────────────────────
+    // Owner directive 20260709-182003: NL questions about system state route to
+    // local Gemma every time (127.0.0.1:11434 warm MLX server via ~/.local/bin/gemma),
+    // never a cloud model. Cloud is only ever reached on an explicit escalate.
+    nonisolated static func gemmaBinary() -> String {
+        NSHomeDirectory() + "/.local/bin/gemma"
+    }
+    nonisolated static func runGemma(prompt: String, system: String) async -> String {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let bin = gemmaBinary()
+                guard FileManager.default.isExecutableFile(atPath: bin) else {
+                    cont.resume(returning: "Local Gemma isn't installed (~/.local/bin/gemma). This query stays on-device — install the local model to use it.")
+                    return
+                }
+                let p = Process()
+                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                p.executableURL = URL(fileURLWithPath: bin)
+                p.arguments = ["-s", system, prompt]
+                let outPipe = Pipe(); let errPipe = Pipe()
+                p.standardOutput = outPipe
+                p.standardError = errPipe   // captured as a fallback so refusals
+                                            // ("start the warm broker") reach the user
+                do { try p.run() } catch {
+                    cont.resume(returning: "Couldn't reach local Gemma: \(error.localizedDescription)")
+                    return
+                }
+                let deadline = DispatchTime.now() + .seconds(60)
+                let timeoutWork = DispatchWorkItem { if p.isRunning { p.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                timeoutWork.cancel()
+                let text = stripANSI(String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { cont.resume(returning: text); return }
+                // No stdout — surface the model's own message (e.g. the RAM-refusal
+                // hint), cleaned of Python traceback noise, so the answer is useful.
+                let err = stripANSI(String(data: errData, encoding: .utf8) ?? "")
+                let hint = err.split(separator: "\n").last(where: { $0.contains("𓁵") || $0.lowercased().contains("gemma") || $0.lowercased().contains("ram") }).map(String.init)?.trimmingCharacters(in: .whitespaces)
+                cont.resume(returning: hint ?? "No answer from local Gemma (is the warm broker running? `sirsi gemma serve`).")
+            }
+        }
+    }
+
+    // askAboutThreads answers an NL question about the live fabric using the
+    // current roster as context — on-device, zero cloud tokens.
+    func askAboutThreads(_ question: String) async -> String {
+        let ctx = threadRoster.map { a in
+            "\(a.agent): \(a.live) live, \(a.idle) idle, \(a.staleN) stale; freshest seen \(Int(a.freshestIdle))s ago; surfaces \(a.surfaces.joined(separator: "/"))"
+        }.joined(separator: "\n")
+        let system = "You answer questions about the Sirsi router thread fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
+        let prompt = "Live thread fabric (\(threadsTotal) live threads across \(threadRoster.count) agents):\n\(ctx.isEmpty ? "(no agents)" : ctx)\n\nQuestion: \(question)"
+        return await Self.runGemma(prompt: prompt, system: system)
+    }
+
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
     // output is never corrupted by a styled banner written to stderr.
     nonisolated static func runJSON(args: [String]) async -> Data {

@@ -2128,6 +2128,9 @@ struct ResultView: View {
 // ⚠️ only for a genuinely stale agent; live data never greyed; plain English.
 struct ThreadsView: View {
     @ObservedObject var engine: SirsiEngine
+    @State private var question = ""
+    @State private var answer: String?
+    @State private var asking = false
 
     private func ago(_ s: Double) -> String {
         if s < 60 { return "\(Int(s))s ago" }
@@ -2175,6 +2178,31 @@ struct ThreadsView: View {
                     }
                 }
             }
+            // Ask the fabric in plain English — answered ON-DEVICE by local Gemma,
+            // never a cloud model (owner directive: local-LLM every time).
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.caption).foregroundStyle(gold)
+                    TextField("Ask about the fabric — e.g. \"what's stale?\"", text: $question)
+                        .textFieldStyle(.plain).font(.system(size: 12))
+                        .onSubmit { ask() }
+                    if asking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(gold)
+                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                if let answer {
+                    Text(answer).font(.caption).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("answered on-device by local Gemma — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }.padding(.horizontal, 14).padding(.vertical, 8)
+
             Divider()
             HStack {
                 Button { Task { await engine.loadThreads() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
@@ -2184,6 +2212,17 @@ struct ThreadsView: View {
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
         .task { await engine.loadThreads() }
+    }
+
+    private func ask() {
+        let q = question.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, !asking else { return }
+        asking = true
+        Task {
+            let a = await engine.askAboutThreads(q)
+            answer = a
+            asking = false
+        }
     }
 
     private func rollup(_ a: AgentHeartbeat) -> String {
