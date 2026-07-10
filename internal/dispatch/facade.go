@@ -158,10 +158,10 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 }
 
 // ListAll returns every item (open AND closed) as the dual-read union of the
-// file router and the store, deduped by id. This is the read path for the
-// operator summary (`router status`) so it reports accurately after the
-// cutover, when open items exist only as store rows.
-func (f *Facade) ListAll(agent string) ([]work.Item, error) {
+// file router and the store, deduped by id. This is the read path for whole-
+// fabric summaries (`router status`, the menubar router signal) so they report
+// accurately after the cutover, when open items exist only as store rows.
+func (f *Facade) ListAll() ([]work.Item, error) {
 	items, err := work.ListAll(f.root)
 	if err != nil {
 		return nil, err

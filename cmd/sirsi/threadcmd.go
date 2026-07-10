@@ -13,6 +13,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 )
@@ -455,11 +456,42 @@ var threadWatchRouterCmd = &cobra.Command{
 			handleRouterEvent(watchThreadID, watchAgentID, watchRouterRoot)
 		}
 
+		// Post-cutover (ADR-036/037) the items/ directory is no longer written,
+		// so fsnotify never fires for router items and this durable watcher would
+		// go deaf. When the store-wake flag is on, park a goroutine on the store's
+		// per-agent wake FIFO (`router wait`, <250ms) and feed its wakes into the
+		// SAME debounce+fire path — so the RunAtLoad watcher wakes on store rows,
+		// while fsnotify still covers state.json / proposals / any legacy files.
+		storeEvents := make(chan struct{}, 1)
+		if routercfg.StoreWake() {
+			if self, err := os.Executable(); err == nil {
+				go func() {
+					for ctx.Err() == nil {
+						out, _ := exec.CommandContext(ctx, self, "router", "wait", watchAgentID, "--timeout", "50").CombinedOutput()
+						if ctx.Err() != nil {
+							return
+						}
+						if strings.Contains(string(out), "• ") {
+							select {
+							case storeEvents <- struct{}{}:
+							default:
+							}
+						}
+					}
+				}()
+			}
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
 				return nil
 			case <-watcher.Events:
+				if debounceTimer != nil {
+					debounceTimer.Stop()
+				}
+				debounceTimer = time.AfterFunc(watchDebounce, fire)
+			case <-storeEvents:
 				if debounceTimer != nil {
 					debounceTimer.Stop()
 				}

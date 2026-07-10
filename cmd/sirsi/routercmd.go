@@ -86,7 +86,7 @@ list open items older than N hours (default 24).`,
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		all, err := f.ListAll("")
+		all, err := f.ListAll()
 		if err != nil {
 			return err
 		}
