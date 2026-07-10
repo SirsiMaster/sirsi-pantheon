@@ -13,6 +13,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 )
@@ -402,7 +403,29 @@ var (
 	watchParentPID  int
 	watchDebounce   = 800 * time.Millisecond
 	watchAliveCheck = 30 * time.Second
+	// store-wake goroutine pacing (fork-storm guards, ADR-036/037 cutover):
+	watchWaitBackoff = 30 * time.Second // after a failed `router wait`, before retry
+	watchDrainPoll   = 5 * time.Second  // between drain checks after a wake, before re-arming
+	// Cap the post-wake drain wait so a poison item (unroutable, an agent with no
+	// spawn command, an item no handler ever closes) can't wedge the loop forever
+	// and silence later items for this agent. After the cap we re-arm anyway; a
+	// still-open item just re-wakes at most once per cap window — bounded, not a
+	// storm — and re-arming re-reads ALL open items so item B is never stranded.
+	watchDrainMaxPolls = 60 // 60 × 5s = 5 min
 )
+
+// sleepCtx sleeps for d or until ctx is canceled. Returns false if canceled
+// (caller should stop), true if the full duration elapsed.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
 
 var threadWatchRouterCmd = &cobra.Command{
 	Use:    "watch-router",
@@ -455,11 +478,74 @@ var threadWatchRouterCmd = &cobra.Command{
 			handleRouterEvent(watchThreadID, watchAgentID, watchRouterRoot)
 		}
 
+		// Post-cutover (ADR-036/037) the items/ directory is no longer written,
+		// so fsnotify never fires for router items and this durable watcher would
+		// go deaf. When the store-wake flag is on, park a goroutine on the store's
+		// per-agent wake FIFO (`router wait`) and feed its wakes into the SAME
+		// debounce+fire path — so the RunAtLoad watcher wakes on store rows, while
+		// fsnotify still covers state.json / proposals / any legacy files.
+		storeEvents := make(chan struct{}, 1)
+		if routercfg.StoreWake() {
+			if self, err := os.Executable(); err == nil {
+				// `router wait` resolves the repo via FindRepoRoot (cwd/git), NOT the
+				// --router-root we were handed; a launchd cwd of / or $HOME would make
+				// it error every iteration. Anchor the subprocess to this repo.
+				repoDir := filepath.Dir(filepath.Dir(watchRouterRoot)) // <repo> from <repo>/.agents/idea-router
+				go func() {
+					for ctx.Err() == nil {
+						c := exec.CommandContext(ctx, self, "router", "wait", watchAgentID, "--timeout", "50")
+						c.Dir = repoDir
+						out, waitErr := c.CombinedOutput()
+						if ctx.Err() != nil {
+							return
+						}
+						if waitErr != nil {
+							// wait failed (repo resolution, store open, …). Back off so a
+							// persistent failure can't become a fork-storm.
+							sleepCtx(ctx, watchWaitBackoff)
+							continue
+						}
+						if !strings.Contains(string(out), "• ") {
+							continue // timed out with an empty inbox — re-block, no event
+						}
+						// Work is present. Deliver ONE wake, then wait for the dispatched
+						// session to DRAIN the inbox before re-arming. `router wait` is
+						// level-triggered (returns instantly while any item is open), so
+						// without this the loop would re-fork `router wait` continuously
+						// for the whole time the item stays open — a fork-storm that also
+						// keeps resetting the debounce so fire() never runs.
+						select {
+						case storeEvents <- struct{}{}:
+						default:
+						}
+						for polls := 0; ctx.Err() == nil && polls < watchDrainMaxPolls; polls++ {
+							if !sleepCtx(ctx, watchDrainPoll) {
+								return
+							}
+							p := exec.CommandContext(ctx, self, "router", "pull", watchAgentID)
+							p.Dir = repoDir
+							pout, _ := p.CombinedOutput()
+							if !strings.Contains(string(pout), "• ") {
+								break // inbox drained — safe to re-arm the wait
+							}
+							// else keep polling until drained or the cap — then re-arm
+							// anyway so a poison item can't permanently wedge this agent.
+						}
+					}
+				}()
+			}
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
 				return nil
 			case <-watcher.Events:
+				if debounceTimer != nil {
+					debounceTimer.Stop()
+				}
+				debounceTimer = time.AfterFunc(watchDebounce, fire)
+			case <-storeEvents:
 				if debounceTimer != nil {
 					debounceTimer.Stop()
 				}

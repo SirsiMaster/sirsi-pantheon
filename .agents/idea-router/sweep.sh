@@ -52,13 +52,10 @@ fi
 #    pull-only observer model a stale dispatch.log is EXPECTED when no codex work is
 #    queued, so alarm ONLY when codex items are actually waiting to be dispatched —
 #    otherwise this fires forever on a moot condition (surfaces: current+actionable only).
-codex_pending=0
-for _f in "$ROUTER_ROOT"/items/*.md; do
-  [ -f "$_f" ] || continue
-  grep -qE '^to:[[:space:]]*"?codex-' "$_f" || continue
-  grep -qE '^status:[[:space:]]*"?open"?[[:space:]]*$' "$_f" || continue
-  codex_pending=$((codex_pending+1))
-done
+# Store-aware count (ADR-036/037 cutover): post-cutover items/*.md may not exist,
+# so read open-by-recipient from the store-capable `router status` rather than
+# globbing files. Sums every open item addressed to a codex-* agent.
+codex_pending=$("$SIRSI" router status 2>/dev/null | awk -F': ' '/^[[:space:]]+codex-/{s+=$2} END{print s+0}')
 if [ "$codex_pending" -gt 0 ]; then
   last_dispatch=$(grep -E '^\[[0-9-]+T' "$ROUTER_ROOT/logs/dispatch.log" 2>/dev/null | tail -1 | head -c 25)
   if [ -z "$last_dispatch" ]; then
@@ -129,13 +126,14 @@ fi
 # 5a. MIGRATION SELF-CLEAN: retire any leftover synthetic probes from before this
 #     change so the fabric board returns to zero. Idempotent; kept permanently so
 #     no historical probe can ever linger.
-for stale in "$ROUTER_ROOT"/items/*-claude-pantheon-claude-pantheon-sweep-probe-*.md; do
-  [ -f "$stale" ] || continue
-  grep -q "^status: open" "$stale" || continue
-  stale_id="$(basename "$stale" .md)"
-  "$SIRSI" router close "$stale_id" --result "sweep probe retired — pump liveness is now READ from dispatch.log, not manufactured (owner directive 20260709-230033)" >/dev/null 2>&1 \
-    && echo "[$(ts)] retired leftover sweep probe $stale_id" >> "$LOG"
-done
+# Store-aware: list open items to claude-pantheon via the store-capable `router
+# pull` (post-cutover the items/ files are gone), filter to sweep-probe ids.
+"$SIRSI" router pull claude-pantheon 2>/dev/null \
+  | grep -oE '[0-9]{8}-[0-9]{6}-claude-pantheon-claude-pantheon-sweep-probe-[A-Za-z0-9._-]*' \
+  | while read -r stale_id; do
+      "$SIRSI" router close "$stale_id" --result "sweep probe retired — pump liveness is now READ from dispatch.log, not manufactured (owner directive 20260709-230033)" >/dev/null 2>&1 \
+        && echo "[$(ts)] retired leftover sweep probe $stale_id" >> "$LOG"
+    done
 
 # Report
 if [ ${#fails[@]} -eq 0 ]; then
@@ -149,12 +147,15 @@ fi
 # a single stale-dispatch condition emitted 23 identical hourly items into the
 # claude-pantheon inbox. The fresh alarm below carries the CURRENT issue list;
 # history lives in the log, not the queue.
-for prior in "$ROUTER_ROOT"/items/*-sweep-bot-claude-pantheon-sweep-alarm-*.md; do
-  [ -f "$prior" ] || continue
-  grep -q "^status: open" "$prior" || continue
-  prior_id="$(basename "$prior" .md)"
-  "$SIRSI" router close "$prior_id" --result "superseded by the current sweep's alarm (keyed-singleton self-clean; condition history is in logs/sweep.log)" >/dev/null 2>&1     && echo "[$(ts)] superseded prior alarm $prior_id" >> "$LOG"
-done
+# Store-aware keyed-singleton self-clean: list prior OPEN sweep-alarm items to
+# claude-pantheon via the store-capable `router pull` (post-cutover the items/
+# files are gone, so the old glob matched nothing → the flood reappeared).
+"$SIRSI" router pull claude-pantheon 2>/dev/null \
+  | grep -oE '[0-9]{8}-[0-9]{6}-sweep-bot-claude-pantheon-sweep-alarm-[A-Za-z0-9._-]*' \
+  | while read -r prior_id; do
+      "$SIRSI" router close "$prior_id" --result "superseded by the current sweep's alarm (keyed-singleton self-clean; condition history is in logs/sweep.log)" >/dev/null 2>&1 \
+        && echo "[$(ts)] superseded prior alarm $prior_id" >> "$LOG"
+    done
 
 {
   echo "[$(ts)] sweep FAIL — ${#fails[@]} issue(s):"

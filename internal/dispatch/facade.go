@@ -32,6 +32,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -102,6 +103,11 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	if err != nil {
 		return SendResult{}, err // refused: no store row, no dispatch (§2b axiom 8)
 	}
+	// After the cutover the store row IS the record — no items/<id>.md audit view
+	// is written, consumers wake via `router wait`, and Show/Close read the store.
+	if routercfg.StoreWake() {
+		return SendResult{ID: id, Deduped: deduped}, nil
+	}
 	path, err := f.store.ExportItem(filepath.Join(f.root, "items"), id)
 	if err != nil {
 		// The dispatch HAPPENED (store row committed); the audit view failed.
@@ -127,9 +133,14 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 	}
 	rows, err := f.store.Inbox(agent)
 	if err != nil {
-		// The store is additive infrastructure during the dual-read window —
-		// a broken store must not strand the canonical file inbox.
-		return items, nil //nolint:nilerr // deliberate: files stay readable
+		// Pre-cutover the store is additive: a broken store must not strand the
+		// canonical file inbox, so we degrade to files. Post-cutover the store IS
+		// the authority and open items are store-only — degrading to files would
+		// report a FALSE-EMPTY inbox and strand work, so the error must surface.
+		if routercfg.StoreWake() {
+			return items, fmt.Errorf("store inbox unavailable (store is the cutover authority): %w", err)
+		}
+		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))
 	for _, it := range items {
@@ -151,48 +162,132 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 	return items, nil
 }
 
+// ListAll returns every item (open AND closed) as the dual-read union of the
+// file router and the store, deduped by id. This is the read path for whole-
+// fabric summaries (`router status`, the menubar router signal) so they report
+// accurately after the cutover, when open items exist only as store rows.
+func (f *Facade) ListAll() ([]work.Item, error) {
+	items, err := work.ListAll(f.root)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := f.store.ListAll()
+	if err != nil {
+		// Same rule as Inbox: post-cutover a broken store must surface, not blind
+		// the caller with a files-only (empty) view.
+		if routercfg.StoreWake() {
+			return items, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
+		}
+		return items, nil //nolint:nilerr // pre-cutover: files stay readable
+	}
+	seen := make(map[string]bool, len(items))
+	for _, it := range items {
+		seen[it.ID] = true
+	}
+	for _, r := range rows {
+		if seen[r.ID] {
+			continue
+		}
+		items = append(items, work.Item{
+			ID: r.ID, From: r.From, To: r.To, Title: r.Title, Type: r.Type,
+			Status: r.Status, Opened: r.Opened, Closed: r.Closed,
+			Instructions: r.Instructions, Result: r.Result,
+			WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
+			WakeAdapter: r.WakeAdapter, WakeError: r.WakeError,
+		})
+	}
+	sortItemsByID(items)
+	return items, nil
+}
+
+// SetWake records a wake-pass annotation on an item, routing to whichever
+// store holds it: the canonical file when one exists (legacy items), else the
+// store row (the post-cutover authority, where a store-only item has no file to
+// annotate). This lets WakePass annotate — and therefore stay idempotent about —
+// items regardless of the cutover state.
+func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
+	if _, err := os.Stat(filepath.Join(f.root, "items", id+".md")); err == nil {
+		return work.SetWake(f.root, id, ann)
+	}
+	return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
+}
+
 // sortItemsByID keeps the merged inbox in the file router's oldest-first
 // order (ids sort chronologically by construction).
 func sortItemsByID(items []work.Item) {
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 }
 
-// Show returns one item's full markdown from the canonical file.
+// Show returns one item's full markdown. It prefers the canonical file (a
+// hand-annotated audit view is authoritative for display), and falls back to
+// rendering the store row when no file exists — the post-cutover steady state
+// where Send no longer writes items/<id>.md, and also any store-only item whose
+// audit write once failed (§2b axiom 8: a missing file never hides work).
 func (f *Facade) Show(id string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(f.root, "items", id+".md"))
-	if err != nil {
+	if err == nil {
+		return string(data), nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("dispatch: read item: %w", err)
 	}
-	return string(data), nil
+	rendered, rerr := f.store.Render(id)
+	if rerr != nil {
+		if errors.Is(rerr, routerstore.ErrNotFound) {
+			return "", fmt.Errorf("dispatch: item %s not found (no file, no store row)", id)
+		}
+		return "", fmt.Errorf("dispatch: render item from store: %w", rerr)
+	}
+	return rendered, nil
 }
 
-// CloseItem closes the canonical file item and mirrors the close into the
-// store. A store row may legitimately not exist (items sent before the
-// facade) or already be closed (idempotent re-close) — both are fine; any
-// other mirror failure is reported without undoing the file close.
+// CloseItem closes the item in both worlds. It closes the canonical file when
+// one exists, and closes the store row. Post-cutover there is no file, so the
+// close lands in the store alone; pre-facade items may have a file but no store
+// row. The only true error is an id that exists in NEITHER place (or a real
+// store failure) — an already-closed row is idempotent success.
 func (f *Facade) CloseItem(id, result string) error {
-	if err := work.Close(f.root, id, result); err != nil {
-		return err
+	fileExists := false
+	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {
+		fileExists = true
 	}
-	if err := f.store.CloseItem(id, result); err != nil &&
-		!errors.Is(err, routerstore.ErrNotFound) &&
-		!errors.Is(err, routerstore.ErrAlreadyClosed) {
-		return fmt.Errorf("dispatch: item %s closed but store mirror failed: %w", id, err)
+	if fileExists {
+		if err := work.Close(f.root, id, result); err != nil {
+			return err
+		}
 	}
-	return nil
+	switch storeErr := f.store.CloseItem(id, result); {
+	case storeErr == nil, errors.Is(storeErr, routerstore.ErrAlreadyClosed):
+		return nil
+	case errors.Is(storeErr, routerstore.ErrNotFound):
+		// No store row is fine only if we actually closed a file; otherwise the
+		// id exists nowhere.
+		if fileExists {
+			return nil
+		}
+		return fmt.Errorf("dispatch: item %s not found (no file, no store row)", id)
+	default:
+		return fmt.Errorf("dispatch: item %s closed but store mirror failed: %w", id, storeErr)
+	}
 }
 
 // Wait blocks until an open item is addressed to agent or the timeout
-// passes, then returns the canonical file inbox. Items sent through the
-// facade wake the waiter event-driven in well under 250ms (PRD /goal #1 —
-// the store signals its in-process waiters and the notify FIFO); items
-// written by a legacy file-only writer are caught by a bounded 5s re-check,
-// which still beats the retired 1s poll loop it replaces at a fifth of the
-// wakeups. Returns (nil, nil) on a clean timeout.
+// passes, then returns the dual-read inbox (store rows ∪ file items). Items
+// sent through the facade wake the waiter event-driven in well under 250ms
+// (PRD /goal #1 — the store signals its in-process waiters and the notify
+// FIFO); items written by a legacy file-only writer are caught by a bounded 5s
+// re-check, which still beats the retired 1s poll loop it replaces at a fifth
+// of the wakeups. Returns (nil, nil) on a clean timeout.
+//
+// The work-check is the union (f.Inbox), NOT the file inbox alone: a store-only
+// send — the steady state after the ADR-036 file-write cutover — must wake the
+// waiter even when no items/<id>.md exists. Using Inbox here is what lets a
+// `/loop` watcher move off the items/ directory-watch onto the store event
+// wake without stranding at cutover.
 func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) ([]work.Item, error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		items, err := work.ListInbox(f.root, agent)
+		items, err := f.Inbox(agent)
 		if err != nil {
 			return nil, err
 		}

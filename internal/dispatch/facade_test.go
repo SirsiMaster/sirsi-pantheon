@@ -1,12 +1,15 @@
 package dispatch
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -49,6 +52,128 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != res.ID {
 		t.Fatalf("file router does not see the dispatched item: %+v", items)
+	}
+}
+
+// TestStoreWakeCutover exercises the full post-cutover steady state: with
+// SIRSI_ROUTER_STORE_WAKE=1, Send writes NO items/<id>.md (the store row is the
+// record), yet Show/Inbox/Close all work store-only. This is what makes it safe
+// to stop writing files — the whole read/close path is store-capable.
+func TestStoreWakeCutover(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	f := testFacade(t)
+
+	res, err := f.Send("a", "b", "cutover item", "review", "do it")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	// No audit file written, and none on disk.
+	if res.AuditPath != "" {
+		t.Fatalf("StoreWake Send should not write an audit file, got %q", res.AuditPath)
+	}
+	if _, statErr := os.Stat(filepath.Join(f.root, "items", res.ID+".md")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no items/%s.md on disk, stat err = %v", res.ID, statErr)
+	}
+	// Inbox surfaces it (from the store).
+	inbox, err := f.Inbox("b")
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(inbox) != 1 || inbox[0].ID != res.ID {
+		t.Fatalf("Inbox store-only = %+v, want the one item", inbox)
+	}
+	// Show renders from the store (no file).
+	md, err := f.Show(res.ID)
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	for _, want := range []string{`from: "a"`, `to: "b"`, "## Instructions", "do it"} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("store-rendered Show missing %q:\n%s", want, md)
+		}
+	}
+	// Close lands in the store even with no file.
+	if err := f.CloseItem(res.ID, "done"); err != nil {
+		t.Fatalf("CloseItem store-only: %v", err)
+	}
+	if remaining, _ := f.Inbox("b"); len(remaining) != 0 {
+		t.Fatalf("after close, inbox = %d, want 0", len(remaining))
+	}
+	// Closing a genuinely unknown id still errors (exists nowhere).
+	if err := f.CloseItem("20260101-000000-x-y-nope", "x"); err == nil {
+		t.Fatal("CloseItem(unknown) should error, got nil")
+	}
+}
+
+// TestSetWakeRoutesToStoreForFilelessItem covers the wake-authority gap the
+// review flagged: post-cutover WakePass must be able to annotate a store-only
+// item (no file), or it loses idempotency and re-wakes every pass. SetWake must
+// route to the store when there is no file, and that annotation must read back.
+func TestSetWakeRoutesToStoreForFilelessItem(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	f := testFacade(t)
+
+	res, err := f.Send("a", "b", "fileless wake", "review", "do it")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	// No file was written (cutover mode) — SetWake must still land, on the store.
+	if werr := f.SetWake(res.ID, work.WakeAnnotation{Status: "wake-attempted", AttemptedAt: "2026-07-10T00:00:00Z", Adapter: "launchagent"}); werr != nil {
+		t.Fatalf("SetWake store-only: %v", werr)
+	}
+	inbox, err := f.Inbox("b")
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(inbox) != 1 {
+		t.Fatalf("inbox = %d, want 1", len(inbox))
+	}
+	if got := inbox[0].WakeStatus; got != "wake-attempted" {
+		t.Fatalf("WakeStatus = %q, want wake-attempted (annotation did not persist to the store)", got)
+	}
+	if got := inbox[0].WakeAdapter; got != "launchagent" {
+		t.Fatalf("WakeAdapter = %q, want launchagent", got)
+	}
+	// An unknown id has neither file nor row — the store reports not-found.
+	if werr := f.SetWake("20260101-000000-x-y-nope", work.WakeAnnotation{Status: "armed"}); werr == nil {
+		t.Fatal("SetWake(unknown) should error, got nil")
+	}
+}
+
+// TestWaitDetectsStoreOnlyItem proves the wake path survives the ADR-036
+// file-write cutover: with the store row present but NO items/<id>.md audit
+// file (the steady state after file writes stop), Wait must still surface the
+// work from the store union — not block until timeout waiting for a file that
+// will never be written. This is what lets a `/loop` watcher move off the
+// items/ directory-watch onto `sirsi router wait` (the store FIFO).
+func TestWaitDetectsStoreOnlyItem(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "store-only wake", "", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate post-cutover: the store holds the dispatch, the audit file is gone.
+	if res.AuditPath == "" {
+		t.Fatalf("expected an audit file to remove: %+v", res)
+	}
+	if rmErr := os.Remove(res.AuditPath); rmErr != nil {
+		t.Fatalf("remove audit file: %v", rmErr)
+	}
+	// The file inbox is now empty — the pre-fix Wait (work.ListInbox) would hang.
+	files, err := work.ListInbox(f.root, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected empty file inbox after audit removal, got %d", len(files))
+	}
+	// Wait returns the item from the store union, well within the timeout.
+	items, err := f.Wait(context.Background(), "b", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != res.ID {
+		t.Fatalf("Wait did not surface the store-only item: %+v", items)
 	}
 }
 

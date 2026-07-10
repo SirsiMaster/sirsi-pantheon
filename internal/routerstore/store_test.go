@@ -60,6 +60,48 @@ func TestOpenAndMigrateIdempotent(t *testing.T) {
 	}
 }
 
+// TestConcurrentOpenMigratesOnce reproduces the cross-process migration race:
+// several openers hit a FRESH database at once, each starting at user_version 0.
+// Every one of them runs Open (its own *sql.DB, like a separate process). With
+// the naive read-then-migrate, a slower opener re-ran an applied step and failed
+// with "duplicate column name: lease_token"; with the BEGIN IMMEDIATE + in-lock
+// re-check, all succeed and the schema ends up applied exactly once.
+func TestConcurrentOpenMigratesOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.db")
+	const openers = 8
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make(chan error, openers)
+	for i := 0; i < openers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start // release all at once to maximize contention on the fresh DB
+			s, err := Open(path)
+			if err != nil {
+				errs <- err
+				return
+			}
+			_ = s.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent Open on a fresh DB failed (migration race): %v", err)
+	}
+	// The migrated schema must be intact and usable exactly once.
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("post-race Open: %v", err)
+	}
+	defer s.Close()
+	if _, err := s.Send("a", "b", "post-race", "review", "works"); err != nil {
+		t.Fatalf("Send on post-race store: %v", err)
+	}
+}
+
 func TestSendGetClose(t *testing.T) {
 	s := newTestStore(t)
 

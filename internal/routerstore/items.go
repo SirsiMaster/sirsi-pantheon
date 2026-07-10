@@ -151,6 +151,24 @@ func (s *Store) ListAll() ([]Item, error) {
 	return scanItems(rows)
 }
 
+// SetWake records the wake-pass annotation on an item, mirroring
+// internal/work.SetWake for store-only rows (the post-cutover authority). It is
+// a single UPDATE keyed on id; unknown ids return ErrNotFound so the caller can
+// fall back to the file path. Empty-string fields clear their column.
+func (s *Store) SetWake(id, status, attemptedAt, adapter, wakeErr string) error {
+	res, err := s.db.Exec(
+		`UPDATE items SET wake_status=?, wake_attempted_at=?, wake_adapter=?, wake_error=? WHERE id=?;`,
+		status, attemptedAt, adapter, wakeErr, id,
+	)
+	if err != nil {
+		return fmt.Errorf("routerstore: SetWake %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // CloseItem marks an item closed and records its result, mirroring
 // internal/work.Close. It returns ErrNotFound if the id is unknown and
 // ErrAlreadyClosed if the item is already closed. (Named CloseItem, not Close,
