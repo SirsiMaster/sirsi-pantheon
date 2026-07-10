@@ -71,6 +71,27 @@ func findGoRepoRoot() (string, bool) {
 	}
 }
 
+// findGitRepoRoot walks up for a .git entry (dir OR file — worktrees use a
+// .git file). Lets callers tell "not a git repo at all" apart from "a git repo
+// that just isn't a Go module" so the message can be accurate (a JS/web repo
+// like assiduous IS a code repository; maat simply can't weigh Go coverage there).
+func findGitRepoRoot() (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
 // runNetStatus reports plan-alignment state HONESTLY (Rule A14: no number
 // that cannot be independently verified). The previous implementation scored
 // a hardcoded three-item demo plan against whatever BUILD_LOG.md happened to
