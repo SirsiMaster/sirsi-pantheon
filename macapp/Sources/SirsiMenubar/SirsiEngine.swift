@@ -198,6 +198,51 @@ struct RouterBoard: Decodable {
     }
 }
 
+// ── CTR thread roster — the ambient "live threads / heartbeat" board ──────────
+// Owner directive 20260709-182003: the CTR board must be an ALWAYS-VISIBLE
+// passive surface, not something you run `sirsi thread list` to see. TWRow is
+// one raw per-thread record from `sirsi thread list --json`; AgentHeartbeat
+// aggregates them by agent (the raw list is ~72 rows, many claude-home CCD
+// sessions — reference_claude_home_ccd_duplicate_records — so a per-agent roll-up
+// is the at-a-glance ambient view the owner asked for).
+struct TWRow: Decodable {
+    let idleSeconds: Double
+    let stale: Bool
+    let thread: Inner
+    struct Inner: Decodable {
+        let agentId: String?
+        let surface: String?
+        let status: String?
+        let watches: [String]?
+        enum CodingKeys: String, CodingKey { case agentId = "agent_id", surface, status, watches }
+    }
+    enum CodingKeys: String, CodingKey { case idleSeconds = "idle_seconds", stale, thread }
+}
+
+// AgentHeartbeat is one roster row: an agent, its thread liveness counts, the
+// freshest thread's idle age (the heartbeat), and the surfaces it runs on.
+struct AgentHeartbeat: Identifiable {
+    let agent: String
+    let live: Int
+    let idle: Int
+    let staleN: Int
+    let freshestIdle: Double     // seconds since the freshest thread was last seen
+    let surfaces: [String]
+    var id: String { agent }
+    var total: Int { live + idle + staleN }
+    // Status semantics match the rest of the surface (surfaces-current+actionable):
+    // 🟢 something live, 💤 only idle, ⚠️ only stale (the one genuinely actionable
+    // state — a stale thread may need reaping).
+    var glyph: String {
+        if live > 0 { return "🟢" }
+        if idle > 0 { return "💤" }
+        return "⚠️"
+    }
+    var isStale: Bool { live == 0 && idle == 0 && staleN > 0 }
+    // Heartbeat pulse fraction (1 = just seen, →0 as it goes quiet over ~10 min).
+    var pulse: Double { max(0, min(1, 1 - freshestIdle / 600)) }
+}
+
 // ActivityEntry is one line of the provenance ledger — every action taken from
 // the UI, with cause + outcome, persisted so the user can see (and trust) what
 // Pantheon did. Reversibility + provenance is what earns autonomy.
@@ -261,6 +306,51 @@ final class SirsiEngine: ObservableObject {
     @Published var routerBoard: RouterBoard?
     @Published var routerLoading = false
     private let routerBoardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
+
+    // ── CTR thread roster (ambient heartbeat board) ──────────────────────────
+    @Published var threadRoster: [AgentHeartbeat] = []
+    @Published var threadsLoading = false
+    @Published var threadsTotal = 0   // total live threads across all agents
+
+    // loadThreads reads the live CTR board (`sirsi thread list --json`) and rolls
+    // it up per agent for the ambient roster. Read-only; never blocks the UI.
+    func loadThreads() async {
+        threadsLoading = true
+        defer { threadsLoading = false }
+        let out = await Self.runJSON(args: ["thread", "list", "--json"])
+        guard let rows = try? JSONDecoder().decode([TWRow].self, from: out) else {
+            threadRoster = []
+            return
+        }
+        // Aggregate by agent. "live" = active & fresh; "stale" honors the CLI's
+        // own stale flag; everything else counts as idle.
+        var byAgent: [String: (live: Int, idle: Int, staleN: Int, fresh: Double, surf: Set<String>)] = [:]
+        for r in rows {
+            let agent = r.thread.agentId ?? "unknown"
+            var acc = byAgent[agent] ?? (0, 0, 0, .greatestFiniteMagnitude, [])
+            if r.stale {
+                acc.staleN += 1
+            } else if (r.thread.status ?? "") == "active" {
+                acc.live += 1
+            } else {
+                acc.idle += 1
+            }
+            acc.fresh = min(acc.fresh, r.idleSeconds)
+            if let s = r.thread.surface, !s.isEmpty { acc.surf.insert(s) }
+            byAgent[agent] = acc
+        }
+        let roster = byAgent.map { agent, a in
+            AgentHeartbeat(agent: agent, live: a.live, idle: a.idle, staleN: a.staleN,
+                           freshestIdle: a.fresh == .greatestFiniteMagnitude ? 0 : a.fresh,
+                           surfaces: a.surf.sorted())
+        }
+        // Liveliest first: live agents by freshness, then idle, then stale.
+        threadRoster = roster.sorted {
+            if ($0.live > 0) != ($1.live > 0) { return $0.live > 0 }
+            return $0.freshestIdle < $1.freshestIdle
+        }
+        threadsTotal = roster.reduce(0) { $0 + $1.live }
+    }
 
     // Blockers = CURRENT, fixable conditions only (feedback_surfaces_current_
     // actionable_only). A real logout (needsLogin) and a broken router daemon are
@@ -423,6 +513,9 @@ final class SirsiEngine: ObservableObject {
     // refresh re-reads the persisted scan (cheap; no rescan). Drives the title.
     func refresh() {
         checkFDA()
+        // Ambient CTR roster: keep the live-thread count fresh for the Home row +
+        // Threads surface without the user querying (owner directive 20260709-182003).
+        Task { await loadThreads() }
         guard let data = FileManager.default.contents(atPath: scanPath),
               let res = try? JSONDecoder().decode(ScanResult.self, from: data) else {
             onTitle?("")   // no scan yet → just the Eye, no waste figure
