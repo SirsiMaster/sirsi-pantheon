@@ -203,6 +203,11 @@ struct HomeView: View {
                                  dot: statusColor(engine.routerStatus))
                     }.buttonStyle(.plain)
 
+                    NavLink { ThreadsView(engine: engine) } label: {
+                        DeityRow(glyph: "💓", title: "Threads — Heartbeat",
+                                 detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live" : "live threads")
+                    }.buttonStyle(.plain)
+
                     NavLink { RiskView(engine: engine) } label: {
                         DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints", detail: "uncommitted risk")
                     }.buttonStyle(.plain)
@@ -2114,6 +2119,144 @@ struct ResultView: View {
     }
 }
 
+// ── Threads — the ambient CTR live-thread board + heartbeat ──────────────────
+// Owner directive 20260709-182003: make the `sirsi thread list` CTR board an
+// always-visible passive surface with a heartbeat graphic — see liveness WITHOUT
+// running a query. One row per agent (the raw list is ~72 threads, mostly
+// claude-home CCD sessions); each row shows a live/idle/stale roll-up, the
+// freshest last-seen (the heartbeat), and a pulse bar. Surfaces-current+actionable:
+// ⚠️ only for a genuinely stale agent; live data never greyed; plain English.
+struct ThreadsView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var question = ""
+    @State private var answer: String?
+    @State private var asking = false
+
+    private func ago(_ s: Double) -> String {
+        if s < 60 { return "\(Int(s))s ago" }
+        if s < 3600 { return "\(Int(s / 60))m ago" }
+        return "\(Int(s / 3600))h ago"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Threads — Heartbeat")
+            HStack(spacing: 6) {
+                Text("\(engine.threadsTotal)").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("live thread\(engine.threadsTotal == 1 ? "" : "s")").font(.caption).foregroundStyle(.primary)
+                    Text("\(engine.threadRoster.count) agent\(engine.threadRoster.count == 1 ? "" : "s") on the fabric").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }.padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+            if engine.threadRoster.isEmpty {
+                VStack(spacing: 8) {
+                    if engine.threadsLoading { ProgressView() }
+                    Text(engine.threadsLoading ? "Reading the fabric…" : "No live threads right now.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(engine.threadRoster) { a in
+                            HStack(spacing: 10) {
+                                Text(a.glyph).font(.system(size: 15))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(a.agent).font(.system(size: 12, weight: .semibold))
+                                    Text(rollup(a)).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 3) {
+                                    Text(ago(a.freshestIdle)).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                    PulseBar(pulse: a.pulse, stale: a.isStale)
+                                }
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            if a.id != engine.threadRoster.last?.id { Divider().padding(.leading, 40) }
+                        }
+                    }
+                }
+            }
+            // Ask Sirsi in plain English — answered ON-DEVICE, never a cloud
+            // model (owner directive: local-LLM every time). "Sirsi" is the
+            // brand; the model under it (Gemma today) is a switchable fabric —
+            // the user never sees the model name (owner, 2026-07-10).
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.caption).foregroundStyle(gold)
+                    TextField("Ask about the fabric — e.g. \"what's stale?\"", text: $question)
+                        .textFieldStyle(.plain).font(.system(size: 12))
+                        .onSubmit { ask() }
+                    if asking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(gold)
+                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                if let answer {
+                    Text(answer).font(.caption).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("answered on-device by Sirsi — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }.padding(.horizontal, 14).padding(.vertical, 8)
+
+            Divider()
+            HStack {
+                Button { Task { await engine.loadThreads() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .disabled(engine.threadsLoading)
+                Spacer()
+                Text("updates every 60s").font(.caption2).foregroundStyle(.tertiary)
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .task { await engine.loadThreads() }
+    }
+
+    private func ask() {
+        let q = question.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, !asking else { return }
+        asking = true
+        Task {
+            let a = await engine.askAboutThreads(q)
+            answer = a
+            asking = false
+        }
+    }
+
+    private func rollup(_ a: AgentHeartbeat) -> String {
+        var parts: [String] = []
+        if a.live > 0 { parts.append("\(a.live) live") }
+        if a.idle > 0 { parts.append("\(a.idle) idle") }
+        if a.staleN > 0 { parts.append("\(a.staleN) stale") }
+        let counts = parts.joined(separator: " · ")
+        let surf = a.surfaces.isEmpty ? "" : " — \(a.surfaces.joined(separator: "/"))"
+        return counts + surf
+    }
+}
+
+// PulseBar is the heartbeat graphic: a short bar that's full + green when the
+// agent was just seen and shrinks/dims as it goes quiet; amber when stale.
+struct PulseBar: View {
+    let pulse: Double   // 1 = just seen → 0 = quiet (~10 min)
+    let stale: Bool
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.08))
+                Capsule()
+                    .fill(stale ? Color.orange : Color.green)
+                    .frame(width: max(4, geo.size.width * CGFloat(stale ? 0.35 : pulse)))
+                    .opacity(stale ? 0.7 : (0.4 + 0.6 * pulse))
+            }
+        }
+        .frame(width: 48, height: 5)
+    }
+}
+
 // ── ActivityView — the provenance ledger ─────────────────────────────────────
 struct ActivityView: View {
     @ObservedObject var engine: SirsiEngine
@@ -2270,7 +2413,7 @@ struct InsightView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }.disabled(loading)
                 Button { Task { await load(ai: true) } } label: {
-                    Label("Ask Gemma", systemImage: "sparkles")
+                    Label("Ask Sirsi", systemImage: "sparkles")
                 }.disabled(loading)
                 if askingGemma { ProgressView().controlSize(.small) }
                 Spacer()
