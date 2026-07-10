@@ -237,6 +237,56 @@ var routerPullCmd = &cobra.Command{
 	},
 }
 
+var routerWaitTimeout int
+
+var routerWaitCmd = &cobra.Command{
+	Use:   "wait <agent>",
+	Short: "Block until open work is addressed to an agent (store event-wake, <250ms)",
+	Long: `Block until the agent has open work, print the inbox, and return.
+
+This is the store-backed counterpart to 'pull'. Instead of watching the items/
+directory on a timer, it parks on the dispatch store's per-agent wake FIFO and
+returns within ~250ms of a matching send (PRD /goal #1). A '/loop' watcher can
+call this in place of watching items/, so agent wake rides the store — and
+therefore survives the Router v2 file-write cutover (ADR-036), where a send is
+a store row with no items/<id>.md to watch. The work-check is the dual-read
+union (store rows ∪ legacy file items), and a bounded re-check still catches
+legacy file-only sends. Returns after --timeout seconds even with no work
+(exit 0), so a shell loop calls it repeatedly.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+
+		// Honor Ctrl-C / SIGTERM so a supervised loop can stop the wait cleanly.
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		items, err := f.Wait(ctx, args[0], time.Duration(routerWaitTimeout)*time.Second)
+		if err != nil {
+			return err
+		}
+		if len(items) == 0 {
+			fmt.Printf("  No open items for %s after %ds.\n", args[0], routerWaitTimeout)
+			return nil
+		}
+		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
+		for _, it := range items {
+			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
+		}
+		fmt.Printf("  Read full: sirsi router show <id>\n")
+		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
+		return nil
+	},
+}
+
 var routerShowCmd = &cobra.Command{
 	Use:   "show <id>",
 	Short: "Print the full text of a work item",
@@ -643,5 +693,6 @@ func init() {
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
 	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent has a live session (bypasses the duplicate-spawn leak guard)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd)
+	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd)
 }

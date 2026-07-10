@@ -183,16 +183,22 @@ func (f *Facade) CloseItem(id, result string) error {
 }
 
 // Wait blocks until an open item is addressed to agent or the timeout
-// passes, then returns the canonical file inbox. Items sent through the
-// facade wake the waiter event-driven in well under 250ms (PRD /goal #1 —
-// the store signals its in-process waiters and the notify FIFO); items
-// written by a legacy file-only writer are caught by a bounded 5s re-check,
-// which still beats the retired 1s poll loop it replaces at a fifth of the
-// wakeups. Returns (nil, nil) on a clean timeout.
+// passes, then returns the dual-read inbox (store rows ∪ file items). Items
+// sent through the facade wake the waiter event-driven in well under 250ms
+// (PRD /goal #1 — the store signals its in-process waiters and the notify
+// FIFO); items written by a legacy file-only writer are caught by a bounded 5s
+// re-check, which still beats the retired 1s poll loop it replaces at a fifth
+// of the wakeups. Returns (nil, nil) on a clean timeout.
+//
+// The work-check is the union (f.Inbox), NOT the file inbox alone: a store-only
+// send — the steady state after the ADR-036 file-write cutover — must wake the
+// waiter even when no items/<id>.md exists. Using Inbox here is what lets a
+// `/loop` watcher move off the items/ directory-watch onto the store event
+// wake without stranding at cutover.
 func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) ([]work.Item, error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		items, err := work.ListInbox(f.root, agent)
+		items, err := f.Inbox(agent)
 		if err != nil {
 			return nil, err
 		}

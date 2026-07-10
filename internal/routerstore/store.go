@@ -26,9 +26,11 @@
 package routerstore
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -216,30 +218,145 @@ CREATE TABLE counters (
 // migrate applies any pending numbered migrations, tracked via the SQLite
 // user_version pragma. Idempotent — safe to call on every Open: a database
 // already at the current version applies nothing.
+// migrate is safe under CROSS-PROCESS concurrency on a fresh database. Two
+// `sirsi` processes opening the same new store both start at user_version 0;
+// because WAL lets a reader see a snapshot, a naive read-then-migrate lets the
+// slower process re-run an already-applied step (e.g. `ALTER … ADD lease_token`
+// → "duplicate column name"). The cutover makes this common — every agent opens
+// the store. So each step runs under an explicit `BEGIN IMMEDIATE` (which grabs
+// the write lock up front, contending via busy_timeout) and RE-READS
+// user_version inside that lock: if a peer already advanced it, this process
+// rolls back and re-loops instead of double-applying. All statements run on one
+// pinned connection so the manual BEGIN/COMMIT is not spread across the pool.
 func (s *Store) migrate() error {
-	var version int
-	if err := s.db.QueryRow(`PRAGMA user_version;`).Scan(&version); err != nil {
-		return fmt.Errorf("routerstore: migrate: read user_version: %w", err)
+	ctx := context.Background()
+	// Pinning the connection establishes it — which on a FRESH database runs the
+	// DSN pragmas, and setting journal_mode=WAL needs a brief exclusive lock. Two
+	// processes opening the same new store race there and one sees SQLITE_BUSY at
+	// connection-establishment, before any migration statement. Retry the pin on
+	// busy so a concurrent first-open never fails the whole Open.
+	conn, err := pinConnWithRetry(ctx, s.db)
+	if err != nil {
+		return fmt.Errorf("routerstore: migrate: pin connection: %w", err)
 	}
-	if version > len(migrations) {
-		return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, len(migrations))
+	defer func() { _ = conn.Close() }()
+
+	// Re-assert busy_timeout on this pinned connection for the BEGIN IMMEDIATE loop.
+	if _, err := conn.ExecContext(ctx, `PRAGMA busy_timeout = 5000;`); err != nil {
+		return fmt.Errorf("routerstore: migrate: set busy_timeout: %w", err)
 	}
-	for i := version; i < len(migrations); i++ {
-		tx, err := s.db.Begin()
-		if err != nil {
-			return fmt.Errorf("routerstore: migrate to v%d: begin: %w", i+1, err)
+
+	for {
+		var version int
+		if err := conn.QueryRowContext(ctx, `PRAGMA user_version;`).Scan(&version); err != nil {
+			return fmt.Errorf("routerstore: migrate: read user_version: %w", err)
 		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
-			_ = tx.Rollback()
+		if version > len(migrations) {
+			return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, len(migrations))
+		}
+		if version == len(migrations) {
+			return nil // up to date
+		}
+		i := version
+
+		// BEGIN IMMEDIATE acquires the write lock now (waiting up to busy_timeout
+		// for a peer mid-migration) so the version re-check below is authoritative.
+		// A fresh-init race can still surface SQLITE_BUSY before the lock is
+		// grantable; retry with a bounded backoff rather than failing the Open.
+		if err := beginImmediateWithRetry(ctx, conn); err != nil {
+			return fmt.Errorf("routerstore: migrate to v%d: begin immediate: %w", i+1, err)
+		}
+		var locked int
+		if err := conn.QueryRowContext(ctx, `PRAGMA user_version;`).Scan(&locked); err != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return fmt.Errorf("routerstore: migrate to v%d: re-read user_version: %w", i+1, err)
+		}
+		if locked != i {
+			// A concurrent opener already advanced past i under the lock. Bail out
+			// of this attempt and re-evaluate from the top — no double-apply.
+			if _, err := conn.ExecContext(ctx, `ROLLBACK;`); err != nil {
+				return fmt.Errorf("routerstore: migrate to v%d: rollback stale: %w", i+1, err)
+			}
+			continue
+		}
+		if _, err := conn.ExecContext(ctx, migrations[i]); err != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: %w", i+1, err)
 		}
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d;", i+1)); err != nil {
-			_ = tx.Rollback()
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d;", i+1)); err != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: set user_version: %w", i+1, err)
 		}
-		if err := tx.Commit(); err != nil {
+		if _, err := conn.ExecContext(ctx, `COMMIT;`); err != nil {
 			return fmt.Errorf("routerstore: migrate to v%d: commit: %w", i+1, err)
 		}
 	}
-	return nil
+}
+
+// pinConnWithRetry acquires a pinned connection, retrying on a transient
+// SQLITE_BUSY at connection-establishment — the fresh-DB WAL-init window where
+// two processes contend to set journal_mode. Bounded ~5s (25 × 200ms).
+func pinConnWithRetry(ctx context.Context, db *sql.DB) (*sql.Conn, error) {
+	const attempts = 25
+	var err error
+	for a := 0; a < attempts; a++ {
+		var conn *sql.Conn
+		conn, err = db.Conn(ctx)
+		if err == nil {
+			// Force the connection to actually establish (run DSN pragmas) now, so
+			// a WAL-init busy surfaces here where we can retry it, not later.
+			if _, perr := conn.ExecContext(ctx, `PRAGMA user_version;`); perr == nil {
+				return conn, nil
+			} else {
+				_ = conn.Close()
+				err = perr
+			}
+		}
+		if !isBusy(err) {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return nil, err
+}
+
+// beginImmediateWithRetry runs BEGIN IMMEDIATE, retrying on a transient
+// SQLITE_BUSY / "database is locked" — the fresh-init WAL window where two
+// processes race to create -wal/-shm and grab the first write lock. busy_timeout
+// covers most contention; this bounded backoff covers the residual init race so
+// a concurrent first-open never fails the whole Open. ~5s ceiling (25 × 200ms),
+// well beyond any real fresh-DB migration (a few ALTERs).
+func beginImmediateWithRetry(ctx context.Context, conn *sql.Conn) error {
+	const attempts = 25
+	var err error
+	for a := 0; a < attempts; a++ {
+		if _, err = conn.ExecContext(ctx, `BEGIN IMMEDIATE;`); err == nil {
+			return nil
+		}
+		if !isBusy(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return err
+}
+
+// isBusy reports whether err is a SQLite busy/locked condition (driver-agnostic
+// string match — modernc surfaces these as text, e.g. "database is locked (5)").
+func isBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "SQLITE_BUSY") ||
+		strings.Contains(msg, "(5)")
 }
