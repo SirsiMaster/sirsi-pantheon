@@ -2178,8 +2178,10 @@ struct ThreadsView: View {
                     }
                 }
             }
-            // Ask the fabric in plain English — answered ON-DEVICE by local Gemma,
-            // never a cloud model (owner directive: local-LLM every time).
+            // Ask Sirsi in plain English — answered ON-DEVICE, never a cloud
+            // model (owner directive: local-LLM every time). "Sirsi" is the
+            // brand; the model under it (Gemma today) is a switchable fabric —
+            // the user never sees the model name (owner, 2026-07-10).
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -2199,7 +2201,7 @@ struct ThreadsView: View {
                     Text(answer).font(.caption).foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("answered on-device by local Gemma — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                    Text("answered on-device by Sirsi — no cloud").font(.caption2).foregroundStyle(.tertiary)
                 }
             }.padding(.horizontal, 14).padding(.vertical, 8)
 
@@ -2411,7 +2413,7 @@ struct InsightView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }.disabled(loading)
                 Button { Task { await load(ai: true) } } label: {
-                    Label("Ask Gemma", systemImage: "sparkles")
+                    Label("Ask Sirsi", systemImage: "sparkles")
                 }.disabled(loading)
                 if askingGemma { ProgressView().controlSize(.small) }
                 Spacer()

@@ -790,7 +790,7 @@ final class SirsiEngine: ObservableObject {
             DispatchQueue.global(qos: .userInitiated).async {
                 let bin = gemmaBinary()
                 guard FileManager.default.isExecutableFile(atPath: bin) else {
-                    cont.resume(returning: "Local Gemma isn't installed (~/.local/bin/gemma). This query stays on-device — install the local model to use it.")
+                    cont.resume(returning: "Sirsi's on-device model isn't set up yet. This query stays on-device — never cloud.")
                     return
                 }
                 let p = Process()
@@ -802,7 +802,7 @@ final class SirsiEngine: ObservableObject {
                 p.standardError = errPipe   // captured as a fallback so refusals
                                             // ("start the warm broker") reach the user
                 do { try p.run() } catch {
-                    cont.resume(returning: "Couldn't reach local Gemma: \(error.localizedDescription)")
+                    cont.resume(returning: "Couldn't reach Sirsi's on-device model: \(error.localizedDescription)")
                     return
                 }
                 let deadline = DispatchTime.now() + .seconds(60)
@@ -814,11 +814,15 @@ final class SirsiEngine: ObservableObject {
                 timeoutWork.cancel()
                 let text = stripANSI(String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty { cont.resume(returning: text); return }
-                // No stdout — surface the model's own message (e.g. the RAM-refusal
-                // hint), cleaned of Python traceback noise, so the answer is useful.
-                let err = stripANSI(String(data: errData, encoding: .utf8) ?? "")
-                let hint = err.split(separator: "\n").last(where: { $0.contains("𓁵") || $0.lowercased().contains("gemma") || $0.lowercased().contains("ram") }).map(String.init)?.trimmingCharacters(in: .whitespaces)
-                cont.resume(returning: hint ?? "No answer from local Gemma (is the warm broker running? `sirsi gemma serve`).")
+                // No stdout — the on-device model didn't answer (commonly: its
+                // broker isn't running or there isn't enough free RAM to load it).
+                // Keep the message BRAND-neutral: the user never sees the model
+                // name (Gemma today) — Sirsi is a switchable fabric (owner,
+                // 2026-07-10). The specific cause stays in errData/logs.
+                let refusedForRAM = stripANSI(String(data: errData, encoding: .utf8) ?? "").lowercased().contains("ram")
+                cont.resume(returning: refusedForRAM
+                    ? "Sirsi's on-device model needs more free memory to answer right now. Your query stayed on-device — never cloud."
+                    : "Sirsi's on-device model isn't running right now. Your query stayed on-device — never cloud.")
             }
         }
     }
