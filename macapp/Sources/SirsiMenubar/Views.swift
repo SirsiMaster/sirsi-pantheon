@@ -74,14 +74,62 @@ func sirsiArgs(_ command: String) -> [String] {
 // RootView is the NavigationStack the popover hosts. Every screen pushes onto it
 // and the native back button returns — the "persistent menubar that can go back"
 // the user asked for. No screen ever kicks out to Terminal or a browser.
+// Nav is the explicit navigation stack. SwiftUI's NavigationStack, pushed inside
+// this fullSizeContentView NSPanel, silently DROPPED the in-content BackBar of
+// every drilled-in screen — the custom "‹ Back" row never rendered no matter
+// what (proven exhaustively 2026-07-10: clean builds, insets, toolbar-hidden,
+// fixed heights — none made it appear). So we drive navigation ourselves: a
+// stack of destinations, a Back that pops it, and a top bar we fully control.
+final class Nav: ObservableObject {
+    struct Frame: Identifiable { let id = UUID(); let view: AnyView }
+    @Published var stack: [Frame] = []
+    func push<V: View>(_ v: V) { stack.append(Frame(view: AnyView(v))) }
+    func pop() { if !stack.isEmpty { stack.removeLast() } }
+    func popToRoot() { stack.removeAll() }
+    var atRoot: Bool { stack.isEmpty }
+}
+
+// NavLink is a drop-in replacement for NavLink { destination } label: {…}
+// that pushes onto our own Nav instead of a NavigationStack. Same call shape, so
+// converting a screen is a rename. The pushed destination inherits `nav` via the
+// environment object, so nested NavLinks keep working to any depth.
+struct NavLink<Label: View, Destination: View>: View {
+    @EnvironmentObject private var nav: Nav
+    private let destination: () -> Destination
+    private let label: () -> Label
+    init(@ViewBuilder destination: @escaping () -> Destination, @ViewBuilder label: @escaping () -> Label) {
+        self.destination = destination
+        self.label = label
+    }
+    var body: some View {
+        Button { nav.push(destination()) } label: { label() }
+            .buttonStyle(.plain)
+    }
+}
+
 struct RootView: View {
     @ObservedObject var engine: SirsiEngine
+    @StateObject private var nav = Nav()
 
     var body: some View {
-        NavigationStack {
-            HomeView(engine: engine)
+        // Wrapping the content in an explicit VStack (instead of a bare Group)
+        // is what finally lets each pushed view's BackBar render — a bare Group
+        // under the NSHostingView (sizingOptions: []) dropped the top row. The
+        // leading Color.clear reserves the window titlebar strip so the BackBar
+        // (and Home's title) clear the traffic-light buttons and stay clickable
+        // (they were overlapping the drag region before).
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 50)
+            Group {
+                if let top = nav.stack.last {
+                    top.view
+                } else {
+                    HomeView(engine: engine)
+                }
+            }
         }
         .frame(width: 380, height: 520)
+        .environmentObject(nav)
     }
 }
 
@@ -120,63 +168,63 @@ struct HomeView: View {
             // Deity rows
             maybeScroll {
                 VStack(spacing: 2) {
-                    NavigationLink { InsightView(engine: engine) } label: {
+                    NavLink { InsightView(engine: engine) } label: {
                         DeityRow(glyph: "✨", title: "Insight — what to do next",
                                  detail: "across the platform")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { AnubisView(engine: engine) } label: {
+                    NavLink { AnubisView(engine: engine) } label: {
                         DeityRow(glyph: "🐺", title: "Anubis — Hygiene",
                                  detail: engine.safeBytes >= SirsiEngine.wasteThreshold ? "\(engine.safe.count) items ready" : "clean")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { HorusView(engine: engine) } label: {
+                    NavLink { HorusView(engine: engine) } label: {
                         DeityRow(glyph: "𓂀", title: "Horus — Ops",
                                  detail: engine.healthLoading ? "checking…" : engine.healthSummary,
                                  dot: statusColor(engine.healthStatus))
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
+                    NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
                         DeityRow(glyph: "𓆄", title: "Ma'at — Quality",
                                  detail: engine.projectName ?? "governance")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ThothMemoryInfoView() } label: {
+                    NavLink { ThothMemoryInfoView() } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
+                    NavLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
                         DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { RouterView(engine: engine) } label: {
+                    NavLink { RouterView(engine: engine) } label: {
                         DeityRow(glyph: "🛰️", title: "Router — Fabric",
                                  detail: engine.routerSummary,
                                  dot: statusColor(engine.routerStatus))
                     }.buttonStyle(.plain)
 
-                    NavigationLink { RiskView(engine: engine) } label: {
+                    NavLink { RiskView(engine: engine) } label: {
                         DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints", detail: "uncommitted risk")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) } label: {
+                    NavLink { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) } label: {
                         DeityRow(glyph: "𓁆", title: "Seshat — Knowledge", detail: "ingestion")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) } label: {
+                    NavLink { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) } label: {
                         DeityRow(glyph: "𓁯", title: "Net — Plan",
                                  detail: engine.projectName ?? "alignment")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) } label: {
+                    NavLink { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) } label: {
                         DeityRow(glyph: "🏛️", title: "Vault — Context", detail: "code search")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) } label: {
+                    NavLink { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) } label: {
                         DeityRow(glyph: "⚡", title: "RTK — Output Filter", detail: "noise sieve")
                     }.buttonStyle(.plain)
 
-                    NavigationLink { ActivityView(engine: engine) } label: {
+                    NavLink { ActivityView(engine: engine) } label: {
                         DeityRow(glyph: "𓆎", title: "Activity — what Pantheon did",
                                  detail: engine.activity.isEmpty ? "ledger" : "\(engine.activity.count) logged")
                     }.buttonStyle(.plain)
@@ -184,7 +232,7 @@ struct HomeView: View {
                     // Only nag for Full Disk Access while we don't have it. Once
                     // granted, the row disappears and a quiet confirmation shows.
                     if !engine.hasFDA {
-                        NavigationLink { FDAGuideView() } label: {
+                        NavLink { FDAGuideView() } label: {
                             DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
                                      detail: "so Sirsi sees everything")
                         }.buttonStyle(.plain)
@@ -273,11 +321,11 @@ struct DeityRow: View {
 // user gets trapped. This calls @Environment(\.dismiss) to pop the stack
 // regardless of toolbar chrome. Put it at the very top of each pushed view.
 struct BackBar: View {
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nav: Nav
     let title: String
     var body: some View {
         HStack(spacing: 6) {
-            Button { dismiss() } label: {
+            Button { nav.pop() } label: {
                 // The LABEL is the hit area for a .plain button — the bare
                 // chevron+text was a ~40×16pt target the owner had to "click
                 // around a few times to actuate" (2026-07-09). Pad it to a
@@ -431,7 +479,7 @@ struct HealthRow: View {
 
     var body: some View {
         if navigable {
-            NavigationLink { FindingView(engine: engine, finding: finding) } label: { row }
+            NavLink { FindingView(engine: engine, finding: finding) } label: { row }
                 .buttonStyle(.plain)
         } else {
             row
@@ -613,7 +661,7 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                         Text(fixSectionLabel).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                        NavigationLink {
+                        NavLink {
                             ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
                                        reverifyCheck: finding.check, reverifyKind: finding.fixKind)
                         } label: {
@@ -733,7 +781,7 @@ struct RouterView: View {
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         ForEach(engine.routerStranded) { s in
-                            NavigationLink {
+                            NavLink {
                                 StrandedAgentView(engine: engine, agent: s)
                             } label: {
                                 HStack(spacing: 10) {
@@ -967,14 +1015,14 @@ struct AnubisView: View {
                     // ONE unified flow (was two split, confusing buttons): scan
                     // with visible progress → review every item → clean the ones
                     // you pick. ScanCleanView owns the whole workflow.
-                    NavigationLink { ScanCleanView(engine: engine) } label: {
+                    NavLink { ScanCleanView(engine: engine) } label: {
                         ActionCard(glyph: "🧹", title: "Scan & Clean Waste",
                                    sub: "Find waste, review every item, move what you choose to Trash")
                     }.buttonStyle(.plain)
 
                     // A real structured screen — the list of leftover apps and what
                     // to do — not a terminal transcript dumped into the popover.
-                    NavigationLink { GhostsView(engine: engine) } label: {
+                    NavLink { GhostsView(engine: engine) } label: {
                         ActionCard(glyph: "👻", title: "Find Leftover Apps",
                                    sub: "Remnants of apps you've uninstalled (Ka)")
                     }.buttonStyle(.plain)
@@ -1085,7 +1133,7 @@ struct ExclusionNote: View {
 // exactly what you picked (Go `--only`, intersection-only).
 struct ScanCleanView: View {
     @ObservedObject var engine: SirsiEngine
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nav: Nav
     @State private var selected: Set<String> = []
     @State private var resultLine: String?
     @State private var showCaution = false
@@ -1151,7 +1199,7 @@ struct ScanCleanView: View {
             Text(line).font(.callout).multilineTextAlignment(.center)
             Text("Moved to Trash — recoverable until you empty it.")
                 .font(.caption).foregroundStyle(.secondary)
-            Button { dismiss() } label: { Text("Done").frame(maxWidth: .infinity) }
+            Button { nav.pop() } label: { Text("Done").frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent).tint(gold).padding(.top, 4)
         }
         .frame(maxWidth: .infinity).padding(24)
@@ -1201,7 +1249,7 @@ struct ScanCleanView: View {
                 }
                 .buttonStyle(.plain)
             }
-            NavigationLink { ItemDetailView(engine: engine, finding: f) } label: {
+            NavLink { ItemDetailView(engine: engine, finding: f) } label: {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(f.description).font(.caption).lineLimit(1)
@@ -1267,7 +1315,7 @@ struct DetailRow: View {
 struct ItemDetailView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: Finding
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nav: Nav
     @State private var resultLine: String?
 
     private var isSafe: Bool { finding.severity == "safe" }
@@ -1305,7 +1353,7 @@ struct ItemDetailView: View {
                 HStack {
                     Text("✓ \(resultLine)").font(.caption).foregroundStyle(.green)
                     Spacer()
-                    Button("Done") { dismiss() }.font(.caption)
+                    Button("Done") { nav.pop() }.font(.caption)
                 }.padding(12)
             } else if isSafe {
                 Button {
@@ -1777,6 +1825,7 @@ struct ResultView: View {
     @State private var applying = false
     @State private var pendingApply: CRAction?
     @State private var toast: String?
+    @State private var toastOK = true      // did the toasted action succeed? drives icon/color
     @State private var postFix: String?   // honest verdict after re-verify
     @State private var didReverify = false // re-verify fires once (across load/apply paths)
 
@@ -1877,11 +1926,12 @@ struct ResultView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let t = toast {
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                        Image(systemName: toastOK ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(toastOK ? .green : .orange)
                         Text(t).font(.caption)
                     }
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.green.opacity(0.12)))
+                    .background(RoundedRectangle(cornerRadius: 7).fill((toastOK ? Color.green : Color.orange).opacity(0.12)))
                 }
                 Text(r.summary).font(.system(size: 14, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -2056,7 +2106,8 @@ struct ResultView: View {
         let out = String(data: jsonData, encoding: .utf8) ?? ""
         engine.recordActivity(title: a.label, command: a.command, result: out)
         let summary = SirsiEngine.summaryLine(out)
-        toast = summary.isEmpty ? "\(a.label): done." : summary
+        toastOK = SirsiEngine.resultOK(out)
+        toast = summary.isEmpty ? (toastOK ? "\(a.label): done." : "\(a.label): failed.") : summary
         applying = false
         await load()
         engine.refresh()
@@ -2165,7 +2216,7 @@ struct InsightView: View {
                             // Each suggestion RUNS its command in-panel — tap pushes
                             // a CommandView that executes `sirsi <cmd>` and shows
                             // output (TUI-is-the-session: never a dead command label).
-                            NavigationLink {
+                            NavLink {
                                 ResultView(engine: engine, title: a.title, args: Self.commandArgs(a.command))
                             } label: {
                                 HStack(alignment: .top, spacing: 8) {
@@ -2192,7 +2243,7 @@ struct InsightView: View {
                             // Never a raw CLI run for the big three: `scan` from
                             // the app used to spin forever (full-disk walk) and
                             // `thoth status` was a jargon dump with wrong advice.
-                            NavigationLink {
+                            NavLink {
                                 Self.deityDestination(engine: engine, deity: s.deity)
                             } label: {
                                 HStack(spacing: 8) {
