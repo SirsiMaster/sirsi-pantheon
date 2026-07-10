@@ -200,6 +200,18 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	return items, nil
 }
 
+// SetWake records a wake-pass annotation on an item, routing to whichever
+// store holds it: the canonical file when one exists (legacy items), else the
+// store row (the post-cutover authority, where a store-only item has no file to
+// annotate). This lets WakePass annotate — and therefore stay idempotent about —
+// items regardless of the cutover state.
+func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
+	if _, err := os.Stat(filepath.Join(f.root, "items", id+".md")); err == nil {
+		return work.SetWake(f.root, id, ann)
+	}
+	return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
+}
+
 // sortItemsByID keeps the merged inbox in the file router's oldest-first
 // order (ids sort chronologically by construction).
 func sortItemsByID(items []work.Item) {
