@@ -1777,6 +1777,7 @@ struct ResultView: View {
     @State private var applying = false
     @State private var pendingApply: CRAction?
     @State private var toast: String?
+    @State private var toastOK = true      // did the toasted action succeed? drives icon/color
     @State private var postFix: String?   // honest verdict after re-verify
     @State private var didReverify = false // re-verify fires once (across load/apply paths)
 
@@ -1877,11 +1878,12 @@ struct ResultView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let t = toast {
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                        Image(systemName: toastOK ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(toastOK ? .green : .orange)
                         Text(t).font(.caption)
                     }
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.green.opacity(0.12)))
+                    .background(RoundedRectangle(cornerRadius: 7).fill((toastOK ? Color.green : Color.orange).opacity(0.12)))
                 }
                 Text(r.summary).font(.system(size: 14, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -2056,7 +2058,8 @@ struct ResultView: View {
         let out = String(data: jsonData, encoding: .utf8) ?? ""
         engine.recordActivity(title: a.label, command: a.command, result: out)
         let summary = SirsiEngine.summaryLine(out)
-        toast = summary.isEmpty ? "\(a.label): done." : summary
+        toastOK = SirsiEngine.resultOK(out)
+        toast = summary.isEmpty ? (toastOK ? "\(a.label): done." : "\(a.label): failed.") : summary
         applying = false
         await load()
         engine.refresh()

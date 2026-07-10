@@ -88,7 +88,9 @@ struct CommandResult: Decodable {
     let summary: String
     let evidence: [CRFact]
     let nextActions: [CRAction]
-    enum CodingKeys: String, CodingKey { case command, summary, evidence; case nextActions = "next_actions" }
+    let status: String?     // "ok" | "error" — drives success/failure affordances
+    let errors: [String]
+    enum CodingKeys: String, CodingKey { case command, summary, evidence, status, errors; case nextActions = "next_actions" }
 
     // Some results omit evidence/next_actions entirely (e.g. `maat audit`'s
     // honest "not inside a code repository"). Treat absent as empty so those
@@ -99,7 +101,14 @@ struct CommandResult: Decodable {
         summary = try c.decode(String.self, forKey: .summary)
         evidence = try c.decodeIfPresent([CRFact].self, forKey: .evidence) ?? []
         nextActions = try c.decodeIfPresent([CRAction].self, forKey: .nextActions) ?? []
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        errors = try c.decodeIfPresent([String].self, forKey: .errors) ?? []
     }
+
+    // Did the command actually succeed? An explicit "error" status or any
+    // errors entry means no — so the toast must not flash a green ✓ over it
+    // (owner, 2026-07-09: a green checkmark sat above "Error: … not installed").
+    var ok: Bool { status != "error" && errors.isEmpty }
 }
 
 // ── Router board (fabric liveness) ───────────────────────────────────────────
@@ -597,6 +606,22 @@ final class SirsiEngine: ObservableObject {
             if !t.isEmpty { return t }
         }
         return "done"
+    }
+
+    // resultOK reports whether a command's JSON output signals success — an
+    // explicit "status":"error" or any errors[] entry is a failure. Falls back
+    // to true when the output isn't structured (no signal ≠ failure), but a
+    // bare "Error:" prefix in unstructured text still reads as failure so the
+    // toast never flashes green over an error.
+    static func resultOK(_ out: String) -> Bool {
+        if let i = out.firstIndex(of: "{"),
+           let data = String(out[i...]).data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let status = obj["status"] as? String, status == "error" { return false }
+            if let errs = obj["errors"] as? [Any], !errs.isEmpty { return false }
+            return true
+        }
+        return !firstMeaningful(stripANSI(out)).lowercased().hasPrefix("error")
     }
 
     // run shells the `sirsi` binary off the main actor and returns combined
