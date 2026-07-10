@@ -120,17 +120,26 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	// owner-facing surface (2026-07-05 popover). Unmeasured is not unhealthy:
 	// say so plainly and point at the fix (Rule A14; surfaces canon).
 	if _, inRepo := findGoRepoRoot(); !inRepo {
+		// Distinguish "not a git repo at all" from "a git repo that just isn't a
+		// Go module" — a JS/web repo (e.g. assiduous) IS a code repository; maat
+		// weighs Go coverage/canon and simply has no Go module to measure there.
+		// The old blanket "Not inside a code repository" was wrong and confusing.
+		_, inGit := findGitRepoRoot()
+		summary := "Not inside a code repository — Ma'at has nothing to weigh here."
+		if inGit {
+			summary = "This is a git repo but has no Go module — Ma'at weighs Go coverage, canon, and pipeline health, so there's nothing to measure here."
+		}
 		res := &output.CommandResult{
 			Command:    "sirsi maat audit",
 			BriefTitle: "Quality & Governance",
-			Summary:    "Not inside a code repository — Ma'at has nothing to weigh here.",
+			Summary:    summary,
 			Status:     "unmeasured",
 			Duration:   time.Since(start),
 		}
 		res.NextActions = append(res.NextActions, output.NextAction{
-			Label:       "Audit a repository",
-			Command:     "cd <your-repo> && sirsi maat audit",
-			Description: "Ma'at weighs a repo's coverage, canon, and pipeline health from its root.",
+			Label:       "Audit a Go repository",
+			Command:     "cd <your-go-repo> && sirsi maat audit",
+			Description: "Ma'at weighs a Go repo's coverage, canon, and pipeline health from its root.",
 		})
 		res.Render()
 		return nil
