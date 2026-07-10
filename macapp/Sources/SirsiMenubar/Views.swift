@@ -111,24 +111,38 @@ struct RootView: View {
     @ObservedObject var engine: SirsiEngine
     @StateObject private var nav = Nav()
 
+    // The whole UI is designed at this width; everything (fonts, dividers,
+    // spacing, structures) scales geometrically from it, so resizing the window
+    // resizes the ELEMENTS too — not just the container (owner, 2026-07-10).
+    private let baseWidth: CGFloat = 380
+
     var body: some View {
         // Wrapping the content in an explicit VStack (instead of a bare Group)
         // is what finally lets each pushed view's BackBar render — a bare Group
         // under the NSHostingView (sizingOptions: []) dropped the top row. The
         // leading Color.clear reserves the window titlebar strip so the BackBar
-        // (and Home's title) clear the traffic-light buttons and stay clickable
-        // (they were overlapping the drag region before).
-        VStack(spacing: 0) {
-            Color.clear.frame(height: 50)
-            Group {
-                if let top = nav.stack.last {
-                    top.view
-                } else {
-                    HomeView(engine: engine)
+        // (and Home's title) clear the traffic-light buttons and stay clickable.
+        GeometryReader { geo in
+            // Scale factor = how much wider the window is than the base design.
+            // The window's minSize (360) keeps scale ≳ 0.95 so the 50pt titlebar
+            // clearance never shrinks below the ~28pt traffic-light strip.
+            let scale = max(0.5, geo.size.width / baseWidth)
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 50)
+                Group {
+                    if let top = nav.stack.last {
+                        top.view
+                    } else {
+                        HomeView(engine: engine)
+                    }
                 }
             }
+            // Design at the base width and a base-unit height that fills the
+            // window once scaled; .scaleEffect then blows up every element —
+            // font, divider, padding — by the same factor, anchored top-left.
+            .frame(width: baseWidth, height: max(1, geo.size.height / scale), alignment: .top)
+            .scaleEffect(scale, anchor: .topLeading)
         }
-        .frame(width: 380, height: 520)
         .environmentObject(nav)
     }
 }
