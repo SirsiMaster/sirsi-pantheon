@@ -263,19 +263,22 @@ var seshatListCmd = &cobra.Command{
 			return nil
 		}
 
-		if JsonOutput {
-			result := map[string]interface{}{
-				"items": items,
-				"total": len(items),
-			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(result)
+		// CommandResult contract (owner surface law 2026-07-09): structured
+		// list + a real lever (sync/ingest), not a raw Printf dump.
+		res := &output.CommandResult{Command: "sirsi seshat list", BriefTitle: "Knowledge Library"}
+		if len(items) == 0 {
+			res.Summary = "No knowledge items ingested yet — the library is empty."
+			res.Status = "ok"
+			res.NextActions = append(res.NextActions,
+				output.NextAction{Label: "Sync knowledge sources", Command: "sirsi seshat sync", Description: "Pull the latest knowledge items from configured sources."},
+				output.NextAction{Label: "Ingest a source", Command: "sirsi seshat ingest", Description: "Add a new source into the library."},
+			)
+			res.Duration = time.Since(start)
+			res.Render()
+			return nil
 		}
-
-		output.Banner()
-		output.Header("Knowledge Library")
-
+		res.Summary = fmt.Sprintf("%d knowledge item(s) in the library.", len(items))
+		res.Status = "ok"
 		for i, ki := range items {
 			source := "unknown"
 			for _, ref := range ki.References {
@@ -284,13 +287,17 @@ var seshatListCmd = &cobra.Command{
 					break
 				}
 			}
-			fmt.Printf("  %d. [%s] %s\n", i+1, source, ki.Title)
-			fmt.Printf("     %s\n", output.Truncate(ki.Summary, 80))
+			if i >= 10 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more", len(items)-10))
+				break
+			}
+			res.AddEvidence(fmt.Sprintf("[%s] %s", source, ki.Title), output.Truncate(ki.Summary, 60))
 		}
-
-		fmt.Printf("\n  Total: %d knowledge items\n", len(items))
-		output.Footer(time.Since(start))
-		output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "seshat", Subcommand: "list"}))
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "Sync knowledge sources", Command: "sirsi seshat sync", Description: "Refresh the library from its sources."},
+		)
+		res.Duration = time.Since(start)
+		res.Render()
 		return nil
 	},
 }
