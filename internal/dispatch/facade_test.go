@@ -1,11 +1,13 @@
 package dispatch
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
@@ -49,6 +51,43 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != res.ID {
 		t.Fatalf("file router does not see the dispatched item: %+v", items)
+	}
+}
+
+// TestWaitDetectsStoreOnlyItem proves the wake path survives the ADR-036
+// file-write cutover: with the store row present but NO items/<id>.md audit
+// file (the steady state after file writes stop), Wait must still surface the
+// work from the store union — not block until timeout waiting for a file that
+// will never be written. This is what lets a `/loop` watcher move off the
+// items/ directory-watch onto `sirsi router wait` (the store FIFO).
+func TestWaitDetectsStoreOnlyItem(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "store-only wake", "", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate post-cutover: the store holds the dispatch, the audit file is gone.
+	if res.AuditPath == "" {
+		t.Fatalf("expected an audit file to remove: %+v", res)
+	}
+	if rmErr := os.Remove(res.AuditPath); rmErr != nil {
+		t.Fatalf("remove audit file: %v", rmErr)
+	}
+	// The file inbox is now empty — the pre-fix Wait (work.ListInbox) would hang.
+	files, err := work.ListInbox(f.root, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected empty file inbox after audit removal, got %d", len(files))
+	}
+	// Wait returns the item from the store union, well within the timeout.
+	items, err := f.Wait(context.Background(), "b", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != res.ID {
+		t.Fatalf("Wait did not surface the store-only item: %+v", items)
 	}
 }
 
