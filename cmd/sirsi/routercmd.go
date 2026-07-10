@@ -400,6 +400,21 @@ var routerWakeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// LEAK GUARD (owner finding 2026-07-10): a background wake LaunchAgent is
+		// for a HEADLESS agent with no live session. If the agent already has a
+		// LIVE thread (an interactive CCD/CLI session, or an armed loop), arming a
+		// background channel on top of it spawns duplicate processes each tick —
+		// the 2026-07-08 wake-loop leak (reference_schedulewakeup_process_leak).
+		// Its inbox is already being handled by the live session. Refuse unless
+		// --force; the headless case (no live thread) proceeds normally.
+		force, _ := cmd.Flags().GetBool("force")
+		if !force && router.AgentHasLiveThread(root, cfg.ID) {
+			fmt.Printf("⚠️  %s has a live session/thread right now — not arming a background wake channel.\n", cfg.ID)
+			fmt.Printf("   A background pull-loop on top of a live session spawns duplicate processes\n")
+			fmt.Printf("   each tick (the wake-loop leak). Its inbox is handled by the live session;\n")
+			fmt.Printf("   arm a background channel only when NO session is running — or use --force.\n")
+			return nil
+		}
 		changed, path, err := router.InstallWakeLaunchAgent(*cfg, "")
 		if err != nil {
 			return err
@@ -627,5 +642,6 @@ func init() {
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
+	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent has a live session (bypasses the duplicate-spawn leak guard)")
 	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd)
 }
