@@ -189,7 +189,7 @@ struct HomeView: View {
                                  detail: engine.projectName ?? "governance")
                     }.buttonStyle(.plain)
 
-                    NavLink { ThothMemoryInfoView() } label: {
+                    NavLink { ThothMemoryInfoView(engine: engine) } label: {
                         DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
                     }.buttonStyle(.plain)
 
@@ -2315,7 +2315,7 @@ struct InsightView: View {
         } else if d.contains("horus") {
             HorusView(engine: engine)
         } else if d.contains("thoth") {
-            ThothMemoryInfoView()
+            ThothMemoryInfoView(engine: engine)
         } else {
             ResultView(engine: engine, title: deity, args: Self.deityArgs(deity))
         }
@@ -2336,30 +2336,116 @@ struct InsightView: View {
 // inside a project, so a raw `thoth status` here said ".thoth/ not found — run
 // sirsi thoth init", which is wrong advice for this surface (it would create
 // /.thoth). Say what's true in plain English instead.
+// ThothMemoryInfoView is project-aware (owner, 2026-07-10): like Ma'at/Net it
+// weighs the ProjectBar-selected repo, showing that project's .thoth/memory.yaml
+// — the compact "resume where the last session left off" state — with a Sync
+// lever, instead of a generic "not in a project" dead-end.
 struct ThothMemoryInfoView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var memory: String?
+    @State private var lineCount = 0
+    @State private var modified: String?
+    @State private var busy = false
+    @State private var toast: String?
+
+    private var memoryPath: String? { engine.projectRoot.map { $0 + "/.thoth/memory.yaml" } }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Thoth — Memory")
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Project memory lives with each project.")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Thoth keeps a small memory file inside every project folder so AI sessions can pick up exactly where the last one left off — no re-reading the whole codebase.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("The menu bar isn't inside a project, so there's nothing to show here. In a project folder, use:")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("sirsi thoth init").font(.caption.monospaced()).foregroundStyle(gold)
-                    Text("sirsi thoth sync").font(.caption.monospaced()).foregroundStyle(gold)
+            ProjectBar(engine: engine) { load() }
+            Group {
+                if engine.projectRoot == nil {
+                    noProject
+                } else if let mem = memory {
+                    hasMemory(mem)
+                } else {
+                    noMemoryYet
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
-                Spacer()
             }
-            .padding(16)
+            if let toast {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                    Text(toast).font(.caption); Spacer()
+                }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
         }
+        .task { load() }
         .navigationTitle("Thoth — Memory")
+    }
+
+    private var noProject: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Project memory lives with each project.").font(.system(size: 13, weight: .semibold))
+            Text("Thoth keeps a small memory file inside every project so a new session picks up where the last one left off — no re-reading the whole codebase.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Pick a project above to see its memory.").font(.callout).foregroundStyle(.secondary)
+            Spacer()
+        }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder private func hasMemory(_ mem: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("📖").font(.system(size: 14))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(engine.projectName ?? "project") memory").font(.system(size: 13, weight: .semibold))
+                    Text("\(lineCount) lines\(modified.map { " · synced \($0)" } ?? "")").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+            Divider()
+            ScrollView {
+                Text(mem).font(.caption.monospaced()).foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
+            Divider()
+            HStack {
+                Button { runThoth(["thoth", "sync"], "Memory synced") } label: { Label("Sync memory", systemImage: "arrow.triangle.2.circlepath") }.disabled(busy)
+                Button { reveal() } label: { Label("Reveal file", systemImage: "folder") }
+                if busy { ProgressView().controlSize(.small) }
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+        }
+    }
+
+    private var noMemoryYet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("No Thoth memory in \(engine.projectName ?? "this project") yet.").font(.system(size: 13, weight: .semibold))
+            Text("Initialize it so future sessions resume from a compact project state instead of re-reading everything.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button { runThoth(["thoth", "init"], "Memory initialized") } label: { Label("Initialize memory", systemImage: "sparkles") }.disabled(busy)
+            if busy { ProgressView().controlSize(.small) }
+            Spacer()
+        }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func load() {
+        guard let path = memoryPath, let data = FileManager.default.contents(atPath: path),
+              let s = String(data: data, encoding: .utf8) else { memory = nil; return }
+        memory = s
+        lineCount = s.split(separator: "\n", omittingEmptySubsequences: false).count
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           let d = attrs[.modificationDate] as? Date {
+            let f = DateFormatter(); f.dateFormat = "MMM d, HH:mm"; modified = f.string(from: d)
+        }
+    }
+
+    private func runThoth(_ args: [String], _ okMsg: String) {
+        busy = true
+        Task {
+            let out = await SirsiEngine.run(args: args, stdin: nil)
+            engine.recordActivity(title: okMsg, command: "sirsi " + args.joined(separator: " "), result: SirsiEngine.firstMeaningful(out))
+            toast = okMsg
+            busy = false
+            load()
+        }
+    }
+
+    private func reveal() {
+        guard let path = memoryPath else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 }
