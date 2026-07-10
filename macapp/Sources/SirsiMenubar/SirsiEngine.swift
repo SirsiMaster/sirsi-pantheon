@@ -442,8 +442,11 @@ final class SirsiEngine: ObservableObject {
     // default — the surface never silently weighs the wrong thing.
     nonisolated static let projectRootKey = "projectRoot"
 
-    // The verbs that measure a repository. Everything else stays pinned to $HOME.
-    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net", "risk", "osiris"]
+    // The verbs that measure/act on a repository — they run from the selected
+    // project root. Everything else stays pinned to $HOME. "thoth" joins so the
+    // Thoth — Memory surface reads/syncs the SELECTED project's .thoth/memory.yaml
+    // (owner, 2026-07-10: make Thoth project-aware like Ma'at/Net).
+    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net", "risk", "osiris", "thoth"]
 
     // Validated project root (or nil), mirrored for the views.
     @Published var projectRoot: String?
