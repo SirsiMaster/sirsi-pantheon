@@ -19,6 +19,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mirror"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ra"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
@@ -679,6 +680,129 @@ func runKa(ctx context.Context) error {
 	result.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 	result.AddNextAction("sirsi diagnose", "Check system health")
 	result.Render()
+	return nil
+}
+
+// ghostsCleanConfirm/App back the `sirsi ghosts clean` flags. Rule A1: clean is
+// DRY-RUN by default (preview), trash-first (recoverable), protected-path aware,
+// and never touches a residual that needs admin rights.
+var (
+	ghostsCleanConfirm bool
+	ghostsCleanApp     string
+)
+
+var ghostsCleanCmd = &cobra.Command{
+	Use:   "clean",
+	Short: "Move ghost app remnants to Trash (safe: dry-run default, trash-first, protected-path aware)",
+	Long: `Reclaim the residual files left by uninstalled apps that 'sirsi ghosts'
+found. SAFE BY DEFAULT (Rule A1): previews unless --confirm; moves to Trash
+(recoverable) rather than deleting; skips protected system paths and anything
+that needs admin rights.
+
+  sirsi ghosts clean                 preview what would be trashed
+  sirsi ghosts clean --confirm       move the remnants to Trash
+  sirsi ghosts clean --app "Sky"     scope to one ghost app`,
+	RunE: runGhostsClean,
+}
+
+// underProtected reports whether absPath is at/under any protected prefix — the
+// hardcoded safety set the cleaner uses (Rule A1: never removable by flag/input).
+func underProtected(absPath string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if absPath == p || strings.HasPrefix(absPath, strings.TrimRight(p, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func runGhostsClean(cmd *cobra.Command, args []string) error {
+	start := time.Now()
+	scanner := ka.NewScanner()
+	ghosts, scanErr := scanner.Scan(cmd.Context(), false) // never sudo in the one-click path
+
+	plat := platform.Current()
+	protected := plat.ProtectedPrefixes()
+	var toTrash []ka.Residual
+	var skippedSudo, skippedProtected int
+	for _, g := range ghosts {
+		if ghostsCleanApp != "" && !strings.EqualFold(g.AppName, ghostsCleanApp) {
+			continue
+		}
+		for _, r := range g.Residuals {
+			switch {
+			case r.RequiresSudo:
+				skippedSudo++
+			case underProtected(r.Path, protected):
+				skippedProtected++
+			default:
+				toTrash = append(toTrash, r)
+			}
+		}
+	}
+	var bytes int64
+	for _, r := range toTrash {
+		bytes += r.SizeBytes
+	}
+
+	res := &output.CommandResult{Command: "sirsi ghosts clean", BriefTitle: "Clean Ghost Remnants", Status: "ok"}
+	res.Duration = time.Since(start)
+	if scanErr != nil {
+		res.AddWarning("Scan completed with errors: %v", scanErr)
+	}
+
+	if len(toTrash) == 0 {
+		res.Summary = "No safe ghost remnants to clean — nothing to do."
+		if skippedProtected+skippedSudo > 0 {
+			res.AddWarning("%d item(s) skipped (protected path or need admin rights).", skippedProtected+skippedSudo)
+		}
+		res.Render()
+		return nil
+	}
+
+	if !ghostsCleanConfirm {
+		// DRY-RUN (default): show what WOULD move to Trash.
+		res.Summary = fmt.Sprintf("Would move %d ghost remnant(s) to Trash — %s reclaimable. Re-run with --confirm to apply.", len(toTrash), jackal.FormatSize(bytes))
+		for i, r := range toTrash {
+			if i >= 10 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more", len(toTrash)-10))
+				break
+			}
+			res.AddEvidence(output.ShortenPath(r.Path), jackal.FormatSize(r.SizeBytes))
+		}
+		if skippedProtected+skippedSudo > 0 {
+			res.AddWarning("%d item(s) will be left alone (protected path or need admin rights).", skippedProtected+skippedSudo)
+		}
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "Move to Trash", Command: "sirsi ghosts clean --confirm", Description: "Move these remnants to Trash — recoverable until you empty it."},
+		)
+		res.Render()
+		return nil
+	}
+
+	// CONFIRM: trash-first (recoverable), one item at a time so one failure
+	// never aborts the rest.
+	var trashed int
+	var freed int64
+	for _, r := range toTrash {
+		if err := plat.MoveToTrash(r.Path); err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", output.ShortenPath(r.Path), err))
+			continue
+		}
+		trashed++
+		freed += r.SizeBytes
+	}
+	if len(res.Errors) > 0 {
+		res.Status = "error"
+	}
+	res.Summary = fmt.Sprintf("Moved %d ghost remnant(s) to Trash — %s reclaimed (recoverable until you empty it).", trashed, jackal.FormatSize(freed))
+	if skippedProtected+skippedSudo > 0 {
+		res.AddWarning("%d item(s) left alone (protected path or need admin rights).", skippedProtected+skippedSudo)
+	}
+	res.NextActions = append(res.NextActions,
+		output.NextAction{Label: "Re-scan", Command: "sirsi ghosts", Description: "Confirm the remnants are gone."},
+	)
+	res.Render()
 	return nil
 }
 

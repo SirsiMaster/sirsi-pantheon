@@ -746,6 +746,10 @@ func init() {
 	// Core commands
 	scanCmd.Flags().BoolVar(&anubisAll, "all", false, "Scan all categories")
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
+	// Safe ghost-clean lever (Rule A1): dry-run default, trash-first, protected-aware.
+	ghostsCleanCmd.Flags().BoolVar(&ghostsCleanConfirm, "confirm", false, "Actually move remnants to Trash (default is a dry-run preview)")
+	ghostsCleanCmd.Flags().StringVar(&ghostsCleanApp, "app", "", "Scope the clean to a single ghost app by name")
+	ghostsCmd.AddCommand(ghostsCleanCmd)
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
 	judgeCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm)")
