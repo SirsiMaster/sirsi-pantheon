@@ -830,6 +830,139 @@ scrape human output.`,
 	},
 }
 
+var (
+	pruneDays      int
+	pruneDryRun    bool
+	pruneItemsOnly bool
+	pruneLogsOnly  bool
+	pruneNoHome    bool
+)
+
+// routerPruneCmd applies the router fabric's retention policy: closed items,
+// dated incident dumps, append-only logs, and terminal work records past the
+// retention window are removed (age cap), and oversized-but-recent logs are
+// tail-capped (size cap). Owner directive 2026-07-10: at most a 90-day log
+// period; logging beyond that is wasteful. Dry-run first (Rule A1).
+var routerPruneCmd = &cobra.Command{
+	Use:   "prune",
+	Short: "Apply the router retention policy (default: 90-day cap; --dry-run to preview)",
+	Long: `Reclaim router byproduct storage under the retention window (default 90 days).
+
+Removed when older than the window:
+  • closed items (open items are NEVER touched, regardless of age)
+  • dated quarantine/incident dumps (quarantine-YYYYMMDD-*)
+  • stale logs, and terminal (completed/failed/blocked) work-queue records
+
+Capped regardless of age (size policy):
+  • active append-only logs tail-capped to their most recent 4 MiB
+  • the regenerated process snapshot removed when it exceeds 8 MiB
+
+Also sweeps ~/.sirsi runtime logs unless --no-home is set. Always run with
+--dry-run first: it reports the exact bytes it would reclaim and mutates nothing.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root, err := workRoot()
+		if err != nil {
+			return err
+		}
+		if pruneDays < 0 {
+			return fmt.Errorf("--days must be >= 0")
+		}
+		cutoff := time.Now().Add(-time.Duration(pruneDays) * 24 * time.Hour)
+
+		var reports []router.PruneReport
+		switch {
+		case pruneItemsOnly:
+			items, perr := work.PruneItems(root, cutoff, pruneDryRun)
+			if perr != nil {
+				return perr
+			}
+			rep := router.PruneReport{Cutoff: cutoff, DryRun: pruneDryRun}
+			for _, it := range items {
+				rep.Actions = append(rep.Actions, router.PruneAction{Path: "items/" + it.ID + ".md", Kind: "item", Before: it.Bytes})
+			}
+			reports = append(reports, rep)
+		case pruneLogsOnly:
+			logDir := filepath.Join(root, "logs")
+			rep := router.PruneReport{Cutoff: cutoff, DryRun: pruneDryRun}
+			if lerr := router.PruneLogDirExported(logDir, cutoff, pruneDryRun, &rep); lerr != nil {
+				return lerr
+			}
+			reports = append(reports, rep)
+		default:
+			rep, perr := router.PruneArtifacts(root, cutoff, pruneDryRun)
+			if perr != nil {
+				return perr
+			}
+			reports = append(reports, rep)
+		}
+
+		if !pruneItemsOnly && !pruneNoHome {
+			if home, herr := os.UserHomeDir(); herr == nil {
+				hrep, herr := router.PruneHomeLogs(filepath.Join(home, ".sirsi"), cutoff, pruneDryRun)
+				if herr == nil {
+					reports = append(reports, hrep)
+				}
+			}
+		}
+
+		if routerJSON, _ := cmd.Flags().GetBool("json"); routerJSON {
+			return json.NewEncoder(os.Stdout).Encode(reports)
+		}
+		printPruneReports(reports, pruneDays, pruneDryRun)
+		return nil
+	},
+}
+
+// printPruneReports renders the Ma'at-styled human summary.
+func printPruneReports(reports []router.PruneReport, days int, dryRun bool) {
+	var total int64
+	var actions int
+	byKind := map[string]int64{}
+	for _, r := range reports {
+		for _, a := range r.Actions {
+			total += a.Reclaimed()
+			actions++
+			byKind[a.Kind] += a.Reclaimed()
+		}
+	}
+	verb := "Reclaimed"
+	if dryRun {
+		verb = "Would reclaim"
+	}
+	fmt.Printf("𓆄 Ma'at router retention — %d-day window\n", days)
+	if actions == 0 {
+		fmt.Printf("  Nothing to prune. Fabric is within retention.\n")
+		return
+	}
+	for _, kind := range []string{"item", "quarantine", "log-deleted", "log-capped", "workqueue", "snapshot"} {
+		if b, ok := byKind[kind]; ok {
+			fmt.Printf("  %-12s %s\n", kind, humanBytes(b))
+		}
+	}
+	fmt.Printf("  %s %s across %d artifact(s)%s\n", verb, humanBytes(total), actions, dryRunNote(dryRun))
+}
+
+func dryRunNote(dryRun bool) string {
+	if dryRun {
+		return "  (dry-run — nothing deleted; re-run without --dry-run to apply)"
+	}
+	return ""
+}
+
+// humanBytes formats a byte count as a compact human string.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
 func init() {
 	routerSendCmd.Flags().StringVar(&sendFrom, "from", "", "Sender agent id (e.g., claude-pantheon)")
 	routerSendCmd.Flags().StringVar(&sendTo, "to", "", "Recipient agent id (e.g., codex-pantheon)")
@@ -844,5 +977,10 @@ func init() {
 	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd)
+	routerPruneCmd.Flags().IntVar(&pruneDays, "days", router.DefaultRetentionDays, "retention window in days (older artifacts are removed)")
+	routerPruneCmd.Flags().BoolVar(&pruneDryRun, "dry-run", false, "report the bytes that would be reclaimed without deleting anything (Rule A1)")
+	routerPruneCmd.Flags().BoolVar(&pruneItemsOnly, "items-only", false, "prune only closed items past the window (skip logs/dumps/queue)")
+	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
+	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd)
 }
