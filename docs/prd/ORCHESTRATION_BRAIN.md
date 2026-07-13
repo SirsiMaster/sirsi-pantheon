@@ -28,6 +28,37 @@ at the enterprise tier, inside **SirsiNexus**. No black box. The brain is a conf
 **Loop ≠ brain:** the eternal monitor is Tier-0 (bash/launchd today → Router v2 daemon). A model is
 *invoked by* the loop, never *is* the loop. Tier-0 must remain fully functional with **no LLM at all**.
 
+### Default routing policy — the Model Tiering Doctrine (PANTHEON_RULES A30, owner directive 2026-07-13)
+
+The law in one line: **generation is cheap to get wrong; judgment is expensive to get wrong — push
+generation down-tier, keep judgment up-tier.** Independence in review comes from a fresh context with
+no stake in the code, **not** from a different brand of model. What is tiered is *cognitive difficulty*,
+not vendor. This is the default work→tier mapping the brain routes on; canonical law lives in
+`~/Development/AGENTS.md`.
+
+| Work | Default tier | Why |
+|---|---|---|
+| Queue triage, first-draft code for a well-specified decomposed task, summarization, log-reading, boilerplate, NL query over local state | **Tier 0** (local, zero-token) | High-volume, low-stakes. **Output is a SCREEN or DRAFT, never a verdict.** |
+| Routing, nudging, ACK-closes, board publishing, grinding a decomposed list (dep bumps, doc updates, test fixes) | **Tier 1** (cloud, standard effort) | Routine agentic work; most scheduled/loop runs. An empty run needs almost nothing. |
+| **Binding verdict (source-deep review before merge — ALWAYS)**, architecture decision, security review, ESCALATE-classed ambiguity, debugging that resisted a first pass | **Tier 2** (frontier, high effort) | The irreversible, exceptional-thinking work. Spend where a mistake ships to main. |
+
+Operating rules (the brain enforces these; they are not left to discipline):
+
+1. **Builders decompose; the cheapest competent tier types.** A thread's job on well-specified work is
+   spec → hand generation to Tier 0 → review the output — not typing code itself at frontier prices.
+2. **The bind is always frontier.** A slightly-off draft is caught at bind; a slightly-off bind ships a
+   bug to main. Spend where the failure is irreversible.
+3. **Screens never become verdicts.** No Tier-0 classification may stand as a binding
+   security/review/architecture decision — verification stays up-tier.
+4. **Read only what escalates.** Cloud models do not read whole queues/logs/repos when a Tier-0 screen
+   can classify first (the 2M-token incident is the cautionary tale).
+5. **Route by difficulty, not by habit.** If a task's tier is unclear, start one tier lower and escalate
+   on failure — escalation is cheap, standing overspend is not.
+
+Brand invariant (A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity
+("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which
+local model serves Tier 0.
+
 ### Tier-0 Registry + Wake invariant (owner directive 2026-06-30) — "the router can ALWAYS see and wake every registered thread"
 
 Registration MUST imply wakeability. A thread that is "registered but unwakeable" is a broken

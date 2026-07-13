@@ -387,6 +387,18 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Decoupled from Router v2**: the brain is built against a `Dispatcher` interface over the **current** router; Router v2 swaps in underneath the same interface later (Amendment 1) — the brain never blocks on that rewrite.
 *   **Reference**: `internal/brain/{config.go,controlplane.go}` + `cmd/sirsi/braincmd.go` (P1b control plane, shipped); ADR-034; PRD `docs/prd/ORCHESTRATION_BRAIN.md`. Custodian: 𓁟 the Brain.
 
+### 2.27 Model Tiering Doctrine — Compute Economy Law (Rule A30)
+> Established July 13, 2026 by owner directive. **Permanent, universal across every repo, thread, agent, and model family — present and future.** Canonical source text: `~/Development/AGENTS.md` § "Model Tiering Doctrine (Compute Economy Law)". This rule codifies that law into Pantheon canon (Living Canon, Rule 18) and is the routing **policy** that A29's Orchestration Brain **enforces**. Ma'at treats violations as governance failures.
+
+*   **The law in one line**: **generation is cheap to get wrong; judgment is expensive to get wrong — push generation down-tier, keep judgment up-tier.** Independence in review comes from a fresh context with no stake in the code, **not** from a different brand of model. What is tiered is *cognitive difficulty*, not vendor.
+*   **The three tiers** (map onto A29's Tier-0/1/2 and the Level 0–3 spectrum):
+    *   **Tier 0 — local, on-device model (zero API tokens)**: high-volume, low-stakes screening + drafting — queue triage, first-draft code for well-specified decomposed tasks, summarization, log-reading, boilerplate, NL queries over local state. **A Tier-0 output is a SCREEN or a DRAFT, never a verdict.**
+    *   **Tier 1 — cloud model, standard effort**: routine agentic work — routing, nudging, ACK-closes, board publishing, grinding decomposed task lists (dep bumps, doc updates, test fixes). Most scheduled/loop runs are Tier 1; an empty run needs almost nothing.
+    *   **Tier 2 — frontier model, high effort**: reserved for exceptional thinking — **binding verdicts (source-deep review before merge — ALWAYS Tier 2)**, architecture decisions, security review, ESCALATE-classed ambiguity, debugging that resisted a first pass.
+*   **Operating rules**: (1) **builders decompose; the cheapest competent tier types** — a thread's job on well-specified work is spec → hand to Tier 0 → review, not typing code at frontier prices; (2) **the bind is always frontier** — a slightly-off draft is caught at bind, a slightly-off bind ships a bug to main, so spend where failure is irreversible; (3) **screens never become verdicts** — no Tier-0 classification stands as a binding security/review/architecture decision; (4) **read only what escalates** — cloud models don't read whole queues/logs/repos when a Tier-0 screen can classify first (the 2M-token incident is the cautionary tale); (5) **route by difficulty, not habit** — if a tier is unclear, start one lower and escalate on failure (escalation is cheap, standing overspend is not); (6) **enforced by the system, not discipline** — the Orchestration Brain (A29; `docs/prd/ORCHESTRATION_BRAIN.md`) is the reference implementation, and every repo's automation should route through it or mirror its policy.
+*   **Brand invariant** (with A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity ("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which local model serves Tier 0.
+*   **Reference**: canonical law `~/Development/AGENTS.md`; enforced by A29 (Orchestration Brain) + `docs/prd/ORCHESTRATION_BRAIN.md` default routing table. Custodian: 𓁟 the Brain (routing) + 𓆄 Ma'at (governance).
+
 ---
 
 ## 3. Technology Stack
