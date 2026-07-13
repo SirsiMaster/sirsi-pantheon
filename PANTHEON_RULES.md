@@ -165,9 +165,10 @@ When context health is 🟡 or 🔴, the agent MUST proactively:
 
 ### 2.7 Terminal UI Fidelity (Rule A10)
 > Adapted from FinalWishes Rule 27 (design fidelity). Applied to terminal output.
+> **v2 (2026-07-13, ADR-038):** the palette is **emerald + gold** and lives in ONE place — `internal/brand`. Green is Sirsi's; green + gold are Pantheon's. Every surface (CLI, TUI, dashboard, menubar, Swift app, Nexus) derives from `internal/brand` — Go surfaces import it, others via `sirsi brand tokens --format css|swift|json`. No surface hardcodes a hex. Emerald leads (identity / healthy / interactive); gold is the second accent (owner-action, the 𓂀 glyph). The gold-primary + lapis palette below is superseded.
 
-All terminal output MUST use the Anubis brand language:
-*   **Colors**: Gold (`#C8A951`) for highlights, White for body text, Red for errors, Green for success. No raw unstylized output in interactive mode.
+All terminal output MUST use the Pantheon brand language (`internal/brand`, ADR-038):
+*   **Colors**: **Emerald** (`#2bd29b`) for identity/healthy/interactive, **Gold** (`#cdad5a`) for owner-action highlights, White/Ink for body text, Red for errors, Amber for warnings. Resolve tokens from `internal/brand`, never a literal. No raw unstylized output in interactive mode.
 *   **Rendering**: Uses `lipgloss` for styled output and `table` for tabular data.
 *   **Headers**: 𓃣 glyph prefix for section headers.
 *   **Progress**: Spinner or progress bar for operations > 2 seconds.
