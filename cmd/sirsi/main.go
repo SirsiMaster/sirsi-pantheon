@@ -785,6 +785,7 @@ func init() {
 	thothCmd.Hidden = true
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
+	rootCmd.AddCommand(brandCmd)   // 𓂀 canonical Pantheon palette + token emitter (ADR-038)
 	rootCmd.AddCommand(gemmaCmd)   // human-facing 'sirsi gemma "<prompt>"' → local on-device model
 	rootCmd.AddCommand(brainCmd)   // 𓁟 Orchestration Brain control plane (A29, ADR-034): tiered/pluggable LLM spectrum over the EXISTING router+wake substrate
 	rootCmd.AddCommand(relieveCmd) // on-demand hang relief: renice the live CPU offender (A1-protected)

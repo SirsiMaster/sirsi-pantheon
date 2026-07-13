@@ -4,6 +4,8 @@ import (
 	"os"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/brand"
 )
 
 // Color & capability model (docs/TUI_DESIGN_PROOF.md §2.4, §5).
@@ -33,8 +35,8 @@ const (
 type Token int
 
 const (
-	TokBrand  Token = iota // gold #C8A951 — identity, headers, selected counts
-	TokAccent              // lapis #1A1A5E — mode chips, active focus border
+	TokBrand  Token = iota // emerald — identity, headers, selected counts
+	TokAccent              // gold — mode chips, active focus border, owner-action
 	TokOK                  // green — pass, safe, healthy
 	TokWarn                // amber — needs attention, reclaimable
 	TokDanger              // red — destructive, error, protected-path block
@@ -127,15 +129,16 @@ func DetectCapabilities(env func(string) string) Capabilities {
 }
 
 // Brand hex values (§2.4). Truecolor path only; lower rungs degrade below.
-const (
-	hexBrand  = "#C8A951" // gold
-	hexAccent = "#1A1A5E" // deep lapis
-	hexOK     = "#3FB950" // green
-	hexWarn   = "#D2A24C" // amber
-	hexDanger = "#F04747" // red
-	hexDim    = "#888888" // gray
-	hexBlack  = "#0F0F0F" // near-black background
-	hexWhite  = "#FAFAFA" // body text
+// Sourced from internal/brand (ADR-038) so the TUI can never drift from the one
+// Pantheon palette. Emerald is the identity; gold is the second accent.
+var (
+	hexBrand  = brand.For(brand.Dark).Hex(brand.Emerald) // emerald — identity
+	hexAccent = brand.For(brand.Dark).Hex(brand.Gold)    // gold — second accent
+	hexOK     = brand.For(brand.Dark).Hex(brand.OK)      // emerald family
+	hexWarn   = brand.For(brand.Dark).Hex(brand.Warn)    // amber
+	hexDanger = brand.For(brand.Dark).Hex(brand.Danger)  // red
+	hexDim    = brand.For(brand.Dark).Hex(brand.Dim)     // gray
+	hexWhite  = brand.For(brand.Dark).Hex(brand.Ink)     // body text
 )
 
 // hex maps a token to its truecolor hex.
@@ -160,9 +163,9 @@ func (t Token) hex() string {
 func (t Token) ansi256() string {
 	switch t {
 	case TokBrand:
-		return "179"
+		return "43" // emerald / teal
 	case TokAccent:
-		return "17"
+		return "178" // gold
 	case TokOK:
 		return "35"
 	case TokWarn:
@@ -177,10 +180,10 @@ func (t Token) ansi256() string {
 // ansi16 maps a token to a base ANSI color name (§2.4 ladder).
 func (t Token) ansi16() string {
 	switch t {
-	case TokBrand, TokWarn:
-		return "3" // yellow
-	case TokAccent:
-		return "4" // blue
+	case TokBrand:
+		return "6" // cyan — emerald proxy at 16-color
+	case TokAccent, TokWarn:
+		return "3" // yellow / gold
 	case TokOK:
 		return "2" // green
 	case TokDanger:
