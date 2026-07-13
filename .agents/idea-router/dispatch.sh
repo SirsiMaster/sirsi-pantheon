@@ -13,10 +13,13 @@ set -uo pipefail
 ROUTER_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon/.agents/idea-router"
 REPO_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon"
 LOG="$ROUTER_ROOT/logs/dispatch.log"
-export PATH="$HOME/.local/bin:/Applications/Codex.app/Contents/Resources:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="$HOME/.local/bin:/Applications/ChatGPT.app/Contents/Resources:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 SIRSI="$HOME/.local/bin/sirsi"
 CLAUDE_BIN="$HOME/.local/bin/claude"
-CODEX_BIN="/Applications/Codex.app/Contents/Resources/codex"
+# codex ships inside ChatGPT.app (resolved via ~/.local/bin/codex), NOT at
+# /Applications/Codex.app — that stale path made codex read "unavailable" under
+# launchd (2026-07-13). Resolve robustly instead of hardcoding a fixed app path.
+CODEX_BIN="$(command -v codex 2>/dev/null || echo "$HOME/.local/bin/codex")"
 LOCK_ROOT="$ROUTER_ROOT/locks"
 
 ts() { date "+%Y-%m-%dT%H:%M:%S%z"; }

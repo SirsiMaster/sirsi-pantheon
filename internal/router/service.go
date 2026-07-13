@@ -26,7 +26,13 @@ func DefaultServiceOptions(repoRoot, binaryPath string) ServiceOptions {
 	logDir := filepath.Join(repoRoot, ".agents", "idea-router", "logs")
 	pathEnv := os.Getenv("PATH")
 	if pathEnv == "" {
-		pathEnv = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Codex.app/Contents/Resources"
+		// Resolve codex where it actually lives: ~/.local/bin (the working
+		// symlink) plus ChatGPT.app's Resources (codex ships inside ChatGPT.app,
+		// NOT /Applications/Codex.app — that path never existed and made the
+		// codex wake adapter read "unavailable" under launchd, 2026-07-13).
+		pathEnv = filepath.Join(home, ".local", "bin") +
+			":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" +
+			":/Applications/ChatGPT.app/Contents/Resources"
 	}
 	return ServiceOptions{
 		RepoRoot:   repoRoot,
