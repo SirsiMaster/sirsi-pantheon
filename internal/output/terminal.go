@@ -1,5 +1,6 @@
 // Package output handles terminal rendering for Sirsi Pantheon.
-// Uses the Pantheon brand language: Gold + Black + Deep Lapis (Rule A10).
+// Uses the Pantheon brand language: emerald + gold, sourced from internal/brand
+// (Rule A10 v2 / ADR-038). Green is Sirsi's; green + gold are Pantheon's.
 package output
 
 import (
@@ -12,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/brand"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
 )
 
@@ -29,28 +31,32 @@ func SuggestSteps(ctx suggest.Context) [][]string {
 	return steps
 }
 
-// Anubis brand colors (Rule A10)
+// Pantheon brand colors — sourced from internal/brand (ADR-038) so the CLI can
+// never drift from the one palette. Emerald leads; gold is the second accent.
+// Terminals are dark-ground, so we resolve against the Dark scheme.
 var (
-	Gold     = lipgloss.Color("#C8A951")
-	Black    = lipgloss.Color("#0F0F0F")
-	Lapis    = lipgloss.Color("#1A1A5E")
-	White    = lipgloss.Color("#FAFAFA")
-	DimWhite = lipgloss.Color("#888888")
-	Red      = lipgloss.Color("#FF4444")
-	Green    = lipgloss.Color("#44FF88")
-	Yellow   = lipgloss.Color("#FFD700")
+	pal      = brand.For(brand.Dark)
+	Emerald  = lipgloss.Color(pal.Hex(brand.Emerald)) // identity · healthy · interactive
+	Gold     = lipgloss.Color(pal.Hex(brand.Gold))    // second accent · owner-action
+	Black    = lipgloss.Color(pal.Hex(brand.Bg))
+	White    = lipgloss.Color(pal.Hex(brand.Ink))
+	DimWhite = lipgloss.Color(pal.Hex(brand.Dim))
+	Red      = lipgloss.Color(pal.Hex(brand.Danger))
+	Green    = lipgloss.Color(pal.Hex(brand.OK))
+	Yellow   = lipgloss.Color(pal.Hex(brand.Warn))
+	Lapis    = lipgloss.Color(pal.Hex(brand.Info)) // retired lapis → brand info blue
 )
 
 // Styles
 var (
 	// Title style — gold text, bold
 	TitleStyle = lipgloss.NewStyle().
-			Foreground(Gold).
+			Foreground(Emerald).
 			Bold(true)
 
 	// Header style — gold, underlined
 	HeaderStyle = lipgloss.NewStyle().
-			Foreground(Gold).
+			Foreground(Emerald).
 			Bold(true).
 			Underline(true)
 
@@ -82,20 +88,20 @@ var (
 
 	// Size style — gold, for file sizes
 	SizeStyle = lipgloss.NewStyle().
-			Foreground(Gold).
+			Foreground(Emerald).
 			Bold(true)
 
 	// Category badge
 	CategoryStyle = lipgloss.NewStyle().
 			Foreground(Black).
-			Background(Gold).
+			Background(Emerald).
 			Padding(0, 1).
 			Bold(true)
 
 	// Box style for major sections
 	BoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(Gold).
+			BorderForeground(Emerald).
 			Padding(0, 2).
 			MarginTop(1)
 
@@ -115,7 +121,7 @@ var (
 	DashboardStyle = lipgloss.NewStyle().
 			Padding(1, 2).
 			Border(lipgloss.DoubleBorder()).
-			BorderForeground(Gold)
+			BorderForeground(Emerald)
 
 	// Severity styles
 	SeveritySafe    = lipgloss.NewStyle().Foreground(Green)
@@ -164,7 +170,7 @@ func Spinner(label string) func() {
 
 	var once sync.Once
 	done := make(chan struct{})
-	gold := lipgloss.NewStyle().Foreground(Gold)
+	gold := lipgloss.NewStyle().Foreground(Emerald)
 
 	go func() {
 		i := 0
@@ -282,7 +288,7 @@ func Dashboard(metrics map[string]string) {
 func Table(headers []string, rows [][]string) {
 	t := table.New().
 		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(Gold)).
+		BorderStyle(lipgloss.NewStyle().Foreground(Emerald)).
 		Headers(headers...).
 		Rows(rows...)
 
