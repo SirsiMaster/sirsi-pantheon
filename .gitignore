@@ -67,6 +67,8 @@ extensions/*/sirsi
 .agents/idea-router/logs/
 .agents/idea-router/.threads.json-*
 .agents/idea-router/processes.json
+.agents/idea-router/board.json
+.agents/idea-router/.board-*.json
 .agents/idea-router/locks/
 # Router messages are EPHEMERAL per-machine runtime state (like the queue/registry
 # above), not source. Tracking them churned the worktree (hundreds of modified
