@@ -61,7 +61,12 @@ var brainStatusCmd = &cobra.Command{
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(st)
 		}
 		w := cmd.OutOrStdout()
-		fmt.Fprintf(w, "𓁟 Orchestration Brain — Level %d\n\n", st.Level)
+		fmt.Fprintf(w, "𓁟 Orchestration Brain — Level %d\n", st.Level)
+		if st.Autonomous {
+			fmt.Fprintf(w, "Autonomous mode: ON — Pantheon may apply fixes unattended (`sirsi autonomous off` to stop)\n\n")
+		} else {
+			fmt.Fprintf(w, "Autonomous mode: OFF — Pantheon observes + proposes only (`sirsi autonomous on` to let it act)\n\n")
+		}
 		fmt.Fprintln(w, "Role        Tier     Provider")
 		for _, r := range st.Roles {
 			fmt.Fprintf(w, "%-11s %-8s %s\n", r.Role, r.Tier, r.Provider.String())
