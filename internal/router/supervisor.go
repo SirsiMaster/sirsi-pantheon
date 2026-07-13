@@ -30,6 +30,12 @@ const (
 //	        type, age, summary) + per-agent oldest_pending_age_seconds and the
 //	        top-level schema_version / generated_at stamps for column sorting
 //	        and drill-down without re-reading item files.
+//
+// The 1.0.0→1.1.0 pending_items type change is a breaking shape change taken as
+// a MINOR bump by conscious decision: this is a pre-1.0 internal contract, every
+// renderer is in-repo and updated in lockstep, they all decode tolerantly, and
+// there is no external --json consumer. Renderers gate on this field, so the
+// bump is what a reader keys on regardless of the SemVer class.
 const SupervisorSchemaVersion = "1.1.0"
 
 // BoardFileName is the canonical on-disk board the supervisor writes on every
@@ -263,8 +269,12 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 
 	// Persist the board for thin renderers (menubar, TUI, Swift app, dashboard)
 	// to read one file instead of re-aggregating. Best-effort: a write failure
-	// never fails the pass — the returned report is still authoritative.
-	_ = WriteBoard(routerRoot, report)
+	// never fails the pass — the returned report is still authoritative — but it
+	// is surfaced to stderr so a persistently unwritable board (e.g. permissions)
+	// is never silently invisible to an operator watching the supervisor.
+	if err := WriteBoard(routerRoot, report); err != nil {
+		fmt.Fprintf(os.Stderr, "supervise: board not persisted: %v\n", err)
+	}
 
 	return report, nil
 }
