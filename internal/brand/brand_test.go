@@ -75,7 +75,12 @@ func TestCSSVarsPerScheme(t *testing.T) {
 // is marked generated so no one hand-edits it into drift.
 func TestSwiftColorsCarriesBothSchemes(t *testing.T) {
 	sw := SwiftColors()
-	for _, want := range []string{"DO NOT EDIT", "enum Pantheon", `light: "#0f7a54", dark: "#2bd29b"`} {
+	for _, want := range []string{
+		"DO NOT EDIT", "enum Pantheon", "import SwiftUI",
+		`case .emerald: return "#0f7a54"`, // light
+		`case .emerald: return "#2bd29b"`, // dark
+		"init(pantheonHex hex: String)",
+	} {
 		if !strings.Contains(sw, want) {
 			t.Errorf("Swift output missing %q:\n%s", want, sw)
 		}
