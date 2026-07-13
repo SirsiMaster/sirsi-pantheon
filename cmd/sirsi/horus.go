@@ -334,10 +334,32 @@ func printSuperviseReport(report *router.SuperviseReport) error {
 		if agent.Detail != "" && agent.Status != router.SupervisorStatusWakeable {
 			fmt.Printf(" — %s", agent.Detail)
 		}
+		if agent.OldestPendingAgeSeconds > 0 {
+			fmt.Printf(" oldest=%s", humanizeAge(agent.OldestPendingAgeSeconds))
+		}
 		fmt.Println()
-		for _, id := range agent.PendingItems {
-			fmt.Printf("      inbox: %s\n", id)
+		for _, item := range agent.PendingItems {
+			fmt.Printf("      inbox: %-22s %-9s %s", item.ID, "["+item.Type+"]", item.Title)
+			if item.AgeSeconds > 0 {
+				fmt.Printf("  (%s)", humanizeAge(item.AgeSeconds))
+			}
+			fmt.Println()
 		}
 	}
 	return nil
+}
+
+// humanizeAge renders an age in seconds as a compact operator-friendly string
+// (e.g. "3d", "5h", "12m"). Sub-minute ages collapse to "just now".
+func humanizeAge(seconds float64) string {
+	switch {
+	case seconds >= 86400:
+		return fmt.Sprintf("%dd", int(seconds/86400))
+	case seconds >= 3600:
+		return fmt.Sprintf("%dh", int(seconds/3600))
+	case seconds >= 60:
+		return fmt.Sprintf("%dm", int(seconds/60))
+	default:
+		return "just now"
+	}
 }
