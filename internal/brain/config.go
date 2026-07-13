@@ -108,7 +108,24 @@ type Config struct {
 	// Roles maps each role to its provider reference string. Absent roles
 	// default to the deterministic floor (ProviderNone).
 	Roles map[string]string `yaml:"roles"`
+	// Autonomous is the operator's master ACTION switch, orthogonal to the LLM
+	// Level. Level says how much intelligence drives decisions; Autonomous says
+	// whether Pantheon may ACT on them unattended (apply remediations, dispatch
+	// fleet work) versus only observe + propose. It defaults to false: a fresh
+	// install watches and recommends but never changes the machine without the
+	// operator turning autonomy ON (`sirsi autonomous on`). This is deliberately
+	// independent of Level so autonomy works at Level 0 (deterministic levers,
+	// no AI) exactly as it does at Level 3 — the loop is Tier-0, never a model.
+	Autonomous bool `yaml:"autonomous"`
 }
+
+// AutonomousMode reports whether Pantheon is permitted to ACT unattended. It is
+// the single source of truth every auto-apply path (remediation loop, fleet
+// dispatch, the real-time manager) MUST consult before mutating the machine:
+// false ⇒ observe + propose only; true ⇒ apply approved levers automatically.
+// Reading a missing/false value is the safe default, so a fresh or malformed
+// config never grants unattended action by accident.
+func (c Config) AutonomousMode() bool { return c.Autonomous }
 
 // DefaultConfig is the fresh-install state: every role deterministic (Level 0).
 // A public download runs the realm with zero AI, zero keys, zero cost (A29 §floor).
@@ -278,5 +295,19 @@ func Set(role Role, providerRef string) error {
 		cfg.Roles = map[string]string{}
 	}
 	cfg.Roles[string(role)] = p.String()
+	return SaveConfig(cfg)
+}
+
+// SetAutonomous flips the master action switch and persists it (the
+// `sirsi autonomous on|off` mutation). Like Set, it round-trips through
+// LoadConfig/SaveConfig so the roles map is preserved and the change takes
+// effect on next read — no restart. Turning autonomy OFF is always safe and
+// immediate; the next thing any loop reads is "observe only".
+func SetAutonomous(on bool) error {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.Autonomous = on
 	return SaveConfig(cfg)
 }
