@@ -181,3 +181,61 @@ func TestSet_SwapWithoutRestart(t *testing.T) {
 		t.Fatalf("after revert to none, level = %d (want 0)", c.Level())
 	}
 }
+
+func TestAutonomous_DefaultsOff(t *testing.T) {
+	t.Setenv("SIRSI_BRAIN_CONFIG", filepath.Join(t.TempDir(), "brain.yaml"))
+	// A fresh install must never act unattended: the safe default is OFF, so a
+	// missing/absent config grants observe-only, never autonomous action.
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig (fresh): %v", err)
+	}
+	if cfg.AutonomousMode() {
+		t.Fatal("fresh install must default to autonomous OFF (observe-only)")
+	}
+}
+
+func TestSetAutonomous_RoundTrip(t *testing.T) {
+	t.Setenv("SIRSI_BRAIN_CONFIG", filepath.Join(t.TempDir(), "brain.yaml"))
+
+	// Turning autonomy ON persists and reloads.
+	if err := SetAutonomous(true); err != nil {
+		t.Fatalf("SetAutonomous(true): %v", err)
+	}
+	if c, _ := LoadConfig(); !c.AutonomousMode() {
+		t.Fatal("after SetAutonomous(true), AutonomousMode() must be true")
+	}
+
+	// Turning it OFF again reverts immediately (the always-safe path).
+	if err := SetAutonomous(false); err != nil {
+		t.Fatalf("SetAutonomous(false): %v", err)
+	}
+	if c, _ := LoadConfig(); c.AutonomousMode() {
+		t.Fatal("after SetAutonomous(false), AutonomousMode() must be false")
+	}
+}
+
+func TestSetAutonomous_PreservesRoles(t *testing.T) {
+	// Autonomy is orthogonal to the LLM Level: flipping the action switch must
+	// not disturb the per-role provider config (or vice-versa).
+	t.Setenv("SIRSI_BRAIN_CONFIG", filepath.Join(t.TempDir(), "brain.yaml"))
+	if err := Set(RoleTriage, "local:qwen2.5-7b-instruct"); err != nil {
+		t.Fatalf("Set triage: %v", err)
+	}
+	if err := SetAutonomous(true); err != nil {
+		t.Fatalf("SetAutonomous: %v", err)
+	}
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !c.AutonomousMode() {
+		t.Error("autonomous flag lost after set")
+	}
+	if got := c.Provider(RoleTriage).String(); got != "local:qwen2.5-7b-instruct" {
+		t.Errorf("triage provider disturbed by autonomous flip: %q", got)
+	}
+	if c.Level() != 1 {
+		t.Errorf("Level disturbed by autonomous flip: %d, want 1", c.Level())
+	}
+}
