@@ -259,8 +259,15 @@ func hapiIsAgent(name string) bool {
 // agent — the thing a human would point at and say "that's the leak." Read-only;
 // safe for a status preview. Returns nil if only protected/agent processes are big.
 func FindRunaway(s MemSample) *MemProc {
+	loadBearing := LoadBearingPIDs()
 	for i := range s.Top { // RSS descending
 		p := s.Top[i]
+		// Never treat load-bearing infrastructure (the local-model broker) as a
+		// runaway — it registers as "Python" and would otherwise be the top RSS
+		// target. An oversized broker is right-sized, not killed (A32/ADR-040).
+		if loadBearing[p.PID] {
+			continue
+		}
 		if isProtectedReniceTarget(p.Name) || hapiIsAgent(p.Name) {
 			continue
 		}
