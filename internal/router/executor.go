@@ -11,6 +11,8 @@ package router
 // test-enforce "the loop never auto-acts on owner-gated work."
 
 import (
+	"time"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -95,6 +97,26 @@ func OwnerQueue(plans []ExecPlan) []ExecPlan {
 		}
 	}
 	return q
+}
+
+// ExecuteActionable performs the side-effecting dispatch for a set of plans —
+// the ONLY function in the loop that acts (ADR-039 P3). It re-asserts the rail
+// (Action==ActDispatch AND the unforgeable authorization) and then wakes ONLY
+// those items via WakePassFiltered, so an owner-gated item can never be woken
+// even if a caller passes a mixed slice. Returns the wake report.
+func ExecuteActionable(routerRoot string, plans []ExecPlan) (WakePassReport, error) {
+	allowed := make(map[string]bool, len(plans))
+	for _, p := range plans {
+		if p.Action == ActDispatch && p.authorized {
+			allowed[p.ItemID] = true
+		}
+	}
+	if len(allowed) == 0 {
+		return WakePassReport{}, nil
+	}
+	return WakePassFiltered(routerRoot, time.Now().UTC(), func(it work.Item) bool {
+		return allowed[it.ID]
+	})
 }
 
 // Actionable returns the plans the loop may act on THIS tick (dispatch). Empty

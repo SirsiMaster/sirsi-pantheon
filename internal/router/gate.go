@@ -152,13 +152,23 @@ func ClassifyGate(item work.Item) GateDecision {
 	}
 
 	// Scan title + instructions + result (result can carry woken-item content).
-	hay := item.Title + "\n" + item.Instructions + "\n" + item.Result
+	return classifyText(item.Title + "\n" + item.Instructions + "\n" + item.Result)
+}
 
-	// Explicit escalation marker anywhere wins as an escalate gate.
+// GateAction is the ACTION-TIME second line of defense (ADR-039 P3). A woken
+// agent's tool/side-effect boundary MUST call this on the raw action or command
+// text BEFORE executing it. Dispatch-time gating (ClassifyGate on the item) only
+// catches items that NAME a danger; a benign item can still steer an agent into a
+// dangerous action, and this is where that is stopped. Same hardcoded rules —
+// two independent lines of defense over one deterministic floor.
+func GateAction(actionText string) GateDecision { return classifyText(actionText) }
+
+// classifyText is the shared deterministic core: the escalate marker, then the
+// hardcoded rule table, first match wins.
+func classifyText(hay string) GateDecision {
 	if escalateRe.MatchString(hay) {
 		return GateDecision{Gated: true, Class: GateEscalate, Reason: "explicit escalate/needs-owner marker"}
 	}
-
 	for _, r := range gateRules {
 		if r.re.MatchString(hay) {
 			return GateDecision{Gated: true, Class: r.class, Reason: r.label}
