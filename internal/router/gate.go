@@ -76,59 +76,69 @@ func mk(class GateClass, label, pat string) gateRule {
 // item touches is the one reported. Breadth is intentional (see file header).
 var gateRules = []gateRule{
 	// ── Safety · money movement ─────────────────────────────────────────────
-	mk(GateSafety, "money", `\b(pay|paying|payment|payout|payable|remit|reimburse|deposit|withdraw|withdrawal|invoice|refund)\b`),
-	mk(GateSafety, "charge", `\bcharg(e|ing)\b.{0,15}\b(card|customer|client|account)\b|\$`),
-	mk(GateSafety, "money", `\b(wire|wiring|ach|swift|venmo|paypal|zelle|cashapp)\b`),
+	// Money verbs gate on the word; "charge"/amounts require a money CONTEXT so
+	// the loop is not stalled by `$HOME`, `$1`, prices, or "in charge of".
+	mk(GateSafety, "money", `\b(pay|paying|payment|payout|payable|payroll|remit|reimburse|deposit|withdraw|withdrawal|invoice|refund)\b`),
+	mk(GateSafety, "charge", `\bcharg(e|ing)\b.{0,15}\b(card|customer|client|account)\b`),
+	mk(GateSafety, "money rail", `\b(ach|swift|venmo|paypal|zelle|cashapp)\b`),
+	mk(GateSafety, "wire funds", `\bwire\b.{0,15}\b(transfer|payment|funds|money|account|\$|\d)`),
 	mk(GateSafety, "money", `\bstripe\b.*\b(charge|payment|payout|refund|transfer)\b`),
-	mk(GateSafety, "money amount", `\$\s?\d`),
-	mk(GateSafety, "send funds", `\bsend\b.{0,25}\b(money|funds|payment|cash|\$)`),
-	mk(GateSafety, "transfer funds", `\btransfer\b.{0,25}\b(money|funds|\$|to (the )?(account|vendor|supplier))`),
+	mk(GateSafety, "amount to", `\$\s?[\d,]+.{0,25}\b(to|account|vendor|supplier|invoice|balance)\b|\b(pay|send|wire|transfer|remit)\b.{0,20}\$\s?\d`),
+	mk(GateSafety, "send funds", `\bsend\b.{0,25}\b(money|funds|payment|cash|\$\s?\d)`),
+	mk(GateSafety, "transfer funds/ownership", `\btransfer\b.{0,25}\b(money|funds|\$|to (the )?(account|vendor|supplier)|repo|repository|ownership|domain|the account)\b`),
 	mk(GateSafety, "securities", `\b(buy|sell|purchase|short|trade)\b.{0,20}\b(stock|share|securit|bond|option)\b`),
 	mk(GateSafety, "crypto", `\b(crypto|cryptocurrency|bitcoin|ethereum|stablecoin|usdc|usdt|wallet)\b`),
 	mk(GateSafety, "crypto", `\b(eth|btc|sol|xrp)\b`),
-	mk(GateSafety, "crypto tx", `\b(sign|broadcast|submit)\b.{0,20}\btransaction\b|\bseed phrase\b|\bprivate key\b`),
+	mk(GateSafety, "crypto tx", `\b(sign|broadcast|submit)\b.{0,20}\btransaction\b|\bseed phrase\b|\brecovery (words|phrase|seed)\b|\bprivate key\b`),
 	mk(GateSafety, "card", `\b(credit|debit)\s+card\b|\bcard on file\b`),
 
 	// ── Safety · credentials / exfiltration ─────────────────────────────────
 	mk(GateSafety, "credential", `\b(secret|secrets|credential|creds|password|passphrase|passwd)\b`),
+	mk(GateSafety, "revoke", `\brevoke\b|\brevocation\b`),
 	mk(GateSafety, "token/key", `\b(api[_ -]?key|access[_ -]?key|secret[_ -]?key|private[_ -]?key|client[_ -]?secret|aws[_ -]?secret|access[_ -]?token|auth[_ -]?token|bearer token|service account key)\b`),
-	mk(GateSafety, "cred file", `\.(env|pem|p12|pfx|key|keystore)\b|\b(id_rsa|authorized_keys|\.aws/credentials|\.npmrc)\b`),
-	mk(GateSafety, "ssh key", `\bssh\s+key\b|\bgpg\s+key\b`),
-	mk(GateSafety, "env dump", `\b(print|cat|echo|dump|paste|leak|exfil)\b.{0,30}\b(env|secret|cred|token|key|password)`),
-	mk(GateSafety, "env var", `\benv(ironment)?\s+var(iable)?s?\b`),
+	mk(GateSafety, "cred file", `\.(env|pem|p12|pfx|key|keystore)\b|\b(id_rsa|id_ed25519|id_ecdsa|authorized_keys)\b|\.ssh/|\.aws/credentials|\.npmrc`),
+	mk(GateSafety, "ssh key", `\b(ssh|gpg)\s+key\b|\bscp\b.{0,25}\b(key|id_|\.pem|secret|cred)`),
+	// Reading env is benign; PRINTING/DUMPING/EXFILTRATING it gates.
+	mk(GateSafety, "env dump", `\b(print|cat|echo|dump|paste|leak|exfil|upload|scp|curl)\b.{0,30}\b(env|secret|cred|token|key|password|id_rsa|id_ed25519)`),
 
 	// ── Safety · destructive ────────────────────────────────────────────────
-	mk(GateSafety, "rm -rf", `\brm\s+-{1,2}\S*(r|f|recursive|force)`),
-	mk(GateSafety, "sql drop", `\b(drop|truncate)\s+(table|database|schema|index)\b|\bdelete\s+from\b`),
+	mk(GateSafety, "rm -rf", `\brm\s+-{1,2}\S*(r|f|recursive|force)|\brm\b.{0,20}(--recursive|--force)`),
+	mk(GateSafety, "cloud rm", `\b(aws\s+s3|gsutil)\s+(rm|rb)\b|\bs3\b.{0,15}\b(rm|rb)\b`),
+	mk(GateSafety, "sql drop", `\b(drop|truncate)\s+(table|database|schema|index|user|role)\b|\bdelete\s+from\b`),
 	mk(GateSafety, "destroy", `\b(destroy|wipe|erase|obliterate|nuke|flushall|flushdb)\b`),
 	mk(GateSafety, "iac teardown", `\bterraform\s+destroy\b|\bkubectl\s+delete\b|\bhelm\s+(uninstall|delete)\b`),
+	mk(GateSafety, "curl delete", `\bcurl\b.{0,30}(-x\s?delete|--request\s+delete)`),
 	mk(GateSafety, "git destructive", `\bgit\s+reset\s+--hard\b|\bgit\s+clean\s+-\S*(f|d)|\bgit\s+push\s+.*(-f\b|--force|-{1,2}force)`),
 	mk(GateSafety, "force push", `\bforce[- ]?push\b`),
-	mk(GateSafety, "delete resource", `\bdelete\b.{0,25}\b(database|prod|production|namespace|deployment|cluster|bucket|volume|snapshot|repo|repository|branch|table|user|account|record)`),
+	mk(GateSafety, "chown", `\bchown\s+-r\b`),
+	mk(GateSafety, "delete resource", `\bdelete\b.{0,25}\b(database|prod|production|namespace|deployment|cluster|bucket|volume|snapshot|repo|repository|branch|table|user|account|record|message|channel|email|everything|every)\b`),
 	mk(GateSafety, "purge/hard-delete", `\bpurge\b|\bhard[- ]?delete\b|\bempty the trash\b|\bpermanently delete\b`),
 
 	// ── Safety · access-control / IAM / exposure ────────────────────────────
 	mk(GateSafety, "iam", `\b(iam|add-iam-policy-binding|setiampolicy|getiampolicy)\b`),
 	mk(GateSafety, "grant", `\bgrant\b|\broles/\w`),
 	mk(GateSafety, "make public", `\bmake\b.{0,25}\bpublic\b|\bworld[- ]?readable\b|\bpublic[- ]?read\b|\ballusers\b|\ballauthenticatedusers\b|\bpublicly\s+(readable|accessible|writable)\b`),
-	mk(GateSafety, "repo public", `\bvisibility\b.{0,15}\bpublic\b|\brepo(sitory)?\s+public\b|\bmake\b.{0,15}\brepo`),
+	mk(GateSafety, "repo public", `\bvisibility\b.{0,15}\bpublic\b|\brepo(sitory)?\s+public\b`),
 	mk(GateSafety, "open firewall", `\b0\.0\.0\.0/0\b|\ballow\s+ingress\b|\bopen\s+(the\s+)?(port|firewall)\b`),
-	mk(GateSafety, "disable auth", `\b(disable|remove|bypass|turn off|skip)\b.{0,15}\b(auth|authentication|2fa|mfa|security|gate)\b`),
-	mk(GateSafety, "privilege", `\bsudo\b|\bmake\b.{0,10}\badmin\b|\badmin\s+access\b|\bgrant\s+admin\b|\bbucket policy\b|\bputobjectacl\b`),
-	mk(GateSafety, "chmod", `\bchmod\s+-?\S*\s*[0-7]*7{2,3}\b|\bchmod\s+-R\b`),
+	mk(GateSafety, "disable security", `\b(disable|remove|bypass|turn off|skip)\b.{0,20}\b(auth|authentication|2fa|mfa|security|encryption|key rotation|kms|backup|protection|gate|verification)\b`),
+	mk(GateSafety, "privilege", `\bsudo\b|\b(make|add|grant)\b.{0,20}\badmin\b|\badmin\s+access\b|\bbucket policy\b|\bputobjectacl\b`),
+	mk(GateSafety, "chmod", `\bchmod\s+-?\S*\s*[0-7]*7{2,3}\b|\bchmod\s+-r\b`),
 	mk(GateSafety, "branch protection", `\bbranch\s+protection\b|\badd\s+collaborator\b|\brecovery\s+contact\b`),
 
 	// ── Founder / business ──────────────────────────────────────────────────
 	mk(GateFounder, "founder/business", `\b(term[- ]?sheet|investor|valuation|cap\s+table|equity|fundrais|pre[- ]?money|post[- ]?money|founder\s+decision|go[- ]?to[- ]?market|\bgtm\b|rebrand|press\s+release|board\s+meeting)\b`),
-	mk(GateFounder, "pricing", `\bpricing\b|\bprice\s+point\b|\bdiscount\b.{0,15}\bcustomer\b`),
+	mk(GateFounder, "pricing", `\bprice\s+point\b|\bdiscount\b.{0,15}\bcustomer\b|\bset\b.{0,10}\bpricing\b`),
 
 	// ── Irreversible / outward-facing ───────────────────────────────────────
-	mk(GateIrreversible, "deploy", `\bdeploy(ing|ment)?\b|\brollout\b|\broll\s+out\b|\bpromote\b.{0,15}\bprod|\bship\b.{0,15}\b(prod|production|live|it live)\b|\bgo[- ]?live\b|\bcut(ting)?\s+(a\s+)?release\b|\btag\s+(a\s+)?release\b|\brelease\s+to\b`),
-	mk(GateIrreversible, "deploy cli", `\bfirebase\s+deploy\b|\bterraform\s+apply\b|\bkubectl\s+apply\b|\bhelm\s+(install|upgrade)\b|\bdocker\s+push\b|\bnpm\s+publish\b|\bgh\s+release\b|\bgh\s+pr\s+merge\b|\bgit\s+push\s+(origin\s+)?(main|master|prod)\b`),
-	mk(GateIrreversible, "merge-prod", `\bmerge\b.{0,20}\b(to\s+)?(main|master|prod|production)\b|\bmerge\s+to\s+(main|prod)\b`),
-	mk(GateIrreversible, "publish", `\bpublish(ing|ed)?\b|\bpost(ing)?\s+to\b|\btweet\b|\bgo\s+public\b`),
-	mk(GateIrreversible, "outward comms", `\b(send|email|slack|dm|text|sms|message|notify|contact|reply)\b.{0,25}\b(customer|client|investor|user|vendor|supplier|the email|the message)\b`),
-	mk(GateIrreversible, "send email", `\bsend\b.{0,15}\bemail\b|\bemail\b.{0,15}\b(the|to)\b`),
+	// "deploy"/"publish" gate as ACTIONS (deploy TO prod, publish THE article),
+	// not as bare mentions — so the loop can edit deploy docs, a pub/sub bus, or
+	// a deployment.yaml. The CLI verbs below still gate unconditionally.
+	mk(GateIrreversible, "deploy", `\bdeploy\b.{0,15}\b(to|prod|production|live|now|it|the (app|site|service|function|stack))\b|\bdeploying to\b|\brollout\b.{0,10}\bprod|\bpromote\b.{0,15}\bprod|\bship\b.{0,15}\b(prod|production|live|it live)\b|\bgo[- ]?live\b|\bcut(ting)?\s+(a\s+)?release\b|\btag\s+(a\s+)?release\b|\brelease\s+to\s+(prod|users|the)\b`),
+	mk(GateIrreversible, "deploy cli", `\bfirebase\s+deploy\b|\bterraform\s+apply\b|\bkubectl\s+apply\b|\bhelm\s+(install|upgrade)\b|\bdocker\s+push\b|\bnpm\s+publish\b|\bgh\s+release\b|\bgh\s+pr\s+merge\b|\b(vercel|netlify|flyctl|fly)\b.{0,10}(deploy|--prod)|\bgit\s+push\b.{0,30}\b(main|master|prod|production)\b`),
+	mk(GateIrreversible, "merge-prod", `\bmerge\b.{0,20}\b(to\s+)?(main|master|prod|production)\b`),
+	mk(GateIrreversible, "publish", `\bpublish\b\s+(the\s+|a\s+|our\s+)?(article|post|blog|release|package|site|page|update|announcement|version|it)\b|\bpost(ing)?\s+to\b.{0,15}\b(twitter|linkedin|blog|slack|social)\b|\btweet\b|\bgo\s+public\b`),
+	mk(GateIrreversible, "outward comms", `\b(send|email|slack|dm|text|sms|message|notify|contact|reply)\b.{0,25}\b(customer|client|investor|vendor|supplier|the email|the message)\b`),
+	mk(GateIrreversible, "send email", `\bsend\b.{0,15}\bemail\b.{0,15}\b(to|the)\b|\bemail\b\s+(the\s+)?(client|customer|investor|vendor|team)\b`),
 }
 
 // ClassifyGate returns whether an item needs the owner and why. It is the single

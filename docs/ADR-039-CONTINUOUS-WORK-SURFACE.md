@@ -70,12 +70,12 @@ flowchart TD
 
 ### 2. Recommended Implementation Order
 
-- **P1 — Honest-gate classifier** (`gate.go` + tests). ✅ *this ADR's PR.* The keystone every executor consults.
-- **P2 — Tiered executor**: given a non-gated item, act at the cheapest competent tier (wrap existing `WakePass`/dispatch for T2; local model for T0/T1). Gated items → owner-queue.
-- **P3 — The tick does work**: fold P2 into `ctr` (autonomous-ON) so each tick reconciles → gates → acts. Reuses CTR's surface + reconcile (#208).
+- **P1 — Honest-gate classifier** (`gate.go` + tests). ✅ **shipped.** The keystone every executor consults (regex/word-boundary, hardened against an under-gating audit).
+- **P2 — Tiered executor (planner)** (`executor.go` — `PlanExecution`/`PlanAll`/`Actionable`/`OwnerQueue`). ✅ **shipped.** PURE decision: gate first → owner-queue; else autonomous-off → propose; else → dispatch to the target agent (T2). Side-effect free so P6 is provable; the actual dispatch (side effects) is P3, gated behind this planner.
+- **P3 — The tick does work**: fold the planner's side effects into `ctr` (autonomous-ON) so each tick reconciles → plans → dispatches `Actionable()` via `WakePass`. Reuses CTR's surface + reconcile (#208). *Must land P6's guarantee first (below) — it does.*
 - **P4 — Self-healing trigger mesh**: fsnotify + hooks + git + launchd + self-reschedule; each tick re-arms dead triggers; drain-before-rearm (the fork-storm lesson).
-- **P5 — Owner-queue surface**: the gated items in one place across CLI / menubar / Nexus; "stalled non-gated item" alarm.
-- **P6 — Ma'at gate**: test-enforced invariant that no autonomous path acts on a `Gated` item, and that the gate table is non-empty.
+- **P5 — Owner-queue surface**: `OwnerQueue()` rendered in one place across CLI / menubar / Nexus; "stalled non-gated item" alarm.
+- **P6 — Ma'at invariant** (`executor_test.go::TestExecutorNeverActsOnGated`). ✅ **shipped.** Test-enforced: the entire dangerous corpus, planned under autonomous=ON, is always `ActGate` and never `Actionable`; gate table non-empty (`TestGateTableArmed`). The safety rail exists BEFORE P3 flips the loop to act.
 
 ### 3. Key Decision Points
 
