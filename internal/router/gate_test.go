@@ -157,3 +157,43 @@ func TestGateTableArmed(t *testing.T) {
 		t.Fatal("gate rule table is EMPTY — every action would be auto-executable")
 	}
 }
+
+// Title-scope tune: a review/response whose TITLE is benign must NOT gate just
+// because its BODY (quoted discussion) mentions an ambiguous token like
+// "credential" or "force push" — that was the over-gating that inflated the
+// owner-queue 4→16. A real dangerous ASK names the action in its title and still
+// gates; and the specific action patterns still scan the body.
+func TestGateTitleScopeStopsReviewFalsePositives(t *testing.T) {
+	// benign review titles whose bodies are full of trigger words → must NOT gate
+	falsePos := []work.Item{
+		{To: "claude-finalwishes", Title: "RESPONSE: PR #62 review: upload signature-header class",
+			Instructions: "The review discusses credential handling, the secret store, and a force push someone did."},
+		{To: "claude-finalwishes", Title: "RESPONSE: PR #65 review (docs-only): action matrix GREEN",
+			Instructions: "notes mention iam, grant, secrets, and swift code"},
+		{To: "claude-pantheon", Title: "FOLLOW-UP (PR #201): dashboard pages.go still raw hex",
+			Instructions: "derive from internal/brand; the SwiftUI code path"},
+	}
+	for _, it := range falsePos {
+		if g := ClassifyGate(it); g.Gated {
+			t.Errorf("review with benign title must NOT gate on body tokens: %q → %s (%s)", it.Title, g.Class, g.Reason)
+		}
+	}
+
+	// real dangerous asks — named in the TITLE — still gate
+	realAsk := []work.Item{
+		{To: "claude-x", Title: "rotate the production credential", Instructions: "x"},
+		{To: "claude-x", Title: "grant IAM admin to the SA", Instructions: "x"},
+		{To: "claude-x", Title: "force push to main", Instructions: "x"},
+	}
+	for _, it := range realAsk {
+		if g := ClassifyGate(it); !g.Gated {
+			t.Errorf("a dangerous ask in the title MUST still gate: %q", it.Title)
+		}
+	}
+
+	// specific action patterns still gate from the BODY (defense not weakened)
+	if g := ClassifyGate(work.Item{To: "claude-x", Title: "investigate the job",
+		Instructions: "then run terraform destroy on prod"}); !g.Gated {
+		t.Error("a specific action pattern (terraform destroy) in the body must still gate")
+	}
+}
