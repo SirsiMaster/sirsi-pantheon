@@ -17,6 +17,29 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
+// nexusOrigins is the allowlist of web origins permitted to read local
+// dashboard data cross-origin. Deliberately explicit, not a wildcard: this
+// data includes live agent PIDs and session identifiers, so only the known
+// Nexus web-panel origins (production + local dev server) may read it, and
+// only over a same-machine loopback request in the first place.
+var nexusOrigins = map[string]bool{
+	"https://sirsi.ai":         true,
+	"https://sirsi-ai.web.app": true,
+	"http://localhost:5183":    true,
+	"http://127.0.0.1:5183":    true,
+}
+
+// allowNexusOrigin sets Access-Control-Allow-Origin when the request's Origin
+// header matches nexusOrigins. No-op (and no header set) for any other origin,
+// which browsers treat as a same-origin-only response.
+func allowNexusOrigin(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin != "" && nexusOrigins[origin] {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+}
+
 // DefaultOpsSummaryMax bounds the OpsSummary agent list to fit a typical
 // NSMenu (~12-20 rows comfortably; we pick 12 to leave headroom for fixed rows
 // like counts and the "Open full dashboard" link). The remainder collapse into
@@ -249,7 +272,13 @@ type NodeStatusCollector func() (*router.NodeStatus, error)
 //   - ?view=summary: bounded OpsSummary (top-N agents + "more_agents")
 //
 // Read-only: no method-gating, no ConfirmGuard path, no side effects.
+//
+// CORS is scoped to the known Nexus web-panel origins (ADR-047 shared-services
+// consumer) rather than a wildcard, since this endpoint exposes live agent PIDs
+// and session identifiers — local-only data that should only ever be readable
+// by a page the operator is themselves looking at, never a wildcard origin.
 func (s *Server) apiNodeStatus(w http.ResponseWriter, r *http.Request) {
+	allowNexusOrigin(w, r)
 	if s.cfg.NodeStatusFn == nil {
 		writeError(w, "node-status not available (collector not wired)", http.StatusServiceUnavailable)
 		return
