@@ -135,7 +135,9 @@ but no live watcher. It is safe to run repeatedly.
 Steps:
 
 1. Run ` + "`ctr`" + ` (or ` + "`sirsi ctr`" + ` if the shim is not on PATH). For machine
-   consumption use ` + "`sirsi ctr --json`" + `.
+   consumption use ` + "`sirsi ctr --json`" + `. Add ` + "`--reconcile`" + ` to also run a local
+   Tier-0 triage of the open items on the on-device model first (a screen, never a
+   binding verdict — read it as guidance); it needs a warm ` + "`sirsi gemma serve`" + `.
 2. Read the output:
    - "Woke this pass" — agents a wake was just attempted for.
    - "Stranded" — open items with NO live watcher; that agent's session must run ctr.
