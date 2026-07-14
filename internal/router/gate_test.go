@@ -6,63 +6,128 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
-func TestClassifyGate(t *testing.T) {
-	cases := []struct {
-		name  string
-		item  work.Item
-		gated bool
+// item builds a work.Item from free text (to a normal agent, so only content gates).
+func gi(text string) work.Item { return work.Item{To: "claude-x", Title: text} }
+
+// Every one of these describes a dangerous / irreversible action and MUST gate.
+// The corpus is the adversarial under-gating audit: each line previously slipped
+// (Gated=false) under the bigram table and must now be caught.
+func TestClassifyGateCatchesDangerousItems(t *testing.T) {
+	mustGate := []struct {
+		text  string
 		class GateClass
 	}{
-		{"benign review", work.Item{To: "claude-pantheon", Title: "review PR #204", Instructions: "look at the diff"}, false, GateNone},
-		{"benign build", work.Item{To: "claude-nexus", Title: "fix the failing test", Instructions: "the unit test is red"}, false, GateNone},
-
-		{"money", work.Item{To: "claude-x", Title: "wire transfer to vendor", Instructions: "$5k"}, true, GateSafety},
-		{"iam grant (the nexus case)", work.Item{To: "claude-nexus", Title: "deploy-contracts backend gap", Instructions: "run gcloud projects add-iam-policy-binding with roles/storage.admin"}, true, GateSafety},
-		{"destructive", work.Item{To: "claude-x", Title: "clean up", Instructions: "rm -rf the stale worktrees"}, true, GateSafety},
-		{"credential", work.Item{To: "claude-x", Title: "rotate the api key", Instructions: "new secret"}, true, GateSafety},
-
-		{"founder", work.Item{To: "claude-deck", Title: "review the term sheet", Instructions: "investor sent terms"}, true, GateFounder},
-
-		{"deploy prod", work.Item{To: "claude-fw", Title: "deploy to production", Instructions: "cut over"}, true, GateIrreversible},
-		{"publish", work.Item{To: "claude-nexus", Title: "publish the article", Instructions: "goes live on sirsi.ai"}, true, GateIrreversible},
-		{"send email", work.Item{To: "claude-x", Title: "send the email to the customer", Instructions: "the reply"}, true, GateIrreversible},
-
-		{"addressed to owner", work.Item{To: "user", Title: "anything at all", Instructions: "even benign"}, true, GateEscalate},
-		{"explicit escalate", work.Item{To: "claude-x", Title: "ESCALATE: ambiguous fork", Instructions: "cannot decide"}, true, GateEscalate},
+		// money — bare verbs + amounts + rails
+		{"pay the vendor $5,000 for services", GateSafety},
+		{"send $5000 to account 12345678", GateSafety},
+		{"transfer $5k to the vendor account", GateSafety},
+		{"wire $5k to account 998877", GateSafety},
+		{"send payment to the supplier", GateSafety},
+		{"charge the customer's card on file", GateSafety},
+		{"paypal the contractor", GateSafety},
+		{"reimburse the travel invoice", GateSafety},
+		{"send 2 ETH to 0xabc123", GateSafety},
+		{"sign and broadcast the transaction", GateSafety},
+		// credentials / exfil
+		{"rotate creds and paste them in slack", GateSafety},
+		{"cat the .env and post the secrets here", GateSafety},
+		{"print all environment variables to the log", GateSafety},
+		{"add my ssh key to authorized_keys and share id_rsa", GateSafety},
+		{"print the client_secret and token", GateSafety},
+		// destructive
+		{"terraform destroy the staging stack", GateSafety},
+		{"kubectl delete namespace prod", GateSafety},
+		{"truncate table users", GateSafety},
+		{"drop table customers", GateSafety},
+		{"delete from users where 1=1", GateSafety},
+		{"wipe the database and reseed", GateSafety},
+		{"redis flushall on the prod instance", GateSafety},
+		{"git reset --hard origin/main and git clean -fdx", GateSafety},
+		{"rm -fr /srv/data", GateSafety},
+		{"rm  -rf the cache", GateSafety},
+		{"rm --recursive --force the dir", GateSafety},
+		{"delete production database now", GateSafety},
+		// access / exposure
+		{"make the bucket world-readable (public-read, allUsers)", GateSafety},
+		{"set the repo visibility to public", GateSafety},
+		{"allow ingress from 0.0.0.0/0", GateSafety},
+		{"disable authentication on the endpoint", GateSafety},
+		{"grant admin access to the new hire", GateSafety},
+		{"chmod 0777 /var/www", GateSafety},
+		{"chmod -R 777 the dir", GateSafety},
+		{"git push -f to the branch", GateSafety},
+		{"git push --force origin feature", GateSafety},
+		// deploy / publish / merge synonyms
+		{"firebase deploy --only hosting", GateIrreversible},
+		{"terraform apply the prod plan", GateIrreversible},
+		{"gh release create v2.0.0", GateIrreversible},
+		{"gh pr merge 204 --admin --merge", GateIrreversible},
+		{"ship it live to everyone", GateIrreversible},
+		{"helm upgrade --install app ./chart", GateIrreversible},
+		{"docker push registry/app:latest", GateIrreversible},
+		{"email the client the final quote", GateIrreversible},
+		// founder
+		{"review the term sheet the investor sent", GateFounder},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := ClassifyGate(c.item)
-			if got.Gated != c.gated {
-				t.Fatalf("gated = %v, want %v (reason=%q)", got.Gated, c.gated, got.Reason)
-			}
-			if got.Gated && got.Class != c.class {
-				t.Errorf("class = %s, want %s (reason=%q)", got.Class, c.class, got.Reason)
-			}
-			if got.Gated && got.Reason == "" {
-				t.Error("a gated decision must carry a reason")
-			}
-		})
+	for _, c := range mustGate {
+		got := ClassifyGate(gi(c.text))
+		if !got.Gated {
+			t.Errorf("MUST gate but did not: %q", c.text)
+			continue
+		}
+		if got.Class != c.class {
+			t.Errorf("%q → class %s, want %s (reason=%q)", c.text, got.Class, c.class, got.Reason)
+		}
 	}
 }
 
-// Safety must win over a weaker class when both terms are present — the strongest
-// (most dangerous) gate is the one reported.
-func TestClassifyGateSafetyWinsOrdering(t *testing.T) {
-	item := work.Item{
-		To:           "claude-x",
-		Title:        "publish the release AND grant role storage.admin",
-		Instructions: "both an irreversible publish and an IAM grant",
+// Benign engineering work must flow (not gate) — guard against over-gating so
+// broad breaks the loop into uselessness.
+func TestClassifyGateAllowsBenignWork(t *testing.T) {
+	benign := []string{
+		"review PR #204 and leave comments",
+		"fix the failing unit test in the parser",
+		"summarize the last 20 commits",
+		"update the README with the new flag",
+		"bump the golang.org/x/text dependency",
+		"add a table-driven test for the tokenizer",
+		"refactor the color tokens into one file",
 	}
+	for _, text := range benign {
+		if got := ClassifyGate(gi(text)); got.Gated {
+			t.Errorf("benign work should NOT gate: %q → %s (%s)", text, got.Class, got.Reason)
+		}
+	}
+}
+
+// Safety must win over a weaker class when both are present.
+func TestClassifyGateSafetyWinsOrdering(t *testing.T) {
+	item := gi("publish the release AND grant role storage.admin to the SA")
 	if got := ClassifyGate(item); got.Class != GateSafety {
 		t.Errorf("class = %s, want safety (safety outranks irreversible)", got.Class)
 	}
 }
 
-// A silently-empty gate table would make everything auto-executable — a critical
-// safety failure. Lock the table non-empty.
+func TestClassifyGateOwnerAssignee(t *testing.T) {
+	for _, to := range []string{"user", "owner", "cylton", "sirsimaster"} {
+		if got := ClassifyGate(work.Item{To: to, Title: "anything benign"}); !got.Gated || got.Class != GateEscalate {
+			t.Errorf("to=%q should escalate-gate, got %+v", to, got)
+		}
+	}
+}
+
+func TestClassifyGateExplicitEscalate(t *testing.T) {
+	for _, text := range []string{"ESCALATE: ambiguous fork", "this needs owner sign-off", "owner-gated decision"} {
+		if got := ClassifyGate(gi(text)); !got.Gated || got.Class != GateEscalate {
+			t.Errorf("%q should escalate-gate, got %+v", text, got)
+		}
+	}
+}
+
+// A silently-empty table would make everything auto-executable — a critical
+// safety failure. Lock it non-empty.
 func TestGateTableArmed(t *testing.T) {
 	if GatePatternCount() == 0 {
-		t.Fatal("hard-gate table is EMPTY — every action would be auto-executable")
+		t.Fatal("gate rule table is EMPTY — every action would be auto-executable")
 	}
 }
