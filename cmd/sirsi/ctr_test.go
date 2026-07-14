@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 func sampleNodeStatus() *router.NodeStatus {
@@ -93,22 +93,52 @@ func TestByAgentCount(t *testing.T) {
 	}
 }
 
-// The shim invokes `sirsi ctr`, prefers PATH, and lands in ~/.local/bin with the
-// right filename for the platform.
-func TestCtrShim(t *testing.T) {
-	path, body := ctrShim("/home/u", "/abs/sirsi")
-	if !strings.Contains(body, "ctr") || !strings.Contains(body, "/abs/sirsi") {
-		t.Errorf("shim body missing ctr invocation or fallback path:\n%s", body)
-	}
-	wantName := "ctr"
-	if runtime.GOOS == "windows" {
-		wantName = "ctr.cmd"
-	}
-	if filepath.Base(path) != wantName {
-		t.Errorf("shim path = %q, want basename %q", path, wantName)
+// The POSIX shim prefers PATH, single-quotes its fallback (space/$-safe), and
+// lands at ~/.local/bin/ctr.
+func TestCtrShimUnix(t *testing.T) {
+	path, body := ctrShim("/home/u", "/opt/sirsi bin/sirsi", "linux")
+	if filepath.Base(path) != "ctr" {
+		t.Errorf("unix shim basename = %q, want ctr", filepath.Base(path))
 	}
 	if filepath.Dir(path) != filepath.Join("/home/u", ".local", "bin") {
 		t.Errorf("shim dir = %q, want ~/.local/bin", filepath.Dir(path))
+	}
+	if !strings.Contains(body, `exec "$SIRSI" ctr "$@"`) {
+		t.Errorf("unix shim missing exec line:\n%s", body)
+	}
+	// Fallback path with a space must be single-quoted so it survives as one word.
+	if !strings.Contains(body, `SIRSI='/opt/sirsi bin/sirsi'`) {
+		t.Errorf("unix shim fallback not single-quoted safely:\n%s", body)
+	}
+}
+
+// The Windows shim uses a real if/else (never the `&&…||…` double-run trap) and
+// embeds the raw path in double quotes (no %q backslash-doubling).
+func TestCtrShimWindows(t *testing.T) {
+	path, body := ctrShim(`C:\Users\u`, `C:\Program Files\sirsi\sirsi.exe`, "windows")
+	if filepath.Base(path) != "ctr.cmd" {
+		t.Errorf("windows shim basename = %q, want ctr.cmd", filepath.Base(path))
+	}
+	if strings.Contains(body, "&&") || strings.Contains(body, "||") {
+		t.Errorf("windows shim still uses &&/|| (double-run trap):\n%s", body)
+	}
+	if !strings.Contains(body, "if %errorlevel%==0 (") {
+		t.Errorf("windows shim missing if/else:\n%s", body)
+	}
+	if strings.Contains(body, `\\`) {
+		t.Errorf("windows shim has doubled backslashes (used %%q?):\n%s", body)
+	}
+	if !strings.Contains(body, `"C:\Program Files\sirsi\sirsi.exe" ctr %*`) {
+		t.Errorf("windows shim missing raw quoted fallback:\n%s", body)
+	}
+}
+
+func TestShSingleQuote(t *testing.T) {
+	if got := shSingleQuote(`/a/b`); got != `'/a/b'` {
+		t.Errorf("shSingleQuote(/a/b) = %q", got)
+	}
+	if got := shSingleQuote(`/it's/here`); got != `'/it'\''s/here'` {
+		t.Errorf("shSingleQuote embedded-quote = %q", got)
 	}
 }
 
@@ -123,6 +153,20 @@ func TestCtrSkillRepoMatchesInstaller(t *testing.T) {
 	}
 	if string(data) != ctrSkillBody() {
 		t.Errorf("%s has drifted from ctrSkillBody(); regenerate it", repoSkill)
+	}
+}
+
+// The reconcile prompt tiers the items, forbids invention, and lists each open
+// item with the fields the local model needs to triage.
+func TestBuildReconcilePrompt(t *testing.T) {
+	p := buildReconcilePrompt([]work.Item{
+		{ID: "i-1", From: "claude-home", Type: "decision", Title: "ship the thing"},
+		{ID: "i-2", From: "claude-nexus", Type: "review", Title: "look at PR"},
+	})
+	for _, want := range []string{"TIER0", "TIER1", "TIER2", "Do NOT invent", "id=i-1", `title="ship the thing"`, "id=i-2"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("reconcile prompt missing %q:\n%s", want, p)
+		}
 	}
 }
 
