@@ -213,6 +213,14 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		printInstallResult(setup.InstallMenubar())
 	}
 
+	// CTR — the universal wake primitive — is wired on every machine so `ctr`
+	// (shell) and `/ctr` (Claude) work everywhere, present and future.
+	if summary, err := InstallCTR(); err != nil {
+		fmt.Printf("  ⚠ CTR         not wired: %v\n", err)
+	} else {
+		fmt.Printf("  ✓ CTR         %s\n", strings.Join(summary, " · "))
+	}
+
 	// ── Step 2 / 4 — Dependencies ──────────────────────────────────────────
 	fmt.Println()
 	fmt.Println("  Step 2 / 4 — Dependencies")

@@ -380,6 +380,15 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Brand invariant** (with A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity ("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which local model serves Tier 0.
 *   **Reference**: canonical law `~/Development/AGENTS.md`; enforced by A29 (Orchestration Brain) + `docs/prd/ORCHESTRATION_BRAIN.md` default routing table. Custodian: 𓁟 the Brain (routing) + 𓆄 Ma'at (governance).
 
+### 2.28 CTR — Check The Router, the universal wake primitive (Rule A31)
+> Established July 13, 2026 by owner directive, after background wake (monitors, arming, watchers, launchd daemons) repeatedly failed to keep threads consuming their inboxes — a level-triggered daemon that dies silently strands every item addressed to it. Custodian: 𓁢 the Router.
+
+*   **Rule**: `ctr` ("Check The Router") is the canonical **on-demand** wake primitive. It is ONE synchronous router pass — surface every open inbox item, then wake the agents that have work waiting but no live watcher — with **no daemon to keep alive**. The trigger moves to events that already happen (a human typing, a hook, a git commit, a cron, another agent), which is why it works where resident processes have not.
+*   **One primitive, three call sites** (all thin adapters over the same Go verb, so they can never diverge): **`ctr`** (a PATH shim, any shell / IDE terminal, mac/linux/windows, headless or resident) · **`/ctr`** (a Claude Code skill, known to every session in every repo) · **`sirsi ctr`** (the cross-platform source of truth). Both a human and a process may call it; `sirsi ctr --json` is the machine contract.
+*   **Wrap, don't rebuild (Rule 0)**: `sirsi ctr` orchestrates the EXISTING substrate — `router.CollectNodeStatus` (pending + stranded truth) and `router.WakePass` (wake-or-declare-unavailable). It MUST NOT reimplement wake logic. Honest boundary (A29): a fully-closed interactive session cannot be resurrected locally → reported **"needs-owner"**, stated not faked; heartbeat-fresh ≠ consuming, and CTR says so.
+*   **Ubiquity is mandatory**: `sirsi setup` wires the shim + skill on every machine (present and future). `sirsi ctr --install` re-wires idempotently. The user-global skill (`~/.claude/skills/ctr`) makes `/ctr` known to every agent/thread; canon here + `~/Development/AGENTS.md` make it known to every repo. Like `/thoth`, it is a first-class shippable Pantheon command.
+*   **Reference**: `cmd/sirsi/ctr.go` + `cmd/sirsi/ctrinstall.go`; skill `.claude/skills/ctr/SKILL.md`; substrate `internal/router/{wake.go,strand.go,nodestatus.go}`. Custodian: 𓁢 the Router.
+
 ---
 
 ## 3. Technology Stack
