@@ -38,6 +38,16 @@ sirsi thread close --thread thr-XXXX
 
 Surfaces are model-neutral: `claude`, `codex`, `gemini`, `gemma`, `qwen`, `mcp`, `api`, `webhook`, `worker`. Missing/invalid registration is treated as a local-node health problem in `sirsi router node-status`.
 
+### `ctr` — Check The Router (the on-demand wake, PANTHEON_RULES A31)
+
+When background wake fails (a watcher loop dies, a daemon exits, a session heartbeats but never pulls), **`ctr`** is the escape hatch: one synchronous pass that surfaces every open item and wakes stranded agents — no daemon to keep alive, so nothing to die.
+
+- **`ctr`** — from any shell / IDE terminal (a shim over `sirsi ctr`; mac/linux/windows, headless or resident).
+- **`/ctr`** — inside a Claude Code session (a skill; run it, then act on items addressed to you).
+- **`sirsi ctr`** — the source of truth. `sirsi ctr --json` for hooks/processes; `sirsi ctr --no-wake` to surface only.
+
+Both a human and a process can call it. Wire it on a machine with `sirsi setup` (automatic) or `sirsi ctr --install`. This is the manual counterpart to the heartbeat loop below — call it whenever the router may have unread items.
+
 ### Heartbeat Loop (mandatory from register → close)
 
 A registered thread that is not looping is invisible to its own inbox — items addressed to it sit unread until the next manual `ctr`. The heartbeat loop is what makes registration mean "alive and watching," not just "known." It is the same primitive across every surface; only the implementation differs:

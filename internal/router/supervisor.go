@@ -366,6 +366,16 @@ func agentWakeReady(cfg AgentConfig) (bool, string) {
 		return true, cfg.Wake.Endpoint
 	case WakeMCPNotification:
 		return true, cfg.Wake.MCPServer
+	case WakeLaunchAgent:
+		// The per-agent pull-loop LaunchAgent (installed by `sirsi router
+		// wake-install`). Recognized as a real wake path — matching the canonical
+		// ProbeWakeReadiness — so the supervisor/board never false-flags a
+		// launchagent-wake agent as "blocked / unsupported mechanism".
+		label := WakeLaunchAgentLabel(cfg.ID)
+		if WakeLaunchAgentInstalled(cfg.ID) {
+			return true, label
+		}
+		return true, label + " (install with `sirsi router wake-install`)"
 	default:
 		if strings.TrimSpace(cfg.WakeMechanism()) == "" {
 			return false, "no wake mechanism configured"
