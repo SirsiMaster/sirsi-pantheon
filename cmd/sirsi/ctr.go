@@ -54,7 +54,9 @@ Callable everywhere as the same primitive:
   sirsi ctr           (this verb — the cross-platform source of truth)
 
   sirsi ctr                    Check + wake all local agents with pending items
-  sirsi ctr claude-pantheon    Scope the surface to one agent
+  sirsi ctr claude-pantheon    Filter the SURFACE to one agent (the wake pass is
+                               always node-wide + idempotent; use --no-wake to
+                               only look)
   sirsi ctr --no-wake          Surface only; do not attempt any wake
   sirsi ctr --json             Machine-readable (for hooks / other processes)
   sirsi ctr --install          Wire the 'ctr' shim + '/ctr' skill on this machine
