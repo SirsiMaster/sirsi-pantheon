@@ -169,12 +169,20 @@ func gemmaServerStart(home string) error {
 	}
 	pyBin := filepath.Join(home, ".venvs/mlx/bin/python")
 
+	// LAYER 3 — cap the PROMPT/KV cache too. The wrapper's mx.set_cache_limit caps
+	// the buffer-cache pool (the 06-18 balloon), but the 07-14 SIGABRT+Jetsam was a
+	// DIFFERENT balloon: the mlx_lm.server prompt/KV cache growing unbounded with
+	// long prompts. --prompt-cache-bytes bounds it. Node-derived (capBytes/4),
+	// consistent with the buffer-pool cap, so it scales with the box and stays well
+	// under the balloon line. This makes the P0 fix durable, not a hand-patched runtime.
+	promptCacheBytes := capBytes / 4
 	c := exec.Command(pyBin, wrapper, strconv.FormatInt(capBytes, 10),
 		"--model", model,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(gemmaServePort),
 		"--decode-concurrency", strconv.Itoa(gemmaServeConcurrency),
 		"--prompt-concurrency", strconv.Itoa(gemmaServeConcurrency),
+		"--prompt-cache-bytes", strconv.FormatInt(promptCacheBytes, 10),
 	)
 	c.Stdout = logf
 	c.Stderr = logf
