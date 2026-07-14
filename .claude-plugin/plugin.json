@@ -1,0 +1,13 @@
+{
+  "name": "pantheon",
+  "version": "0.1.0",
+  "description": "Sirsi Pantheon's Claude-native surface. Skills for orchestration (conduct), the router (ctr), and persistent memory (thoth); a system-health SessionStart line; and the sirsi MCP server (scan, ghost detection, project memory, health). Thin client over the sirsi engine (install via the Sirsi Homebrew tap).",
+  "author": {
+    "name": "Sirsi",
+    "url": "https://github.com/SirsiMaster"
+  },
+  "homepage": "https://github.com/SirsiMaster/sirsi-pantheon",
+  "license": "MIT",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}
