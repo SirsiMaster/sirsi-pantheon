@@ -189,9 +189,15 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		ready, detail := agentWakeReady(cfg)
 		status.Detail = detail
 		switch {
+		case len(status.LiveThreads) > 0:
+			// A live session/thread is already consuming this agent's inbox, so it
+			// is NOT blocked even without an armed background wake path (the
+			// leak-guard case: we deliberately do not install a wake LaunchAgent on
+			// top of a live session). Healthy.
+			status.Status = SupervisorStatusWakeable
 		case !ready && status.PendingCount > 0:
 			status.Status = SupervisorStatusBlocked
-		case len(status.StaleThreads) > 0 && len(status.LiveThreads) == 0:
+		case len(status.StaleThreads) > 0:
 			status.Status = SupervisorStatusStale
 		case ready:
 			status.Status = SupervisorStatusWakeable
@@ -368,14 +374,18 @@ func agentWakeReady(cfg AgentConfig) (bool, string) {
 		return true, cfg.Wake.MCPServer
 	case WakeLaunchAgent:
 		// The per-agent pull-loop LaunchAgent (installed by `sirsi router
-		// wake-install`). Recognized as a real wake path — matching the canonical
-		// ProbeWakeReadiness — so the supervisor/board never false-flags a
-		// launchagent-wake agent as "blocked / unsupported mechanism".
+		// wake-install`). Recognized as a real wake mechanism — no longer the
+		// catch-all "unsupported" — but READY only when the plist is actually
+		// installed, exactly matching the canonical ProbeWakeReadiness. If it is
+		// configured-but-not-installed, the agent genuinely cannot be woken yet,
+		// so report NOT ready with the actionable fix: an agent sitting on pending
+		// items then surfaces as Blocked (current + fixable), and the board never
+		// disagrees with the wake pass (which files the same item as unavailable).
 		label := WakeLaunchAgentLabel(cfg.ID)
 		if WakeLaunchAgentInstalled(cfg.ID) {
 			return true, label
 		}
-		return true, label + " (install with `sirsi router wake-install`)"
+		return false, label + " not installed — run `sirsi router wake-install`"
 	default:
 		if strings.TrimSpace(cfg.WakeMechanism()) == "" {
 			return false, "no wake mechanism configured"
