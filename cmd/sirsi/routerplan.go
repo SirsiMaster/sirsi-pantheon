@@ -102,6 +102,8 @@ func runRouterPlan(_ *cobra.Command, _ []string) error {
 			for _, p := range actionable {
 				fmt.Printf("      → %-46s dispatch → %s\n", truncID(p.ItemID), p.To)
 			}
+		} else if len(plans) == 0 {
+			fmt.Println("✅ Queue empty — nothing pending.")
 		} else if len(owner) == len(plans) {
 			fmt.Println("✅ Honest idle — every remaining item is owner-gated; nothing else is stuck.")
 		}

@@ -36,7 +36,19 @@ type ExecPlan struct {
 	Tier   int          `json:"tier"` // 0 dispatch-none, 2 dispatch-agent; owner-gated = -1
 	Gate   GateDecision `json:"gate"`
 	Reason string       `json:"reason"`
+
+	// authorized is an UNFORGEABLE dispatch token: only PlanExecution sets it, and
+	// only on a non-gated ActDispatch. It is unexported, so no caller in another
+	// package can build an ExecPlan that Actionable() will act on by setting
+	// Action=ActDispatch directly, and it does not survive JSON (a decoded plan is
+	// never actionable — the caller must re-plan). This makes the safety rail a
+	// type property, not just a convention in a comment (review finding (a)).
+	authorized bool
 }
+
+// Authorized reports whether this plan carries a genuine dispatch authorization
+// minted by PlanExecution — the executor (P3) MUST gate every side effect on this.
+func (p ExecPlan) Authorized() bool { return p.authorized }
 
 // PlanExecution decides what the loop does with one item. It ALWAYS classifies
 // the gate first, so a gated item can never fall through to an action — the
@@ -56,9 +68,10 @@ func PlanExecution(item work.Item, autonomous bool) ExecPlan {
 		}
 	}
 	// Autonomous ON + not gated: hand it to the target agent to work (Tier-2).
+	// authorized:true is the only place this token is minted.
 	return ExecPlan{
 		ItemID: item.ID, To: item.To, Action: ActDispatch, Tier: 2, Gate: g,
-		Reason: "non-gated — dispatch to " + item.To,
+		Reason: "non-gated — dispatch to " + item.To, authorized: true,
 	}
 }
 
@@ -91,7 +104,10 @@ func OwnerQueue(plans []ExecPlan) []ExecPlan {
 func Actionable(plans []ExecPlan) []ExecPlan {
 	var a []ExecPlan
 	for _, p := range plans {
-		if p.Action == ActDispatch {
+		// BOTH the action AND the unforgeable authorization — a plan whose Action
+		// was set to ActDispatch by hand (or decoded from JSON) has authorized=false
+		// and can never be acted on.
+		if p.Action == ActDispatch && p.authorized {
 			a = append(a, p)
 		}
 	}

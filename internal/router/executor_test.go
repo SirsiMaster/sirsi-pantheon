@@ -42,6 +42,22 @@ func TestExecutorNeverActsOnGated(t *testing.T) {
 	}
 }
 
+// The dispatch authorization is unforgeable: a plan constructed by hand (or
+// decoded from JSON) with Action=ActDispatch but no minted token is never
+// actionable — only PlanExecution's genuine output is. This closes the
+// executor-boundary bypass the review found: the rail is a type property, not a
+// convention.
+func TestForgedDispatchIsNotActionable(t *testing.T) {
+	forged := ExecPlan{ItemID: "x", To: "claude-x", Action: ActDispatch} // authorized == false
+	if len(Actionable([]ExecPlan{forged})) != 0 {
+		t.Fatal("SAFETY BREACH: a hand-built/unauthorized ActDispatch plan is actionable")
+	}
+	genuine := PlanExecution(work.Item{ID: "y", To: "claude-x", Title: "review the PR"}, true)
+	if !genuine.Authorized() || len(Actionable([]ExecPlan{genuine})) != 1 {
+		t.Fatal("a genuine non-gated dispatch plan should be authorized + actionable")
+	}
+}
+
 // Owner-assigned items also never act.
 func TestExecutorGatesOwnerAssigned(t *testing.T) {
 	plan := PlanExecution(work.Item{ID: "i", To: "user", Title: "anything benign"}, true)
