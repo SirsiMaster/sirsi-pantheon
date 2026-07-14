@@ -96,10 +96,15 @@ func (d *RouterDispatcher) WakeReadiness() ([]router.AgentWakeHealth, error) {
 // (Named BrainStatus, not Status, to avoid colliding with the model-download
 // Status in downloader.go — same package, different concern.)
 type BrainStatus struct {
-	Level    int
-	Roles    []RoleStatus
-	Registry RegistryHealth
-	Node     NodeHeadroom
+	Level int
+	// Autonomous is the master action switch (config.Autonomous): whether
+	// Pantheon may ACT unattended (true) or only observe + propose (false).
+	// Surfaced alongside Level so a viewer sees both "how smart" and "may it
+	// act" in one glance — the menubar toggle reads this over JSON.
+	Autonomous bool
+	Roles      []RoleStatus
+	Registry   RegistryHealth
+	Node       NodeHeadroom
 }
 
 // RoleStatus is one role's plugged provider + its derived tier.
@@ -148,7 +153,7 @@ func tierForRole(role Role, p Provider) string {
 // always renders and `doctor` can diagnose — a dead router must not blank the
 // brain view.
 func Collect(cfg Config, d Dispatcher) BrainStatus {
-	st := BrainStatus{Level: cfg.Level()}
+	st := BrainStatus{Level: cfg.Level(), Autonomous: cfg.AutonomousMode()}
 	for _, r := range Roles() {
 		p := cfg.Provider(r)
 		st.Roles = append(st.Roles, RoleStatus{Role: r, Provider: p, Tier: tierForRole(r, p)})
