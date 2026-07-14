@@ -4,9 +4,52 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
+
+// The self-trigger fix: once an item is armed, a second wake pass must NOT rewrite
+// its file (which would bump mtime and — with items/ as a launchd WatchPath —
+// self-trigger an endless conduit tick loop). A steady state produces no writes.
+func TestWakePassArmedIsIdempotent(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot)
+
+	now := time.Now().UTC()
+	host, _ := os.Hostname()
+	if _, err := RegisterThread(routerRoot, &Thread{
+		ThreadID: "thr-live", AgentID: "claude-pantheon", Surface: "claude", Repo: repoRoot,
+		Status: ThreadStatusActive, StartedAt: now, LastSeenAt: now, PID: os.Getpid(), Host: host,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := work.Send(routerRoot, "claude-home", "claude-pantheon", "do a thing", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemPath := filepath.Join(routerRoot, "items", id+".md")
+
+	if _, wErr := WakePass(routerRoot, now); wErr != nil { // arms it
+		t.Fatal(wErr)
+	}
+	st1, err := os.Stat(itemPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(15 * time.Millisecond)
+	if _, wErr := WakePass(routerRoot, now); wErr != nil { // must be a no-write
+		t.Fatal(wErr)
+	}
+	st2, _ := os.Stat(itemPath)
+	if !st1.ModTime().Equal(st2.ModTime()) {
+		t.Errorf("SELF-TRIGGER: an already-armed item was rewritten on a second pass (mtime %v → %v)", st1.ModTime(), st2.ModTime())
+	}
+}
 
 // The action-time gate (second line of defense) catches a dangerous ACTION even
 // when the dispatching item looked benign.

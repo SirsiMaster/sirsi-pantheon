@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -66,7 +67,14 @@ func conduitPlistPath() string {
 	return filepath.Join(home, "Library", "LaunchAgents", conduitLabel+".plist")
 }
 
-func conduitPlist(sirsiBin, workDir, itemsDir string, interval int) string {
+// xmlEscape makes a string safe to interpolate into the plist XML (paths with
+// & < > would otherwise corrupt it and break arming).
+func xmlEscape(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
+	return r.Replace(s)
+}
+
+func conduitPlist(sirsiBin, workDir, itemsDir, logPath string, interval int) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -83,6 +91,8 @@ func conduitPlist(sirsiBin, workDir, itemsDir string, interval int) string {
 	</array>
 	<key>StartInterval</key>
 	<integer>%[5]d</integer>
+	<key>ThrottleInterval</key>
+	<integer>%[5]d</integer>
 	<key>WatchPaths</key>
 	<array>
 		<string>%[4]s</string>
@@ -94,12 +104,12 @@ func conduitPlist(sirsiBin, workDir, itemsDir string, interval int) string {
 	<key>ProcessType</key>
 	<string>Background</string>
 	<key>StandardOutPath</key>
-	<string>/tmp/sirsi-conduit-tick.log</string>
+	<string>%[6]s</string>
 	<key>StandardErrorPath</key>
-	<string>/tmp/sirsi-conduit-tick.log</string>
+	<string>%[6]s</string>
 </dict>
 </plist>
-`, conduitLabel, sirsiBin, workDir, itemsDir, interval)
+`, xmlEscape(conduitLabel), xmlEscape(sirsiBin), xmlEscape(workDir), xmlEscape(itemsDir), interval, xmlEscape(logPath))
 }
 
 func runConduitArm(_ *cobra.Command, _ []string) error {
@@ -117,12 +127,20 @@ func runConduitArm(_ *cobra.Command, _ []string) error {
 	if stable, sErr := router.ResolveStableBinary(repoRoot, bin); sErr == nil {
 		bin = stable
 	}
+	// Floor the interval: a tiny interval multiplies launchd wakeups + disk
+	// churn for no benefit (WatchPaths already fires on inbox change).
+	if conduitArmInterval < 30 {
+		conduitArmInterval = 30
+	}
 	itemsDir := filepath.Join(repoRoot, ".agents", "idea-router", "items")
+	logDir := filepath.Join(repoRoot, ".agents", "idea-router", "logs")
+	_ = os.MkdirAll(logDir, 0o755)
+	logPath := filepath.Join(logDir, "conduit-tick.log")
 	plistPath := conduitPlistPath()
 	if err := os.MkdirAll(filepath.Dir(plistPath), 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}
-	if err := os.WriteFile(plistPath, []byte(conduitPlist(bin, repoRoot, itemsDir, conduitArmInterval)), 0o644); err != nil {
+	if err := os.WriteFile(plistPath, []byte(conduitPlist(bin, repoRoot, itemsDir, logPath, conduitArmInterval)), 0o644); err != nil {
 		return fmt.Errorf("write conduit plist: %w", err)
 	}
 	// Reload idempotently: bootout any prior instance, then bootstrap.

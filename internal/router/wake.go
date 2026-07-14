@@ -317,7 +317,13 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 		}
 
 		if armed[agentID] {
-			setWake(item.ID, work.WakeAnnotation{Status: WakeStatusArmed})
+			// Idempotent: only WRITE when the status actually changes to armed.
+			// Re-writing an already-armed item every pass bumps its mtime, and
+			// when items/ is a launchd WatchPath (the conduit mesh) that would
+			// self-trigger an endless tick loop. A steady state produces no writes.
+			if item.WakeStatus != WakeStatusArmed {
+				setWake(item.ID, work.WakeAnnotation{Status: WakeStatusArmed})
+			}
 			rep.Armed = append(rep.Armed, WakeOutcome{ItemID: item.ID, AgentID: agentID})
 			continue
 		}
@@ -330,7 +336,10 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 		}
 
 		if !health.Ready {
-			setWake(item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
+			// Idempotent (same reason as the armed branch): only write on change.
+			if item.WakeStatus != WakeStatusUnavailable {
+				setWake(item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
+			}
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Detail: health.Detail})
 			continue
 		}
