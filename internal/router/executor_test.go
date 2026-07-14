@@ -1,10 +1,61 @@
 package router
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
+
+// The action-time gate (second line of defense) catches a dangerous ACTION even
+// when the dispatching item looked benign.
+func TestGateActionIsTheSecondLine(t *testing.T) {
+	if !GateAction("terraform destroy the prod stack").Gated {
+		t.Error("action-time gate must catch `terraform destroy`")
+	}
+	if GateAction("run the unit tests and report results").Gated {
+		t.Error("action-time gate must let a benign action run")
+	}
+}
+
+// End-to-end: a gated item must never be woken through ExecuteActionable, even
+// when planned alongside a benign one under autonomous=ON.
+func TestExecuteActionableNeverWakesGated(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot) // registers claude-pantheon (cli-spawn)
+
+	benign, err := work.Send(routerRoot, "claude-home", "claude-pantheon", "review the PR", "take a look")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gated, err := work.SendTyped(routerRoot, "claude-home", "claude-pantheon", "deploy to production now", "decision", "cut it over")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := work.ListInbox(routerRoot, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExecuteActionable(routerRoot, Actionable(PlanAll(items, true))); err != nil {
+		t.Fatal(err)
+	}
+
+	after, _ := work.ListInbox(routerRoot, "")
+	byID := map[string]work.Item{}
+	for _, it := range after {
+		byID[it.ID] = it
+	}
+	if s := byID[gated].WakeStatus; s == WakeStatusArmed || s == WakeStatusAttempted {
+		t.Errorf("SAFETY BREACH: gated item %s was woken (wake_status=%q)", gated, s)
+	}
+	_ = benign // the benign item may or may not arm depending on host wake-readiness; the invariant under test is that the GATED one never does.
+}
 
 // P6 — THE safety invariant of ADR-039: with autonomous FULLY ON, no gated item
 // may ever be actionable. Runs every dangerous phrasing from the gate audit
