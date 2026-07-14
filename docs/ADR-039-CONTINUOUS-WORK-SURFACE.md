@@ -74,7 +74,7 @@ flowchart TD
 - **P2 — Tiered executor (planner)** (`executor.go` — `PlanExecution`/`PlanAll`/`Actionable`/`OwnerQueue`). ✅ **shipped.** PURE decision: gate first → owner-queue; else autonomous-off → propose; else → dispatch to the target agent (T2). Side-effect free so P6 is provable; the actual dispatch (side effects) is P3, gated behind this planner.
 - **P3 — The tick does work**: fold the planner's side effects into `ctr` (autonomous-ON) so each tick reconciles → plans → dispatches `Actionable()` via `WakePass`. Reuses CTR's surface + reconcile (#208). *Must land P6's guarantee first (below) — it does.*
 - **P4 — Self-healing trigger mesh**: fsnotify + hooks + git + launchd + self-reschedule; each tick re-arms dead triggers; drain-before-rearm (the fork-storm lesson).
-- **P5 — Owner-queue surface**: `OwnerQueue()` rendered in one place across CLI / menubar / Nexus; "stalled non-gated item" alarm.
+- **P5 — Owner-queue surface** (`sirsi router plan` [`--json`]). ✅ **shipped (CLI).** Runs the executor over the live queue and renders the honest split — needs-owner (grouped by gate class + reason), actionable, proposals — plus the "honest idle" state. Read-only. Menubar/Nexus renderers consume the same `--json` next.
 - **P6 — Ma'at invariant** (`executor_test.go::TestExecutorNeverActsOnGated`). ✅ **shipped.** Test-enforced: the entire dangerous corpus, planned under autonomous=ON, is always `ActGate` and never `Actionable`; gate table non-empty (`TestGateTableArmed`). The safety rail exists BEFORE P3 flips the loop to act.
 
 ### 3. Key Decision Points
