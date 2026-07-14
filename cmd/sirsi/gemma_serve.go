@@ -129,10 +129,16 @@ func gemmaServerStart(home string) error {
 	// constants. NodeCapacity.DynamicReserve accounts for the OS + live Claude/Codex
 	// RSS + a margin that scales with the box (cross-agent protection is the point).
 	nc := guard.SampleNodeCapacity()
-	// BINDING REFUSE GATE (claude-home): MaxConcurrency floors at 1, so it never
-	// refuses on its own — gate on Fits FIRST and refuse-rather-than-OOM when one
-	// model won't fit within the dynamic reserve.
-	if !nc.Fits(modelBytes) {
+	// BINDING REFUSE GATE: refuse-rather-than-OOM. nc.Fits requires 2×model +
+	// reserve — that headroom existed because an UNCAPPED broker could balloon a
+	// full model's worth of working memory (the 06-18/07-14 Jetsam). This broker
+	// now launches with hard runtime caps (mx.set_cache_limit on the buffer pool +
+	// --prompt-cache-bytes on the KV cache, #215), so it CANNOT grow past
+	// model + capped-caches. The 2× is therefore obsolete: require 1×model + the
+	// dynamic reserve, which keeps a capable model (gemma-4-12B) runnable without
+	// the balloon risk the 2× guarded against. The runtime cap is the real floor.
+	need := modelBytes + nc.DynamicReserve()
+	if nc.FreeRAM < need {
 		return fmt.Errorf("Pantheon refuses to start the broker: a ~%d GB model + ~%d GB dynamic reserve (OS + live agents + margin) > %d GB free. Free up memory first — the broker will not OOM your machine",
 			modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
 	}
