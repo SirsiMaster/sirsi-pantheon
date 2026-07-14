@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 38 (+ ADR-031-A/B/C sub-decisions)** | **Next available: ADR-039**
+**Total ADRs: 40 (+ ADR-031-A/B/C sub-decisions)** | **Next available: ADR-041**
 
 ---
 
@@ -135,6 +135,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-036 | **Accepted** — Router v2 Durable Dispatch (store authority, one facade, event wake, migration+dual-read; cutover mechanism shipped behind `SIRSI_ROUTER_STORE_WAKE`, flip is a live-verified deploy step) |
 | ADR-037 | **Accepted** — Daemon-Owned Fabric (the ship-complete control plane: Tier-0 daemon + store authority; MCP/CLI/hooks are thin adapters; self-healing via `doctor`; the completion-proof — every conversation-exercised capability must become a shipped, deterministic, test-enforced lever) |
 | ADR-038 | **Accepted** — Pantheon Brand (Emerald + Gold) & the Universal Surface (`internal/brand` is the sole palette; `sirsi brand tokens --format css\|swift\|json` derives every non-Go surface; one supervisor report producer + thin renderers put the dashboard in CLI/TUI/menubar/Swift/web; green = Sirsi, green + gold = Pantheon; supersedes A10 v1) |
+| ADR-040 | **Accepted** — Load-Bearing Process Guard (`docs/ADR-040-LOAD-BEARING-PROCESS-GUARD.md`). The RAM slayer must not SIGKILL an actively-serving, launchd-managed local model server to "reclaim RAM" — killing it reclaims nothing durable (respawn + model reload) and severs a live capability. Generalizes Rule A5 (Hapi GPU inference protection) to RAM: `getProcessListWith` captures full argv (`ps …,command` not `,comm`) so identity is no longer truncated; new `internal/guard/loadbearing.go` `isLoadBearingWith` classifies model servers from argv and gates both `SlayWith` and `KillTrueOrphans` at the single `isProtectedProcessWith` chokepoint, sparing them with a reason that names the sizing lever (lower RAM cap / smaller model / evict-idle). Forensic origin 2026-07-14: gemma-capped-server.py (PID 1210, 25.8 GB) misdiagnosed as a leak. |
 | ADR-039 | **Accepted** — The Continuous Wake-and-Work Surface (Honest-Gate Autonomy). Owner directive 2026-07-14: "models in effort at all times except when there is an honest user gate." Continuity comes from a redundant self-healing trigger mesh (each tick works + heals + reschedules), not a resident daemon; the local model is always in effort at Tier-0; the loop runs full-auto and stops only per-item at a DETERMINISTIC honest gate (`internal/router/gate.go` `ClassifyGate` — safety/founder/irreversible/escalate, hardcoded like safety.go, model may only ADD gates); rides #203 `brain.AutonomousMode()`. P1 (gate classifier) shipped; P2-P6 decomposed. |
 | ADR-040 | Next available |
 

@@ -315,7 +315,12 @@ func parseVMStatValue(line string) int64 {
 
 // getProcessListWith returns all running processes with memory info using the provided platform.
 func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
-	out, err := p.Command("ps", "-axo", "pid,rss,vsz,%cpu,user,comm")
+	// Capture the FULL argv (`command`), not just the executable path (`comm`).
+	// `comm` truncates identity: a 25.8 GB model server shows only as ".../Python",
+	// hiding that it is gemma-capped-server.py — the exact truncation that let a
+	// load-bearing server be mistaken for a nameless RAM hog (ADR-040). The load-
+	// bearing guard and classifier both need the args to identify a model server.
+	out, err := p.Command("ps", "-axo", "pid,rss,vsz,%cpu,user,command")
 	if err != nil {
 		return nil, err
 	}
@@ -342,18 +347,21 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 		vsz, _ := strconv.ParseInt(fields[2], 10, 64)
 		cpu, _ := strconv.ParseFloat(fields[3], 64)
 		user := fields[4]
-		comm := strings.Join(fields[5:], " ")
-
-		// Extract just the binary name from path
-		name := comm
-		if idx := strings.LastIndex(comm, "/"); idx >= 0 {
-			name = comm[idx+1:]
+		// fields[5] is the executable (possibly a full path); fields[5:] is the
+		// full argv. Name = basename of the executable ONLY — never the last "/"
+		// in the whole line, which would land inside a path-valued arg such as
+		// `--model mlx-community/gemma-4-12B-it-8bit`.
+		exe := fields[5]
+		command := strings.Join(fields[5:], " ")
+		name := exe
+		if idx := strings.LastIndex(exe, "/"); idx >= 0 {
+			name = exe[idx+1:]
 		}
 
 		processes = append(processes, ProcessInfo{
 			PID:        pid,
 			Name:       name,
-			Command:    comm,
+			Command:    command,
 			RSS:        rss * 1024, // ps reports RSS in KB
 			VSZ:        vsz * 1024,
 			CPUPercent: cpu,

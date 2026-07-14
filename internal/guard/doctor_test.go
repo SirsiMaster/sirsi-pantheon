@@ -53,7 +53,7 @@ Pages occupied by compressor:             25000.`,
 /dev/disk3s1  460Gi  230Gi  230Gi    50%  1234567 9876543    11%   /`,
 
 			// ps for getProcessListWith (used by checkTopMemoryProcesses)
-			"ps -axo pid,rss,vsz,%cpu,user,comm": `  PID   RSS    VSZ  %CPU USER     COMM
+			"ps -axo pid,rss,vsz,%cpu,user,command": `  PID   RSS    VSZ  %CPU USER     COMM
   100  51200  102400  1.0 user     /usr/bin/node
   200  30720   61440  0.5 user     /usr/local/bin/gopls
   300  20480   40960  0.2 user     /Applications/Safari.app/Contents/MacOS/Safari
@@ -578,7 +578,7 @@ func TestDoctorWith_MemoryHog(t *testing.T) {
 	m := healthyMock()
 
 	// Inject a process using > 4 GB RSS (4194304 KB = 4 GB in KB for ps output)
-	m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = `  PID   RSS    VSZ  %CPU USER     COMM
+	m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,command"] = `  PID   RSS    VSZ  %CPU USER     COMM
   100  5242880  10485760  5.0 user     /usr/bin/node
   200  30720   61440  0.5 user     /usr/local/bin/gopls`
 
@@ -765,7 +765,7 @@ func TestCheckSpotlightStorm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := healthyMock()
-			m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = tt.ps
+			m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,command"] = tt.ps
 
 			report := &DoctorReport{}
 			checkSpotlightStorm(m, report)

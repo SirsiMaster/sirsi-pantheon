@@ -46,6 +46,10 @@ type SlayResult struct {
 	BytesFreed int64
 	Errors     []error
 	DryRun     bool
+	// Protected lists load-bearing processes that were spared with the reason
+	// why (ADR-040), so the surface can explain that a kill would not have
+	// reclaimed durable RAM and point at the real lever. Additive (Rule A15).
+	Protected []ProtectedProcess
 }
 
 // Slay terminates processes matching the target group using the current platform.
@@ -90,6 +94,15 @@ func SlayWith(p platform.Platform, target SlayTarget, dryRun bool) (*SlayResult,
 	for _, proc := range targets {
 		if isProtectedProcessWith(p, proc) {
 			result.Skipped++
+			// Load-bearing servers are spared WITH a reason (ADR-040) so the
+			// surface can explain why a kill would reclaim no durable RAM.
+			if lb, reason := isLoadBearingWith(p, proc); lb {
+				result.Protected = append(result.Protected, ProtectedProcess{
+					PID:    proc.PID,
+					Name:   proc.Name,
+					Reason: reason,
+				})
+			}
 			continue
 		}
 		safeTargets = append(safeTargets, proc)
@@ -150,6 +163,15 @@ func isProtectedProcessWith(p platform.Platform, proc ProcessInfo) bool {
 	// Antigravity core — killing this crashes the IDE.
 	// Uses Contains because the full path is in proc.Name.
 	if strings.Contains(nameLower, "language_server_macos_arm") {
+		return true
+	}
+
+	// Load-bearing model / inference servers (ADR-040). Killing one reclaims no
+	// durable RAM — it is launchd-respawned and reloads the model — and severs a
+	// live service. Generalizes Rule A5 (Hapi GPU) to the RAM slayer. This gate
+	// also protects the orphan-kill path (KillTrueOrphans), which is especially
+	// dangerous here: a launchd daemon has PPID=1 and looks like a true orphan.
+	if lb, _ := isLoadBearingWith(p, proc); lb {
 		return true
 	}
 

@@ -47,7 +47,7 @@ sync_protocol:
 # Core scan engine: internal/jackal/ (81 rules across 7 domains)
 # Ghost hunter: internal/ka/ (17 macOS locations)
 # File dedup: internal/mirror/ (3-phase hash, GUI + CLI)
-# RAM audit: internal/guard/ (process grouping, orphan detection)
+# RAM audit: internal/guard/ (process grouping, orphan detection, load-bearing guard ADR-040)
 # Policy engine: internal/scales/ (YAML enforcement)
 # Neural brain: internal/brain/ (model download + classify)
 # MCP server: internal/mcp/ (AI IDE integration, 5 tools including Thoth)

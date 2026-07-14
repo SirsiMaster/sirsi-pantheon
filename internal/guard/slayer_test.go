@@ -25,7 +25,7 @@ func TestSlayWith_NodeLive(t *testing.T) {
 	m := &platform.Mock{
 		// Simulate a node process
 		CommandResults: map[string]string{
-			"ps -axo pid,rss,vsz,%cpu,user,comm": "  PID   RSS   VSZ  %CPU USER     COMM\n 9999 51200 81920 1.5 user node",
+			"ps -axo pid,rss,vsz,%cpu,user,command": "  PID   RSS   VSZ  %CPU USER     COMM\n 9999 51200 81920 1.5 user node",
 		},
 	}
 	result, err := SlayWith(m, SlayNode, false)

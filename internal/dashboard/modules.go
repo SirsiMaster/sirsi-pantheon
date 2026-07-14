@@ -205,13 +205,26 @@ func (s *Server) apiSlay(w http.ResponseWriter, r *http.Request) {
 		errStrings = append(errStrings, e.Error())
 	}
 
+	// Surface load-bearing servers that were spared, with the reason (ADR-040),
+	// so the menubar/dashboard explains why a kill would reclaim no durable RAM
+	// and points the operator at the real lever instead of the SIGKILL.
+	protected := make([]map[string]interface{}, 0, len(result.Protected))
+	for _, prot := range result.Protected {
+		protected = append(protected, map[string]interface{}{
+			"pid":    prot.PID,
+			"name":   prot.Name,
+			"reason": prot.Reason,
+		})
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"target":  target,
-		"dry_run": result.DryRun,
-		"killed":  result.Killed,
-		"failed":  result.Failed,
-		"skipped": result.Skipped,
-		"errors":  errStrings,
+		"target":    target,
+		"dry_run":   result.DryRun,
+		"killed":    result.Killed,
+		"failed":    result.Failed,
+		"skipped":   result.Skipped,
+		"errors":    errStrings,
+		"protected": protected,
 	})
 }
 

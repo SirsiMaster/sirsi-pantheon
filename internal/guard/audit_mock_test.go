@@ -16,7 +16,7 @@ Pages active:                 200000.
 Pages inactive:               150000.
 Pages wired:                  100000.
 `,
-			"ps -axo pid,rss,vsz,%cpu,user,comm": `  PID   RSS   VSZ  %CPU USER     COMM
+			"ps -axo pid,rss,vsz,%cpu,user,command": `  PID   RSS   VSZ  %CPU USER     COMM
     1   1024  4096  0.1  root     /sbin/launchd
   100  51200  81920 1.5  user     /usr/local/bin/node
   200  102400 204800 2.0 user     /usr/local/bin/gopls
@@ -59,7 +59,7 @@ func TestAuditWith_MockLinux(t *testing.T) {
 Mem:    16000000000  8000000000  4000000000   100000000  4000000000  7000000000
 Swap:    2000000000           0  2000000000
 `,
-			"ps -axo pid,rss,vsz,%cpu,user,comm": `  PID   RSS   VSZ  %CPU USER     COMM
+			"ps -axo pid,rss,vsz,%cpu,user,command": `  PID   RSS   VSZ  %CPU USER     COMM
     1   1024  4096  0.0  root     systemd
   123 204800 500000 5.0  user     node
 `,
