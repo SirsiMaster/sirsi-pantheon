@@ -242,6 +242,14 @@ type WakePassReport struct {
 // "Armed" is heartbeat freshness only (constraint 2) — it deliberately does NOT
 // consult the loop-monitor pgrep gate, so it never widens #79/#80 to pull-loops.
 func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
+	return WakePassFiltered(routerRoot, now, nil)
+}
+
+// WakePassFiltered is WakePass restricted to the items `allow` accepts. A nil
+// filter is allow-all, so WakePass is byte-identical. The continuous work loop
+// (ADR-039 P3) passes a filter of exactly the gate-cleared, dispatch-authorized
+// item ids, so a wake pass can never touch an owner-gated item.
+func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bool) (WakePassReport, error) {
 	var rep WakePassReport
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -302,9 +310,20 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 		if agentID == "" {
 			continue
 		}
+		// The continuous loop's gate/authorization filter: skip any item not
+		// explicitly cleared for dispatch (owner-gated items never pass).
+		if allow != nil && !allow(item) {
+			continue
+		}
 
 		if armed[agentID] {
-			setWake(item.ID, work.WakeAnnotation{Status: WakeStatusArmed})
+			// Idempotent: only WRITE when the status actually changes to armed.
+			// Re-writing an already-armed item every pass bumps its mtime, and
+			// when items/ is a launchd WatchPath (the conduit mesh) that would
+			// self-trigger an endless tick loop. A steady state produces no writes.
+			if item.WakeStatus != WakeStatusArmed {
+				setWake(item.ID, work.WakeAnnotation{Status: WakeStatusArmed})
+			}
 			rep.Armed = append(rep.Armed, WakeOutcome{ItemID: item.ID, AgentID: agentID})
 			continue
 		}
@@ -317,7 +336,10 @@ func WakePass(routerRoot string, now time.Time) (WakePassReport, error) {
 		}
 
 		if !health.Ready {
-			setWake(item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
+			// Idempotent (same reason as the armed branch): only write on change.
+			if item.WakeStatus != WakeStatusUnavailable {
+				setWake(item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
+			}
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Detail: health.Detail})
 			continue
 		}
