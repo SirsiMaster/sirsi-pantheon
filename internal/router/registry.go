@@ -136,12 +136,17 @@ func (cfg *AgentConfig) Validate() error {
 		return fmt.Errorf("agent %q: type is required", cfg.ID)
 	}
 	switch cfg.WakeMechanism() {
-	case "", "cli-spawn":
+	case "", "cli-spawn", WakeLaunchAgent:
+		// launchagent is a cli-spawn wrapped in a resident launchd pull-loop
+		// (`sirsi router wake-install`): it ultimately spawns the agent's command,
+		// so it carries the same requirements. It is a first-class mechanism —
+		// NOT the catch-all "unsupported" default, which was the true source of
+		// the board's false "unsupported wake mechanism launchagent" label.
 		if len(cfg.Command) == 0 {
-			return fmt.Errorf("agent %q: command array is required for cli-spawn (no shell strings)", cfg.ID)
+			return fmt.Errorf("agent %q: command array is required for %s (no shell strings)", cfg.ID, cfg.WakeMechanism())
 		}
 		if cfg.Cwd == "" {
-			return fmt.Errorf("agent %q: cwd is required for cli-spawn", cfg.ID)
+			return fmt.Errorf("agent %q: cwd is required for %s", cfg.ID, cfg.WakeMechanism())
 		}
 	case "api-call":
 		if cfg.Wake.Endpoint == "" {
