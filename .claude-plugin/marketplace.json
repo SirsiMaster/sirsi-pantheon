@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "pantheon",
+  "description": "Sirsi Pantheon — self-healing compute substrate for your Mac and your agent fleet. Memory, governance, router, and system health as Claude-native skills, commands, hooks, and MCP tools.",
+  "owner": {
+    "name": "Sirsi",
+    "url": "https://github.com/SirsiMaster"
+  },
+  "plugins": [
+    {
+      "name": "pantheon",
+      "description": "Pantheon's Claude-facing surface: orchestration (conduct), router (ctr), memory (thoth), plus the sirsi MCP server exposing scan, ghost-detection, project memory, and system health.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
