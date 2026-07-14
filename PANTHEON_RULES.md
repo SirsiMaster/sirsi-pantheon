@@ -409,6 +409,16 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Ubiquity is mandatory**: `sirsi setup` wires the shim + skill on every machine (present and future). `sirsi ctr --install` re-wires idempotently. The user-global skill (`~/.claude/skills/ctr`) makes `/ctr` known to every agent/thread; canon here + `~/Development/AGENTS.md` make it known to every repo. Like `/thoth`, it is a first-class shippable Pantheon command.
 *   **Reference**: `cmd/sirsi/ctr.go` + `cmd/sirsi/ctrinstall.go`; skill `.claude/skills/ctr/SKILL.md`; substrate `internal/router/{wake.go,strand.go,nodestatus.go}`. Custodian: 𓁢 the Router.
 
+### 2.29 Do No Harm To The Running Host — Load-Bearing Recognition (Rule A32)
+> Established July 14, 2026 by owner directive, after an agent nearly killed the process holding 25.8 GB to "reclaim RAM" — which was the local-model **broker itself** (`sirsi gemma serve`, running as `Python`). Resized instead of killed, but it exposed that Pantheon's own governor treated the Tier-0 substrate as expendable. Custodian: 𓁢 the Broker (Hapi 🌊). Decision: ADR-040. Extends A1 (Safety First) + A5 (VRAM/GPU Safety) to the host Pantheon runs ON.
+
+*   **Rule**: While the system is working, an agent — or the continuous loop, or any Pantheon governor — MUST NOT kill or starve **load-bearing Pantheon infrastructure**. The canonical load-bearing service is the local-model broker (the Tier-0 substrate the router, the reconcile, and gemma-the-builder all depend on); more may be added. Breaking the host to do the work is a governance failure.
+*   **Recognition by pidfile, not name**: `internal/guard.LoadBearingPIDs()` / `IsLoadBearing(pid)` reads the infra pidfiles (`~/.sirsi/gemma-server.pid`, `gemma-worker.pid`), excludes dead PIDs (a stale pidfile never protects a reused PID — the PID-alive lesson), and is the single authority every kill/suspend path consults. The broker runs as `Python`, so name-based protection (A24 ProtectGlyph, `isProtectedReniceTarget`) misses it — recognition MUST be by PID. `FindRunaway` never selects a load-bearing PID even as top RSS.
+*   **Right-size over kill**: the correct response to an oversized Tier-0 model (a 25 GB 12B where a 2 GB 3B belongs) is to **right-size** it (`~/.sirsi/gemma-model.conf` → a smaller model; `sirsi gemma serve --stop && sirsi gemma serve`), reclaiming the RAM while keeping the builder. Killing the broker is an absolute last resort at true emergency (imminent Jetsam) — never a routine reclaim, and **never something an agent does mid-work**. Verify the full argv before signalling any hog (`ps -p <pid>`); "biggest RSS" is not "kill me".
+*   **Gemma-the-builder is bound the same**: when the local model does build/triage work, its instructions carry this constraint — do not kill or starve Pantheon infrastructure; resize/reconfigure, never SIGKILL a serving process. Gemma must not break Pantheon while working.
+*   **Fix-don't-narrate corollary** (from the same incident): a blocker an agent has DIAGNOSED and CAN fix within remit gets FIXED on sight, never narrated back to the owner as a standing constraint (a RAM starvation reported three times but never fixed is the anti-pattern).
+*   **Reference**: `internal/guard/loadbearing.go` (+ `hapi.go` FindRunaway); ADR-040. Custodian: 𓁢 Hapi.
+
 ---
 
 ## 3. Technology Stack
