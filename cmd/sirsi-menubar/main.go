@@ -207,26 +207,6 @@ func onReady() {
 	wire(mOpsHeader, spawnTUIWindow)
 	wire(mDashboard, spawnTUIWindow)
 
-	// ── 🐺 Anubis — Hygiene ──────────────────────────────────────────────────
-	mAnubis := systray.AddMenuItem("🐺 Anubis — Hygiene", "Scan, clean, and de-ghost the workstation")
-	rrAnubis := newDeityResult(mAnubis)
-	mScan := mAnubis.AddSubMenuItem("Scan for Waste", "Scan the workstation for reclaimable space and junk")
-	mJudge := mAnubis.AddSubMenuItem("Clean Waste…", "Preview safe reclaimable waste, then confirm to move it to Trash")
-	// Full itemized manifest (Rule A1: consent needs visibility) — every safe
-	// item that will be trashed + the caution items that are excluded.
-	mReview := mAnubis.AddSubMenuItem("  ↳ Review what will be cleaned…", "See the exact list of files before confirming — opens a manifest")
-	// In-app clean confirm (Rule A1): hidden until a dry-run preview arms it.
-	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Confirm Clean", "Move the previewed SAFE waste to Trash (recoverable)")
-	mCleanConfirm.Hide()
-	mKa := mAnubis.AddSubMenuItem("Find Leftover Apps", "Detect remnants of uninstalled apps")
-	mGuard := mAnubis.AddSubMenuItem("Start Watchdog…", "Start the resource watchdog — opens in Terminal")
-	wire(mScan, func() { runService(mScan, "Scan for Waste", sirsiBin, "scan", nStore, rrAnubis) })
-	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clean Waste…", sirsiBin, nStore, rrAnubis) })
-	wire(mReview, func() { reviewCleanList() })
-	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
-	wire(mKa, func() { runService(mKa, "Find Leftover Apps", sirsiBin, "ghosts", nStore, rrAnubis) })
-	wire(mGuard, func() { spawnTUIWithCommand("guard") })
-
 	// ── 𓆄 Ma'at — Quality ────────────────────────────────────────────────────
 	mMaatTop := systray.AddMenuItem("𓆄 Ma'at — Quality", "Quality + governance audit, system diagnostics")
 	rrMaat := newDeityResult(mMaatTop)
@@ -269,6 +249,24 @@ func onReady() {
 	wire(mSeba, func() { runService(mSeba, "Hardware Info", sirsiBin, "seba hardware", nStore, rrInsight) })
 	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
 	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
+
+	// ── 🐺 Anubis — Cleanup (secondary: storage upkeep lives BELOW the live view) ─
+	// Memory is the pre-eminent view; disk cleanup is demoted here, plain-English.
+	mAnubis := systray.AddMenuItem("🐺 Anubis — Cleanup", "Find and clear files you don't need")
+	rrAnubis := newDeityResult(mAnubis)
+	mScan := mAnubis.AddSubMenuItem("Find stuff to clear", "Look for files you can safely remove")
+	mJudge := mAnubis.AddSubMenuItem("Clear stuff…", "Preview what's safe to remove, then confirm")
+	mReview := mAnubis.AddSubMenuItem("  ↳ See exactly what will be removed…", "Review the full list before anything moves")
+	mCleanConfirm := mAnubis.AddSubMenuItem("  ✓ Move it to Trash", "Move the previewed items to Trash (you can undo)")
+	mCleanConfirm.Hide()
+	mKa := mAnubis.AddSubMenuItem("Find leftover app files", "Find bits left behind by apps you deleted")
+	mGuard := mAnubis.AddSubMenuItem("Watch for problems…", "Keep an eye on apps using too much")
+	wire(mScan, func() { runService(mScan, "Find stuff to clear", sirsiBin, "scan", nStore, rrAnubis) })
+	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clear stuff…", sirsiBin, nStore, rrAnubis) })
+	wire(mReview, func() { reviewCleanList() })
+	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
+	wire(mKa, func() { runService(mKa, "Find leftover app files", sirsiBin, "ghosts", nStore, rrAnubis) })
+	wire(mGuard, func() { spawnTUIWithCommand("guard") })
 
 	systray.AddSeparator()
 
@@ -481,36 +479,57 @@ type menubarState struct {
 
 var liveState = &menubarState{}
 
-// updateTitle sets the menubar title based on the current live state.
-// Priority: guard alert (if recent) > RAM pressure > waste > clean.
+// updateTitle paints the menubar dot with a calm, meaningful color model
+// (owner 2026-06-26). The dot only "yells" (yellow) when something genuinely
+// needs the human. Precedence, worst first:
+//
+//	🔴 red    active + bad:  failing now (rogue process, high RAM pressure)
+//	🟡 yellow needs YOU:     an action only you can take (grant disk access)
+//	🟢 green  active + good: running and healthy, nothing needs you
+//	⚪️ white  active + idle: not yet reporting (startup / unknown)
+//
+// Reclaimable cache ("waste") is deliberately NOT a dot state: there is always
+// some and Pantheon cleans it itself, so it must never paint the dot yellow —
+// that was the old false alarm that kept the menubar permanently yellow.
 func (s *menubarState) updateTitle() {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	guardAlert, guardAt, ramPressure := s.guardAlert, s.guardAlertAt, s.ramPressure
+	s.mu.RUnlock()
 
-	// Guard alert takes priority if within last 5 minutes
-	if s.guardAlert != "" && time.Since(s.guardAlertAt) < 5*time.Minute {
-		systray.SetTitle("⚠️ " + s.guardAlert)
-		systray.SetTooltip(fmt.Sprintf("Process alert: %s", s.guardAlert))
+	// 🔴 RED — active + bad: something is failing right now.
+	if guardAlert != "" && time.Since(guardAt) < 5*time.Minute {
+		systray.SetTitle("🔴 " + guardAlert)
+		systray.SetTooltip(fmt.Sprintf("%s is using too much — Sirsi is calming it down", guardAlert))
+		return
+	}
+	if ramPressure == "high" {
+		systray.SetTitle("🔴 Memory")
+		systray.SetTooltip("Your Mac is running low on memory")
 		return
 	}
 
-	// High RAM pressure
-	if s.ramPressure == "high" {
-		systray.SetTitle("🔴 RAM")
-		systray.SetTooltip("High RAM pressure detected")
+	// 🟡 YELLOW — needs YOU: only when Sirsi is FULLY blind (no disk access).
+	// Partial access still works, so it stays calm — the "see everything" prompt
+	// remains a quiet menu item rather than a standing alarm. Yellow must mean a
+	// real, required action, not "you could grant more."
+	switch platform.CheckDiskAccess().Level {
+	case platform.AccessFull, platform.AccessSome:
+		// healthy enough — fall through to green/white
+	default:
+		systray.SetTitle("🟡 Needs access")
+		systray.SetTooltip("Let Sirsi see your Mac so it can keep it healthy")
 		return
 	}
 
-	// Waste found (> 1 GB)
-	if s.wasteBytes > 1<<30 {
-		systray.SetTitle("🟡 " + s.wasteLabel)
-		systray.SetTooltip(fmt.Sprintf("Infrastructure waste: %s", s.wasteLabel))
+	// 🟢 GREEN / ⚪️ WHITE — nothing needs you. White until the first refresh
+	// populates a snapshot (idle/unknown), green once confirmed healthy.
+	if ramPressure == "" {
+		systray.SetTitle("⚪️ Sirsi")
+		systray.SetTooltip("Sirsi — starting up")
 		return
 	}
-
-	// All clean
-	systray.SetTitle("🟢 Clean")
-	systray.SetTooltip("Sirsi Ecosystem Monitor — all clean")
+	systray.SetTitle("🟢 Sirsi")
+	systray.SetTooltip("Your Mac is healthy")
 }
 
 // startGuardBridge starts the guard watchdog and pipes alerts into live state.
@@ -542,8 +561,12 @@ func rescanWaste(ctx context.Context) {
 	jackal.EnrichAdvisory(res)
 	_ = jackal.Persist(res, time.Since(start))
 	liveState.mu.Lock()
-	liveState.wasteBytes = res.TotalSize
-	liveState.wasteLabel = jackal.FormatSize(res.TotalSize) + " waste"
+	// Show RECLAIMABLE waste, not the full inventory: warning-tier findings (AI
+	// model weights, data) are protected from one-click clean, so counting them
+	// would put a scary 67 GB of Gemma weights in the title that the cleaner will
+	// never remove (the false "76 GB waste" alarm). ReclaimableSize = safe+caution.
+	liveState.wasteBytes = res.ReclaimableSize
+	liveState.wasteLabel = jackal.FormatSize(res.ReclaimableSize) + " waste"
 	liveState.mu.Unlock()
 	liveState.updateTitle()
 }

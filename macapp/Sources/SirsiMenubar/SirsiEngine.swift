@@ -11,10 +11,18 @@ struct Finding: Decodable, Identifiable {
     let sizeBytes: Int64
     let severity: String
     let description: String
+    // Optional richer fields the Go scanner already persists — used by the
+    // drill-in detail so every row can answer "what / where / whose is this."
+    let rule: String?
+    let category: String?
+    let advisory: String?
+    let remediation: String?
+    let fileCount: Int?
 
     enum CodingKeys: String, CodingKey {
-        case path, severity, description
+        case path, severity, description, rule, category, advisory, remediation
         case sizeBytes = "size_bytes"
+        case fileCount = "file_count"
     }
 }
 
@@ -80,7 +88,159 @@ struct CommandResult: Decodable {
     let summary: String
     let evidence: [CRFact]
     let nextActions: [CRAction]
-    enum CodingKeys: String, CodingKey { case command, summary, evidence; case nextActions = "next_actions" }
+    let status: String?     // "ok" | "error" — drives success/failure affordances
+    let errors: [String]
+    enum CodingKeys: String, CodingKey { case command, summary, evidence, status, errors; case nextActions = "next_actions" }
+
+    // Some results omit evidence/next_actions entirely (e.g. `maat audit`'s
+    // honest "not inside a code repository"). Treat absent as empty so those
+    // still render as the structured summary card, not the raw-text fallback.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        command = try c.decodeIfPresent(String.self, forKey: .command)
+        summary = try c.decode(String.self, forKey: .summary)
+        evidence = try c.decodeIfPresent([CRFact].self, forKey: .evidence) ?? []
+        nextActions = try c.decodeIfPresent([CRAction].self, forKey: .nextActions) ?? []
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        errors = try c.decodeIfPresent([String].self, forKey: .errors) ?? []
+    }
+
+    // Did the command actually succeed? An explicit "error" status or any
+    // errors entry means no — so the toast must not flash a green ✓ over it
+    // (owner, 2026-07-09: a green checkmark sat above "Error: … not installed").
+    var ok: Bool { status != "error" && errors.isEmpty }
+}
+
+// ── Router board (fabric liveness) ───────────────────────────────────────────
+//
+// The Router view reads ~/.sirsi/router-board.json — the lean board the
+// claude-home conduit regenerates each cycle — falling back to shelling
+// `sirsi router node-status --json` when that file is absent. Both share the
+// NodeStatus contract (schema_version 1.0.0), so ONE set of Decodables covers
+// both sources. The surface only RENDERS what Go already decided; it never
+// re-aggregates fabric state.
+
+// RBAgentHealth mirrors agent_health[]. The three auth outcomes are distinct on
+// purpose (honest-auth, ADR-026): only needsLogin is an ACTIONABLE blocker the
+// operator can clear by re-authing. degraded is an inconclusive probe (a cold CLI
+// start that timed out) — informational, never an alarm. authOk==false alone is
+// ambiguous, so the surface branches on needsLogin / degraded, never authOk.
+struct RBAgentHealth: Decodable, Identifiable {
+    var id: String { agentType }
+    let agentType: String
+    let cliFound: Bool
+    let authOk: Bool
+    let needsLogin: Bool?
+    let degraded: Bool?
+    let blockedItems: Int?
+    let authError: String?
+    enum CodingKeys: String, CodingKey {
+        case agentType = "agent_type"
+        case cliFound = "cli_found"
+        case authOk = "auth_ok"
+        case needsLogin = "needs_login"
+        case degraded
+        case blockedItems = "blocked_items"
+        case authError = "auth_error"
+    }
+}
+
+// RBLaunchAgent mirrors launch_agents[]. A router daemon that is NOT installed (or
+// installed but its program is missing) is a CURRENT, fixable blocker: work
+// strands until it is installed. The menubar's "router" daemons exclude the
+// menubar app itself and the legacy daemon.
+struct RBLaunchAgent: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let role: String
+    let installed: Bool
+    let programFound: Bool?
+    let legacy: Bool?
+    enum CodingKeys: String, CodingKey {
+        case label, role, installed
+        case programFound = "program_found"
+        case legacy
+    }
+    // A router-relay daemon (not the menubar app, not the legacy daemon) that is
+    // missing or broken — the actionable set `sirsi router install-daemons` fixes.
+    var isRouterDaemon: Bool {
+        !(legacy ?? false) && role != "menubar"
+    }
+    var isBroken: Bool { isRouterDaemon && (!installed || !(programFound ?? true)) }
+}
+
+// RBStranded mirrors stranded_inbox[]: an agent with open items and no armed
+// thread to watch them — work that sits until the agent is (re)armed.
+struct RBStranded: Decodable, Identifiable {
+    var id: String { agentId }
+    let agentId: String
+    let openItems: Int
+    enum CodingKeys: String, CodingKey {
+        case agentId = "agent_id"
+        case openItems = "open_items"
+    }
+}
+
+// RouterBoard is the decoded fabric view. Only the fields the surface renders are
+// modeled; unknown fields are ignored (additive-tolerant, ADR-026).
+struct RouterBoard: Decodable {
+    let schemaVersion: String?
+    let totalPending: Int?
+    let agentHealth: [RBAgentHealth]?
+    let launchAgents: [RBLaunchAgent]?
+    let strandedInbox: [RBStranded]?
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case totalPending = "total_pending"
+        case agentHealth = "agent_health"
+        case launchAgents = "launch_agents"
+        case strandedInbox = "stranded_inbox"
+    }
+}
+
+// ── CTR thread roster — the ambient "live threads / heartbeat" board ──────────
+// Owner directive 20260709-182003: the CTR board must be an ALWAYS-VISIBLE
+// passive surface, not something you run `sirsi thread list` to see. TWRow is
+// one raw per-thread record from `sirsi thread list --json`; AgentHeartbeat
+// aggregates them by agent (the raw list is ~72 rows, many claude-home CCD
+// sessions — reference_claude_home_ccd_duplicate_records — so a per-agent roll-up
+// is the at-a-glance ambient view the owner asked for).
+struct TWRow: Decodable {
+    let idleSeconds: Double
+    let stale: Bool
+    let thread: Inner
+    struct Inner: Decodable {
+        let agentId: String?
+        let surface: String?
+        let status: String?
+        let watches: [String]?
+        enum CodingKeys: String, CodingKey { case agentId = "agent_id", surface, status, watches }
+    }
+    enum CodingKeys: String, CodingKey { case idleSeconds = "idle_seconds", stale, thread }
+}
+
+// AgentHeartbeat is one roster row: an agent, its thread liveness counts, the
+// freshest thread's idle age (the heartbeat), and the surfaces it runs on.
+struct AgentHeartbeat: Identifiable {
+    let agent: String
+    let live: Int
+    let idle: Int
+    let staleN: Int
+    let freshestIdle: Double     // seconds since the freshest thread was last seen
+    let surfaces: [String]
+    var id: String { agent }
+    var total: Int { live + idle + staleN }
+    // Status semantics match the rest of the surface (surfaces-current+actionable):
+    // 🟢 something live, 💤 only idle, ⚠️ only stale (the one genuinely actionable
+    // state — a stale thread may need reaping).
+    var glyph: String {
+        if live > 0 { return "🟢" }
+        if idle > 0 { return "💤" }
+        return "⚠️"
+    }
+    var isStale: Bool { live == 0 && idle == 0 && staleN > 0 }
+    // Heartbeat pulse fraction (1 = just seen, →0 as it goes quiet over ~10 min).
+    var pulse: Double { max(0, min(1, 1 - freshestIdle / 600)) }
 }
 
 // ActivityEntry is one line of the provenance ledger — every action taken from
@@ -142,6 +302,205 @@ final class SirsiEngine: ObservableObject {
         return n == 0 ? "all healthy" : "\(n) issue\(n == 1 ? "" : "s")"
     }
 
+    // ── Router board (fabric liveness) ───────────────────────────────────────
+    @Published var routerBoard: RouterBoard?
+    @Published var routerLoading = false
+    private let routerBoardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
+
+    // ── CTR thread roster (ambient heartbeat board) ──────────────────────────
+    @Published var threadRoster: [AgentHeartbeat] = []
+    @Published var threadsLoading = false
+    @Published var threadsTotal = 0   // total live threads across all agents
+
+    // loadThreads reads the live CTR board (`sirsi thread list --json`) and rolls
+    // it up per agent for the ambient roster. Read-only; never blocks the UI.
+    func loadThreads() async {
+        threadsLoading = true
+        defer { threadsLoading = false }
+        let out = await Self.runJSON(args: ["thread", "list", "--json"])
+        guard let rows = try? JSONDecoder().decode([TWRow].self, from: out) else {
+            threadRoster = []
+            return
+        }
+        // Aggregate by agent. "live" = active & fresh; "stale" honors the CLI's
+        // own stale flag; everything else counts as idle.
+        var byAgent: [String: (live: Int, idle: Int, staleN: Int, fresh: Double, surf: Set<String>)] = [:]
+        for r in rows {
+            let agent = r.thread.agentId ?? "unknown"
+            var acc = byAgent[agent] ?? (0, 0, 0, .greatestFiniteMagnitude, [])
+            if r.stale {
+                acc.staleN += 1
+            } else if (r.thread.status ?? "") == "active" {
+                acc.live += 1
+            } else {
+                acc.idle += 1
+            }
+            acc.fresh = min(acc.fresh, r.idleSeconds)
+            if let s = r.thread.surface, !s.isEmpty { acc.surf.insert(s) }
+            byAgent[agent] = acc
+        }
+        let roster = byAgent.map { agent, a in
+            AgentHeartbeat(agent: agent, live: a.live, idle: a.idle, staleN: a.staleN,
+                           freshestIdle: a.fresh == .greatestFiniteMagnitude ? 0 : a.fresh,
+                           surfaces: a.surf.sorted())
+        }
+        // Liveliest first: live agents by freshness, then idle, then stale.
+        threadRoster = roster.sorted {
+            if ($0.live > 0) != ($1.live > 0) { return $0.live > 0 }
+            return $0.freshestIdle < $1.freshestIdle
+        }
+        threadsTotal = roster.reduce(0) { $0 + $1.live }
+    }
+
+    // Blockers = CURRENT, fixable conditions only (feedback_surfaces_current_
+    // actionable_only). A real logout (needsLogin) and a broken router daemon are
+    // blockers; a degraded/inconclusive auth probe is NOT (nothing to click clears
+    // it), and neither is a stranded inbox (that's its own drillable section).
+    var routerAuthBlockers: [RBAgentHealth] {
+        (routerBoard?.agentHealth ?? []).filter { $0.cliFound && ($0.needsLogin ?? false) }
+    }
+    var routerDaemonBlockers: [RBLaunchAgent] {
+        (routerBoard?.launchAgents ?? []).filter { $0.isBroken }
+    }
+    // Degraded (inconclusive) probes — surfaced as plain INFO, never an alarm.
+    var routerDegraded: [RBAgentHealth] {
+        (routerBoard?.agentHealth ?? []).filter { $0.cliFound && !$0.authOk && !($0.needsLogin ?? false) }
+    }
+    var routerStranded: [RBStranded] {
+        (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
+    }
+    var routerHasBlockers: Bool { !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty }
+    // Home-row status: red if a real blocker, green otherwise (stranded inboxes are
+    // work-to-do, not an alarm — they show a count, not a red dot).
+    var routerStatus: String { routerHasBlockers ? "red" : "green" }
+    var routerSummary: String {
+        if routerLoading && routerBoard == nil { return "checking…" }
+        // Honesty gate (#147 review, minor 6): a board that never loaded is
+        // UNKNOWN, not healthy — "healthy" may only describe data we actually
+        // read. Without this guard a missing board file + failed CLI fallback
+        // rendered a false-green "healthy".
+        guard routerBoard != nil else { return "no data yet" }
+        if routerHasBlockers {
+            let n = routerAuthBlockers.count + routerDaemonBlockers.count
+            return "\(n) blocker\(n == 1 ? "" : "s")"
+        }
+        let pending = routerBoard?.totalPending ?? 0
+        if pending > 0 { return "\(pending) pending" }
+        return "healthy"
+    }
+
+    // loadRouterBoard reads ~/.sirsi/router-board.json; if absent, shells
+    // `sirsi router node-status --json` (same contract). Never blocks the UI.
+    func loadRouterBoard() async {
+        routerLoading = true
+        defer { routerLoading = false }
+        if let data = FileManager.default.contents(atPath: routerBoardPath),
+           let board = try? JSONDecoder().decode(RouterBoard.self, from: data) {
+            routerBoard = board
+            return
+        }
+        // Fallback: the conduit hasn't written the lean board — read the live fabric
+        // directly. runJSON captures stdout only so a banner can't corrupt the JSON.
+        let out = await Self.runJSON(args: ["router", "node-status", "--json"])
+        if let board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
+            routerBoard = board
+        }
+    }
+
+    // installWake shells `sirsi router wake-install <agent>` to arm a stranded
+    // agent's pull-loop wake channel. Returns the CLI's first line for inline
+    // feedback; records provenance. Re-loads the board so the row updates.
+    func installWake(agent: String) async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "wake-install", agent], stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Arm wake channel — \(agent)", command: "router wake-install \(agent)", result: line)
+        await loadRouterBoard()
+        return line
+    }
+
+    // installRouterDaemons shells `sirsi router install-daemons` to (re)install the
+    // missing router LaunchAgents. Records provenance and re-loads the board.
+    func installRouterDaemons() async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "install-daemons"], stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Install router daemons", command: "router install-daemons", result: line)
+        await loadRouterBoard()
+        return line
+    }
+
+    // ── project root (repo-scoped verbs) ─────────────────────────────────────
+    //
+    // Ma'at and Net weigh a CODE REPOSITORY, but the app shells `sirsi` from
+    // $HOME (see run/runJSON), where those verbs honestly report "unmeasured —
+    // not inside a code repository" (#170). The optional project root lets the
+    // owner point them at a repo: stored in UserDefaults under the app's domain,
+    // so it is settable from the UI picker or the command line:
+    //   defaults write ai.sirsi.pantheon projectRoot -string ~/Development/sirsi-pantheon
+    // No project configured (or an invalid path) keeps the honest unmeasured
+    // default — the surface never silently weighs the wrong thing.
+    nonisolated static let projectRootKey = "projectRoot"
+
+    // The verbs that measure/act on a repository — they run from the selected
+    // project root. Everything else stays pinned to $HOME. "thoth" joins so the
+    // Thoth — Memory surface reads/syncs the SELECTED project's .thoth/memory.yaml
+    // (owner, 2026-07-10: make Thoth project-aware like Ma'at/Net).
+    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net", "risk", "osiris", "thoth"]
+
+    // Validated project root (or nil), mirrored for the views.
+    @Published var projectRoot: String?
+    var projectName: String? { projectRoot.map { ($0 as NSString).lastPathComponent } }
+
+    func loadProjectRoot() { projectRoot = Self.validatedProjectRoot() }
+
+    func setProjectRoot(_ path: String?) {
+        if let path, !path.isEmpty {
+            UserDefaults.standard.set(path, forKey: Self.projectRootKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.projectRootKey)
+        }
+        loadProjectRoot()
+    }
+
+    // validatedProjectRoot returns the configured root only when it is an
+    // existing directory that is a git repository (.git may be a dir or, in a
+    // worktree, a file). Anything else → nil, i.e. the honest default.
+    nonisolated static func validatedProjectRoot() -> String? {
+        guard let raw = UserDefaults.standard.string(forKey: projectRootKey), !raw.isEmpty
+        else { return nil }
+        let path = (raw as NSString).expandingTildeInPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
+              FileManager.default.fileExists(atPath: path + "/.git")
+        else { return nil }
+        return path
+    }
+
+    // discoverProjectRoots lists git repositories one level under ~/Development —
+    // the picker's candidate set. Cheap: one directory listing + a .git probe.
+    nonisolated static func discoverProjectRoots() -> [String] {
+        let dev = FileManager.default.homeDirectoryForCurrentUser.path + "/Development"
+        guard let kids = try? FileManager.default.contentsOfDirectory(atPath: dev) else { return [] }
+        return kids.compactMap { name in
+            guard !name.hasPrefix(".") else { return nil }
+            let p = dev + "/" + name
+            return FileManager.default.fileExists(atPath: p + "/.git") ? p : nil
+        }.sorted()
+    }
+
+    // workingDirectory picks the child's cwd: a repo-scoped verb with a valid
+    // project root runs from that repo; everything else runs from $HOME — never
+    // the app's launchd cwd (/), where a path-scoped `sirsi scan` walks the
+    // entire disk (the 2026-07-02 infinite-spinner bug).
+    nonisolated static func workingDirectory(for args: [String]) -> URL {
+        if let verb = args.first, repoScopedVerbs.contains(verb),
+           let root = validatedProjectRoot() {
+            return URL(fileURLWithPath: root)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+
     // Title callback so the AppDelegate can update the menubar label.
     var onTitle: ((String) -> Void)?
 
@@ -157,6 +516,9 @@ final class SirsiEngine: ObservableObject {
     // refresh re-reads the persisted scan (cheap; no rescan). Drives the title.
     func refresh() {
         checkFDA()
+        // Ambient CTR roster: keep the live-thread count fresh for the Home row +
+        // Threads surface without the user querying (owner directive 20260709-182003).
+        Task { await loadThreads() }
         guard let data = FileManager.default.contents(atPath: scanPath),
               let res = try? JSONDecoder().decode(ScanResult.self, from: data) else {
             onTitle?("")   // no scan yet → just the Eye, no waste figure
@@ -203,9 +565,38 @@ final class SirsiEngine: ObservableObject {
         return Self.firstMeaningful(out)
     }
 
+    // cleanSelected trashes ONLY the given paths, via the Go `--only` flag (one
+    // per path). The flag is intersection-only in Go — it can never widen scope
+    // beyond the safe set the scanner already approved — so a user-curated subset
+    // is safe by construction. Empty selection is treated as a no-op by the
+    // caller (the button is disabled), never as "clean everything."
+    func cleanSelected(paths: [String]) async -> String {
+        guard !paths.isEmpty else { return "Nothing selected." }
+        busy = true; lastError = nil
+        var args = ["anubis", "clean", "--dry-run=false"]
+        for p in paths { args.append("--only"); args.append(p) }
+        let out = await Self.run(args: args, stdin: "y\n")
+        busy = false
+        refresh()
+        return Self.firstMeaningful(out)
+    }
+
+    // lastDiagnoseAt throttles diagnose to once per 5 minutes: the popover used
+    // to spawn a full multi-second `sirsi diagnose` on EVERY open (the 2026-07-03
+    // "menubar feels slow" report — same storm class as the session-hook cache).
+    // Reopens inside the window render the last-known health instantly; a fresh
+    // run happens in the background only when the cache has aged out.
+    private var lastDiagnoseAt: Date?
+    static let diagnoseTTL: TimeInterval = 300
+
     // diagnose runs `sirsi diagnose --json` and parses the health report. Uses a
     // stdout-only run so a banner on stderr can't corrupt the JSON.
-    func diagnose() async {
+    func diagnose(force: Bool = false) async {
+        if !force, let t = lastDiagnoseAt, Date().timeIntervalSince(t) < Self.diagnoseTTL,
+           !health.isEmpty {
+            return  // fresh enough — render last-known instantly
+        }
+        lastDiagnoseAt = Date()
         healthLoading = true
         let data = await Self.runJSON(args: ["diagnose", "--json"])
         if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
@@ -264,6 +655,17 @@ final class SirsiEngine: ObservableObject {
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
+    // humanDuration renders seconds as "3w2d" / "5h12m" / "4m" — plain reading
+    // for "time since last checkpoint".
+    static func humanDuration(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        let w = s / 604_800, d = (s % 604_800) / 86_400, h = (s % 86_400) / 3_600, m = (s % 3_600) / 60
+        if w > 0 { return "\(w)w\(d)d" }
+        if d > 0 { return "\(d)d\(h)h" }
+        if h > 0 { return "\(h)h\(m)m" }
+        return "\(max(m, 1))m"
+    }
+
     static func human(_ bytes: Int64) -> String {
         let units = ["B", "KB", "MB", "GB", "TB"]
         var v = Double(bytes); var i = 0
@@ -281,12 +683,41 @@ final class SirsiEngine: ObservableObject {
         return out.string(from: d)
     }
 
+    // summaryLine pulls a human result line from a command's output: the
+    // CommandResult JSON "summary" when present (structured verbs), else the
+    // first meaningful text line. Used to toast what a follow-up action did.
+    static func summaryLine(_ out: String) -> String {
+        if let i = out.firstIndex(of: "{"),
+           let data = String(out[i...]).data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let summary = obj["summary"] as? String, !summary.isEmpty {
+            return summary
+        }
+        return firstMeaningful(stripANSI(out))
+    }
+
     static func firstMeaningful(_ s: String) -> String {
         for line in s.split(separator: "\n") {
             let t = line.trimmingCharacters(in: .whitespaces)
             if !t.isEmpty { return t }
         }
         return "done"
+    }
+
+    // resultOK reports whether a command's JSON output signals success — an
+    // explicit "status":"error" or any errors[] entry is a failure. Falls back
+    // to true when the output isn't structured (no signal ≠ failure), but a
+    // bare "Error:" prefix in unstructured text still reads as failure so the
+    // toast never flashes green over an error.
+    static func resultOK(_ out: String) -> Bool {
+        if let i = out.firstIndex(of: "{"),
+           let data = String(out[i...]).data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let status = obj["status"] as? String, status == "error" { return false }
+            if let errs = obj["errors"] as? [Any], !errs.isEmpty { return false }
+            return true
+        }
+        return !firstMeaningful(stripANSI(out)).lowercased().hasPrefix("error")
     }
 
     // run shells the `sirsi` binary off the main actor and returns combined
@@ -299,6 +730,12 @@ final class SirsiEngine: ObservableObject {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
+                // Repo-scoped verbs (maat, net) run from the configured project
+                // root so they weigh a real repository; everything else runs
+                // from $HOME, never the app's launchd cwd (/), where a
+                // path-scoped `sirsi scan` walks the entire disk (the
+                // 2026-07-02 infinite-spinner bug).
+                p.currentDirectoryURL = workingDirectory(for: args)
                 p.executableURL = URL(fileURLWithPath: sirsiBinary())
                 p.arguments = args
                 let outPipe = Pipe()
@@ -318,11 +755,90 @@ final class SirsiEngine: ObservableObject {
                     inPipe.fileHandleForWriting.write(d)
                     inPipe.fileHandleForWriting.closeFile()
                 }
+                // HARD RUNTIME BOUND. A popover button must never spin
+                // forever: `maat heal` on a cold coverage cache silently ran
+                // the full test suite for minutes behind a greyed screen with
+                // no result and no cancel (owner, 2026-07-09: "no interaction
+                // whatsoever"). The verb side is fixed to be fast, but the
+                // SURFACE enforces its own bound — defense in depth, same
+                // shape as the supervisor's duty timeout.
+                let deadline = DispatchTime.now() + .seconds(120)
+                let timeoutWork = DispatchWorkItem {
+                    if p.isRunning {
+                        p.terminate()
+                    }
+                }
+                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
-                cont.resume(returning: stripANSI(String(data: data, encoding: .utf8) ?? ""))
+                timeoutWork.cancel()
+                var text = stripANSI(String(data: data, encoding: .utf8) ?? "")
+                if p.terminationReason == .uncaughtSignal {
+                    text = "Stopped after 2 minutes — this action is taking too long for the menubar. Run `sirsi \(args.joined(separator: " "))` in a terminal to let it finish.\n" + text
+                }
+                cont.resume(returning: text)
             }
         }
+    }
+
+    // ── Local-LLM query (on-device, NEVER cloud) ─────────────────────────────
+    // Owner directive 20260709-182003: NL questions about system state route to
+    // local Gemma every time (127.0.0.1:11434 warm MLX server via ~/.local/bin/gemma),
+    // never a cloud model. Cloud is only ever reached on an explicit escalate.
+    nonisolated static func gemmaBinary() -> String {
+        NSHomeDirectory() + "/.local/bin/gemma"
+    }
+    nonisolated static func runGemma(prompt: String, system: String) async -> String {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let bin = gemmaBinary()
+                guard FileManager.default.isExecutableFile(atPath: bin) else {
+                    cont.resume(returning: "Sirsi's on-device model isn't set up yet. This query stays on-device — never cloud.")
+                    return
+                }
+                let p = Process()
+                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                p.executableURL = URL(fileURLWithPath: bin)
+                p.arguments = ["-s", system, prompt]
+                let outPipe = Pipe(); let errPipe = Pipe()
+                p.standardOutput = outPipe
+                p.standardError = errPipe   // captured as a fallback so refusals
+                                            // ("start the warm broker") reach the user
+                do { try p.run() } catch {
+                    cont.resume(returning: "Couldn't reach Sirsi's on-device model: \(error.localizedDescription)")
+                    return
+                }
+                let deadline = DispatchTime.now() + .seconds(60)
+                let timeoutWork = DispatchWorkItem { if p.isRunning { p.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                timeoutWork.cancel()
+                let text = stripANSI(String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { cont.resume(returning: text); return }
+                // No stdout — the on-device model didn't answer (commonly: its
+                // broker isn't running or there isn't enough free RAM to load it).
+                // Keep the message BRAND-neutral: the user never sees the model
+                // name (Gemma today) — Sirsi is a switchable fabric (owner,
+                // 2026-07-10). The specific cause stays in errData/logs.
+                let refusedForRAM = stripANSI(String(data: errData, encoding: .utf8) ?? "").lowercased().contains("ram")
+                cont.resume(returning: refusedForRAM
+                    ? "Sirsi's on-device model needs more free memory to answer right now. Your query stayed on-device — never cloud."
+                    : "Sirsi's on-device model isn't running right now. Your query stayed on-device — never cloud.")
+            }
+        }
+    }
+
+    // askAboutThreads answers an NL question about the live fabric using the
+    // current roster as context — on-device, zero cloud tokens.
+    func askAboutThreads(_ question: String) async -> String {
+        let ctx = threadRoster.map { a in
+            "\(a.agent): \(a.live) live, \(a.idle) idle, \(a.staleN) stale; freshest seen \(Int(a.freshestIdle))s ago; surfaces \(a.surfaces.joined(separator: "/"))"
+        }.joined(separator: "\n")
+        let system = "You answer questions about the Sirsi router thread fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
+        let prompt = "Live thread fabric (\(threadsTotal) live threads across \(threadRoster.count) agents):\n\(ctx.isEmpty ? "(no agents)" : ctx)\n\nQuestion: \(question)"
+        return await Self.runGemma(prompt: prompt, system: system)
     }
 
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
@@ -331,6 +847,9 @@ final class SirsiEngine: ObservableObject {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
+                // Repo-scoped verbs (maat, net) run from the configured project
+                // root; everything else from $HOME — see run() above.
+                p.currentDirectoryURL = workingDirectory(for: args)
                 p.executableURL = URL(fileURLWithPath: sirsiBinary())
                 p.arguments = args
                 let outPipe = Pipe()

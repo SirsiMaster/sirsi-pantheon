@@ -18,8 +18,8 @@ Use the router for `/plan`, `/goal`, ETA, repo ownership, verification evidence,
 
 # PANTHEON_RULES.md
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 3.0.0 (v0.9.0-rc1 Release)
-**Date:** March 31, 2026
+**Version:** 3.0.0 (v0.23.8-beta Release)
+**Date:** July 1, 2026
 
 ---
 
@@ -398,6 +398,31 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Auto-merge is OPTIONAL** (codex-pantheon guardrail): repos MAY enable GitHub auto-merge where maturity and owner policy allow, but it is NOT mandatory canon — some repos require manual release gates, regulated review, or staged deploy timing.
 *   **Admin override**: branch protection uses `enforce_admins=false` so the founder retains override (A23 — sole arbiter).
 *   **Reference**: sirsi-pantheon `internal/setup.ArmMaatGate()` + `.githooks/pre-push` + `gh api -X PUT repos/SirsiMaster/<repo>/branches/main/protection`. Custodian: 𓆄 Ma'at (A17). Portfolio-standard candidate — mirror into the Universal Rules (§1) once each repo confirms adoption.
+
+### 2.26 Orchestration Brain: Tiered & Pluggable (Rule A29)
+> Established July 2, 2026. Co-authored claude-home ↔ claude-pantheon (router bind `20260630-190342`, all 6 amendments + the 7th Registry/Wake invariant). Custodian: 𓁟 the Brain (control plane) + 𓁢 the Router (Tier-0 substrate). Full design: `docs/prd/ORCHESTRATION_BRAIN.md`; decision: ADR-034.
+
+*   **Rule**: Pantheon's orchestration intelligence is a **tiered, pluggable, user-navigable brain**, not a single always-on model. It has three tiers — **Tier-0 Dispatch** (watch/route/heartbeat/ack), **Tier-1 Triage** (classify ambiguous items), **Tier-2 Execution** (agentic build/review/bind) — over an LLM spectrum **Level 0–3** (0 Deterministic → 1 +local triage → 2 +agentic execution → 3 +hosted). The Level is **derived** from per-role provider config, never separately stored.
+*   **The deterministic floor (mandatory)**: **Tier-0 dispatch MUST run with zero LLM** and ships **ON at Level 0** on a fresh public install — dispatch/route/heartbeat/ack all work with no AI, no keys, no cost. The model is *invoked by* the loop, never *is* the loop. The config layer and `sirsi brain doctor` both **reject a model plugged into dispatch**.
+*   **Per-role pluggable**: each role independently selects a provider — `none` (floor) · `local:<model-id>` (zero-token) · `hosted:<provider-id>` (opt-in, the only per-token path). Config lives in **`~/.sirsi/brain.yaml`** (structured YAML via the repo's yaml.v3 standard — not a bespoke `.conf`, not a new viper dependency; Rule 0). Swaps take effect on **next read — no restart**.
+*   **Tier-0 Registry/Wake invariant (7th amendment — ENFORCE, don't rebuild)**: "the router can always see and wake every registered thread." Registration binds a **persistent wake-channel**; a registered thread with no live channel is a broken contract (the zombie state). This invariant is **already implemented** in `internal/router` (`WakePass`, `ProbeWakeReadiness`, `InstallWakeLaunchAgent`, `RunWakeLoop`, `wakemechanism.go`; `sirsi router doctor --fix` runs the wake pass). A29 **codifies that existing system** — it MUST NOT be reimplemented (Rule 0). The brain's control plane **surfaces + enforces** it: `sirsi brain status`/`doctor` read the existing wake API to flag every registered-but-unwakeable agent and every stranded inbox, and point the fix at the **existing** verbs (`sirsi router wake-install`, `sirsi router doctor --fix`). Waking + repair stay the router's job; the brain observes. Honest boundary preserved: a fully-closed interactive Claude process cannot be resurrected locally → **"needs-owner"**, stated not faked. This makes A27 (Heartbeat Loop Mandate) *enforced*, not advisory.
+*   **Resource-broker consumer (RAM gate)**: before loading a local model the brain consults `guard.NodeCapacity.Fits()`; `doctor` reports "**won't fit — N GB short**" instead of letting it OOM (defense-in-depth with ADR-031-A/B).
+*   **Hosted-key handling (A11 + safety)**: Level-3 keys live in the OS keychain or `~/.sirsi/` 0600 — **never in brain.yaml, never logged**, transmitted only to the chosen provider. `doctor` reports "auth present" without printing the key.
+*   **Visible + modifiable + troubleshootable**: the active tier + per-role model MUST be visible and swappable in the **CLI** (`sirsi brain {status,use,levels,doctor,test}`) and the **menubar**, and visible in **SirsiNexus** (`--json` read-model). "No black box" — brain decisions append to the Activity/stele provenance ledger.
+*   **Decoupled from Router v2**: the brain is built against a `Dispatcher` interface over the **current** router; Router v2 swaps in underneath the same interface later (Amendment 1) — the brain never blocks on that rewrite.
+*   **Reference**: `internal/brain/{config.go,controlplane.go}` + `cmd/sirsi/braincmd.go` (P1b control plane, shipped); ADR-034; PRD `docs/prd/ORCHESTRATION_BRAIN.md`. Custodian: 𓁟 the Brain.
+
+### 2.27 Model Tiering Doctrine — Compute Economy Law (Rule A30)
+> Established July 13, 2026 by owner directive. **Permanent, universal across every repo, thread, agent, and model family — present and future.** Canonical source text: `~/Development/AGENTS.md` § "Model Tiering Doctrine (Compute Economy Law)". This rule codifies that law into Pantheon canon (Living Canon, Rule 18) and is the routing **policy** that A29's Orchestration Brain **enforces**. Ma'at treats violations as governance failures.
+
+*   **The law in one line**: **generation is cheap to get wrong; judgment is expensive to get wrong — push generation down-tier, keep judgment up-tier.** Independence in review comes from a fresh context with no stake in the code, **not** from a different brand of model. What is tiered is *cognitive difficulty*, not vendor.
+*   **The three tiers** (map onto A29's Tier-0/1/2 and the Level 0–3 spectrum):
+    *   **Tier 0 — local, on-device model (zero API tokens)**: high-volume, low-stakes screening + drafting — queue triage, first-draft code for well-specified decomposed tasks, summarization, log-reading, boilerplate, NL queries over local state. **A Tier-0 output is a SCREEN or a DRAFT, never a verdict.**
+    *   **Tier 1 — cloud model, standard effort**: routine agentic work — routing, nudging, ACK-closes, board publishing, grinding decomposed task lists (dep bumps, doc updates, test fixes). Most scheduled/loop runs are Tier 1; an empty run needs almost nothing.
+    *   **Tier 2 — frontier model, high effort**: reserved for exceptional thinking — **binding verdicts (source-deep review before merge — ALWAYS Tier 2)**, architecture decisions, security review, ESCALATE-classed ambiguity, debugging that resisted a first pass.
+*   **Operating rules**: (1) **builders decompose; the cheapest competent tier types** — a thread's job on well-specified work is spec → hand to Tier 0 → review, not typing code at frontier prices; (2) **the bind is always frontier** — a slightly-off draft is caught at bind, a slightly-off bind ships a bug to main, so spend where failure is irreversible; (3) **screens never become verdicts** — no Tier-0 classification stands as a binding security/review/architecture decision; (4) **read only what escalates** — cloud models don't read whole queues/logs/repos when a Tier-0 screen can classify first (the 2M-token incident is the cautionary tale); (5) **route by difficulty, not habit** — if a tier is unclear, start one lower and escalate on failure (escalation is cheap, standing overspend is not); (6) **enforced by the system, not discipline** — the Orchestration Brain (A29; `docs/prd/ORCHESTRATION_BRAIN.md`) is the reference implementation, and every repo's automation should route through it or mirror its policy.
+*   **Brand invariant** (with A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity ("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which local model serves Tier 0.
+*   **Reference**: canonical law `~/Development/AGENTS.md`; enforced by A29 (Orchestration Brain) + `docs/prd/ORCHESTRATION_BRAIN.md` default routing table. Custodian: 𓁟 the Brain (routing) + 𓆄 Ma'at (governance).
 
 ---
 

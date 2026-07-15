@@ -125,10 +125,14 @@ if [ "${SIGNED_FOR_RELEASE}" = "1" ]; then
     codesign --force --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${DMG_PATH}"
     if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
         echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
+        # --timeout bounds the --wait poll so a stuck Apple-notary submission (or
+        # a bad credential that never resolves) fails the step instead of hanging;
+        # the release.yml job-level timeout-minutes is the outer backstop.
         xcrun notarytool submit "${DMG_PATH}" \
             --apple-id "${APPLE_ID}" \
             --team-id "${APPLE_TEAM_ID}" \
             --password "${APPLE_APP_PASSWORD}" \
+            --timeout 20m \
             --wait
         echo "Stapling notarization ticket..."
         xcrun stapler staple "${DMG_PATH}"

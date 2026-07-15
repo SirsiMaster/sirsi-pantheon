@@ -113,13 +113,17 @@ func remediationKind(f DiagnosticFinding) FixKind {
 		return FixInstant // clearing the crash-report backlog drops the count
 	case "Disk Space":
 		return FixInstant // clean frees real bytes
+	case "Local Snapshots":
+		return FixInstant // thinning reclaims real disk immediately
 	case "Spotlight Storm":
 		return FixGuidance // acts only during a live storm; else prints guidance
 	case "App Hangs (7d)":
 		return FixRelief // a real user-app freeze → renice the live hog; trend decays
-	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)",
+	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)",
 		"Thread Leaks", "Swap Usage":
 		return FixRelief // eases the live cause; trend counts decay, not drop
+	case "Runaway Executor":
+		return FixRelief // quarantine stops the spawner; artifacts drain via the hourly sweep
 	}
 	return ""
 }
@@ -150,17 +154,36 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
-	case "RAM Pressure", "Memory Processes", "Jetsam Events (7d)":
+	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)":
 		if warn {
-			return "sirsi guard" // relieve memory pressure — renice hogs
+			// Flush inactive caches — the safe, non-destructive memory lever
+			// (renice frees CPU, not RAM). Was `sirsi guard`, which is just the
+			// MONITOR — tapping "Relieve" opened a dashboard, not an action.
+			// NOTE the check name: the memory-hog finding is emitted as
+			// "Top Memory Consumers". This case once said "Memory Processes" —
+			// the PROGRESS label, not the finding name — so the hog warning
+			// dead-ended with no lever (the owner's menubar QA defect).
+			return "sirsi relieve --memory"
 		}
-	case "Thread Leaks", "Swap Usage":
+	case "Swap Usage":
 		if f.Severity >= SeverityCritical {
-			return "sirsi guard"
+			return "sirsi relieve --memory" // genuine pressure → flush caches
+		}
+	case "Thread Leaks":
+		if f.Severity >= SeverityCritical {
+			return "sirsi relieve" // renice the offender (a real action, not a monitor)
 		}
 	case "Disk Space":
 		if warn {
 			return "sirsi clean --include-caution"
+		}
+	case "Local Snapshots":
+		return "sirsi reclaim-snapshots" // optional disk reclaim, offered even at Info
+	case "Runaway Executor":
+		if warn {
+			// 𓁵 Sekhmet's kill switch (ADR-035): bootout + quarantine ONLY the
+			// claude build-worker LaunchAgents; wake-loops/supervisor untouched.
+			return "sirsi router quarantine-worker"
 		}
 	}
 	return ""
@@ -278,6 +301,60 @@ func DoctorWith(p platform.Platform) (*DoctorReport, error) {
 	return DoctorWithOpts(p, DoctorOpts{})
 }
 
+// doctorCheck is one entry in the doctor's canonical check registry: the
+// progress label surfaces show while it runs, the finding Check name(s) it can
+// emit, and the runner itself.
+type doctorCheck struct {
+	name  string   // progress label (what's being checked)
+	emits []string // every finding Check name this check can append
+	run   func(p platform.Platform, report *DoctorReport)
+}
+
+// doctorChecks is THE canonical registry of health checks. DoctorWithOpts runs
+// exactly this list, and FindingChecks derives the finding-name catalog from
+// the same table — so a new check cannot ship without registering here, and
+// registering here automatically puts it under the ADR-033 enforcement tests
+// (remediation_enforcement_test.go), forcing its author to declare a
+// remediation contract. The hand-maintained duplicate list this replaces is
+// how "Top Memory Consumers" shipped as an alarm with no lever.
+var doctorChecks = []doctorCheck{
+	{"RAM Pressure", []string{"RAM Pressure"}, checkRAMPressure},
+	{"Swap Usage", []string{"Swap Usage"}, checkSwapUsage},
+	{"Disk Space", []string{"Disk Space"}, checkDiskSpace},
+	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
+	{"Spotlight Storm", []string{"Spotlight Storm"}, checkSpotlightStorm},
+	{"Crash Logs", []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
+		func(_ platform.Platform, r *DoctorReport) { checkRecentCrashLogs(r) }},
+	{"App Crashes", []string{"App Crashes (7d)"},
+		func(_ platform.Platform, r *DoctorReport) { checkAppCrashes(r) }},
+	{"App Hangs", []string{"App Hangs (7d)"},
+		func(_ platform.Platform, r *DoctorReport) { checkAppHangs(r) }},
+	{"Thread Leaks", []string{"Thread Leaks"},
+		func(_ platform.Platform, r *DoctorReport) { checkThreadLeaks(r) }},
+	{"Sirsi Processes", []string{"Sirsi Processes"}, checkSirsiProcesses},
+	{"Runaway Executor", []string{"Runaway Executor"}, checkRunawayExecutor},
+	{"Local Snapshots", []string{"Local Snapshots"},
+		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
+}
+
+// externalFindingChecks are finding Check names appended to the report OUTSIDE
+// DoctorWithOpts but resolved through the same remediation catalog, so the
+// enforcement tests must cover them too.
+var externalFindingChecks = []string{
+	"binary-drift", // appended by `sirsi diagnose` (cmd/sirsi/anubis.go) from selfupdate.ScanHost
+}
+
+// FindingChecks returns the canonical list of every finding Check name the
+// diagnostic can emit — derived from the registry the doctor actually runs,
+// never hand-maintained. The ADR-033 enforcement tests walk this list.
+func FindingChecks() []string {
+	out := make([]string, 0, len(doctorChecks)+len(externalFindingChecks))
+	for _, c := range doctorChecks {
+		out = append(out, c.emits...)
+	}
+	return append(out, externalFindingChecks...)
+}
+
 // DoctorWithOpts runs the diagnostic with progress reporting.
 func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error) {
 	start := time.Now()
@@ -285,26 +362,9 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		Timestamp: start,
 	}
 
-	type checkFunc struct {
-		name string
-		fn   func()
-	}
-	checks := []checkFunc{
-		{"RAM Pressure", func() { checkRAMPressure(p, report) }},
-		{"Swap Usage", func() { checkSwapUsage(p, report) }},
-		{"Disk Space", func() { checkDiskSpace(p, report) }},
-		{"Memory Processes", func() { checkTopMemoryProcesses(p, report) }},
-		{"Spotlight Storm", func() { checkSpotlightStorm(p, report) }},
-		{"Crash Logs", func() { checkRecentCrashLogs(report) }},
-		{"App Crashes", func() { checkAppCrashes(report) }},
-		{"App Hangs", func() { checkAppHangs(report) }},
-		{"Thread Leaks", func() { checkThreadLeaks(report) }},
-		{"Sirsi Processes", func() { checkSirsiProcesses(p, report) }},
-	}
-
-	for i, c := range checks {
+	for i, c := range doctorChecks {
 		prevCount := len(report.Findings)
-		c.fn()
+		c.run(p, report)
 		if opts.OnCheck != nil {
 			sev := SeverityOK
 			msg := "healthy"
@@ -313,9 +373,25 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 				sev = last.Severity
 				msg = last.Message
 			}
-			opts.OnCheck(c.name, sev, msg, i+1, len(checks))
+			opts.OnCheck(c.name, sev, msg, i+1, len(doctorChecks))
 		}
 	}
+
+	// A 7-day trend is HISTORY, not a live alarm — demote every trend finding to
+	// Info BEFORE scoring/classifying so NO surface (the score, the health light,
+	// the menubar, the Horus "Attention" brief) treats it as a current issue. The
+	// count + cause stay in the finding's Message for the history/dashboard view;
+	// only the alarm is removed. Owner's law: an element alarms ONLY for a
+	// current, actionable issue — trends inform, they don't alarm.
+	demoteTrendsToInfo(report.Findings)
+
+	// Swap is STICKY on macOS — the kernel keeps it allocated after using it — so a
+	// large swap reading while RAM pressure is normal is RESIDUE, not active
+	// thrashing. Cap the Swap alarm at the CURRENT memory-pressure severity so it
+	// only reads red when memory is genuinely pressured NOW. (Owner's law, the one
+	// that has recurred: alarm ONLY on a current, actionable condition — and you
+	// cannot clear swap while memory is calm; it drains as pressure stays low.)
+	gateSwapOnPressure(report.Findings)
 
 	report.Score = calculateScore(report.Findings)
 	report.Status = classifyHealth(report.Findings)
@@ -323,7 +399,14 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 	// surface can resolve it AND label the action truthfully.
 	for i := range report.Findings {
 		report.Findings[i].Fix = remediationCommand(report.Findings[i])
-		report.Findings[i].FixKind = remediationKind(report.Findings[i])
+		// Only carry an honesty-class when there is an actual action — a healthy
+		// finding (e.g. swap capped to OK because pressure is normal) must NOT show
+		// a "relief / 7-day pattern" banner for a fix that isn't offered.
+		if report.Findings[i].Fix == "" {
+			report.Findings[i].FixKind = ""
+		} else {
+			report.Findings[i].FixKind = remediationKind(report.Findings[i])
+		}
 	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
@@ -398,6 +481,17 @@ func checkRAMPressure(p platform.Platform, report *DoctorReport) {
 		finding.Message = fmt.Sprintf("RAM healthy at %.0f%%", usedPct)
 	}
 
+	// ADR-031-B: surface Hapi's NodeCapacity pressure level + its SOURCE. The
+	// menubar renders finding.Detail, so this is the Hapi pressure surface with no
+	// Swift rebuild / no FDA churn: it shows whether pressure is the authoritative
+	// kernel DISPATCH_SOURCE_MEMORYPRESSURE level ("kernel-dispatch", once the Hapi
+	// daemon's watcher is live) or the bootstrap free-% estimate ("bootstrap-snapshot").
+	// Darwin-only so the mock-platform diagnose tests stay deterministic.
+	if p.Name() == "darwin" {
+		nc := SampleNodeCapacity()
+		finding.Detail += fmt.Sprintf(" | Pressure: %s (source: %s)", nc.Pressure, nc.PressureSource)
+	}
+
 	report.Findings = append(report.Findings, finding)
 }
 
@@ -414,31 +508,57 @@ func checkSwapUsage(p platform.Platform, report *DoctorReport) {
 		Detail: line,
 	}
 
-	// Parse "used = X.XXM" specifically from the swap usage line
-	// Format: "total = 2048.00M  used = 150.00M  free = 1898.00M  (encrypted)"
-	usedMB := 0.0
-	if idx := strings.Index(line, "used = "); idx >= 0 {
-		rest := line[idx+len("used = "):]
-		rest = strings.TrimSuffix(strings.Fields(rest)[0], "M")
-		usedMB, _ = strconv.ParseFloat(rest, 64)
-	}
+	usedMB := parseSwapUsedMB(line)
 
 	// macOS uses swap proactively — a few hundred MB with healthy RAM is normal,
 	// NOT pressure. Only flag swap that is genuinely large. (Was: any swap > 0 MB
 	// warned "RAM pressure present", which cried wolf on 195 MB.)
 	switch {
-	case usedMB < 1024: // < 1 GB — routine
+	// GREEN STANDARD: macOS swaps PROACTIVELY — it pages idle memory to disk and
+	// leaves it there even when RAM is fine, so allocated swap ≠ pressure. A busy
+	// dev machine (browsers + multiple AI agents) routinely sits at a few GB of
+	// swap while perfectly healthy. Only genuinely large swap signals real
+	// pressure. (Was: 1 GB warned → amber, so a normal loaded Mac was never green.)
+	case usedMB < 4096: // < 4 GB — routine on a loaded machine
 		finding.Severity = SeverityOK
-		finding.Message = fmt.Sprintf("Swap minimal (%.0f MB) — no memory pressure", usedMB)
-	case usedMB < 4096: // 1–4 GB — worth a look
+		finding.Message = fmt.Sprintf("Swap routine (%.1f GB) — normal macOS paging, no pressure", usedMB/1024)
+	case usedMB < 12288: // 4–12 GB — worth a look
 		finding.Severity = SeverityWarn
-		finding.Message = fmt.Sprintf("Swap active (%.1f GB) — under memory pressure", usedMB/1024)
-	default: // > 4 GB — genuinely heavy
+		finding.Message = fmt.Sprintf("Swap elevated (%.1f GB) — under memory pressure", usedMB/1024)
+	default: // > 12 GB — genuinely heavy
 		finding.Severity = SeverityCritical
 		finding.Message = fmt.Sprintf("Heavy swapping (%.1f GB) — system is thrashing", usedMB/1024)
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// parseSwapUsedMB extracts the "used = X.XXM" value from a sysctl vm.swapusage
+// line. Format: "total = 2048.00M  used = 150.00M  free = 1898.00M  (encrypted)".
+// Shared by checkSwapUsage and SwapUsedBytes — one parse for the one probe.
+func parseSwapUsedMB(line string) float64 {
+	idx := strings.Index(line, "used = ")
+	if idx < 0 {
+		return 0
+	}
+	rest := line[idx+len("used = "):]
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return 0
+	}
+	usedMB, _ := strconv.ParseFloat(strings.TrimSuffix(fields[0], "M"), 64)
+	return usedMB
+}
+
+// SwapUsedBytes returns the swap "used" bytes via sysctl vm.swapusage — the
+// SAME probe checkSwapUsage runs, exposed for the fast vitals surface (TUI
+// design proof gap V1). Returns 0 when the probe or parse fails.
+func SwapUsedBytes(p platform.Platform) int64 {
+	out, err := p.Command("sysctl", "-n", "vm.swapusage")
+	if err != nil {
+		return 0
+	}
+	return int64(parseSwapUsedMB(strings.TrimSpace(string(out))) * 1024 * 1024)
 }
 
 // checkDiskSpace checks available disk space on the boot volume.
@@ -583,6 +703,16 @@ func checkSpotlightStorm(p platform.Platform, report *DoctorReport) {
 // week escalates to Critical.
 const trendDayThreshold = 3
 
+// transientEventTolerance is THE GREEN STANDARD for 7-day trend checks (Jetsam,
+// kernel panics, app hangs): a handful of ISOLATED events over a week is normal
+// background on a busy machine — informational history, NOT a current alarm. At
+// or below this count (and not a multi-day trend) the finding stays SeverityOK so
+// the at-a-glance light can be GREEN. Above it (a real spike) → Warn (amber);
+// recurring across trendDayThreshold+ days → Critical (amber). Without this, a
+// single Jetsam kill 6 days ago pinned the machine amber for a week and green was
+// unreachable on any real dev machine (the owner's "it's always yellow" report).
+const transientEventTolerance = 3
+
 // crashEventScanFn returns the modification times of kernel-panic and Jetsam
 // reports in the system DiagnosticReports dirs. Injectable (Rule A16) so the
 // trend classifier can be tested without real crash logs on the host.
@@ -668,11 +798,21 @@ func crashEventFinding(check, noun, trendCause string, times []time.Time, now ti
 		f.Message = fmt.Sprintf("No %ss in the last %d days", noun, crashWindowDays)
 	case isTrend:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("%d %ss across %d of %d days — sustained trend, %s",
+		// A "(7d)" trend is HISTORY (demoteTrendsToInfo greens it), so the message
+		// must read as a record, not a present-tense alarm — "%s" is what was true
+		// AT THE TIME, not now. A green dot saying "system under RAM pressure" was
+		// the exact contradiction the owner flagged.
+		f.Message = fmt.Sprintf("%d %ss on %d of the last %d days — a 7-day record (%s at the time); not happening now",
 			count, noun, activeDays, crashWindowDays, trendCause)
+	case count <= transientEventTolerance:
+		// GREEN STANDARD: a few isolated events over a week is normal background,
+		// not a current problem — informational, keeps the light green.
+		f.Severity = SeverityOK
+		f.Message = fmt.Sprintf("%d %s(s) in the last %d days — isolated, no sustained trend (normal background)",
+			count, noun, crashWindowDays)
 	default:
 		f.Severity = SeverityWarn
-		f.Message = fmt.Sprintf("%d %s(s) in the last %d days, clustered in %d day(s) — transient spike, watch for a trend",
+		f.Message = fmt.Sprintf("%d %ss in the last %d days, clustered in %d day(s) — elevated, watch for a trend",
 			count, noun, crashWindowDays, activeDays)
 	}
 	return f
@@ -843,12 +983,19 @@ func checkAppHangs(report *DoctorReport) {
 		f.Detail = "Background only: " + topOffenders(daemonByProc, 3) + " — normal macOS maintenance. If Spotlight churns often, exclude busy folders from indexing."
 	case isTrend:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("%d app freeze event(s) across %d of %d days — sustained main-thread saturation (beachballs, dropped frames)",
+		// History (demoted to green), not a present-tense claim of current saturation.
+		f.Message = fmt.Sprintf("%d app freeze event(s) on %d of the last %d days — a 7-day record of main-thread stalls (beachballs); not happening now",
 			count, activeDays, crashWindowDays)
+		f.Detail = topOffenders(userByProc, 3)
+	case count <= transientEventTolerance:
+		// GREEN STANDARD: a few isolated stalls over a week are normal — keep green.
+		f.Severity = SeverityInfo
+		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days — isolated, no sustained trend (normal background)",
+			count, crashWindowDays)
 		f.Detail = topOffenders(userByProc, 3)
 	default:
 		f.Severity = SeverityWarn
-		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days, clustered in %d day(s) — transient stall, watch for a trend",
+		f.Message = fmt.Sprintf("%d app freeze event(s) in the last %d days, clustered in %d day(s) — elevated, watch for a trend",
 			count, crashWindowDays, activeDays)
 		f.Detail = topOffenders(userByProc, 3)
 	}
@@ -1095,15 +1242,91 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// calculateScore derives a 0-100 health score from findings.
+// demoteTrendsToInfo strips the alarm from EVERY 7-day-window finding
+// (Jetsam/kernel-panic/app-crash/app-hang counts). The whole "(7d)" category is
+// HISTORY — last week's events can't be acted on now and no click can clear them
+// — so none of it may read as "attention", whether or not it crossed the
+// sustained-trend threshold (3 clustered crashes is still history). Demoting to
+// Info keeps each finding visible (its Message carries the count + cause for the
+// history/dashboard view) while removing the yellow/red on every surface. The
+// CURRENT signals (live RAM/Swap/Disk/etc.) have no "(7d)" suffix and aren't
+// trends, so they keep their severity and still alarm.
+func demoteTrendsToInfo(findings []DiagnosticFinding) {
+	for i := range findings {
+		f := &findings[i]
+		historical := f.Trend || strings.HasSuffix(f.Check, "(7d)")
+		if historical && f.Severity > SeverityInfo {
+			f.Severity = SeverityInfo
+		}
+	}
+}
+
+// gateSwapOnPressure caps the "Swap Usage" alarm at the CURRENT memory-pressure
+// severity. macOS keeps swap ALLOCATED after using it, so a large swap reading
+// while RAM pressure is normal is residue — not active thrashing. "Heavy
+// swapping — system is thrashing" in red, while RAM Pressure reads healthy, is
+// the recurring false alarm: nothing the user can do clears swap while memory is
+// calm (it drains only as pressure stays low). So swap may never alarm higher
+// than the live RAM Pressure finding; when capped, its message is rewritten to
+// the truth. If there is no RAM Pressure reading, swap is left untouched.
+func gateSwapOnPressure(findings []DiagnosticFinding) {
+	pressureSev := SeverityOK
+	havePressure := false
+	for i := range findings {
+		if findings[i].Check == "RAM Pressure" {
+			pressureSev = findings[i].Severity
+			havePressure = true
+		}
+	}
+	if !havePressure {
+		return
+	}
+	for i := range findings {
+		f := &findings[i]
+		if f.Check != "Swap Usage" || f.Severity <= pressureSev {
+			continue
+		}
+		usedGB := parseSwapUsedGB(f.Detail)
+		f.Severity = pressureSev
+		if pressureSev <= SeverityInfo {
+			f.Message = fmt.Sprintf("Swap in use (%.1f GB) — memory pressure is normal; macOS keeps swap allocated after using it", usedGB)
+		} else {
+			f.Message = fmt.Sprintf("Swap elevated (%.1f GB) — memory is under some pressure", usedGB)
+		}
+	}
+}
+
+// parseSwapUsedGB extracts the "used = X.XXM" value (in GB) from a vm.swapusage
+// detail line: "total = …  used = 12986.31M  free = …  (encrypted)".
+func parseSwapUsedGB(detail string) float64 {
+	if idx := strings.Index(detail, "used = "); idx >= 0 {
+		if fields := strings.Fields(detail[idx+len("used = "):]); len(fields) > 0 {
+			mb, _ := strconv.ParseFloat(strings.TrimSuffix(fields[0], "M"), 64)
+			return mb / 1024
+		}
+	}
+	return 0
+}
+
+// calculateScore derives a 0-100 health score from the CURRENT state.
+//
+// The score is point-in-time — "how healthy is this Mac RIGHT NOW" — not a
+// credit-score-style rap sheet of the past week. Historical 7-day trend
+// findings (Jetsam/crash/hang/panic counts) are therefore EXCLUDED from the
+// score: a machine that is currently fine reads as fine even if last week was
+// rough. Those trends are still produced as findings and belong on a dashboard
+// for longitudinal analysis — they inform, they don't deduct.
 func calculateScore(findings []DiagnosticFinding) int {
 	score := 100
 	for _, f := range findings {
+		if f.Trend {
+			continue // historical 7-day trend → dashboard, never the live score
+		}
 		switch {
 		case isLiveCritical(f):
 			score -= 25 // a live, session-threatening problem
 		case f.Severity == SeverityCritical:
-			score -= 8 // a historical trend — concerning, not catastrophic
+			score -= 12 // a current critical condition
 		case f.Severity == SeverityWarn:
 			score -= 6
 		}

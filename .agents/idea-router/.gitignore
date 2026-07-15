@@ -1,0 +1,19 @@
+# Router runtime state — ephemeral per-message files. These must NEVER be
+# version-controlled (ROUTER_V2_DURABLE_DISPATCH /goal #2: "zero router runtime
+# files tracked in git; git status after 100 sends/closes shows a clean tree").
+# The file-based router writes these live on every send/close/heartbeat; git
+# tracks only durable config (agents.json), scripts (*.sh), and docs (*.md).
+items/
+reviews/
+proposals/
+decisions/
+police/
+logs/
+state.json
+threads.json
+processes.json
+dispatch-ledger.json
+*.ledger
+.processes.json
+.threads.json
+.agents.json-*

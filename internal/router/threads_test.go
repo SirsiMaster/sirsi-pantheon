@@ -457,3 +457,97 @@ func TestRegisterThread_PidRecycleMintsFreshNotReuse(t *testing.T) {
 		t.Error("same (pid, start_time) should reuse the live record, not mint a new one")
 	}
 }
+
+// TestRegisterThread_ReuseMergesWatches is the regression for the router-fabric bug
+// (codex-home item 133134, claude-home confirmed): the (agent_id, pid) reuse path
+// updated only LastSeenAt/CurrentItem and silently DROPPED a re-register's new
+// --watch values, so an agent could never add (nor narrow) its watch set without
+// minting a duplicate thread. Design: REPLACE-when-non-empty (authoritative
+// re-declaration; allows narrowing), KEEP-on-empty (a bare heartbeat-style
+// re-register must not wipe the live declaration).
+func TestRegisterThread_ReuseMergesWatches(t *testing.T) {
+	defer probeStubs(t, PIDAlive, "sig-1")()
+	tmp := t.TempDir()
+
+	base := func(watches []string) *Thread {
+		return &Thread{AgentID: "codex-home", Surface: "codex", PID: 7777, StartTime: "sig-1", Watches: watches}
+	}
+
+	first, err := RegisterThread(tmp, base([]string{"codex-home"}))
+	if err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+
+	// (1) Re-register the SAME agent+pid+start with MORE watches → same thread, new
+	// watches PERSIST (the dropped-values bug).
+	second, err := RegisterThread(tmp, base([]string{"codex-home", "claude-home", "claude-finalwishes"}))
+	if err != nil {
+		t.Fatalf("re-register (add): %v", err)
+	}
+	if second.ThreadID != first.ThreadID {
+		t.Fatalf("reuse must return the SAME thread_id; got %q vs %q", second.ThreadID, first.ThreadID)
+	}
+	for _, want := range []string{"codex-home", "claude-home", "claude-finalwishes"} {
+		if !containsStr(second.Watches, want) {
+			t.Errorf("re-register dropped watch %q; got %v", want, second.Watches)
+		}
+	}
+
+	// (2) Narrowing: re-register with a SMALLER non-empty set → replace, not union.
+	third, err := RegisterThread(tmp, base([]string{"codex-home"}))
+	if err != nil {
+		t.Fatalf("re-register (narrow): %v", err)
+	}
+	if len(third.Watches) != 1 || third.Watches[0] != "codex-home" {
+		t.Errorf("narrowing must REPLACE (not union); got %v", third.Watches)
+	}
+
+	// (3) Empty incoming watches (bare heartbeat-style register) must NOT wipe.
+	fourth, err := RegisterThread(tmp, base(nil))
+	if err != nil {
+		t.Fatalf("re-register (empty): %v", err)
+	}
+	if len(fourth.Watches) != 1 || fourth.Watches[0] != "codex-home" {
+		t.Errorf("empty incoming must KEEP existing watches; got %v", fourth.Watches)
+	}
+}
+
+func containsStr(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRegisterThread_AlwaysWatchesSelf locks the A27 contract that a thread always
+// watches its OWN inbox, even when the --watch declaration omits self (claude-home
+// #76 follow-up: a `--watch other-agent` that drops self would leave the thread
+// blind to its own inbox). Holds on both the fresh and reuse paths.
+func TestRegisterThread_AlwaysWatchesSelf(t *testing.T) {
+	defer probeStubs(t, PIDAlive, "sig-2")()
+	tmp := t.TempDir()
+	mk := func(watches []string) *Thread {
+		return &Thread{AgentID: "claude-pantheon", Surface: "claude", PID: 8888, StartTime: "sig-2", Watches: watches}
+	}
+	// Fresh register declaring only OTHER agents — self must be added.
+	first, err := RegisterThread(tmp, mk([]string{"claude-home", "codex-pantheon"}))
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if !containsStr(first.Watches, "claude-pantheon") {
+		t.Errorf("fresh register must watch self; got %v", first.Watches)
+	}
+	// Re-register (reuse path) again omitting self — self must remain.
+	second, err := RegisterThread(tmp, mk([]string{"claude-home"}))
+	if err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	if second.ThreadID != first.ThreadID {
+		t.Fatalf("reuse must return same thread_id")
+	}
+	if !containsStr(second.Watches, "claude-pantheon") {
+		t.Errorf("reuse re-register must keep self-watch; got %v", second.Watches)
+	}
+}

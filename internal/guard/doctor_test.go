@@ -98,8 +98,8 @@ func TestDoctorWith_HealthySystem(t *testing.T) {
 	if swapFinding.Severity != SeverityOK {
 		t.Errorf("Swap Usage severity = %v, want OK", swapFinding.Severity)
 	}
-	if !strings.Contains(swapFinding.Message, "no memory pressure") {
-		t.Errorf("Swap message = %q, want 'no memory pressure' substring", swapFinding.Message)
+	if !strings.Contains(swapFinding.Message, "no pressure") {
+		t.Errorf("Swap message = %q, want 'no pressure' substring", swapFinding.Message)
 	}
 
 	// Disk should be OK
@@ -188,25 +188,37 @@ func TestDoctorWith_SwapActive(t *testing.T) {
 			name:          "minimal swap (256 MB) is healthy",
 			swapOutput:    "total = 512.00M  used = 256.00M  free = 256.00M  (encrypted)",
 			wantSeverity:  SeverityOK,
-			wantSubstring: "no memory pressure",
+			wantSubstring: "no pressure",
 		},
 		{
-			name:          "moderate swap (2 GB) warns",
+			// GREEN STANDARD: a few GB of swap on a busy machine is normal paging.
+			name:          "routine swap (2 GB) is GREEN — normal macOS paging",
 			swapOutput:    "total = 4096.00M  used = 2048.00M  free = 2048.00M  (encrypted)",
-			wantSeverity:  SeverityWarn,
-			wantSubstring: "under memory pressure",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "normal macOS paging",
 		},
 		{
-			name:          "heavy swap (6 GB) is critical thrashing",
+			// Under HEALTHY RAM pressure, swap of any size is residue, not an alarm
+			// — macOS keeps it allocated after using it, so the gate demotes to OK.
+			name:          "elevated swap (6 GB) is OK while RAM is healthy",
 			swapOutput:    "total = 12288.00M  used = 6144.00M  free = 6144.00M  (encrypted)",
-			wantSeverity:  SeverityCritical,
-			wantSubstring: "thrashing",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "memory pressure is normal",
+		},
+		{
+			// 16 GB swap with healthy RAM is NOT thrashing — the recurring false
+			// alarm. Genuine thrashing (heavy swap + high pressure) is covered by
+			// TestGateSwapOnPressure.
+			name:          "heavy swap (16 GB) is OK while RAM is healthy (residue, not thrashing)",
+			swapOutput:    "total = 32768.00M  used = 16384.00M  free = 16384.00M  (encrypted)",
+			wantSeverity:  SeverityOK,
+			wantSubstring: "memory pressure is normal",
 		},
 		{
 			name:          "no swap",
 			swapOutput:    "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)",
 			wantSeverity:  SeverityOK,
-			wantSubstring: "no memory pressure",
+			wantSubstring: "no pressure",
 		},
 	}
 
@@ -459,11 +471,18 @@ func TestCalculateScore(t *testing.T) {
 			want: 94, // 100 - 6
 		},
 		{
-			name: "one trend critical (historical, not live)",
+			name: "trend critical is EXCLUDED from the current score",
 			findings: []DiagnosticFinding{
-				{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
+				{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true},
 			},
-			want: 92, // 100 - 8 (a 7-day pattern, not catastrophic)
+			want: 100, // a 7-day trend never lowers the CURRENT health score
+		},
+		{
+			name: "current (non-trend) critical deducts",
+			findings: []DiagnosticFinding{
+				{Check: "Thread Leaks", Severity: SeverityCritical},
+			},
+			want: 88, // 100 - 12 (current critical: not a trend, not live-critical)
 		},
 		{
 			name: "one LIVE critical (act-now)",
@@ -473,14 +492,14 @@ func TestCalculateScore(t *testing.T) {
 			want: 75, // 100 - 25
 		},
 		{
-			name: "mixed severities",
+			name: "mixed: trend excluded, current warn still counts",
 			findings: []DiagnosticFinding{
 				{Severity: SeverityOK},
 				{Severity: SeverityInfo},
 				{Severity: SeverityWarn},
-				{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
+				{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true},
 			},
-			want: 86, // 100 - 0(OK) - 0(Info) - 6(Warn) - 8(trend-crit)
+			want: 94, // 100 - 6(Warn); the 7d trend-crit is excluded from the score
 		},
 		{
 			name: "floors at zero (many live criticals)",
@@ -577,6 +596,16 @@ func TestDoctorWith_MemoryHog(t *testing.T) {
 	}
 	if !strings.Contains(memFinding.Message, "Memory hog") {
 		t.Errorf("message = %q, want 'Memory hog' substring", memFinding.Message)
+	}
+	// The owner-reported dead-end: a warn-level memory hog MUST carry its lever
+	// through the report post-pass (ADR-033 — an alarm without an action is a
+	// monitor). The mapping once keyed on the phantom name "Memory Processes",
+	// so this stayed empty and the menubar said "Informational" about a 6 GB hog.
+	if memFinding.Fix != "sirsi relieve --memory" {
+		t.Errorf("Top Memory Consumers WARN Fix = %q, want %q", memFinding.Fix, "sirsi relieve --memory")
+	}
+	if memFinding.FixKind != FixRelief {
+		t.Errorf("Top Memory Consumers WARN FixKind = %q, want %q", memFinding.FixKind, FixRelief)
 	}
 }
 
@@ -776,11 +805,13 @@ func TestCheckRecentCrashLogs_TransientVsTrend(t *testing.T) {
 	if jet == nil {
 		t.Fatal("missing Jetsam finding")
 	}
-	if jet.Severity != SeverityWarn || jet.Trend {
-		t.Errorf("transient jetsam: got severity=%v trend=%v, want Warn/false", jet.Severity, jet.Trend)
+	// GREEN STANDARD: 3 isolated Jetsam kills (<= tolerance, not a multi-day trend)
+	// is normal background — SeverityOK so the machine can be green, NOT a warning.
+	if jet.Severity != SeverityOK || jet.Trend {
+		t.Errorf("transient jetsam: got severity=%v trend=%v, want OK/false (green standard)", jet.Severity, jet.Trend)
 	}
-	if !strings.Contains(jet.Message, "transient") {
-		t.Errorf("transient jetsam message %q should say transient", jet.Message)
+	if !strings.Contains(jet.Message, "no sustained trend") {
+		t.Errorf("transient jetsam message %q should say 'no sustained trend'", jet.Message)
 	}
 
 	pan := findByCheck(report.Findings, "Kernel Panics (7d)")
@@ -790,8 +821,10 @@ func TestCheckRecentCrashLogs_TransientVsTrend(t *testing.T) {
 	if pan.Severity != SeverityCritical || !pan.Trend {
 		t.Errorf("trend panics: got severity=%v trend=%v, want Critical/true", pan.Severity, pan.Trend)
 	}
-	if !strings.Contains(pan.Message, "sustained trend") {
-		t.Errorf("trend panic message %q should say sustained trend", pan.Message)
+	// A 7d trend is demoted to green info — the message must read as history, not
+	// a present-tense alarm (owner-flagged contradiction).
+	if !strings.Contains(pan.Message, "7-day record") || strings.Contains(pan.Message, "sustained trend") {
+		t.Errorf("trend panic message %q should read as a 7-day record, not a present-tense alarm", pan.Message)
 	}
 }
 
@@ -871,8 +904,9 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 	if f.Severity != SeverityCritical || !f.Trend {
 		t.Errorf("trend hangs: got severity=%v trend=%v, want Critical/true", f.Severity, f.Trend)
 	}
-	if !strings.Contains(f.Message, "sustained main-thread saturation") {
-		t.Errorf("trend message %q should name the saturation", f.Message)
+	// History framing, not a present-tense "saturation" claim on a green finding.
+	if !strings.Contains(f.Message, "7-day record") || strings.Contains(f.Message, "sustained main-thread saturation") {
+		t.Errorf("trend hang message %q should read as a 7-day record, not a present-tense alarm", f.Message)
 	}
 	if !strings.Contains(f.Detail, "Chrome ×6") {
 		t.Errorf("detail %q should name the real user-facing offender first", f.Detail)
@@ -908,8 +942,38 @@ func TestCheckAppHangs_TransientVsTrend(t *testing.T) {
 	report = &DoctorReport{}
 	checkAppHangs(report)
 	f = findByCheck(report.Findings, "App Hangs (7d)")
-	if f.Severity != SeverityWarn || f.Trend {
-		t.Errorf("transient hangs: got severity=%v trend=%v, want Warn/false", f.Severity, f.Trend)
+	// GREEN STANDARD: 3 isolated hangs (<= tolerance, not a trend) → Info, green.
+	if f.Severity != SeverityInfo || f.Trend {
+		t.Errorf("transient hangs: got severity=%v trend=%v, want Info/false (green standard)", f.Severity, f.Trend)
+	}
+}
+
+// TestClassifyHealth_GreenIsReachable is THE owner standard: a real dev machine
+// with isolated background events (a couple of Jetsam kills, a transient hang) and
+// routine swap must be GREEN — green has to be reachable, not perpetually amber.
+// A genuine sustained trend still escalates to amber.
+func TestClassifyHealth_GreenIsReachable(t *testing.T) {
+	healthy := []DiagnosticFinding{
+		{Check: "Swap Usage", Severity: SeverityOK},         // 2 GB routine paging
+		{Check: "Jetsam Events (7d)", Severity: SeverityOK}, // 2 isolated kills, below tolerance
+		{Check: "App Hangs (7d)", Severity: SeverityInfo},   // transient, informational
+		{Check: "RAM Pressure", Severity: SeverityOK},
+		{Check: "Disk Space", Severity: SeverityOK},
+	}
+	if got := classifyHealth(healthy); got != HealthGreen {
+		t.Errorf("classifyHealth = %v, want GREEN — a machine with only isolated background events must reach green", got)
+	}
+
+	// A sustained multi-day trend is still amber (real, not perpetual noise).
+	withTrend := append(healthy, DiagnosticFinding{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true})
+	if got := classifyHealth(withTrend); got != HealthAmber {
+		t.Errorf("classifyHealth with a sustained trend = %v, want amber", got)
+	}
+
+	// A live-critical (RAM/disk) is still red.
+	withRed := append(healthy, DiagnosticFinding{Check: "RAM Pressure", Severity: SeverityCritical})
+	if got := classifyHealth(withRed); got != HealthRed {
+		t.Errorf("classifyHealth with live-critical RAM = %v, want red", got)
 	}
 }
 
@@ -962,18 +1026,46 @@ func TestClassifyHealth(t *testing.T) {
 }
 
 func TestCalculateScore_TrendsDoNotZero(t *testing.T) {
+	// Historical 7-day trends never lower the CURRENT score — they are dashboard
+	// data, not deductions. (In production a 7d finding is only Critical/Warn when
+	// it IS a sustained trend, so it always carries Trend:true.)
 	trends := []DiagnosticFinding{
-		{Check: "Jetsam Events (7d)", Severity: SeverityCritical},
-		{Check: "App Crashes (7d)", Severity: SeverityCritical},
-		{Check: "App Hangs (7d)", Severity: SeverityCritical},
-		{Check: "Kernel Panics (7d)", Severity: SeverityCritical},
+		{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true},
+		{Check: "App Crashes (7d)", Severity: SeverityCritical, Trend: true},
+		{Check: "App Hangs (7d)", Severity: SeverityCritical, Trend: true},
+		{Check: "Kernel Panics (7d)", Severity: SeverityCritical, Trend: true},
 	}
-	if s := calculateScore(trends); s < 60 {
-		t.Errorf("4 historical trend criticals scored %d, want >= 60 (trends are not catastrophic)", s)
+	if s := calculateScore(trends); s != 100 {
+		t.Errorf("4 historical trends scored %d, want 100 (trends never lower the current score)", s)
 	}
+	// A live-critical lowers the score; an excluded trend does not.
 	live := []DiagnosticFinding{{Check: "RAM Pressure", Severity: SeverityCritical, Message: "critically high"}}
 	if calculateScore(live) >= calculateScore(trends[:1]) {
-		t.Errorf("a live-critical should score lower than a single trend-critical")
+		t.Errorf("a live-critical should score lower than a trend-only set")
+	}
+}
+
+// TestDemoteTrendsToInfo locks the "trends never alarm" fix at the data source:
+// every Trend finding drops to Info (so no surface shows it as attention), while
+// CURRENT findings keep their severity.
+func TestDemoteTrendsToInfo(t *testing.T) {
+	f := []DiagnosticFinding{
+		{Check: "Swap Usage", Severity: SeverityCritical},                      // current → untouched
+		{Check: "Jetsam Events (7d)", Severity: SeverityCritical, Trend: true}, // sustained trend → Info
+		{Check: "App Hangs (7d)", Severity: SeverityWarn, Trend: true},         // sustained trend → Info
+		{Check: "App Crashes (7d)", Severity: SeverityWarn},                    // 7d but NOT flagged trend → still Info
+		{Check: "RAM Pressure", Severity: SeverityWarn},                        // current → untouched
+	}
+	demoteTrendsToInfo(f)
+
+	if f[0].Severity != SeverityCritical || f[4].Severity != SeverityWarn {
+		t.Errorf("current findings were demoted: swap=%v ram=%v", f[0].Severity, f[4].Severity)
+	}
+	// All three "(7d)" findings demote — including the non-trend elevated count.
+	for _, i := range []int{1, 2, 3} {
+		if f[i].Severity != SeverityInfo {
+			t.Errorf("7-day finding %q not Info after demotion: %v", f[i].Check, f[i].Severity)
+		}
 	}
 }
 
@@ -989,14 +1081,16 @@ func TestRemediationCommand(t *testing.T) {
 		{"App Crashes (7d)", "", SeverityWarn, "sirsi clean --include-caution", FixInstant},
 		{"App Hangs (7d)", "Chrome ×6", SeverityCritical, "sirsi relieve", FixRelief},
 		{"App Hangs (7d)", "Chrome ×4", SeverityWarn, "sirsi relieve", FixRelief},
-		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi guard", FixRelief},
+		// Memory findings now route to a REAL action (flush caches), not the
+		// `sirsi guard` MONITOR that used to dead-end at a dashboard.
+		{"Jetsam Events (7d)", "", SeverityCritical, "sirsi relieve --memory", FixRelief},
 		{"Disk Space", "", SeverityCritical, "sirsi clean --include-caution", FixInstant},
 		{"Swap Usage", "", SeverityWarn, "", FixRelief}, // warn swap → no one-click cmd, but classed relief
-		{"Swap Usage", "", SeverityCritical, "sirsi guard", FixRelief},
+		{"Swap Usage", "", SeverityCritical, "sirsi relieve --memory", FixRelief},
 		{"RAM Pressure", "", SeverityOK, "", FixRelief}, // healthy → no cmd; kind still relief
 		{"Spotlight Storm", "", SeverityWarn, "sirsi spotlight-exclude ~/Development", FixGuidance},
-		{"Thread Leaks", "", SeverityCritical, "sirsi guard", FixRelief},
-		{"Sirsi Processes", "", SeverityInfo, "", ""}, // informational → no fix, no kind
+		{"Thread Leaks", "", SeverityCritical, "sirsi relieve", FixRelief}, // renice offender (real action, not the monitor)
+		{"Sirsi Processes", "", SeverityInfo, "", ""},                      // informational → no fix, no kind
 	}
 	for _, c := range cases {
 		f := DiagnosticFinding{Check: c.check, Detail: c.detail, Severity: c.sev}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,6 +48,28 @@ type systemProfilerApp struct {
 // systemProfilerResult wraps the top-level JSON structure from system_profiler.
 type systemProfilerResult struct {
 	Items []systemProfilerApp `json:"_items"`
+}
+
+// Injectable seams (PANTHEON_RULES A16/A21). Production defaults exec real
+// system tools; tests swap these for canned data. Tests that swap them must
+// NOT use t.Parallel() (package-level state — see PRs #129/#131).
+var (
+	systemProfilerJSON = runSystemProfilerJSON
+	brewListCasks      = runBrewListCasks
+	brewCaskInfoJSON   = runBrewCaskInfoJSON
+	lsRegisterStream   = runLSRegisterStream
+	appDirSources      = defaultAppDirSources
+	readBundleIDFile   = readBundleIDDefault
+	enrichAppFn        = enrichApp
+	ghostScanFn        = defaultGhostScan
+)
+
+// defaultGhostScan runs the standard filesystem-only ghost scan used by
+// EnumerateApps to fold residual data into the app inventory.
+func defaultGhostScan(ctx context.Context) ([]Ghost, error) {
+	scanner := NewScanner()
+	scanner.SkipLaunchServices = true // LS ghosts are folded via the ghost scan below
+	return scanner.Scan(ctx, false)
 }
 
 // EnumerateApps discovers all software on macOS from multiple sources.
@@ -130,9 +153,7 @@ func EnumerateApps(ctx context.Context) ([]InstalledApp, error) {
 	}
 
 	// Enrich each app with runtime status, size, last-used, and ghost data
-	scanner := NewScanner()
-	scanner.SkipLaunchServices = true // We'll fold LS ghosts via the ghost scan below
-	ghosts, _ := scanner.Scan(ctx, false)
+	ghosts, _ := ghostScanFn(ctx)
 
 	// Build ghost index by bundle ID and by app name
 	ghostByBundleID := make(map[string]Ghost)
@@ -145,7 +166,7 @@ func EnumerateApps(ctx context.Context) ([]InstalledApp, error) {
 	}
 
 	for i := range apps {
-		enrichApp(ctx, &apps[i], ghostByBundleID, ghostByName)
+		enrichAppFn(ctx, &apps[i], ghostByBundleID, ghostByName)
 	}
 
 	// Add pure ghost apps (apps no longer installed but with residuals).
@@ -196,10 +217,14 @@ func EnumerateApps(ctx context.Context) ([]InstalledApp, error) {
 	return apps, nil
 }
 
+// runSystemProfilerJSON executes system_profiler and returns its JSON output.
+func runSystemProfilerJSON(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "system_profiler", "SPApplicationsDataType", "-json").Output()
+}
+
 // enumerateSystemProfiler uses system_profiler to get all registered apps.
 func enumerateSystemProfiler(ctx context.Context) ([]InstalledApp, error) {
-	cmd := exec.CommandContext(ctx, "system_profiler", "SPApplicationsDataType", "-json")
-	out, err := cmd.Output()
+	out, err := systemProfilerJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("system_profiler failed: %w", err)
 	}
@@ -229,10 +254,14 @@ func enumerateSystemProfiler(ctx context.Context) ([]InstalledApp, error) {
 	return apps, nil
 }
 
+// runBrewListCasks executes brew list --cask and returns its output.
+func runBrewListCasks(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "brew", "list", "--cask", "-1").Output()
+}
+
 // enumerateHomebrew lists all Homebrew cask-installed apps.
 func enumerateHomebrew(ctx context.Context, homeDir string) ([]InstalledApp, error) {
-	cmd := exec.CommandContext(ctx, "brew", "list", "--cask", "-1")
-	out, err := cmd.Output()
+	out, err := brewListCasks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("brew list failed: %w", err)
 	}
@@ -268,7 +297,7 @@ func enumerateHomebrew(ctx context.Context, homeDir string) ([]InstalledApp, err
 
 		// Read bundle ID from the .app if we found it
 		if appPath != "" {
-			if bid, err := readBundleIDDefault(ctx, appPath); err == nil && bid != "" {
+			if bid, err := readBundleIDFile(ctx, appPath); err == nil && bid != "" {
 				app.BundleID = bid
 			}
 		}
@@ -279,15 +308,23 @@ func enumerateHomebrew(ctx context.Context, homeDir string) ([]InstalledApp, err
 	return apps, nil
 }
 
-// enumerateAppDirs directly scans /Applications and ~/Applications.
-func enumerateAppDirs(ctx context.Context, homeDir string) []InstalledApp {
-	dirs := []struct {
-		path   string
-		source string
-	}{
+// appDirSource pairs an application directory with its inventory source label.
+type appDirSource struct {
+	path   string
+	source string
+}
+
+// defaultAppDirSources returns the standard macOS application directories.
+func defaultAppDirSources(homeDir string) []appDirSource {
+	return []appDirSource{
 		{"/Applications", "applications"},
 		{filepath.Join(homeDir, "Applications"), "user-applications"},
 	}
+}
+
+// enumerateAppDirs directly scans /Applications and ~/Applications.
+func enumerateAppDirs(ctx context.Context, homeDir string) []InstalledApp {
+	dirs := appDirSources(homeDir)
 
 	var apps []InstalledApp
 	for _, d := range dirs {
@@ -320,7 +357,7 @@ func enumerateAppDirs(ctx context.Context, homeDir string) []InstalledApp {
 			}
 
 			// Read bundle ID
-			if bid, err := readBundleIDDefault(ctx, appPath); err == nil && bid != "" {
+			if bid, err := readBundleIDFile(ctx, appPath); err == nil && bid != "" {
 				app.BundleID = bid
 			}
 
@@ -358,7 +395,7 @@ func walkAppsUnder(ctx context.Context, dir, source string, maxDepth int) []Inst
 				Path:   appPath,
 				Source: source,
 			}
-			if bid, err := readBundleIDDefault(ctx, appPath); err == nil && bid != "" {
+			if bid, err := readBundleIDFile(ctx, appPath); err == nil && bid != "" {
 				app.BundleID = bid
 			}
 			apps = append(apps, app)
@@ -379,7 +416,7 @@ func enrichApp(ctx context.Context, app *InstalledApp, ghostByBundleID map[strin
 
 	// Read bundle ID if missing
 	if app.BundleID == "" {
-		if bid, err := readBundleIDDefault(ctx, app.Path); err == nil && bid != "" {
+		if bid, err := readBundleIDFile(ctx, app.Path); err == nil && bid != "" {
 			app.BundleID = bid
 		}
 	}
@@ -495,10 +532,14 @@ func caskToAppName(cask string) string {
 	return strings.Join(parts, " ")
 }
 
+// runBrewCaskInfoJSON executes brew info for a cask and returns its JSON output.
+func runBrewCaskInfoJSON(ctx context.Context, cask string) ([]byte, error) {
+	return exec.CommandContext(ctx, "brew", "info", "--cask", "--json=v2", cask).Output()
+}
+
 // brewCaskVersion attempts to read the version of a brew cask.
 func brewCaskVersion(ctx context.Context, cask string) string {
-	cmd := exec.CommandContext(ctx, "brew", "info", "--cask", "--json=v2", cask)
-	out, err := cmd.Output()
+	out, err := brewCaskInfoJSON(ctx, cask)
 	if err != nil {
 		return ""
 	}
@@ -517,6 +558,21 @@ func brewCaskVersion(ctx context.Context, cask string) string {
 	return ""
 }
 
+// runLSRegisterStream starts lsregister -dump and returns its stdout stream
+// plus a done func that reaps the process once the stream is consumed.
+func runLSRegisterStream(ctx context.Context) (io.Reader, func(), error) {
+	lsregister := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+	cmd := exec.CommandContext(ctx, lsregister, "-dump")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("ka: lsregister pipe failed: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, nil, fmt.Errorf("ka: lsregister start failed: %w", err)
+	}
+	return stdout, func() { _ = cmd.Wait() }, nil
+}
+
 // ScanLaunchServicesGhosts folds the sight/launchservices logic into Ka.
 // Scans the Launch Services database for apps that are registered but
 // whose .app bundle no longer exists on disk.
@@ -525,17 +581,13 @@ func ScanLaunchServicesGhosts(ctx context.Context) ([]GhostRegistration, error) 
 		return nil, fmt.Errorf("ka: Launch Services scan only supported on macOS")
 	}
 
-	lsregister := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-	cmd := exec.CommandContext(ctx, lsregister, "-dump")
-	stdout, err := cmd.StdoutPipe()
+	stream, done, err := lsRegisterStream(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("ka: lsregister pipe failed: %w", err)
+		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("ka: lsregister start failed: %w", err)
-	}
+	defer done()
 
-	sc := bufio.NewScanner(stdout)
+	sc := bufio.NewScanner(stream)
 	sc.Buffer(make([]byte, 256*1024), 1024*1024)
 
 	var ghosts []GhostRegistration
@@ -595,8 +647,6 @@ func ScanLaunchServicesGhosts(ctx context.Context) ([]GhostRegistration, error) 
 		}
 	}
 	processBlock() // final block
-
-	_ = cmd.Wait()
 
 	logging.Debug("ka: Launch Services ghost scan complete", "ghosts", len(ghosts))
 	return ghosts, nil

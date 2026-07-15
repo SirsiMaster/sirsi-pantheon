@@ -38,6 +38,35 @@ func (m *mockRule) Clean(_ context.Context, findings []Finding, opts CleanOption
 	}, nil
 }
 
+// TestScan_ReclaimableSizeExcludesWeightsAndWarnings locks the fix for the
+// "76 GB waste" false alarm: the reclaimable headline must NOT count AI model
+// weights (CategoryAI, caution-tier, cleaner-protected, expensive to regenerate)
+// or warning-tier data, even though TotalSize still inventories everything.
+func TestScan_ReclaimableSizeExcludesWeightsAndWarnings(t *testing.T) {
+	const gb = int64(1) << 30
+	e := NewEngine()
+	e.Register(&mockRule{
+		name:      "mixed",
+		category:  CategoryDev,
+		platforms: []string{"darwin", "linux", "windows"},
+		findings: []Finding{
+			{RuleName: "cache", Category: CategoryDev, Severity: SeveritySafe, SizeBytes: 10 * gb},     // reclaimable
+			{RuleName: "weights", Category: CategoryAI, Severity: SeverityCaution, SizeBytes: 67 * gb}, // model weights — NOT reclaimable
+			{RuleName: "data", Category: CategoryDev, Severity: SeverityWarning, SizeBytes: 5 * gb},    // warning — NOT reclaimable
+		},
+	})
+	res, err := e.Scan(context.Background(), ScanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(82) * gb; res.TotalSize != want {
+		t.Errorf("TotalSize = %d GB, want 82 (full inventory)", res.TotalSize/gb)
+	}
+	if want := int64(10) * gb; res.ReclaimableSize != want {
+		t.Errorf("ReclaimableSize = %d GB, want 10 (excludes the 67 GB AI weights + 5 GB warning)", res.ReclaimableSize/gb)
+	}
+}
+
 func TestEngine_RegisterAndRules(t *testing.T) {
 	e := NewEngine()
 	if len(e.Rules()) != 0 {

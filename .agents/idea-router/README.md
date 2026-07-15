@@ -38,6 +38,16 @@ sirsi thread close --thread thr-XXXX
 
 Surfaces are model-neutral: `claude`, `codex`, `gemini`, `gemma`, `qwen`, `mcp`, `api`, `webhook`, `worker`. Missing/invalid registration is treated as a local-node health problem in `sirsi router node-status`.
 
+### `ctr` — Check The Router (the on-demand wake, PANTHEON_RULES A31)
+
+When background wake fails (a watcher loop dies, a daemon exits, a session heartbeats but never pulls), **`ctr`** is the escape hatch: one synchronous pass that surfaces every open item and wakes stranded agents — no daemon to keep alive, so nothing to die.
+
+- **`ctr`** — from any shell / IDE terminal (a shim over `sirsi ctr`; mac/linux/windows, headless or resident).
+- **`/ctr`** — inside a Claude Code session (a skill; run it, then act on items addressed to you).
+- **`sirsi ctr`** — the source of truth. `sirsi ctr --json` for hooks/processes; `sirsi ctr --no-wake` to surface only.
+
+Both a human and a process can call it. Wire it on a machine with `sirsi setup` (automatic) or `sirsi ctr --install`. This is the manual counterpart to the heartbeat loop below — call it whenever the router may have unread items.
+
 ### Heartbeat Loop (mandatory from register → close)
 
 A registered thread that is not looping is invisible to its own inbox — items addressed to it sit unread until the next manual `ctr`. The heartbeat loop is what makes registration mean "alive and watching," not just "known." It is the same primitive across every surface; only the implementation differs:
@@ -55,6 +65,15 @@ Rules:
 - The loop's job is minimal: pull the inbox, act on or queue new items, emit a `sirsi thread heartbeat`, sleep. It is not a work driver — it is a watcher.
 - Prefer event-driven waking (file Monitor on `items/`) over fixed polling; keep a long fallback tick so the loop survives a missed event.
 - One loop per thread. De-registering (`thread close`) is the only clean way to end it.
+
+**Durable cross-session watcher (A27) — one channel, two front doors.** For worker/headless surfaces the persistent heartbeat loop is a per-agent launchd pull-loop: a `KeepAlive` LaunchAgent (`ai.sirsi.router.wake.<agent>`) that runs `sirsi router wake-loop <agent>`, which each interval pulls the agent's inbox and heartbeats — surviving session restarts because launchd owns its lifecycle. There is exactly ONE such channel; it has two equivalent front doors:
+
+| Command | Scope | Use when |
+| :--- | :--- | :--- |
+| `sirsi router wake-install <agent>` | agent-scoped (explicit id) | installing for a named agent (setup/topology) |
+| `sirsi thread watch --install` | thread-scoped (self-resolving) | a session arming its OWN durable watcher without knowing its agent id |
+
+`sirsi thread watch --install` == `sirsi router wake-install <that agent>` — the thread verb resolves the current thread's agent (via `--agent`, `$SIRSI_AGENT_ID`, the session→agent marker, or a sole live thread) and delegates to the SAME `InstallWakeLaunchAgent` path. It is a thin alias, not a second watcher subsystem. `sirsi thread watch` (no flag) reports whether the channel is installed; `--uninstall` cleanly removes it. Interactive `claude` sessions do NOT use this — they heartbeat via `/loop` (row 1 above).
 
 ## Protocol
 
@@ -378,3 +397,14 @@ sirsi router status
 ```
 
 If no automation runner is active, the pending item is still the source of truth. Agents must check `state.json` and the latest router files at session start.
+
+## Router v2 — durable store, one facade, migration (ADR-036)
+
+Dispatch authority lives in `~/.sirsi/router.db` (outside git). `sirsi router
+send/close/pull` and the MCP `router_*` tools share one facade: writes commit
+to the store first (idempotency, quotas, breakers — no store row, no
+dispatch), then dual-write the `items/*.md` audit view here. Reads are the
+union of files and store rows, so neither a legacy writer nor a failed audit
+write can hide work. `sirsi router migrate` imports every existing item with
+zero-loss verification (idempotent). Files remain written and tracked until
+the owner-gated cutover at the end of the deprecation window.

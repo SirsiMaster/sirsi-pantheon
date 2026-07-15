@@ -42,6 +42,11 @@ jobs:
     name: Build Menu Bar (macOS DMG)
     runs-on: macos-latest
     needs: release
+    # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
+    # path wedges (a missing/invalid Developer-ID cert or app-specific password
+    # makes `security import`/`codesign`/`notarytool --wait` hang), this caps the
+    # job at 30m. A 5h20m hung DMG job (run 27873488895) is what motivated this.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,6 +124,10 @@ jobs:
 
   windows-installer:
     name: Build Windows Installer
+    # Mac-first platform roadmap (ADR-032): Windows is deferred 3–6mo, demand-gated.
+    # Gated OFF so a tag release never fails on Windows; set the repo variable
+    # ENABLE_WINDOWS_BUILD=true to re-enable when the platform phase arrives.
+    if: ${{ vars.ENABLE_WINDOWS_BUILD == 'true' }}
     runs-on: windows-latest
     needs: release
     steps:
@@ -175,6 +184,11 @@ jobs:
     name: Publish thoth-init to npm (OIDC)
     runs-on: ubuntu-latest
     needs: release
+    # Non-fatal: thoth-init publishing 404'd (package not yet claimed / OIDC
+    # trusted-publisher not configured), which failed the WHOLE release run and
+    # masked the signed-DMG result. The npm tool is decoupled from the signed
+    # macOS release, so a publish failure must not red the release.
+    continue-on-error: true
     permissions:
       contents: read
       id-token: write
@@ -188,18 +202,23 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Extract version from tag
-        id: version
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Update package version
+      # thoth-init is versioned INDEPENDENTLY of the pantheon release tag. The old
+      # flow overrode its package.json version with the tag (e.g. 0.23.2-beta),
+      # which would DOWNGRADE the npm `latest` tag (thoth-init is at 2.0.0) and
+      # 404'd every release. Publish ONLY the version already in
+      # tools/thoth-init/package.json, and only when it is genuinely new — an
+      # unchanged thoth-init is a no-op, never a downgrade and never a failed
+      # release. (A new version still needs the npm Trusted Publisher configured;
+      # that is owner-gated.)
+      - name: Publish thoth-init (skip if this version is already on npm)
         working-directory: tools/thoth-init
-        env:
-          PKG_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: npm version "$PKG_VERSION" --no-git-tag-version --allow-same-version
-
-      - name: Publish with provenance
-        working-directory: tools/thoth-init
-        run: npm publish --provenance --access public
+        run: |
+          set -euo pipefail
+          PKG_NAME="$(node -p 'require("./package.json").name')"
+          PKG_VERSION="$(node -p 'require("./package.json").version')"
+          if npm view "${PKG_NAME}@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "${PKG_NAME}@${PKG_VERSION} already published — nothing to publish."
+            exit 0
+          fi
+          echo "Publishing ${PKG_NAME}@${PKG_VERSION} (provenance, public)..."
+          npm publish --provenance --access public

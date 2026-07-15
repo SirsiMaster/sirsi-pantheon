@@ -140,12 +140,23 @@ func InstallSupervisor() InstallResult {
 		res.Message = "could not resolve repo root for WorkingDirectory: " + err.Error()
 		return res
 	}
+	// Root-ful invocation: persist the clone root so app-context callers (the
+	// menubar's launchd-spawned levers, cwd=/) can resolve it later (B2).
+	router.RememberRepoRoot(workDir)
 	path := supervisorPlistPath()
+	content := supervisorPlistContent(bin, workDir)
+	// Idempotence: an already-correct plist means the resident supervisor is
+	// already the one we would install — leave it alone rather than bouncing a
+	// healthy KeepAlive loop on every setup/install-daemons run.
+	if existing, rerr := os.ReadFile(path); rerr == nil && string(existing) == content {
+		res.Status, res.Message = StatusOK, "agent-router supervisor already installed (no change)"
+		return res
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
-	if err := os.WriteFile(path, []byte(supervisorPlistContent(bin, workDir)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}

@@ -52,6 +52,47 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// sirsiTestEnv returns the parent environment with every GIT_* variable removed
+// and PWD pinned to dir, for handing to a sirsi subprocess.
+//
+// Stripping GIT_* is what makes per-test router roots actually isolated. When
+// the suite runs under a git hook — most importantly the Ma'at pre-push gate,
+// which executes inside `git push` — git exports GIT_DIR, GIT_INDEX_FILE,
+// GIT_PREFIX, GIT_COMMON_DIR, etc. into the environment, and `go test` (and
+// every subprocess it spawns) inherits them. The sirsi binary resolves the
+// router root via router.FindRepoRoot, which shells `git rev-parse
+// --git-common-dir`; git honors GIT_DIR over the process working directory, so
+// a binary launched in an isolated t.TempDir() would resolve the REAL repo's
+// router root instead of the temp one — writing there and leaving the temp
+// state.json untouched. That is the TestRouterAckLegacyPending gate flake:
+// green under a bare `go test` (no GIT_* in the env, so FindRepoRoot falls back
+// to the cwd walk-up) but red under the pre-push gate. Removing GIT_* forces
+// the subprocess to resolve from its own cwd. Pinning PWD additionally keeps any
+// os.Getwd()-based resolution consistent with cmd.Dir.
+func sirsiTestEnv(dir string, extra ...string) []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+len(extra)+1)
+	for _, kv := range base {
+		if strings.HasPrefix(kv, "GIT_") {
+			continue
+		}
+		if dir != "" && strings.HasPrefix(kv, "PWD=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	if dir != "" {
+		out = append(out, "PWD="+dir)
+	}
+	// Sandbox the router store: without this, every test send lands in the
+	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07, and
+	// the idempotency window made TestRouterPullModelRoundtrip dedupe against
+	// a PREVIOUS run's row — flaky by the hour bucket). Per-process temp file;
+	// an explicit SIRSI_ROUTER_DB in extra still wins (append order).
+	out = append(out, "SIRSI_ROUTER_DB="+filepath.Join(os.TempDir(), fmt.Sprintf("sirsi-test-router-%d.db", os.Getpid())))
+	return append(out, extra...)
+}
+
 // runSirsi executes the test binary with the given args and a timeout.
 // It returns stdout, stderr, and any error (including non-zero exit).
 func runSirsi(t *testing.T, timeout time.Duration, args ...string) (stdout, stderr string, err error) {
@@ -66,7 +107,7 @@ func runSirsiWithEnv(t *testing.T, timeout time.Duration, env []string, args ...
 
 	cmd := exec.CommandContext(ctx, testBinary, args...)
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = sirsiTestEnv(repoRoot, env...)
 	// Prevent interactive prompts by closing stdin.
 	cmd.Stdin = nil
 
@@ -99,7 +140,10 @@ func runSirsiInDir(t *testing.T, dir string, timeout time.Duration, args ...stri
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	// Strip GIT_* (e.g. GIT_DIR leaked by the pre-push gate) and pin PWD so the
+	// subprocess resolves its router root from dir, not the gate's repo. See
+	// sirsiTestEnv for the full rationale (TestRouterAckLegacyPending flake).
+	cmd.Env = sirsiTestEnv(dir)
 	cmd.Stdin = nil
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
@@ -839,7 +883,34 @@ func TestUXContract_NoDeityVocab(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			stdout, stderr, err := runSirsi(t, 60*time.Second, tt.args...)
+			// `risk` ECHOES repo data (branch name, last commit message) — a
+			// host checkout whose tip commit mentions a deity is DATA, not UI
+			// chrome, and must not fail the vocab law. Run it against a
+			// controlled fixture repo so the test owns every string it greps
+			// (2026-07-09: the pushed tip "feat(menubar): Osiris — …" made
+			// this test unpassable in its own feature worktree).
+			dir := repoRoot
+			if tt.name == "risk" {
+				dir = t.TempDir()
+				for _, ga := range [][]string{
+					{"init", "-q"},
+					{"config", "user.email", "vocab@test"},
+					{"config", "user.name", "vocab-test"},
+					{"commit", "--allow-empty", "-q", "-m", "plain fixture commit"},
+				} {
+					gc := exec.Command("git", ga...)
+					gc.Dir = dir
+					for _, kv := range os.Environ() {
+						if !strings.HasPrefix(kv, "GIT_") {
+							gc.Env = append(gc.Env, kv)
+						}
+					}
+					if out, gerr := gc.CombinedOutput(); gerr != nil {
+						t.Fatalf("fixture git %v: %v\n%s", ga, gerr, out)
+					}
+				}
+			}
+			stdout, stderr, err := runSirsiInDir(t, dir, 60*time.Second, tt.args...)
 			if err != nil {
 				t.Fatalf("command %v failed: %v", tt.args, err)
 			}

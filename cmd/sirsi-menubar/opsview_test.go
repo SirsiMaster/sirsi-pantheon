@@ -41,8 +41,10 @@ func TestOpsAgentRows(t *testing.T) {
 	if !strings.Contains(rows[0], "🟢") || !strings.Contains(rows[0], "claude-pantheon") || !strings.Contains(rows[0], "1 live") {
 		t.Errorf("row0 = %q", rows[0])
 	}
-	// Stale agent: 🟡 + stale + pending.
-	if !strings.Contains(rows[1], "🟡") || !strings.Contains(rows[1], "2 stale") || !strings.Contains(rows[1], "3 pending") {
+	// Agent with old (stale) registrations: stays 🟢 — old session records are
+	// cruft, not an alarm — but the count is still surfaced as "N old".
+	if !strings.Contains(rows[1], "🟢") || strings.Contains(rows[1], "🟡") ||
+		!strings.Contains(rows[1], "2 old") || !strings.Contains(rows[1], "3 pending") {
 		t.Errorf("row1 = %q", rows[1])
 	}
 	// Needs-login agent: 🔑 + "needs login" (precedence over live count).

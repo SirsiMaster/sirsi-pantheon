@@ -100,6 +100,108 @@ func TestSuperviseOnceRegistersThreadAndClassifiesSurfaces(t *testing.T) {
 	}
 }
 
+func TestSuperviseOnceStampsSchemaAndDrillableItems(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot)
+	id, err := work.SendTyped(routerRoot, "claude-pantheon", "codex-pantheon", "wire the board", "review", "Enrich board.json to 1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	report, err := SuperviseOnce(SuperviseOptions{
+		RepoRoot: repoRoot,
+		AgentID:  "horus-supervisor-test",
+		PID:      os.Getpid(),
+		Now:      now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Contract stamps present — renderers gate on these.
+	if report.SchemaVersion != SupervisorSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", report.SchemaVersion, SupervisorSchemaVersion)
+	}
+	if report.GeneratedAt == "" {
+		t.Fatal("generated_at must be stamped")
+	}
+
+	// pending_items is drillable: the codex row carries the enriched record, not
+	// a bare id.
+	var codex AgentSurfaceStatus
+	for _, a := range report.Agents {
+		if a.AgentID == "codex-pantheon" {
+			codex = a
+		}
+	}
+	if len(codex.PendingItems) != 1 {
+		t.Fatalf("codex pending_items = %d, want 1", len(codex.PendingItems))
+	}
+	pi := codex.PendingItems[0]
+	if pi.ID != id {
+		t.Errorf("pending_item id = %q, want %q", pi.ID, id)
+	}
+	if pi.Title != "wire the board" {
+		t.Errorf("pending_item title = %q, want the item title", pi.Title)
+	}
+	if pi.Type != "review" {
+		t.Errorf("pending_item type = %q, want review", pi.Type)
+	}
+	if pi.From != "claude-pantheon" {
+		t.Errorf("pending_item from = %q, want claude-pantheon", pi.From)
+	}
+	if codex.OldestPendingAgeSeconds < 0 {
+		t.Errorf("oldest_pending_age_seconds = %v, must never be negative", codex.OldestPendingAgeSeconds)
+	}
+}
+
+func TestSuperviseOnceWritesBoardJSON(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot)
+
+	report, err := SuperviseOnce(SuperviseOptions{
+		RepoRoot: repoRoot,
+		AgentID:  "horus-supervisor-test",
+		PID:      os.Getpid(),
+		Now:      time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The board is persisted for thin renderers and round-trips to the same shape.
+	data, err := os.ReadFile(filepath.Join(routerRoot, BoardFileName))
+	if err != nil {
+		t.Fatalf("board.json not written: %v", err)
+	}
+	var board SuperviseReport
+	if err := json.Unmarshal(data, &board); err != nil {
+		t.Fatalf("board.json does not round-trip: %v", err)
+	}
+	if board.SchemaVersion != report.SchemaVersion {
+		t.Errorf("board schema = %q, want %q", board.SchemaVersion, report.SchemaVersion)
+	}
+	if board.ThreadID != report.ThreadID {
+		t.Errorf("board thread_id = %q, want %q", board.ThreadID, report.ThreadID)
+	}
+	// No temp files leak into the router root after an atomic write.
+	entries, _ := os.ReadDir(routerRoot)
+	for _, e := range entries {
+		if len(e.Name()) > 7 && e.Name()[:7] == ".board-" {
+			t.Errorf("leaked board temp file: %s", e.Name())
+		}
+	}
+}
+
 func TestSuperviseOnceMarksStaleAgentThread(t *testing.T) {
 	repoRoot := t.TempDir()
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")

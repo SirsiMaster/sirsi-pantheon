@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	cryptorand "crypto/rand"
@@ -244,6 +245,26 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				if t.CurrentItem != "" {
 					existing.CurrentItem = t.CurrentItem
 				}
+				// REPLACE-when-non-empty (claude-home design call, 2026-06-19): a
+				// re-register with a non-empty declaration AUTHORITATIVELY re-states
+				// the live thread's watches/metadata. This fixes the bug where new
+				// --watch values were silently dropped on the reuse path (codex-home,
+				// item 133134) AND lets an agent NARROW its watch set — "re-register
+				// tightens the live declaration." An empty incoming field is a bare
+				// heartbeat-style register and must NOT wipe the existing value.
+				// (Union was rejected: it accretes watches forever and can never narrow.)
+				if len(t.Watches) > 0 {
+					existing.Watches = normalizeWatches(existing.AgentID, t.Watches)
+				}
+				if t.Workstream != "" {
+					existing.Workstream = t.Workstream
+				}
+				if t.WakeMechanism != "" {
+					existing.WakeMechanism = t.WakeMechanism
+				}
+				if t.Repo != "" {
+					existing.Repo = t.Repo
+				}
 				if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 					return nil, err
 				}
@@ -266,15 +287,43 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t.Status == "" {
 		t.Status = ThreadStatusActive
 	}
-	if len(t.Watches) == 0 {
-		t.Watches = []string{t.AgentID}
-	}
+	// normalizeWatches puts self first + dedupes, so empty input → just [self] and a
+	// declaration omitting self still watches its own inbox (the A27 contract).
+	t.Watches = normalizeWatches(t.AgentID, t.Watches)
 
 	reg.Threads[t.ThreadID] = t
 	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 		return nil, err
 	}
 	return t, nil
+}
+
+// normalizeWatches returns the watch set with the thread's OWN agent id FIRST,
+// then the declared watches stable-de-duped with blank/whitespace entries dropped.
+// Every thread watches its own inbox (A27), so self is GUARANTEED present and
+// primary even when a register/re-register declares only other agents — that
+// self-watch is the precursor honest liveness depends on (codex-validated #76
+// follow-up: a thread that doesn't watch its own inbox can never be truthfully
+// "armed"). A blank agentID is ignored. Used on both the mint and reuse paths.
+func normalizeWatches(agentID string, watches []string) []string {
+	seen := make(map[string]struct{}, len(watches)+1)
+	out := make([]string, 0, len(watches)+1)
+	add := func(w string) {
+		w = strings.TrimSpace(w)
+		if w == "" {
+			return
+		}
+		if _, ok := seen[w]; ok {
+			return
+		}
+		seen[w] = struct{}{}
+		out = append(out, w)
+	}
+	add(agentID) // self FIRST — the inbox a thread must always watch
+	for _, w := range watches {
+		add(w)
+	}
+	return out
 }
 
 // HeartbeatThread updates LastSeenAt and optionally status/current_item/last_error.

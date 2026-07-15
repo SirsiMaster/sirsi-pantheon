@@ -7,10 +7,111 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
+
+// ── Binary resolution ───────────────────────────────────────────────
+//
+// The menubar runs under launchd, which hands processes a MINIMAL PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) that omits ~/.local/bin — exactly where the
+// `claude` and `codex` CLIs install. A bare exec.LookPath therefore reports
+// those agents as "not installed" while a GUI app like VS Code (detected via
+// its /Applications bundle) shows installed — the diabolical inversion where
+// Pantheon can't see the very agents building it. resolveBinary fixes this by
+// searching an AUGMENTED candidate path: the inherited PATH, the user's
+// login-shell PATH, and the common user-bin dirs a truncated PATH drops.
+
+var (
+	augmentedPathOnce sync.Once
+	augmentedPathDirs []string
+	// forceCandidateDirs is a test seam: when non-nil, resolveBinary searches
+	// exactly these dirs (after the inherited PATH), bypassing the cache.
+	forceCandidateDirs []string
+)
+
+func augmentedPath() []string {
+	if forceCandidateDirs != nil {
+		return forceCandidateDirs
+	}
+	augmentedPathOnce.Do(func() {
+		seen := map[string]bool{}
+		var dirs []string
+		add := func(d string) {
+			if d != "" && !seen[d] {
+				seen[d] = true
+				dirs = append(dirs, d)
+			}
+		}
+		// 1) the PATH this process inherited
+		for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+			add(d)
+		}
+		// 2) the user's LOGIN-shell PATH — captures shell-profile additions a
+		//    launchd/GUI process never sees. Best-effort.
+		if sh := os.Getenv("SHELL"); sh != "" {
+			if out, err := exec.Command(sh, "-lc", `printf %s "$PATH"`).Output(); err == nil {
+				for _, d := range filepath.SplitList(strings.TrimSpace(string(out))) {
+					add(d)
+				}
+			}
+		}
+		// 3) common user-bin dirs a truncated launchd PATH omits
+		if home, err := os.UserHomeDir(); err == nil {
+			add(filepath.Join(home, ".local", "bin"))
+			add(filepath.Join(home, ".cargo", "bin"))
+			add(filepath.Join(home, "bin"))
+		}
+		add("/opt/homebrew/bin")
+		add("/usr/local/bin")
+		add("/usr/bin")
+		add("/bin")
+		augmentedPathDirs = dirs
+	})
+	return augmentedPathDirs
+}
+
+// resolveBinary finds an executable by name across the augmented path. It is the
+// PATH-independent replacement for exec.LookPath used by every Installed()/Launch()
+// check so detection is correct even under a launchd-truncated PATH.
+func resolveBinary(name string) (string, bool) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, true
+	}
+	for _, dir := range augmentedPath() {
+		cand := filepath.Join(dir, name)
+		if isExecutableFile(cand) {
+			return cand, true
+		}
+	}
+	return "", false
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0o111 != 0
+}
+
+// appBundleInstalled reports whether a GUI .app bundle exists in the standard
+// macOS application locations — a secondary signal for IDE launchers whose CLI
+// shim may not be on any PATH.
+func appBundleInstalled(appName string) bool {
+	bases := []string{"/Applications"}
+	if home, err := os.UserHomeDir(); err == nil {
+		bases = append(bases, filepath.Join(home, "Applications"))
+	}
+	for _, base := range bases {
+		if info, err := os.Stat(filepath.Join(base, appName)); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
 
 // Launcher knows how to start an AI assistant or IDE for a workstream.
 type Launcher interface {
@@ -124,8 +225,8 @@ func (c ClaudeLauncher) Name() string { return "Claude Code" }
 func (c ClaudeLauncher) Kind() string { return "ai" }
 
 func (c ClaudeLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("claude")
-	return err == nil
+	_, ok := resolveBinary("claude")
+	return ok
 }
 
 func (c ClaudeLauncher) InstallCmd() string {
@@ -141,9 +242,9 @@ func (c ClaudeLauncher) Integration() *IntegrationInfo {
 }
 
 func (c ClaudeLauncher) Launch(ws Workstream, opts LaunchOptions) error {
-	binary, err := exec.LookPath("claude")
-	if err != nil {
-		return fmt.Errorf("claude not found in PATH: %w", err)
+	binary, ok := resolveBinary("claude")
+	if !ok {
+		return fmt.Errorf("claude not found in PATH or common install dirs")
 	}
 
 	dir := opts.Dir
@@ -185,8 +286,10 @@ func (v VSCodeLauncher) Name() string { return "VS Code" }
 func (v VSCodeLauncher) Kind() string { return "ide" }
 
 func (v VSCodeLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("code")
-	return err == nil
+	if _, ok := resolveBinary("code"); ok {
+		return true
+	}
+	return appBundleInstalled("Visual Studio Code.app")
 }
 
 func (v VSCodeLauncher) InstallCmd() string {
@@ -222,8 +325,10 @@ func (c CursorLauncher) Name() string { return "Cursor" }
 func (c CursorLauncher) Kind() string { return "ide" }
 
 func (c CursorLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("cursor")
-	return err == nil
+	if _, ok := resolveBinary("cursor"); ok {
+		return true
+	}
+	return appBundleInstalled("Cursor.app")
 }
 
 func (c CursorLauncher) InstallCmd() string {
@@ -259,8 +364,10 @@ func (w WindsurfLauncher) Name() string { return "Windsurf" }
 func (w WindsurfLauncher) Kind() string { return "ide" }
 
 func (w WindsurfLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("windsurf")
-	return err == nil
+	if _, ok := resolveBinary("windsurf"); ok {
+		return true
+	}
+	return appBundleInstalled("Windsurf.app")
 }
 
 func (w WindsurfLauncher) InstallCmd() string {
@@ -296,8 +403,10 @@ func (z ZedLauncher) Name() string { return "Zed" }
 func (z ZedLauncher) Kind() string { return "ide" }
 
 func (z ZedLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("zed")
-	return err == nil
+	if _, ok := resolveBinary("zed"); ok {
+		return true
+	}
+	return appBundleInstalled("Zed.app")
 }
 
 func (z ZedLauncher) InstallCmd() string {
@@ -328,8 +437,8 @@ func (c CodexLauncher) Name() string { return "Codex" }
 func (c CodexLauncher) Kind() string { return "ai" }
 
 func (c CodexLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("codex")
-	return err == nil
+	_, ok := resolveBinary("codex")
+	return ok
 }
 
 func (c CodexLauncher) InstallCmd() string {
@@ -339,9 +448,9 @@ func (c CodexLauncher) InstallCmd() string {
 func (c CodexLauncher) Integration() *IntegrationInfo { return nil }
 
 func (c CodexLauncher) Launch(ws Workstream, opts LaunchOptions) error {
-	binary, err := exec.LookPath("codex")
-	if err != nil {
-		return fmt.Errorf("codex not found in PATH: %w", err)
+	binary, ok := resolveBinary("codex")
+	if !ok {
+		return fmt.Errorf("codex not found in PATH or common install dirs")
 	}
 	dir := opts.Dir
 	if dir == "" {
@@ -366,8 +475,8 @@ func (g GeminiLauncher) Name() string { return "Gemini CLI" }
 func (g GeminiLauncher) Kind() string { return "ai" }
 
 func (g GeminiLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("gemini")
-	return err == nil
+	_, ok := resolveBinary("gemini")
+	return ok
 }
 
 func (g GeminiLauncher) InstallCmd() string {
@@ -377,9 +486,9 @@ func (g GeminiLauncher) InstallCmd() string {
 func (g GeminiLauncher) Integration() *IntegrationInfo { return nil }
 
 func (g GeminiLauncher) Launch(ws Workstream, opts LaunchOptions) error {
-	binary, err := exec.LookPath("gemini")
-	if err != nil {
-		return fmt.Errorf("gemini not found in PATH: %w", err)
+	binary, ok := resolveBinary("gemini")
+	if !ok {
+		return fmt.Errorf("gemini not found in PATH or common install dirs")
 	}
 	dir := opts.Dir
 	if dir == "" {
@@ -400,8 +509,10 @@ func (a AntigravityLauncher) Name() string { return "Antigravity" }
 func (a AntigravityLauncher) Kind() string { return "ide" }
 
 func (a AntigravityLauncher) Installed(p platform.Platform) bool {
-	_, err := exec.LookPath("antigravity")
-	return err == nil
+	if _, ok := resolveBinary("antigravity"); ok {
+		return true
+	}
+	return appBundleInstalled("Antigravity.app")
 }
 
 func (a AntigravityLauncher) InstallCmd() string {

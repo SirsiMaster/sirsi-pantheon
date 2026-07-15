@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // `sirsi gemma` is the human-facing way to talk to Gemma — the local MLX model
@@ -93,6 +96,29 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(mlx); err != nil {
 		return fmt.Errorf("Gemma's local runtime isn't installed (%s missing) — run the MLX/Gemma setup first", mlx)
 	}
+
+	// LAYER 4 (ADR-031-A) — the cold path is the 06-18 OOM culprit: 4 concurrent
+	// `sirsi gemma` calls each forked a full ~12 GB model load (5 at once → Jetsam).
+	// (1) RAM-gate it like the broker; (2) serialize it machine-wide with a file
+	// lock so concurrent callers can NEVER stack N full model loads.
+	_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
+	// ADR-031-B: the cold path now refuses through the SAME NodeCapacity self-model
+	// as the warm broker — one node-derived budget, not a separate gemmaSafeConcurrency
+	// with its own constants. Fits requires 2×model + DynamicReserve (resident model +
+	// one model of working memory + OS/agents/margin), so the cold path keeps the
+	// #63 2×model conservatism, now node-proportional and cross-agent-aware.
+	modelBytes := gemmaEstimateModelBytes(home, model)
+	if nc := guard.SampleNodeCapacity(); !nc.Fits(modelBytes) {
+		return fmt.Errorf("not enough RAM to load Gemma cold (~%dGB model + ~%dGB dynamic reserve > %dGB free) — start the warm broker (`sirsi gemma serve`) or free memory. Refusing rather than OOM the machine",
+			modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
+	}
+	if lf, lerr := os.OpenFile(filepath.Join(home, ".sirsi/gemma-cold.lock"), os.O_CREATE|os.O_RDWR, 0o644); lerr == nil {
+		defer lf.Close()
+		if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX) == nil { // blocks until we hold it
+			defer func() { _ = syscall.Flock(int(lf.Fd()), syscall.LOCK_UN) }()
+		}
+	}
+
 	fmt.Fprintf(os.Stderr, "gemma · %s · cold (reloading — run `sirsi gemma serve` to keep it warm)…\n", gemmaShortModel(model))
 	out, err := exec.Command(mlx, "--model", model, "--max-tokens", fmt.Sprint(gemmaMaxTokens), "--prompt", prompt).Output()
 	if err != nil {

@@ -1,6 +1,12 @@
 package tui
 
-import "os"
+import (
+	"os"
+
+	"charm.land/lipgloss/v2"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/brand"
+)
 
 // Color & capability model (docs/TUI_DESIGN_PROOF.md §2.4, §5).
 //
@@ -29,8 +35,8 @@ const (
 type Token int
 
 const (
-	TokBrand  Token = iota // gold #C8A951 — identity, headers, selected counts
-	TokAccent              // lapis #1A1A5E — mode chips, active focus border
+	TokBrand  Token = iota // emerald — identity, headers, selected counts
+	TokAccent              // gold — mode chips, active focus border, owner-action
 	TokOK                  // green — pass, safe, healthy
 	TokWarn                // amber — needs attention, reclaimable
 	TokDanger              // red — destructive, error, protected-path block
@@ -120,4 +126,117 @@ func DetectCapabilities(env func(string) string) Capabilities {
 	}
 
 	return caps
+}
+
+// Brand hex values (§2.4). Truecolor path only; lower rungs degrade below.
+// Sourced from internal/brand (ADR-038) so the TUI can never drift from the one
+// Pantheon palette. Emerald is the identity; gold is the second accent.
+var (
+	hexBrand  = brand.For(brand.Dark).Hex(brand.Emerald) // emerald — identity
+	hexAccent = brand.For(brand.Dark).Hex(brand.Gold)    // gold — second accent
+	hexOK     = brand.For(brand.Dark).Hex(brand.OK)      // emerald family
+	hexWarn   = brand.For(brand.Dark).Hex(brand.Warn)    // amber
+	hexDanger = brand.For(brand.Dark).Hex(brand.Danger)  // red
+	hexDim    = brand.For(brand.Dark).Hex(brand.Dim)     // gray
+	hexWhite  = brand.For(brand.Dark).Hex(brand.Ink)     // body text
+)
+
+// hex maps a token to its truecolor hex.
+func (t Token) hex() string {
+	switch t {
+	case TokBrand:
+		return hexBrand
+	case TokAccent:
+		return hexAccent
+	case TokOK:
+		return hexOK
+	case TokWarn:
+		return hexWarn
+	case TokDanger:
+		return hexDanger
+	default:
+		return hexDim
+	}
+}
+
+// ansi256 maps a token to its xterm-256 fallback (§2.4 ladder).
+func (t Token) ansi256() string {
+	switch t {
+	case TokBrand:
+		return "43" // emerald / teal
+	case TokAccent:
+		return "178" // gold
+	case TokOK:
+		return "35"
+	case TokWarn:
+		return "214"
+	case TokDanger:
+		return "196"
+	default:
+		return "244"
+	}
+}
+
+// ansi16 maps a token to a base ANSI color name (§2.4 ladder).
+func (t Token) ansi16() string {
+	switch t {
+	case TokBrand:
+		return "6" // cyan — emerald proxy at 16-color
+	case TokAccent, TokWarn:
+		return "3" // yellow / gold
+	case TokOK:
+		return "2" // green
+	case TokDanger:
+		return "1" // red
+	default:
+		return "7" // default/gray
+	}
+}
+
+// Paint applies the semantic token to s at the surface's color depth. At
+// ColorNone it degrades to an attribute (bold) so meaning survives without color
+// (§2.4, §5); color is never the sole carrier of meaning — severities always
+// also carry a text token (SeverityLabel).
+func Paint(s string, tok Token, caps Capabilities) string {
+	switch caps.Color {
+	case ColorTrue:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(tok.hex())).Render(s)
+	case Color256:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(tok.ansi256())).Render(s)
+	case Color16:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(tok.ansi16())).Render(s)
+	default:
+		// Attribute-only: brand/headers bold, danger reverse, everything else plain.
+		switch tok {
+		case TokBrand:
+			return lipgloss.NewStyle().Bold(true).Render(s)
+		case TokDanger:
+			return lipgloss.NewStyle().Reverse(true).Render(s)
+		default:
+			return s
+		}
+	}
+}
+
+// Chip renders a lapis-background mode chip with white text (§2.4: lapis is a
+// background, never text-on-black). At ColorNone it degrades to reverse video.
+func Chip(s string, caps Capabilities) string {
+	label := " " + s + " "
+	switch caps.Color {
+	case ColorTrue:
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color(hexAccent)).
+			Foreground(lipgloss.Color(hexWhite)).
+			Bold(true).Render(label)
+	case Color256:
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color("17")).
+			Foreground(lipgloss.Color("231")).Render(label)
+	case Color16:
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color("4")).
+			Foreground(lipgloss.Color("15")).Render(label)
+	default:
+		return lipgloss.NewStyle().Reverse(true).Render(label)
+	}
 }

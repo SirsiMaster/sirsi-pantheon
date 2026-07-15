@@ -222,8 +222,10 @@ func (c *CoverageAssessor) Assess() ([]Assessment, error) {
 
 	results := ParseCoverageOutput(output)
 
-	// Save fresh results to cache for future diff runs.
-	if cache := c.coverageCachePath(); cache != "" {
+	// Save fresh results to cache for future diff runs — but never from fast
+	// mode: its output IS the cache round-tripped, and re-saving a parse of it
+	// can only preserve or degrade the cache, never improve it.
+	if cache := c.coverageCachePath(); cache != "" && !c.SkipTests {
 		_ = saveCoverageCache(cache, results)
 	}
 
@@ -243,9 +245,19 @@ func (c *CoverageAssessor) coverageCachePath() string {
 }
 
 // runCoverage executes coverage — either skip, diff-only, or full scan.
+//
+// Fast mode (SkipTests — the DEFAULT for `sirsi audit`) NEVER runs the test
+// suite. It used to fall through to a full `go test -cover ./...` when the
+// cache was cold "so the score wouldn't be built on missing data" — which
+// silently upgraded a documented ~2s verb into a 5+ minute full-suite run on
+// any cold-cache machine: it blew the UX contract's 120s budget
+// (TestUXContract_JSONClean/audit_json), stalled every surface that shells
+// `sirsi audit` (the #158 menubar disease class), and blocked the Ma'at
+// pre-push gate (2026-07-04). Cold-cache modules now surface as honest
+// warnings naming `--full` as the remedy instead of a silent stall.
 func (c *CoverageAssessor) runCoverage() (string, error) {
 	if c.SkipTests {
-		return c.runSkipTests()
+		return c.runSkipTests(), nil
 	}
 
 	if c.Runner != nil {
@@ -259,23 +271,24 @@ func (c *CoverageAssessor) runCoverage() (string, error) {
 	return c.runFullCoverage()
 }
 
-// runSkipTests returns cached coverage without running any tests.
-func (c *CoverageAssessor) runSkipTests() (string, error) {
+// runSkipTests returns whatever cached coverage exists without running any
+// tests — possibly partial, possibly empty. Threshold modules absent from the
+// cache score as cold-cache warnings in evaluate (never a silent scan).
+func (c *CoverageAssessor) runSkipTests() string {
 	cache := c.coverageCachePath()
 	cached, err := loadCoverageCache(cache)
-	if err == nil && len(cached) > 0 {
-		var lines []string
-		for _, r := range cached {
-			if r.NoTests {
-				lines = append(lines, fmt.Sprintf("?\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t[no test files]", r.Package))
-			} else {
-				lines = append(lines, fmt.Sprintf("ok\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t(cached)\tcoverage: %.1f%% of statements", r.Package, r.Coverage))
-			}
-		}
-		return strings.Join(lines, "\n"), nil
+	if err != nil {
+		return "" // cold cache — every threshold module reports honestly cold
 	}
-	// No cache available — return empty so evaluate() gives warnings, not crashes.
-	return "", nil
+	var lines []string
+	for _, r := range cached {
+		if r.NoTests {
+			lines = append(lines, fmt.Sprintf("?\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t[no test files]", r.Package))
+		} else {
+			lines = append(lines, fmt.Sprintf("ok\tgithub.com/SirsiMaster/sirsi-pantheon/internal/%s\t(cached)\tcoverage: %.1f%% of statements", r.Package, r.Coverage))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // runFullCoverage runs go test -cover on all packages, streaming results
@@ -328,15 +341,21 @@ func (c *CoverageAssessor) runFullCoverage() (string, error) {
 				Total:    total,
 				Failed:   strings.HasPrefix(line, "FAIL"),
 			})
-		} else if matches := noTestRegex.FindStringSubmatch(line); len(matches) == 2 {
-			count++
-			pkg := normalizePackageName(matches[1])
-			c.ProgressFn(PackageProgress{
-				Package: pkg,
-				NoTests: true,
-				Current: count,
-				Total:   total,
-			})
+		} else {
+			matches := noTestRegex.FindStringSubmatch(line)
+			if matches == nil {
+				matches = bareNoTestRegex.FindStringSubmatch(line)
+			}
+			if len(matches) == 2 {
+				count++
+				pkg := normalizePackageName(matches[1])
+				c.ProgressFn(PackageProgress{
+					Package: pkg,
+					NoTests: true,
+					Current: count,
+					Total:   total,
+				})
+			}
 		}
 	}
 
@@ -425,6 +444,9 @@ func (c *CoverageAssessor) runDiffCoverage() (string, error) {
 }
 
 // cacheCoversThresholds checks if the cache has data for all threshold modules.
+// Used by DIFF mode only: diff mode explicitly runs tests, so falling back to
+// a full scan there is a scope widening, not a mode violation. Fast mode
+// (SkipTests) never consults this — it never scans (see runCoverage).
 func (c *CoverageAssessor) cacheCoversThresholds(cached []CoverageResult) bool {
 	if len(cached) == 0 {
 		return false
@@ -528,6 +550,18 @@ var noTestRegex = regexp.MustCompile(
 	`\?\s+\S+/internal/(\S+)\s+\[no test files\]`,
 )
 
+// bareNoTestRegex matches the format Go emits under -cover for packages
+// that have NO test files (instead of the classic "? ... [no test files]"):
+//
+//	github.com/SirsiMaster/sirsi-pantheon/internal/help		coverage: 0.0% of statements
+//
+// The line starts with whitespace (no "ok"/"FAIL"/"?" status column), so it
+// matches neither coverageRegex nor noTestRegex — without this pattern such
+// modules are invisible to Ma'at and surface as "no coverage data found".
+var bareNoTestRegex = regexp.MustCompile(
+	`^\s+\S+/internal/(\S+)\s+coverage:\s+0\.0%`,
+)
+
 // ParseCoverageOutput extracts coverage results from go test -cover output.
 func ParseCoverageOutput(output string) []CoverageResult {
 	var results []CoverageResult
@@ -551,8 +585,12 @@ func ParseCoverageOutput(output string) []CoverageResult {
 			continue
 		}
 
-		// Match no-test-files lines
-		if matches := noTestRegex.FindStringSubmatch(line); len(matches) == 2 {
+		// Match no-test-files lines (classic "?" form and bare -cover form)
+		matches := noTestRegex.FindStringSubmatch(line)
+		if matches == nil {
+			matches = bareNoTestRegex.FindStringSubmatch(line)
+		}
+		if len(matches) == 2 {
 			pkg := normalizePackageName(matches[1])
 			if !seen[pkg] {
 				results = append(results, CoverageResult{
@@ -617,6 +655,15 @@ func (c *CoverageAssessor) evaluate(results []CoverageResult) []Assessment {
 			a.Message = fmt.Sprintf("%s: no test files", t.Module)
 			a.Remediation = fmt.Sprintf("Add tests to internal/%s/", t.Module)
 
+		case !hasCov && c.SkipTests:
+			// Fast mode with this module absent from the coverage cache: the
+			// honest state is "unmeasured", not "unhealthy" — and fast mode
+			// never runs the suite to find out (see runCoverage).
+			a.Verdict = VerdictWarning
+			a.FeatherWeight = 50
+			a.Message = fmt.Sprintf("%s: coverage cache cold (fast mode never runs tests)", t.Module)
+			a.Remediation = "Run `sirsi maat audit --full` to measure coverage and warm the cache"
+
 		case !hasCov:
 			// Module not found in the output — might not exist or might be skipped.
 			a.Verdict = VerdictWarning
@@ -626,19 +673,19 @@ func (c *CoverageAssessor) evaluate(results []CoverageResult) []Assessment {
 
 		case cov >= t.MinCoverage:
 			a.Verdict = VerdictPass
-			a.FeatherWeight = clampWeight(int(cov))
+			a.FeatherWeight = weightAgainst(cov, t.MinCoverage)
 			a.Message = fmt.Sprintf("%s: %.1f%% coverage (threshold: %.0f%%)", t.Module, cov, t.MinCoverage)
 
 		case cov >= t.MinCoverage*0.8:
 			// Within 80% of the threshold — warning.
 			a.Verdict = VerdictWarning
-			a.FeatherWeight = clampWeight(int(cov))
+			a.FeatherWeight = weightAgainst(cov, t.MinCoverage)
 			a.Message = fmt.Sprintf("%s: %.1f%% coverage (threshold: %.0f%%)", t.Module, cov, t.MinCoverage)
 			a.Remediation = fmt.Sprintf("Add tests to bring %s from %.1f%% to %.0f%%", t.Module, cov, t.MinCoverage)
 
 		default:
 			a.Verdict = VerdictFail
-			a.FeatherWeight = clampWeight(int(cov))
+			a.FeatherWeight = weightAgainst(cov, t.MinCoverage)
 			a.Message = fmt.Sprintf("%s: %.1f%% coverage (threshold: %.0f%%)", t.Module, cov, t.MinCoverage)
 			a.Remediation = fmt.Sprintf("Add tests to bring %s from %.1f%% to %.0f%%", t.Module, cov, t.MinCoverage)
 		}
@@ -647,6 +694,21 @@ func (c *CoverageAssessor) evaluate(results []CoverageResult) []Assessment {
 	}
 
 	return assessments
+}
+
+// weightAgainst converts measured coverage into a feather weight relative
+// to the module's declared threshold. The feather IS the standard: weight
+// measures COMPLIANCE with the tier threshold, not raw statement coverage.
+// A Tier C module at 45% (threshold 30%) is fully compliant and weighs 100;
+// a Tier A module at 45% (threshold 80%) weighs 56. This keeps the overall
+// audit score meaningful — modules that meet their declared standard no
+// longer drag the average down just because their tier tolerates lower
+// raw coverage.
+func weightAgainst(cov, minCoverage float64) int {
+	if minCoverage <= 0 {
+		return 100
+	}
+	return clampWeight(int(cov / minCoverage * 100))
 }
 
 // clampWeight ensures a weight is between 0 and 100.

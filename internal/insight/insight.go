@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/deity"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 )
@@ -179,7 +180,7 @@ func (p *Platform) addThoth(repoRoot string) {
 	mem := filepath.Join(repoRoot, ".thoth", "memory.yaml")
 	info, err := os.Stat(mem)
 	if err != nil {
-		p.Signals = append(p.Signals, DeitySignal{"Thoth — Memory", "𓁟", "no .thoth memory", 0})
+		p.Signals = append(p.Signals, DeitySignal{"Thoth — Memory", "𓁟", "no project memory in this folder", 0})
 		return
 	}
 	age := nowFn().Sub(info.ModTime())
@@ -199,20 +200,27 @@ func (p *Platform) addRouter(repoRoot string) {
 	if repoRoot == "" {
 		return
 	}
-	items := filepath.Join(repoRoot, ".agents", "idea-router", "items")
-	entries, err := os.ReadDir(items)
+	// "Router not in use here" stays a no-signal — check before opening the store
+	// so non-router repos don't materialize one.
+	if _, err := os.Stat(filepath.Join(repoRoot, ".agents", "idea-router")); err != nil {
+		return
+	}
+	// Count open items through the dispatch facade (store ∪ files) so the signal
+	// stays accurate after the Router v2 cutover, when open items live only as
+	// store rows and items/*.md is no longer written (ADR-036/037).
+	f, err := dispatch.Open(repoRoot)
 	if err != nil {
-		return // router not in use here — not a signal
+		return
+	}
+	defer func() { _ = f.Close() }()
+	all, err := f.ListAll()
+	if err != nil {
+		return
 	}
 	open := 0
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) != ".md" {
-			continue
-		}
-		if data, err := os.ReadFile(filepath.Join(items, e.Name())); err == nil {
-			if strings.Contains(string(data), "status: open") {
-				open++
-			}
+	for _, it := range all {
+		if it.Status == "open" {
+			open++
 		}
 	}
 	status := "no open hand-offs"

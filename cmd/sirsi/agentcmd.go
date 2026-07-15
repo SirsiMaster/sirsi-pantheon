@@ -49,6 +49,8 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("no idea-router found: %w", err)
 		}
+		// Root-ful invocation: persist the clone root for app-context callers (B2).
+		router.RememberRepoRoot(repoRoot)
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 		agentType := args[0]
 		cwd := agentRegisterCWD

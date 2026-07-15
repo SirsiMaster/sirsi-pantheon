@@ -65,3 +65,26 @@ Plus: correct the serial budget to 2×model (the (1+n) growth model implies it; 
 - **Prevention ≠ detection.** Counting yesterday's Jetsam is not protecting today's session. Real protection is a live guard with teeth (suspend/cap/kill before the kernel does), not a report.
 - **A designed deity is not a running one.** Hapi on paper protected nothing. Until it is a live process with intervention authority, the "protect" claim is marketing.
 - **Never re-enable the broker** until layers 2+3 ship. (Owner is holding `sirsi gemma serve`.)
+
+## 6. Recurrence — 2026-07-03: the gate worked, but wasn't in the path (ADR-031-C)
+
+**Status update:** layers 1–4 above all shipped (ADR-031-A/B, merged) and were confirmed correct
+by source-deep review on 2026-07-03 — `guard.NodeCapacity.Fits()`, the 2×model serial budget, the
+dynamic reserve accounting for live Claude/Codex RSS, the cold-path file lock, and Hapi's governed
+suspend/kill ladder are all real, tested, and present on `origin/main`. **This was not another design
+failure.** It was a coverage failure: two pieces of local automation — a router-triage daemon
+(`sirsi-gemma-worker.sh`) and, more pointedly, **the LaunchAgent that starts the warm broker
+itself** (`ai.sirsi.gemma`, still invoking raw `mlx_lm.server`) — predated the broker and were
+never migrated onto it. `git grep "ai.sirsi.gemma" -- '*.go'` returned zero hits: the process
+actually running the warm model on this machine was invisible to the code that was supposed to
+govern it.
+
+The owner's response, verbatim, is the correct verdict on this class of incident: *"this situation
+is exactly what the pantheon and router are supposed to prevent and then remedy."* The fix (see
+`docs/ADR-031-C-BROKER-ENFORCEMENT-UNIVERSAL.md`) is narrower than 2026-06-18's — no new mechanism,
+just closing the door beside the gate — but the lesson generalizes further than the fix does:
+**a correctly designed invariant still does nothing for a caller that was never pointed at it.**
+Every layer above assumed all local-model dispatch already flowed through the broker. It didn't.
+Both bypasses are fixed and verified live as of this commit; a regression guard (grep audit for
+direct `mlx_lm.*` invocations outside `cmd/sirsi/gemma*.go`) is recommended, not yet built —
+tracked in ADR-031-C so a third bypass isn't the next person's incident to write up.

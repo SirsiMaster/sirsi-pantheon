@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-07-04 — INCIDENT: the runaway executor — 19,195 sessions, 11,564 items, 1.3 TB
+**What broke:** for six weeks the visible symptom was "agent threads never stay armed" — and the theory (an arming gap) was wrong. The watchers were healthy. A build-worker LaunchAgent spawned a full headless agentic session for EVERY open router item and closed none: **19,195 sessions started, 0 completed**. Then the first stopgap (a retry cap) flooded **11,564 escalation items in one night** because its give-up path wasn't idempotent. Then the worker's timeout-killed `go test` runs orphaned **~1.3 TB of build trees in 36 hours**, filling the disk to 100% — the owner hit ENOSPC, and *nothing alarmed at any point*.
+
+**The hard truth (the mistakes stay in):** we spent six weeks re-arming healthy watchers because delivery was measurable and completion wasn't. The executor's design — one full agentic session per item, no closure protocol, no idempotency, no budget — was the disease, and a stopgap bolted onto a runaway system inherited the runaway.
+
+**Fix (three independent layers, worker stays OFF):** (1) the **Dispatch Contract** (PRD §2b, PR #160, codex-SME APPROVED after an adversarial round-1 FAIL): the routerstore becomes the only executable dispatch authority — fenced lease tokens, claim-only execution, idempotent send facade + quotas, keyed-singleton escalations, circuit breakers, budgets; the claude build-worker stays OFF until safety tests reproduce BOTH incidents and pass. (2) The hourly sweep **reaps orphaned build trees** >24h old (PR #161) and checks the supervisor of record, not a migrated-away daemon (PR #159). (3) **𓁵 Sekhmet's host backstop** (ADR-035, this entry's PR): a "Runaway Executor" doctor finding that alarms on the two live disease signatures — headless-session flood and fresh build-tree churn — carrying a real lever, `sirsi router quarantine-worker`, which stops every claude build-worker LaunchAgent durably and never touches the wake-loops.
+
+**Full canon:** [`docs/ADR-035-RUNAWAY-PROOF-EXECUTION.md`](ADR-035-RUNAWAY-PROOF-EXECUTION.md) · [`docs/case-studies/2026-07-04-runaway-executor.md`](case-studies/2026-07-04-runaway-executor.md) · [`docs/prd/ROUTER_V2_DURABLE_DISPATCH.md`](prd/ROUTER_V2_DURABLE_DISPATCH.md) §2b.
+
+---
+
+## 2026-07-03 — RECURRENCE: the broker was correct, but two callers never went through it
+**What broke:** the owner reported the machine repeatedly "churning and effectively shutting down" while running `codex`. Independent diagnosis (claude-home) found 96% swap used and ~1 GB free of 51.5 GB — a symptom nearly identical to 2026-06-18. Codex itself turned out to be a mostly cloud-API-driven CLI, not the actual RAM driver — just what was running when the machine tipped over.
+
+**The hard truth (the mistakes stay in):** this was NOT a repeat of the same design failure. `guard.NodeCapacity.Fits()`, the 2×model serial budget, `DynamicReserve()` (which already accounts for live Claude/Codex RSS), the cold-path file lock, and Hapi's governed suspend/kill ladder were all read from source and confirmed correct. The gate works. **Two pieces of local automation were never wired to call through it**: `sirsi-gemma-worker.sh` (the router-triage daemon) shelled `mlx_lm.generate` directly on its default path with zero RAM check, and — more pointedly — **the LaunchAgent that starts the warm broker itself** invoked raw `mlx_lm.server`, with zero references anywhere in the Go codebase (`git grep "ai.sirsi.gemma" -- '*.go'` → nothing). The process actually serving the warm model was invisible to the code meant to govern it. A gate with a door beside it is not a gate.
+
+**Fix (verified live, not claimed):** `sirsi-gemma-worker.sh` now calls `sirsi gemma` — confirmed it correctly *refused* a cold load at ~1 GB free instead of blindly loading. The `ai.sirsi.gemma` LaunchAgent now runs `sirsi gemma serve --port 11434` (`KeepAlive` corrected `true`→`false` — this command is a one-shot ensure-warm launcher that forks a detached, Hapi-governed child and exits, not a persistent process itself) — confirmed it correctly refused to start past its own `2×model + DynamicReserve` boundary rather than being forced past it. Owner's verdict, verbatim: *"this situation is exactly what the pantheon and router are supposed to prevent and then remedy."* Agreed — and now it does, in both places it previously didn't.
+
+**Full canon:** [`docs/ADR-031-C-BROKER-ENFORCEMENT-UNIVERSAL.md`](ADR-031-C-BROKER-ENFORCEMENT-UNIVERSAL.md); addendum to [`docs/case-studies/2026-06-18-pantheon-did-not-prevent-oom.md`](case-studies/2026-06-18-pantheon-did-not-prevent-oom.md) §6. Regression guard (CI/lint audit for direct `mlx_lm.*` calls outside `cmd/sirsi/gemma*.go`) recommended, not yet built.
+
+---
+
 ## 2026-06-18 — INCIDENT: Pantheon OOM'd the host it exists to protect
 **What broke:** while testing a new warm-inference broker (`sirsi gemma serve`), a concurrency-4 default with no RAM gate let ~5 MLX model copies (~53 GB) sit resident at once on a 48 GB machine → macOS Jetsam → host froze. The 4 concurrent `sirsi gemma` calls fell through to the cold path (`mlx_lm.generate`), each loading the full model.
 
@@ -16,6 +38,17 @@
 **Fix (defense in depth, 3 layers):** (1) pre-launch RAM gate — **shipped #60** (default concurrency 1, refuse rather than OOM); (2) **hard runtime cap** (MLX memory limit) — do first, before re-enabling; (3) **live self-governance** — the broker registers under Pantheon's own guard/Hapi watchdog that intervenes (warn → suspend → kill non-critical) before the kernel Jetsams. Plus an invariant regression test. The broker stays disabled until 2+3 ship.
 
 **Full forensics:** [`docs/case-studies/2026-06-18-pantheon-did-not-prevent-oom.md`](case-studies/2026-06-18-pantheon-did-not-prevent-oom.md).
+
+---
+
+## 2026-06-19 — FIX: Hapi made real — the live memory governor (the layer that was missing)
+**What shipped:** the four-layer "never exhaust the host" stack is now complete. Layers 1–3 (RAM gate hardening, hard MLX runtime cap, cold-path flock + 2×model budget) landed in PR #63; **Layer 4 — Hapi — is now built** (`internal/guard/hapi.go`, `cmd/sirsi/hapi.go`).
+
+**Why it's the real fix:** the 06-18 incident wasn't just a config bug — it exposed that Pantheon governed *CPU* (the Isis watchdog) but never *memory*, and renice (its only relief) frees zero bytes of RAM. Hapi is the first guard primitive that targets memory: it samples free RAM (`vm_stat`) + per-process RSS on a bounded tick, classifies pressure (OK/warn/critical/emergency), and intervenes **before the kernel** — `SIGSTOP` a runaway to halt its balloon (reversible), `SIGTERM` as last resort.
+
+**The safety design (consent, not force):** Hapi only uses teeth on processes that **registered as governed**. The gemma broker self-registers its PID at launch — it *consents* to being stopped, so it can never again OOM the host. Every other process is only warned + recommended, never auto-killed. WindowServer, the kernel, audio, the session UI, sirsi itself, and live Claude/Codex agents are refused outright.
+
+**Proof, not claims:** 10 tests including a **real-process** SIGSTOP→`ps` state `T`→SIGCONT check and a protected-refusal gate on a real pid; full `go test ./...` = 0 FAIL; verified live on the M5 Max (`sirsi hapi` reads 23.4 GB free and names the true top process). The broker stays disabled until the complete stack passes binding review (claude-home) and the owner re-enables it. **ADR:** [`docs/ADR-031-A-NEVER-EXHAUST-THE-HOST.md`](ADR-031-A-NEVER-EXHAUST-THE-HOST.md) — Layer 4 marked DONE.
 
 ---
 

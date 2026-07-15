@@ -19,6 +19,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mirror"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ra"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
@@ -30,7 +31,9 @@ var (
 	anubisAll            bool
 	anubisDryRun         bool
 	anubisConfirm        bool
+	anubisYes            bool
 	anubisIncludeCaution bool
+	anubisOnly           []string
 	anubisDocs           bool
 
 	// apps subcommand flags
@@ -123,7 +126,9 @@ func init() {
 	anubisWeighCmd.Flags().BoolVar(&anubisAll, "all", false, "Scan all categories")
 	anubisJudgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	anubisJudgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply (does NOT change scope — preview matches apply)")
+	anubisJudgeCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm; for dispatchers that confirmed already)")
 	anubisJudgeCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (applies to BOTH preview and apply)")
+	anubisJudgeCmd.Flags().StringArrayVar(&anubisOnly, "only", nil, "Restrict cleanup to these exact paths (repeatable). Can only NARROW scope, never widen — lets a UI clean a user-curated subset. Applies to BOTH preview and apply.")
 	anubisKaCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Enable sudo access")
 
 	anubisAppsCmd.Flags().BoolVar(&appsGhosts, "ghosts", false, "Show only apps with ghost residuals")
@@ -340,6 +345,54 @@ func selectCleanTargets(findings []jackal.Finding, includeCaution bool) []jackal
 	return target
 }
 
+// narrowToPaths restricts an already-selected clean target to the exact paths in
+// `only`. It is a pure INTERSECTION: the result is always a subset of `target`,
+// so it can only reduce scope, never widen it — the safety property that lets a
+// UI hand the user a per-item selection without ever expanding what `clean`
+// touches. An empty `only` means "no restriction" and returns target unchanged.
+// A path in `only` that isn't in target is simply ignored (can't add findings).
+func narrowToPaths(target []jackal.Finding, only []string) []jackal.Finding {
+	if len(only) == 0 {
+		return target
+	}
+	want := make(map[string]bool, len(only))
+	for _, p := range only {
+		want[p] = true
+	}
+	var out []jackal.Finding
+	for _, f := range target {
+		if want[f.Path] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// cleanAction is what runJudge does after target selection.
+type cleanAction int
+
+const (
+	cleanActionPreview cleanAction = iota // dry-run: render the plan, change nothing
+	cleanActionPrompt                     // interactive [y/N] on stdin, then apply
+	cleanActionApply                      // apply without the prompt (--yes)
+)
+
+// decideCleanAction is the pure gate for the clean flow (TUI design proof gap
+// V2). --yes ONLY suppresses the interactive stdin prompt — for programmatic
+// dispatchers (TUI/menubar/dashboard) that rendered their OWN confirmation and
+// would otherwise deadlock on the [y/N] read. It never changes WHAT is cleaned:
+// scope stays a function of severity + --include-caution alone (Rule A1,
+// selectCleanTargets), and --yes without --confirm remains a dry-run.
+func decideCleanAction(dryRun, confirm, yes bool) cleanAction {
+	if dryRun && !confirm {
+		return cleanActionPreview
+	}
+	if yes {
+		return cleanActionApply
+	}
+	return cleanActionPrompt
+}
+
 func runJudge(ctx context.Context) error {
 	start := time.Now()
 	output.Banner()
@@ -386,8 +439,16 @@ func runJudge(ctx context.Context) error {
 	// shown is exactly what moves to Trash (Rule A1: preview == apply). The pure
 	// selector has no confirm parameter, so apply structurally cannot widen scope.
 	target := selectCleanTargets(findings, anubisIncludeCaution)
+	// --only narrows the set to a UI-curated subset. It runs BEFORE the
+	// dry-run/confirm split, so preview and apply target the identical set
+	// (Rule A1). Intersection-only: it can never widen scope.
+	target = narrowToPaths(target, anubisOnly)
 
 	if len(target) == 0 {
+		if len(anubisOnly) > 0 {
+			output.Info("None of the selected paths are cleanable in the latest scan. Run `sirsi scan` to refresh.")
+			return nil
+		}
 		output.Info("No safe findings to clean. Use --include-caution to also target caution items.")
 		return nil
 	}
@@ -410,8 +471,11 @@ func runJudge(ctx context.Context) error {
 		output.Dim("  ... and %d more", len(target)-limit)
 	}
 
-	// Dry-run mode (default) — just show the plan.
-	if anubisDryRun && !anubisConfirm {
+	// The gate: dry-run preview, interactive prompt, or prompt-free apply.
+	// --yes only skips the stdin read — the target set above is already final.
+	switch decideCleanAction(anubisDryRun, anubisConfirm, anubisYes) {
+	case cleanActionPreview:
+		// Dry-run mode (default) — just show the plan.
 		cr := &output.CommandResult{
 			Command:  "sirsi clean",
 			Summary:  fmt.Sprintf("Dry run: %d items (%s) would be cleaned", len(target), jackal.FormatSize(totalCleanable)),
@@ -423,22 +487,24 @@ func runJudge(ctx context.Context) error {
 		cr.AddNextAction("sirsi scan", "Run a fresh scan to update findings")
 		cr.Render()
 		return nil
-	}
 
-	// Confirm interactively.
-	fmt.Fprintf(os.Stderr, "\n  Proceed? Items will be moved to Trash. [y/N] ")
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "y" && response != "yes" {
-		output.Info("Canceled.")
-		return nil
+	case cleanActionPrompt:
+		// Confirm interactively.
+		fmt.Fprintf(os.Stderr, "\n  Proceed? Items will be moved to Trash. [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			output.Info("Canceled.")
+			return nil
+		}
 	}
 
 	// Execute cleanup. Safety here is real, not a demo brake: scan-derived
 	// findings only, filtered to safe (or caution via --include-caution),
-	// protected paths hardcoded in internal/cleaner, the user just answered
-	// [y/N], and every move is trash-first (recoverable).
+	// protected paths hardcoded in internal/cleaner, the user confirmed
+	// ([y/N] above, or their dispatcher's own confirmation via --yes), and
+	// every move is trash-first (recoverable).
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
 
@@ -479,10 +545,94 @@ func cleanupApplyPaused() bool {
 	return os.Getenv("SIRSI_ALLOW_CLEAN_APPLY") != "1"
 }
 
+// ghostResidualJSON is one residual path in the structured ghosts contract —
+// field names match the dashboard's /api/ghosts shape (the established
+// structured-ghost convention in this repo).
+type ghostResidualJSON struct {
+	Path      string `json:"path"`
+	Type      string `json:"type"`
+	SizeBytes int64  `json:"size_bytes"`
+	FileCount int    `json:"file_count"`
+}
+
+// ghostJSON is one ghost app with its residuals.
+type ghostJSON struct {
+	AppName          string              `json:"app_name"`
+	BundleID         string              `json:"bundle_id"`
+	TotalSizeBytes   int64               `json:"total_size_bytes"`
+	TotalFiles       int                 `json:"total_files"`
+	InLaunchServices bool                `json:"in_launch_services"`
+	Residuals        []ghostResidualJSON `json:"residuals"`
+}
+
+// ghostReport is the `sirsi ghosts --json` contract (TUI design proof gap V3):
+// real paths, kinds, and sizes for per-app drill-in and per-item toggles —
+// not display strings. Follows the scan --json convention of emitting the
+// structured payload directly (jackal.ScanResult), not CommandResult evidence.
+type ghostReport struct {
+	Command         string      `json:"command"`
+	Summary         string      `json:"summary"`
+	GhostCount      int         `json:"ghost_count"`
+	TotalWasteBytes int64       `json:"total_waste_bytes"`
+	TotalWaste      string      `json:"total_waste"`
+	Ghosts          []ghostJSON `json:"ghosts"`
+	Warnings        []string    `json:"warnings,omitempty"`
+}
+
+// buildGhostReport assembles the structured contract from a ka scan — pure,
+// so tests pin the shape without scanning a real filesystem. Ghosts are
+// sorted by size (largest waste first, ties by name) because the scanner
+// merges from a map: a stable order is part of the contract.
+func buildGhostReport(ghosts []ka.Ghost, scanErr error) ghostReport {
+	r := ghostReport{
+		Command: "sirsi ghosts",
+		Ghosts:  []ghostJSON{},
+	}
+	for _, g := range ghosts {
+		gj := ghostJSON{
+			AppName:          g.AppName,
+			BundleID:         g.BundleID,
+			TotalSizeBytes:   g.TotalSize,
+			TotalFiles:       g.TotalFiles,
+			InLaunchServices: g.InLaunchServices,
+			Residuals:        []ghostResidualJSON{},
+		}
+		for _, res := range g.Residuals {
+			gj.Residuals = append(gj.Residuals, ghostResidualJSON{
+				Path:      res.Path,
+				Type:      string(res.Type),
+				SizeBytes: res.SizeBytes,
+				FileCount: res.FileCount,
+			})
+		}
+		r.Ghosts = append(r.Ghosts, gj)
+		r.TotalWasteBytes += g.TotalSize
+	}
+	sort.SliceStable(r.Ghosts, func(i, j int) bool {
+		if r.Ghosts[i].TotalSizeBytes != r.Ghosts[j].TotalSizeBytes {
+			return r.Ghosts[i].TotalSizeBytes > r.Ghosts[j].TotalSizeBytes
+		}
+		return r.Ghosts[i].AppName < r.Ghosts[j].AppName
+	})
+	r.GhostCount = len(r.Ghosts)
+	r.TotalWaste = jackal.FormatSize(r.TotalWasteBytes)
+	if r.GhostCount == 0 {
+		r.Summary = "No ghost app remnants detected"
+	} else {
+		r.Summary = fmt.Sprintf("Found %d ghost apps with %s of reclaimable waste", r.GhostCount, r.TotalWaste)
+	}
+	if scanErr != nil {
+		r.Warnings = append(r.Warnings, fmt.Sprintf("Scan completed with errors: %v", scanErr))
+	}
+	return r
+}
+
 func runKa(ctx context.Context) error {
 	start := time.Now()
-	output.Banner()
-	output.Header("Ghost App Detection")
+	if !JsonOutput {
+		output.Banner()
+		output.Header("Ghost App Detection")
+	}
 
 	stopSpin := output.Spinner("Detecting ghost app remnants...")
 	scanner := ka.NewScanner()
@@ -490,6 +640,14 @@ func runKa(ctx context.Context) error {
 	stopSpin()
 	if err != nil {
 		output.Warn("Ghost scan error: %v", err)
+	}
+
+	// JSON mode — the structured contract (paths + kinds + sizes), not
+	// CommandResult display strings (TUI design proof gap V3).
+	if JsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(buildGhostReport(ghosts, err))
 	}
 
 	var totalWaste int64
@@ -522,6 +680,129 @@ func runKa(ctx context.Context) error {
 	result.AddNextAction("sirsi scan", "Full infrastructure waste scan")
 	result.AddNextAction("sirsi diagnose", "Check system health")
 	result.Render()
+	return nil
+}
+
+// ghostsCleanConfirm/App back the `sirsi ghosts clean` flags. Rule A1: clean is
+// DRY-RUN by default (preview), trash-first (recoverable), protected-path aware,
+// and never touches a residual that needs admin rights.
+var (
+	ghostsCleanConfirm bool
+	ghostsCleanApp     string
+)
+
+var ghostsCleanCmd = &cobra.Command{
+	Use:   "clean",
+	Short: "Move ghost app remnants to Trash (safe: dry-run default, trash-first, protected-path aware)",
+	Long: `Reclaim the residual files left by uninstalled apps that 'sirsi ghosts'
+found. SAFE BY DEFAULT (Rule A1): previews unless --confirm; moves to Trash
+(recoverable) rather than deleting; skips protected system paths and anything
+that needs admin rights.
+
+  sirsi ghosts clean                 preview what would be trashed
+  sirsi ghosts clean --confirm       move the remnants to Trash
+  sirsi ghosts clean --app "Sky"     scope to one ghost app`,
+	RunE: runGhostsClean,
+}
+
+// underProtected reports whether absPath is at/under any protected prefix — the
+// hardcoded safety set the cleaner uses (Rule A1: never removable by flag/input).
+func underProtected(absPath string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if absPath == p || strings.HasPrefix(absPath, strings.TrimRight(p, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func runGhostsClean(cmd *cobra.Command, args []string) error {
+	start := time.Now()
+	scanner := ka.NewScanner()
+	ghosts, scanErr := scanner.Scan(cmd.Context(), false) // never sudo in the one-click path
+
+	plat := platform.Current()
+	protected := plat.ProtectedPrefixes()
+	var toTrash []ka.Residual
+	var skippedSudo, skippedProtected int
+	for _, g := range ghosts {
+		if ghostsCleanApp != "" && !strings.EqualFold(g.AppName, ghostsCleanApp) {
+			continue
+		}
+		for _, r := range g.Residuals {
+			switch {
+			case r.RequiresSudo:
+				skippedSudo++
+			case underProtected(r.Path, protected):
+				skippedProtected++
+			default:
+				toTrash = append(toTrash, r)
+			}
+		}
+	}
+	var bytes int64
+	for _, r := range toTrash {
+		bytes += r.SizeBytes
+	}
+
+	res := &output.CommandResult{Command: "sirsi ghosts clean", BriefTitle: "Clean Ghost Remnants", Status: "ok"}
+	res.Duration = time.Since(start)
+	if scanErr != nil {
+		res.AddWarning("Scan completed with errors: %v", scanErr)
+	}
+
+	if len(toTrash) == 0 {
+		res.Summary = "No safe ghost remnants to clean — nothing to do."
+		if skippedProtected+skippedSudo > 0 {
+			res.AddWarning("%d item(s) skipped (protected path or need admin rights).", skippedProtected+skippedSudo)
+		}
+		res.Render()
+		return nil
+	}
+
+	if !ghostsCleanConfirm {
+		// DRY-RUN (default): show what WOULD move to Trash.
+		res.Summary = fmt.Sprintf("Would move %d ghost remnant(s) to Trash — %s reclaimable. Re-run with --confirm to apply.", len(toTrash), jackal.FormatSize(bytes))
+		for i, r := range toTrash {
+			if i >= 10 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more", len(toTrash)-10))
+				break
+			}
+			res.AddEvidence(output.ShortenPath(r.Path), jackal.FormatSize(r.SizeBytes))
+		}
+		if skippedProtected+skippedSudo > 0 {
+			res.AddWarning("%d item(s) will be left alone (protected path or need admin rights).", skippedProtected+skippedSudo)
+		}
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "Move to Trash", Command: "sirsi ghosts clean --confirm", Description: "Move these remnants to Trash — recoverable until you empty it."},
+		)
+		res.Render()
+		return nil
+	}
+
+	// CONFIRM: trash-first (recoverable), one item at a time so one failure
+	// never aborts the rest.
+	var trashed int
+	var freed int64
+	for _, r := range toTrash {
+		if err := plat.MoveToTrash(r.Path); err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", output.ShortenPath(r.Path), err))
+			continue
+		}
+		trashed++
+		freed += r.SizeBytes
+	}
+	if len(res.Errors) > 0 {
+		res.Status = "error"
+	}
+	res.Summary = fmt.Sprintf("Moved %d ghost remnant(s) to Trash — %s reclaimed (recoverable until you empty it).", trashed, jackal.FormatSize(freed))
+	if skippedProtected+skippedSudo > 0 {
+		res.AddWarning("%d item(s) left alone (protected path or need admin rights).", skippedProtected+skippedSudo)
+	}
+	res.NextActions = append(res.NextActions,
+		output.NextAction{Label: "Re-scan", Command: "sirsi ghosts", Description: "Confirm the remnants are gone."},
+	)
+	res.Render()
 	return nil
 }
 

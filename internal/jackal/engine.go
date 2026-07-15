@@ -83,8 +83,16 @@ type ScanResult struct {
 	// All findings across all rules
 	Findings []Finding
 
-	// Total size in bytes
+	// Total size in bytes across ALL findings (including warning-tier items the
+	// cleaner will NEVER one-click remove, e.g. AI model weights).
 	TotalSize int64
+
+	// ReclaimableSize is the size that is genuinely reclaimable as waste —
+	// safe + caution findings only. Warning-tier findings (model weights, data,
+	// config — protected from one-click clean) are EXCLUDED so a "waste" headline
+	// never counts 67 GB of Gemma weights as trash. This is what surfaces (menubar
+	// title, summaries) should show; TotalSize remains the full inventory.
+	ReclaimableSize int64
 
 	// Number of rules that ran
 	RulesRan int
@@ -189,6 +197,15 @@ func (e *Engine) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error
 
 			for _, f := range rr.findings {
 				result.TotalSize += f.SizeBytes
+				// ReclaimableSize is the casual "waste" headline — it EXCLUDES
+				// (a) warning-tier (data/config that may break) and (b) AI model
+				// weights (CategoryAI: HuggingFace/Ollama/MLX/… — caution-tier and
+				// expensive to regenerate, the cleaner never one-click-removes them).
+				// Without this, a scan put 67 GB of cold Gemma weights in the menubar
+				// "waste" title (the "76 GB waste" false alarm) the user can't act on.
+				if f.Severity != SeverityWarning && f.Category != CategoryAI {
+					result.ReclaimableSize += f.SizeBytes
+				}
 				ruleSize += f.SizeBytes
 
 				cat := result.ByCategory[f.Category]

@@ -5,10 +5,65 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
-// collectDashRAM gathers RAM metrics via sysctl + vm_stat.
+// sampleNodeCapacityFn is injectable so tests can supply a deterministic
+// NodeCapacity without touching the host (Rule A16/A21).
+var sampleNodeCapacityFn = guard.SampleNodeCapacity
+
+// collectDashRAM gathers RAM metrics from the guard package's NodeCapacity
+// self-model (ADR-031-B) — the SAME source the menubar/guard surfaces use
+// (real system values, PR #123). This fills total_ram/used_ram/free_ram,
+// which the old sysctl+vm_stat path never set, so GET /api/stats rendered
+// live zeros next to a real ram_percent (data-honesty violation).
+//
+// used/free/percent all derive from ONE sample so the fields stay mutually
+// consistent. "free" is the guard's canonical reclaimable definition
+// (free + inactive + speculative pages).
 func collectDashRAM(stats map[string]interface{}) {
+	nc := sampleNodeCapacityFn()
+	if nc.TotalRAM <= 0 {
+		// Hardware detection failed — degrade to the legacy vm_stat percent
+		// rather than inventing totals. RAM fields stay honest zeros.
+		collectDashRAMLegacy(stats)
+		return
+	}
+
+	used := nc.TotalRAM - nc.FreeRAM
+	if used < 0 {
+		used = 0
+	}
+	pct := float64(used) / float64(nc.TotalRAM) * 100
+
+	stats["total_ram"] = nc.TotalRAM
+	stats["used_ram"] = used
+	stats["free_ram"] = nc.FreeRAM
+	stats["ram_percent"] = pct
+	classifyDashRAMPressure(stats, pct)
+}
+
+// classifyDashRAMPressure maps a used-RAM percentage onto the dashboard's
+// pressure label + icon.
+func classifyDashRAMPressure(stats map[string]interface{}, pct float64) {
+	switch {
+	case pct > 85:
+		stats["ram_pressure"] = "high"
+		stats["ram_icon"] = "🔴"
+	case pct > 65:
+		stats["ram_pressure"] = "medium"
+		stats["ram_icon"] = "🟡"
+	default:
+		stats["ram_pressure"] = "low"
+		stats["ram_icon"] = "🟢"
+	}
+}
+
+// collectDashRAMLegacy is the pre-NodeCapacity fallback (sysctl + vm_stat).
+// It only produces ram_percent — total/used/free remain zero, which the UI
+// treats as "unknown" rather than rendering fabricated numbers.
+func collectDashRAMLegacy(stats map[string]interface{}) {
 	out, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
 	if err != nil {
 		return
@@ -44,17 +99,7 @@ func collectDashRAM(stats map[string]interface{}) {
 	pct := float64(used) / float64(total) * 100
 
 	stats["ram_percent"] = pct
-	switch {
-	case pct > 85:
-		stats["ram_pressure"] = "high"
-		stats["ram_icon"] = "🔴"
-	case pct > 65:
-		stats["ram_pressure"] = "medium"
-		stats["ram_icon"] = "🟡"
-	default:
-		stats["ram_pressure"] = "low"
-		stats["ram_icon"] = "🟢"
-	}
+	classifyDashRAMPressure(stats, pct)
 }
 
 func parseVMLine(line string) int64 {

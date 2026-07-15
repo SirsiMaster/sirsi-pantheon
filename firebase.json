@@ -1,7 +1,6 @@
 {
   "hosting": {
     "site": "sirsi-pantheon",
-    "project": "sirsi-nexus-live",
     "public": "docs",
     "cleanUrls": true,
     "ignore": ["**/.*", "**/*.md", "**/*.go"],

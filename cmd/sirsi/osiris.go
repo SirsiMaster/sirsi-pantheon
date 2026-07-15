@@ -58,9 +58,47 @@ var osirisStatusCmd = &cobra.Command{
 	RunE:  runOsirisStatus,
 }
 
+var osirisCheckpointCmd = &cobra.Command{
+	Use:   "checkpoint [path]",
+	Short: "Commit everything as a checkpoint — the lever behind the risk finding",
+	Long: `𓁹 Osiris Checkpoint — secure uncommitted work NOW (Rule A18)
+
+Stages all changes and commits them as a checkpoint in the current (or given)
+repository. Local commit only — nothing is pushed, and a checkpoint is fully
+reversible (git reset). A clean tree is a successful no-op.`,
+	RunE: runOsirisCheckpoint,
+}
+
+func runOsirisCheckpoint(cmd *cobra.Command, args []string) error {
+	start := time.Now()
+	dir := "."
+	if len(args) > 0 {
+		dir = args[0]
+	}
+	res := &output.CommandResult{Command: "sirsi osiris checkpoint", BriefTitle: "Checkpoint"}
+	cp, err := osiris.CommitCheckpoint(dir)
+	if err != nil {
+		res.Summary = "Couldn't checkpoint here: " + err.Error()
+		res.Status = "error"
+		res.Errors = append(res.Errors, err.Error())
+	} else if !cp.Committed {
+		res.Summary = "Working tree clean — everything is already checkpointed."
+		res.Status = "ok"
+	} else {
+		res.Summary = fmt.Sprintf("Checkpointed %d file(s) as commit %s. Local only — nothing was pushed; undo with git reset.", cp.FilesCommitted, cp.Hash)
+		res.Status = "ok"
+		res.AddEvidence("Commit", cp.Hash)
+		res.AddEvidence("Files secured", fmt.Sprintf("%d", cp.FilesCommitted))
+	}
+	res.Duration = time.Since(start)
+	res.Render()
+	return nil
+}
+
 func init() {
 	osirisCmd.AddCommand(osirisAssessCmd)
 	osirisCmd.AddCommand(osirisStatusCmd)
+	osirisCmd.AddCommand(osirisCheckpointCmd)
 }
 
 func runOsirisAssess(cmd *cobra.Command, args []string) error {

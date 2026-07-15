@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ReniceTarget defines what process group to deprioritize.
@@ -178,6 +179,27 @@ func isProtectedReniceTarget(name string) bool {
 // one-click renice can never starve a critical process and make a freeze worse.
 func reniceByPID(pid int, name string) error {
 	return reniceByPIDWith(pid, name, reniceFn, taskpolicyFn)
+}
+
+// reniceByPIDFn is the A21-safe seam the Isis watchdog's auto-renice goroutine
+// calls. The Watch loop runs it from a `go func`, so a test that swaps it to
+// capture calls MUST go through set/getReniceByPIDFn (under reniceByPIDMu) —
+// raw global assignment would be a data race against the live goroutine.
+var (
+	reniceByPIDMu sync.RWMutex
+	reniceByPIDFn = reniceByPID
+)
+
+func getReniceByPIDFn() func(int, string) error {
+	reniceByPIDMu.RLock()
+	defer reniceByPIDMu.RUnlock()
+	return reniceByPIDFn
+}
+
+func setReniceByPIDFn(fn func(int, string) error) {
+	reniceByPIDMu.Lock()
+	defer reniceByPIDMu.Unlock()
+	reniceByPIDFn = fn
 }
 
 // reniceByPIDWith is the injectable core (A16/A21) so the protected-target

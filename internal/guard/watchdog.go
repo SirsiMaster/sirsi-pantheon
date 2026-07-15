@@ -166,6 +166,7 @@ func (w *Watchdog) run() {
 
 	hotStreak := make(map[int]int)
 	firstSeen := make(map[int]time.Time)
+	reniced := make(map[int]bool) // PIDs already auto-reniced this hot streak
 	currentInterval := w.cfg.Interval
 
 	ticker := time.NewTicker(currentInterval)
@@ -237,13 +238,16 @@ func (w *Watchdog) run() {
 							// Consumer too slow — drop this alert silently
 						}
 
-						// Auto-renice: if enabled and sustained for 6+ checks (30s at 5s),
-						// deprioritize the process. Opt-in per Rule A1.
-						if w.cfg.AutoRenice && hotStreak[p.PID] == 0 {
-							// hotStreak was just reset, meaning this is the first alert.
-							// We only renice on first alert — not repeatedly.
+						// Auto-renice (opt-in, Rule A1): on the FIRST sustained alert for
+						// this PID, deprioritize it once. Tracked via `reniced` (cleared
+						// when the process cools). The previous `hotStreak[p.PID] == 0`
+						// guard was DEAD CODE — this block only runs when hotStreak >=
+						// SustainCount, so it was never 0 here and auto-renice never fired.
+						if w.cfg.AutoRenice && !reniced[p.PID] {
+							reniced[p.PID] = true
+							renice := getReniceByPIDFn() // captured here (A21: goroutine never reads the global)
 							go func(pid int, name string) {
-								if err := reniceByPID(pid, name); err == nil {
+								if err := renice(pid, name); err == nil {
 									stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
 										"action": "auto_renice",
 										"pid":    fmt.Sprintf("%d", pid),
@@ -273,6 +277,7 @@ func (w *Watchdog) run() {
 				if !currentHot[pid] {
 					delete(hotStreak, pid)
 					delete(firstSeen, pid)
+					delete(reniced, pid) // cooled down — eligible to renice again if it re-spikes
 				}
 			}
 		}
@@ -376,12 +381,26 @@ func Watch(ctx context.Context, cfg WatchConfig, onAlert AlertFunc) error {
 	defer w.Stop()
 
 	for {
+		// Honor cancellation deterministically. On cancel, the watchdog's run()
+		// exits and CLOSES the alerts channel, so both this select's ctx.Done()
+		// and the closed-Alerts cases become ready at once — and Go picks a ready
+		// case at random, which made Watch return ctx.Err() OR nil nondeterminis-
+		// tically (flaky TestWatch_ImmediateCancel). Checking ctx.Err() first
+		// makes a canceled context always return its error.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case alert, ok := <-w.Alerts():
 			if !ok {
-				return nil // Channel closed — watchdog stopped
+				// Channel closed. If it closed because the context was canceled,
+				// report the cancellation rather than a clean stop.
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return nil // watchdog stopped cleanly
 			}
 			if onAlert != nil {
 				onAlert(alert)

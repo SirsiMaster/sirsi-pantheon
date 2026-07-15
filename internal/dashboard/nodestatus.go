@@ -17,6 +17,29 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
+// nexusOrigins is the allowlist of web origins permitted to read local
+// dashboard data cross-origin. Deliberately explicit, not a wildcard: this
+// data includes live agent PIDs and session identifiers, so only the known
+// Nexus web-panel origins (production + local dev server) may read it, and
+// only over a same-machine loopback request in the first place.
+var nexusOrigins = map[string]bool{
+	"https://sirsi.ai":         true,
+	"https://sirsi-ai.web.app": true,
+	"http://localhost:5183":    true,
+	"http://127.0.0.1:5183":    true,
+}
+
+// allowNexusOrigin sets Access-Control-Allow-Origin when the request's Origin
+// header matches nexusOrigins. No-op (and no header set) for any other origin,
+// which browsers treat as a same-origin-only response.
+func allowNexusOrigin(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin != "" && nexusOrigins[origin] {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+}
+
 // DefaultOpsSummaryMax bounds the OpsSummary agent list to fit a typical
 // NSMenu (~12-20 rows comfortably; we pick 12 to leave headroom for fixed rows
 // like counts and the "Open full dashboard" link). The remainder collapse into
@@ -102,11 +125,15 @@ func Summarize(ns *router.NodeStatus, max int) OpsSummary {
 		}
 	}
 
-	// Drift / auth — true if any agent CLI has auth failures or any wake
+	// Drift / auth — true if any agent CLI needs a real re-login, or any wake
 	// mechanism is not ready, or daemon is installed but its configured binary
-	// does not exist (ADR-023 drift class).
+	// does not exist (ADR-023 drift class). Only a confirmed logout (NeedsLogin)
+	// counts — a DEGRADED/inconclusive probe (cold-start timeout) is NOT an
+	// actionable auth issue and must never paint Horus red (the 8s-timeout false
+	// alarm: nothing the user could click would clear it). See feedback
+	// "surfaces_current_actionable_only".
 	for _, h := range ns.AgentHealth {
-		if h.CLIFound && !h.AuthOK {
+		if h.CLIFound && h.NeedsLogin {
 			sum.HasDriftOrAuthIssue = true
 			break
 		}
@@ -124,7 +151,13 @@ func Summarize(ns *router.NodeStatus, max int) OpsSummary {
 	}
 	if sum.HasDriftOrAuthIssue {
 		sum.WorstIcon = "🔴"
-	} else if sum.StaleThreadCount > 0 || sum.RecentFailureCount > 0 {
+	} else if sum.RecentFailureCount > 0 {
+		// Only a CURRENT, actionable signal turns Horus yellow — a recent
+		// failure. Stale thread registrations (ended sessions whose records
+		// weren't reaped) are registry cruft, not a problem the user can act
+		// on, so they must NOT paint Horus yellow — that was a permanent
+		// false alarm no click could clear. The count is still surfaced in the
+		// per-agent rows as plain information.
 		sum.WorstIcon = "🟡"
 	} else {
 		sum.WorstIcon = "🟢"
@@ -239,7 +272,13 @@ type NodeStatusCollector func() (*router.NodeStatus, error)
 //   - ?view=summary: bounded OpsSummary (top-N agents + "more_agents")
 //
 // Read-only: no method-gating, no ConfirmGuard path, no side effects.
+//
+// CORS is scoped to the known Nexus web-panel origins (ADR-047 shared-services
+// consumer) rather than a wildcard, since this endpoint exposes live agent PIDs
+// and session identifiers — local-only data that should only ever be readable
+// by a page the operator is themselves looking at, never a wildcard origin.
 func (s *Server) apiNodeStatus(w http.ResponseWriter, r *http.Request) {
+	allowNexusOrigin(w, r)
 	if s.cfg.NodeStatusFn == nil {
 		writeError(w, "node-status not available (collector not wired)", http.StatusServiceUnavailable)
 		return

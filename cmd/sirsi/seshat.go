@@ -263,19 +263,22 @@ var seshatListCmd = &cobra.Command{
 			return nil
 		}
 
-		if JsonOutput {
-			result := map[string]interface{}{
-				"items": items,
-				"total": len(items),
-			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(result)
+		// CommandResult contract (owner surface law 2026-07-09): structured
+		// list + a real lever (sync/ingest), not a raw Printf dump.
+		res := &output.CommandResult{Command: "sirsi seshat list", BriefTitle: "Knowledge Library"}
+		if len(items) == 0 {
+			res.Summary = "No knowledge items ingested yet — the library is empty."
+			res.Status = "ok"
+			res.NextActions = append(res.NextActions,
+				output.NextAction{Label: "Sync knowledge sources", Command: "sirsi seshat sync", Description: "Pull the latest knowledge items from configured sources."},
+				output.NextAction{Label: "Ingest a source", Command: "sirsi seshat ingest", Description: "Add a new source into the library."},
+			)
+			res.Duration = time.Since(start)
+			res.Render()
+			return nil
 		}
-
-		output.Banner()
-		output.Header("Knowledge Library")
-
+		res.Summary = fmt.Sprintf("%d knowledge item(s) in the library.", len(items))
+		res.Status = "ok"
 		for i, ki := range items {
 			source := "unknown"
 			for _, ref := range ki.References {
@@ -284,13 +287,150 @@ var seshatListCmd = &cobra.Command{
 					break
 				}
 			}
-			fmt.Printf("  %d. [%s] %s\n", i+1, source, ki.Title)
-			fmt.Printf("     %s\n", output.Truncate(ki.Summary, 80))
+			if i >= 10 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more", len(items)-10))
+				break
+			}
+			res.AddEvidence(fmt.Sprintf("[%s] %s", source, ki.Title), output.Truncate(ki.Summary, 60))
+		}
+		// Levers that RESOLVE what the list shows (owner surface law): a
+		// polluted or stale library needs a way OUT, not just a way to add
+		// more. "Refresh" re-ingests (the no-arg legacy `sync` is a no-op, so
+		// point at `ingest`, which actually pulls); "Clear" prunes the store.
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "Refresh from sources", Command: "sirsi seshat ingest", Description: "Re-ingest from all configured sources (fixes stale/mis-dated items)."},
+		)
+		// If a single source dominates the library, offer to prune just that
+		// noise (e.g. hundreds of raw Chrome-history rows) before nuking all.
+		if src, n := dominantSource(items); src != "" && n >= 10 && src != "unknown" {
+			res.NextActions = append(res.NextActions,
+				output.NextAction{Label: fmt.Sprintf("Remove %d %s item(s)", n, src), Command: "sirsi seshat prune --source " + src, Description: fmt.Sprintf("Prune the %s items from the library, keeping everything else.", src)},
+			)
+		}
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "Clear the library", Command: "sirsi seshat prune --all", Description: "Remove every ingested item. Re-ingest rebuilds it from source."},
+		)
+		res.Duration = time.Since(start)
+		res.Render()
+		return nil
+	},
+}
+
+// dominantSource returns the source that accounts for the most items and its
+// count, so `list` can offer a targeted prune of the biggest noise contributor.
+func dominantSource(items []seshat.KnowledgeItem) (string, int) {
+	counts := map[string]int{}
+	for _, ki := range items {
+		for _, ref := range ki.References {
+			if ref.Type == "source" {
+				counts[ref.Value]++
+				break
+			}
+		}
+	}
+	var topSrc string
+	var topN int
+	for src, n := range counts {
+		if n > topN {
+			topSrc, topN = src, n
+		}
+	}
+	return topSrc, topN
+}
+
+var seshatPruneCmd = &cobra.Command{
+	Use:   "prune",
+	Short: "𓁆 Remove ingested knowledge items (all, or one source)",
+	Long: `𓁆 Prune the knowledge library.
+
+The library is a rebuildable local cache under ~/.config/seshat/store — pruning
+it is reversible by re-ingesting. Use this to clear stale or mis-dated items
+(e.g. Chrome history ingested by an older build) or to drop a noisy source.
+
+  sirsi seshat prune --all                 Remove every item
+  sirsi seshat prune --source chrome-history  Remove only that source's items`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		start := time.Now()
+		source, _ := cmd.Flags().GetString("source")
+		all, _ := cmd.Flags().GetBool("all")
+
+		res := &output.CommandResult{Command: "sirsi seshat prune", BriefTitle: "Prune Knowledge Library"}
+
+		if !all && source == "" {
+			res.Status = "error"
+			res.Summary = "Nothing pruned — choose --all or --source <name>."
+			res.Errors = append(res.Errors, "specify --all to clear everything, or --source <name> to remove one source")
+			res.NextActions = append(res.NextActions,
+				output.NextAction{Label: "Clear the library", Command: "sirsi seshat prune --all", Description: "Remove every ingested item."},
+			)
+			res.Duration = time.Since(start)
+			res.Render()
+			return nil
 		}
 
-		fmt.Printf("\n  Total: %d knowledge items\n", len(items))
-		output.Footer(time.Since(start))
-		output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "seshat", Subcommand: "list"}))
+		items, err := loadLatestKnowledgeItems()
+		if err != nil || len(items) == 0 {
+			res.Status = "ok"
+			res.Summary = "The library is already empty — nothing to prune."
+			res.NextActions = append(res.NextActions,
+				output.NextAction{Label: "Ingest a source", Command: "sirsi seshat ingest", Description: "Populate the library from configured sources."},
+			)
+			res.Duration = time.Since(start)
+			res.Render()
+			return nil
+		}
+
+		before := len(items)
+		var kept []seshat.KnowledgeItem
+		if all {
+			kept = nil
+		} else {
+			for _, ki := range items {
+				src := "unknown"
+				for _, ref := range ki.References {
+					if ref.Type == "source" {
+						src = ref.Value
+						break
+					}
+				}
+				if src != source {
+					kept = append(kept, ki)
+				}
+			}
+		}
+		removed := before - len(kept)
+
+		if removed == 0 {
+			res.Status = "ok"
+			res.Summary = fmt.Sprintf("No %s items found — nothing pruned (%d item(s) untouched).", source, before)
+			res.Duration = time.Since(start)
+			res.Render()
+			return nil
+		}
+
+		if err := writeLatestKnowledgeItems(kept); err != nil {
+			res.Status = "error"
+			res.Summary = "Prune failed — the library was not changed."
+			res.Errors = append(res.Errors, err.Error())
+			res.Duration = time.Since(start)
+			res.Render()
+			return err
+		}
+
+		res.Status = "ok"
+		if all {
+			res.Summary = fmt.Sprintf("Cleared the library — removed all %d item(s).", removed)
+		} else {
+			res.Summary = fmt.Sprintf("Removed %d %s item(s); %d item(s) remain.", removed, source, len(kept))
+		}
+		res.AddEvidence("Removed", fmt.Sprintf("%d item(s)", removed))
+		res.AddEvidence("Remaining", fmt.Sprintf("%d item(s)", len(kept)))
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "View the library", Command: "sirsi seshat list", Description: "See what remains after the prune."},
+			output.NextAction{Label: "Re-ingest fresh", Command: "sirsi seshat ingest", Description: "Rebuild the library with the current (corrected) parser."},
+		)
+		res.Duration = time.Since(start)
+		res.Render()
 		return nil
 	},
 }
@@ -636,6 +776,9 @@ func init() {
 	seshatSyncCmd.Flags().String("ki", "", "Knowledge Item name to sync")
 	seshatSyncCmd.Flags().String("target", "", "Target GEMINI.md file path")
 
+	seshatPruneCmd.Flags().String("source", "", "Prune only items from this source (e.g. chrome-history)")
+	seshatPruneCmd.Flags().Bool("all", false, "Remove every ingested item")
+
 	seshatChromeOpenCmd.Flags().String("profile", "", "Chrome profile name or display name (default: 'Default')")
 	seshatChromeOpenCmd.Flags().String("url", "", "URL to open in Chrome")
 
@@ -649,6 +792,7 @@ func init() {
 	seshatCmd.AddCommand(seshatExportCmd)
 	seshatCmd.AddCommand(seshatExportNotebookLMCmd)
 	seshatCmd.AddCommand(seshatListCmd)
+	seshatCmd.AddCommand(seshatPruneCmd)
 	seshatCmd.AddCommand(seshatAdaptersCmd)
 	seshatCmd.AddCommand(seshatProfilesCmd)
 	seshatCmd.AddCommand(seshatOpenCmd)
@@ -702,4 +846,22 @@ func loadLatestKnowledgeItems() ([]seshat.KnowledgeItem, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+// writeLatestKnowledgeItems overwrites the store's latest.json with exactly the
+// given items (used by prune). A nil/empty slice writes `[]` so `list` reads a
+// clean empty library rather than erroring on a missing file.
+func writeLatestKnowledgeItems(items []seshat.KnowledgeItem) error {
+	dir := seshatStoreDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	if items == nil {
+		items = []seshat.KnowledgeItem{}
+	}
+	data, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "latest.json"), data, 0644)
 }

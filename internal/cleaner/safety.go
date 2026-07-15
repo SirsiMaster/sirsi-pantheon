@@ -61,13 +61,46 @@ var protectedHomeDirs = []string{
 
 // ValidatePath checks if a path is safe to delete.
 // Returns an error if the path is protected.
+//
+// It validates BOTH the lexical absolute path AND the symlink-resolved real
+// target: a symlink (or a symlinked parent directory) whose name looks innocent
+// must not be able to smuggle a delete into a protected location it points at.
+// The protected-path guarantee (Rule A1: "cannot be overridden") would otherwise
+// be bypassable with a link named e.g. "cache" pointing into ~/.ssh, or a scan
+// root that is itself a symlink into /System.
 func ValidatePath(path string) error {
-	// Resolve to absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("cannot resolve path %q: %w", path, err)
 	}
 
+	// Lexical check first.
+	if err := checkProtected(absPath); err != nil {
+		return err
+	}
+
+	// Then the symlink-resolved real target. Resolve the full path when it
+	// exists; otherwise resolve the parent and re-attach the base so a symlinked
+	// parent directory is still caught even when the leaf is already gone.
+	realPath := absPath
+	if resolved, e := filepath.EvalSymlinks(absPath); e == nil {
+		realPath = resolved
+	} else if parent, pe := filepath.EvalSymlinks(filepath.Dir(absPath)); pe == nil {
+		realPath = filepath.Join(parent, filepath.Base(absPath))
+	}
+	if realPath != absPath {
+		if err := checkProtected(realPath); err != nil {
+			return fmt.Errorf("%w (resolved via symlink from %q)", err, absPath)
+		}
+	}
+
+	return nil
+}
+
+// checkProtected runs the protected prefix/suffix/name/exact matrix against a
+// single absolute path. ValidatePath applies it to both the lexical path and the
+// symlink-resolved real target.
+func checkProtected(absPath string) error {
 	// Check platform-specific protected prefixes
 	for _, prefix := range platform.Current().ProtectedPrefixes() {
 		if strings.HasPrefix(absPath, prefix) {
@@ -192,10 +225,12 @@ func DeleteFileReversible(path string, dryRun bool) (int64, error) {
 // CleanFile removes a file with full decision logging.
 // Policy:
 //   - Always requires human-confirmed decision (no auto-delete)
+//   - dryRun previews without touching the file (Rule A1 — every destructive op
+//     has a no-op preview), recording a "dry-run" decision instead of removing
 //   - Always trash first on macOS (reversible)
 //   - Records every action with path, size, hash, reason, timestamp
 //   - Permanent delete only via explicit EmptyTrash after review
-func CleanFile(path string, reason string, groupID string, hash string, log *DecisionLog) (int64, error) {
+func CleanFile(path string, dryRun bool, reason string, groupID string, hash string, log *DecisionLog) (int64, error) {
 	// SAFETY: Validate path before ANY operation
 	if err := ValidatePath(path); err != nil {
 		_ = log.Record(Decision{
@@ -215,6 +250,22 @@ func CleanFile(path string, reason string, groupID string, hash string, log *Dec
 		return 0, fmt.Errorf("cannot stat %q: %w", path, err)
 	}
 	size := info.Size()
+
+	// Dry-run: report what WOULD be removed without touching it, and record a
+	// "dry-run" decision so the ledger shows the preview rather than a removal
+	// that never happened (Rule A1: a destructive op must have a no-op preview).
+	if dryRun {
+		logging.Debug("Dry-run: would clean", "path", path, "size", size)
+		_ = log.Record(Decision{
+			Path:       path,
+			Size:       size,
+			Action:     "dry-run",
+			Reason:     reason,
+			DupGroupID: groupID,
+			SHA256:     hash,
+		})
+		return size, nil
+	}
 
 	// Always trash on platforms that support it (reversible)
 	if platform.Current().SupportsTrash() {

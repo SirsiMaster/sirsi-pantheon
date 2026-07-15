@@ -79,8 +79,15 @@ func renderNodeStatus(ns *router.NodeStatus) {
 	if len(ns.LiveThreads) > 0 {
 		fmt.Println("  Live threads:")
 		for _, t := range ns.LiveThreads {
-			fmt.Printf("    • %s  agent=%s  surface=%s  pid=%d  os=%s  idle=%.0fs\n",
-				t.ThreadID, t.AgentID, t.Surface, t.PID, t.OSState, t.IdleSeconds)
+			// Honest liveness: make a heartbeat-fresh-but-loop-dead thread visible
+			// instead of silently "live" — exactly the "claims live but is idle" case
+			// the owner flagged. armed_reason is the surface-native verdict.
+			armed := "armed (" + t.ArmedReason + ")"
+			if !t.Armed {
+				armed = "⚠ NOT ARMED (" + t.ArmedReason + ")"
+			}
+			fmt.Printf("    • %s  agent=%s  surface=%s  pid=%d  os=%s  loop=%s  idle=%.0fs  %s\n",
+				t.ThreadID, t.AgentID, t.Surface, t.PID, t.OSState, t.LoopState, t.IdleSeconds, armed)
 		}
 		fmt.Println()
 	}
@@ -96,6 +103,15 @@ func renderNodeStatus(ns *router.NodeStatus) {
 		fmt.Println("  Pending by agent:")
 		for agent, ids := range ns.PendingByAgent {
 			fmt.Printf("    %s: %d\n", agent, len(ids))
+		}
+		fmt.Println()
+	}
+	if len(ns.StrandedInbox) > 0 {
+		// Make stranded work VISIBLE: these agents have open items but no armed
+		// thread watching them — the work sits until they are (re)armed.
+		fmt.Println("  ⚠ Stranded inbox (open items, NO armed watcher):")
+		for _, s := range ns.StrandedInbox {
+			fmt.Printf("    %s: %d item(s) waiting — not armed\n", s.AgentID, s.OpenItems)
 		}
 		fmt.Println()
 	}
@@ -126,12 +142,11 @@ func renderNodeStatus(ns *router.NodeStatus) {
 			status := "ok"
 			if !h.CLIFound {
 				status = "not-found"
-			} else if !h.AuthOK {
-				if h.NeedsLogin {
-					status = "needs-login"
-				} else {
-					status = "auth-error"
-				}
+			} else if h.NeedsLogin {
+				status = "needs-login"
+			} else if h.Degraded {
+				// Inconclusive probe (cold-start timeout / env) — NOT a logout.
+				status = "probe-inconclusive"
 			}
 			line := fmt.Sprintf("    %s: %s", h.AgentType, status)
 			if h.AuthError != "" {

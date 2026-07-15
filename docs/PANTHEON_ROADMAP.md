@@ -1,16 +1,17 @@
 # 𓁢 Sirsi Pantheon — Canonical Roadmap
-**Version:** 5.0.0 (The Honest Measurement)
-**Date:** March 31, 2026
-**Status:** **v0.8.0-beta — Preparing for Public Release**
+**Version:** 6.0.0 (Reality Sync)
+**Date:** July 1, 2026
+**Status:** **v0.23.8-beta shipped** (signed + notarized, tagged 2026-06-30) — next: v1.0.0-rc1 Star-Grade sprint
 
-> **All metrics in this document are verified by `go test -cover ./...` (March 31, 2026).**
-> Previous versions of this document contained false coverage numbers due to a hardcoded
-> module registry in Ma'at. This has been fixed — Ma'at now dynamically discovers all modules.
+> **The coverage tables in §2 are a dated snapshot** verified by `go test -cover ./...` on
+> March 31, 2026 (the honest-measurement reset). Current repo state as of July 1, 2026:
+> `VERSION` = 0.23.8-beta = latest tag `v0.23.8-beta`; 2,078 test functions
+> (`grep -r '^func Test' --include='*_test.go' | wc -l`); Go 1.25.
 
 ## 1. Vision: Pantheon Anubis — Standalone DevOps Intelligence CLI
 Pantheon is the single, modular brand for all Sirsi automation deities. The standalone CLI (Pantheon Anubis) gives you all features in one binary. Each deity can also be installed independently.
 
-## 2. Deity Pillars (v0.8.0-beta)
+## 2. Deity Pillars (coverage snapshot: v0.8.0-beta, March 31, 2026)
 
 | Pillar | Glyph | Role | Coverage | Status |
 |:-------|:------|:-----|:---------|:-------|
@@ -56,7 +57,7 @@ Pantheon is the single, modular brand for all Sirsi automation deities. The stan
 
 **Weighted Average:** ~83.5% across 28 packages (27 modules + jackal/rules)
 
-## 3. Global Metrics (Verified March 31, 2026)
+## 3. Global Metrics (snapshot: March 31, 2026 — current test count is 2,078 funcs as of 2026-07-01)
 
 | Metric | Value | Source |
 |:-------|:------|:-------|
@@ -85,7 +86,7 @@ Pantheon is the single, modular brand for all Sirsi automation deities. The stan
 - Composition pipeline: RTK -> Vault -> Horus. Zero new external dependencies.
 - Horus dogfood: parsed 169 Go files from Pantheon itself, extracted 328 types, 15 interfaces. `tools.go` outline: 700+ lines to ~30 lines (23x).
 
-### Phase 3: Hardening & Honest Measurement (CURRENT) — 🚧 v0.8.0-beta
+### Phase 3: Hardening & Honest Measurement — ✅ March 31 (v0.8.0-beta)
 - Fixed Ma'at dynamic module discovery (was reporting false 0% for 10 modules)
 - Thoth folded from standalone repo into Pantheon (Go port + subtree merge)
 - All golangci-lint errors resolved (40+ fixes across 19 files)
@@ -93,29 +94,26 @@ Pantheon is the single, modular brand for all Sirsi automation deities. The stan
 - E2E smoke test suite (9 tests against compiled binary)
 - Honest version: v0.8.0-beta (not premature RC1)
 
-### Phase 4: Public Beta Release — 📋 Next
-- Tag v0.8.0-beta and trigger GoReleaser
-- Close jackal/rules coverage gap (64.5% → 85%)
-- MCP test performance optimization
-- Release notes and installation docs
+### Phase 4: Public Beta Release — ✅ Shipped (April–June 2026)
+- v0.8.0-beta tagged and published; releases continued through **v0.23.8-beta** (tagged 2026-06-30)
+- Signed + notarized DMG releases with stable TCC identity (since v0.23.3-beta)
+- `sirsi update` self-update installing signed releases (#98)
+- Native macOS menubar — NSStatusItem + NSPopover + SwiftUI (ADR-030)
+- Mac-first platform roadmap adopted: CLI → Menubar → TUI → GUI (ADR-032); Windows/Linux GUI deferred
+- ADR-033 Remediation Catalog accepted (2026-06-30): every finding maps to a real macOS lever, never a monitor
 
-### Phase 5: v1.0.0-rc1 (Earned, Not Declared) — 📋 April
-- 30-day dogfooding on production machines
-- Cross-platform testing (Linux, Windows)
-- Neith orchestration implementation
-- Ra portal (inside SirsiNexusApp)
+### Phase 5: v1.0.0-rc1 (Earned, Not Declared) — 🚧 CURRENT: the Star-Grade sprint
+- See §5 below — governed by `docs/prd/RELEASE_V1_STAR_GRADE.md`
 
-## 5. Remaining Work for v0.8.0-beta Release
+## 5. Next: v1.0.0-rc1 Star-Grade Sprint
 
-| # | Action | Current | Target | Est. |
-|:--|:-------|:--------|:-------|:-----|
-| 1 | Close jackal/rules coverage | 64.5% | 85%+ | 4-6 hrs |
-| 2 | MCP test performance | 52s | <15s | 2-3 hrs |
-| 3 | Release notes + docs | Missing | Complete | 2 hrs |
-| 4 | Tag + GoReleaser publish | No tag | v0.8.0-beta | 30 min |
+The current sprint drives v0.23.8-beta → **v1.0.0-rc1**, governed by the release PRD:
+**[`docs/prd/RELEASE_V1_STAR_GRADE.md`](prd/RELEASE_V1_STAR_GRADE.md)** (lands with PR #132).
+Every public claim must match reality (this document included); rc1 is earned by closing the
+PRD's star-grade gates, not declared.
 
 ---
 **Custodian**: 𓆄 Ma'at (dynamic measurement, not hardcoded)
-**Last Verified**: March 31, 2026 — 1,450+ tests / ~83.5% coverage / 28 packages green / 0 lint errors.
+**Last Verified**: July 1, 2026 — `VERSION` 0.23.8-beta = tag `v0.23.8-beta`; 2,078 test functions. (§2 coverage tables: March 31, 2026 snapshot.)
 **Measurement**: `go test -cover ./...` (verified) + `golangci-lint run` (clean).
 *Building in public. The feather weighs true. No excuses.*

@@ -1,7 +1,7 @@
 # PANTHEON_RULES.md
 **Operational Directive for All Development Agents (sirsi-pantheon)**
-**Version:** 3.0.0 (v0.19.0 — TUI UX Overhaul)
-**Date:** May 6, 2026
+**Version:** 3.0.0 (v0.23.8-beta Release)
+**Date:** July 1, 2026
 
 ---
 
@@ -13,6 +13,9 @@ An open-source CLI tool that scans, judges, and purges infrastructure waste acro
 - **Local Path**: `/Users/thekryptodragon/Development/sirsi-pantheon`
 - **CLI Binary**: `sirsi`
 - **Agent Binary**: `sirsi-agent`
+
+### Platform Roadmap (ADR-032 — Mac-first)
+Pantheon is **100% Mac**, built in this exact order: **(1) Mac CLI → (2) Mac Menubar → (3) Mac TUI → (4) Mac desktop GUI** (built FROM the menubar). Windows/Linux are **deferred 3–6 months**, revisited only on demand once all four Mac surfaces are engineered, working, AND selling. CI builds Mac-only (PR #64); off-strategy jobs (Windows installer, Android/iOS) are gated off, not deleted. See `docs/ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md`.
 
 **This repo is NOT SirsiNexusApp. This repo is NOT FinalWishes. This repo is NOT Assiduous.**
 Rules, design tokens, and business logic from other repositories do NOT apply here unless explicitly inherited through Universal Rules (§1).
@@ -37,7 +40,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | Resource Optimizer | **Hapi** 🌊 | The Flow | Controls VRAM, GPU memory, and storage flow |
 | Output Filter | **RTK** ⚡ | The Sieve | Strips noise from tool output before it hits AI context |
 | Context Vault | **Vault** 🏛️ | The Keeper | Sandboxes large output in SQLite FTS5, indexes code for BM25 search |
-| Code Graph | **Horus** 𓂀 | The All-Seeing | Extracts structural code symbols, serves outlines instead of full files |
+| Code Graph | **Horus** 𓂀 | The All-Seeing | The all-seeing Local Lord — structural code graph, live file watching, AND the workstation ops dashboard (ADR-015/026) |
 
 ---
 
@@ -74,7 +77,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 
 *   **Scan Rule Isolation (Rule A2)**: Each scan rule is a self-contained Go file implementing the `ScanRule` interface. Rules MUST NOT have side effects during the `Scan()` phase — they may only read the filesystem and report findings. Side effects (deletion, modification) happen ONLY during the `Clean()` phase, which requires explicit user confirmation.
 
-*   **Cross-Platform Safety (Rule A3)**: Agent binaries (`anubis-agent`) must be statically compiled with `CGO_ENABLED=0` and zero external dependencies. They run on untrusted targets (customer VMs, containers, remote hosts). The agent MUST NOT execute arbitrary commands received from the controller — it implements a fixed, auditable command set.
+*   **Cross-Platform Safety (Rule A3)**: Agent binaries (`sirsi-agent`) must be statically compiled with `CGO_ENABLED=0` and zero external dependencies. They run on untrusted targets (customer VMs, containers, remote hosts). The agent MUST NOT execute arbitrary commands received from the controller — it implements a fixed, auditable command set.
 
 *   **Network Safety (Rule A4)**: Fleet sweep operations (`anubis scarab`) require explicit opt-in via `--confirm-network` flag. Anubis MUST NEVER auto-discover and scan network targets without user initiation. Subnet scanning requires the user to explicitly provide the target range. No "scan everything" defaults.
 
@@ -94,8 +97,8 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 *   **Pre-merge checks** (automated on every push/PR):
     1. **Lint** — `golangci-lint run ./...` must pass with zero errors.
     2. **Test** — `go test ./...` must pass with zero failures.
-    3. **Build** — `go build ./cmd/anubis/` and `go build ./cmd/anubis-agent/` must succeed.
-    4. **Binary Size Guard** — Warning if `anubis` > 25MB or `anubis-agent` > 12MB.
+    3. **Build** — `go build ./cmd/sirsi/` and `go build ./cmd/sirsi-agent/` must succeed.
+    4. **Binary Size Guard** — Warning if `sirsi` > 25MB or `sirsi-agent` > 12MB.
 *   **Agent Responsibility**: After ANY `go get` that modifies `go.sum`, the agent MUST commit and push the updated sum file immediately.
 
 ### 2.4 Commit Traceability Protocol (Rule A7)
@@ -162,9 +165,10 @@ When context health is 🟡 or 🔴, the agent MUST proactively:
 
 ### 2.7 Terminal UI Fidelity (Rule A10)
 > Adapted from FinalWishes Rule 27 (design fidelity). Applied to terminal output.
+> **v2 (2026-07-13, ADR-038):** the palette is **emerald + gold** and lives in ONE place — `internal/brand`. Green is Sirsi's; green + gold are Pantheon's. Every surface (CLI, TUI, dashboard, menubar, Swift app, Nexus) derives from `internal/brand` — Go surfaces import it, others via `sirsi brand tokens --format css|swift|json`. No surface hardcodes a hex. Emerald leads (identity / healthy / interactive); gold is the second accent (owner-action, the 𓂀 glyph). The gold-primary + lapis palette below is superseded.
 
-All terminal output MUST use the Anubis brand language:
-*   **Colors**: Gold (`#C8A951`) for highlights, White for body text, Red for errors, Green for success. No raw unstylized output in interactive mode.
+All terminal output MUST use the Pantheon brand language (`internal/brand`, ADR-038):
+*   **Colors**: **Emerald** (`#2bd29b`) for identity/healthy/interactive, **Gold** (`#cdad5a`) for owner-action highlights, White/Ink for body text, Red for errors, Amber for warnings. Resolve tokens from `internal/brand`, never a literal. No raw unstylized output in interactive mode.
 *   **Rendering**: Uses `lipgloss` for styled output and `table` for tabular data.
 *   **Headers**: 𓃣 glyph prefix for section headers.
 *   **Progress**: Spinner or progress bar for operations > 2 seconds.
@@ -317,6 +321,25 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Enforcement**: An AI agent that guesses instead of asking (Axiom 3), or codes before understanding (Axiom 4), has violated Truth Vector. The resulting work must be reviewed before canonization.
 *   **Custodian**: The user is the sole arbiter of Truth Vector compliance.
 
+### 2.21 Ra Scope Autonomy (Rule A24)
+> Established April 3, 2026, after 4 Ra-deployed agents blocked indefinitely waiting for sprint plan approval that could never arrive in non-interactive mode.
+
+*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 14 (Sprint Planning is Mandatory).
+*   **Scope Authoring**: Scopes MUST be written as directive, numbered task lists — not vague descriptions. Each task must name specific files, paths, or concrete actions. Vague scopes cause agents to ask clarifying questions, which hang forever in `--print` mode. See `configs/scopes/README.md` for the full authoring guide.
+*   **Prompt Structure**: The autonomy directive and scope of work are placed at the **top** of the woven prompt and are **never truncated**. Canon context (CLAUDE.md, Thoth memory, ADRs) fills the remaining token budget and may be truncated.
+*   **Permission Model**: Ra agents run with `--dangerously-skip-permissions` because the scope is pre-approved. This flag MUST NOT be used outside of Ra-deployed agents.
+*   **Streaming Output**: Ra agents MUST use `--output-format stream-json --verbose` with `--print`. Default `--print` mode buffers ALL output until the session completes, making agents appear lifeless for 10+ minutes. The stream-json output is piped through a python filter (`terminal.go`) that extracts human-readable text and tool-use summaries, writing to both the terminal (live progress) and the log file (Ra monitoring).
+*   **Evidence**: Session where `sirsi ra deploy` spawned 4 windows; all 4 agents asked for approval and blocked. Root causes: (1) CLAUDE.md Rule 14 conflict, (2) vague scope descriptions, (3) directive placed after canon context and truncated, (4) `--print` default text mode buffered all output making agents appear dead.
+
+### 2.22 Deity Registry & Attribution (Rule A25)
+> Established April 4, 2026, after pre-push hooks in FinalWishes and Assiduous misattributed deity glyphs and functions.
+
+*   **Rule**: Every deity has one glyph, one domain, and one functional responsibility. These are defined in `docs/DEITY_REGISTRY.md` and are invariant across all Sirsi repos. No repo may reassign a deity's function or glyph.
+*   **Ma'at Owns All Quality Gates**: Every pre-push hook, CI gate, and quality assessment is `𓆄 Ma'at`. Output format: `𓆄 Ma'at pre-push gate... [RepoName]`. No other deity may be attributed for quality gate functions.
+*   **ProtectGlyph Is Ra-Exclusive**: `𓂀` in a Terminal.app window title is Ra's authority to mark windows as immune to `KillAll`. It is not a general-purpose glyph and must not be used as another deity's symbol in functional contexts.
+*   **No Repo-Specific Aliases**: A deity is never renamed for a repo. Correct: `𓆄 Ma'at pre-push gate... [FinalWishes]`. Wrong: `𓁹 Osiris (FinalWishes) pre-push gate...`.
+*   **Evidence**: FinalWishes used `𓂀 Osiris` for its pre-push gate (wrong deity, wrong glyph, wrong function). Assiduous used `𓇼 Seba` (wrong deity for quality gates). Both corrected to `𓆄 Ma'at`.
+
 ### 2.23 Idea Router Workstream Protocol (Rule A26)
 > Established May 15, 2026. Codex and Claude must collaborate through the Idea Router for multi-agent and cross-agent workstreams.
 
@@ -351,23 +374,70 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Admin override**: branch protection uses `enforce_admins=false` so the founder retains override (A23 — sole arbiter).
 *   **Reference**: sirsi-pantheon `internal/setup.ArmMaatGate()` + `.githooks/pre-push` + `gh api -X PUT repos/SirsiMaster/<repo>/branches/main/protection`. Custodian: 𓆄 Ma'at (A17). Portfolio-standard candidate — mirror into the Universal Rules (§1) once each repo confirms adoption.
 
+### 2.26 Orchestration Brain: Tiered & Pluggable (Rule A29)
+> Established July 2, 2026. Co-authored claude-home ↔ claude-pantheon (router bind `20260630-190342`, all 6 amendments + the 7th Registry/Wake invariant). Custodian: 𓁟 the Brain (control plane) + 𓁢 the Router (Tier-0 substrate). Full design: `docs/prd/ORCHESTRATION_BRAIN.md`; decision: ADR-034.
+
+*   **Rule**: Pantheon's orchestration intelligence is a **tiered, pluggable, user-navigable brain**, not a single always-on model. It has three tiers — **Tier-0 Dispatch** (watch/route/heartbeat/ack), **Tier-1 Triage** (classify ambiguous items), **Tier-2 Execution** (agentic build/review/bind) — over an LLM spectrum **Level 0–3** (0 Deterministic → 1 +local triage → 2 +agentic execution → 3 +hosted). The Level is **derived** from per-role provider config, never separately stored.
+*   **The deterministic floor (mandatory)**: **Tier-0 dispatch MUST run with zero LLM** and ships **ON at Level 0** on a fresh public install — dispatch/route/heartbeat/ack all work with no AI, no keys, no cost. The model is *invoked by* the loop, never *is* the loop. The config layer and `sirsi brain doctor` both **reject a model plugged into dispatch**.
+*   **Per-role pluggable**: each role independently selects a provider — `none` (floor) · `local:<model-id>` (zero-token) · `hosted:<provider-id>` (opt-in, the only per-token path). Config lives in **`~/.sirsi/brain.yaml`** (structured YAML via the repo's yaml.v3 standard — not a bespoke `.conf`, not a new viper dependency; Rule 0). Swaps take effect on **next read — no restart**.
+*   **Tier-0 Registry/Wake invariant (7th amendment — ENFORCE, don't rebuild)**: "the router can always see and wake every registered thread." Registration binds a **persistent wake-channel**; a registered thread with no live channel is a broken contract (the zombie state). This invariant is **already implemented** in `internal/router` (`WakePass`, `ProbeWakeReadiness`, `InstallWakeLaunchAgent`, `RunWakeLoop`, `wakemechanism.go`; `sirsi router doctor --fix` runs the wake pass). A29 **codifies that existing system** — it MUST NOT be reimplemented (Rule 0). The brain's control plane **surfaces + enforces** it: `sirsi brain status`/`doctor` read the existing wake API to flag every registered-but-unwakeable agent and every stranded inbox, and point the fix at the **existing** verbs (`sirsi router wake-install`, `sirsi router doctor --fix`). Waking + repair stay the router's job; the brain observes. Honest boundary preserved: a fully-closed interactive Claude process cannot be resurrected locally → **"needs-owner"**, stated not faked. This makes A27 (Heartbeat Loop Mandate) *enforced*, not advisory.
+*   **Resource-broker consumer (RAM gate)**: before loading a local model the brain consults `guard.NodeCapacity.Fits()`; `doctor` reports "**won't fit — N GB short**" instead of letting it OOM (defense-in-depth with ADR-031-A/B).
+*   **Hosted-key handling (A11 + safety)**: Level-3 keys live in the OS keychain or `~/.sirsi/` 0600 — **never in brain.yaml, never logged**, transmitted only to the chosen provider. `doctor` reports "auth present" without printing the key.
+*   **Visible + modifiable + troubleshootable**: the active tier + per-role model MUST be visible and swappable in the **CLI** (`sirsi brain {status,use,levels,doctor,test}`) and the **menubar**, and visible in **SirsiNexus** (`--json` read-model). "No black box" — brain decisions append to the Activity/stele provenance ledger.
+*   **Decoupled from Router v2**: the brain is built against a `Dispatcher` interface over the **current** router; Router v2 swaps in underneath the same interface later (Amendment 1) — the brain never blocks on that rewrite.
+*   **Reference**: `internal/brain/{config.go,controlplane.go}` + `cmd/sirsi/braincmd.go` (P1b control plane, shipped); ADR-034; PRD `docs/prd/ORCHESTRATION_BRAIN.md`. Custodian: 𓁟 the Brain.
+
+### 2.27 Model Tiering Doctrine — Compute Economy Law (Rule A30)
+> Established July 13, 2026 by owner directive. **Permanent, universal across every repo, thread, agent, and model family — present and future.** Canonical source text: `~/Development/AGENTS.md` § "Model Tiering Doctrine (Compute Economy Law)". This rule codifies that law into Pantheon canon (Living Canon, Rule 18) and is the routing **policy** that A29's Orchestration Brain **enforces**. Ma'at treats violations as governance failures.
+
+*   **The law in one line**: **generation is cheap to get wrong; judgment is expensive to get wrong — push generation down-tier, keep judgment up-tier.** Independence in review comes from a fresh context with no stake in the code, **not** from a different brand of model. What is tiered is *cognitive difficulty*, not vendor.
+*   **The three tiers** (map onto A29's Tier-0/1/2 and the Level 0–3 spectrum):
+    *   **Tier 0 — local, on-device model (zero API tokens)**: high-volume, low-stakes screening + drafting — queue triage, first-draft code for well-specified decomposed tasks, summarization, log-reading, boilerplate, NL queries over local state. **A Tier-0 output is a SCREEN or a DRAFT, never a verdict.**
+    *   **Tier 1 — cloud model, standard effort**: routine agentic work — routing, nudging, ACK-closes, board publishing, grinding decomposed task lists (dep bumps, doc updates, test fixes). Most scheduled/loop runs are Tier 1; an empty run needs almost nothing.
+    *   **Tier 2 — frontier model, high effort**: reserved for exceptional thinking — **binding verdicts (source-deep review before merge — ALWAYS Tier 2)**, architecture decisions, security review, ESCALATE-classed ambiguity, debugging that resisted a first pass.
+*   **Operating rules**: (1) **builders decompose; the cheapest competent tier types** — a thread's job on well-specified work is spec → hand to Tier 0 → review, not typing code at frontier prices; (2) **the bind is always frontier** — a slightly-off draft is caught at bind, a slightly-off bind ships a bug to main, so spend where failure is irreversible; (3) **screens never become verdicts** — no Tier-0 classification stands as a binding security/review/architecture decision; (4) **read only what escalates** — cloud models don't read whole queues/logs/repos when a Tier-0 screen can classify first (the 2M-token incident is the cautionary tale); (5) **route by difficulty, not habit** — if a tier is unclear, start one lower and escalate on failure (escalation is cheap, standing overspend is not); (6) **enforced by the system, not discipline** — the Orchestration Brain (A29; `docs/prd/ORCHESTRATION_BRAIN.md`) is the reference implementation, and every repo's automation should route through it or mirror its policy.
+*   **Brand invariant** (with A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity ("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which local model serves Tier 0.
+*   **Reference**: canonical law `~/Development/AGENTS.md`; enforced by A29 (Orchestration Brain) + `docs/prd/ORCHESTRATION_BRAIN.md` default routing table. Custodian: 𓁟 the Brain (routing) + 𓆄 Ma'at (governance).
+
+### 2.28 CTR — Check The Router, the universal wake primitive (Rule A31)
+> Established July 13, 2026 by owner directive, after background wake (monitors, arming, watchers, launchd daemons) repeatedly failed to keep threads consuming their inboxes — a level-triggered daemon that dies silently strands every item addressed to it. Custodian: 𓁢 the Router.
+
+*   **Rule**: `ctr` ("Check The Router") is the canonical **on-demand** wake primitive. It is ONE synchronous router pass — surface every open inbox item, then wake the agents that have work waiting but no live watcher — with **no daemon to keep alive**. The trigger moves to events that already happen (a human typing, a hook, a git commit, a cron, another agent), which is why it works where resident processes have not.
+*   **One primitive, three call sites** (all thin adapters over the same Go verb, so they can never diverge): **`ctr`** (a PATH shim, any shell / IDE terminal, mac/linux/windows, headless or resident) · **`/ctr`** (a Claude Code skill, known to every session in every repo) · **`sirsi ctr`** (the cross-platform source of truth). Both a human and a process may call it; `sirsi ctr --json` is the machine contract.
+*   **Wrap, don't rebuild (Rule 0)**: `sirsi ctr` orchestrates the EXISTING substrate — `router.CollectNodeStatus` (pending + stranded truth) and `router.WakePass` (wake-or-declare-unavailable). It MUST NOT reimplement wake logic. Honest boundary (A29): a fully-closed interactive session cannot be resurrected locally → reported **"needs-owner"**, stated not faked; heartbeat-fresh ≠ consuming, and CTR says so.
+*   **Local model first (A30 Tier-0)**: `ctr --reconcile` hands the open items to the on-device model to RECEIVE and RECONCILE (triage into TIER0/1/2) BEFORE anything escalates to a cloud thread — threads work through the local model first. The reconciliation is a Tier-0 **screen, never a binding verdict**; it runs warm-broker-only (never cold-loads a multi-GB model) and is time-bounded so a plain `ctr` stays a fast wake primitive. User-facing name is **"Ask Sirsi"**, never the model id (A25 brand-over-model-name).
+*   **Ubiquity is mandatory**: `sirsi setup` wires the shim + skill on every machine (present and future). `sirsi ctr --install` re-wires idempotently. The user-global skill (`~/.claude/skills/ctr`) makes `/ctr` known to every agent/thread; canon here + `~/Development/AGENTS.md` make it known to every repo. Like `/thoth`, it is a first-class shippable Pantheon command.
+*   **Reference**: `cmd/sirsi/ctr.go` + `cmd/sirsi/ctrinstall.go`; skill `.claude/skills/ctr/SKILL.md`; substrate `internal/router/{wake.go,strand.go,nodestatus.go}`. Custodian: 𓁢 the Router.
+
+### 2.29 Do No Harm To The Running Host — Load-Bearing Recognition (Rule A32)
+> Established July 14, 2026 by owner directive, after an agent nearly killed the process holding 25.8 GB to "reclaim RAM" — which was the local-model **broker itself** (`sirsi gemma serve`, running as `Python`). Resized instead of killed, but it exposed that Pantheon's own governor treated the Tier-0 substrate as expendable. Custodian: 𓁢 the Broker (Hapi 🌊). Decision: ADR-040. Extends A1 (Safety First) + A5 (VRAM/GPU Safety) to the host Pantheon runs ON.
+
+*   **Rule**: While the system is working, an agent — or the continuous loop, or any Pantheon governor — MUST NOT kill or starve **load-bearing Pantheon infrastructure**. The canonical load-bearing service is the local-model broker (the Tier-0 substrate the router, the reconcile, and gemma-the-builder all depend on); more may be added. Breaking the host to do the work is a governance failure.
+*   **Recognition by pidfile, not name**: `internal/guard.LoadBearingPIDs()` / `IsLoadBearing(pid)` reads the infra pidfiles (`~/.sirsi/gemma-server.pid`, `gemma-worker.pid`), excludes dead PIDs (a stale pidfile never protects a reused PID — the PID-alive lesson), and is the single authority every kill/suspend path consults. The broker runs as `Python`, so name-based protection (A24 ProtectGlyph, `isProtectedReniceTarget`) misses it — recognition MUST be by PID. `FindRunaway` never selects a load-bearing PID even as top RSS.
+*   **Right-size over kill**: the correct response to an oversized Tier-0 model (a 25 GB 12B where a 2 GB 3B belongs) is to **right-size** it (`~/.sirsi/gemma-model.conf` → a smaller model; `sirsi gemma serve --stop && sirsi gemma serve`), reclaiming the RAM while keeping the builder. Killing the broker is an absolute last resort at true emergency (imminent Jetsam) — never a routine reclaim, and **never something an agent does mid-work**. Verify the full argv before signalling any hog (`ps -p <pid>`); "biggest RSS" is not "kill me".
+*   **Gemma-the-builder is bound the same**: when the local model does build/triage work, its instructions carry this constraint — do not kill or starve Pantheon infrastructure; resize/reconfigure, never SIGKILL a serving process. Gemma must not break Pantheon while working.
+*   **Fix-don't-narrate corollary** (from the same incident): a blocker an agent has DIAGNOSED and CAN fix within remit gets FIXED on sight, never narrated back to the owner as a standing constraint (a RAM starvation reported three times but never fixed is the anti-pattern).
+*   **Reference**: `internal/guard/loadbearing.go` (+ `hapi.go` FindRunaway); ADR-040. Custodian: 𓁢 Hapi.
+
 ---
 
 ## 3. Technology Stack
 
+> **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
+
 | Layer | Technology | Decision |
 | :--- | :--- | :--- |
-| **Language** | **Go 1.22+** | Single static binary, cross-compile, contributor-friendly |
+| **Language** | **Go 1.22+** | Single static binary; cross-compile *capable* but **Mac-targeted today** (ADR-032), contributor-friendly |
 | **CLI Framework** | **cobra** | Subcommands, auto-complete, help generation |
 | **Terminal UI** | **lipgloss + table** (charmbracelet) | Styled CLI output (tables, headers, progress) for v0.23. New Mole-grade TUI follows under ADR-020 / Hybrid C. |
-| **Interactive Surface** | **New Mole-grade TUI** (in design) first on macOS/Windows/Linux + CLI on all platforms; native macOS SwiftUI as a later-phase polish-bar upgrade | v0.22 BubbleTea TUI implementation removed in v0.23 per ADR-018; surface direction reopened and closed as Hybrid C per ADR-020 (2026-05-29). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
+| **Interactive Surface** | **Mac-first surface ladder (ADR-032): CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar); native macOS SwiftUI is the GUI path | v0.22 BubbleTea TUI removed in v0.23 per ADR-018; surface direction closed as Hybrid C per ADR-020 (2026-05-29). Mac-only build targets per ADR-032 (Windows/Linux TUI deferred). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
 | **Agent Protocol** | **gRPC** (fallback: SSH+JSON) | Streaming results, bidirectional |
-| **Config** | **viper** (YAML) | User-defined rules, profiles, budgets |
+| **Config** | **yaml.v3** (structured YAML) | User-defined rules, profiles, budgets. (viper was listed aspirationally but never adopted — every config consumer uses gopkg.in/yaml.v3; ADR-034 Alt 5) |
 | **Network Discovery** | **nmap** wrapper + native ARP/mDNS | Subnet/VLAN host discovery |
 | **Docker** | **docker/client** SDK | Native Docker API |
 | **Kubernetes** | **client-go** | Native K8s API |
 | **SSH** | **golang.org/x/crypto/ssh** | Native Go SSH client |
-| **Build** | **goreleaser** | Multi-platform binary releases |
+| **Build** | **goreleaser** | Mac binary releases today (darwin arm64/amd64); multi-platform deferred per ADR-032 |
 | **CI/CD** | **GitHub Actions** | Build, test, release |
 | **Distribution** | **Homebrew tap** + GitHub Releases | `brew install sirsi-pantheon` |
 
@@ -421,7 +491,7 @@ These documents are the source of truth for this repo:
 |---------|-------|
 | **Name** | Sirsi Anubis |
 | **CLI** | `sirsi` |
-| **Agent** | `anubis-agent` |
+| **Agent** | `sirsi-agent` |
 | **Colors** | Gold (`#C8A951`) + Black (`#0F0F0F`) + Deep Lapis (`#1A1A5E`) |
 | **Icon** | Jackal silhouette in Egyptian profile |
 | **Motto** | *"Weigh. Judge. Purge."* |
@@ -441,7 +511,7 @@ These documents are the source of truth for this repo:
 *   **Pipeline Visibility**: Full CI/CD pipeline access via `gh` CLI.
 *   **Push Protocol**: ALWAYS run `git status` -> `git add` -> `git commit` -> `git push`.
 *   **Identity**: `SirsiMaster` account exclusively.
-*   **Build Verification**: After ANY code change, run `go build ./cmd/anubis/` and `go test ./...` before committing.
+*   **Build Verification**: After ANY code change, run `go build ./cmd/sirsi/` and `go test ./...` before committing.
 
 ---
 

@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 	"github.com/spf13/cobra"
 )
@@ -70,11 +76,18 @@ var routerStatusCmd = &cobra.Command{
 missing — safe to run in sandboxed or audit-only contexts. Use --stale to
 list open items older than N hours (default 24).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := workRoot()
+		// Summarize through the facade (files ∪ store) so the counts are accurate
+		// after the cutover, when open items live only as store rows.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		all, err := work.ListAll(root)
+		defer func() { _ = f.Close() }()
+		all, err := f.ListAll()
 		if err != nil {
 			return err
 		}
@@ -181,15 +194,26 @@ recipient picks it up next time they run sirsi router pull <their-id>.
 		if err != nil {
 			return fmt.Errorf("--instructions: %w", err)
 		}
-		root, err := workRootEnsure()
+		// Router v2 Phase 3: THE send facade (store-first guards — idempotency,
+		// quotas, breakers — then the items/*.md audit view; §2b axiom 8).
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		id, err := work.SendTyped(root, sendFrom, sendTo, sendTitle, sendType, instr)
+		defer func() { _ = f.Close() }()
+		res, err := f.Send(sendFrom, sendTo, sendTitle, sendType, instr)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, id)
+		if res.Deduped {
+			fmt.Printf("  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", sendFrom, sendTo, res.ID)
+		} else {
+			fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, res.ID)
+		}
 		return nil
 	},
 }
@@ -199,11 +223,18 @@ var routerPullCmd = &cobra.Command{
 	Short: "Pull open work items addressed to an agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := workRoot()
+		// Read through the facade (store rows ∪ file items) so store-only items
+		// — the post-cutover steady state — are visible to pull, not just wait.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		items, err := work.ListInbox(root, args[0])
+		defer func() { _ = f.Close() }()
+		items, err := f.Inbox(args[0])
 		if err != nil {
 			return err
 		}
@@ -221,21 +252,77 @@ var routerPullCmd = &cobra.Command{
 	},
 }
 
+var routerWaitTimeout int
+
+var routerWaitCmd = &cobra.Command{
+	Use:   "wait <agent>",
+	Short: "Block until open work is addressed to an agent (store event-wake, <250ms)",
+	Long: `Block until the agent has open work, print the inbox, and return.
+
+This is the store-backed counterpart to 'pull'. Instead of watching the items/
+directory on a timer, it parks on the dispatch store's per-agent wake FIFO and
+returns within ~250ms of a matching send (PRD /goal #1). A '/loop' watcher can
+call this in place of watching items/, so agent wake rides the store — and
+therefore survives the Router v2 file-write cutover (ADR-036), where a send is
+a store row with no items/<id>.md to watch. The work-check is the dual-read
+union (store rows ∪ legacy file items), and a bounded re-check still catches
+legacy file-only sends. Returns after --timeout seconds even with no work
+(exit 0), so a shell loop calls it repeatedly.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+
+		// Honor Ctrl-C / SIGTERM so a supervised loop can stop the wait cleanly.
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		items, err := f.Wait(ctx, args[0], time.Duration(routerWaitTimeout)*time.Second)
+		if err != nil {
+			return err
+		}
+		if len(items) == 0 {
+			fmt.Printf("  No open items for %s after %ds.\n", args[0], routerWaitTimeout)
+			return nil
+		}
+		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
+		for _, it := range items {
+			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
+		}
+		fmt.Printf("  Read full: sirsi router show <id>\n")
+		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
+		return nil
+	},
+}
+
 var routerShowCmd = &cobra.Command{
 	Use:   "show <id>",
 	Short: "Print the full text of a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root, err := workRoot()
+		// Read through the facade so `show` renders a store-only item (no file)
+		// after the cutover, falling back to the file when one exists.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(root, "items", args[0]+".md")
-		data, err := os.ReadFile(path)
+		defer func() { _ = f.Close() }()
+		md, err := f.Show(args[0])
 		if err != nil {
-			return fmt.Errorf("read item: %w", err)
+			return err
 		}
-		_, _ = os.Stdout.Write(data)
+		fmt.Print(md)
 		return nil
 	},
 }
@@ -344,16 +431,536 @@ var routerCloseCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("--result: %w", err)
 		}
-		root, err := workRootEnsure()
+		// Phase 3: the facade closes the canonical file AND mirrors the close
+		// into the store, so the durable index never lies about liveness.
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
 		if err != nil {
 			return err
 		}
-		if err := work.Close(root, args[0], result); err != nil {
+		defer func() { _ = f.Close() }()
+		if err := f.CloseItem(args[0], result); err != nil {
 			return err
 		}
 		fmt.Printf("  Closed %s\n", args[0])
 		return nil
 	},
+}
+
+// routerWakeInstallCmd installs the per-agent pull-loop LaunchAgent (PR#2,
+// constraint 2). The loop polls the agent's inbox and heartbeats on a bounded
+// interval — a pull-loop watcher armed by heartbeat freshness, not the
+// loop-monitor pgrep gate. Idempotent: re-running reports "already installed".
+var routerWakeInstallCmd = &cobra.Command{
+	Use:   "wake-install <agent>",
+	Short: "Install a worker/headless agent's pull-loop wake LaunchAgent (macOS)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root, err := workRoot()
+		if err != nil {
+			return err
+		}
+		reg, err := router.LoadRegistry(root)
+		if err != nil {
+			return fmt.Errorf("load agents: %w", err)
+		}
+		cfg, err := reg.Lookup(args[0])
+		if err != nil {
+			return err
+		}
+		// LEAK GUARD (owner finding 2026-07-10): a background wake LaunchAgent is
+		// for a HEADLESS agent with no live session. If the agent already has a
+		// LIVE thread (an interactive CCD/CLI session, or an armed loop), arming a
+		// background channel on top of it spawns duplicate processes each tick —
+		// the 2026-07-08 wake-loop leak (reference_schedulewakeup_process_leak).
+		// Its inbox is already being handled by the live session. Refuse unless
+		// --force; the headless case (no live thread) proceeds normally.
+		force, _ := cmd.Flags().GetBool("force")
+		if !force && router.AgentHasLiveThread(root, cfg.ID) {
+			fmt.Printf("⚠️  %s has a live session/thread right now — not arming a background wake channel.\n", cfg.ID)
+			fmt.Printf("   A background pull-loop on top of a live session spawns duplicate processes\n")
+			fmt.Printf("   each tick (the wake-loop leak). Its inbox is handled by the live session;\n")
+			fmt.Printf("   arm a background channel only when NO session is running — or use --force.\n")
+			return nil
+		}
+		changed, path, err := router.InstallWakeLaunchAgent(*cfg, "")
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Printf("✔ Installed wake LaunchAgent: %s\n", path)
+			fmt.Printf("  Load it: launchctl load -w %s\n", path)
+		} else {
+			fmt.Printf("✓ Wake LaunchAgent already installed (no change): %s\n", path)
+		}
+		return nil
+	},
+}
+
+// routerCutoverCmd manages the ADR-036/037 store-authority cutover as a
+// deterministic, doctor-visible lever — NOT a manual env-var. `enable` drops the
+// persistent marker (routercfg.MarkerPath) so every new process on the host
+// treats the store as the sole authority, and (with --rearm) reinstalls the
+// headless wake LaunchAgents so they restart in store-wake mode. This is the
+// "owner-visible deploy step" ADR-036 named, now a shipped verb + a doctor check.
+var routerCutoverCmd = &cobra.Command{
+	Use:   "cutover",
+	Short: "Store-authority cutover (ADR-036/037): show/enable/disable store-only dispatch",
+	RunE:  func(cmd *cobra.Command, args []string) error { return cmd.Help() },
+}
+
+// cutoverModeLine reports the effective mode and where the setting came from.
+func cutoverModeLine() string {
+	on := routercfg.StoreWake()
+	src := "default (legacy dual-write + items/ watch)"
+	if v, ok := os.LookupEnv(routercfg.StoreWakeEnv); ok {
+		src = fmt.Sprintf("env %s=%q", routercfg.StoreWakeEnv, v)
+	} else if p := routercfg.MarkerPath(); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			src = "marker " + p
+		}
+	}
+	if on {
+		return "STORE-ONLY (cutover active) — source: " + src
+	}
+	return "LEGACY (files + store) — source: " + src
+}
+
+var routerCutoverStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show the current cutover mode and its source",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Printf("  Cutover mode: %s\n", cutoverModeLine())
+		if root, err := workRoot(); err == nil {
+			if reg, rErr := router.LoadRegistry(root); rErr == nil {
+				fmt.Printf("  Registered agents: %d (durable watchers re-arm on restart)\n", len(reg.Agents))
+			}
+		}
+		return nil
+	},
+}
+
+var routerCutoverEnableCmd = &cobra.Command{
+	Use:   "enable",
+	Short: "Flip the fabric to store-only dispatch (drops the persistent marker) + re-arm watchers",
+	Long: `Enable the ADR-036/037 store-authority cutover on this host.
+
+Writes the persistent marker so every NEW process (launchd watchers, CLI,
+sessions) reads the store as the sole dispatch + wake authority: sends stop
+writing items/<id>.md, and wake rides 'sirsi router wait'. Already-running
+durable watchers pick up the new mode when they restart; --rearm reinstalls the
+headless wake LaunchAgents now. Live interactive sessions re-arm on their next
+loop tick (the arm instruction is regenerated store-aware). Reversible with
+'sirsi router cutover disable'.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p := routercfg.MarkerPath()
+		if p == "" {
+			return fmt.Errorf("cannot resolve home directory for the cutover marker")
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return fmt.Errorf("create marker dir: %w", err)
+		}
+		if err := os.WriteFile(p, []byte("ADR-036/037 store-authority cutover active\n"), 0o644); err != nil {
+			return fmt.Errorf("write marker: %w", err)
+		}
+		if !routercfg.StoreWake() {
+			// An explicit env override can still force it off — say so plainly
+			// rather than claiming a flip that isn't in effect.
+			fmt.Printf("⚠️  Marker written (%s) but %s forces it OFF for this process — unset it to take effect.\n", p, routercfg.StoreWakeEnv)
+			return nil
+		}
+		fmt.Printf("✔ Cutover ENABLED — %s\n", cutoverModeLine())
+
+		rearm, _ := cmd.Flags().GetBool("rearm")
+		if rearm {
+			root, err := workRoot()
+			if err != nil {
+				return err
+			}
+			reg, err := router.LoadRegistry(root)
+			if err != nil {
+				return fmt.Errorf("load agents: %w", err)
+			}
+			rearmed, skipped := 0, 0
+			for _, a := range reg.Agents {
+				// Same leak guard as `router wake-install` (owner finding 2026-07-10):
+				// arming a background wake channel on an agent that has a LIVE session
+				// spawns duplicate processes each tick. Only re-arm headless agents.
+				if router.AgentHasLiveThread(root, a.ID) {
+					skipped++
+					continue
+				}
+				if changed, _, iErr := router.InstallWakeLaunchAgent(a, ""); iErr == nil && changed {
+					rearmed++
+				}
+			}
+			fmt.Printf("  Re-armed %d headless wake LaunchAgent(s) into store-wake mode", rearmed)
+			if skipped > 0 {
+				fmt.Printf("; skipped %d with a live session (their /loop re-arms itself)", skipped)
+			}
+			fmt.Println(".")
+		}
+		fmt.Printf("  Live sessions re-arm on their next loop tick; run `sirsi router cutover status` to verify.\n")
+		return nil
+	},
+}
+
+var routerCutoverDisableCmd = &cobra.Command{
+	Use:   "disable",
+	Short: "Revert to legacy files + store dual-write (removes the marker)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p := routercfg.MarkerPath()
+		if p == "" {
+			return fmt.Errorf("cannot resolve home directory for the cutover marker")
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove marker: %w", err)
+		}
+		fmt.Printf("✔ Cutover DISABLED — %s\n", cutoverModeLine())
+		if _, ok := os.LookupEnv(routercfg.StoreWakeEnv); ok {
+			fmt.Printf("  Note: %s is still set in this environment and overrides the marker.\n", routercfg.StoreWakeEnv)
+		}
+		return nil
+	},
+}
+
+// routerWakeLoopCmd runs a worker/headless agent's bounded pull-loop (A27). It is
+// the long-lived foreground loop the wake LaunchAgent (`router wake-install`)
+// invokes via KeepAlive — NOT a self-daemonizing verb (it blocks; launchd owns
+// the lifecycle). Hidden because it is machine-run, not a human-facing command.
+// It registers a concrete pull-loop thread, heartbeats each interval, and closes
+// the thread on SIGINT/SIGTERM.
+var routerWakeLoopCmd = &cobra.Command{
+	Use:    "wake-loop <agent>",
+	Short:  "Run a worker agent's bounded pull-loop (machine-run by the wake LaunchAgent)",
+	Hidden: true,
+	Args:   cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root, err := workRootEnsure()
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		return router.RunWakeLoop(ctx, root, args[0], router.DefaultWakeLoopInterval)
+	},
+}
+
+// routerInstallDaemonsCmd ensures the single-backstop router automation
+// (backlog ruling 20260629-230327): the ONE resident supervisor LaunchAgent
+// installed and loaded, and the three legacy per-duty LaunchAgents migrated
+// away when present. The duties those agents carried (dispatch pump, hourly
+// sweep, registry police) now run inside `sirsi horus supervise` — see
+// internal/router/supervisorduties.go. Idempotent; macOS only.
+var routerInstallDaemonsCmd = &cobra.Command{
+	Use:   "install-daemons",
+	Short: "Ensure the single router supervisor and migrate away legacy per-duty agents — macOS",
+	Long: `Ensures the single-backstop router automation:
+
+  1. Installs (or confirms) the ONE resident supervisor LaunchAgent
+     (ai.sirsi.horus.agent-router). Its loop now carries the dispatch pump,
+     the hourly queue sweep, and the registry-police pass — cadence-gated
+     and error-isolated.
+  2. Migrates away the three legacy per-duty LaunchAgents when present
+     (com.sirsi.idea-router, com.sirsi.idea-router-sweep,
+     ai.sirsi.registry-police): each is unloaded and its plist removed,
+     and the migration is reported.
+
+Idempotent — a second run confirms the supervisor and finds nothing to
+migrate. macOS only.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		res := setup.InstallRouterDaemons()
+		switch res.Status {
+		case setup.StatusOK:
+			fmt.Printf("✔ %s\n", res.Message)
+		case setup.StatusSkipped:
+			fmt.Printf("• Skipped: %s\n", res.Message)
+		default:
+			return fmt.Errorf("%s", res.Message)
+		}
+		return nil
+	},
+}
+
+// routerQuarantineWorkerCmd is 𓁵 Sekhmet's kill switch for the runaway-executor
+// class (ADR-035; the 2026-07-03/04 incident: 19,195 sessions spawned, 0 closed,
+// 1.3 TB of orphaned build trees). It stops every claude build-worker LaunchAgent
+// now (bootout) and keeps it stopped across logins (plist → .quarantined rename).
+// It is the remediation behind the doctor's "Runaway Executor" finding, and the
+// OFF state the Dispatch Contract requires until the Phase-2 acceptance bar
+// passes (PRD ROUTER_V2_DURABLE_DISPATCH §2b). Wake-loop watchers and the router
+// supervisor are NEVER touched — the incident's watchers were healthy.
+var quarantineWorkerDryRun bool
+
+var routerQuarantineWorkerCmd = &cobra.Command{
+	Use:   "quarantine-worker",
+	Short: "𓁵 Stop every claude build-worker LaunchAgent — bootout now, quarantine its plist (macOS)",
+	Long: `Stops the claude build-worker executor tier, durably:
+
+  1. Boots every loaded ai.sirsi.claude-worker.* job out of launchd (stops it now).
+  2. Renames its plist to *.plist.quarantined so login/RunAtLoad cannot bring it
+     back. Rename it back by hand to re-arm — but per the Dispatch Contract
+     (docs/prd/ROUTER_V2_DURABLE_DISPATCH.md §2b) the worker stays OFF until the
+     Phase-2 acceptance bar passes.
+
+Wake-loop watchers (ai.sirsi.router.wake.*) and the router supervisor are never touched.
+Idempotent; --dry-run reports the full plan without changing anything.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		res, err := router.QuarantineWorkers(quarantineWorkerDryRun, nil)
+		if err != nil {
+			return err
+		}
+		if len(res.BootedOut) == 0 && len(res.Quarantined) == 0 {
+			fmt.Println("✓ No claude build-worker LaunchAgents found — nothing to quarantine.")
+			return nil
+		}
+		verb := ""
+		if res.DryRun {
+			verb = "would be "
+		}
+		for _, label := range res.BootedOut {
+			fmt.Printf("✔ %sbooted out: %s\n", verb, label)
+		}
+		for _, p := range res.Quarantined {
+			fmt.Printf("✔ %squarantined: %s → %s.quarantined\n", verb, p, filepath.Base(p))
+		}
+		fmt.Println("  Wake-loops and the supervisor were not touched.")
+		return nil
+	},
+}
+
+// routerMigrateCmd is the Phase-4 one-shot importer (PRD /goal #4): every
+// canonical items/*.md lands in the durable store with verification evidence
+// (count-in == count-out + spot-checked bodies). Idempotent — safe to re-run
+// any time; rows upsert by id. File writes are NOT stopped here: the cutover
+// (stop tracking runtime items in git) is a separate, owner-visible step at
+// the end of the deprecation window.
+var routerMigrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Import every items/*.md into the durable router store (idempotent, verified)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		rep, err := f.Migrate()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  Files seen:   %d\n", rep.FilesSeen)
+		fmt.Printf("  Imported:     %d new, %d refreshed (count-out %d)\n", rep.Inserted, rep.Updated, rep.CountOut())
+		fmt.Printf("  Spot-checked: %d item(s) byte-compared file↔store\n", rep.SpotChecked)
+		if len(rep.Errors) > 0 {
+			for _, e := range rep.Errors {
+				fmt.Printf("  ✗ %s\n", e)
+			}
+			return fmt.Errorf("migration completed with %d error(s) — zero-loss NOT proven", len(rep.Errors))
+		}
+		if rep.CountOut() != rep.FilesSeen {
+			return fmt.Errorf("count-in %d != count-out %d — zero-loss NOT proven", rep.FilesSeen, rep.CountOut())
+		}
+		fmt.Println("  ✔ Zero-loss verified: count-in == count-out, spot-checks match.")
+		return nil
+	},
+}
+
+// routerBoardCmd prints the owner-actionable router board the conduit regenerates
+// at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
+// threads). Read-only convenience mirror of what the menubar Router view renders.
+var routerBoardCmd = &cobra.Command{
+	Use:   "board",
+	Short: "Print the owner-actionable router board (~/.sirsi/router-board.md)",
+	Long: `Prints ~/.sirsi/router-board.md — the lean, owner-actionable board the
+router conduit regenerates each cycle (blockers, stranded inboxes, live threads).
+
+This is a read-only convenience mirror of the menubar's Router view. If the board
+file is absent (no conduit has run), it points you at 'sirsi router node-status'.
+
+With --json the verb emits a real JSON envelope ({path, exists, content,
+modified_at}) instead of raw markdown, so scripted callers never have to
+scrape human output.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home: %w", err)
+		}
+		boardPath := filepath.Join(home, ".sirsi", "router-board.md")
+		data, err := os.ReadFile(boardPath)
+		exists := err == nil
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("read board: %w", err)
+		}
+		// The root --json flag must yield machine output here too — before this
+		// branch existed it was silently swallowed (markdown printed, exit 0),
+		// which is a contract violation for scripted callers (#147 review, minor 5).
+		if JsonOutput {
+			envelope := map[string]any{
+				"path":    boardPath,
+				"exists":  exists,
+				"content": string(data),
+			}
+			if info, serr := os.Stat(boardPath); serr == nil {
+				envelope["modified_at"] = info.ModTime().UTC().Format(time.RFC3339)
+			}
+			if !exists {
+				envelope["hint"] = "no conduit run recorded — use `sirsi router node-status --json` for the live fabric view"
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(envelope)
+		}
+		if !exists {
+			fmt.Println("No router board yet (no conduit run recorded).")
+			fmt.Println("Run `sirsi router node-status` for the live fabric view.")
+			return nil
+		}
+		fmt.Print(string(data))
+		if !strings.HasSuffix(string(data), "\n") {
+			fmt.Println()
+		}
+		return nil
+	},
+}
+
+var (
+	pruneDays      int
+	pruneDryRun    bool
+	pruneItemsOnly bool
+	pruneLogsOnly  bool
+	pruneNoHome    bool
+)
+
+// routerPruneCmd applies the router fabric's retention policy: closed items,
+// dated incident dumps, append-only logs, and terminal work records past the
+// retention window are removed (age cap), and oversized-but-recent logs are
+// tail-capped (size cap). Owner directive 2026-07-10: at most a 90-day log
+// period; logging beyond that is wasteful. Dry-run first (Rule A1).
+var routerPruneCmd = &cobra.Command{
+	Use:   "prune",
+	Short: "Apply the router retention policy (default: 90-day cap; --dry-run to preview)",
+	Long: `Reclaim router byproduct storage under the retention window (default 90 days).
+
+Removed when older than the window:
+  • closed items (open items are NEVER touched, regardless of age)
+  • dated quarantine/incident dumps (quarantine-YYYYMMDD-*)
+  • stale logs, and terminal (completed/failed/blocked) work-queue records
+
+Capped regardless of age (size policy):
+  • active append-only logs tail-capped to their most recent 4 MiB
+  • the regenerated process snapshot removed when it exceeds 8 MiB
+
+Also sweeps ~/.sirsi runtime logs unless --no-home is set. Always run with
+--dry-run first: it reports the exact bytes it would reclaim and mutates nothing.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root, err := workRoot()
+		if err != nil {
+			return err
+		}
+		if pruneDays < 0 {
+			return fmt.Errorf("--days must be >= 0")
+		}
+		cutoff := time.Now().Add(-time.Duration(pruneDays) * 24 * time.Hour)
+
+		var reports []router.PruneReport
+		switch {
+		case pruneItemsOnly:
+			items, perr := work.PruneItems(root, cutoff, pruneDryRun)
+			if perr != nil {
+				return perr
+			}
+			rep := router.PruneReport{Cutoff: cutoff, DryRun: pruneDryRun}
+			for _, it := range items {
+				rep.Actions = append(rep.Actions, router.PruneAction{Path: "items/" + it.ID + ".md", Kind: "item", Before: it.Bytes})
+			}
+			reports = append(reports, rep)
+		case pruneLogsOnly:
+			logDir := filepath.Join(root, "logs")
+			rep := router.PruneReport{Cutoff: cutoff, DryRun: pruneDryRun}
+			if lerr := router.PruneLogDirExported(logDir, cutoff, pruneDryRun, &rep); lerr != nil {
+				return lerr
+			}
+			reports = append(reports, rep)
+		default:
+			rep, perr := router.PruneArtifacts(root, cutoff, pruneDryRun)
+			if perr != nil {
+				return perr
+			}
+			reports = append(reports, rep)
+		}
+
+		if !pruneItemsOnly && !pruneNoHome {
+			if home, herr := os.UserHomeDir(); herr == nil {
+				hrep, herr := router.PruneHomeLogs(filepath.Join(home, ".sirsi"), cutoff, pruneDryRun)
+				if herr == nil {
+					reports = append(reports, hrep)
+				}
+			}
+		}
+
+		if routerJSON, _ := cmd.Flags().GetBool("json"); routerJSON {
+			return json.NewEncoder(os.Stdout).Encode(reports)
+		}
+		printPruneReports(reports, pruneDays, pruneDryRun)
+		return nil
+	},
+}
+
+// printPruneReports renders the Ma'at-styled human summary.
+func printPruneReports(reports []router.PruneReport, days int, dryRun bool) {
+	var total int64
+	var actions int
+	byKind := map[string]int64{}
+	for _, r := range reports {
+		for _, a := range r.Actions {
+			total += a.Reclaimed()
+			actions++
+			byKind[a.Kind] += a.Reclaimed()
+		}
+	}
+	verb := "Reclaimed"
+	if dryRun {
+		verb = "Would reclaim"
+	}
+	fmt.Printf("𓆄 Ma'at router retention — %d-day window\n", days)
+	if actions == 0 {
+		fmt.Printf("  Nothing to prune. Fabric is within retention.\n")
+		return
+	}
+	for _, kind := range []string{"item", "quarantine", "log-deleted", "log-capped", "workqueue", "snapshot"} {
+		if b, ok := byKind[kind]; ok {
+			fmt.Printf("  %-12s %s\n", kind, humanBytes(b))
+		}
+	}
+	fmt.Printf("  %s %s across %d artifact(s)%s\n", verb, humanBytes(total), actions, dryRunNote(dryRun))
+}
+
+func dryRunNote(dryRun bool) string {
+	if dryRun {
+		return "  (dry-run — nothing deleted; re-run without --dry-run to apply)"
+	}
+	return ""
+}
+
+// humanBytes formats a byte count as a compact human string.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func init() {
@@ -364,5 +971,16 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerShowCmd, routerCloseCmd, routerAckCmd)
+	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
+	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
+	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent has a live session (bypasses the duplicate-spawn leak guard)")
+	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
+	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
+	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)
+	routerPruneCmd.Flags().IntVar(&pruneDays, "days", router.DefaultRetentionDays, "retention window in days (older artifacts are removed)")
+	routerPruneCmd.Flags().BoolVar(&pruneDryRun, "dry-run", false, "report the bytes that would be reclaimed without deleting anything (Rule A1)")
+	routerPruneCmd.Flags().BoolVar(&pruneItemsOnly, "items-only", false, "prune only closed items past the window (skip logs/dumps/queue)")
+	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
+	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd)
 }

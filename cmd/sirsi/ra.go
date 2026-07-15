@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -234,87 +233,72 @@ var raStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show orchestrator status and repo config",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		start := time.Now()
 		repos := raRepos()
 
-		// Check python3 availability
 		python3Ok := false
 		if _, err := exec.LookPath("python3"); err == nil {
 			python3Ok = true
 		}
-
-		// Check orchestrator script
-		scriptPath, scriptErr := findOrchestrator()
-
-		// Check claude-code-sdk
+		_, scriptErr := findOrchestrator()
 		sdkOk := false
 		sdkCheck := exec.Command("python3", "-c", "import claude_code_sdk; print('ok')")
 		if out, err := sdkCheck.Output(); err == nil && strings.TrimSpace(string(out)) == "ok" {
 			sdkOk = true
 		}
 
-		if JsonOutput {
-			repoStatus := make(map[string]interface{})
-			for name, repo := range repos {
-				exists := true
-				if _, err := os.Stat(repo.Path); os.IsNotExist(err) {
-					exists = false
-				}
-				repoStatus[name] = map[string]interface{}{
-					"path":        repo.Path,
-					"description": repo.Desc,
-					"exists":      exists,
-				}
+		reposPresent := 0
+		for _, repo := range repos {
+			if _, err := os.Stat(repo.Path); err == nil {
+				reposPresent++
 			}
-			result := map[string]interface{}{
-				"python3":      python3Ok,
-				"orchestrator": scriptErr == nil,
-				"sdk":          sdkOk,
-				"repos":        repoStatus,
-			}
-			if scriptErr == nil {
-				result["orchestrator_path"] = scriptPath
-			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(result)
 		}
 
-		output.Header("Fleet Orchestrator Status")
-
-		// Prerequisites
-		output.Section("Prerequisites")
-		if python3Ok {
-			output.Success("python3 found")
+		// CommandResult contract (owner surface law 2026-07-09): a structured
+		// summary + evidence + real levers, not a raw text dump that ignored
+		// --json and dead-ended at a Refresh.
+		res := &output.CommandResult{Command: "sirsi ra status", BriefTitle: "Fleet Orchestrator"}
+		ready := python3Ok && scriptErr == nil && sdkOk
+		if ready {
+			res.Summary = fmt.Sprintf("Fleet orchestrator ready — %d repositories in the fleet.", reposPresent)
+			res.Status = "ok"
 		} else {
-			output.Error("python3 not found")
+			res.Summary = fmt.Sprintf("Fleet orchestrator not fully set up (%d repositories tracked).", reposPresent)
+			res.Status = "warn"
 		}
-		if scriptErr == nil {
-			output.Success("orchestrator: %s", scriptPath)
-		} else {
-			output.Error("orchestrator script not found")
-		}
-		if sdkOk {
-			output.Success("claude-code-sdk installed")
-		} else {
-			output.Warn("claude-code-sdk not found (pip3 install claude-code-sdk)")
-		}
-
-		fmt.Println()
-		output.Section("Repository Fleet")
-		fmt.Println()
-
-		// Table of repos
+		res.AddEvidence("python3", boolMark(python3Ok))
+		res.AddEvidence("orchestrator", boolMark(scriptErr == nil))
+		res.AddEvidence("fleet SDK", boolMark(sdkOk))
+		res.AddEvidence("repositories", fmt.Sprintf("%d present", reposPresent))
 		for name, repo := range repos {
-			exists := "\u2705"
+			mark := "present"
 			if _, err := os.Stat(repo.Path); os.IsNotExist(err) {
-				exists = "\u274C"
+				mark = "missing"
 			}
-			fmt.Printf("  %s  %-15s  %-35s  %s\n", exists, name, repo.Desc, repo.Path)
+			res.AddEvidence(name, fmt.Sprintf("%s — %s", mark, repo.Desc))
 		}
-
-		fmt.Println()
+		if !sdkOk {
+			res.NextActions = append(res.NextActions, output.NextAction{
+				Label: "Install the fleet SDK", Command: "pip3 install claude-code-sdk",
+				Description: "The orchestrator needs claude-code-sdk to drive fleet agents.",
+			})
+		}
+		res.NextActions = append(res.NextActions,
+			output.NextAction{Label: "Check fleet health", Command: "sirsi ra health", Description: "Probe each repo's build/test/lint state."},
+			output.NextAction{Label: "Pipeline status", Command: "sirsi ra pipeline", Description: "Last recording, knowledge-item count, Thoth sync."},
+		)
+		res.Duration = time.Since(start)
+		res.Render()
 		return nil
 	},
+}
+
+// boolMark renders a check/cross for a boolean prerequisite in evidence rows.
+func boolMark(ok bool) string {
+	if ok {
+		return "ready"
+	}
+	return "not found"
 }
 
 // raPipelineCmd shows the pipeline status — last recording, KI count, Thoth sync time.

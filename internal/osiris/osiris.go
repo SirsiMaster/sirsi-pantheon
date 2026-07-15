@@ -17,6 +17,7 @@ package osiris
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -66,8 +67,57 @@ var runCommand = defaultRunCommand
 func defaultRunCommand(dir, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	// Scrub GIT_* from the child env. This package's contract is "operate on
+	// dir" — but git honors GIT_DIR/GIT_WORK_TREE OVER the process cwd, so an
+	// inherited pointer (the Ma'at pre-push gate exports one into `go test`)
+	// silently retargets every git call at a DIFFERENT repo. That exact leak
+	// made `osiris checkpoint`'s own test suite commit 1,126 files onto the
+	// feature branch it ships on, twice, from inside the push gate
+	// (2026-07-09; the #99 class). Environment redirection is never this
+	// package's contract; explicit dir is.
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
+}
+
+// dirtiestWorktree returns the linked worktree path with the most uncommitted
+// changes for a bare repo (or the first one if all are clean). Empty if none.
+func dirtiestWorktree(repoDir string) string {
+	out, err := runCommand(repoDir, "git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok {
+			// Skip the bare repo's own entry (it has no working tree).
+			if b, _ := runCommand(p, "git", "rev-parse", "--is-bare-repository"); b == "true" {
+				continue
+			}
+			paths = append(paths, p)
+		}
+	}
+	best, bestN := "", -1
+	for _, p := range paths {
+		status, err := runCommand(p, "git", "status", "--porcelain")
+		if err != nil {
+			continue
+		}
+		n := 0
+		if strings.TrimSpace(status) != "" {
+			n = len(strings.Split(strings.TrimSpace(status), "\n"))
+		}
+		if n > bestN {
+			best, bestN = p, n
+		}
+	}
+	return best
 }
 
 // Assess evaluates the current repository state and returns a Checkpoint.
@@ -78,6 +128,20 @@ func Assess(repoDir string) (*Checkpoint, error) {
 	}
 
 	cp := &Checkpoint{}
+
+	// A BARE repository has no work tree of its own — its uncommitted work
+	// lives in LINKED worktrees (the sirsi-pantheon multi-worktree layout).
+	// `git rev-parse --show-toplevel` fails there ("this operation must be run
+	// in a work tree"), which surfaced as Osiris saying "needs a git
+	// repository" for a perfectly valid project (owner, 2026-07-09). Redirect
+	// to the worktree with the most uncommitted work so the risk is real.
+	if bare, _ := runCommand(repoDir, "git", "rev-parse", "--is-bare-repository"); bare == "true" {
+		if wt := dirtiestWorktree(repoDir); wt != "" {
+			repoDir = wt
+		} else {
+			return nil, fmt.Errorf("osiris: %s is a bare repository with no linked worktrees to assess", repoDir)
+		}
+	}
 
 	// Find repo root
 	root, err := runCommand(repoDir, "git", "rev-parse", "--show-toplevel")

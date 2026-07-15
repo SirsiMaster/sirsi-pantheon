@@ -16,6 +16,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/tui"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
@@ -108,10 +109,12 @@ var rootCmd = &cobra.Command{
 
   Fix My Environment
   sirsi diagnose           Full system health check
+  sirsi vitals             Fast memory snapshot (RAM, pressure, top hogs)
   sirsi fix                Auto-fix DNS, firewall, security
   sirsi network            Network security audit
   sirsi monitor            Watch processes and RAM pressure
   sirsi status             Live system dashboard
+  sirsi activity           Recent operations — what sirsi actually changed
 
   Keep Shipping
   sirsi audit              Code quality and governance scan
@@ -126,9 +129,17 @@ var rootCmd = &cobra.Command{
   sirsi ra <verb>          Fleet orchestration module
   sirsi version            Show version`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// sirsi no-args prints help. The interactive surface is the
-		// forthcoming native macOS app (ADR-018); the terminal TUI was
-		// eliminated 2026-05-21.
+		// sirsi no-args launches the interactive operator console (the TUI,
+		// ADR-020) when it is on a real terminal. It falls back to printing help
+		// verbatim in every non-interactive context — piped, redirected, JSON,
+		// quiet, or when SIRSI_NO_TUI=1 opts out — so scripts and CI see the exact
+		// same help text they did before (CLI_COMPATIBILITY: help is byte-stable).
+		if shouldLaunchTUI() {
+			if err := tui.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "sirsi: %v\n", err)
+			}
+			return
+		}
 		_ = cmd.Help()
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -702,6 +713,22 @@ func isTerminal(fd uintptr) bool {
 	return term.IsTerminal(int(fd))
 }
 
+// shouldLaunchTUI decides whether `sirsi` with no args opens the interactive
+// operator console. It launches ONLY on a genuine interactive terminal (both
+// stdin and stdout are TTYs) and never when output is being consumed by a tool
+// or a human wants the plain help: JSON/quiet flags, or the SIRSI_NO_TUI opt-out
+// each force the help path. This keeps `echo "" | sirsi` and `sirsi > f` printing
+// help byte-for-byte unchanged.
+func shouldLaunchTUI() bool {
+	if os.Getenv("SIRSI_NO_TUI") != "" {
+		return false
+	}
+	if JsonOutput || quietMode {
+		return false
+	}
+	return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd())
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&JsonOutput, "json", false, "Output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress output")
@@ -719,21 +746,32 @@ func init() {
 	// Core commands
 	scanCmd.Flags().BoolVar(&anubisAll, "all", false, "Scan all categories")
 	ghostsCmd.Flags().BoolVar(&anubisSudo, "sudo", false, "Include system directories (requires sudo)")
+	// Safe ghost-clean lever (Rule A1): dry-run default, trash-first, protected-aware.
+	ghostsCleanCmd.Flags().BoolVar(&ghostsCleanConfirm, "confirm", false, "Actually move remnants to Trash (default is a dry-run preview)")
+	ghostsCleanCmd.Flags().StringVar(&ghostsCleanApp, "app", "", "Scope the clean to a single ghost app by name")
+	ghostsCmd.AddCommand(ghostsCleanCmd)
 	judgeCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview mode")
 	judgeCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Confirm and apply")
+	judgeCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm)")
 	// Top-level `sirsi clean` shares the one A1-correct engine (runJudge): preview
 	// by default, --confirm to apply (asks first), --include-caution for scope.
+	// --yes suppresses ONLY the [y/N] stdin prompt — for dispatchers (TUI/menubar/
+	// dashboard) that render their own confirmation; scope is untouched and
+	// --yes without --confirm stays a dry-run (TUI design proof gap V2).
 	cleanCmd.Flags().BoolVar(&anubisDryRun, "dry-run", true, "Preview only (default); use --confirm to apply")
 	cleanCmd.Flags().BoolVar(&anubisConfirm, "confirm", false, "Apply the cleanup — move items to Trash (asks first)")
+	cleanCmd.Flags().BoolVar(&anubisYes, "yes", false, "Skip the interactive [y/N] prompt (with --confirm; for dispatchers that confirmed already)")
 	cleanCmd.Flags().BoolVar(&anubisIncludeCaution, "include-caution", false, "Also target caution-tier items (preview and apply)")
 	fixCmd.Flags().BoolVar(&fixYes, "yes", false, "Apply safe reclaim without the confirmation prompt")
 	// ── User-facing commands (visible in sirsi --help) ──
 	rootCmd.AddCommand(scanCmd, cleanCmd, ghostsCmd, dedupCmd, doctorCmd)
 	rootCmd.AddCommand(purgeCmd, analyzeCmd, installerCmd)
 	rootCmd.AddCommand(networkCmd, fixCmd, monitorCmd)
+	rootCmd.AddCommand(vitalsCmd, activityCmd)
 	rootCmd.AddCommand(spotlightExcludeCmd)
 	rootCmd.AddCommand(auditCmd, riskCmd, hardwareCmd, diagramCmd, statusCmd)
 	rootCmd.AddCommand(versionCmd, quickstartCmd, setupCmd, routerCmd, agentCmd, threadCmd)
+	rootCmd.AddCommand(ctrCmd) // 𓁢 CTR — Check The Router: universal on-demand wake primitive (ctr / /ctr)
 	rootCmd.AddCommand(selfUpdateCmd)
 
 	// ── Power-user deity modules (hidden from default help, still work) ──
@@ -748,8 +786,12 @@ func init() {
 	thothCmd.Hidden = true
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
-	rootCmd.AddCommand(gemmaCmd)   // human-facing 'sirsi gemma "<prompt>"' → local on-device model
-	rootCmd.AddCommand(relieveCmd) // on-demand hang relief: renice the live CPU offender (A1-protected)
+	rootCmd.AddCommand(brandCmd)      // 𓂀 canonical Pantheon palette + token emitter (ADR-038)
+	rootCmd.AddCommand(gemmaCmd)      // human-facing 'sirsi gemma "<prompt>"' → local on-device model
+	rootCmd.AddCommand(brainCmd)      // 𓁟 Orchestration Brain control plane (A29, ADR-034): tiered/pluggable LLM spectrum over the EXISTING router+wake substrate
+	rootCmd.AddCommand(autonomousCmd) // 𓁟 master ACTION switch: observe-only vs. self-managing, orthogonal to the LLM Level (deterministic Tier-0 loop)
+	rootCmd.AddCommand(relieveCmd)    // on-demand hang relief: renice the live CPU offender (A1-protected)
+	rootCmd.AddCommand(hapiCmd)       // 𓁢 Hapi: the live MEMORY governor — stop a runaway before the kernel Jetsams (ADR-031-A Layer 4)
 	rootCmd.AddCommand(thothCmd, maatCmd, seshatCmd, raCmd, netCmd)
 
 	// ── Internal tools (hidden) ──

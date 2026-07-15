@@ -68,8 +68,11 @@ font-family:Inter,-apple-system,system-ui,sans-serif}
 .sidebar-footer{padding:12px 16px;border-top:1px solid %s;font-size:8px;color:#333;letter-spacing:1px;
 font-family:Inter,-apple-system,system-ui,sans-serif}
 
-/* Main */
-.main{margin-left:180px;flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+/* Main — content is capped at 1400px and centered in the space right of the
+   fixed sidebar so ultra-wide viewports don't strand everything top-left. */
+.main{margin-left:180px;flex:1;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden}
+.main-inner{width:100%%;max-width:1400px;display:flex;flex-direction:column;height:100vh;overflow:hidden;
+border-left:1px solid rgba(200,169,81,.06);border-right:1px solid rgba(200,169,81,.06)}
 
 /* Stats bar */
 .stats-bar{display:flex;gap:1px;background:rgba(200,169,81,.06);border-bottom:1px solid %s;flex-shrink:0}
@@ -110,18 +113,18 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
  <nav class="sidebar-nav">%s</nav>
  <div class="sidebar-footer">LOCAL NODE • 127.0.0.1:%d</div>
 </div>
-<div class="main">%s</div>
+<div class="main"><div class="main-inner">%s</div></div>
 </body>
 </html>`,
 		title,
 		ColorBg, ColorWhite,
 		ColorBorder, ColorBorder,
-		ColorGold,
-		ColorDim, ColorWhite, ColorGold, ColorGold,
+		ColorEmerald,
+		ColorDim, ColorWhite, ColorEmerald, ColorEmerald,
 		ColorBorder,
 		ColorBorder, ColorBg,
-		ColorGold, ColorGold,
-		ColorBorder, ColorGold, ColorWhite,
+		ColorEmerald, ColorEmerald,
+		ColorBorder, ColorEmerald, ColorWhite,
 		navHTML.String(),
 		DashboardPort,
 		bodyContent,
@@ -184,8 +187,12 @@ function clear(){T.textContent=''}
 
 /* Stats polling */
 function renderStats(s){if(!s)return;
- document.getElementById('ram-val').textContent=(s.ram_icon||'')+' '+Math.round(s.ram_percent||0)+'%%';
- document.getElementById('ram-label').textContent=s.ram_pressure||'';
+ /* Body is a Sprintf ARGUMENT, not format — a literal % is correct here. */
+ document.getElementById('ram-val').textContent=(s.ram_icon||'')+' '+Math.round(s.ram_percent||0)+'%';
+ /* Show real used/total when the producer supplies them; never render
+    fabricated numbers when they're absent (data honesty). */
+ document.getElementById('ram-label').textContent=(s.total_ram>0
+  ?fmtSize(s.used_ram||0)+' / '+fmtSize(s.total_ram)+' · ':'')+(s.ram_pressure||'');
  document.getElementById('git-val').textContent=(s.uncommitted_files||0)+' dirty';
  document.getElementById('git-label').textContent=s.git_branch||'';
  document.getElementById('deity-val').textContent=s.deity_count||0;
@@ -387,30 +394,19 @@ function viewVault(){
  }).catch(function(){out('Vault not available.','t-dim')});
 }
 
+/* Ra fleet orchestration has no backend yet — say so plainly instead of
+   dead-ending on fetches that can never succeed. Plain info, no alarm
+   styling: nothing here is fixable by the user, so nothing may alarm. */
 function viewRa(){
- out('𓇶 Ra — Orchestrator','t-gold');
- out('');out('Loading deployment status...','t-dim');
-
- fetch('/api/ra/scopes').then(r=>r.json()).then(function(scopes){
-  if(scopes.length){
-   out('');out('  Available Scopes:','t-head');
-   scopes.forEach(function(s){
-    const deadline=s.deadline?' · deadline '+s.deadline:'';
-    out('  ['+s.priority+'] '+s.display_name+' — '+s.repo_path+deadline)});
-  }
- }).catch(function(){});
-
- fetch('/api/ra/status').then(r=>r.json()).then(function(d){
-  sep();
-  if(!d.deployed){out('');out('  No active deployment.','t-dim');
-   out('');out('  Commands: deploy, ra status, ra collect, ra kill','t-dim');return}
-  out('');out('  Deployment Status (started '+d.started_at+')','t-head');
-  (d.windows||[]).forEach(function(w){
-   const icon=({running:'⟳',completed:'✅',failed:'❌',crashed:'💀'}[w.state]||'⚪');
-   out('  '+icon+' '+w.name+' — '+w.state+' ('+w.duration+')');
-   if(w.log_tail)out('    '+w.log_tail.split('\\n').pop(),'t-dim')});
-  if(d.all_done)out('');out('  All windows completed. Run "ra collect" to gather results.','t-dim');
- }).catch(function(){out('  Ra not available.','t-dim')});
+ out('𓇶 Ra — Fleet Orchestration','t-gold');
+ out('');
+ out('  Fleet orchestration — coming with the Ra backend.','t-out');
+ out('');
+ out('  Ra will balance work across your machines: each node reports its','t-dim');
+ out('  capacity (RAM, GPU, pressure) and Ra deploys builds where they fit.','t-dim');
+ out('');
+ out('  This tab will light up when the backend ships. Nothing to configure','t-dim');
+ out('  or fix here today.','t-dim');
 }
 
 /* ── Command input ────────────────────────────────────── */
