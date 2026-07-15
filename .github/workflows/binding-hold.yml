@@ -92,7 +92,7 @@ jobs:
           set -euo pipefail
           CHANGED=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
           echo "$CHANGED"
-          if echo "$CHANGED" | grep -qE '^(\.github/|cmd/sirsi/|internal/router/|PANTHEON_RULES\.md|docs/ADR-)'; then
+          if echo "$CHANGED" | grep -qE '^(\.github/|scripts/bind/|cmd/sirsi/|internal/router/|PANTHEON_RULES\.md|docs/ADR-)'; then
             echo "sensitive=true" >> "$GITHUB_OUTPUT"
           else
             echo "sensitive=false" >> "$GITHUB_OUTPUT"
@@ -122,7 +122,7 @@ jobs:
             ] | unique | join(", ")')
 
           if [ -z "$BINDERS" ]; then
-            echo "::error title=Authority-model change — independent bind required::This PR touches paths that define who may merge what (.github/, cmd/sirsi/, internal/router/, PANTHEON_RULES.md, docs/ADR-*). It is held until an identity OTHER THAN the author ($AUTHOR) records an APPROVING REVIEW on the current head commit ($HEAD_SHA). Rule A25/A28; scope per ADR-041."
+            echo "::error title=Authority-model change — independent bind required::This PR touches paths that define who may merge what (.github/, scripts/bind/, cmd/sirsi/, internal/router/, PANTHEON_RULES.md, docs/ADR-*). It is held until an identity OTHER THAN the author ($AUTHOR) records an APPROVING REVIEW on the current head commit ($HEAD_SHA). Rule A25/A28; scope per ADR-041."
             echo "A stale approval on an older commit does not count — push after a bind and the bind is dropped, by design."
             echo "Binding reviewer runs:  scripts/bind/sirsi-bind.sh $PR"
             exit 1

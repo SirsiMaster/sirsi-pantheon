@@ -79,7 +79,7 @@ head SHA it required.
 ## What is now true, and what still isn't
 
 **Enforced by GitHub, not convention:**
-- A PR touching `.github/`, `cmd/sirsi/`, `internal/router/`, `PANTHEON_RULES.md`,
+- A PR touching `.github/`, `scripts/bind/`, `cmd/sirsi/`, `internal/router/`, `PANTHEON_RULES.md`,
   or `docs/ADR-*` cannot merge without an approving review from a non-author identity.
 - That review is pinned to the head SHA — push after a bind and the bind drops.
 - `SirsiMaster` (every agent) cannot satisfy it on its own PRs. GitHub forbids
