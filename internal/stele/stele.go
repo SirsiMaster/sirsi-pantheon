@@ -11,10 +11,12 @@
 package stele
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,6 +24,11 @@ import (
 	"sync"
 	"time"
 )
+
+// maxEntryBytes bounds a single ledger line when scanning. Entries carry small
+// string maps, so this is far above any real record and only guards against a
+// corrupt file scanning into memory.
+const maxEntryBytes = 1 << 20
 
 // Entry is a single record in the Stele ledger.
 type Entry struct {
@@ -233,6 +240,56 @@ func computeHash(e Entry) string {
 	data, _ := json.Marshal(e)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// TailByType returns entries of the given type found in the last maxBytes of
+// the ledger, oldest first. The Stele is append-only and unbounded (it passed
+// 170MB in July 2026), so a surface that only needs recent activity reads a
+// window rather than the whole file — a Reader would consume the offset a real
+// consumer depends on.
+//
+// ponytail: fixed byte window, not an index. A caller needing lifetime totals
+// needs a real aggregate, not a bigger window.
+func TailByType(eventType string, maxBytes int64) ([]Entry, error) {
+	return TailByTypeFrom(DefaultPath(), eventType, maxBytes)
+}
+
+// TailByTypeFrom is TailByType against an explicit ledger path (Rule A16).
+func TailByTypeFrom(path, eventType string, maxBytes int64) ([]Entry, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("stele: open ledger: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	st, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stele: stat ledger: %w", err)
+	}
+	start := max(st.Size()-maxBytes, 0)
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("stele: seek ledger: %w", err)
+	}
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), maxEntryBytes)
+	if start > 0 {
+		sc.Scan() // discard the partial line the seek landed mid-way through
+	}
+	var out []Entry
+	for sc.Scan() {
+		var e Entry
+		if json.Unmarshal(sc.Bytes(), &e) != nil {
+			continue // a torn or future-schema line is skipped, never fatal
+		}
+		if e.Type == eventType {
+			out = append(out, e)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("stele: read ledger: %w", err)
+	}
+	return out, nil
 }
 
 // Reader reads new entries from the Stele with offset tracking.

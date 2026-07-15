@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 var (
@@ -75,21 +78,62 @@ func runRTKFilter(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runRTKStats(_ *cobra.Command, _ []string) error {
-	// RTK is a PIPE filter — stats only mean something with piped input. The
-	// popover (and any tty caller) shells this with no stdin, which used to
-	// "measure" an empty string and dump nonsense text. On a tty, render the
-	// honest tool card instead (owner law 2026-07-09: no dead-end screens).
-	if fi, statErr := os.Stdin.Stat(); statErr == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
-		res := &output.CommandResult{
-			Command:    "sirsi rtk stats",
-			BriefTitle: "RTK — Output Filter",
-			Summary:    "RTK is a pipe filter: it strips ANSI noise, deduplicates, and truncates tool output before it reaches an AI context. Pipe something through it to measure savings.",
-			Status:     "ok",
+// rtkSavingsWindow bounds how much of the Stele the savings card reads. The
+// ledger is append-only and unbounded, and this runs on a popover open.
+const rtkSavingsWindow = 8 << 20
+
+// renderRTKSavings reports what the filter has actually saved, from the Stele
+// entries every filtered output inscribes. This is the no-stdin surface: the
+// menubar row, and any bare `sirsi rtk stats`.
+func renderRTKSavings() {
+	res := &output.CommandResult{
+		Command:    "sirsi rtk stats",
+		BriefTitle: "RTK — Output Filter",
+		Status:     "ok",
+	}
+
+	entries, err := stele.TailByType(stele.TypeRTKFilter, rtkSavingsWindow)
+	switch {
+	case err != nil:
+		res.Status = "warn"
+		res.Summary = "Sirsi cannot read the activity ledger, so it cannot show what the filter has saved."
+		res.Errors = append(res.Errors, err.Error())
+	case len(entries) == 0:
+		// Honest empty state: the filter is armed, it just has not run yet.
+		res.Summary = "The filter is on, but it has not trimmed anything yet. Numbers appear here once Sirsi has run commands for an agent."
+	default:
+		var original, filtered, dupes int
+		for _, e := range entries {
+			o, _ := strconv.Atoi(e.Data["original_bytes"])
+			f, _ := strconv.Atoi(e.Data["filtered_bytes"])
+			d, _ := strconv.Atoi(e.Data["dupes"])
+			original += o
+			filtered += f
+			dupes += d
 		}
-		res.AddEvidence("Filter usage", "some-command | sirsi rtk filter")
-		res.AddEvidence("Measure savings", "some-command | sirsi rtk stats")
-		res.Render()
+		saved := original - filtered
+		pct := 0.0
+		if original > 0 {
+			pct = float64(saved) / float64(original) * 100
+		}
+		res.Summary = fmt.Sprintf(
+			"Sirsi trimmed %s of noise out of %s of tool output — %.0f%% less for the AI to read.",
+			guard.FormatBytes(int64(saved)), guard.FormatBytes(int64(original)), pct)
+		res.AddEvidence("Outputs filtered", strconv.Itoa(len(entries)))
+		res.AddEvidence("Repeated lines removed", strconv.Itoa(dupes))
+		res.AddEvidence("Measured over", "recent activity")
+	}
+	res.Render()
+}
+
+func runRTKStats(_ *cobra.Command, _ []string) error {
+	// RTK is a PIPE filter — a live measurement needs piped input, and the
+	// popover (like any tty caller) shells this with no stdin. It used to print
+	// usage syntax here, which told the reader to go somewhere else and left
+	// the screen dead. But every filtered output is inscribed on the Stele, so
+	// report what RTK has ALREADY saved instead of explaining what it could.
+	if fi, statErr := os.Stdin.Stat(); statErr == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
+		renderRTKSavings()
 		return nil
 	}
 	input, err := io.ReadAll(os.Stdin)
