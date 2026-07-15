@@ -38,6 +38,7 @@ func runSnapshotMode(outDir: String) {
         // exactly as they do when the popover runs them.
         let maat = await SirsiEngine.runResult(args: ["maat", "audit"])
         let net = await SirsiEngine.runResult(args: ["net", "status"])
+        let rtk = await SirsiEngine.runResult(args: ["rtk", "stats"])
 
         let shots: [(name: String, view: AnyView)] = [
             ("home", AnyView(RootView(engine: engine))),
@@ -45,6 +46,10 @@ func runSnapshotMode(outDir: String) {
                                                 args: ["maat", "audit"], preloaded: maat))),
             ("net-plan", AnyView(ResultView(engine: engine, title: "Net — Plan",
                                             args: ["net", "status"], preloaded: net))),
+            // RTK shipped a dead tutorial card past a "walked" sign-off because
+            // the snapshot harness never rendered it (#221).
+            ("rtk-output-filter", AnyView(ResultView(engine: engine, title: "RTK — Output Filter",
+                                                     args: ["rtk", "stats"], preloaded: rtk))),
         ]
         for shot in shots {
             let renderer = ImageRenderer(content: shot.view
