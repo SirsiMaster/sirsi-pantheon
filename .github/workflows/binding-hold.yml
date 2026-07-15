@@ -4,18 +4,37 @@ name: Binding Hold
 #
 # Native GitHub auto-merge respects required STATUS CHECKS, not labels — so a
 # label alone can't stop a safety/relay-integrity PR from auto-merging once armed.
-# This job makes the `binding-hold` label a *required check that fails when the
-# label is present*: branch protection then blocks the merge (auto-merge waits)
-# until a binding reviewer removes the label on PASS. Closes the class where a
-# safety-tier change merged before its binding verdict (the #33 bypass).
+# This job makes a hold a *required check that fails while the hold stands*:
+# branch protection then blocks the merge (auto-merge waits) until a binding
+# reviewer clears it. Closes the class where a safety-tier change merged before
+# its binding verdict (the #33 bypass).
 #
-# A binding reviewer applies `binding-hold` at open on any A1 / clean-path /
-# binary-mutating / security / migration PR (or any PR explicitly held for
-# arch/binding review), and removes it on PASS. This is a HOLD, not a CI failure.
+# TWO ways a PR is held. Both resolve in this one job, on purpose:
 #
-# It lives in its own workflow (not ci.yml) so toggling the label re-runs ONLY
-# this lightweight gate — not the full lint/test/build matrix (the heavy jobs'
-# results from the last push stay valid, the commit SHA is unchanged).
+#   1. EXPLICIT (opt-in, unchanged): a reviewer applies the `binding-hold` label
+#      to any A1 / clean-path / binary-mutating / security / migration PR. Normal
+#      PRs are never slowed down by default. Cleared by removing the label.
+#
+#   2. AUTOMATIC (authority-model paths): a PR touching the paths that define who
+#      may merge what holds itself, with no reviewer needing to remember. Cleared
+#      by applying the `bound` label after a real independent review.
+#
+# WHY THE DETECTION LIVES HERE AND NOT IN ITS OWN WORKFLOW — do not "clean this
+# up" by splitting it: a separate workflow that APPLIES a label using the default
+# `secrets.GITHUB_TOKEN` CANNOT gate. GitHub suppresses workflow runs triggered by
+# GITHUB_TOKEN events to prevent recursion, so the resulting `labeled` event never
+# re-runs this gate — the label shows on the PR while this required check stays
+# green from before the label existed, and the PR merges held-in-name-only.
+# Observed live on PR #217: bot labeled at 01:05:10Z, last binding-hold run was
+# 01:05:00Z and stayed green. A label applied by a REAL USER token does re-trigger
+# (same PR: labeled 00:59:29Z -> gate correctly failed at 00:59:32Z) — which is why
+# reviewer-applied labels work and bot-applied ones do not. Computing sensitivity
+# inside the gate removes the cross-workflow event entirely.
+#
+# It lives in its own workflow (not ci.yml) so toggling a label re-runs ONLY this
+# lightweight gate — not the full lint/test/build matrix (the heavy jobs' results
+# from the last push stay valid, the commit SHA is unchanged). It reads changed
+# paths from the API rather than checking the tree out, to keep that promise.
 
 on:
   pull_request:
@@ -24,18 +43,53 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   binding-hold:
     name: binding-hold
     runs-on: ubuntu-latest
     steps:
-      - name: Held — a binding reviewer must clear the label
+      - name: Held — explicit binding-hold label
         if: contains(github.event.pull_request.labels.*.name, 'binding-hold')
         run: |
           echo "::error title=Held for binding review::This PR carries the 'binding-hold' label — a binding reviewer (codex / claude-home root-authority) must remove it before merge. This is a SAFETY / relay-integrity HOLD (Rule A25/A28), not a CI failure."
           exit 1
 
-      - name: Gate open — no binding-hold label
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'binding-hold') }}
-        run: echo "No 'binding-hold' label — gate open, merge not blocked by the binding-review hold."
+      # Authority-model paths: the code and canon deciding who may merge what.
+      # A change here cannot be graded by the same automation it rewrites, so it
+      # holds until a reviewer records a bind.
+      - name: Detect authority-model paths
+        id: sens
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          CHANGED=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(\.github/|cmd/sirsi/|internal/router/|PANTHEON_RULES\.md|docs/ADR-)'; then
+            echo "sensitive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sensitive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Held — authority-model change needs a recorded bind
+        if: >-
+          steps.sens.outputs.sensitive == 'true' &&
+          !contains(github.event.pull_request.labels.*.name, 'bound')
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "::error title=Authority-model change — bind required::This PR touches paths that define who may merge what (.github/, cmd/sirsi/, internal/router/, PANTHEON_RULES.md, docs/ADR-*). It is held until an independent binding reviewer records a verdict and applies the 'bound' label. Rule A25/A28."
+          echo "Reviewer clears with:  gh pr edit $PR --repo $REPO --add-label bound"
+          exit 1
+
+      - name: Gate open
+        if: >-
+          !contains(github.event.pull_request.labels.*.name, 'binding-hold') &&
+          (steps.sens.outputs.sensitive != 'true' ||
+           contains(github.event.pull_request.labels.*.name, 'bound'))
+        run: echo "Gate open — no hold stands (no 'binding-hold' label; authority-model paths either untouched or bound)."
