@@ -1,0 +1,48 @@
+name: Auto-Hold Sensitive PRs
+
+# Applies the `binding-hold` label automatically on PRs touching authority-model /
+# governance-sensitive paths, so the hold in binding-hold.yml no longer depends on
+# a reviewer remembering to apply it at open. See binding-hold.yml for the gate
+# itself and PANTHEON_RULES.md (A25/A28) for the binding-review requirement.
+#
+# A binding reviewer (claude-home, never the PR author) removes the label after
+# real review to release the merge.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  auto-hold:
+    name: auto-hold-sensitive-prs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for sensitive paths
+        id: check
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          CHANGED=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(\.github/|cmd/sirsi/|internal/router/|PANTHEON_RULES\.md|docs/ADR-)'; then
+            echo "sensitive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sensitive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply binding-hold label
+        if: steps.check.outputs.sensitive == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label binding-hold
+          echo "::notice::PR touches authority-model/governance paths (.github/, cmd/sirsi/, internal/router/, PANTHEON_RULES.md, docs/ADR-*) — held for binding review. A claude-home review must remove the 'binding-hold' label before merge."
