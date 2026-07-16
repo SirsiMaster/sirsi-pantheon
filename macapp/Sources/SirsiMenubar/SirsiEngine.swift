@@ -277,6 +277,26 @@ final class SirsiEngine: ObservableObject {
     // output predates the reopen (the stale-RTK-tutorial bug, 2026-07-16).
     @Published var reopenTick = 0
 
+    // Autonomous mode — the master action switch (`sirsi autonomous`, #203):
+    // ON = Pantheon applies approved fixes unattended (the auto-heal loop);
+    // OFF = observe + propose only. Mirrors ~/.sirsi/brain.yaml via the CLI.
+    @Published var autonomousOn = false
+
+    func fetchAutonomous() async {
+        let data = await Self.runJSON(args: ["autonomous", "status", "--json"])
+        if let obj = try? JSONDecoder().decode([String: Bool].self, from: data) {
+            autonomousOn = obj["autonomous"] ?? false
+        }
+    }
+
+    func setAutonomous(_ on: Bool) async {
+        _ = await Self.run(args: ["autonomous", on ? "on" : "off"], stdin: nil)
+        await fetchAutonomous()
+        recordActivity(title: "Autonomous mode turned \(on ? "ON" : "OFF")",
+                       command: "sirsi autonomous \(on ? "on" : "off")",
+                       result: on ? "self-managing" : "observe + propose")
+    }
+
     // Provenance ledger — actions taken from the UI, newest first.
     @Published var activity: [ActivityEntry] = []
     private let activityPath = (("~/.config/pantheon/menubar-activity.json") as NSString).expandingTildeInPath
