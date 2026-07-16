@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stubLaunchctl records every launchctl invocation and fails those whose
@@ -21,7 +22,36 @@ func stubLaunchctlRecording(t *testing.T, failOn string) *[][]string {
 		return nil
 	}
 	t.Cleanup(func() { launchctlExecFn = old })
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {} // retries must not slow the suite
+	t.Cleanup(func() { sleepFn = oldSleep })
 	return &calls
+}
+
+// TestRefreshSirsiLaunchAgents_BootstrapRetriesAcrossTeardown reproduces the
+// live failure: bootout of a RUNNING job tears down asynchronously and the
+// first bootstrap attempts fail with EIO until the old instance exits.
+func TestRefreshSirsiLaunchAgents_BootstrapRetriesAcrossTeardown(t *testing.T) {
+	dir := t.TempDir()
+	writePlist(t, dir, "ai.sirsi.router.wake.claude-home.plist")
+
+	failures := 3
+	calls := stubLaunchctlRecording(t, "")
+	old := launchctlExecFn
+	launchctlExecFn = func(args ...string) error {
+		if args[0] == "bootstrap" && failures > 0 {
+			failures--
+			return os.ErrInvalid // launchd EIO stand-in
+		}
+		return old(args...)
+	}
+	t.Cleanup(func() { launchctlExecFn = old })
+
+	refreshed, problems := refreshSirsiLaunchAgentsIn(dir, 501)
+	if len(problems) != 0 || len(refreshed) != 1 {
+		t.Fatalf("refreshed=%v problems=%v, want success after teardown retries", refreshed, problems)
+	}
+	_ = calls
 }
 
 func writePlist(t *testing.T, dir, name string) {
