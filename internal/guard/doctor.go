@@ -120,7 +120,7 @@ func remediationKind(f DiagnosticFinding) FixKind {
 	case "App Hangs (7d)":
 		return FixRelief // a real user-app freeze → renice the live hog; trend decays
 	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)",
-		"Thread Leaks", "Swap Usage":
+		"Thread Leaks", "Swap Usage", "Memory Death Spiral":
 		return FixRelief // eases the live cause; trend counts decay, not drop
 	case "Runaway Executor":
 		return FixRelief // quarantine stops the spawner; artifacts drain via the hourly sweep
@@ -154,7 +154,7 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
-	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)":
+	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral":
 		if warn {
 			// Flush inactive caches — the safe, non-destructive memory lever
 			// (renice frees CPU, not RAM). Was `sirsi guard`, which is just the
@@ -250,8 +250,9 @@ func (h HealthStatus) Label() string {
 // 7-day trend checks are deliberately excluded: allocated swap and past patterns
 // are amber, not act-now.
 var liveCriticalChecks = map[string]bool{
-	"RAM Pressure": true, // used RAM critically high → Jetsam kills imminent
-	"Disk Space":   true, // volume full → saves fail, system instability
+	"RAM Pressure":        true, // used RAM critically high → Jetsam kills imminent
+	"Disk Space":          true, // volume full → saves fail, system instability
+	"Memory Death Spiral": true, // swap exhausted + load runaway → the machine is dying NOW (94/100-during-spiral bug, 2026-07-16)
 }
 
 // isLiveCritical reports whether a finding is an act-now RED rather than a
@@ -319,6 +320,7 @@ type doctorCheck struct {
 // how "Top Memory Consumers" shipped as an alarm with no lever.
 var doctorChecks = []doctorCheck{
 	{"RAM Pressure", []string{"RAM Pressure"}, checkRAMPressure},
+	{"Memory Death Spiral", []string{"Memory Death Spiral"}, checkMemoryDeathSpiral},
 	{"Swap Usage", []string{"Swap Usage"}, checkSwapUsage},
 	{"Disk Space", []string{"Disk Space"}, checkDiskSpace},
 	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
