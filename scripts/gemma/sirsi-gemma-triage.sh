@@ -65,8 +65,12 @@ dt = time.time() - t0
 print(int(toks / dt) if dt > 0 else 0)
 PY
 )
-  if [ -n "$rate" ] && [ "$rate" -lt "$TOKS_FLOOR" ]; then
-    echo "ERROR: warm server DEGRADED — measured ${rate} tok/s < ${TOKS_FLOOR} tok/s floor on ${MODEL}. Refusing to crawl; run sirsi-gemma-model-resolver.sh (empirical fit) or free memory." >&2
+  # An EMPTY rate here means the server answered /v1/models but the probe
+  # completion timed out — that is slower than any floor, not a pass. Verified
+  # live 2026-07-16: a 1 tok/s server timed the 90s probe out and the empty
+  # rate fail-OPENED into the exact crawl this guard exists to prevent.
+  if [ -z "$rate" ] || [ "$rate" -lt "$TOKS_FLOOR" ]; then
+    echo "ERROR: warm server DEGRADED — measured ${rate:-<probe timeout>} tok/s < ${TOKS_FLOOR} tok/s floor on ${MODEL}. Refusing to crawl; run sirsi-gemma-model-resolver.sh (empirical fit) or free memory." >&2
     exit 2
   fi
 fi
