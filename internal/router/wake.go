@@ -382,17 +382,30 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
 	}
-	host, _ := os.Hostname()
-	thr, err := RegisterThread(routerRoot, &Thread{
-		AgentID:       agentID,
-		Surface:       surfaceWorker,
-		WakeMechanism: WakeLaunchAgent,
-		PID:           os.Getpid(),
-		Host:          host,
-		Status:        ThreadStatusActive,
-	})
+	// Keyed singleton on (agent, surface=worker, this machine) — P-heartbeat-owner,
+	// #178 pattern. Every launchd bootout/bootstrap gives this loop a new PID;
+	// registering by PID minted a NEW worker thread each restart and left the old
+	// record active until a reap pass, so agents accumulated duplicate workers
+	// (claude-finalwishes carried two). Adopt the existing worker record instead —
+	// the thread id stays stable across restarts — and retire any other OS-dead
+	// worker duplicate for this agent while we're here.
+	thr, err := adoptWorkerThread(routerRoot, agentID, os.Getpid())
 	if err != nil {
-		return fmt.Errorf("register wake-loop thread: %w", err)
+		return fmt.Errorf("adopt wake-loop thread: %w", err)
+	}
+	if thr == nil {
+		host, _ := os.Hostname()
+		thr, err = RegisterThread(routerRoot, &Thread{
+			AgentID:       agentID,
+			Surface:       surfaceWorker,
+			WakeMechanism: WakeLaunchAgent,
+			PID:           os.Getpid(),
+			Host:          host,
+			Status:        ThreadStatusActive,
+		})
+		if err != nil {
+			return fmt.Errorf("register wake-loop thread: %w", err)
+		}
 	}
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
@@ -413,6 +426,73 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		case <-tick.C:
 		}
 	}
+}
+
+// adoptWorkerThread resolves the keyed-singleton worker thread for an agent on
+// THIS machine: it re-points the newest live (non-terminal, non-suspended)
+// surface=worker record at the calling process and retires any other worker
+// record for the agent that is dead by OS truth (ADR-022 — live and suspended
+// records are never touched). Returns nil when no record exists to adopt; the
+// caller then registers a fresh one.
+func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return nil, err
+	}
+	thisMachine := MachineID()
+	now := time.Now().UTC()
+
+	var adopted *Thread
+	for _, t := range reg.Threads {
+		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker {
+			continue
+		}
+		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+			continue
+		}
+		if !SameMachine(t.MachineID, thisMachine) {
+			continue
+		}
+		if adopted == nil || t.LastSeenAt.After(adopted.LastSeenAt) {
+			adopted = t
+		}
+	}
+	if adopted == nil {
+		return nil, nil
+	}
+
+	// Retire OS-dead duplicates — every live candidate EXCEPT the one adopted.
+	for _, t := range reg.Threads {
+		if t == nil || t == adopted || t.AgentID != agentID || t.Surface != surfaceWorker {
+			continue
+		}
+		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+			continue
+		}
+		if !SameMachine(t.MachineID, thisMachine) {
+			continue
+		}
+		if t.PID >= minAgentPID && !DeadByOSTruth(PIDStateOfThread(t)) {
+			continue // genuinely alive — never touch it
+		}
+		t.Status = ThreadStatusReaped
+		t.LastSeenAt = now
+		t.LastError = fmt.Sprintf("reaped: duplicate worker superseded by %s at %s", adopted.ThreadID, now.Format(time.RFC3339))
+	}
+
+	adopted.PID = pid
+	adopted.StartTime = PIDStartTimeOf(pid)
+	adopted.Status = ThreadStatusActive
+	adopted.WakeMechanism = WakeLaunchAgent
+	adopted.LastSeenAt = now
+	adopted.LastError = ""
+	if adopted.MachineID == "" {
+		adopted.MachineID = thisMachine
+	}
+	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+		return nil, err
+	}
+	return adopted, nil
 }
 
 // ── LaunchAgent pull-loop install (constraint 2 + 7) ─────────────────────────
