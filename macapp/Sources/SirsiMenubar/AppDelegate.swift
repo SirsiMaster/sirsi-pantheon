@@ -186,6 +186,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.maxSize = NSSize(width: 900, height: 1400)
         p.isReleasedWhenClosed = false
         p.setFrameAutosaveName("SirsiPantheonPanel")  // persist position + size
+        // Yield focus like a real menubar surface: click anywhere else and the
+        // panel gets out of the way instead of floating over every window
+        // forever (owner, 2026-07-16: "static and never loses focus and blocks
+        // other windows"). Sheets (Apply confirmations) become key while the
+        // panel resigns — don't hide underneath our own dialog.
+        panelObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: p, queue: .main
+        ) { _ in
+            Task { @MainActor in
+                if let key = NSApp.keyWindow, key.sheetParent === p || key.parent === p { return }
+                if p.attachedSheet != nil { return }
+                p.orderOut(nil)
+            }
+        }
         panel = p
     }
 
@@ -196,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         engine.refresh()
+        engine.reopenTick += 1   // RootView pops to a fresh Home (no stale screens)
         // First open with no saved frame: anchor under the status item. After
         // that, respect wherever the user moved/sized it (autosaved frame).
         if panel.frameAutosaveName.isEmpty || !panel.setFrameUsingName("SirsiPantheonPanel") {
