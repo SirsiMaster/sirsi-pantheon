@@ -37,6 +37,10 @@ install: build
 	@# Re-sign in place so `sirsi` runs post-install (macOS arm64 cdhash cache).
 	@# SIGN_ID="<stable identity>" keeps FDA grants across rebuilds (A6; A27 drift).
 	@codesign --force --sign "$(SIGN_ID)" "$(INSTALL_DIR)/sirsi" 2>/dev/null || true
+	@# Re-sign changes the cdhash; launchd keeps enforcing the OLD one per job
+	@# (stale LWCR -> "Launch Constraint Violation" crash-loop; kickstart can't
+	@# clear it). Bootout+bootstrap every ai.sirsi.* job with the NEW binary.
+	@"$(INSTALL_DIR)/sirsi" launchd refresh || true
 	@echo "✅ sirsi installed to $(INSTALL_DIR)/sirsi"
 
 uninstall:
