@@ -141,6 +141,15 @@ if curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; the
       log "EMPIRICAL FIT FAIL: $MODEL measured ${rate} tok/s < ${TOKS_FLOOR} floor — stepping down to $FALLBACK"
       MODEL=$FALLBACK
       echo "$MODEL" > "$CONF"
+      # Bounce the warm server so the too-big model's WIRED weights are actually
+      # RELEASED — conf only changes what clients request; the server keeps every
+      # loaded model resident (JetsamEvent 2026-07-16: the 31B's ~30 GB base
+      # footprint, not the bounded KV cache, is what drove the system to the
+      # wall). KeepAlive reloads it serving the stepped-down model only.
+      launchctl kickstart -k "gui/$(id -u)/ai.sirsi.gemma" 2>/dev/null \
+        && log "bounced ai.sirsi.gemma to release the oversized model's wired memory" \
+        || log "server bounce skipped (job not managed here)"
+      sleep 8   # let the reloaded server come up before re-probing
       rate=$(probe_toks "$MODEL")
       log "fallback $MODEL measured ${rate:-unreachable} tok/s"
     else
