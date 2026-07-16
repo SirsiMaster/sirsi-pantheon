@@ -47,6 +47,14 @@ uninstall:
 	rm -f $(INSTALL_DIR)/sirsi
 	@echo "✅ sirsi removed from $(INSTALL_DIR)"
 
+# --- Gemma worker (canonical source: scripts/gemma/) ---
+install-gemma-worker:
+	cp scripts/gemma/sirsi-gemma-worker.sh $(INSTALL_DIR)/sirsi-gemma-worker.sh
+	chmod +x $(INSTALL_DIR)/sirsi-gemma-worker.sh
+	@# Restart the daemon so the running copy matches the repo (KeepAlive respawns it).
+	@launchctl kickstart -k gui/$$(id -u)/ai.sirsi.gemma-worker 2>/dev/null || true
+	@echo "✅ gemma worker installed + daemon kickstarted"
+
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf Pantheon.app
