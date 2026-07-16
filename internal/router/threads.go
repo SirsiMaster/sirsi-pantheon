@@ -84,6 +84,12 @@ type Thread struct {
 	// legacy records and platforms without a start-time probe (bare-PID fallback).
 	StartTime string `json:"start_time,omitempty"`
 	Host      string `json:"host,omitempty"`
+	// MachineID is the stable per-machine identity captured at registration.
+	// The reaper scopes OS-truth liveness to the machine that wrote the record
+	// (ADR-022) via this, NOT via Host — a hostname is mutable across networks,
+	// which stranded inboxes when a laptop's name changed. Empty on legacy
+	// records (treated as local; the registry is per-machine). See machineid.go.
+	MachineID string `json:"machine_id,omitempty"`
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`
@@ -194,6 +200,13 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	}
 	now := time.Now().UTC()
 
+	// Stamp the stable machine identity the reaper scopes liveness to (ADR-022).
+	// Captured here so both the mint and reuse paths carry it; empty on platforms
+	// without a probe, which the reaper treats as a local (per-machine) record.
+	if t.MachineID == "" {
+		t.MachineID = MachineID()
+	}
+
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
@@ -242,6 +255,9 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 					continue
 				}
 				existing.LastSeenAt = now
+				if existing.MachineID == "" {
+					existing.MachineID = t.MachineID // backfill legacy record in place
+				}
 				if t.CurrentItem != "" {
 					existing.CurrentItem = t.CurrentItem
 				}
@@ -628,19 +644,22 @@ type ReapedThread struct {
 // refuses to revive them. This is what stops a dead PID from re-presenting as
 // `active` after a late heartbeat.
 //
-// host scopes the sweep to threads on THIS machine: a thread whose Host differs
-// (or is empty) is left untouched, because we cannot observe another host's
-// process table. Threads without a PID are also skipped (unverifiable).
+// The sweep is scoped to THIS machine's process table by stable machine identity
+// (MachineID / SameMachine), not hostname — a record with a different machine id
+// is provably foreign and left untouched; an id-less legacy record is treated as
+// local (the registry is per-machine). Threads without a PID are also handled
+// (stale phantoms retire; fresh pid-less surfaces stay alive).
 //
 // Returns the reaped records (empty if none). The registry is saved only when
 // at least one thread was reaped.
-func ReapDeadThreads(routerRoot, host string) ([]ReapedThread, error) {
+func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
 	}
 	var reaped []ReapedThread
 	now := time.Now().UTC()
+	thisMachine := MachineID()
 	for _, t := range reg.Threads {
 		if t == nil || t.Status.IsTerminal() {
 			continue
@@ -652,8 +671,14 @@ func ReapDeadThreads(routerRoot, host string) ([]ReapedThread, error) {
 		if t.Status == ThreadStatusSuspended {
 			continue
 		}
-		if host != "" && t.Host != host {
-			continue // a different host's process table
+		// Scope to THIS machine's process table by stable machine identity, not
+		// hostname. A hostname is mutable across networks, so the old host-equality
+		// guard treated a laptop's own older records (written under a prior name)
+		// as a foreign host and NEVER reaped their dead PIDs — the root cause of a
+		// 1d16h stranded inbox. A record with a DIFFERENT machine id is provably
+		// foreign; an id-less legacy record is local (the registry is per-machine).
+		if !SameMachine(t.MachineID, thisMachine) {
+			continue
 		}
 		// Phantom PID (<minAgentPID, i.e. 0/launchd-1) is "unverifiable" by
 		// the cmdline-identity check, but PR #29 established: a stale phantom

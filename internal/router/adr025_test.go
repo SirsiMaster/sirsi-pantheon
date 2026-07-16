@@ -141,7 +141,7 @@ func TestReapDeadThreads_SkipsSuspended(t *testing.T) {
 	}
 	_, _ = SuspendThread(root, thr.ThreadID, nil)
 
-	reaped, err := ReapDeadThreads(root, host)
+	reaped, err := ReapDeadThreads(root)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}

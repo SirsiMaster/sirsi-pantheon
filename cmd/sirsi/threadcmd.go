@@ -80,8 +80,7 @@ func killRouterWatcher(threadID string) {
 // swept whenever anyone reads the registry — no daemon, no polling,
 // per AGENTS.md §Lean #1 (the read IS the event).
 func reapDeadPIDThreads(routerRoot string) []router.ReapedThread {
-	host, _ := os.Hostname()
-	reaped, _ := router.ReapDeadThreads(routerRoot, host)
+	reaped, _ := router.ReapDeadThreads(routerRoot)
 	return reaped
 }
 

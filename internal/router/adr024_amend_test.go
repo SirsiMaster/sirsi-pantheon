@@ -71,7 +71,7 @@ func TestReapDeadThreads_RecycledPIDReaped(t *testing.T) {
 	restore := probeStubs(t, PIDAlive, "Mon Jun 2 02:00") // alive, but DIFFERENT start
 	defer restore()
 
-	reaped, err := ReapDeadThreads(root, host)
+	reaped, err := ReapDeadThreads(root)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestReapDeadThreads_LiveMatchingStartSurvives(t *testing.T) {
 	restore := probeStubs(t, PIDAlive, "Mon Jun 2 02:00") // alive AND matching start
 	defer restore()
 
-	reaped, err := ReapDeadThreads(root, host)
+	reaped, err := ReapDeadThreads(root)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestReapDeadThreads_LivePIDWrongCommandReaped(t *testing.T) {
 	defer restore()
 	setPIDCommandFn(func(int) string { return "/bin/zsh" })
 
-	reaped, err := ReapDeadThreads(root, host)
+	reaped, err := ReapDeadThreads(root)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestReapDeadThreads_LivePIDMatchingCommandSurvives(t *testing.T) {
 	defer restore()
 	setPIDCommandFn(func(int) string { return "/Applications/Claude.app/Contents/MacOS/claude --resume abc" })
 
-	reaped, err := ReapDeadThreads(root, host)
+	reaped, err := ReapDeadThreads(root)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}

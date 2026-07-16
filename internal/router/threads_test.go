@@ -159,7 +159,7 @@ func TestReapDeadThreads_DefunctAndGone(t *testing.T) {
 	})
 	defer setPIDStateFn(old)
 
-	reaped, err := ReapDeadThreads(tmp, host)
+	reaped, err := ReapDeadThreads(tmp)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}
@@ -190,28 +190,70 @@ func TestReapDeadThreads_DefunctAndGone(t *testing.T) {
 	}
 }
 
-// TestReapDeadThreads_RemoteHostUntouched ensures the reaper never retires a
-// thread recorded on a different host — we cannot observe a remote process
-// table, so its liveness is unknowable here.
-func TestReapDeadThreads_RemoteHostUntouched(t *testing.T) {
+// TestReapDeadThreads_ForeignMachineUntouched ensures the reaper never retires a
+// thread recorded on a DIFFERENT machine (by stable machine id) — this host
+// cannot observe that machine's process table, so its liveness is unknowable.
+func TestReapDeadThreads_ForeignMachineUntouched(t *testing.T) {
 	tmp := t.TempDir()
-	thr, _ := RegisterThread(tmp, &Thread{AgentID: "claude-remote", Surface: "claude", PID: 5001, Host: "some-other-host"})
+	oldMID := getMachineIDFn()
+	setMachineIDFn(func() string { return "THIS-MACHINE" })
+	defer setMachineIDFn(oldMID)
+
+	// A record stamped with a DIFFERENT machine id is provably foreign. Host is
+	// irrelevant to scoping now — only the machine id is.
+	thr, _ := RegisterThread(tmp, &Thread{AgentID: "claude-remote", Surface: "claude", PID: 5001, MachineID: "OTHER-MACHINE"})
 
 	old := getPIDStateFn()
 	setPIDStateFn(func(int) PIDState { return PIDGone })
 	defer setPIDStateFn(old)
 
-	host, _ := os.Hostname()
-	reaped, err := ReapDeadThreads(tmp, host)
+	reaped, err := ReapDeadThreads(tmp)
 	if err != nil {
 		t.Fatalf("ReapDeadThreads: %v", err)
 	}
 	if len(reaped) != 0 {
-		t.Fatalf("expected 0 reaped for remote host, got %d", len(reaped))
+		t.Fatalf("expected 0 reaped for a foreign machine, got %d", len(reaped))
 	}
 	reg, _ := LoadThreadRegistry(tmp)
 	if got := reg.Threads[thr.ThreadID].Status; got != ThreadStatusActive {
-		t.Errorf("remote-host thread was reaped: status=%q want active", got)
+		t.Errorf("foreign-machine thread was reaped: status=%q want active", got)
+	}
+}
+
+// TestReapDeadThreads_StaleHostnameStillReaped is the direct regression for the
+// 1d16h stranded inbox: a dead-PID record written under a PRIOR hostname (the
+// laptop changed networks: Mac.lan / MacBook-Pro-2.local / Mac.hsd1... are one
+// machine) must STILL be reaped. The old host-equality guard skipped it as a
+// "foreign host"; machine-id scoping treats an id-less legacy record as local.
+func TestReapDeadThreads_StaleHostnameStillReaped(t *testing.T) {
+	tmp := t.TempDir()
+	oldMID := getMachineIDFn()
+	setMachineIDFn(func() string { return "THIS-MACHINE" })
+	defer setMachineIDFn(oldMID)
+
+	thr, _ := RegisterThread(tmp, &Thread{AgentID: "claude-pantheon", Surface: "worker", PID: 6001, Host: "MacBook-Pro-2.local"})
+	// Force the pre-migration shape: a legacy record with NO machine id, exactly
+	// the 355 records the live registry carried.
+	reg, _ := LoadThreadRegistry(tmp)
+	reg.Threads[thr.ThreadID].MachineID = ""
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveThreadRegistry: %v", err)
+	}
+
+	old := getPIDStateFn()
+	setPIDStateFn(func(int) PIDState { return PIDGone })
+	defer setPIDStateFn(old)
+
+	reaped, err := ReapDeadThreads(tmp)
+	if err != nil {
+		t.Fatalf("ReapDeadThreads: %v", err)
+	}
+	if len(reaped) != 1 {
+		t.Fatalf("a dead-PID record under a stale hostname must be reaped, got %d", len(reaped))
+	}
+	reg, _ = LoadThreadRegistry(tmp)
+	if got := reg.Threads[thr.ThreadID].Status; got != ThreadStatusReaped {
+		t.Errorf("stale-hostname dead thread: status=%q want reaped", got)
 	}
 }
 
@@ -356,7 +398,7 @@ func TestReapDeadThreads_PidSanityFloor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reaped, err := ReapDeadThreads(tmp, "")
+	reaped, err := ReapDeadThreads(tmp)
 	if err != nil {
 		t.Fatal(err)
 	}
