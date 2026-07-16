@@ -65,8 +65,8 @@ func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	now := time.Now()
 
 	first := runSupervisorDuties(routerRoot, repoRoot, now)
-	if len(first) != 4 {
-		t.Fatalf("first pass duties = %d, want 4 (3 scripts + native session-reaper)", len(first))
+	if len(first) != 5 {
+		t.Fatalf("first pass duties = %d, want 5 (3 scripts + native auto-heal + session-reaper)", len(first))
 	}
 	for _, d := range first {
 		if !d.Ran || d.Skipped != "" || d.Error != "" {
@@ -157,10 +157,11 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 		t.Fatalf("no script should run when none exist: %v", *calls)
 	}
 	for _, d := range results {
-		if d.Name == "session-reaper" {
-			// Native duty: no script to be missing — it runs.
+		if d.Name == "session-reaper" || d.Name == "auto-heal" {
+			// Native duties: no script to be missing — they run (auto-heal is an
+			// inert no-op until cmd/sirsi injects the real pass).
 			if !d.Ran || d.Skipped != "" {
-				t.Errorf("session-reaper = %+v, want ran (native, script-independent)", d)
+				t.Errorf("%s = %+v, want ran (native, script-independent)", d.Name, d)
 			}
 			continue
 		}
@@ -194,8 +195,8 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Duties) != 4 {
-		t.Fatalf("report.Duties = %d, want 4: %+v", len(report.Duties), report.Duties)
+	if len(report.Duties) != 5 {
+		t.Fatalf("report.Duties = %d, want 5: %+v", len(report.Duties), report.Duties)
 	}
 	if len(*calls) != 3 {
 		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)
