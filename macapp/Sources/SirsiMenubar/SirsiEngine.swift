@@ -272,6 +272,11 @@ final class SirsiEngine: ObservableObject {
     // panel clears it without a relaunch.
     @Published var hasFDA = false
 
+    // Bumped each time the panel is (re)opened. RootView pops navigation to
+    // Home on change so a reopened panel never shows a screen whose command
+    // output predates the reopen (the stale-RTK-tutorial bug, 2026-07-16).
+    @Published var reopenTick = 0
+
     // Provenance ledger — actions taken from the UI, newest first.
     @Published var activity: [ActivityEntry] = []
     private let activityPath = (("~/.config/pantheon/menubar-activity.json") as NSString).expandingTildeInPath

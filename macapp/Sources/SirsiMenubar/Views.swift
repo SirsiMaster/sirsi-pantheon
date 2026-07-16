@@ -143,6 +143,10 @@ struct RootView: View {
             .frame(width: baseWidth, height: max(1, geo.size.height / scale), alignment: .top)
             .scaleEffect(scale, anchor: .topLeading)
         }
+        // Every panel (re)open starts at a fresh Home. Pushed screens load their
+        // command output once (.task) and would otherwise show it forever — the
+        // RTK screen kept rendering output from a since-replaced binary.
+        .onChange(of: engine.reopenTick) { _ in nav.popToRoot() }
         .environmentObject(nav)
     }
 }
