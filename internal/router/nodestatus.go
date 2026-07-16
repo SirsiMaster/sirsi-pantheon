@@ -411,9 +411,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	// --- Live thread registry ---
 	// Reap dead/defunct-PID threads against OS truth before reading, so Horus
 	// and the menubar never present a gone or zombie PID as a live agent (the
-	// CTR false-active bug). Scoped to this host; remote tables are unobservable.
-	host, _ := os.Hostname()
-	_, _ = ReapDeadThreads(routerRoot, host)
+	// CTR false-active bug). Scoped to this machine by stable id; foreign tables
+	// are unobservable (see ReapDeadThreads / SameMachine).
+	_, _ = ReapDeadThreads(routerRoot)
 	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		for _, thr := range treg.SortedThreads() {

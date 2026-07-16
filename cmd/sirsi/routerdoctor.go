@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -92,8 +91,7 @@ var routerDoctorCmd = &cobra.Command{
 			return nil
 		}
 
-		host, _ := os.Hostname()
-		reaped, rerr := router.ReapDeadThreads(repoRoot, host)
+		reaped, rerr := router.ReapDeadThreads(repoRoot)
 		if rerr != nil {
 			return fmt.Errorf("reap dead threads: %w", rerr)
 		}

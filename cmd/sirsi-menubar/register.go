@@ -110,8 +110,7 @@ const menubarRecordRetention = time.Hour
 // (keepThreadID) untouched. Scoped to menubarAgentID so it is safe for a single
 // surface to run on every launch without disturbing other agents.
 func pruneOwnStaleRecords(routerRoot, keepThreadID string) {
-	host, _ := os.Hostname()
-	_, _ = router.ReapDeadThreads(routerRoot, host) // dead-PID actives → terminal
+	_, _ = router.ReapDeadThreads(routerRoot) // dead-PID actives → terminal
 	reg, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return
