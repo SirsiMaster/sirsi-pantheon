@@ -7,7 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/autoheal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 // autonomous.go is the operator's master ACTION switch — the one plain-English
@@ -106,4 +108,8 @@ func renderAutonomous(cmd *cobra.Command, on, changed bool) error {
 
 func init() {
 	autonomousCmd.Flags().BoolVar(&autonomousJSON, "json", false, "Output the mode as JSON")
+	// Wire the auto-heal pass into the supervisor's auto-heal duty (ADR-039 P3).
+	// internal/autoheal imports internal/router (GateAction), so the router's
+	// duty table reaches it through this injected seam rather than an import cycle.
+	router.SetAutoHealFn(autoheal.Run)
 }
