@@ -47,13 +47,15 @@ uninstall:
 	rm -f $(INSTALL_DIR)/sirsi
 	@echo "✅ sirsi removed from $(INSTALL_DIR)"
 
-# --- Gemma worker (canonical source: scripts/gemma/) ---
+# --- Gemma worker + tooling (canonical source: scripts/gemma/) ---
 install-gemma-worker:
 	cp scripts/gemma/sirsi-gemma-worker.sh $(INSTALL_DIR)/sirsi-gemma-worker.sh
-	chmod +x $(INSTALL_DIR)/sirsi-gemma-worker.sh
+	cp scripts/gemma/sirsi-gemma-model-resolver.sh $(INSTALL_DIR)/sirsi-gemma-model-resolver.sh
+	cp scripts/gemma/sirsi-gemma-triage.sh $(INSTALL_DIR)/sirsi-gemma-triage.sh
+	chmod +x $(INSTALL_DIR)/sirsi-gemma-worker.sh $(INSTALL_DIR)/sirsi-gemma-model-resolver.sh $(INSTALL_DIR)/sirsi-gemma-triage.sh
 	@# Restart the daemon so the running copy matches the repo (KeepAlive respawns it).
 	@launchctl kickstart -k gui/$$(id -u)/ai.sirsi.gemma-worker 2>/dev/null || true
-	@echo "✅ gemma worker installed + daemon kickstarted"
+	@echo "✅ gemma worker + resolver + triage installed; daemon kickstarted"
 
 clean:
 	rm -rf $(BUILD_DIR)
