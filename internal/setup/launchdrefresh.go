@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ── LWCR refresh: re-derive launch constraints after a binary re-sign ─────────
@@ -19,6 +20,14 @@ import (
 // clean reset is bootout + bootstrap per job, which re-derives the constraint
 // from the binary as currently signed. (Router item 20260716-150734: 531
 // crash-loops on ai.sirsi.conduit.tick after a re-sign.)
+
+const (
+	bootstrapAttempts   = 10
+	bootstrapRetryDelay = 300 * time.Millisecond
+)
+
+// sleepFn indirects the retry delay so tests run instantly (Rule A16).
+var sleepFn = time.Sleep
 
 // RefreshSirsiLaunchAgents boots out and re-bootstraps every ai.sirsi.* job in
 // ~/Library/LaunchAgents. Run after any sirsi binary re-sign/deploy. macOS only.
@@ -48,7 +57,18 @@ func refreshSirsiLaunchAgentsIn(dir string, uid int) (refreshed, problems []stri
 		// Bootout is best-effort: "not loaded" is fine — the point is that no
 		// stale LWCR survives into the bootstrap below.
 		_ = runLaunchctl("bootout", fmt.Sprintf("gui/%d/%s", uid, label))
-		if err := runLaunchctl("bootstrap", fmt.Sprintf("gui/%d", uid), plist); err != nil {
+		// Bootout of a RUNNING job tears down asynchronously; bootstrapping
+		// before the old instance exits fails with EIO (verified live: only the
+		// loaded KeepAlive wake loops failed, every unloaded job succeeded).
+		// Retry across the teardown window instead of reporting a false failure.
+		var err error
+		for attempt := 0; attempt < bootstrapAttempts; attempt++ {
+			if err = runLaunchctl("bootstrap", fmt.Sprintf("gui/%d", uid), plist); err == nil {
+				break
+			}
+			sleepFn(bootstrapRetryDelay)
+		}
+		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: bootstrap failed: %v", label, err))
 			continue
 		}
