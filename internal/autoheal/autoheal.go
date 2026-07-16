@@ -82,11 +82,15 @@ var (
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, ".sirsi", "autoheal-state.json")
 	}
+	// inscribeFn seams the provenance write so unit tests never pollute the
+	// LIVE Stele (the first suite run wrote its fixtures into ~/.config/ra).
+	inscribeFn = stele.Inscribe
 )
 
 func setSeams(auto func() bool, doc func() ([]guard.DiagnosticFinding, error), gate func(string) router.GateDecision, ex func([]string) error, state func() string) {
 	mu.Lock()
 	defer mu.Unlock()
+	inscribeFn = func(string, string, string, map[string]string) {} // tests never write the live Stele
 	if auto != nil {
 		autonomousFn = auto
 	}
@@ -116,7 +120,7 @@ type Outcome struct {
 // point: silent no-op when autonomous is OFF, error-isolated by the caller.
 func Run(_, _ string) error {
 	mu.RLock()
-	auto, doc, gate, ex, statePath := autonomousFn, doctorFn, gateFn, execFn, statePathFn()
+	auto, doc, gate, ex, statePath, inscribe := autonomousFn, doctorFn, gateFn, execFn, statePathFn(), inscribeFn
 	mu.RUnlock()
 
 	if !auto() {
@@ -162,7 +166,7 @@ func Run(_, _ string) error {
 	if len(outcomes) > 0 {
 		saveState(statePath, lastRun)
 		for _, o := range outcomes {
-			stele.Inscribe("autoheal", "auto_heal", o.Check, map[string]string{
+			inscribe("autoheal", "auto_heal", o.Check, map[string]string{
 				"fix": o.Fix, "applied": fmt.Sprintf("%t", o.Applied), "reason": o.Reason,
 			})
 		}

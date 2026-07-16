@@ -181,6 +181,28 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 12)
 
+            // Autonomous — the master action switch (plain English, one toggle):
+            // ON = Pantheon fixes issues itself (the auto-heal loop, ADR-039);
+            // OFF = it only reports and proposes. Reads/writes the same
+            // ~/.sirsi/brain.yaml truth as `sirsi autonomous on|off`.
+            HStack(spacing: 8) {
+                Text(engine.autonomousOn ? "🛠" : "👁")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Fix issues automatically").font(.callout)
+                    Text(engine.autonomousOn ? "On — Pantheon applies approved fixes itself"
+                                             : "Off — Pantheon only reports and suggests")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { engine.autonomousOn },
+                    set: { on in Task { await engine.setAutonomous(on) } }
+                ))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 6)
+            .task { await engine.fetchAutonomous() }
+
             Divider().padding(.horizontal, 12)
 
             // Deity rows
