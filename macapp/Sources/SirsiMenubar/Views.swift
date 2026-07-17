@@ -93,6 +93,25 @@ final class Nav: ObservableObject {
 // that pushes onto our own Nav instead of a NavigationStack. Same call shape, so
 // converting a screen is a rename. The pushed destination inherits `nav` via the
 // environment object, so nested NavLinks keep working to any depth.
+
+// MaybeList — a List that stays a real List in the live app but renders as a
+// plain stack under snapshot QA: ImageRenderer cannot draw NSTableView-backed
+// Lists (they rasterize as a giant prohibition glyph), so every List-based
+// screen was invisible to the harness. .listStyle on the stack is a no-op.
+struct MaybeList<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    @ViewBuilder let content: Content
+    var body: some View {
+        if snapshotMode {
+            VStack(alignment: .leading, spacing: 10) { content }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(12)
+        } else {
+            List { content }
+        }
+    }
+}
+
 struct NavLink<Label: View, Destination: View>: View {
     @EnvironmentObject private var nav: Nav
     private let destination: () -> Destination
@@ -484,7 +503,7 @@ struct HorusView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
+                MaybeList {
                     Section {
                         ForEach(engine.health) { f in
                             HealthRow(engine: engine, finding: f)
@@ -788,15 +807,72 @@ func openTerminal() {
 struct RouterView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
+    @Environment(\.snapshotMode) private var snapshotMode
+
+    // ImageRenderer draws ScrollView viewports EMPTY — swap for a plain stack
+    // under snapshot QA (same contract as HomeView.maybeScroll / ResultView).
+    @ViewBuilder private func maybeScrollRouter<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if snapshotMode {
+            content().frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { content() }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Router — Fabric")
-            ScrollView {
+            maybeScrollRouter {
                 VStack(alignment: .leading, spacing: 14) {
 
+                    // ── Honest empty state: never a false "healthy" ─────────
+                    if engine.routerBoard == nil {
+                        HStack(spacing: 8) {
+                            Circle().fill(.gray).frame(width: 8, height: 8)
+                            Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet — the board hasn't been generated on this machine.")
+                                .font(.system(size: 13, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
+                    }
+
+                    // ── Fabric overview — the actual work map ───────────────
+                    if let board = engine.routerBoard {
+                        SectionLabel("THE FABRIC RIGHT NOW")
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(board.liveThreadCount ?? 0)").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
+                                Text("live threads").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(board.totalPending ?? 0)").font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle((board.totalPending ?? 0) > 0 ? gold : .green)
+                                Text("open items").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        let pending = (board.pendingByAgent ?? [:]).filter { !$0.value.isEmpty }
+                        if !pending.isEmpty {
+                            VStack(spacing: 0) {
+                                ForEach(pending.keys.sorted(), id: \.self) { agent in
+                                    HStack {
+                                        Text(agent).font(.caption)
+                                        Spacer()
+                                        Text("\(pending[agent]?.count ?? 0) open").font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    }.padding(.vertical, 6)
+                                    if agent != pending.keys.sorted().last { Divider() }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        }
+                    }
+
                     // ── Blockers (current + fixable ONLY) ───────────────────
-                    if engine.routerHasBlockers {
+                    if engine.routerBoard != nil && engine.routerHasBlockers {
                         SectionLabel("BLOCKERS — FIX TO UNSTRAND WORK", tint: .red)
 
                         ForEach(engine.routerAuthBlockers) { h in
@@ -807,10 +883,10 @@ struct RouterView: View {
                                               broken: engine.routerDaemonBlockers,
                                               onResult: { resultLine = $0 })
                         }
-                    } else {
+                    } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
                             Circle().fill(.green).frame(width: 8, height: 8)
-                            Text("Fabric healthy — no blockers")
+                            Text("No blockers — nothing is stranding work")
                                 .font(.system(size: 13, weight: .semibold))
                             Spacer()
                         }
@@ -1251,7 +1327,7 @@ struct ScanCleanView: View {
     }
 
     private var reviewList: some View {
-        List {
+        MaybeList {
             Section {
                 ForEach(engine.safe) { f in
                     itemRow(f, toggleable: true)
@@ -1472,7 +1548,7 @@ struct RiskView: View {
             if loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
-                List {
+                MaybeList {
                     Section {
                         HStack {
                             Text(riskGlyph(r.risk)).font(.system(size: 18))
@@ -1664,7 +1740,7 @@ struct GhostsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
-                List {
+                MaybeList {
                     Section { Text(r.summary).font(.callout) } header: { Text("RESULT") }
                     if r.ghosts.isEmpty {
                         Section {
@@ -2435,13 +2511,22 @@ struct InsightView: View {
     @State private var loading = true
     @State private var askingGemma = false
 
+    // Snapshot QA injection (same seam as ResultView): ImageRenderer never runs
+    // .task, so without a preloaded report this screen renders an eternal
+    // spinner and the harness can't judge it.
+    init(engine: SirsiEngine, preloaded: InsightReport? = nil) {
+        self.engine = engine
+        _report = State(initialValue: preloaded)
+        _loading = State(initialValue: preloaded == nil)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Insight")
             if loading && report == nil {
                 HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
             } else if let r = report {
-                List {
+                MaybeList {
                     if let n = r.narrative, !n.isEmpty {
                         Section { Text(n).font(.callout) } header: { Text("𓂀 LOCAL GEMMA") }
                     }

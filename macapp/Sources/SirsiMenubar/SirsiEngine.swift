@@ -186,15 +186,20 @@ struct RBStranded: Decodable, Identifiable {
 struct RouterBoard: Decodable {
     let schemaVersion: String?
     let totalPending: Int?
+    let liveThreadCount: Int?
     let agentHealth: [RBAgentHealth]?
     let launchAgents: [RBLaunchAgent]?
     let strandedInbox: [RBStranded]?
+    // agent id → open item ids: the fabric's actual work map.
+    let pendingByAgent: [String: [String]]?
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case totalPending = "total_pending"
+        case liveThreadCount = "live_thread_count"
         case agentHealth = "agent_health"
         case launchAgents = "launch_agents"
         case strandedInbox = "stranded_inbox"
+        case pendingByAgent = "pending_by_agent"
     }
 }
 
