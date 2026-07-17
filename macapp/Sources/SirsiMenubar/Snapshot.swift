@@ -49,6 +49,7 @@ func runSnapshotMode(outDir: String) {
         await engine.loadRouterBoard()
         await engine.loadThreads()
         await engine.fetchAutonomous()
+        await engine.fetchVitals()
         let insightRaw = await SirsiEngine.run(args: ["insight", "--json", "--no-ai"], stdin: nil)
         let insight = InsightView.decode(insightRaw)
 

@@ -185,20 +185,49 @@ struct HomeView: View {
             }
             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
 
-            // Status card — only meaningful reclaim (≥ threshold) reads as waste;
-            // trivial caches read "Clean" so the surface never alarms on 230 KB.
+            // MEMORY-FIRST lead card (canon: RAM is the pre-eminent view, not
+            // storage). Free RAM is the headline number with a pressure light;
+            // swap + the biggest process are the evidence lines; safe-to-reclaim
+            // storage drops to a secondary line beneath. Falls back to the
+            // storage lead only until vitals load, so Home is never blank.
             VStack(spacing: 4) {
-                let hasWaste = engine.safeBytes >= SirsiEngine.wasteThreshold
-                Text(hasWaste ? SirsiEngine.human(engine.safeBytes) : "Clean")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(hasWaste ? gold : .green)
-                Text(hasWaste ? "safe to reclaim" : "nothing significant to clean")
-                    .font(.caption).foregroundStyle(.secondary)
-                if !engine.scannedAt.isEmpty {
-                    Text("scanned \(engine.scannedAt)").font(.caption2).foregroundStyle(.tertiary)
+                if let v = engine.vitals {
+                    let (light, word): (Color, String) = {
+                        switch v.pressure {
+                        case "critical": return (.red, "under heavy memory pressure")
+                        case "warn":     return (.orange, "memory getting tight")
+                        default:         return (.green, "memory healthy")
+                        }
+                    }()
+                    HStack(spacing: 8) {
+                        Circle().fill(light).frame(width: 10, height: 10)
+                        Text(SirsiEngine.human(v.freeBytes) + " free")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(light)
+                    }
+                    Text("\(word) · of \(SirsiEngine.human(v.totalBytes)) · swap \(SirsiEngine.human(v.swapUsedBytes))")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    if let top = v.top?.first {
+                        Text("biggest: \(top.name) \(SirsiEngine.human(top.rssBytes))")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    if engine.safeBytes >= SirsiEngine.wasteThreshold {
+                        Text("storage: \(SirsiEngine.human(engine.safeBytes)) safe to reclaim")
+                            .font(.caption2).foregroundStyle(gold)
+                    }
+                } else {
+                    // Pre-vitals fallback: the prior storage lead.
+                    let hasWaste = engine.safeBytes >= SirsiEngine.wasteThreshold
+                    Text(hasWaste ? SirsiEngine.human(engine.safeBytes) : "Clean")
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundStyle(hasWaste ? gold : .green)
+                    Text(hasWaste ? "safe to reclaim" : "reading memory…")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .task { await engine.fetchVitals() }
 
             // Autonomous — the master action switch (plain English, one toggle):
             // ON = Pantheon fixes issues itself (the auto-heal loop, ADR-039);
