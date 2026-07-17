@@ -183,6 +183,34 @@ struct RBStranded: Decodable, Identifiable {
 
 // RouterBoard is the decoded fabric view. Only the fields the surface renders are
 // modeled; unknown fields are ignored (additive-tolerant, ADR-026).
+// MemoryVitals decodes `sirsi vitals --json` — the memory-first read.
+struct MemoryVitals: Decodable {
+    let totalBytes: Int64
+    let usedBytes: Int64
+    let freeBytes: Int64
+    let swapUsedBytes: Int64
+    let pressure: String          // "normal" | "warn" | "critical"
+    let top: [VitalsProc]?
+    enum CodingKeys: String, CodingKey {
+        case totalBytes = "total_bytes"
+        case usedBytes = "used_bytes"
+        case freeBytes = "free_bytes"
+        case swapUsedBytes = "swap_used_bytes"
+        case pressure, top
+    }
+}
+
+struct VitalsProc: Decodable, Identifiable {
+    let name: String
+    let pid: Int
+    let rssBytes: Int64
+    var id: Int { pid }
+    enum CodingKeys: String, CodingKey {
+        case name, pid
+        case rssBytes = "rss_bytes"
+    }
+}
+
 struct RouterBoard: Decodable {
     let schemaVersion: String?
     let totalPending: Int?
@@ -281,6 +309,17 @@ final class SirsiEngine: ObservableObject {
     // Home on change so a reopened panel never shows a screen whose command
     // output predates the reopen (the stale-RTK-tutorial bug, 2026-07-16).
     @Published var reopenTick = 0
+
+    // Memory-First (canon: RAM is the pre-eminent view, not storage). Live
+    // vitals from `sirsi vitals --json`; drives the Home lead card.
+    @Published var vitals: MemoryVitals?
+
+    func fetchVitals() async {
+        let data = await Self.runJSON(args: ["vitals", "--json"])
+        if let v = try? JSONDecoder().decode(MemoryVitals.self, from: data) {
+            vitals = v
+        }
+    }
 
     // Autonomous mode — the master action switch (`sirsi autonomous`, #203):
     // ON = Pantheon applies approved fixes unattended (the auto-heal loop);
