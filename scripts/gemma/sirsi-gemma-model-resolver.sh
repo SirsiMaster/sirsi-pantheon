@@ -32,9 +32,16 @@ total_gb() { python3 -c "import subprocess;print(round(int(subprocess.check_outp
 
 resolve() {
   local total; total=$(total_gb)
-  # Budget: leave ~16GB for OS + the other agent sessions on this shared box.
-  local budget; budget=$(python3 -c "print(max(8.0, $total - 16))")
-  log "resolve: total=${total}GB budget=${budget}GB"
+  # DEFAULT-pick budget = 35% of physical RAM (floor 8GB). The old `total - 16`
+  # arithmetic selected the 31B (~28.8GB wired) as the ALWAYS-ON default on a
+  # 51.5GB box — its base footprint + the live desktop drove the machine to the
+  # jetsam wall and system-wide delays (2026-07-16/17, twice). The owner-chosen
+  # hybrid policy (2026-06-14) is: fleet-safe DEFAULT + big model ON-DEMAND
+  # (`MODEL: max`, RAM-gated per request by the worker). This budget sizes only
+  # the default; MAX_CONF stays the on-demand ceiling. On a 128GB box the same
+  # rule promotes the 31B to default automatically.
+  local budget; budget=$(python3 -c "print(max(8.0, round($total * 0.35, 1)))")
+  log "resolve: total=${total}GB default-budget=${budget}GB (35% steady-state rule)"
 
   # Newest gemma dense instruction models on mlx-community, newest first.
   local json
@@ -145,10 +152,18 @@ if curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; the
       # RELEASED — conf only changes what clients request; the server keeps every
       # loaded model resident (JetsamEvent 2026-07-16: the 31B's ~30 GB base
       # footprint, not the bounded KV cache, is what drove the system to the
-      # wall). KeepAlive reloads it serving the stepped-down model only.
-      launchctl kickstart -k "gui/$(id -u)/ai.sirsi.gemma" 2>/dev/null \
-        && log "bounced ai.sirsi.gemma to release the oversized model's wired memory" \
-        || log "server bounce skipped (job not managed here)"
+      # wall). Target the SERVER PROCESS itself: ai.sirsi.gemma is a one-shot
+      # ensure-warm LAUNCHER (KeepAlive=false) — kickstarting it does NOT
+      # restart the detached python server (verified live 2026-07-17: the old
+      # server survived a kickstart holding ~31 GB wired). SIGTERM the server,
+      # then re-warm through the RAM-gated launcher (ADR-031 resize, not kill).
+      pkill -TERM -f "gemma-capped-server.py" 2>/dev/null \
+        && log "stopped gemma-capped-server to release the oversized model's wired memory" \
+        || log "no running gemma-capped-server to stop"
+      sleep 3
+      "$HOME/.local/bin/sirsi" gemma serve >/dev/null 2>&1 \
+        && log "re-warmed broker via sirsi gemma serve (RAM-gated)" \
+        || log "re-warm refused/failed — broker's RAM gate will retry on next use"
       sleep 8   # let the reloaded server come up before re-probing
       rate=$(probe_toks "$MODEL")
       log "fallback $MODEL measured ${rate:-unreachable} tok/s"
