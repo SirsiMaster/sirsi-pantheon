@@ -247,12 +247,17 @@ ${body}
 
 Deliverable:" "$model")
   fi
-  local truncated_after_retry=""
+  local truncated_after_retry="" blocked="" blocked_reason=""
   if [ -z "$out" ]; then
-    out="(model returned empty after retry — claude-home should re-scope; Gemma did not refuse, the prompt likely needs more context)"
+    out="(model returned empty after retry — Gemma did not refuse; this task exceeds the local model and is posted to claude-pantheon's board as work-to-do)"
+    blocked="yes"; blocked_reason="the local model produced no usable output (task too hard / needs tools or code the draft path can't build)"
   elif looks_truncated "$out"; then
     truncated_after_retry="yes"
   fi
+  # A flagged (escalation-class) task is ALSO blocked for gemma — it reaches a
+  # binding verdict / tool action gemma cannot perform. Post it as actionable
+  # work, not just a flagged deliverable.
+  [ "$flag_for_review" = "yes" ] && { blocked="yes"; blocked_reason="${blocked_reason:-needs a binding verdict / tool action the review-bind layer must perform}"; }
 
   cat > "$result_file" <<EOF
 COMPLETED by local Gemma worker (zero API tokens, on-device).
@@ -302,6 +307,35 @@ EOF
       --title "gemma deliverable: ${title:-$id}" \
       --instructions "@$result_file" >/dev/null 2>&1) \
       && log "routed reply -> $from for $id" || log "reply-route FAILED $id"
+  fi
+
+  # BLOCKED → post the WORK to the review/bind layer's job board (owner directive
+  # 2026-07-17: "gemma should post work for you into the job board if it's
+  # blocked"). A blocked task is not a finished deliverable — it is work-to-do
+  # that exceeds the local model. Post it to claude-pantheon as an ACTIONABLE
+  # proposal carrying the ORIGINAL task body, so it lands on the board as a real
+  # package, not a dead result buried in a closed item. Skip when the requester
+  # IS claude-pantheon (the normal relay above already put it on that board) or
+  # gemma itself (never self-loop).
+  if [ "$blocked" = "yes" ] && [ "$from" != "claude-pantheon" ] && [ "$from" != "gemma" ]; then
+    local blocked_file; blocked_file=$(mktemp -t gemma-blocked)
+    cat > "$blocked_file" <<EOF
+BLOCKED by gemma — this task exceeds the local model and needs the review/bind layer.
+Reason: ${blocked_reason}
+Original requester: ${from}   ·   Original item: ${id}
+
+--- ORIGINAL TASK (do this) ---
+${body}
+--- END ---
+
+(Posted automatically by the gemma worker so blocked work appears on your board as
+work-to-do, not a dead deliverable. claude-pantheon: complete or re-scope + re-dispatch.)
+EOF
+    (cd "$REPO" && "$SIRSI" router send --from gemma --to claude-pantheon --type proposal \
+      --title "BLOCKED by gemma — needs review/bind: ${title:-$id}" \
+      --instructions "@$blocked_file" >/dev/null 2>&1) \
+      && log "posted BLOCKED work -> claude-pantheon board for $id" || log "blocked-post FAILED $id"
+    rm -f "$blocked_file"
   fi
 
   # Close the original with a short pointer (full deliverable lives in the routed reply).
