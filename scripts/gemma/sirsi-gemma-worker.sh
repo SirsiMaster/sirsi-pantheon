@@ -60,6 +60,15 @@ POLL=${GEMMA_POLL:-30}   # Tier-0 worker cadence: gemma polls FAST (30s) because
                          # decomposed build/draft task within seconds of a thread
                          # routing it. The review/bind layer (claude) loops slower.
 
+# Broker stderr from the LAST gen() call (RCA by claude-nexus, item 20260717).
+# `sirsi gemma` writes its refusal reasons (ADR-031 RAM-guard capacity decline,
+# warm-broker-down) to STDERR; gen() used to swallow it with 2>/dev/null, so a
+# capacity refusal surfaced as a SILENT empty and the worker wrongly advised
+# "re-scope" (which can't fix RAM). Capturing it lets the empty branch tell a
+# genuine empty apart from a capacity refusal and surface the real cause.
+GEN_STDERR=$(mktemp -t gemma-gen-stderr) || GEN_STDERR=/tmp/gemma-gen-stderr.$$
+trap 'rm -f "$GEN_STDERR"' EXIT
+
 mkdir -p "$(dirname "$LOG")"
 [ -x "$MLX" ] || { echo "[$(date -u +%FT%TZ)] ERROR: MLX runtime missing at $MLX" >> "$LOG"; exit 1; }
 
@@ -115,7 +124,7 @@ gen() {
   # harmless idempotent safety net (a no-op on already-clean text) in case a residual
   # scratchpad fragment ever slips through.
   local m="${2:-$DEFAULT_MODEL}"
-  "$SIRSI" gemma --model "$m" --max-tokens "$MAXTOK" <<<"$1" 2>/dev/null \
+  "$SIRSI" gemma --model "$m" --max-tokens "$MAXTOK" <<<"$1" 2>"$GEN_STDERR" \
     | grep -vE "^=+$|^Prompt:|^Generation:|^Peak memory:|^Fetching|<end_of_turn>|<start_of_turn>|^model$" \
     | python3 -c "
 import sys,re
@@ -249,8 +258,23 @@ Deliverable:" "$model")
   fi
   local truncated_after_retry="" blocked="" blocked_reason=""
   if [ -z "$out" ]; then
-    out="(model returned empty after retry — Gemma did not refuse; this task exceeds the local model and is posted to claude-pantheon's board as work-to-do)"
-    blocked="yes"; blocked_reason="the local model produced no usable output (task too hard / needs tools or code the draft path can't build)"
+    blocked="yes"
+    # Distinguish a CAPACITY REFUSAL (ADR-031 RAM guard declined to load the model
+    # rather than OOM the host — its reason is on stderr, captured in $GEN_STDERR)
+    # from a genuine empty. Re-scoping does NOT fix a RAM refusal; the accurate next
+    # action is free RAM / warm the broker with the model resident, then re-queue.
+    # (claude-nexus RCA, item 20260717: gen() used to swallow this with 2>/dev/null.)
+    local broker_reason
+    broker_reason=$(sed $'s/\033\\[[0-9;]*m//g' "$GEN_STDERR" 2>/dev/null \
+      | grep -iE "not enough RAM|Refusing rather than OOM|warm broker|free memory|would not fit|GB short|OOM" \
+      | tail -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "$broker_reason" ]; then
+      out="(Local model could not run this build — the broker REFUSED to load the model: ${broker_reason}. This is a CAPACITY refusal by the RAM guard (ADR-031/A32), not a scoping problem: free memory or start the warm broker (\`sirsi gemma serve\`) with the requested model resident, then re-queue. Gemma did not refuse the task.)"
+      blocked_reason="broker RAM-refused the model load (ADR-031): ${broker_reason} — free RAM / warm the broker, then re-queue"
+    else
+      out="(model returned empty after retry — Gemma did not refuse; this task exceeds the local model and is posted to claude-pantheon's board as work-to-do)"
+      blocked_reason="the local model produced no usable output (task too hard / needs tools or code the draft path can't build)"
+    fi
   elif looks_truncated "$out"; then
     truncated_after_retry="yes"
   fi
