@@ -101,11 +101,19 @@ if [ -z "$MODEL" ]; then
   echo "$FALLBACK" > "$CONF"; log "wrote fallback $FALLBACK"; exit 0
 fi
 
-# Cache check (HF cache dir uses models--org--name)
-cache_dir="$HF_CACHE/models--$(echo "$MODEL" | tr '/' '-' | sed 's/-/--/')"
-# (the tr/sed above is approximate; rely on mlx to no-op if already present)
-echo "$MODEL" > "$CONF"
-log "conf -> $MODEL"
+# Serve what EXISTS: if the chosen model is not on disk yet, conf points at the
+# cached fallback until the background prefetch completes — otherwise the warm
+# server (and every client) blocks on a multi-GB download while the machine has
+# a perfectly good cached model (live gap 2026-07-17: conf named an uncached
+# 12B-mxfp8; the broker restore fell back to serving the 31B instead).
+is_cached() { [ -d "$HF_CACHE/models--$(echo "$1" | sed 's/\//--/')" ]; }
+if ! is_cached "$MODEL" && is_cached "$FALLBACK"; then
+  log "chosen $MODEL not cached yet — conf serves cached $FALLBACK until the prefetch completes"
+  echo "$FALLBACK" > "$CONF"
+else
+  echo "$MODEL" > "$CONF"
+fi
+log "conf -> $(cat "$CONF")"
 
 # Warm/download via huggingface-cli if available (background-safe; mlx will also
 # fetch on first use, but pre-warming avoids a cold first request).
