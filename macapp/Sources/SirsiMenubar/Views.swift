@@ -2027,10 +2027,18 @@ struct ResultView: View {
                 if !r.evidence.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(r.evidence) { f in
-                            HStack {
+                            // Full information, never a clipped tail (owner 2026-07-17:
+                            // "drill-downs don't give enough information") — label and
+                            // value WRAP to show everything, and both are selectable
+                            // so evidence can be copied out of the popover.
+                            HStack(alignment: .firstTextBaseline) {
                                 Text(f.label).font(.caption).foregroundStyle(.secondary)
-                                Spacer()
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 12)
                                 Text(f.value).font(.caption.monospaced())
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
                             }.padding(.vertical, 7)
                             if f.id != r.evidence.last?.id { Divider() }
                         }
@@ -2064,8 +2072,12 @@ struct ResultView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(a.label).font(.system(size: 12, weight: .semibold))
                 if let d = a.description, !d.isEmpty {
+                    // Wrap, never clip mid-sentence — a half-shown consequence is
+                    // worse than a taller button.
                     Text(d).font(.caption2)
                         .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
                 }
             }
             Spacer()

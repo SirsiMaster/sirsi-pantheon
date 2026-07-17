@@ -764,8 +764,8 @@ func runGhostsClean(cmd *cobra.Command, args []string) error {
 		// DRY-RUN (default): show what WOULD move to Trash.
 		res.Summary = fmt.Sprintf("Would move %d ghost remnant(s) to Trash — %s reclaimable. Re-run with --confirm to apply.", len(toTrash), jackal.FormatSize(bytes))
 		for i, r := range toTrash {
-			if i >= 10 {
-				res.AddEvidence("…", fmt.Sprintf("+%d more", len(toTrash)-10))
+			if i >= 50 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more", len(toTrash)-50))
 				break
 			}
 			res.AddEvidence(output.ShortenPath(r.Path), jackal.FormatSize(r.SizeBytes))
