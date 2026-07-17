@@ -47,6 +47,9 @@ func stubDutyRun(t *testing.T, fn func(script, repoRoot string) error) *[]string
 // first run of this suite executed the real reaper before this stub existed).
 func stubSessionReaper(t *testing.T) *int {
 	t.Helper()
+	oldEnum := enumerateProcsFn
+	enumerateProcsFn = func() ([]CensusProc, error) { return nil, nil }
+	t.Cleanup(func() { enumerateProcsFn = oldEnum })
 	runs := 0
 	orig := getSessionReaperImpl()
 	setSessionReaperImpl(func(routerRoot, repoRoot string) error { runs++; return nil })
@@ -65,8 +68,8 @@ func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	now := time.Now()
 
 	first := runSupervisorDuties(routerRoot, repoRoot, now)
-	if len(first) != 5 {
-		t.Fatalf("first pass duties = %d, want 5 (3 scripts + native auto-heal + session-reaper)", len(first))
+	if len(first) != 6 {
+		t.Fatalf("first pass duties = %d, want 6 (3 scripts + native auto-heal + census + session-reaper)", len(first))
 	}
 	for _, d := range first {
 		if !d.Ran || d.Skipped != "" || d.Error != "" {
@@ -157,7 +160,7 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 		t.Fatalf("no script should run when none exist: %v", *calls)
 	}
 	for _, d := range results {
-		if d.Name == "session-reaper" || d.Name == "auto-heal" {
+		if d.Name == "session-reaper" || d.Name == "auto-heal" || d.Name == "thread-census" {
 			// Native duties: no script to be missing — they run (auto-heal is an
 			// inert no-op until cmd/sirsi injects the real pass).
 			if !d.Ran || d.Skipped != "" {
@@ -195,8 +198,8 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Duties) != 5 {
-		t.Fatalf("report.Duties = %d, want 5: %+v", len(report.Duties), report.Duties)
+	if len(report.Duties) != 6 {
+		t.Fatalf("report.Duties = %d, want 6: %+v", len(report.Duties), report.Duties)
 	}
 	if len(*calls) != 3 {
 		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)

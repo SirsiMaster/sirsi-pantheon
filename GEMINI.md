@@ -32,6 +32,9 @@ An open-source CLI tool that scans, judges, and purges infrastructure waste acro
 - **CLI Binary**: `sirsi`
 - **Agent Binary**: `sirsi-agent`
 
+### Platform Roadmap (ADR-032 — Mac-first)
+Pantheon is **100% Mac**, built in this exact order: **(1) Mac CLI → (2) Mac Menubar → (3) Mac TUI → (4) Mac desktop GUI** (built FROM the menubar). Windows/Linux are **deferred 3–6 months**, revisited only on demand once all four Mac surfaces are engineered, working, AND selling. CI builds Mac-only (PR #64); off-strategy jobs (Windows installer, Android/iOS) are gated off, not deleted. See `docs/ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md`.
+
 **This repo is NOT SirsiNexusApp. This repo is NOT FinalWishes. This repo is NOT Assiduous.**
 Rules, design tokens, and business logic from other repositories do NOT apply here unless explicitly inherited through Universal Rules (§1).
 
@@ -180,9 +183,10 @@ When context health is 🟡 or 🔴, the agent MUST proactively:
 
 ### 2.7 Terminal UI Fidelity (Rule A10)
 > Adapted from FinalWishes Rule 27 (design fidelity). Applied to terminal output.
+> **v2 (2026-07-13, ADR-038):** the palette is **emerald + gold** and lives in ONE place — `internal/brand`. Green is Sirsi's; green + gold are Pantheon's. Every surface (CLI, TUI, dashboard, menubar, Swift app, Nexus) derives from `internal/brand` — Go surfaces import it, others via `sirsi brand tokens --format css|swift|json`. No surface hardcodes a hex. Emerald leads (identity / healthy / interactive); gold is the second accent (owner-action, the 𓂀 glyph). The gold-primary + lapis palette below is superseded.
 
-All terminal output MUST use the Anubis brand language:
-*   **Colors**: Gold (`#C8A951`) for highlights, White for body text, Red for errors, Green for success. No raw unstylized output in interactive mode.
+All terminal output MUST use the Pantheon brand language (`internal/brand`, ADR-038):
+*   **Colors**: **Emerald** (`#2bd29b`) for identity/healthy/interactive, **Gold** (`#cdad5a`) for owner-action highlights, White/Ink for body text, Red for errors, Amber for warnings. Resolve tokens from `internal/brand`, never a literal. No raw unstylized output in interactive mode.
 *   **Rendering**: Uses `lipgloss` for styled output and `table` for tabular data.
 *   **Headers**: 𓃣 glyph prefix for section headers.
 *   **Progress**: Spinner or progress bar for operations > 2 seconds.
@@ -413,23 +417,57 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Brand invariant** (with A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity ("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which local model serves Tier 0.
 *   **Reference**: canonical law `~/Development/AGENTS.md`; enforced by A29 (Orchestration Brain) + `docs/prd/ORCHESTRATION_BRAIN.md` default routing table. Custodian: 𓁟 the Brain (routing) + 𓆄 Ma'at (governance).
 
+### 2.28 CTR — Check The Router, the universal wake primitive (Rule A31)
+> Established July 13, 2026 by owner directive, after background wake (monitors, arming, watchers, launchd daemons) repeatedly failed to keep threads consuming their inboxes — a level-triggered daemon that dies silently strands every item addressed to it. Custodian: 𓁢 the Router.
+
+*   **Rule**: `ctr` ("Check The Router") is the canonical **on-demand** wake primitive. It is ONE synchronous router pass — surface every open inbox item, then wake the agents that have work waiting but no live watcher — with **no daemon to keep alive**. The trigger moves to events that already happen (a human typing, a hook, a git commit, a cron, another agent), which is why it works where resident processes have not.
+*   **One primitive, three call sites** (all thin adapters over the same Go verb, so they can never diverge): **`ctr`** (a PATH shim, any shell / IDE terminal, mac/linux/windows, headless or resident) · **`/ctr`** (a Claude Code skill, known to every session in every repo) · **`sirsi ctr`** (the cross-platform source of truth). Both a human and a process may call it; `sirsi ctr --json` is the machine contract.
+*   **Wrap, don't rebuild (Rule 0)**: `sirsi ctr` orchestrates the EXISTING substrate — `router.CollectNodeStatus` (pending + stranded truth) and `router.WakePass` (wake-or-declare-unavailable). It MUST NOT reimplement wake logic. Honest boundary (A29): a fully-closed interactive session cannot be resurrected locally → reported **"needs-owner"**, stated not faked; heartbeat-fresh ≠ consuming, and CTR says so.
+*   **Local model first (A30 Tier-0)**: `ctr --reconcile` hands the open items to the on-device model to RECEIVE and RECONCILE (triage into TIER0/1/2) BEFORE anything escalates to a cloud thread — threads work through the local model first. The reconciliation is a Tier-0 **screen, never a binding verdict**; it runs warm-broker-only (never cold-loads a multi-GB model) and is time-bounded so a plain `ctr` stays a fast wake primitive. User-facing name is **"Ask Sirsi"**, never the model id (A25 brand-over-model-name).
+*   **Ubiquity is mandatory**: `sirsi setup` wires the shim + skill on every machine (present and future). `sirsi ctr --install` re-wires idempotently. The user-global skill (`~/.claude/skills/ctr`) makes `/ctr` known to every agent/thread; canon here + `~/Development/AGENTS.md` make it known to every repo. Like `/thoth`, it is a first-class shippable Pantheon command.
+*   **Reference**: `cmd/sirsi/ctr.go` + `cmd/sirsi/ctrinstall.go`; skill `.claude/skills/ctr/SKILL.md`; substrate `internal/router/{wake.go,strand.go,nodestatus.go}`. Custodian: 𓁢 the Router.
+
+### 2.29 Do No Harm To The Running Host — Load-Bearing Recognition (Rule A32)
+> Established July 14, 2026 by owner directive, after an agent nearly killed the process holding 25.8 GB to "reclaim RAM" — which was the local-model **broker itself** (`sirsi gemma serve`, running as `Python`). Resized instead of killed, but it exposed that Pantheon's own governor treated the Tier-0 substrate as expendable. Custodian: 𓁢 the Broker (Hapi 🌊). Decision: ADR-040. Extends A1 (Safety First) + A5 (VRAM/GPU Safety) to the host Pantheon runs ON.
+
+*   **Rule**: While the system is working, an agent — or the continuous loop, or any Pantheon governor — MUST NOT kill or starve **load-bearing Pantheon infrastructure**. The canonical load-bearing service is the local-model broker (the Tier-0 substrate the router, the reconcile, and gemma-the-builder all depend on); more may be added. Breaking the host to do the work is a governance failure.
+*   **Recognition by pidfile, not name**: `internal/guard.LoadBearingPIDs()` / `IsLoadBearing(pid)` reads the infra pidfiles (`~/.sirsi/gemma-server.pid`, `gemma-worker.pid`), excludes dead PIDs (a stale pidfile never protects a reused PID — the PID-alive lesson), and is the single authority every kill/suspend path consults. The broker runs as `Python`, so name-based protection (A24 ProtectGlyph, `isProtectedReniceTarget`) misses it — recognition MUST be by PID. `FindRunaway` never selects a load-bearing PID even as top RSS.
+*   **Right-size over kill**: the correct response to an oversized Tier-0 model (a 25 GB 12B where a 2 GB 3B belongs) is to **right-size** it (`~/.sirsi/gemma-model.conf` → a smaller model; `sirsi gemma serve --stop && sirsi gemma serve`), reclaiming the RAM while keeping the builder. Killing the broker is an absolute last resort at true emergency (imminent Jetsam) — never a routine reclaim, and **never something an agent does mid-work**. Verify the full argv before signalling any hog (`ps -p <pid>`); "biggest RSS" is not "kill me".
+*   **Gemma-the-builder is bound the same**: when the local model does build/triage work, its instructions carry this constraint — do not kill or starve Pantheon infrastructure; resize/reconfigure, never SIGKILL a serving process. Gemma must not break Pantheon while working.
+*   **Fix-don't-narrate corollary** (from the same incident): a blocker an agent has DIAGNOSED and CAN fix within remit gets FIXED on sight, never narrated back to the owner as a standing constraint (a RAM starvation reported three times but never fixed is the anti-pattern).
+*   **Reference**: `internal/guard/loadbearing.go` (+ `hapi.go` FindRunaway); ADR-040. Custodian: 𓁢 Hapi.
+
+
+### 2.29 Universal Thread Census & Work Board Overseer (Rule A32)
+> Established July 17, 2026 by owner directive, after the on-device model broker — a GPU process holding ~30 GB of wired Metal memory — drove two system-wide jetsam incidents while registered in NO registry: no board, reaper, or overseer could see, govern, or resize it. Co-implemented claude-pantheon (census primitive) ↔ claude-home (overseer duties). Custodian: 𓂀 Horus (visibility) + 𓁢 the Router (registry).
+
+*   **The invariant**: **every non-system agent-class process on every surface — CPU and GPU — exists as a registered thread, with no misses, current and future.** A process the registry cannot see is a process nothing can govern. This completes A27 (registration means alive-and-watching) and A29's Registry/Wake invariant (see-and-wake every thread) with the missing third leg: *discover-and-register every process*.
+*   **Two complementary reconcilers, one contract**: `sirsi thread discover` maps INTERACTIVE sessions (claude/codex/… by repo cwd, never guessing); the **Universal Thread Census** (`sirsi thread census`; `internal/router/census.go`) maps INFRASTRUCTURE processes with no repo binding — model brokers/servers (surface `gpu-server`), workers, supervisors — via the `censusMatchers` table. The census runs as a supervisor duty (10-min cadence), so any future process is caught within one cadence of first launch. It REGISTERS, never kills — governance stays with the reaper (ADR-022) and the resource broker (ADR-031).
+*   **Extensibility = no misses for FUTURE threads**: every new agent-class service MUST ship its `censusMatchers` row in the same change that introduces the process. A service reachable only by `ps` archaeology is a governance failure under Ma'at.
+*   **The Work Board** (`sirsi router workboard [--json]`, `internal/router/workboard.go`): every agent's work packages (title/sender/age), peers (live agents + surfaces — idle live agents included), and pace (closed today/7d, avg open→close turnaround, per agent + fabric-wide). Computed on read from the items corpus + thread registry; stored nowhere.
+*   **Overseer role — claude-home/Horus**: the router conduit (claude-home) is the Work Board OVERSEER: its scheduled sweeps read the board, verify the census invariant (zero unregistered agent-class processes), escalate misses as router items, and publish board state to the ambient surfaces. Pantheon owns the primitives; the overseer owns the watching. An overseer sweep that cannot run leaves the supervisor duty as the machine-local backstop — two independent legs, no single point of blindness.
+*   **Reference**: `internal/router/census.go` + `workboard.go`; `sirsi thread census`, `sirsi router workboard`; supervisor duties `thread-census` + the board consumers. Refs: A27, A29, ADR-022, ADR-031.
+
+
 ---
 
 ## 3. Technology Stack
 
+> **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
+
 | Layer | Technology | Decision |
 | :--- | :--- | :--- |
-| **Language** | **Go 1.22+** | Single static binary, cross-compile, contributor-friendly |
+| **Language** | **Go 1.22+** | Single static binary; cross-compile *capable* but **Mac-targeted today** (ADR-032), contributor-friendly |
 | **CLI Framework** | **cobra** | Subcommands, auto-complete, help generation |
 | **Terminal UI** | **lipgloss + table** (charmbracelet) | Styled CLI output (tables, headers, progress) for v0.23. New Mole-grade TUI follows under ADR-020 / Hybrid C. |
-| **Interactive Surface** | **New Mole-grade TUI** (in design) first on macOS/Windows/Linux + CLI on all platforms; native macOS SwiftUI as a later-phase polish-bar upgrade | v0.22 BubbleTea TUI implementation removed in v0.23 per ADR-018; surface direction reopened and closed as Hybrid C per ADR-020 (2026-05-29). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
+| **Interactive Surface** | **Mac-first surface ladder (ADR-032): CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar); native macOS SwiftUI is the GUI path | v0.22 BubbleTea TUI removed in v0.23 per ADR-018; surface direction closed as Hybrid C per ADR-020 (2026-05-29). Mac-only build targets per ADR-032 (Windows/Linux TUI deferred). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
 | **Agent Protocol** | **gRPC** (fallback: SSH+JSON) | Streaming results, bidirectional |
-| **Config** | **viper** (YAML) | User-defined rules, profiles, budgets |
+| **Config** | **yaml.v3** (structured YAML) | User-defined rules, profiles, budgets. (viper was listed aspirationally but never adopted — every config consumer uses gopkg.in/yaml.v3; ADR-034 Alt 5) |
 | **Network Discovery** | **nmap** wrapper + native ARP/mDNS | Subnet/VLAN host discovery |
 | **Docker** | **docker/client** SDK | Native Docker API |
 | **Kubernetes** | **client-go** | Native K8s API |
 | **SSH** | **golang.org/x/crypto/ssh** | Native Go SSH client |
-| **Build** | **goreleaser** | Multi-platform binary releases |
+| **Build** | **goreleaser** | Mac binary releases today (darwin arm64/amd64); multi-platform deferred per ADR-032 |
 | **CI/CD** | **GitHub Actions** | Build, test, release |
 | **Distribution** | **Homebrew tap** + GitHub Releases | `brew install sirsi-pantheon` |
 

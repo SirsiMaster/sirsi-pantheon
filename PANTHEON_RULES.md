@@ -419,6 +419,18 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Fix-don't-narrate corollary** (from the same incident): a blocker an agent has DIAGNOSED and CAN fix within remit gets FIXED on sight, never narrated back to the owner as a standing constraint (a RAM starvation reported three times but never fixed is the anti-pattern).
 *   **Reference**: `internal/guard/loadbearing.go` (+ `hapi.go` FindRunaway); ADR-040. Custodian: 𓁢 Hapi.
 
+
+### 2.29 Universal Thread Census & Work Board Overseer (Rule A32)
+> Established July 17, 2026 by owner directive, after the on-device model broker — a GPU process holding ~30 GB of wired Metal memory — drove two system-wide jetsam incidents while registered in NO registry: no board, reaper, or overseer could see, govern, or resize it. Co-implemented claude-pantheon (census primitive) ↔ claude-home (overseer duties). Custodian: 𓂀 Horus (visibility) + 𓁢 the Router (registry).
+
+*   **The invariant**: **every non-system agent-class process on every surface — CPU and GPU — exists as a registered thread, with no misses, current and future.** A process the registry cannot see is a process nothing can govern. This completes A27 (registration means alive-and-watching) and A29's Registry/Wake invariant (see-and-wake every thread) with the missing third leg: *discover-and-register every process*.
+*   **Two complementary reconcilers, one contract**: `sirsi thread discover` maps INTERACTIVE sessions (claude/codex/… by repo cwd, never guessing); the **Universal Thread Census** (`sirsi thread census`; `internal/router/census.go`) maps INFRASTRUCTURE processes with no repo binding — model brokers/servers (surface `gpu-server`), workers, supervisors — via the `censusMatchers` table. The census runs as a supervisor duty (10-min cadence), so any future process is caught within one cadence of first launch. It REGISTERS, never kills — governance stays with the reaper (ADR-022) and the resource broker (ADR-031).
+*   **Extensibility = no misses for FUTURE threads**: every new agent-class service MUST ship its `censusMatchers` row in the same change that introduces the process. A service reachable only by `ps` archaeology is a governance failure under Ma'at.
+*   **The Work Board** (`sirsi router workboard [--json]`, `internal/router/workboard.go`): every agent's work packages (title/sender/age), peers (live agents + surfaces — idle live agents included), and pace (closed today/7d, avg open→close turnaround, per agent + fabric-wide). Computed on read from the items corpus + thread registry; stored nowhere.
+*   **Overseer role — claude-home/Horus**: the router conduit (claude-home) is the Work Board OVERSEER: its scheduled sweeps read the board, verify the census invariant (zero unregistered agent-class processes), escalate misses as router items, and publish board state to the ambient surfaces. Pantheon owns the primitives; the overseer owns the watching. An overseer sweep that cannot run leaves the supervisor duty as the machine-local backstop — two independent legs, no single point of blindness.
+*   **Reference**: `internal/router/census.go` + `workboard.go`; `sirsi thread census`, `sirsi router workboard`; supervisor duties `thread-census` + the board consumers. Refs: A27, A29, ADR-022, ADR-031.
+
+
 ---
 
 ## 3. Technology Stack
