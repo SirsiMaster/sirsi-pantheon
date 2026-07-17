@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -203,5 +204,17 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	}
 	if len(*calls) != 3 {
 		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)
+	}
+	// The full work board is broadcast on every pass and persisted to board.json
+	// (owner directive 2026-07-17) — every thread reads the same file.
+	if report.WorkBoard == nil {
+		t.Fatal("report.WorkBoard is nil — the board must broadcast every pass")
+	}
+	raw, err := os.ReadFile(filepath.Join(routerRoot, BoardFileName))
+	if err != nil {
+		t.Fatalf("board.json not written: %v", err)
+	}
+	if !strings.Contains(string(raw), "\"work_board\"") {
+		t.Fatal("board.json missing the broadcast work_board block")
 	}
 }

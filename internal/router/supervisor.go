@@ -78,6 +78,13 @@ type SuperviseReport struct {
 	// Duties are the folded single-backstop passes (dispatch pump, sweep,
 	// registry police) this tick ran, skipped, or failed — see supervisorduties.go.
 	Duties []DutyResult `json:"duties,omitempty"`
+	// WorkBoard is the full board — every agent's packages, peers, and PACE
+	// (closed today/7d, turnaround) — recomputed and BROADCAST every pass into
+	// board.json (owner directive 2026-07-17: "the job board should be
+	// broadcast through the router to all threads"). Every thread that reads
+	// board.json (menubar, TUI, wake-loops, CTR) sees the same board without
+	// re-aggregating. A compute error leaves it nil — the pass never fails on it.
+	WorkBoard *WorkBoard `json:"work_board,omitempty"`
 }
 
 type AgentSurfaceStatus struct {
@@ -271,6 +278,11 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		StaleThreadCount: staleCount,
 		Agents:           agents,
 		Duties:           duties,
+	}
+	// Broadcast the full work board on every pass (best-effort — never fail the
+	// tick if the corpus is briefly unreadable).
+	if wb, wberr := ComputeWorkBoard(routerRoot); wberr == nil {
+		report.WorkBoard = wb
 	}
 
 	// Persist the board for thin renderers (menubar, TUI, Swift app, dashboard)
