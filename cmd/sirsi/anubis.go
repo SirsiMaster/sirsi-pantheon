@@ -17,6 +17,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mirror"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
@@ -1170,6 +1171,25 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
 		}
 		report.Findings = append(report.Findings, f)
+	}
+
+	// Liveness-watch lever (A32 durability): the launchd safety net must be
+	// installed so the gemma/menubar/memory-death watch survives a reboot with no
+	// Claude app. Not-installed is a Warn with an instant fix; installed is OK.
+	{
+		lw := guard.DiagnosticFinding{
+			Check:    "liveness-watch",
+			Severity: guard.SeverityOK,
+			Message:  "launchd liveness watch installed",
+		}
+		if !liveness.Installed() {
+			lw.Severity = guard.SeverityWarn
+			lw.Message = "launchd liveness watch not installed"
+			lw.Detail = "the OS-level gemma/menubar/memory-death safety net is absent — a reboot without the Claude app leaves the load-bearing surfaces unwatched"
+			lw.Fix = "sirsi liveness-watch install"
+			lw.FixKind = guard.FixInstant
+		}
+		report.Findings = append(report.Findings, lw)
 	}
 
 	if JsonOutput {

@@ -77,6 +77,36 @@ func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, f)
 }
 
+// MemoryDeath is a one-shot read of the memory-death signals, for consumers
+// outside the doctor render path (the launchd liveness watch). It mirrors the
+// exact spiral ladder in checkMemoryDeathSpiral so both surfaces agree on what
+// "dying" means — one definition, two callers.
+type MemoryDeath struct {
+	SwapPct    float64
+	SwapUsedGB float64
+	FreeGB     float64
+	Load1      float64
+	Cores      int
+	Readable   bool // false when no signal is readable on this platform (never guess)
+	Dying      bool // the live-critical spiral: swap ≥ 90% AND (load ≥ 2×cores OR free < 0.5 GB)
+}
+
+// SampleMemoryDeath reads swap%, free RAM, and load in one pass and classifies
+// the spiral condition. Read-only; safe to call from a launchd probe.
+func SampleMemoryDeath() MemoryDeath {
+	p := platform.Current()
+	load1, loadOK := readLoad1(p)
+	cores := readCores(p)
+	swapPct, swapUsedGB, swapOK := readSwapPct(p)
+	freeGB, _ := readVMStatGB(p)
+	md := MemoryDeath{
+		SwapPct: swapPct, SwapUsedGB: swapUsedGB, FreeGB: freeGB,
+		Load1: load1, Cores: cores, Readable: loadOK || swapOK,
+	}
+	md.Dying = swapPct >= 90 && (load1 >= 2*float64(cores) || freeGB < 0.5)
+	return md
+}
+
 // readLoad1 parses `sysctl -n vm.loadavg` ("{ 31.80 29.00 22.10 }").
 func readLoad1(p platform.Platform) (float64, bool) {
 	out, err := p.Command("sysctl", "-n", "vm.loadavg")
