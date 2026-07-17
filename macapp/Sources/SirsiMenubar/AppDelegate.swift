@@ -113,13 +113,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A TCC-denied open() is what puts an app in that list (see Views.swift).
         registerForFullDiskAccess()
 
+        // Claim a RIGHT-side menu-bar slot from the first launch (owner reports
+        // 2026-07-17): macOS hides the LEFTMOST status items when the bar fills,
+        // and a newly-created item spawns leftmost — so the Eye (recreated on
+        // every app relaunch) was perpetually first to vanish behind Outlook's
+        // transient notification item. A Cmd-drag anchor doesn't work against a
+        // transient neighbor, so seed the position PROGRAMMATICALLY: macOS reads
+        // the item's saved slot from the "NSStatusItem Preferred Position
+        // <autosaveName>" default (points from the RIGHT edge of the status
+        // area) BEFORE placing it. Seeding a small value pins the Eye next to
+        // the system items — right of every transient third-party icon — and is
+        // written only when absent, so the owner's own drag always wins after.
+        let posKey = "NSStatusItem Preferred Position ai.sirsi.pantheon.eye"
+        if UserDefaults.standard.object(forKey: posKey) == nil {
+            UserDefaults.standard.set(120.0, forKey: posKey)
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // Persist the item's menu-bar POSITION across launches (owner report
-        // 2026-07-17: the Eye gets hidden when Outlook's transient status items
-        // appear — macOS hides whatever sits leftmost when space runs out, and
-        // a freshly-launched item starts leftmost). With a stable autosaveName,
-        // one Cmd-drag to the right of the crowd sticks forever; without it,
-        // every relaunch resets the position and the Eye is first to vanish.
         statusItem.autosaveName = "ai.sirsi.pantheon.eye"
         statusItem.isVisible = true
         if let button = statusItem.button {
