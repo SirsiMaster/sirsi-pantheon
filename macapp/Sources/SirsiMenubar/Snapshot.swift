@@ -44,6 +44,13 @@ func runSnapshotMode(outDir: String) {
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
         await engine.diagnose()
         engine.refresh()
+        // Self-loading screens draw from ENGINE state — load it here so the
+        // harness renders their REAL content, not an eternal loading shell.
+        await engine.loadRouterBoard()
+        await engine.loadThreads()
+        await engine.fetchAutonomous()
+        let insightRaw = await SirsiEngine.run(args: ["insight", "--json", "--no-ai"], stdin: nil)
+        let insight = InsightView.decode(insightRaw)
 
         // EVERY top-level drill-in renders here — a screen the harness doesn't
         // draw is a screen that can ship broken past a "walked" sign-off (the
@@ -51,7 +58,7 @@ func runSnapshotMode(outDir: String) {
         // loading shell; ResultViews get real preloaded output.
         let shots: [(name: String, view: AnyView)] = [
             ("home", AnyView(RootView(engine: engine))),
-            ("insight", AnyView(InsightView(engine: engine))),
+            ("insight", AnyView(InsightView(engine: engine, preloaded: insight))),
             ("anubis-hygiene", AnyView(AnubisView(engine: engine))),
             ("horus-ops", AnyView(HorusView(engine: engine))),
             ("maat-quality", AnyView(ResultView(engine: engine, title: "Ma'at — Quality",
