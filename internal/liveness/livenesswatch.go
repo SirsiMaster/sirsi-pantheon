@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -207,32 +208,38 @@ func hasOpen(root, agent, title string) bool {
 	return false
 }
 
-// probeGemma runs a REAL chat completion against the warm broker. Health lies
-// (the /v1/models 200 while content is empty condition, 2026-07-17), so this
-// generates and inspects the answer. Wedged = no port / connect error / non-200
-// / empty content / slower than probeTimeout.
-func probeGemma(home string) Finding {
-	f := Finding{Check: "gemma-broker", Fixable: true,
-		Title: "liveness-watch: gemma broker wedged",
-		Body: "The launchd liveness watch generated against the warm gemma broker and it did not answer " +
-			"(no port, connection error, non-200, empty content, or >30s). The broker is the Tier-0 substrate " +
-			"the router/reconcile/gemma-builder depend on. Fix (load-bearing-safe, A32/ADR-040): right-size, " +
-			"don't SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve` (verify free RAM fits the model first). " +
-			"Verify with: curl -s -m40 $(cat ~/.sirsi/gemma-server.port | xargs -I{} echo http://127.0.0.1:{})/v1/chat/completions."}
+// GemmaStatus classifies the broker's liveness for consumers that need to ACT on
+// it (the router's self-healing gemma-liveness duty), not just alert.
+type GemmaStatus int
 
+const (
+	// GemmaHealthy — answered a real generation.
+	GemmaHealthy GemmaStatus = iota
+	// GemmaDown — nothing is serving: no port file, or the connection is refused.
+	// The correct restore is to START the broker.
+	GemmaDown
+	// GemmaWedged — the port responds but the broker is not generating (non-200,
+	// empty content, or slower than probeTimeout). "Health lies" — /v1/models can
+	// return 200 while completions return nothing (2026-07-17). The correct restore
+	// is a GRACEFUL restart (stop + start), never a SIGKILL (A32/ADR-040).
+	GemmaWedged
+)
+
+// ProbeGemmaState runs ONE real chat completion against the warm broker and
+// classifies the result. Health lies, so it generates and inspects the answer
+// rather than trusting a 200. Read-only. Shared by the read-only liveness watch
+// (probeGemma) and the router's self-healing duty so both agree on "wedged".
+func ProbeGemmaState(home string) (GemmaStatus, string) {
 	portRaw, err := os.ReadFile(filepath.Join(home, ".sirsi/gemma-server.port"))
 	if err != nil {
-		f.Detail = "no port file (broker not running)"
-		return f
+		return GemmaDown, "no port file (broker not running)"
 	}
 	port, err := strconv.Atoi(strings.TrimSpace(string(portRaw)))
 	if err != nil || port == 0 {
-		f.Detail = "port file unreadable"
-		return f
+		return GemmaDown, "port file unreadable"
 	}
-	model := resolveModel(home)
 	body, _ := json.Marshal(map[string]any{
-		"model":       model,
+		"model":       resolveModel(home),
 		"messages":    []map[string]string{{"role": "user", "content": "Reply with the single word: OK"}},
 		"max_tokens":  128, // reasoning model burns budget thinking; too-low a cap yields empty content
 		"temperature": 0,
@@ -241,13 +248,16 @@ func probeGemma(home string) Finding {
 	cl := &http.Client{Timeout: probeTimeout}
 	resp, err := cl.Post(fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port), "application/json", bytes.NewReader(body))
 	if err != nil {
-		f.Detail = fmt.Sprintf("no answer in %s (%v)", time.Since(start).Round(time.Second), err)
-		return f
+		// A timeout means the server is there but hung (wedged); anything else
+		// (connection refused, no listener) means nothing is serving (down).
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			return GemmaWedged, fmt.Sprintf("no answer in %s (timed out — up but hung)", time.Since(start).Round(time.Second))
+		}
+		return GemmaDown, fmt.Sprintf("connection failed in %s (%v)", time.Since(start).Round(time.Second), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		f.Detail = fmt.Sprintf("HTTP %d", resp.StatusCode)
-		return f
+		return GemmaWedged, fmt.Sprintf("HTTP %d (up but erroring)", resp.StatusCode)
 	}
 	var out struct {
 		Choices []struct {
@@ -257,15 +267,26 @@ func probeGemma(home string) Finding {
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		f.Detail = "unparseable response"
-		return f
+		return GemmaWedged, "unparseable response (up but not generating)"
 	}
 	if len(out.Choices) == 0 || strings.TrimSpace(out.Choices[0].Message.Content) == "" {
-		f.Detail = fmt.Sprintf("empty content after %s (broker up but not generating)", time.Since(start).Round(time.Second))
-		return f
+		return GemmaWedged, fmt.Sprintf("empty content after %s (up but not generating)", time.Since(start).Round(time.Second))
 	}
-	f.OK = true
-	f.Detail = fmt.Sprintf("answered in %s", time.Since(start).Round(time.Second))
+	return GemmaHealthy, fmt.Sprintf("answered in %s", time.Since(start).Round(time.Second))
+}
+
+// probeGemma is the read-only liveness-watch wrapper over ProbeGemmaState.
+func probeGemma(home string) Finding {
+	f := Finding{Check: "gemma-broker", Fixable: true,
+		Title: "liveness-watch: gemma broker wedged",
+		Body: "The launchd liveness watch generated against the warm gemma broker and it did not answer " +
+			"(no port, connection error, non-200, empty content, or >30s). The broker is the Tier-0 substrate " +
+			"the router/reconcile/gemma-builder depend on. The router's gemma-liveness duty auto-restores it " +
+			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
+			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
+	status, detail := ProbeGemmaState(home)
+	f.OK = status == GemmaHealthy
+	f.Detail = detail
 	return f
 }
 

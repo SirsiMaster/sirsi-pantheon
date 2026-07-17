@@ -81,6 +81,14 @@ func supervisorDuties() []SupervisorDuty {
 		// including GPU servers — becomes a registered thread, no misses;
 		// a future process is caught within one cadence of first launch.
 		{Name: "thread-census", GoRun: RunCensusDuty, Cadence: 10 * time.Minute},
+		// Gemma liveness (A32, owner directive 2026-07-17): the local LLM must
+		// survive on Pantheon's survival, not the IDE. This resident supervisor
+		// (always-on, IDE-independent) probes the broker and RESTORES it — the
+		// `ai.sirsi.gemma` LaunchAgent only starts it at boot. 2-min cadence
+		// because gemma is the Tier-0 substrate everything depends on.
+		{Name: "gemma-liveness", GoRun: func(routerRoot, repoRoot string) error {
+			return getGemmaLivenessFn()(routerRoot, repoRoot)
+		}, Cadence: 2 * time.Minute},
 		// Session reaper (2026-07-08 wakeup-leak RCA): native Go — it needs
 		// process grouping + SIGTERM, not a shell subroutine. See sessionreaper.go.
 		{Name: "session-reaper", GoRun: runSessionReaperDuty, Cadence: 10 * time.Minute},
