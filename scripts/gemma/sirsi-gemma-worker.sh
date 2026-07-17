@@ -57,6 +57,13 @@ MAXTOK=${GEMMA_MAXTOK:-8192}   # was 512 → truncated builds. gemma-4 is a REAS
                                # needs generous headroom to reach the final answer. Tunable via env.
 POLL=${GEMMA_POLL:-60}
 
+# Broker stderr from the LAST gen() call. gen() routes through `sirsi gemma`, which
+# writes its refusal reasons (RAM-guard capacity decline, warm-broker-down, etc.) to
+# STDERR. Capturing it here lets the empty-handling branch tell a genuine empty answer
+# apart from a capacity REFUSAL and surface the actual cause instead of a silent empty.
+GEN_STDERR=$(mktemp -t gemma-gen-stderr) || GEN_STDERR=/tmp/gemma-gen-stderr.$$
+trap 'rm -f "$GEN_STDERR"' EXIT
+
 mkdir -p "$(dirname "$LOG")"
 [ -x "$MLX" ] || { echo "[$(date -u +%FT%TZ)] ERROR: MLX runtime missing at $MLX" >> "$LOG"; exit 1; }
 
@@ -112,7 +119,7 @@ gen() {
   # harmless idempotent safety net (a no-op on already-clean text) in case a residual
   # scratchpad fragment ever slips through.
   local m="${2:-$DEFAULT_MODEL}"
-  "$SIRSI" gemma --model "$m" --max-tokens "$MAXTOK" <<<"$1" 2>/dev/null \
+  "$SIRSI" gemma --model "$m" --max-tokens "$MAXTOK" <<<"$1" 2>"$GEN_STDERR" \
     | grep -vE "^=+$|^Prompt:|^Generation:|^Peak memory:|^Fetching|<end_of_turn>|<start_of_turn>|^model$" \
     | python3 -c "
 import sys,re
@@ -246,7 +253,24 @@ Deliverable:" "$model")
   fi
   local truncated_after_retry=""
   if [ -z "$out" ]; then
-    out="(model returned empty after retry — claude-home should re-scope; Gemma did not refuse, the prompt likely needs more context)"
+    # gen() returned nothing after retry. Distinguish two very different causes so the
+    # deliverable carries the RIGHT next action, not a misleading "re-scope":
+    #   (a) CAPACITY REFUSAL — `sirsi gemma`'s RAM guard (ADR-031) declined to load the
+    #       model rather than OOM the host. Correct + expected under memory pressure; its
+    #       reason lands on stderr (captured in $GEN_STDERR). Re-scoping the prompt does
+    #       NOT help — the fix is to free RAM / start the warm broker with the model
+    #       resident, then re-queue. Surfacing this is the A32 "fix-don't-narrate as a
+    #       silent empty" corollary: a RAM blocker must be visible, not swallowed.
+    #   (b) genuine empty — the model reached no final answer for prompt reasons.
+    local broker_reason
+    broker_reason=$(sed $'s/\033\\[[0-9;]*m//g' "$GEN_STDERR" 2>/dev/null \
+      | grep -iE "not enough RAM|Refusing rather than OOM|warm broker|free memory|would not fit|N GB short|OOM" \
+      | tail -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "$broker_reason" ]; then
+      out="(Local model could not run this build — the broker refused to load the model: ${broker_reason}. This is a CAPACITY refusal by the RAM guard (ADR-031/A32), not a scoping problem: free memory or start the warm broker (\`sirsi gemma serve\`) with the requested model resident, then re-queue this item. Gemma did not refuse the task.)"
+    else
+      out="(model returned empty after retry — claude-home should re-scope; Gemma did not refuse, the prompt likely needs more context)"
+    fi
   elif looks_truncated "$out"; then
     truncated_after_retry="yes"
   fi
