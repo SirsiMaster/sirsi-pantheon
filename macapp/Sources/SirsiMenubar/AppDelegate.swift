@@ -114,6 +114,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerForFullDiskAccess()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Persist the item's menu-bar POSITION across launches (owner report
+        // 2026-07-17: the Eye gets hidden when Outlook's transient status items
+        // appear — macOS hides whatever sits leftmost when space runs out, and
+        // a freshly-launched item starts leftmost). With a stable autosaveName,
+        // one Cmd-drag to the right of the crowd sticks forever; without it,
+        // every relaunch resets the position and the Eye is first to vanish.
+        statusItem.autosaveName = "ai.sirsi.pantheon.eye"
+        statusItem.isVisible = true
         if let button = statusItem.button {
             // Branded mark: the Eye of Horus (the watchful protector), drawn in
             // code in the health colour (makeEye), NOT a template image. Healthy

@@ -287,11 +287,11 @@ var seshatListCmd = &cobra.Command{
 					break
 				}
 			}
-			if i >= 10 {
-				res.AddEvidence("…", fmt.Sprintf("+%d more", len(items)-10))
+			if i >= 50 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more — sirsi seshat list shows all", len(items)-50))
 				break
 			}
-			res.AddEvidence(fmt.Sprintf("[%s] %s", source, ki.Title), output.Truncate(ki.Summary, 60))
+			res.AddEvidence(fmt.Sprintf("[%s] %s", source, ki.Title), output.Truncate(ki.Summary, 160))
 		}
 		// Levers that RESOLVE what the list shows (owner surface law): a
 		// polluted or stale library needs a way OUT, not just a way to add
