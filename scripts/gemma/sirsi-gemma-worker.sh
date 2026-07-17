@@ -55,7 +55,10 @@ LOG=$HOME/.sirsi/gemma-worker.log
 MAXTOK=${GEMMA_MAXTOK:-8192}   # was 512 → truncated builds. gemma-4 is a REASONING builder:
                                # it spends tokens thinking (checking its work) THEN answers, so it
                                # needs generous headroom to reach the final answer. Tunable via env.
-POLL=${GEMMA_POLL:-60}
+POLL=${GEMMA_POLL:-30}   # Tier-0 worker cadence: gemma polls FAST (30s) because it
+                         # is the high-volume generation layer — it should pick up a
+                         # decomposed build/draft task within seconds of a thread
+                         # routing it. The review/bind layer (claude) loops slower.
 
 mkdir -p "$(dirname "$LOG")"
 [ -x "$MLX" ] || { echo "[$(date -u +%FT%TZ)] ERROR: MLX runtime missing at $MLX" >> "$LOG"; exit 1; }
