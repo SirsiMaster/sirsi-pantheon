@@ -22,6 +22,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ra"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/reaper"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
@@ -1190,6 +1191,29 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			lw.FixKind = guard.FixInstant
 		}
 		report.Findings = append(report.Findings, lw)
+	}
+
+	// Leaked-session pileup (A32 leak source): count leaked claude-desktop
+	// runners (read-only; the caller's own ancestry is never counted) and surface
+	// the reap lever when the pileup is large or memory is already dying. The reap
+	// is owner/doctor-invoked only — never auto-run from a headless task (no safe
+	// signature to distinguish the owner's live session).
+	if plan, perr := reaper.Plan(reaper.Options{}, reaper.RealDeps()); perr == nil {
+		n := len(plan.Candidates)
+		md := guard.SampleMemoryDeath()
+		ls := guard.DiagnosticFinding{
+			Check:    "leaked-sessions",
+			Severity: guard.SeverityOK,
+			Message:  fmt.Sprintf("no leaked claude-desktop session pileup (%d reclaimable)", n),
+		}
+		if n >= 8 || (n > 0 && md.Dying) {
+			ls.Severity = guard.SeverityWarn
+			ls.Message = fmt.Sprintf("%d leaked claude-desktop sessions (~%d MB reclaimable)", n, plan.ReclaimMBEst)
+			ls.Detail = "scheduled-task/wakeup runs leave resident sessions that drive swap-death — reclaim them (your live session is protected)"
+			ls.Fix = "sirsi reap-sessions --apply"
+			ls.FixKind = guard.FixInstant
+		}
+		report.Findings = append(report.Findings, ls)
 	}
 
 	if JsonOutput {
