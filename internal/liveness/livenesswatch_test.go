@@ -64,6 +64,26 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	}
 }
 
+// TestProbeSessionLeak_Threshold confirms the leaked-session probe stays OK
+// below the threshold and alerts (alert-only, never reaps) at/above it.
+func TestProbeSessionLeak_Threshold(t *testing.T) {
+	old := getSessionLeakCount()
+	t.Cleanup(func() { setSessionLeakCount(old) })
+
+	setSessionLeakCount(func() (int, int) { return sessionLeakThreshold - 1, 100 })
+	if f := probeSessionLeak(); !f.OK {
+		t.Errorf("below threshold should be OK, got %+v", f)
+	}
+	setSessionLeakCount(func() (int, int) { return sessionLeakThreshold, 900 })
+	f := probeSessionLeak()
+	if f.OK {
+		t.Errorf("at threshold should alert, got OK: %+v", f)
+	}
+	if !f.Fixable || f.Title == "" {
+		t.Errorf("alert must be a routable fixable finding, got %+v", f)
+	}
+}
+
 // TestPickWorst_SeverityOrder confirms the broker outranks memory outranks
 // menubar, and that an OK or non-fixable finding is never routed.
 func TestPickWorst_SeverityOrder(t *testing.T) {
