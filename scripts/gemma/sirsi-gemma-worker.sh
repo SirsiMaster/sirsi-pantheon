@@ -370,11 +370,30 @@ EOF
 }
 
 log "gemma-worker started (poll=${POLL}s, model=$DEFAULT_MODEL)"
-echo $$ > "$HOME/.sirsi/gemma-worker.pid"
-trap 'rm -f "$HOME/.sirsi/gemma-worker.pid"' EXIT
+# Singleton by ownership token (gemma-worker-not-a-singleton, 2026-07-17): the
+# NEWEST worker claims the pidfile; an older worker — e.g. one still mid-generation
+# when `make install-gemma-worker` kickstarted a replacement and slow to honor
+# SIGTERM — notices it lost ownership at its next loop boundary and steps down,
+# so exactly one worker ever polls the gemma inbox (no wasted GPU, no double-grab).
+MYPID=$$
+PIDFILE="$HOME/.sirsi/gemma-worker.pid"
+echo "$MYPID" > "$PIDFILE"
+# ONE EXIT trap (bash keeps only the last per signal): clean the gen-stderr temp
+# AND reclaim the pidfile, but only if WE still own it — never clobber a newer
+# worker's token. (Folds in the earlier GEN_STDERR trap, which this line used to
+# silently overwrite.)
+trap 'rm -f "$GEN_STDERR"; [ "$(cat "$PIDFILE" 2>/dev/null)" = "$MYPID" ] && rm -f "$PIDFILE"' EXIT
 status_write "idle" "-"
 
 while true; do
+  # Singleton guard: if a newer worker claimed the pidfile, step down cleanly. A
+  # mid-generation old worker reaches here only after its broker call returns, so
+  # it never grabs another item once superseded.
+  owner=$(cat "$PIDFILE" 2>/dev/null)
+  if [ -n "$owner" ] && [ "$owner" != "$MYPID" ]; then
+    log "superseded by worker $owner — stepping down (singleton)"
+    exit 0
+  fi
   # Pull open gemma items through the router FACADE (`router pull`), never by
   # globbing items/*.md: dispatch/facade.go stops writing item files when
   # StoreWake flips (SIRSI_ROUTER_STORE_WAKE) — a file-globbing worker would go
