@@ -29,9 +29,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/reaper"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -149,10 +151,12 @@ type Finding struct {
 func Run(routerRoot string, w io.Writer) error {
 	home, _ := os.UserHomeDir()
 	// Order = severity: a wedged broker strands every agent; a memory spiral
-	// swap-kills the broker; a dead menubar only loses the operator surface.
+	// swap-kills the broker; a leaked-session pileup is the precursor that CAUSES
+	// that spiral; a dead menubar only loses the operator surface.
 	findings := []Finding{
 		probeGemma(home),
 		probeMemoryDeath(),
+		probeSessionLeak(),
 		probeMenubar(),
 	}
 
@@ -301,6 +305,59 @@ func resolveModel(home string) string {
 		}
 	}
 	return "mlx-community/gemma-2-27b-it-bf16-4bit"
+}
+
+// sessionLeakThreshold is how many leaked claude-desktop sessions must
+// accumulate before the watch proactively alerts. Matches the `sirsi diagnose`
+// leaked-sessions lever so the two surfaces agree.
+const sessionLeakThreshold = 8
+
+// sessionLeakCountFn returns (candidate count, reclaimable MB) for leaked
+// sessions — the caller's own ancestry is never counted (reaper.Plan). Injectable
+// (A16/A21) so the threshold branch is testable without a live process table.
+var (
+	sessionLeakMu    sync.RWMutex
+	sessionLeakCount = func() (int, int) {
+		p, err := reaper.Plan(reaper.Options{}, reaper.RealDeps())
+		if err != nil {
+			return 0, 0
+		}
+		return len(p.Candidates), p.ReclaimMBEst
+	}
+)
+
+func getSessionLeakCount() func() (int, int) {
+	sessionLeakMu.RLock()
+	defer sessionLeakMu.RUnlock()
+	return sessionLeakCount
+}
+
+func setSessionLeakCount(fn func() (int, int)) {
+	sessionLeakMu.Lock()
+	defer sessionLeakMu.Unlock()
+	sessionLeakCount = fn
+}
+
+// probeSessionLeak surfaces a leaked-session pileup PROACTIVELY (before an
+// operator runs `sirsi diagnose`) so it can be reclaimed before it swap-kills
+// the broker. Alert-ONLY: it never reaps (the hard reap stays owner/doctor-
+// invoked via `sirsi reap-sessions --apply` — no auto-kill from a headless net).
+func probeSessionLeak() Finding {
+	n, mb := getSessionLeakCount()()
+	f := Finding{Check: "session-leak", Fixable: true,
+		Title: "liveness-watch: leaked claude-desktop sessions piling up",
+		Body: fmt.Sprintf("The launchd liveness watch found %d leaked claude-desktop task-runner sessions "+
+			"(~%d MB reclaimable). These accumulate from scheduled-task/wakeup runs that never self-exit and "+
+			"drive the swap-death that wedges the gemma broker (2026-07-17). Reclaim them safely — your live "+
+			"session is protected: `sirsi reap-sessions` (dry-run) then `sirsi reap-sessions --apply`. Alert-only; "+
+			"nothing was killed.", n, mb)}
+	if n < sessionLeakThreshold {
+		f.OK = true
+		f.Detail = fmt.Sprintf("%d leaked (below %d threshold)", n, sessionLeakThreshold)
+		return f
+	}
+	f.Detail = fmt.Sprintf("%d leaked sessions (~%d MB) — reap to prevent swap-death", n, mb)
+	return f
 }
 
 // probeMenubar checks the SwiftUI menubar is alive by its exact executable path
