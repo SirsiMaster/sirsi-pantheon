@@ -38,6 +38,13 @@ func NewMLXRunner(cfg Config) *MLXRunner {
 	return &MLXRunner{cfg: cfg}
 }
 
+// gemmaWorkerMaxKVSize bounds the worker's mlx_lm.generate KV cache (in tokens)
+// so no single prompt can balloon this Python process unbounded and trigger a
+// jetsam. The 2026-07-21 28.88 GB event was an unbounded generate path; this is
+// the worker-binary analog of the cold-path bound in cmd/sirsi gemma.go (#263),
+// closing the last unbounded mlx spawn on the machine. Refs A32/ADR-040.
+const gemmaWorkerMaxKVSize = 32768
+
 func (r *MLXRunner) Generate(ctx context.Context, prompt string, maxTokens int, temperature float64) (string, error) {
 	if maxTokens <= 0 {
 		maxTokens = r.cfg.MaxTokens
@@ -54,6 +61,7 @@ func (r *MLXRunner) Generate(ctx context.Context, prompt string, maxTokens int, 
 		"--model", r.cfg.ModelID,
 		"--prompt", prompt,
 		"--max-tokens", strconv.Itoa(maxTokens),
+		"--max-kv-size", strconv.Itoa(gemmaWorkerMaxKVSize), // A32: bound KV so a long prompt cannot balloon unbounded
 		"--temp", strconv.FormatFloat(temperature, 'f', -1, 64),
 	}
 	cmd := exec.CommandContext(ctx, genBin, args...)
