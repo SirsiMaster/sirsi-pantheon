@@ -29,6 +29,12 @@ var (
 	gemmaTask      string
 )
 
+// gemmaColdMaxKVSize caps the cold-path mlx_lm.generate KV cache (in tokens) so
+// no bare `sirsi gemma` call can balloon its Python unbounded and trigger a
+// jetsam (2026-07-21: a separate unbounded Python hit 28.88 GB). Generous for
+// Tier-0 work; the model rotates the cache past this cap rather than growing.
+const gemmaColdMaxKVSize = 32768
+
 var gemmaCmd = &cobra.Command{
 	Use:   "gemma [prompt]",
 	Short: "Talk to Gemma — the local on-device model (zero API tokens, nothing leaves this Mac)",
@@ -140,7 +146,17 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "gemma · %s · cold (reloading — run `sirsi gemma serve` to keep it warm)…\n", gemmaShortModel(model))
-	out, err := exec.Command(mlx, "--model", model, "--max-tokens", fmt.Sprint(gemmaMaxTokens), "--prompt", prompt).Output()
+	// Bound the KV cache (--max-kv-size) so a pathologically long prompt can NEVER
+	// balloon the cold-path Python unbounded — the 2026-07-21 jetsam was a separate,
+	// unbounded Python that hit 28.88 GB → forced OS jetsam. The warm broker bounds
+	// its cache via --prompt-cache-bytes (#215); this is the generate-path analog on
+	// the ONLY non-serve mlx spawn a bare `sirsi gemma` call makes. 32K tokens is
+	// generous for Tier-0 tasks while hard-capping the balloon (mlx uses a rotating
+	// cache past the cap). Refs A32/ADR-040; claude-home P0 2026-07-21.
+	out, err := exec.Command(mlx, "--model", model,
+		"--max-tokens", fmt.Sprint(gemmaMaxTokens),
+		"--max-kv-size", fmt.Sprint(gemmaColdMaxKVSize),
+		"--prompt", prompt).Output()
 	if err != nil {
 		return fmt.Errorf("gemma generation failed: %w (first run downloads the model — that can take a while)", err)
 	}
