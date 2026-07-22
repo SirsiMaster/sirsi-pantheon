@@ -40,7 +40,7 @@ jobs:
 
   menubar:
     name: Build Menu Bar (macOS DMG)
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     needs: release
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
