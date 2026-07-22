@@ -1263,7 +1263,7 @@ func demoteTrendsToInfo(findings []DiagnosticFinding) {
 	}
 }
 
-// gateSwapOnPressure caps the "Swap Usage" alarm at the CURRENT memory-pressure
+// gateSwapOnPressure caps swap-residue alarms at the CURRENT memory-pressure
 // severity. macOS keeps swap ALLOCATED after using it, so a large swap reading
 // while RAM pressure is normal is residue — not active thrashing. "Heavy
 // swapping — system is thrashing" in red, while RAM Pressure reads healthy, is
@@ -1285,11 +1285,19 @@ func gateSwapOnPressure(findings []DiagnosticFinding) {
 	}
 	for i := range findings {
 		f := &findings[i]
-		if f.Check != "Swap Usage" || f.Severity <= pressureSev {
+		if (f.Check != "Swap Usage" && f.Check != "Memory Death Spiral") || f.Severity <= pressureSev {
+			continue
+		}
+		f.Severity = pressureSev
+		if f.Check == "Memory Death Spiral" {
+			if pressureSev <= SeverityInfo {
+				f.Message = "No active memory death spiral — memory pressure is normal; high swap allocation is retained history"
+			} else {
+				f.Message = "Memory pressure elevated, but no active death spiral is confirmed"
+			}
 			continue
 		}
 		usedGB := parseSwapUsedGB(f.Detail)
-		f.Severity = pressureSev
 		if pressureSev <= SeverityInfo {
 			f.Message = fmt.Sprintf("Swap in use (%.1f GB) — memory pressure is normal; macOS keeps swap allocated after using it", usedGB)
 		} else {
