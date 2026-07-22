@@ -57,7 +57,7 @@ func runSnapshotMode(outDir: String) {
         // draw is a screen that can ship broken past a "walked" sign-off (the
         // #221 RTK lesson). Self-loading views (.task-driven) render their
         // loading shell; ResultViews get real preloaded output.
-        let shots: [(name: String, view: AnyView)] = [
+        var shots: [(name: String, view: AnyView)] = [
             ("home", AnyView(RootView(engine: engine))),
             ("insight", AnyView(InsightView(engine: engine, preloaded: insight))),
             ("anubis-hygiene", AnyView(AnubisView(engine: engine))),
@@ -82,8 +82,18 @@ func runSnapshotMode(outDir: String) {
             ("ghosts-leftover-apps", AnyView(GhostsView(engine: engine))),
             ("scan-clean", AnyView(ScanCleanView(engine: engine))),
         ]
+        // Owner-gated screens render only when the live board has items — the
+        // detail view gets its body preloaded (ImageRenderer never runs .task).
+        shots.append(("owner-actions", AnyView(OwnerActionsListView(engine: engine))))
+        if let first = engine.ownerGatedItems.first {
+            let body = await SirsiEngine.ownerItemBody(id: first.id)
+            shots.append(("owner-action-detail",
+                          AnyView(OwnerActionView(engine: engine, itemID: first.id, preloadedBody: body))))
+        }
+
         for shot in shots {
             let renderer = ImageRenderer(content: shot.view
+                .environmentObject(Nav())
                 .environment(\.snapshotMode, true)
                 .frame(width: 380, height: 520))
             renderer.scale = 2.0

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 // AppDelegate owns the NSStatusItem and the NSPopover. This is the durable
 // surface ADR-030 specifies: an NSStatusItem.button anchors an NSPopover whose
@@ -158,13 +159,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // after you click it is half-useful. diagnose() sets healthStatus → onTitle.
         Task { @MainActor in await engine.diagnose() }
 
+        // Owner-gated toasts (board schema 1.1.0): open `to: user` router items
+        // must reach the owner as a notification, click → action screen. Only
+        // meaningful from the signed .app bundle — UNUserNotificationCenter
+        // throws in an unbundled dev binary.
+        if Bundle.main.bundleIdentifier != nil {
+            let nc = UNUserNotificationCenter.current()
+            nc.delegate = self
+            nc.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
+        Task { @MainActor in await self.checkOwnerGated() }
+
         // Periodic refresh so the Eye tracks reality at a glance: cheap waste re-read
         // + a health diagnose (≥60s — never a tight tick; A27 forbids flooding).
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.engine.refresh()
                 await self?.engine.diagnose()
+                await self?.checkOwnerGated()
             }
+        }
+    }
+
+    // checkOwnerGated re-reads the board and toasts genuinely-new owner-gated
+    // items. Board-file-only on the timer path: the CLI fallback would spawn a
+    // process every 90s when the conduit is down — the file IS the cheap signal.
+    private func checkOwnerGated() async {
+        let boardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: boardPath) else { return }
+        await engine.loadRouterBoard()
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        for item in engine.claimNewOwnerGated() {
+            let content = UNMutableNotificationContent()
+            content.title = String(item.title.prefix(64))
+            content.body = item.why ?? "An item needs your decision."
+            content.userInfo = ["id": item.id]
+            UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: item.id, content: content, trigger: nil),
+                withCompletionHandler: nil)
         }
     }
 
@@ -243,6 +275,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // openOwnerItem deep-links: show the panel and let RootView push the
+    // action screen for this item id (engine.pendingOwnerItemID is observed).
+    func openOwnerItem(id: String) {
+        engine.pendingOwnerItemID = id
+        if panel?.isVisible != true { togglePopover(nil) }
+    }
+
     // positionUnderStatusItem places the panel just below the menu-bar icon,
     // right-aligned to it (the natural first-open location).
     private func positionUnderStatusItem() {
@@ -259,5 +298,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             f.origin.y = min(max(f.origin.y, vis.minY + 8), vis.maxY - f.height - 8)
         }
         panel.setFrame(f, display: false)
+    }
+}
+
+// Toast click → the item's action screen. willPresent keeps banners visible
+// even while the app is "active" (a menubar agent is technically always-ish
+// active, which would otherwise swallow every toast).
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let id = response.notification.request.content.userInfo["id"] as? String
+        Task { @MainActor in
+            if let id { self.openOwnerItem(id: id) }
+            completionHandler()
+        }
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 }
