@@ -16,10 +16,7 @@ func initGitRepo(t *testing.T) string {
 	dir := t.TempDir()
 	run := func(args ...string) {
 		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test.com",
-			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test.com",
-		)
+		cmd.Env = gitTestEnv() // #99 class: never inherit GIT_DIR/GIT_WORK_TREE
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
@@ -87,10 +84,7 @@ func TestGitMergedBranches(t *testing.T) {
 	repo := initGitRepo(t)
 	run := func(args ...string) {
 		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test.com",
-			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test.com",
-		)
+		cmd.Env = gitTestEnv() // #99 class: never inherit GIT_DIR/GIT_WORK_TREE
 		cmd.CombinedOutput()
 	}
 
