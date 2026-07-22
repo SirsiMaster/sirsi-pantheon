@@ -166,6 +166,14 @@ struct RootView: View {
         // command output once (.task) and would otherwise show it forever — the
         // RTK screen kept rendering output from a since-replaced binary.
         .onChange(of: engine.reopenTick) { _ in nav.popToRoot() }
+        // Toast deep-link: a clicked owner-gated notification lands directly on
+        // that item's action screen (set by AppDelegate.openOwnerItem).
+        .onChange(of: engine.pendingOwnerItemID) { id in
+            guard let id else { return }
+            nav.popToRoot()
+            nav.push(OwnerActionView(engine: engine, itemID: id))
+            engine.pendingOwnerItemID = nil
+        }
         .environmentObject(nav)
     }
 }
@@ -256,6 +264,15 @@ struct HomeView: View {
             // Deity rows
             maybeScroll {
                 VStack(spacing: 2) {
+                    // Owner-gated items lead the list when present — work only
+                    // the OWNER can move (open `to: user` router items).
+                    if !engine.ownerGatedItems.isEmpty {
+                        NavLink { OwnerActionsListView(engine: engine) } label: {
+                            DeityRow(glyph: "🔑", title: "Needs you — owner actions",
+                                     detail: "\(engine.ownerGatedItems.count) waiting", dot: .yellow)
+                        }.buttonStyle(.plain)
+                    }
+
                     NavLink { InsightView(engine: engine) } label: {
                         DeityRow(glyph: "✨", title: "Insight — what to do next",
                                  detail: "across the platform")
@@ -2799,5 +2816,177 @@ struct ThothMemoryInfoView: View {
     private func reveal() {
         guard let path = memoryPath else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+}
+
+// ── Owner actions — items only the OWNER can move ────────────────────────────
+// Open `to: user` router items (board owner_gated[], schema 1.1.0) get a toast
+// (AppDelegate) and this pair of screens: a list, and a detail view with real
+// levers — read the referenced docs, mark it handled, or reply to a decision.
+
+struct OwnerActionsListView: View {
+    @ObservedObject var engine: SirsiEngine
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Needs you")
+            if engine.ownerGatedItems.isEmpty {
+                VStack(spacing: 8) {
+                    Text("✓").font(.system(size: 40)).foregroundStyle(.green)
+                    Text("Nothing is waiting on you.").font(.callout).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
+            } else {
+                MaybeList {
+                    ForEach(engine.ownerGatedItems) { item in
+                        NavLink { OwnerActionView(engine: engine, itemID: item.id) } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(item.type == "decision" ? "❓" : "🔑").frame(width: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title).font(.system(size: 12, weight: .semibold))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .multilineTextAlignment(.leading)
+                                    if let why = item.why, !why.isEmpty {
+                                        Text(why).font(.caption2).foregroundStyle(.secondary)
+                                            .lineLimit(3).multilineTextAlignment(.leading)
+                                    }
+                                    Text("from \(item.from) · \(item.ageLabel)")
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Needs you")
+        .task { await engine.loadRouterBoard() }
+    }
+}
+
+struct OwnerActionView: View {
+    @ObservedObject var engine: SirsiEngine
+    let itemID: String
+    var preloadedBody: String? = nil   // snapshot QA — ImageRenderer never runs .task
+    @EnvironmentObject private var nav: Nav
+    @Environment(\.snapshotMode) private var snapshotMode
+    @State private var body_ = ""
+    @State private var loading = true
+    @State private var confirmClose = false
+    @State private var decision = ""
+    @State private var resultLine: String?
+
+    private var meta: OwnerGated? { engine.ownerGatedItems.first { $0.id == itemID } }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Owner action")
+            maybeScrollBody
+            Divider()
+            levers
+        }
+        .navigationTitle("Owner action")
+        .task {
+            if let pre = preloadedBody { body_ = pre; loading = false; return }
+            body_ = await SirsiEngine.ownerItemBody(id: itemID)
+            loading = false
+        }
+        .confirmationDialog("Mark this handled?", isPresented: $confirmClose, titleVisibility: .visible) {
+            Button("Mark handled", role: .destructive) {
+                Task { resultLine = await engine.closeOwnerItem(id: itemID, note: "") }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Closes the item in the router. Do this after you've actually done what it asks.")
+        }
+    }
+
+    @ViewBuilder private var maybeScrollBody: some View {
+        if snapshotMode { detail.frame(maxHeight: .infinity, alignment: .top) }
+        else { ScrollView { detail } }
+    }
+
+    @ViewBuilder private var detail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let m = meta {
+                Text(m.title).font(.system(size: 14, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Text(m.type).font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(m.type == "decision" ? Color.yellow.opacity(0.25) : Color.primary.opacity(0.08)))
+                    Text("from \(m.from) · \(m.ageLabel)").font(.caption2).foregroundStyle(.secondary)
+                }
+                if let refs = m.refs, !refs.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("REFERENCED FILES").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        ForEach(refs, id: \.self) { ref in
+                            Button { openRef(ref) } label: {
+                                Label(ref, systemImage: "doc.text").font(.caption)
+                            }.buttonStyle(.link)
+                        }
+                    }
+                }
+            }
+            if let r = resultLine {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                    Text(r).font(.caption)
+                }
+                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.green.opacity(0.12)))
+            }
+            if loading {
+                HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 20)
+            } else {
+                Text(body_.isEmpty ? "No details recorded." : body_)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }.padding(14)
+    }
+
+    @ViewBuilder private var levers: some View {
+        VStack(spacing: 8) {
+            if meta?.type == "decision" && resultLine == nil {
+                HStack(spacing: 8) {
+                    TextField("Your decision…", text: $decision)
+                        .textFieldStyle(.roundedBorder).font(.caption)
+                    Button("Send") {
+                        Task { resultLine = await engine.replyOwnerDecision(id: itemID, text: decision) }
+                    }
+                    .disabled(decision.trimmingCharacters(in: .whitespaces).isEmpty || engine.busy)
+                }
+            }
+            HStack {
+                if resultLine == nil {
+                    Button { confirmClose = true } label: {
+                        Label("Mark handled", systemImage: "checkmark.circle")
+                    }.disabled(engine.busy)
+                } else {
+                    Button { nav.pop() } label: { Label("Done", systemImage: "chevron.left") }
+                }
+                if engine.busy { ProgressView().controlSize(.small).padding(.leading, 4) }
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
+    // openRef reveals a repo-relative referenced path. Resolves against the
+    // configured project root, then the canonical pantheon checkout, then $HOME.
+    private func openRef(_ ref: String) {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var roots = [home + "/Development/sirsi-pantheon", home]
+        if let pr = engine.projectRoot { roots.insert(pr, at: 0) }
+        for root in roots {
+            let p = root + "/" + ref
+            if FileManager.default.fileExists(atPath: p) {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
+                return
+            }
+        }
     }
 }

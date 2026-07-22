@@ -211,6 +211,29 @@ struct VitalsProc: Decodable, Identifiable {
     }
 }
 
+// OwnerGated mirrors one owner_gated[] record (board schema 1.1.0): an open
+// `to: user` router item awaiting the OWNER's hand. The full body is
+// intentionally not on the board — the action screen shells
+// `sirsi router show <id>` on open.
+struct OwnerGated: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let type: String
+    let from: String
+    let opened: String?
+    let ageHours: Double?
+    let why: String?
+    let refs: [String]?
+    enum CodingKeys: String, CodingKey {
+        case id, title, type, from, opened, why, refs
+        case ageHours = "age_hours"
+    }
+    var ageLabel: String {
+        guard let h = ageHours else { return "" }
+        return h < 48 ? String(format: "%.0f h old", h) : String(format: "%.0f days old", h / 24)
+    }
+}
+
 struct RouterBoard: Decodable {
     let schemaVersion: String?
     let totalPending: Int?
@@ -220,6 +243,7 @@ struct RouterBoard: Decodable {
     let strandedInbox: [RBStranded]?
     // agent id → open item ids: the fabric's actual work map.
     let pendingByAgent: [String: [String]]?
+    let ownerGated: [OwnerGated]?
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case totalPending = "total_pending"
@@ -228,6 +252,7 @@ struct RouterBoard: Decodable {
         case launchAgents = "launch_agents"
         case strandedInbox = "stranded_inbox"
         case pendingByAgent = "pending_by_agent"
+        case ownerGated = "owner_gated"
     }
 }
 
@@ -474,6 +499,75 @@ final class SirsiEngine: ObservableObject {
         if let board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
             routerBoard = board
         }
+    }
+
+    // ── owner-gated items (board schema 1.1.0) ───────────────────────────────
+    // Open `to: user` router items — work only the OWNER can move. The board
+    // producer (claude-home's conduit) enriches these; the surface toasts NEW
+    // ones and gives an action screen with real levers (read refs, mark
+    // handled, reply to decisions).
+
+    var ownerGatedItems: [OwnerGated] { routerBoard?.ownerGated ?? [] }
+
+    // Set by the AppDelegate when the owner clicks a toast — RootView deep-links
+    // straight to that item's action screen.
+    @Published var pendingOwnerItemID: String?
+
+    // Toast only genuinely-new ids: the persisted set survives restarts (no
+    // backlog re-spam) and a resolved-then-reopened id never re-toasts.
+    private static let toastedKey = "ownerGatedToasted"
+
+    // newOwnerGated returns the not-yet-toasted items and marks them toasted.
+    func claimNewOwnerGated() -> [OwnerGated] {
+        let items = ownerGatedItems
+        guard !items.isEmpty else { return [] }
+        var seen = Set(UserDefaults.standard.stringArray(forKey: Self.toastedKey) ?? [])
+        let fresh = items.filter { !seen.contains($0.id) }
+        guard !fresh.isEmpty else { return [] }
+        fresh.forEach { seen.insert($0.id) }
+        UserDefaults.standard.set(Array(seen), forKey: Self.toastedKey)
+        return fresh
+    }
+
+    // ownerItemBody shells `sirsi router show <id>` — the full item text lives
+    // in the router, not on the lean board.
+    nonisolated static func ownerItemBody(id: String) async -> String {
+        await run(args: ["router", "show", id], stdin: nil)
+    }
+
+    // closeOwnerItem marks the item handled: `sirsi router close <id> --result @f`.
+    func closeOwnerItem(id: String, note: String) async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "close", id, "--result",
+                                        note.isEmpty ? "Handled by owner via menubar." : note],
+                                 stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Owner action — mark handled", command: "router close \(id)", result: line)
+        await loadRouterBoard()
+        return line
+    }
+
+    // replyOwnerDecision routes the owner's decision text BACK to the sender as
+    // fresh inbound (sirsi-respond.sh notifies; a bare close is only an audit
+    // trail the sender never sees).
+    func replyOwnerDecision(id: String, text: String) async -> String {
+        busy = true; defer { busy = false }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let tmp = NSTemporaryDirectory() + "owner-decision-\(UUID().uuidString.prefix(8)).md"
+        try? text.write(toFile: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
+        let script = home + "/.local/bin/sirsi-respond.sh"
+        let out: String
+        if FileManager.default.isExecutableFile(atPath: script) {
+            out = await Self.runProgram(script, args: [id, tmp])
+        } else {
+            // Fallback: close with the decision as the result (audit-only).
+            out = await Self.run(args: ["router", "close", id, "--result", text], stdin: nil)
+        }
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Owner action — decision sent", command: "respond \(id)", result: line)
+        await loadRouterBoard()
+        return line
     }
 
     // installWake shells `sirsi router wake-install <agent>` to arm a stranded
@@ -846,6 +940,33 @@ final class SirsiEngine: ObservableObject {
                     text = "Stopped after 2 minutes — this action is taking too long for the menubar. Run `sirsi \(args.joined(separator: " "))` in a terminal to let it finish.\n" + text
                 }
                 cont.resume(returning: text)
+            }
+        }
+    }
+
+    // runProgram runs an arbitrary local executable (e.g. sirsi-respond.sh)
+    // with the same $HOME cwd, output capture, and 120s bound as run().
+    nonisolated static func runProgram(_ path: String, args: [String]) async -> String {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let p = Process()
+                p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                p.executableURL = URL(fileURLWithPath: path)
+                p.arguments = args
+                let outPipe = Pipe()
+                p.standardOutput = outPipe
+                p.standardError = outPipe
+                do { try p.run() } catch {
+                    cont.resume(returning: "error: \(error.localizedDescription)")
+                    return
+                }
+                let deadline = DispatchTime.now() + .seconds(120)
+                let timeoutWork = DispatchWorkItem { if p.isRunning { p.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                timeoutWork.cancel()
+                cont.resume(returning: stripANSI(String(data: data, encoding: .utf8) ?? ""))
             }
         }
     }
