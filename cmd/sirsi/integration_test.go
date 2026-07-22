@@ -226,12 +226,11 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 		t.Errorf("expected empty pull after close, got: %s", stdoutB2)
 	}
 
-	_, stderrDC, err := runSirsiInDir(t, tmp, 10*time.Second, "router", "close", id)
-	if err == nil {
-		t.Errorf("expected double-close to fail")
-	}
-	if !strings.Contains(stderrDC, "already closed") {
-		t.Errorf("expected 'already closed' error, got: %s", stderrDC)
+	// Double-close is idempotent: the file is already closed and the store
+	// mirror heals (phantom-open fix) — store-only items always behaved this
+	// way, so file-backed items now match.
+	if _, stderrDC, dcErr := runSirsiInDir(t, tmp, 10*time.Second, "router", "close", id); dcErr != nil {
+		t.Errorf("expected double-close to succeed idempotently, got: %v (%s)", dcErr, stderrDC)
 	}
 }
 

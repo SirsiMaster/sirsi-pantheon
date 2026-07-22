@@ -150,6 +150,13 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 		if seen[r.ID] {
 			continue
 		}
+		// seen holds only file-OPEN items, so a row missing from it is either
+		// store-only (include) or a stale open mirror of a file closed file-only
+		// by a pre-facade binary (skip — the file is canon; a phantom-open row
+		// must not resurface a closed item to pull/wait forever).
+		if it, getErr := work.Get(f.root, r.ID); getErr == nil && it.Status != "open" {
+			continue
+		}
 		items = append(items, work.Item{
 			ID: r.ID, From: r.From, To: r.To, Title: r.Title, Type: r.Type,
 			Status: r.Status, Opened: r.Opened, Closed: r.Closed,
@@ -253,7 +260,12 @@ func (f *Facade) CloseItem(id, result string) error {
 	}
 	if fileExists {
 		if err := work.Close(f.root, id, result); err != nil {
-			return err
+			// An already-closed file may still have a stale open store row (a
+			// file-only close by a pre-facade binary). Fall through so the store
+			// mirror below heals the phantom instead of it being un-closable.
+			if !errors.Is(err, work.ErrAlreadyClosed) {
+				return err
+			}
 		}
 	}
 	switch storeErr := f.store.CloseItem(id, result); {

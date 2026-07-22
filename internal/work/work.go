@@ -7,6 +7,7 @@
 package work
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -198,6 +199,11 @@ func ListAll(root string) ([]Item, error) {
 	return items, nil
 }
 
+// ErrAlreadyClosed is returned by Close when the item's file is already
+// closed. Callers (the dispatch facade) distinguish it from real failures so
+// a stale-open store mirror can still be healed.
+var ErrAlreadyClosed = errors.New("already closed")
+
 // Close marks an item closed and appends a result section.
 func Close(root, id, result string) error {
 	it, err := Get(root, id)
@@ -205,7 +211,7 @@ func Close(root, id, result string) error {
 		return err
 	}
 	if it.Status == "closed" {
-		return fmt.Errorf("already closed")
+		return ErrAlreadyClosed
 	}
 	path := filepath.Join(itemsDir(root), id+".md")
 	data, err := os.ReadFile(path)
