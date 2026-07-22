@@ -835,3 +835,15 @@ The scoped SME farm-out returned **FAIL — bypass found**, and it was right. `b
 Fixed in `0c36c929` — `scripts/bind/` added to the regex, the gate's error message, ADR-041 §Decision 6, PANTHEON_RULES A28, and the runbook, all in lockstep (canon drifting from the gate is what this same run already had to fix once, in `f023e929`). Scope covers the directory, not just the one file: `binding-hold-selection.test.sh` pins the gate's own selection logic and belongs behind the same bind. Verified: `scripts/bind/*` → SENSITIVE, ordinary paths → autonomous, 6/6 cases pass, gate still holds #218 against itself on the new head. Codex's other four angles (fail-closed detection, head-SHA pin, gate-open condition, token minting) came back clean and match the first-chop read.
 
 **The lesson worth keeping**: claude-home authored #218 and reviewed it source-deep, and still missed this — the author's own agent found a canon contradiction but not the hole in the enforcement boundary it had just drawn. The independent lens found it in five minutes. No-self-review is not ceremony; it is the only reason this is closed. **Self-inflicted, recorded honestly**: journaling the 05:39Z run to main via #219 while #218's branch carried its own unmerged entry conflicted `.thoth/journal.md` (`DIRTY`); resolved in `f256d41c` keeping both entries chronologically — next conduit run should journal onto the open branch, or land the journal PR last.
+
+---
+
+## Entry — 2026-07-21 — "The Toast Reaches the Owner (and the backlog sweep behind it)"
+
+**Context**: claude-pantheon, owner directive "find every task from every conversation and ensure complete." Sweep found 6 open router items + 1 arriving mid-session; all closed with results.
+
+**Landed (#267)**: owner-gated router items (board `owner_gated[]`, schema 1.1.0, claude-home's producer) now reach the owner as menubar toasts. Launch + 90s file-only board re-read → UNUserNotification per genuinely-new id (persisted `ownerGatedToasted` dedupe — no restart re-spam). Toast click deep-links (notification delegate → `pendingOwnerItemID` → RootView push) to a new Owner-action screen: full body via `sirsi router show`, refs revealed in Finder, Mark handled (confirm-first, provenance), decision reply via sirsi-respond.sh so the sender is actually woken. "🔑 Needs you" home row carries the count. Verified live: relaunch toasted the two real liveness-watch items.
+
+**Sweep findings worth keeping**: (1) the Scan/Review/Clean unified workflow the 07-17 self-item asked for had ALREADY shipped as ScanCleanView — but its gemma-built companions (#254–#257) are merged and unreferenced: fold in or Rule-0 them next menubar pass. (2) A STALE `v1.0.0-rc1` tag exists on origin pointing at 2026-03-29 (Session 38) — the real rc1 cut must delete/move it first. (3) `sirsi router` works fine from $HOME cwd — no repo-scoping needed for the menubar's router verbs.
+
+**State**: inbox zero for claude-pantheon; session thread registered thr-b8206c35ba3ca785 (A27) and closed at session end; report routed to claude-home.
