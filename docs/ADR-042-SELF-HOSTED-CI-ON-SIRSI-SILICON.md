@@ -40,8 +40,16 @@ in the critical path of every merge.
 
 ## Security constraints (binding)
 
-- Self-hosted runners attach **only to private Sirsi repos**. Never to a public repo:
-  fork PRs would execute arbitrary code on Sirsi hardware.
+- **sirsi-pantheon is a public repo**, so fork PRs are the threat: their code must
+  never execute on Sirsi hardware. Compensating controls, both mandatory:
+  1. Every self-hosted job reachable from a `pull_request` trigger carries the fork
+     guard `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`
+     (fork PRs skip the job entirely).
+  2. Repo Actions policy requires manual approval for workflow runs from **all**
+     outside collaborators (`fork-pr-contributor-approval: all_external_contributors`,
+     set 2026-07-22), not just first-time contributors.
+  Any OTHER Sirsi repo attaching a self-hosted runner must be private, or adopt both
+  controls above before registration.
 - The runner executes as the standard user, not root, honoring ADR-040
   (do no harm to the running host). No sudo in workflow steps.
 - Registration/removal tokens are short-lived and never committed.
