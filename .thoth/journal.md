@@ -847,3 +847,17 @@ Fixed in `0c36c929` — `scripts/bind/` added to the regex, the gate's error mes
 **Sweep findings worth keeping**: (1) the Scan/Review/Clean unified workflow the 07-17 self-item asked for had ALREADY shipped as ScanCleanView — but its gemma-built companions (#254–#257) are merged and unreferenced: fold in or Rule-0 them next menubar pass. (2) A STALE `v1.0.0-rc1` tag exists on origin pointing at 2026-03-29 (Session 38) — the real rc1 cut must delete/move it first. (3) `sirsi router` works fine from $HOME cwd — no repo-scoping needed for the menubar's router verbs.
 
 **State**: inbox zero for claude-pantheon; session thread registered thr-b8206c35ba3ca785 (A27) and closed at session end; report routed to claude-home.
+
+---
+
+## Entry — 2026-07-21 — "The Installed Popover Was Still Wearing Gold"
+
+The owner's live screenshot showed two concrete regressions on Home: Pantheon identity and reclaim copy still used the legacy gold accent, while most supporting text inherited macOS `caption`/`caption2` sizes that were too small at the popover's normal width. The fix is intentionally scoped: identity moved to Pantheon emerald; subordinate storage copy is neutral; genuine amber warning dots remain semantic warnings. Home now sets explicit readable type floors—17pt identity, 15pt action and row titles, 13–14pt supporting copy—plus larger row glyphs and footer controls.
+
+Proof was end-to-end, not source-only: the release target compiled, all 17 SwiftUI snapshot surfaces rendered, the signed bundle was rebuilt into `~/Applications/Sirsi Menubar.app` with the stable `ai.sirsi.pantheon` certificate requirement, and the stale process was terminated and relaunched from the new bundle. The headless ImageRenderer still omits macOS material/text compositing in parts of Home, a known limitation already recorded in the July 7 entry; it nevertheless confirmed the emerald accent and layout, while compilation, signing verification, and the live process path close the delivery loop.
+
+### Correction — the yellow was status, not styling
+
+The first interpretation was wrong: the owner was pointing to the 6.9 GB safe-to-reclaim value and Horus's amber problem indicator, not asking to replace Pantheon's gold visual identity. The emerald branding change was reverted. The typography work remained and was extended app-wide with Large Dynamic Type plus a 360pt design width.
+
+Live inspection found the actual state. Autonomous mode was ON, but its loop consumes Horus diagnostic levers only; it does not consume Anubis safe-storage findings, despite the broad UI wording. A deliberate safe-only Anubis clean moved 158 items to Trash and reclaimed 7.5 GB; nine protected/error items were skipped. A fresh scan then reported zero safe bytes, so the storage figure clears on refresh. Horus was amber for a genuine memory condition: first a swap-death/leaked-session warning, then—after all 17 leaked sessions exited—a >4 GB Python memory consumer. The Eye must remain amber while a current Warn finding exists; hiding it would falsify health.

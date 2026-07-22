@@ -133,7 +133,7 @@ struct RootView: View {
     // The whole UI is designed at this width; everything (fonts, dividers,
     // spacing, structures) scales geometrically from it, so resizing the window
     // resizes the ELEMENTS too — not just the container (owner, 2026-07-10).
-    private let baseWidth: CGFloat = 380
+    private let baseWidth: CGFloat = 360
 
     var body: some View {
         // Wrapping the content in an explicit VStack (instead of a bare Group)
@@ -175,6 +175,9 @@ struct RootView: View {
             engine.pendingOwnerItemID = nil
         }
         .environmentObject(nav)
+        // Keep the entire popover legible, including drilled-in screens that
+        // use semantic caption/callout styles rather than Home's explicit sizes.
+        .dynamicTypeSize(.large)
     }
 }
 
@@ -188,7 +191,9 @@ struct HomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("𓁢 Sirsi Pantheon").font(.headline).foregroundStyle(gold)
+                Text("𓁢 Sirsi Pantheon")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(gold)
                 Spacer()
             }
             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
@@ -214,15 +219,15 @@ struct HomeView: View {
                             .foregroundStyle(light)
                     }
                     Text("\(word) · of \(SirsiEngine.human(v.totalBytes)) · swap \(SirsiEngine.human(v.swapUsedBytes))")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     if let top = v.top?.first {
                         Text("biggest: \(top.name) \(SirsiEngine.human(top.rssBytes))")
-                            .font(.caption2).foregroundStyle(.tertiary)
+                            .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                     }
                     if engine.safeBytes >= SirsiEngine.wasteThreshold {
                         Text("storage: \(SirsiEngine.human(engine.safeBytes)) safe to reclaim")
-                            .font(.caption2).foregroundStyle(gold)
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(gold)
                     }
                 } else {
                     // Pre-vitals fallback: the prior storage lead.
@@ -231,7 +236,7 @@ struct HomeView: View {
                         .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(hasWaste ? gold : .green)
                     Text(hasWaste ? "safe to reclaim" : "reading memory…")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -244,10 +249,10 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 Text(engine.autonomousOn ? "🛠" : "👁")
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Fix issues automatically").font(.callout)
-                    Text(engine.autonomousOn ? "On — Pantheon applies approved fixes itself"
+                    Text("Fix issues automatically").font(.system(size: 15, weight: .semibold))
+                    Text(engine.autonomousOn ? "On — health fixes apply; storage stays review-first"
                                              : "Off — Pantheon only reports and suggests")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Toggle("", isOn: Binding(
@@ -358,10 +363,11 @@ struct HomeView: View {
             HStack {
                 Button { Task { await engine.rescan() } } label: {
                     Label("Scan", systemImage: "arrow.clockwise")
-                }.disabled(engine.busy)
+                }.font(.system(size: 14, weight: .semibold)).disabled(engine.busy)
                 if engine.busy { ProgressView().controlSize(.small).padding(.leading, 4) }
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .font(.system(size: 14, weight: .semibold))
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
@@ -412,12 +418,12 @@ struct DeityRow: View {
     var dot: Color? = nil
     var body: some View {
         HStack(spacing: 10) {
-            Text(glyph).font(.system(size: 18)).frame(width: 26)
-            Text(title).font(.system(size: 13, weight: .medium))
+            Text(glyph).font(.system(size: 20)).frame(width: 28)
+            Text(title).font(.system(size: 15, weight: .semibold))
             Spacer()
             if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-            Text(detail).font(.caption).foregroundStyle(.secondary)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+            Image(systemName: "chevron.right").font(.system(size: 13, weight: .medium)).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 8).padding(.horizontal, 10)
         .contentShape(Rectangle())
