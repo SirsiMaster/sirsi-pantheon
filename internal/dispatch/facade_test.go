@@ -281,3 +281,37 @@ func TestOpenCreatesStoreDirOnFreshHome(t *testing.T) {
 		t.Fatalf("send on fresh store: %v", err)
 	}
 }
+
+// TestPhantomOpenStoreRowHiddenAndHealable: a file closed file-only by a
+// pre-facade binary leaves a stale open store row. Inbox must not resurface
+// it (phantom-open), and CloseItem must heal the store mirror instead of
+// failing with "already closed" (the A28 divergence, 2026-07-22).
+func TestPhantomOpenStoreRowHiddenAndHealable(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "diverge me", "", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Close the FILE only (what a pre-facade binary did) — store row stays open.
+	if err := work.Close(f.root, res.ID, "file-only close"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := f.Inbox("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("phantom-open store row resurfaced a closed item: %+v", items)
+	}
+	// Re-close through the facade: must heal the store, not error.
+	if err := f.CloseItem(res.ID, "heal"); err != nil {
+		t.Fatalf("CloseItem on already-closed file must heal the store: %v", err)
+	}
+	rows, err := f.store.Inbox("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("store row still open after heal: %+v", rows)
+	}
+}
