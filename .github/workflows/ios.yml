@@ -18,7 +18,7 @@ permissions:
 jobs:
   build:
     name: Build iOS
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +63,7 @@ jobs:
   testflight:
     name: Deploy to TestFlight
     needs: build
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     if: github.event.inputs.deploy_testflight == 'true'
     environment: ios-release
     steps:
