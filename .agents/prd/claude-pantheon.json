@@ -1,0 +1,151 @@
+{
+  "agent": "claude-pantheon",
+  "app": "Sirsi Pantheon",
+  "done_when": "all tasks done or owner-gated",
+  "canon_refs": [
+    "PANTHEON_RULES.md",
+    "PANTHEON_ROADMAP.md",
+    "docs/ADR-INDEX.md",
+    "docs/ARCHITECTURE*.md",
+    "CLAUDE.md"
+  ],
+  "note": "Derived from repo canon + the 2026-06-21 run-history audit. `sirsi prd sync` (in flight) will keep this reconciled to canon; until then this is the seed. Status: open|done|owner-gated|blocked.",
+  "tasks": [
+    {
+      "id": "P1",
+      "desc": "cgo DISPATCH_SOURCE_MEMORYPRESSURE watcher (ADR-031-B last slice) \u2014 replace NodeCapacity bootstrap pressure seed",
+      "acceptance": "live kernel memory-pressure source feeds NodeCapacity; replaces the bootstrap seed; tests green; codex bind",
+      "status": "owner-gated",
+      "ref": "ADR-031-B",
+      "note": "Watcher CODE slice DONE+verified (claude-pantheon 2026-06-29): cgo DISPATCH_SOURCE_MEMORYPRESSURE watcher + full wiring landed PR #72 (65b219a8); CGO build exit 0, `CGO_ENABLED=1 go test ./internal/guard` ok 10.2s. NodeCapacity.SampleNodeCapacity reads effectivePressure (kernel-dispatch -> cross-proc cache -> bootstrap fallback); bootstrap correctly demoted to fallback-only. GAP blocking acceptance end-to-end: NO persistent runner keeps ~/.sirsi/pressure.json fresh, so live readers (`sirsi diagnose` -> 'source: bootstrap-snapshot'; cache 10.5d stale) never see the kernel level. Remaining = a persistent WARN-ONLY `sirsi hapi watch` runner. OWNER/ARCH DECISION: placement \u2014 standalone LaunchAgent installed via `sirsi setup` (Permissions-in-Install) vs fold into P12 `sirsi supervise` vs menubar-spawned child \u2014 AND a Spotlight-safe re-stamp cadence (current 3s write is perpetual). Then codex bind. claude-pantheon recommends folding into P12 supervise (one KeepAlive owner) + bump re-stamp to ~15s.",
+      "evidence": "PR #72 (65b219a8); CGO build exit0; go test ./internal/guard ok 10.2s; ~/.sirsi/pressure.json source=kernel-dispatch but 10.5d stale; diagnose reads bootstrap-snapshot"
+    },
+    {
+      "id": "P2",
+      "desc": "Re-point the COLD-path gemmaSafeConcurrency onto NodeCapacity (warm path landed in #71)",
+      "acceptance": "cold path reads NodeCapacity; refuse-if-it-won't-fit gate preserved; tests green",
+      "status": "done",
+      "note": "Cold path re-pointed in PR #73 (MERGED 2026-06-19T07:28:44Z): cmd/sirsi/gemma.go uses guard.SampleNodeCapacity()+nc.Fits (refuse gate preserved, 2x-model budget); gemmaSafeConcurrency deleted; gemma_serve_test locks the invariant.",
+      "evidence": "PR #73 merged; gemma.go:130 SampleNodeCapacity+Fits; tests green"
+    },
+    {
+      "id": "P3",
+      "desc": "Expose NodeCapacity for Ra (fleet)",
+      "acceptance": "Ra can read per-node capacity; documented in ADR-031-B",
+      "status": "done",
+      "note": "sirsi ra status now surfaces per-node capacity evidence (free RAM, DynamicReserve(), pressure+source) via guard.SampleNodeCapacity(); documented in ADR-031-B 'Ra exposure' section. Verified live: 'node capacity -> 20.9 GB free \u00b7 reserve 14.3 GB \u00b7 pressure normal'. PR feat/menubar-owner-gated-toast follow-on branch 2026-07-21.",
+      "evidence": "ra.go evidence line + ADR-031-B note; live JSON verified"
+    },
+    {
+      "id": "P4",
+      "desc": "Hapi menubar/CLI pressure surface (governor core built #63; surfacing not done)",
+      "acceptance": "pressure + governor state visible in menubar + `sirsi` CLI, actionable, Mole-quality",
+      "status": "done",
+      "note": "Shipped PR #74 (2026-06-19): doctor.go RAM-Pressure finding appends live NodeCapacity pressure + source; menubar FindingView renders detail with zero Swift churn; verified live via sirsi diagnose --json.",
+      "evidence": "doctor.go:494; PR #74 merged"
+    },
+    {
+      "id": "P5",
+      "desc": "gemma-worker source-durability: $MODEL unbound at runner line 192; worker script is installed-only, not in-repo -> a reinstall RE-BREAKS the daemon",
+      "acceptance": "worker source lives in-repo, builds on install, $MODEL bound; reinstall no longer breaks gemma",
+      "status": "done",
+      "note": "Worker source lives in-repo at scripts/gemma/sirsi-gemma-worker.sh with MODEL bound via ~/.sirsi/gemma-model.conf + env defaults (lines 43-51); Makefile install-gemma-worker installs+chmods+kickstarts; installed copy verified IDENTICAL to repo 2026-07-21. Hardened further by #261 (pidfile singleton) + #265 (KV cache bound).",
+      "evidence": "diff identical; Makefile:51; #261 #265 merged"
+    },
+    {
+      "id": "P6",
+      "desc": "Agent-operations-parity: respond/review/ask/memory/watch/reap/insights in CLI + menubar (design stub only)",
+      "acceptance": "each op implemented in CLI + menubar per docs/agent-operations/AGENT-OPERATIONS-PARITY",
+      "status": "done",
+      "note": "Parity reached op-by-op since the stub: respond = router send/close CLI + menubar decision-reply/Mark-handled (#267); ask = sirsi gemma CLI + menubar local-LLM query; memory = sirsi thoth + Thoth menubar view; watch = sirsi thread list + ThreadsView heartbeat roster; reap = sirsi thread prune + stale \u26a0\ufe0f surfaced in ThreadsView; insights = sirsi insight + InsightView. 'review' is deliberately the cross-agent router relay (codex/claude-home lane per A26/A25), not a menubar op.",
+      "evidence": "menubar #242/#247/#267 + CLI verbs shipped"
+    },
+    {
+      "id": "P7",
+      "desc": "Cross-agent QoS: extend allowlist to claude/codex/gemma + set P-core QoS via taskpolicy (ANE is CoreML-only; core-pinning not possible \u2014 QoS only)",
+      "acceptance": "allowlist + taskpolicy QoS applied + verified; no core-pin claims",
+      "status": "done",
+      "note": "ReniceTargetAgents added (claude/codex/mlx_lm/gemma) with renice +10 + taskpolicy -b (QoS only, no core-pin claims \u2014 ANE is CoreML-only); GUI install locations (/Applications, /Frameworks) excluded so the owner's desktop app is never touched while claude-code runners under Application Support still match; A1 protected list enforced at reniceWith layer for EVERY target; CLI lever `sirsi relieve --agents` (preview default, --confirm applies). Tests: TestShouldRenice_AgentsTarget, TestReniceWith_SkipsProtected, TestMatchesAgent_ExcludesGUIBundles. Live preview found 15 real background runners.",
+      "evidence": "renice.go agents target + relieve --agents; go test ok"
+    },
+    {
+      "id": "P8",
+      "desc": "50-feature roadmap -> menubar+CLI parity, then downloadable from git AND the Sirsi Product page",
+      "acceptance": "every roadmap feature reaches CLI+menubar; download path works from git + product page",
+      "status": "owner-gated",
+      "ref": "PANTHEON_ROADMAP.md",
+      "note": "Program-level umbrella, not a single task. DOWNLOADABLE half VERIFIED DONE 2026-07-21: GitHub releases live (v0.23.8-beta), docs/download.html serves 200 on sirsi.ai, signed+notarized DMG shipped (P17). Roadmap->parity half IS the product program tracked in PANTHEON_ROADMAP.md + docs/TRACEABILITY.md \u2014 which tranche ships next is the owner's Rule-17 prioritization call, so this line owner-gates rather than pretending a 50-feature program is one completable task. Recommend replacing P8 with per-tranche tasks at next `sirsi prd sync`.",
+      "evidence": ""
+    },
+    {
+      "id": "P9",
+      "desc": "Investigate 4 LaunchAgents loaded-but-not-running (registry-police, calendar-sync, idea-router, idea-router-sweep)",
+      "acceptance": "each is running-or-removed with a reason; no zombie loaded-not-running agents",
+      "status": "done",
+      "note": "All four (registry-police, calendar-sync, idea-router, idea-router-sweep) are NOT LOADED as of 2026-07-21 \u2014 removed in the 2026-07-02 LaunchAgent cutover; no zombie loaded-but-not-running agents remain (launchctl print returns not-loaded for each).",
+      "evidence": "launchctl print gui/UID/ai.sirsi.<each> -> not loaded"
+    },
+    {
+      "id": "P10",
+      "desc": "Verify pantheon PR #71 (broker re-point) merged + remove leftover /tmp worktree from PR #44",
+      "acceptance": "#71 state confirmed; stale /tmp worktree gone",
+      "status": "done",
+      "note": "#71 confirmed MERGED 2026-06-19T07:09:29Z. Stale /tmp worktrees from the #44 era are gone; `git worktree prune` runs clean; remaining worktrees are active lanes only (verified 2026-07-21).",
+      "evidence": "gh pr view 71 MERGED; git worktree list clean"
+    },
+    {
+      "id": "P11",
+      "desc": "router_wait MCP \u2014 anti-idle leg 2 (routed 20260621-045806)",
+      "acceptance": "sirsi MCP exposes router tools + blocking router_wait; tested; PR bound",
+      "status": "done",
+      "note": "router_wait blocking long-poll MCP tool shipped: internal/mcp/router_wait.go (thin PollInbox wrapper, 50s cap, files stay source of truth); in CHANGELOG Unreleased.",
+      "evidence": "internal/mcp/router_wait.go on main"
+    },
+    {
+      "id": "P12",
+      "desc": "sirsi supervise launchd backstop \u2014 anti-idle leg 3 / Piece 2 (routed 20260621-015502)",
+      "acceptance": "supervisor resurrects dead not-done threads, reaps done, honest-wake; PR bound",
+      "status": "done",
+      "note": "Supervisor shipped: internal/router/supervisor.go + supervisorduties.go(+tests), `sirsi horus supervise` verb, runs under launchd (ai.sirsi.horus.agent-router.plist); kickstarted + verified live 2026-07-04 (fabric-board incident close-out).",
+      "evidence": "supervisor.go; horus.go:79; launchd plist"
+    },
+    {
+      "id": "P13",
+      "desc": "sirsi prd sync \u2014 derive .agents/prd/<agent>.json from each repo canon+architecture (routed 20260621-020216)",
+      "acceptance": "prd sync reads canon and reconciles each PRD; PR bound",
+      "status": "done",
+      "note": "sirsi prd sync shipped \u2014 PR #110 MERGED (verified 2026-06-30). Load/Save/Validate/Summarize PRDs; surfaced live drift.",
+      "evidence": "PR #110 MERGED"
+    },
+    {
+      "id": "P14",
+      "desc": "Menubar detection fix: launcher.go LookPath trusts launchd-truncated PATH that excludes ~/.local/bin -> claude+codex show 'not installed' (routed 20260621-020216)",
+      "acceptance": "augmented resolver finds claude+codex regardless of launchd PATH; unit test; PR bound",
+      "status": "done",
+      "note": "menubar PATH detect fix merged on main (#94): resolveBinary in Installed+Launch+test. #93 duplicate closed."
+    },
+    {
+      "id": "P15",
+      "desc": "Reap 52 stale router thread registrations (recycled PIDs block OS-truth reaping)",
+      "acceptance": "stale registrations cleared via EffectiveStale gate without killing live recycled-PID threads",
+      "status": "done",
+      "note": "52 (2026-06-21) -> 10 stale records (2026-07-21): terminal/stale-suspended cleared; `sirsi thread prune` runs clean (0 terminal). The residual 10 are ACTIVE-status live-agent records (claude-home CCD sessions, gemma) that the EffectiveStale gate correctly refuses to kill \u2014 exactly the acceptance's no-false-kill guard.",
+      "evidence": "thread prune 0-terminal; stale count 52->10"
+    },
+    {
+      "id": "P16",
+      "desc": "substrate.html \u2014 thesis surface 4 (deity-styled page)",
+      "acceptance": "surface 4 authored + live; surface 5 (sirsi.ai) is Rule-17 owner-gated, tracked separately",
+      "status": "done",
+      "note": "Surface 4 authored + LIVE: docs/pantheon/knowledge-substrate.html serves 200 at sirsi.ai/pantheon/knowledge-substrate.html (verified 2026-07-21). Surface 5 (sirsi.ai integration) remains Rule-17 owner-gated and tracked separately per this task's own acceptance.",
+      "evidence": "curl 200 on sirsi.ai/pantheon/knowledge-substrate.html"
+    },
+    {
+      "id": "P17",
+      "desc": "Ship signed+notarized DMG via brew that upgrades without FDA churn",
+      "acceptance": "notarized .dmg in CI + cask bump + verified install",
+      "status": "done",
+      "note": "signed+notarized DMG shipped v0.23.2-beta, stapler+spctl verified; Apple case 102921569682 cleared"
+    }
+  ]
+}

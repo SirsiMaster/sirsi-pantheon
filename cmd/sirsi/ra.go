@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/help"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ra"
@@ -270,6 +271,13 @@ var raStatusCmd = &cobra.Command{
 		res.AddEvidence("orchestrator", boolMark(scriptErr == nil))
 		res.AddEvidence("fleet SDK", boolMark(sdkOk))
 		res.AddEvidence("repositories", fmt.Sprintf("%d present", reposPresent))
+		// Per-node capacity (ADR-031-B): the fleet lord reads what THIS node
+		// can carry before placing work — free RAM, the dynamic reserve, and
+		// the live pressure level with its source.
+		nc := guard.SampleNodeCapacity()
+		res.AddEvidence("node capacity", fmt.Sprintf("%s free · reserve %s · pressure %s (%s)",
+			guard.FormatBytes(nc.FreeRAM), guard.FormatBytes(nc.DynamicReserve()),
+			nc.Pressure, nc.PressureSource))
 		for name, repo := range repos {
 			mark := "present"
 			if _, err := os.Stat(repo.Path); os.IsNotExist(err) {

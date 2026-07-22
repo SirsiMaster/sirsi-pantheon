@@ -29,6 +29,11 @@ type ReniceTarget string
 const (
 	ReniceTargetLSP ReniceTarget = "lsp"
 	ReniceTargetAll ReniceTarget = "all"
+	// ReniceTargetAgents deprioritizes background AI-agent CLIs (claude, codex,
+	// local mlx/gemma runners) so the foreground session keeps P-core access.
+	// QoS only — core-pinning is not possible (ANE is CoreML-only); taskpolicy -b
+	// prefers E-cores, which is the whole cross-agent QoS story (ADR-031-B).
+	ReniceTargetAgents ReniceTarget = "agents"
 )
 
 // ReniceResult reports what was deprioritized.
@@ -74,6 +79,13 @@ func Renice(target ReniceTarget) (*ReniceResult, error) {
 	return reniceWith(target, defaultOrphanPs, reniceFn, taskpolicyFn)
 }
 
+// PreviewRenice reports what Renice(target) WOULD deprioritize without
+// applying anything — the dry-run half of the A1 preview-then-confirm shape.
+func PreviewRenice(target ReniceTarget) (*ReniceResult, error) {
+	return reniceWith(target, defaultOrphanPs,
+		func(int, int) error { return nil }, func(int) error { return nil })
+}
+
 func reniceWith(target ReniceTarget, psFn func() ([]orphanPsEntry, error), reniceFnArg func(int, int) error, taskpolicyFnArg func(int) error) (*ReniceResult, error) {
 	result := &ReniceResult{Target: target}
 
@@ -89,6 +101,15 @@ func reniceWith(target ReniceTarget, psFn func() ([]orphanPsEntry, error), renic
 
 		// Skip PID 0 and 1 (kernel, launchd)
 		if entry.PID <= 1 {
+			result.Skipped++
+			continue
+		}
+
+		// A1: the protected list holds for EVERY target, not just per-PID
+		// callers — a pattern that ever grows to overlap a protected name
+		// (e.g. "sirsi-gemma-worker" under the agents target) must be
+		// skipped here, not trusted to pattern hygiene.
+		if isProtectedReniceTarget(entry.Name) {
 			result.Skipped++
 			continue
 		}
@@ -130,11 +151,42 @@ func shouldRenice(target ReniceTarget, name string) bool {
 	switch target {
 	case ReniceTargetLSP:
 		return matchesLSP(nameLower)
+	case ReniceTargetAgents:
+		return matchesAgent(nameLower)
 	case ReniceTargetAll:
-		return matchesLSP(nameLower)
+		return matchesLSP(nameLower) || matchesAgent(nameLower)
 	default:
 		return false
 	}
+}
+
+// agentProcessPatterns match background AI-agent CLIs and local model runners.
+// "sirsi" processes (incl. sirsi-gemma-worker) are excluded by the protected
+// list — Pantheon never deprioritizes itself.
+var agentProcessPatterns = []string{
+	"claude",
+	"codex",
+	"mlx_lm",
+	"gemma",
+}
+
+func matchesAgent(nameLower string) bool {
+	// The foreground GUI is NOT a background agent: "claude" must match the
+	// claude-code runners, never /Applications/Claude.app (the owner's desktop
+	// app and its Electron helpers) — deprioritizing that harms the exact
+	// foreground this lever protects. The exclusion keys on GUI install
+	// locations, not ".app" itself: claude-code's headless runner also lives
+	// inside an .app-shaped directory (under Application Support) and MUST
+	// still match.
+	if strings.Contains(nameLower, "/applications/") || strings.Contains(nameLower, "/frameworks/") {
+		return false
+	}
+	for _, pattern := range agentProcessPatterns {
+		if strings.Contains(nameLower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesLSP(nameLower string) bool {

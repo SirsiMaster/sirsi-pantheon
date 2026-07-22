@@ -58,6 +58,17 @@ Everything reads from `NodeCapacity`. On 48 GB/12 GB-model it yields concurrency
 
 Each node's `NodeCapacity` + current load is the **unit a fleet layer balances across**. A node near pressure sheds or refuses inference; a node with headroom accepts more. **The per-node dynamic governor is the prerequisite** — there is nothing to balance until each node models itself. So `NodeCapacity` must be expressed in a form Ra/Nexus can consume (serializable, versioned), even though the fleet balancer is future work.
 
+### Ra exposure (P3, 2026-07-21)
+
+`sirsi ra status` now surfaces this node's live capacity as evidence — free RAM,
+`DynamicReserve()`, and the pressure level with its source (`kernel-dispatch` /
+cache / bootstrap) — via `guard.SampleNodeCapacity()`. The fleet lord reads what
+a node can carry before placing work; cross-node aggregation stays with the
+SirsiNexus location-transparency trajectory above. Cross-agent QoS ships as
+`sirsi relieve --agents` (renice +10 + `taskpolicy -b` on claude/codex/local-model
+processes; QoS only — the ANE is CoreML-only, so core-pinning is impossible and
+is not claimed).
+
 ## Consequences
 
 - **The invariant is unchanged and still enforced** — the hard cap, the cold-path single-flight, and consent-based Hapi governance all stay. Only the *numbers* feeding them become measured.
