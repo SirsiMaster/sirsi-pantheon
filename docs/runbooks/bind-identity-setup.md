@@ -57,10 +57,13 @@ chmod 600 ~/.sirsi/bind-app.pem
 
 ## 3. Install it on the repo
 
-App page → **Install App** → your account → **Only select repositories** →
-`sirsi-pantheon` → **Install**.
+App page → **Install App** → your account → choose the scope → **Install**.
 
-(Add `FinalWishes` / `SirsiNexusApp` later only if you extend the gate there.)
+Scope is your call. `sirsi-pantheon` alone is the minimum (it is the only repo with
+`binding-hold.yml` today). **All repositories** is also fine and avoids re-doing this:
+the App can only *submit an approving review* — no merge, no push, no settings — so on
+any repo without the gate wired, its approval is inert. Wider install ≠ wider power;
+the enforcement boundary is the local key, not the repo list.
 
 ## 4. Verify — end to end, no guessing
 
@@ -68,13 +71,22 @@ App page → **Install App** → your account → **Only select repositories** �
 # identity resolves and the App can see the repo
 scripts/bind/sirsi-bind.sh --help
 
-# real check: bind PR #218 (the PR that carries this change, and holds itself)
-scripts/bind/sirsi-bind.sh 218
+# real check: bind the next open authority-model PR (one touching a gated path).
+# (The original test PR #218 has since merged — use whatever authority PR is open.)
+scripts/bind/sirsi-bind.sh <pr-number>
 ```
 
-Expect `✔ PR #218 bound on <sha>` and the `binding-hold` check flipping to green
+Expect `✔ PR #<n> bound on <sha>` and the `binding-hold` check flipping to green
 within ~30s. If it stays red, read the check log — it prints the author login and
-head SHA it required.
+head SHA it required. With no authority PR open, verify the identity alone by minting
+an installation token (see ADR-041 §Verify).
+
+> **✅ Completed 2026-07-22.** App `sirsi-bind` (App ID **4361030**) created, private
+> key placed at `~/.sirsi/bind-app.pem` (perms `600`), installed **org-wide**.
+> Token-mint verified against `sirsi-pantheon`, `FinalWishes`, `SirsiNexusApp`, and
+> `Assiduous`. The gate is **active only in `sirsi-pantheon`** (only repo carrying
+> `binding-hold.yml`); to extend it, wire that workflow into the target repo and note
+> it in that repo's canon.
 
 ## What is now true, and what still isn't
 
