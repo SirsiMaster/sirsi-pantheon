@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -247,7 +248,7 @@ var routerPullCmd = &cobra.Command{
 			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
 		}
 		fmt.Printf("  Read full: sirsi router show <id>\n")
-		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
+		fmt.Printf("  Close when done: sirsi router close <id> --proof .agents/proofs/<id>.json --result @path/to/result.md\n")
 		return nil
 	},
 }
@@ -297,7 +298,7 @@ legacy file-only sends. Returns after --timeout seconds even with no work
 			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
 		}
 		fmt.Printf("  Read full: sirsi router show <id>\n")
-		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
+		fmt.Printf("  Close when done: sirsi router close <id> --proof .agents/proofs/<id>.json --result @path/to/result.md\n")
 		return nil
 	},
 }
@@ -420,7 +421,12 @@ func legacyReadKey(agent string) string {
 	}
 }
 
-var closeResult string
+var (
+	closeResult  string
+	closeProof   string
+	closeBlocked bool
+	closeAck     bool
+)
 
 var routerCloseCmd = &cobra.Command{
 	Use:   "close <id>",
@@ -442,12 +448,81 @@ var routerCloseCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = f.Close() }()
+		md, err := f.Show(args[0])
+		if err != nil {
+			return err
+		}
+		targetRepo := closeTargetRepo(repoRoot, md)
+		if err := enforceCloseProof(targetRepo, closeProof, closeBlocked, closeAck, result); err != nil {
+			return err
+		}
 		if err := f.CloseItem(args[0], result); err != nil {
 			return err
 		}
 		fmt.Printf("  Closed %s\n", args[0])
 		return nil
 	},
+}
+
+func closeTargetRepo(repoRoot, md string) string {
+	for _, line := range strings.Split(md, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "---" || line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(key) != "repo" {
+			continue
+		}
+		repo := strings.Trim(strings.TrimSpace(value), `"'`)
+		if repo == "" {
+			break
+		}
+		if filepath.IsAbs(repo) {
+			return filepath.Clean(repo)
+		}
+		return filepath.Clean(filepath.Join(repoRoot, repo))
+	}
+	return repoRoot
+}
+
+func enforceCloseProof(repoRoot, proofPath string, blocked, ack bool, result string) error {
+	if blocked && ack {
+		return fmt.Errorf("--blocked and --ack are mutually exclusive")
+	}
+	contractPath := filepath.Join(repoRoot, ".agents", "completion.contract.json")
+	if _, err := os.Stat(contractPath); err != nil {
+		if os.IsNotExist(err) {
+			if strings.TrimSpace(proofPath) != "" {
+				return fmt.Errorf("--proof supplied but no completion contract exists at %s", contractPath)
+			}
+			return nil
+		}
+		return fmt.Errorf("check completion contract: %w", err)
+	}
+	if blocked || ack {
+		if strings.TrimSpace(result) == "" {
+			return fmt.Errorf("--result is required when closing with --blocked or --ack")
+		}
+		return nil
+	}
+	if strings.TrimSpace(proofPath) == "" {
+		return fmt.Errorf("completion proof required: run `python3 ~/Development/tools/agent_completion_gate.py init-proof --repo %s --work-item <id> --agent-id <agent>`, fill the proof, validate it, then close with --proof", repoRoot)
+	}
+	proof := strings.TrimSpace(proofPath)
+	if !filepath.IsAbs(proof) {
+		proof = filepath.Join(repoRoot, proof)
+	}
+	script := "/Users/thekryptodragon/Development/tools/agent_completion_gate.py"
+	cmd := exec.Command("python3", script, "validate", "--repo", repoRoot, "--proof", proof)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("completion proof validation failed: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // routerWakeInstallCmd installs the per-agent pull-loop LaunchAgent (PR#2,
@@ -970,6 +1045,9 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendType, "type", "", "Message type: proposal|review|decision (ADR-024 §5 — one inbox, no reviews/ or decisions/ dirs)")
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
+	routerCloseCmd.Flags().StringVar(&closeProof, "proof", "", "Completion proof JSON path, relative to the target repo or absolute")
+	routerCloseCmd.Flags().BoolVar(&closeBlocked, "blocked", false, "Close as blocked with a written reason; skips completion proof validation")
+	routerCloseCmd.Flags().BoolVar(&closeAck, "ack", false, "Close as coordination-only acknowledgment; skips completion proof validation")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")

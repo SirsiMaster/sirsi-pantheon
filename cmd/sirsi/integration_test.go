@@ -235,6 +235,64 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	}
 }
 
+func TestRouterCloseRequiresCompletionProofWhenContractExists(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, ".agents", "idea-router"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".agents", "completion.contract.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := runSirsiInDir(t, tmp, 10*time.Second,
+		"router", "send",
+		"--from", "claude-a", "--to", "codex-b",
+		"--title", "proof required close",
+		"--instructions", "complete the contracted work and prove it")
+	if err != nil {
+		t.Fatalf("send failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	pullOut, _, err := runSirsiInDir(t, tmp, 10*time.Second, "router", "pull", "codex-b")
+	if err != nil {
+		t.Fatalf("pull failed: %v", err)
+	}
+	var id string
+	for _, line := range strings.Split(pullOut, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "•") {
+			id = strings.TrimSpace(strings.TrimPrefix(line, "•"))
+			break
+		}
+	}
+	if id == "" {
+		t.Fatalf("could not extract item id:\n%s", pullOut)
+	}
+	if !strings.Contains(pullOut, "--proof .agents/proofs/<id>.json") {
+		t.Fatalf("pull hint should teach proof-backed close, got:\n%s", pullOut)
+	}
+
+	_, stderr, err = runSirsiInDir(t, tmp, 10*time.Second,
+		"router", "close", id, "--result", "claimed complete")
+	if err == nil {
+		t.Fatalf("close without proof should fail")
+	}
+	if !strings.Contains(stderr, "completion proof required") {
+		t.Fatalf("expected completion proof error, got:\n%s", stderr)
+	}
+
+	stdout, stderr, err = runSirsiInDir(t, tmp, 10*time.Second,
+		"router", "close", id, "--ack", "--result", "coordination-only acknowledgement")
+	if err != nil {
+		t.Fatalf("ack close should succeed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "Closed") {
+		t.Fatalf("expected close confirmation, got:\n%s", stdout)
+	}
+}
+
 func TestRouterAckLegacyPending(t *testing.T) {
 	t.Parallel()
 
