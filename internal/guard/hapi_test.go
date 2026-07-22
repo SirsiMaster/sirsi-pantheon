@@ -75,7 +75,17 @@ func withSeams(t *testing.T, governed map[int]string, fn func(c *seamCalls)) {
 	// A21: save via getters, swap + restore via setters (all under hapiFnMu) —
 	// the governor goroutine may read these concurrently with the swap.
 	og, os1, or, ok := getGovernedFn(), getSuspendFn(), getResumeFn(), getKillFn()
-	defer func() { setGovernedFn(og); setSuspendFn(os1); setResumeFn(or); setKillFn(ok) }()
+	prevPressureAuth, prevPressureLevel := lastPressureAuth.Load(), lastPressureLevel.Load()
+	lastPressureAuth.Store(false)
+	lastPressureLevel.Store(int32(PressureUnknown))
+	defer func() {
+		setGovernedFn(og)
+		setSuspendFn(os1)
+		setResumeFn(or)
+		setKillFn(ok)
+		lastPressureLevel.Store(prevPressureLevel)
+		lastPressureAuth.Store(prevPressureAuth)
+	}()
 	c := &seamCalls{}
 	setGovernedFn(func() map[int]string { return governed })
 	setSuspendFn(func(pid int, name string) error { c.suspended = append(c.suspended, pid); return nil })
