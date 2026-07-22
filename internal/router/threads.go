@@ -20,6 +20,8 @@ import (
 
 	cryptorand "crypto/rand"
 	"encoding/hex"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
 // DefaultThreadStaleAfter is the grace window before a thread without
@@ -708,6 +710,151 @@ func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
 		}
 	}
 	return reaped, nil
+}
+
+// isLiveWatcher reports whether t is a live process currently holding its
+// surface: a non-suspended, non-terminal record whose PID is alive by OS truth.
+// Suspended is excluded even if its PID happens to linger — it is a parked
+// resting state (ADR-025), never an anchor that supersedes a sibling.
+func isLiveWatcher(t *Thread) bool {
+	if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+		return false
+	}
+	if t.PID < minAgentPID {
+		return false
+	}
+	return !DeadByOSTruth(PIDStateOfThread(t))
+}
+
+// ReapStrayThreads enforces the ADR-024 invariant "one live watcher per
+// (agent, surface, machine)". After ReapDeadThreads has retired dead-PID actives,
+// any group that still has a LIVE watcher has its remaining NON-live siblings —
+// superseded suspends and any leftover dead-PID stray — retired to `closed`.
+// This is what bounds the ghost pile: the moment a successor session registers a
+// live watcher, every prior record for that surface is provably superseded and
+// swept, so a churny surface (the scheduled conduit re-registers every 15 min)
+// can never accrete hundreds of tombstones.
+//
+// SAFETY — ADR-025 preserved: a suspended record is retired ONLY when a live
+// sibling supersedes it. An un-superseded suspend (its group has NO live watcher)
+// is a genuine resumable pause and is left untouched; the resume-later guarantee
+// holds until a successor actually takes the surface. A live PID is NEVER retired
+// (OS-truth): if two real watchers race the same surface, both survive until one
+// dies — we only sweep records that are not themselves alive.
+//
+// NOTHING LOST — owner directive 2026-07-22: before retiring any record that
+// carries salvageable state (a non-boilerplate resume prompt, owned open items,
+// a thoth ref, or an in-flight current item), its continuation is inscribed to
+// the Stele ledger so the state is durably captured even as the record is swept.
+// Owned open items are additionally safe because the live successor shares the
+// same agent inbox — they are never stranded, only recorded.
+//
+// Returns the retired records (empty if none). The registry is saved only when at
+// least one record was retired.
+func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	thisMachine := MachineID()
+
+	type groupKey struct{ agent, surface string }
+	// Pass 1: find the canonical live watcher per group (newest by last_seen).
+	live := map[groupKey]*Thread{}
+	for _, t := range reg.Threads {
+		if t == nil || !SameMachine(t.MachineID, thisMachine) {
+			continue
+		}
+		if !isLiveWatcher(t) {
+			continue
+		}
+		k := groupKey{t.AgentID, t.Surface}
+		if cur, ok := live[k]; !ok || t.LastSeenAt.After(cur.LastSeenAt) {
+			live[k] = t
+		}
+	}
+	if len(live) == 0 {
+		return nil, nil // nothing anchors a supersession — leave every record be
+	}
+
+	// Pass 2: sweep non-live siblings of any group that has a live watcher.
+	var retired []ReapedThread
+	for _, t := range reg.Threads {
+		if t == nil || t.Status.IsTerminal() || !SameMachine(t.MachineID, thisMachine) {
+			continue
+		}
+		anchor, ok := live[groupKey{t.AgentID, t.Surface}]
+		if !ok || anchor.ThreadID == t.ThreadID || isLiveWatcher(t) {
+			continue // no live anchor, this IS the anchor, or itself still live
+		}
+		inscribeStraySalvage(t, anchor.ThreadID)
+		t.Status = ThreadStatusClosed
+		t.LastSeenAt = now
+		t.LastError = fmt.Sprintf("retired: superseded by live watcher %s (ADR-024 one-watcher-per-surface) at %s",
+			anchor.ThreadID, now.Format(time.RFC3339))
+		retired = append(retired, ReapedThread{ThreadID: t.ThreadID, AgentID: t.AgentID, PID: t.PID, State: PIDStateOfThread(t)})
+	}
+	if len(retired) > 0 {
+		if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+			return retired, err
+		}
+	}
+	return retired, nil
+}
+
+// boilerplateResumePrompts are the auto-generated continuation strings that carry
+// no salvageable work (the SessionEnd hook stamps "session ended"). A stray whose
+// only state is one of these is an empty tombstone — swept without a ledger entry.
+var boilerplateResumePrompts = map[string]bool{"": true, "session ended": true}
+
+// straySalvage checks a soon-to-be-retired stray against durable memory and
+// returns its salvageable continuation state, or ok=false when the record is an
+// empty tombstone (nothing to save). This is the pure decision half of the
+// "nothing lost" guarantee — the check runs on every reap; inscribeStraySalvage
+// wraps it with the Stele side effect (Rule A16 keeps the side effect isolated
+// and the predicate unit-testable without touching the ledger).
+func straySalvage(t *Thread, supersededBy string) (map[string]string, bool) {
+	if t == nil {
+		return nil, false
+	}
+	p := t.SuspendPayload
+	hasResume := p != nil && !boilerplateResumePrompts[strings.TrimSpace(p.ResumePrompt)] && p.ResumePrompt != ""
+	hasThothRef := p != nil && p.ThothRef != ""
+	hasOwned := p != nil && len(p.OwnedOpenItems) > 0
+	hasCurrent := t.CurrentItem != ""
+	if !hasResume && !hasThothRef && !hasOwned && !hasCurrent {
+		return nil, false // checked: nothing salvageable — safe to sweep
+	}
+	data := map[string]string{
+		"thread_id":     t.ThreadID,
+		"agent":         t.AgentID,
+		"surface":       t.Surface,
+		"prior_status":  string(t.Status),
+		"superseded_by": supersededBy,
+	}
+	if hasCurrent {
+		data["current_item"] = t.CurrentItem
+	}
+	if hasResume {
+		data["resume_prompt"] = p.ResumePrompt
+	}
+	if hasThothRef {
+		data["thoth_ref"] = p.ThothRef
+	}
+	if hasOwned {
+		data["owned_open_items"] = strings.Join(p.OwnedOpenItems, ",")
+	}
+	return data, true
+}
+
+// inscribeStraySalvage inscribes a stray's salvageable state to the Stele ledger
+// so nothing is lost (owner directive 2026-07-22). Empty tombstones inscribe
+// nothing — the check still runs on every reap; it simply finds nothing to save.
+func inscribeStraySalvage(t *Thread, supersededBy string) {
+	if data, ok := straySalvage(t, supersededBy); ok {
+		stele.Inscribe("horus", stele.TypeThreadReap, t.Repo, data)
+	}
 }
 
 // IsStale reports whether a thread should be considered stale given now and
