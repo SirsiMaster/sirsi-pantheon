@@ -17,10 +17,12 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mirror"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ra"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/reaper"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
@@ -764,8 +766,8 @@ func runGhostsClean(cmd *cobra.Command, args []string) error {
 		// DRY-RUN (default): show what WOULD move to Trash.
 		res.Summary = fmt.Sprintf("Would move %d ghost remnant(s) to Trash — %s reclaimable. Re-run with --confirm to apply.", len(toTrash), jackal.FormatSize(bytes))
 		for i, r := range toTrash {
-			if i >= 10 {
-				res.AddEvidence("…", fmt.Sprintf("+%d more", len(toTrash)-10))
+			if i >= 50 {
+				res.AddEvidence("…", fmt.Sprintf("+%d more", len(toTrash)-50))
 				break
 			}
 			res.AddEvidence(output.ShortenPath(r.Path), jackal.FormatSize(r.SizeBytes))
@@ -1170,6 +1172,48 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
 		}
 		report.Findings = append(report.Findings, f)
+	}
+
+	// Liveness-watch lever (A32 durability): the launchd safety net must be
+	// installed so the gemma/menubar/memory-death watch survives a reboot with no
+	// Claude app. Not-installed is a Warn with an instant fix; installed is OK.
+	{
+		lw := guard.DiagnosticFinding{
+			Check:    "liveness-watch",
+			Severity: guard.SeverityOK,
+			Message:  "launchd liveness watch installed",
+		}
+		if !liveness.Installed() {
+			lw.Severity = guard.SeverityWarn
+			lw.Message = "launchd liveness watch not installed"
+			lw.Detail = "the OS-level gemma/menubar/memory-death safety net is absent — a reboot without the Claude app leaves the load-bearing surfaces unwatched"
+			lw.Fix = "sirsi liveness-watch install"
+			lw.FixKind = guard.FixInstant
+		}
+		report.Findings = append(report.Findings, lw)
+	}
+
+	// Leaked-session pileup (A32 leak source): count leaked claude-desktop
+	// runners (read-only; the caller's own ancestry is never counted) and surface
+	// the reap lever when the pileup is large or memory is already dying. The reap
+	// is owner/doctor-invoked only — never auto-run from a headless task (no safe
+	// signature to distinguish the owner's live session).
+	if plan, perr := reaper.Plan(reaper.Options{}, reaper.RealDeps()); perr == nil {
+		n := len(plan.Candidates)
+		md := guard.SampleMemoryDeath()
+		ls := guard.DiagnosticFinding{
+			Check:    "leaked-sessions",
+			Severity: guard.SeverityOK,
+			Message:  fmt.Sprintf("no leaked claude-desktop session pileup (%d reclaimable)", n),
+		}
+		if n >= 8 || (n > 0 && md.Dying) {
+			ls.Severity = guard.SeverityWarn
+			ls.Message = fmt.Sprintf("%d leaked claude-desktop sessions (~%d MB reclaimable)", n, plan.ReclaimMBEst)
+			ls.Detail = "scheduled-task/wakeup runs leave resident sessions that drive swap-death — reclaim them (your live session is protected)"
+			ls.Fix = "sirsi reap-sessions --apply"
+			ls.FixKind = guard.FixInstant
+		}
+		report.Findings = append(report.Findings, ls)
 	}
 
 	if JsonOutput {

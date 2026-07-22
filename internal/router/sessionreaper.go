@@ -274,8 +274,7 @@ func sessionReaperDuty(routerRoot, repoRoot string) error {
 	if len(report.Reaped) == 0 {
 		return nil
 	}
-	host, _ := os.Hostname()
-	_, _ = ReapDeadThreads(routerRoot, host) // fold registry records via OS truth (ADR-022)
+	_, _ = ReapDeadThreads(routerRoot) // fold registry records via OS truth (ADR-022)
 	for _, r := range report.Reaped {
 		appendSupervisorLog(routerRoot, fmt.Sprintf("session-reaper: SIGTERM %d (%s: %s)", r.PID, r.Kind, r.Why))
 	}

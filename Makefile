@@ -37,11 +37,25 @@ install: build
 	@# Re-sign in place so `sirsi` runs post-install (macOS arm64 cdhash cache).
 	@# SIGN_ID="<stable identity>" keeps FDA grants across rebuilds (A6; A27 drift).
 	@codesign --force --sign "$(SIGN_ID)" "$(INSTALL_DIR)/sirsi" 2>/dev/null || true
+	@# Re-sign changes the cdhash; launchd keeps enforcing the OLD one per job
+	@# (stale LWCR -> "Launch Constraint Violation" crash-loop; kickstart can't
+	@# clear it). Bootout+bootstrap every ai.sirsi.* job with the NEW binary.
+	@"$(INSTALL_DIR)/sirsi" launchd refresh || true
 	@echo "✅ sirsi installed to $(INSTALL_DIR)/sirsi"
 
 uninstall:
 	rm -f $(INSTALL_DIR)/sirsi
 	@echo "✅ sirsi removed from $(INSTALL_DIR)"
+
+# --- Gemma worker + tooling (canonical source: scripts/gemma/) ---
+install-gemma-worker:
+	cp scripts/gemma/sirsi-gemma-worker.sh $(INSTALL_DIR)/sirsi-gemma-worker.sh
+	cp scripts/gemma/sirsi-gemma-model-resolver.sh $(INSTALL_DIR)/sirsi-gemma-model-resolver.sh
+	cp scripts/gemma/sirsi-gemma-triage.sh $(INSTALL_DIR)/sirsi-gemma-triage.sh
+	chmod +x $(INSTALL_DIR)/sirsi-gemma-worker.sh $(INSTALL_DIR)/sirsi-gemma-model-resolver.sh $(INSTALL_DIR)/sirsi-gemma-triage.sh
+	@# Restart the daemon so the running copy matches the repo (KeepAlive respawns it).
+	@launchctl kickstart -k gui/$$(id -u)/ai.sirsi.gemma-worker 2>/dev/null || true
+	@echo "✅ gemma worker + resolver + triage installed; daemon kickstarted"
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -37,9 +36,23 @@ var routerDoctorCmd = &cobra.Command{
 			return fmt.Errorf("collect node-status: %w", err)
 		}
 
+		// Loop-dead is a PER-AGENT verdict, not per-session (router item
+		// 20260714-210359): an agent needs ONE armed watcher; redundant live
+		// sessions of the same agent (CCD duplicate records) are not each
+		// obligated to run /loop. Only threads of agents with open items and
+		// ZERO armed watchers are worth an alarm.
+		loopDead := map[string]bool{}
 		var unarmed []router.ThreadSummary
 		for _, t := range ns.LiveThreads {
-			if !t.Armed {
+			if t.Armed {
+				continue
+			}
+			verdict, seen := loopDead[t.AgentID]
+			if !seen {
+				verdict = router.AgentLoopDead(routerRoot, t.AgentID, ns.PendingByAgent)
+				loopDead[t.AgentID] = verdict
+			}
+			if verdict {
 				unarmed = append(unarmed, t)
 			}
 		}
@@ -51,11 +64,11 @@ var routerDoctorCmd = &cobra.Command{
 		issues := 0
 		if len(unarmed) > 0 {
 			issues++
-			fmt.Printf("⚠ %d live thread(s) NOT armed (claim live, watcher loop dead):\n", len(unarmed))
+			fmt.Printf("⚠ %d live thread(s) of loop-dead agent(s) — open items, zero armed watchers:\n", len(unarmed))
 			for _, t := range unarmed {
 				fmt.Printf("    %s  agent=%s  reason=%s\n", t.ThreadID, t.AgentID, t.ArmedReason)
 			}
-			fmt.Println("    → that agent must re-arm its /loop watcher (it is not consuming its inbox).")
+			fmt.Println("    → that agent must arm ONE watcher (/loop, or `sirsi router wake-install <agent>`) — its inbox has no consumer.")
 			fmt.Println()
 		}
 		if len(ns.StrandedInbox) > 0 {
@@ -92,8 +105,7 @@ var routerDoctorCmd = &cobra.Command{
 			return nil
 		}
 
-		host, _ := os.Hostname()
-		reaped, rerr := router.ReapDeadThreads(repoRoot, host)
+		reaped, rerr := router.ReapDeadThreads(repoRoot)
 		if rerr != nil {
 			return fmt.Errorf("reap dead threads: %w", rerr)
 		}

@@ -86,6 +86,17 @@ func AgentHasLiveThread(routerRoot, agentID string) bool {
 	return false
 }
 
+// AgentLoopDead reports whether agentID actually needs a loop-dead alarm: it
+// has open inbox items AND zero armed live threads. An agent needs ONE armed
+// watcher to consume its inbox — extra live sessions of the same agent (the
+// CCD duplicate-record artifact: several concurrent claude.app sessions, none
+// running /loop) are not each obligated to run a loop, and flagging every one
+// of them over-fires per-session (router item 20260714-210359). An agent with
+// no open items has nothing stranding either way.
+func AgentLoopDead(routerRoot, agentID string, pendingByAgent map[string][]string) bool {
+	return len(pendingByAgent[agentID]) > 0 && !AgentArmed(routerRoot, agentID)
+}
+
 // StrandedAgent is one agent with open inbox items but no armed thread watching
 // them — work that sits until the agent is (re)armed.
 type StrandedAgent struct {

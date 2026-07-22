@@ -22,12 +22,36 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
 // dutyTimeout bounds one duty script run so a hung script can never wedge the
 // supervisor loop (bounded, per the single-backstop ruling).
 const dutyTimeout = 2 * time.Minute
+
+// autoHealFn is the injected auto-heal pass (Rule A16/A21 accessor pattern).
+// internal/autoheal imports this package, so the duty reaches it through this
+// seam, wired by cmd/sirsi at startup; the default is an inert no-op.
+var (
+	autoHealMu sync.RWMutex
+	autoHealFn = func(routerRoot, repoRoot string) error { return nil }
+)
+
+func getAutoHealFn() func(string, string) error {
+	autoHealMu.RLock()
+	defer autoHealMu.RUnlock()
+	return autoHealFn
+}
+
+// SetAutoHealFn installs the auto-heal pass the supervisor's auto-heal duty runs.
+func SetAutoHealFn(fn func(routerRoot, repoRoot string) error) {
+	autoHealMu.Lock()
+	defer autoHealMu.Unlock()
+	if fn != nil {
+		autoHealFn = fn
+	}
+}
 
 // SupervisorDuty describes one folded duty pass.
 type SupervisorDuty struct {
@@ -46,6 +70,25 @@ func supervisorDuties() []SupervisorDuty {
 		{Name: "dispatch-pump", ScriptRel: "run-on-event.sh", Cadence: 0},
 		{Name: "sweep", ScriptRel: "sweep.sh", Cadence: time.Hour},
 		{Name: "registry-police", ScriptRel: filepath.Join("police", "registry-police.sh"), Cadence: 10 * time.Minute},
+		// Auto-heal (ADR-039 P3): the monitor→identify→FIX pass, gated on
+		// autonomous mode + GateAction inside the hook. Injected from cmd/sirsi
+		// (internal/autoheal imports this package — a direct import would cycle).
+		// The default no-ops, so library consumers without the wiring are inert.
+		{Name: "auto-heal", GoRun: func(routerRoot, repoRoot string) error {
+			return getAutoHealFn()(routerRoot, repoRoot)
+		}, Cadence: 5 * time.Minute},
+		// Universal Thread Census (A32): every agent-class infra process —
+		// including GPU servers — becomes a registered thread, no misses;
+		// a future process is caught within one cadence of first launch.
+		{Name: "thread-census", GoRun: RunCensusDuty, Cadence: 10 * time.Minute},
+		// Gemma liveness (A32, owner directive 2026-07-17): the local LLM must
+		// survive on Pantheon's survival, not the IDE. This resident supervisor
+		// (always-on, IDE-independent) probes the broker and RESTORES it — the
+		// `ai.sirsi.gemma` LaunchAgent only starts it at boot. 2-min cadence
+		// because gemma is the Tier-0 substrate everything depends on.
+		{Name: "gemma-liveness", GoRun: func(routerRoot, repoRoot string) error {
+			return getGemmaLivenessFn()(routerRoot, repoRoot)
+		}, Cadence: 2 * time.Minute},
 		// Session reaper (2026-07-08 wakeup-leak RCA): native Go — it needs
 		// process grouping + SIGTERM, not a shell subroutine. See sessionreaper.go.
 		{Name: "session-reaper", GoRun: runSessionReaperDuty, Cadence: 10 * time.Minute},

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/brand"
 )
 
 // ── Shared Layout ───────────────────────────────────────────────────────
@@ -45,12 +47,13 @@ func pageShell(title, activePage, bodyContent string) string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>%s — Horus — Sirsi</title>
 <style>
+:root{%s}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:%s;color:%s;font-family:'SF Mono',Menlo,Consolas,'Courier New',monospace;
 display:flex;min-height:100vh;overflow:hidden}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(200,169,81,.2);border-radius:3px}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--gold) 20%%, transparent);border-radius:3px}
 
 /* Sidebar */
 .sidebar{width:180px;min-height:100vh;background:rgba(6,6,15,.96);border-right:1px solid %s;
@@ -62,25 +65,25 @@ color:%s;letter-spacing:2px;text-transform:uppercase}
 .nav-item{display:flex;align-items:center;padding:8px 16px;color:%s;text-decoration:none;
 font-size:12px;letter-spacing:.3px;transition:all .15s;border-left:2px solid transparent;cursor:pointer;
 font-family:Inter,-apple-system,system-ui,sans-serif}
-.nav-item:hover{background:rgba(200,169,81,.06);color:%s}
-.nav-item.active{background:rgba(200,169,81,.08);color:%s;border-left-color:%s}
+.nav-item:hover{background:color-mix(in srgb, var(--gold) 6%%, transparent);color:%s}
+.nav-item.active{background:color-mix(in srgb, var(--gold) 8%%, transparent);color:%s;border-left-color:%s}
 .nav-glyph{width:20px;font-size:14px;margin-right:8px;text-align:center}
-.sidebar-footer{padding:12px 16px;border-top:1px solid %s;font-size:8px;color:#333;letter-spacing:1px;
+.sidebar-footer{padding:12px 16px;border-top:1px solid %s;font-size:8px;color:var(--line);letter-spacing:1px;
 font-family:Inter,-apple-system,system-ui,sans-serif}
 
 /* Main — content is capped at 1400px and centered in the space right of the
    fixed sidebar so ultra-wide viewports don't strand everything top-left. */
 .main{margin-left:180px;flex:1;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden}
 .main-inner{width:100%%;max-width:1400px;display:flex;flex-direction:column;height:100vh;overflow:hidden;
-border-left:1px solid rgba(200,169,81,.06);border-right:1px solid rgba(200,169,81,.06)}
+border-left:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);border-right:1px solid color-mix(in srgb, var(--gold) 6%%, transparent)}
 
 /* Stats bar */
-.stats-bar{display:flex;gap:1px;background:rgba(200,169,81,.06);border-bottom:1px solid %s;flex-shrink:0}
+.stats-bar{display:flex;gap:1px;background:color-mix(in srgb, var(--gold) 6%%, transparent);border-bottom:1px solid %s;flex-shrink:0}
 .stat{flex:1;padding:12px 16px;background:%s}
 .stat-label{font-size:9px;color:%s;letter-spacing:1.5px;text-transform:uppercase;
 font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 .stat-value{font-size:16px;color:%s;font-weight:400}
-.stat-sub{font-size:10px;color:#555;margin-top:2px}
+.stat-sub{font-size:10px;color:var(--dim);margin-top:2px}
 
 /* Terminal */
 .terminal-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -88,23 +91,23 @@ font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 .term-prompt{color:%s;padding:8px 0 8px 16px;font-size:13px;flex-shrink:0}
 .term-input{flex:1;background:none;border:none;color:%s;font-size:13px;padding:8px 16px 8px 8px;
 font-family:inherit;outline:none}
-.term-input::placeholder{color:#444}
-.term-view-label{color:#555;font-size:10px;padding-right:16px;letter-spacing:1px;text-transform:uppercase;
+.term-input::placeholder{color:var(--dim)}
+.term-view-label{color:var(--dim);font-size:10px;padding-right:16px;letter-spacing:1px;text-transform:uppercase;
 font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .terminal{flex:1;overflow-y:auto;padding:12px 16px;background:rgba(3,3,8,.95);line-height:1.6;font-size:12px}
 .t-line{margin:0;white-space:pre-wrap;word-break:break-all}
-.t-dim{color:#555}
-.t-out{color:#ccc}
-.t-ok{color:#44FF88}
-.t-err{color:#FF4444}
-.t-gold{color:#C8A951}
-.t-head{color:#C8A951;font-weight:600;font-size:13px;margin-top:8px}
+.t-dim{color:var(--dim)}
+.t-out{color:var(--ink2)}
+.t-ok{color:var(--ok)}
+.t-err{color:var(--danger)}
+.t-gold{color:var(--gold)}
+.t-head{color:var(--gold);font-weight:600;font-size:13px;margin-top:8px}
 .t-row{display:flex;gap:16px;padding:2px 0}
-.t-row:hover{background:rgba(200,169,81,.03)}
-.t-col{color:#aaa}.t-col-r{color:#C8A951;text-align:right;min-width:80px}
-.t-action{color:#555;cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:#333}
-.t-action:hover{color:#C8A951;text-decoration-color:#C8A951}
-.t-sep{border-top:1px solid rgba(200,169,81,.06);margin:6px 0}
+.t-row:hover{background:color-mix(in srgb, var(--gold) 3%%, transparent)}
+.t-col{color:var(--ink2)}.t-col-r{color:var(--gold);text-align:right;min-width:80px}
+.t-action{color:var(--dim);cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:var(--line)}
+.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
+.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 </style>
 </head>
 <body>
@@ -117,6 +120,7 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 </body>
 </html>`,
 		title,
+		brand.CSSVars(brand.Dark),
 		ColorBg, ColorWhite,
 		ColorBorder, ColorBorder,
 		ColorEmerald,
@@ -251,7 +255,7 @@ function viewScan(){
    out('','t-dim');
    const bulk=document.createElement('div');bulk.className='t-line';
    const btn=document.createElement('span');btn.className='t-action';
-   btn.style.cssText='color:#C8A951;font-weight:600;font-size:13px';
+   btn.style.cssText='color:var(--gold);font-weight:600;font-size:13px';
    btn.textContent='▸ CLEAN ALL '+safeCount+' SAFE ITEMS ('+fmtSize(safeSize)+')';
    btn.addEventListener('click',function(){cleanAllSafe(btn,data.findings)});
    bulk.appendChild(btn);T.appendChild(bulk);
@@ -280,19 +284,19 @@ function viewScan(){
      const act=document.createElement('span');act.className='t-action';
      act.textContent=f.remediation==='Flag for review'?'[flag]':'['+f.remediation+']';
      act.style.marginLeft='12px';
-     if(f.breaking){act.style.color='#FF8844'}
+     if(f.breaking){act.style.color='var(--warn)'}
      if(f.remediation!=='Flag for review'){act.addEventListener('click',function(){cleanIdx(act,f._i)})}
-     else{act.style.cursor='default';act.style.textDecoration='none';act.style.color='#666'}
+     else{act.style.cursor='default';act.style.textDecoration='none';act.style.color='var(--dim)'}
      row.appendChild(act);
     }else{
-     const flag=document.createElement('span');flag.style.cssText='margin-left:12px;color:#555;font-size:10px';
+     const flag=document.createElement('span');flag.style.cssText='margin-left:12px;color:var(--dim);font-size:10px';
      flag.textContent='review';row.appendChild(flag);
     }
     T.appendChild(row);
     /* Show advisory as sub-line */
     if(f.advisory){
      const adv=document.createElement('div');adv.className='t-line';
-     adv.style.cssText='padding-left:24px;font-size:10px;color:#555;margin-top:-2px';
+     adv.style.cssText='padding-left:24px;font-size:10px;color:var(--dim);margin-top:-2px';
      adv.textContent=f.advisory;T.appendChild(adv)}
    });
   });
@@ -308,14 +312,14 @@ function cleanAllSafe(btn,findings){
  const safeIdx=[];
  findings.forEach(function(f,i){if(f.severity==='safe')safeIdx.push(i)});
  if(!safeIdx.length)return;
- btn.textContent='▸ CLEANING '+safeIdx.length+' ITEMS...';btn.style.color='#C8A951';
+ btn.textContent='▸ CLEANING '+safeIdx.length+' ITEMS...';btn.style.color='var(--gold)';
  fetch('/api/clean',{method:'POST',headers:{'Content-Type':'application/json'},
   body:JSON.stringify({indices:safeIdx,dry_run:false})
  }).then(r=>r.json()).then(function(d){
-  btn.textContent='✓ FREED '+d.freed_human+' ('+d.cleaned+' items)';btn.style.color='#44FF88';
+  btn.textContent='✓ FREED '+d.freed_human+' ('+d.cleaned+' items)';btn.style.color='var(--ok)';
   /* Reload after 2s to show updated state */
   setTimeout(function(){switchView('scan')},2000);
- }).catch(function(e){btn.textContent='✗ Error: '+e.message;btn.style.color='#FF4444'});
+ }).catch(function(e){btn.textContent='✗ Error: '+e.message;btn.style.color='var(--danger)'});
 }
 
 function cleanIdx(el,idx){
@@ -323,9 +327,9 @@ function cleanIdx(el,idx){
  fetch('/api/clean',{method:'POST',headers:{'Content-Type':'application/json'},
   body:JSON.stringify({indices:[idx],dry_run:false})
  }).then(r=>r.json()).then(function(d){
-  if(d.cleaned>0){el.textContent='✓ '+d.freed_human;el.style.color='#44FF88'}
-  else{el.textContent='skip';el.style.color='#666'}
- }).catch(function(){el.textContent='err';el.style.color='#FF4444'});
+  if(d.cleaned>0){el.textContent='✓ '+d.freed_human;el.style.color='var(--ok)'}
+  else{el.textContent='skip';el.style.color='var(--dim)'}
+ }).catch(function(){el.textContent='err';el.style.color='var(--danger)'});
 }
 
 function viewGhosts(){
@@ -339,7 +343,7 @@ function viewGhosts(){
    g.residuals.forEach(function(r){
     const row=document.createElement('div');row.className='t-line t-row';
     const type=document.createElement('span');type.className='t-col';type.style.width='140px';type.textContent=r.type;
-    const path=document.createElement('span');path.className='t-col';path.style.flex='1';path.style.color='#666';path.textContent=r.path;
+    const path=document.createElement('span');path.className='t-col';path.style.flex='1';path.style.color='var(--dim)';path.textContent=r.path;
     const size=document.createElement('span');size.className='t-col-r';size.textContent=fmtSize(r.size_bytes);
     row.appendChild(type);row.appendChild(path);row.appendChild(size);T.appendChild(row)});
    const cleanRow=document.createElement('div');cleanRow.className='t-line';
@@ -349,8 +353,8 @@ function viewGhosts(){
     fetch('/api/ghosts/clean',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({app_name:g.app_name,dry_run:false})
     }).then(r=>r.json()).then(function(d){
-     act.textContent='✓ freed '+d.freed_human;act.style.color='#44FF88'
-    }).catch(function(){act.textContent='error';act.style.color='#FF4444'})});
+     act.textContent='✓ freed '+d.freed_human;act.style.color='var(--ok)'
+    }).catch(function(){act.textContent='error';act.style.color='var(--danger)'})});
    cleanRow.appendChild(act);T.appendChild(cleanRow)});
  }).catch(function(e){out('Error: '+e.message,'t-err')});
 }

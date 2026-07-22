@@ -183,18 +183,51 @@ struct RBStranded: Decodable, Identifiable {
 
 // RouterBoard is the decoded fabric view. Only the fields the surface renders are
 // modeled; unknown fields are ignored (additive-tolerant, ADR-026).
+// MemoryVitals decodes `sirsi vitals --json` — the memory-first read.
+struct MemoryVitals: Decodable {
+    let totalBytes: Int64
+    let usedBytes: Int64
+    let freeBytes: Int64
+    let swapUsedBytes: Int64
+    let pressure: String          // "normal" | "warn" | "critical"
+    let top: [VitalsProc]?
+    enum CodingKeys: String, CodingKey {
+        case totalBytes = "total_bytes"
+        case usedBytes = "used_bytes"
+        case freeBytes = "free_bytes"
+        case swapUsedBytes = "swap_used_bytes"
+        case pressure, top
+    }
+}
+
+struct VitalsProc: Decodable, Identifiable {
+    let name: String
+    let pid: Int
+    let rssBytes: Int64
+    var id: Int { pid }
+    enum CodingKeys: String, CodingKey {
+        case name, pid
+        case rssBytes = "rss_bytes"
+    }
+}
+
 struct RouterBoard: Decodable {
     let schemaVersion: String?
     let totalPending: Int?
+    let liveThreadCount: Int?
     let agentHealth: [RBAgentHealth]?
     let launchAgents: [RBLaunchAgent]?
     let strandedInbox: [RBStranded]?
+    // agent id → open item ids: the fabric's actual work map.
+    let pendingByAgent: [String: [String]]?
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case totalPending = "total_pending"
+        case liveThreadCount = "live_thread_count"
         case agentHealth = "agent_health"
         case launchAgents = "launch_agents"
         case strandedInbox = "stranded_inbox"
+        case pendingByAgent = "pending_by_agent"
     }
 }
 
@@ -271,6 +304,42 @@ final class SirsiEngine: ObservableObject {
     // Re-probed on every refresh()/popover open, so granting then reopening the
     // panel clears it without a relaunch.
     @Published var hasFDA = false
+
+    // Bumped each time the panel is (re)opened. RootView pops navigation to
+    // Home on change so a reopened panel never shows a screen whose command
+    // output predates the reopen (the stale-RTK-tutorial bug, 2026-07-16).
+    @Published var reopenTick = 0
+
+    // Memory-First (canon: RAM is the pre-eminent view, not storage). Live
+    // vitals from `sirsi vitals --json`; drives the Home lead card.
+    @Published var vitals: MemoryVitals?
+
+    func fetchVitals() async {
+        let data = await Self.runJSON(args: ["vitals", "--json"])
+        if let v = try? JSONDecoder().decode(MemoryVitals.self, from: data) {
+            vitals = v
+        }
+    }
+
+    // Autonomous mode — the master action switch (`sirsi autonomous`, #203):
+    // ON = Pantheon applies approved fixes unattended (the auto-heal loop);
+    // OFF = observe + propose only. Mirrors ~/.sirsi/brain.yaml via the CLI.
+    @Published var autonomousOn = false
+
+    func fetchAutonomous() async {
+        let data = await Self.runJSON(args: ["autonomous", "status", "--json"])
+        if let obj = try? JSONDecoder().decode([String: Bool].self, from: data) {
+            autonomousOn = obj["autonomous"] ?? false
+        }
+    }
+
+    func setAutonomous(_ on: Bool) async {
+        _ = await Self.run(args: ["autonomous", on ? "on" : "off"], stdin: nil)
+        await fetchAutonomous()
+        recordActivity(title: "Autonomous mode turned \(on ? "ON" : "OFF")",
+                       command: "sirsi autonomous \(on ? "on" : "off")",
+                       result: on ? "self-managing" : "observe + propose")
+    }
 
     // Provenance ledger — actions taken from the UI, newest first.
     @Published var activity: [ActivityEntry] = []

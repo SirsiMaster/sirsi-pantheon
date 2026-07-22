@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,6 +48,9 @@ func stubDutyRun(t *testing.T, fn func(script, repoRoot string) error) *[]string
 // first run of this suite executed the real reaper before this stub existed).
 func stubSessionReaper(t *testing.T) *int {
 	t.Helper()
+	oldEnum := enumerateProcsFn
+	enumerateProcsFn = func() ([]CensusProc, error) { return nil, nil }
+	t.Cleanup(func() { enumerateProcsFn = oldEnum })
 	runs := 0
 	orig := getSessionReaperImpl()
 	setSessionReaperImpl(func(routerRoot, repoRoot string) error { runs++; return nil })
@@ -65,8 +69,8 @@ func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	now := time.Now()
 
 	first := runSupervisorDuties(routerRoot, repoRoot, now)
-	if len(first) != 4 {
-		t.Fatalf("first pass duties = %d, want 4 (3 scripts + native session-reaper)", len(first))
+	if len(first) != 7 {
+		t.Fatalf("first pass duties = %d, want 7 (3 scripts + native auto-heal + census + gemma-liveness + session-reaper)", len(first))
 	}
 	for _, d := range first {
 		if !d.Ran || d.Skipped != "" || d.Error != "" {
@@ -157,10 +161,11 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 		t.Fatalf("no script should run when none exist: %v", *calls)
 	}
 	for _, d := range results {
-		if d.Name == "session-reaper" {
-			// Native duty: no script to be missing — it runs.
+		if d.Name == "session-reaper" || d.Name == "auto-heal" || d.Name == "thread-census" || d.Name == "gemma-liveness" {
+			// Native duties: no script to be missing — they run (auto-heal is an
+			// inert no-op until cmd/sirsi injects the real pass).
 			if !d.Ran || d.Skipped != "" {
-				t.Errorf("session-reaper = %+v, want ran (native, script-independent)", d)
+				t.Errorf("%s = %+v, want ran (native, script-independent)", d.Name, d)
 			}
 			continue
 		}
@@ -194,10 +199,22 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Duties) != 4 {
-		t.Fatalf("report.Duties = %d, want 4: %+v", len(report.Duties), report.Duties)
+	if len(report.Duties) != 7 {
+		t.Fatalf("report.Duties = %d, want 7: %+v", len(report.Duties), report.Duties)
 	}
 	if len(*calls) != 3 {
 		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)
+	}
+	// The full work board is broadcast on every pass and persisted to board.json
+	// (owner directive 2026-07-17) — every thread reads the same file.
+	if report.WorkBoard == nil {
+		t.Fatal("report.WorkBoard is nil — the board must broadcast every pass")
+	}
+	raw, err := os.ReadFile(filepath.Join(routerRoot, BoardFileName))
+	if err != nil {
+		t.Fatalf("board.json not written: %v", err)
+	}
+	if !strings.Contains(string(raw), "\"work_board\"") {
+		t.Fatal("board.json missing the broadcast work_board block")
 	}
 }

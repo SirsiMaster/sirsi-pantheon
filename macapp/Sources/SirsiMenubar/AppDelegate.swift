@@ -113,7 +113,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A TCC-denied open() is what puts an app in that list (see Views.swift).
         registerForFullDiskAccess()
 
+        // Claim a RIGHT-side menu-bar slot from the first launch (owner reports
+        // 2026-07-17): macOS hides the LEFTMOST status items when the bar fills,
+        // and a newly-created item spawns leftmost — so the Eye (recreated on
+        // every app relaunch) was perpetually first to vanish behind Outlook's
+        // transient notification item. A Cmd-drag anchor doesn't work against a
+        // transient neighbor, so seed the position PROGRAMMATICALLY: macOS reads
+        // the item's saved slot from the "NSStatusItem Preferred Position
+        // <autosaveName>" default (points from the RIGHT edge of the status
+        // area) BEFORE placing it. Seeding a small value pins the Eye next to
+        // the system items — right of every transient third-party icon — and is
+        // written only when absent, so the owner's own drag always wins after.
+        let posKey = "NSStatusItem Preferred Position ai.sirsi.pantheon.eye"
+        if UserDefaults.standard.object(forKey: posKey) == nil {
+            UserDefaults.standard.set(120.0, forKey: posKey)
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.autosaveName = "ai.sirsi.pantheon.eye"
+        statusItem.isVisible = true
         if let button = statusItem.button {
             // Branded mark: the Eye of Horus (the watchful protector), drawn in
             // code in the health colour (makeEye), NOT a template image. Healthy
@@ -186,6 +203,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.maxSize = NSSize(width: 900, height: 1400)
         p.isReleasedWhenClosed = false
         p.setFrameAutosaveName("SirsiPantheonPanel")  // persist position + size
+        // Yield focus like a real menubar surface: click anywhere else and the
+        // panel gets out of the way instead of floating over every window
+        // forever (owner, 2026-07-16: "static and never loses focus and blocks
+        // other windows"). Sheets (Apply confirmations) become key while the
+        // panel resigns — don't hide underneath our own dialog.
+        panelObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: p, queue: .main
+        ) { _ in
+            Task { @MainActor in
+                if let key = NSApp.keyWindow, key.sheetParent === p || key.parent === p { return }
+                if p.attachedSheet != nil { return }
+                p.orderOut(nil)
+            }
+        }
         panel = p
     }
 
@@ -196,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         engine.refresh()
+        engine.reopenTick += 1   // RootView pops to a fresh Home (no stale screens)
         // First open with no saved frame: anchor under the status item. After
         // that, respect wherever the user moved/sized it (autosaved frame).
         if panel.frameAutosaveName.isEmpty || !panel.setFrameUsingName("SirsiPantheonPanel") {

@@ -670,9 +670,22 @@ func TestCollectNodeStatus_SurfacesLiveAndStaleThreads(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RegisterThread live: %v", err)
 	}
-	// Register a thread, then back-date its LastSeenAt to make it stale.
+	// A stale thread is one with a LIVE PID but an old heartbeat — it must be
+	// surfaced as stale, not reaped. (A pid-less phantom that is stale is DEAD
+	// and gets reaped per the #29 policy, so it would not be a "stale" row.)
+	// Report its PID alive so the OS-truth reaper leaves it be.
+	const stalePID = 424242
+	oldState := getPIDStateFn()
+	setPIDStateFn(func(pid int) PIDState {
+		if pid == stalePID {
+			return PIDAlive
+		}
+		return PIDGone
+	})
+	defer setPIDStateFn(oldState)
+
 	stale, err := RegisterThread(routerRoot, &Thread{
-		AgentID: "codex-pantheon", Surface: "codex", Repo: repoRoot,
+		AgentID: "codex-pantheon", Surface: "codex", Repo: repoRoot, PID: stalePID,
 	})
 	if err != nil {
 		t.Fatalf("RegisterThread stale: %v", err)

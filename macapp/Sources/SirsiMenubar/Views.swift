@@ -93,6 +93,25 @@ final class Nav: ObservableObject {
 // that pushes onto our own Nav instead of a NavigationStack. Same call shape, so
 // converting a screen is a rename. The pushed destination inherits `nav` via the
 // environment object, so nested NavLinks keep working to any depth.
+
+// MaybeList — a List that stays a real List in the live app but renders as a
+// plain stack under snapshot QA: ImageRenderer cannot draw NSTableView-backed
+// Lists (they rasterize as a giant prohibition glyph), so every List-based
+// screen was invisible to the harness. .listStyle on the stack is a no-op.
+struct MaybeList<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    @ViewBuilder let content: Content
+    var body: some View {
+        if snapshotMode {
+            VStack(alignment: .leading, spacing: 10) { content }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(12)
+        } else {
+            List { content }
+        }
+    }
+}
+
 struct NavLink<Label: View, Destination: View>: View {
     @EnvironmentObject private var nav: Nav
     private let destination: () -> Destination
@@ -143,6 +162,10 @@ struct RootView: View {
             .frame(width: baseWidth, height: max(1, geo.size.height / scale), alignment: .top)
             .scaleEffect(scale, anchor: .topLeading)
         }
+        // Every panel (re)open starts at a fresh Home. Pushed screens load their
+        // command output once (.task) and would otherwise show it forever — the
+        // RTK screen kept rendering output from a since-replaced binary.
+        .onChange(of: engine.reopenTick) { _ in nav.popToRoot() }
         .environmentObject(nav)
     }
 }
@@ -162,20 +185,71 @@ struct HomeView: View {
             }
             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
 
-            // Status card — only meaningful reclaim (≥ threshold) reads as waste;
-            // trivial caches read "Clean" so the surface never alarms on 230 KB.
+            // MEMORY-FIRST lead card (canon: RAM is the pre-eminent view, not
+            // storage). Free RAM is the headline number with a pressure light;
+            // swap + the biggest process are the evidence lines; safe-to-reclaim
+            // storage drops to a secondary line beneath. Falls back to the
+            // storage lead only until vitals load, so Home is never blank.
             VStack(spacing: 4) {
-                let hasWaste = engine.safeBytes >= SirsiEngine.wasteThreshold
-                Text(hasWaste ? SirsiEngine.human(engine.safeBytes) : "Clean")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(hasWaste ? gold : .green)
-                Text(hasWaste ? "safe to reclaim" : "nothing significant to clean")
-                    .font(.caption).foregroundStyle(.secondary)
-                if !engine.scannedAt.isEmpty {
-                    Text("scanned \(engine.scannedAt)").font(.caption2).foregroundStyle(.tertiary)
+                if let v = engine.vitals {
+                    let (light, word): (Color, String) = {
+                        switch v.pressure {
+                        case "critical": return (.red, "under heavy memory pressure")
+                        case "warn":     return (.orange, "memory getting tight")
+                        default:         return (.green, "memory healthy")
+                        }
+                    }()
+                    HStack(spacing: 8) {
+                        Circle().fill(light).frame(width: 10, height: 10)
+                        Text(SirsiEngine.human(v.freeBytes) + " free")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(light)
+                    }
+                    Text("\(word) · of \(SirsiEngine.human(v.totalBytes)) · swap \(SirsiEngine.human(v.swapUsedBytes))")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    if let top = v.top?.first {
+                        Text("biggest: \(top.name) \(SirsiEngine.human(top.rssBytes))")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    if engine.safeBytes >= SirsiEngine.wasteThreshold {
+                        Text("storage: \(SirsiEngine.human(engine.safeBytes)) safe to reclaim")
+                            .font(.caption2).foregroundStyle(gold)
+                    }
+                } else {
+                    // Pre-vitals fallback: the prior storage lead.
+                    let hasWaste = engine.safeBytes >= SirsiEngine.wasteThreshold
+                    Text(hasWaste ? SirsiEngine.human(engine.safeBytes) : "Clean")
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundStyle(hasWaste ? gold : .green)
+                    Text(hasWaste ? "safe to reclaim" : "reading memory…")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .task { await engine.fetchVitals() }
+
+            // Autonomous — the master action switch (plain English, one toggle):
+            // ON = Pantheon fixes issues itself (the auto-heal loop, ADR-039);
+            // OFF = it only reports and proposes. Reads/writes the same
+            // ~/.sirsi/brain.yaml truth as `sirsi autonomous on|off`.
+            HStack(spacing: 8) {
+                Text(engine.autonomousOn ? "🛠" : "👁")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Fix issues automatically").font(.callout)
+                    Text(engine.autonomousOn ? "On — Pantheon applies approved fixes itself"
+                                             : "Off — Pantheon only reports and suggests")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { engine.autonomousOn },
+                    set: { on in Task { await engine.setAutonomous(on) } }
+                ))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 6)
+            .task { await engine.fetchAutonomous() }
 
             Divider().padding(.horizontal, 12)
 
@@ -458,7 +532,7 @@ struct HorusView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
+                MaybeList {
                     Section {
                         ForEach(engine.health) { f in
                             HealthRow(engine: engine, finding: f)
@@ -762,15 +836,72 @@ func openTerminal() {
 struct RouterView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
+    @Environment(\.snapshotMode) private var snapshotMode
+
+    // ImageRenderer draws ScrollView viewports EMPTY — swap for a plain stack
+    // under snapshot QA (same contract as HomeView.maybeScroll / ResultView).
+    @ViewBuilder private func maybeScrollRouter<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if snapshotMode {
+            content().frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { content() }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Router — Fabric")
-            ScrollView {
+            maybeScrollRouter {
                 VStack(alignment: .leading, spacing: 14) {
 
+                    // ── Honest empty state: never a false "healthy" ─────────
+                    if engine.routerBoard == nil {
+                        HStack(spacing: 8) {
+                            Circle().fill(.gray).frame(width: 8, height: 8)
+                            Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet — the board hasn't been generated on this machine.")
+                                .font(.system(size: 13, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
+                    }
+
+                    // ── Fabric overview — the actual work map ───────────────
+                    if let board = engine.routerBoard {
+                        SectionLabel("THE FABRIC RIGHT NOW")
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(board.liveThreadCount ?? 0)").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
+                                Text("live threads").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(board.totalPending ?? 0)").font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle((board.totalPending ?? 0) > 0 ? gold : .green)
+                                Text("open items").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        let pending = (board.pendingByAgent ?? [:]).filter { !$0.value.isEmpty }
+                        if !pending.isEmpty {
+                            VStack(spacing: 0) {
+                                ForEach(pending.keys.sorted(), id: \.self) { agent in
+                                    HStack {
+                                        Text(agent).font(.caption)
+                                        Spacer()
+                                        Text("\(pending[agent]?.count ?? 0) open").font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    }.padding(.vertical, 6)
+                                    if agent != pending.keys.sorted().last { Divider() }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        }
+                    }
+
                     // ── Blockers (current + fixable ONLY) ───────────────────
-                    if engine.routerHasBlockers {
+                    if engine.routerBoard != nil && engine.routerHasBlockers {
                         SectionLabel("BLOCKERS — FIX TO UNSTRAND WORK", tint: .red)
 
                         ForEach(engine.routerAuthBlockers) { h in
@@ -781,10 +912,10 @@ struct RouterView: View {
                                               broken: engine.routerDaemonBlockers,
                                               onResult: { resultLine = $0 })
                         }
-                    } else {
+                    } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
                             Circle().fill(.green).frame(width: 8, height: 8)
-                            Text("Fabric healthy — no blockers")
+                            Text("No blockers — nothing is stranding work")
                                 .font(.system(size: 13, weight: .semibold))
                             Spacer()
                         }
@@ -1225,7 +1356,7 @@ struct ScanCleanView: View {
     }
 
     private var reviewList: some View {
-        List {
+        MaybeList {
             Section {
                 ForEach(engine.safe) { f in
                     itemRow(f, toggleable: true)
@@ -1446,7 +1577,7 @@ struct RiskView: View {
             if loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
-                List {
+                MaybeList {
                     Section {
                         HStack {
                             Text(riskGlyph(r.risk)).font(.system(size: 18))
@@ -1638,7 +1769,7 @@ struct GhostsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
-                List {
+                MaybeList {
                     Section { Text(r.summary).font(.callout) } header: { Text("RESULT") }
                     if r.ghosts.isEmpty {
                         Section {
@@ -2001,10 +2132,18 @@ struct ResultView: View {
                 if !r.evidence.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(r.evidence) { f in
-                            HStack {
+                            // Full information, never a clipped tail (owner 2026-07-17:
+                            // "drill-downs don't give enough information") — label and
+                            // value WRAP to show everything, and both are selectable
+                            // so evidence can be copied out of the popover.
+                            HStack(alignment: .firstTextBaseline) {
                                 Text(f.label).font(.caption).foregroundStyle(.secondary)
-                                Spacer()
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 12)
                                 Text(f.value).font(.caption.monospaced())
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
                             }.padding(.vertical, 7)
                             if f.id != r.evidence.last?.id { Divider() }
                         }
@@ -2038,8 +2177,12 @@ struct ResultView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(a.label).font(.system(size: 12, weight: .semibold))
                 if let d = a.description, !d.isEmpty {
+                    // Wrap, never clip mid-sentence — a half-shown consequence is
+                    // worse than a taller button.
                     Text(d).font(.caption2)
                         .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
                 }
             }
             Spacer()
@@ -2397,13 +2540,22 @@ struct InsightView: View {
     @State private var loading = true
     @State private var askingGemma = false
 
+    // Snapshot QA injection (same seam as ResultView): ImageRenderer never runs
+    // .task, so without a preloaded report this screen renders an eternal
+    // spinner and the harness can't judge it.
+    init(engine: SirsiEngine, preloaded: InsightReport? = nil) {
+        self.engine = engine
+        _report = State(initialValue: preloaded)
+        _loading = State(initialValue: preloaded == nil)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Insight")
             if loading && report == nil {
                 HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
             } else if let r = report {
-                List {
+                MaybeList {
                     if let n = r.narrative, !n.isEmpty {
                         Section { Text(n).font(.callout) } header: { Text("𓂀 LOCAL GEMMA") }
                     }

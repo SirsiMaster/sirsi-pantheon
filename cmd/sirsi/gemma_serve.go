@@ -27,6 +27,13 @@ import (
 
 const gemmaServerDefaultPort = 8765
 
+// gemmaPromptCacheSlots is how many DISTINCT prompt-prefix KV caches the broker
+// retains (mlx_lm.server --prompt-cache-size). Pantheon's router alternates
+// between a handful of recurring prefix families (reconcile / build / worker /
+// NL query), so 8 lets each stay warm across requests; total memory is still
+// bounded by --prompt-cache-bytes, which the slots share. (oMLX lesson, 2026-07-21.)
+const gemmaPromptCacheSlots = 8
+
 var (
 	gemmaServeStop        bool
 	gemmaServeStatusFlag  bool
@@ -188,6 +195,16 @@ func gemmaServerStart(home string) error {
 		"--port", strconv.Itoa(gemmaServePort),
 		"--decode-concurrency", strconv.Itoa(gemmaServeConcurrency),
 		"--prompt-concurrency", strconv.Itoa(gemmaServeConcurrency),
+		// Retain MULTIPLE distinct prompt prefixes, not just the most-recent one.
+		// Pantheon's workload is the "coding-agent shifting-prefix" pattern (oMLX,
+		// 2026-07-21): the router alternates between reconcile / build / worker /
+		// NL-query prompts that each carry a large STABLE prefix (canon, source).
+		// Stock mlx_lm.server holds ~one prefix and evicts it on every shift →
+		// full KV recompute → the slow TTFT we measure on the liveness probe.
+		// Holding N prefixes lets each request type hit a warm cache. Memory stays
+		// bounded by --prompt-cache-bytes (the N caches SHARE that byte budget,
+		// LRU-evicted) — so this is a pure latency win with no added RAM risk.
+		"--prompt-cache-size", strconv.Itoa(gemmaPromptCacheSlots),
 		"--prompt-cache-bytes", strconv.FormatInt(promptCacheBytes, 10),
 	)
 	c.Stdout = logf

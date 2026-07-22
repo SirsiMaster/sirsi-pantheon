@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/yield"
 )
 
@@ -235,6 +237,17 @@ func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	cfg.MaxBytes = opts.MaxOutputBytes
 	cfg.MaxLines = opts.MaxOutputLines
 	filtered := rtk.New(cfg).Apply(lim.String())
+
+	// This is the path RTK actually runs on — every guarded command an agent
+	// executes. It was computing the saving and dropping it, so the surface
+	// built to report savings had nothing to report. Same field names as the
+	// MCP filter_output handler so one aggregate reads both.
+	stele.Inscribe("rtk", stele.TypeRTKFilter, "", map[string]string{
+		"original_bytes": strconv.Itoa(lim.written),
+		"filtered_bytes": strconv.Itoa(filtered.FilteredBytes),
+		"ratio":          fmt.Sprintf("%.2f", filtered.Ratio),
+		"dupes":          strconv.Itoa(filtered.DupsCollapsed),
+	})
 
 	return &RunResult{
 		Report:        report,
