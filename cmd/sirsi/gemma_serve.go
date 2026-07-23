@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
 // `sirsi gemma serve` is the Pantheon inference broker: it loads the local model
@@ -37,6 +38,7 @@ const gemmaPromptCacheSlots = 8
 var (
 	gemmaServeStop        bool
 	gemmaServeStatusFlag  bool
+	gemmaServeForeground  bool
 	gemmaServePort        int
 	gemmaServeConcurrency int
 )
@@ -59,6 +61,7 @@ This is the "use the whole machine" path: one resident model, concurrent inferen
 func init() {
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeStop, "stop", false, "Stop the warm Gemma server")
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeStatusFlag, "status", false, "Show whether the warm server is running")
+	gemmaServeCmd.Flags().BoolVar(&gemmaServeForeground, "foreground", false, "Run the broker as this process (for launchd — KeepAlive revives it after crashes and reboots)")
 	gemmaServeCmd.Flags().IntVar(&gemmaServePort, "port", gemmaServerDefaultPort, "Local port for the server")
 	gemmaServeCmd.Flags().IntVar(&gemmaServeConcurrency, "concurrency", 0, "Concurrent decodes; 0 = auto-derive from this node (ADR-031-B), >0 requests a specific count capped to what the node can hold")
 	gemmaCmd.AddCommand(gemmaServeCmd)
@@ -116,8 +119,22 @@ func runGemmaServe(cmd *cobra.Command, args []string) error {
 
 func gemmaServerStart(home string) error {
 	if base := gemmaServerBase(home); base != "" {
+		if gemmaServeForeground {
+			// launchd respawned us while a broker is still serving (e.g. a
+			// stray manually-started one). Exit non-zero; ThrottleInterval
+			// spaces the retries until the stray broker is gone.
+			return fmt.Errorf("a Gemma broker is already warm at %s — not starting a second one", base)
+		}
 		fmt.Printf("Gemma broker already warm at %s.\n", base)
 		return nil
+	}
+	// When the reboot-durable LaunchAgent owns the broker (ADR-045), start it
+	// through launchd so there is exactly ONE supervisor of the process —
+	// KeepAlive then revives it after any crash and at every boot.
+	if !gemmaServeForeground && setup.GemmaBrokerInstalled() {
+		fmt.Println("gemma broker starting via launchd (reboot-durable) — loading onto the GPU…")
+		_ = exec.Command("launchctl", "kickstart", fmt.Sprintf("gui/%d/%s", os.Getuid(), setup.GemmaBrokerLabel)).Run()
+		return gemmaAwaitWarm(home)
 	}
 	mlxsrv := filepath.Join(home, ".venvs/mlx/bin/mlx_lm.server")
 	if _, err := os.Stat(mlxsrv); err != nil {
@@ -163,10 +180,6 @@ func gemmaServerStart(home string) error {
 	gemmaServeConcurrency = safe
 
 	_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
-	logf, err := os.Create(gemmaServerLogPath(home))
-	if err != nil {
-		return fmt.Errorf("opening server log: %w", err)
-	}
 
 	// LAYER 2 — HARD RUNTIME CAP. MLX may use up to (free − headroom); beyond that
 	// it evicts/errors instead of taking the host down. The pre-launch gate already
@@ -189,7 +202,7 @@ func gemmaServerStart(home string) error {
 	// consistent with the buffer-pool cap, so it scales with the box and stays well
 	// under the balloon line. This makes the P0 fix durable, not a hand-patched runtime.
 	promptCacheBytes := capBytes / 4
-	c := exec.Command(pyBin, wrapper, strconv.FormatInt(capBytes, 10),
+	args := []string{wrapper, strconv.FormatInt(capBytes, 10),
 		"--model", model,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(gemmaServePort),
@@ -206,7 +219,26 @@ func gemmaServerStart(home string) error {
 		// LRU-evicted) — so this is a pure latency win with no added RAM risk.
 		"--prompt-cache-size", strconv.Itoa(gemmaPromptCacheSlots),
 		"--prompt-cache-bytes", strconv.FormatInt(promptCacheBytes, 10),
-	)
+	}
+
+	if gemmaServeForeground {
+		// launchd mode (ADR-045): exec the capped server IN PLACE so the pid
+		// launchd supervises IS the serving process — KeepAlive revives it after
+		// any crash and at every boot, with zero cloud involvement. exec keeps
+		// our pid, so the pid file written here stays truthful for `--stop`,
+		// the load-bearing guard (ADR-040), and Hapi governance (ADR-031-A).
+		pid := os.Getpid()
+		_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(pid)), 0o644)
+		_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
+		_ = guard.HapiRegisterGoverned(pid, "gemma-broker")
+		return syscall.Exec(pyBin, append([]string{pyBin}, args...), os.Environ())
+	}
+
+	logf, err := os.Create(gemmaServerLogPath(home))
+	if err != nil {
+		return fmt.Errorf("opening server log: %w", err)
+	}
+	c := exec.Command(pyBin, args...)
 	c.Stdout = logf
 	c.Stderr = logf
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group → survives this CLI exiting
@@ -226,11 +258,16 @@ func gemmaServerStart(home string) error {
 
 	fmt.Printf("gemma broker starting (pid %d, port %d, model %s, concurrency %d) — loading onto the GPU…\n",
 		pid, gemmaServePort, gemmaShortModel(model), gemmaServeConcurrency)
+	return gemmaAwaitWarm(home)
+}
+
+// gemmaAwaitWarm polls the broker until it answers or ~90s passes.
+func gemmaAwaitWarm(home string) error {
 	base := fmt.Sprintf("http://127.0.0.1:%d", gemmaServePort)
 	for i := 0; i < 45; i++ {
 		time.Sleep(2 * time.Second)
 		if gemmaServerPing(base) {
-			fmt.Printf("✓ Gemma is WARM at %s. `sirsi gemma \"...\"` now answers instantly — no reload, %d concurrent.\n", base, gemmaServeConcurrency)
+			fmt.Printf("✓ Gemma is WARM at %s. `sirsi gemma \"...\"` now answers instantly.\n", base)
 			return nil
 		}
 	}
@@ -252,6 +289,10 @@ func gemmaServerStop(home string) error {
 	_ = os.Remove(gemmaPidPath(home))
 	_ = os.Remove(gemmaPortPath(home))
 	fmt.Printf("Stopped Gemma broker (pid %d).\n", pid)
+	if setup.GemmaBrokerInstalled() {
+		fmt.Printf("Note: the reboot-durable agent will bring it back within ~30s. To keep it off: launchctl bootout gui/%d/%s\n",
+			os.Getuid(), setup.GemmaBrokerLabel)
+	}
 	return nil
 }
 

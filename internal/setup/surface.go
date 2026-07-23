@@ -43,6 +43,10 @@ const (
 	// InstallResult for a uniform install report. The constant keeps its
 	// historical value for report/JSON stability.
 	SurfaceRouterDaemons Surface = "router-daemons"
+	// SurfaceGemmaBroker is the reboot-durable local model broker LaunchAgent
+	// (ADR-045). Installed by default on macOS with the MLX runtime present;
+	// reuses InstallResult for a uniform install report.
+	SurfaceGemmaBroker Surface = "gemma-broker"
 )
 
 // Selectable returns the surfaces a user opts into at install time
@@ -71,6 +75,8 @@ func (s Surface) Title() string {
 		return "Ma'at gate"
 	case SurfaceRouterDaemons:
 		return "Router automation"
+	case SurfaceGemmaBroker:
+		return "Local model"
 	}
 	return string(s)
 }
@@ -94,6 +100,8 @@ func (s Surface) Detail() string {
 		return "𓆄 Ma'at pre-push gate — gofmt + vet + golangci-lint + tests before push"
 	case SurfaceRouterDaemons:
 		return "Background router automation, folded into the one resident supervisor"
+	case SurfaceGemmaBroker:
+		return "On-device AI model, kept alive across crashes and reboots"
 	}
 	return ""
 }

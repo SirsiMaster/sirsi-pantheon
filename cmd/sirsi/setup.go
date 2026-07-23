@@ -365,6 +365,15 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		printInstallResult(setup.InstallRouterDaemons())
 	}
 
+	// Reboot-durable local model broker (ADR-045, owner directive 2026-07-23
+	// "local-llm-sovereignty"): launchd owns the bounded broker process
+	// (KeepAlive), so the on-device model survives crashes and reboots without
+	// cloud help. Retires the legacy one-shot `ai.sirsi.gemma` launcher.
+	// Skips cleanly on machines without the MLX runtime.
+	if runtime.GOOS == "darwin" {
+		printInstallResult(setup.InstallGemmaBroker())
+	}
+
 	// Arm the 𓆄 Ma'at pre-push gate (Rule A17) when run inside a Pantheon source
 	// clone, so contributors push pre-gated (gofmt + vet + golangci-lint + tests)
 	// instead of finding failures in CI. Cross-platform; skips for end users who
