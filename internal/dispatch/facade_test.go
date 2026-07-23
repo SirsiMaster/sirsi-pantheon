@@ -315,3 +315,28 @@ func TestPhantomOpenStoreRowHiddenAndHealable(t *testing.T) {
 		t.Fatalf("store row still open after heal: %+v", rows)
 	}
 }
+
+// TestGetReadsStoreOnlyItem: Get must resolve items that exist only as store
+// rows — the post-cutover steady state that broke the file-based respond
+// wrapper ("item not found" for every new item).
+func TestGetReadsStoreOnlyItem(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1") // store-only: Send writes no audit file
+	f := testFacade(t)
+	res, err := f.Send("claude-finalwishes", "claude-home", "bind PR #105", "review", "please bind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AuditPath != "" {
+		t.Fatalf("cutover-on Send should not write an audit file, got %q", res.AuditPath)
+	}
+	it, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it.From != "claude-finalwishes" || it.To != "claude-home" || it.Title != "bind PR #105" || it.Status != "open" {
+		t.Fatalf("unexpected item: %+v", it)
+	}
+	if _, err := f.Get("20260101-000000-nobody-nobody-missing"); err == nil {
+		t.Fatal("Get of a nonexistent id must error")
+	}
+}

@@ -248,6 +248,33 @@ func (f *Facade) Show(id string) (string, error) {
 	return rendered, nil
 }
 
+// Get returns one item's parsed form, canonical file first (same authority
+// order as Show), store row otherwise — so callers can read from:/title:
+// metadata for store-only items, which post-cutover is every new item.
+func (f *Facade) Get(id string) (work.Item, error) {
+	it, err := work.Get(f.root, id)
+	if err == nil {
+		return it, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return work.Item{}, fmt.Errorf("dispatch: read item: %w", err)
+	}
+	r, serr := f.store.Get(id)
+	if serr != nil {
+		if errors.Is(serr, routerstore.ErrNotFound) {
+			return work.Item{}, fmt.Errorf("dispatch: item %s not found (no file, no store row)", id)
+		}
+		return work.Item{}, fmt.Errorf("dispatch: get item from store: %w", serr)
+	}
+	return work.Item{
+		ID: r.ID, From: r.From, To: r.To, Title: r.Title, Type: r.Type,
+		Status: r.Status, Opened: r.Opened, Closed: r.Closed,
+		Instructions: r.Instructions, Result: r.Result,
+		WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
+		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError,
+	}, nil
+}
+
 // CloseItem closes the item in both worlds. It closes the canonical file when
 // one exists, and closes the store row. Post-cutover there is no file, so the
 // close lands in the store alone; pre-facade items may have a file but no store
