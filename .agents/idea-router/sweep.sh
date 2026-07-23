@@ -47,25 +47,19 @@ if ! launchctl list | awk '{print $3}' | grep -qx ai.sirsi.horus.agent-router; t
   fail "launchd job ai.sirsi.horus.agent-router (router supervisor) NOT loaded"
 fi
 
-# 2. dispatch.sh recent activity — dispatch.sh auto-spawns codex-* agents ONLY
-#    (interactive claude agents are pull-model and never blind-spawned). Under the
-#    pull-only observer model a stale dispatch.log is EXPECTED when no codex work is
-#    queued, so alarm ONLY when codex items are actually waiting to be dispatched —
-#    otherwise this fires forever on a moot condition (surfaces: current+actionable only).
+# 2. codex consumer liveness — dispatch.sh was retired to a codex-only facade
+#    (#278); its log/mtime is a permanently-dead signal and must never gate an
+#    alarm (it paired a live queue count with a dead timestamp and fired forever —
+#    the 2026-07-23 hourly-noise class). The real consumer is the wake-loop.
+#    Alarm ONLY when codex items are actually waiting AND no wake-loop process is
+#    alive (surfaces: current+actionable only).
 # Store-aware count (ADR-036/037 cutover): post-cutover items/*.md may not exist,
 # so read open-by-recipient from the store-capable `router status` rather than
 # globbing files. Sums every open item addressed to a codex-* agent.
 codex_pending=$("$SIRSI" router status 2>/dev/null | awk -F': ' '/^[[:space:]]+codex-/{s+=$2} END{print s+0}')
 if [ "$codex_pending" -gt 0 ]; then
-  last_dispatch=$(grep -E '^\[[0-9-]+T' "$ROUTER_ROOT/logs/dispatch.log" 2>/dev/null | tail -1 | head -c 25)
-  if [ -z "$last_dispatch" ]; then
-    fail "dispatch.log empty but $codex_pending codex item(s) pending"
-  else
-    last_epoch=$(date -j -f "[%Y-%m-%dT%H:%M:%S" "$last_dispatch" "+%s" 2>/dev/null || echo 0)
-    now_epoch=$(date "+%s")
-    if [ $((now_epoch - last_epoch)) -gt 86400 ]; then
-      fail "dispatch.sh stale 24h+ with $codex_pending codex item(s) waiting (last: $last_dispatch)"
-    fi
+  if ! pgrep -f 'wake-loop codex' >/dev/null 2>&1; then
+    fail "$codex_pending codex item(s) waiting with NO live codex wake-loop (pgrep -f 'wake-loop codex' empty)"
   fi
 fi
 
