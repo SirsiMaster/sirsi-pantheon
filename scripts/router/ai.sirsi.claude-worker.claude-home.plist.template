@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.sirsi.claude-worker.claude-home</string>
+  <key>ProgramArguments</key>
+  <array><string>~/.local/bin/sirsi-claude-home-worker-wrapper.sh</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>~/.sirsi/logs/claude-worker-claude-home.launchd.log</string>
+  <key>StandardErrorPath</key><string>~/.sirsi/logs/claude-worker-claude-home.launchd.log</string>
+</dict>
+</plist>
