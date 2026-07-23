@@ -12,6 +12,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/runner"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
@@ -369,6 +370,23 @@ func runSetup(_ *cobra.Command, _ []string) error {
 	// instead of finding failures in CI. Cross-platform; skips for end users who
 	// installed the binary outside the repo. Idempotent.
 	printInstallResult(setup.ArmMaatGate())
+
+	// Local-frames default (ADR-042/ADR-044): when setup runs inside a git repo
+	// with a GitHub remote and gh is authenticated, offer to register this Mac
+	// as the repo's build worker — builds on owned silicon by default, the
+	// rented cloud as the exception. Default-yes; idempotent (install no-ops
+	// when the repo's runner dir is already configured). macOS only.
+	if runtime.GOOS == "darwin" && interactive {
+		if ownerRepo := runner.CurrentGitHubRepo(); ownerRepo != "" {
+			fmt.Println()
+			if promptYesNo(reader, fmt.Sprintf("  Run %s's builds on this Mac (self-hosted CI)?", ownerRepo), true) {
+				owner, repo := runner.ParseRepoArg(ownerRepo)
+				if err := runner.Install(owner, repo, func(line string) { fmt.Println("  " + line) }); err != nil {
+					output.Warn("  Runner install skipped: %v", err)
+				}
+			}
+		}
+	}
 
 	// ── Summary ────────────────────────────────────────────────────────────
 	fmt.Println()
