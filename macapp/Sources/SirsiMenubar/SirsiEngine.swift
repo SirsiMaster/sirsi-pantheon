@@ -464,9 +464,14 @@ final class SirsiEngine: ObservableObject {
         (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
     }
     var routerHasBlockers: Bool { !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty }
-    // Home-row status: red if a real blocker, green otherwise (stranded inboxes are
-    // work-to-do, not an alarm — they show a count, not a red dot).
-    var routerStatus: String { routerHasBlockers ? "red" : "green" }
+    // Home-row status: red for a real blocker, amber while items WAIT on agents
+    // (pending work is not "all good" — a green dot beside "48 pending" is the
+    // exact contradiction the owner flagged 2026-07-22), green when idle.
+    var routerStatus: String {
+        if routerHasBlockers { return "red" }
+        if (routerBoard?.totalPending ?? 0) > 0 { return "amber" }
+        return "green"
+    }
     var routerSummary: String {
         if routerLoading && routerBoard == nil { return "checking…" }
         // Honesty gate (#147 review, minor 6): a board that never loaded is
@@ -488,7 +493,14 @@ final class SirsiEngine: ObservableObject {
     func loadRouterBoard() async {
         routerLoading = true
         defer { routerLoading = false }
-        if let data = FileManager.default.contents(atPath: routerBoardPath),
+        // Freshness gate: the producer-written board is trusted only while
+        // recent. A stale file is worse than no file — it rendered "48 pending"
+        // against a live fabric of 17 (owner, 2026-07-22) — so past 5 minutes
+        // we fall through to the live CLI read below.
+        let attrs = try? FileManager.default.attributesOfItem(atPath: routerBoardPath)
+        let fresh = (attrs?[.modificationDate] as? Date).map { Date().timeIntervalSince($0) < 300 } ?? false
+        if fresh,
+           let data = FileManager.default.contents(atPath: routerBoardPath),
            let board = try? JSONDecoder().decode(RouterBoard.self, from: data) {
             routerBoard = board
             return
