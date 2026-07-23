@@ -81,7 +81,13 @@ func runSnapshotMode(outDir: String) {
             ("activity", AnyView(ActivityView(engine: engine))),
             ("ghosts-leftover-apps", AnyView(GhostsView(engine: engine))),
             ("scan-clean", AnyView(ScanCleanView(engine: engine))),
+            ("ask-sirsi", AnyView(AskSirsiView(engine: engine))),
         ]
+        // Live round-trip proof for the Ask Sirsi query path: exercise the
+        // REAL askLocalAI (board endpoint, quirk handling) and print the
+        // answer — the harness run itself becomes the verification evidence.
+        let probe = await engine.askLocalAI("Reply with exactly: READY")
+        FileHandle.standardOutput.write(Data("ask-sirsi live probe: \(probe.prefix(120))\n".utf8))
         // Owner-gated screens render only when the live board has items — the
         // detail view gets its body preloaded (ImageRenderer never runs .task).
         shots.append(("owner-actions", AnyView(OwnerActionsListView(engine: engine))))

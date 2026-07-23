@@ -244,6 +244,10 @@ struct RouterBoard: Decodable {
     // agent id → open item ids: the fabric's actual work map.
     let pendingByAgent: [String: [String]]?
     let ownerGated: [OwnerGated]?
+    // On-device model state (board 1.2.0) — feeds the Ask Sirsi panel. `var`
+    // because loadRouterBoard grafts it onto a live node-status read (which
+    // does not carry local_llm) when the board file has gone stale.
+    var localLLM: LocalLLM?
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case totalPending = "total_pending"
@@ -253,6 +257,28 @@ struct RouterBoard: Decodable {
         case strandedInbox = "stranded_inbox"
         case pendingByAgent = "pending_by_agent"
         case ownerGated = "owner_gated"
+        case localLLM = "local_llm"
+    }
+}
+
+// LocalLLM is the conduit's on-device model block (board schema 1.2.0). The
+// GUI shows this as "Local AI" — model identifiers stay out of user-facing
+// copy per the brand-over-model-name rule; `model` is rendered only as the
+// small technical footnote line.
+struct LocalLLM: Decodable {
+    let port: Int?
+    let healthy: Bool?
+    let endpoint: String?
+    let queryAPI: String?
+    let model: String?
+    let rssMB: Int?
+    let uptime: String?
+    let kvCacheCapBytes: Int64?
+    enum CodingKeys: String, CodingKey {
+        case port, healthy, endpoint, model, uptime
+        case queryAPI = "query_api"
+        case rssMB = "rss_mb"
+        case kvCacheCapBytes = "kv_cache_cap_bytes"
     }
 }
 
@@ -499,16 +525,20 @@ final class SirsiEngine: ObservableObject {
         // we fall through to the live CLI read below.
         let attrs = try? FileManager.default.attributesOfItem(atPath: routerBoardPath)
         let fresh = (attrs?[.modificationDate] as? Date).map { Date().timeIntervalSince($0) < 300 } ?? false
-        if fresh,
-           let data = FileManager.default.contents(atPath: routerBoardPath),
-           let board = try? JSONDecoder().decode(RouterBoard.self, from: data) {
+        let fileBoard = FileManager.default.contents(atPath: routerBoardPath)
+            .flatMap { try? JSONDecoder().decode(RouterBoard.self, from: $0) }
+        if fresh, let board = fileBoard {
             routerBoard = board
             return
         }
-        // Fallback: the conduit hasn't written the lean board — read the live fabric
-        // directly. runJSON captures stdout only so a banner can't corrupt the JSON.
+        // Stale or missing board — read the live fabric directly (runJSON
+        // captures stdout only so a banner can't corrupt the JSON). node-status
+        // does NOT carry local_llm (conduit-enriched only), so graft the file's
+        // block onto the live read: pending counts stay honest-live while the
+        // Ask Sirsi panel keeps its last-known on-device state.
         let out = await Self.runJSON(args: ["router", "node-status", "--json"])
-        if let board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
+        if var board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
+            if board.localLLM == nil { board.localLLM = fileBoard?.localLLM }
             routerBoard = board
         }
     }
@@ -1029,6 +1059,59 @@ final class SirsiEngine: ObservableObject {
                     ? "Sirsi's on-device model needs more free memory to answer right now. Your query stayed on-device — never cloud."
                     : "Sirsi's on-device model isn't running right now. Your query stayed on-device — never cloud.")
             }
+        }
+    }
+
+    var localLLM: LocalLLM? { routerBoard?.localLLM }
+
+    // askLocalAI POSTs a question straight to the on-device model's OpenAI-style
+    // endpoint from the board feed (port-move-proof: the board carries the live
+    // endpoint, we never hardcode a port). Quirks handled per the conduit's live
+    // verification: the model may spend tokens in a `reasoning` field (render
+    // `content`, fall back to `reasoning`); first token can lag during a model
+    // swap (90s timeout, and a timeout reads as "busy loading", not an error).
+    // All copy is brand-level ("Local AI") — never a model name.
+    func askLocalAI(_ question: String) async -> String {
+        guard let llm = localLLM, let endpoint = llm.endpoint else {
+            return "Local AI state hasn't loaded yet — try again in a moment."
+        }
+        guard llm.healthy == true else {
+            return "Local AI is offline — Sirsi restores it automatically each cycle."
+        }
+        guard let url = URL(string: endpoint + (llm.queryAPI ?? "/v1/chat/completions")) else {
+            return "Local AI endpoint is malformed in the board feed."
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 90
+        let body: [String: Any] = [
+            "messages": [["role": "user", "content": question]],
+            "max_tokens": 512,
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            struct Resp: Decodable {
+                struct Choice: Decodable {
+                    struct Msg: Decodable { let content: String?; let reasoning: String? }
+                    let message: Msg?
+                }
+                let choices: [Choice]?
+            }
+            guard let resp = try? JSONDecoder().decode(Resp.self, from: data),
+                  let msg = resp.choices?.first?.message else {
+                return "Local AI answered in a shape Sirsi didn't recognize."
+            }
+            let content = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !content.isEmpty { return content }
+            let reasoning = (msg.reasoning ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reasoning.isEmpty { return reasoning }
+            return "Local AI returned an empty answer — try asking again."
+        } catch let e as URLError where e.code == .timedOut {
+            return "Local AI is busy loading a model — try again shortly."
+        } catch {
+            return "Couldn't reach Local AI: \(error.localizedDescription)"
         }
     }
 

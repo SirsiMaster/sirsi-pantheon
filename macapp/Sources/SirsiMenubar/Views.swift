@@ -313,6 +313,12 @@ struct HomeView: View {
                             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
                     }
 
+                    NavLink { AskSirsiView(engine: engine) } label: {
+                        DeityRow(glyph: "🗣️", title: "Ask Sirsi — Local AI",
+                                 detail: engine.localLLM.map { $0.healthy == true ? "online" : "offline" },
+                                 dot: engine.localLLM.map { $0.healthy == true ? .green : .red })
+                    }.buttonStyle(.plain)
+
                     NavLink { InsightView(engine: engine) } label: {
                         DeityRow(glyph: "✨", title: "Insight — what to do next")
                     }.buttonStyle(.plain)
@@ -2391,6 +2397,110 @@ struct ResultView: View {
 // claude-home CCD sessions); each row shows a live/idle/stale roll-up, the
 // freshest last-seen (the heartbeat), and a pulse bar. Surfaces-current+actionable:
 // ⚠️ only for a genuinely stale agent; live data never greyed; plain English.
+// ── Ask Sirsi — Local AI (board 1.2.0 local_llm feed) ────────────────────────
+// Owner directive 2026-07-23: the on-device model's state must be visible
+// inside Pantheon, and the owner must be able to query it from here. Copy is
+// brand-level ("Ask Sirsi" / "Local AI") — model identifiers appear only as
+// the small technical footnote. Offline is an honest message, never a greyed
+// stale panel (live-data-never-greyed).
+struct AskSirsiView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var question = ""
+    @State private var asking = false
+    @State private var answer: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            BackBar(title: "Ask Sirsi — Local AI")
+
+            // ── State card ────────────────────────────────────────────────
+            VStack(alignment: .leading, spacing: 6) {
+                if let llm = engine.localLLM {
+                    let online = llm.healthy == true
+                    HStack(spacing: 8) {
+                        Circle().fill(online ? .green : .red).frame(width: 9, height: 9)
+                        Text(online ? "Online — answering on this Mac" : "Offline")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    if online {
+                        if let rss = llm.rssMB {
+                            Text("using \(SirsiEngine.human(Int64(rss) * 1_048_576)) of memory" +
+                                 (llm.uptime.map { " · up \($0)" } ?? ""))
+                                .font(.system(size: 13)).foregroundStyle(.secondary)
+                        }
+                        if let cap = llm.kvCacheCapBytes {
+                            Text("answer cache capped at \(SirsiEngine.human(cap))")
+                                .font(.system(size: 13)).foregroundStyle(.secondary)
+                        }
+                        // No model-identifier line: brand-over-model-name is owner
+                        // canon — the GUI says "Local AI", the model id stays in
+                        // the CLI/board. (The task note about showing the board's
+                        // model name targeted the response's "default_model"
+                        // quirk; the fix is to show NO id, not the raw one.)
+                    } else {
+                        Text("Sirsi restores it automatically each cycle — no action needed.")
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text("Reading Local AI state…").font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+            .padding(.horizontal, 12).padding(.top, 8)
+
+            // ── Query box ─────────────────────────────────────────────────
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    TextField("Ask anything — answered on this Mac, never cloud", text: $question)
+                        .textFieldStyle(.plain).font(.system(size: 13))
+                        .onSubmit { ask() }
+                    if asking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(gold)
+                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty
+                                      || engine.localLLM?.healthy != true)
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                if asking {
+                    Text("thinking on-device…").font(.caption2).foregroundStyle(.tertiary)
+                }
+                if let answer {
+                    ScrollView {
+                        Text(answer).font(.system(size: 13))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxHeight: 260)
+                    Text("answered on-device by Sirsi — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 10)
+
+            Spacer(minLength: 8)
+        }
+        .task { await engine.loadRouterBoard() }
+        .navigationTitle("Ask Sirsi — Local AI")
+    }
+
+    private func ask() {
+        let q = question.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, !asking else { return }
+        asking = true
+        Task {
+            answer = await engine.askLocalAI(q)
+            asking = false
+        }
+    }
+}
+
 struct ThreadsView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var question = ""
