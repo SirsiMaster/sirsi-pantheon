@@ -147,7 +147,11 @@ struct RootView: View {
             // clearance never shrinks below the ~28pt traffic-light strip.
             let scale = max(0.5, geo.size.width / baseWidth)
             VStack(spacing: 0) {
-                Color.clear.frame(height: 50)
+                // Titlebar clearance is a WINDOW constant (traffic lights are
+                // ~28pt at every size), so divide by scale: post-.scaleEffect it
+                // renders at a fixed 50pt instead of ballooning with the window
+                // (the owner's 2026-07-22 screenshot: a third of the panel dead).
+                Color.clear.frame(height: 50 / scale)
                 Group {
                     if let top = nav.stack.last {
                         top.view
@@ -266,94 +270,124 @@ struct HomeView: View {
 
             Divider().padding(.horizontal, 12)
 
-            // Deity rows
+            // Home is two honest groups (owner, 2026-07-22 — "this is a mess"):
+            // NEEDS ATTENTION = rows with a CURRENT non-green condition, shown
+            // only while the condition holds; TOOLS = everything else, quiet,
+            // no fake-state chips. Canon: surfaces are current + actionable.
             maybeScroll {
                 VStack(spacing: 2) {
-                    // Owner-gated items lead the list when present — work only
-                    // the OWNER can move (open `to: user` router items).
-                    if !engine.ownerGatedItems.isEmpty {
-                        NavLink { OwnerActionsListView(engine: engine) } label: {
-                            DeityRow(glyph: "🔑", title: "Needs you — owner actions",
-                                     detail: "\(engine.ownerGatedItems.count) waiting", dot: .yellow)
-                        }.buttonStyle(.plain)
+                    let attention = !engine.ownerGatedItems.isEmpty
+                        || engine.healthStatus != "green"
+                        || engine.routerStatus != "green"
+                        || engine.safeBytes >= SirsiEngine.wasteThreshold
+                    if attention {
+                        SectionLabel("NEEDS ATTENTION")
+                            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
+                        if !engine.ownerGatedItems.isEmpty {
+                            NavLink { OwnerActionsListView(engine: engine) } label: {
+                                DeityRow(glyph: "🔑", title: "Needs you — owner actions",
+                                         detail: "\(engine.ownerGatedItems.count) waiting", dot: .yellow)
+                            }.buttonStyle(.plain)
+                        }
+                        if engine.healthStatus != "green" {
+                            NavLink { HorusView(engine: engine) } label: {
+                                DeityRow(glyph: "𓂀", title: "Horus — Ops",
+                                         detail: engine.healthLoading ? "checking…" : engine.healthSummary,
+                                         dot: statusColor(engine.healthStatus))
+                            }.buttonStyle(.plain)
+                        }
+                        if engine.routerStatus != "green" {
+                            NavLink { RouterView(engine: engine) } label: {
+                                DeityRow(glyph: "🛰️", title: "Router — Fabric",
+                                         detail: engine.routerSummary,
+                                         dot: statusColor(engine.routerStatus))
+                            }.buttonStyle(.plain)
+                        }
+                        if engine.safeBytes >= SirsiEngine.wasteThreshold {
+                            NavLink { AnubisView(engine: engine) } label: {
+                                DeityRow(glyph: "🐺", title: "Anubis — Hygiene",
+                                         detail: "\(engine.safe.count) items ready", dot: .yellow)
+                            }.buttonStyle(.plain)
+                        }
+                        SectionLabel("TOOLS")
+                            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
                     }
 
                     NavLink { InsightView(engine: engine) } label: {
-                        DeityRow(glyph: "✨", title: "Insight — what to do next",
-                                 detail: "across the platform")
+                        DeityRow(glyph: "✨", title: "Insight — what to do next")
                     }.buttonStyle(.plain)
 
-                    NavLink { AnubisView(engine: engine) } label: {
-                        DeityRow(glyph: "🐺", title: "Anubis — Hygiene",
-                                 detail: engine.safeBytes >= SirsiEngine.wasteThreshold ? "\(engine.safe.count) items ready" : "clean")
-                    }.buttonStyle(.plain)
+                    if engine.healthStatus == "green" {
+                        NavLink { HorusView(engine: engine) } label: {
+                            DeityRow(glyph: "𓂀", title: "Horus — Ops",
+                                     detail: engine.healthLoading ? "checking…" : engine.healthSummary,
+                                     dot: .green)
+                        }.buttonStyle(.plain)
+                    }
 
-                    NavLink { HorusView(engine: engine) } label: {
-                        DeityRow(glyph: "𓂀", title: "Horus — Ops",
-                                 detail: engine.healthLoading ? "checking…" : engine.healthSummary,
-                                 dot: statusColor(engine.healthStatus))
-                    }.buttonStyle(.plain)
+                    if engine.routerStatus == "green" {
+                        NavLink { RouterView(engine: engine) } label: {
+                            DeityRow(glyph: "🛰️", title: "Router — Fabric",
+                                     detail: engine.routerSummary == "healthy" ? nil : engine.routerSummary)
+                        }.buttonStyle(.plain)
+                    }
 
-                    NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
-                        DeityRow(glyph: "𓆄", title: "Ma'at — Quality",
-                                 detail: engine.projectName ?? "governance")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ThothMemoryInfoView(engine: engine) } label: {
-                        DeityRow(glyph: "𓁟", title: "Thoth — Memory", detail: "memory")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
-                        DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet", detail: "orchestration")
-                    }.buttonStyle(.plain)
-
-                    NavLink { RouterView(engine: engine) } label: {
-                        DeityRow(glyph: "🛰️", title: "Router — Fabric",
-                                 detail: engine.routerSummary,
-                                 dot: statusColor(engine.routerStatus))
-                    }.buttonStyle(.plain)
+                    if engine.safeBytes < SirsiEngine.wasteThreshold {
+                        NavLink { AnubisView(engine: engine) } label: {
+                            DeityRow(glyph: "🐺", title: "Anubis — Hygiene", detail: "clean")
+                        }.buttonStyle(.plain)
+                    }
 
                     NavLink { ThreadsView(engine: engine) } label: {
                         DeityRow(glyph: "💓", title: "Threads — Heartbeat",
-                                 detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live" : "live threads")
+                                 detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live" : nil)
                     }.buttonStyle(.plain)
 
-                    NavLink { RiskView(engine: engine) } label: {
-                        DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints", detail: "uncommitted risk")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) } label: {
-                        DeityRow(glyph: "𓁆", title: "Seshat — Knowledge", detail: "ingestion")
+                    NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
+                        DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: engine.projectName)
                     }.buttonStyle(.plain)
 
                     NavLink { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) } label: {
-                        DeityRow(glyph: "𓁯", title: "Net — Plan",
-                                 detail: engine.projectName ?? "alignment")
+                        DeityRow(glyph: "𓁯", title: "Net — Plan", detail: engine.projectName)
+                    }.buttonStyle(.plain)
+
+                    NavLink { RiskView(engine: engine) } label: {
+                        DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints")
+                    }.buttonStyle(.plain)
+
+                    NavLink { ThothMemoryInfoView(engine: engine) } label: {
+                        DeityRow(glyph: "𓁟", title: "Thoth — Memory")
+                    }.buttonStyle(.plain)
+
+                    NavLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
+                        DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet")
+                    }.buttonStyle(.plain)
+
+                    NavLink { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) } label: {
+                        DeityRow(glyph: "𓁆", title: "Seshat — Knowledge")
                     }.buttonStyle(.plain)
 
                     NavLink { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) } label: {
-                        DeityRow(glyph: "🏛️", title: "Vault — Context", detail: "code search")
+                        DeityRow(glyph: "🏛️", title: "Vault — Context")
                     }.buttonStyle(.plain)
 
                     NavLink { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) } label: {
-                        DeityRow(glyph: "⚡", title: "RTK — Output Filter", detail: "noise sieve")
+                        DeityRow(glyph: "⚡", title: "RTK — Output Filter")
                     }.buttonStyle(.plain)
 
                     NavLink { ActivityView(engine: engine) } label: {
                         DeityRow(glyph: "𓆎", title: "Activity — what Pantheon did",
-                                 detail: engine.activity.isEmpty ? "ledger" : "\(engine.activity.count) logged")
+                                 detail: engine.activity.isEmpty ? nil : "\(engine.activity.count) logged")
                     }.buttonStyle(.plain)
 
-                    // Only nag for Full Disk Access while we don't have it. Once
-                    // granted, the row disappears and a quiet confirmation shows.
+                    // Only nag for Full Disk Access while we don't have it; once
+                    // granted the row disappears entirely (a permanent "granted"
+                    // confirmation row is exactly the noise this screen sheds).
                     if !engine.hasFDA {
                         NavLink { FDAGuideView() } label: {
                             DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
-                                     detail: "so Sirsi sees everything")
+                                     detail: "so Sirsi sees everything", dot: .yellow)
                         }.buttonStyle(.plain)
-                    } else {
-                        DeityRow(glyph: "✅", title: "Full Disk Access",
-                                 detail: "granted")
                     }
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
@@ -413,8 +447,14 @@ func insightSeverityColor(_ sev: Int) -> Color {
     }
 }
 
+// DeityRow: `detail` is LIVE STATE ONLY (a count, a verdict, a repo under
+// audit) — never a static category label. A row with nothing current to say
+// shows just its name; fake-state chips are what made Home unreadable
+// (owner, 2026-07-22). Dot colors: red broken · yellow waiting-on-someone ·
+// green good; a dot never accompanies neutral text.
 struct DeityRow: View {
-    let glyph: String; let title: String; let detail: String
+    let glyph: String; let title: String
+    var detail: String? = nil
     var dot: Color? = nil
     var body: some View {
         HStack(spacing: 10) {
@@ -422,7 +462,9 @@ struct DeityRow: View {
             Text(title).font(.system(size: 15, weight: .semibold))
             Spacer()
             if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-            Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+            if let detail {
+                Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+            }
             Image(systemName: "chevron.right").font(.system(size: 13, weight: .medium)).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 8).padding(.horizontal, 10)
