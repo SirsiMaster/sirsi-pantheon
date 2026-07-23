@@ -92,6 +92,15 @@ func supervisorDuties() []SupervisorDuty {
 		// Session reaper (2026-07-08 wakeup-leak RCA): native Go — it needs
 		// process grouping + SIGTERM, not a shell subroutine. See sessionreaper.go.
 		{Name: "session-reaper", GoRun: runSessionReaperDuty, Cadence: 10 * time.Minute},
+		// Dead-label kickstart (local sovereignty P1, owner directive
+		// 2026-07-23): every managed LaunchAgent plist on disk must be loaded
+		// in launchd — the reboot proved a label that dies at boot stays dead
+		// until a CLOUD agent notices, which inverts the sovereignty order.
+		// Deterministic, no LLM; inert seam wired by cmd/sirsi (tests never
+		// shell real launchctl). See launchdkickstart.go.
+		{Name: "launchd-kickstart", GoRun: func(routerRoot, repoRoot string) error {
+			return getLaunchdKickstartFn()(routerRoot, repoRoot)
+		}, Cadence: 5 * time.Minute},
 	}
 }
 

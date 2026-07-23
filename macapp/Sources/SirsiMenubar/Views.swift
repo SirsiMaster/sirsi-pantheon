@@ -268,6 +268,23 @@ struct HomeView: View {
             .padding(.horizontal, 16).padding(.vertical, 6)
             .task { await engine.fetchAutonomous() }
 
+            // Last check — the owner-facing run report (what the fabric DID:
+            // heals, escalations, cloud reachability). Quiet green/secondary
+            // when all is well; amber only for a current unfixed condition
+            // (surfaces are current + actionable, never decorative alarm).
+            if let sentence = engine.lastRunSentence {
+                HStack(spacing: 6) {
+                    Text("Last check:").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(sentence)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(engine.lastRun?.outcome == "degraded" ? Color.orange : Color.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.bottom, 4)
+            }
+
             Divider().padding(.horizontal, 12)
 
             // Home is two honest groups (owner, 2026-07-22 — "this is a mess"):
@@ -411,7 +428,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { engine.loadProjectRoot(); engine.loadActivity(); await engine.diagnose(); await engine.loadRouterBoard() }   // project + health + ledger + fabric on open
+        .task { engine.loadProjectRoot(); engine.loadActivity(); engine.loadRunReport(); await engine.diagnose(); await engine.loadRouterBoard() }   // project + health + ledger + run report + fabric on open
     }
 
     @ViewBuilder private func maybeScroll<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
