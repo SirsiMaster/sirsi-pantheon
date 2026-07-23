@@ -79,7 +79,7 @@ func gemmaCapWrapperPath(home string) string {
 // instead of growing into Jetsam — the guarantee that makes "never OOM the host"
 // true even when the pre-launch estimate is wrong or the KV cache grows mid-decode.
 // argv: <cap_bytes> <mlx_lm.server args...>
-const gemmaCapWrapper = `import sys, runpy
+const gemmaCapWrapper = `import os, socket, sys, time, traceback, runpy
 import mlx.core as mx
 cap = int(sys.argv[1])
 for fn in ("set_memory_limit", "set_wired_limit"):
@@ -87,8 +87,47 @@ for fn in ("set_memory_limit", "set_wired_limit"):
     except Exception as e: print("WARN: mx.%s(%d): %s" % (fn, cap, e), file=sys.stderr)
 try: mx.set_cache_limit(cap // 4)   # cap the buffer-cache pool (the thing that ballooned on 06-18)
 except Exception as e: print("WARN: mx.set_cache_limit:", e, file=sys.stderr)
-sys.argv = ["mlx_lm.server"] + sys.argv[2:]
-runpy.run_module("mlx_lm.server", run_name="__main__")
+argv = sys.argv[2:]
+
+# Wait-for-port-free (broker deaths #3+#4, 2026-07-23): a respawn that binds
+# while the dying predecessor still holds the port got Errno 48 INSIDE
+# mlx_lm.server, and the failed process wedged as a zombie — model loaded
+# (12.9 GB), main thread dead, port unheld. Probe-bind until the port frees
+# (the only competitor is our own dying predecessor, which never re-binds, so
+# the probe→release→server-bind window is benign); give up after 30s with a
+# distinct exit code so launchd KeepAlive retries on its ThrottleInterval.
+host, port = "127.0.0.1", 8080
+for i, a in enumerate(argv):
+    if a == "--host" and i + 1 < len(argv): host = argv[i + 1]
+    if a == "--port" and i + 1 < len(argv): port = int(argv[i + 1])
+deadline = time.time() + 30
+while True:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((host, port))
+        probe.close()
+        break
+    except OSError:
+        probe.close()
+        if time.time() > deadline:
+            print("FATAL: port %d still held after 30s — exiting for launchd retry" % port, file=sys.stderr)
+            os._exit(48)
+        time.sleep(0.5)
+
+# Last-gasp + no-zombie guarantee: ANY exit path ends in os._exit so
+# non-daemon worker threads can never keep a dead server resident holding the
+# model (the death-#3 wedge class), and every crash leaves an attributable
+# traceback in the launchd log (4 silent deaths on 2026-07-23 had none).
+sys.argv = ["mlx_lm.server"] + argv
+code = 0
+try:
+    runpy.run_module("mlx_lm.server", run_name="__main__")
+except SystemExit as e:
+    code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+except BaseException:
+    traceback.print_exc()
+    code = 1
+os._exit(code)
 `
 
 // gemmaWriteCapWrapper writes the launcher next to the other broker state.

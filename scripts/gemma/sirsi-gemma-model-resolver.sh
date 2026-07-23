@@ -165,6 +165,16 @@ if curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; the
       # restart the detached python server (verified live 2026-07-17: the old
       # server survived a kickstart holding ~31 GB wired). SIGTERM the server,
       # then re-warm through the RAM-gated launcher (ADR-031 resize, not kill).
+      # DRAIN GUARD (broker death #4, 2026-07-23): never bounce a broker with
+      # in-flight work — the 14:01Z swap SIGTERM'd mid-triage-batch and the
+      # batch died at item 15/24. Established client connections to the broker
+      # port ARE the in-flight truth (no log parsing, no protocol change):
+      # any present → defer the swap to the next resolver run, conf already
+      # points at the new model so the swap completes on the first idle pass.
+      if lsof -nP -iTCP:"$PORT" -sTCP:ESTABLISHED 2>/dev/null | grep -q .; then
+        log "DEFERRED model swap: broker has in-flight request(s) on :$PORT — will swap on next idle run"
+        exit 0
+      fi
       pkill -TERM -f "gemma-capped-server.py" 2>/dev/null \
         && log "stopped gemma-capped-server to release the oversized model's wired memory" \
         || log "no running gemma-capped-server to stop"
