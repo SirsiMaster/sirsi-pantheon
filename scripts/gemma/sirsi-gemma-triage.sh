@@ -25,8 +25,27 @@ set -u
 # the clean CLASS/REASON. mlx_lm.generate is the cold fallback only if the server is unreachable.
 # Port comes from the port file the live server writes — hardcoding 11434 silently missed the
 # warm server (capped-server listens on 8765) and cold-loaded every item, defeating the whole point.
-GEMMA_PORT=$( [ -f "$HOME/.sirsi/gemma-server.port" ] && cat "$HOME/.sirsi/gemma-server.port" || echo 11434 )
-SERVER=${GEMMA_SERVER:-http://127.0.0.1:${GEMMA_PORT}/v1/chat/completions}
+# resolve_server re-reads the port file EVERY call — the warm server moves
+# ports across model-swap restarts, and a port resolved once at startup went
+# stale mid-run on 2026-07-23: SERVER pointed at a dead port, every warm call
+# refused, and the cold fallback hung the whole run (item 20260723-043612).
+resolve_server() {
+  local port
+  port=$( [ -f "$HOME/.sirsi/gemma-server.port" ] && cat "$HOME/.sirsi/gemma-server.port" || echo 11434 )
+  echo "${GEMMA_SERVER:-http://127.0.0.1:${port}/v1/chat/completions}"
+}
+SERVER=$(resolve_server)
+
+# run_bounded <secs> <cmd...> — hard wall-clock cap on ANY child. The cold
+# `sirsi gemma` fallback has no internal timeout and blocks on the broker
+# flock; unbounded it turned a dead warm port into a 9-minute silent hang.
+run_bounded() {
+  local secs=$1; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
+  else perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
+  fi
+}
 MLX=$HOME/.venvs/mlx/bin/mlx_lm.generate
 MODEL=${GEMMA_MODEL:-$( [ -f "$HOME/.sirsi/gemma-model.conf" ] && cat "$HOME/.sirsi/gemma-model.conf" || echo "mlx-community/gemma-4-12B-it-8bit" )}
 REPO=$HOME/Development/sirsi-pantheon
@@ -49,10 +68,15 @@ fi
 # reports a DEGRADED screen and the cloud path proceeds knowingly.
 TOKS_FLOOR=${GEMMA_TOKS_FLOOR:-5}
 if server_up; then
-  rate=$(SERVER="$SERVER" MODEL="$MODEL" python3 - <<'PY' 2>/dev/null
+  echo "· calibration probe (${SERVER})" >&2
+  # NO "model" field: the probe measures whatever model the server actually
+  # holds — same as every per-item call below. Pinning the id from
+  # gemma-model.conf 401'd whenever the conf drifted from the loaded model
+  # (resolver re-resolves; conf said qat-mxfp8 while the server served 8bit,
+  # 2026-07-23) and the empty rate read as a false "0 tok/s DEGRADED".
+  rate=$(SERVER="$SERVER" python3 - <<'PY' 2>/dev/null
 import os, json, time, urllib.request
-body = json.dumps({"model": os.environ["MODEL"],
-                   "messages":[{"role":"user","content":"Count from 1 to 20, digits only."}],
+body = json.dumps({"messages":[{"role":"user","content":"Count from 1 to 20, digits only."}],
                    "max_tokens": 48, "temperature": 0.0}).encode()
 req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
 t0 = time.time()
@@ -106,6 +130,9 @@ for fn in sorted(os.listdir(d)):
 
 while IFS=$'\t' read -r id to title snippet; do
   [ -z "$id" ] && continue
+  # Progress per item (stderr, so stdout stays the clean TSV contract): a
+  # hang is now attributable to a named item instead of reading as a dead run.
+  echo "· triaging ${id}" >&2
   prompt="You are a router-queue triage assistant for a multi-agent dev system. Classify this work item into EXACTLY ONE category and give a one-line reason (max 15 words).
 
 Categories:
@@ -140,9 +167,35 @@ except Exception:
 PY
 )
   if [ -z "$final" ]; then
+    # Warm call failed — before paying for a cold load, re-resolve the port
+    # (the server moves across model-swap restarts; a stale port here is the
+    # 2026-07-23 hang) and retry warm once on the fresh endpoint.
+    fresh=$(resolve_server)
+    if [ "$fresh" != "$SERVER" ]; then
+      echo "· server moved (${SERVER} → ${fresh}), retrying warm" >&2
+      SERVER="$fresh"
+      final=$(SERVER="$SERVER" MAXTOK="$MAXTOK" python3 - "$prompt" <<'PY' 2>/dev/null
+import sys, os, json, urllib.request
+body = json.dumps({"messages":[{"role":"user","content":sys.argv[1]}],
+                   "max_tokens":int(os.environ["MAXTOK"]),"temperature":0.0,"stream":False}).encode()
+req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
+try:
+    with urllib.request.urlopen(req, timeout=120) as r:
+        m = json.loads(r.read())["choices"][0]["message"]
+        print(m.get("content") or m.get("reasoning") or "")
+except Exception:
+    pass
+PY
+)
+    fi
+  fi
+  if [ -z "$final" ]; then
     # Fallback: server unreachable → cold in-process generate (per-item reload). Strip reasoning.
     # ADR-031-C: cold path through the broker (NodeCapacity gate + lock), never raw mlx_lm.
-    raw=$("$HOME/.local/bin/sirsi" gemma --model "$MODEL" --max-tokens "$MAXTOK" "$prompt" 2>/dev/null)
+    # HARD-BOUNDED: sirsi gemma blocks on the broker flock with no internal
+    # timeout — unbounded, a dead warm port turned into a 9-minute silent hang.
+    echo "· ${id}: warm unreachable, cold fallback (180s cap)" >&2
+    raw=$(run_bounded 180 "$HOME/.local/bin/sirsi" gemma --model "$MODEL" --max-tokens "$MAXTOK" "$prompt" 2>/dev/null)
     final=$(printf '%s' "$raw" | perl -0777 -pe 's/.*<channel\|>//s' 2>/dev/null)
     [ -z "$final" ] && final="$raw"
   fi
