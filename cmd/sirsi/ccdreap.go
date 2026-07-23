@@ -242,8 +242,8 @@ func ccdArchiveRecord(path string) error {
 		return err
 	}
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return err
+	if uerr := json.Unmarshal(raw, &m); uerr != nil {
+		return uerr
 	}
 	m["isArchived"] = true
 	out, err := json.Marshal(m)
