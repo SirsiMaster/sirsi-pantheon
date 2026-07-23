@@ -139,58 +139,17 @@ def pull_model_open_items(router_root: Path, agent_id: str) -> list[str]:
     return matches
 
 
-def _ps_parent_and_comm(pid: int, runner=subprocess.run) -> tuple[int | None, str]:
-    """Return (ppid, basename(comm)) for pid, or (None, "") on any failure."""
+def claude_session_pid() -> int | None:
+    """Grandparent of this script (claude → shell → python3) is the CLI process."""
     try:
-        out = runner(
-            ["ps", "-p", str(pid), "-o", "ppid=,comm="],
+        shell_pid = os.getppid()
+        out = subprocess.run(
+            ["ps", "-p", str(shell_pid), "-o", "ppid="],
             capture_output=True, text=True, timeout=2,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None, ""
-    if out.returncode != 0 or not (out.stdout or "").strip():
-        return None, ""
-    parts = out.stdout.split(None, 1)
-    try:
-        ppid = int(parts[0])
-    except (ValueError, IndexError):
-        return None, ""
-    comm = parts[1].strip() if len(parts) > 1 else ""
-    return ppid, os.path.basename(comm)
-
-
-def claude_session_pid(runner=subprocess.run, start_pid: int | None = None) -> int | None:
-    """Resolve the long-lived `claude` CLI process by walking the parent chain.
-
-    Identity for the registry is (agent_id, anchor pid); the anchor MUST be the
-    stable claude-CLI pid so the same session adopts the same thread on every
-    wakeup. The previous implementation assumed a FIXED depth (grandparent of
-    this script). But the launch chain (claude -> ... -> shell -> python3)
-    carries a VARIABLE number of intermediate, ephemeral processes -- a fresh
-    shell per hook fire -- so a fixed-depth lookup returned a different pid each
-    resume. That is the registry-accretion root: the (agent_id, pid) adopt never
-    matched, so a new thread + watcher was minted every SessionStart (~130-record
-    churn, daily false A27 alarms, and the write-amplification that feeds the
-    mds_stores -> Jetsam loop the health surface measures).
-
-    Walking up to the process whose basename is `claude` yields the stable
-    per-session identity regardless of how many wrapper shells sit in between.
-    Falls back to None (caller then uses freshness) only if no `claude` ancestor
-    is found within the walk cap -- never a wrong/ephemeral pid.
-    """
-    pid = start_pid if start_pid is not None else os.getppid()
-    seen: set[int] = set()
-    for _ in range(20):  # cap the walk; guard against cycles / runaway chains
-        if pid is None or pid <= 1 or pid in seen:
-            return None
-        seen.add(pid)
-        ppid, comm = _ps_parent_and_comm(pid, runner=runner)
-        if comm == "claude":
-            return pid
-        if ppid is None:
-            return None
-        pid = ppid
-    return None  # no claude ancestor within the cap
+        return int(out.stdout.strip()) if out.returncode == 0 else None
+    except (subprocess.TimeoutExpired, ValueError):
+        return None
 
 
 def supervisor_mode(env: dict | None = None) -> str:
@@ -257,6 +216,15 @@ def register_handshake(agent_id: str, repo_path: Path, thread_id: str | None,
     return tid, arm
 
 
+def _pid_alive(pid) -> bool:
+    """OS-truth: is this pid running? (signal 0 probe)"""
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def adopt_or_register(agent_id: str, repo_path: Path, runner=subprocess.run) -> tuple[str | None, str]:
     """Adopt the existing active thread anchored on THIS session's pid if one
     exists; else register a new one. Returns (thread_id, arm_instruction).
@@ -307,6 +275,27 @@ def adopt_or_register(agent_id: str, repo_path: Path, runner=subprocess.run) -> 
             fresh.sort(key=lambda t: t.get("idle_seconds", 1e9))
             existing = (fresh[0].get("thread") or {}).get("thread_id")
 
+    # Machine-level reuse (owner directive 2026-07-23): ONE record per
+    # (agent, surface, machine). A new session pid must not mint while a prior
+    # session's record is adoptable — that was the per-restart mint churn that
+    # accreted 310 claude-home records (ADR-043 context). Adopt the freshest
+    # ACTIVE record whose anchor pid is DEAD (its session ended → orphaned,
+    # not concurrent); register --thread re-anchors it to this pid. A record
+    # with a LIVE foreign pid is a genuinely concurrent session — only then
+    # is a fresh mint correct.
+    if existing is None and anchor is not None:
+        orphaned = []
+        for t in threads:
+            th = t.get("thread") or {}
+            if th.get("agent_id") != agent_id or th.get("status") != "active":
+                continue
+            pid = th.get("pid")
+            if pid and pid != anchor and not _pid_alive(pid):
+                orphaned.append(t)
+        if orphaned:
+            orphaned.sort(key=lambda t: t.get("idle_seconds", 1e9))
+            existing = (orphaned[0].get("thread") or {}).get("thread_id")
+
     return register_handshake(agent_id, repo_path, existing, anchor, runner=runner)
 
 
@@ -344,6 +333,17 @@ def main() -> int:
     # session's agent, NO-OP — never default to claude-pantheon and falsely
     # heartbeat its thread from another agent's session (ADR-024 refinement).
     agent_id = resolve_agent(cwd, agents)
+
+    # Explicit identity override (SIRSI_ROUTER_AGENT). A home-rooted session that
+    # works on a specific repo (e.g. Pantheon from the desktop app, cwd=$HOME)
+    # can declare its true agent rather than falling to claude-home. Honored
+    # ONLY when it names a registered agent AND the cwd did not already resolve
+    # to a repo-specific agent — so a global setting can rescue home sessions
+    # without ever mislabeling a session launched from another repo's dir.
+    override = os.environ.get("SIRSI_ROUTER_AGENT", "").strip()
+    if override and override in agents.get("agents", {}) and agent_id in (None, "claude-home"):
+        agent_id = override
+
     if not agent_id:
         return 0
     sup = supervisor_mode()
