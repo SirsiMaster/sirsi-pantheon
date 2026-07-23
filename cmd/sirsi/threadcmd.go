@@ -81,7 +81,11 @@ func killRouterWatcher(threadID string) {
 // per AGENTS.md §Lean #1 (the read IS the event).
 func reapDeadPIDThreads(routerRoot string) []router.ReapedThread {
 	reaped, _ := router.ReapDeadThreads(routerRoot)
-	return reaped
+	// ADR-024: after dead-PID actives retire, sweep superseded strays (duplicate
+	// suspends/ghosts of a surface a live watcher already holds), so the read
+	// enforces one-live-watcher-per-surface — not just OS-truth on actives.
+	strays, _ := router.ReapStrayThreads(routerRoot)
+	return append(reaped, strays...)
 }
 
 var (

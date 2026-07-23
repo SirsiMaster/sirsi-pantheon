@@ -115,6 +115,10 @@ const (
 	// Horus — structural code graph
 	TypeHorusScan  = "horus_scan"
 	TypeHorusQuery = "horus_query"
+	// TypeThreadReap records a stray/superseded thread record retired by the
+	// ADR-024 supersession reaper, carrying any salvaged continuation state so
+	// nothing is lost when the ghost is swept.
+	TypeThreadReap = "thread_reap"
 
 	// Notify — notification system
 	TypeNotify      = "notify"

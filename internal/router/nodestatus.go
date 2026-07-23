@@ -414,6 +414,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	// CTR false-active bug). Scoped to this machine by stable id; foreign tables
 	// are unobservable (see ReapDeadThreads / SameMachine).
 	_, _ = ReapDeadThreads(routerRoot)
+	// ADR-024: sweep superseded strays too, so Horus/menubar node-status never
+	// counts a surface's duplicate suspends/ghosts once a live watcher holds it.
+	_, _ = ReapStrayThreads(routerRoot)
 	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		for _, thr := range treg.SortedThreads() {
