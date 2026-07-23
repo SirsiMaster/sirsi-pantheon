@@ -13,28 +13,38 @@ set -uo pipefail
 ROUTER_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon/.agents/idea-router"
 REPO_ROOT="/Users/thekryptodragon/Development/sirsi-pantheon"
 LOG="$ROUTER_ROOT/logs/dispatch.log"
-export PATH="$HOME/.local/bin:/Applications/ChatGPT.app/Contents/Resources:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-SIRSI="$HOME/.local/bin/sirsi"
-CLAUDE_BIN="$HOME/.local/bin/claude"
-# codex ships inside ChatGPT.app (resolved via ~/.local/bin/codex), NOT at
-# /Applications/Codex.app — that stale path made codex read "unavailable" under
-# launchd (2026-07-13). Resolve robustly instead of hardcoding a fixed app path.
-CODEX_BIN="$(command -v codex 2>/dev/null || echo "$HOME/.local/bin/codex")"
+export PATH="$HOME/.local/bin:/Applications/Codex.app/Contents/Resources:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+CODEX_BIN="/Applications/Codex.app/Contents/Resources/codex"
 LOCK_ROOT="$ROUTER_ROOT/locks"
+. "$ROUTER_ROOT/router-env.sh"
 
 ts() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 
-mkdir -p "$(dirname "$LOG")" "$LOCK_ROOT"
+LOG="$(router_ensure_log "$LOG" "/tmp/sirsi-router-dispatch.log")" || exit 1
+if ! mkdir -p "$LOCK_ROOT" 2>/dev/null; then
+  echo "[$(ts)] dispatch.sh warning — lock root $LOCK_ROOT unavailable; using /tmp" >> "$LOG"
+  LOCK_ROOT="/tmp/sirsi-router-locks"
+  mkdir -p "$LOCK_ROOT" || { echo "[$(ts)] dispatch.sh exit — cannot create $LOCK_ROOT" >> "$LOG"; exit 1; }
+fi
 
 # cd into the repo upfront so `sirsi` commands can locate the router via
 # FindRepoRoot() — launchd's default cwd is `/`, which silently breaks pull.
 cd "$REPO_ROOT" || { echo "[$(ts)] dispatch.sh exit — cannot cd to $REPO_ROOT" >> "$LOG"; exit 1; }
 
+SIRSI="$(router_resolve_sirsi "$REPO_ROOT")" || { echo "[$(ts)] dispatch.sh exit — sirsi binary not found" >> "$LOG"; exit 1; }
+
 # Agents this host claims. Keep this explicit so launchd does not pretend to
 # deliver to agents that have no local headless wake path.
-AGENTS=(claude-pantheon codex-pantheon)
+AGENTS=(codex-home codex-pantheon codex-finalwishes codex-nexus codex-puck-technology)
 
 agent_lock_dir() { printf '%s/dispatch-%s.lock' "$LOCK_ROOT" "$1"; }
+
+agent_cwd() {
+  agent="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg agent "$agent" '.agents[$agent].cwd // empty' "$ROUTER_ROOT/agents.json" 2>/dev/null
+  fi
+}
 
 agent_is_running() {
   agent="$1"
@@ -70,14 +80,6 @@ start_agent_worker() {
   fi
 
   case "$agent" in
-    claude-*)
-      if [ ! -x "$CLAUDE_BIN" ]; then
-        echo "[$(ts)] $agent blocked: claude CLI not executable at $CLAUDE_BIN" >> "$LOG"
-        rm -rf "$lock_dir"
-        return 1
-      fi
-      ( printf '%s\n' "$prompt" | "$CLAUDE_BIN" --print --permission-mode auto >> "$LOG" 2>&1; rm -rf "$lock_dir" ) &
-      ;;
     codex-*)
       if [ ! -x "$CODEX_BIN" ]; then
         echo "[$(ts)] $agent blocked: Codex CLI not executable at $CODEX_BIN" >> "$LOG"
