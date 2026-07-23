@@ -92,3 +92,4 @@ extensions/*/sirsi
 # Bind identity private keys (ADR-041) — the sirsi-bind App key is local-only,
 # never committed and never a GitHub Secret. A key in CI lets a PR approve itself.
 *.pem
+.agents/idea-router/police/*.log

@@ -609,6 +609,22 @@ func TestDoctorWith_MemoryHog(t *testing.T) {
 	}
 }
 
+func TestTopMemoryProcessesDoesNotAlarmOnCapacityCappedGemmaBroker(t *testing.T) {
+	m := healthyMock()
+	m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = `  PID   RSS    VSZ  %CPU USER     COMM
+ 45798 6291456 7000000 88.5 user /Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python`
+	m.CommandResults["ps -p 45798 -o command="] = `/Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python /Users/test/.sirsi/gemma-capped-server.py 25281044480`
+
+	var report DoctorReport
+	checkTopMemoryProcesses(m, &report)
+	if len(report.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1", len(report.Findings))
+	}
+	if report.Findings[0].Severity != SeverityOK {
+		t.Fatalf("Gemma broker severity = %v, want OK", report.Findings[0].Severity)
+	}
+}
+
 // ── TestDoctorWith_SirsiProcesses ────────────────────────────────────────
 
 func TestDoctorWith_SirsiProcesses(t *testing.T) {

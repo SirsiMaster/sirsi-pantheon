@@ -629,6 +629,13 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	var hogs []string
 	for _, proc := range processes {
 		if proc.RSS > 4*1024*1024*1024 {
+			// The warm Gemma broker is an intentional, capacity-capped model
+			// reservation. Its RSS may exceed the generic per-process threshold
+			// while node pressure remains healthy; RAM Pressure and Memory Death
+			// Spiral still alarm if that reservation becomes unsafe.
+			if isCapacityCappedGemmaBroker(p, proc.PID) {
+				continue
+			}
 			hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(proc.RSS)))
 		}
 	}
@@ -647,6 +654,14 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+func isCapacityCappedGemmaBroker(p platform.Platform, pid int) bool {
+	out, err := p.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "/.sirsi/gemma-capped-server.py")
 }
 
 // crashWindowDays is the look-back window for kernel-panic / Jetsam trends.
@@ -1263,7 +1278,7 @@ func demoteTrendsToInfo(findings []DiagnosticFinding) {
 	}
 }
 
-// gateSwapOnPressure caps the "Swap Usage" alarm at the CURRENT memory-pressure
+// gateSwapOnPressure caps swap-residue alarms at the CURRENT memory-pressure
 // severity. macOS keeps swap ALLOCATED after using it, so a large swap reading
 // while RAM pressure is normal is residue — not active thrashing. "Heavy
 // swapping — system is thrashing" in red, while RAM Pressure reads healthy, is
@@ -1285,11 +1300,19 @@ func gateSwapOnPressure(findings []DiagnosticFinding) {
 	}
 	for i := range findings {
 		f := &findings[i]
-		if f.Check != "Swap Usage" || f.Severity <= pressureSev {
+		if (f.Check != "Swap Usage" && f.Check != "Memory Death Spiral") || f.Severity <= pressureSev {
+			continue
+		}
+		f.Severity = pressureSev
+		if f.Check == "Memory Death Spiral" {
+			if pressureSev <= SeverityInfo {
+				f.Message = "No active memory death spiral — memory pressure is normal; high swap allocation is retained history"
+			} else {
+				f.Message = "Memory pressure elevated, but no active death spiral is confirmed"
+			}
 			continue
 		}
 		usedGB := parseSwapUsedGB(f.Detail)
-		f.Severity = pressureSev
 		if pressureSev <= SeverityInfo {
 			f.Message = fmt.Sprintf("Swap in use (%.1f GB) — memory pressure is normal; macOS keeps swap allocated after using it", usedGB)
 		} else {

@@ -42,6 +42,22 @@ func TestGateSwapOnPressure(t *testing.T) {
 	}
 }
 
+func TestGateSwapOnPressure_DemotesRetainedSwapDeathSpiralWarning(t *testing.T) {
+	findings := []DiagnosticFinding{
+		{Check: "RAM Pressure", Severity: SeverityOK, Message: "RAM healthy"},
+		{Check: "Memory Death Spiral", Severity: SeverityWarn, Message: "Swap 91% exhausted", Detail: "load1 15.8 / 18 cores | swap 91% (8.2 GB) | free 18.81 GB"},
+	}
+
+	gateSwapOnPressure(findings)
+
+	if findings[1].Severity != SeverityOK {
+		t.Fatalf("death-spiral severity = %v, want OK under normal pressure", findings[1].Severity)
+	}
+	if !strings.Contains(findings[1].Message, "No active memory death spiral") {
+		t.Fatalf("demoted message = %q", findings[1].Message)
+	}
+}
+
 // No RAM Pressure reading → swap is left exactly as-is (don't guess).
 func TestGateSwapOnPressure_NoPressureFindingLeavesSwapAlone(t *testing.T) {
 	findings := []DiagnosticFinding{

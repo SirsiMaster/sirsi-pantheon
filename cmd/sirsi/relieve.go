@@ -15,6 +15,7 @@ var (
 	relieveConfirm bool
 	relieveMinCPU  float64
 	relieveMemory  bool
+	relieveAgents  bool
 )
 
 // gib is 1 GiB, for byte→GB display math.
@@ -46,11 +47,15 @@ func init() {
 	relieveCmd.Flags().BoolVar(&relieveConfirm, "confirm", false, "Apply the renice (default: preview only)")
 	relieveCmd.Flags().Float64Var(&relieveMinCPU, "min-cpu", 15, "Only relieve a process above this %CPU")
 	relieveCmd.Flags().BoolVar(&relieveMemory, "memory", false, "Relieve MEMORY pressure by flushing inactive caches (needs admin) instead of the CPU renice")
+	relieveCmd.Flags().BoolVar(&relieveAgents, "agents", false, "Deprioritize ALL background AI-agent processes (claude, codex, local models) to background QoS instead of the single top CPU hog")
 }
 
 func runRelieve(cmd *cobra.Command, args []string) error {
 	if relieveMemory {
 		return runRelieveMemory()
+	}
+	if relieveAgents {
+		return runRelieveAgents()
 	}
 	hint := strings.TrimSpace(strings.Join(args, " "))
 	res := &output.CommandResult{Command: "sirsi relieve"}
@@ -100,6 +105,61 @@ func runRelieve(cmd *cobra.Command, args []string) error {
 	}
 	res.Status = "ok"
 	res.Summary = fmt.Sprintf("Relieved %s (pid %d) — lowered to background priority. Your foreground app should regain responsiveness; it resets when %s exits.", c.Name, c.PID, c.Name)
+	res.Render()
+	return nil
+}
+
+// runRelieveAgents deprioritizes EVERY background AI-agent process (claude,
+// codex, local mlx/gemma runners) to background QoS in one pass — the
+// cross-agent QoS lever (ADR-031-B). QoS only: core-pinning is not possible
+// (the ANE is CoreML-only); taskpolicy -b prefers E-cores, renice +10 yields
+// the P-cores. Protected processes (incl. every sirsi binary) are refused by
+// the guard layer. Dry-run by default (A1); --confirm to apply.
+func runRelieveAgents() error {
+	res := &output.CommandResult{Command: "sirsi relieve --agents"}
+	if !relieveConfirm {
+		r, err := guard.PreviewRenice(guard.ReniceTargetAgents)
+		if err != nil {
+			res.Status = "error"
+			res.Errors = []string{err.Error()}
+			res.Summary = "Couldn't scan for agent processes."
+			res.Render()
+			return nil
+		}
+		if r.Reniced == 0 {
+			res.Status = "ok"
+			res.Summary = "No background AI-agent processes are running right now."
+			res.Render()
+			return nil
+		}
+		for _, p := range r.Processes {
+			res.Evidence = append(res.Evidence, output.Evidence{
+				Label: p.Name, Value: fmt.Sprintf("pid %d · %s", p.PID, p.RSSHuman)})
+		}
+		res.Status = "preview"
+		res.Summary = fmt.Sprintf("%d background AI-agent process(es) would drop to background priority — your foreground work gets the P-cores back. Reversible; nothing is killed.", r.Reniced)
+		res.NextActions = []output.NextAction{{
+			Label:       "Deprioritize them now",
+			Command:     "relieve --agents --confirm",
+			Description: "renice +10 + background QoS on every agent process — resets when each exits",
+		}}
+		res.Render()
+		return nil
+	}
+	r, err := guard.Renice(guard.ReniceTargetAgents)
+	if err != nil {
+		res.Status = "error"
+		res.Errors = []string{err.Error()}
+		res.Summary = "Couldn't deprioritize agent processes."
+		res.Render()
+		return nil
+	}
+	for _, p := range r.Processes {
+		res.Evidence = append(res.Evidence, output.Evidence{
+			Label: p.Name, Value: fmt.Sprintf("pid %d · QoS %s", p.PID, p.QoS)})
+	}
+	res.Status = "ok"
+	res.Summary = fmt.Sprintf("Deprioritized %d agent process(es) to background QoS (%d skipped as protected/system). Priorities reset when each process exits.", r.Reniced, r.Skipped)
 	res.Render()
 	return nil
 }

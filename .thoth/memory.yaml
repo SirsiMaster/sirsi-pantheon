@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-07-13T22:17:16-04:00
+# Last updated: 2026-07-21T21:00:00-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -18,6 +18,14 @@ mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, 
 ios_app: ios/ (SwiftUI, 9 deity views, WidgetKit, Fastlane, Siri Shortcuts)
 android_app: android/ (Jetpack Compose, 9 screens, nav drawer, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
+
+## Current UI State
+# 2026-07-21: Pantheon menubar keeps its gold identity and semantic amber health
+# signals. Home's evidence, automation, deity-row, and footer typography has
+# explicit 13–17pt floors (15pt semibold row titles); the full popover uses Large
+# Dynamic Type and a 360pt design width so drilled-in screens are legible too.
+# Safe Anubis cleanup reclaimed 7.5 GB; fresh scan reports 0 safe bytes. Horus
+# remained honestly amber while a live >4 GB memory-consumer warning persisted.
 
 ## Knowledge Graph (Understand-Anything)
 # Semantic verification layer. Thoth holds memory/intent; Seba owns architectural map sovereignty;
