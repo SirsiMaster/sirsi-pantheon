@@ -244,9 +244,10 @@ const (
 	// The correct restore is to START the broker.
 	GemmaDown
 	// GemmaWedged — the port responds but the broker is not generating (non-200,
-	// empty content, or slower than probeTimeout). "Health lies" — /v1/models can
-	// return 200 while completions return nothing (2026-07-17). The correct restore
-	// is a GRACEFUL restart (stop + start), never a SIGKILL (A32/ADR-040).
+	// zero tokens produced, abnormal finish_reason, or slower than probeTimeout).
+	// "Health lies" — /v1/models can return 200 while completions return nothing
+	// (2026-07-17). The correct restore is a GRACEFUL restart (stop + start),
+	// never a SIGKILL (A32/ADR-040).
 	GemmaWedged
 )
 
@@ -266,7 +267,7 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	body, _ := json.Marshal(map[string]any{
 		"model":       resolveModel(home),
 		"messages":    []map[string]string{{"role": "user", "content": "Reply with the single word: OK"}},
-		"max_tokens":  128, // reasoning model burns budget thinking; too-low a cap yields empty content
+		"max_tokens":  32, // we assert on tokens-produced, not content, so a tiny budget is enough (cheap probe)
 		"temperature": 0,
 	})
 	start := time.Now()
@@ -286,18 +287,39 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	}
 	var out struct {
 		Choices []struct {
+			// A reasoning model (gemma-4) fills `reasoning` first, then `content`.
+			// At a small max_tokens the whole budget is spent in `reasoning` and
+			// `content` is legitimately empty on a perfectly healthy broker — so
+			// "empty content" is a MODEL-BEHAVIOR assumption, not a liveness fact.
 			Message struct {
-				Content string `json:"content"`
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage struct {
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return GemmaWedged, "unparseable response (up but not generating)"
 	}
-	if len(out.Choices) == 0 || strings.TrimSpace(out.Choices[0].Message.Content) == "" {
-		return GemmaWedged, fmt.Sprintf("empty content after %s (up but not generating)", time.Since(start).Round(time.Second))
+	if len(out.Choices) == 0 {
+		return GemmaWedged, fmt.Sprintf("no choices after %s (up but not generating)", time.Since(start).Round(time.Second))
 	}
-	return GemmaHealthy, fmt.Sprintf("answered in %s", time.Since(start).Round(time.Second))
+	// Transport truth, not content shape: the broker IS generating if it stopped
+	// for a normal reason AND produced tokens — whether the budget landed in
+	// content, in reasoning, or is only visible in usage. Reading content alone
+	// false-flags a reasoning model as "wedged" and pages the owner every cycle.
+	ch := out.Choices[0]
+	producedTokens := out.Usage.CompletionTokens > 0 ||
+		strings.TrimSpace(ch.Message.Content) != "" ||
+		strings.TrimSpace(ch.Message.Reasoning) != ""
+	normalFinish := ch.FinishReason == "stop" || ch.FinishReason == "length" || ch.FinishReason == ""
+	if producedTokens && normalFinish {
+		return GemmaHealthy, fmt.Sprintf("answered in %s (%d tok, finish=%q)", time.Since(start).Round(time.Second), out.Usage.CompletionTokens, ch.FinishReason)
+	}
+	return GemmaWedged, fmt.Sprintf("no tokens generated after %s (finish=%q, up but not generating)", time.Since(start).Round(time.Second), ch.FinishReason)
 }
 
 // probeGemma is the read-only liveness-watch wrapper over ProbeGemmaState.
@@ -305,7 +327,7 @@ func probeGemma(home string) Finding {
 	f := Finding{Check: "gemma-broker", Fixable: true,
 		Title: "liveness-watch: gemma broker wedged",
 		Body: "The launchd liveness watch generated against the warm gemma broker and it did not answer " +
-			"(no port, connection error, non-200, empty content, or >30s). The broker is the Tier-0 substrate " +
+			"(no port, connection error, non-200, zero tokens produced, or >30s). The broker is the Tier-0 substrate " +
 			"the router/reconcile/gemma-builder depend on. The router's gemma-liveness duty auto-restores it " +
 			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
 			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
