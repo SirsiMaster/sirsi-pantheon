@@ -77,7 +77,7 @@ func supervisorDuties() []SupervisorDuty {
 		{Name: "auto-heal", GoRun: func(routerRoot, repoRoot string) error {
 			return getAutoHealFn()(routerRoot, repoRoot)
 		}, Cadence: 5 * time.Minute},
-		// Universal Thread Census (A32): every agent-class infra process —
+		// Universal Thread Census (A33): every agent-class infra process —
 		// including GPU servers — becomes a registered thread, no misses;
 		// a future process is caught within one cadence of first launch.
 		{Name: "thread-census", GoRun: RunCensusDuty, Cadence: 10 * time.Minute},

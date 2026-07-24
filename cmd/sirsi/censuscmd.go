@@ -1,7 +1,7 @@
 package main
 
 // censuscmd.go — `sirsi thread census`: on-demand run of the Universal Thread
-// Census (A32). The supervisor runs it every 10 minutes; this verb is the
+// Census (A33). The supervisor runs it every 10 minutes; this verb is the
 // operator's immediate pass + visibility into what it decided.
 
 import (
@@ -17,7 +17,7 @@ import (
 
 var censusCmd = &cobra.Command{
 	Use:   "census",
-	Short: "Register every agent-class process (CPU + GPU surfaces) as a thread — no misses (A32)",
+	Short: "Register every agent-class process (CPU + GPU surfaces) as a thread — no misses (A33)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoRoot, err := router.FindRepoRoot()
 		if err != nil {
