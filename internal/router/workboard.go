@@ -11,8 +11,6 @@ package router
 import (
 	"sort"
 	"time"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // WorkPackage is one open item as an agent sees it on the board.
@@ -48,7 +46,7 @@ type WorkBoard struct {
 
 // ComputeWorkBoard builds the board from the items corpus + thread registry.
 func ComputeWorkBoard(routerRoot string) (*WorkBoard, error) {
-	items, err := work.ListAll(routerRoot)
+	items, err := AllItems(routerRoot)
 	if err != nil {
 		return nil, err
 	}
