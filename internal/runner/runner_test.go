@@ -97,3 +97,32 @@ func TestInstalledDirs(t *testing.T) {
 		t.Errorf("missing base: got %v, %v", dirs, err)
 	}
 }
+
+func TestInstanceNaming(t *testing.T) {
+	cases := []struct {
+		instance      int
+		wantSuffix    string
+		wantRunner    string
+		wantDirSuffix string
+	}{
+		{0, "", "m5-sirsi", "sirsi-pantheon"}, // guard: <=1 is instance 1
+		{1, "", "m5-sirsi", "sirsi-pantheon"}, // canonical single runner — no suffix
+		{2, "-2", "m5-sirsi-2", "sirsi-pantheon-2"},
+		{3, "-3", "m5-sirsi-3", "sirsi-pantheon-3"},
+	}
+	for _, c := range cases {
+		if got := instanceSuffix(c.instance); got != c.wantSuffix {
+			t.Errorf("instanceSuffix(%d) = %q, want %q", c.instance, got, c.wantSuffix)
+		}
+		if got := instanceRunnerName(c.instance); got != c.wantRunner {
+			t.Errorf("instanceRunnerName(%d) = %q, want %q", c.instance, got, c.wantRunner)
+		}
+		if got := instanceDir("sirsi-pantheon", c.instance); filepath.Base(got) != c.wantDirSuffix {
+			t.Errorf("instanceDir(%d) base = %q, want %q", c.instance, filepath.Base(got), c.wantDirSuffix)
+		}
+	}
+	// Instance 1 must be byte-identical to the pre-instance path.
+	if instanceRunnerName(1) != RunnerName {
+		t.Error("instance 1 must equal RunnerName exactly")
+	}
+}

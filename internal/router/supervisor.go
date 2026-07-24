@@ -294,6 +294,11 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		fmt.Fprintf(os.Stderr, "supervise: board not persisted: %v\n", err)
 	}
 
+	// Owner-facing run report (local sovereignty P1): what this pass DID, in
+	// plain English, to ~/.sirsi/conduit-report.json — rendered by `sirsi
+	// report` and the menubar "Last check" line. Best-effort by contract.
+	writeRunReport(now, duties)
+
 	return report, nil
 }
 

@@ -10,7 +10,7 @@
 // NOWHERE), model workers, servers. A process the registry cannot see is a
 // process no board, reaper, or overseer can govern.
 //
-// Extensibility contract (canon A32): every new agent-class service ships a
+// Extensibility contract (canon A33): every new agent-class service ships a
 // matcher row here IN THE SAME CHANGE. The census runs as a supervisor duty,
 // so a future process is caught within one cadence of first launch.
 package router
