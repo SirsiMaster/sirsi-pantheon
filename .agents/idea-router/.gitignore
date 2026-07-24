@@ -7,7 +7,12 @@ items/
 reviews/
 proposals/
 decisions/
-police/
+# police/: LOGS are runtime, the SCRIPT is durable logic. Ignoring the whole
+# directory left registry-police.sh untracked on ONE machine — the ADR-031-C
+# class (local automation outside the repo, invisible to canon and review).
+police/*.log
+police/launchd.out
+police/launchd.err
 logs/
 state.json
 threads.json
