@@ -145,6 +145,12 @@ var ccdReapCmd = &cobra.Command{
 			idle int
 		}
 		var reap []reapT
+		// Sessions with an attributed live runner. The archive pass consults this
+		// so a session that is still ALIVE is never archived out of the app's
+		// history — the same protection the kill path gives, extended to the
+		// archive path (it holds for untagged/interactive sessions too, which the
+		// kill path skips outright and would otherwise be archived on age alone).
+		liveSIDs := map[string]bool{}
 		for _, pid := range ccdPgrep("-f", "claude.app/Contents/MacOS/claude ") {
 			if pid == me {
 				continue
@@ -166,7 +172,8 @@ var ccdReapCmd = &cobra.Command{
 			if best == nil || bd > ccdMatchWinSec { // unattributable → never kill
 				continue
 			}
-			if best.sched == "" { // interactive/named → protect
+			liveSIDs[best.sid] = true // attributed and running — archive must skip it
+			if best.sched == "" {     // interactive/named → protect
 				continue
 			}
 			if best.last != 0 && best.last == newest[best.sched] { // running instance → protect
@@ -208,19 +215,12 @@ var ccdReapCmd = &cobra.Command{
 			verb = "ARCHIVE"
 		}
 		for _, s := range sessions {
+			if !ccdShouldArchive(s, newest, liveSIDs, now) {
+				continue
+			}
 			idleMin := 1e18
 			if s.last != 0 {
 				idleMin = (now - s.last) / 60
-			}
-			if s.sched != "" {
-				if s.last != 0 && s.last == newest[s.sched] {
-					continue // running instance
-				}
-				if idleMin < ccdGraceMin {
-					continue
-				}
-			} else if idleMin < ccdStaleDays*1440 {
-				continue
 			}
 			if ccdReapApply {
 				if err := ccdArchiveRecord(s.path); err != nil {
@@ -234,6 +234,32 @@ var ccdReapCmd = &cobra.Command{
 		fmt.Printf("archived %d session record(s); stale-window=%dd apply=%v\n", archived, ccdStaleDays, ccdReapApply)
 		return nil
 	},
+}
+
+// ccdShouldArchive is the archive-pass predicate, extracted so the live-session
+// protection is unit-testable without shelling ps/pgrep.
+//
+// Never archive a session with an attributed LIVE runner — that would hide an
+// active session (including an untagged interactive one, which the kill path
+// skips outright and would otherwise be archived on age alone). Otherwise:
+// a scheduled-task run is archivable once it is not the newest instance for its
+// task and has idled past the grace window; an untagged session only after
+// ccdStaleDays.
+func ccdShouldArchive(s ccdSession, newest map[string]float64, liveSIDs map[string]bool, now float64) bool {
+	if liveSIDs[s.sid] {
+		return false
+	}
+	idleMin := 1e18
+	if s.last != 0 {
+		idleMin = (now - s.last) / 60
+	}
+	if s.sched != "" {
+		if s.last != 0 && s.last == newest[s.sched] {
+			return false // the running instance for that task
+		}
+		return idleMin >= ccdGraceMin
+	}
+	return idleMin >= ccdStaleDays*1440
 }
 
 func ccdArchiveRecord(path string) error {
