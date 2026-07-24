@@ -560,8 +560,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		ns.AgentHealth = append(ns.AgentHealth, check)
 	}
 
-	// Strand visibility (PR #2): backlogged agents with no armed thread.
-	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent)
+	// Strand visibility (PR #2): backlogged agents with no live consumer. A
+	// consumer is an armed registry thread OR the agent's launchd wake job — the
+	// latter is the durable post-cutover consumer and lives outside the registry,
+	// so it must be credited here or every wake-loop agent false-strands (#298).
+	strandAgents := make([]string, 0, len(ns.PendingByAgent))
+	for a := range ns.PendingByAgent {
+		strandAgents = append(strandAgents, a)
+	}
+	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck))
 
 	return ns, nil
 }

@@ -104,13 +104,47 @@ type StrandedAgent struct {
 	OpenItems int    `json:"open_items"`
 }
 
-// computeStranded returns the agents that have pending items but no armed thread,
-// sorted by descending backlog. Reuses the already-computed PendingByAgent, so it
-// adds no extra item scan.
-func computeStranded(routerRoot string, pendingByAgent map[string][]string) []StrandedAgent {
+// liveWakeAgents returns the set of agents whose per-agent launchd wake job
+// (`ai.sirsi.router.wake.<agent>`) is loaded. After the store cutover this job —
+// not a registry thread — is the durable inbox consumer for a background agent,
+// so it MUST count as "watched". `launchctl list <label>` exits 0 iff loaded
+// (the same domain-correct probe CollectNodeStatus/CollectLaunchAgents use). A
+// nil checker (tests) yields an empty set, preserving registry-only semantics.
+func liveWakeAgents(agents []string, launchctlCheck LaunchctlChecker) map[string]bool {
+	live := map[string]bool{}
+	if launchctlCheck == nil {
+		return live
+	}
+	for _, a := range agents {
+		if launchctlCheck("list", "ai.sirsi.router.wake."+a) == nil {
+			live[a] = true
+		}
+	}
+	return live
+}
+
+// computeStranded returns the agents that have pending items but no watcher
+// consuming them, sorted by descending backlog. Reuses the already-computed
+// PendingByAgent, so it adds no extra item scan. `liveWake` is the set of agents
+// whose launchd wake job is loaded (see liveWakeAgents) — pass nil for
+// registry-only classification.
+func computeStranded(routerRoot string, pendingByAgent map[string][]string, liveWake map[string]bool) []StrandedAgent {
 	var stranded []StrandedAgent
 	for agent, items := range pendingByAgent {
-		if len(items) == 0 || AgentArmed(routerRoot, agent) {
+		if len(items) == 0 {
+			continue
+		}
+		// The owner queue ("user") has no session/loop watcher — it is consumed by
+		// the owner reading the menubar. Telling the owner to "arm a watcher" for
+		// their own inbox is a category error, so `user` is never stranded.
+		if agent == "user" {
+			continue
+		}
+		// Watched = a live consumer: an armed registry thread (a running /loop
+		// session) OR the agent's launchd wake-loop. Crediting only the registry
+		// false-strands every wake-loop agent (the #298 class — proven live: the
+		// screenshot flagged claude-pantheon stranded while its wake job was up).
+		if AgentArmed(routerRoot, agent) || liveWake[agent] {
 			continue
 		}
 		stranded = append(stranded, StrandedAgent{AgentID: agent, OpenItems: len(items)})
