@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Auto-cancel a branch's prior in-flight run on every new push, so a
+# rebase-heavy PR stack never leaves superseded runs starving the serialized
+# self-hosted runners (root-caused 2026-07-24: 12 stale runs clogged 2 runners).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
