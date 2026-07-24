@@ -45,8 +45,9 @@ const Label = "ai.sirsi.liveness-watch"
 const StartInterval = 900
 
 // probeTimeout bounds the gemma generation probe. Longer than a healthy answer,
-// short enough that a wedged broker (>30s to first token) reads as wedged.
-const probeTimeout = 30 * time.Second
+// short enough that a wedged broker (>30s to first token) reads as wedged. var
+// (not const) so tests can shrink it to exercise the timeout/retry path fast.
+var probeTimeout = 30 * time.Second
 
 // PlistPath is where the LaunchAgent is written (per-user).
 func PlistPath() string {
@@ -251,10 +252,21 @@ const (
 	GemmaWedged
 )
 
-// ProbeGemmaState runs ONE real chat completion against the warm broker and
+// probeRetryPause is the drain between a timed-out probe and its single retry.
+// The broker serializes requests (mlx_lm.server), and the triage loop /
+// gemma-worker / conduit keep it generating — so a probe that fires mid-request
+// queues behind an in-flight generation and can exceed probeTimeout on a
+// perfectly HEALTHY broker (observed live: 21.58s queued vs 0.39s idle). A short
+// pause lets the blocking generation drain; the retry then answers fast, while a
+// truly wedged broker fails both attempts.
+var probeRetryPause = 3 * time.Second
+
+// ProbeGemmaState runs a real chat completion against the warm broker and
 // classifies the result. Health lies, so it generates and inspects the answer
-// rather than trusting a 200. Read-only. Shared by the read-only liveness watch
-// (probeGemma) and the router's self-healing duty so both agree on "wedged".
+// rather than trusting a 200. A single timeout can't distinguish WEDGED from
+// merely BUSY (serialized behind real work), so a timed-out attempt is retried
+// once. Read-only. Shared by the read-only liveness watch (probeGemma) and the
+// router's self-healing duty so both agree on "wedged".
 func ProbeGemmaState(home string) (GemmaStatus, string) {
 	portRaw, err := os.ReadFile(filepath.Join(home, ".sirsi/gemma-server.port"))
 	if err != nil {
@@ -264,8 +276,28 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	if err != nil || port == 0 {
 		return GemmaDown, "port file unreadable"
 	}
+	model := resolveModel(home)
+	status, detail, timedOut := probeGemmaAttempt(port, model)
+	if timedOut {
+		// Busy vs wedged: let the blocking generation drain, then retry once.
+		time.Sleep(probeRetryPause)
+		status, detail, timedOut = probeGemmaAttempt(port, model)
+		switch {
+		case timedOut:
+			detail += " (twice — wedged, not just busy)"
+		case status == GemmaHealthy:
+			detail += " (on retry — broker was busy, not wedged)"
+		}
+	}
+	return status, detail
+}
+
+// probeGemmaAttempt is ONE generation probe. The third return is true ONLY when
+// the request itself timed out — the busy-vs-wedged ambiguity ProbeGemmaState
+// resolves with a retry — never for a decisive non-200 or zero-token result.
+func probeGemmaAttempt(port int, model string) (GemmaStatus, string, bool) {
 	body, _ := json.Marshal(map[string]any{
-		"model":       resolveModel(home),
+		"model":       model,
 		"messages":    []map[string]string{{"role": "user", "content": "Reply with the single word: OK"}},
 		"max_tokens":  32, // we assert on tokens-produced, not content, so a tiny budget is enough (cheap probe)
 		"temperature": 0,
@@ -274,16 +306,17 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	cl := &http.Client{Timeout: probeTimeout}
 	resp, err := cl.Post(fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port), "application/json", bytes.NewReader(body))
 	if err != nil {
-		// A timeout means the server is there but hung (wedged); anything else
+		// A timeout means the server is there but not answering in time (wedged
+		// OR busy — the caller retries to tell them apart); anything else
 		// (connection refused, no listener) means nothing is serving (down).
 		if ne, ok := err.(net.Error); ok && ne.Timeout() {
-			return GemmaWedged, fmt.Sprintf("no answer in %s (timed out — up but hung)", time.Since(start).Round(time.Second))
+			return GemmaWedged, fmt.Sprintf("no answer in %s (timed out)", time.Since(start).Round(time.Second)), true
 		}
-		return GemmaDown, fmt.Sprintf("connection failed in %s (%v)", time.Since(start).Round(time.Second), err)
+		return GemmaDown, fmt.Sprintf("connection failed in %s (%v)", time.Since(start).Round(time.Second), err), false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return GemmaWedged, fmt.Sprintf("HTTP %d (up but erroring)", resp.StatusCode)
+		return GemmaWedged, fmt.Sprintf("HTTP %d (up but erroring)", resp.StatusCode), false
 	}
 	var out struct {
 		Choices []struct {
@@ -302,10 +335,10 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return GemmaWedged, "unparseable response (up but not generating)"
+		return GemmaWedged, "unparseable response (up but not generating)", false
 	}
 	if len(out.Choices) == 0 {
-		return GemmaWedged, fmt.Sprintf("no choices after %s (up but not generating)", time.Since(start).Round(time.Second))
+		return GemmaWedged, fmt.Sprintf("no choices after %s (up but not generating)", time.Since(start).Round(time.Second)), false
 	}
 	// Transport truth, not content shape: the broker IS generating if it stopped
 	// for a normal reason AND produced tokens — whether the budget landed in
@@ -317,9 +350,9 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 		strings.TrimSpace(ch.Message.Reasoning) != ""
 	normalFinish := ch.FinishReason == "stop" || ch.FinishReason == "length" || ch.FinishReason == ""
 	if producedTokens && normalFinish {
-		return GemmaHealthy, fmt.Sprintf("answered in %s (%d tok, finish=%q)", time.Since(start).Round(time.Second), out.Usage.CompletionTokens, ch.FinishReason)
+		return GemmaHealthy, fmt.Sprintf("answered in %s (%d tok, finish=%q)", time.Since(start).Round(time.Second), out.Usage.CompletionTokens, ch.FinishReason), false
 	}
-	return GemmaWedged, fmt.Sprintf("no tokens generated after %s (finish=%q, up but not generating)", time.Since(start).Round(time.Second), ch.FinishReason)
+	return GemmaWedged, fmt.Sprintf("no tokens generated after %s (finish=%q, up but not generating)", time.Since(start).Round(time.Second), ch.FinishReason), false
 }
 
 // probeGemma is the read-only liveness-watch wrapper over ProbeGemmaState.

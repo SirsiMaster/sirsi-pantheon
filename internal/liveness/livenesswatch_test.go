@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -99,6 +101,63 @@ func TestPickWorst_SeverityOrder(t *testing.T) {
 	if w := pickWorst([]Finding{okFinding, nonFixable}); w != nil {
 		t.Errorf("no fixable non-OK finding → nil, got %+v", w)
 	}
+}
+
+// TestProbeGemmaState_RetryOnTimeout is the busy-vs-wedged regression guard
+// (recurring alerts 20260724). The broker serializes requests, so a probe firing
+// while the triage loop / gemma-worker is mid-generation queues behind it and
+// times out on a HEALTHY broker. A timed-out probe must retry once: a busy
+// broker answers on retry (healthy); a truly wedged one fails both (wedged).
+func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
+	// Shrink the timing so the timeout path runs fast.
+	oldT, oldP := probeTimeout, probeRetryPause
+	probeTimeout, probeRetryPause = 150*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { probeTimeout, probeRetryPause = oldT, oldP })
+
+	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
+
+	t.Run("busy_then_answers_is_healthy", func(t *testing.T) {
+		var n int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if atomic.AddInt32(&n, 1) == 1 {
+				time.Sleep(400 * time.Millisecond) // first attempt: busy → client times out
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(healthy)) // retry: answers
+		}))
+		defer srv.Close()
+		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+		if got != GemmaHealthy {
+			t.Errorf("busy-then-answers = %v (%s), want GemmaHealthy", got, detail)
+		}
+	})
+
+	t.Run("always_hangs_is_wedged", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(400 * time.Millisecond) // every attempt times out
+		}))
+		defer srv.Close()
+		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+		if got != GemmaWedged {
+			t.Errorf("always-hangs = %v (%s), want GemmaWedged", got, detail)
+		}
+	})
+}
+
+// homeWithPort writes a gemma-server.port pointing at srvURL's port under a temp
+// HOME, returning that HOME for ProbeGemmaState.
+func homeWithPort(t *testing.T, srvURL string) string {
+	t.Helper()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	port := strings.TrimPrefix(srvURL, "http://127.0.0.1:")
+	if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-server.port"), []byte(port), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return home
 }
 
 // TestProbeGemmaState_Classification is the false-positive regression guard.
