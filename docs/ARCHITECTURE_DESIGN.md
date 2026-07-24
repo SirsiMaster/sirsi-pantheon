@@ -19,7 +19,7 @@ The Pantheon is organized into six divine pillars, each assigned a canonical Anc
 - **𓇽 SEBA (Mapping)**: Infrastructure topology, project registry (Book), and fleet discovery (Scarab).
 - **𓁆 SESHAT (Scribe)**: Knowledge bridge (Gemini/NotebookLM), MCP context server, and AI sync.
 
-> **Knowledge Substrate (𓅓) — adjacent capability, not a pillar.** Codified in [ADR-019](ADR-019-KNOWLEDGE-SUBSTRATE.md) on 2026-05-26. The substrate is a *semantic verification* layer derived from source via the Understand-Anything plugin; it complements Thoth (memory) and Seba (architectural map) without competing with either deity's sovereignty. Today's per-repo `.understand-anything/knowledge-graph.json` is the local feeder for the future **Sirsi hypergraph** on Hedera Consensus Service (workspace-canon vision at `~/Development/HYPERGRAPH_VISION.md`). See [§ Knowledge Substrate](#knowledge-substrate) for the full integration spec.
+> **Knowledge Substrate (𓅓) — adjacent capability, not a pillar.** Codified in [ADR-019](ADR-019-KNOWLEDGE-SUBSTRATE.md) on 2026-05-26. The substrate is a *semantic verification* layer derived from source via the Understand-Anything plugin; it complements Thoth (memory) and Seba (architectural map) without competing with either deity's sovereignty. Today's per-repo `.understand-anything/knowledge-graph.json` is a local feeder for the **Sirsi hypergraph**, now LIVE and owned by the [sirsi-hypergraph](https://github.com/SirsiMaster/sirsi-hypergraph) repo (HCS envelope anchoring in flight; canon: that repo's ADR-003). See [§ Knowledge Substrate](#knowledge-substrate) for the full integration spec.
 
 ```
                     ┌─────────────────────────────┐
@@ -300,18 +300,23 @@ Codified in global `~/CLAUDE.md`. After every `/understand` run in any Thoth-ena
 
 The contract is enforced by AI session behavior, not by a hook — agents detect the gap and refresh.
 
-### CLI surface (spec'd; implementation pending)
+### CLI surface — MOVED to the `hypergraph` binary (2026-07-23)
+
+Pantheon ships **no** `sirsi hypergraph` verb. The substrate is owned by
+[sirsi-hypergraph](https://github.com/SirsiMaster/sirsi-hypergraph) (canon: that repo's
+ADR-003 Neural Fractal Architecture), and its own binary carries the surface — one
+implementation of the pattern, per LEAN:
 
 ```
-sirsi hypergraph status [--json]
-sirsi hypergraph refresh [--full]
-sirsi hypergraph chat <question>
-sirsi hypergraph explain <path>
-sirsi hypergraph diff <ref>
-sirsi hypergraph layers
-sirsi hypergraph tour
-sirsi hypergraph export <json|dot|mermaid>
+hypergraph ingest <feeder-artifact>    # router items, thoth memory/journal, understand graphs
+hypergraph replay                      # events → SQLite projection
+hypergraph query [event-type]
+hypergraph nodes                       # code nodes as canonical URIs
 ```
+
+The union bus is cross-repo at `~/.sirsi/hypergraph/events.jsonl` — a superset of the
+per-repo bus this document once specified. Pantheon's role is unchanged: it **feeds** the
+substrate (`.thoth/`, `.agents/`, `.understand-anything/` stay sovereign here).
 
 Gated by `configs/hypergraph.yaml` `enabled:` (config-time) and a `hypergraph` build tag (compile-time). When disabled or absent, the subcommand has zero runtime cost.
 
