@@ -22,6 +22,16 @@ HF_CACHE=$HOME/.cache/huggingface/hub
 mkdir -p "$(dirname "$CONF")"
 log(){ echo "[$(date -u +%FT%TZ)] $*" >> "$LOG"; }
 
+# The model the running broker was STARTED on. Used two ways: as a ranking
+# tiebreak (hysteresis, see the ranking block) and to skip a pointless probe when
+# the pick is already what is being served. Empty when no broker is running.
+resident_model() {
+  local sp; sp=$(cat "$HOME/.sirsi/gemma-server.pid" 2>/dev/null) || return 1
+  [ -n "$sp" ] || return 1
+  ps -o command= -p "$sp" 2>/dev/null | tr ' ' '\n' | grep -A1 -x -- '--model' | tail -1
+}
+RESIDENT=$(resident_model || true)
+
 # Approx GB-per-billion-params by quant (safetensors on disk ≈ RAM at load).
 gb_per_b() { case "$1" in 8bit) echo 1.05;; 6bit) echo 0.80;; 5bit) echo 0.66;; 4bit|qat-4bit|nvfp4|mxfp4) echo 0.55;; *) echo 0.6;; esac; }
 
@@ -54,6 +64,7 @@ resolve() {
   CHOSEN=$(echo "$json" | python3 -c "
 import json,sys,re,os
 budget=$budget
+resident='$RESIDENT'
 HUB=os.path.expanduser('~/.cache/huggingface/hub')
 def cached(mid): return os.path.isdir(os.path.join(HUB,'models--'+mid.replace('/','--')))
 gbper={'8bit':1.05,'6bit':0.93,'5bit':0.85,'4bit':0.93,'qat':0.93,'nvfp4':0.6,'mxfp4':0.6,'mxfp8':1.0,'bf16':2.0}  # measured: gemma-4-31b qat-4bit = 28.8GB → ~0.93 GB/B (QAT keeps hi-precision embeds/scales)
@@ -77,15 +88,49 @@ for i in items:
     qat=1 if 'qat' in lo else 0
     size=params*gbper.get(q,0.6)
     if size>budget: continue
-    # rank: newest family, largest params, QAT preferred, highest bits that fit,
-    # then already-on-disk (tiebreak ONLY among otherwise-equal models — must stay
-    # after bits so a small cached model can never outrank a larger remote one;
-    # avoids a ~29GB download when an equivalent local quant already exists), then name
-    cand.append((fam, params, qat, bits, 1 if cached(i) else 0, i, round(size,1)))
+    # rank: newest family, largest params, HIGHEST BITS that fit, then ALREADY
+    # RESIDENT, then QAT, then already-on-disk, then name.
+    #
+    # RESIDENT OUTRANKS QAT -- hysteresis, and it is what stops the churn. Among
+    # models that tie on family, params AND bits, the one the broker is already
+    # serving wins. Rationale: at an identical bit depth, QAT-vs-plain is a
+    # marginal quality difference, and it is not worth swapping a multi-GB model
+    # to collect. Without this, 12B-it-qat-mxfp8 beat the resident 12B-it-8bit on
+    # the qat key every single run, so conf permanently named a model the broker
+    # had not started on. Probing that model then LOADED it as a SECOND resident
+    # 12B (measured 2026-07-24: free RAM 82% -> 28%, ~23GB wired), and any probe
+    # reading below floor SIGTERMd the broker to swap. A genuine upgrade (more
+    # params, or more bits) still outranks the resident model and still swaps --
+    # hysteresis only suppresses lateral moves, never real ones.
+    #
+    # BITS RANKS ABOVE QAT (fixed 2026-07-24). QAT sat above bits, which made ANY
+    # qat variant outrank a higher-bit plain one — qat-mxfp8 (bits=8) permanently
+    # beat the proven-good 12B-it-8bit FALLBACK, and once that was addressed
+    # qat-6bit (bits=6) beat it too. Both contradict this script's own stated
+    # strategy -- largest param size, then the HIGHEST-bit quant that fits. QAT
+    # exists to recover quality lost to aggressive quantization, so it is a real
+    # win BETWEEN EQUAL-BIT variants (qat-4bit over plain 4bit) and never a reason
+    # to accept fewer bits. The old order also never let the pick settle: each run
+    # re-chose a non-resident model, and any probe reading below floor stepped down
+    # and SIGTERM'd the load-bearing broker (~2 bounces/hr on measurement noise).
+    #
+    # The cached flag stays AFTER bits so a small cached model can never outrank a
+    # larger remote one (avoids a ~29GB download when an equivalent local quant
+    # already exists).
+    #
+    # !! THIS WHOLE PYTHON BLOCK LIVES INSIDE A DOUBLE-QUOTED BASH STRING !!
+    # So a double quote, a backtick, or dollar-paren in these comments is NOT
+    # text: a double quote ENDS the string and truncates every line after it,
+    # and the other two run as shell command substitution. The failure is silent
+    # and misleading -- the block dies mid-parse, cand stays empty, and the
+    # resolver logs no-fitting-candidate as if the API were down. Cost three
+    # broken runs on 2026-07-24. Use plain ASCII prose only. Guarded by
+    # test-gemma-model-resolver.sh, which runs this block for real.
+    cand.append((fam, params, bits, 1 if i==resident else 0, qat, 1 if cached(i) else 0, i, round(size,1)))
 if not cand:
     print(''); sys.exit()
 cand.sort(reverse=True)
-fam,params,qat,bits,_loc,i,size=cand[0]
+fam,params,bits,_res,qat,_loc,i,size=cand[0]
 print(f'{i}\t{size}')
 ")
   [ -z "$CHOSEN" ] && { log "no fitting candidate — keeping fallback"; return 1; }
@@ -114,6 +159,14 @@ else
   echo "$MODEL" > "$CONF"
 fi
 log "conf -> $(cat "$CONF")"
+
+# INVARIANT: from here on MODEL is whatever conf actually serves. Without this the
+# probe measured the CHOSEN model while clients used the cached fallback — so a
+# fresh uncached pick got logged as "fit OK" on a decode nobody would ever run,
+# and (worse) naming a non-resident model in the probe makes the broker LOAD it,
+# a second multi-GB model alongside the resident one. Observed live 2026-07-24:
+# free RAM fell 82% -> 28% (~23GB wired) inside one conduit pass.
+MODEL=$(cat "$CONF")
 
 # Warm/download via huggingface-cli if available (background-safe; mlx will also
 # fetch on first use, but pre-warming avoids a cold first request).
@@ -149,7 +202,36 @@ dt = time.time() - t0
 print(int(toks / dt) if dt > 0 else 0)
 PY
 }
-if curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; then
+# BEST-OF-N (2026-07-24): a single probe is not a measurement, it is a sample of a
+# contended machine. Host load only ever makes decode SLOWER — it cannot make it
+# faster — so the MAX across N samples is the least-contaminated estimate of the
+# model's true decode rate, and a false-low needs all N to be slow instead of one.
+# This matters because below-floor does not merely log: it rewrites conf AND
+# SIGTERMs the load-bearing broker. Measured on this box, one model inside one
+# hour: 2, 8, 25, 2, 30 tok/s — a 15x spread across a 5 tok/s floor, i.e. the old
+# single sample was deciding broker restarts on noise. Bail out early on the first
+# sample that clears the floor: the common healthy case still costs one call.
+best_toks() { # $1=model → echoes best-of-N tok/s (empty if every sample unreachable)
+  local best="" r n=${GEMMA_PROBE_SAMPLES:-3}
+  for _ in $(seq "$n"); do
+    r=$(probe_toks "$1")
+    [ -z "$r" ] && continue
+    { [ -z "$best" ] || [ "$r" -gt "$best" ]; } && best=$r
+    [ -n "$best" ] && [ "$best" -ge "$TOKS_FLOOR" ] && break
+  done
+  echo "$best"
+}
+# RESIDENT-AWARE SKIP (2026-07-24). probe_toks NAMES a model, so probing anything
+# the broker does not already have loaded makes it LOAD that model — a second
+# multi-GB set of weights alongside the resident one, left resident afterwards.
+# In steady state (chosen == what the broker is already serving) there is nothing
+# to learn from a probe and a real ~12GB cost to running one, so skip it entirely.
+# The probe's actual job is to catch "nominal RAM says it fits but it thrashes"
+# (the 31B case, router item 20260715-175752) — that only arises when a SWAP is on
+# the table, which is exactly when we still probe.
+if [ -n "${RESIDENT:-}" ] && [ "$RESIDENT" = "$MODEL" ]; then
+  log "steady state: broker already serving $MODEL — probe skipped (no second model load)"
+elif curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; then
   # WARMUP-DISCARD (2026-07-24, same class as the triage probe): this probe names
   # $MODEL explicitly, so if that model is not already resident the server loads
   # it (~45s) and `toks/dt` divides 48 tokens by the LOAD, not the decode —
@@ -159,7 +241,7 @@ if curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; the
   # 8 tok/s cold and 25 tok/s warm 15 min apart. Discard the first (load-bearing)
   # call, then measure warm decode.
   probe_toks "$MODEL" >/dev/null
-  rate=$(probe_toks "$MODEL")
+  rate=$(best_toks "$MODEL")
   if [ -n "$rate" ] && [ "$rate" -lt "$TOKS_FLOOR" ]; then
     if [ "$MODEL" != "$FALLBACK" ]; then
       log "EMPIRICAL FIT FAIL: $MODEL measured ${rate} tok/s < ${TOKS_FLOOR} floor — stepping down to $FALLBACK"
