@@ -41,6 +41,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Decouple + heal the Go module cache (self-hosted)
+        shell: bash
+        run: |
+          # Two m5 runners (m5-sirsi, m5-sirsi-2) share this box. A SINGLE
+          # GOMODCACHE means concurrent `go test`/`go build` race on read-only
+          # module files ("Can't unlink already-existing object: Permission
+          # denied"), and one cache truncated mid-write (a memory/swap storm)
+          # reddens EVERY self-hosted repo with a fake "SECURITY ERROR /
+          # checksum mismatch". Give each runner its OWN persistent module tree
+          # so they never collide, then sweep zero-byte artifacts — always
+          # corrupt, always safely re-fetchable (content-addressed +
+          # checksum-verified on re-download). Set before setup-go so
+          # `go env GOMODCACHE` reports the override. Refs: items 150517, 172218.
+          CACHE="$HOME/.cache/sirsi-ci/${RUNNER_NAME:-default}/gomodcache"
+          mkdir -p "$CACHE/cache/download"
+          echo "GOMODCACHE=$CACHE" >> "$GITHUB_ENV"
+          find "$CACHE/cache/download" \( -name '*.mod' -o -name '*.zip' -o -name '*.info' -o -name '*.ziphash' \) -size 0 -print -delete 2>/dev/null || true
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
@@ -82,6 +100,18 @@ jobs:
         go-version: ['1.25']
     steps:
       - uses: actions/checkout@v4
+
+      - name: Decouple + heal the Go module cache (self-hosted)
+        shell: bash
+        run: |
+          # Per-runner module tree (no cross-runner unlink race) + zero-byte
+          # artifact sweep (self-heals a truncated cache before it reads as a
+          # fake SECURITY ERROR). See the Test job for the full rationale.
+          # Refs: items 150517, 172218.
+          CACHE="$HOME/.cache/sirsi-ci/${RUNNER_NAME:-default}/gomodcache"
+          mkdir -p "$CACHE/cache/download"
+          echo "GOMODCACHE=$CACHE" >> "$GITHUB_ENV"
+          find "$CACHE/cache/download" \( -name '*.mod' -o -name '*.zip' -o -name '*.info' -o -name '*.ziphash' \) -size 0 -print -delete 2>/dev/null || true
 
       - uses: actions/setup-go@v5
         with:
