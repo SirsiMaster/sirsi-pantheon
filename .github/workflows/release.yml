@@ -95,6 +95,42 @@ jobs:
           gh release upload "$TAG_NAME" \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
 
+      # goreleaser (release job) bumps Formula/sirsi-pantheon.rb but has no view
+      # of the DMG (built here, after it). Without this the Cask silently drifts
+      # behind the Formula on every tagged release — it stuck at v0.18.0 while the
+      # Formula reached v0.23.8-beta (homebrew-tools item 172647; fixed once by
+      # hand in homebrew-tools PR #2). Mirror the Formula bump for the Cask: the
+      # DMG is in hand here, so update version + sha256 in the tap and push. The
+      # cask's `url` is version-templated, so only those two fields change.
+      - name: Bump Homebrew Cask in tap (Formula-parity, no silent drift)
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          DMG="bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
+          SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
+          echo "DMG sha256: $SHA"
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/SirsiMaster/homebrew-tools.git" tap
+          CASK="tap/Casks/sirsi-pantheon.rb"
+          if [ ! -f "$CASK" ]; then
+            echo "::error::$CASK not found in tap — cannot bump the cask"; exit 1
+          fi
+          # perl (not BSD sed) for portable in-place edits; url uses #{version}.
+          perl -0pi -e "s/version \"[^\"]+\"/version \"${BUILD_VERSION}\"/" "$CASK"
+          perl -0pi -e "s/sha256 \"[0-9a-f]{64}\"/sha256 \"${SHA}\"/"       "$CASK"
+          cd tap
+          if git diff --quiet; then
+            echo "Cask already at ${BUILD_VERSION} — nothing to bump."
+            exit 0
+          fi
+          git config user.name  "sirsi-release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add Casks/sirsi-pantheon.rb
+          git commit -m "Cask update for sirsi-pantheon version ${BUILD_VERSION}"
+          git push
+
       # The menu bar app (fyne/systray) needs CGO+Cocoa and cannot be built by
       # the ubuntu goreleaser job, so the curl install.sh path has no menubar
       # binary. Build it here (native macOS = CGO works), sign it with the same
