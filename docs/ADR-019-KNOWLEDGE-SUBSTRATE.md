@@ -1,7 +1,19 @@
 # ADR-019: Knowledge Substrate — Three-Tool Local Layer + Hypergraph Direction
 
 ## Status
-**Accepted** — 2026-05-26
+**Accepted (local layer) · Hypergraph direction SUPERSEDED** — 2026-05-26; superseded 2026-07-23
+
+> **Substrate ownership moved.** The "Hypergraph Direction" half of this ADR is superseded by
+> **[sirsi-hypergraph](https://github.com/SirsiMaster/sirsi-hypergraph)**, which now owns the
+> event-sourced cross-repo substrate (canon: that repo's `docs/ADR-003-NEURAL-FRACTAL-ARCHITECTURE.md`;
+> Horus = machine scope, Ra = fleet scope). One implementation of the pattern, per LEAN: Pantheon
+> ships **no** hypergraph package or `sirsi hypergraph` verb — use the `hypergraph` binary, whose
+> union bus lives at `~/.sirsi/hypergraph/events.jsonl` (a superset of the per-repo bus this ADR
+> once described).
+>
+> **Still current and Pantheon-owned:** the three-tool LOCAL layer below — Thoth memory, Seba
+> architectural mapping, and the Understand-Anything knowledge graph. Those feeders stay sovereign
+> here and are consumed BY the hypergraph, not replaced by it.
 **Deciders:** Cylton Collymore (architect-led decision), claude-pantheon (proposal + implementation), codex-pantheon (review pending — router item `20260527-174419-claude-pantheon-codex-pantheon-completion-understand-anything-install-hypergraph-vision-cod.md`)
 **Related:** [ADR-004 (Ma'at QA/QC Governance)](ADR-004-MAAT-GOVERNANCE.md), [ADR-007 (Unified Findings Portal)](ADR-007-UNIFIED-FINDINGS-PORTAL.md), [ADR-008 (Shared Filesystem Index)](ADR-008-SHARED-FS-INDEX.md), [ADR-014 (Stele Ledger)](ADR-014-STELE-LEDGER.md), [ADR-015 (Deity Hierarchy)](ADR-015-DEITY-HIERARCHY.md)
 
@@ -76,7 +88,12 @@ Detailed design principles, phasing sketch, and anti-patterns for future builder
 
 ### 6. CLI surface — the "switch within Sirsi overall"
 
-Pantheon's `sirsi` binary becomes the user-facing entrypoint to the knowledge substrate. Stub design (to be implemented by codex-pantheon in a separate workstream, gated by `--feature=hypergraph` until projection layer exists):
+> **SUPERSEDED 2026-07-23 — never implemented in Pantheon, and deliberately so.** The verbs below
+> were a 2026-05 stub design. The substrate now lives in
+> [sirsi-hypergraph](https://github.com/SirsiMaster/sirsi-hypergraph) and its own `hypergraph`
+> binary carries the surface (`ingest` / `replay` / `query` / `nodes`). Pantheon ships no
+> `sirsi hypergraph` verb — one implementation of the pattern (LEAN). The block is kept for
+> provenance: it records what was designed and why the ownership moved.
 
 ```
 sirsi hypergraph status               # Show local layer state: which artifacts exist, last analyzed
