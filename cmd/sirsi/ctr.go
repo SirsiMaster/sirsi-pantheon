@@ -166,7 +166,7 @@ func renderReconcile(routerRoot string) {
 		fmt.Println("🧠 Local reconcile: the on-device model isn't warm — run `sirsi gemma serve`, then `ctr --reconcile`.")
 		return
 	}
-	items, err := work.ListInbox(routerRoot, "")
+	items, err := router.OpenItems(routerRoot, "")
 	if err != nil || len(items) == 0 {
 		return
 	}

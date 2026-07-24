@@ -18,7 +18,6 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 var conduitCmd = &cobra.Command{
@@ -51,7 +50,7 @@ func runConduitTick(_ *cobra.Command, _ []string) error {
 	}
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 
-	items, err := work.ListInbox(routerRoot, "")
+	items, err := router.OpenItems(routerRoot, "")
 	if err != nil {
 		return fmt.Errorf("read open items: %w", err)
 	}

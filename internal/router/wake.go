@@ -62,13 +62,34 @@ func inboxUnion(routerRoot, agent string) ([]work.Item, error) {
 	if !routercfg.StoreWake() {
 		return work.ListInbox(routerRoot, agent)
 	}
-	repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // <repo> from <repo>/.agents/idea-router
-	f, err := dispatch.Open(repoRoot)
+	f, err := dispatch.OpenRoot(routerRoot)
 	if err != nil {
 		return work.ListInbox(routerRoot, agent)
 	}
 	defer func() { _ = f.Close() }()
 	return f.Inbox(agent)
+}
+
+// OpenItems is inboxUnion for callers outside this package (the CLI's ctr,
+// conduit-tick, and plan surfaces). Every reader of open work must go through
+// ONE cutover-aware entry point — a surface still calling work.ListInbox
+// directly reads the frozen legacy files and reports closed items as open.
+func OpenItems(routerRoot, agent string) ([]work.Item, error) {
+	return inboxUnion(routerRoot, agent)
+}
+
+// AllItems is OpenItems for whole-corpus readers (the work board's pace and
+// turnaround stats), which need closed items too.
+func AllItems(routerRoot string) ([]work.Item, error) {
+	if !routercfg.StoreWake() {
+		return work.ListAll(routerRoot)
+	}
+	f, err := dispatch.OpenRoot(routerRoot)
+	if err != nil {
+		return work.ListAll(routerRoot)
+	}
+	defer func() { _ = f.Close() }()
+	return f.ListAll()
 }
 
 // AgentWakeHealth (the readiness verdict) is defined in nodestatus.go — it is the
