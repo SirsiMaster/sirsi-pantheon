@@ -142,7 +142,17 @@ filter_agent="${1:-}"
 #      disables ALL shell expansion, so the class cannot recur here.
 #   2. The filter arrives via ENV, not string interpolation. The old
 #      flt = '$filter_agent' let a single quote in $1 break out of the literal.
-raw=$(cd "$REPO" && "$SIRSI" router dump --json 2>/dev/null)
+# FAIL CLOSED ON THE EXIT STATUS, not just on empty stdout (codex-pantheon
+# review of this PR, 2026-07-24). A dump that dies partway through still emits
+# the JSONL it managed to write, so `raw` is non-empty and the old
+# empty-string check waved it through — a partial store read presented as a
+# complete one. That is the same fail-open class this whole block exists to
+# kill, just one layer in. Status first, contents second.
+if ! raw=$(cd "$REPO" && "$SIRSI" router dump --json 2>/dev/null); then
+  echo "ERROR: 'sirsi router dump --json' exited nonzero — the triage screen could not read the router store." >&2
+  echo "       Any output it produced is a PARTIAL read. This is NOT an empty queue." >&2
+  exit 2
+fi
 if [ -z "$raw" ]; then
   # NEVER print "(no open items)" here. An unreadable store is a BROKEN SCREEN,
   # and reporting it as an empty queue is exactly the failure this block exists
@@ -159,14 +169,22 @@ trap 'rm -f "$_tf"' EXIT
 cat > "$_tf" <<'PY'
 import os, sys, json
 flt = os.environ.get('FLT', '')
-for line in sys.stdin:
+for n, line in enumerate(sys.stdin, 1):
     line = line.strip()
     if not line:
         continue
     try:
         d = json.loads(line)          # dump emits JSONL, one object per line
     except ValueError:
-        continue
+        # FATAL, never skipped. A truncated or corrupt record is an open item
+        # we cannot see; skipping it and then printing "(no open items)" is a
+        # fabricated all-clear built from an unreadable source. Exit nonzero so
+        # the caller treats the screen as broken, not as green.
+        sys.stderr.write(
+            "ERROR: malformed JSONL from 'router dump --json' at line %d: %s\n" % (n, repr(line[:120])))
+        sys.stderr.write(
+            "       The store could not be parsed in full. Refusing to report a false all-clear.\n")
+        raise SystemExit(2)
     if d.get('status') != 'open':
         continue
     to = d.get('to') or '?'
@@ -177,8 +195,15 @@ for line in sys.stdin:
     snippet = ' '.join((d.get('body') or '').split())[:400]
     print(f"{d.get('id','')}\t{to}\t{title}\t{snippet}")
 PY
-items=$(FLT="$filter_agent" python3 "$_tf" <<<"$raw")
+# A nonzero parse MUST NOT fall through to the empty-queue message below: an
+# unparseable dump and a genuinely empty queue both yield an empty $items, and
+# only the exit status tells them apart.
+if ! items=$(FLT="$filter_agent" python3 "$_tf" <<<"$raw"); then
+  echo "ERROR: the router dump could not be parsed in full — the triage screen is BROKEN, not empty." >&2
+  exit 2
+fi
 
+# Reached only on a successful, fully-parsed dump: a genuine empty queue.
 [ -z "$items" ] && { echo "(no open items$([ -n "$filter_agent" ] && echo " for $filter_agent"))"; exit 0; }
 
 while IFS=$'\t' read -r id to title snippet; do
