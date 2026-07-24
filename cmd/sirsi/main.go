@@ -807,7 +807,7 @@ func init() {
 	dashboardCmd.Hidden = true
 	rootCmd.AddCommand(guardCmd, judgeCmd, qualityCmd, mcpCmd, benchmarkCmd)
 	rootCmd.AddCommand(rtkCmd, vaultCmd, horusCmd)
-	rootCmd.AddCommand(notificationsCmd, dashboardCmd)
+	rootCmd.AddCommand(notificationsCmd, dashboardCmd, ccdCmd)
 
 	// Note: `sirsi dashboard` is branded as Horus (ADR-015).
 	// `sirsi horus` remains the code graph subcommand for backward compat.
