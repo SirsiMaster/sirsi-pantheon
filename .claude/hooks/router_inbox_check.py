@@ -139,17 +139,59 @@ def pull_model_open_items(router_root: Path, agent_id: str) -> list[str]:
     return matches
 
 
-def claude_session_pid() -> int | None:
-    """Grandparent of this script (claude → shell → python3) is the CLI process."""
-    try:
-        shell_pid = os.getppid()
-        out = subprocess.run(
-            ["ps", "-p", str(shell_pid), "-o", "ppid="],
-            capture_output=True, text=True, timeout=2,
-        )
-        return int(out.stdout.strip()) if out.returncode == 0 else None
-    except (subprocess.TimeoutExpired, ValueError):
-        return None
+# Bound on the ancestry walk. Deep enough for any real hook chain, shallow
+# enough that a pathological/looping tree can never spin.
+MAX_ANCESTRY_HOPS = 12
+
+
+def claude_session_pid(runner=subprocess.run, start_pid: int | None = None) -> int | None:
+    """PID of the long-lived `claude` process that owns this session.
+
+    Walks UP the ancestry until it finds the actual claude process, instead of
+    assuming a fixed chain depth. The prior implementation took EXACTLY the
+    grandparent, on the assumption the chain is always claude → shell → python3.
+    That holds on some surfaces and not others: where the chain is deeper (the
+    desktop app), the grandparent is a TRANSIENT per-prompt process, so the
+    anchor changed on every hook fire, `adopt_or_register`'s (agent_id, pid)
+    match never hit, and a NEW thread was minted every emission — claude-deck
+    accreted 7 active records while every other agent held exactly 1
+    (measured 2026-07-24, claude-home item 20260724-202920).
+
+    Returns None when no claude ancestor is found, which routes callers to the
+    freshest-active fallback (adopt rather than always-mint). Returning a WRONG
+    pid is the failure mode this replaces — a wrong-but-present anchor silently
+    bypasses that fallback, which is gated on `anchor is None`.
+    """
+    pid = os.getppid() if start_pid is None else start_pid
+    for _ in range(MAX_ANCESTRY_HOPS):
+        try:
+            out = runner(
+                ["ps", "-p", str(pid), "-o", "ppid=,comm="],
+                capture_output=True, text=True, timeout=2,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        if out.returncode != 0 or not out.stdout.strip():
+            return None
+        parts = out.stdout.strip().split(None, 1)
+        if not parts:
+            return None
+        # `comm` is the executable name. Match the DURABLE claude process only:
+        # the CLI reports `claude`, the desktop app `Claude`, wrappers
+        # `claude-code`. "Claude Helper (Renderer)" / "(GPU)" are the TRANSIENT
+        # per-prompt children — matching one of those is precisely the bug this
+        # replaces, so `helper` is excluded explicitly.
+        comm = parts[1].strip() if len(parts) > 1 else ""
+        name = os.path.basename(comm).lower()
+        if name.startswith("claude") and "helper" not in name:
+            return pid
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            return None
+        if pid <= 1:  # reached init without finding claude
+            return None
+    return None
 
 
 def supervisor_mode(env: dict | None = None) -> str:

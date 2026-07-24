@@ -220,6 +220,15 @@ class TestClaudeSessionPidWalk(unittest.TestCase):
         self.assertEqual(b, 400)
         self.assertEqual(a, b)  # stable identity → same thread adopted
 
+    def test_skips_transient_claude_helper_children(self):
+        # "Claude Helper (Renderer)" CONTAINS "claude" but is the per-prompt
+        # transient — matching it reproduces the mint-per-emission bug. The walk
+        # must pass through it to the durable claude process.
+        tree = {200: (300, "zsh"), 300: (400, "Claude Helper (Renderer)"),
+                400: (1, "/x/MacOS/claude")}
+        self.assertEqual(
+            hook.claude_session_pid(runner=chain_runner(tree), start_pid=200), 400)
+
     def test_no_claude_ancestor_returns_none(self):
         tree = {200: (300, "zsh"), 300: (1, "launchd")}
         got = hook.claude_session_pid(runner=chain_runner(tree), start_pid=200)
