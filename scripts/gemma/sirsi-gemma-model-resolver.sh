@@ -150,6 +150,15 @@ print(int(toks / dt) if dt > 0 else 0)
 PY
 }
 if curl -s -o /dev/null -m 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; then
+  # WARMUP-DISCARD (2026-07-24, same class as the triage probe): this probe names
+  # $MODEL explicitly, so if that model is not already resident the server loads
+  # it (~45s) and `toks/dt` divides 48 tokens by the LOAD, not the decode —
+  # a false 1-4 tok/s. Here that is worse than a bad log line: below-floor
+  # STEPS DOWN to $FALLBACK and bounces the server, so one cold-load reading can
+  # silently downgrade the fabric's model. Observed live: the same model measured
+  # 8 tok/s cold and 25 tok/s warm 15 min apart. Discard the first (load-bearing)
+  # call, then measure warm decode.
+  probe_toks "$MODEL" >/dev/null
   rate=$(probe_toks "$MODEL")
   if [ -n "$rate" ] && [ "$rate" -lt "$TOKS_FLOOR" ]; then
     if [ "$MODEL" != "$FALLBACK" ]; then
