@@ -56,6 +56,27 @@ MAXTOK=2048  # gemma-4 is a REASONING model: it deliberates (~450-900 tok) befor
 
 # Server-first, so the CLI runtime is optional. Only hard-require it if the server is down.
 server_up() { curl -s -o /dev/null -m 3 -w '%{http_code}' "${SERVER%/v1/*}/v1/models" 2>/dev/null | grep -q 200; }
+
+# gemma_probe prints the server's decode rate in tok/s (empty on timeout). $1 =
+# HTTP timeout seconds. NO "model" field — it measures whatever model the server
+# actually holds (same as every per-item call), so a conf/resident drift never
+# 401s the probe. Factored out so the warmup and the measurement share one body.
+gemma_probe() {
+  SERVER="$SERVER" PROBE_TIMEOUT="${1:-90}" python3 - <<'PY' 2>/dev/null
+import os, json, time, urllib.request
+body = json.dumps({"messages":[{"role":"user","content":"Count from 1 to 20, digits only."}],
+                   "max_tokens": 48, "temperature": 0.0}).encode()
+req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
+t0 = time.time()
+try:
+    with urllib.request.urlopen(req, timeout=float(os.environ.get("PROBE_TIMEOUT", "90"))) as r:
+        toks = json.loads(r.read())["usage"]["completion_tokens"]
+except Exception:
+    raise SystemExit
+dt = time.time() - t0
+print(int(toks / dt) if dt > 0 else 0)
+PY
+}
 if ! server_up && [ ! -x "$HOME/.local/bin/sirsi" ]; then
   echo "ERROR: warm server unreachable AND sirsi broker missing" >&2; exit 1
 fi
@@ -69,54 +90,24 @@ fi
 TOKS_FLOOR=${GEMMA_TOKS_FLOOR:-5}
 if server_up; then
   echo "· calibration probe (${SERVER})" >&2
-  # NO "model" field: the probe measures whatever model the server actually
-  # holds — same as every per-item call below. Pinning the id from
-  # gemma-model.conf 401'd whenever the conf drifted from the loaded model
-  # (resolver re-resolves; conf said qat-mxfp8 while the server served 8bit,
-  # 2026-07-23) and the empty rate read as a false "0 tok/s DEGRADED".
-  rate=$(SERVER="$SERVER" python3 - <<'PY' 2>/dev/null
-import os, json, time, urllib.request
-body = json.dumps({"messages":[{"role":"user","content":"Count from 1 to 20, digits only."}],
-                   "max_tokens": 48, "temperature": 0.0}).encode()
-req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
-t0 = time.time()
-try:
-    with urllib.request.urlopen(req, timeout=90) as r:
-        toks = json.loads(r.read())["usage"]["completion_tokens"]
-except Exception:
-    raise SystemExit
-dt = time.time() - t0
-print(int(toks / dt) if dt > 0 else 0)
-PY
-)
-  # An EMPTY rate here means the server answered /v1/models but the probe
-  # completion timed out — that is slower than any floor, not a pass. Verified
-  # live 2026-07-16: a 1 tok/s server timed the 90s probe out and the empty
-  # rate fail-OPENED into the exact crawl this guard exists to prevent.
-  #
-  # WARMUP RETRY (broker death #3 forensics, 2026-07-23): the FIRST inference
-  # after a model load measures ~1 tok/s (compile/warmup) — a probe that runs
-  # right after a heal false-fails the floor on a healthy broker. One below-
-  # floor read gets a 20s warm pause and a second measurement; only two
-  # consecutive below-floor reads are a real DEGRADED.
+  # WARMUP-DISCARD (claude-home 2026-07-24): the FIRST inference after an idle
+  # or just-loaded model pays the full weight load from disk (~45s). Timing
+  # THAT call divides 48 tokens by the load time → a false ~1 tok/s "DEGRADED"
+  # on a healthy broker (measured 25 tok/s immediately after, no restart). The
+  # old 20s post-fail retry was SHORTER than the load it triggered, so the
+  # retry landed mid-load and confirmed the false verdict. Fix: run one
+  # throwaway generation with generous headroom so the model is definitively
+  # resident, THEN measure warm decode. Weight-load time is never in the rate.
+  gemma_probe 180 >/dev/null
+  rate=$(gemma_probe 90)
+  # An EMPTY rate means the server answered /v1/models but the warm probe still
+  # timed out (slower than any floor — not a pass; the 2026-07-16 fail-open).
+  # One retry absorbs a genuine transient blip; the model is already warm, so a
+  # short 5s pause is enough (no cold load to wait out anymore).
   if [ -z "$rate" ] || [ "$rate" -lt "$TOKS_FLOOR" ]; then
-    echo "· probe measured ${rate:-timeout} tok/s — possible post-heal warmup, retrying once in 20s" >&2
-    sleep 20
-    rate=$(SERVER="$SERVER" python3 - <<'PY' 2>/dev/null
-import os, json, time, urllib.request
-body = json.dumps({"messages":[{"role":"user","content":"Count from 1 to 20, digits only."}],
-                   "max_tokens": 48, "temperature": 0.0}).encode()
-req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
-t0 = time.time()
-try:
-    with urllib.request.urlopen(req, timeout=90) as r:
-        toks = json.loads(r.read())["usage"]["completion_tokens"]
-except Exception:
-    raise SystemExit
-dt = time.time() - t0
-print(int(toks / dt) if dt > 0 else 0)
-PY
-)
+    echo "· probe measured ${rate:-timeout} tok/s on a warm model — retrying once in 5s" >&2
+    sleep 5
+    rate=$(gemma_probe 90)
   fi
   if [ -z "$rate" ] || [ "$rate" -lt "$TOKS_FLOOR" ]; then
     echo "ERROR: warm server DEGRADED — measured ${rate:-<probe timeout>} tok/s < ${TOKS_FLOOR} tok/s floor on ${MODEL} (post-warmup retry included). Refusing to crawl; run sirsi-gemma-model-resolver.sh (empirical fit) or free memory." >&2
