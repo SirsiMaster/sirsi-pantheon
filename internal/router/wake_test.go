@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -390,5 +391,50 @@ func TestInstallWakeLaunchAgentIdempotent(t *testing.T) {
 	}
 	if want := filepath.Join(dir, WakeLaunchAgentLabel(cfg.ID)+".plist"); path1 != want {
 		t.Fatalf("plist path = %q, want %q", path1, want)
+	}
+}
+
+// TestCutoverReadersFailClosed pins codex-pantheon's #315 review blocker: under
+// the cutover the store is the sole authority, so a store-open failure must
+// SURFACE, never degrade to the frozen legacy files. Failing open there
+// resurrects closed work through pull/wake/plan/board — the exact P0 #315
+// fixed — precisely when the store is unavailable.
+func TestCutoverReadersFailClosed(t *testing.T) {
+	root := t.TempDir()
+	// Seed a legacy file that says OPEN. If either reader falls back, it finds this.
+	itemsDir := filepath.Join(root, "items")
+	if err := os.MkdirAll(itemsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const id = "20260101-000000-a-claude-pantheon-legacy-open"
+	body := "---\nfrom: \"a\"\nto: \"claude-pantheon\"\ntitle: \"legacy open\"\nstatus: open\nopened: 2026-01-01T00:00:00Z\n---\n\n## Instructions\n\nx\n"
+	if err := os.WriteFile(filepath.Join(itemsDir, id+".md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	// An unopenable store: a path whose parent exists as a FILE, so MkdirAll fails.
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(blocker, "router.db"))
+
+	if items, err := OpenItems(root, "claude-pantheon"); err == nil {
+		t.Errorf("OpenItems returned %d item(s) and no error — it fell back to the frozen legacy files", len(items))
+	}
+	if items, err := AllItems(root); err == nil {
+		t.Errorf("AllItems returned %d item(s) and no error — it fell back to the frozen legacy files", len(items))
+	}
+
+	// Pre-cutover the SAME store failure must still degrade to files — that is
+	// the correct behavior there, and this change must not alter it (Rule 14).
+	t.Setenv(routercfg.StoreWakeEnv, "0")
+	items, err := OpenItems(root, "claude-pantheon")
+	if err != nil {
+		t.Fatalf("pre-cutover OpenItems should read files, got %v", err)
+	}
+	if len(items) != 1 || items[0].ID != id {
+		t.Errorf("pre-cutover OpenItems = %+v, want the one legacy file item", items)
 	}
 }
