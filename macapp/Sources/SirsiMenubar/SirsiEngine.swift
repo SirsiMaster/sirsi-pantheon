@@ -427,6 +427,57 @@ final class SirsiEngine: ObservableObject {
     @Published var routerLoading = false
     private let routerBoardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
 
+    // ── Owner-facing run report (local sovereignty, owner directive
+    // 2026-07-23): what the fabric DID — the supervisor/conduit write
+    // ~/.sirsi/conduit-report.json (internal/report contract) and Home shows
+    // the newest run as the "Last check" line, so a reboot recovery or broker
+    // restore reaches the OWNER without asking.
+    @Published var lastRun: ReportRun?
+    private let runReportPath = (("~/.sirsi/conduit-report.json") as NSString).expandingTildeInPath
+
+    struct ReportRun: Decodable {
+        let ts: String?
+        let source: String?
+        let outcome: String?
+        let heals: [String]?
+        let escalations: [String]?
+        let apiReachable: Bool?
+        enum CodingKeys: String, CodingKey {
+            case ts, source, outcome, heals, escalations
+            case apiReachable = "api_reachable"
+        }
+    }
+    private struct ReportFile: Decodable { let runs: [ReportRun]? }
+
+    // loadRunReport reads the newest run (file-only; the writers own freshness).
+    func loadRunReport() {
+        guard let data = FileManager.default.contents(atPath: runReportPath),
+              let f = try? JSONDecoder().decode(ReportFile.self, from: data) else { return }
+        lastRun = f.runs?.first
+    }
+
+    // lastRunSentence mirrors internal/report.Sentence — one plain-English
+    // line, same grading, so CLI and menubar never tell different stories.
+    var lastRunSentence: String? {
+        guard let r = lastRun else { return nil }
+        var t = r.ts ?? ""
+        if let ts = r.ts {
+            let iso = ISO8601DateFormatter()
+            if let d = iso.date(from: ts) {
+                let df = DateFormatter(); df.dateFormat = "HH:mm"
+                t = df.string(from: d)
+            }
+        }
+        var body: String
+        switch r.outcome {
+        case "green":  body = "all green"
+        case "healed": body = (r.heals?.isEmpty == false) ? r.heals!.joined(separator: "; ") : "self-healed"
+        default:       body = (r.escalations?.isEmpty == false) ? "needs attention: " + r.escalations!.joined(separator: "; ") : "degraded"
+        }
+        if r.apiReachable == false { body += " · cloud unreachable, local AI holding the fort" }
+        return "\(t) — \(body)"
+    }
+
     // ── CTR thread roster (ambient heartbeat board) ──────────────────────────
     @Published var threadRoster: [AgentHeartbeat] = []
     @Published var threadsLoading = false
