@@ -179,8 +179,12 @@ var (
 var routerSendCmd = &cobra.Command{
 	Use:   "send",
 	Short: "Send a work item from one agent to another",
-	Long: `Writes a new open work item under .agents/idea-router/items/. The
-recipient picks it up next time they run sirsi router pull <their-id>.
+	Long: `Commits a new open work item to the durable router store (~/.sirsi/router.db).
+The recipient picks it up on sirsi router pull <their-id>, or wakes on it
+immediately if they are blocked in sirsi router wait <their-id>.
+
+Before the store cutover this also wrote an items/<id>.md audit view; with the
+cutover live the store row IS the record.
 
   sirsi router send --from claude-pantheon --to codex-pantheon \
     --title "review canon-sync" --instructions @proposal.md`,

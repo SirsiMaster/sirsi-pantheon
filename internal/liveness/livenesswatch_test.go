@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -46,6 +48,9 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	// Ensure the gemma probe reads "down": point HOME at an empty dir with no
 	// gemma-server.port, so probeGemma returns wedged deterministically.
 	t.Setenv("HOME", t.TempDir())
+	// Own store per test: Run dispatches through the router store now, and the
+	// package-level db would let a sibling test's alert dedupe this one away.
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
 	var buf bytes.Buffer
 	if err := Run(root, &buf); err != nil {
@@ -235,4 +240,57 @@ func TestRecipientFor(t *testing.T) {
 	if got := recipientFor("some-future-owner-only-condition"); got != "user" {
 		t.Errorf("unclassified condition = %q, want user (fail-safe to owner)", got)
 	}
+}
+
+// TestRun_DedupsUnderStoreCutover is the post-cutover half of the flood guard
+// and the fix for owner item 20260724-210246. Run used to send with
+// internal/work (files) while every consumer had moved to the store: the alert
+// never reached the wake path, and the file-reading dedupe could not see its own
+// previous send, so a persistent blocker re-alerted every 15 minutes. Both sides
+// now go through the dispatch facade, so the second Run must skip.
+func TestRun_DedupsUnderStoreCutover(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir() // no gemma-server.port → probeGemma reads wedged
+	t.Setenv("HOME", home)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+	var buf bytes.Buffer
+	if err := Run(root, &buf); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	if n := storeOpenCount(t, root, "claude-pantheon"); n != 1 {
+		t.Fatalf("first Run left %d open store items, want 1\n%s", n, buf.String())
+	}
+	// Post-cutover the store row IS the record — no audit file is written.
+	if dirExists(filepath.Join(root, "items")) {
+		if entries, _ := os.ReadDir(filepath.Join(root, "items")); len(entries) != 0 {
+			t.Errorf("cutover Run wrote %d file(s) into items/, want none", len(entries))
+		}
+	}
+
+	buf.Reset()
+	if err := Run(root, &buf); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if n := storeOpenCount(t, root, "claude-pantheon"); n != 1 {
+		t.Errorf("second Run left %d open store items, want 1 (dedup blind to its own send)\n%s", n, buf.String())
+	}
+	if !strings.Contains(buf.String(), "skip") {
+		t.Errorf("second Run should report a dedup skip, got:\n%s", buf.String())
+	}
+}
+
+func storeOpenCount(t *testing.T, root, agent string) int {
+	t.Helper()
+	f, err := dispatch.OpenRoot(root)
+	if err != nil {
+		t.Fatalf("open dispatch: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	items, err := f.Inbox(agent)
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	return len(items)
 }

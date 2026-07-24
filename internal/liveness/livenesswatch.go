@@ -32,9 +32,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/reaper"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // Label is the LaunchAgent label for the liveness watch.
@@ -184,15 +184,28 @@ func Run(routerRoot string, w io.Writer) error {
 	// right-size/restart, safe caller-protected reap, launchd kickstart). Only
 	// a genuinely owner-only condition (none today) would fall through to user.
 	recipient := recipientFor(worst.Check)
-	if hasOpen(routerRoot, recipient, worst.Title) {
+
+	// Send through the ONE dispatch facade, never internal/work directly. A raw
+	// work.Send writes items/<id>.md with no store row at all — which post-cutover
+	// means the alert never reaches the wake path (consumers block on `router
+	// wait`, which reads the store) while still piling into the legacy file dir
+	// that observers union back in as phantom open work. This was the last
+	// file-only writer in the tree.
+	f, err := dispatch.OpenRoot(routerRoot)
+	if err != nil {
+		return fmt.Errorf("route blocker: open dispatch: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if hasOpen(f, recipient, worst.Title) {
 		fmt.Fprintf(w, "route          skip    already open: %q\n", worst.Title)
 		return nil
 	}
-	id, err := work.Send(routerRoot, "liveness-watch", recipient, worst.Title, worst.Body)
+	res, err := f.Send("liveness-watch", recipient, worst.Title, "decision", worst.Body)
 	if err != nil {
 		return fmt.Errorf("route blocker: %w", err)
 	}
-	fmt.Fprintf(w, "route          sent    %s → %s (%s)\n", worst.Title, recipient, id)
+	fmt.Fprintf(w, "route          sent    %s → %s (%s)\n", worst.Title, recipient, res.ID)
 	return nil
 }
 
@@ -220,9 +233,12 @@ func pickWorst(fs []Finding) *Finding {
 	return nil
 }
 
-// hasOpen reports whether `user` already has an open item with this title.
-func hasOpen(root, agent, title string) bool {
-	items, err := work.ListInbox(root, agent)
+// hasOpen reports whether the recipient already has an open item with this
+// title. It reads through the same facade the send goes through — reading files
+// while writing the store is what let a persistent blocker re-alert on every
+// 15-minute tick: the dedupe could never see its own previous send.
+func hasOpen(f *dispatch.Facade, agent, title string) bool {
+	items, err := f.Inbox(agent)
 	if err != nil {
 		return false // can't read the inbox → don't suppress the alert
 	}
