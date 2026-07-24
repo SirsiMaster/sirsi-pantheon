@@ -1128,6 +1128,65 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+// dumpRecord projects a router item onto the fixed H4-boundary export contract:
+// exactly the nine agreed fields, keys stable, no store schema or wake state.
+// Extracted so the contract is unit-testable without opening a real store.
+func dumpRecord(it work.Item) map[string]string {
+	return map[string]string{
+		"id":     it.ID,
+		"from":   it.From,
+		"to":     it.To,
+		"type":   it.Type,
+		"title":  it.Title,
+		"status": it.Status,
+		"opened": it.Opened,
+		"closed": it.Closed,
+		"body":   it.Instructions,
+	}
+}
+
+// routerDumpCmd — `sirsi router dump`: a read-only, store-aware export of every
+// router item as JSONL to stdout, one JSON object per line. Built for the
+// hypergraph fabric feeder (claude-home, 2026-07-24): the ADR-036/037 cutover
+// stopped writing items/*.md, so a file-only reader is blind to store-only
+// items — this reads through the dispatch facade (the union of file + store),
+// so it sees EVERY item across the cutover boundary. H4 boundary: JSON only,
+// exactly the nine agreed fields — no store schema, no internal wake/frontmatter
+// state — so the export stays a stable contract the ingester can dedup on.
+var routerDumpCmd = &cobra.Command{
+	Use:   "dump",
+	Short: "Export every router item as JSONL (store-aware; for the hypergraph feeder)",
+	Long: `Streams every router item to stdout as JSONL — one JSON object per line,
+with exactly: id, from, to, type, title, status, opened, closed, body.
+
+Read-only and store-aware: it reads through the dispatch facade (file + durable
+store union), so unlike a raw items/ scan it sees store-only items written after
+the ADR-036/037 cutover. Intended as the hypergraph router feeder; the field set
+is a fixed H4-boundary contract (JSON only, no schema exposure).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		items, err := f.ListAll()
+		if err != nil {
+			return fmt.Errorf("list items: %w", err)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		for _, it := range items {
+			if err := enc.Encode(dumpRecord(it)); err != nil {
+				return fmt.Errorf("encode %s: %w", it.ID, err)
+			}
+		}
+		return nil
+	},
+}
+
 func init() {
 	routerSendCmd.Flags().StringVar(&sendFrom, "from", "", "Sender agent id (e.g., claude-pantheon)")
 	routerSendCmd.Flags().StringVar(&sendTo, "to", "", "Recipient agent id (e.g., codex-pantheon)")
@@ -1152,5 +1211,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneItemsOnly, "items-only", false, "prune only closed items past the window (skip logs/dumps/queue)")
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd)
 }
