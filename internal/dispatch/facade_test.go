@@ -340,3 +340,61 @@ func TestGetReadsStoreOnlyItem(t *testing.T) {
 		t.Fatal("Get of a nonexistent id must error")
 	}
 }
+
+// TestStoreWakeIgnoresFrozenOpenFile is the phantom-resurrection regression
+// (P0, 2026-07-24). Post-cutover `close` writes the STORE only, so any
+// items/<id>.md left over from before the cutover stays frozen at
+// `status: open` forever. While the reads unioned files with the store, that
+// frozen copy outranked its own closed store row: 34 long-closed items came
+// back as open on this host, `router status` reported 47 open against the
+// store's 9, and `pull` handed agents work finished five weeks earlier. With
+// the cutover live the store is the sole authority — the file is ignored.
+func TestStoreWakeIgnoresFrozenOpenFile(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "0") // send pre-cutover so the audit FILE exists
+	f := testFacade(t)
+
+	res, err := f.Send("a", "b", "phantom item", "review", "do it")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	filePath := filepath.Join(f.root, "items", res.ID+".md")
+	if _, statErr := os.Stat(filePath); statErr != nil {
+		t.Fatalf("pre-cutover Send should write the audit file: %v", statErr)
+	}
+
+	// Close it from a DIFFERENT router root over the SAME store — exactly how it
+	// happens on the host, where a close run from a git worktree finds no file at
+	// its own root and updates the store alone. The original file is never
+	// touched and stays frozen at `status: open`.
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	other := New(t.TempDir(), f.store)
+	if closeErr := other.CloseItem(res.ID, "done"); closeErr != nil {
+		t.Fatalf("CloseItem from another root: %v", closeErr)
+	}
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+
+	if inbox, inboxErr := f.Inbox("b"); inboxErr != nil || len(inbox) != 0 {
+		t.Errorf("Inbox = %d items (err %v), want 0 — the frozen file must not resurrect a closed item", len(inbox), inboxErr)
+	}
+	all, err := f.ListAll()
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	for _, it := range all {
+		if it.ID == res.ID && it.Status != "closed" {
+			t.Errorf("ListAll reports %s as %q, want closed (store is the authority)", it.ID, it.Status)
+		}
+	}
+	if got, err := f.Get(res.ID); err != nil || got.Status != "closed" {
+		t.Errorf("Get status = %q (err %v), want closed", got.Status, err)
+	}
+
+	// Guard the premise: if the file ever stops being frozen-open, this test is
+	// passing for the wrong reason and must be re-derived, not deleted.
+	if !strings.Contains(string(raw), "status: open") {
+		t.Fatal("premise broke: the audit file is no longer frozen at `status: open`")
+	}
+}
