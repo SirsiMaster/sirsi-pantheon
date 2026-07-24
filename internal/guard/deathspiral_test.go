@@ -98,3 +98,32 @@ func TestMemoryDeathSpiralUnreadableEmitsNothing(t *testing.T) {
 		t.Fatalf("findings = %v, want none when nothing is readable", r.Findings)
 	}
 }
+
+// TestIsDeathSpiral_InactiveIsAvailable pins the false-positive that paged an
+// agent every 15 minutes on 2026-07-24. The host: 48 GB, swap 92% used,
+// load 8.6 on 14 cores, "Pages free" 0.5 GB — but 20.2 GB sat in
+// "Pages inactive", which macOS reclaims on demand, and macOS itself reported
+// 85% memory free. Reading FREE alone called that a death spiral. Reading
+// AVAILABLE (free + inactive) — what a process can actually get — does not.
+func TestIsDeathSpiral_InactiveIsAvailable(t *testing.T) {
+	const cores = 14
+	tests := []struct {
+		name                    string
+		swapPct, load1, availGB float64
+		want                    bool
+	}{
+		{"live host: swap full but 20.7 GB reclaimable", 92, 8.6, 20.7, false},
+		{"swap full and genuinely no memory left", 92, 8.6, 0.2, true},
+		{"swap full and a paging-driven load storm", 92, 30, 20.7, true},
+		{"no memory but swap has room — not yet a spiral", 40, 8.6, 0.2, false},
+		{"idle and empty", 10, 1, 40, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isDeathSpiral(tc.swapPct, tc.load1, tc.availGB, cores); got != tc.want {
+				t.Errorf("isDeathSpiral(swap %.0f%%, load %.1f, avail %.1f GB, %d cores) = %v, want %v",
+					tc.swapPct, tc.load1, tc.availGB, cores, got, tc.want)
+			}
+		})
+	}
+}
