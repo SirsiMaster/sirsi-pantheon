@@ -48,25 +48,32 @@ the fleet** (Go Standard otherwise). Go owns supervision around it.
 
 ## What DOES make sense — three-step work path
 
-### Step 1 (in flight): Go supervision hardening — claude-pantheon
-Finish `--prompt-cache-bytes` passthrough in `sirsi gemma serve` so the
+### Step 1 (DONE): Go supervision hardening — claude-pantheon
+`--prompt-cache-bytes` passthrough in `sirsi gemma serve` so the
 governed Go path fully owns lifecycle, bounds, and restart of the Python
 kernel. Python shrinks to a supervised compute kernel, like a GPU driver.
 
-### Step 2 (new): llama.cpp-Metal benchmark — claude-pantheon
+### Step 2 (re-homed to Win/Linux — see Amendment 2026-07-24): llama.cpp GGUF backend — claude-pantheon
 llama.cpp is a single C++ binary, Metal-first, no Python runtime, gemma
-supported, OpenAI-compatible `llama-server`. If it reaches parity on OUR
-workload, we delete Python from serving without writing any bindings.
+supported, OpenAI-compatible `llama-server`. **On Apple Silicon it is NOT
+adopted** (owner ruling 2026-07-24): our workload is prefill-dominated (8–32K
+agent prompts + prompt-cache reuse) — MLX's home turf — so the ≥90%-of-mlx-lm
+prompt-throughput adopt bar is the exact one llama.cpp is least likely to clear
+on M-series, and a multi-hour 13 GB download to most-likely print "no-go" is not
+worth the spend. The Python-serving fragility that motivated "delete Python from
+serving" is already closed on the Mac (bounded cap wrapper + `--prompt-cache-bytes`,
+KeepAlive-durable broker #286, self-healing #295), so swapping one external
+binary for another is lateral and does not advance the substrate thesis.
 
-Benchmark on m5-sirsi, gemma-4-12B (8bit MLX vs Q8 GGUF), agent-shaped
-workload: long prompts (8-32K), prompt-cache reuse ratio as in the router
-conduit, decode-concurrency 2. Measure: prompt tok/s, decode tok/s, RSS
-ceiling, prompt-cache hit behavior, cold-start. Decision rule: llama.cpp
-adopted iff ≥90% of mlx-lm prompt throughput AND no RSS regression; MLX
-prompt-processing advantage on Apple silicon is the thing to beat.
+llama.cpp is instead **re-homed as the cross-platform GGUF backend for the first
+non-Apple Sirsi build (Windows/Linux), where there is no MLX.** Benchmark it
+THERE, against that platform's own baseline — not against Apple Silicon. `sirsi
+gemma serve` stays the abstraction: platform detection picks MLX on Apple,
+llama.cpp GGUF elsewhere. Deferred until a non-Apple target exists.
 
-### Step 3 (new, scoped spike): `mlx-go` embeddings binding — claude-pantheon, nexus consumer
-A NARROW cgo binding over mlx-c for a fixed embedding model only — no
+### Step 3 (PRIMARY Apple-Silicon sovereignty play — see Amendment 2026-07-24): `mlx-go` embeddings binding — claude-pantheon, nexus consumer
+With llama.cpp re-homed off Apple, this is the primary de-Python play on Apple
+Silicon: Go-native, in-process, no HTTP hop. A NARROW cgo binding over mlx-c for a fixed embedding model only — no
 model-architecture treadmill, small stable op surface (load, matmul,
 norm, eval). Serves hypergraph/CTR-board semantic query in-process in Go
 instead of shelling to Python. This is also strategic: an on-device Go
@@ -75,9 +82,40 @@ inference on Sirsi silicon). Timebox: go/no-go spike, one week equivalent.
 No-go criteria: mlx-c API instability, cgo/Metal interaction issues, or
 <2x latency win over the HTTP hop to the Python broker.
 
+## Platform backend matrix
+
+`sirsi gemma serve` is the stable abstraction; the local-inference backend is
+chosen by platform detection:
+
+| Platform | Backend (today) | Backend (future) | Rationale |
+|---|---|---|---|
+| Apple Silicon | MLX (`mlx_lm.server`, supervised) | mlx-c cgo (Step 3, if the spike wins) | Prefill-dominated workload is MLX's home turf; Go-native cgo removes the HTTP hop and Python |
+| Windows / Linux | — (no non-Apple target yet) | llama.cpp GGUF (`llama-server`) (Step 2) | No MLX off Apple; llama.cpp is the natural cross-platform local brain |
+
 ## Consequences
 
-- Python inventory converges to exactly one supervised kernel (or zero if
-  Step 2 wins), with Go owning every operational surface.
+- On Apple Silicon, Python inventory converges to exactly one supervised kernel
+  today (MLX), and to zero if Step 3's mlx-c cgo spike wins.
+- llama.cpp is not dead — it is the cross-platform backend for the first
+  non-Apple Sirsi build, benchmarked there against that platform's baseline.
 - Step 3, if it survives its spike, seeds a `sirsi`-native inference
   capability that Nexus hardware (Cube/TPU roadmap) can later target.
+
+## Amendment — 2026-07-24 (owner decision; claude-home concurred)
+
+Owner ruling (verbatim intent): *"llama.cpp was not necessary for Apple
+Silicon; stage it for Windows/Linux machines Sirsi builds."* Effect:
+
+- **Step 2** re-homed from an Apple-Silicon benchmark to the cross-platform
+  (Win/Linux) GGUF backend behind the `sirsi gemma serve` seam; deferred until a
+  non-Apple target exists, benchmarked against THAT platform's baseline.
+- **Step 3** (mlx-c cgo embeddings spike) elevated to the **primary** Apple-Silicon
+  de-Python / sovereignty play. Accepted as scoped; its one-week timebox and
+  no-go gates (mlx-c API instability, cgo/Metal issues, <2× win over the HTTP
+  hop) are unchanged. **Implementation is scheduled for a dedicated session
+  (owner) — this amendment records the decision, not the spike.**
+- Added the platform backend matrix above.
+
+Authority: pantheon lane (claude-pantheon holds the pen); claude-home concurred
+as ADR-048 authority-path conduit (router item 20260724-151054). Refs: ADR-031
+(local models through Pantheon), ADR-045 (durable broker), #286/#295.
