@@ -23,7 +23,7 @@ import (
 const (
 	// DefaultOwner is assumed when `install` gets a bare repo name.
 	DefaultOwner = "SirsiMaster"
-	// RunnerName is the fleet-wide runner identity on this machine.
+	// RunnerName is the fleet-wide runner identity on this machine (instance 1).
 	RunnerName = "m5-sirsi"
 	// labels advertised to GitHub; workflows target `self-hosted`.
 	labels = "self-hosted,macOS,ARM64,m5"
@@ -43,6 +43,28 @@ func ParseRepoArg(arg string) (owner, repo string) {
 		return arg[:i], arg[i+1:]
 	}
 	return DefaultOwner, arg
+}
+
+// instanceSuffix is "" for the first runner and "-N" for the Nth (N>=2), so a
+// second runner on the same repo — the way to parallelize a serialized CI
+// queue (owner directive 2026-07-24: add a second m5 runner) — gets a distinct
+// dir and GitHub runner name without colliding with the first. Instance 1 is
+// suffix-free, so the single-runner path is byte-identical to before.
+func instanceSuffix(instance int) string {
+	if instance <= 1 {
+		return ""
+	}
+	return fmt.Sprintf("-%d", instance)
+}
+
+// instanceDir is the per-instance donor-clone directory under Base().
+func instanceDir(repo string, instance int) string {
+	return filepath.Join(Base(), repo+instanceSuffix(instance))
+}
+
+// instanceRunnerName is the GitHub runner name for this instance.
+func instanceRunnerName(instance int) string {
+	return RunnerName + instanceSuffix(instance)
 }
 
 // runnerFile is the subset of .runner (written by config.sh) we read back.
@@ -213,16 +235,27 @@ func run(dir, bin string, args ...string) error {
 // via gh, configure, install the launchd service, start it, then poll the
 // runners API until the runner reports online (or ~60s passes).
 func Install(owner, repo string, progress func(string)) error {
+	return InstallInstance(owner, repo, 1, progress)
+}
+
+// InstallInstance installs the Nth runner for owner/repo. instance 1 is the
+// canonical single runner (name m5-sirsi, dir <repo>); instance >=2 adds a
+// parallel runner (name m5-sirsi-N, dir <repo>-N) to widen a serialized CI
+// queue. Every instance clones the SAME donor software and is otherwise
+// identical — labels, launchd service shape, online-gated success.
+func InstallInstance(owner, repo string, instance int, progress func(string)) error {
 	if progress == nil {
 		progress = func(string) {}
 	}
 	base := Base()
 	src := filepath.Join(base, donorDir)
-	dst := filepath.Join(base, repo)
+	dst := instanceDir(repo, instance)
+	name := instanceRunnerName(instance)
 	ownerRepo := owner + "/" + repo
+	tag := repo + instanceSuffix(instance)
 
 	if _, err := os.Stat(filepath.Join(dst, ".runner")); err == nil {
-		progress(fmt.Sprintf("[%s] already configured", repo))
+		progress(fmt.Sprintf("[%s] already configured", tag))
 		return nil
 	}
 	if _, err := os.Stat(filepath.Join(src, "config.sh")); err != nil {
@@ -234,7 +267,7 @@ func Install(owner, repo string, progress func(string)) error {
 
 	// Gotcha 1: strip ALL instance state — .runner_migrated especially, which
 	// makes config.sh believe the copy is already configured and skip setup.
-	progress(fmt.Sprintf("[%s] copying runner software", repo))
+	progress(fmt.Sprintf("[%s] copying runner software", tag))
 	if err := run("", "rsync", "-a",
 		"--exclude", ".runner", "--exclude", ".credentials*", "--exclude", ".env",
 		"--exclude", ".path", "--exclude", ".service", "--exclude", ".runner_migrated",
@@ -249,7 +282,7 @@ func Install(owner, repo string, progress func(string)) error {
 		}
 	}
 
-	progress(fmt.Sprintf("[%s] requesting registration token", repo))
+	progress(fmt.Sprintf("[%s] requesting registration token", tag))
 	tok, err := gh("api", "-X", "POST", "repos/"+ownerRepo+"/actions/runners/registration-token", "-q", ".token")
 	if err != nil {
 		return fmt.Errorf("registration token for %s: %w", ownerRepo, err)
@@ -259,10 +292,10 @@ func Install(owner, repo string, progress func(string)) error {
 		return fmt.Errorf("empty registration token for %s", ownerRepo)
 	}
 
-	progress(fmt.Sprintf("[%s] configuring runner %s", repo, RunnerName))
+	progress(fmt.Sprintf("[%s] configuring runner %s", tag, name))
 	if err := run(dst, "./config.sh",
 		"--url", "https://github.com/"+ownerRepo, "--token", token,
-		"--name", RunnerName, "--labels", labels, "--work", "_work", "--unattended"); err != nil {
+		"--name", name, "--labels", labels, "--work", "_work", "--unattended"); err != nil {
 		return fmt.Errorf("config.sh for %s: %w", ownerRepo, err)
 	}
 	if err := run(dst, "cp", "./bin/runsvc.sh", "./runsvc.sh"); err != nil {
@@ -270,28 +303,28 @@ func Install(owner, repo string, progress func(string)) error {
 	}
 	_ = run(dst, "chmod", "+x", "./runsvc.sh")
 
-	progress(fmt.Sprintf("[%s] installing launchd service", repo))
+	progress(fmt.Sprintf("[%s] installing launchd service", tag))
 	_ = run(dst, "./svc.sh", "install") // idempotent-noisy; start is the real gate
 	if err := run(dst, "./svc.sh", "start"); err != nil {
 		return fmt.Errorf("svc.sh start for %s: %w", ownerRepo, err)
 	}
 
-	progress(fmt.Sprintf("[%s] waiting for runner to come online", repo))
+	progress(fmt.Sprintf("[%s] waiting for runner to come online", tag))
 	deadline := time.Now().Add(60 * time.Second)
 	for {
 		rows, err := RepoRunners(ownerRepo)
 		if err == nil {
-			if st, _ := ClassifyStatus(rows, RunnerName); st == "online" {
-				progress(fmt.Sprintf("[%s] runner %s: online", repo, RunnerName))
+			if st, _ := ClassifyStatus(rows, name); st == "online" {
+				progress(fmt.Sprintf("[%s] runner %s: online", tag, name))
 				return nil
 			}
 		}
 		if time.Now().After(deadline) {
 			st := "not found"
 			if rows, err := RepoRunners(ownerRepo); err == nil {
-				st, _ = ClassifyStatus(rows, RunnerName)
+				st, _ = ClassifyStatus(rows, name)
 			}
-			return fmt.Errorf("[%s] runner %s did not come online within 60s (last status: %s)", repo, RunnerName, st)
+			return fmt.Errorf("[%s] runner %s did not come online within 60s (last status: %s)", tag, name, st)
 		}
 		time.Sleep(3 * time.Second)
 	}

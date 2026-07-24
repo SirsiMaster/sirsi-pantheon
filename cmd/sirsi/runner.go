@@ -20,13 +20,19 @@ var runnerCmd = &cobra.Command{
 	Short: "Builds on your own silicon — install and watch this Mac's CI runners",
 }
 
+var runnerInstance int
+
 var runnerInstallCmd = &cobra.Command{
 	Use:   "install <owner>/<repo>",
 	Short: "Register this Mac as a repository's build worker (reboot-durable service)",
-	Args:  cobra.ExactArgs(1),
+	Long: "Register this Mac as a repository's build worker (reboot-durable service).\n\n" +
+		"Pass --instance N (N>=2) to add a PARALLEL runner to the same repo — the way\n" +
+		"to widen a serialized CI queue when one runner can't keep up. Each instance\n" +
+		"gets its own name (m5-sirsi-N) and launchd service; instance 1 is the default.",
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		owner, repo := runner.ParseRepoArg(args[0])
-		return runner.Install(owner, repo, func(line string) {
+		return runner.InstallInstance(owner, repo, runnerInstance, func(line string) {
 			fmt.Println(line)
 		})
 	},
@@ -68,6 +74,8 @@ var runnerStatusCmd = &cobra.Command{
 }
 
 func init() {
+	runnerInstallCmd.Flags().IntVar(&runnerInstance, "instance", 1,
+		"Runner instance number; >=2 adds a parallel runner (m5-sirsi-N) to widen a serialized CI queue")
 	runnerCmd.AddCommand(runnerInstallCmd, runnerStatusCmd)
 	rootCmd.AddCommand(runnerCmd)
 }
