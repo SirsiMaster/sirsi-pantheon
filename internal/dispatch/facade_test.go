@@ -398,3 +398,73 @@ func TestStoreWakeIgnoresFrozenOpenFile(t *testing.T) {
 		t.Fatal("premise broke: the audit file is no longer frozen at `status: open`")
 	}
 }
+
+// TestCutoverReadsAreExactlyTheStore is codex-pantheon's requested verification
+// of the losslessness premise (#315 review). The cutover marker asserts that the
+// Phase-4 migration COMPLETED — every file has a store row. This fixture holds
+// all three ways the two sources can diverge and proves post-cutover reads
+// return exactly the store's ids and statuses, with no reconciliation of
+// file-only rows back into the store during a read.
+func TestCutoverReadsAreExactlyTheStore(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "0") // seed pre-cutover so audit files exist
+	f := testFacade(t)
+	other := New(t.TempDir(), f.store) // closes store-side only (the worktree split)
+
+	// (a) store-closed / file-open — the phantom that started this.
+	phantom, err := f.Send("a", "b", "phantom", "review", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (b) store-open / file-closed — the inverse: a file closed by a pre-facade
+	//     binary while its store row stayed open.
+	inverse, err := f.Send("a", "b", "inverse", "review", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (c) file-only open — no store row at all (a pre-importer leftover).
+	const orphan = "20260101-000000-a-b-file-only-open"
+	orphanBody := "---\nfrom: \"a\"\nto: \"b\"\ntitle: \"file only\"\nstatus: open\nopened: 2026-01-01T00:00:00Z\n---\n\n## Instructions\n\nx\n"
+	if werr := os.WriteFile(filepath.Join(f.root, "items", orphan+".md"), []byte(orphanBody), 0o644); werr != nil {
+		t.Fatal(werr)
+	}
+
+	if cerr := other.CloseItem(phantom.ID, "done"); cerr != nil { // store only
+		t.Fatal(cerr)
+	}
+	if cerr := work.Close(f.root, inverse.ID, "done"); cerr != nil { // file only
+		t.Fatal(cerr)
+	}
+
+	// Pre-cutover: the union is unchanged — the file wins where it exists, and
+	// the file-only orphan is visible.
+	pre, err := f.Inbox("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preIDs := map[string]bool{}
+	for _, it := range pre {
+		preIDs[it.ID] = true
+	}
+	if !preIDs[phantom.ID] || !preIDs[orphan] || preIDs[inverse.ID] {
+		t.Errorf("pre-cutover inbox = %v; want the file-open phantom and the file-only orphan, not the file-closed inverse", preIDs)
+	}
+
+	// Post-cutover: exactly the store's open rows. The phantom is gone (store
+	// says closed), the inverse IS present (store says open), and the file-only
+	// orphan is invisible — and stays absent from the store: no read reconciles.
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	post, err := f.Inbox("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(post))
+	for _, it := range post {
+		got = append(got, it.ID)
+	}
+	if len(got) != 1 || got[0] != inverse.ID {
+		t.Errorf("post-cutover inbox = %v, want exactly [%s] (the one row the store calls open)", got, inverse.ID)
+	}
+	if _, serr := f.store.Get(orphan); serr == nil {
+		t.Error("a read reconciled the file-only row into the store — reads must never write")
+	}
+}

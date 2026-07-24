@@ -242,6 +242,14 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 // annotate). This lets WakePass annotate — and therefore stay idempotent about —
 // items regardless of the cutover state.
 func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
+	// Post-cutover the annotation belongs on the store row. Writing it to the file
+	// instead is worse than a stale read: it makes the wake pass an AMPLIFIER of
+	// the phantom class, recording wake state onto items closed months ago
+	// (claude-home item 20260724-232706 — two claude-ask-eliot rows closed since
+	// June were being annotated on every conduit run).
+	if routercfg.StoreWake() {
+		return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
+	}
 	if _, err := os.Stat(filepath.Join(f.root, "items", id+".md")); err == nil {
 		return work.SetWake(f.root, id, ann)
 	}
