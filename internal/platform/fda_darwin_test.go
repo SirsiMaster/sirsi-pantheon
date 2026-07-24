@@ -8,6 +8,9 @@ import "testing"
 // asserts only invariants (the actual level depends on what the test binary has
 // been granted), so it is environment-safe.
 func TestCheckDiskAccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live disk-access TCC probe — skipped in short mode")
+	}
 	da := CheckDiskAccess()
 	t.Logf("disk access level=%s accessible=%v blocked=%v", da.Level, da.Accessible, da.Blocked)
 
