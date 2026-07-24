@@ -117,4 +117,14 @@ func init() {
 	// autonomous mode — gemma is the Tier-0 substrate and must survive on
 	// Pantheon's always-on supervisor regardless of any IDE session.
 	router.SetGemmaLivenessFn(router.RunGemmaLivenessDuty)
+	// Wire the dead-label kickstart pass (local sovereignty P1): plists on
+	// disk absent from launchd get re-bootstrapped by the resident supervisor
+	// — deterministic, no LLM, no cloud dependency.
+	router.SetLaunchdKickstartFn(router.RunLaunchdKickstartDuty)
+	// Wire the owner-facing run-report writer (local sovereignty P1, owner
+	// directive 2026-07-23): each supervisor pass appends what it did — heals,
+	// escalations, cloud reachability — to ~/.sirsi/conduit-report.json for
+	// `sirsi report` and the menubar "Last check" line. Inert in library/test
+	// context; only the real CLI writes the real file.
+	router.SetRunReportFn(router.WriteSupervisorRun)
 }

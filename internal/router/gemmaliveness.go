@@ -122,7 +122,11 @@ func RunGemmaLivenessDuty(_, _ string) error {
 		gemmaWedgeStrikes = 0
 		// Nothing serving — start it (RAM-gated inside serve; non-forcing).
 		fmt.Fprintf(os.Stderr, "gemma-liveness: broker down (%s) — starting\n", detail)
-		return getGemmaServeFn()(false)
+		if err := getGemmaServeFn()(false); err != nil {
+			return err
+		}
+		RecordHeal("local AI was down — restarted (bounded)")
+		return nil
 	case liveness.GemmaWedged:
 		gemmaWedgeStrikes++
 		if gemmaWedgeStrikes < gemmaWedgeThreshold {
@@ -133,7 +137,11 @@ func RunGemmaLivenessDuty(_, _ string) error {
 		}
 		gemmaWedgeStrikes = 0
 		fmt.Fprintf(os.Stderr, "gemma-liveness: broker wedged confirmed (%s) — graceful restart\n", detail)
-		return getGemmaServeFn()(true) // stop + start; never SIGKILL (A32/ADR-040)
+		if err := getGemmaServeFn()(true); err != nil { // stop + start; never SIGKILL (A32/ADR-040)
+			return err
+		}
+		RecordHeal("local AI stopped answering — gracefully restarted (bounded)")
+		return nil
 	}
 	return nil
 }

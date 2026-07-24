@@ -428,6 +428,95 @@ var (
 	closeAck     bool
 )
 
+var (
+	respondResult string
+	respondTitle  string
+)
+
+// routerRespondCmd is the atomic request→response primitive (owner rule
+// 2026-06-15: a request ALWAYS requires a response). A close-with-Result is
+// audit-only — the sender is not notified; only a fresh inbound wakes them.
+// This verb does both: close the item with the Result, then route a
+// type:decision inbound back to the requester carrying the same Result. It
+// goes through the facade, so it works for file items AND store-only items
+// (the post-cutover steady state, where the file-based sirsi-respond.sh
+// wrapper found nothing to read).
+var routerRespondCmd = &cobra.Command{
+	Use:   "respond <id>",
+	Short: "Close a request with a Result AND route the response back to its sender (atomic)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := loadOrLiteral(respondResult)
+		if err != nil {
+			return fmt.Errorf("--result: %w", err)
+		}
+		if strings.TrimSpace(result) == "" {
+			return fmt.Errorf("--result is required: a response with no body answers nothing")
+		}
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+
+		item, err := f.Get(args[0])
+		if err != nil {
+			return err
+		}
+		if item.From == "" {
+			return fmt.Errorf("item %s has no from: — cannot notify the requester", args[0])
+		}
+		me := item.To
+		if me == "" {
+			me = "claude-home"
+		}
+
+		// NOTIFY FIRST, then close. There is no cross-row transaction here (the
+		// file era has no transaction at all), so one of the two orders has to
+		// be the survivable one — and only this order is. Closing first can
+		// strand the requester: the request is gone from their queue and the
+		// notification never arrives, with nothing left open to retry from.
+		// Notifying first fails safe — the request stays OPEN until it is
+		// answered, so a retry is always available, and the retry is harmless
+		// because the store's idem_key dedupes an identical resend
+		// (SendGuarded → deduped=true) instead of double-notifying.
+		title := respondTitle
+		if title == "" {
+			t := item.Title
+			if len(t) > 80 {
+				t = t[:80]
+			}
+			title = "RESPONSE: " + t
+		}
+		body := fmt.Sprintf("RESPONSE to your request %q (your item %s, closed with this as the Result).\n\n%s",
+			item.Title, args[0], result)
+		res, err := f.Send(me, item.From, title, "decision", body)
+		if err != nil {
+			return fmt.Errorf("notifying %s FAILED — %s left OPEN, nothing lost, rerun respond: %w",
+				item.From, args[0], err)
+		}
+		if res.Deduped {
+			fmt.Printf("  Notified %s (response %s already sent this window — deduped, not resent)\n", item.From, res.ID)
+		} else {
+			fmt.Printf("  Notified %s (fresh inbound %s)\n", item.From, res.ID)
+		}
+
+		// Close with the Result (audit trail). A respond close is by definition
+		// an acknowledgement — the notification above IS the response — so it
+		// carries --ack semantics past the ADR-037 proof gate.
+		if cerr := f.CloseItem(args[0], result); cerr != nil {
+			return fmt.Errorf("%s notified via %s but closing %s FAILED — rerun respond, the resend dedupes: %w",
+				item.From, res.ID, args[0], cerr)
+		}
+		fmt.Printf("  Closed %s (Result recorded)\n", args[0])
+		return nil
+	},
+}
+
 var routerCloseCmd = &cobra.Command{
 	Use:   "close <id>",
 	Short: "Mark a work item closed",
@@ -1046,6 +1135,8 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendType, "type", "", "Message type: proposal|review|decision (ADR-024 §5 — one inbox, no reviews/ or decisions/ dirs)")
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
+	routerRespondCmd.Flags().StringVar(&respondResult, "result", "", "Response body routed back to the requester (literal text, or @file)")
+	routerRespondCmd.Flags().StringVar(&respondTitle, "title", "", "Title for the response inbound (default: RESPONSE: <request title>)")
 	routerCloseCmd.Flags().StringVar(&closeProof, "proof", "", "Completion proof JSON path, relative to repo root or absolute (ADR-037)")
 	routerCloseCmd.Flags().BoolVar(&closeBlocked, "blocked", false, "Close as explicitly blocked; requires --result and skips proof validation")
 	routerCloseCmd.Flags().BoolVar(&closeAck, "ack", false, "Close as coordination/ack only; requires --result and skips proof validation")
@@ -1061,5 +1152,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneItemsOnly, "items-only", false, "prune only closed items past the window (skip logs/dumps/queue)")
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd)
 }
