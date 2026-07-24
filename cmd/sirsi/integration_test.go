@@ -973,3 +973,88 @@ func TestSubcommandHelp(t *testing.T) {
 		})
 	}
 }
+
+// TestRouterRespondStoreOnlyItem is the command-level smoke codex-pantheon's
+// PR #294 review asked for: with the cutover on (store-only items, no
+// items/<id>.md), `router respond` must close the request with its Result AND
+// leave exactly one type:decision inbound in the requester's queue. It also
+// pins the survivable ordering — a rerun dedupes rather than double-notifying,
+// which is what makes notify-before-close safe to retry.
+func TestRouterRespondStoreOnlyItem(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, ".agents", "idea-router"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(tmp, "router.db")
+	env := func() []string {
+		return sirsiTestEnv(tmp, "SIRSI_ROUTER_STORE_WAKE=1", "SIRSI_ROUTER_DB="+db)
+	}
+	run := func(args ...string) (string, string, error) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, testBinary, args...)
+		cmd.Dir, cmd.Env, cmd.Stdin = tmp, env(), nil
+		var o, e bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &o, &e
+		err := cmd.Run()
+		return o.String(), e.String(), err
+	}
+
+	out, errOut, err := run("router", "send", "--from", "claude-fw", "--to", "claude-home",
+		"--type", "review", "--title", "bind something", "--instructions", "please bind")
+	if err != nil {
+		t.Fatalf("send failed: %v\n%s\n%s", err, out, errOut)
+	}
+	id := ""
+	if i := strings.LastIndex(out, ": "); i >= 0 {
+		id = strings.TrimSpace(out[i+2:])
+	}
+	if id == "" {
+		t.Fatalf("could not parse sent id from: %s", out)
+	}
+	// Cutover on: the item exists only as a store row.
+	if _, statErr := os.Stat(filepath.Join(tmp, ".agents", "idea-router", "items", id+".md")); statErr == nil {
+		t.Fatalf("expected a store-only item, but %s.md exists", id)
+	}
+
+	out, errOut, err = run("router", "respond", id, "--result", "merged at abc123")
+	if err != nil {
+		t.Fatalf("respond failed: %v\n%s\n%s", err, out, errOut)
+	}
+	for _, want := range []string{"Notified claude-fw", "Closed " + id} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("respond output missing %q:\n%s", want, out)
+		}
+	}
+
+	// The requester now has exactly one response waiting...
+	out, _, err = run("router", "pull", "claude-fw")
+	if err != nil {
+		t.Fatalf("pull requester failed: %v", err)
+	}
+	if !strings.Contains(out, "1 open items for claude-fw") || !strings.Contains(out, "RESPONSE: bind something") {
+		t.Fatalf("requester did not get exactly one response inbound:\n%s", out)
+	}
+	// ...and the original request is closed, so the responder's queue is empty.
+	out, _, err = run("router", "pull", "claude-home")
+	if err != nil {
+		t.Fatalf("pull responder failed: %v", err)
+	}
+	if !strings.Contains(out, "No open items for claude-home") {
+		t.Fatalf("expected the request to be closed, got:\n%s", out)
+	}
+
+	// Rerunning respond on the closed item must not mint a SECOND notification
+	// — the idem_key dedupe is what makes the notify-first order retry-safe.
+	_, _, _ = run("router", "respond", id, "--result", "merged at abc123")
+	out, _, err = run("router", "pull", "claude-fw")
+	if err != nil {
+		t.Fatalf("pull requester after rerun failed: %v", err)
+	}
+	if !strings.Contains(out, "1 open items for claude-fw") {
+		t.Fatalf("rerun duplicated the response instead of deduping:\n%s", out)
+	}
+}

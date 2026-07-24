@@ -475,15 +475,15 @@ var routerRespondCmd = &cobra.Command{
 			me = "claude-home"
 		}
 
-		// 1+2: close with the Result (audit trail). A respond close is by
-		// definition an acknowledgement — the real notification is step 3 — so
-		// it carries --ack semantics past the ADR-037 proof gate.
-		if cerr := f.CloseItem(args[0], result); cerr != nil {
-			return cerr
-		}
-		fmt.Printf("  Closed %s (Result recorded)\n", args[0])
-
-		// 3: fresh inbound back to the requester — the actual notification.
+		// NOTIFY FIRST, then close. There is no cross-row transaction here (the
+		// file era has no transaction at all), so one of the two orders has to
+		// be the survivable one — and only this order is. Closing first can
+		// strand the requester: the request is gone from their queue and the
+		// notification never arrives, with nothing left open to retry from.
+		// Notifying first fails safe — the request stays OPEN until it is
+		// answered, so a retry is always available, and the retry is harmless
+		// because the store's idem_key dedupes an identical resend
+		// (SendGuarded → deduped=true) instead of double-notifying.
 		title := respondTitle
 		if title == "" {
 			t := item.Title
@@ -492,14 +492,27 @@ var routerRespondCmd = &cobra.Command{
 			}
 			title = "RESPONSE: " + t
 		}
-		body := fmt.Sprintf("RESPONSE to your request %q (your item %s, now closed with this as the Result).\n\n%s",
+		body := fmt.Sprintf("RESPONSE to your request %q (your item %s, closed with this as the Result).\n\n%s",
 			item.Title, args[0], result)
 		res, err := f.Send(me, item.From, title, "decision", body)
 		if err != nil {
-			return fmt.Errorf("item %s closed but notifying %s FAILED — requester will not see the response: %w",
-				args[0], item.From, err)
+			return fmt.Errorf("notifying %s FAILED — %s left OPEN, nothing lost, rerun respond: %w",
+				item.From, args[0], err)
 		}
-		fmt.Printf("  Notified %s (fresh inbound %s)\n", item.From, res.ID)
+		if res.Deduped {
+			fmt.Printf("  Notified %s (response %s already sent this window — deduped, not resent)\n", item.From, res.ID)
+		} else {
+			fmt.Printf("  Notified %s (fresh inbound %s)\n", item.From, res.ID)
+		}
+
+		// Close with the Result (audit trail). A respond close is by definition
+		// an acknowledgement — the notification above IS the response — so it
+		// carries --ack semantics past the ADR-037 proof gate.
+		if cerr := f.CloseItem(args[0], result); cerr != nil {
+			return fmt.Errorf("%s notified via %s but closing %s FAILED — rerun respond, the resend dedupes: %w",
+				item.From, res.ID, args[0], cerr)
+		}
+		fmt.Printf("  Closed %s (Result recorded)\n", args[0])
 		return nil
 	},
 }
