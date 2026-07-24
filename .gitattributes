@@ -1,0 +1,11 @@
+# Kill the CHANGELOG merge treadmill (claude-home tip, router item 152531).
+#
+# Every PR prepends its entry to `## [Unreleased]`, so the moment one merges it
+# moves `main` and re-conflicts every sibling PR on the SAME lines — a
+# rebase-per-merge tax the whole stack pays. `merge=union` is git's built-in
+# driver (no `git config` merge.union.driver setup needed): on a conflict it
+# keeps BOTH sides' added lines instead of stopping. For an append-only,
+# newest-first changelog that is exactly the right resolution — the two entries
+# both survive, order is fixed up by whoever curates the release, and no human
+# has to hand-resolve a non-overlapping "conflict" that was never semantic.
+CHANGELOG.md merge=union
