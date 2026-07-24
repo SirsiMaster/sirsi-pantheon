@@ -93,8 +93,33 @@ PY
   # completion timed out — that is slower than any floor, not a pass. Verified
   # live 2026-07-16: a 1 tok/s server timed the 90s probe out and the empty
   # rate fail-OPENED into the exact crawl this guard exists to prevent.
+  #
+  # WARMUP RETRY (broker death #3 forensics, 2026-07-23): the FIRST inference
+  # after a model load measures ~1 tok/s (compile/warmup) — a probe that runs
+  # right after a heal false-fails the floor on a healthy broker. One below-
+  # floor read gets a 20s warm pause and a second measurement; only two
+  # consecutive below-floor reads are a real DEGRADED.
   if [ -z "$rate" ] || [ "$rate" -lt "$TOKS_FLOOR" ]; then
-    echo "ERROR: warm server DEGRADED — measured ${rate:-<probe timeout>} tok/s < ${TOKS_FLOOR} tok/s floor on ${MODEL}. Refusing to crawl; run sirsi-gemma-model-resolver.sh (empirical fit) or free memory." >&2
+    echo "· probe measured ${rate:-timeout} tok/s — possible post-heal warmup, retrying once in 20s" >&2
+    sleep 20
+    rate=$(SERVER="$SERVER" python3 - <<'PY' 2>/dev/null
+import os, json, time, urllib.request
+body = json.dumps({"messages":[{"role":"user","content":"Count from 1 to 20, digits only."}],
+                   "max_tokens": 48, "temperature": 0.0}).encode()
+req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
+t0 = time.time()
+try:
+    with urllib.request.urlopen(req, timeout=90) as r:
+        toks = json.loads(r.read())["usage"]["completion_tokens"]
+except Exception:
+    raise SystemExit
+dt = time.time() - t0
+print(int(toks / dt) if dt > 0 else 0)
+PY
+)
+  fi
+  if [ -z "$rate" ] || [ "$rate" -lt "$TOKS_FLOOR" ]; then
+    echo "ERROR: warm server DEGRADED — measured ${rate:-<probe timeout>} tok/s < ${TOKS_FLOOR} tok/s floor on ${MODEL} (post-warmup retry included). Refusing to crawl; run sirsi-gemma-model-resolver.sh (empirical fit) or free memory." >&2
     exit 2
   fi
 fi
