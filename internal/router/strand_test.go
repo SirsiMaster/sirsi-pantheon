@@ -1,6 +1,12 @@
 package router
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
+
+// errNotLoaded is what a launchctl checker returns for an unloaded label.
+var errNotLoaded = errors.New("not loaded")
 
 // TestComputeStranded_FlagsUnarmedBacklog: agents with open items but no armed
 // thread (loop-dead, or no thread at all) are surfaced as stranded; armed agents
@@ -29,7 +35,7 @@ func TestComputeStranded_FlagsUnarmedBacklog(t *testing.T) {
 		"claude-dead":  {"i3", "i4"}, // loop dead → STRANDED (2)
 		"claude-gone":  {"i5"},       // no thread at all → STRANDED (1)
 	}
-	got := computeStranded(root, pending)
+	got := computeStranded(root, pending, nil)
 	if len(got) != 2 {
 		t.Fatalf("got %d stranded, want 2: %+v", len(got), got)
 	}
@@ -45,6 +51,50 @@ func TestComputeStranded_FlagsUnarmedBacklog(t *testing.T) {
 	}
 	if AgentArmed(root, "claude-dead") || AgentArmed(root, "claude-gone") {
 		t.Error("loop-dead + no-thread agents must report unarmed")
+	}
+}
+
+// TestComputeStranded_CreditsWakeJobAndSkipsUser pins the two false-positive
+// fixes (owner item 172430 / claude-home item 160154): an agent whose ONLY
+// consumer is a launchd `ai.sirsi.router.wake.<agent>` job (no registry thread)
+// is NOT stranded — crediting only the registry falsely flagged claude-pantheon
+// while its wake job was live (PID 80806). And `user` (the owner queue) is never
+// stranded, since it has no session watcher to "arm".
+func TestComputeStranded_CreditsWakeJobAndSkipsUser(t *testing.T) {
+	root := t.TempDir()
+	pending := map[string][]string{
+		"claude-wakeonly": {"i1"},       // no thread, but wake job live → NOT stranded
+		"claude-nobody":   {"i2", "i3"}, // no thread, no wake job → STRANDED (2)
+		"user":            {"i4"},       // owner queue → never stranded
+	}
+	// liveWake mirrors what liveWakeAgents(launchctlCheck) would produce.
+	liveWake := map[string]bool{"claude-wakeonly": true}
+
+	got := computeStranded(root, pending, liveWake)
+	if len(got) != 1 {
+		t.Fatalf("got %d stranded, want exactly 1 (claude-nobody): %+v", len(got), got)
+	}
+	if got[0].AgentID != "claude-nobody" || got[0].OpenItems != 2 {
+		t.Errorf("stranded = %+v, want claude-nobody/2", got[0])
+	}
+}
+
+// TestLiveWakeAgents confirms the launchd wake-label union: an agent is credited
+// iff `launchctl list ai.sirsi.router.wake.<agent>` exits 0, and a nil checker
+// (tests without launchctl) yields an empty set (registry-only classification).
+func TestLiveWakeAgents(t *testing.T) {
+	check := func(args ...string) error {
+		if len(args) == 2 && args[0] == "list" && args[1] == "ai.sirsi.router.wake.claude-up" {
+			return nil // loaded
+		}
+		return errNotLoaded
+	}
+	live := liveWakeAgents([]string{"claude-up", "claude-down"}, check)
+	if !live["claude-up"] || live["claude-down"] {
+		t.Errorf("live = %+v, want only claude-up", live)
+	}
+	if got := liveWakeAgents([]string{"claude-up"}, nil); len(got) != 0 {
+		t.Errorf("nil checker must yield empty set, got %+v", got)
 	}
 }
 

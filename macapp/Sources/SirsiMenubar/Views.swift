@@ -1003,7 +1003,7 @@ struct RouterView: View {
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
                             Circle().fill(.green).frame(width: 8, height: 8)
-                            Text("No blockers — nothing is stranding work")
+                            Text("No blockers — fabric is healthy")
                                 .font(.system(size: 13, weight: .semibold))
                             Spacer()
                         }
