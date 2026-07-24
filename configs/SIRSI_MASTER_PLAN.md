@@ -1,3 +1,9 @@
+> **⚠️ SUPERSEDED — NOT CANON (2026-07-23).** This April-2026 plan previously declared itself
+> "the single source of truth for all Sirsi portfolio development." That authority is revoked by the
+> owner-ratified One Architecture: `SirsiNexusApp/docs/CANON_ALIGNMENT_AUDIT.md` (+ the v5-amended
+> `SIRSI_MASTER_BLUEPRINT.md`). Neith/Ra scope assembly must read the ratified canon, not this file.
+> Preserved unmodified below for history.
+
 # Sirsi Master Execution Plan
 **Version:** 1.0.0 | **Date:** April 4, 2026 | **Author:** Cylton Collymore + Claude Opus 4.6
 **Custodian:** Neith (scope alignment) + Ra (orchestration) + Ma'at (quality gates)
