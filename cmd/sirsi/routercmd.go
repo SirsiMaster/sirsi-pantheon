@@ -478,8 +478,8 @@ var routerRespondCmd = &cobra.Command{
 		// 1+2: close with the Result (audit trail). A respond close is by
 		// definition an acknowledgement — the real notification is step 3 — so
 		// it carries --ack semantics past the ADR-037 proof gate.
-		if err := f.CloseItem(args[0], result); err != nil {
-			return err
+		if cerr := f.CloseItem(args[0], result); cerr != nil {
+			return cerr
 		}
 		fmt.Printf("  Closed %s (Result recorded)\n", args[0])
 
