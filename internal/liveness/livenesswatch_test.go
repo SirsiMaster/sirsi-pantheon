@@ -2,6 +2,8 @@ package liveness
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +98,50 @@ func TestPickWorst_SeverityOrder(t *testing.T) {
 	nonFixable := Finding{Check: "menubar", OK: false, Fixable: false}
 	if w := pickWorst([]Finding{okFinding, nonFixable}); w != nil {
 		t.Errorf("no fixable non-OK finding → nil, got %+v", w)
+	}
+}
+
+// TestProbeGemmaState_Classification is the false-positive regression guard.
+// A reasoning model (gemma-4) spends a small token budget in `message.reasoning`
+// and legitimately leaves `message.content` empty on a HEALTHY broker — the old
+// "empty content ⇒ wedged" rule paged the owner every cycle. The probe now
+// asserts transport truth (normal finish_reason + tokens produced), so:
+//   - reasoning-shaped response (empty content, non-empty reasoning) ⇒ healthy
+//   - genuinely empty response (no tokens, no finish) ⇒ wedged
+func TestProbeGemmaState_Classification(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want GemmaStatus
+	}{
+		{"reasoning_model_empty_content", `{"choices":[{"message":{"content":"","reasoning":"The user wants me to"},"finish_reason":"length"}],"usage":{"completion_tokens":32}}`, GemmaHealthy},
+		{"plain_content", `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`, GemmaHealthy},
+		{"no_tokens_generated", `{"choices":[{"message":{"content":""},"finish_reason":""}],"usage":{"completion_tokens":0}}`, GemmaWedged},
+		{"no_choices", `{"choices":[],"usage":{"completion_tokens":0}}`, GemmaWedged},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			home := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// httptest binds 127.0.0.1:PORT; hand the probe that port.
+			port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+			if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-server.port"), []byte(port), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			got, detail := ProbeGemmaState(home)
+			if got != tc.want {
+				t.Errorf("ProbeGemmaState = %v (%s), want %v", got, detail, tc.want)
+			}
+		})
 	}
 }
 
