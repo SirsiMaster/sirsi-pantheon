@@ -6,6 +6,9 @@ import (
 )
 
 func TestKaHunt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow filesystem scan — skipped in short mode")
+	}
 	result := KaHunt(false)
 
 	var resp Response

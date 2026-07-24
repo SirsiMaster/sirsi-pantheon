@@ -216,6 +216,84 @@ jobs:
           gh release upload "$TAG_NAME" \
             "bin/SirsiPantheon-${BUILD_VERSION}-windows-setup.exe"
 
+  bump-cask:
+    name: Bump Homebrew Cask (DMG SHA256)
+    runs-on: ubuntu-latest
+    needs: menubar
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download DMG and compute SHA256
+        id: sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          gh release download "$TAG_NAME" \
+            --repo SirsiMaster/sirsi-pantheon \
+            --pattern "SirsiPantheon-${VERSION}-arm64.dmg"
+          SHA=$(sha256sum "SirsiPantheon-${VERSION}-arm64.dmg" | awk '{print $1}')
+          echo "SHA256=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Casks/sirsi-pantheon.rb in homebrew-tools
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          SHA256: ${{ steps.sha.outputs.SHA256 }}
+        run: |
+          set -euo pipefail
+          CASK_PATH="Casks/sirsi-pantheon.rb"
+          REPO="SirsiMaster/homebrew-tools"
+
+          # Get current blob SHA (required for GitHub API file update)
+          BLOB_SHA=$(gh api "repos/${REPO}/contents/${CASK_PATH}" --jq '.sha')
+
+          # Build cask content and base64-encode for the GitHub API
+          CONTENT=$(cat <<EOF | base64 -w0
+          cask "sirsi-pantheon" do
+            version "${VERSION}"
+            sha256 "${SHA256}"
+
+            url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-arm64.dmg"
+            name "Sirsi Pantheon"
+            desc "DevOps intelligence platform — menu bar monitor + CLI"
+            homepage "https://github.com/SirsiMaster/sirsi-pantheon"
+
+            app "Pantheon.app"
+
+            uninstall quit:      "ai.sirsi.pantheon",
+                      launchctl: "ai.sirsi.pantheon"
+
+            zap trash: [
+              "~/.config/pantheon",
+              "~/Library/LaunchAgents/ai.sirsi.pantheon.plist",
+            ]
+
+            caveats <<~EOS
+              Pantheon.app includes both the menu bar monitor and the sirsi CLI.
+
+              To start the menu bar at login:
+                cp /Applications/Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist ~/Library/LaunchAgents/
+                launchctl load ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
+
+              Quick start:
+                sirsi scan       Find waste on your machine
+                sirsi doctor     Check system health
+                sirsi ghosts     Find remnants of uninstalled apps
+            EOS
+          end
+          EOF
+          )
+
+          gh api "repos/${REPO}/contents/${CASK_PATH}" \
+            -X PUT \
+            -f message="chore: bump cask to v${VERSION}" \
+            -f content="${CONTENT}" \
+            -f sha="${BLOB_SHA}"
+
   publish-npm:
     name: Publish thoth-init to npm (OIDC)
     runs-on: ubuntu-latest
