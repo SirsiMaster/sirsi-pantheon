@@ -64,7 +64,12 @@ func inboxUnion(routerRoot, agent string) ([]work.Item, error) {
 	}
 	f, err := dispatch.OpenRoot(routerRoot)
 	if err != nil {
-		return work.ListInbox(routerRoot, agent)
+		// FAIL CLOSED. Post-cutover the store is the authority and the files are a
+		// frozen legacy copy; degrading to them on a store-open failure resurrects
+		// closed work through pull/wake/plan/board — reproducing the exact P0 this
+		// path was fixed for, precisely when the store is unavailable. The facade's
+		// own read methods fail closed for the same reason; this must match them.
+		return nil, fmt.Errorf("router: store unavailable and the cutover makes it the sole authority (refusing to read frozen legacy files): %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	return f.Inbox(agent)
@@ -86,7 +91,7 @@ func AllItems(routerRoot string) ([]work.Item, error) {
 	}
 	f, err := dispatch.OpenRoot(routerRoot)
 	if err != nil {
-		return work.ListAll(routerRoot)
+		return nil, fmt.Errorf("router: store unavailable and the cutover makes it the sole authority (refusing to read frozen legacy files): %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	return f.ListAll()
