@@ -47,16 +47,16 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("first Run: %v", err)
 	}
-	first := openCount(t, root, "user")
+	first := openCount(t, root, "claude-pantheon")
 	if first != 1 {
-		t.Fatalf("first Run routed %d items to user, want exactly 1\n%s", first, buf.String())
+		t.Fatalf("first Run routed %d items to claude-pantheon, want exactly 1\n%s", first, buf.String())
 	}
 
 	buf.Reset()
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("second Run: %v", err)
 	}
-	if second := openCount(t, root, "user"); second != 1 {
+	if second := openCount(t, root, "claude-pantheon"); second != 1 {
 		t.Errorf("second Run left %d open items, want 1 (dedup failed)\n%s", second, buf.String())
 	}
 	if !strings.Contains(buf.String(), "skip") {
@@ -115,4 +115,19 @@ func openCount(t *testing.T, root, agent string) int {
 func dirExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
+}
+
+// TestRecipientFor pins the ownership routing: machine-health conditions go to
+// claude-pantheon (which remediates them under A32/ADR-040), unclassified
+// conditions fall through to the owner so nothing is silently misrouted.
+func TestRecipientFor(t *testing.T) {
+	pantheon := []string{"gemma-broker", "memory-death", "session-leak", "menubar"}
+	for _, c := range pantheon {
+		if got := recipientFor(c); got != "claude-pantheon" {
+			t.Errorf("recipientFor(%q) = %q, want claude-pantheon", c, got)
+		}
+	}
+	if got := recipientFor("some-future-owner-only-condition"); got != "user" {
+		t.Errorf("unclassified condition = %q, want user (fail-safe to owner)", got)
+	}
 }
