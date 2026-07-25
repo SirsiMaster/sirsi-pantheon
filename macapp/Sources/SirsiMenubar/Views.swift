@@ -75,7 +75,7 @@ func sirsiArgs(_ command: String) -> [String] {
 // and the native back button returns — the "persistent menubar that can go back"
 // the user asked for. No screen ever kicks out to Terminal or a browser.
 // Nav is the explicit navigation stack. SwiftUI's NavigationStack, pushed inside
-// this fullSizeContentView NSPanel, silently DROPPED the in-content BackBar of
+// this NSPanel, silently DROPPED the in-content BackBar of
 // every drilled-in screen — the custom "‹ Back" row never rendered no matter
 // what (proven exhaustively 2026-07-10: clean builds, insets, toolbar-hidden,
 // fixed heights — none made it appear). So we drive navigation ourselves: a
@@ -130,42 +130,34 @@ struct RootView: View {
     @ObservedObject var engine: SirsiEngine
     @StateObject private var nav = Nav()
 
-    // The whole UI is designed at this width; everything (fonts, dividers,
-    // spacing, structures) scales geometrically from it, so resizing the window
-    // resizes the ELEMENTS too — not just the container (owner, 2026-07-10).
-    private let baseWidth: CGFloat = 360
-
     var body: some View {
         // Wrapping the content in an explicit VStack (instead of a bare Group)
         // is what finally lets each pushed view's BackBar render — a bare Group
-        // under the NSHostingView (sizingOptions: []) dropped the top row. The
-        // leading Color.clear reserves the window titlebar strip so the BackBar
-        // (and Home's title) clear the traffic-light buttons and stay clickable.
-        GeometryReader { geo in
-            // Scale factor = how much wider the window is than the base design.
-            // The window's minSize (360) keeps scale ≳ 0.95 so the 50pt titlebar
-            // clearance never shrinks below the ~28pt traffic-light strip.
-            let scale = max(0.5, geo.size.width / baseWidth)
-            VStack(spacing: 0) {
-                // Titlebar clearance is a WINDOW constant (traffic lights are
-                // ~28pt at every size), so divide by scale: post-.scaleEffect it
-                // renders at a fixed 50pt instead of ballooning with the window
-                // (the owner's 2026-07-22 screenshot: a third of the panel dead).
-                Color.clear.frame(height: 50 / scale)
-                Group {
-                    if let top = nav.stack.last {
-                        top.view
-                    } else {
-                        HomeView(engine: engine)
-                    }
-                }
+        // under the NSHostingView (sizingOptions: []) dropped the top row.
+        //
+        // No titlebar spacer here: the panel is a plain .titled window (NOT
+        // fullSizeContentView, whatever the stale comment above Nav used to
+        // claim), so AppKit already insets contentView by the 32pt titlebar —
+        // NSWindow.contentRect(forFrameRect:) measures exactly that. The old
+        // 50pt Color.clear stacked a SECOND clearance under the real one and
+        // put ~82pt of dead space above every screen (owner, 2026-07-24:
+        // "huge display gap ... on every window").
+        //
+        // No .scaleEffect either. Resizing a Mac window reflows the layout; it
+        // does not zoom the type — Finder, Mail and System Settings all keep
+        // their point sizes and give you more room instead. The geometric zoom
+        // this used to do (design at 360pt, scale up) is what forced the /scale
+        // fudge above, resampled every glyph off the pixel grid, and SHRANK the
+        // vertical design space as you widened the window. Content is fluid
+        // (maxWidth: .infinity throughout) and simply fills the real frame.
+        VStack(spacing: 0) {
+            if let top = nav.stack.last {
+                top.view
+            } else {
+                HomeView(engine: engine)
             }
-            // Design at the base width and a base-unit height that fills the
-            // window once scaled; .scaleEffect then blows up every element —
-            // font, divider, padding — by the same factor, anchored top-left.
-            .frame(width: baseWidth, height: max(1, geo.size.height / scale), alignment: .top)
-            .scaleEffect(scale, anchor: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Every panel (re)open starts at a fresh Home. Pushed screens load their
         // command output once (.task) and would otherwise show it forever — the
         // RTK screen kept rendering output from a since-replaced binary.

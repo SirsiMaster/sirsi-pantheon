@@ -15,7 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // wrong for a 20-screen app (owner, 2026-07-09). The panel remembers its
     // frame (position + size) across opens via setFrameAutosaveName.
     private var panel: NSPanel!
-    private var panelObserver: Any?
     private let engine = SirsiEngine()
     private var refreshTimer: Timer?
 
@@ -217,16 +216,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let p = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 560),
-            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered, defer: false)
         p.title = "Sirsi Pantheon"
         p.titleVisibility = .hidden
         p.titlebarAppearsTransparent = true
         p.isMovableByWindowBackground = true          // drag from anywhere
-        p.isFloatingPanel = true
-        p.level = .floating
+        // ORDINARY window behaviour (owner, 2026-07-24: "so rigid and always has
+        // focus unlike every other kind of window"). It used to be a
+        // .nonactivatingPanel at .floating level, which puts it above every
+        // window of every app permanently — you could never click it behind
+        // anything. #224 tried to soften that by hiding the panel whenever it
+        // resigned key, which just traded "always in front" for "vanishes the
+        // moment you look away" — neither is how a Mac window behaves.
+        // At .normal level it simply takes its place in the window order: click
+        // another app and it goes behind, click the Eye and it comes forward.
+        p.isFloatingPanel = false
+        p.level = .normal
         p.hidesOnDeactivate = false
-        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Follow the user to whatever Space they're on rather than tiling itself
+        // onto all of them — .canJoinAllSpaces is floating-utility behaviour.
+        p.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 560))
         hosting.frame = container.bounds
         container.addSubview(hosting)
@@ -235,26 +245,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.maxSize = NSSize(width: 900, height: 1400)
         p.isReleasedWhenClosed = false
         p.setFrameAutosaveName("SirsiPantheonPanel")  // persist position + size
-        // Yield focus like a real menubar surface: click anywhere else and the
-        // panel gets out of the way instead of floating over every window
-        // forever (owner, 2026-07-16: "static and never loses focus and blocks
-        // other windows"). Sheets (Apply confirmations) become key while the
-        // panel resigns — don't hide underneath our own dialog.
-        panelObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification, object: p, queue: .main
-        ) { _ in
-            Task { @MainActor in
-                if let key = NSApp.keyWindow, key.sheetParent === p || key.parent === p { return }
-                if p.attachedSheet != nil { return }
-                p.orderOut(nil)
-            }
-        }
         panel = p
     }
 
     @objc private func togglePopover(_ sender: Any?) {
         guard panel != nil else { return }
-        if panel.isVisible {
+        // Now that the panel lives at .normal level it can be OPEN BUT BEHIND
+        // another app's window. Toggling on isVisible alone would hide a panel
+        // the user could not even see; the menu-bar affordance has to bring it
+        // forward instead. Only a panel that is already front-and-key toggles off.
+        if panel.isVisible && panel.isKeyWindow {
             panel.orderOut(sender)
             return
         }
