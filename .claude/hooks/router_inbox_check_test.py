@@ -5,9 +5,11 @@ Run: python3 .claude/hooks/router_inbox_check_test.py
 """
 
 import importlib.util
+import os
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Load the hyphenless-but-underscored hook module by path.
 _spec = importlib.util.spec_from_file_location(
@@ -245,6 +247,47 @@ class TestClaudeSessionPidWalk(unittest.TestCase):
         tree = {200: (300, "zsh")}  # 300 absent → lookup fails
         got = hook.claude_session_pid(runner=chain_runner(tree), start_pid=200)
         self.assertIsNone(got)
+
+
+class TestIdentityOverrideNarrowsOnly(unittest.TestCase):
+    """SIRSI_ROUTER_AGENT may narrow, never contradict (item 20260724-205100)."""
+
+    AGENTS = {"agents": {
+        "claude-home": {"type": "claude", "cwd": "/Users/x"},
+        "claude-deck": {"type": "claude", "cwd": "/Users/x/Development/deck"},
+        "claude-pantheon": {"type": "claude", "cwd": "/Users/x/Development/sirsi-pantheon"},
+    }}
+
+    def _apply(self, resolved, cwd, override):
+        with mock.patch.dict(os.environ, {"SIRSI_ROUTER_AGENT": override}, clear=False):
+            with mock.patch.object(hook.Path, "resolve", lambda self: self):
+                return hook.apply_identity_override(resolved, hook.Path(cwd), self.AGENTS)
+
+    def test_machine_global_cannot_hijack_a_home_session(self):
+        # The live trap: a user-level settings.json env block exported
+        # SIRSI_ROUTER_AGENT=claude-deck into EVERY session, relabeling the
+        # home-rooted router conduit and making it heartbeat claude-deck's thread.
+        self.assertEqual(
+            self._apply("claude-home", "/Users/x", "claude-deck"), "claude-home")
+
+    def test_override_cannot_rescue_an_unresolved_session(self):
+        # No confident cwd match and the override's cwd does not contain this
+        # one → still no-op. A session may not assert an identity it cannot prove.
+        self.assertIsNone(
+            self._apply(None, "/tmp/somewhere", "claude-pantheon"))
+
+    def test_override_may_narrow_to_an_agent_that_owns_the_cwd(self):
+        self.assertEqual(
+            self._apply("claude-home", "/Users/x/Development/deck/sub", "claude-deck"),
+            "claude-deck")
+
+    def test_unregistered_override_is_ignored(self):
+        self.assertEqual(
+            self._apply("claude-home", "/Users/x", "claude-nope"), "claude-home")
+
+    def test_empty_override_is_a_no_op(self):
+        self.assertEqual(self._apply("claude-home", "/Users/x", ""), "claude-home")
+
 
 
 if __name__ == "__main__":

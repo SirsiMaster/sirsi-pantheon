@@ -95,6 +95,57 @@ def resolve_agent(cwd: Path, agents: dict) -> str | None:
     return resolve_agent_by_cwd(cwd, agents) or portfolio_agent_for_cwd(str(cwd))
 
 
+def agent_owns_cwd(agent_id: str, cwd: Path, agents: dict) -> bool:
+    """Whether agent_id's OWN registered cwd contains this session's cwd — i.e.
+    whether this session could legitimately be that agent."""
+    config = (agents.get("agents") or {}).get(agent_id) or {}
+    c = config.get("cwd")
+    if not c:
+        return False
+    try:
+        base = Path(c).expanduser().resolve()
+        cwd_resolved = cwd.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return cwd_resolved == base or base in cwd_resolved.parents
+
+
+def apply_identity_override(resolved: str | None, cwd: Path, agents: dict) -> str | None:
+    """Apply SIRSI_ROUTER_AGENT, which may only NARROW — never contradict.
+
+    The override is honored ONLY when the named agent's own registered cwd
+    contains this session's cwd. A session may disambiguate among agents it
+    could actually be; it may never claim one its cwd rules out.
+
+    Why the old rule was unsafe (claude-home item 20260724-205100): it honored
+    any registered agent whenever the cwd resolved to None or claude-home. But
+    SIRSI_ROUTER_AGENT is an ordinary env var, and Claude Code's user-level
+    settings.json `env` block exports it into EVERY session on the machine —
+    so the hook cannot tell "this session declared its identity" from "the
+    machine declared every session's identity". One global setting relabeled
+    every home-rooted session, including the 15-min router-conduit task, which
+    then heartbeat ANOTHER agent's thread: a cross-agent liveness lie fed to
+    the doctor, the board, and the ADR-022 reaper. It also drove mint churn —
+    each mislabeled session has its own LIVE anchor pid, so the reuse path
+    (which adopts only DEAD anchors) correctly declined and minted a new record
+    ~11 times per conduit run.
+
+    Deliberate trade: this removes the documented "a home-rooted session can
+    declare it is really claude-pantheon" rescue. That rescue is unrecoverable
+    by design — it is indistinguishable from the machine-global trap. A session
+    at $HOME *is* claude-home; a session that means to be claude-pantheon
+    belongs in the pantheon repo's cwd, where resolve_agent gets it right with
+    no override at all."""
+    override = os.environ.get("SIRSI_ROUTER_AGENT", "").strip()
+    if not override or override == resolved:
+        return resolved
+    if override not in (agents.get("agents") or {}):
+        return resolved
+    if not agent_owns_cwd(override, cwd, agents):
+        return resolved  # contradicts the cwd — refuse, never assert a liveness lie
+    return override
+
+
 def pending_items(state: dict, agent_id: str) -> list[str]:
     pending = state.get("pending") or {}
     items = list(pending.get(agent_id) or [])
@@ -376,15 +427,9 @@ def main() -> int:
     # heartbeat its thread from another agent's session (ADR-024 refinement).
     agent_id = resolve_agent(cwd, agents)
 
-    # Explicit identity override (SIRSI_ROUTER_AGENT). A home-rooted session that
-    # works on a specific repo (e.g. Pantheon from the desktop app, cwd=$HOME)
-    # can declare its true agent rather than falling to claude-home. Honored
-    # ONLY when it names a registered agent AND the cwd did not already resolve
-    # to a repo-specific agent — so a global setting can rescue home sessions
-    # without ever mislabeling a session launched from another repo's dir.
-    override = os.environ.get("SIRSI_ROUTER_AGENT", "").strip()
-    if override and override in agents.get("agents", {}) and agent_id in (None, "claude-home"):
-        agent_id = override
+    # Explicit identity override (SIRSI_ROUTER_AGENT) — narrowing only; it can
+    # never contradict the cwd. See apply_identity_override.
+    agent_id = apply_identity_override(agent_id, cwd, agents)
 
     if not agent_id:
         return 0
