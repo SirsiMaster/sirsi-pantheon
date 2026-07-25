@@ -481,20 +481,20 @@ func probeMemoryDeath() Finding {
 	f := Finding{Check: "memory-death", Fixable: true,
 		Title: "liveness-watch: memory death spiral",
 		Body: fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
-			"free %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
+			"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
 			"gemma broker (2026-07-17). Fix: close/restart the heaviest leaked sessions (leaked claude-desktop "+
 			"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
 			"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
-			md.SwapPct, md.SwapUsedGB, md.FreeGB, md.Load1, md.Cores)}
+			md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)}
 	if !md.Readable {
 		f.OK, f.Fixable, f.Detail = true, false, "no signal readable"
 		return f
 	}
 	if md.Dying {
-		f.Detail = fmt.Sprintf("swap %.0f%% / free %.2f GB / load %.1f — SPIRAL", md.SwapPct, md.FreeGB, md.Load1)
+		f.Detail = fmt.Sprintf("swap %.0f%% / available %.2f GB / load %.1f — SPIRAL", md.SwapPct, md.AvailableGB, md.Load1)
 		return f
 	}
 	f.OK = true
-	f.Detail = fmt.Sprintf("swap %.0f%% / free %.2f GB / load %.1f/%d", md.SwapPct, md.FreeGB, md.Load1, md.Cores)
+	f.Detail = fmt.Sprintf("swap %.0f%% / available %.2f GB / load %.1f/%d", md.SwapPct, md.AvailableGB, md.Load1, md.Cores)
 	return f
 }

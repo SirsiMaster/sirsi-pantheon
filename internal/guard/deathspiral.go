@@ -25,19 +25,28 @@ const vmStatPageBytes = 16384
 // one Claude.app PID). Ordinary apps fan out helpers in the tens.
 const fanOutAlarm = 100
 
+// isDeathSpiral is THE spiral ladder — one definition, both callers (the doctor
+// check and the launchd liveness probe), so the two surfaces can never drift on
+// what "dying" means. Each signal alone has an innocent explanation: swap fills
+// during a transient spike and STAYS full, and a busy machine runs hot. The
+// spiral is swap exhaustion together with either a paging-driven load storm or
+// genuinely no reclaimable memory left.
+func isDeathSpiral(swapPct, load1, availGB float64, cores int) bool {
+	return swapPct >= 90 && (load1 >= 2*float64(cores) || availGB < 0.5)
+}
+
 // checkMemoryDeathSpiral emits one "Memory Death Spiral" finding.
 //
 // Severity ladder:
 //   - Critical (live — forces RED): swap ≥ 90% exhausted AND (1-min load ≥ 2×cores
-//     OR free RAM < 512 MB). Each signal alone has an innocent explanation; the
-//     combination is the spiral (paging storms drive load, load starves the pager).
+//     OR available RAM < 512 MB). See isDeathSpiral.
 //   - Warn: swap ≥ 80%, OR load ≥ 1.5×cores, OR a single parent with ≥ 100 children.
 //   - OK otherwise, with the measured headroom shown as evidence.
 func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
 	load1, loadOK := readLoad1(p)
 	cores := readCores(p)
 	swapPct, swapUsedGB, swapOK := readSwapPct(p)
-	freeGB, compressedGB := readVMStatGB(p)
+	availGB, compressedGB := readVMStatGB(p)
 	fanCount, fanParent := maxProcessFanOut(p)
 
 	if !loadOK && !swapOK {
@@ -46,17 +55,17 @@ func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
 
 	f := DiagnosticFinding{
 		Check: "Memory Death Spiral",
-		Detail: fmt.Sprintf("load1 %.1f / %d cores | swap %.0f%% (%.1f GB) | free %.2f GB | compressor %.1f GB | max fan-out %d (%s)",
-			load1, cores, swapPct, swapUsedGB, freeGB, compressedGB, fanCount, fanParent),
+		Detail: fmt.Sprintf("load1 %.1f / %d cores | swap %.0f%% (%.1f GB) | available %.2f GB | compressor %.1f GB | max fan-out %d (%s)",
+			load1, cores, swapPct, swapUsedGB, availGB, compressedGB, fanCount, fanParent),
 	}
 
-	spiral := swapPct >= 90 && (load1 >= 2*float64(cores) || freeGB < 0.5)
+	spiral := isDeathSpiral(swapPct, load1, availGB, cores)
 	leak := fanCount >= fanOutAlarm
 
 	switch {
 	case spiral:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("Memory death spiral — swap %.0f%% exhausted, load %.1f on %d cores, %.2f GB free. The machine is paging itself to death.", swapPct, load1, cores, freeGB)
+		f.Message = fmt.Sprintf("Memory death spiral — swap %.0f%% exhausted, load %.1f on %d cores, %.2f GB available. The machine is paging itself to death.", swapPct, load1, cores, availGB)
 		if leak {
 			f.Message += fmt.Sprintf(" Likely driver: %s has %d child processes — restart it to reclaim them.", fanParent, fanCount)
 		}
@@ -82,13 +91,13 @@ func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
 // exact spiral ladder in checkMemoryDeathSpiral so both surfaces agree on what
 // "dying" means — one definition, two callers.
 type MemoryDeath struct {
-	SwapPct    float64
-	SwapUsedGB float64
-	FreeGB     float64
-	Load1      float64
-	Cores      int
-	Readable   bool // false when no signal is readable on this platform (never guess)
-	Dying      bool // the live-critical spiral: swap ≥ 90% AND (load ≥ 2×cores OR free < 0.5 GB)
+	SwapPct     float64
+	SwapUsedGB  float64
+	AvailableGB float64 // free + inactive — what a process can actually get
+	Load1       float64
+	Cores       int
+	Readable    bool // false when no signal is readable on this platform (never guess)
+	Dying       bool // the live-critical spiral — see isDeathSpiral
 }
 
 // SampleMemoryDeath reads swap%, free RAM, and load in one pass and classifies
@@ -98,12 +107,12 @@ func SampleMemoryDeath() MemoryDeath {
 	load1, loadOK := readLoad1(p)
 	cores := readCores(p)
 	swapPct, swapUsedGB, swapOK := readSwapPct(p)
-	freeGB, _ := readVMStatGB(p)
+	availGB, _ := readVMStatGB(p)
 	md := MemoryDeath{
-		SwapPct: swapPct, SwapUsedGB: swapUsedGB, FreeGB: freeGB,
+		SwapPct: swapPct, SwapUsedGB: swapUsedGB, AvailableGB: availGB,
 		Load1: load1, Cores: cores, Readable: loadOK || swapOK,
 	}
-	md.Dying = swapPct >= 90 && (load1 >= 2*float64(cores) || freeGB < 0.5)
+	md.Dying = isDeathSpiral(swapPct, load1, availGB, cores)
 	return md
 }
 
@@ -161,7 +170,7 @@ func readSwapPct(p platform.Platform) (pct, usedGB float64, ok bool) {
 }
 
 // readVMStatGB reads free + compressor-occupied memory from `vm_stat`.
-func readVMStatGB(p platform.Platform) (freeGB, compressedGB float64) {
+func readVMStatGB(p platform.Platform) (availGB, compressedGB float64) {
 	out, err := p.Command("vm_stat")
 	if err != nil {
 		return 0, 0
@@ -178,7 +187,13 @@ func readVMStatGB(p platform.Platform) (freeGB, compressedGB float64) {
 		return 0
 	}
 	const gb = 1 << 30
-	return pages("Pages free") * vmStatPageBytes / gb,
+	// AVAILABLE, not free. On macOS "Pages free" is near-zero by design on any
+	// long-running machine — the OS parks idle RAM in "Pages inactive" as cache
+	// and reclaims it on demand. Reading free alone called a 48 GB host with
+	// 20 GB of reclaimable inactive pages a death spiral while macOS itself
+	// reported 85% memory free (2026-07-24). Available = free + inactive is the
+	// quantity a process can actually get.
+	return (pages("Pages free") + pages("Pages inactive")) * vmStatPageBytes / gb,
 		pages("Pages occupied by compressor") * vmStatPageBytes / gb
 }
 
