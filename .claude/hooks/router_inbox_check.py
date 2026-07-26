@@ -372,22 +372,35 @@ def adopt_or_register(agent_id: str, repo_path: Path, runner=subprocess.run) -> 
     # (agent, surface, machine). A new session pid must not mint while a prior
     # session's record is adoptable — that was the per-restart mint churn that
     # accreted 310 claude-home records (ADR-043 context). Adopt the freshest
-    # ACTIVE record whose anchor pid is DEAD (its session ended → orphaned,
-    # not concurrent); register --thread re-anchors it to this pid. A record
-    # with a LIVE foreign pid is a genuinely concurrent session — only then
-    # is a fresh mint correct.
+    # ACTIVE record for this agent and re-anchor it to this pid.
+    #
+    # The prior rule adopted only records whose anchor pid was DEAD, on the
+    # theory that a LIVE foreign pid means a genuinely concurrent session that
+    # deserves its own record. On the desktop surface that theory fails: CCD
+    # spawns one long-lived `claude` process per session and they persist, so
+    # several home-rooted sessions are alive at once, every one of them
+    # legitimately claude-home (a session at $HOME *is* claude-home — see
+    # apply_identity_override). Each minted its own record and, because
+    # `watcher_armed` keys on thread_id, each new id read as unarmed and
+    # spawned another /loop watcher — self-fulfilling churn that produced 6
+    # concurrent claude-home records and watchers outliving their sessions
+    # (claude-home run 20260726-2013; two were still heartbeating threads
+    # absent from the store after 2d16h and 1d14h).
+    #
+    # The router wakes an AGENT, not a session, so agent-level liveness is the
+    # correct granularity: concurrent sessions share one record and all
+    # heartbeat it. Losing per-session records is the deliberate trade — it is
+    # what "ONE record per (agent, surface, machine)" means.
     if existing is None and anchor is not None:
-        orphaned = []
-        for t in threads:
-            th = t.get("thread") or {}
-            if th.get("agent_id") != agent_id or th.get("status") != "active":
-                continue
-            pid = th.get("pid")
-            if pid and pid != anchor and not _pid_alive(pid):
-                orphaned.append(t)
-        if orphaned:
-            orphaned.sort(key=lambda t: t.get("idle_seconds", 1e9))
-            existing = (orphaned[0].get("thread") or {}).get("thread_id")
+        adoptable = [
+            t for t in threads
+            if (t.get("thread") or {}).get("agent_id") == agent_id
+            and (t.get("thread") or {}).get("status") == "active"
+            and (t.get("thread") or {}).get("pid") != anchor
+        ]
+        if adoptable:
+            adoptable.sort(key=lambda t: t.get("idle_seconds", 1e9))
+            existing = (adoptable[0].get("thread") or {}).get("thread_id")
 
     return register_handshake(agent_id, repo_path, existing, anchor, runner=runner)
 

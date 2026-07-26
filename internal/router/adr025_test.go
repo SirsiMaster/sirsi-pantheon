@@ -314,3 +314,47 @@ func TestReconcileExits_ScopedByHostAndAgent(t *testing.T) {
 		t.Error("out-of-scope records (other host / other agent) must be left untouched")
 	}
 }
+
+// Idle is not exit: a stale-by-clock record whose PID is still ALIVE belongs to
+// a session that merely has not fired a hook lately. Suspending it made the
+// session's next hook fire mint a fresh record — the churn that produced 6
+// concurrent claude-home records, each spawning its own /loop watcher
+// (claude-home run 20260726-2013). Only OS truth (gone/defunct) proves exit,
+// the same discriminator ReapDeadThreads uses.
+func TestReconcileExits_LivePIDNotSuspendedOnIdleAlone(t *testing.T) {
+	now := time.Now().UTC()
+	mk := func(pid int) *ThreadRegistry {
+		return &ThreadRegistry{Threads: map[string]*Thread{
+			"thr-idle": {
+				ThreadID: "thr-idle", AgentID: "claude-home", Surface: "claude",
+				Host: "h1", Status: ThreadStatusActive, PID: pid,
+				LastSeenAt: now.Add(-30 * time.Minute),
+			},
+		}}
+	}
+	retro := func(_ *Thread) (*SuspendPayload, bool) { return &SuspendPayload{}, true }
+
+	oldFn := getPIDStateFn()
+	defer setPIDStateFn(oldFn)
+
+	// Live anchor → left ACTIVE despite being far past the stale window.
+	setPIDStateFn(func(int) PIDState { return PIDAlive })
+	reg := mk(4242)
+	if out := ReconcileExits(reg, "h1", "", now, DefaultThreadStaleAfter, retro); len(out) != 0 {
+		t.Fatalf("outcomes = %+v, want none — a live pid is not an exit", out)
+	}
+	if got := reg.Threads["thr-idle"].Status; got != ThreadStatusActive {
+		t.Errorf("status = %q, want active (live session, just quiet)", got)
+	}
+
+	// Dead anchor → still suspended, exactly as before.
+	setPIDStateFn(func(int) PIDState { return PIDGone })
+	reg = mk(4242)
+	out := ReconcileExits(reg, "h1", "", now, DefaultThreadStaleAfter, retro)
+	if len(out) != 1 || out[0].Action != ReconcileSuspendedStale {
+		t.Fatalf("outcomes = %+v, want one suspended-stale for a dead pid", out)
+	}
+	if got := reg.Threads["thr-idle"].Status; got != ThreadStatusSuspended {
+		t.Errorf("status = %q, want suspended (dead anchor)", got)
+	}
+}
