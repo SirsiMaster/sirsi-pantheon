@@ -3,6 +3,7 @@
 package router
 
 import (
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -23,9 +24,23 @@ import (
 // clock alone) that became a fork per record per pass, which measurably slowed
 // a loaded host — the cmd/sirsi integration test crossed its 60s deadline.
 // If `ps` is unavailable we keep the old fallback: exists, defunctness unknown.
+//
+// The error is read, not merely tested for nil: only ESRCH proves the PID is
+// gone. Signal 0 returns EPERM when the process EXISTS but belongs to another
+// user — routine on this host, where root-owned launchd services sit next to
+// user sessions. Treating every error as gone would feed a false PIDGone
+// straight into ReapDeadThreads and stale reconciliation, which is the one
+// direction this probe must never fail in. EPERM and any other indeterminate
+// errno therefore answer PIDUnknown, which callers already handle
+// conservatively (ReconcileExits falls through to idle-based behavior rather
+// than acting on it).
 func defaultPIDState(pid int) PIDState {
-	if syscall.Kill(pid, 0) != nil {
+	switch err := syscall.Kill(pid, 0); {
+	case err == nil: // exists — ps refines alive vs defunct below
+	case errors.Is(err, syscall.ESRCH):
 		return PIDGone
+	default: // EPERM and friends: it exists, or we cannot tell. Never "gone".
+		return PIDUnknown
 	}
 	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
 	state := strings.TrimSpace(string(out))
