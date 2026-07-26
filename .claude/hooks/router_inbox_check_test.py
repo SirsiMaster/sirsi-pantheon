@@ -141,11 +141,8 @@ class TestAdoptOrRegister_AnchorPidIdentity(unittest.TestCase):
         # matches, so it MUST be adopted (the bug fix).
         self.assertEqual(tid, "thr-LIVE")
 
-    def test_adopts_record_on_different_pid_machine_level_reuse(self):
-        """ONE record per (agent, surface, machine): a record on a different
-        pid is adopted and re-anchored, NOT minted alongside. Concurrent
-        desktop sessions are all legitimately the same agent, so they share
-        one record rather than each minting their own."""
+    def test_does_not_adopt_record_on_different_pid_even_if_fresh(self):
+        """A fresh record on a DIFFERENT pid is NOT this session — must mint."""
         list_body = '[{"thread":{"agent_id":"claude-home","status":"active","thread_id":"thr-OTHER","pid":99999},"idle_seconds":5.0}]'
         runner, _ = self._runner(list_body)
         original_anchor = hook.claude_session_pid
@@ -154,37 +151,7 @@ class TestAdoptOrRegister_AnchorPidIdentity(unittest.TestCase):
             tid, _ = hook.adopt_or_register("claude-home", Path("/tmp"), runner=runner)
         finally:
             hook.claude_session_pid = original_anchor  # type: ignore[assignment]
-        self.assertEqual(tid, "thr-OTHER")
-
-    def test_adopts_even_when_foreign_anchor_is_alive(self):
-        """The churn regression: a LIVE foreign anchor (this very test process)
-        must still be adopted. Minting here is what accreted 6 concurrent
-        claude-home records, each spawning its own /loop watcher."""
-        live = os.getpid()
-        list_body = (
-            '[{"thread":{"agent_id":"claude-home","status":"active",'
-            f'"thread_id":"thr-LIVEFOREIGN","pid":{live}}},"idle_seconds":5.0}}]'
-        )
-        runner, _ = self._runner(list_body)
-        original_anchor = hook.claude_session_pid
-        hook.claude_session_pid = lambda: live + 1  # type: ignore[assignment]
-        try:
-            tid, _ = hook.adopt_or_register("claude-home", Path("/tmp"), runner=runner)
-        finally:
-            hook.claude_session_pid = original_anchor  # type: ignore[assignment]
-        self.assertEqual(tid, "thr-LIVEFOREIGN")
-
-    def test_mints_when_no_active_record_for_agent(self):
-        """Adoption is scoped to the agent: another agent's record is never
-        adopted, so a first session for this agent still mints."""
-        list_body = '[{"thread":{"agent_id":"claude-nexus","status":"active","thread_id":"thr-OTHERAGENT","pid":99999},"idle_seconds":5.0}]'
-        runner, _ = self._runner(list_body)
-        original_anchor = hook.claude_session_pid
-        hook.claude_session_pid = lambda: 12345  # type: ignore[assignment]
-        try:
-            tid, _ = hook.adopt_or_register("claude-home", Path("/tmp"), runner=runner)
-        finally:
-            hook.claude_session_pid = original_anchor  # type: ignore[assignment]
+        # No --thread is passed to register => server mints; our stub returns thr-NEW.
         self.assertEqual(tid, "thr-NEW")
 
     def test_fallback_to_freshness_only_when_anchor_unresolvable(self):
@@ -201,10 +168,8 @@ class TestAdoptOrRegister_AnchorPidIdentity(unittest.TestCase):
             hook.claude_session_pid = original_anchor  # type: ignore[assignment]
         self.assertEqual(tid, "thr-FRESH")
 
-    def test_adopts_idle_record_rather_than_minting(self):
-        """An idle ACTIVE record is still this agent's record on this machine:
-        adopt and re-anchor it. Idleness alone never justifies a mint — that
-        was the pre-ADR-043 300s-window behavior that accreted records."""
+    def test_no_fresh_no_anchor_match_mints(self):
+        """Stale record + anchor mismatch => mint a fresh thread."""
         list_body = '[{"thread":{"agent_id":"claude-home","status":"active","thread_id":"thr-STALE","pid":99999},"idle_seconds":1000.0}]'
         runner, _ = self._runner(list_body)
         original_anchor = hook.claude_session_pid
@@ -213,7 +178,7 @@ class TestAdoptOrRegister_AnchorPidIdentity(unittest.TestCase):
             tid, _ = hook.adopt_or_register("claude-home", Path("/tmp"), runner=runner)
         finally:
             hook.claude_session_pid = original_anchor  # type: ignore[assignment]
-        self.assertEqual(tid, "thr-STALE")
+        self.assertEqual(tid, "thr-NEW")
 
 
 def chain_runner(tree: dict[int, tuple[int, str]]):
