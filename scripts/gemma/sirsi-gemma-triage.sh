@@ -49,7 +49,11 @@ run_bounded() {
 MLX=$HOME/.venvs/mlx/bin/mlx_lm.generate
 MODEL=${GEMMA_MODEL:-$( [ -f "$HOME/.sirsi/gemma-model.conf" ] && cat "$HOME/.sirsi/gemma-model.conf" || echo "mlx-community/gemma-4-12B-it-8bit" )}
 REPO=$HOME/Development/sirsi-pantheon
-DIR=$REPO/.agents/idea-router/items
+SIRSI=${SIRSI_BIN:-$HOME/.local/bin/sirsi}
+# NOTE: $REPO/.agents/idea-router/items is the LEGACY archive. Dispatch went
+# STORE-ONLY at the ADR-036/037 cutover and that directory is no longer written.
+# This script used to walk it; see the item-list block below for why that was a
+# silent, total failure rather than a partial one.
 MAXTOK=2048  # gemma-4 is a REASONING model: it deliberates (~450-900 tok) before emitting
              # CLASS/REASON. Generous headroom (2048) so even a long reasoning trace on a complex
              # item completes. Well within the 256K ctx; KV cost is trivial here.
@@ -118,30 +122,88 @@ fi
 filter_agent="${1:-}"
 [ "$filter_agent" = "--all" ] && filter_agent=""
 
-# Build the item list (open only, optionally filtered by recipient)
-items=$(cd "$REPO" && python3 -c "
-import os, re, sys
-d = '$DIR'
-flt = '$filter_agent'
-for fn in sorted(os.listdir(d)):
-    if not fn.endswith('.md'): continue
-    txt = open(os.path.join(d, fn)).read()
-    m = re.match(r'---\n(.*?)\n---', txt, re.DOTALL)
-    if not m: continue
-    fm = m.group(1)
-    if not re.search(r'^status:\s*\"?open\"?', fm, re.MULTILINE): continue
-    to = re.search(r'^to:\s*\"?([\w-]+)\"?', fm, re.MULTILINE)
-    to = to.group(1) if to else '?'
-    if flt and to != flt: continue
-    title = re.search(r'^title:\s*\"(.*?)\"', fm, re.MULTILINE)
-    title = title.group(1) if title else ''
-    # first 400 chars of the instructions body for context
-    body = txt[m.end():]
-    bm = re.search(r'## Instructions\s*\n(.*)', body, re.DOTALL)
-    snippet = (bm.group(1) if bm else body).strip().replace(chr(10), ' ')[:400]
-    print(f'{fn[:-3]}\t{to}\t{title}\t{snippet}')
-")
+# Build the item list (open only, optionally filtered by recipient).
+#
+# SOURCE = THE ROUTER STORE, not the legacy items/ directory (fixed 2026-07-24).
+# This block used to walk $REPO/.agents/idea-router/items and parse frontmatter
+# with regexes. That directory stopped being written at the ADR-036/037
+# store-only cutover, so by 2026-07-24 all 1760 files in it were closed and the
+# screen matched ZERO items while SEVEN were genuinely open in the store -- no
+# overlap at all (the legacy set was two months stale). It did not error: it
+# printed "(no open items)" and exited 0, which is indistinguishable from a
+# healthy empty queue. The conduit runs this as its FIRST, token-free screen, so
+# the whole Tier-0 pre-screen was a silent permanent false all-clear.
+#
+# Two hardening choices follow from that:
+#   1. A quoted heredoc (<<'PY'), NOT python3 -c "...". Inside a double-quoted
+#      bash string a double quote ENDS the string and truncates the code, and
+#      backticks/dollar-paren execute as shell -- the trap that broke
+#      sirsi-gemma-model-resolver.sh three times (see #313). A quoted heredoc
+#      disables ALL shell expansion, so the class cannot recur here.
+#   2. The filter arrives via ENV, not string interpolation. The old
+#      flt = '$filter_agent' let a single quote in $1 break out of the literal.
+# FAIL CLOSED ON THE EXIT STATUS, not just on empty stdout (codex-pantheon
+# review of this PR, 2026-07-24). A dump that dies partway through still emits
+# the JSONL it managed to write, so `raw` is non-empty and the old
+# empty-string check waved it through — a partial store read presented as a
+# complete one. That is the same fail-open class this whole block exists to
+# kill, just one layer in. Status first, contents second.
+if ! raw=$(cd "$REPO" && "$SIRSI" router dump --json 2>/dev/null); then
+  echo "ERROR: 'sirsi router dump --json' exited nonzero — the triage screen could not read the router store." >&2
+  echo "       Any output it produced is a PARTIAL read. This is NOT an empty queue." >&2
+  exit 2
+fi
+if [ -z "$raw" ]; then
+  # NEVER print "(no open items)" here. An unreadable store is a BROKEN SCREEN,
+  # and reporting it as an empty queue is exactly the failure this block exists
+  # to prevent. Fail loud and non-zero so the caller cannot mistake it for green.
+  echo "ERROR: 'sirsi router dump --json' returned nothing — the triage screen could not read the router store." >&2
+  echo "       This is NOT an empty queue. Refusing to report a false all-clear." >&2
+  exit 2
+fi
 
+# The code goes in a temp FILE and the JSONL arrives on stdin. `python3 - <<'PY'`
+# cannot be used here: stdin would have to carry both the program and the data.
+_tf=$(mktemp -t gemmatriage) || { echo "ERROR: mktemp failed" >&2; exit 2; }
+trap 'rm -f "$_tf"' EXIT
+cat > "$_tf" <<'PY'
+import os, sys, json
+flt = os.environ.get('FLT', '')
+for n, line in enumerate(sys.stdin, 1):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)          # dump emits JSONL, one object per line
+    except ValueError:
+        # FATAL, never skipped. A truncated or corrupt record is an open item
+        # we cannot see; skipping it and then printing "(no open items)" is a
+        # fabricated all-clear built from an unreadable source. Exit nonzero so
+        # the caller treats the screen as broken, not as green.
+        sys.stderr.write(
+            "ERROR: malformed JSONL from 'router dump --json' at line %d: %s\n" % (n, repr(line[:120])))
+        sys.stderr.write(
+            "       The store could not be parsed in full. Refusing to report a false all-clear.\n")
+        raise SystemExit(2)
+    if d.get('status') != 'open':
+        continue
+    to = d.get('to') or '?'
+    if flt and to != flt:
+        continue
+    # Collapse whitespace so the TSV contract survives multi-line bodies/titles.
+    title = ' '.join((d.get('title') or '').split())
+    snippet = ' '.join((d.get('body') or '').split())[:400]
+    print(f"{d.get('id','')}\t{to}\t{title}\t{snippet}")
+PY
+# A nonzero parse MUST NOT fall through to the empty-queue message below: an
+# unparseable dump and a genuinely empty queue both yield an empty $items, and
+# only the exit status tells them apart.
+if ! items=$(FLT="$filter_agent" python3 "$_tf" <<<"$raw"); then
+  echo "ERROR: the router dump could not be parsed in full — the triage screen is BROKEN, not empty." >&2
+  exit 2
+fi
+
+# Reached only on a successful, fully-parsed dump: a genuine empty queue.
 [ -z "$items" ] && { echo "(no open items$([ -n "$filter_agent" ] && echo " for $filter_agent"))"; exit 0; }
 
 while IFS=$'\t' read -r id to title snippet; do
