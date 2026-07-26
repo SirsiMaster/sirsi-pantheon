@@ -1,277 +1,290 @@
 {
- "agents": {
-  "claude-assiduous": {
-   "id": "claude-assiduous",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/assiduous",
-   "workstream": "assiduous",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-assiduous"
-   }
-  },
-  "claude-finalwishes": {
-   "id": "claude-finalwishes",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/FinalWishes",
-   "workstream": "finalwishes",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes"
-   }
-  },
-  "claude-finalwishes-web": {
-   "id": "claude-finalwishes-web",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
-   "workstream": "finalwishes-web",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes-web"
-   }
-  },
-  "claude-home": {
-   "id": "claude-home",
-   "type": "claude",
-   "command": [
-    "claude"
-   ],
-   "cwd": "/Users/thekryptodragon",
-   "workstream": "home",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-home"
-   }
-  },
-  "claude-homebrew-tools": {
-   "id": "claude-homebrew-tools",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
-   "workstream": "homebrew",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-homebrew-tools"
-   }
-  },
-  "claude-kfca": {
-   "id": "claude-kfca",
-   "type": "claude",
-   "command": [
-    "claude"
-   ],
-   "cwd": "/Users/thekryptodragon/KingFarmCAB",
-   "workstream": "pantheon",
-   "wake": {
-    "mechanism": "launchagent",
-    "health_check": [
-     "claude",
-     "--version"
-    ],
-    "launch_agent_label": "ai.sirsi.router.wake.claude-kfca"
-   }
-  },
-  "claude-nexus": {
-   "id": "claude-nexus",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
-   "workstream": "nexus",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-nexus"
-   }
-  },
-  "claude-pantheon": {
-   "id": "claude-pantheon",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
-   "workstream": "pantheon-pro-ux-loop",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-pantheon"
-   }
-  },
-  "claude-porch-and-alley": {
-   "id": "claude-porch-and-alley",
-   "type": "claude",
-   "command": [
-    "claude",
-    "--print",
-    "--permission-mode",
-    "auto"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
-   "workstream": "porch-and-alley",
-   "wake": {
-    "mechanism": "launchagent",
-    "launch_agent_label": "ai.sirsi.router.wake.claude-porch-and-alley"
-   }
-  },
-  "codex-assiduous": {
-   "id": "codex-assiduous",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/assiduous",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/assiduous",
-   "workstream": "assiduous-v110-completion",
-   "wake": {}
-  },
-  "codex-finalwishes": {
-   "id": "codex-finalwishes",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/FinalWishes",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/FinalWishes",
-   "workstream": "finalwishes",
-   "wake": {}
-  },
-  "codex-finalwishes-web": {
-   "id": "codex-finalwishes-web",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/FinalWishes/web",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
-   "workstream": "finalwishes-web",
-   "wake": {}
-  },
-  "codex-home": {
-   "id": "codex-home",
-   "type": "codex",
-   "command": [
-    "codex"
-   ],
-   "cwd": "/Users/thekryptodragon",
-   "workstream": "home",
-   "wake": {}
-  },
-  "codex-homebrew": {
-   "id": "codex-homebrew",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/homebrew-tools",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
-   "workstream": "homebrew",
-   "wake": {}
-  },
-  "codex-nexus": {
-   "id": "codex-nexus",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/SirsiNexusApp",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
-   "workstream": "nexus",
-   "wake": {}
-  },
-  "codex-pantheon": {
-   "id": "codex-pantheon",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/sirsi-pantheon",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
-   "workstream": "pantheon-pro-ux-loop",
-   "wake": {}
-  },
-  "codex-porch-and-alley": {
-   "id": "codex-porch-and-alley",
-   "type": "codex",
-   "command": [
-    "codex",
-    "exec",
-    "-C",
-    "/Users/thekryptodragon/Development/porch-and-alley",
-    "--sandbox",
-    "workspace-write"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
-   "workstream": "porch-and-alley",
-   "wake": {}
-  },
-  "gemma-pantheon": {
-   "id": "gemma-pantheon",
-   "type": "gemma",
-   "command": [
-    "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh"
-   ],
-   "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
-   "workstream": "pantheon",
-   "wake": {
-    "mechanism": "cli-spawn",
-    "health_check": [
-     "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh",
-     "--version"
-    ]
-   }
+  "agents": {
+    "claude-assiduous": {
+      "id": "claude-assiduous",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/assiduous",
+      "workstream": "assiduous",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-assiduous"
+      }
+    },
+    "claude-finalwishes": {
+      "id": "claude-finalwishes",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/FinalWishes",
+      "workstream": "finalwishes",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes"
+      }
+    },
+    "claude-finalwishes-web": {
+      "id": "claude-finalwishes-web",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
+      "workstream": "finalwishes-web",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes-web"
+      }
+    },
+    "claude-home": {
+      "id": "claude-home",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "workstream": "home",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-home"
+      }
+    },
+    "claude-homebrew-tools": {
+      "id": "claude-homebrew-tools",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
+      "workstream": "homebrew",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-homebrew-tools"
+      }
+    },
+    "claude-io": {
+      "id": "claude-io",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io",
+      "workstream": "io",
+      "wake": {}
+    },
+    "claude-kfca": {
+      "id": "claude-kfca",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon/KingFarmCAB",
+      "workstream": "pantheon",
+      "wake": {
+        "mechanism": "launchagent",
+        "health_check": [
+          "claude",
+          "--version"
+        ],
+        "launch_agent_label": "ai.sirsi.router.wake.claude-kfca"
+      }
+    },
+    "claude-nexus": {
+      "id": "claude-nexus",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
+      "workstream": "nexus",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-nexus"
+      }
+    },
+    "claude-pantheon": {
+      "id": "claude-pantheon",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "workstream": "pantheon-pro-ux-loop",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-pantheon"
+      }
+    },
+    "claude-porch-and-alley": {
+      "id": "claude-porch-and-alley",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
+      "workstream": "porch-and-alley",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-porch-and-alley"
+      }
+    },
+    "codex-assiduous": {
+      "id": "codex-assiduous",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/assiduous",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/assiduous",
+      "workstream": "assiduous-v110-completion",
+      "wake": {}
+    },
+    "codex-finalwishes": {
+      "id": "codex-finalwishes",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/FinalWishes",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/FinalWishes",
+      "workstream": "finalwishes",
+      "wake": {}
+    },
+    "codex-finalwishes-web": {
+      "id": "codex-finalwishes-web",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/FinalWishes/web",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
+      "workstream": "finalwishes-web",
+      "wake": {}
+    },
+    "codex-home": {
+      "id": "codex-home",
+      "type": "codex",
+      "command": [
+        "codex"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "workstream": "home",
+      "wake": {}
+    },
+    "codex-homebrew": {
+      "id": "codex-homebrew",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/homebrew-tools",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
+      "workstream": "homebrew",
+      "wake": {}
+    },
+    "codex-nexus": {
+      "id": "codex-nexus",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/SirsiNexusApp",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
+      "workstream": "nexus",
+      "wake": {}
+    },
+    "codex-pantheon": {
+      "id": "codex-pantheon",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/sirsi-pantheon",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "workstream": "pantheon-pro-ux-loop",
+      "wake": {}
+    },
+    "codex-porch-and-alley": {
+      "id": "codex-porch-and-alley",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/porch-and-alley",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
+      "workstream": "porch-and-alley",
+      "wake": {}
+    },
+    "gemma-pantheon": {
+      "id": "gemma-pantheon",
+      "type": "gemma",
+      "command": [
+        "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "workstream": "pantheon",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh",
+          "--version"
+        ]
+      }
+    }
   }
- }
 }
