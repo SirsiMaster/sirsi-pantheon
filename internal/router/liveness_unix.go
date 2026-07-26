@@ -11,19 +11,26 @@ import (
 
 // defaultPIDState reports OS-truth liveness on unix-like systems.
 //
-// It asks `ps` for the process state code: a leading "Z" means defunct
-// (zombie) — the process is dead but unreaped, and must NOT count as a live
-// agent. Empty output means the PID is gone. If `ps` is unavailable we fall
-// back to signal 0, which can only distinguish exists/gone (not defunct).
+// Signal 0 is asked FIRST because it is a syscall, not a fork: it settles the
+// gone/not-gone question outright, and "gone" is the common answer on the hot
+// path (reconcile probes records precisely because they have gone quiet, and
+// most such sessions really did exit). Only a process that still exists needs
+// `ps`, whose state code is the one thing the syscall cannot report: a leading
+// "Z" means defunct — dead but unreaped, and must NOT count as a live agent.
+//
+// The prior order forked `ps` for every probe including the gone ones. Once
+// reconcile began probing each stale record (rather than suspending on the
+// clock alone) that became a fork per record per pass, which measurably slowed
+// a loaded host — the cmd/sirsi integration test crossed its 60s deadline.
+// If `ps` is unavailable we keep the old fallback: exists, defunctness unknown.
 func defaultPIDState(pid int) PIDState {
+	if syscall.Kill(pid, 0) != nil {
+		return PIDGone
+	}
 	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
 	state := strings.TrimSpace(string(out))
 	if err != nil || state == "" {
-		// ps failed or reported nothing — confirm existence via signal 0.
-		if syscall.Kill(pid, 0) == nil {
-			return PIDAlive
-		}
-		return PIDGone
+		return PIDAlive // exists per signal 0; ps could not refine it
 	}
 	if strings.HasPrefix(strings.ToUpper(state), "Z") {
 		return PIDDefunct
