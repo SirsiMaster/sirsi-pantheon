@@ -27,7 +27,11 @@ type ContainerAudit struct {
 	StoppedCount   int         `json:"stopped_count"`
 	RunningCount   int         `json:"running_count"`
 	UnusedVolumes  int         `json:"unused_volumes"`
-	DockerRunning  bool        `json:"docker_running"`
+	// RetainedVolumes are dangling volumes that hold irreplaceable state and are
+	// deliberately NOT counted as reclaimable. Surfaced separately so an operator
+	// sees they exist and sees that they were protected on purpose.
+	RetainedVolumes int  `json:"retained_volumes"`
+	DockerRunning   bool `json:"docker_running"`
 }
 
 // AuditContainers scans the local Docker environment using the current platform.
@@ -69,7 +73,7 @@ func AuditContainersWith(p platform.Platform) (*ContainerAudit, error) {
 		defer wg.Done()
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		volOut, volErr = p.Command("docker", "volume", "ls", "-f", "dangling=true", "-q")
+		volOut, volErr = p.Command("docker", "volume", "ls", "-f", "dangling=true", "--format", "{{.Name}}\t{{.Labels}}")
 	}()
 	wg.Wait()
 
@@ -94,10 +98,47 @@ func AuditContainersWith(p platform.Platform) (*ContainerAudit, error) {
 	}
 
 	if volErr == nil {
-		audit.UnusedVolumes = countNonEmptyLines(strings.TrimSpace(string(volOut)))
+		for _, line := range strings.Split(strings.TrimSpace(string(volOut)), "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			if isRetainedVolume(line) {
+				audit.RetainedVolumes++
+				continue
+			}
+			audit.UnusedVolumes++
+		}
 	}
 
 	return audit, nil
+}
+
+// retainedVolumeMarkers name the container/compose projects whose volumes hold
+// state that cannot be regenerated. The hedera-local consensus ledger lives in
+// an ANONYMOUS docker volume inside Colima: once its container is removed the
+// volume goes dangling and every reclamation surface would otherwise advertise
+// it as free space. It is not free space — it is the sovereign node's ledger,
+// and `hedera-local stop` already destroys it once (it runs `down -v`), which is
+// why a 108 MB emergency snapshot exists at
+// ~/.sirsi/hypergraph/ledger-backup/. Prevention, not a second snapshot.
+//
+// Matched against "<name>\t<labels>" so BOTH a named volume and an anonymous
+// one carrying compose labels (com.docker.compose.project=hedera-local) are
+// caught — an anonymous volume's hash name says nothing on its own.
+var retainedVolumeMarkers = []string{"hedera", "network-node", "mirror-node"}
+
+// isRetainedVolume reports whether a `docker volume ls` line describes state we
+// must never offer for reclamation. Fails CLOSED: anything it cannot classify
+// stays reclaimable only if no marker appears, and the check is case-insensitive
+// because compose project labels are not case-normalised.
+func isRetainedVolume(line string) bool {
+	l := strings.ToLower(line)
+	for _, m := range retainedVolumeMarkers {
+		if strings.Contains(l, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // splitContainerLine parses a single tab-delimited docker ps output line.
