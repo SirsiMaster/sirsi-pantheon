@@ -253,6 +253,11 @@ var liveCriticalChecks = map[string]bool{
 	"RAM Pressure":        true, // used RAM critically high → Jetsam kills imminent
 	"Disk Space":          true, // volume full → saves fail, system instability
 	"Memory Death Spiral": true, // swap exhausted + load runaway → the machine is dying NOW (94/100-during-spiral bug, 2026-07-16)
+	// A single process at half of RAM is act-now: the kernel Jetsams SOMETHING to
+	// survive it, and it does not get to pick a convenient victim. This machine
+	// OOM'd three times on 2026-07-27 while every check reported green, because
+	// they all sampled RSS and the offender was 39.9 GB compressed.
+	"Process Footprint": true,
 }
 
 // isLiveCritical reports whether a finding is an act-now RED rather than a
@@ -325,6 +330,7 @@ var doctorChecks = []doctorCheck{
 	{"Disk Space", []string{"Disk Space"}, checkDiskSpace},
 	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
 	{"Spotlight Storm", []string{"Spotlight Storm"}, checkSpotlightStorm},
+	{"Process Footprint", []string{"Process Footprint"}, checkProcessFootprint},
 	{"Crash Logs", []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
 		func(_ platform.Platform, r *DoctorReport) { checkRecentCrashLogs(r) }},
 	{"App Crashes", []string{"App Crashes (7d)"},
@@ -613,7 +619,7 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 
 	// Sort by RSS descending
 	sort.Slice(processes, func(i, j int) bool {
-		return processes[i].RSS > processes[j].RSS
+		return memSize(processes[i]) > memSize(processes[j])
 	})
 
 	// Report top 5 memory consumers
@@ -622,21 +628,32 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 		if i >= 5 {
 			break
 		}
-		top = append(top, fmt.Sprintf("%s (%s)", proc.Name, FormatBytes(proc.RSS)))
+		top = append(top, fmt.Sprintf("%s (%s)", proc.Name, FormatBytes(memSize(proc))))
 	}
 
 	// Check for any single process using > 4GB
+	// Sized by PHYSICAL FOOTPRINT, not RSS. RSS counts resident pages only; on
+	// Apple Silicon the compressor holds the rest. Measured 2026-07-27: the
+	// gemma broker read 4.71 GB RSS against a 29.4 GB footprint and a 40.5 GB
+	// peak, and the Virtualization VM read 5.4 GB RSS against 18.4 GB.
+	//
+	// The Gemma exemption is GONE. It read:
+	//
+	//   "The warm Gemma broker is an intentional, capacity-capped model
+	//    reservation... RAM Pressure and Memory Death Spiral still alarm if that
+	//    reservation becomes unsafe."
+	//
+	// That premise was falsified on 2026-07-27. The reservation became unsafe
+	// three times in 24 hours — Jetsam footprints of 31, 43.9 and 38.1 GB — and
+	// neither named check alarmed, because both also sampled resident memory.
+	// A health surface that excuses its own components is the exact failure this
+	// codebase keeps recording. Sirsi's own broker is the most likely offender on
+	// a developer's machine and must be the FIRST thing named, not the one thing
+	// exempted.
 	var hogs []string
 	for _, proc := range processes {
-		if proc.RSS > 4*1024*1024*1024 {
-			// The warm Gemma broker is an intentional, capacity-capped model
-			// reservation. Its RSS may exceed the generic per-process threshold
-			// while node pressure remains healthy; RAM Pressure and Memory Death
-			// Spiral still alarm if that reservation becomes unsafe.
-			if isCapacityCappedGemmaBroker(p, proc.PID) {
-				continue
-			}
-			hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(proc.RSS)))
+		if memSize(proc) > 4*1024*1024*1024 {
+			hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(memSize(proc))))
 		}
 	}
 
@@ -654,6 +671,16 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// memSize is the honest size of a process: physical footprint when available,
+// RSS only as a last resort. Every caller that sizes a process must use this —
+// reading .RSS directly is how the broker stayed invisible through three OOMs.
+func memSize(pr ProcessInfo) int64 {
+	if pr.Footprint > 0 {
+		return pr.Footprint
+	}
+	return pr.RSS
 }
 
 func isCapacityCappedGemmaBroker(p platform.Platform, pid int) bool {
