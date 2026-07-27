@@ -468,3 +468,28 @@ func TestCutoverReadsAreExactlyTheStore(t *testing.T) {
 		t.Error("a read reconciled the file-only row into the store — reads must never write")
 	}
 }
+
+// TestInboxFailsClosedWhenStoreErrorsAndNoFileItems: the pre-cutover degrade
+// path may fall back to the file inbox, but only when the file leg actually
+// answers. With zero file items a store failure must surface as an error —
+// returning an empty list would be indistinguishable from a clean inbox, which
+// is what made `pull` print "No open items" for an inbox holding nine.
+func TestInboxFailsClosedWhenStoreErrorsAndNoFileItems(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "0") // pre-cutover: exercise the degrade branch
+	f := testFacade(t)
+	// Create the root (and a file item addressed to someone else) so the file
+	// leg is healthy and empty for our agent rather than erroring outright.
+	if _, err := f.Send("claude-home", "codex-pantheon", "unrelated", "review", "body"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil { // break the store leg only
+		t.Fatal(err)
+	}
+	items, err := f.Inbox("claude-deck")
+	if err == nil {
+		t.Fatalf("fail-open: store broken + no file items returned %d items and nil error", len(items))
+	}
+	if items != nil {
+		t.Fatalf("want nil items alongside the error, got %d", len(items))
+	}
+}

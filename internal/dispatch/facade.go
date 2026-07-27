@@ -168,6 +168,17 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 		// Pre-cutover only (the cutover path returned above): the store is merely
 		// additive here, so a broken store must not strand the canonical file
 		// inbox — degrade to files rather than fail the surface.
+		//
+		// But degrading is only defensible when the file leg is actually
+		// answering. With zero file items we have NO evidence the inbox is
+		// empty, and returning (nil, nil) is the fail-open direction: an empty
+		// list is indistinguishable from a clean inbox, so `pull` prints "No
+		// open items", a wake loop goes back to sleep on a full inbox, and
+		// nothing is non-zero to retry on. Canon says readers fail closed —
+		// with no corroborating file rows, surface the store error instead.
+		if len(items) == 0 {
+			return nil, fmt.Errorf("inbox unavailable: store read failed and no file items corroborate an empty inbox: %w", err)
+		}
 		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))
