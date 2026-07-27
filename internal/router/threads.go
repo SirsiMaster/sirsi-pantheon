@@ -560,6 +560,7 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 	if retro == nil {
 		retro = func(*Thread) (*SuspendPayload, bool) { return &SuspendPayload{}, false }
 	}
+	thisMachine := MachineID()
 	// Snapshot ids: we mint successors into reg.Threads while iterating.
 	ids := make([]string, 0, len(reg.Threads))
 	for id := range reg.Threads {
@@ -616,6 +617,24 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 			continue // parked or cleanly closed — nothing to heal
 
 		case t.IsStale(now, staleAfter):
+			// Idle is not exit. A record whose PID is still ALIVE belongs to a
+			// session that simply has not fired a hook lately (a desktop session
+			// sitting between prompts idles well past staleAfter). Suspending it
+			// drove mint churn: the session's next hook fire found no ACTIVE
+			// record for its anchor pid and minted a fresh one, so the same live
+			// process cycled through thread ids every few minutes and each new id
+			// read as unarmed and spawned another /loop watcher (claude-home run
+			// 20260726-2013 — 6 concurrent claude-home records, two watchers still
+			// heartbeating store-absent threads after 2d16h).
+			//
+			// OS truth is the discriminator ReapDeadThreads already uses: only a
+			// gone/defunct PID proves the session ended. PIDUnknown (foreign
+			// machine, unreadable table) keeps the old idle-based behavior rather
+			// than pinning a record alive forever.
+			if t.PID > 0 && SameMachine(t.MachineID, thisMachine) &&
+				getPIDStateFn()(t.PID) == PIDAlive {
+				continue // live session, just quiet — leave it active
+			}
 			payload, _ := retro(t) // transcript is the live session's; always present
 			if payload == nil {
 				payload = &SuspendPayload{}

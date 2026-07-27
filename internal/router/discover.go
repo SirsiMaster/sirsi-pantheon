@@ -59,15 +59,42 @@ type DiscoverAction struct {
 // host scopes the "already registered" check to threads on this machine;
 // remote-host threads are never matched against local PIDs.
 func ReconcileDiscovery(reg *Registry, threads *ThreadRegistry, procs []DiscoveredProc, host string) []DiscoverAction {
-	// Index active threads on this host by live PID, so a re-run of discover
+	// Index active threads on this machine by live PID, so a re-run of discover
 	// recognizes sessions it (or `register`) already enrolled.
+	//
+	// Scoped by stable machine identity, NOT hostname. A Mac's hostname is not
+	// stable: it follows DHCP/mDNS, so this host had written records under
+	// `Mac.fios-router.home` (40), `MacBook-Pro-2.local` (20) and `Mac` (1) —
+	// all the same machine. With a `t.Host == host` index, every record written
+	// under a previous hostname was invisible here, so a live session read as
+	// unregistered and discovery minted it a NEW thread on each pass. That is
+	// the churn clock behind "my thread cycles every 1-2 minutes" and, with the
+	// two handshake defects fixed alongside this, the accretion ADR-043
+	// characterized (claude-home run 20260726-2013 watched 5 records re-mint in
+	// one 100ms burst, one per live claude pid, seconds after being collapsed).
+	//
+	// Machine id is authoritative only when the record actually carries one.
+	// It usually does — 27 of this host's 40 stale-hostname records did — but
+	// an id-less legacy record leaves hostname as the only available signal,
+	// and there the old comparison is still right: it is what stops a remote
+	// host's thread from shadowing a local PID of the same number. Using
+	// SameMachine unconditionally would treat those id-less foreign records as
+	// local (it reads a missing id as "mine"), which is a worse failure than
+	// the churn — a foreign record would suppress a legitimate registration.
+	thisMachine := MachineID()
+	isThisMachine := func(t *Thread) bool {
+		if t.MachineID != "" && thisMachine != "" {
+			return t.MachineID == thisMachine
+		}
+		return t.Host == host
+	}
 	activeByPID := make(map[int]*Thread)
 	if threads != nil {
 		for _, t := range threads.Threads {
 			if t == nil || t.Status == ThreadStatusClosed {
 				continue
 			}
-			if t.Host == host && t.PID > 0 {
+			if isThisMachine(t) && t.PID > 0 {
 				activeByPID[t.PID] = t
 			}
 		}

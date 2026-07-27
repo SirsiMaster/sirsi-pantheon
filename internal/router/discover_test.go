@@ -146,3 +146,50 @@ func TestReconcileDiscovery_RemoteHostThreadDoesNotShadow(t *testing.T) {
 		t.Fatalf("remote-host thread must not shadow local PID; want register, got %s", a.Outcome)
 	}
 }
+
+// A Mac's hostname follows DHCP/mDNS and is not stable: this host had written
+// records under `Mac.fios-router.home`, `MacBook-Pro-2.local` and `Mac`, all
+// the same machine. Indexing "already registered" by hostname made every
+// record written under a previous hostname invisible, so a live session read
+// as unregistered and discovery minted it a new thread each pass — the churn
+// clock behind "my thread cycles every 1-2 minutes" (claude-home run
+// 20260726-2013). Machine id is authoritative when the record carries one.
+func TestReconcileDiscovery_StaleHostnameDoesNotRemint(t *testing.T) {
+	me := MachineID()
+	if me == "" {
+		t.Skip("machine id unresolvable on this host")
+	}
+	threads := &ThreadRegistry{Threads: map[string]*Thread{
+		"thr-oldname": {
+			ThreadID: "thr-oldname", AgentID: "claude-pantheon", Status: ThreadStatusActive,
+			PID: 400, Host: "Mac.fios-router.home", MachineID: me,
+		},
+	}}
+	procs := []DiscoveredProc{{PID: 400, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "MacBook-Pro-2.local")
+
+	a, _ := actionFor(actions, 400)
+	if a.Outcome != OutcomeSkip {
+		t.Fatalf("same machine under an older hostname must be recognized; want skip, got %s (%s)", a.Outcome, a.Reason)
+	}
+}
+
+// The id-less counterpart of the above: with no machine id there is nothing
+// but the hostname to go on, and a foreign record must still not shadow a
+// local PID. This is why the machine-id check is conditional rather than a
+// bare SameMachine (which reads a missing id as "mine").
+func TestReconcileDiscovery_IDLessRemoteRecordStillDoesNotShadow(t *testing.T) {
+	threads := &ThreadRegistry{Threads: map[string]*Thread{
+		"thr-remote": {
+			ThreadID: "thr-remote", AgentID: "claude-pantheon", Status: ThreadStatusActive,
+			PID: 400, Host: "other-host", // no MachineID
+		},
+	}}
+	procs := []DiscoveredProc{{PID: 400, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1")
+
+	a, _ := actionFor(actions, 400)
+	if a.Outcome != OutcomeRegister {
+		t.Fatalf("id-less remote record must not shadow a local PID; want register, got %s", a.Outcome)
+	}
+}
