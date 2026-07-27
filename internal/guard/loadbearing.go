@@ -30,6 +30,86 @@ var loadBearingPidFiles = []string{
 	"gemma-worker.pid", // the router-facing gemma worker
 }
 
+// ColimaVMReservation reports the memory reservation the running Colima VM was
+// LAUNCHED with, in bytes, and whether that VM is currently up. Zero/false means
+// no reservation could be established from the runtime record.
+//
+// Two deliberate choices, both of which were review findings on the first pass:
+//
+//   - The record is the LIMA-GENERATED `_lima/colima/lima.yaml`, not the
+//     user-editable `~/.colima/default/colima.yaml`. The latter is DESIRED
+//     config: an operator can edit it to any number at any time without the
+//     running hypervisor changing at all, so reading it and calling the result
+//     "the VM's ceiling" reports a wish as a measurement. The generated file is
+//     written by Colima at launch, alongside the pidfile, and describes the VM
+//     that is actually running.
+//   - Liveness is bound to `_lima/colima/vz.pid` — the Apple-Virtualization
+//     driver record for this instance — not inferred from a resource number. A
+//     reservation read from a config whose VM is gone is not a reservation.
+//
+// Known and deliberate limitation: the vz.pid record identifies the Colima
+// INSTANCE, while the process actually holding the RSS is the
+// `com.apple.Virtualization.VirtualMachine` XPC service, which macOS reparents
+// to launchd (ppid 1). There is therefore no process-tree link from the pidfile
+// to the RSS-holding PID, and recognition is by class (an Apple-Virt VM, while
+// this instance is up) rather than by instance identity. That asymmetry is why
+// this is used ONLY to protect and to label, never to suppress: over-protecting
+// a second unrelated VM from a routine kill is safe, whereas over-HIDING one
+// would silence a real hog. Suppression is what the first pass got wrong.
+func ColimaVMReservation() (int64, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0, false
+	}
+	inst := filepath.Join(home, ".colima", "_lima", "colima")
+
+	b, err := os.ReadFile(filepath.Join(inst, "vz.pid"))
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || !pidAlive(pid) {
+		return 0, false
+	}
+
+	y, err := os.ReadFile(filepath.Join(inst, "lima.yaml"))
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(y), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "memory:")
+		if !ok {
+			continue
+		}
+		n, err := parseMiB(strings.TrimSpace(rest))
+		if err != nil || n <= 0 {
+			return 0, false
+		}
+		return n, true
+	}
+	return 0, false
+}
+
+// parseMiB parses the "10240MiB" form Lima writes into bytes. Only the units
+// Lima actually emits are accepted — an unrecognized form yields an error and
+// the caller falls through to reporting, never to a silent default.
+func parseMiB(s string) (int64, error) {
+	mult := int64(1)
+	switch {
+	case strings.HasSuffix(s, "GiB"):
+		s, mult = strings.TrimSuffix(s, "GiB"), 1024*1024*1024
+	case strings.HasSuffix(s, "MiB"):
+		s, mult = strings.TrimSuffix(s, "MiB"), 1024*1024
+	case strings.HasSuffix(s, "B"):
+		s = strings.TrimSuffix(s, "B")
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return n * mult, nil
+}
+
 // LoadBearingPIDs returns the set of live PIDs Pantheon must not kill/starve
 // while working. Dead PIDs are excluded (a stale pidfile never protects a reused
 // PID — the PID-alive lesson).

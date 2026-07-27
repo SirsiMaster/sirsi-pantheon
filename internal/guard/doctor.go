@@ -625,39 +625,62 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 		top = append(top, fmt.Sprintf("%s (%s)", proc.Name, FormatBytes(proc.RSS)))
 	}
 
-	// Check for any single process using > 4GB
-	var hogs []string
+	// Check for any single process using > 4GB.
+	//
+	// A large process is one of three things, and they are NOT the same finding:
+	// an unbounded hog, a capacity-capped reservation, or load-bearing
+	// infrastructure sitting inside a reservation it was launched with. The
+	// reservation cases stay VISIBLE — they are reported as reservations rather
+	// than deleted from the output. Hiding them was the defect in the first pass
+	// of this fix: an operator who cannot see the largest process on the box
+	// cannot reason about memory at all, and a surface that goes quiet is the
+	// green-surface-over-a-real-condition pattern this codebase keeps paying for.
+	// What was actually wrong was never the visibility — it was the REMEDIATION
+	// telling the operator to quit the process (see remediationFor), which for
+	// this VM destroys the sovereign consensus ledger it anchors.
+	var hogs, reserved []string
 	for _, proc := range processes {
-		if proc.RSS > 4*1024*1024*1024 {
-			// The warm Gemma broker is an intentional, capacity-capped model
-			// reservation. Its RSS may exceed the generic per-process threshold
-			// while node pressure remains healthy; RAM Pressure and Memory Death
-			// Spiral still alarm if that reservation becomes unsafe.
-			if isCapacityCappedGemmaBroker(p, proc.PID) {
-				continue
-			}
-			// Likewise the Colima VM: its memory ceiling is declared up front in
-			// colima.yaml, and inside that ceiling it is the anchor for the
-			// sovereign consensus ledger, not a hog. Calling it one told the
-			// operator to "quit the worst offenders" — and stopping this VM
-			// DESTROYS the ledger. A VM that outgrows its own declared cap is
-			// still reported.
-			if isCapacityCappedVM(p, proc.PID, proc.RSS) {
-				continue
-			}
-			hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(proc.RSS)))
+		if proc.RSS <= 4*1024*1024*1024 {
+			continue
 		}
+		// The warm Gemma broker is an intentional, capacity-capped model
+		// reservation. Its RSS may exceed the generic per-process threshold
+		// while node pressure remains healthy; RAM Pressure and Memory Death
+		// Spiral still alarm if that reservation becomes unsafe.
+		if isCapacityCappedGemmaBroker(p, proc.PID) {
+			continue
+		}
+		// The Colima VM anchors the sovereign consensus ledger. Inside the
+		// reservation it was LAUNCHED with (Lima's generated record, bound to a
+		// live vz.pid — not a user-editable wish), it is reserved capacity, not
+		// a hog. Outside it, or with no runtime record to read, it falls through
+		// and is reported like anything else: the label has to be earned.
+		if isAppleVirtVM(p, proc.PID) {
+			if capBytes, ok := ColimaVMReservation(); ok && proc.RSS <= capBytes {
+				reserved = append(reserved, fmt.Sprintf("%s at %s of %s reserved",
+					proc.Name, FormatBytes(proc.RSS), FormatBytes(capBytes)))
+				continue
+			}
+		}
+		hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(proc.RSS)))
 	}
 
 	finding := DiagnosticFinding{
 		Check:  "Top Memory Consumers",
 		Detail: strings.Join(top, " | "),
 	}
+	if len(reserved) > 0 {
+		finding.Detail += fmt.Sprintf("  •  load-bearing, capacity-reserved: %s", strings.Join(reserved, ", "))
+	}
 
-	if len(hogs) > 0 {
+	switch {
+	case len(hogs) > 0:
 		finding.Severity = SeverityWarn
 		finding.Message = fmt.Sprintf("Memory hog detected: %s", strings.Join(hogs, ", "))
-	} else {
+	case len(reserved) > 0:
+		finding.Severity = SeverityOK
+		finding.Message = fmt.Sprintf("No unbounded process over 4 GB (%s)", strings.Join(reserved, ", "))
+	default:
 		finding.Severity = SeverityOK
 		finding.Message = "No individual process exceeding 4 GB"
 	}
@@ -665,46 +688,19 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
-// isCapacityCappedVM reports whether pid is an Apple Virtualization VM living
-// inside a memory reservation it declared up front. Detection is deliberately
-// two-sided: the process must be a VM AND its RSS must fit the declared cap. A
-// missing or unparseable config yields no cap, so the process falls through and
-// is reported — the exemption can only ever be earned, never assumed.
-func isCapacityCappedVM(p platform.Platform, pid int, rss int64) bool {
+// isAppleVirtVM reports whether pid is an Apple Virtualization VM process. This
+// is IDENTITY ONLY — deliberately no longer a combined identity+cap predicate.
+// The first pass proved "an Apple-Virt process whose RSS fits a number read out
+// of a config file" and then treated that conjunction as identity, so a VM that
+// grew past the number silently stopped being recognized as a VM at all. The
+// reservation is now a separate, separately-sourced fact (ColimaVMReservation),
+// which keeps "what is this process" and "what was it promised" independent.
+func isAppleVirtVM(p platform.Platform, pid int) bool {
 	out, err := p.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
 	if err != nil {
 		return false
 	}
-	if !strings.Contains(string(out), "com.apple.Virtualization.VirtualMachine") {
-		return false
-	}
-	capBytes := declaredVMCapBytes()
-	return capBytes > 0 && rss <= capBytes
-}
-
-// declaredVMCapBytes reads the memory ceiling Colima was configured with, in
-// bytes. Zero means "no cap could be established" — never treated as unlimited.
-func declaredVMCapBytes() int64 {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return 0
-	}
-	b, err := os.ReadFile(filepath.Join(home, ".colima", "default", "colima.yaml"))
-	if err != nil {
-		return 0
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "memory:")
-		if !ok {
-			continue
-		}
-		gib, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
-		if err != nil || gib <= 0 {
-			return 0
-		}
-		return gib * 1024 * 1024 * 1024
-	}
-	return 0
+	return strings.Contains(string(out), "com.apple.Virtualization.VirtualMachine")
 }
 
 func isCapacityCappedGemmaBroker(p platform.Platform, pid int) bool {
