@@ -18,69 +18,98 @@ property, and proposes the smallest architecture that removes it.
 
 ---
 
-## 1. The recurring failure, stated numerically
+## 1. The inversion — Sirsi is a plugin pretending to be a platform
 
-Two numbers, measured on this repo today:
+This is the thesis. Everything else in this document is subordinate to it.
+
+Sirsi does not host an agent. It is hosted *by* one. The installer says so in its
+own words — `internal/setup/surface.go:279`, the message shown when Claude Code is
+absent:
+
+```go
+res.Message = "no `claude` CLI found — add to your IDE: " + MCPConfigSnippet()
+```
+
+Sirsi's remedy for "no AI present" is **to register itself inside someone else's
+agent**. That is the inversion, stated in code.
+
+Measured consequences:
+
+| capability | state |
+|---|---|
+| provider abstraction (swappable Claude / Codex / Gemma / OpenAI-compatible) | **none in Go** |
+| inference client | **none** — the only `api.anthropic.com` reference is a DNS reachability check in `guard/network.go` |
+| agent loop owned by Sirsi | **none** — the loop lives in Claude Code |
+| install-time discovery of IDEs and AI resources | **none** — install offers to insert Sirsi into your IDE instead |
+| conversation surface | `Ask Sirsi` — chat only, **no tool-calling** |
+
+The intent already exists and is correct. `sirsi-brain.sh` opens:
+
+> *"the PLUGGABLE orchestration brain for Sirsi Pantheon… It must be swappable
+> painlessly — gemma is the zero-token DEFAULT, but a user can point it at Claude,
+> Codex, Gemini, GLM, Kimi K2, or any OpenAI-compatible endpoint without changing
+> anything else."*
+
+That is the right design. It is also an **unversioned bash script in
+`~/.local/bin`**, outside the repo, offering a single verb — `ask`: one prompt, one
+answer. No tools. No loop. No conversation. No Go caller treats it as a provider.
+
+### Why this obviates the local premise
+
+If Sirsi is only useful when Claude Code is installed, then "local sovereignty" is
+fiction: the product has taken a hard dependency on a cloud AI CLI in order to
+deliver local independence. A developer with no AI in their IDE — the majority — gets
+a status widget.
+
+**Sirsi must make the IDE's AI moot.** Not integrate with it. Moot.
+
+## 2. The acceptance test for the whole programme
+
+> **Anything that can be done in Claude Code must be doable in Sirsi.
+> If it can't be done in Sirsi, it can't be done.**
+
+Concretely, this conversation is the test case. Today, through Claude Code, the
+following happened: a machine-wide process census; an ancestry walk from a symptom
+to a spawner; parsing a Jetsam report and *correctly discarding it* as the cause;
+reading a heuristic out of a shipped application bundle to prove an error message was
+a guess; a root-cause fix; a deploy; a live verification; and four rounds of the
+owner challenging the conclusion and the conclusion changing twice.
+
+**None of it was observable to Sirsi, and none of it is expressible in Sirsi today.**
+
+That transcript is the Phase-4 acceptance bar. Not a demo of it — that exact class of
+work, initiated and completed inside Sirsi, with a swappable model behind it.
+
+## 2b. The recurring failure, stated numerically
+
+The inversion is the thesis; this is the wound that proves the substrate is also
+wrong. Two numbers, measured on this repo today:
 
 | measurement | value |
 |---|---|
-| places in the codebase that can spawn an OS process | **196** (`exec.Command`, 78 files) |
+| places that can spawn an OS process | **196** (`exec.Command`, 78 files) |
 | places that enforce a memory or process budget | **0** |
 
-There is no allocator. Every one of those 196 sites decides, on its own, that
-spawning is fine. Individually each is reasonable. Collectively they are a machine
-that periodically eats itself.
-
-The incident history is the same failure wearing different clothes:
+There is no allocator. Every one of those 196 sites decides on its own that spawning
+is fine. Individually reasonable; collectively a machine that periodically eats
+itself.
 
 | date | shape | scale |
 |---|---|---|
-| 2026-07-03/04 | runaway executor | **19,195 sessions spawned, 0 closed, 1.3 TB** orphaned trees |
+| 2026-07-03/04 | runaway executor | **19,195 sessions spawned, 0 closed, 1.3 TB** orphaned |
 | 2026-07-24 | leaked task-runner sessions | ~8/hr accretion, swap-death wedging gemma |
 | 2026-07-27 | `thread discover` fork storm | **358 processes, 267 zombies, load 436, swap 48.5/49 GB** |
 
-Ka (ghost scanner) and Anubis (hygiene) were both created to clean up *after* this
-class. They are janitors hired because the building has no doors. The correct fix is
-doors.
+Ka and Anubis were created to clean up after this class. They are janitors hired
+because the building has no doors.
 
-**Hardware is not the lever.** The owner moved from an M1/32 GB to an M5/48 GB and
-the failure recurred unchanged, because unbounded × bigger is still unbounded. The
-2026-07-27 storm consumed a 49 GB swapfile — it would have consumed 96 GB.
+**Hardware is not the lever** — M1/32 GB → M5/48 GB, failure unchanged, because
+unbounded × bigger is still unbounded. Today's storm ate a 49 GB swapfile.
 
-**The health surface cannot see it.** During the 2026-07-27 storm, with macOS
-displaying *"your system has run out of application memory"*:
-
-```
-$ sirsi diagnose
-  Status     🟢 Healthy
-  Health     100/100
-  16 signals checked
-  Priority   1. No immediate action required.
-```
-
-Sixteen signals, and not one of them was *"is swap nearly exhausted"* or *"is a
-process tree multiplying."* This is the green-surface-over-a-dead-thing class —
-Pantheon's most frequently recorded bug family — pointed at Pantheon itself.
-
----
-
-## 2. The constraint that defines the product
-
-> *"If Sirsi can't work and be performant on an M5 Mac with 48 GB, how can it help
-> 99% of developers with lesser specs?"*
-
-This is the correct product constraint and it should be binding:
-
-> **Sirsi targets a 16 GB machine. Every feature is designed against that budget.
-> The 48 GB machine is the development box, never the target.**
-
-The consequence is not cosmetic. It means **the resource governor is the product**,
-not a subsystem of it. An AI operations console that cannot govern its own footprint
-has no claim to govern anyone's machine. Today Sirsi is the largest single consumer
-on the owner's workstation (gemma broker measured at **12.49 GB**, capped at
-**20.8 GB** — 43% of a 48 GB machine, and 130% of the target machine).
-
----
+**The health surface cannot see it.** During the storm, with macOS displaying *"your
+system has run out of application memory"*: `sirsi diagnose` → **🟢 Healthy,
+100/100, 16 signals, "No immediate action required."** None of the 16 was *"is swap
+exhausted"* or *"is a process tree multiplying."*
 
 ## 3. What Claude Code has that Sirsi does not
 
@@ -107,11 +136,59 @@ loud cannot diagnose.
 
 ---
 
-## 4. Architecture — five pillars
+## 4. Architecture — six pillars
+
+### Pillar 0 — Sirsi is the agent host
+
+*The pillar that makes Sirsi a product instead of a plugin. Without it, nothing else
+is worth building.*
+
+Three parts, none optional.
+
+**`internal/agent` — Sirsi owns the loop.** Not "Sirsi is called by a loop." The
+conversation, the tool dispatch, the transcript, the verification and the turn state
+live in Sirsi. This is the piece that currently exists only inside Claude Code.
+
+**`internal/provider` — intelligence is swappable.** A single Go interface with an
+honest capability model, because the backends are not equivalent:
+
+```go
+type Provider interface {
+    Name() string
+    Caps() Caps          // tool-calling? streaming? context window? cost class?
+    Complete(ctx, Request) (Response, error)
+}
+```
+
+Implementations, in order of build: **local (gemma / any OpenAI-compatible endpoint —
+the zero-token default)**, **Anthropic API**, **OpenAI-compatible cloud**, and
+**delegating CLIs** (`claude`, `codex`) for users who already have them.
+
+This is `sirsi-brain.sh`'s stated intent, promoted from an unversioned bash script
+into versioned Go with tools and a loop attached. The design was right; it was never
+given a body.
+
+Capability degradation must be explicit: a provider without tool-calling drives the
+loop through a constrained decision tree instead, and the transcript says so. Silent
+degradation is how a local-first product becomes a cloud product nobody noticed.
+
+**Install inverts.** Today install detects Claude Code and offers to insert Sirsi
+into it. It must instead:
+
+1. **discover** — IDEs (VS Code, Xcode, JetBrains, Cursor), AI CLIs (`claude`,
+   `codex`, `ollama`, LM Studio), API keys in env, local model runtimes;
+2. **report** — "here is the intelligence available on this machine";
+3. **route** — register each as a *provider* selectable inside Sirsi;
+4. **offer, not require** — MCP registration into an IDE becomes an *export*, one
+   option among several, rather than the fallback when Sirsi finds itself unwanted.
+
+A machine with **no** AI resources must still yield a working Sirsi, on the local
+model alone. That is the entire local premise, and it is testable: disconnect the
+network, uninstall `claude`, and the diagnostic conversation must still work.
 
 ### Pillar 1 — Ma'at Governor: one allocator, admission control, backpressure
 
-*The pillar that ends the recurring failure. Everything else is downstream.*
+*The pillar that ends the recurring failure — and the one that makes the 16 GB target reachable.*
 
 `internal/govern` becomes the only path to an OS process or a memory reservation.
 
@@ -237,7 +314,17 @@ menubar item should be. It stops being the product.
 
 ## 5. Phasing — each phase independently shippable, each with a falsifiable bar
 
-### Phase 0 — Instrument the truth (days)
+### Phase 0 — Sirsi can think without Claude Code (weeks)
+
+`internal/provider` (local first, then Anthropic, then delegating CLIs) ·
+`internal/agent` loop with tool dispatch · install-time discovery and routing ·
+`sirsi ask` becomes a conversation with tools, not a chat box.
+
+**Bar:** with the network disconnected and the `claude` CLI removed from `PATH`, ask
+Sirsi *"why is my machine slow?"* and get a correct causal answer with a named
+remedy. If that fails, the local premise is fiction and nothing later matters.
+
+### Phase 0b — Instrument the truth (days)
 Sensors that would have caught today: swap headroom, process-count delta and fork
 rate, lineage depth, footprint-vs-RSS divergence, per-class RSS.
 
@@ -289,6 +376,8 @@ tool tiers rather than against hope.
 - **Not a bigger menubar.** A popover cannot hold a diagnostic conversation.
 - **Not "Gemma will figure it out."** The loop is scaffolded in Go. The model ranks,
   reads and explains. Anything else is wishing.
+- **Not an MCP server with better manners.** The current shape is Sirsi-inside-your-agent.
+  The product is agent-inside-Sirsi. These are opposite directions, not degrees.
 - **Not autonomy first.** Governor and tool tiers precede autonomy. ADR-035 exists
   because that order was once reversed.
 
@@ -303,11 +392,15 @@ tool tiers rather than against hope.
 
 ## 8. Owner decisions required
 
-1. **Ratify the 16 GB target.** Everything downstream depends on it.
-2. **Phase order** — Governor before Loop is the recommendation (the Loop needs
+1. **Ratify the inversion.** Sirsi hosts the agent; models are swappable backends;
+   IDEs and AI CLIs are discovered resources routed *through* Sirsi. MCP-into-your-IDE
+   becomes an export option, never the fallback.
+2. **Ratify the 16 GB target.** Everything downstream depends on it.
+3. **Phase order** — Agent Host (Phase 0) before everything is non-negotiable if the
+   local premise is real; Governor before Loop thereafter is the recommendation (the Loop needs
    actuators the Governor makes safe). Reversing them is defensible if a
    demonstrable diagnostic conversation matters more than stability.
-3. **Autonomy posture** for the repair tier: confirm-each, confirm-once-per-class, or
+4. **Autonomy posture** for the repair tier: confirm-each, confirm-once-per-class, or
    fully manual.
-4. **The gemma broker cap** — currently 20.8 GB on a 48 GB box, 130% of the target
+5. **The gemma broker cap** — currently 20.8 GB on a 48 GB box, 130% of the target
    machine. Interim fix regardless of this plan's fate.
