@@ -11,7 +11,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/assiduous",
       "workstream": "assiduous",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-assiduous"
+      }
     },
     "claude-finalwishes": {
       "id": "claude-finalwishes",
@@ -24,7 +27,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/FinalWishes",
       "workstream": "finalwishes",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes"
+      }
     },
     "claude-finalwishes-web": {
       "id": "claude-finalwishes-web",
@@ -37,7 +43,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
       "workstream": "finalwishes-web",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes-web"
+      }
     },
     "claude-home": {
       "id": "claude-home",
@@ -47,7 +56,10 @@
       ],
       "cwd": "/Users/thekryptodragon",
       "workstream": "home",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-home"
+      }
     },
     "claude-homebrew-tools": {
       "id": "claude-homebrew-tools",
@@ -60,7 +72,40 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
       "workstream": "homebrew",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-homebrew-tools"
+      }
+    },
+    "claude-io": {
+      "id": "claude-io",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io",
+      "workstream": "io",
       "wake": {}
+    },
+    "claude-kfca": {
+      "id": "claude-kfca",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon/KingFarmCAB",
+      "workstream": "pantheon",
+      "wake": {
+        "mechanism": "launchagent",
+        "health_check": [
+          "claude",
+          "--version"
+        ],
+        "launch_agent_label": "ai.sirsi.router.wake.claude-kfca"
+      }
     },
     "claude-nexus": {
       "id": "claude-nexus",
@@ -73,7 +118,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
       "workstream": "nexus",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-nexus"
+      }
     },
     "claude-pantheon": {
       "id": "claude-pantheon",
@@ -86,7 +134,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "workstream": "pantheon-pro-ux-loop",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-pantheon"
+      }
     },
     "claude-porch-and-alley": {
       "id": "claude-porch-and-alley",
@@ -99,7 +150,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
       "workstream": "porch-and-alley",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-porch-and-alley"
+      }
     },
     "codex-assiduous": {
       "id": "codex-assiduous",
