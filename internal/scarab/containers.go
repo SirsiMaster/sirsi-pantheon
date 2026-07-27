@@ -128,9 +128,16 @@ func AuditContainersWith(p platform.Platform) (*ContainerAudit, error) {
 var retainedVolumeMarkers = []string{"hedera", "network-node", "mirror-node"}
 
 // isRetainedVolume reports whether a `docker volume ls` line describes state we
-// must never offer for reclamation. Fails CLOSED: anything it cannot classify
-// stays reclaimable only if no marker appears, and the check is case-insensitive
-// because compose project labels are not case-normalised.
+// must never offer for reclamation. Case-insensitive, because compose project
+// labels are not case-normalized.
+//
+// This is fail-OPEN, and that is worth stating plainly rather than dressing up:
+// a volume whose record is unrecognized or malformed stays RECLAIMABLE. Making
+// it fail-closed would mean treating every unclassifiable volume as protected,
+// which turns the reclaimable count into noise and trains operators to ignore
+// it. The mitigation for the unknown-volume case is the enforcement boundary in
+// configs/default_rules.yaml (no `--volumes` on the advertised prune), not this
+// predicate.
 func isRetainedVolume(line string) bool {
 	l := strings.ToLower(line)
 	for _, m := range retainedVolumeMarkers {
