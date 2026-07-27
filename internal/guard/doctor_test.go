@@ -609,7 +609,17 @@ func TestDoctorWith_MemoryHog(t *testing.T) {
 	}
 }
 
-func TestTopMemoryProcessesDoesNotAlarmOnCapacityCappedGemmaBroker(t *testing.T) {
+// INVERTED 2026-07-27. This test previously asserted that the gemma broker was
+// EXEMPT from the memory-hog check ("...DoesNotAlarmOnCapacityCappedGemmaBroker",
+// wanting SeverityOK). That exemption is why this machine OOM'd three times in a
+// single day with the health surface reporting 100/100 throughout: the broker
+// reached Jetsam footprints of 31, 43.9 and 38.1 GB and was skipped every time.
+//
+// The invariant is now the opposite, and it is the more important one: Sirsi's
+// own local model is the MOST likely memory offender on a developer's machine,
+// so it must be the first thing named, never the one thing excused. A test that
+// pins "our component is exempt" is a test that pins the outage.
+func TestTopMemoryProcessesAlarmsOnOurOwnGemmaBroker(t *testing.T) {
 	m := healthyMock()
 	m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = `  PID   RSS    VSZ  %CPU USER     COMM
  45798 6291456 7000000 88.5 user /Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python`
@@ -620,8 +630,12 @@ func TestTopMemoryProcessesDoesNotAlarmOnCapacityCappedGemmaBroker(t *testing.T)
 	if len(report.Findings) != 1 {
 		t.Fatalf("findings = %d, want 1", len(report.Findings))
 	}
-	if report.Findings[0].Severity != SeverityOK {
-		t.Fatalf("Gemma broker severity = %v, want OK", report.Findings[0].Severity)
+	if report.Findings[0].Severity == SeverityOK {
+		t.Fatalf("Gemma broker was excused (severity OK) — Sirsi's own broker must be "+
+			"named, not exempted; message was %q", report.Findings[0].Message)
+	}
+	if !strings.Contains(report.Findings[0].Message, "Python") {
+		t.Errorf("finding does not name the offending process: %q", report.Findings[0].Message)
 	}
 }
 
