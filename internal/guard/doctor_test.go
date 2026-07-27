@@ -1192,11 +1192,11 @@ func TestTopMemoryProcessesCapacityReservedVM(t *testing.T) {
 			if f.Severity != tc.wantSev {
 				t.Fatalf("severity = %v, want %v (%q)", f.Severity, tc.wantSev, f.Message)
 			}
-			// The correction this test exists for: an exempt VM is RE-LABELLED,
+			// The correction this test exists for: an exempt VM is RE-LABELED,
 			// never hidden. A surface that drops the largest process on the box
 			// leaves the operator unable to reason about memory at all.
 			if !strings.Contains(f.Detail, "VirtualMachine") {
-				t.Errorf("VM absent from Detail %q — exempt must mean re-labelled, not hidden", f.Detail)
+				t.Errorf("VM absent from Detail %q — exempt must mean re-labeled, not hidden", f.Detail)
 			}
 			if tc.wantSev == SeverityOK && !strings.Contains(f.Detail, "capacity-reserved") {
 				t.Errorf("Detail = %q, want the reservation named", f.Detail)
