@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1116,5 +1117,54 @@ func TestRemediationCommand(t *testing.T) {
 		if got := remediationKind(f); got != c.wantKind {
 			t.Errorf("remediationKind(%q/%v) = %q, want %q", c.check, c.sev, got, c.wantKind)
 		}
+	}
+}
+
+// A VM inside its declared cap is a reservation, not a hog — and telling the
+// operator to quit it would destroy the consensus ledger it anchors. A VM that
+// outgrows that cap, or one with no cap on record, must still alarm.
+func TestTopMemoryProcessesCapacityCappedVM(t *testing.T) {
+	const vmCmd = "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
+
+	tests := []struct {
+		name    string
+		rssKB   int64
+		config  string // empty = write no colima.yaml at all
+		wantSev DiagnosticSeverity
+	}{
+		{"inside declared cap", 5 * 1024 * 1024, "cpu: 6\nmemory: 10\n", SeverityOK},
+		{"exceeds declared cap", 12 * 1024 * 1024, "cpu: 6\nmemory: 10\n", SeverityWarn},
+		{"no cap on record", 5 * 1024 * 1024, "", SeverityWarn},
+		{"unparseable cap", 5 * 1024 * 1024, "memory: lots\n", SeverityWarn},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			if tc.config != "" {
+				dir := filepath.Join(home, ".colima", "default")
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "colima.yaml"), []byte(tc.config), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("HOME", home)
+
+			m := healthyMock()
+			m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = fmt.Sprintf(
+				"  PID   RSS    VSZ  %%CPU USER     COMM\n 21580 %d 20000000 4.0 user %s", tc.rssKB, vmCmd)
+			m.CommandResults["ps -p 21580 -o command="] = vmCmd
+
+			var report DoctorReport
+			checkTopMemoryProcesses(m, &report)
+			if len(report.Findings) != 1 {
+				t.Fatalf("findings = %d, want 1", len(report.Findings))
+			}
+			if got := report.Findings[0].Severity; got != tc.wantSev {
+				t.Fatalf("severity = %v, want %v (%q)", got, tc.wantSev, report.Findings[0].Message)
+			}
+		})
 	}
 }

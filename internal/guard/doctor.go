@@ -636,6 +636,15 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 			if isCapacityCappedGemmaBroker(p, proc.PID) {
 				continue
 			}
+			// Likewise the Colima VM: its memory ceiling is declared up front in
+			// colima.yaml, and inside that ceiling it is the anchor for the
+			// sovereign consensus ledger, not a hog. Calling it one told the
+			// operator to "quit the worst offenders" — and stopping this VM
+			// DESTROYS the ledger. A VM that outgrows its own declared cap is
+			// still reported.
+			if isCapacityCappedVM(p, proc.PID, proc.RSS) {
+				continue
+			}
 			hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(proc.RSS)))
 		}
 	}
@@ -654,6 +663,48 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// isCapacityCappedVM reports whether pid is an Apple Virtualization VM living
+// inside a memory reservation it declared up front. Detection is deliberately
+// two-sided: the process must be a VM AND its RSS must fit the declared cap. A
+// missing or unparseable config yields no cap, so the process falls through and
+// is reported — the exemption can only ever be earned, never assumed.
+func isCapacityCappedVM(p platform.Platform, pid int, rss int64) bool {
+	out, err := p.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
+	if err != nil {
+		return false
+	}
+	if !strings.Contains(string(out), "com.apple.Virtualization.VirtualMachine") {
+		return false
+	}
+	capBytes := declaredVMCapBytes()
+	return capBytes > 0 && rss <= capBytes
+}
+
+// declaredVMCapBytes reads the memory ceiling Colima was configured with, in
+// bytes. Zero means "no cap could be established" — never treated as unlimited.
+func declaredVMCapBytes() int64 {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".colima", "default", "colima.yaml"))
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "memory:")
+		if !ok {
+			continue
+		}
+		gib, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
+		if err != nil || gib <= 0 {
+			return 0
+		}
+		return gib * 1024 * 1024 * 1024
+	}
+	return 0
 }
 
 func isCapacityCappedGemmaBroker(p platform.Platform, pid int) bool {
