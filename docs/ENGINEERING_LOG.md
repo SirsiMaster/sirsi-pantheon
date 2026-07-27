@@ -12,6 +12,153 @@
 
 ---
 
+## EL-002 — 2026-07-27 — The operational budget: who decides it, and what it buys
+
+**Author:** claude-home (conduit) · **Status:** SPEC'D — implementation routed to claude-pantheon
+**Trigger:** owner, following EL-001 — *"Why is Colima 10 GB? That's huge. I need Pantheon to decide
+the most appropriate operational budget. Deterministic vs LLM based? Which local LLM? Which quantization?"*
+
+### 1. Why Colima is 10 GB — it is not a node, it is a 16-container stack
+
+```bash
+colima ssh -- free -m          # total 9922 · used 6444 · available 3477
+docker stats --no-stream       # 16 containers
+```
+
+| Container | RSS | Needed to anchor? |
+|---|---|---|
+| `network-node` (consensus, JVM, limit 8 GiB) | **2783 MiB** | **yes — this is the ledger** |
+| `mirror-node-importer` | 567 MiB | only to read anchors back |
+| `mirror-node-web3` | 537 MiB | no — EVM/smart-contract path |
+| `mirror-node-monitor` | 500 MiB | no |
+| `mirror-node-rest-java-internal` | 393 MiB | only to read anchors back |
+| `mirror-node-grpc` | 377 MiB | no |
+| `json-rpc-relay` + `-ws` | 418 MiB | no — Ethereum JSON-RPC compatibility |
+| `mirror-node-rest-internal` | 108 MiB | only to read anchors back |
+| `mirror-node-db` (Postgres) | 89 MiB | only to read anchors back |
+| grafana + prometheus | 129 MiB | no — dev observability |
+| explorer, api-proxy, relay-cache, haveged | 16 MiB | no |
+| **Total** | **≈ 5.78 GiB** | |
+
+**The consensus node is 2.78 GB — 47% of the VM. The other 53% is a block explorer, an Ethereum
+JSON-RPC compatibility layer, a smart-contract execution service, a Postgres mirror and a Grafana
+stack**, because `hedera-local start` launches the full local-development environment rather than a
+node. The 10 GB was never sized against Sirsi's workload; it is the stack's default, and it fits.
+
+So the honest answer to *"why 10 GB"* is: **nobody chose 10 GB for anchoring — it is what running the
+whole developer stack costs.** Anchoring itself costs 2.78 GB, or ~3.5 GB if anchors are read back
+through the REST mirror.
+
+**Action (blocked on one measurement, not on judgement):** instrument which endpoints the anchoring
+client actually calls. If it submits consensus messages via the gRPC SDK only, the target profile is
+`network-node` alone → **VM at 4 GB**. If it verifies anchors through the mirror REST API, keep
+`importer` + `db` + `rest` → **VM at 6 GB**. Either way ~2.2 GB comes back with nothing lost.
+⚠ `hedera-local stop` DESTROYS the ledger — this is a compose-profile change, never a stop/start.
+
+### 2. Deterministic vs LLM-based sizing — **deterministic, and this is not a close call**
+
+The budget decision must never be made by the thing being budgeted. Five reasons, any one sufficient:
+
+1. **Circularity.** On an 8 GB host the model cannot load, so it cannot be asked whether it fits.
+   The tier that needs the decision most is the tier that cannot make it.
+2. **Ordering.** Sizing happens at boot, before any model is resident. An LLM-based sizer would have
+   to load a model to decide whether to load a model.
+3. **Reproducibility.** The same host must yield the same plan every time. A budget that varies
+   run-to-run is a heisenbug living in the OOM path — the least debuggable place in the system.
+4. **Failure mode.** Arithmetic that is wrong is wrong the same way every time and gets fixed once.
+   A hallucinated integer here kills the machine, non-reproducibly.
+5. **Cost.** It is six measured inputs and two multiplications. Paying an LLM for it is absurd.
+
+**The LLM's legitimate role is narration, not decision.** `sirsi diagnose` should print the derived
+plan deterministically, and may use the local model to explain *in plain English* why a host got the
+tier it got ("your 16 GB machine runs the 3B model on demand because the consensus VM holds 6 GB").
+That respects the Plain-English-GUI rule without putting a probabilistic component in the OOM path.
+
+**Boundary, stated as canon: sizing is arithmetic; explanation is language; they never swap jobs.**
+
+### 3. Which local LLM — criteria first, because the fleet has no comparative measurement
+
+**What we actually know:** `~/.sirsi/gemma-model-resolver.log` (2318 lines) records `selected:` on
+every run and **no comparative benchmark of any kind**. Gemma was chosen by RAM arithmetic and one
+behavioural property (it does not refuse), never by measured task accuracy against an alternative.
+Any recommendation below that is not marked *measured* is a prior, not evidence.
+
+**Criteria that matter for Pantheon's actual workload** — router triage, classification, structured
+verdicts, summarization. Not long-form generation:
+
+1. **Refusal rate on security-adjacent text.** Router items discuss credential rotation, kill
+   decisions, exploits. A model that refuses is not a screen — it is a second queue. This is the
+   property Gemma was picked for and it outranks benchmark scores.
+2. **Structured-output reliability.** Triage returns a verdict enum. A model that emits prose around
+   its JSON costs more in parsing failures than it saves in RAM.
+3. **Quality per GB in the 2–8 GB class**, since that is the whole 8/16 GB tier.
+4. **MLX availability.** No `mlx-community` conversion means no Apple-Silicon local path, which means
+   no local sovereignty. This is a hard gate, not a preference.
+5. **License.** Commercial product. Apache-2.0/MIT beats a bespoke community license.
+
+**Recommendation, with confidence marked:**
+
+| Tier | Model | Confidence |
+|---|---|---|
+| 8 GB (on demand) | **Qwen-class 3B-4bit** — 1.6 GB, already cached on this box, Apache-2.0, strong structured output at small size | medium — cached, never benchmarked here |
+| 16 GB | **Qwen-class 7–8B-4bit** (~4.5 GB) or 3B resident | medium |
+| 32–64 GB | **Gemma 12B, 4-bit QAT** (~7–8 GB) | high — the family is proven on this fleet |
+| 128 GB | Gemma 31B 4-bit QAT (~30 GB) | measured: 0.5 tok/s on **this** box (router item `20260715-175752`) — a 128 GB claim, not a 48 GB one |
+
+**GLM and Kimi K3: do not put them in the default path without a benchmark.** One structural reason
+that does not depend on version specifics: **MoE architectures are the opposite of what a small tier
+needs.** Their *active* parameter count is small, but every expert must be resident — you pay the
+full parameter count in RAM and only save compute. For an 8 GB host that is the wrong trade in the
+wrong direction. Dense small models are the right family for the small tiers, whoever trains them.
+My information on the very newest releases may also be behind, which is itself an argument for the
+harness in §5 rather than for my opinion.
+
+### 4. Which quantization — **4-bit QAT as the default, everywhere**
+
+| Quant | GB/B param | 12B model | Verdict |
+|---|---|---|---|
+| 8-bit | ~1.05 (disk) / **~1.6 measured RSS** | **19.30 GB peak** | only when RAM is genuinely free |
+| **4-bit QAT** | ~0.55–0.6 | **~7–8 GB** | **default** |
+| plain 4-bit | ~0.55 | ~7–8 GB | acceptable; QAT is better at equal size |
+| 3-bit and below | ~0.45 | ~5.5 GB | quality cliff — no |
+
+Two rules follow:
+
+- **Prefer more parameters at 4-bit QAT over fewer parameters at 8-bit for the same RAM.** A 12B-4bit
+  at ~7 GB beats a 4B-8bit at ~6.5 GB on every task Pantheon runs. QAT exists precisely to recover
+  what aggressive quantization costs, which is why it wins between equal-bit variants and is never a
+  reason to accept fewer bits.
+- **8-bit is a large-host luxury.** On this 48 GB box it is what took the machine to the jetsam wall
+  (EL-001 §3). The resolver preferred it because its ranking puts bits above size-realism — correct
+  when RAM is free, catastrophic when it is not.
+
+**Stated plainly: the current 12B-8bit default is costing ~12 GB of RAM to buy a quality difference
+this fleet has never measured.**
+
+### 5. The open action that outranks every opinion above — EL-002-A
+
+Build a **triage benchmark harness**: 50 real closed router items with claude-home's recorded verdicts
+as ground truth. Run each candidate (Gemma 12B-8bit, Gemma 12B-4bit-QAT, Qwen 3B-4bit, Qwen 7B-4bit)
+over the same 50 and record **verdict agreement %, refusal count, malformed-output count, tok/s, and
+peak RSS**. Ground truth already exists in the router store at zero labelling cost.
+
+That single table replaces every "medium confidence" in §3 with a number, and it is what should decide
+the default — not the resolver's ranking heuristics, and not this entry.
+
+**Until it exists, the defensible position is: 4-bit QAT everywhere (RAM-justified, low risk), model
+family unchanged (Gemma, behaviourally proven), and Qwen 3B as the 8 GB tier candidate to be
+confirmed by the harness.**
+
+### 6. Disposition
+
+- Colima profile trim: **blocked on one measurement** (which endpoints the anchoring client calls),
+  then a compose-profile change. Never a `hedera-local stop`.
+- Deterministic sizing: canon, routed to claude-pantheon with EL-001's five rules.
+- Model + quantization: **4-bit QAT is actionable now**; the family question stays open until EL-002-A.
+- **Owner-gated:** moving this box off 12B-8bit changes fleet output quality.
+
+---
+
 ## EL-001 — 2026-07-27 — Pantheon cannot yet honestly claim to run on 8 GB or 16 GB hosts
 
 **Author:** claude-home (conduit) · **Status:** SPEC'D — implementation routed to claude-pantheon
