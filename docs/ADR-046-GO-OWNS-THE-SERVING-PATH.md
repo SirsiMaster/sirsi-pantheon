@@ -94,3 +94,54 @@ be re-verified against `--stop`, ADR-040 and Hapi rather than assumed — S2 is 
 until that is demonstrated, not argued. And a supervisor is itself code that can fail:
 if it exits and leaves an orphan worker, we have traded one failure mode for another,
 so the supervisor must die *with* its child, not before it.
+
+## The pid-file contract (added after independent review)
+
+The HyperGraph custodian reviewed this ADR and found a concrete breakage that the
+decision above would otherwise have shipped silently. It is recorded here rather than
+fixed quietly, because the failure it describes is the interesting part.
+
+**What breaks.** A governed conduit step runs every 15 minutes and verifies that the KV
+bound is actually applied, by reading the pid file and inspecting that process's argv
+for `--prompt-cache-bytes`. Under ADR-046 the pid file names the *supervisor*, and the
+supervisor does not carry that flag — the worker does. The check therefore flips to a
+**permanent false negative**: it would conclude "broker unbounded" on a correctly
+bounded broker, and bounce a healthy load-bearing server on every run.
+
+**Why this is worth writing down rather than patching.** This is the ADR-040 hazard in
+its exact shape — acting on a pid whose argv does not describe what the reader thinks it
+describes. ADR-045 said the supervised pid *is* the serving process, and treated that as
+a fact about `--stop`. It was also load-bearing for **readers**, and nobody wrote that
+down, so a reader-facing contract survived only as an implicit property of the
+implementation. When the implementation changed, the contract broke with no test to
+catch it.
+
+**Decision.** The pid file at `~/.sirsi/gemma.pid` names the **supervisor**, and that is
+now a stated contract rather than an emergent property.
+
+**S2 additionally ships a documented surface for readers**, so that nothing has to grep
+argv to learn the broker's state:
+
+- a worker pid at `~/.sirsi/gemma-worker.pid`, and
+- `sirsi gemma status`, reporting supervisor pid, worker pid, and the **effective** cache
+  bound as the worker actually applied it.
+
+Readers assert against that surface. Grepping another process's argv is the fragile
+thing we are replacing, not a pattern to preserve — an effective bound reported by the
+process enforcing it is strictly better evidence than a flag someone passed to it.
+
+**S2 is not complete until the conduit check is migrated** to the new surface. A
+supervisor that lands before its readers are migrated is exactly the silent breakage
+this section exists to prevent.
+
+## S3's real blocker, narrowed by measurement
+
+Live figures from the reviewer's sweep: broker RSS **12.52 GB** for
+`gemma-4-12B-it-8bit`, KV cache **2.17 GB** against a 4 GiB bound. The bound is holding.
+
+That narrows S3 usefully and contradicts the obvious reading of the 2026-07-26 Jetsam:
+MLX is not misbehaving, and the watchdog is not needed to catch a runaway cache. The
+defect is the **input number** — the resolver budgets on-disk bytes while real RSS runs
+~2.5×, so the ceiling is computed from the wrong quantity. That work is already routed
+to claude-pantheon as a P0 (router item `20260726-235904`). It and S3's gate are the
+same blocker, so they are coordinated rather than re-derived.
