@@ -11,7 +11,11 @@ MainActor.assumeIsolated {
     // headless QA proof of what the surface really shows (see Snapshot.swift).
     let argv = CommandLine.arguments
     if let i = argv.firstIndex(of: "--snapshot"), i + 1 < argv.count {
-        runSnapshotMode(outDir: argv[i + 1])   // configures NSApp and runs it
+        var w: CGFloat = 380
+        if let j = argv.firstIndex(of: "--width"), j + 1 < argv.count, let v = Double(argv[j + 1]) {
+            w = CGFloat(v)
+        }
+        runSnapshotMode(outDir: argv[i + 1], width: w)   // configures NSApp and runs it
     } else {
         let app = NSApplication.shared
         let delegate = AppDelegate()
