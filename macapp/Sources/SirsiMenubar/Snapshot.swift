@@ -25,7 +25,7 @@ extension EnvironmentValues {
 // eternal spinner. (NSHostingView + cacheDisplay was tried first and cannot
 // composite SwiftUI's render-server content: captures come back nearly blank.)
 @MainActor
-func runSnapshotMode(outDir: String) {
+func runSnapshotMode(outDir: String, width: CGFloat = 380) {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
@@ -101,7 +101,13 @@ func runSnapshotMode(outDir: String) {
             let renderer = ImageRenderer(content: shot.view
                 .environmentObject(Nav())
                 .environment(\.snapshotMode, true)
-                .frame(width: 380, height: 520))
+                // Width is a parameter so the harness can prove RESPONSIVE
+                // behaviour headlessly: render the same screen at the panel's
+                // minSize and at a wide size and diff them. Verifying type
+                // scaling by driving the live panel needs an unlocked screen;
+                // this does not.
+                .frame(width: width, height: 520)
+                .environment(\.sirsiTypeScale, typeScale(forWidth: width)))
             renderer.scale = 2.0
             var wrote = 0
             if let img = renderer.nsImage, let tiff = img.tiffRepresentation,

@@ -125,6 +125,80 @@ extension View {
     }
 }
 
+// SirsiTextStyle mirrors the SwiftUI semantic styles this surface uses. Base
+// point sizes are the MEASURED macOS values (NSFont.preferredFont(forTextStyle:)
+// on this OS), not guesses — caption/caption2/footnote really are all 10pt on
+// macOS, unlike iOS.
+//
+// The scale-1.0 branch below returns the NATIVE semantic font rather than a
+// system font of the same size. That is deliberate: at the owner's default
+// window width the rendering is byte-identical to what shipped, so restoring
+// responsive type cannot quietly restyle the panel at rest. Only widening the
+// window switches to an explicitly-sized font.
+enum SirsiTextStyle {
+    case largeTitle, title, title2, title3, headline, body, callout, subheadline, footnote, caption, caption2
+
+    var base: CGFloat {
+        switch self {
+        case .largeTitle: return 26
+        case .title: return 22
+        case .title2: return 17
+        case .title3: return 15
+        case .headline, .body: return 13
+        case .callout: return 12
+        case .subheadline: return 11
+        case .footnote, .caption, .caption2: return 10
+        }
+    }
+
+    // headline is the only style macOS renders bold by default.
+    var defaultWeight: Font.Weight { self == .headline ? .bold : .regular }
+
+    var native: Font {
+        switch self {
+        case .largeTitle: return .largeTitle
+        case .title: return .title
+        case .title2: return .title2
+        case .title3: return .title3
+        case .headline: return .headline
+        case .body: return .body
+        case .callout: return .callout
+        case .subheadline: return .subheadline
+        case .footnote: return .footnote
+        case .caption: return .caption
+        case .caption2: return .caption2
+        }
+    }
+}
+
+private struct ScaledSemanticFont: ViewModifier {
+    @Environment(\.sirsiTypeScale) private var scale
+    let style: SirsiTextStyle
+    let weight: Font.Weight?
+    let design: Font.Design
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if scale == 1 && weight == nil && design == .default {
+            content.font(style.native)
+        } else {
+            content.font(.system(size: style.base * scale,
+                                 weight: weight ?? style.defaultWeight,
+                                 design: design))
+        }
+    }
+}
+
+extension View {
+    // sirsiFont(.caption) replaces .sirsiFont(.caption) and friends. Semantic styles
+    // were the gap that made the owner report "text is super tiny": #320 scaled
+    // the 73 explicit .system(size:) sites but left 135 semantic ones fixed, so
+    // numerals grew while body copy in the SAME card did not.
+    func sirsiFont(_ style: SirsiTextStyle, weight: Font.Weight? = nil,
+                   design: Font.Design = .default) -> some View {
+        modifier(ScaledSemanticFont(style: style, weight: weight, design: design))
+    }
+}
+
 // ScaledFrame keeps a fixed-width element (glyph gutters, avatars) in step with
 // the type it sits beside — without it, scaled text overflows a 28pt gutter.
 private struct ScaledFrame: ViewModifier {
@@ -622,9 +696,9 @@ struct FDAGuideView: View {
         BackBar(title: "Full Disk Access")
         VStack(alignment: .leading, spacing: 14) {
             Text("Grant Full Disk Access")
-                .font(.headline).foregroundStyle(gold)
+                .sirsiFont(.headline).foregroundStyle(gold)
             Text("macOS won’t let Sirsi grant itself disk access — you add it once, by hand. Here’s the quickest way:")
-                .font(.callout).foregroundStyle(.secondary)
+                .sirsiFont(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 10) {
@@ -680,7 +754,7 @@ struct HorusView: View {
                 VStack(spacing: 10) {
                     if engine.healthLoading { ProgressView() }
                     Text(engine.healthLoading ? "Checking system health…" : "No health data")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .sirsiFont(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 MaybeList {
@@ -735,14 +809,14 @@ struct HealthRow: View {
             Circle().fill(findingColor(finding)).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
                 Text(finding.check).sirsiFont(12, weight: .semibold)
-                Text(finding.message).font(.caption).foregroundStyle(.secondary)
+                Text(finding.message).sirsiFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             if hasFix {
-                Image(systemName: "wrench.and.screwdriver.fill").font(.caption2).foregroundStyle(gold)
+                Image(systemName: "wrench.and.screwdriver.fill").sirsiFont(.caption2).foregroundStyle(gold)
             } else if navigable {
-                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 3)
@@ -867,11 +941,11 @@ struct FindingView: View {
                             VStack(spacing: 0) {
                                 ForEach(entries) { e in
                                     HStack(alignment: .firstTextBaseline) {
-                                        Text(e.name).font(.callout)
+                                        Text(e.name).sirsiFont(.callout)
                                             .lineLimit(1).truncationMode(.middle)
                                         Spacer(minLength: 12)
                                         if let v = e.value {
-                                            Text(v).font(.callout.monospaced())
+                                            Text(v).sirsiFont(.callout, design: .monospaced)
                                         }
                                     }
                                     .padding(.horizontal, 10).padding(.vertical, 5)
@@ -881,7 +955,7 @@ struct FindingView: View {
                             .textSelection(.enabled)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         } else {
-                            Text(d).font(.callout)
+                            Text(d).sirsiFont(.callout)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -895,16 +969,16 @@ struct FindingView: View {
                         // nothing changed" trap. The banner sets the true expectation.
                         if let note = fixExpectation {
                             HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: fixIcon).font(.caption)
+                                Image(systemName: fixIcon).sirsiFont(.caption)
                                     .foregroundStyle(.secondary).padding(.top, 1)
-                                Text(note).font(.caption).foregroundStyle(.secondary)
+                                Text(note).sirsiFont(.caption).foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
-                        Text(fixSectionLabel).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
                         NavLink {
                             ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
                                        reverifyCheck: finding.check, reverifyKind: finding.fixKind)
@@ -913,7 +987,7 @@ struct FindingView: View {
                                 Image(systemName: fixIcon)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
-                                    Text(fix).font(.caption2.monospaced())
+                                    Text(fix).sirsiFont(.caption2, design: .monospaced)
                                         .foregroundStyle(Color.white.opacity(0.85))
                                 }
                                 Spacer()
@@ -924,14 +998,14 @@ struct FindingView: View {
                         // or critical finding "Informational" was the dead-end
                         // the owner flagged (ADR-033: alarm ⇒ way to act).
                         Text("This needs attention but has no one-click fix yet.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .sirsiFont(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else if let cmd = recommendedCommand {
                         // Guidance-tier (e.g. caution items cleared deliberately
                         // in Terminal): the command it names must be actionable,
                         // not buried in prose ending at "Informational."
-                        Text("RECOMMENDED — RUN IN TERMINAL").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(cmd).font(.caption.monospaced()).foregroundStyle(gold)
+                        Text("RECOMMENDED — RUN IN TERMINAL").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
+                        Text(cmd).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(10)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
@@ -941,10 +1015,10 @@ struct FindingView: View {
                                 copied = true
                             } label: { Label(copied ? "Copied" : "Copy command", systemImage: copied ? "checkmark" : "doc.on.doc") }
                             Button { openTerminal() } label: { Label("Open Terminal", systemImage: "terminal") }
-                        }.font(.caption)
+                        }.sirsiFont(.caption)
                     } else {
                         Text("Informational — nothing to act on.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .sirsiFont(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
                 }.padding(16)
@@ -1025,12 +1099,12 @@ struct RouterView: View {
                         HStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("\(board.liveThreadCount ?? 0)").sirsiFont(22, weight: .bold).foregroundStyle(.green)
-                                Text("live threads").font(.caption2).foregroundStyle(.secondary)
+                                Text("live threads").sirsiFont(.caption2).foregroundStyle(.secondary)
                             }
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("\(board.totalPending ?? 0)").sirsiFont(22, weight: .bold)
                                     .foregroundStyle((board.totalPending ?? 0) > 0 ? gold : .green)
-                                Text("open items").font(.caption2).foregroundStyle(.secondary)
+                                Text("open items").sirsiFont(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                         }
@@ -1039,9 +1113,9 @@ struct RouterView: View {
                             VStack(spacing: 0) {
                                 ForEach(pending.keys.sorted(), id: \.self) { agent in
                                     HStack {
-                                        Text(agent).font(.caption)
+                                        Text(agent).sirsiFont(.caption)
                                         Spacer()
-                                        Text("\(pending[agent]?.count ?? 0) open").font(.caption.monospaced()).foregroundStyle(.secondary)
+                                        Text("\(pending[agent]?.count ?? 0) open").sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
                                     }.padding(.vertical, 6)
                                     if agent != pending.keys.sorted().last { Divider() }
                                 }
@@ -1079,7 +1153,7 @@ struct RouterView: View {
                     if !engine.routerStranded.isEmpty {
                         SectionLabel("STRANDED INBOXES — OPEN ITEMS, NO WATCHER")
                         Text("These agents have work waiting but no armed session watching. Arm a wake channel so their inbox is pulled automatically.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .sirsiFont(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         ForEach(engine.routerStranded) { s in
                             NavLink {
@@ -1090,10 +1164,10 @@ struct RouterView: View {
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(s.agentId).sirsiFont(13, weight: .medium)
                                         Text("\(s.openItems) item\(s.openItems == 1 ? "" : "s") waiting")
-                                            .font(.caption).foregroundStyle(.secondary)
+                                            .sirsiFont(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                    Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
                                 }
                                 .padding(.vertical, 8).padding(.horizontal, 10)
                                 .contentShape(Rectangle())
@@ -1107,12 +1181,12 @@ struct RouterView: View {
                         SectionLabel("PROBE INCONCLUSIVE — INFORMATIONAL")
                         ForEach(engine.routerDegraded) { h in
                             HStack(alignment: .top, spacing: 8) {
-                                Text("🛈").font(.callout)
+                                Text("🛈").sirsiFont(.callout)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("\(h.agentType) — auth check inconclusive")
                                         .sirsiFont(12, weight: .medium)
                                     Text("The CLI didn't answer in time (a cold start), so we can't confirm login. This is not a logout — it clears on its own and blocks nothing.")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .sirsiFont(.caption).foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
@@ -1123,7 +1197,7 @@ struct RouterView: View {
                     }
 
                     if let line = resultLine {
-                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text(line).sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -1132,7 +1206,7 @@ struct RouterView: View {
                 }.padding(16)
             }
             if engine.busy {
-                HStack { ProgressView().controlSize(.small); Text("Working…").font(.caption).foregroundStyle(.secondary); Spacer() }
+                HStack { ProgressView().controlSize(.small); Text("Working…").sirsiFont(.caption).foregroundStyle(.secondary); Spacer() }
                     .padding(.horizontal, 16).padding(.bottom, 8)
             }
         }
@@ -1146,7 +1220,7 @@ struct SectionLabel: View {
     var tint: Color = .secondary
     init(_ text: String, tint: Color = .secondary) { self.text = text; self.tint = tint }
     var body: some View {
-        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(tint)
+        Text(text).sirsiFont(.caption2, weight: .semibold).foregroundStyle(tint)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -1165,12 +1239,12 @@ struct AuthBlockerCard: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(health.agentType) needs re-login")
                         .sirsiFont(13, weight: .semibold)
-                    Text(blockedNote).font(.caption).foregroundStyle(.secondary)
+                    Text(blockedNote).sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login.")
-                .font(.caption).foregroundStyle(.secondary)
+                .sirsiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button {
@@ -1211,13 +1285,13 @@ struct DaemonBlockerCard: View {
                     Text("\(broken.count) router daemon\(broken.count == 1 ? "" : "s") missing")
                         .sirsiFont(13, weight: .semibold)
                     Text("Work can't relay while a session is closed.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             ForEach(broken) { d in
                 Text("• \(friendlyDaemon(d.role)) (\(d.label))")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Button {
@@ -1258,12 +1332,12 @@ struct StrandedAgentView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(spacing: 4) {
                         Text("\(agent.openItems)").sirsiFont(34, weight: .bold).foregroundStyle(gold)
-                        Text("item\(agent.openItems == 1 ? "" : "s") waiting").font(.caption).foregroundStyle(.secondary)
+                        Text("item\(agent.openItems == 1 ? "" : "s") waiting").sirsiFont(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 8)
 
                     Text("This agent has work in its inbox but no armed session watching. Arming a wake channel installs a pull-loop that checks its inbox automatically, so the work no longer waits for someone to open the session.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .sirsiFont(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Button {
@@ -1274,17 +1348,17 @@ struct StrandedAgentView: View {
                     }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
 
                     Text("Runs: sirsi router wake-install \(agent.agentId)")
-                        .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                        .sirsiFont(.caption2, design: .monospaced).foregroundStyle(.tertiary)
 
                     if let line = resultLine {
-                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text(line).sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                     }
                     if engine.busy {
-                        HStack { ProgressView().controlSize(.small); Text("Arming…").font(.caption).foregroundStyle(.secondary) }
+                        HStack { ProgressView().controlSize(.small); Text("Arming…").sirsiFont(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer()
                 }.padding(16)
@@ -1305,9 +1379,9 @@ struct AnubisView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("\(SirsiEngine.human(engine.safeBytes)) safe").font(.title2.bold()).foregroundStyle(gold)
+                            Text("\(SirsiEngine.human(engine.safeBytes)) safe").sirsiFont(.title2, weight: .bold).foregroundStyle(gold)
                             Text("\(engine.safe.count) regenerable items · trash-first, recoverable")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .sirsiFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
@@ -1347,7 +1421,7 @@ struct ActionCard: View {
             Text(glyph).sirsiFont(22).sirsiFrame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).sirsiFont(14, weight: .semibold)
-                Text(sub).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                Text(sub).sirsiFont(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
             }
             Spacer()
         }
@@ -1411,12 +1485,12 @@ struct ExclusionNote: View {
     let bytes: Int64; let count: Int
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Text("🛈").font(.callout)
+            Text("🛈").sirsiFont(.callout)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(SirsiEngine.human(bytes)) held back for now")
-                    .font(.callout.weight(.semibold))
+                    .sirsiFont(.callout, weight: .semibold)
                 Text("\(count) caution-tier items (things like package caches and app remnants) aren't cleaned with one click, because they take longer to rebuild. Open Scan & Clean to review them.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .sirsiFont(.footnote).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1471,7 +1545,7 @@ struct ScanCleanView: View {
         VStack(spacing: 12) {
             ProgressView()
             Text(engine.safe.isEmpty ? "Scanning your Mac for waste…" : "Moving selected items to Trash…")
-                .font(.callout).foregroundStyle(.secondary)
+                .sirsiFont(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(.top, 60)
     }
@@ -1485,7 +1559,7 @@ struct ScanCleanView: View {
             Text(engine.scannedAt.isEmpty
                  ? "Scan your Mac to find reclaimable waste."
                  : "Nothing safe to clean right now.")
-                .font(.callout).multilineTextAlignment(.center)
+                .sirsiFont(.callout).multilineTextAlignment(.center)
             Button { Task { await engine.rescan(); syncSelection() } } label: {
                 Label("Scan now", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
             }
@@ -1497,9 +1571,9 @@ struct ScanCleanView: View {
     private func resultState(_ line: String) -> some View {
         VStack(spacing: 14) {
             Text("✓").sirsiFont(40).foregroundStyle(.green)
-            Text(line).font(.callout).multilineTextAlignment(.center)
+            Text(line).sirsiFont(.callout).multilineTextAlignment(.center)
             Text("Moved to Trash — recoverable until you empty it.")
-                .font(.caption).foregroundStyle(.secondary)
+                .sirsiFont(.caption).foregroundStyle(.secondary)
             Button { nav.pop() } label: { Text("Done").frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent).tint(gold).padding(.top, 4)
         }
@@ -1524,7 +1598,7 @@ struct ScanCleanView: View {
                         ForEach(engine.caution) { f in itemRow(f, toggleable: false) }
                     } label: {
                         Text("Held back — \(engine.caution.count) caution items · \(SirsiEngine.human(engine.cautionBytes))")
-                            .font(.callout.weight(.semibold))
+                            .sirsiFont(.callout, weight: .semibold)
                     }
                 } footer: {
                     Text("Not cleaned with one click — these take longer to rebuild. Tap any item to see what it is; clean deliberately in Terminal with `sirsi anubis clean --include-caution --confirm`.")
@@ -1553,14 +1627,14 @@ struct ScanCleanView: View {
             NavLink { ItemDetailView(engine: engine, finding: f) } label: {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(f.description).font(.caption).lineLimit(1)
-                        Text(owningEntity(f)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(f.description).sirsiFont(.caption).lineLimit(1)
+                        Text(owningEntity(f)).sirsiFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 6)
                     Text(SirsiEngine.human(f.sizeBytes))
-                        .font(.caption.monospaced())
+                        .sirsiFont(.caption, design: .monospaced)
                         .foregroundStyle(toggleable ? gold : .secondary)
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
                 .contentShape(Rectangle())
             }
@@ -1574,7 +1648,7 @@ struct ScanCleanView: View {
                 if selected.count == engine.safe.count { selected.removeAll() }
                 else { syncSelection() }
             }
-            .font(.caption).buttonStyle(.plain).foregroundStyle(gold)
+            .sirsiFont(.caption).buttonStyle(.plain).foregroundStyle(gold)
             Spacer()
             Button {
                 Task { resultLine = await engine.cleanSelected(paths: selectedSafe.map { $0.path }) }
@@ -1601,9 +1675,12 @@ struct DetailRow: View {
     let label: String; let value: String; var mono = false
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label.uppercased()).font(.caption2).foregroundStyle(.tertiary)
+            Text(label.uppercased()).sirsiFont(.caption2).foregroundStyle(.tertiary)
             Text(value)
-                .font(mono ? .caption.monospaced() : .callout)
+                // Conditional style: the ternary picked between two SEMANTIC
+                // fonts, so a plain textual sweep could not convert it. Split so
+                // both arms scale.
+                .sirsiFont(mono ? .caption : .callout, design: mono ? .monospaced : .default)
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1626,7 +1703,7 @@ struct ItemDetailView: View {
             BackBar(title: "Item")
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(finding.description).font(.headline)
+                    Text(finding.description).sirsiFont(.headline)
 
                     DetailRow(label: "Size", value: SirsiEngine.human(finding.sizeBytes)
                               + (finding.fileCount.map { " · \($0) files" } ?? ""))
@@ -1642,7 +1719,7 @@ struct ItemDetailView: View {
                     Button {
                         NSWorkspace.shared.selectFile(finding.path, inFileViewerRootedAtPath: "")
                     } label: {
-                        Label("Reveal in Finder", systemImage: "folder").font(.caption)
+                        Label("Reveal in Finder", systemImage: "folder").sirsiFont(.caption)
                     }
                     .buttonStyle(.plain).foregroundStyle(gold).padding(.top, 2)
                 }
@@ -1652,16 +1729,16 @@ struct ItemDetailView: View {
             Divider()
             if let resultLine {
                 HStack {
-                    Text("✓ \(resultLine)").font(.caption).foregroundStyle(.green)
+                    Text("✓ \(resultLine)").sirsiFont(.caption).foregroundStyle(.green)
                     Spacer()
-                    Button("Done") { nav.pop() }.font(.caption)
+                    Button("Done") { nav.pop() }.sirsiFont(.caption)
                 }.padding(12)
             } else if isSafe {
                 Button {
                     Task { resultLine = await engine.cleanSelected(paths: [finding.path]) }
                 } label: {
                     if engine.busy {
-                        HStack { ProgressView().controlSize(.small); Text("Moving to Trash…").font(.caption) }
+                        HStack { ProgressView().controlSize(.small); Text("Moving to Trash…").sirsiFont(.caption) }
                             .frame(maxWidth: .infinity)
                     } else {
                         Text("Move this to Trash (\(SirsiEngine.human(finding.sizeBytes)))")
@@ -1671,7 +1748,7 @@ struct ItemDetailView: View {
                 .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy).padding(12)
             } else {
                 Text("Held back from one-click cleaning — rebuild it deliberately.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(12)
             }
         }
@@ -1736,25 +1813,25 @@ struct RiskView: View {
                                 Text("\(r.uncommittedFiles) file\(r.uncommittedFiles == 1 ? "" : "s") not checkpointed")
                                     .sirsiFont(13, weight: .semibold)
                                 Text("Last commit \(SirsiEngine.humanDuration(r.timeSinceCommit / 1_000_000_000)) ago — \(r.lastCommitMessage)")
-                                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                    .sirsiFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
                             }
                         }
                     } header: { Text("RISK: \(r.risk.uppercased())") }
                     Section {
-                        LabeledContent("Repository") { Text(r.repoRoot).font(.caption2.monospaced()).lineLimit(1).truncationMode(.middle) }
-                        LabeledContent("Branch") { Text(r.branch).font(.caption2.monospaced()) }
-                        LabeledContent("Modified / untracked") { Text("\(r.modifiedFiles) / \(r.untrackedFiles)").font(.caption2.monospaced()) }
-                        LabeledContent("Line churn") { Text("+\(r.linesAdded) −\(r.linesDeleted)").font(.caption2.monospaced()) }
+                        LabeledContent("Repository") { Text(r.repoRoot).sirsiFont(.caption2, design: .monospaced).lineLimit(1).truncationMode(.middle) }
+                        LabeledContent("Branch") { Text(r.branch).sirsiFont(.caption2, design: .monospaced) }
+                        LabeledContent("Modified / untracked") { Text("\(r.modifiedFiles) / \(r.untrackedFiles)").sirsiFont(.caption2, design: .monospaced) }
+                        LabeledContent("Line churn") { Text("+\(r.linesAdded) −\(r.linesDeleted)").sirsiFont(.caption2, design: .monospaced) }
                     } header: { Text("DETAILS") }
                     if let w = r.warning, !w.isEmpty {
-                        Section { Text(w).font(.caption).foregroundStyle(.secondary) } header: { Text("NOTE") }
+                        Section { Text(w).sirsiFont(.caption).foregroundStyle(.secondary) } header: { Text("NOTE") }
                     }
                     if let line = actionResult {
                         Section {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: line.contains("Checkpointed") ? "checkmark.seal.fill" : "info.circle.fill")
                                     .foregroundStyle(line.contains("Checkpointed") ? .green : .secondary)
-                                Text(line).font(.caption).fixedSize(horizontal: false, vertical: true)
+                                Text(line).sirsiFont(.caption).fixedSize(horizontal: false, vertical: true)
                             }
                         } header: { Text("RESULT") }
                     }
@@ -1764,7 +1841,7 @@ struct RiskView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                                 Text("All work is checkpointed — nothing at risk right now.")
-                                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                                    .sirsiFont(.caption).fixedSize(horizontal: false, vertical: true)
                             }
                         } else {
                             Button {
@@ -1773,9 +1850,9 @@ struct RiskView: View {
                                 HStack {
                                     if checkpointing { ProgressView().controlSize(.small) }
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text("Checkpoint now").font(.caption.weight(.semibold))
+                                        Text("Checkpoint now").sirsiFont(.caption, weight: .semibold)
                                         Text("Commit all changes locally — nothing is pushed, undo with git reset.")
-                                            .font(.caption2).foregroundStyle(.secondary)
+                                            .sirsiFont(.caption2).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                 }.contentShape(Rectangle())
@@ -1790,7 +1867,7 @@ struct RiskView: View {
                 ScrollView {
                     let msg = (rawFallback?.isEmpty == false) ? rawFallback! : "Couldn't read checkpoint risk."
                     Text(msg)
-                        .font(.caption.monospaced())
+                        .sirsiFont(.caption, design: .monospaced)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                 }
             }
@@ -1915,29 +1992,29 @@ struct GhostsView: View {
                 VStack(spacing: 12) {
                     ProgressView()
                     Text("Scanning for remnants of uninstalled apps…")
-                        .font(.callout).foregroundStyle(.secondary)
-                    Text("This can take a minute.").font(.caption2).foregroundStyle(.tertiary)
+                        .sirsiFont(.callout).foregroundStyle(.secondary)
+                    Text("This can take a minute.").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
                 MaybeList {
-                    Section { Text(r.summary).font(.callout) } header: { Text("RESULT") }
+                    Section { Text(r.summary).sirsiFont(.callout) } header: { Text("RESULT") }
                     if r.ghosts.isEmpty {
                         Section {
                             Text("Nothing left behind — every uninstalled app cleaned up after itself.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .sirsiFont(.caption).foregroundStyle(.secondary)
                         }
                     } else {
                         ForEach(r.ghosts) { g in
                             Section {
                                 ForEach(g.residuals) { res in
                                     HStack {
-                                        Text(res.path).font(.caption2.monospaced())
+                                        Text(res.path).sirsiFont(.caption2, design: .monospaced)
                                             .foregroundStyle(.secondary).lineLimit(1)
                                             .truncationMode(.middle)
                                         Spacer(minLength: 8)
                                         Text(SirsiEngine.human(res.sizeBytes))
-                                            .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                                            .sirsiFont(.caption2, design: .monospaced).foregroundStyle(.tertiary)
                                     }
                                 }
                             } header: {
@@ -1945,7 +2022,7 @@ struct GhostsView: View {
                                     Text(g.appName)
                                     Spacer()
                                     Text("\(g.totalFiles) file\(g.totalFiles == 1 ? "" : "s") · \(SirsiEngine.human(g.totalSizeBytes))")
-                                        .font(.caption2)
+                                        .sirsiFont(.caption2)
                                 }
                             }
                         }
@@ -1955,7 +2032,7 @@ struct GhostsView: View {
             } else {
                 VStack(spacing: 8) {
                     Text("Couldn't scan for leftover apps.").foregroundStyle(.secondary)
-                    Button("Try again") { Task { await load() } }.font(.caption)
+                    Button("Try again") { Task { await load() } }.sirsiFont(.caption)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             }
@@ -1964,7 +2041,7 @@ struct GhostsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: toastOK ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(toastOK ? .green : .orange)
-                    Text(toast).font(.caption); Spacer()
+                    Text(toast).sirsiFont(.caption); Spacer()
                 }.padding(.horizontal, 14).padding(.vertical, 8)
             }
             // The lever the audit asked for: a SAFE clean (Go `ghosts clean` —
@@ -1978,7 +2055,7 @@ struct GhostsView: View {
                     }.disabled(cleaning)
                     if cleaning { ProgressView().controlSize(.small) }
                     Spacer()
-                    Text("recoverable").font(.caption2).foregroundStyle(.tertiary)
+                    Text("recoverable").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }.padding(.horizontal, 14).padding(.vertical, 10)
             }
         }
@@ -2091,12 +2168,12 @@ struct ProjectBar: View {
                 .sirsiFont(13).foregroundStyle(gold)
             VStack(alignment: .leading, spacing: 1) {
                 if let name = engine.projectName {
-                    Text("Weighing \(name)").font(.caption.weight(.semibold))
-                    Text(abbreviatedRoot).font(.caption2).foregroundStyle(.secondary)
+                    Text("Weighing \(name)").sirsiFont(.caption, weight: .semibold)
+                    Text(abbreviatedRoot).sirsiFont(.caption2).foregroundStyle(.secondary)
                 } else {
-                    Text("No project selected").font(.caption.weight(.semibold))
+                    Text("No project selected").sirsiFont(.caption, weight: .semibold)
                     Text("Pick a project to see its real score.")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .sirsiFont(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -2123,7 +2200,7 @@ struct ProjectBar: View {
                 }
             } label: {
                 Text(engine.projectRoot == nil ? "Choose…" : "Change…")
-                    .font(.caption)
+                    .sirsiFont(.caption)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -2214,7 +2291,7 @@ struct ResultView: View {
                 Divider()
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Working…").font(.caption).foregroundStyle(.secondary)
+                    Text("Working…").sirsiFont(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }.padding(.horizontal, 14).padding(.vertical, 8)
             }
@@ -2223,7 +2300,7 @@ struct ResultView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: pf.hasPrefix("✓") ? "checkmark.seal.fill" : "info.circle.fill")
                         .foregroundStyle(pf.hasPrefix("✓") ? .green : .secondary).padding(.top, 1)
-                    Text(pf).font(.caption).foregroundStyle(.primary)
+                    Text(pf).sirsiFont(.caption).foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, 14).padding(.vertical, 10)
@@ -2272,7 +2349,7 @@ struct ResultView: View {
                     HStack(spacing: 6) {
                         Image(systemName: toastOK ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .foregroundStyle(toastOK ? .green : .orange)
-                        Text(t).font(.caption)
+                        Text(t).sirsiFont(.caption)
                     }
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 7).fill((toastOK ? Color.green : Color.orange).opacity(0.12)))
@@ -2288,10 +2365,10 @@ struct ResultView: View {
                             // value WRAP to show everything, and both are selectable
                             // so evidence can be copied out of the popover.
                             HStack(alignment: .firstTextBaseline) {
-                                Text(f.label).font(.caption).foregroundStyle(.secondary)
+                                Text(f.label).sirsiFont(.caption).foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 12)
-                                Text(f.value).font(.caption.monospaced())
+                                Text(f.value).sirsiFont(.caption, design: .monospaced)
                                     .multilineTextAlignment(.trailing)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .textSelection(.enabled)
@@ -2304,7 +2381,7 @@ struct ResultView: View {
                 }
 
                 if !r.nextActions.isEmpty {
-                    Text("WHAT YOU CAN DO").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("WHAT YOU CAN DO").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
                     VStack(spacing: 8) {
                         ForEach(r.nextActions) { actionButton($0) }
                     }
@@ -2330,7 +2407,7 @@ struct ResultView: View {
                 if let d = a.description, !d.isEmpty {
                     // Wrap, never clip mid-sentence — a half-shown consequence is
                     // worse than a taller button.
-                    Text(d).font(.caption2)
+                    Text(d).sirsiFont(.caption2)
                         .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
@@ -2549,7 +2626,7 @@ struct AskSirsiView: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                 if asking {
-                    Text("thinking on-device…").font(.caption2).foregroundStyle(.tertiary)
+                    Text("thinking on-device…").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
                 if let answer {
                     ScrollView {
@@ -2559,7 +2636,7 @@ struct AskSirsiView: View {
                             .textSelection(.enabled)
                     }
                     .frame(maxHeight: 260)
-                    Text("answered on-device by Sirsi — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                    Text("answered on-device by Sirsi — no cloud").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 12).padding(.top, 10)
@@ -2599,8 +2676,8 @@ struct ThreadsView: View {
             HStack(spacing: 6) {
                 Text("\(engine.threadsTotal)").sirsiFont(22, weight: .bold).foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("live thread\(engine.threadsTotal == 1 ? "" : "s")").font(.caption).foregroundStyle(.primary)
-                    Text("\(engine.threadRoster.count) agent\(engine.threadRoster.count == 1 ? "" : "s") on the fabric").font(.caption2).foregroundStyle(.secondary)
+                    Text("live thread\(engine.threadsTotal == 1 ? "" : "s")").sirsiFont(.caption).foregroundStyle(.primary)
+                    Text("\(engine.threadRoster.count) agent\(engine.threadRoster.count == 1 ? "" : "s") on the fabric").sirsiFont(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }.padding(.horizontal, 16).padding(.vertical, 10)
@@ -2609,7 +2686,7 @@ struct ThreadsView: View {
                 VStack(spacing: 8) {
                     if engine.threadsLoading { ProgressView() }
                     Text(engine.threadsLoading ? "Reading the fabric…" : "No live threads right now.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .sirsiFont(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
             } else {
                 ScrollView {
@@ -2619,11 +2696,11 @@ struct ThreadsView: View {
                                 Text(a.glyph).sirsiFont(15)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(a.agent).sirsiFont(12, weight: .semibold)
-                                    Text(rollup(a)).font(.caption2).foregroundStyle(.secondary)
+                                    Text(rollup(a)).sirsiFont(.caption2).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 VStack(alignment: .trailing, spacing: 3) {
-                                    Text(ago(a.freshestIdle)).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                    Text(ago(a.freshestIdle)).sirsiFont(.caption2, design: .monospaced).foregroundStyle(.secondary)
                                     PulseBar(pulse: a.pulse, stale: a.isStale)
                                 }
                             }
@@ -2640,7 +2717,7 @@ struct ThreadsView: View {
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.caption).foregroundStyle(gold)
+                    Image(systemName: "sparkles").sirsiFont(.caption).foregroundStyle(gold)
                     TextField("Ask about the fabric — e.g. \"what's stale?\"", text: $question)
                         .textFieldStyle(.plain).sirsiFont(12)
                         .onSubmit { ask() }
@@ -2653,10 +2730,10 @@ struct ThreadsView: View {
                     }
                 }
                 if let answer {
-                    Text(answer).font(.caption).foregroundStyle(.primary)
+                    Text(answer).sirsiFont(.caption).foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("answered on-device by Sirsi — no cloud").font(.caption2).foregroundStyle(.tertiary)
+                    Text("answered on-device by Sirsi — no cloud").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
             }.padding(.horizontal, 14).padding(.vertical, 8)
 
@@ -2665,7 +2742,7 @@ struct ThreadsView: View {
                 Button { Task { await engine.loadThreads() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                     .disabled(engine.threadsLoading)
                 Spacer()
-                Text("updates every 60s").font(.caption2).foregroundStyle(.tertiary)
+                Text("updates every 60s").sirsiFont(.caption2).foregroundStyle(.tertiary)
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
         .task { await engine.loadThreads() }
@@ -2720,10 +2797,10 @@ struct ActivityView: View {
             BackBar(title: "Activity")
             if engine.activity.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath").font(.title).foregroundStyle(.tertiary)
-                    Text("No actions yet").font(.callout).foregroundStyle(.secondary)
+                    Image(systemName: "clock.arrow.circlepath").sirsiFont(.title).foregroundStyle(.tertiary)
+                    Text("No actions yet").sirsiFont(.callout).foregroundStyle(.secondary)
                     Text("Fixes you apply show here — what changed, when, and the command that ran. Everything is reversible.")
-                        .font(.caption2).foregroundStyle(.tertiary).multilineTextAlignment(.center)
+                        .sirsiFont(.caption2).foregroundStyle(.tertiary).multilineTextAlignment(.center)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
             } else {
                 List(engine.activity) { e in
@@ -2731,11 +2808,11 @@ struct ActivityView: View {
                         HStack {
                             Text(e.title).sirsiFont(12, weight: .semibold)
                             Spacer()
-                            Text(e.when).font(.caption2).foregroundStyle(.tertiary)
+                            Text(e.when).sirsiFont(.caption2).foregroundStyle(.tertiary)
                         }
-                        Text(e.command).font(.caption.monospaced()).foregroundStyle(gold)
+                        Text(e.command).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
                         if !e.result.isEmpty {
-                            Text(e.result).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                            Text(e.result).sirsiFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }.padding(.vertical, 2)
                 }.listStyle(.inset)
@@ -2812,12 +2889,12 @@ struct InsightView: View {
             } else if let r = report {
                 MaybeList {
                     if let n = r.narrative, !n.isEmpty {
-                        Section { Text(n).font(.callout) } header: { Text("𓂀 LOCAL GEMMA") }
+                        Section { Text(n).sirsiFont(.callout) } header: { Text("𓂀 LOCAL GEMMA") }
                     }
                     Section {
                         if r.actions.isEmpty {
                             Text("Everything healthy — nothing to do right now.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .sirsiFont(.caption).foregroundStyle(.secondary)
                         }
                         ForEach(r.actions) { a in
                             // Each suggestion RUNS its command in-panel — tap pushes
@@ -2829,9 +2906,9 @@ struct InsightView: View {
                                 HStack(alignment: .top, spacing: 8) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(a.title).sirsiFont(12, weight: .semibold)
-                                        Text(a.why).font(.caption2).foregroundStyle(.secondary)
+                                        Text(a.why).sirsiFont(.caption2).foregroundStyle(.secondary)
                                             .fixedSize(horizontal: false, vertical: true)
-                                        Text(a.command).font(.caption.monospaced()).foregroundStyle(gold)
+                                        Text(a.command).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
                                     }
                                     Spacer()
                                     Image(systemName: "play.circle.fill")
@@ -2855,10 +2932,10 @@ struct InsightView: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Circle().fill(insightSeverityColor(min(s.severity, 2))).frame(width: 7, height: 7)
-                                    Text(s.deity).font(.caption)
+                                    Text(s.deity).sirsiFont(.caption)
                                     Spacer()
-                                    Text(s.status).font(.caption2).foregroundStyle(.secondary)
-                                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                    Text(s.status).sirsiFont(.caption2).foregroundStyle(.secondary)
+                                    Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
                                 }
                                 .contentShape(Rectangle())
                             }
@@ -2974,7 +3051,7 @@ struct ThothMemoryInfoView: View {
                 Divider()
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
-                    Text(toast).font(.caption); Spacer()
+                    Text(toast).sirsiFont(.caption); Spacer()
                 }.padding(.horizontal, 14).padding(.vertical, 8)
             }
         }
@@ -2986,8 +3063,8 @@ struct ThothMemoryInfoView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Project memory lives with each project.").sirsiFont(13, weight: .semibold)
             Text("Thoth keeps a small memory file inside every project so a new session picks up where the last one left off — no re-reading the whole codebase.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("Pick a project above to see its memory.").font(.callout).foregroundStyle(.secondary)
+                .sirsiFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Pick a project above to see its memory.").sirsiFont(.callout).foregroundStyle(.secondary)
             Spacer()
         }.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -2998,13 +3075,13 @@ struct ThothMemoryInfoView: View {
                 Text("📖").sirsiFont(14)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(engine.projectName ?? "project") memory").sirsiFont(13, weight: .semibold)
-                    Text("\(lineCount) lines\(modified.map { " · synced \($0)" } ?? "")").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(lineCount) lines\(modified.map { " · synced \($0)" } ?? "")").sirsiFont(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }.padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             ScrollView {
-                Text(mem).font(.caption.monospaced()).foregroundStyle(.primary)
+                Text(mem).sirsiFont(.caption, design: .monospaced).foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }
@@ -3022,7 +3099,7 @@ struct ThothMemoryInfoView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("No Thoth memory in \(engine.projectName ?? "this project") yet.").sirsiFont(13, weight: .semibold)
             Text("Initialize it so future sessions resume from a compact project state instead of re-reading everything.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .sirsiFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button { runThoth(["thoth", "init"], "Memory initialized") } label: { Label("Initialize memory", systemImage: "sparkles") }.disabled(busy)
             if busy { ProgressView().controlSize(.small) }
             Spacer()
@@ -3070,7 +3147,7 @@ struct OwnerActionsListView: View {
             if engine.ownerGatedItems.isEmpty {
                 VStack(spacing: 8) {
                     Text("✓").sirsiFont(40).foregroundStyle(.green)
-                    Text("Nothing is waiting on you.").font(.callout).foregroundStyle(.secondary)
+                    Text("Nothing is waiting on you.").sirsiFont(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
             } else {
                 MaybeList {
@@ -3083,14 +3160,14 @@ struct OwnerActionsListView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                         .multilineTextAlignment(.leading)
                                     if let why = item.why, !why.isEmpty {
-                                        Text(why).font(.caption2).foregroundStyle(.secondary)
+                                        Text(why).sirsiFont(.caption2).foregroundStyle(.secondary)
                                             .lineLimit(3).multilineTextAlignment(.leading)
                                     }
                                     Text("from \(item.from) · \(item.ageLabel)")
-                                        .font(.caption2).foregroundStyle(.tertiary)
+                                        .sirsiFont(.caption2).foregroundStyle(.tertiary)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
                             }
                             .contentShape(Rectangle())
                         }
@@ -3151,17 +3228,17 @@ struct OwnerActionView: View {
                 Text(m.title).sirsiFont(14, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    Text(m.type).font(.caption2.weight(.semibold))
+                    Text(m.type).sirsiFont(.caption2, weight: .semibold)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(m.type == "decision" ? Color.yellow.opacity(0.25) : Color.primary.opacity(0.08)))
-                    Text("from \(m.from) · \(m.ageLabel)").font(.caption2).foregroundStyle(.secondary)
+                    Text("from \(m.from) · \(m.ageLabel)").sirsiFont(.caption2).foregroundStyle(.secondary)
                 }
                 if let refs = m.refs, !refs.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("REFERENCED FILES").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("REFERENCED FILES").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
                         ForEach(refs, id: \.self) { ref in
                             Button { openRef(ref) } label: {
-                                Label(ref, systemImage: "doc.text").font(.caption)
+                                Label(ref, systemImage: "doc.text").sirsiFont(.caption)
                             }.buttonStyle(.link)
                         }
                     }
@@ -3170,7 +3247,7 @@ struct OwnerActionView: View {
             if let r = resultLine {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
-                    Text(r).font(.caption)
+                    Text(r).sirsiFont(.caption)
                 }
                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.green.opacity(0.12)))
@@ -3191,7 +3268,7 @@ struct OwnerActionView: View {
             if meta?.type == "decision" && resultLine == nil {
                 HStack(spacing: 8) {
                     TextField("Your decision…", text: $decision)
-                        .textFieldStyle(.roundedBorder).font(.caption)
+                        .textFieldStyle(.roundedBorder).sirsiFont(.caption)
                     Button("Send") {
                         Task { resultLine = await engine.replyOwnerDecision(id: itemID, text: decision) }
                     }
