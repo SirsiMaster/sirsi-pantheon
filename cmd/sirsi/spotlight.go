@@ -14,6 +14,8 @@ import (
 )
 
 var spotlightExcludeJSON bool
+var spotlightMarkers bool
+var spotlightMarkersConfirm bool
 
 // spotlightPrivacyURL deep-links to System Settings ▸ Spotlight ▸ Privacy. The
 // pane id churned across macOS versions; the extension form is Ventura+.
@@ -49,6 +51,10 @@ func runSpotlightExclude(_ *cobra.Command, args []string) error {
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
+	}
+
+	if spotlightMarkers {
+		return runSpotlightMarkers(path)
 	}
 
 	// Read-only storm state from the shipped detector.
@@ -135,4 +141,71 @@ func detailOf(f *guard.DiagnosticFinding) string {
 
 func init() {
 	spotlightExcludeCmd.Flags().BoolVar(&spotlightExcludeJSON, "json", false, "read-only storm state as JSON (never opens the UI)")
+	spotlightExcludeCmd.Flags().BoolVar(&spotlightMarkers, "markers", false, "plan .metadata_never_index markers over high-churn trees (preview)")
+	spotlightExcludeCmd.Flags().BoolVar(&spotlightMarkersConfirm, "confirm", false, "with --markers: actually write the markers")
+}
+
+// runSpotlightMarkers is the durable, unprivileged half of the remediation.
+// The Privacy pane is user-only and does not survive being described; a
+// .metadata_never_index marker is a file this process can actually write, and
+// re-running is a no-op rather than a duplicate.
+func runSpotlightMarkers(devDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home: %w", err)
+	}
+	plan := planIndexMarkers(home, devDir)
+
+	var already, todo, missing int
+	for _, st := range plan {
+		switch {
+		case !st.Exists:
+			missing++
+		case st.Marked:
+			already++
+		default:
+			todo++
+		}
+	}
+
+	if !spotlightMarkersConfirm {
+		output.Header("Spotlight index markers — preview (nothing written)")
+		for _, st := range plan {
+			switch {
+			case !st.Exists:
+				continue
+			case st.Marked:
+				output.Dim("  already marked  %s", st.Path)
+			default:
+				output.Info("  would mark      %s", st.Path)
+			}
+		}
+		output.Info("\n  %d to mark, %d already marked, %d absent.", todo, already, missing)
+		output.Dim("     Re-run with --markers --confirm to write them. Reverse by deleting %s.", markerFile)
+		printRootOnlyLevers()
+		return nil
+	}
+
+	plan, applyErr := applyIndexMarkers(plan)
+	wrote := 0
+	for _, st := range plan {
+		if st.WroteNow {
+			wrote++
+			output.Success("  marked %s", st.Path)
+		}
+	}
+	output.Info("\n  %d newly marked, %d already marked, %d absent.", wrote, already, missing)
+	output.Dim("     Source trees are deliberately NOT marked — code search is the one Spotlight result worth keeping.")
+	printRootOnlyLevers()
+	return applyErr
+}
+
+// printRootOnlyLevers states the part this process cannot do. Measured, not
+// assumed: mds runs as root and mds_stores as _mds_stores, so renice and
+// taskpolicy both return EPERM here.
+func printRootOnlyLevers() {
+	output.Dim("\n  Bounding the indexer itself needs root (mds is root-owned; renice/taskpolicy return EPERM):")
+	for _, l := range rootOnlyLevers() {
+		output.Dim("     %s", l)
+	}
 }
