@@ -8,7 +8,16 @@
 >
 > **Entry format:** `## EL-NNN — YYYY-MM-DD — Title` · author agent · status
 > (`OPEN` / `SPEC'D` / `IN FLIGHT` / `CLOSED` / `SUPERSEDED BY EL-NNN`).
-> Every claim carries the command that produced it. No number goes in here that was not measured.
+>
+> **Epistemic labels (used inline throughout entries):**
+> - **[measured]** — backed by a command whose output is quoted; authoritative.
+> - **[derived]** — arithmetic on measured inputs; reliable within stated assumptions.
+> - **[estimated]** — reasoned from incomplete data or single observations; a starting point, not a fact.
+> - **[hypothesis]** — a claim that is plausible but untested on this fleet; carries a named test that would confirm or refute it.
+>
+> Claims without a label are structural (definitions, procedures, policy). Forward-looking recommendations
+> are always hypotheses until the test is run. A wrong finding is never rewritten — a follow-up entry
+> supersedes it, so the reasoning stays auditable.
 
 ---
 
@@ -51,9 +60,25 @@ through the REST mirror.
 
 **Action (blocked on one measurement, not on judgement):** instrument which endpoints the anchoring
 client actually calls. If it submits consensus messages via the gRPC SDK only, the target profile is
-`network-node` alone → **VM at 4 GB**. If it verifies anchors through the mirror REST API, keep
-`importer` + `db` + `rest` → **VM at 6 GB**. Either way ~2.2 GB comes back with nothing lost.
-⚠ `hedera-local stop` DESTROYS the ledger — this is a compose-profile change, never a stop/start.
+`network-node` alone → **VM at 4 GB [estimated]**. If it verifies anchors through the mirror REST API, keep
+`importer` + `db` + `rest` → **VM at 6 GB [estimated]**. Either way ~2.2 GB [estimated] comes back with nothing lost.
+
+⚠ **Safe procedure — NEVER invoke `hedera-local stop` (it destroys the ledger).** The preservation
+sequence before any compose-profile change is:
+
+1. Record every anchoring-client endpoint currently in use (`netstat`/`lsof` against the running
+   anchor-submission process and the mirror-rest reader, if any).
+2. Snapshot the ledger volume identity: `docker inspect network-node --format '{{.Mounts}}'` and
+   verify the volume is named (not anonymous) so `docker compose up` re-attaches it.
+3. Confirm ledger continuity via readback: submit a probe transaction and read it back through the
+   REST mirror before touching anything.
+4. Remove only the services confirmed non-essential by step 1: edit the compose profile to exclude
+   them, then `docker compose up -d --remove-orphans` (this reconciles the running set without
+   stopping the consensus node).
+5. Re-run the readback probe to confirm the anchor and REST paths still resolve.
+
+Until steps 1–5 are documented and run on this box, the 4–6 GB [estimated] and 2.2 GB reclaimed
+[estimated] remain estimates. This is not an approved operation.
 
 ### 2. Deterministic vs LLM-based sizing — **deterministic, and this is not a close call**
 
@@ -96,22 +121,25 @@ verdicts, summarization. Not long-form generation:
    no local sovereignty. This is a hard gate, not a preference.
 5. **License.** Commercial product. Apache-2.0/MIT beats a bespoke community license.
 
-**Recommendation, with confidence marked:**
+**Recommendation [hypothesis] — with confidence marked:**
 
-| Tier | Model | Confidence |
-|---|---|---|
-| 8 GB (on demand) | **Qwen-class 3B-4bit** — 1.6 GB, already cached on this box, Apache-2.0, strong structured output at small size | medium — cached, never benchmarked here |
-| 16 GB | **Qwen-class 7–8B-4bit** (~4.5 GB) or 3B resident | medium |
-| 32–64 GB | **Gemma 12B, 4-bit QAT** (~7–8 GB) | high — the family is proven on this fleet |
-| 128 GB | Gemma 31B 4-bit QAT (~30 GB) | measured: 0.5 tok/s on **this** box (router item `20260715-175752`) — a 128 GB claim, not a 48 GB one |
+| Tier | Model | Confidence | Basis |
+|---|---|---|---|
+| 8 GB (on demand) | **Qwen-class 3B-4bit** — ~1.6 GB [estimated], already cached on this box, Apache-2.0, strong structured output at small size | medium | [estimated] cached artifact size, no on-host benchmark |
+| 16 GB | **Qwen-class 7–8B-4bit** (~4.5 GB [estimated]) or 3B resident | medium | [estimated] |
+| 32–64 GB | **Gemma 12B, 4-bit QAT** (~7–8 GB [estimated from 1.6× seed]) | medium | [hypothesis] family proven, QAT variant not benchmarked on this fleet |
+| 128 GB | Gemma 31B 4-bit QAT (~30 GB [estimated]) | low | [estimated] disk only; 0.5 tok/s at 8-bit on *this 48 GB box* [measured, router `20260715-175752`] — not a validated 128 GB claim |
 
-**GLM and Kimi K3: do not put them in the default path without a benchmark.** One structural reason
-that does not depend on version specifics: **MoE architectures are the opposite of what a small tier
-needs.** Their *active* parameter count is small, but every expert must be resident — you pay the
-full parameter count in RAM and only save compute. For an 8 GB host that is the wrong trade in the
-wrong direction. Dense small models are the right family for the small tiers, whoever trains them.
-My information on the very newest releases may also be behind, which is itself an argument for the
-harness in §5 rather than for my opinion.
+**GLM and Kimi K3: do not put them in the default path without a benchmark.** One structural caution
+that does not depend on version specifics: **MoE architectures trade active compute for total parameter
+count**, and conventional local-inference runtimes (including the MLX path used here) typically keep
+full expert weights resident because expert-paging and offloading are not universally available or
+performant on the supported runtime. In that common configuration, you pay the full parameter count
+in RAM and save only compute — the wrong trade on a memory-constrained host. Whether expert offloading
+is available and performant on the specific runtime and model is the actual gate; until that is
+confirmed, dense small models are the safer default for small tiers. My information on the newest
+releases may also be behind, which is itself an argument for the harness in §5 rather than for this
+structural heuristic.
 
 ### 4. Which quantization — **4-bit QAT as the default, everywhere**
 
@@ -124,16 +152,18 @@ harness in §5 rather than for my opinion.
 
 Two rules follow:
 
-- **Prefer more parameters at 4-bit QAT over fewer parameters at 8-bit for the same RAM.** A 12B-4bit
-  at ~7 GB beats a 4B-8bit at ~6.5 GB on every task Pantheon runs. QAT exists precisely to recover
-  what aggressive quantization costs, which is why it wins between equal-bit variants and is never a
-  reason to accept fewer bits.
+- **[hypothesis] Prefer more parameters at 4-bit QAT over fewer parameters at 8-bit for the same RAM.**
+  A 12B-4bit at ~7 GB *likely* outperforms a 4B-8bit at ~6.5 GB on Pantheon's workload — QAT recovers
+  much of what aggressive quantization costs — but no comparative benchmark exists on this fleet or
+  against Pantheon's actual tasks. This is the leading hypothesis; EL-002-A is the test. It is also
+  why it wins between equal-bit variants and is never a reason to accept fewer bits.
 - **8-bit is a large-host luxury.** On this 48 GB box it is what took the machine to the jetsam wall
   (EL-001 §3). The resolver preferred it because its ranking puts bits above size-realism — correct
   when RAM is free, catastrophic when it is not.
 
-**Stated plainly: the current 12B-8bit default is costing ~12 GB of RAM to buy a quality difference
-this fleet has never measured.**
+**Stated plainly: the current 12B-8bit default is costing ~12 GB of RAM. Whether a 4-bit 12B matches
+it on task quality is unknown — that is exactly what EL-002-A measures. Moving to 4-bit QAT is
+RAM-justified and low-risk; claiming it is quality-neutral is not yet evidenced.**
 
 ### 5. The open action that outranks every opinion above — EL-002-A
 
@@ -273,14 +303,19 @@ runs** — the 4 GiB reservation is nearly 2× what the workload has ever used, 
 
 ### 7. Answer to the owner's literal question (this box, current config)
 
-- **64 GB** — honest minimum for the configuration as it stands today (12B-8bit + 10 GB VM + desktop).
-- **128 GB** — required before `gemma-4-31B-it-qat-4bit` (27 GB on disk → ~30–34 GB resident) can be
-  the default while the consensus VM and builds run.
+- **64 GB [estimated]** — conservative minimum for the configuration as it stands today (12B-8bit
+  observed at 19.30 GB peak [measured] + 10 GB VM [measured] + desktop + OS wired). Not verified on
+  a 64 GB host.
+- **128 GB [estimated]** — required before `gemma-4-31B-it-qat-4bit` (27 GB on disk → ~30–34 GB
+  resident [estimated from 1.6× seed]) can be the default while the consensus VM and builds run.
+  The 128 GB claim itself is from router item `20260715-175752` [measured on this 48 GB box reporting
+  0.5 tok/s, a 128 GB inference rate, not a 128 GB minimum].
 - **48 GB (current)** — sufficient **only** with the resident set capped. Not sufficient as configured.
 
-Config changes that reclaim ~11–14 GB with no hardware: 12B-8bit → a 4-bit 12B (−10 GB), prompt cache
-4 GiB → 2 GiB (−2 GB), Colima 10 → 8 GB (−2 GB, **only after measuring the consensus node's JVM heap
-inside the VM** — `hedera-local stop` destroys the ledger, so this one is measure-first).
+Config changes that reclaim ~11–14 GB [estimated] with no hardware: 12B-8bit → a 4-bit 12B
+(−10 GB [estimated]), prompt cache 4 GiB → 2 GiB (−2 GB [derived from 2.19–2.20 GB high-water mark]),
+Colima 10 → 8 GB (−2 GB [estimated], **only after the §1 preservation procedure and the consensus
+JVM heap measurement inside the VM** — `hedera-local stop` destroys the ledger).
 
 But buying RAM or hand-trimming constants both leave the real defect in place: **the next model bump
 silently re-creates this.**
@@ -292,8 +327,11 @@ as useful as we claim."* Accepted as a product law, not a nice-to-have. Five rul
 
 **R1 — Budget against measured RSS, never disk size.** Maintain `~/.sirsi/model-footprint.json`:
 `{model_id: {disk_gb, observed_peak_rss_gb, samples, last_seen}}`, written by the broker on every load
-and read by the resolver. Until a model has a measurement, apply a **1.6× disk multiplier** — the
-worst ratio observed here — rather than 1.0×. Learned numbers replace the guess on first real load.
+and read by the resolver. Until a model has a measurement, apply a **1.6× disk multiplier** as a
+conservative whole-process peak seed — this is the ratio observed in one jetsam incident on this box
+(weights + KV cache + activations + allocator slack + framework overhead), not a validated
+disk-to-weights ratio. It is an initial upper bound to be replaced by per-model samples on first real
+load, not a generally established multiplier. Learned numbers replace the seed on first real load.
 
 **R2 — Delete the `max(8.0, …)` floor.** Replace with a subtractive budget:
 
@@ -320,20 +358,20 @@ deterministic rules, the router, board, threads, health and menubar are unaffect
 that makes the 8 GB claim honest — at 8 GB the truthful statement is not *"Pantheon runs a 12B model"*,
 it is *"Pantheon runs, and the LLM is opt-in and non-resident."*
 
-### 9. Proposed tier table (to be validated on real hardware, not asserted)
+### 9. Proposed tier table [hypothesis — to be validated on real hardware, not asserted]
 
-| Host | Pantheon core | Local LLM default | VM | Honest claim |
-|---|---|---|---|---|
-| 8 GB | 80 MB | **none resident**; 3B-4bit (1.6 GB) on demand, evicted after idle | off | full Pantheon, opt-in LLM |
-| 16 GB | 80 MB | 3B-4bit resident **or** 12B on demand + evict | off / 4 GB opt-in | full Pantheon, small local LLM |
-| 32 GB | 80 MB | 12B-4bit (~8 GB measured) | 6 GB | comfortable |
-| 48 GB | 80 MB | 12B-4bit, cache 2 GB | 8 GB | comfortable (this box, after fix) |
-| 64 GB | 80 MB | 12B-8bit (~19 GB measured) | 10 GB | headroom |
-| 128 GB | 80 MB | 31B-4bit (~30–34 GB) | 16 GB | full fleet |
+| Host | Pantheon core | Local LLM default | VM | Honest claim | Status |
+|---|---|---|---|---|---|
+| 8 GB | 80 MB [measured] | **none resident**; 3B-4bit (~1.6 GB [estimated]) on demand, evicted after idle | off | full Pantheon, opt-in LLM | hypothesis |
+| 16 GB | 80 MB [measured] | 3B-4bit resident **or** 12B on demand + evict | off / 4 GB opt-in | full Pantheon, small local LLM | hypothesis |
+| 32 GB | 80 MB [measured] | 12B-4bit (~8 GB [estimated from 1.6× seed]) | 6 GB [estimated] | comfortable | hypothesis |
+| 48 GB | 80 MB [measured] | 12B-4bit, cache 2 GB | 8 GB [estimated] | comfortable (this box, after fix) | hypothesis |
+| 64 GB | 80 MB [measured] | 12B-8bit (~19 GB peak [measured on 48 GB box]) | 10 GB | headroom | hypothesis |
+| 128 GB | 80 MB [measured] | 31B-4bit (~30–34 GB [estimated]) | 16 GB | full fleet | hypothesis |
 
 **Not yet verified:** no 8 GB or 16 GB host has ever run this stack. Until one does, every row above
-except 48 GB is arithmetic, not evidence. **The tier table is a hypothesis with a test attached, and
-this entry does not close until an 8 GB run is on the record.**
+except the 48 GB Pantheon-core figure is arithmetic, not evidence. **The tier table is a hypothesis
+with a test attached, and this entry does not close until an 8 GB run is on the record.**
 
 ### 10. Disposition
 
