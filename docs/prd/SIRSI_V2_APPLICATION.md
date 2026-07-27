@@ -111,6 +111,95 @@ system has run out of application memory"*: `sirsi diagnose` → **🟢 Healthy,
 100/100, 16 signals, "No immediate action required."** None of the 16 was *"is swap
 exhausted"* or *"is a process tree multiplying."*
 
+## 2c. The execution model — the certainties ladder
+
+*Owner, 2026-07-27. This is the core primitive of the product and it resolves three
+problems at once.*
+
+Every request escalates through tiers of increasing certainty and increasing cost,
+stopping at the first tier that can answer:
+
+| tier | mechanism | cost | availability |
+|---|---|---|---|
+| **heuristic** | deterministic checks, thresholds, known signatures | zero tokens, zero model residency | always |
+| **local** | on-device model reasoning over the evidence | zero tokens, model RAM | always (offline) |
+| **remote** | frontier model | tokens, network | when configured and reachable |
+
+**The tier is the confidence.** A heuristic answer is stated as a heuristic answer.
+"Swap is at 94% and a process tree grew 6× in 90 seconds" needs no model at all —
+it is a certainty. "Which of these four hypotheses explains it" is a local-model
+question. "This contradicts its own documentation and I need judgment about a design
+trade" is a remote question.
+
+Why this is the keystone, not a detail:
+
+- **It answers the 16 GB constraint.** Most diagnostic work never loads a model.
+  Today's storm — 358 processes, lineage depth 5, swap 48.5/49 GB — is *entirely*
+  heuristic-tier. The machine that most needs help is the one with least headroom to
+  run a model, and the ladder means it doesn't have to.
+- **It answers the local premise honestly.** Heuristic and local always work,
+  offline, free. Remote is an *enhancement*, never a dependency. That is a
+  defensible sovereignty claim rather than a slogan.
+- **It answers cost.** Zero tokens for the majority of operations, by construction.
+- **It makes confidence legible.** Every answer carries the tier that produced it, so
+  a user knows whether they are reading a measurement, an inference, or a judgement.
+
+**Escalation must be explicit and recorded.** "Heuristic inconclusive → escalated to
+local → escalated to remote" belongs in the transcript, with the reason for each
+step. Silent escalation to a paid tier is a betrayal of the model.
+
+`internal/provider` (Pillar 0) therefore is not merely a swappable backend registry —
+it is the ladder's implementation, with the tier as a first-class property of every
+answer.
+
+## 2d. The two-way street, and the three journeys
+
+Sirsi is not a standalone app *or* an IDE integration. It is both, first-class, and
+the same engine serves all of it.
+
+**Journey A — the operator.** *"Diagnose and hygienize my system or network."*
+Sirsi standalone. Certainties ladder. No IDE, no AI subscription, no terminal
+required. This is the 99% who have no utility AI at all.
+
+**Journey B — the developer.** *"I want my IDE to be able to diagnose and manage my
+machine."* Install the Sirsi MCP; the IDE gains system diagnosis and management **in
+its own context**. Note the direction: this is Sirsi *exporting* capability into the
+IDE, not Sirsi begging for a host. Same engine, different front door.
+
+**Journey C — the builder.** *"Expand my network"* / *"add a reverse proxy that can
+scan, detect, refuse and quarantine."* The **Nexus** engine performs the work through
+tool calls, protobuf commands and network access. Requests and outcomes are logged
+into the **Hypergraph**. The provisioned proxy is then **handed to Pantheon as a
+managed object** — hygiene, failure detection, remediation — and is thereafter
+inspectable on mobile, on the desktop, or from inside the IDE.
+
+### The handoff that makes it a system
+
+Journey C contains the pattern that makes Sirsi more than a toolbox:
+
+```
+Nexus provisions  →  Hypergraph records (request + outcome)  →  Pantheon adopts
+                                                                as a managed object
+                     ↓
+              I/O renders it — phone · desktop · IDE
+```
+
+**Anything Nexus creates becomes something Pantheon manages.** A proxy, a node, a
+service: provisioned once, then permanently under hygiene, failure detection and
+remediation, visible wherever the user is. That lifecycle — *provision → record →
+manage → surface* — is the product, and no single pillar can express it.
+
+### This document's scope, honestly stated
+
+The four pillars are planes of one system: **I/O** senses and expresses, **Pantheon**
+runs and heals, **Hypergraph** remembers and attests, **Nexus** builds and judges.
+This PRD is written from Pantheon and binds Pantheon. The Nexus engine work
+(Journey C), the Hypergraph logging contract, and the I/O rendering surfaces are
+stated here as *seams* for their custodians to ratify, per the cross-pillar scope
+rule. Pantheon's binding commitment is: **anything handed to it becomes a managed
+object with hygiene, failure detection and remediation, reachable from every
+surface.**
+
 ## 3. What Claude Code has that Sirsi does not
 
 Today's incident was diagnosed and fixed entirely through Claude Code. Sirsi
@@ -395,12 +484,14 @@ tool tiers rather than against hope.
 1. **Ratify the inversion.** Sirsi hosts the agent; models are swappable backends;
    IDEs and AI CLIs are discovered resources routed *through* Sirsi. MCP-into-your-IDE
    becomes an export option, never the fallback.
-2. **Ratify the 16 GB target.** Everything downstream depends on it.
-3. **Phase order** — Agent Host (Phase 0) before everything is non-negotiable if the
+2. **Ratify the certainties ladder** (heuristic → local → remote) as the execution
+   model, with the tier reported as confidence and escalation always explicit.
+3. **Ratify the 16 GB target.** Everything downstream depends on it.
+4. **Phase order** — Agent Host (Phase 0) before everything is non-negotiable if the
    local premise is real; Governor before Loop thereafter is the recommendation (the Loop needs
    actuators the Governor makes safe). Reversing them is defensible if a
    demonstrable diagnostic conversation matters more than stability.
-4. **Autonomy posture** for the repair tier: confirm-each, confirm-once-per-class, or
+5. **Autonomy posture** for the repair tier: confirm-each, confirm-once-per-class, or
    fully manual.
-5. **The gemma broker cap** — currently 20.8 GB on a 48 GB box, 130% of the target
+6. **The gemma broker cap** — currently 20.8 GB on a 48 GB box, 130% of the target
    machine. Interim fix regardless of this plan's fate.
