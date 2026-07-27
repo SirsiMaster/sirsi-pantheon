@@ -683,13 +683,16 @@ func memSize(pr ProcessInfo) int64 {
 	return pr.RSS
 }
 
-func isCapacityCappedGemmaBroker(p platform.Platform, pid int) bool {
-	out, err := p.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "/.sirsi/gemma-capped-server.py")
-}
+// isCapacityCappedGemmaBroker was DELETED 2026-07-27, not left unused.
+//
+// It exempted Sirsi's own broker from the memory-hog check, on the premise
+// that RAM Pressure and Memory Death Spiral would alarm if the reservation
+// became unsafe. It became unsafe three times that day — Jetsam footprints of
+// 31, 43.9 and 38.1 GB — and neither alarmed, because both also sampled
+// resident memory while 39.9 GB sat compressed.
+//
+// Deleted rather than left unused so the exemption cannot be quietly
+// re-applied: there is nothing left to call.
 
 // crashWindowDays is the look-back window for kernel-panic / Jetsam trends.
 const crashWindowDays = 7
