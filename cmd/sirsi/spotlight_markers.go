@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // Durable half of the Spotlight remediation.
@@ -12,15 +14,26 @@ import (
 // `spotlight-exclude` detects the storm and guides the user to the Privacy
 // pane, because that list is SIP-protected and genuinely user-only. But the
 // Privacy pane is not the only lever, and it is not the durable one: a
-// `.metadata_never_index` marker at the root of a directory tells Spotlight to
-// skip that tree, needs no privilege, is version-stable, survives reboots, and
-// is reversed by deleting one file.
+// `.metadata_never_index` marker at the root of a directory tree tells Spotlight
+// to skip that tree, needs no privilege, is version-stable, survives reboots,
+// and is reversed by deleting one file.
 //
-// It is also the ONLY indexing lever available at user privilege. Measured on
-// this class of host: `mds` runs as root and `mds_stores` as `_mds_stores`, so
-// both `renice` and `taskpolicy -b` are refused with EPERM. Bounding the
-// indexer's CPU/IO — the thing that would actually cap indexing pressure —
-// requires root and therefore an owner action, not an agent one.
+// Scope of the privilege claim, narrowed to what was actually measured: TWO
+// mechanisms for bounding the indexer were tested on this class of host and
+// both are refused at user privilege — `renice` and `taskpolicy -b`, because
+// `mds` runs as root and `mds_stores` as `_mds_stores`, so both return EPERM.
+// That is a result about those two mechanisms only. It is not a proof that no
+// other unprivileged lever exists, and this comment previously claimed exactly
+// that; it does not now.
+//
+// What a marker does and does not do, measured on this host rather than assumed:
+// it stops FUTURE indexing of the tree, it does not evict what is already in the
+// index. Markers written here on 2026-07-25 were still in place two days later,
+// and `mdfind -onlyin ~/go/pkg/mod` still returned ~106k hits over that same
+// marked tree. So the honest claim is prevention of ongoing reindex churn, not
+// removal of existing index content — clearing that needs an owner-level index
+// rebuild, which is deliberately not offered as a pressure remedy (see
+// rootOnlyLevers). This has NOT been verified across a reboot.
 //
 // The churn set below is deliberately narrow: caches, module stores, transient
 // worktrees and agent transcript trees. Source trees are NOT marked — code
@@ -41,20 +54,66 @@ func indexChurnPaths(home string) []string {
 	}
 }
 
-// buildDirNames are per-project output trees: regenerated constantly, never
-// worth searching, and the largest single source of reindex churn in a dev tree.
-var buildDirNames = map[string]bool{
+// unambiguousBuildDirs are names that are build output by the name alone —
+// no project realistically keeps hand-written source in one.
+var unambiguousBuildDirs = map[string]bool{
 	"node_modules": true,
-	".build":       true,
-	"target":       true,
-	"dist":         true,
 	".next":        true,
+}
+
+// ambiguousBuildDirs maps a name that is USUALLY build output but is also a
+// perfectly ordinary repository name onto the manifests that prove a real build
+// produced it. A checkout named `dist` or `target` is not build output, and
+// marking it silently removes a source tree from Spotlight — the one outcome
+// this whole feature promises never to cause. The manifest must sit in the
+// PARENT directory, i.e. the project root the toolchain would have built from.
+var ambiguousBuildDirs = map[string][]string{
+	"dist":   {"package.json", "pyproject.toml", "setup.py", "rollup.config.js", "vite.config.js", "vite.config.ts"},
+	"target": {"Cargo.toml", "pom.xml", "build.gradle", "build.gradle.kts"},
+	".build": {"Package.swift"},
+}
+
+// isBuildOutput decides whether a name-matched directory carries real evidence
+// of being generated. Two independent gates, both required:
+//
+//  1. It must not be its own repository. A directory containing `.git` is a
+//     checkout whatever it is called, so a vendored repo named `dist` is refused.
+//  2. If the name is ambiguous, the parent must carry the build manifest that
+//     the corresponding toolchain writes that directory from.
+func isBuildOutput(path, name string) bool {
+	if _, err := os.Lstat(filepath.Join(path, ".git")); err == nil {
+		return false // a checkout, not build output
+	}
+	manifests, ambiguous := ambiguousBuildDirs[name]
+	if !ambiguous {
+		return unambiguousBuildDirs[name]
+	}
+	parent := filepath.Dir(path)
+	for _, m := range manifests {
+		if _, err := os.Lstat(filepath.Join(parent, m)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// isBuildDirName reports whether the name is a candidate at all, before the
+// evidence gate runs. Kept separate so a name match still stops the walk from
+// descending, even when the evidence gate then refuses to mark it.
+func isBuildDirName(name string) bool {
+	if unambiguousBuildDirs[name] {
+		return true
+	}
+	_, ok := ambiguousBuildDirs[name]
+	return ok
 }
 
 // discoverBuildDirs finds build-output trees under root, bounded to maxDepth so
 // a deep monorepo cannot turn this into a full filesystem walk. It does not
 // descend INTO a matched directory — marking node_modules covers everything
-// beneath it, and walking a 40k-file tree to find nested copies is waste.
+// beneath it, and walking a 40k-file tree to find nested copies is waste. A
+// name match that fails the evidence gate is still not descended into: if it
+// carries a build-output name we do not want the walk inside it either way.
 func discoverBuildDirs(root string, maxDepth int) []string {
 	var found []string
 	rootDepth := strings.Count(filepath.Clean(root), string(os.PathSeparator))
@@ -65,8 +124,10 @@ func discoverBuildDirs(root string, maxDepth int) []string {
 		if strings.Count(path, string(os.PathSeparator))-rootDepth > maxDepth {
 			return filepath.SkipDir
 		}
-		if buildDirNames[d.Name()] {
-			found = append(found, path)
+		if isBuildDirName(d.Name()) {
+			if isBuildOutput(path, d.Name()) {
+				found = append(found, path)
+			}
 			return filepath.SkipDir
 		}
 		return nil
@@ -77,14 +138,41 @@ func discoverBuildDirs(root string, maxDepth int) []string {
 // markerState is what one candidate directory looks like right now.
 type markerState struct {
 	Path     string
-	Exists   bool // the directory exists
+	Exists   bool // the directory exists, as a real directory, not a symlink
 	Marked   bool // already carries the marker
 	WroteNow bool
+	Removed  bool
+	// Skipped is non-empty when apply/remove deliberately refused this path.
+	Skipped string
+
+	// Filesystem identity captured at plan time. The write path re-reads it and
+	// refuses if it moved — see verifyIdentity.
+	dev uint64
+	ino uint64
+}
+
+// statIdentity returns the device/inode pair for path, via Lstat so a symlink
+// is reported as itself rather than as its target. ok is false if the path is
+// absent or the platform did not give us a usable stat.
+func statIdentity(path string) (dev, ino uint64, isDir, ok bool) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return 0, 0, false, false
+	}
+	st, isStat := fi.Sys().(*syscall.Stat_t)
+	if !isStat {
+		return 0, 0, fi.IsDir(), false
+	}
+	return uint64(st.Dev), st.Ino, fi.IsDir(), true
 }
 
 // planIndexMarkers resolves every candidate to its current state. Pure
 // inspection — nothing is written here, so the preview and the apply share one
 // code path and cannot disagree about what would change (Rule A1).
+//
+// Identity is captured here and re-verified at write time. Lstat, not Stat: a
+// candidate that is a symlink is not a directory we are willing to write into,
+// because the link can be repointed between preview and apply.
 func planIndexMarkers(home, devDir string) []markerState {
 	cands := indexChurnPaths(home)
 	cands = append(cands, discoverBuildDirs(devDir, 3)...)
@@ -97,9 +185,10 @@ func planIndexMarkers(home, devDir string) []markerState {
 		}
 		seen[p] = true
 		st := markerState{Path: p}
-		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+		if dev, ino, isDir, ok := statIdentity(p); ok && isDir {
 			st.Exists = true
-			if _, err := os.Stat(filepath.Join(p, markerFile)); err == nil {
+			st.dev, st.ino = dev, ino
+			if _, err := os.Lstat(filepath.Join(p, markerFile)); err == nil {
 				st.Marked = true
 			}
 		}
@@ -108,18 +197,53 @@ func planIndexMarkers(home, devDir string) []markerState {
 	return out
 }
 
+// verifyIdentity re-reads the path immediately before a write and reports why
+// it must not be touched, or "" if it is the same directory we previewed.
+//
+// This closes the preview→apply window: in between, a candidate can be replaced
+// by a symlink pointing somewhere that must never be marked, or swapped for a
+// different directory entirely. Comparing (dev, ino) against what the plan
+// recorded is the check a path-string comparison cannot make.
+func verifyIdentity(st *markerState) string {
+	dev, ino, isDir, ok := statIdentity(st.Path)
+	if !ok {
+		return "vanished between preview and apply"
+	}
+	if !isDir {
+		return "no longer a directory (redirected or replaced)"
+	}
+	if dev != st.dev || ino != st.ino {
+		return "filesystem identity changed between preview and apply"
+	}
+	return ""
+}
+
 // applyIndexMarkers writes the marker into every unmarked, existing candidate.
 // Idempotent: an already-marked tree is left alone and reported as such, so a
 // second run is a no-op rather than a lie about having changed something.
+//
+// Creation is O_EXCL. Combined with the identity recheck, that means we either
+// create the marker ourselves or we do not write at all — we never truncate or
+// overwrite a file that appeared under that name in the meantime.
 func applyIndexMarkers(plan []markerState) ([]markerState, error) {
 	var firstErr error
 	for i := range plan {
 		if !plan[i].Exists || plan[i].Marked {
 			continue
 		}
+		if why := verifyIdentity(&plan[i]); why != "" {
+			plan[i].Skipped = why
+			continue
+		}
 		f, err := os.OpenFile(filepath.Join(plan[i].Path, markerFile),
-			os.O_CREATE|os.O_WRONLY, 0o644)
+			os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err != nil {
+			if errors.Is(err, os.ErrExist) {
+				// Someone marked it inside the same window. The end state is the
+				// one we wanted, so this is success — but not a write we may claim.
+				plan[i].Marked = true
+				continue
+			}
 			if firstErr == nil {
 				firstErr = fmt.Errorf("mark %s: %w", plan[i].Path, err)
 			}
@@ -132,14 +256,51 @@ func applyIndexMarkers(plan []markerState) ([]markerState, error) {
 	return plan, firstErr
 }
 
+// removeIndexMarkers unmarks every currently-marked candidate, under the same
+// identity recheck as the write path — an unlink through a redirected path is
+// as bad as a write through one.
+//
+// The preview for this is load-bearing rather than decorative: marking is
+// additive and cheap to undo, but removal hands whole trees back to the indexer,
+// and an operator is entitled to see every path that will happen to first.
+func removeIndexMarkers(plan []markerState) ([]markerState, error) {
+	var firstErr error
+	for i := range plan {
+		if !plan[i].Exists || !plan[i].Marked {
+			continue
+		}
+		if why := verifyIdentity(&plan[i]); why != "" {
+			plan[i].Skipped = why
+			continue
+		}
+		if err := os.Remove(filepath.Join(plan[i].Path, markerFile)); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				plan[i].Marked = false
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("unmark %s: %w", plan[i].Path, err)
+			}
+			continue
+		}
+		plan[i].Marked = false
+		plan[i].Removed = true
+	}
+	return plan, firstErr
+}
+
 // rootOnlyLevers are the indexing controls that exist but need privileges this
 // process does not have. Surfaced verbatim so the owner can run them, rather
 // than silently omitted — an incomplete remedy presented as complete is the
 // failure mode this whole subsystem keeps hitting.
+//
+// Deliberately NOT listed: `mdutil -E`, which erases and rebuilds the index.
+// That is index maintenance, not pressure control — it guarantees a full
+// reindex storm, so offering it here would recommend more of the exact load the
+// operator came to this command to reduce.
 func rootOnlyLevers() []string {
 	return []string{
 		"sudo mdutil -i off /                     # stop indexing the boot volume entirely",
-		"sudo mdutil -E /                         # erase + rebuild the index (expect a reindex storm first)",
 		"sudo renice +20 -p $(pgrep -x mds)       # deprioritise the indexer (resets on respawn)",
 	}
 }
