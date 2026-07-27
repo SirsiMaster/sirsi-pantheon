@@ -65,14 +65,25 @@ virtualization:
     requires_sudo: true  # For /Library and /var paths
 
   - name: docker_desktop
-    description: "Docker Desktop images, volumes, and build cache"
+    description: "Docker Desktop images and build cache (NOT volumes — see below)"
     paths:
       - "~/Library/Containers/com.docker.docker/"
       - "~/Library/Group Containers/group.com.docker/"
       - "~/.docker/"
     commands:
       - "docker system df"  # Show disk usage
-      - "docker system prune -af --volumes"  # Clean command (with confirm)
+      # `--volumes` REMOVED deliberately. It deletes anonymous dangling volumes,
+      # and the hedera-local consensus ledger lives in exactly such a volume
+      # inside Colima: the moment its container is removed the ledger volume goes
+      # dangling and this command would destroy it. That is not a hypothetical —
+      # `hedera-local stop` runs `down -v` and has already destroyed this ledger
+      # once (see reference_sovereign_node_two_live_hazards).
+      #
+      # Without --volumes this reclaims images, stopped containers, networks and
+      # build cache, which is the actual disk win, and it CANNOT touch volume
+      # state. Reclaiming volumes is a deliberate, per-volume operator act, not
+      # something a general clean command should offer.
+      - "docker system prune -af"  # Clean command (with confirm) — never --volumes
 
   - name: vmware_fusion
     description: "VMware Fusion preferences and logs"
