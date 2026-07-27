@@ -154,6 +154,14 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
+	case "Process Footprint":
+		// One process holding a third-to-half of RAM. `relieve --memory` flushes
+		// inactive caches, which does NOT touch a single process's footprint —
+		// the lever has to name the offender. Deliberately a PREVIEW verb: the
+		// offender here is routinely Sirsi's own model broker, and killing the
+		// local AI without asking is not a remedy an operator should discover
+		// after the fact (A1: preview mutates nothing).
+		return "sirsi relieve"
 	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral":
 		if warn {
 			// Flush inactive caches — the safe, non-destructive memory lever
