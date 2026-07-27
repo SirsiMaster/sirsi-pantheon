@@ -82,6 +82,8 @@
       "type": "claude",
       "command": [
         "claude",
+        "--model",
+        "opus",
         "--print",
         "--permission-mode",
         "auto"
