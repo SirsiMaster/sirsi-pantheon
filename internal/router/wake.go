@@ -25,6 +25,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -437,13 +438,39 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
+	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s)",
+		agentID, thr.ThreadID, os.Getpid(), interval)
+	lastDepth := -1
 	for {
 		// Surface the inbox depth into the heartbeat status; the worker surface's
 		// own logic processes the items — this loop only proves liveness + watches.
+		//
+		// Reads go through OpenItems, NOT work.ListInbox. Post-cutover the legacy
+		// files are frozen, so reading them here derived the heartbeat status from
+		// stale data — a surface reporting on a source nothing writes any more.
+		// This was a call site #315 missed while claiming every observer had been
+		// routed through the cutover-aware entry point.
 		status := ThreadStatusIdle
-		if items, lerr := work.ListInbox(routerRoot, agentID); lerr == nil && len(items) > 0 {
+		depth := 0
+		items, lerr := OpenItems(routerRoot, agentID)
+		if lerr != nil {
+			// Fail loud in the log rather than silently reporting idle: an unreadable
+			// inbox is not an empty one, and this loop is the only liveness signal
+			// the fabric has for this agent.
+			log.Printf("wake-loop %s: inbox read FAILED: %v", agentID, lerr)
+		} else if depth = len(items); depth > 0 {
 			status = ThreadStatusActive
 		}
+
+		// Log only on change. A per-tick line would be noise; a depth that moves is
+		// the thing an operator actually wants to see, and until now these loops
+		// wrote literally zero bytes — ten agents, 20 days, no forensics at all.
+		if depth != lastDepth {
+			log.Printf("wake-loop %s: inbox depth %d -> %d (status=%s)",
+				agentID, lastDepth, depth, status)
+			lastDepth = depth
+		}
+
 		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: status})
 
 		select {
