@@ -148,6 +148,27 @@ func TestGovernSuspendsGovernedAtCritical(t *testing.T) {
 	})
 }
 
+func TestGovernSelectsLargestGovernedByFootprint(t *testing.T) {
+	withSeams(t, map[int]string{30: "resident-heavy", 40: "compressed-heavy"}, func(c *seamCalls) {
+		og := hapiSampleFn
+		defer setHapiSampleFn(og)
+		setHapiSampleFn(func() (MemSample, error) {
+			return sampleAt(7,
+				MemProc{PID: 30, Name: "resident-heavy", RSS: 8 * gb, Footprint: 9 * gb},
+				MemProc{PID: 40, Name: "compressed-heavy", RSS: 1 * gb, Footprint: 30 * gb},
+			), nil
+		})
+		g := DefaultMemGovernor()
+		g.Govern = true
+		if _, err := g.GovernOnce(); err != nil {
+			t.Fatal(err)
+		}
+		if len(c.suspended) != 1 || c.suspended[0] != 40 {
+			t.Fatalf("want largest footprint pid 40 suspended, got %v", c.suspended)
+		}
+	})
+}
+
 // TestGovernKillsGovernedAtEmergency: only at emergency, and only governed PIDs.
 func TestGovernKillsGovernedAtEmergency(t *testing.T) {
 	withSeams(t, map[int]string{30: "python"}, func(c *seamCalls) {
