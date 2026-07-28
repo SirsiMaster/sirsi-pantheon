@@ -21,8 +21,27 @@ func testFacade(t *testing.T) *Facade {
 		t.Fatal(err)
 	}
 	f := New(filepath.Join(t.TempDir(), "idea-router"), store)
+	writeTestRegistry(t, f.root)
 	t.Cleanup(func() { _ = f.Close() })
 	return f
+}
+
+func writeTestRegistry(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registry := `{
+		"agents": {
+			"b": {"type": "test", "command": ["true"], "cwd": "/tmp"},
+			"victim": {"type": "test", "command": ["true"], "cwd": "/tmp"},
+			"codex-pantheon": {"type": "codex", "command": ["codex"], "cwd": "/tmp"},
+			"claude-home": {"type": "claude", "command": ["claude"], "cwd": "/tmp"}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestSendCommitsStoreThenAuditFile: the store row is the authority and the
@@ -52,6 +71,33 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != res.ID {
 		t.Fatalf("file router does not see the dispatched item: %+v", items)
+	}
+}
+
+func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
+	f := testFacade(t)
+
+	_, err := f.Send("claude-pantheon", "claude-deck", "lost work", "review", "do not strand this")
+	if err == nil {
+		t.Fatal("Send to an unregistered recipient must fail")
+	}
+	if !strings.Contains(err.Error(), `agent "claude-deck" not registered`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	inbox, inboxErr := f.Inbox("claude-deck")
+	if inboxErr != nil {
+		t.Fatal(inboxErr)
+	}
+	if len(inbox) != 0 {
+		t.Fatalf("unregistered recipient send wrote work: %+v", inbox)
+	}
+	all, allErr := f.ListAll()
+	if allErr != nil {
+		t.Fatal(allErr)
+	}
+	if len(all) != 0 {
+		t.Fatalf("rejected send must not create any router item, got %+v", all)
 	}
 }
 
@@ -277,6 +323,7 @@ func TestOpenCreatesStoreDirOnFreshHome(t *testing.T) {
 		t.Fatalf("Open on a fresh home must create the store dir: %v", err)
 	}
 	defer func() { _ = f.Close() }()
+	writeTestRegistry(t, f.root)
 	if _, err := f.Send("a", "b", "first ever send", "", "x"); err != nil {
 		t.Fatalf("send on fresh store: %v", err)
 	}
