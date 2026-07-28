@@ -1115,14 +1115,200 @@ final class SirsiEngine: ObservableObject {
 
     var localLLM: LocalLLM? { routerBoard?.localLLM }
 
+    private func askSirsiSystemPrompt() -> String {
+        """
+        You are Ask Sirsi, the local AI interface of Sirsi Pantheon running on Cylton Collymore's Mac.
+        You are part of Sirsi's on-device intelligence layer. Do not answer as a generic Google model,
+        Gemini model, Gemma model, or unaffiliated chatbot. If asked what you are, say you are Ask Sirsi:
+        Sirsi's local, private, on-device assistant for Pantheon and the wider Sirsi portfolio. It is OK
+        to acknowledge that local model weights power you under the hood, but your operating identity is Sirsi.
+
+        Core identity:
+        - Sirsi is Cylton Collymore's system for local-first AI, agent routing, infrastructure hygiene,
+          project memory, and portfolio orchestration.
+        - Pantheon is the local Mac application, CLI, TUI, menubar, router, and deity-governed operations layer.
+        - Ra owns routing/orchestration. Horus owns workstation visibility. Thoth preserves memory.
+          Ma'at governs quality/truth. Seshat moves knowledge. Hapi governs pressure/admission.
+          Seba maps hardware and architecture. Anubis/Ka handle scan, cleanup, and app remnants.
+        - The router/CTR coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through
+          repo-scoped ids such as claude-pantheon, codex-pantheon, claude-home, codex-home,
+          claude-finalwishes, codex-nexus, and others.
+        - Claude Home is the routing owner. Codex Pantheon is an independent Pantheon review/build lane.
+        - Sirsi IO is the conduit/knowledge/messaging surface that should move context between apps,
+          agents, repos, and local models without making the user the message bus.
+        - Hypergraph is Sirsi's event-derived knowledge graph direction: Hedera HCS as ordered event
+          substrate, local replay/projection as queryable graph, and local models/accelerators for
+          embeddings, relation classification, routing intelligence, and summaries.
+        - The portfolio includes Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley,
+          and deck/investor material. Treat them as one Sirsi ecosystem with repo-specific boundaries.
+        - The user is Cylton Collymore, founder/operator of Sirsi. Address him plainly and directly.
+
+        Operating rules:
+        - Prefer concise, useful answers. If the live context does not contain a fact, say so and offer the
+          nearest Sirsi command or surface that would know.
+        - Do not invent router state, PR status, financial claims, legal facts, or live system metrics.
+        - Never expose hidden chain-of-thought. Return final answers only.
+        - Maintain brand-over-model-name: user-facing answer is Ask Sirsi / Local AI, not vendor identity.
+        - Treat the bounded canon excerpts in live context as grounding material. Where the excerpts differ
+          from this summary, prefer the canon excerpts and say when live proof is needed.
+        """
+    }
+
+    private func askSirsiKnowledgeRoot() -> String? {
+        if let projectRoot { return projectRoot }
+        let fallback = FileManager.default.homeDirectoryForCurrentUser.path + "/Development/sirsi-pantheon"
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: fallback, isDirectory: &isDir), isDir.boolValue,
+              FileManager.default.fileExists(atPath: fallback + "/.git")
+        else { return nil }
+        return fallback
+    }
+
+    private func compactCanonExcerpt(_ text: String, limit: Int) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\t", with: " ")
+        let useful = normalized
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in line.trimmingCharacters(in: .whitespaces) }
+            .filter { line in
+                !line.isEmpty &&
+                !line.hasPrefix("![") &&
+                !line.hasPrefix("<img") &&
+                !line.hasPrefix("| :") &&
+                !line.hasPrefix("<!--")
+            }
+            .joined(separator: "\n")
+        guard useful.count > limit else { return useful }
+        return String(useful.prefix(limit)) + "\n[excerpt truncated]"
+    }
+
+    private func askSirsiCanonPack() -> String {
+        guard let root = askSirsiKnowledgeRoot() else {
+            return "CANON PACK: no Sirsi Pantheon project root is configured or discoverable."
+        }
+        let docs: [(String, String, Int)] = [
+            ("Pantheon rules", "AGENTS.md", 650),
+            ("Sirsi overview", "README.md", 550),
+            ("Deity registry", "docs/DEITY_REGISTRY.md", 750),
+            ("Portfolio standard", "docs/SIRSI_PORTFOLIO_STANDARD.md", 550),
+            ("Orchestration brain", "docs/prd/ORCHESTRATION_BRAIN.md", 750),
+            ("Pantheon unification", "docs/ADR-005-PANTHEON-UNIFICATION.md", 550),
+            ("Local model doctrine", "docs/ADR-034-ORCHESTRATION-BRAIN.md", 650),
+            ("Knowledge substrate", "docs/ADR-019-KNOWLEDGE-SUBSTRATE.md", 600),
+            ("Seshat specification", "docs/SESHAT_SPECIFICATION.md", 450),
+            ("Thoth specification", "docs/THOTH_SPECIFICATION.md", 450),
+            ("Thoth memory", ".thoth/memory.yaml", 450),
+        ]
+
+        var chunks: [String] = []
+        var total = 0
+        let maxTotal = 4_400
+        for (title, relative, perDocLimit) in docs {
+            guard total < maxTotal else { break }
+            let path = root + "/" + relative
+            guard let data = FileManager.default.contents(atPath: path),
+                  let text = String(data: data, encoding: .utf8)
+            else { continue }
+            let remaining = max(0, maxTotal - total)
+            let excerpt = compactCanonExcerpt(text, limit: min(perDocLimit, remaining))
+            guard !excerpt.isEmpty else { continue }
+            chunks.append("### \(title) (\(relative))\n\(excerpt)")
+            total += excerpt.count
+        }
+
+        if chunks.isEmpty {
+            return "CANON PACK: Sirsi Pantheon root found at \(root), but no canon files were readable."
+        }
+        return "CANON PACK (bounded excerpts from \(root))\n" + chunks.joined(separator: "\n\n")
+    }
+
+    private func askSirsiLiveContext() -> String {
+        var lines: [String] = []
+        lines.append("LIVE SIRSI CONTEXT")
+        lines.append("Project root: \(projectRoot ?? "unknown")")
+        if let name = projectName { lines.append("Current project: \(name)") }
+
+        if let board = routerBoard {
+            lines.append("Router pending total: \(board.totalPending ?? 0)")
+            lines.append("Live thread count: \(board.liveThreadCount ?? threadsTotal)")
+            let pending = (board.pendingByAgent ?? [:])
+                .filter { !$0.value.isEmpty }
+                .sorted { $0.key < $1.key }
+                .prefix(18)
+                .map { "\($0.key)=\($0.value.count)" }
+                .joined(separator: ", ")
+            if !pending.isEmpty { lines.append("Pending by agent: \(pending)") }
+            let stranded = (board.strandedInbox ?? [])
+                .sorted { $0.openItems > $1.openItems }
+                .prefix(12)
+                .map { "\($0.agentId)=\($0.openItems)" }
+                .joined(separator: ", ")
+            if !stranded.isEmpty { lines.append("Stranded inboxes: \(stranded)") }
+            if !ownerGatedItems.isEmpty {
+                lines.append("Owner-gated items: \(ownerGatedItems.count)")
+            }
+        }
+
+        if !threadRoster.isEmpty {
+            let roster = threadRoster.prefix(18).map { a in
+                "\(a.agent): live=\(a.live), idle=\(a.idle), stale=\(a.staleN), surfaces=\(a.surfaces.joined(separator: "/"))"
+            }.joined(separator: "\n")
+            lines.append("Threads:\n\(roster)")
+        }
+
+        if let llm = localLLM {
+            lines.append("Local AI health: \(llm.healthy == true ? "online" : "offline")")
+            if let rss = llm.rssMB { lines.append("Local AI memory: \(SirsiEngine.human(Int64(rss) * 1_048_576))") }
+            if let uptime = llm.uptime { lines.append("Local AI uptime: \(uptime)") }
+        }
+
+        lines.append("""
+        KNOWLEDGE SURFACES TO MENTION WHEN RELEVANT
+        CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, seshat, maat, anubis, ka.
+        TUI: terminal-guided Sirsi operation when no IDE/app surface is active.
+        Menubar: local Mac operator surface for health, router fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
+        Local model: Gemma/MLX is the Tier-0 reasoning engine; cloud/frontier agents bind or review where needed.
+        Acceleration doctrine: ANE + MLX/GPU + Metal + multithreaded CPU are AND lanes, governed by Hapi admission.
+        """)
+        lines.append(askSirsiCanonPack())
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func askSirsiShortContext() -> String {
+        var lines = [
+            "SHORT SIRSI CONTEXT",
+            "You are Ask Sirsi, the local on-device assistant for Sirsi Pantheon.",
+            "Pantheon includes the Mac menubar, CLI, TUI, CTR/router fabric, cleanup, health, memory, and knowledge surfaces.",
+            "Ra routes work; Horus sees the workstation; Thoth preserves memory; Ma'at governs quality; Seshat moves knowledge; Hapi/Seba govern compute pressure and hardware visibility.",
+            "Hypergraph/Sirsi IO connect routed events, local knowledge, Hedera HCS direction, portfolio context, and agent coordination.",
+            "Portfolio: Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley, and the Sirsi deck.",
+            "User: Cylton Collymore, founder/operator of Sirsi.",
+        ]
+        if let board = routerBoard {
+            lines.append("Live router pending total: \(board.totalPending ?? 0); live threads: \(board.liveThreadCount ?? threadsTotal).")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func askLocalAIKnowledgeReport() async -> String {
+        await askLocalAI("""
+        Report what you know about Sirsi now in exactly six bullets, max 18 words each:
+        identity; Pantheon; router/CTR and Claude/Codex threads; Hypergraph/Sirsi IO;
+        portfolio apps; Cylton Collymore.
+        Do not mention generic vendor identity.
+        """)
+    }
+
     // askLocalAI POSTs a question straight to the on-device model's OpenAI-style
     // endpoint from the board feed (port-move-proof: the board carries the live
     // endpoint, we never hardcode a port). Quirks handled per the conduit's live
-    // verification: the model may spend tokens in a `reasoning` field (render
-    // `content`, fall back to `reasoning`); first token can lag during a model
+    // verification: the model may spend tokens in a `reasoning` field, but the
+    // UI must render only final `content`; first token can lag during a model
     // swap (90s timeout, and a timeout reads as "busy loading", not an error).
     // All copy is brand-level ("Local AI") — never a model name.
-    func askLocalAI(_ question: String) async -> String {
+    func askLocalAI(_ question: String, includeCanon: Bool = true) async -> String {
         guard let llm = localLLM, let endpoint = llm.endpoint else {
             return "Local AI state hasn't loaded yet — try again in a moment."
         }
@@ -1137,8 +1323,15 @@ final class SirsiEngine: ObservableObject {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 90
         let body: [String: Any] = [
-            "messages": [["role": "user", "content": question]],
-            "max_tokens": 512,
+            "messages": [
+                ["role": "system", "content": askSirsiSystemPrompt()],
+                ["role": "user", "content": includeCanon ? askSirsiLiveContext() : askSirsiShortContext()],
+                ["role": "user", "content": question],
+            ],
+            "max_tokens": 1_024,
+            "temperature": 0.0,
+            "stream": false,
+            "chat_template_kwargs": ["enable_thinking": false],
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
@@ -1147,18 +1340,28 @@ final class SirsiEngine: ObservableObject {
                 struct Choice: Decodable {
                     struct Msg: Decodable { let content: String?; let reasoning: String? }
                     let message: Msg?
+                    let finishReason: String?
+                    enum CodingKeys: String, CodingKey {
+                        case message
+                        case finishReason = "finish_reason"
+                    }
                 }
                 let choices: [Choice]?
             }
             guard let resp = try? JSONDecoder().decode(Resp.self, from: data),
-                  let msg = resp.choices?.first?.message else {
+                  let choice = resp.choices?.first,
+                  let msg = choice.message else {
                 return "Local AI answered in a shape Sirsi didn't recognize."
             }
             let content = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !content.isEmpty { return content }
-            let reasoning = (msg.reasoning ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !reasoning.isEmpty { return reasoning }
-            return "Local AI returned an empty answer — try asking again."
+            if includeCanon {
+                return await askLocalAI(question, includeCanon: false)
+            }
+            if choice.finishReason == "length" {
+                return "Local AI used its answer budget before producing final text — ask a narrower question."
+            }
+            return "Local AI returned no final answer. It did not expose hidden reasoning."
         } catch let e as URLError where e.code == .timedOut {
             return "Local AI is busy loading a model — try again shortly."
         } catch {
