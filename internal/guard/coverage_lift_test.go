@@ -661,6 +661,9 @@ func TestHapiFreeRAMBytesCommandFailureIsZero(t *testing.T) {
 func TestHapiTopByRSSParsesSortsAndTruncates(t *testing.T) {
 	orig := hapiPsFn
 	t.Cleanup(func() { hapiPsFn = orig })
+	oldFootprint := getHapiFootprintFn()
+	t.Cleanup(func() { setHapiFootprintFn(oldFootprint) })
+	setHapiFootprintFn(func(int) (uint64, error) { return 0, errors.New("unavailable") })
 	hapiPsFn = func() ([]byte, error) {
 		return []byte(`  PID    RSS COMM
     1  10000 /sbin/launchd
@@ -685,6 +688,29 @@ func TestHapiTopByRSSParsesSortsAndTruncates(t *testing.T) {
 	}
 	if procs[1].PID != 300 {
 		t.Fatalf("second largest is pid 300, got %+v", procs[1])
+	}
+}
+
+func TestHapiTopByRSSPrefersPhysicalFootprint(t *testing.T) {
+	orig := hapiPsFn
+	t.Cleanup(func() { hapiPsFn = orig })
+	oldFootprint := getHapiFootprintFn()
+	t.Cleanup(func() { setHapiFootprintFn(oldFootprint) })
+	hapiPsFn = func() ([]byte, error) {
+		return []byte("PID RSS COMM\n100 900000 resident-heavy\n200 100000 compressed-heavy\n"), nil
+	}
+	setHapiFootprintFn(func(pid int) (uint64, error) {
+		if pid == 200 {
+			return uint64(30 * gb), nil
+		}
+		return uint64(2 * gb), nil
+	})
+	procs, err := hapiTopByRSS(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if procs[0].PID != 200 || procs[0].Footprint != 30*gb {
+		t.Fatalf("want compressed-heavy first by footprint, got %+v", procs)
 	}
 }
 

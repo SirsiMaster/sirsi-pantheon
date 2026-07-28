@@ -11,18 +11,27 @@ import (
 	"sync"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/vitals"
 )
 
 // ProcessInfo represents a running process with memory usage.
 type ProcessInfo struct {
-	PID        int
-	Name       string
-	Command    string
-	RSS        int64 // Resident Set Size in bytes
-	VSZ        int64 // Virtual memory size in bytes
-	User       string
-	CPUPercent float64
-	Group      string // Grouping label (e.g., "node", "docker", "lsp")
+	PID     int
+	Name    string
+	Command string
+	RSS     int64 // Resident Set Size in bytes — RESIDENT ONLY; see Footprint
+	// Footprint is the process's PHYSICAL FOOTPRINT: resident + compressed, the
+	// number macOS itself uses to pick a Jetsam victim. RSS is not that number.
+	// Measured on the gemma broker 2026-07-27: rss 4.71 GB, footprint 29.43 GB,
+	// peak 40.52 GB — a 6x live divergence on a 48 GB machine that OOM'd three
+	// times that day while every RSS-sampling check reported it innocent.
+	// Zero when unavailable (non-darwin, or the pid exited mid-census).
+	Footprint     int64
+	PeakFootprint int64
+	VSZ           int64 // Virtual memory size in bytes
+	User          string
+	CPUPercent    float64
+	Group         string // Grouping label (e.g., "node", "docker", "lsp")
 }
 
 // ProcessGroup aggregates processes by type.
@@ -350,14 +359,27 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 			name = comm[idx+1:]
 		}
 
+		// Physical footprint via proc_pid_rusage — a syscall, cheap enough per
+		// process. Failure is non-fatal: a pid can exit between `ps` and here,
+		// and one dead process must not blank a whole census.
+		var footprint, peak int64
+		if fp, ferr := vitals.PhysFootprint(pid); ferr == nil {
+			footprint = int64(fp)
+		}
+		if pk, perr := vitals.PeakPhysFootprint(pid); perr == nil {
+			peak = int64(pk)
+		}
+
 		processes = append(processes, ProcessInfo{
-			PID:        pid,
-			Name:       name,
-			Command:    comm,
-			RSS:        rss * 1024, // ps reports RSS in KB
-			VSZ:        vsz * 1024,
-			CPUPercent: cpu,
-			User:       user,
+			PID:           pid,
+			Name:          name,
+			Command:       comm,
+			RSS:           rss * 1024, // ps reports RSS in KB
+			VSZ:           vsz * 1024,
+			Footprint:     footprint,
+			PeakFootprint: peak,
+			CPUPercent:    cpu,
+			User:          user,
 		})
 	}
 

@@ -154,6 +154,14 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
+	case "Process Footprint":
+		// One process holding a third-to-half of RAM. `relieve --memory` flushes
+		// inactive caches, which does NOT touch a single process's footprint —
+		// the lever has to name the offender. Deliberately a PREVIEW verb: the
+		// offender here is routinely Sirsi's own model broker, and killing the
+		// local AI without asking is not a remedy an operator should discover
+		// after the fact (A1: preview mutates nothing).
+		return "sirsi relieve"
 	case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral":
 		if warn {
 			// Flush inactive caches — the safe, non-destructive memory lever
@@ -253,6 +261,11 @@ var liveCriticalChecks = map[string]bool{
 	"RAM Pressure":        true, // used RAM critically high → Jetsam kills imminent
 	"Disk Space":          true, // volume full → saves fail, system instability
 	"Memory Death Spiral": true, // swap exhausted + load runaway → the machine is dying NOW (94/100-during-spiral bug, 2026-07-16)
+	// A single process at half of RAM is act-now: the kernel Jetsams SOMETHING to
+	// survive it, and it does not get to pick a convenient victim. This machine
+	// OOM'd three times on 2026-07-27 while every check reported green, because
+	// they all sampled RSS and the offender was 39.9 GB compressed.
+	"Process Footprint": true,
 }
 
 // isLiveCritical reports whether a finding is an act-now RED rather than a
@@ -325,6 +338,7 @@ var doctorChecks = []doctorCheck{
 	{"Disk Space", []string{"Disk Space"}, checkDiskSpace},
 	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
 	{"Spotlight Storm", []string{"Spotlight Storm"}, checkSpotlightStorm},
+	{"Process Footprint", []string{"Process Footprint"}, checkProcessFootprint},
 	{"Crash Logs", []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
 		func(_ platform.Platform, r *DoctorReport) { checkRecentCrashLogs(r) }},
 	{"App Crashes", []string{"App Crashes (7d)"},
@@ -613,7 +627,7 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 
 	// Sort by RSS descending
 	sort.Slice(processes, func(i, j int) bool {
-		return processes[i].RSS > processes[j].RSS
+		return memSize(processes[i]) > memSize(processes[j])
 	})
 
 	// Report top 5 memory consumers
@@ -622,47 +636,47 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 		if i >= 5 {
 			break
 		}
-		top = append(top, fmt.Sprintf("%s (%s)", proc.Name, FormatBytes(proc.RSS)))
+		top = append(top, fmt.Sprintf("%s (%s)", proc.Name, FormatBytes(memSize(proc))))
 	}
 
-	// Check for any single process using > 4GB.
+	// Check for any single process using > 4GB
+	// Sized by PHYSICAL FOOTPRINT, not RSS. RSS counts resident pages only; on
+	// Apple Silicon the compressor holds the rest. Measured 2026-07-27: the
+	// gemma broker read 4.71 GB RSS against a 29.4 GB footprint and a 40.5 GB
+	// peak, and the Virtualization VM read 5.4 GB RSS against 18.4 GB.
 	//
-	// A large process is one of three things, and they are NOT the same finding:
-	// an unbounded hog, a capacity-capped reservation, or load-bearing
-	// infrastructure sitting inside a reservation it was launched with. The
-	// reservation cases stay VISIBLE — they are reported as reservations rather
-	// than deleted from the output. Hiding them was the defect in the first pass
-	// of this fix: an operator who cannot see the largest process on the box
-	// cannot reason about memory at all, and a surface that goes quiet is the
-	// green-surface-over-a-real-condition pattern this codebase keeps paying for.
-	// What was actually wrong was never the visibility — it was the REMEDIATION
-	// telling the operator to quit the process (see remediationFor), which for
-	// this VM destroys the sovereign consensus ledger it anchors.
+	// The Gemma exemption is GONE. It read:
+	//
+	//   "The warm Gemma broker is an intentional, capacity-capped model
+	//    reservation... RAM Pressure and Memory Death Spiral still alarm if that
+	//    reservation becomes unsafe."
+	//
+	// That premise was falsified on 2026-07-27. The reservation became unsafe
+	// three times in 24 hours — Jetsam footprints of 31, 43.9 and 38.1 GB — and
+	// neither named check alarmed, because both also sampled resident memory.
+	// A health surface that excuses its own components is the exact failure this
+	// codebase keeps recording. Sirsi's own broker is the most likely offender on
+	// a developer's machine and must be the FIRST thing named, not the one thing
+	// exempted.
+	//
+	// The Colima VM is different: it anchors the sovereign consensus ledger.
+	// Inside the reservation it was LAUNCHED with (Lima's generated record,
+	// bound to a live vz.pid), it is reserved capacity, not a hog. It stays
+	// visible as capacity-reserved instead of being hidden from the report.
 	var hogs, reserved []string
 	for _, proc := range processes {
-		if proc.RSS <= 4*1024*1024*1024 {
+		size := memSize(proc)
+		if size <= 4*1024*1024*1024 {
 			continue
 		}
-		// The warm Gemma broker is an intentional, capacity-capped model
-		// reservation. Its RSS may exceed the generic per-process threshold
-		// while node pressure remains healthy; RAM Pressure and Memory Death
-		// Spiral still alarm if that reservation becomes unsafe.
-		if isCapacityCappedGemmaBroker(p, proc.PID) {
-			continue
-		}
-		// The Colima VM anchors the sovereign consensus ledger. Inside the
-		// reservation it was LAUNCHED with (Lima's generated record, bound to a
-		// live vz.pid — not a user-editable wish), it is reserved capacity, not
-		// a hog. Outside it, or with no runtime record to read, it falls through
-		// and is reported like anything else: the label has to be earned.
 		if isAppleVirtVM(p, proc.PID) {
-			if capBytes, ok := ColimaVMReservation(); ok && proc.RSS <= capBytes {
+			if capBytes, ok := ColimaVMReservation(); ok && size <= capBytes {
 				reserved = append(reserved, fmt.Sprintf("%s at %s of %s reserved",
-					proc.Name, FormatBytes(proc.RSS), FormatBytes(capBytes)))
+					proc.Name, FormatBytes(size), FormatBytes(capBytes)))
 				continue
 			}
 		}
-		hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(proc.RSS)))
+		hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(size)))
 	}
 
 	finding := DiagnosticFinding{
@@ -703,13 +717,26 @@ func isAppleVirtVM(p platform.Platform, pid int) bool {
 	return strings.Contains(string(out), "com.apple.Virtualization.VirtualMachine")
 }
 
-func isCapacityCappedGemmaBroker(p platform.Platform, pid int) bool {
-	out, err := p.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
-	if err != nil {
-		return false
+// memSize is the honest size of a process: physical footprint when available,
+// RSS only as a last resort. Every caller that sizes a process must use this —
+// reading .RSS directly is how the broker stayed invisible through three OOMs.
+func memSize(pr ProcessInfo) int64 {
+	if pr.Footprint > 0 {
+		return pr.Footprint
 	}
-	return strings.Contains(string(out), "/.sirsi/gemma-capped-server.py")
+	return pr.RSS
 }
+
+// isCapacityCappedGemmaBroker was DELETED 2026-07-27, not left unused.
+//
+// It exempted Sirsi's own broker from the memory-hog check, on the premise
+// that RAM Pressure and Memory Death Spiral would alarm if the reservation
+// became unsafe. It became unsafe three times that day — Jetsam footprints of
+// 31, 43.9 and 38.1 GB — and neither alarmed, because both also sampled
+// resident memory while 39.9 GB sat compressed.
+//
+// Deleted rather than left unused so the exemption cannot be quietly
+// re-applied: there is nothing left to call.
 
 // crashWindowDays is the look-back window for kernel-panic / Jetsam trends.
 const crashWindowDays = 7
