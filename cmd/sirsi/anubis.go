@@ -1294,7 +1294,13 @@ func remediationFor(check string) (string, string) {
 		return "sirsi clean --include-caution", "Preview crash-report cleanup (caution tier); re-run with --confirm to move them to Trash"
 	case strings.Contains(check, "Jetsam"), strings.Contains(check, "RAM"),
 		strings.Contains(check, "Swap"), strings.Contains(check, "Memory"):
-		return "sirsi monitor", "Watch the processes driving memory pressure, then quit the worst offenders"
+		// NOT "quit the worst offenders". The largest process on a Pantheon host
+		// is routinely load-bearing — the Gemma broker, or the Colima VM that
+		// anchors the sovereign consensus ledger — and quitting it destroys
+		// state that no amount of reclaimed RAM buys back. The honest advice is
+		// to inspect the pressure and right-size the reservation; killing by RSS
+		// rank is never the routine move (PANTHEON_RULES A32, ADR-040).
+		return "sirsi monitor", "Inspect what is driving memory pressure, then right-size its reservation — load-bearing services are capped, never quit"
 	case strings.Contains(check, "Disk"):
 		return "sirsi clean", "Reclaim disk space from caches, logs, and old installers"
 	case strings.Contains(check, "Kernel Panic"):
