@@ -132,6 +132,10 @@ func runGemma(cmd *cobra.Command, args []string) error {
 		// can't fit it either (the broker is holding RAM). Report the warm cause
 		// so a warm-vs-cold routing gap is diagnosable, not a bare cold refusal.
 		if warmUp && warmErr != nil {
+			if strings.Contains(warmErr.Error(), "raise --max-tokens") {
+				return fmt.Errorf("the warm broker is up but did not finish within --max-tokens (%v). Retry with a larger --max-tokens value; refusing cold reload because it won't fit (~%dGB model + ~%dGB reserve > %dGB free)",
+					warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
+			}
 			return fmt.Errorf("the warm broker is up but did not serve %s (%v), and a cold load won't fit (~%dGB model + ~%dGB reserve > %dGB free). The warm broker likely holds a DIFFERENT model resident — restart it on this model with `sirsi gemma serve --port <p>` (its default reads gemma-model.conf = %s), or free memory. Refusing rather than OOM the machine",
 				gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30), gemmaShortModel(model))
 		}
