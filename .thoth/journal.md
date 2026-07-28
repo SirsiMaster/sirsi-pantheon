@@ -973,3 +973,24 @@ EDT pair. reconcile healed 5, prune 947→928, `ccd reap` killed 5 procs across 
 and archived 2 records, retention reclaimed 95.9 KiB, board republished at 01:11Z. `doctor --fix`
 reports the same 7 undeliverable items (6 claude-deck + 1 user) already covered by the open
 `20260727-222631` owner item — surfaced, not re-nagged.
+
+## Conduit run 2026-07-28T01:26Z
+
+All-vitals-green run whose only real work was closing two loops the previous run had
+identified but never routed. Broker pid 75716 held stable a seventh run with its
+`--prompt-cache-bytes` bound intact and cache at 2.77 GB; no new `.ips` since the 19:53
+EDT `Python-…195355` SIGBUS, so the second-crash escalation trigger stays unfired. All
+sirsi daemons live, reconcile healed one reaped thread to a successor, prune took the
+record set 929 → 925, `ccd reap` killed 2 leaked supervisor sessions and archived 2, and
+retention reclaimed 95.9 KiB. Both my router queues pulled empty and the stale list was
+byte-for-byte the already-evaluated set, so no re-reading was spent on it. PR #335 still
+heads at `cf721cef` — unchanged since the run that proved `internal/govern` has zero
+callers and `MemProc` still has no `Footprint` field — so that BLOCKED verdict stands
+without re-derivation. What was actually new: #337 and #338 are green, mergeable, and
+identity-safe but authored by me, and nothing had ever asked an independent agent to
+merge them; and #339/#341/#342/#343 have now sat three runs on a single commit authored
+`test@test.com`, which a single-commit squash would carry into main, with #340 stacked
+behind #339. Both were routed to claude-pantheon as requests rather than left implicit in
+a memory file, and the identity item names the likely source — a branch-creation path
+committing with an unset git identity, four PRs in one night being a pattern rather than
+an accident.
