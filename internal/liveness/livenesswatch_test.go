@@ -45,6 +45,7 @@ func TestPlistContent_LeverShape(t *testing.T) {
 // adds no duplicate.
 func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	root := t.TempDir()
+	writeLivenessTestAgents(t, root)
 	// Ensure the gemma probe reads "down": point HOME at an empty dir with no
 	// gemma-server.port, so probeGemma returns wedged deterministically.
 	t.Setenv("HOME", t.TempDir())
@@ -227,6 +228,18 @@ func dirExists(p string) bool {
 	return err == nil && fi.IsDir()
 }
 
+func writeLivenessTestAgents(t *testing.T, root string) {
+	t.Helper()
+	registry := `{
+		"agents": {
+			"claude-pantheon": {"type": "claude", "command": ["true"], "cwd": "/tmp"}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestRecipientFor pins the ownership routing: machine-health conditions go to
 // claude-pantheon (which remediates them under A32/ADR-040), unclassified
 // conditions fall through to the owner so nothing is silently misrouted.
@@ -250,6 +263,7 @@ func TestRecipientFor(t *testing.T) {
 // now go through the dispatch facade, so the second Run must skip.
 func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	root := t.TempDir()
+	writeLivenessTestAgents(t, root)
 	home := t.TempDir() // no gemma-server.port → probeGemma reads wedged
 	t.Setenv("HOME", home)
 	t.Setenv(routercfg.StoreWakeEnv, "1")
