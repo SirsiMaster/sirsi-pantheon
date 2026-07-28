@@ -378,8 +378,10 @@ func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error
 	defer resp.Body.Close()
 	var out struct {
 		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -389,7 +391,15 @@ func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error
 	if len(out.Choices) == 0 {
 		return "", fmt.Errorf("warm broker returned no choices")
 	}
-	return gemmaClean(out.Choices[0].Message.Content), nil
+	msg := out.Choices[0].Message
+	text := msg.Content
+	if strings.TrimSpace(text) == "" {
+		if out.Choices[0].FinishReason == "length" {
+			return "", fmt.Errorf("warm broker returned only reasoning before the token limit; raise --max-tokens")
+		}
+		text = msg.Reasoning
+	}
+	return gemmaClean(text), nil
 }
 
 // gemmaEstimateModelBytes estimates the resident size of a model from its HF cache.

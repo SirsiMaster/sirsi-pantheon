@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -52,5 +55,58 @@ func TestGemmaNeverAgainInvariants(t *testing.T) {
 	//    Fits refuse gate must run first.
 	if tight.MaxConcurrency(12*gb) < 1 {
 		t.Error("MaxConcurrency must floor at 1")
+	}
+}
+
+func TestGemmaWarmCompleteAcceptsReasoningOnlyBrokerText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"finish_reason": "stop",
+					"message": map[string]string{
+						"content":   "",
+						"reasoning": "NEEDS-AGENT",
+					},
+				},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	got, err := gemmaWarmComplete(ts.URL, "mlx-community/gemma-4-12B-it-8bit", "classify", 8)
+	if err != nil {
+		t.Fatalf("gemmaWarmComplete returned error: %v", err)
+	}
+	if got != "NEEDS-AGENT" {
+		t.Fatalf("gemmaWarmComplete = %q, want NEEDS-AGENT", got)
+	}
+}
+
+func TestGemmaWarmCompleteRejectsCutoffReasoningOnlyBrokerText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"finish_reason": "length",
+					"message": map[string]string{
+						"content":   "",
+						"reasoning": "I am still thinking",
+					},
+				},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	got, err := gemmaWarmComplete(ts.URL, "mlx-community/gemma-4-12B-it-8bit", "classify", 8)
+	if err == nil {
+		t.Fatalf("gemmaWarmComplete = %q, want token-limit error", got)
+	}
+	if !strings.Contains(err.Error(), "raise --max-tokens") {
+		t.Fatalf("gemmaWarmComplete error = %q, want raise --max-tokens", err.Error())
 	}
 }
