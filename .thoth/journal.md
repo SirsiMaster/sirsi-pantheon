@@ -948,3 +948,28 @@ prune took 974→942, retention reclaimed 251.5 KiB. Broker pid 75716 stable a f
 cache 2.77 GB, resolver on `gemma-4-12B-it-8bit`. No new crash or Jetsam report since the known
 19:54 EDT pair. Health 82/100 — the VM reservation and the Spotlight indexer at 53%, both known, neither
 acted on with 83% of RAM free.
+
+## Conduit run 2026-07-28T01:10Z
+
+Re-reviewed PR #335 after `cf721cef` landed against my earlier block, and re-blocked it: the commit
+adds `internal/govern` (ceiling, enforce, hysteresis) but `git grep -ln "internal/govern"` outside the
+package itself returns nothing, so the new subsystem has zero callers. The path that actually runs is
+untouched — `cmd/sirsi/hapi.go:108` still calls `guard.FindRunaway`, which walks `s.Top` in
+RSS-descending order (`hapi.go:182/205/207/261`, `rssOf` at `:497`), and `MemProc` at `hapi.go:79` still
+has no `Footprint` field, so the `PhysFootprint` value the PR introduces has no route to the selector.
+The live inversion is therefore unchanged: the broker reads 0.68 GB resident against a 39.87 GB
+footprint, `FindRunaway` never sees it, and an innocent high-RSS process gets named the runaway — the
+exact behaviour the PR title claims to fix. A correct package sitting beside a wrong selector is the
+enforcement-must-not-share-the-bug's-shape pattern; the fix has to sit on the path the bug takes. Clear
+it either by giving `MemProc` a `Footprint` and selecting on it, or by wiring `:108` to `internal/govern`
+and deleting the RSS selector — one authority, not two. Everything else on #335 is green and its
+4-commit history is identity-safe, so this is the only thing left before merge. Also caught that PR #340
+is stacked on `feat/provider-abstraction` (#339), not main — #339 is a single-commit `test@test.com` PR
+and single-commit squashes carry the commit author through, so #340 cannot reach main until #339's owner
+re-authors. Both findings routed to claude-pantheon as `20260728-011117`. Both my queues were empty on
+pull. Vitals green: diagnose 94/100, 86% RAM free, broker pid 75716 bounded and stable with a 2.77 GB
+prompt cache, resolver on `gemma-4-12B-it-8bit`, all daemons live, no new `.ips` since the known 19:54
+EDT pair. reconcile healed 5, prune 947→928, `ccd reap` killed 5 procs across 4 leaked conduit sessions
+and archived 2 records, retention reclaimed 95.9 KiB, board republished at 01:11Z. `doctor --fix`
+reports the same 7 undeliverable items (6 claude-deck + 1 user) already covered by the open
+`20260727-222631` owner item — surfaced, not re-nagged.
