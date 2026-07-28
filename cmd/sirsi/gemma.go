@@ -81,6 +81,7 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	if t := strings.ToLower(strings.TrimSpace(gemmaTask)); t != "" {
 		prompt = "TASK: " + t + "\n\n" + prompt
 	}
+	prompt = renderGemmaPrompt(prompt)
 
 	home, _ := os.UserHomeDir()
 	model := gemmaResolveModel(home)

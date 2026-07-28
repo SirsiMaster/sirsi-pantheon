@@ -10,6 +10,16 @@ Cursor, IDE plugins — as two tools:
 Everything runs on your machine. No tokens billed. No data leaves the
 host (Rule A11).
 
+## Product identity
+
+The tool answers as **Ask Sirsi**, the local AI of the Sirsi Pantheon. The
+Gemma/MLX model is the engine; Ask Sirsi is the product surface. Every
+`gemma_chat`, `gemma_complete`, `sirsi gemma`, and `ctr --reconcile` request
+receives Sirsi identity context before the user prompt so the local model
+knows the Pantheon, CTR/router, Claude Home, Codex Pantheon, Hypergraph, Sirsi
+Nexus, and portfolio workstream vocabulary. It should not answer as a generic
+Google model unless you explicitly ask about the underlying engine.
+
 ## When to use it
 
 Use sirsi-gemma when:

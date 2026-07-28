@@ -163,7 +163,7 @@ func TestBuildReconcilePrompt(t *testing.T) {
 		{ID: "i-1", From: "claude-home", Type: "decision", Title: "ship the thing"},
 		{ID: "i-2", From: "claude-nexus", Type: "review", Title: "look at PR"},
 	})
-	for _, want := range []string{"TIER0", "TIER1", "TIER2", "Do NOT invent", "id=i-1", `title="ship the thing"`, "id=i-2"} {
+	for _, want := range []string{"Ask Sirsi", "Sirsi Pantheon", "Cylton Collymore", "Claude Home", "TIER0", "TIER1", "TIER2", "Do NOT invent", "id=i-1", `title="ship the thing"`, "id=i-2"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("reconcile prompt missing %q:\n%s", want, p)
 		}

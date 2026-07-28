@@ -23,6 +23,7 @@ func RenderChatPrompt(system string, msgs []ChatMessage) (string, error) {
 	if len(msgs) == 0 {
 		return "", fmt.Errorf("chat: at least one message required")
 	}
+	system = applySirsiIdentity(system)
 	var b strings.Builder
 	if system != "" {
 		// Gemma has no dedicated system role — convention is to fold the
