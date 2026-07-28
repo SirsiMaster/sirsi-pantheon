@@ -112,7 +112,7 @@ private struct ScaledFont: ViewModifier {
     let weight: Font.Weight
     let design: Font.Design
     func body(content: Content) -> some View {
-        content.font(.system(size: size * scale, weight: weight, design: design))
+        content.font(.system(size: size * scale, weight: weight, design: design)) // sirsi:scaling-primitive
     }
 }
 
@@ -179,9 +179,9 @@ private struct ScaledSemanticFont: ViewModifier {
 
     @ViewBuilder func body(content: Content) -> some View {
         if scale == 1 && weight == nil && design == .default {
-            content.font(style.native)
+            content.font(style.native) // sirsi:scaling-primitive
         } else {
-            content.font(.system(size: style.base * scale,
+            content.font(.system(size: style.base * scale, // sirsi:scaling-primitive
                                  weight: weight ?? style.defaultWeight,
                                  design: design))
         }

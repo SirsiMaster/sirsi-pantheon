@@ -17,7 +17,7 @@ struct CleanScanStep: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(error)
-                        .font(.caption)
+                        .sirsiFont(.caption)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Try again") {
                         onScan()
@@ -27,23 +27,23 @@ struct CleanScanStep: View {
                 VStack(spacing: 8) {
                     ProgressView()
                     Text("Searching for leftover apps, caches, logs, and snapshots.")
-                        .font(.caption)
+                        .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 VStack(spacing: 8) {
                     Text("Scan for cleanup")
-                        .font(.system(size: 15, weight: .semibold))
+                        .sirsiFont(15, weight: .semibold)
                     Text("One tap finds caches, logs, leftover apps, and snapshots.")
-                        .font(.caption)
+                        .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Button {
                         onScan()
                     } label: {
                         Text("Scan")
-                            .font(.system(size: 13, weight: .semibold))
+                            .sirsiFont(13, weight: .semibold)
                     }
                     .buttonStyle(.borderedProminent)
                 }
