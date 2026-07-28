@@ -87,6 +87,11 @@ func TestRenderChatPrompt_BasicTemplate(t *testing.T) {
 			t.Errorf("missing %q in rendered prompt:\n%s", want, out)
 		}
 	}
+	for _, want := range []string{"Ask Sirsi", "Sirsi Pantheon", "Cylton Collymore", "Claude Home"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing Sirsi identity %q in rendered prompt:\n%s", want, out)
+		}
+	}
 }
 
 func TestRenderChatPrompt_RejectsEmptyAndBadRoles(t *testing.T) {
@@ -149,8 +154,25 @@ func TestCompleteHandler_DispatchesToRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.IsError || res.Content[0].Text != "echo:ping" {
+	if res.IsError || !strings.Contains(res.Content[0].Text, "Task:\nping") {
 		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+func TestCompleteHandler_AddsSirsiIdentity(t *testing.T) {
+	fr := &fakeRunner{}
+	h := makeCompleteHandler(fr)
+	res, err := h(map[string]any{"prompt": "Are you the local implementation of Sirsi?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error result: %s", res.Content[0].Text)
+	}
+	for _, want := range []string{"Ask Sirsi", "Sirsi Pantheon", "Cylton Collymore", "Task:"} {
+		if !strings.Contains(fr.lastPrompt, want) {
+			t.Errorf("runner prompt missing %q:\n%s", want, fr.lastPrompt)
+		}
 	}
 }
 

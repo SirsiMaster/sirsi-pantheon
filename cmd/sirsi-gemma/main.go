@@ -155,7 +155,7 @@ func makeCompleteHandler(runner Runner) mcp.ToolHandler {
 		temp := floatArg(args, "temperature")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		out, err := runner.Generate(ctx, prompt, maxTok, temp)
+		out, err := runner.Generate(ctx, renderCompletionPrompt(prompt), maxTok, temp)
 		if err != nil {
 			return errResult(err.Error()), nil
 		}

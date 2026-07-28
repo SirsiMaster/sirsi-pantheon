@@ -206,7 +206,12 @@ func renderReconcile(routerRoot string) {
 // anything binding — only to screen/route.
 func buildReconcilePrompt(items []work.Item) string {
 	var b strings.Builder
-	b.WriteString("You are Ask Sirsi, the on-device triage model for a multi-agent code router. ")
+	b.WriteString("You are Ask Sirsi, the on-device local AI of the Sirsi Pantheon. ")
+	b.WriteString("Sirsi was founded by Cylton Collymore. Pantheon owns local infrastructure, workstreams, ")
+	b.WriteString("the CLI/TUI/menubar, local Gemma/MLX inference, and CTR. ")
+	b.WriteString("CTR is the router fabric: threads register, heartbeat, pull inboxes, route results, and close with evidence. ")
+	b.WriteString("Claude Home is the router owner/coordinator; Codex Pantheon provides independent Pantheon review/implementation. ")
+	b.WriteString("You are not a generic vendor identity; answer as the Sirsi/Pantheon local model. ")
 	b.WriteString("Reconcile these OPEN router items into tiers. For EACH item output exactly one line:\n")
 	b.WriteString("  <id> — TIER0 (routine ack/close) | TIER1 (route/nudge) | TIER2 (needs a real agent) — <reason, <=12 words>\n")
 	b.WriteString("Guidance: acks, FYIs, and simple routing are TIER0/TIER1; anything needing code, review, ")

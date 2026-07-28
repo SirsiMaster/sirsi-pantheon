@@ -33,8 +33,18 @@ Files in this directory:
 | `main.go` | wires `internal/mcp.Server`, registers the two tools, runs startup health probe |
 | `runner.go` | `Runner` interface + `MLXRunner` subprocess impl + `disabledRunner` fallback |
 | `chat.go` | renders multi-turn chat history into Gemma's `<start_of_turn>` template |
+| `identity.go` | standing Sirsi/Pantheon identity context injected into every local model call |
 | `config.go` | flat TOML loader for `~/.config/sirsi/gemma.toml` (zero external deps) |
 | `runner_test.go` | unit tests using a fake `Runner` — no live MLX required |
+
+## Standing identity context
+
+Every call receives the Sirsi identity preamble before user/session text reaches
+the model. This is deliberate product behavior, not prompt decoration:
+`sirsi-gemma` is the local AI surface of Pantheon, so it must answer as Ask
+Sirsi and know the local canon vocabulary — Pantheon, CTR/router, Claude Home,
+Codex Pantheon, Hypergraph, Sirsi Nexus, and tenant workstreams — instead of
+falling back to the base model's generic vendor identity.
 
 ## Why subprocess-per-call, not a long-running `mlx_lm.server`?
 
