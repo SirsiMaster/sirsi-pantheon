@@ -52,6 +52,14 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380) {
         await engine.fetchVitals()
         let insightRaw = await SirsiEngine.run(args: ["insight", "--json", "--no-ai"], stdin: nil)
         let insight = InsightView.decode(insightRaw)
+        // Live round-trip proof for the Ask Sirsi query path: exercise the
+        // REAL askLocalAI (board endpoint, quirk handling), print the answer,
+        // and preload it into the rendered Ask Sirsi screen so visual QA proves
+        // the final answer path, not an empty prompt shell.
+        let askSirsiProbe = await engine.askLocalAIKnowledgeReport()
+        try? askSirsiProbe.write(toFile: outDir + "/ask-sirsi-learned-report.txt",
+                                 atomically: true, encoding: .utf8)
+        FileHandle.standardOutput.write(Data("ask-sirsi learned report: \(askSirsiProbe.prefix(240))\n".utf8))
 
         // EVERY top-level drill-in renders here — a screen the harness doesn't
         // draw is a screen that can ship broken past a "walked" sign-off (the
@@ -81,13 +89,8 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380) {
             ("activity", AnyView(ActivityView(engine: engine))),
             ("ghosts-leftover-apps", AnyView(GhostsView(engine: engine))),
             ("scan-clean", AnyView(ScanCleanView(engine: engine))),
-            ("ask-sirsi", AnyView(AskSirsiView(engine: engine))),
+            ("ask-sirsi", AnyView(AskSirsiView(engine: engine, preloadedAnswer: askSirsiProbe))),
         ]
-        // Live round-trip proof for the Ask Sirsi query path: exercise the
-        // REAL askLocalAI (board endpoint, quirk handling) and print the
-        // answer — the harness run itself becomes the verification evidence.
-        let probe = await engine.askLocalAI("Reply with exactly: READY")
-        FileHandle.standardOutput.write(Data("ask-sirsi live probe: \(probe.prefix(120))\n".utf8))
         // Owner-gated screens render only when the live board has items — the
         // detail view gets its body preloaded (ImageRenderer never runs .task).
         shots.append(("owner-actions", AnyView(OwnerActionsListView(engine: engine))))
@@ -98,15 +101,17 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380) {
         }
 
         for shot in shots {
+            let height: CGFloat = shot.name == "ask-sirsi" ? 760 : 520
             let renderer = ImageRenderer(content: shot.view
                 .environmentObject(Nav())
                 .environment(\.snapshotMode, true)
+                .environment(\.colorScheme, .dark)
                 // Width is a parameter so the harness can prove RESPONSIVE
                 // behaviour headlessly: render the same screen at the panel's
                 // minSize and at a wide size and diff them. Verifying type
                 // scaling by driving the live panel needs an unlocked screen;
                 // this does not.
-                .frame(width: width, height: 520)
+                .frame(width: width, height: height)
                 .environment(\.sirsiTypeScale, typeScale(forWidth: width)))
             renderer.scale = 2.0
             var wrote = 0

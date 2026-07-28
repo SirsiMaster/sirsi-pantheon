@@ -2562,9 +2562,18 @@ struct ResultView: View {
 // stale panel (live-data-never-greyed).
 struct AskSirsiView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
     @State private var question = ""
     @State private var asking = false
     @State private var answer: String?
+    private var panelFill: Color {
+        snapshotMode ? Color(red: 0.13, green: 0.13, blue: 0.13) : Color.primary.opacity(0.04)
+    }
+
+    init(engine: SirsiEngine, preloadedAnswer: String? = nil) {
+        self.engine = engine
+        _answer = State(initialValue: preloadedAnswer)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2605,37 +2614,77 @@ struct AskSirsiView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
             .padding(.horizontal, 12).padding(.top, 8)
 
             // ── Query box ─────────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    TextField("Ask anything — answered on this Mac, never cloud", text: $question)
-                        .textFieldStyle(.plain).sirsiFont(13)
-                        .onSubmit { ask() }
-                    if asking {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(gold)
-                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty
-                                      || engine.localLLM?.healthy != true)
+                if snapshotMode {
+                    HStack(spacing: 6) {
+                        Text("Ask anything — answered on this Mac, never cloud")
+                            .sirsiFont(13)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(gold)
                     }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                } else {
+                    HStack(spacing: 6) {
+                        TextField("Ask anything — answered on this Mac, never cloud", text: $question)
+                            .textFieldStyle(.plain).sirsiFont(13)
+                            .onSubmit { ask() }
+                        if asking {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
+                                .buttonStyle(.plain).foregroundStyle(gold)
+                                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty
+                                          || engine.localLLM?.healthy != true)
+                        }
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
                 }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                 if asking {
                     Text("thinking on-device…").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
+                if snapshotMode {
+                    Label("Report what Sirsi taught you", systemImage: "book.closed")
+                        .frame(maxWidth: .infinity)
+                        .sirsiFont(12, weight: .semibold)
+                        .foregroundStyle(gold)
+                        .padding(.vertical, 7)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                } else {
+                    Button {
+                        askKnowledgeReport()
+                    } label: {
+                        Label("Report what Sirsi taught you", systemImage: "book.closed")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderless)
+                    .sirsiFont(12, weight: .semibold)
+                    .foregroundStyle(gold)
+                    .disabled(asking || engine.localLLM?.healthy != true)
+                }
                 if let answer {
-                    ScrollView {
+                    if snapshotMode {
                         Text(answer).sirsiFont(13)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                    } else {
+                        ScrollView {
+                            Text(answer).sirsiFont(13)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 260)
                     }
-                    .frame(maxHeight: 260)
                     Text("answered on-device by Sirsi — no cloud").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -2653,6 +2702,15 @@ struct AskSirsiView: View {
         asking = true
         Task {
             answer = await engine.askLocalAI(q)
+            asking = false
+        }
+    }
+
+    private func askKnowledgeReport() {
+        guard !asking else { return }
+        asking = true
+        Task {
+            answer = await engine.askLocalAIKnowledgeReport()
             asking = false
         }
     }
