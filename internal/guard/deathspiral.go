@@ -22,7 +22,8 @@ const vmStatPageBytes = 16384
 
 // fanOutAlarm is the per-parent child-process count that reads as a session
 // leak (the ScheduleWakeup/CCD leak parented 244 claude-code processes under
-// one Claude.app PID). Ordinary apps fan out helpers in the tens.
+// one Claude.app PID). Ordinary apps fan out helpers in the tens. Some platform
+// supervisors legitimately fan out above this count and must be excluded below.
 const fanOutAlarm = 100
 
 // isDeathSpiral is THE spiral ladder — one definition, both callers (the doctor
@@ -217,6 +218,11 @@ func maxProcessFanOut(p platform.Platform) (int, string) {
 	// launchd (ppid 1) parents everything by design — not a leak signal.
 	delete(children, "1")
 	delete(children, "0")
+	for ppid := range children {
+		if isStructuralFanOutParent(comm[ppid]) {
+			delete(children, ppid)
+		}
+	}
 	type kv struct {
 		ppid string
 		n    int
@@ -238,4 +244,16 @@ func maxProcessFanOut(p platform.Platform) (int, string) {
 		name = name[i+1:]
 	}
 	return all[0].n, name
+}
+
+func isStructuralFanOutParent(name string) bool {
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	switch strings.ToLower(name) {
+	case "launchd_sim":
+		return true
+	default:
+		return false
+	}
 }
