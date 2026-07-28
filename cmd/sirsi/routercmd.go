@@ -44,8 +44,27 @@ func workRootEnsure() (string, error) {
 	return root, nil
 }
 
+// inlineBodyLimit is the length above which a body MUST come from a file.
+//
+// Router bodies are composed in a shell. A backtick or $(...) inside a
+// double-quoted argument is EVALUATED BY THE SHELL before this binary ever
+// runs, so the text that arrives is already mangled — silently, with the
+// evaluated span replaced by command output or by nothing. It has corrupted a
+// stored record (an owner-gate row rewritten by an evaluated backtick) and, in
+// one session, blanked command names out of three separate item bodies written
+// by an author who knew about the hazard and had a memory note describing it.
+//
+// Discipline demonstrably does not fix this, so the safe path is made the only
+// path for bodies long enough to contain prose. Short bodies stay inline
+// because "ack" and "merged as abc123" are not worth a temp file.
+const inlineBodyLimit = 280
+
 // loadOrLiteral returns the literal value, or the contents of the file if it
-// starts with @. Lets callers pass --instructions "text" or --instructions @file.
+// starts with @.
+//
+// Refuses a long inline body rather than storing text the shell may already
+// have rewritten. The refusal is the feature: a truncated record looks
+// plausible, which is precisely what makes it dangerous.
 func loadOrLiteral(v string) (string, error) {
 	if strings.HasPrefix(v, "@") {
 		data, err := os.ReadFile(strings.TrimPrefix(v, "@"))
@@ -53,6 +72,14 @@ func loadOrLiteral(v string) (string, error) {
 			return "", err
 		}
 		return string(data), nil
+	}
+	if len(v) > inlineBodyLimit {
+		return "", fmt.Errorf(
+			"body is %d chars; anything over %d must be passed as @file.\n"+
+				"  Shells evaluate backticks and $(...) inside a quoted argument BEFORE sirsi sees it,\n"+
+				"  so a long inline body can arrive silently rewritten and be stored that way.\n"+
+				"  Write it to a file and pass @that-file.",
+			len(v), inlineBodyLimit)
 	}
 	return v, nil
 }
