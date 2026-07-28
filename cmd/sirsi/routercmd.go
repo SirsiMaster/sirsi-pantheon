@@ -941,21 +941,21 @@ var routerMigrateCmd = &cobra.Command{
 	},
 }
 
-// routerBoardCmd prints the owner-actionable router board the conduit regenerates
-// at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
-// threads). Read-only convenience mirror of what the menubar Router view renders.
+// routerBoardCmd prints the owner-actionable router board. It renders live
+// NodeStatus first; the historical ~/.sirsi/router-board.md file is only a
+// visibly-stale fallback when the live read-model is unavailable.
 var routerBoardCmd = &cobra.Command{
 	Use:   "board",
-	Short: "Print the owner-actionable router board (~/.sirsi/router-board.md)",
-	Long: `Prints ~/.sirsi/router-board.md — the lean, owner-actionable board the
-router conduit regenerates each cycle (blockers, stranded inboxes, live threads).
+	Short: "Print the live owner-actionable router board",
+	Long: `Prints the live owner-actionable router board from the router's
+authoritative read-model (queue, stranded inboxes, live threads, helpers).
 
-This is a read-only convenience mirror of the menubar's Router view. If the board
-file is absent (no conduit has run), it points you at 'sirsi router node-status'.
+The old ~/.sirsi/router-board.md conduit artifact is used only as a marked
+fallback when the live read-model cannot be collected.
 
-With --json the verb emits a real JSON envelope ({path, exists, content,
-modified_at}) instead of raw markdown, so scripted callers never have to
-scrape human output.`,
+With --json the verb emits an explicit source envelope. source=live-node-status
+is current truth; source=cached-markdown is a stale fallback and includes the
+cached file's modified_at.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -967,36 +967,77 @@ scrape human output.`,
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("read board: %w", err)
 		}
+		var modifiedAt string
+		if info, serr := os.Stat(boardPath); serr == nil {
+			modifiedAt = info.ModTime().UTC().Format(time.RFC3339)
+		}
+
+		live, liveErr := collectLiveRouterBoard()
 		// The root --json flag must yield machine output here too — before this
 		// branch existed it was silently swallowed (markdown printed, exit 0),
 		// which is a contract violation for scripted callers (#147 review, minor 5).
 		if JsonOutput {
-			envelope := map[string]any{
-				"path":    boardPath,
-				"exists":  exists,
-				"content": string(data),
-			}
-			if info, serr := os.Stat(boardPath); serr == nil {
-				envelope["modified_at"] = info.ModTime().UTC().Format(time.RFC3339)
-			}
-			if !exists {
-				envelope["hint"] = "no conduit run recorded — use `sirsi router node-status --json` for the live fabric view"
-			}
+			envelope := routerBoardEnvelope(boardPath, data, exists, modifiedAt, live, liveErr)
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(envelope)
 		}
-		if !exists {
-			fmt.Println("No router board yet (no conduit run recorded).")
-			fmt.Println("Run `sirsi router node-status` for the live fabric view.")
+		if liveErr == nil {
+			renderNodeStatus(live)
 			return nil
 		}
-		fmt.Print(string(data))
-		if !strings.HasSuffix(string(data), "\n") {
+		if exists {
+			fmt.Printf("⚠ live router board unavailable (%v); showing stale cached markdown", liveErr)
+			if modifiedAt != "" {
+				fmt.Printf(" from %s", modifiedAt)
+			}
+			fmt.Println(".")
 			fmt.Println()
+			fmt.Print(string(data))
+			if !strings.HasSuffix(string(data), "\n") {
+				fmt.Println()
+			}
+			return nil
 		}
-		return nil
+		return fmt.Errorf("collect live router board: %w", liveErr)
 	},
+}
+
+func collectLiveRouterBoard() (*router.NodeStatus, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return nil, fmt.Errorf("locate repo root: %w", err)
+	}
+	ns, err := router.CollectNodeStatus(repoRoot, nil)
+	if err != nil {
+		return nil, fmt.Errorf("collect node-status: %w", err)
+	}
+	return ns, nil
+}
+
+func routerBoardEnvelope(boardPath string, cached []byte, exists bool, modifiedAt string, live *router.NodeStatus, liveErr error) map[string]any {
+	if liveErr == nil && live != nil {
+		return map[string]any{
+			"source":      "live-node-status",
+			"stale":       false,
+			"node_status": live,
+		}
+	}
+	envelope := map[string]any{
+		"source":     "cached-markdown",
+		"stale":      true,
+		"path":       boardPath,
+		"exists":     exists,
+		"content":    string(cached),
+		"live_error": fmt.Sprint(liveErr),
+	}
+	if modifiedAt != "" {
+		envelope["modified_at"] = modifiedAt
+	}
+	if !exists {
+		envelope["hint"] = "no cached conduit board exists and live node-status collection failed"
+	}
+	return envelope
 }
 
 var (
