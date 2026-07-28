@@ -193,8 +193,13 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 	rows, err := f.store.Inbox(agent)
 	if err != nil {
 		// Pre-cutover only (the cutover path returned above): the store is merely
-		// additive here, so a broken store must not strand the canonical file
-		// inbox — degrade to files rather than fail the surface.
+		// additive here, so a broken store must not strand a non-empty canonical
+		// file inbox. An empty file leg does not corroborate an empty inbox,
+		// though: returning nil there would hide store-only work behind a store
+		// outage and tell the operator "no open items" when the fabric is blind.
+		if len(items) == 0 {
+			return nil, fmt.Errorf("inbox unavailable: store read failed and no file items corroborate an empty inbox: %w", err)
+		}
 		return items, nil //nolint:nilerr // pre-cutover: files stay readable
 	}
 	seen := make(map[string]bool, len(items))

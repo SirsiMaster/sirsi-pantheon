@@ -101,6 +101,28 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	}
 }
 
+func TestInboxFailsClosedWhenStoreErrorsAndNoFileItems(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("claude-pantheon", "codex-pantheon", "store-only work", "review", "do not hide")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removeErr := os.Remove(res.AuditPath); removeErr != nil {
+		t.Fatal(removeErr)
+	}
+	if closeErr := f.store.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+
+	items, err := f.Inbox("codex-pantheon")
+	if err == nil {
+		t.Fatalf("Inbox returned success with no file corroboration and an unreadable store: %+v", items)
+	}
+	if !strings.Contains(err.Error(), "no file items corroborate an empty inbox") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // TestStoreWakeCutover exercises the full post-cutover steady state: with
 // SIRSI_ROUTER_STORE_WAKE=1, Send writes NO items/<id>.md (the store row is the
 // record), yet Show/Inbox/Close all work store-only. This is what makes it safe
