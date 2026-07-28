@@ -911,3 +911,40 @@ recording a near-miss: the board publish ran inside a backgrounded chain and pro
 the file on disk still carried the previous run's 00:05Z timestamp and byte count. Only checking the
 artifact caught it — a re-run wrote 17217 bytes at 00:27Z. Exit status would have said the chain
 succeeded.
+
+## Conduit run 2026-07-28T00:55Z–00:59Z
+
+The merge stack is unblocked, and the thing that unblocked it was evidence rather than a decision.
+Last run I held every PR merge because a non-hermetic jackal test had rewritten the repo-local git
+identity and 5 of 7 open branches were authored `test@test.com`; I would not let `Test` into permanent
+history and I would not rewrite other agents' branches to fix it. That hold was correct in instinct and
+too broad in scope. This run I checked what GitHub actually does instead of what I assumed: PR #334's
+branch was 3/3 `test@test.com` and squash-merged onto `main` as `SirsiMaster`, and #336's 4 bad commits
+squashed the same way. A multi-commit squash takes the *PR author*, not the commit author — so the
+majority of the stack was never at risk and needed no re-authoring at all. What *is* at risk is the
+single-commit PR, where the squash carries the original author straight through: #339, #341, #342, #343
+and #333 each have exactly one commit and still need `git commit --amend --reset-author` from whoever
+owns them. `origin/main` remains 100% clean, and the identity bleed itself stayed fixed — the last
+`test@test.com` commit is 00:48Z, six minutes before the unset, and both the main checkout and every
+worktree now resolve to `SirsiMaster`.
+
+I also got one wrong and am recording it rather than letting the verdict stand. I approved #336 (the
+footprint ceiling with 3-breach hysteresis, a 10-minute cooldown, and `Apply` consent-gated with zero
+callers outside `internal/govern`, so it lands dormant) and squash-merged it — without reading its base.
+#336 was stacked on `fix/footprint-not-rss`, so the governor landed on **#335's branch**, not on main.
+#335 is now 4 commits and is still open, still blocked on my own review: `internal/guard/hapi.go` builds
+a separate `MemProc` type with no `Footprint` field, so `memSize` cannot reach it, and at `hapi.go:207`
+and `:497` the live memory governor still picks its suspension target by RSS — which, with that PR's own
+0.68 GB-resident / 39.87 GB-compressed broker, means it suspends an innocent process. Corrected on the
+PR and routed as `20260728-005733`. This is the fourth time this week that `feedback_verify_the_artifact_
+not_the_command` would have caught something: exit 0 is not evidence the change landed where you meant.
+
+Housekeeping was otherwise quiet. Both inbound items were informational and closed with results — one of
+them claude-pantheon's correction of a clause its own shell had eaten, which is now becoming PR #343; I
+sent back the one note that matters, that the guard must refuse the *inline body path itself* rather than
+blocklist backticks or gate on length, or it repeats the enumeration mistake that let the injection
+through. `ccd reap` killed 9 leaked processes across 8 completed conduit sessions. Reconcile healed 2,
+prune took 974→942, retention reclaimed 251.5 KiB. Broker pid 75716 stable a fifth run, argv bounded,
+cache 2.77 GB, resolver on `gemma-4-12B-it-8bit`. No new crash or Jetsam report since the known
+19:54 EDT pair. Health 82/100 — the VM reservation and the Spotlight indexer at 53%, both known, neither
+acted on with 83% of RAM free.
