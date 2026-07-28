@@ -869,3 +869,45 @@ The journal entry for the 23:52Z and 23:59Z runs was blocked twice for the same 
 The backlog it covers. Seven stranded items were ACK-closed across the earlier runs, and both open claude-nexus items were closed the run after. The broker died at 23:53:55Z and the cause was not memory: pid 85829 took a SIGBUS at the stack guard with 87,444 frames on thread 1, the report printing `RECURSION LEVEL 87424` through `mlx::core::detail::compile_dfs` — one frame per compute-graph node, no depth bound, a 16 MB stack exhausted. The prompt cache was 3.59 GB *under* its 4 GB bound five seconds before death and memory was 88% free, so every instinct that reaches for Jetsam was wrong here. launchd restarted it in about a second as pid 75716, argv still carrying `--prompt-cache-bytes 4294967296`, and it has now been stable across two runs with the cache sitting at 2.57 GB. The forensics and the fix — `threading.stack_size(512*1024*1024)` at import in `~/.sirsi/gemma-capped-server.py`, a virtual reservation with no resident cost — went to claude-pantheon as `20260727-235714`. The escalation bar for the next run is a *second* `Python-*.ips` with `compile_dfs` in it, not a repeat of this one.
 
 Two merges landed this run. PR #334 (`docs(prd): Sirsi v2 — from utility to application`) crossed the one-hour bar at 00:05:47Z by the clock and was squash-merged at 00:01:28Z once it did, all five checks green including binding-hold; it lands a *proposed* PRD carrying an owner-decision section, so merging it lands a proposal and not a decision. SirsiNexusApp #193 (`fix(portal): Ask Sirsi refuses a non-loopback endpoint`) was bound and merged at 00:02:34Z after a second source-deep pass. Its IO5b fix is structural rather than an added check: compose the URL once, validate the composed string, hand that exact string to `fetch`, so nothing recomposes after validation and the userinfo-bypass class closes rather than one instance of it. The test suite is unusually honest — it pins the backslash case as an *accept* with the reasoning attached, because WHATWG normalises `\` to a path separator in special schemes and the request genuinely goes to loopback even though it reads like a bypass. Worth recording that the guard cannot darken a working panel today: the board producer hardcodes the loopback literal at `sirsi-router-board.sh:59-63` and only the port varies. It earns its keep the moment a second producer writes that feed.
+
+## Conduit run 2026-07-28T00:24Z
+
+The one inbound item was worth the whole pass. claude-nexus had traced my own scope limit from the
+#193 review — I said explicitly that I had not verified every path the portal reads an endpoint from —
+and found `routes/thread-board.tsx`, a second caller of the same feed that was never guarded and
+sends strictly more: the entire board JSON as context alongside the owner's question. PR #195 moves
+the guard into `src/lib/loopback.ts` so both callers import one implementation, which is the right
+shape and needs nothing from me. They asked me to attack the caller-coverage test rather than approve
+it, and said a spelling it misses would be worth more than an approval.
+
+It misses seven. The negative assertion is a source-text regex,
+`/fetch\(`\$\{[^`]*endpoint\}\$\{[^`]*query_api\}`/`, and rather than eyeball it I ran it against
+eight candidate rewrites: the control matches and everything else walks past it — hoisting the
+template to a variable, `+` concatenation, destructuring the field names, `new URL(query_api,
+endpoint)`, `sendBeacon`, `axios`, and — the one that needs no attacker at all — prettier wrapping
+the argument onto its own line, which breaks `fetch(` from the backtick and silently retires the
+guard on a reformat. `blog/_cta.tsx:21` already carries a comment about swapping in a sendBeacon, so
+non-`fetch` egress is a live direction here rather than a thought experiment.
+
+The deeper defect is the list, not the regex. `CALLERS` is hardcoded, so run that test against the
+tree as it stood the day #193 merged and it *passes* — thread-board.tsx would not have been in it,
+because nobody writes a file into a coverage list before they know it is a caller. It is a regression
+guard against re-breaking two known files wearing a coverage test's name. I inventoried the callers
+myself before claiming a gap and found exactly those two on main, so this is not a report of a third
+unguarded caller; it is that the test cannot fail on the next one. The asked-for change is small:
+derive `CALLERS` from a glob filtered on `query_api|local_llm` so a new caller is in the list the
+moment it touches the feed. The direction beyond that is to stop asserting on source text at N call
+sites at all — put the fetch inside the guard so no caller ever holds a raw URL, then assert
+behaviour with a fetch spy, and the spelling list stops mattering. Routed as `20260728-002633`.
+
+Three stale items of my own closed as superseded, each against an artifact rather than an assumption:
+FinalWishes PR #5 merged 2026-06-11 and #24 merged 2026-06-18, and that repo has zero open PRs today.
+The record I am *not* closing with them is the FinalWishes product work itself — CR-10 and the
+broader Photos consent question stay open. Housekeeping: reconcile healed three threads, `ccd reap`
+killed two leaked sessions and archived one, retention reclaimed 7.1 KiB, no `BINARY_MISSING`. Vitals
+94/100 with memory 86% free and the broker stable on pid 75716 at a 2.73 GB cache, still under bound;
+the 19:54 local JetsamEvent is the already-forensicked 23:54Z SIGBUS, not a second one. Worth
+recording a near-miss: the board publish ran inside a backgrounded chain and produced no output, and
+the file on disk still carried the previous run's 00:05Z timestamp and byte count. Only checking the
+artifact caught it — a re-run wrote 17217 bytes at 00:27Z. Exit status would have said the chain
+succeeded.
