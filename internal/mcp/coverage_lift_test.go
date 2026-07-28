@@ -87,6 +87,15 @@ func setupRouterRepoRoot(t *testing.T) string {
 	}`), 0o644); err != nil {
 		t.Fatalf("write state.json: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(rdir, "agents.json"), []byte(`{
+		"agents": {
+			"claude-home": {"type": "claude", "command": ["true"], "cwd": "/tmp"},
+			"claude-pantheon": {"type": "claude", "command": ["true"], "cwd": "/tmp"},
+			"codex-pantheon": {"type": "codex", "command": ["true"], "cwd": "/tmp"}
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("write agents.json: %v", err)
+	}
 
 	t.Chdir(root)
 
