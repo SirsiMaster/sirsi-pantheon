@@ -143,9 +143,6 @@ func validateRecipient(root, to string) error {
 	if to == "" {
 		return fmt.Errorf("dispatch: recipient is required")
 	}
-	if to == "codex" || to == "claude" {
-		return nil
-	}
 	data, err := os.ReadFile(filepath.Join(root, "agents.json"))
 	if err != nil {
 		return fmt.Errorf("dispatch: validate recipient: read agents.json: %w", err)
