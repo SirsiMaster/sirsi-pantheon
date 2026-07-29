@@ -1109,3 +1109,56 @@ Vitals green: diagnose 94/100 with the same load-bearing Virtualization VM as so
 free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
 crash `.ips`, all daemons live. `reconcile` healed 6 threads to successors, `prune` 0, `ccd reap`
 archived 2 session records, retention prune 3.1 KiB.
+
+## Conduit run 2026-07-29T04:00Z
+
+Cleared the in-flight ledger and took three PRs off the board. **#369** (the prior run's journal)
+merged first, as its state file instructed. **#356** turned out to have fallen off the CHANGELOG
+conflict pile on its own — MERGEABLE, docs-only, `binding-hold` already SUCCESS, blocked solely on a
+Lint still in flight — so it merged as soon as that went green: the ADR-031 case study, whose six
+findings (transient MLX peak sizing, biggest-model traps, the operational objective function, runtime
+currency lag, fix-the-machine-first, Gemma as producer rather than refuser) match what this host has
+independently re-learned. **#345** was the one conflict-pile PR for this run, chosen because #347 was
+stacked on it. The union merge-driver in the shared `.git/config` again did the whole job — rebase onto
+main in a `--detach` worktree, zero manual conflict work, and the artifact read back as +120/-0 with a
+one-line CHANGELOG addition and all 163 sibling entries intact.
+
+**Two mechanical traps, both new.** First, zsh applied `:r` as a history modifier to `"$NEW:refs/heads/…"`
+*inside double quotes*, silently mangling the refspec into `…efs/heads/…`; `${NEW}:refs/…` is the fix,
+and quoting alone is not protection. Second, `gh pr merge --delete-branch` on a PR that another PR is
+stacked on **auto-closes the child**: deleting #345's branch closed #347, and #347 then could not be
+reopened at all, because GitHub refuses to reopen a PR whose base ref no longer exists. Recovering it
+took restoring the base branch via `gh api …/git/refs` — which also skips the local Ma'at pre-push gate
+— then reopen, then retarget to `main`. #347 is OPEN again on base `main`, now CONFLICTING, and is the
+natural next rebase target. The restored `codex/router-send-registered-recipient` ref is now unreferenced
+and can be deleted once #347 lands.
+
+**The merge that mattered most is the one that turned out to be half-wrong.** #345 adds
+`validateRecipient` to `internal/dispatch/facade.go`, and it passed a source-deep read on its merits:
+allowlist-by-discovery over `agents.json`, fails closed on an unreadable registry, refuses before
+`SendGuarded` can create a row. What neither the review nor the PR's own regression test caught is the
+bypass list — `if to == "codex" || to == "claude"` — which enumerates the legacy inboxes and stops
+there. `user` is a first-class router recipient that is deliberately not an agent: it is the
+owner-escalation lane the conduit protocol runs on, it is absent from `agents.json` (19 agents), and it
+is special-cased nowhere in `internal/dispatch` or `routercmd.go`. Verified rather than reasoned about:
+built `cmd/sirsi` from `origin/main`, ran it against a copy of the live registry, and
+`--to user` is refused while a registered control passes the guard and only trips the later ADR-024 type
+check. The breakage is latent — the installed binary predates the merge — but it arms itself at the next
+rebuild, *including the binary-drift heal path this very task runs unattended*, so it would most likely
+have first surfaced as the conduit silently losing the ability to escalate to the owner. This is
+precisely enforcement sharing the bug's shape: the defect was "sends reach lanes that cannot receive",
+and the remedy answers it with a hand-typed exception list, so every legitimate non-agent recipient
+nobody remembered is now refused. Routed to codex-pantheon as `20260729-040039` with the reproduction,
+the suggested fix (source the pseudo-recipients from one place, or let the registry carry non-agent
+recipients), and the note that the regression test must pin `--to user` as accepted — pinning one
+specific rejected name is what let this through. `claude-deck` is the same problem's second face:
+unregistered, and holding one real open item (`20260729-030646`) that nothing will be able to reach once
+the guard is live. Flagged, not unilaterally decided.
+
+Everything else green. Diagnose 94/100 on the known load-bearing `com.apple.Virtualization.VirtualMachine`
+priority; RAM 78% free; broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at
+2.73 GB; registry `agents.json` byte-clean against `origin/main` both before and after merging; all
+daemons live; no new crash `.ips` — the new `/Library` `.diag` files are Microstackshots CPU samples
+(`bsdtar`, `node`), not crashes or Jetsams. `reconcile` healed 1 thread, `prune` 0, `ccd reap` killed 2
+leaked sessions of this task, retention prune reclaimed 6.0 KiB. Router 17 open, oldest 3h52m, nothing
+stale; claude-home's own inbox empty.
