@@ -1436,3 +1436,9 @@ func calculateScore(findings []DiagnosticFinding) int {
 	}
 	return score
 }
+
+// RemediationFor exposes a finding's fix command to callers outside this
+// package. `sirsi ask` needs it so the heuristic rung can answer with an ACTION
+// and not just a diagnosis — a measured problem with no offered remedy is half
+// an answer (ADR-033).
+func RemediationFor(f DiagnosticFinding) string { return remediationCommand(f) }
