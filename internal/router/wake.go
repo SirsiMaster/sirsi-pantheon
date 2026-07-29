@@ -24,6 +24,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -228,10 +229,13 @@ func runBounded(name string, args ...string) error {
 	defer cancel()
 	err := exec.CommandContext(ctx, name, args...).Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		// "remained at", not "parked at": `spawn scheduled` is the normal resting
-		// state of an interval wake agent — that misdiagnosis is what this change
-		// corrects, so the error text must not reintroduce it.
-		return fmt.Errorf("%s %s: no response in %s (label remained at 'spawn scheduled'): %w",
+		// Deliberately says nothing about launchd state. This helper also carries
+		// print, bootout, and the checker probes, and a timeout there tells us
+		// only that launchctl did not answer — asserting a `spawn scheduled` label
+		// would be inventing an unobserved state, which is the same class of
+		// mistake as the "parked" diagnosis this change removed. Callers that
+		// actually know the operation add their own context.
+		return fmt.Errorf("%s %s: no response in %s: %w",
 			name, strings.Join(args, " "), launchctlTimeout, context.DeadlineExceeded)
 	}
 	return err
@@ -278,7 +282,19 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		// The pull-loop is resident; kick it to poll immediately.
 		label := WakeLaunchAgentLabel(cfg.ID)
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		return runLaunchctl("kickstart", "-k", target)
+		if err := runLaunchctl("kickstart", "-k", target); err != nil {
+			// Only here do we know the operation was a kickstart -k, which is the
+			// one that blocks when the label has a spawn scheduled but nothing
+			// running. runBounded stays silent about launchd state precisely so
+			// this inference lives where it is actually warranted.
+			if errors.Is(err, context.DeadlineExceeded) {
+				return fmt.Errorf("wake %s: launchctl kickstart -k %s did not return in %s — "+
+					"the label likely has a spawn scheduled with nothing running yet: %w",
+					cfg.ID, target, launchctlTimeout, err)
+			}
+			return err
+		}
+		return nil
 	default:
 		// Includes mcp-notification: ProbeWakeReadiness never yields it as a
 		// ready adapter (not yet wired), so this is the honest failure if reached.

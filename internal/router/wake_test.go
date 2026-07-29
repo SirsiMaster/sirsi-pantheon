@@ -247,8 +247,14 @@ func TestRunBoundedKillsBlockedChild(t *testing.T) {
 		t.Fatalf("runBounded took %s against a %s bound — child was not killed on expiry",
 			elapsed, launchctlTimeout)
 	}
-	if strings.Contains(err.Error(), "parked") {
-		t.Fatalf("timeout text reintroduces the 'parked' misdiagnosis: %v", err)
+	// The generic helper also carries print/bootout/checker probes, so its timeout
+	// must not assert a launchd state it never observed — neither the old "parked"
+	// misdiagnosis nor a bare "spawn scheduled" claim. Callers that know the
+	// operation add that context themselves.
+	for _, banned := range []string{"parked", "spawn scheduled"} {
+		if strings.Contains(err.Error(), banned) {
+			t.Fatalf("generic timeout text claims unobserved launchd state %q: %v", banned, err)
+		}
 	}
 }
 
