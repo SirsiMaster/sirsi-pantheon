@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 // Programmatic NSApplication entry — no Storyboard, no Xcode project. `.accessory`
 // activation policy = LSUIElement (menubar agent, no Dock icon). Built with
@@ -15,7 +16,11 @@ MainActor.assumeIsolated {
         if let j = argv.firstIndex(of: "--width"), j + 1 < argv.count, let v = Double(argv[j + 1]) {
             w = CGFloat(v)
         }
-        runSnapshotMode(outDir: argv[i + 1], width: w)   // configures NSApp and runs it
+        var appearance: ColorScheme = .dark
+        if let k = argv.firstIndex(of: "--appearance"), k + 1 < argv.count, argv[k + 1] == "light" {
+            appearance = .light
+        }
+        runSnapshotMode(outDir: argv[i + 1], width: w, appearance: appearance)   // configures NSApp and runs it
     } else {
         let app = NSApplication.shared
         let delegate = AppDelegate()

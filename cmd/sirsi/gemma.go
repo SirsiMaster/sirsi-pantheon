@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 )
 
 // `sirsi gemma` is the human-facing way to talk to Gemma — the local MLX model
@@ -81,6 +82,13 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	if t := strings.ToLower(strings.TrimSpace(gemmaTask)); t != "" {
 		prompt = "TASK: " + t + "\n\n" + prompt
 	}
+	// NOT enveloped here. Envelope is documented as being for "local backends that
+	// only accept one prompt string" — that is the cold path alone. The warm broker
+	// takes a real system message and gemmaWarmComplete always sends SystemPrompt()
+	// as one, so enveloping up here shipped the whole identity block TWICE on the
+	// default (warm) path: once as the system role, once buried in the user turn.
+	// The envelope now happens at the cold exec, which is the only single-string
+	// backend. (claude-home review, PR #382.)
 
 	home, _ := os.UserHomeDir()
 	model := gemmaResolveModel(home)
@@ -156,7 +164,7 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	out, err := exec.Command(mlx, "--model", model,
 		"--max-tokens", fmt.Sprint(gemmaMaxTokens),
 		"--max-kv-size", fmt.Sprint(gemmaColdMaxKVSize),
-		"--prompt", prompt).Output()
+		"--prompt", localrouter.Envelope(prompt)).Output()
 	if err != nil {
 		return fmt.Errorf("gemma generation failed: %w (first run downloads the model — that can take a while)", err)
 	}

@@ -181,7 +181,7 @@ type LaunchctlChecker func(args ...string) error
 // all and the fabric board reported loaded=false for daemons launchctl showed
 // running with live PIDs (owner screenshot 2026-07-04).
 func DefaultLaunchctlChecker(args ...string) error {
-	return exec.Command("launchctl", args...).Run()
+	return runLaunchctl(args...)
 }
 
 // claudeAuthProbeTimeout is how long DefaultAuthProbe waits for the Claude CLI to

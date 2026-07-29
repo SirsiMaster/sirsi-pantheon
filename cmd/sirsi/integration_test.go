@@ -151,6 +151,26 @@ func runSirsiInDir(t *testing.T, dir string, timeout time.Duration, args ...stri
 	return outBuf.String(), errBuf.String(), err
 }
 
+func writeRouterTestAgents(t *testing.T, repoRoot string, agents ...string) {
+	t.Helper()
+	root := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	b.WriteString(`{"agents":{`)
+	for i, agent := range agents {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, "%q:{%q:%q,%q:[%q],%q:%q}", agent, "type", "test", "command", "true", "cwd", "/tmp")
+	}
+	b.WriteString(`}}`)
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestRouterPullModelRoundtrip verifies the new pull-model loop: A sends to B,
 // B pulls and sees the item, B closes with a result, B's pull is then empty.
 // This is the bare-minimum any-to-any flow, independent of legacy state.json.
@@ -161,6 +181,7 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmp, ".agents", "idea-router"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeRouterTestAgents(t, tmp, "claude-a", "claude-b")
 
 	stdout, stderr, err := runSirsiInDir(t, tmp, 10*time.Second,
 		"router", "send",
@@ -987,6 +1008,7 @@ func TestRouterRespondStoreOnlyItem(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmp, ".agents", "idea-router"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeRouterTestAgents(t, tmp, "claude-fw", "claude-home")
 	db := filepath.Join(tmp, "router.db")
 	env := func() []string {
 		return sirsiTestEnv(tmp, "SIRSI_ROUTER_STORE_WAKE=1", "SIRSI_ROUTER_DB="+db)
