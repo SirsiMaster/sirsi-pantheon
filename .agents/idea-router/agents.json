@@ -22,7 +22,7 @@
       "command": [
         "claude"
       ],
-      "cwd": "/Users/thekryptodragon",
+      "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing",
       "env": {
         "SIRSI_ROUTER_AGENT": "claude-deck"
       },
