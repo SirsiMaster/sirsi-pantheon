@@ -434,6 +434,39 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 ---
 
+### 2.26 Scope The Check To The Claim (Rule A29)
+> Established July 27, 2026, after a single day in which five independent defects — three found by codex, two by claude-home — turned out to be the same shape.
+
+**Rule**: A check, guard, cap, probe or status MUST be scoped to the full extent of the claim it makes. If it cannot cover the claim, it MUST narrow the claim instead. A check narrower than its claim is worse than no check: it converts an unknown risk into a false assurance, and nobody re-examines a thing that reads fine.
+
+**The five instances, all 2026-07-27, all in merged or deployed code:**
+
+| the claim | the actual scope | what it cost |
+|---|---|---|
+| "all 210 font sites scale, 0 unscaled" | one file (`Views.swift`) | 16 live bypasses; the owner's menubar stayed broken after the "fix" |
+| "the wake loop now logs" | one condition (depth *change*) | a wedged loop and a healthy loop leave identical records |
+| "the broker is capped at 20.8 GiB" | one allocator (MLX's) | 43.94 GB footprint; three OOM kills in 24h |
+| "Phase 4 — all four deliverables shipped" | graded by its own author | a required `DEPRECATED` warning was never shipped and was marked complete |
+| "the fork storm is *the* cause of the OOM" | one window (before 22:17Z) | a third Jetsam fired 21 min later from a different consumer |
+
+Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 across 16 signals** while macOS displayed *out of application memory* (none of the 16 measured swap headroom or process growth); and `isCapacityCappedGemmaBroker`, which **exempted Sirsi's own broker** from the memory-hog check on the premise that two other checks would catch it — both of which also sampled the wrong metric.
+
+**How to apply — four questions before a check ships:**
+
+1. **What exactly does this assert?** Write the sentence. "All fonts on the surface scale" is a different claim from "all fonts in this file scale."
+2. **What does it actually read?** One file, one metric, one process, one window, one allocator. Name it.
+3. **Where do 1 and 2 differ?** That gap is the false assurance. Close it, or rewrite the claim to match the scope.
+4. **Can it fail?** A guard that has never been shown red is an untested guard. Verify BOTH directions — clean passes, and a deliberate regression fails and names itself. Prefer a regression fixture that exercises the *widest* part of the claim (a second file, a second process, a second window), because the collapse-back-to-one is the failure mode.
+
+**Corollaries:**
+
+*   **A self-graded phase is not closed.** Marking your own work complete requires independent review; "I am grading my own work" in a review request does not excuse the grade.
+*   **A cap enforced inside the thing it caps is not a cap.** Enforcement belongs outside the governed process, reading what the kernel judges by.
+*   **Exempting your own component is the strongest smell in this list.** Sirsi's local model is the most likely offender on a developer's machine and must be the first thing named, never the one thing skipped.
+*   **A cause established in one window is *a* cause.** Check whether the symptom recurred after the fix.
+
+**Enforcement**: Ma'at and review treat an unscoped claim as a defect even when the code is correct, because the record is the thing later work depends on. Where a scope gap cannot be closed now, the claim MUST be narrowed in the same change, with the residual named.
+
 ## 3. Technology Stack
 
 > **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
