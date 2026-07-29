@@ -3,11 +3,13 @@ package reason
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/vitals"
 )
 
@@ -222,13 +224,17 @@ func forkStormScan() Tool {
 // reversible, and it VERIFIES by re-reading the world rather than trusting an
 // exit code.
 func restartBroker() Tool {
+	// pidBefore is captured across Run and Verify so verification can assert the
+	// broker is a DIFFERENT process, not merely that some process is alive.
+	var pidBefore int
+
 	return Tool{
 		Name:       "gemma.restart",
 		Does:       "restart the local model broker (it reloads in seconds; in-flight requests are lost)",
 		Tier:       TierRepair,
 		Reversible: true,
 		Run: func(ctx context.Context) (Result, error) {
-			before := brokerPID(ctx)
+			pidBefore = brokerPID(ctx)
 			cmd := exec.CommandContext(ctx, "sirsi", "gemma", "serve", "--restart")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -236,30 +242,101 @@ func restartBroker() Tool {
 					fmt.Errorf("restart broker: %w", err)
 			}
 			return Result{
-				Summary:  fmt.Sprintf("restart issued (previous pid %d)", before),
-				Evidence: map[string]any{"pid_before": before},
+				Summary:  fmt.Sprintf("restart issued (previous pid %d)", pidBefore),
+				Evidence: map[string]any{"pid_before": pidBefore},
 				Changed:  true,
 			}, nil
 		},
 		Verify: func(ctx context.Context) (Result, error) {
-			// Verification is the whole point. A restart that "succeeded" while
-			// the broker never came back is the failure mode that ends an
-			// investigation early — so assert a NEW pid AND a live endpoint.
+			// Verification is the whole point, and it must assert what it CLAIMS
+			// to assert. The previous form only checked pid > 0, which passes in
+			// both failure modes that actually happen here:
+			//
+			//   1. The restart silently did nothing and the OLD process is still
+			//      running — same pid, reported as a successful restart.
+			//   2. The process is alive but its HTTP server is wedged or still
+			//      loading weights — a live pid over a dead endpoint, which is
+			//      the exact green-surface-over-a-dead-thing class this fabric
+			//      keeps getting burned by.
+			//
+			// So: a DIFFERENT pid, and an endpoint that actually serves.
 			deadline := time.Now().Add(30 * time.Second)
+			var lastErr string
 			for time.Now().Before(deadline) {
-				if pid := brokerPID(ctx); pid > 0 {
+				pid := brokerPID(ctx)
+				var model string
+				var serveErr error
+				if pid != 0 {
+					model, serveErr = brokerServing(ctx)
+				}
+				if ok, reason := restartVerdict(pidBefore, pid, model, serveErr); !ok {
+					lastErr = reason
+				} else {
 					fp, _ := vitals.PhysFootprint(pid)
 					return Result{
-						Summary:  fmt.Sprintf("broker back as pid %d, footprint %.1f GB", pid, float64(fp)/(1<<30)),
-						Evidence: map[string]any{"pid_after": pid, "footprint_gb": float64(fp) / (1 << 30)},
+						Summary: fmt.Sprintf("broker back as pid %d (was %d), serving %q, footprint %.1f GB",
+							pid, pidBefore, model, float64(fp)/(1<<30)),
+						Evidence: map[string]any{
+							"pid_before": pidBefore, "pid_after": pid,
+							"serving_model": model, "footprint_gb": float64(fp) / (1 << 30),
+						},
 					}, nil
 				}
 				time.Sleep(2 * time.Second)
 			}
-			return Result{Summary: "broker did not come back within 30s"},
-				fmt.Errorf("broker absent after restart — the model is DOWN, not restarted")
+			return Result{Summary: "broker did not come back healthy within 30s: " + lastErr},
+				fmt.Errorf("broker not verifiably restarted: %s", lastErr)
 		},
 	}
+}
+
+// restartVerdict is the restart verifier's decision rule, separated from the
+// polling loop so it is testable without a live broker. It lives HERE, in
+// production code, rather than being restated in a test — a test that
+// reimplements the rule proves only that the copy agrees with itself.
+//
+// Both rejections exist because both failures happened:
+//   - an unchanged pid means the restart replaced nothing, however the command exited
+//   - a live pid whose endpoint does not serve is a process, not a model
+//
+// pidBefore == 0 is a cold start: there is no prior pid to differ from, so a
+// serving broker is a valid outcome.
+func restartVerdict(pidBefore, pidNow int, serving string, serveErr error) (bool, string) {
+	switch {
+	case pidNow == 0:
+		return false, "no broker process"
+	case pidBefore != 0 && pidNow == pidBefore:
+		return false, fmt.Sprintf("pid unchanged (%d) — the restart did not replace the process", pidNow)
+	case serveErr != nil:
+		return false, fmt.Sprintf("process %d up but endpoint not serving: %v", pidNow, serveErr)
+	case strings.TrimSpace(serving) == "":
+		return false, fmt.Sprintf("process %d up but the endpoint names no model", pidNow)
+	default:
+		return true, ""
+	}
+}
+
+// brokerServing probes the local broker's own endpoint and returns the model it
+// actually serves. Transport truth, not a process check: a loaded pid with a
+// wedged or still-loading server answers nothing, and reporting that as a
+// healthy restart is how an investigation ends one step too early.
+func brokerServing(ctx context.Context) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	p := provider.Local(home, provider.LoadConf(home))
+	if p == nil {
+		return "", fmt.Errorf("no local broker endpoint (no port file)")
+	}
+	model, err := p.ServedModel(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(model) == "" {
+		return "", fmt.Errorf("endpoint answered but names no model")
+	}
+	return model, nil
 }
 
 func brokerPID(ctx context.Context) int {

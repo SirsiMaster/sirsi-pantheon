@@ -120,7 +120,12 @@ type modelsResponse struct {
 	} `json:"data"`
 }
 
-func (o *OpenAICompat) servedModel(ctx context.Context) (string, error) {
+// ServedModel is exported because it is the only honest liveness probe for a
+// local broker: it proves the ENDPOINT answers and names what it serves, which
+// a process check cannot. The restart verifier in internal/reason depends on
+// exactly that distinction — a live pid over a wedged server is the failure this
+// fabric keeps mistaking for health.
+func (o *OpenAICompat) ServedModel(ctx context.Context) (string, error) {
 	if strings.TrimSpace(o.Model) != "" {
 		return o.Model, nil
 	}
@@ -158,7 +163,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	}
 	msgs = append(msgs, ccMessage{Role: "user", Content: req.Prompt})
 
-	model, err := o.servedModel(ctx)
+	model, err := o.ServedModel(ctx)
 	if err != nil {
 		return Response{}, err
 	}
