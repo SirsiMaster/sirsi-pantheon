@@ -282,6 +282,31 @@ struct LocalLLM: Decodable {
     }
 }
 
+// LocalRouterContext is emitted by `sirsi brain context --json`. It is the
+// shared Ask Sirsi identity/canon pack; Swift adds live Mac/router state around
+// it but does not privately define the product identity.
+struct LocalRouterContext: Decodable {
+    let system: String?
+    let shortContext: String?
+    let canonPack: String?
+    let grounding: Grounding?
+
+    struct Grounding: Decodable {
+        let value: String?
+        let detail: String?
+        let healthy: Bool?
+        let readable: Int?
+        let total: Int?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case system
+        case shortContext = "short_context"
+        case canonPack = "canon_pack"
+        case grounding
+    }
+}
+
 // ── CTR thread roster — the ambient "live threads / heartbeat" board ──────────
 // Owner directive 20260709-182003: the CTR board must be an ALWAYS-VISIBLE
 // passive surface, not something you run `sirsi thread list` to see. TWRow is
@@ -1115,6 +1140,16 @@ final class SirsiEngine: ObservableObject {
 
     var localLLM: LocalLLM? { routerBoard?.localLLM }
 
+    private func loadLocalRouterContext() async -> LocalRouterContext? {
+        var args = ["brain", "context", "--json"]
+        if let root = askSirsiKnowledgeRoot() {
+            args.append(contentsOf: ["--root", root])
+        }
+        let data = await Self.runJSON(args: args)
+        guard !data.isEmpty else { return nil }
+        return try? JSONDecoder().decode(LocalRouterContext.self, from: data)
+    }
+
     private func askSirsiSystemPrompt() -> String {
         """
         You are Ask Sirsi, the local AI interface of Sirsi Pantheon running on Cylton Collymore's Mac.
@@ -1240,9 +1275,12 @@ final class SirsiEngine: ObservableObject {
         return "CANON PACK (bounded excerpts from \(root))\n" + chunks.joined(separator: "\n\n")
     }
 
-    private func askSirsiLiveContext() -> String {
+    private func askSirsiLiveContext(shared: LocalRouterContext? = nil) -> String {
         var lines: [String] = []
         lines.append("LIVE SIRSI CONTEXT")
+        if let short = shared?.shortContext, !short.isEmpty {
+            lines.append(short)
+        }
         lines.append("Project root: \(projectRoot ?? "unknown")")
         if let name = projectName { lines.append("Current project: \(name)") }
 
@@ -1288,13 +1326,26 @@ final class SirsiEngine: ObservableObject {
         Local model: Gemma/MLX is the Tier-0 reasoning engine; cloud/frontier agents bind or review where needed.
         Acceleration doctrine: ANE + MLX/GPU + Metal + multithreaded CPU are AND lanes, governed by Hapi admission.
         """)
-        lines.append(askSirsiCanonPack())
+        if let grounding = shared?.grounding {
+            let value = grounding.value ?? "unknown"
+            let detail = grounding.detail ?? "no detail"
+            lines.append("Shared local-router grounding: \(value) — \(detail)")
+        }
+        if let canonPack = shared?.canonPack, !canonPack.isEmpty {
+            lines.append(canonPack)
+        } else {
+            lines.append(askSirsiCanonPack())
+        }
 
         return lines.joined(separator: "\n")
     }
 
-    private func askSirsiShortContext() -> String {
-        var lines = [
+    private func askSirsiShortContext(shared: LocalRouterContext? = nil) -> String {
+        var lines: [String]
+        if let short = shared?.shortContext, !short.isEmpty {
+            lines = [short]
+        } else {
+            lines = [
             "SHORT SIRSI CONTEXT",
             "You are Ask Sirsi, the local on-device assistant for Sirsi Pantheon.",
             "Pantheon includes the Mac menubar, CLI, TUI, CTR/router fabric, cleanup, health, memory, and knowledge surfaces.",
@@ -1302,7 +1353,8 @@ final class SirsiEngine: ObservableObject {
             "Hypergraph/Sirsi IO connect routed events, local knowledge, Hedera HCS direction, portfolio context, and agent coordination.",
             "Portfolio: Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley, and the Sirsi deck.",
             "User: Cylton Collymore, founder/operator of Sirsi.",
-        ]
+            ]
+        }
         if let board = routerBoard {
             lines.append("Live router pending total: \(board.totalPending ?? 0); live threads: \(board.liveThreadCount ?? threadsTotal).")
         }
@@ -1339,10 +1391,18 @@ final class SirsiEngine: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 90
+        let shared = await loadLocalRouterContext()
+        let systemPrompt: String
+        if let system = shared?.system, !system.isEmpty {
+            systemPrompt = system
+        } else {
+            systemPrompt = askSirsiSystemPrompt()
+        }
+        let context = includeCanon ? askSirsiLiveContext(shared: shared) : askSirsiShortContext(shared: shared)
         let body: [String: Any] = [
             "messages": [
-                ["role": "system", "content": askSirsiSystemPrompt()],
-                ["role": "user", "content": includeCanon ? askSirsiLiveContext() : askSirsiShortContext()],
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": context],
                 ["role": "user", "content": question],
             ],
             "max_tokens": 1_024,

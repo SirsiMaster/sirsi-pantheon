@@ -14,6 +14,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
@@ -21,8 +22,10 @@ import (
 )
 
 var (
-	brainStatusJSON bool
-	brainDoctorJSON bool
+	brainStatusJSON  bool
+	brainDoctorJSON  bool
+	brainContextJSON bool
+	brainContextRoot string
 )
 
 var brainCmd = &cobra.Command{
@@ -138,6 +141,34 @@ that backend.`,
 	},
 }
 
+var brainContextCmd = &cobra.Command{
+	Use:   "context",
+	Short: "Emit the shared Ask Sirsi system-manager context pack",
+	Long: `Emit the model-agnostic context every local backend should receive before
+answering as Ask Sirsi. This is the shared Local LLM router payload for the
+menubar, CLI, router triage, and future Nexus consumers.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root := brainContextRoot
+		if root == "" {
+			if wd, err := os.Getwd(); err == nil {
+				root = wd
+			}
+		}
+		pack := localrouter.BuildContext(root)
+		if brainContextJSON {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(pack)
+		}
+		w := cmd.OutOrStdout()
+		fmt.Fprintln(w, pack.System)
+		fmt.Fprintln(w, "\n---")
+		fmt.Fprintln(w, pack.ShortContext)
+		fmt.Fprintln(w, "\n---")
+		fmt.Fprintf(w, "Grounding: %s — %s\n\n", pack.Grounding.Value, pack.Grounding.Detail)
+		fmt.Fprintln(w, pack.CanonPack)
+		return nil
+	},
+}
+
 var brainUseCmd = &cobra.Command{
 	Use:   "use <role> <provider>",
 	Short: "Plug a provider into a role (e.g. `use triage local:qwen2.5-7b-instruct`; `use triage none`)",
@@ -248,5 +279,7 @@ func init() {
 	brainStatusCmd.Flags().BoolVar(&brainStatusJSON, "json", false, "emit the status read-model as JSON (for menubar/Nexus surfaces)")
 	brainDoctorCmd.Flags().BoolVar(&brainDoctorJSON, "json", false, "emit the diagnoses as JSON")
 	brainRouteCmd.Flags().BoolVar(&brainStatusJSON, "json", false, "emit the resolved Local LLM route as JSON")
-	brainCmd.AddCommand(brainStatusCmd, brainLevelsCmd, brainRouteCmd, brainUseCmd, brainDoctorCmd, brainTestCmd)
+	brainContextCmd.Flags().BoolVar(&brainContextJSON, "json", false, "emit the context pack as JSON")
+	brainContextCmd.Flags().StringVar(&brainContextRoot, "root", "", "Pantheon canon root to ground Ask Sirsi")
+	brainCmd.AddCommand(brainStatusCmd, brainLevelsCmd, brainRouteCmd, brainContextCmd, brainUseCmd, brainDoctorCmd, brainTestCmd)
 }
