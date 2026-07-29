@@ -75,29 +75,33 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 }
 
 func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
-	f := testFacade(t)
+	for _, recipient := range []string{"claude-deck", "codex"} {
+		t.Run(recipient, func(t *testing.T) {
+			f := testFacade(t)
 
-	_, err := f.Send("claude-pantheon", "claude-deck", "lost work", "review", "do not strand this")
-	if err == nil {
-		t.Fatal("Send to an unregistered recipient must fail")
-	}
-	if !strings.Contains(err.Error(), `agent "claude-deck" not registered`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+			_, err := f.Send("claude-pantheon", recipient, "lost work", "review", "do not strand this")
+			if err == nil {
+				t.Fatal("Send to an unregistered recipient must fail")
+			}
+			if !strings.Contains(err.Error(), `agent "`+recipient+`" not registered`) {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	inbox, inboxErr := f.Inbox("claude-deck")
-	if inboxErr != nil {
-		t.Fatal(inboxErr)
-	}
-	if len(inbox) != 0 {
-		t.Fatalf("unregistered recipient send wrote work: %+v", inbox)
-	}
-	all, allErr := f.ListAll()
-	if allErr != nil {
-		t.Fatal(allErr)
-	}
-	if len(all) != 0 {
-		t.Fatalf("rejected send must not create any router item, got %+v", all)
+			inbox, inboxErr := f.Inbox(recipient)
+			if inboxErr != nil {
+				t.Fatal(inboxErr)
+			}
+			if len(inbox) != 0 {
+				t.Fatalf("unregistered recipient send wrote work: %+v", inbox)
+			}
+			all, allErr := f.ListAll()
+			if allErr != nil {
+				t.Fatal(allErr)
+			}
+			if len(all) != 0 {
+				t.Fatalf("rejected send must not create any router item, got %+v", all)
+			}
+		})
 	}
 }
 
