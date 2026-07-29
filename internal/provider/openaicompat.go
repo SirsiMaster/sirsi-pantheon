@@ -120,15 +120,28 @@ type modelsResponse struct {
 	} `json:"data"`
 }
 
-// ServedModel is exported because it is the only honest liveness probe for a
-// local broker: it proves the ENDPOINT answers and names what it serves, which
-// a process check cannot. The restart verifier in internal/reason depends on
-// exactly that distinction — a live pid over a wedged server is the failure this
-// fabric keeps mistaking for health.
+// ServedModel RESOLVES the model name to use for a request. It short-circuits to
+// the configured model when one is set, so it is cheap — and therefore it is NOT
+// a liveness probe: with a model configured it never touches the network and
+// cannot tell a healthy broker from a dead one.
+//
+// An earlier version of this comment claimed it "proves the ENDPOINT answers".
+// It does not, and a restart verifier built on that claim would report a healthy
+// model over a dead broker (codex-pantheon, router item 20260729-193639). Use
+// ProbeServedModel when the point is to prove the endpoint is alive.
 func (o *OpenAICompat) ServedModel(ctx context.Context) (string, error) {
 	if strings.TrimSpace(o.Model) != "" {
 		return o.Model, nil
 	}
+	return o.ProbeServedModel(ctx)
+}
+
+// ProbeServedModel ALWAYS performs the request. It is the honest liveness probe:
+// it proves the endpoint answers and names what the broker actually loaded,
+// which no process check and no configured string can. A configured model must
+// never be able to satisfy it — that bypass is what let a wedged server read as
+// healthy.
+func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(o.Endpoint, "/")+"/models", nil)
 	if err != nil {
 		return "", err

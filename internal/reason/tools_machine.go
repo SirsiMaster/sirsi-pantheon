@@ -224,17 +224,13 @@ func forkStormScan() Tool {
 // reversible, and it VERIFIES by re-reading the world rather than trusting an
 // exit code.
 func restartBroker() Tool {
-	// pidBefore is captured across Run and Verify so verification can assert the
-	// broker is a DIFFERENT process, not merely that some process is alive.
-	var pidBefore int
-
 	return Tool{
 		Name:       "gemma.restart",
 		Does:       "restart the local model broker (it reloads in seconds; in-flight requests are lost)",
 		Tier:       TierRepair,
 		Reversible: true,
 		Run: func(ctx context.Context) (Result, error) {
-			pidBefore = brokerPID(ctx)
+			pidBefore := brokerPID(ctx)
 			cmd := exec.CommandContext(ctx, "sirsi", "gemma", "serve", "--restart")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -247,7 +243,10 @@ func restartBroker() Tool {
 				Changed:  true,
 			}, nil
 		},
-		Verify: func(ctx context.Context) (Result, error) {
+		Verify: func(ctx context.Context, ran Result) (Result, error) {
+			// Baseline comes from THIS invocation's Run result, never from
+			// closure state shared across concurrent invocations.
+			pidBefore, _ := ran.Evidence["pid_before"].(int)
 			// Verification is the whole point, and it must assert what it CLAIMS
 			// to assert. The previous form only checked pid > 0, which passes in
 			// both failure modes that actually happen here:
@@ -260,7 +259,7 @@ func restartBroker() Tool {
 			//      keeps getting burned by.
 			//
 			// So: a DIFFERENT pid, and an endpoint that actually serves.
-			deadline := time.Now().Add(30 * time.Second)
+			deadline := time.Now().Add(brokerReadyWindow)
 			var lastErr string
 			for time.Now().Before(deadline) {
 				pid := brokerPID(ctx)
@@ -284,7 +283,7 @@ func restartBroker() Tool {
 				}
 				time.Sleep(2 * time.Second)
 			}
-			return Result{Summary: "broker did not come back healthy within 30s: " + lastErr},
+			return Result{Summary: fmt.Sprintf("broker did not come back healthy within %s: %s", brokerReadyWindow, lastErr)},
 				fmt.Errorf("broker not verifiably restarted: %s", lastErr)
 		},
 	}
@@ -329,7 +328,11 @@ func brokerServing(ctx context.Context) (string, error) {
 	if p == nil {
 		return "", fmt.Errorf("no local broker endpoint (no port file)")
 	}
-	model, err := p.ServedModel(ctx)
+	// ProbeServedModel, never ServedModel: the latter short-circuits to the
+	// configured model without touching the network, so a configured string
+	// would satisfy this check over a dead broker — the precise bypass that made
+	// the previous verifier decorative.
+	model, err := p.ProbeServedModel(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -382,3 +385,12 @@ func oldEnough(etime string) bool {
 func nearlyZeroCPU(t string) bool {
 	return strings.HasPrefix(t, "0:0") || strings.HasPrefix(t, "0:1")
 }
+
+// brokerReadyWindow bounds how long a restart may take to become verifiably
+// healthy. The previous 30s was a guess and too tight: a cold 12B 8-bit load on
+// this hardware routinely exceeds it, which turned an honest slow start into a
+// reported failure. There is no pre-existing broker readiness policy in this
+// repo to reuse — codex suggested one, I looked, and it does not exist — so this
+// is a named, overridable var rather than a borrowed constant, and it is stated
+// as a policy choice instead of hidden as a literal.
+var brokerReadyWindow = 5 * time.Minute

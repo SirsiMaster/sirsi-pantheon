@@ -93,7 +93,12 @@ type Tool struct {
 	// for repair tools: "exit 0" is not evidence, and this fabric has recorded
 	// the difference repeatedly. A repair tool without Verify is refused at
 	// registration.
-	Verify func(ctx context.Context) (Result, error)
+	// `ran` is Run's own Result, so verification state is INVOCATION-LOCAL.
+	// Sharing a captured variable between Run and Verify let concurrent
+	// invocations of the same registered tool overwrite each other's baseline and
+	// produce false pass/fail verdicts (codex-pantheon, router item
+	// 20260729-193639).
+	Verify func(ctx context.Context, ran Result) (Result, error)
 }
 
 // Result is what a tool observed or did.
@@ -183,7 +188,7 @@ func Invoke(ctx context.Context, r *Registry, name string, p Policy) Invocation 
 	}
 
 	if t.Verify != nil {
-		v, verr := t.Verify(ctx)
+		v, verr := t.Verify(ctx, res)
 		inv.Verified = &v
 		if verr != nil {
 			inv.Err = fmt.Errorf("ran, but verification failed: %w", verr)

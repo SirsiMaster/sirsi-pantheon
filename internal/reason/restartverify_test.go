@@ -3,6 +3,8 @@ package reason
 import (
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -68,5 +70,60 @@ func TestRestartVerifyAcceptsNewPIDServingAModel(t *testing.T) {
 func TestRestartVerifyAcceptsColdStart(t *testing.T) {
 	if ok, reason := restartVerdict(0, 5150, "gemma-3-12b", nil); !ok {
 		t.Fatalf("cold start (no prior pid) must verify, got %q", reason)
+	}
+}
+
+// codex-pantheon (router item 20260729-193639): pidBefore was shared closure
+// state between Run and Verify, so concurrent invocations of the same registered
+// tool could overwrite each other's baseline and produce false verdicts. Verify
+// now receives THIS invocation's Run result, so the baseline cannot cross over.
+func TestVerifyBaselineIsInvocationLocal(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[int]int{} // pid_before observed by Verify → count
+
+	// A tool whose Run stamps a distinct baseline per invocation and whose Verify
+	// reports back the baseline it was handed.
+	var nextPID int64 = 1000
+	tool := Tool{
+		Name:       "test.baseline",
+		Does:       "stamp a per-invocation baseline",
+		Tier:       TierRepair,
+		Reversible: true,
+		Run: func(ctx context.Context) (Result, error) {
+			pid := int(atomic.AddInt64(&nextPID, 1))
+			return Result{Evidence: map[string]any{"pid_before": pid}, Changed: true}, nil
+		},
+		Verify: func(ctx context.Context, ran Result) (Result, error) {
+			got, _ := ran.Evidence["pid_before"].(int)
+			mu.Lock()
+			seen[got]++
+			mu.Unlock()
+			return Result{Summary: "ok"}, nil
+		},
+	}
+
+	r := NewRegistry()
+	if err := r.Register(tool); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	const n = 25
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			Invoke(context.Background(), r, "test.baseline", PolicyAutoRepair)
+		}()
+	}
+	wg.Wait()
+
+	if len(seen) != n {
+		t.Fatalf("Verify observed %d distinct baselines across %d concurrent invocations — baselines are crossing between invocations", len(seen), n)
+	}
+	for pid, count := range seen {
+		if count != 1 {
+			t.Fatalf("baseline %d was observed %d times — it must belong to exactly one invocation", pid, count)
+		}
 	}
 }

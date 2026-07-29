@@ -168,3 +168,28 @@ func TestLoopbackIsNeverClassifiedAsRemote(t *testing.T) {
 		}
 	}
 }
+
+// codex-pantheon (router item 20260729-193639): a restart verifier built on
+// ServedModel reported a healthy model over a DEAD broker, because ServedModel
+// short-circuits to the configured model and never touches the network.
+// ProbeServedModel must never be satisfiable by a configured string.
+func TestProbeServedModelAlwaysHitsTheEndpoint(t *testing.T) {
+	// Port 1 is reserved and nothing listens there: any real request fails.
+	dead := &OpenAICompat{
+		ProviderName: "local",
+		Endpoint:     "http://127.0.0.1:1/v1",
+		Model:        "gemma-3-12b-8bit", // configured — this must NOT satisfy the probe
+		TierValue:    TierLocal,
+	}
+
+	if _, err := dead.ProbeServedModel(context.Background()); err == nil {
+		t.Fatal("ProbeServedModel returned success against a dead endpoint — a configured model string must never substitute for transport")
+	}
+
+	// The cheap resolver is allowed to short-circuit; that is its job. Pinning it
+	// here so the distinction between the two is a tested contract, not a comment.
+	got, err := dead.ServedModel(context.Background())
+	if err != nil || got != "gemma-3-12b-8bit" {
+		t.Fatalf("ServedModel should resolve the configured model without transport, got (%q, %v)", got, err)
+	}
+}

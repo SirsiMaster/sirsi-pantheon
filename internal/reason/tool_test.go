@@ -56,7 +56,7 @@ func TestVerificationFailureOverridesRunSuccess(t *testing.T) {
 	if err := r.Register(Tool{
 		Name: "restart.thing", Does: "restart", Tier: TierRepair, Reversible: true,
 		Run: func(context.Context) (Result, error) { return Result{Summary: "issued", Changed: true}, nil },
-		Verify: func(context.Context) (Result, error) {
+		Verify: func(context.Context, Result) (Result, error) {
 			return Result{Summary: "still gone"}, errors.New("never came back")
 		},
 	}); err != nil {
@@ -79,7 +79,7 @@ func TestRefusalExplainsAndDoesNotRun(t *testing.T) {
 	_ = r.Register(Tool{
 		Name: "restart.thing", Does: "restart the local model broker", Tier: TierRepair,
 		Run:    func(context.Context) (Result, error) { ran = true; return Result{}, nil },
-		Verify: func(context.Context) (Result, error) { return Result{}, nil },
+		Verify: func(context.Context, Result) (Result, error) { return Result{}, nil },
 	})
 	inv := Invoke(context.Background(), r, "restart.thing", PolicyReadOnly)
 	if ran {
