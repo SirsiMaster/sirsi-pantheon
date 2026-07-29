@@ -145,3 +145,72 @@ defect is the **input number** — the resolver budgets on-disk bytes while real
 ~2.5×, so the ceiling is computed from the wrong quantity. That work is already routed
 to claude-pantheon as a P0 (router item `20260726-235904`). It and S3's gate are the
 same blocker, so they are coordinated rather than re-derived.
+
+## The MLX boundary — decided on measurement, not preference
+
+Added 2026-07-28 after the owner re-asserted the directive ("our MLX implementation has
+to be rewritten into Go, Python is destructive") and the HyperGraph custodian supplied
+crash forensics that change the design. The directive holds. The *justification* shifts,
+and one common assumption about it must not survive into the build.
+
+### Go does not fix the crash that precipitated this
+
+Broker pid 85829 died 2026-07-27T23:53:55Z, SIGBUS at the stack guard, after **87,424
+levels of recursion through `mlx::core::detail::compile_dfs`** — every frame of it C++
+inside `libmlx.dylib`. Python appears only at the bottom of the stack, as the caller.
+`compile_dfs` recurses once per compute-graph node with no depth bound.
+
+MLX is a C++ library. A Go host calls the *same* C++ and inherits the *same* unbounded
+recursion. Rewriting the serving layer in Go does not touch this defect, and any plan
+that assumes otherwise is buying a crash it did not price.
+
+### A naive in-process port makes it fire sooner — measured, not assumed
+
+cgo calls do not run on growable goroutine stacks; they run on the OS thread's system
+stack. We were asked not to take the estimated 8 MB on faith, so it was measured on this
+toolchain (`go1.26.2 darwin/arm64`):
+
+| cgo call site | stack available |
+|---|---|
+| main goroutine | **8.0 MB** |
+| spawned goroutines (×3) | **8.0 MB** |
+| goroutine under `runtime.LockOSThread()` | **8.0 MB** |
+
+Two conclusions, the second of which was not in the original analysis:
+
+1. **8 MB confirmed, and it is half of Python's.** The thread that overflowed had 16 MB
+   and still died at 87k frames. 8 MB overflows sooner, and it surfaces through the Go
+   runtime where it reads as a Go bug rather than an MLX recursion — a worse failure
+   than the one we have, because it misdirects the next debugger.
+2. **`LockOSThread` does not buy a bigger stack.** The obvious Go-side mitigation —
+   "run MLX on a dedicated large-stack thread" — does not work as written: a locked OS
+   thread gets the same 8 MB. Obtaining a larger stack requires hand-rolled `pthread`
+   creation with an explicit attribute and calling into it, i.e. more C plumbing in the
+   exact layer we are trying to remove.
+
+### Decision
+
+**MLX stays behind a PROCESS boundary. Go owns serving; it does not cgo-link `libmlx`.**
+
+Go keeps the HTTP surface, admission control, KV-cache accounting, the memory governor,
+lifecycle and metrics. The MLX worker is a thin, supervised, restartable child. A stack
+overflow inside `compile_dfs` then kills a worker, not the broker.
+
+This is what the Go Standard already says — *Python only as a called extension* — and it
+is what we have today **by accident**, via launchd. That accident is the only reason last
+night's crash was a one-second blip rather than an outage. The port must preserve that
+property deliberately rather than inherit it and then lose it while "simplifying."
+
+Pure-Go inference (no MLX) is the third option and is not on the table: it discards the
+Metal kernels and is enormous.
+
+### What the port actually buys, stated honestly
+
+Not crash-freedom. **Containment and governance**: a real enforced memory ceiling rather
+than an advisory one, supervision that outlives the worker, no GIL, versioned in-repo
+code, and attributable failures. The memory case is the strongest one — a single Python
+process reached **46.2 GB on a 48 GB machine** and was the #1 consumer in all four of
+today's Jetsam events, with the #2 consumer flat at ~10.8 GB. That is not shared blame,
+and it is the thing a Go governor can actually fix.
+
+Anyone reading this ADR as "rewrite it in Go and the crashes stop" has read it wrong.
