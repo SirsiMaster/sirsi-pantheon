@@ -14,6 +14,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
@@ -128,14 +129,34 @@ that backend.`,
 		if brainStatusJSON {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(route)
 		}
-		w := cmd.OutOrStdout()
-		fmt.Fprintf(w, "𓁟 Local LLM Router\n\n")
-		fmt.Fprintf(w, "Role:     %s\n", route.Role)
-		fmt.Fprintf(w, "Provider: %s\n", route.Provider.String())
-		fmt.Fprintf(w, "Identity: Ask Sirsi internal system manager\n")
-		fmt.Fprintf(w, "\nThis route can point at Gemma, Qwen, Ollama, Core ML, or another local backend; Sirsi identity stays above the model.\n")
+		writeRouteHuman(cmd.OutOrStdout(), route)
 		return nil
 	},
+}
+
+// writeRouteHuman renders one resolved route for a person.
+//
+// IO7 (sirsi-io ADR-002): a substituted default is never rendered as a
+// configuration. Route.Defaulted already recorded that Resolve() PICKED the
+// provider rather than READ it, and --json already emitted it — but this render
+// printed only the provider name, so an operator could not tell a role
+// configured for local:gemma from an unconfigured role that had local:gemma
+// chosen for it. The contract was honest and the surface was not.
+//
+// Extracted from the command body so the disclosure is assertable by test
+// rather than by reading; see brainroute_io7_test.go.
+func writeRouteHuman(w io.Writer, route localrouter.Route) {
+	fmt.Fprintf(w, "𓁟 Local LLM Router\n\n")
+	fmt.Fprintf(w, "Role:     %s\n", route.Role)
+	if route.Defaulted {
+		fmt.Fprintf(w, "Provider: %s  ⚠ DEFAULT — role %q is not configured\n", route.Provider.String(), route.Role)
+		fmt.Fprintf(w, "          Sirsi chose this so the call is not a naked model call.\n")
+		fmt.Fprintf(w, "          To configure it: sirsi brain use %s %s\n", route.Role, route.Provider.String())
+	} else {
+		fmt.Fprintf(w, "Provider: %s  (configured)\n", route.Provider.String())
+	}
+	fmt.Fprintf(w, "Identity: Ask Sirsi internal system manager\n")
+	fmt.Fprintf(w, "\nThis route can point at Gemma, Qwen, Ollama, Core ML, or another local backend; Sirsi identity stays above the model.\n")
 }
 
 var brainUseCmd = &cobra.Command{
