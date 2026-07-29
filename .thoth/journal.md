@@ -5,1313 +5,6 @@
 
 ---
 
-## Entry 056 — 2026-06-16 22:32 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"734326c9-8d83-405c-8c9e-bb58e6412a4a","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/734326c9-8d83-405c-8c9e-bb58e6412a4a.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-16T15:30:16Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 057 — 2026-06-18 19:45 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Pantheon menubar/health + agent-infra session (claude-pantheon, 2026-06-17/18). SHIPPED+MERGED #52-#59: #52 reniceByPID A1 protected-allowlist floor; #53 honest Fix-it (FixKind instant/relief/guidance + post-fix re-verify) + honest App-Hangs (real freezes vs background-daemon CPU noise); #54 bolder self-tinting menubar Eye; #55 EYE-VISIBLE FIX (drawn in health colour via makeEye, isTemplate=false — AppKit template tinting does NOT engage for a runtime-drawn NSImage, so it rendered black/invisible on dark bars); #56 comment cleanup; #57 "sirsi gemma" human CLI to the local MLX model; #58 "sirsi relieve" on-demand renice of the live CPU hog (App-Hangs arc COMPLETE: detect#47 -> floor#52 -> classify#53 -> relieve#58); #59 ADR-031 local-models-through-Pantheon broker. Also: committed 408 stranded router/docs/thoth files to chore/adopt-router-state-20260618 (owner-authorized; did NOT clobber peer branch); gemma worker daemon restarted (was down). Menubar DEPLOYED LIVE (cert f95b4877, FDA preserved; deploy via macapp/build-app.sh + launchctl bootout/bootstrap). CLI installed ~/.local/bin/sirsi. NEXT (the one remaining "all of the above" item): agent-operations-parity = surface ALL agent ops (respond/review/ask/memory/watch/reap + insights) in CLI+menubar, AI-optional; design stub docs/agent-operations/AGENT-OPERATIONS-PARITY-20260616.md; a fresh focused sprint (too big to rush). NOT-mine: main checkout parked on peer branch fix/sirsi-gemma-bare-server-chipA (sirsi-gemma thread) w/ its own WIP. Resume: continue with agent-operations-parity.
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-16T15:30:16Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 058 — 2026-06-19 02:49 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Session 2026-06-19 (claude-pantheon): shipped the complete never-exhaust-the-host + dynamic per-node refactor. MERGED: #63 Hapi memory governor (consent-gated suspend/kill before Jetsam), #65 Mac-first platform canon (ADR-032), #66 always-on Hapi daemon (sirsi hapi install), #67 install teeth-notice, #68 ADR-031-B design (dynamic per-node), #69 pressure source resolved (DISPATCH_SOURCE_MEMORYPRESSURE primary), #70 NodeCapacity self-model foundation. OPEN/under review: #71 broker re-pointed onto NodeCapacity (Fits refuse gate, concurrency default 1->0 auto-derive, dynamic cap). Each binding-PASSed by claude-home source-deep. Broker STILL DISABLED (owner holding sirsi gemma serve). REMAINING ADR-031-B slice: cgo DISPATCH_SOURCE_MEMORYPRESSURE watcher (replaces bootstrap pressure seed) + cold-path gemmaSafeConcurrency re-point. Then: Hapi menubar pressure surface, deity menubar gaps (Seshat/Osiris/Net/RTK/Vault), downloadable (GitHub release + product page). Owner directive: build all night, route every PR to claude-home, don't go idle.
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-19T03:34:15Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 059 — 2026-06-19 09:06 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019edffc-b3cd-7621-9151-cdaa19064d98","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-19T03:34:15Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 060 — 2026-06-19 10:21 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019ee041-696c-7c91-ae76-6da48bd256ef","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-19T03:34:15Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 061 — 2026-06-22 09:19 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Session 2026-06-21/22 (claude-pantheon): SHIPPED the signed downloadable. Merged PR#89 (router wake-or-declare-unavailable), #90 (release robustness: DMG job timeout-minutes:30 + thoth-init npm version decouple), #91 (node-status honest ProbeWakeReadiness). CLI v0.23.2-beta published + brew-installable (verified bin runs). HEADLINE: signed+notarized DMG SHIPPED + VERIFIED — SirsiPantheon-0.23.2-beta-arm64.dmg on the v0.23.2-beta release; stapler validate OK + spctl='accepted, source=Notarized Developer ID'. Apple notary had stalled ALL submissions 'In Progress' for days (proven Apple-side via a minimal validly-signed hello-world that also stalled, NOT our config — 7 signing secrets+cert all valid); filed Apple Developer Support Case 102921569682 (browser-driven under ckcollymore@outlook.com); stall then cleared (all 5 submissions Accepted), re-fired CI menubar job -> notarized DMG published. PRD P17=done. OPEN PRD (16): P11 router_wait MCP (blocking long-poll), P13 sirsi prd sync (derive PRD from canon), P14 menubar launcher-detection fix (launcher.go LookPath trusts launchd-truncated PATH excluding ~/.local/bin -> claude+codex show 'not installed'), P5 gemma-source-durability landmine, + roadmap. NEXT: P14 (bounded, Go-only). Context was 🔴 deep.
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-19T03:34:15Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 062 — 2026-06-29 12:48 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- fix(core): make install now re-signs sirsi in place on macOS arm64. cp over a signed binary stales the AMFI cdhash cache -> kernel SIGKILLs sirsi on next exec (exit 137) until manual codesign; this silently broke sirsi after every make install and killed router heartbeat loops shelling the installed binary (A27 watcher binary drift). Fix: added 'codesign --force --sign - $(INSTALL_DIR)/sirsi' immediately after the cp in the install target. Verified make install && sirsi version exits 0 (was 137); installed binary reports Signature=adhoc. build/build-menubar already ad-hoc-sign via go build; bundle already --deep signs Pantheon.app; install was the lone gap. Committed c50719e + CHANGELOG entry, pushed to main. Refs PANTHEON_RULES.md A6, reference_a27_watcher_binary_drift.
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-26T19:31:28Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 063 — 2026-06-29 12:49 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"40d9d244-9f30-4202-92eb-f8aa7cedfca2","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/40d9d244-9f30-4202-92eb-f8aa7cedfca2.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-26T19:31:28Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 063 — 2026-06-29 — PR #99: GIT_* env isolation fixes router-ack gate flake (claude-pantheon)
-
-> Owner: claude-pantheon (session hook mis-tagged claude-home; pantheon work is claude-pantheon's per [I Am Claude Pantheon]).
-
-**Decision**: test(router) — `TestRouterAckLegacyPending` (cmd/sirsi/integration_test.go) passed under bare `go test` but failed deterministically under the Ma'at pre-push gate at integration_test.go:233. Root cause: the gate runs inside `git push`, which exports GIT_DIR/GIT_INDEX_FILE/GIT_PREFIX/GIT_COMMON_DIR into the env; the test helpers passed `cmd.Env = os.Environ()`, leaking them into every sirsi subprocess. Post-ADR-029, router.FindRepoRoot resolves via `git rev-parse --git-common-dir`, which honors GIT_DIR over cwd — so `router ack` launched in the test's t.TempDir() resolved the REAL repo's router root, wrote state.json there, and left the temp copy unchanged. Bare `go test` has no GIT_* → git rev-parse fails → FindRepoRoot falls back to cwd walk-up → temp root → passes (that asymmetry = the "flake"). Fix (test-only): new `sirsiTestEnv()` strips all GIT_* (and pins PWD) in runSirsiWithEnv + runSirsiInDir, closing the class for ack/pull/ADR-024.
-
-**Evidence**: reproduced :233 by injecting GIT_DIR at a throwaway decoy repo (decoy state.json mutated, temp untouched); with fix, `-run TestRouterAck -count=20` + full `-short` package green under GIT_DIR, decoy never mutated, no regression without GIT_DIR; gofmt/vet/golangci-lint clean; **actual Ma'at pre-push gate PASSED on push**. PR #99 (https://github.com/SirsiMaster/sirsi-pantheon/pull/99), branch fix/flaky-router-ack-gitdir-isolation off main. Note: git-based FindRepoRoot lives on main; older fix/sirsi-gemma-bare-server-chipA branch still has pre-ADR-029 cwd-walk-up.
-
-**Next (claude-pantheon)**: get CI green + merge #99; optionally forward-port sirsiTestEnv guard to any active branch still carrying the unsanitized helper. Refs: ADR-029, PANTHEON_RULES.md A26, reference_git_env_leak_test_isolation.
-
----
-
-## Entry 064 — 2026-06-29 20:05 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"0e4833cf-2ad6-4183-8288-3d375c2d6429","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/0e4833cf-2ad6-4183-8288-3d375c2d6429.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-29T23:54:16Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 065 — 2026-06-30 19:02 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- claude-home: cleared full router inbox queue (13 items across FinalWishes/Assiduous/SirsiNexusApp/sirsi-pantheon/codex-home). Bound 6 PRs after source-deep verification: FW#38, Assiduous#15 (P1 maps-key+waitlist), Assiduous#16 (A1 PA Act 52 wholesaling compliance, merge-conflict resolved), Nexus#99/#100/#103 (admin-override merge, CI blocked by org-wide GH Actions billing outage confirmed independently via run annotations, not code defects). Found+routed back a real residual bug in Nexus PR100: the 'server-derive amount' fix is dead code (data.amount never set on envelope docs, always falls through to client-supplied amount) - opensign.ts create-session handler still has a price-spoofing vector. Adopted codex-home's commercialization-gate fabric: added a pointer block to ~/CLAUDE.md (home-root had no AGENTS.md/gate pointer unlike ~/Development/CLAUDE.md). Re-armed claude-home router watcher on new thread thr-791ca6347db1972a (old thr-8bf0437d26341b92 was killed when prior session ended).
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-29T23:54:16Z
-- pending:
-- claude-home: 20260630-codex-home-claude-home-commercialization-gate-adoption
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 066 — 2026-06-30 21:08 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019f1b37-e991-7ed2-9677-03c4261ec819","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-06-29T23:54:16Z
-- pending:
-- claude-home: 20260630-codex-home-claude-home-commercialization-gate-adoption
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Conduit run 2026-07-02T13:17Z
-claude-home conduit supervisor cycle. Binary healthy, no BINARY_MISSING sentinels. Both queues (claude-home, claude-codex-standin) empty of open items addressed to me. Router: 19 open items, all OUTBOUND directives from claude-home to suspended/resumable agent threads (claude-pantheon ×10, claude-homebrew-tools ×4, claude-porch-and-alley ×4 — full-repo reviews, gitleaks gate, orchestration-brain bind, design-review canon). Left all open: they are durable routed backlog for those workstreams, not review-requests-to-me, none doable in a conduit window, none superseded by a citable artifact (the "supersedes-3" items are survivors = actionable). Threads: only thr-e28e75e445fa0da4 (claude-home, mine) active — heartbeated (last_seen 13:16Z); all others already suspended, none dead-but-active, no re-injection needed. PRs: pantheon + FinalWishes clean; SirsiNexusApp #101 (401-file cruft deletion) NOT merged — two real failing checks (Lock File Sync + CI Gate; not an Actions outage as the body claims — the deletions/gitignore desynced the lockfile), owner-authored, not dependabot, not routed to me → left for lockfile resync. STRANDED-RESPONSE AUDIT caught one: claude-finalwishes PR #44 (mount-watchdog) bind request was closed 02:31Z with a full APPROVED+BOUND verdict but never routed back as a fresh inbound (close is audit-only) → re-routed the verdict to claude-finalwishes as 20260702-131715 so the asker is actually notified.
-
-## Conduit run 2026-07-02T14:45Z — router-liveness surfacing (owner directive)
-Owner reframed the conduit's value: it should ROUTE + NUDGE + publish a LIVE actionable list Pantheon can see, not do thread work. Actions this session: (1) Thread registry cleanup — `reconcile --agent claude-home` healed 2 stale-active + minted 14 suspended successors from hard-killed lineages; `prune --suspended-older-than 240h` removed 176 terminal + 268 stale-suspended → 573→129 records (preserved live conduit + 2 claude-pantheon resume points). (2) NUDGE — `router doctor --fix`: 0 woken · 10 already-armed · 10 wake-unavailable (interactive agents never blind-spawned by design). Root cause of all 20 stranded items surfaced: `claude` CLI `auth_ok=false` blocking the fabric + all router daemons (idea-router/sweep/registry-police) missing. (3) LIVE BOARD — wrote `~/.local/bin/sirsi-router-board.sh` → emits `~/.sirsi/router-board.json` (8KB lean feed, from node-status schema 1.0.0) + `router-board.md` (owner view, blockers-first). (4) ROUTED build `P-router-board` → claude-pantheon (menubar reads the board; one-click wake-install; install missing daemons; build in clean worktree off origin/main). (5) ESCALATED `to: user` — re-auth claude CLI (the single blocker). (6) Baked steps 13–16 into the conduit SKILL.md so every run runs the wake pass, refreshes the board, and escalates owner-gated blockers. Note: conduit watcher thr-b0c93073968b3c1d shows loop=dead (headless scheduled run can't durably arm a /loop) — heartbeated only.
-
-## Conduit run 2026-07-02T15:22Z — retracted false auth alarm + hardened probe
-Owner asked "how do I re-auth". Investigating the exact probe revealed it was a FALSE POSITIVE, not an owner action: `internal/router/nodestatus.go` DefaultAuthProbe runs `claude --print` under an 8s timeout; on a cold CLI start (heavy config/MCP load) it exceeds 8s → reports auth_ok=false with detail "CLI check failed: OK" (it captured the SUCCESS output "OK" as the failure reason). Flaps true↔false across runs 12min apart. Direct `claude --print "respond with OK"` → OK exit 0; credentials valid. Actions: (1) Hardened `~/.local/bin/sirsi-router-board.sh` to RE-VERIFY every auth_ok==false with a direct 30s probe and only alarm on a real /login signature — false blocker now gone from the board (only genuine daemon-missing items remain). (2) Retracted the false `to: user` re-auth escalation (closed with correction Result). (3) Routed ADDENDUM to claude-pantheon (P-router-board): raise probe timeout / return inconclusive-not-logged-out / menubar alarms only on needs_login. (4) Tightened conduit SKILL.md step 15: never escalate on raw auth_ok==false; re-verify first. Lesson: node-status auth_ok is a flapping monitor, not truth — verification stays with a direct probe.
-
-## Conduit run 2026-07-02T15:28Z — installed router automation daemons
-Owner: "install those LaunchAgents so the queue gets swept." Found the 3 node-status-expected daemons have no binary installer — they're the on-disk scripts (run-on-event.sh observer, sweep.sh hourly probe, police/registry-police.sh A27 reconcile), all read-only/advisory (none mutate/delete items). Caught that wake.example.plist runs the STALE `sirsi router run --once` verb (removed — router is now read-only observer), so pointed each plist at the REAL scripts instead. Installed + bootstrapped 3 LaunchAgents (~/Library/LaunchAgents): com.sirsi.idea-router (WatchPaths on state.json/items/proposals → run-on-event, no idle proc), com.sirsi.idea-router-sweep (StartInterval 3600 → sweep.sh), ai.sirsi.registry-police (StartInterval 600 → registry-police.sh). All status=0, stderr clean. First runs: police PASS (unmappable=0, stale-loop=0); sweep immediately caught a real latent issue (dispatch.sh hasn't fired since 2026-06-18 — expected under the read-only-observer architecture; sweep routed it to claude-pantheon). node-status now shows all 3 installed=true (loaded/program_found still false = its plist-parse quirk → folded into P-router-board). Hardened board to exclude the deprecated legacy polling daemon from the missing-daemon alarm. Also flagged: pre-existing ai.sirsi.horus.agent-router LaunchAgent is failing (status 127, command-not-found) — separate from these 3, left for owner/pantheon.
-
-## Conduit run 2026-07-02T15:33Z — fixed broken horus.agent-router (#5)
-`ai.sirsi.horus.agent-router` LaunchAgent was exiting 127: ProgramArguments ran `exec "/private/tmp/sirsi-audit" horus supervise` — a throwaway audit binary in /private/tmp that got cleared; KeepAlive=true meant perpetual 127 relaunch. Also had a suspicious `/private/tmp`-prefixed PATH. `horus supervise` is the resident Ra/Horus router supervisor (heartbeats, pulls inboxes, classifies surfaces wakeable/stale/blocked — does NOT dispatch/merge) — complementary to the 3 daemons, so REPOINTED not removed: rewrote plist → `~/.local/bin/sirsi horus supervise --interval 60s`, clean PATH, logs → router logs dir, ThrottleInterval 30, backed up old as .bak-20260702. Now pid=29315 status=0, alive, log shows it inventorying all surfaces + inboxes; registered resident thread thr-41af099caf70555d (armed) — the router is now genuinely attended. Cleared 32KB stale /tmp/sirsi-horus-supervisor.err. Note: com.sirsi.idea-router-sweep shows status=1 — that is the sweep CORRECTLY exiting non-zero because it detected the pre-existing dispatch.sh-stale issue (#4, routed to pantheon), not a daemon fault ("loud failure is the gift").
-
-## Conduit run 2026-07-02T15:38Z — resolved #4 (dispatch-stale false alarm)
-Dug into the sweep's "dispatch.sh has not fired in 24h+" alarm. Findings: dispatch.sh auto-spawns CODEX agents only (AGENTS=codex-home/pantheon/finalwishes/nexus/puck) — interactive claude agents are pull-model, never blind-spawned. It last ran 2026-06-18 when its WatchPaths trigger (com.sirsi.idea-router) was uninstalled. Verified ZERO codex items pending (all 24 pending are claude-*), so dispatch firing would be a no-op — the alarm was moot/non-actionable (same surfaces-current-actionable-only pattern). Router is intentionally pull-only now (CLI self-describes as read-only observer; token doctrine forbids blind codex auto-spawn). Fix (Rule 0, additive): patched sweep.sh check #2 to count open codex-* items and alarm ONLY when codex work is actually queued+stale — preserves the check's real value, kills the false positive. Verified: sweep now PASS (manual exit 0 + launchd kickstart status 0). Closed the stale sweep-alarm item routed to claude-pantheon with resolution evidence. dispatch.sh left intact/dormant — available if owner ever wants codex auto-dispatch (wire dispatch.sh, not the observer, to the WatchPaths). All 4 automation jobs now green.
-
-## Conduit run 2026-07-03T00:28:45Z
-Pulled claude-home (3 bind requests) + claude-codex-standin (empty). **FW #48** (memorial stack: send-cap gate + #47 P2s) and **pantheon #144** (router-v2 increment) were already source-deep-reviewed, merged via --admin, and closed with full Results by the prior tick ~2min earlier — both fully green; spot-confirmed my #48 gate landed in the merged diff (transactional 25/day `sms_counters/{uid_yyyymmdd}` fail-closed-before-increment, `people` writes tightened to isEstatePrincipal||isAdmin, firestore.rules shape caps, sirsi-messaging HMAC). My redundant responses no-op'd cleanly (close-already-closed, no duplicate inbound). **FW #49** (pin firebase-admin@13 to revive 7-days-red nightly E2E): CI fully green + fix correct, but branch is CONFLICTING/DIRTY (CHANGELOG collision after #48 merged ahead) → routed HOLD verdict + rebase instruction back to claude-finalwishes (pre-approved on content, will bind on green+clean). New **claude-nexus P3 decision**: SirsiNexusApp deploy CI red ~3mo (same masked-rot shape as Assiduous; manual deploy-contracts.sh path hid it) — ACK'd their sound diagnosis + safe Node-setup fix (blocked only by the separate gitleaks 27-findings gate), and escalated the one owner-only blocker (IAM grant for github-action SA on `run-sources-sirsi-nexus-live-us-east4` / roles/run.builder) as a single `to: user` item with exact commands. No PR merges: **pantheon #145** (brain control plane) is claude-pantheon's active in-flight branch (BEHIND main, no bind request) → left untouched; **Nexus #101** (dead-cruft delete) has a CI Gate FAILURE → left for claude-nexus. Thread hygiene: CTR auto-reaped 5 OS-dead claude-home threads this read; remaining ⚠️ idle threads still OS-alive → not suspended. doctor --fix: 1 armed, 7 wake-unavailable (interactive/legacy agents, stranded by design); flagged thr-0e093cd9fcee559a as loop-dead/NOT-ARMED (a claude-home watcher needs re-arm). Board published — no confirmed auth/daemon blockers, 8 pending across 6 agents surfaced.
-
-## Conduit run 2026-07-03T01:34Z
-Clean pass. Binary healthy (no BINARY_MISSING sentinels). No open items for claude-home or claude-codex-standin — nothing to first-chop or farm. Router: 14 open across 7 recipients, all interactive/legacy-command agents with no wake mechanism (stranded-by-design). Ran `sirsi router doctor --fix`: 0 woken, 1 already-armed, 13 recorded wake-unavailable; 0 OS-dead reaped. Published `~/.sirsi/router-board.{json,md}` — **blockers: none, fabric healthy**; 14 pending inboxes surfaced for owner/menubar. No new escalation (existing `user` IAM-grant item left open as owner action, not nagged). PRs: sirsi-pantheon none; FinalWishes #49 BLOCKED (checks not green); SirsiNexusApp #101 UNSTABLE (CI Gate + Lock File Sync FAILURE) — neither mergeable, both already flagged as cleanup items to their threads. No merges. Threads: horus-supervisor + several claude-home sessions live; loop-dead claude-home session records surfaced on board, left to age out (live-PID, no cmdline-verified kill). An empty run is a good run.
-
-## Conduit run 2026-07-05T03:08:38Z
-
-claude-home conduit (scheduled). Pulled claude-home (3 items) + claude-codex-standin (0). Source-deep
-reviewed and BOUND all four open PRs across the portfolio, then reconciled against a fast-forwarded
-router state (env clock advanced ~2 days mid-run; a concurrent claude-home thread had already
-progressed the FinalWishes queue to #53/#54/#55):
-
-- FinalWishes #49 (firebase-admin@13 pin reviving 7-day silent-red nightly — green-masking-red class):
-  pre-approved content, green → squash-merged.
-- FinalWishes #50 (memorial photo gallery + video/audio): verified "no new rule surface" claim against
-  the diff (no firestore.rules touched; media rides the existing principal-only public_memorials write;
-  render is <img alt>/native <video|audio controls> aria-labeled, no dangerouslySetInnerHTML, URLs
-  principal-authored → no XSS) → squash-merged.
-- ADR-051 (first unauthenticated write path, public-memorial RSVP): design verdict PASS with 3 binding
-  conditions (R1 ship rsvpsOpen family kill-switch in v1, folded into a single get() that also gates
-  existence — 1 read; R2 App Check enforce-mode rolled out monitor→enforce; R3 render note as plain
-  React text node, no trigger on rsvps/** until per-write rate-limiting). Reconciliation found this
-  verdict was already delivered by a concurrent home thread and IMPLEMENTED (#53 rsvp v1, #54 App Check
-  monitor mode, rsvpsOpen rules live on main) — so no re-route (would be duplicate noise).
-- Pantheon #155 (Fabric board v2, #147 re-land): verified all three adversarial blockers against the
-  diff — B1 single-backstop fold is double-exec-safe (migrateLegacyRouterDaemons unloads THEN removes
-  all three legacy plists; fold is bounded/error-isolated/restart-safe), B2 repo-root marker is
-  strictly last-resort + validRepoRoot-guarded + write-guarded, B4 env-override has 4 tests. All checks
-  green, no hold label, independent review → squash-merged.
-- Nexus #101 (delete 401 dead-cruft files + .gitignore): verified GitHub Pages is NOT enabled on the
-  repo (404) so the orphaned root index.html + GH-Pages relics are safe to remove (CNAME untouched);
-  already merged by the thread.
-
-Housekeeping: router doctor --fix (0 OS-dead reaped, 6 already-armed, 1 wake-unavailable on the
-to:user SirsiNexusApp IAM-grant item — already-open owner blocker, not duplicated). Published fresh
-router-board.json/.md (no confirmed infra blockers to escalate). sirsi-respond.sh close step failed on
-the three source items (already closed under the fast-forwarded state) — responses are self-evident
-from merged PRs + the already-delivered ADR-051 implementation, so no manual re-route was warranted.
-
-## Conduit run 2026-07-05T03:18Z
-claude-home conduit (scheduled 15-min run). Queues opened empty, then two items landed mid-run: a source-deep BIND REQUEST from claude-finalwishes for FinalWishes PR #56 (nightly layer-5 Playwright fix) and a non-blocking FYI/decision from claude-assiduous re: concurrent work on the shared Assiduous worktree. Reviewed PR #56 source-deep (gh pr diff + files): correct root-cause fix — `@playwright/test` was ROOT-manifest-only so CI's `npm ci` in ./web never vendored it, `npx` pulled 1.61.1 at install vs 1.59 at test → shell-1217 mismatch; fix pins `~1.59.1` in web/package.json + moves install to `working-directory: ./web`, and dropping the explicit headless-shell arg is correct for Playwright ≥1.49. Empirical proof accepted (dispatched run 28727699302 = first-ever green nightly). PR #56 squash-merged to main at 03:16:28Z. Referenced PR #54 (App Check monitor mode) was already merged at 02:56:14Z (requester's "still queued" note was stale) — also reviewed clean (public reCAPTCHA site key, window-guarded fail-open init, ENFORCE correctly OFF). Only remaining open FW PR is #55 (delivery ledger) which is CONFLICTING/DIRTY — left for the live claude-finalwishes thread to rebase. Both router items had been closed by a concurrent claude-home watcher WITHOUT routing a response (directive-12 gap), so re-routed both verdicts as fresh inbounds (bind verdict → claude-finalwishes; coordination ACK → claude-assiduous). Ran router doctor --fix (wake pass: 0 woken, 7 already-armed, 1 wake-unavailable on the user IAM item — owner action, not nagged) and published the router board (no confirmed auth/daemon blockers; installed=false launchagents are the superseded legacy idea-router/registry-police daemons, live mechanism is the horus-supervisor thread + per-agent wake launchagents all ready). No threads reaped (none OS-dead). Binary healthy, no drift sentinels.
-
-## Conduit run 2026-07-05T03:23:44Z
-Pulled claude-home (1 item) and claude-codex-standin (empty). Worked the one item: claude-porch-and-alley delivered its full-repo review written report (follow-up to 20260630-185528) — P0 broken-object-level-authz IDOR cluster fixed+merged (#2), with the self-created silent-write-failure follow-ons caught (#6, open). Issued a first-chop ACCEPTED verdict via sirsi-respond.sh (audit Result + fresh inbound back to porch-and-alley): endorsed landing #6 as completion of the P0 work, ranked next-work CI-swallow-fix (ci.yml:30 `|| echo`) first, then money→auth→consent boundary tests. No codex farm-out needed — clean first-chop. PRs: sirsi-pantheon and SirsiNexusApp have zero open; FinalWishes #55 is DIRTY (merge conflict) and owned by the live claude-finalwishes thread — left for them, not mergeable anyway. No dependabot PRs. Threads: all heartbeating (recent last_seen), zero OS-dead records to reap; doctor --fix woke 0 / already-armed 6 / 1 wake-unavailable (the user IAM-grant item, owner-gated, left open, no nag). Emitted heartbeat for thr-f54259aafa21a026 (this cron session's keyed thread); did NOT spawn a persistent /loop — a one-shot scheduled run must not outlive itself with a watcher. Published router-board.json+md. NOTE: board's 3 "Daemon missing" blockers (com.sirsi.idea-router, com.sirsi.idea-router-sweep, ai.sirsi.registry-police) are FALSE POSITIVES — those are pre-cutover legacy daemon names; the router automation now runs under ai.sirsi.horus.agent-router (pid 60829, loaded) + all ai.sirsi.router.wake.* agents (loaded), post the 2026-07-02 horus cutover (see .bak-cutover-20260702 plists). Did NOT escalate (mirrors the retracted 2026-07-02 false auth escalation); this board-generator stale-expected-daemon-names bug belongs to the already-routed P-router-board build at claude-pantheon. No new user escalation opened.
-
-## Conduit run 2026-07-05T03:42Z
-claude-home conduit cycle. Both conduit queues (claude-home, claude-codex-standin) empty — no review/farm work. Router: 7 open items, all owned by LIVE recipients (claude-assiduous ×2, claude-finalwishes ×3, claude-porch-and-alley ×1, all 🟢 armed) plus 1 owner item (IAM grant for SirsiNexusApp deploy, 2d3h, left open — owner action, wake-unavailable recorded). Suspended 5 dead ghost claude-home watcher threads (thr-f54259aa, thr-7ab7bf61, thr-23ea4624, thr-6183015717, thr-ab52ef15) — all had empty thread dirs, no wake.pid, no live process (verified via ps/pgrep after filtering out the self-matching diagnostic command), heartbeat aged 17–27min; each owned 0 open items so no orphaned work. PRs: pantheon #164/#165 both <5min old (under 1h rule, left); FinalWishes #55 all-green but mergeStateStatus DIRTY/CONFLICTING → author (claude-finalwishes, alive) must rebase, not conduit-mergeable; SirsiNexusApp none. Ran router doctor --fix (0 woken, 6 already-armed, 1 wake-unavailable on the user IAM item). Refreshed router-board.json/.md — surfaced 3 missing LaunchAgent daemons (idea-router, idea-router-sweep, registry-police) as blockers; not re-escalated as user items (already routed to claude-pantheon as P-router-board build; board is the owner surface — avoided duplicate nag). Emitted heartbeat for own watcher thr-f583f43f5b668354 (board flagged loop=dead; durable /loop re-arm is an interactive-session action, deferred). No auth_ok blockers surfaced (no false-flap escalation). Clean cycle.
-
-## Conduit run 2026-07-05T03:57:18Z
-Empty-and-healthy run. Both conduit queues (claude-home, claude-codex-standin) had zero open items. Router: 8 open items, all owned by live recipient threads (claude-assiduous ×2, claude-finalwishes ×3, claude-pantheon ×1, claude-porch-and-alley ×1) plus one `to: user` IAM-grant item (owner action, already the sole standing escalation — left, not nagged). `router doctor --fix`: wake pass woke 0 / 7 already-armed / 1 wake-unavailable (the user IAM item — "user" not a registered agent, correct). Board published fresh.
-
-Board finding (did NOT escalate — false positive): the board's BLOCKERS list shows 3 "missing daemons" — com.sirsi.idea-router, com.sirsi.idea-router-sweep, ai.sirsi.registry-police. These are LEGACY per-duty daemon names that were deliberately migrated away (`sirsi router install-daemons` = "Ensure the single router supervisor and migrate away legacy per-duty agents"). The real router automation is loaded and healthy: 11× ai.sirsi.router.wake.* + ai.sirsi.horus.agent-router (pid 25947) + ai.sirsi.triage all present in launchctl. So this is a stale expected-daemon-set bug in the board generator (same class as the auth-probe false-positive already routed to claude-pantheon as the P-router-board addendum 2026-07-02). Did NOT run install-daemons (would risk re-introducing the migrated-away per-duty workers tied to the runaway-worker incident) and did NOT open an owner escalation (rule 15 — not a real blocker). Folding into existing P-router-board workstream rather than opening a duplicate; will route a scoped fix only if it recurs after that build lands.
-
-Two claude-home /loop watchers (thr-2e215eee44ef90ee, thr-37884e96d42191d9) report loop-dead, but claude-home's inbox is empty so nothing is stranded, and the durable ai.sirsi.router.wake.claude-home LaunchAgent (pid 48721) is loaded and will consume any real inbound. Binary healthy (no BINARY_MISSING sentinels). No agent_health auth failures. PRs: sirsi-pantheon none open; FinalWishes #55 DIRTY (merge conflicts — not mergeable, owned by live claude-finalwishes); SirsiNexusApp none. Merged/closed/routed nothing — an empty run is a good run.
-
-## Conduit run 2026-07-05T04:13:09Z
-claude-home conduit pass (scheduled). Pulled claude-home (1 item) + claude-codex-standin (empty).
-The item was a claude-assiduous `decision`: "next four" shipped (console.log gated, Firestore rules
-solid) plus two new findings — (#3) global IP-keyed rate limiter (100/min) locks out shared-NAT
-origins, and (#4) deployed PROD Stripe key resolves to `sk_test_` (verified via Secret Manager
-prefix), a revenue-blocker. Source-deep verdict issued: #1/#2 accepted no-op; #3 ruled a standard
-correctness fix (split limiter — UID-keyed for authed, per-endpoint IP for anon) that assiduous is
-cleared to BUILD now, not an owner decision; #4 is genuinely owner-only. Note: the shared item got
-closed at 04:10:29Z by a concurrent claude-home thread (4 are active + horus-supervisor watches
-claude-home) WITHOUT my Result, and sirsi-respond.sh `exit 1` on the close error stranded the
-notification — so I routed the verdict directly as a fresh inbound to claude-assiduous
-(20260705-041241) per the request-requires-response rule, and escalated the Stripe blocker to owner
-(20260705-041247-...-user-owner-action-assiduous-prod-stripe-key). PRs: Pantheon/Nexus none open;
-FinalWishes #55 CONFLICTING (left for owner thread to rebase). `router doctor --fix`: 0 woken,
-8 armed, 1 wake-unavailable (existing IAM-grant `to:user`); no confirmed CLI-auth blockers on the
-board. All threads live; no reaps, no rearms needed. Board republished. Binary healthy (no
-BINARY_MISSING sentinels).
-
-## Conduit run 2026-07-05T04:25Z
-Routine conduit tick. claude-home + claude-codex-standin queues both empty — no reviews/farms. Router: 10 open items (assiduous 3, finalwishes 3, pantheon 1, porch 1, user 2) — all ACTIONABLE for their own live recipients or owner-gated; none for the conduit. Gemma triage returned one ESCALATE (a parse-failure fallback) on the pre-existing `to: user` IAM-grant item (SirsiNexusApp CI-red, 2d3h old) — already open, left un-nagged. `router doctor --fix`: reaped 0 OS-dead, 8 already-armed, 2 wake-unavailable recorded on the user items (agent "user" unregistered = owner action, by design). Emitted heartbeat for thr-4614a4d3158a4935. Verified two claude-home records os=gone (pids 67482, 92902 confirmed dead via ps) and suspended both — 0 owned open items each, no orphaned work. Published router-board.json + .md (blockers = 3 standing missing router LaunchAgents, already covered by the P-router-board build routed to claude-pantheon; confirmed_blockers=null so NO CLI auth blocker → no new owner escalation). PR sweep: pantheon 0 open, nexus 0 open, FinalWishes #55 CONFLICTING (not mergeable — left for the live claude-finalwishes thread to rebase). No merges. Clean run.
-
-## Conduit run 2026-07-05T04:40Z
-Clean run. Binary healthy (no BINARY_MISSING sentinels). claude-home and claude-codex-standin queues both empty — no reviews to chop, nothing to farm to codex. Router status: 10 open items, all owned by other recipients (assiduous 3, finalwishes 3, pantheon 1, porch-and-alley 1, user 2); none for the conduit. All live threads healthy with fresh heartbeats — 0 OS-dead, 0 suspended. Emitted claude-home heartbeat (thr-e4d5fd5805e3b040). `router doctor --fix`: 0 reaped, wake pass 8 already-armed / 2 wake-unavailable (both the `user` owner-action items — IAM grant for SirsiNexusApp deploy, and today's Assiduous prod Stripe sk_test escalation; left open, not nagged). PRs: none open in sirsi-pantheon or SirsiNexusApp; FinalWishes #55 (announcement delivery ledger) is MERGEABLE but BLOCKED on two still-pending Web checks — not green, and it's claude-finalwishes's own live-thread PR, so left for its thread. Republished router-board.json/.md (surfaces 3 missing router LaunchAgents + 2 stranded user inboxes). Did not mint a fresh daemon-missing escalation — persistent known state already carried on the board; avoiding duplicate owner nag. My own watcher loop shows loop=dead (0 procs) but I did not spawn a persistent /loop from this ephemeral scheduled session — the empty inbox is covered by the 15-min scheduled pull cadence.
-
-## Conduit run 2026-07-05T04:56Z
-claude-home conduit sweep. Both queues empty (claude-home, claude-codex-standin) — no reviews to chop, no farm-outs. Router: 11 open / 1030 closed; all 11 belong to other recipients (assiduous 3, finalwishes 3, pantheon 2, porch-and-alley 1, user 2). The 2 `to: user` items (SirsiNexusApp IAM grant 2d4h; Assiduous prod Stripe test-key) are legit owner actions — left open, not nagged, not duplicated. No BINARY_MISSING sentinels; sirsi binary healthy. `router doctor --fix`: reaped 0 OS-dead, 9 already-armed, 2 wake-unavailable (both the unregistered `user` agent). It flagged my own supervisor thread thr-bc17b963f8e840cd as loop-dead (0 watcher procs via pgrep) — re-armed: heartbeat + detached 60s heartbeat/scan watcher; board now shows it loop=alive·armed. Board refreshed (router-board.json/md): 3 persistent daemon-missing blockers (idea-router, idea-router-sweep, registry-police) — covered by the P-router-board build already routed to claude-pantheon, not re-escalated. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. All live threads armed with fresh heartbeats; suspended threads correctly parked. Clean run.
-
-## Conduit run 2026-07-05T05:11:24Z
-Clean run. claude-home and claude-codex-standin queues both empty — nothing to first-chop or farm. Router: 11 open / 1030 closed, all 11 belonging to live-thread recipients (claude-assiduous ×3, claude-finalwishes ×3, claude-pantheon ×2, claude-porch-and-alley ×1 — left for their armed watchers) plus 2 `user` owner-action items (SirsiNexusApp IAM-grant, Assiduous prod Stripe test-key). `router doctor --fix` reaped 0 OS-dead records, wake pass = 9 already-armed + 2 wake-unavailable (recorded on the user items; agent "user" has no wake mechanism, by design). Board republished (router-board.json/.md). Confirmed blockers on board: 3 unloaded router/registry LaunchAgents (com.sirsi.idea-router, ...-sweep, ai.sirsi.registry-police — no plists present) — NOT re-escalated: install is already delegated to claude-pantheon as the P-router-board build, and the router stays functional via this 15-min sweep, so a fresh `to: user` item would duplicate delegated work. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Emitted heartbeat for thr-2ad4d8929ce19219 (doctor flags its interactive /loop watcher loop-dead, but claude-home inbox is empty so no work is stranded; a persistent /loop is not spawned from this non-interactive scheduled run to avoid a runaway worker). No binary-drift sentinels.
-
-## Conduit run 2026-07-05T05:40Z
-Routine supervisor tick. Both conduit queues empty (claude-home, claude-codex-standin — 0 open). Router: 11 open / 1030 closed; open items belong to other threads (assiduous 3, finalwishes 3, pantheon 2, porch-and-alley 1) or are owner-gated `to: user` (2). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to review/merge. `router doctor --fix`: reaped 0 OS-dead records, wake pass woke 0 / 9 already-armed / 2 wake-unavailable (both `to: user` — SirsiNexusApp IAM grant + Assiduous Stripe test-key; genuine owner actions, left un-nagged). claude-pantheon's 2 stranded items have a launchagent wake mechanism (handled). My watcher thread thr-d3557a9c487990e1 flagged loop-dead (expected in a non-interactive scheduled run) — emitted heartbeat to refresh last_seen. Board republished (router-board.json + .md). No binary-drift sentinels. Nothing closed/merged/routed — clean healthy run.
-
-## Conduit run 2026-07-05T05:56:24Z
-Clean run. Both claude-home and claude-codex-standin router queues empty — nothing to review or
-farm. `router status`: 12 open items, all for other recipients (assiduous/finalwishes/pantheon/
-porch-and-alley = their work; 2 `to: user` owner-gated items = Assiduous PROD Stripe key still
-sk_test_ [20260705-041247] and SirsiNexusApp deploy IAM grant [20260703-002632] — both already
-escalated with wake-unavailable recorded, left untouched, not nagged). `router doctor --fix`:
-reaped 0 (no OS-dead records — the ~13 stale ⚠️ claude-home threads are aged-heartbeat CLI sessions,
-OS-alive per ADR-022, so untouched), woke 0 (10 already-armed), 2 wake-unavailable (the user items,
-expected — "user" not a registered wake target). Own thread thr-cee9efd34b3b9104 flagged loop-dead
-by doctor; not re-armed here (scheduled non-interactive one-shot — durable /loop arming belongs to
-the interactive claude-home session; did not blind-spawn to avoid runaway-worker risk). Board
-republished fresh (router-board.json 9837B + .md): 3 persistent daemon-missing blockers
-(com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police) surfaced — already tracked by
-the P-router-board build routed to claude-pantheon 2026-07-02, so no duplicate user escalation.
-Gemma model resolver ran. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to
-merge. No closes/merges/routes this run.
-
-## Conduit run 2026-07-05T06:11:16Z
-Clean run. Binary healthy (no BINARY_MISSING sentinels). claude-home and claude-codex-standin
-inboxes both empty — nothing to review or farm to codex. Router: 12 open items — 10 belong to
-live recipient threads (assiduous 3, finalwishes 3, pantheon 3, porch-and-alley 1, all 🟢 active in
-thread list, left for their owners) and 2 are `to: user` owner actions (SirsiNexusApp IAM grant
-age 2d5h; new today: Assiduous prod Stripe key is sk_test / test-mode) — both already surfaced as
-user items, left un-nagged. Gemma triage flagged only the IAM item (parse-failure false-escalate,
-not a real signal). `router doctor --fix` ran the wake pass: pantheon's 3 items armed (wake via
-launchagent), 2 user items correctly marked wake-unavailable (agent "user" not registered — owner
-actions, expected). Doctor also flagged thr-0f8aff4f19ef8aca watcher loop-dead, but claude-home's
-inbox is empty so nothing is stranded and this scheduled run consumes the inbox itself. No open PRs
-in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to merge. Stranded-response audit clean:
-the claude-assiduous "next-four-done" inbound received a verdict routed back (041241) which spawned
-the owner Stripe escalation (041247). Board republished to ~/.sirsi/router-board.{json,md}.
-
-## Conduit run 2026-07-05T07:40Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Binary healthy, no BINARY_MISSING sentinels. Ran `router doctor --fix`: reaped 0 OS-dead records (process-truth says the 25 stale records are suspended/aged, not dead), wake pass woke 0 · 11 already-armed · 2 wake-unavailable recorded on the two `to: user` items. Published fresh router-board.json/.md. Board blockers = 3 missing router LaunchAgents (com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police) — verified genuinely absent (no plists, none loaded); NOT escalated as new user items because their install is the P-router-board build already routed to claude-pantheon (one-click install surface). Two open `to: user` items (SirsiNexusApp IAM grant, Assiduous Stripe sk_test_ key) left as-is — owner-gated, already open, not nagged. thr-5625fe039d0fe01e (claude-home supervisor watcher) flagged loop-dead by doctor; interactive watcher must self-re-arm, not blind-spawned from this scheduled run.
-
-## Conduit run 2026-07-05T07:55:47Z
-Healthy/empty run. claude-home and claude-codex-standin queues both empty (no reviews, no farm-outs). Zero open PRs across sirsi-pantheon, FinalWishes, SirsiNexusApp. Binary healthy (no BINARY_MISSING sentinels). Ran `router doctor --fix`: reaped 0 OS-dead records (26 stale but all OS-alive), wake pass woke 0 / 12 already-armed / 2 wake-unavailable (both are `to: user` owner items — nexus IAM grant + assiduous prod stripe sk_test key — left for owner, not nagged). Published router-board.json/md. Board surfaces 3 missing router LaunchAgents (idea-router, idea-router-sweep, registry-police) + 2 stranded inboxes (claude-pantheon 5, user 2) — all rendered on the board (the Pantheon-native surface), no new owner escalation created (no confirmed auth blocker; daemon-missing is board-surfaced by design). Gemma resolver holds mlx gemma-4-12B-it-8bit. No closes/merges/routes this cycle.
-
-## Conduit run 2026-07-05T08:10Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin) — no reviews to first-chop, nothing to farm to codex. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Binary healthy (no BINARY_MISSING sentinels). Threads: 8 live, all armed except thr-970209499bb264d9 (claude-home watcher, loop-dead but os-alive) — not re-armed because claude-home has two other live armed watchers (thr-4ded9211024debd2, thr-bc17b963f8e840cd) and an empty inbox, so no inbox is actually stranded. Ran `router doctor --fix` (0 woken, 12 already-armed, 2 wake-unavailable recorded on the two `to: user` items) and refreshed the board (router-board.json + .md). Board blockers = 3 missing LaunchAgent daemons (com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police) — surfaced for the P-router-board menubar one-click install, not escalated. Two open `to: user` items (SirsiNexusApp IAM grant, Assiduous Stripe test-key) left as owner actions, not duplicated. No auth blockers → no new owner escalation. Under 10 min.
-
-## Conduit run 2026-07-05T08:27:37Z
-Routine conduit pass. Binary healthy (no BINARY_MISSING sentinels). claude-home and claude-codex-standin queues both empty. `router doctor --fix` reaped 0 OS-dead records, 12 threads already-armed, 2 wake-unavailable recorded on the two `to: user` owner-action items (iam-grant SirsiNexusApp, Assiduous prod Stripe test-key) — left for the owner, not nagged. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Housekeeping: closed 5 accumulated `claude-pantheon → claude-pantheon` automated `sweep-probe` items ("close on receive", zero payload) that had piled up because the sweep LaunchAgent (com.sirsi.idea-router-sweep) is not loaded — this de-stranded the pantheon inbox (open count 14 → 9). Router board refreshed (~/.sirsi/router-board.{json,md}); it flags 3 missing router daemons (idea-router, idea-router-sweep, registry-police) as owner-clearable blockers — left to the board surface + the routed P-router-board build to claude-pantheon rather than minting a duplicate user escalation. Remaining 9 open items are all claude-home outbound responses to alive+armed recipients (assiduous ×3, finalwishes ×3, porch-and-alley ×1) plus the 2 owner items. Board note: thr-23bfe69724f2f088 (claude-home watcher) reports loop-dead — that is a persistent-watcher concern outside this scheduled pass. Empty-ish run, threads healthy.
-
-## Conduit run 2026-07-05T08:55:57Z
-Quiet run — an empty queue is a good queue. `router pull claude-home` and `router pull claude-codex-standin` both returned no open items; nothing to review or farm. Router status: 10 open / 1035 closed, none addressed to claude-home (3 assiduous, 3 finalwishes, 1 pantheon, 1 porch-and-alley, 2 user). `router doctor --fix` ran the wake pass: 0 woken, 8 already-armed, 2 wake-unavailable recorded on the two `to: user` items (IAM-grant for SirsiNexusApp CI, Assiduous prod Stripe sk_test key) — both owner-gated and left open un-nagged; claude-pantheon's 1 item wakes via launchagent. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Thread list healthy — all live threads heartbeating within the last few minutes, doctor reaped 0 OS-dead records. Doctor flagged my own watcher thread thr-14aec3fe346b5bdc as loop-dead (0 matching /loop procs); did NOT spawn a persistent /loop from this scheduled task (would leak across runs) — claude-home's inbox is empty and covered by two sibling live claude-home threads + horus-supervisor, so I emitted a heartbeat to keep the record fresh instead. Published router-board.json + router-board.md. No escalations (no re-verified owner-clearable blocker beyond the two already-open user items).
-
-## Conduit run 2026-07-05T09:12:10Z
-Routine empty-ish run. claude-home + claude-codex-standin queues both empty — no first-chop reviews pending. Router: 10 open items, all owned by other recipients (assiduous 3, finalwishes 3, pantheon 1, porch-and-alley 1) or owner-gated user items (2: SirsiNexusApp IAM grant 2d8h; new Assiduous prod Stripe sk_test test-mode key). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review-merge. Gemma triage surfaced only the known user IAM item (parse-failure escalate, not a real class). Ran `router doctor --fix`: reaped 0 OS-dead, wake pass 8 already-armed / 2 wake-unavailable (both to unregistered "user" agent, by design). Published router-board.json+md — blockers = 3 missing router daemons (com.sirsi.idea-router, -sweep, ai.sirsi.registry-police; install owned by pantheon P-router-board build). Watcher thread thr-cba5333fa192e85d showed loop=dead / not-armed with zero watcher procs + no wake.pid; sirsi-thread-init.sh is missing so no catalyst re-inject possible — PID 22654 verified alive (genuine claude proc); emitted heartbeat to keep record fresh (inbox empty + serviced by this 15-min task, so no work stranded). Response audit clean: all recent request-type items to claude-home (assiduous next-four/FYI, finalwishes PR53/54/56 binds) have matching reply-back inbounds. No PR #8/#32 action. Nothing closed/merged/routed.
-
-## Conduit run 2026-07-05T09:41:16Z
-Clean cycle. claude-home + claude-codex-standin queues both empty — no review verdicts owed. Router: 10 open items, all other-recipient work (assiduous 3, finalwishes 3, pantheon 1, porch-and-alley 1) or owner-gated to:user (2: SirsiNexusApp IAM grant + Assiduous prod Stripe sk-test key) — left open, no nag. `router doctor --fix` reaped 0 (all stale ⚠️ claude-home threads OS-alive per ADR-022, not suspended), 8 watchers already-armed, recorded wake-unavailable on the 2 to:user items (user agent not registerable — expected). Board republished (router-board.json/md): 0 auth blockers, only legacy daemons uninstalled (no real gap). No open PRs in sirsi-pantheon/FinalWishes/SirsiNexusApp. Noted: watcher thr-fbbe2e510e30e408 loop-dead but inbox empty + headless run, so recorded for the interactive claude-home session to re-arm; not escalated. No closes/merges/routes.
-
-## Conduit run 2026-07-05T10:11:25Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. Router: 11 open — all correctly owned by live threads (claude-assiduous 3, claude-finalwishes 3, claude-pantheon 2, claude-porch-and-alley 1) plus 2 owner-gated `to: user` items (SirsiNexusApp IAM-grant, Assiduous prod Stripe sk_test key); neither duplicated. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Threads healthy — no dead PIDs to suspend. `router doctor --fix`: 0 reaped, 9 already-armed, 2 wake-unavailable (the user items, by design). Board republished fresh (blockers = 3 missing router LaunchAgents, owned by claude-pantheon P-router-board build). thr-2660702ad37e3081 flagged loop-dead but PID 1493 is a live claude-home CLI session (verified cmdline) — not killable, agent must re-arm its own /loop; surfaced on board, not escalated. No closes/merges/routes.
-
-## Conduit run 2026-07-05T11:10Z
-Clean run. Both claude-home and claude-codex-standin queues empty (0 open). Router: 12 open items,
-all addressed to other live agents (claude-assiduous 3, claude-finalwishes 3, claude-pantheon 3,
-claude-porch-and-alley 1) or to user (2). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp
-— nothing to review or merge. `router doctor --fix`: reaped 0 OS-dead, wake pass 10 armed / 2
-wake-unavailable (the 2 `to: user` owner items — IAM grant for SirsiNexusApp CI, and Assiduous PROD
-Stripe key in TEST mode; both genuine owner-gated, already open, left un-nagged). Binary healthy (no
-BINARY_MISSING sentinels). Gemma triage surfaced only the stale user IAM item (already escalated).
-Board republished (~/.sirsi/router-board.json + .md): agent_health both CLIs auth_ok=true (no auth
-blocker to escalate), only legacy daemons uninstalled (non-legacy ai.sirsi.pantheon +
-ai.sirsi.horus.agent-router both loaded). One open signal on the board: supervisor watcher
-thr-c1a867cadf7f60f7 is loop-dead/unarmed — to be re-armed by the live interactive claude-home
-session, not blind-spawned from this cron. Audit: recent request items (FW bind PR#56, Assiduous
-'next four') both had fresh inbound replies routed back to senders — no stranded responses.
-
-## Conduit run 2026-07-05T11:26:00Z
-Clean run. `router pull claude-home` and `claude-codex-standin` both empty — no review/farm work. Router: 12 open, all belonging to recipient threads' own work (claude-assiduous 3, claude-finalwishes 3, claude-pantheon 3, claude-porch-and-alley 1) plus 2 `to: user` owner actions (SirsiNexusApp IAM grant from 07-03; Assiduous PROD Stripe sk_test_ key from 07-05) — both already open and previously escalated, left untouched, no nag. `router doctor --fix`: reaped 0 OS-dead records (34 stale are heartbeat-aged only, not OS-dead → nothing to suspend), wake pass woke 0 / 10 already-armed / 2 wake-unavailable recorded on the user items. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Board republished (`~/.sirsi/router-board.json` + `.md`). No BINARY_MISSING sentinels. Watcher thr-796193d1bc1e5bfe flagged loop-dead by doctor (0 matching procs); emitted heartbeat but did not arm a competing /loop from this headless run — that watcher belongs to the interactive claude-home session. Empty run = good run.
-
-## Conduit run 2026-07-05T11:40:46Z
-Clean run. claude-home and claude-codex-standin inboxes both empty; nothing to review or farm. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp (all merged/quiet). Ran `router doctor --fix`: reaped 0 OS-dead records, wake pass woke 0 / 10 already-armed / 2 wake-unavailable (the two `to: user` items — SirsiNexusApp IAM grant and Assiduous Stripe sk-test key — both owner actions, left open, not nagged). Published fresh router-board.json + .md. Board surfaces 3 missing router LaunchAgents (idea-router, idea-router-sweep, registry-police) — left on the board as the owner-actionable surface rather than minting duplicate escalations. One anomaly: thr-c48b59b37800c933 (claude-home router-supervisor) is OS-alive but loop-dead / not-armed; claude-home inbox coverage is intact via horus-supervisor (thr-fe425d79dd1a7efa, armed) plus three other live claude-home threads, so no inbox is stranded. Did not fabricate a heartbeat for the dead loop (would be false liveness). All other threads live and armed.
-
-## Conduit run 2026-07-05T11:58:44Z
-Empty-queue run, one material fix. Both conduit queues (claude-home, claude-codex-standin) empty; 13 router items all open to other recipients or `to: user`. **Fixed:** claude-home supervisor watcher (thr-8fbf899a295e8beb) was loop-dead (`router doctor --fix` + pgrep both confirmed 0 armed processes) — re-armed as a detached 60s heartbeat/inbox-scan loop with the thread id inline on the command line so future `pgrep -f thr-8fbf899a295e8beb` idempotency checks detect it (prior arm had the id only inside the script file, invisible to pgrep). No open PRs in sirsi-pantheon/FinalWishes/SirsiNexusApp. Board republished (`router-board.json` + `.md`); agent_health both CLIs auth_ok=true, launchagents loaded — no confirmed owner-clearable blocker. 2 `to: user` items (SirsiNexusApp IAM grant, Assiduous Stripe test-key) already open — left, not nagged. Response-audit clean: every recently-closed request to claude-home has a matching fresh outbound reply to its sender. router doctor reaped 0 OS-dead records (36 stale but ADR-022 conservative, untouched by design).
-
-## Conduit run 2026-07-05T13:10Z
-Clean run. Queues empty for claude-home and claude-codex-standin (nothing to review/verdict/farm). Router: 14 open, all owned by other threads (claude-assiduous 3, claude-finalwishes 3, claude-pantheon 5, claude-porch-and-alley 1) or `to: user` (2) — owner actions, not conduit-closable. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp, so nothing to source-review or merge. Ran `sirsi router doctor --fix`: reaped 0 OS-dead records (ADR-022 truth — none of the 40 stale heartbeats are OS-dead), wake pass = 12 already-armed · 2 wake-unavailable (both `to: user` IAM/Stripe owner items, correctly recorded). Published board (`~/.sirsi/router-board.{json,md}`): surfaces 3 missing router LaunchAgents (com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police) — already covered by the P-router-board build routed to claude-pantheon; no new `to: user` duplicate raised. One live finding: supervisor watcher thread thr-6a042dfc988897e8 shows loop=dead while its recorded interactive session (pid 55452) is OS-alive — left for that alive session to self-re-arm on its next tick rather than orphaning a duplicate /loop from this ephemeral scheduled run. No closes/merges/routes this cycle. Both `to: user` blockers (SirsiNexusApp IAM grant 2d12h; Assiduous prod Stripe sk_test) already open — not re-nagged.
-
-## Conduit run 2026-07-05T13:42Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin — 0 open). Router: 14 open / 1035 closed, all owned by live-thread recipients (claude-assiduous 3, claude-finalwishes 3, claude-pantheon 5, claude-porch-and-alley 1) or `to: user` (2). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to source-review or merge. Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: reaped 0 OS-dead records, wake pass 0 woken / 12 already-armed / 2 wake-unavailable (both `to: user` owner items — SirsiNexusApp IAM grant 2d13h + Assiduous prod Stripe sk_test key; left open, not nagged, agent "user" unregistered by design). Board republished (router-board.json/.md): 3 persistent missing router LaunchAgents (com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police — verified genuinely absent, none loaded, no plists) surfaced as owner-clearable blockers but NOT escalated — install is the P-router-board build already routed to claude-pantheon and the router stays functional via this 15-min sweep, so a fresh `to: user` item would duplicate delegated work (consistent with all prior runs). No confirmed auth blocker (agent_health auth_ok all true). Watcher thr-756ee5c824674947 (this session's hook-bound claude-home supervisor) flagged loop-dead / 0 procs by doctor — emitted a heartbeat (last_seen→13:42:00Z) to refresh the record; a detached re-arm loop did not survive the ephemeral scheduled Bash reaping and is left to the interactive session that owns the thread, since claude-home's inbox is empty and covered by four sibling armed claude-home watchers + horus-supervisor (no inbox stranded). Response audit clean (0 open claude-home request items). Gemma model resolver ran. Nothing closed/merged/routed.
-
-## Conduit run 2026-07-05T18:54:51Z
-Both conduit queues empty (claude-home 0, claude-codex-standin 0) — no reviews to first-chop, no scoped items to farm to codex. Router shows 19 open across other recipients (claude-pantheon 10, claude-assiduous 3, claude-finalwishes 3, claude-porch-and-alley 1) plus 2 pre-existing `to: user` owner items (SirsiNexusApp IAM grant 2d18h; Assiduous prod Stripe sk_test) — left untouched (their work / owner actions, no nag). Threads healthy: integrity reaper cleared 1 OS-dead record (thr-9f13acd143e7fdac, pid 33278 gone); horus-supervisor + claude-finalwishes + claude-assiduous + claude-porch + claude-homebrew live; emitted heartbeat for my watcher thr-43bd4f7b91853bc0. Ran `router doctor --fix` wake pass: 4 woken, 13 already-armed, 2 owner items marked wake-unavailable (expected — "user" not a registered agent). Published fresh router-board.json/md. PRs: pantheon #168 (Router v2 Phase 3 facade) is FAILING the Test check → not conduit-mergeable, belongs to claude-pantheon; no open PRs in FinalWishes or SirsiNexusApp. Gemma model resolver ran clean. Board surfaces 3 missing router LaunchAgents (idea-router, idea-router-sweep, registry-police) — plists absent from disk, a persistent pre-existing condition; this is a BUILD (generate plist + bootstrap) already routed to claude-pantheon as P-router-board, not an owner-clearable blocker, so no new user escalation (avoids 35th-run duplicate nag). Empty, healthy run.
-
-## Conduit run 2026-07-05T19:12Z
-claude-home conduit cycle. Binary healthy, no BINARY_MISSING sentinels. Two claude-home
-inbox items, both worked and responded-back via sirsi-respond.sh (fresh inbound, not
-audit-only close):
-1. **BIND REQUEST PR #58 (FinalWishes, do-not-contact suppression)** — source-deep review
-   (diff + firestore.rules + functions/index.js at pull/58/head). Verdict: **CHANGES
-   REQUESTED / do-not-merge**. Blocker: `estates/{estateId}/optOuts/{address}` has NO
-   Firestore rule (no nested match, no recursive wildcard) → the whole client suppression
-   surface (useCollection read + setOptOut/removeOptOut writes) is default-denied at runtime;
-   the family can never populate the list the server `isOptedOut()` reads. CI/jest(admin-SDK)/
-   vitest(mocked) are structurally blind to it. Gave the exact rule block + asked for a
-   rules-path test. Accepted (b) fail-open judgment (correct for memorial domain) and (c)
-   suppression ordering (verified pre-cap in sendSms line 989 < cost-cap txn 995). Routed
-   back to claude-finalwishes.
-2. **claude-nexus RESOLVED (gitleaks full-history block, #116-#119)** — ACK-closed. Confirmed
-   the users.json real-credential residual (rotation/history-scrub) stays owner-gated and is
-   nexus's to surface — did NOT mint a duplicate `to: user` escalation. Endorsed the
-   sirsi-triage rule-tightening suggestion, told nexus to route it as a scoped build to
-   claude-pantheon if they want it actioned.
-PRs: sirsi-pantheon none open; FinalWishes #58 held (above); SirsiNexusApp #116-#119 all
-green+unlabeled but <15min old (created ~18:57-18:59Z) — left for their author per the
->1h rule. Ran `router doctor --fix`: 0 reaped, 1 woken, 7 already-armed, 2 wake-unavailable
-(the 2 owner-gated `to: user` items — IAM grant + Stripe test-key — both already open, not
-duplicated). Board refreshed (router-board.json/md). No confirmed auth blockers (agent_health
-auth_ok all true); 3 missing launch-agents are all legacy:true, superseded by ready per-agent
-ai.sirsi.router.wake.* agents — not a blocker, no escalation.
-
-## Conduit run 2026-07-05T19:41Z
-Binary healthy (no BINARY_MISSING sentinels). Both conduit queues empty (claude-home, claude-codex-standin: no open items). Router: 10 open / 1051 closed — all items belong to other threads (claude-assiduous 3, claude-finalwishes 2, claude-pantheon 2, claude-porch-and-alley 1) or the owner (2× to:user). Suspended 6 dead claude-home scheduled-task threads (thr-fe599fade072b773, b4006795619df040, 0f8787a801f38e4c, 81e4000bfd2f7cbc, 43bd4f7b91853bc0, 76855b1744af23ad) — zero live procs each, no owned open items — to declutter the board. PR sweep: pantheon none; FinalWishes #58 and SirsiNexusApp #116-#119 all CLEAN/mergeable but ~40min old (created 18:57-18:59Z) — under the 1h cooldown, left for next run; no dependabot PRs. Ran router doctor --fix (0 woken, 8 already-armed, 2 wake-unavailable recorded on the two to:user items — "user" not a registered wake target, expected). Refreshed router-board.json/.md. Heartbeated this thread (thr-f6927d9caf39d47f) — its /loop watcher proc exists (1), so no re-arm. No new escalation: both to:user blockers already open (SirsiNexusApp IAM grant, Assiduous sk-test Stripe key); missing router LaunchAgents surfaced on board for the Pantheon menubar to install.
-
-## Conduit run 2026-07-05T19:58:40Z
-claude-home conduit tick. Both conduit queues (claude-home, claude-codex-standin) empty. Router: 10 open items, all belonging to live recipients or owner (user) actions — nothing closable by the conduit. Gemma triage flagged only the standing `to: user` IAM-grant item (parse-failure → escalated for safety); left open, no nag. `router doctor --fix` reaped 0 OS-dead records (the ⚠️ thr-f6927d9caf39d47f claude-home thread is alive per OS-truth, correctly NOT suspended); wake pass = 8 already-armed, 2 wake-unavailable (both `to: user` owner actions, by design). Emitted heartbeat for my watcher thread thr-52632f75f4304b6c (router doctor flags it loop-dead — an interactive-session re-arm concern, not spawned from this scheduled run). PRs: sirsi-pantheon clean. Found all FOUR open SirsiNexusApp PRs (#116 gitleaks-triage, #117 ADR-047 messaging, #118 CI deploy-contracts fix, #119 Cloud SQL tenants) modify the SAME `.gitleaks.toml` — a rebase-conflict cascade that can drop allowlist entries. Did NOT force-merge any; instead routed ONE nudge to claude-nexus (item …195817…) with a suggested merge order (#116→#118→#117→#119) since sequencing is the author thread's call. FinalWishes #58 (do-not-contact suppression) is single-repo, green, no conflict, author claude-finalwishes 🟢 active — left for them to land. Board (router-board.json/.md) refreshed. No merges, no closes, one route.
-
-## Conduit run 2026-07-05T20:16:11Z
-claude-home conduit pass. Pulled claude-home (1 item) + claude-codex-standin (empty). Source-deep reviewed the three green, unheld, >1h PRs. **NexusApp #117** (Sirsi Messaging / ADR-047): clean — HMAC verify-before-parse with timing-safe+length-guard compare, symmetric 5-min replay window, tenant allowlist, fail-closed 503 on unprovisioned RBM, properly wired via `messagingApi = onRequest(messagingApp)`, well-tested → **squash-merged**. **NexusApp #119** (tenant Cloud SQL persistence): net-positive (closes the never-persisted data-loss on the happy path, `tenantsMu`-guarded store, idempotent additiveMigrations, nil-check) → **approved**, but merging #117 introduced a docs-only conflict in SIRSI_MASTER_BLUEPRINT.md (Go files don't conflict) so it went DIRTY; handed the trivial rebase back to the live claude-nexus author with binding approval + a non-blocking hardening note (CreateTenant/UpdateTenant swallow SQL-write errors and return success → a DB-outage window silently re-opens the data-loss; recommend fail-closed on the write). Responded to nexus via sirsi-respond.sh (close+notify). **FinalWishes #58** (do-not-contact suppression): **HELD** — server enforcement is excellent (fail-open isOptedOut, channel-scoped, pre-provider, 34/34) but the PR ships no firestore.rules for the new `estates/*/optOuts` subcollection; rules are default-deny with no catch-all (every subcollection explicitly matched, slice-1 added announcements but slice-2 forgot optOuts), so client setOptOut/removeOptOut writes + the useCollection toggle-read are PERMISSION_DENIED in prod → the family-managed control is non-functional; jest/tsc can't catch it. Routed the fix (add `match /estates/{estateId}/optOuts/{address}` mirroring announcements/people, create+read+delete principal-only, no update) to the live claude-finalwishes thread. Ran `router doctor --fix`: 0 OS-dead reaped, 12 already-armed, 2 wake-unavailable recorded on the owner-gated `user` items; one stale duplicate thr-003a flagged loop-dead (not my live watcher thr-324a80e9d2337700). Published router-board.json/md. No new owner escalation warranted: no confirmed auth blockers (auth_ok==false empty), the 4 installed==false launch agents are all legacy/superseded, and the 2 open `user` items (SirsiNexusApp IAM grant, Assiduous prod sk_test key) are already-escalated owner actions — left as-is per the no-nag rule.
-
-## Conduit run 2026-07-05T20:21:56Z
-claude-home 15-min conduit. Both router queues (claude-home, claude-codex-standin) empty — no first-chop
-reviews owed. 14 open router items all belong to other recipients (their work) or are to:user owner-gated
-(IAM grant + Assiduous Stripe test-mode key — left open, not nagged). Ran gemma model-resolver, router
-doctor --fix (0 reaped, 12 already-armed, 2 wake-unavailable = the two to:user items, agent "user" not
-registered — stranded-by-design), and published router-board.json/.md. All CTR threads healthy/live.
-
-Reviewed the two open non-pantheon PRs source-deep:
-- SirsiNexusApp #119 (tenant_sql.go Cloud SQL persistence): PASS. Verified #109 dual-write pattern
-  reproduced correctly — proto.Clone under provisioningMu then persist OUTSIDE the lock, idempotent
-  additiveMigrations (ADD COLUMN IF NOT EXISTS + ON CONFLICT DO NOTHING), sound memory/SQL fallback.
-  Was already merged by repo auto-merge by the time I ran merge; posted my PASS + one non-blocking
-  follow-up (SuspendTenant/DeactivateTenant read tenantStore memory only → NotFound for a SQL tenant
-  after a Cloud Run cold start; GetTenant already read-throughs SQL, those two should too).
-- FinalWishes #58 (do-not-contact suppression): HOLD — did NOT merge despite all-green CI. Blocker
-  CI can't see: client-SDK writes to estates/{estateId}/optOuts (setOptOut/removeOptOut) but the PR
-  touches zero lines of firestore.rules, and the ruleset has no optOuts match block and no
-  match /{document=**} catch-all → default-deny → the "Do not contact" button errors on tap and the
-  suppression list stays permanently empty (isOptedOut reads nothing). Green only because functions
-  tests mock Firestore + no emulator/e2e for the client write. Posted the blocking PR comment and
-  routed a fresh inbound verdict to claude-finalwishes (item …-hold-pr-58-optouts-firestore-rules-…)
-  so the thread adds the optOuts rules block + an emulator test.
-
-## Conduit run 2026-07-05T20:44:05Z
-Pulled claude-home (1 item) and claude-codex-standin (0). ACK-closed claude-nexus's DONE report confirming SirsiNexusApp PRs #116–#119 all landed on main (gitleaks fix, deploy-contracts CI, Sirsi Messaging, tenant Cloud SQL persistence) — informational, no response owed. `router doctor --fix`: reaped 0 OS-dead (5 stale claude-home scheduled-run records lack verifiable dead PIDs so the OS-truth reaper left them — not churning manually); claude-pantheon's 3 items wake via launchagent; 2 `user` items (IAM grant, Assiduous Stripe test-mode key) marked wake-unavailable — owner actions, left open, not nagged. Published router-board.json/md (no confirmed blockers, 0 stranded). PR sweep: pantheon 0 open, NexusApp 0 open, FinalWishes #58 open (~1.7h, green/CLEAN/unlabeled). Source-deep review of #58 (do-not-contact suppression) found a BLOCKING gap CI missed: the PR adds client writes/reads on new subcollection `estates/{estateId}/optOuts/{address}` (setOptOut/removeOptOut/useCollection) but adds NO firestore.rules match block, and the ruleset has no recursive {document=**} wildcard → path is default-deny → all client ops get PERMISSION_DENIED, so the family can never populate the opt-out list and nothing is ever suppressed (Admin-SDK enforcement works but is fed an always-empty list). CI green because jest mocks Firestore and never exercises the client rules path. Did NOT merge; posted the finding as a comment on PR #58 (could not formal-request-changes — PR authored by the same SirsiMaster identity the CLI is authed as) and routed a binding REQUEST-CHANGES verdict to the live claude-finalwishes thread with the scoped fix (add `match /optOuts/{address}` under estates: principal/admin create+read+delete, no update, per the PR's own DATA_MODEL.md §5.4). No codex farm-out needed. PR #8/#32 untouched (codex-held).
-
-## Conduit run 2026-07-05T20:59:47Z
-claude-home conduit tick. Queues clean: no open items for claude-home or claude-codex-standin; router status 16 open (none mine — claude-assiduous 3, claude-finalwishes 5, claude-nexus 2, claude-pantheon 3, porch 1, user 2). No BINARY_MISSING sentinels. Re-armed my own /loop watcher (thr-7e50e8c4e6eded2b was loop-dead per router doctor; no pgrep match existed → started a thread-id-keyed heartbeat+inbox watcher, pid 8257). Ran `router doctor --fix` (reaped 0 OS-dead, wake pass 14 already-armed, 2 wake-unavailable = the two `to: user` owner items which are never nagged). Published router-board.json/.md — no confirmed blockers, so no owner escalation. Gemma triage: only the pre-existing user IAM item flagged (parse-failure ESCALATE; it's an owner action, left open). **PR sweep:** pantheon & SirsiNexusApp clean; FinalWishes **#58** (do-not-contact suppression, green+clean+unheld, ~2h old) reviewed source-deep and **HELD — did not merge**: server-side `isOptedOut` enforcement is correct, but `estates/{id}/optOuts` has NO firestore.rules match block and there's no recursive `{document=**}` wildcard, so the subcollection is default-deny → client `setOptOut`/`removeOptOut`/`useCollection` all hit PERMISSION_DENIED (family-managed half dead-on-arrival, despite DATA_MODEL §5.4 claiming the rule exists). Posted the finding + fix (a `match /optOuts/{address}` block modeled on `announcements`/`people`) as a PR comment and routed a binding review inbound to the live claude-finalwishes thread (item …-pr-58-do-not-contact-hold-…). Stale-active claude-home scheduled-run thread records left to the doctor's ADR-022 OS-truth reap (not manually suspended — no verified-dead PIDs).
-
-## Conduit run 2026-07-05T21:12:19Z
-Near-clean run with one live PR gate. claude-home + claude-codex-standin queues both empty — no first-chop reviews or codex farm-outs owed. Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: reaped 0 OS-dead records (6 stale ⚠️ claude-home heartbeats all OS-alive per ADR-022, not suspended), wake pass 0 woken / 16 already-armed / 2 wake-unavailable (the two `to: user` owner items — SirsiNexusApp IAM grant 2d20h + Assiduous prod Stripe sk_test key; left open, not nagged). Board republished (router-board.json/.md): 3 persistent missing router LaunchAgents (com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police) surfaced as owner-clearable blockers but NOT escalated — install is the P-router-board build already routed to claude-pantheon (consistent with all prior runs; no duplicate `to: user`). claude-pantheon's 4 stranded items wake via its launchagent. My scheduled-task watcher thr-a3f22c29f9a97a1c flagged loop-dead/0-procs, but claude-home inbox coverage is intact via sibling thr-7e50e8c4e6eded2b (loop=alive, armed) and the pull returned empty — did not orphan a duplicate /loop from this ephemeral run. **PRs:** sirsi-pantheon 0 open, SirsiNexusApp 0 open. FinalWishes **PR #58** (do-not-contact suppression) is CI-green/CLEAN but held: source-deep review confirms the `estates/{id}/optOuts` subcollection has NO firestore.rules match block (PR head a18525ee == reviewed head; changed-files has no firestore.rules), so the family-managed client half (setOptOut/removeOptOut/useCollection) is default-deny / dead-on-arrival while jest-mocked CI stays green. NOT merged. The exact fix (a `match /optOuts/{address}` block, principal+admin create/read/delete, no updates) is already routed as an OPEN unacted inbound to claude-finalwishes (20260705-205902…) and that thread is live+armed — left for it to fix; did not mint a 5th duplicate hold (no-nag). Response audit clean (nexus + finalwishes request items have matching reply-back inbounds). Nothing closed/merged/routed this cycle.
-
-## Conduit run 2026-07-05T21:28:52Z
-claude-home router-conduit-supervisor. Own queues (claude-home, claude-codex-standin) empty — clean run. sirsi binary healthy, no BINARY_MISSING sentinels. `router doctor --fix`: 0 reaped, wake pass 16 already-armed / 2 wake-unavailable (both `to: user` owner escalations — SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — left open, not nagged). Board republished (router-board.json/.md). Only open PR anywhere was **FinalWishes #58** (do-not-contact suppression, Phase-2 slice-2): green CI but source-deep review found a CONFIRMED blocker — `firestore.rules` has no `match /optOuts/{…}` block and no recursive wildcard, so `estates/{estateId}/optOuts/{address}` falls to default-deny; the web-SDK `setOptOut`/`removeOptOut` toggle would hit permission-denied at runtime → no opt-out doc ever written → server-side `isOptedOut()` suppression never fires. Feature dead on arrival; jest green only because it mocks Firestore. Same failure mode already documented in their rules at `3n-pre. Wizard intake metadata`. Did NOT merge — created+applied `binding-hold` label, posted a PR comment, and routed a scoped fix (the exact rule block + a rules-unit-testing case) to claude-finalwishes (thread alive thr-9346f11b0d65b735). Stale claude-home thread records (7, ⚠️) have no pid files; doctor's ADR-022 OS-truth reaper declined them — did not hand-suspend without PID verification. No stranded closed-request responses in the 12h window.
-
-## Conduit run 2026-07-05T21:56:50Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin) — nothing to review or farm. Router: 19 open / 1053 closed; `router doctor --fix` reaped 0 (no OS-dead records confirmed under ADR-022 OS-truth), wake pass 17 already-armed + 2 wake-unavailable — both `to: user` owner actions (SirsiNexusApp IAM grant age 2d21h; Assiduous prod Stripe sk-test test-mode key), left open, not nagged. Board republished (`router-board.json`/`.md`, 9573 bytes): agent_health clean (claude + codex CLIs found, auth_ok=true — no auth flap to escalate), real launchagents (pantheon menubar, horus router-supervisor) installed+loaded, only `installed=false` entries are the two legacy idea-router units. Stranded inboxes: claude-pantheon (4, wakes via launchagent) + user (2). PRs: sirsi-pantheon none, SirsiNexusApp none, FinalWishes #58 carries `binding-hold` (prior source-deep review: missing Firestore rules for `optouts` collection) — NOT merged, hold already routed to claude-finalwishes. Sent-item audit shows responses reaching senders as fresh inbounds (no stranded responses). Binary healthy, no BINARY_MISSING sentinels. Emitted heartbeat for watcher thread thr-84364c664ec0ebd1. No new escalations.
-
-## Conduit run 2026-07-05T22:10Z
-Clean run. claude-home + claude-codex-standin queues both empty — nothing to review or farm. `router doctor --fix` reaped 0 OS-dead, woke 0 (18 already-armed), recorded 2 wake-unavailable on the two owner-gated `user` items (SirsiNexusApp IAM grant, Assiduous prod Stripe key still sk_test) — left open, not nagged. Threads healthy: claude-home inbox is armed via thr-7e50e8c4e6eded2b (loop=alive); thr-149ab13c15b43691 shows loop=dead but is redundantly covered — emitted a heartbeat to keep its record alive. PRs: pantheon 0 open, NexusApp 0 open, FinalWishes #58 green but carries `binding-hold` (prior conduit review found a blocker) → NOT merged per hard rule. Board's 3 "missing daemon" blockers (idea-router, idea-router-sweep, registry-police) confirmed FALSE-POSITIVE: registry-police posted items today, per-agent `ai.sirsi.router.wake.*` launchagents all loaded and threads armed — monolithic `com.sirsi.idea-router` label is stale naming, already routed to claude-pantheon (items 20260622, 20260702). No new escalation.
-
-## Conduit run 2026-07-05T22:25Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. Router: 20 open, none to claude-home; the only stale item is the `to: user` Nexus IAM-grant (owner action, 2d21h) — left, not nagged. `router doctor --fix`: 0 reaped, wake pass armed 18 agents, 2 wake-unavailable recorded on the two `user` items (IAM grant + Assiduous Stripe test-mode key — both genuine owner actions, already open, not duplicated). PRs: pantheon & Nexus clean; FinalWishes #58 carries `binding-hold` → not merged. Published router-board.json/md. **Did NOT escalate the board's 3 "daemon missing" blockers** (com.sirsi.idea-router, com.sirsi.idea-router-sweep, ai.sirsi.registry-police): those plist names are absent but the router automation is functionally live under the current `ai.sirsi.*` topology (horus.agent-router + triage + per-agent wake agents + gemma all loaded per `launchctl list`), and doctor armed 18 agents with all live threads heartbeating <40s. The board probe checks superseded daemon names — a generator-accuracy bug already owned by claude-pantheon (P-router-board), not an owner-clearable outage. Escalating would repeat the retracted false-auth escalation of 2026-07-02. My own headless watcher thread (thr-e68c5967d858c8d4) shows loop-dead — expected for a scheduled non-interactive run; the 15-min task is the consumer, no persistent /loop armed.
-
-## Conduit run 2026-07-05T23:26:20Z
-Clean cycle. Both conduit queues (claude-home, claude-codex-standin) empty; no BINARY_MISSING sentinels. Router: 21 open, none to conduit — 6 claude-pantheon (armed launchagent), 7 finalwishes + others (recipient threads live), 2 `to: user` owner actions (SirsiNexusApp IAM grant, Assiduous Stripe test-key) left un-nagged. `router doctor --fix` reaped 0 OS-dead records, wake pass 19 already-armed / 2 wake-unavailable (user, expected). PRs: FinalWishes #58 (do-not-contact suppression) green+CLEAN but carries `binding-hold` → left per hard rule; no open pantheon/nexus PRs. Board published (schema 1.0.0), 0 confirmed blockers, no auth failures, no stranded inboxes. Re-armed the claude-home watcher loop (thr-bee6cf82f4d161bf) — doctor flagged it loop-dead with 0 processes; new heartbeat loop pid 48816.
-
-## Conduit run 2026-07-05T23:44:49Z
-Routine conduit cycle (claude-home). Both conduit queues empty — no reviews to first-chop, no scoped codex farm-outs. `router doctor --fix` ran: wake pass woke 0 / 19 already-armed / 2 recorded wake-unavailable (both `to: user` owner actions — SirsiNexusApp IAM grant age 2d23h, and the revenue-blocking Assiduous PROD Stripe `sk_test_` key; left open, not nagged). Suspended 15 dead `claude-home` scheduled-run thread records (all `status=active` but idle 32min–4h, far beyond the <10min run lifetime; non-destructive record cleanup — doctor won't reap them since ADR-022 OS-truth can't confirm death without a PID). PRs: sirsi-pantheon and SirsiNexusApp clean; FinalWishes #58 carries `binding-hold` (respected, not merged); no dependabot PRs. **Fixed a board-generator false-positive**: `~/.local/bin/sirsi-router-board.sh` was listing 3 deprecated `legacy:true` daemons (com.sirsi.idea-router, idea-router-sweep, ai.sirsi.registry-police) under "⚠ Blockers" every run — the exclusion filter tested `.role|test("legacy")` but legacy-ness lives in the boolean `.legacy` field (roles are router-watchpaths/router-sweep/registry-police), so it never fired. Rewrote both filters to `((.legacy // false) | not)`; board now correctly reports "none — fabric healthy" (current wake fabric = per-agent wake LaunchAgents + horus.agent-router, all loaded). Did NOT escalate the legacy daemons to owner — installing them would regress the architecture ([[surfaces: current+actionable only]]; avoids repeating the 2026-07-02 retracted false escalation). No repo copy of the board script exists, so the local fix persists.
-
-## Conduit run 2026-07-06T00:27:19Z
-Empty-is-good run. claude-home and claude-codex-standin queues both empty — nothing to review, farm, or respond to. Router: 23 open / 1053 closed; only stranded inboxes are claude-pantheon (8, wakes via launchagent — handled by `router doctor --fix`) and user (2 owner-gated: SirsiNexusApp IAM grant + Assiduous Stripe test-key — both already open, not nagged). Three claude-home threads showed active+stale but all three PIDs (19912/23607/29665) are LIVE claude.app sessions — left untouched per pid-alive≠kill-evidence; no suspensions. PRs: sirsi-pantheon none, SirsiNexusApp none, FinalWishes #58 is binding-hold (not merged). Board republished (`router-board.json`/`.md`) — no confirmed blockers, both claude+codex CLIs auth_ok=true; installed=false launch agents are all legacy. No owner escalation warranted. Note: watcher thread thr-b24eb4adff579655 reports loop=dead/NOT ARMED, but its inbox is empty so nothing is stranded; durable re-arm belongs to an interactive claude-home session, not this ephemeral scheduled run.
-
-## Conduit run 2026-07-06T01:41Z
-Automated router-conduit-supervisor pass (claude-home). Binary healthy, no BINARY_MISSING drift sentinels. Both my queues empty (claude-home, claude-codex-standin) — no reviews to chop, no farm-outs needed. Router: 24 open items, none mine; 2 `to: user` items (SirsiNexusApp IAM grant 3d1h stale, Assiduous prod Stripe test-mode key) correctly left open as owner actions — not nagged. `router doctor --fix` reaped 0 (ADR-022 OS-truth) but flagged 8 stale claude-home records; I independently verified 7 had no thread dir and no wake.pid and were idle far beyond the 15-min task cadence (leaked prior scheduled-task sessions), and suspended them (--no-sync, 0 owned items each — nothing stranded). claude-pantheon's 9 stranded items are launchagent-wakeable (its work, doctor nudged). Published fresh router-board.json/.md — 0 confirmed blockers. PRs: pantheon none, SirsiNexusApp none, FinalWishes #58 is binding-hold (skipped per hard rule). Clean run.
-
-## Conduit run 2026-07-06T01:57:18Z
-Clean run. claude-home and claude-codex-standin queues both empty (0 open items — nothing to review/farm). Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: reaped 0 OS-dead threads (ADR-022 OS-truth), 22 already-armed, 0 woken; recorded `wake-unavailable` on the 2 open `to: user` items (IAM-grant SirsiNexusApp CI-red; Assiduous prod Stripe key is sk-test) — both owner actions, left un-nagged. claude-pantheon's 9 open items are armed (wake via launchagent, not stranded). One flagged: claude-home's own watcher thr-46eabfa931aaf638 reports loop-dead, but its inbox is empty so nothing is stranded. Open PRs: Pantheon [] , Nexus [] , FinalWishes only #58 (binding-hold — not merged). Step-12 audit: verified recent finalwishes bind-requests 53–56 all got routed-back responses; PRs 51/52 (routine dependabot/nightly) were bound+merged 2026-07-04T23:09 and closed without a fresh inbound, but finalwishes has since shipped 53–56 on top of that tree state — it demonstrably knows, so a 2-day-late merge ping would be noise; recorded here rather than re-routed. Board + model-resolver refreshed (`router-board.json`/`.md` written). No merges, no closes, no farm-outs this cycle.
-
-## Conduit run 2026-07-06T02:11:40Z
-Both conduit queues (claude-home, claude-codex-standin) empty — no review requests to chop. Router: 25 open / 1053 closed, none addressed to claude-home; oldest open is the 3d SirsiNexusApp IAM-grant item (to: user, owner action, left un-nagged). PRs: only FinalWishes #58 open, carrying binding-hold — not merged (hard rule); sirsi-pantheon and SirsiNexusApp clean. Threads: all live threads healthy/armed except supervisor thr-e9ff458571c3069d (pid alive, /loop watcher dead) — no watcher process found via pgrep and claude-home inbox is empty so nothing stranded; emitted a heartbeat to keep the record fresh, durable re-arm belongs to the interactive session. Ran router doctor --fix (0 reaped, 23 already-armed, 2 wake-unavailable recorded on the two to:user items — agent "user" unregistered, expected). Published router-board.json/.md: no confirmed blockers, stranded inboxes = claude-pantheon(10, launchagent-woken) + user(2, owner). No escalation raised (both user blockers already open). Clean run.
-
-## Conduit run 2026-07-06T02:26:39Z
-Clean run. claude-home and claude-codex-standin queues both empty — no items to review or farm. Router: 25 open, none to me; the 2 stale `to: user` items (SirsiNexusApp IAM grant 3d1h; Assiduous Stripe test-mode key) are owner-gated — left open, not nagged. `router doctor --fix` flagged this thread (thr-786f9565169abe83) as loop-dead with zero watcher procs, so I re-armed the /loop heartbeat watcher (keyed WATCH_TID=thr-786f9565169abe83 to avoid the shared loop-body collision) and emitted a fresh heartbeat. claude-pantheon's 10 stranded items wake via launchagent (already armed) — not mine. PRs: pantheon and SirsiNexusApp have none open; FinalWishes #58 (do-not-contact suppression) is CLEAN/green but carries `binding-hold` — correctly held: a prior claude-home review found a runtime-blocking missing `optOuts` Firestore rule (CI-invisible: jest uses Admin SDK, vitest mocks Firestore) and routed CHANGES REQUESTED back to claude-finalwishes, so NOT merged. Response audit passed — the #58 bind-request has its verdict routed back. Board published (`~/.sirsi/router-board.json`, no confirmed blockers). No binary-drift sentinels.
-
-## Conduit run 2026-07-06T02:55Z
-Clean run — empty queues, healthy fabric. `sirsi router pull` for claude-home and claude-codex-standin both returned zero open items, so no review requests to first-chop and nothing to farm to codex. `router doctor --fix` woke 0 (23 already-armed), recorded the 2 `user` items as wake-unavailable (owner actions, by design), and reaped 0 OS-dead records; claude-pantheon's 10 stranded items wake via launchagent. PRs: pantheon and NexusApp have no open PRs; FinalWishes #58 is CLEAN/mergeable but carries the `binding-hold` label from the prior conduit review (missing Firestore rules for `optouts`) — left held, not merged. Duty-12 audit: every inbound request (FW #58 bind-request, nexus merge-sequence/gitleaks) has a response inbound routed back to its sender — nothing stranded. Board republished to ~/.sirsi/router-board.json (no blockers). Nothing closed/merged/routed. One cosmetic note: my watcher thread thr-ef423119eaaf4de0 shows loop=dead on the board — that is the interactive session's re-arm responsibility, not this non-interactive conduit run.
-
-## Conduit run 2026-07-06T03:10:55Z
-Clean run. Both conduit inboxes (claude-home, claude-codex-standin) empty — nothing to review or farm. Router: 26 open items across other recipients (claude-pantheon 11 armed via launchagent; user 2 owner-gated — IAM grant + Assiduous prod Stripe test-key — left open, no nag; plus assiduous/finalwishes/nexus/porch splits, all recipient-owned). PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes only #58 which carries `binding-hold` — not merged. `router doctor --fix`: reaped 0, 24 already-armed, 2 wake-unavailable (both to unregistered "user" agent — expected owner actions). Board refreshed (~/.sirsi/router-board.{json,md}) — 0 confirmed blockers, fabric healthy. thr-006d6d56538410ba shows loop=dead but claude-home inbox is empty and covered by 3 other armed live loops (bee6cf82/786f9565/7e50e8c4); no action. No closes/merges/routes this cycle.
-
-## Conduit run 2026-07-06T03:41:36Z
-Clean run. Binary healthy (no BINARY_MISSING sentinels). Both conduit queues empty (claude-home, claude-codex-standin — 0 open). Router: 26 open items but none to claude-home — they belong to claude-pantheon (11, launchagent-wakeable), claude-finalwishes (7), claude-assiduous (3), claude-nexus (2), user (2 owner-action), porch (1); all stale flags were either to:user (owner-gated, left) or responses already routed to live recipients. `router doctor --fix`: reaped 0 (nothing OS-dead), wake pass 0 woken / 24 already-armed / 2 wake-unavailable (both to:user, correctly not nagged). Board refreshed (`router-board.{json,md}`) — no blockers, fabric healthy; stranded inboxes claude-pantheon(11)+user(2) handled by launchagent/owner. thr-508df153ca1149cb (claude-home) shows loop=dead but claude-home inbox is empty and watched by 3 other armed loops (bee6cf82/786f9565/7e50e8c4, all loop=alive) — cosmetic, will age out via CTR. PRs: pantheon 0, Nexus 0, FinalWishes #58 held by `binding-hold` label (do not merge, per hard rules). Gemma model resolver ran; worker on mlx-community/gemma-4-12B-it-8bit (largest fitting the 16GB-reserved RAM budget). Response audit: FW PR-58 bind-request and nexus merge-sequence reports all have matching fresh inbounds routed back — no stranded responses. No closes/merges/routes this cycle.
-
-## Conduit run 2026-07-06T03:55Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no reviews, ACKs, or codex farm-outs. Router: 26 open, all correctly parked (claude-pantheon 11 → launchagent wake; 2 user items owner-gated, wake-unavailable recorded). `router doctor --fix` reaped 0 OS-dead records (ADR-022 OS-truth); the growing pile of stale `claude-home surface=claude` thread records are prior scheduled-task runs not yet OS-confirmed-dead, so left untouched per hard-rule (no unverified suspends). PRs: sirsi-pantheon and SirsiNexusApp have none open; FinalWishes #58 remains `binding-hold` (left held, no merge/rebase). Board republished, gemma model resolved, binary healthy (no BINARY_MISSING sentinels). Nothing closed/merged/routed. NOTE for next session: `claude-home surface=claude` records are accumulating (~40+ suspended/stale) — worth a reaper policy tweak or a bounded scheduled-task record TTL so they don't grow unbounded.
-
-## Conduit run 2026-07-06T04:11:46Z
-Clean run. claude-home and claude-codex-standin queues both empty (no items to review/farm). Router status: 27 open / 1053 closed; open recipients are claude-pantheon (12, wake via launchagent — its own build queue), user (2 owner actions: SirsiNexusApp IAM grant + Assiduous Stripe test-key), claude-finalwishes (7), claude-assiduous (3), claude-nexus (2), claude-porch-and-alley (1) — none addressed to claude-home. `router doctor --fix`: reaped 0 OS-dead, wake pass 25 already-armed / 2 wake-unavailable (the two `user` items — no wake mechanism by design; left open, not nagged). Board published (`router-board.json` + `.md`) — no confirmed blockers, fabric healthy, no auth flapping. thr-e812acb0b3da0796 (claude-home supervisor) flagged loop=dead but pid=28344 os=alive → not reapable; emitted heartbeat to refresh liveness; true /loop re-arm left to an interactive session (not spawned from this non-interactive scheduled run). PRs: sirsi-pantheon none, SirsiNexusApp none, FinalWishes #58 is binding-hold (left held, not merged). No closes/merges/farm-outs this cycle.
-
-## Conduit run 2026-07-06T04:55Z
-Clean run. claude-home and claude-codex-standin inboxes both empty. Router: 27 open items, all outbound to other recipients (claude-pantheon 12, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, claude-porch-and-alley 1, user 2) — these are already-routed responses/acks awaiting recipient pull, not claude-home work. `router doctor --fix`: 0 reaped, 25 already-armed, 2 wake-unavailable (both `user` items — expected, user is not a registered agent; owner actions, not nagged). Board published healthy — no blockers. Noted thr-c6300d170a0761c8 (claude-home, pid 10452) reports loop=dead, but it is a separate live interactive session, not this scheduled run, and claude-home's inbox is empty so nothing is stranded; did not arm a loop in this ephemeral task. PRs: pantheon 0 open, nexus 0 open, FinalWishes #58 open but binding-hold (left held). No closes/merges/routes. Nothing escalated.
-
-## Conduit run 2026-07-06T05:12:03Z
-Routine conduit pass (claude-home). Router queues clean — 0 open for claude-home and claude-codex-standin. Router-wide: 28 open / 1053 closed, all addressed to live threads (claude-pantheon 13 via launchagent, finalwishes 7, assiduous 3, nexus 2, porch 1) or owner-gated user items (2). Suspended 9 dead stale claude-home scheduled-run threads (no wake.pid, idle stepping in 15-min cron increments, current live watcher thr-5b4d0df17d387094 preserved). Ran `router doctor --fix`: wake pass 0 woken / 26 already-armed / 2 wake-unavailable (both user items — no wake mechanism, correct/owner-gated); doctor flags thr-5b4d0df17d387094 loop-dead but its inbox is empty so nothing stranded — re-arm belongs to the live interactive session's SessionStart, not this ephemeral cron. Published router-board.json/.md. PRs: only FinalWishes #58 open (binding-hold) — verified blocker still open (still at commit a18525ee predating all review comments; firestore.rules still lacks the optOuts match block, feature dead-on-arrival), hold correctly stands, NOT merged. claude-finalwishes already received 5 fresh inbounds about the hold (19:12–21:27) and thread is live, so no additional notification (would be nagging). PR #8/#32 not open. Gemma model resolver kept worker on gemma-4-12B-it-8bit. No escalations (2 user items pre-existing, no duplication). Binary healthy, no drift sentinels.
-
-## Conduit run 2026-07-06T05:55Z
-Clean run. claude-home + claude-codex-standin queues both empty — no verdicts to issue, nothing to farm to codex. Binary healthy (no BINARY_MISSING sentinels). Router: 28 open / 1053 closed; open by recipient = claude-pantheon 13 (armed launchagent, live), claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, claude-porch-and-alley 1, user 2. All stale (>24h) items belong to live recipient threads (assiduous/porch/finalwishes all 🟢) or are owner-gated `user` items (IAM grant 3d5h; assiduous prod stripe sk-test key 1d1h) — left open, no nag. `router doctor --fix` wake pass: 0 woken · 26 already-armed · 2 wake-unavailable (the 2 user items, agent "user" unregistered — expected). Board refreshed (`router-board.json`+`.md`): **no blockers — fabric healthy**, no auth/daemon issues to escalate. PRs: only FinalWishes #58 open, carries `binding-hold` (prior conduit blocker) — NOT merged, correctly held; pantheon + nexus have zero open PRs. Threads: no dead-PID active threads to suspend (idle ≠ dead). Note: supervisor watcher thread thr-4c6b944d001abcae shows loop=dead/NOT ARMED, but claude-home inbox is covered by three sibling claude-home threads with loop=alive·armed (bee6cf82, 786f9565, 7e50e8c4), so no stranded work; durable re-arm belongs to the live interactive session, not this ephemeral scheduled task. Heartbeat emitted for thr-4c6b944d001abcae.
-
-## Conduit run 2026-07-06T06:56:39Z
-Clean pass. claude-home + claude-codex-standin queues both empty; no PRs mergeable (sirsi-pantheon/SirsiNexusApp have none open; FinalWishes #58 carries `binding-hold` — left untouched). Router: 29 open / 1053 closed. All 6 stale (>24h) items are either `to: user` owner-actions (IAM grant 3d6h, Assiduous Stripe sk-test key 1d2h — both already open, not re-nagged) or addressed to living recipient threads (claude-assiduous, claude-porch-and-alley — both PID-alive, their work). Verified all 12 stale claude-home interactive threads: every PID alive with genuine claude-code cmdline → suspended none (PID-alive is not kill-evidence). `router doctor --fix`: 0 reaped, 27 already-armed, 2 wake-unavailable recorded (the user items — "user" unregistered by design). Board published clean (no blockers); stranded inboxes = claude-pantheon (14, launchagent-wakeable, own workstream) + user (2, owner). thr-0bfa43d70b460204 flagged loop-dead but claude-home inbox is empty → nothing stranded. Gemma model resolver → gemma-4-12B-it-8bit. No closes/merges/routes/escalations needed.
-
-## Conduit run 2026-07-06T07:11:05Z
-Clean run. Both claude-home and claude-codex-standin queues empty — no review requests or informational items to action. `router doctor --fix`: reaped 0 OS-dead records, 28 threads already-armed, 2 wake-unavailable (both `to: user` owner-action items — the SirsiNexusApp IAM-grant and the Assiduous Stripe test-key escalations; left open, no nag). Refreshed router-board.json/.md: zero confirmed blockers, zero auth_ok=false. PRs: sirsi-pantheon none open, SirsiNexusApp none open, FinalWishes only #58 (binding-hold — left untouched). Binary healthy, no BINARY_MISSING sentinels. Doctor noted my own watcher thr-80d483a9a4eae84a as loop-dead, expected for a headless cron run. No closes/merges/routes.
-
-## Conduit run 2026-07-06T07:27:59Z
-Conduit queues clean — `router pull claude-home` and `claude-codex-standin` both empty. Router: 30 open items, all routed to live recipients (claude-pantheon 15 armed via launchagent; assiduous/finalwishes/porch/nexus responses sitting in alive worker queues) or owner-gated `to: user` (iam-grant + assiduous stripe-key — both already-open escalations, not re-nagged). Thread check: 18 "active" claude-home surface=claude records are stale (idle up to ~7.7h) but every PID is alive with a genuine claude-code cmdline — NOT suspended, since suspension gates on a dead PID and a generic claude-code cmdline can't distinguish a recycled PID from a live session (PID-alive ≠ kill-evidence). `router doctor --fix`: reaped 0 OS-dead, wake pass 28 already-armed / 2 wake-unavailable (both the owner `user` items — no wake mechanism by design). Re-armed my own watcher thr-fda7490ff1b89e58 (doctor flagged loop-dead; 0 watcher procs existed → emitted heartbeat, last_seen refreshed). Ran gemma-model-resolver + republished router-board.json/md. PR sweep: sirsi-pantheon none, FinalWishes #58 held (binding-hold label, left untouched), SirsiNexusApp none — no merges. Board confirms no owner-clearable blocker beyond the 2 pre-existing user items (auth_ok all true; the 2 installed=false daemons are legacy=true, deprecated by the active ai.sirsi.horus.agent-router). Binary healthy, no BINARY_MISSING sentinels. Clean run.
-
-## Conduit run 2026-07-06T08:26:37Z
-Clean cycle. claude-home + claude-codex-standin inboxes both empty (0 open). Router: 31 open / 1053 closed — all 31 are outbound responses already routed (16 claude-pantheon, 7 claude-finalwishes, 3 claude-assiduous, 2 claude-nexus, 1 porch-and-alley) plus 2 owner-action `→ user` items (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key); recipient threads verified live, user items left un-nagged. `router doctor --fix`: reaped 0 OS-dead, wake pass 29 already-armed + 2 wake-unavailable (the two `→ user` items — no wake mechanism by design). Board republished (router-board.json/.md, 11KB). PRs: pantheon 0 open, Nexus 0 open, FinalWishes #58 carries binding-hold (left, not merged). Gemma model resolver ran. No BINARY_MISSING sentinels; sirsi binary healthy. Note: doctor flags claude-home watcher thr-69490f8657024a86 as loop-dead (0 watcher procs) — but inbox is empty so nothing stranded, and a Monitor armed inside a 15-min non-interactive cron can't persist; durable watcher must come from the owner's live interactive session. Stale `surface=claude` claude-home records are prior scheduled-run sessions (no wake.pid), left for the OS-truth reaper.
-
-## Conduit run 2026-07-06T08:54Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. Router: 31 open / 1053 closed — all open items belong to live recipients (claude-pantheon 16 armed via launchagent, claude-assiduous 3, claude-finalwishes 7, claude-nexus 2, porch 1) or are 2 `→ user` owner-action escalations (SirsiNexusApp IAM grant; Assiduous prod Stripe key still sk-test) left open, not nagged. `router doctor --fix`: 0 reaped, 29 already-armed, 2 wake-unavailable recorded on the user items. Board republished. PRs: pantheon none, NexusApp none, FinalWishes #58 (do-not-contact suppression) carries binding-hold — left held. No binary-missing sentinels. Own watcher thr-50a194f5d350e713 heartbeated (loop-dead flagged by doctor; record kept fresh, persistent /loop is the owner main-session's to re-arm, not this ephemeral scheduled run). No closes/merges/farms this cycle.
-
-## Conduit run 2026-07-06T09:11:26Z
-Clean run. claude-home and claude-codex-standin queues both empty — no reviews to first-chop. `router doctor --fix`: reaped 0 OS-dead, wake pass 30 already-armed, recorded wake-unavailable on the 2 `to: user` owner items (IAM grant, Assiduous Stripe test-key) as expected. Open PRs: sirsi-pantheon 0, SirsiNexusApp 0, FinalWishes #58 held (binding-hold label — not merged, recipient claude-finalwishes 🟢 alive). 21 stale claude-home surface=claude thread records are all no-meta (PID unrecoverable) and the doctor's ADR-022 OS-truth reap declined them — left untouched per no-verified-kill rule. Board republished (~/.sirsi/router-board.json, no confirmed blockers). Heartbeat emitted for thr-7d0972bc779885d8 (watcher loop shows 0 procs — needs interactive re-arm; heartbeat keeps record fresh). No new escalations (2 owner items already open, not duplicated).
-
-## Conduit run 2026-07-06T09:56:00Z
-Both conduit queues empty (claude-home, claude-codex-standin) — no reviews to chop, no farm-outs. Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: reaped 0 OS-dead records, 30 channels already-armed, claude-pantheon's 17 stranded items will wake via launchagent, 2 `user` items (SirsiNexusApp IAM grant + Assiduous prod Stripe test-key) correctly recorded wake-unavailable and left open — owner-gated, not nagged. Stale responses to claude-assiduous/claude-porch-and-alley are open fresh-inbounds already delivered to those live threads. PR sweep: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 CLEAN but `binding-hold` (prior conduit blocker) → correctly NOT merged, belongs to claude-finalwishes to clear. Board republished. Note: doctor flags this session's own watcher thr-7c24ec627f03d649 as loop-dead — expected in a headless 15-min scheduled run (no durable /loop); the standing router-supervisor cron re-arms interactive sessions.
-
-## Conduit run 2026-07-06T10:11:34Z
-Clean run. Both claude-home and claude-codex-standin queues empty — nothing to review/farm. No BINARY_MISSING sentinels; sirsi binary healthy. Open router items (33) all belong to other recipients or `user`; stale ones are already-routed response inbounds (claude-assiduous, claude-porch-and-alley) waiting on live recipients, plus 2 pre-existing owner escalations (SirsiNexusApp IAM grant, Assiduous Stripe test-key) — left open, not nagged. `router doctor --fix`: 0 reaped, wake pass 31 already-armed / 2 wake-unavailable (the `user` items, by design). PRs: sirsi-pantheon + SirsiNexusApp none open; FinalWishes #58 carries binding-hold → not merged. Board republished (auth 0 failures, only legacy daemons uninstalled — superseded, not a blocker). My watcher thr-c7e9a57387954bec was loop-dead (pgrep=0); emitted heartbeat to refresh (persistent /loop re-arm needs an interactive session). No owner escalation warranted — no new confirmed blocker.
-
-## Conduit run 2026-07-06T11:27:29Z
-Routine cron pass. Both conduit queues (claude-home, claude-codex-standin) empty — no
-review/informational items to work. Router: 34 open items, none belonging to me
-(19 claude-pantheon + 7 finalwishes + 3 assiduous + 2 nexus + 2 user + 1 porch); all
-stale>24h items belong to LIVE recipient threads (assiduous/porch active) or are
-owner-gated user items — left in place, no nag. `router doctor --fix`: reaped 0
-(no OS-dead-confirmable records — the ~40 accumulating stale `active` claude-home
-records are this cron's own ephemeral session orphans, correctly untouched per ADR-022
-OS-truth), wake pass 0 woken / 32 already-armed / 2 wake-unavailable (both `user`
-items — no wake mechanism, expected). Watcher thr-764983a8e0f729fe flagged loop-dead
-with no catalyst dir — did NOT arm a durable /loop from this ephemeral run (would orphan
-another record); claude-home inbox is empty and also covered by live horus-supervisor.
-Board republished (~/.sirsi/router-board.json + .md). PRs: pantheon 0, nexus 0,
-FinalWishes #58 held (binding-hold, left). No merges, no farm-outs, no escalations.
-Clean run.
-
-## Conduit run 2026-07-06T11:56:31Z
-Quiet run. claude-home and claude-codex-standin inboxes both empty — no review requests to chop. PRs: sirsi-pantheon none, SirsiNexusApp none, FinalWishes only #58 (binding-hold label) → left untouched. Router: 34 open, none for claude-home; stale >24h items are either owner-gated (2026-07-06T11:56:31Z still-open user escalations for SirsiNexusApp IAM grant + Assiduous prod Stripe sk-test key — already escalated, not re-nagged) or already-routed responses awaiting live recipient threads (claude-assiduous, claude-porch-and-alley both 🟢). `router doctor --fix`: reaped 0 OS-dead, 32 already-armed, 2 wake-unavailable recorded on the two user items (agent "user" unregistered — expected). Board published: 0 confirmed blockers, 0 stranded. Conduit watcher thr-cc255507e274dcbb flagged loop-dead (inbox empty, cosmetic) — emitted heartbeat to keep fresh; did NOT spawn a /loop from this ephemeral scheduled session (runaway-loop guard). No closes/merges/farm-outs.
-
-## Conduit run 2026-07-06T12:14:03Z
-Clean run. claude-home and claude-codex-standin queues both empty — no review requests or informational items to work. Router: 34→35 open items, all owned by other live agents (claude-pantheon 20, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, claude-porch-and-alley 1) plus 2 pre-existing `user` owner-actions (SirsiNexusApp IAM grant 3d11h; Assiduous prod Stripe key is sk-test 1d7h) — left open, not nagged. Ran `router doctor --fix`: wake pass woke 0 / 33 already-armed / 2 wake-unavailable (the user items, no wake mechanism); reaped 0 (no OS-dead records). Board republished (`~/.sirsi/router-board.{json,md}`) — no confirmed blockers: both CLIs auth_ok=true, all non-legacy launchagents installed+loaded, stranded inboxes are claude-pantheon (wakes via its live launchagent) and user (owner). PRs: only FinalWishes #58 open — correctly `binding-hold` by a prior claude-home source-deep REQUEST-CHANGES verdict (firestore.rules missing the `optOuts` match block → feature dead-on-arrival); verdict already routed to claude-finalwishes as fresh inbounds (20260705-1912→2127), left held awaiting the rules fix. sirsi-pantheon and SirsiNexusApp: no open PRs. **Finding to surface:** 33 stale ⚠️ active `claude-home` surface=claude thread records, each a prior 15-min scheduled-task run of THIS supervisor — all verified via `ps` to be LIVE claude processes (lstart matches recorded start_time; none OS-dead), so none are reapable/suspendable under the dead-PID protocol and none may be killed (hard rule). This is a process leak: scheduled-task claude sessions are not exiting after completing. Not conduit-fixable (launchd/scheduling); belongs as an infra build to claude-pantheon (thread-reaper needs a live-but-hung-session policy, cf. reference_worker_loop_and_thread_arming runaway-worker class). No new closes/merges/routes this run.
-
-## Conduit run 2026-07-06T12:26Z
-Clean cycle. claude-home and claude-codex-standin inboxes both empty. Router: 35 open / 1053 closed — all open items belong to live recipient threads (claude-pantheon 20 via launchagent-wake, claude-assiduous/finalwishes/nexus/porch outbound notifications) or to `user` (2 owner-gated: SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — left open, not nagged). `sirsi router doctor --fix`: reaped 0 OS-dead (ADR-022 — none actually dead), wake pass 33 already-armed, 2 wake-unavailable recorded on the `user` items (agent "user" not registered — expected). Board republished (`router-board.json`/`.md`): no blockers, fabric healthy; one redundant loop-dead claude-home watcher (thr-4592a1731b333315) noted but claude-home inbox is covered by 3 other armed loop threads. PR sweep: pantheon 0, SirsiNexusApp 0, FinalWishes only #58 (binding-hold, missing Firestore rules for `optouts` — held per prior conduit review, do-not-merge, blocker already routed to claude-finalwishes via fresh inbounds). No dependabot PRs. Binary healthy, no drift sentinels. Nothing closed/merged/routed this cycle — an empty run is a good run.
-
-## Conduit run 2026-07-06T12:57:17Z
-Scheduled router-conduit-supervisor run (claude-home). Conduit queues (claude-home, claude-codex-standin) both empty — no review/farm-out work. Gemma triage over 35 open items surfaced only 1 ESCALATE, a parse-failure fallback on a `to: user` IAM-grant item (owner action, not conduit-closable). Ran `router doctor --fix`: 0 OS-dead reaped, wake pass 33 already-armed / 2 wake-unavailable (both `to: user` owner items — the SirsiNexusApp IAM grant and the Assiduous prod Stripe test-key; correctly not nagged). Refreshed router-board.json/.md. PR sweep: sirsi-pantheon and SirsiNexusApp have no open PRs; FinalWishes #58 is CLEAN but `binding-hold`-labeled, so left untouched. Board shows both CLI agents auth_ok=true (no auth blocker), only legacy daemons uninstalled (expected), current menubar+router-supervisor daemons installed+loaded — no confirmed owner-clearable blocker to escalate. Nothing closed/merged/routed. Note: my watcher thread thr-783bd6b7885d1d2c reads loop-dead per doctor, expected in a headless scheduled run — the 15-min cron cadence is claude-home's wake mechanism. Clean run.
-
-## Conduit run 2026-07-06T13:26:44Z
-Both conduit queues empty (claude-home, claude-codex-standin) — no review/informational items to work. Router: 36 open, all owned by live recipients (claude-pantheon 21, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, porch-and-alley 1, user 2) — their work, not the conduit's. Only open PR fabric-wide is FinalWishes #58 (do-not-contact suppression) — green/CLEAN but carries `binding-hold` (prior conduit blocker); left held for claude-finalwishes to clear, not merged. No pantheon/Nexus PRs open; PR #8/#32 untouched. Ran `router doctor --fix`: reaped 0 (no OS-dead), wake pass 34 already-armed + 2 wake-unavailable (both `user` items — no wake mechanism, expected). Re-armed the loop-dead watcher for thr-a80a11d1efb8a076 (owner pid 67892 alive, zero existing watchers) with a self-terminating bg heartbeat loop. Published router-board.json/.md — no confirmed blockers ("fabric healthy"); stranded inboxes = claude-pantheon (21, wakes via launchagent) + user (2, owner actions). No escalation created (two user items already open: SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — owner-gated, not nagged). Gemma model conf present (gemma-4-12B-it-8bit). Clean run.
-
-## Conduit run 2026-07-06T13:41Z
-Clean cycle. claude-home + claude-codex-standin queues both empty — no reviews to chop, no farm-outs. Router: 36 open, none to claude-home; stale set is 2 `to:user` owner actions (IAM grant, Assiduous prod Stripe test-key — left, not nagged, escalations already open) plus claude-assiduous(3)/claude-porch-and-alley(1) items whose threads are LIVE and armed (their work, left). PRs: sirsi-pantheon & SirsiNexusApp none; FinalWishes #58 carries `binding-hold` (prior conduit blocker) — not merged. `router doctor --fix`: reaped 0 (no OS-dead), wake pass 34 already-armed / 2 wake-unavailable (user, unregistered). Board refreshed — no blockers, fabric healthy; surfaced claude-pantheon(21, launchagent-woken) + user(2) stranded inboxes and thr-bc51c43ca3649f56 loop-dead (that live session must re-arm its own /loop; not fixable from this headless run). Binary present, no BINARY_MISSING sentinels.
-
-## Conduit run 2026-07-06T14:57Z
-Clean run. Queues empty for both claude-home and claude-codex-standin (0 open). No PRs mergeable: sirsi-pantheon and SirsiNexusApp have none; FinalWishes #58 carries `binding-hold` (conduit-flagged blocker) — left untouched. Router status: 37 open items, all outbound — 22→claude-pantheon (launchagent wake, not stranded), 7→claude-finalwishes, 3→claude-assiduous (already-routed response/ack/verdict items to live recipients), 2→user (owner actions: SirsiNexusApp IAM grant + Assiduous prod Stripe sk-test key — both left open, not nagged). `router doctor --fix`: reaped 0 OS-dead records, wake pass 35 already-armed / 2 wake-unavailable (the two user items — expected). Board published (0 confirmed blockers → no owner escalation). Gemma model resolved to gemma-4-12B-it-8bit. Response audit clean (no stranded responses). NOTE for next session: 43 "stale active" claude-home threads are NOT dead — `ps -o lstart` matches each record's `start_time` exactly (not recycled PIDs), started at precise 15-min intervals = lingering processes from prior runs of THIS scheduled task. Correctly NOT suspended (rule 3 = dead-PID only; doctor confirms 0 reapable). pgrep -f claude shows ~189 procs — a process-accumulation leak from the 15-min cadence worth watching, but not a router blocker and not safe to kill blindly.
-
-## Conduit run 2026-07-06T15:11Z
-Routine 15-min conduit pass. claude-home and claude-codex-standin inboxes both empty (nothing to review/farm). Router: 37 open across pantheon(22, wakes via launchagent), finalwishes(7), assiduous(3), nexus(2), porch(1), user(2 owner-actions, correctly wake-unavailable). Ran `router doctor --fix`: 0 reaped, 35 already-armed, 2 wake-unavailable (both `to: user`, agent not registered — owner actions, left open, not nagged). Re-armed the claude-home watcher for thr-e69b8b0f15899121 (0 processes existed; launched detached loop-proof heartbeat loop `~/.sirsi/claude-home-watcher.sh`, bounded ~24h, self-exits if thread deregisters) — inbox was empty so nothing was stranded, but keeps last_seen fresh. Published fresh router-board.json/.md (no confirmed blockers — fabric healthy; stranded inboxes = pantheon + user only). PRs: pantheon 0 open, nexus 0 open, FinalWishes #58 green but carries `binding-hold` (claude-home's own hold pending firestore optout rules per items 201422/204331) — NOT merged, correct. Response audit clean: every request-type item addressed to claude-home has a matching routed-back reply; all open `claude-home-*` items are outbound nudges/responses correctly awaiting their recipients. No owner escalation (no re-verified owner-clearable blocker). Empty-ish healthy run.
-
-## Conduit run 2026-07-06T16:12:36Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin — no open items). Router: 38 open / 1053 closed; the 2 stale >24h `to: user` items (SirsiNexusApp IAM grant, Assiduous prod Stripe sk-test key) remain open as owner actions — not nagged. Ran `router doctor --fix`: reaped 0 (ADR-022 OS-truth declined the 47 stale claude-home scheduled-task records as not OS-dead-confirmed — did NOT mass-suspend), wake pass 36 already-armed / 2 wake-unavailable recorded on the two `user` items. Board republished (`~/.sirsi/router-board.{json,md}`); claude `auth_ok=false` is the known cold-start flap (probe inconclusive, no logout signature) — NOT escalated per step 15. PRs: pantheon 0, SirsiNexusApp 0, FinalWishes #58 (do-not-contact suppression) carries the conduit `binding-hold` label — left held, not merged. Response audit: PR #58 bind verdict was delivered back to claude-finalwishes (item 20260705-191222-...response-bind-request-pr-58) — no stranded responses. No binary drift (no BINARY_MISSING sentinels). Nothing closed/merged/routed this run.
-
-## Conduit run 2026-07-06T16:26:43Z
-Clean run. claude-home and claude-codex-standin inboxes both empty (0 open). Router: 39 open items total, none for claude-home — all belong to live recipient threads (claude-pantheon 24 wake-via-launchagent, claude-assiduous/finalwishes/nexus/porch each with live armed workers) plus 2 `user` owner-action items (IAM grant for SirsiNexusApp deploy; Assiduous prod Stripe key is sk-test) left open per owner-gate rule, correctly marked wake-unavailable by `router doctor --fix`. Reaped 0 OS-dead thread records (nothing to suspend). Wake pass: 37 already-armed, 2 wake-unavailable. Published router-board.{json,md} — no blockers, fabric healthy. PRs: sirsi-pantheon and SirsiNexusApp have none open; FinalWishes #58 (do-not-contact suppression) carries `binding-hold` — left held per hard rule. No dependabot PRs anywhere. Two claude-home supervisor session threads show loop=dead but PIDs alive and heartbeats flowing (~23s); not re-armed since a one-shot scheduled run can't own a persistent /loop. No responses stranded — the stale →assiduous/→porch items are the fresh-inbound responses awaiting pull by their live threads. Empty run = good run.
-
-## Conduit run 2026-07-06T17:55Z
-Clean run. Binary healthy (no BINARY_MISSING sentinels). Both conduit queues empty — `sirsi router pull claude-home` and `claude-codex-standin` returned no open items. `router doctor --fix`: reaped 0 OS-dead records, wake pass woke 0 / 38 already-armed / 2 wake-unavailable (both `user`-recipient owner-action items — agent "user" not registered, by design). Router board republished (`~/.sirsi/router-board.{json,md}`): **no blockers, fabric healthy**; stranded inboxes are claude-pantheon (25 items, wakes via launchagent) and user (2 items, owner actions) — both expected. Two claude-home thread records show loop=dead (thr-771427e0a9672962, thr-e69b8b0f15899121) but claude-home's inbox is covered by 5 other armed live loops, so not stranded — no re-arm from this scheduled run. PR sweep: sirsi-pantheon and SirsiNexusApp have no open PRs; FinalWishes #58 is CLEAN but carries `binding-hold` (my own hold from 2026-07-05 for a real security gap — `optouts` collection lacks a Firestore write rule) so correctly not merged; no dependabot PRs. Response audit: PR #58 bind-request (closed 07-05T19:12) was answered and routed back to claude-finalwishes (191222 response + follow-up hold inbounds) — no stranded responses. No escalations (no re-verified owner-clearable blockers). Nothing closed/merged/routed this cycle.
-
-## Conduit run 2026-07-06T18:14:03Z
-claude-home conduit tick. Both conduit queues (claude-home, claude-codex-standin) empty — no review requests or informational items to work. Core action this run: healed a large accumulation of orphaned claude-home session threads. `sirsi router doctor --fix` reaped 0 OS-dead records (recorded PIDs alive/recycled, not OS-dead) but flagged 55 stale thread records; `sirsi thread reconcile --agent claude-home` then healed the whole lineage — dozens of stale-active records transitioned active→suspended and hard-killed records minted suspended successors (reaped_from). Router status: 40 open items, none to claude-home; stranded inboxes are claude-pantheon (25, armed via launchagent — its build queue) and user (2 already-open owner escalations: SirsiNexusApp IAM grant + Assiduous prod Stripe sk-test key). No new escalation created (rule 15 — one open item per blocker already exists). PRs: only FinalWishes #58 open — green + CLEAN but labeled binding-hold, left untouched; sirsi-pantheon and SirsiNexusApp have 0 open. Board republished (~/.sirsi/router-board.json + .md); no confirmed auth/daemon blockers (4 uninstalled launch agents are all legacy, superseded by ai.sirsi.horus.agent-router). Board generator's confirmed-blocker list clean. Noted: doctor flagged claude-home watcher thr-bd6ff6239d13a890 as loop-dead; not re-armed in this headless scheduled run (the 15-min scheduled task is itself the periodic consumer).
-
-## Conduit run 2026-07-06T19:25Z
-Routine conduit tick. claude-home + claude-codex-standin queues both empty — nothing to review/close. Router: 42 open, all belonging to other recipients (claude-pantheon 27 via launchagent wake, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, user 2). Ran `router doctor --fix`: 0 OS-dead reaped, wake pass 40 already-armed + 2 user items correctly marked wake-unavailable (owner actions — IAM grant + Assiduous prod Stripe test-key, both already open, not nagged). Published `~/.sirsi/router-board.{json,md}` — fabric healthy, zero blockers. PRs: pantheon none, NexusApp none, FinalWishes #58 is binding-hold (left). Two claude-home interactive threads (thr-e69b8b0f15899121, thr-9b465eb4d4909e48) show loop=dead — their own sessions must re-arm /loop; not a fabric blocker, no escalation. Gemma model.conf = gemma-4-12B-it-8bit (fits RAM budget). Closed/merged/routed nothing. Empty run = good run.
-
-## Conduit run 2026-07-06T19:55Z
-Clean cycle. claude-home + claude-codex-standin queues empty — no reviews to chop, nothing farmed to codex. PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 carries `binding-hold` (left untouched per hard rule). All worker threads (assiduous, porch-and-alley, finalwishes, nexus, horus-supervisor) 🟢 heartbeating; no OS-dead active threads to suspend. `router doctor --fix`: 0 woken, 40 already-armed, 2 wake-unavailable recorded on the two `to: user` owner-action items (iam-grant-needed-sirsinexusapp 3d19h; assiduous-prod-stripe-key sk_test 1d15h) — both left open for the owner, not nagged. Board published clean (no confirmed blockers). Two claude-home conduit threads show loop=dead (incl. watcher thr-3b803880c81127cf) — surfaced on board; durable re-arm belongs to the interactive session, not this ephemeral run. Empty run = good run.
-
-## Conduit run 2026-07-06T20:11:32Z
-claude-home / claude-codex-standin inboxes both empty — no reviews to first-chop. Binary healthy (no BINARY_MISSING sentinels). Router: 42 open / 1053 closed; all open items belong to other recipients (pantheon 27, finalwishes 7, assiduous 3, nexus 2, user 2). `router doctor --fix`: 12 live / 6 stale agents; reaped 0 OS-dead (conservative, ADR-022); wake pass 40 already-armed, 2 wake-unavailable recorded on the two `to: user` owner-action items (IAM grant, Assiduous Stripe key) — pantheon's 27 wake via launchagent (armed). Published router-board.json/md (0 auth_ok=false; 4 uninstalled launch-agents all legacy=true → no confirmed blocker → no escalation). Gemma resolver pinned mlx-community/gemma-4-12B-it-8bit. PRs: pantheon 0, Nexus 0, FinalWishes only #58 (binding-hold, left). Noted: 2 claude-home supervisor threads flag loop-dead watchers, but headless 15-min run is the effective conduit watcher and its inbox is empty — no starvation. No closes/merges/routes this cycle. Clean run.
-
-## Conduit run 2026-07-06T20:26Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — nothing to review or farm. Router: 43 open items, all outbound-to-recipient or owner-gated (claude-pantheon 28 wake via launchagent; user 2 = standing owner actions IAM-grant + Assiduous Stripe test-key, already escalated, not refreshed). Only open PR fabric-wide is FinalWishes #58 (DNC suppression); it still carries the conduit `binding-hold` because it writes `estates/{estateId}/optOuts/{address}` but touches NO firestore.rules file — blocker verified still live via `gh pr diff --name-only`; hold correctly stands, already routed twice to claude-finalwishes (thread alive/armed), not re-nudged. sirsi-pantheon & SirsiNexusApp: 0 open PRs. `router doctor --fix`: reaped 0 OS-dead (7 stale claude-home records not OS-confirmed-dead, left per ADR-022), 41 already-armed, recorded wake-unavailable on the 2 user items. Board republished (`~/.sirsi/router-board.{json,md}`) — blockers: none, fabric healthy. Two claude-home threads flagged loop-dead/NOT-ARMED (incl. this supervisor thread) but claude-home inbox is empty so nothing stranded; no ephemeral watcher spawned (would die at run-end; 15-min scheduled task is the durable consumer). No PID suspended (no verified-dead cmdlines). Binary healthy, no drift sentinels.
-
-## Conduit run 2026-07-06T20:43:00Z
-Both conduit queues empty (claude-home, claude-codex-standin — no open items). Router: 43 open items, all addressed to other recipients (claude-pantheon 28, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, claude-porch-and-alley 1, user 2) — their work, not conduit-closable. Suspended 8 stale `claude-home surface=claude` scheduled-run threads (pid=NONE, idle 900–9035s incrementing on the 15-min cadence — prior ephemeral runs left marked active; suspend is a soft state change, no PID to protect). Ran `router doctor --fix`: 41 already-armed, 0 woken, 2 wake-unavailable (both `user` owner-action items — no wake mechanism, correct). Published router-board.json/.md. No confirmed owner-clearable blocker: agent_health auth_ok==false count 0; the only uninstalled launch agents are all legacy:true (deprecated), while menubar + router-supervisor daemons are installed/loaded/healthy. PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes only #58 (binding-hold, claude-home's own hold pending optouts Firestore rules by claude-finalwishes) — correctly left. Response-audit clean: recent claude-home items are all outbound replies already routed as fresh inbounds. No escalation, no merge, no farm-out this cycle. Emitted heartbeat for watcher thread thr-f2de5fb44e683cec; did not spawn a persistent /loop in this ephemeral scheduled session (would die on session-end and recreate loop-dead records).
-
-## Conduit run 2026-07-06T20:56:06Z
-Clean run. claude-home and claude-codex-standin queues both empty — no reviews to first-chop, no SME farm-outs. Router: 43 open / 1053 closed; all 43 open items belong to other recipients (claude-pantheon 28, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, claude-porch-and-alley 1, user 2) — their work, not the conduit's. `sirsi router doctor --fix` ran the wake pass: 0 woken, 41 already-armed, 2 recorded wake-unavailable (the two `to: user` owner items — SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — both pre-existing owner escalations, left open, not nagged). Two claude-home watcher threads (incl. thr-42e32066a31befba) reported loop-dead; deferred to an interactive session since a scheduled run can't persist a /loop. PRs: pantheon 0, Nexus 0, FinalWishes 1 (#58, my own binding-hold pending optouts Firestore rules — claude-finalwishes live, request-changes chain already routed). No dependabot PRs. Threads all healthy (no dead-PID workers); board republished to ~/.sirsi/router-board.{json,md}. Nothing closed/merged/escalated new this cycle.
-
-## Conduit run 2026-07-06T21:26Z
-Clean supervisory cycle. Queues for claude-home and claude-codex-standin both empty (0 open). Binary healthy, no BINARY_MISSING drift sentinels. Router: 44 open / 1053 closed — all open items are notifications/holds addressed to live peer agents (claude-finalwishes×7, claude-pantheon×29 wakes via launchagent, claude-assiduous×3, claude-nexus×2, claude-porch-and-alley×1) plus 2 owner-gated `user` items (SirsiNexusApp IAM grant 3d20h, Assiduous prod Stripe test-key 1d17h) — left open, not nagged. PR sweep: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 carries my own `binding-hold` (missing Firestore rules for optouts) — correctly held, not merged. Ran `router doctor --fix` (wake pass: 0 woken, 42 already-armed, 2 wake-unavailable on the user items — expected). Published router-board.json+md: **blockers none — fabric healthy**. Two claude-home peer threads (thr-e69b8b0f15899121, thr-9b5a09c6bfe4c529) show loop=dead but os=alive real PIDs → not suspended (PID-alive rule); emitted a bounded heartbeat for the supervisor thread thr-9b5a09c6bfe4c529 to clear its loop-dead flag for this tick rather than spawn an orphan background loop. Gemma triage script returned a parse failure this cycle (surfaced only the pre-existing IAM user item) — noted, no action. Empty run = good run.
-
-## Conduit run 2026-07-06T21:41:07Z
-Clean run. claude-home and claude-codex-standin queues both empty — no reviews or SME farm-outs pending. Router: 44 open items, all addressed to other recipients (claude-pantheon 29 via launchagent, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, user 2) — their work, not conduit-closable. Ran `router doctor --fix`: reaped 0 OS-dead records, 42 threads already-armed, 2 wake-unavailable recorded (both → user owner actions: SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — already-open escalations, not re-nagged). Doctor flagged 2 live claude-home threads loop-dead (thr-e69b8b0f15899121, thr-95e2e7ee7f37cfab) — the interactive session must re-arm its own /loop watcher; not spawned from this scheduled run. PRs: pantheon + SirsiNexusApp none open; FinalWishes #58 carries conduit binding-hold (optouts missing Firestore rules) awaiting the live claude-finalwishes thread — not merged. Republished router-board.json/.md. No items closed/merged/routed.
-
-## Conduit run 2026-07-06T21:56:21Z
-Clean cycle. Binary healthy (24MB, no BINARY_MISSING sentinels). Both conduit queues empty (claude-home, claude-codex-standin) — nothing to review or farm. Router: 44 open / 1053 closed; all stale (>24h) items are addressed to other recipients (claude-finalwishes ×7 mostly the PR #58 DNC-suppression binding-hold thread, claude-pantheon ×29 incl. self-generated sweep-probes, claude-nexus, claude-assiduous) whose worker threads are all live/armed, plus 2 owner-action `to: user` items (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) left un-nagged. PRs: pantheon 0, Nexus 0, FinalWishes 1 (#58, my own binding-hold for missing Firestore optouts rules — correctly held, not merged). `router doctor --fix`: reaped 0, wake pass 42 already-armed / 2 wake-unavailable (the user items, expected). Board republished — no confirmed blockers ("fabric healthy"); stranded inboxes = claude-pantheon (wakes via launchagent) + user. Two redundant loop-dead claude-home watcher threads noted but harmless (4 sibling loops alive+armed, claude-home inbox empty). No closes/merges/routes. Empty run = good run.
-
-## Conduit run 2026-07-06T22:11:19Z
-Clean run. claude-home and claude-codex-standin queues both empty — no review requests to chop, nothing to farm to codex. Router: 44 open / 1053 closed; all 44 open are either recipients' own actionable work (claude-pantheon 29 incl. self sweep-probes, claude-finalwishes 7 = my own already-routed PR-58 holds, claude-assiduous/nexus/porch responses) or 2 `to: user` owner actions (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) left open and un-nagged. All agent worker threads (assiduous, finalwishes, porch, nexus, homebrew, horus-supervisor) alive + armed. Two claude-home interactive `claude`-surface threads (thr-e69b8b0f15899121, thr-c9761c2b9665c747) report loop=dead — interactive sessions to re-arm their own /loop on next SessionStart; not blind-spawnable from this headless cron; 0 OS-dead records so nothing reaped. router doctor --fix: 0 woken, 42 already-armed, 2 wake-unavailable (the user items). Board republished (router-board.json 12477 bytes + .md) — no confirmed blockers, fabric healthy. PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes only #58 (binding-hold, my own — optouts missing Firestore rules, awaiting claude-finalwishes). No merges, no closes, no escalations. Empty run = good run.
-
-## Conduit run 2026-07-06T22:25Z
-Clean run — an empty run is a good run. Both conduit queues (claude-home, claude-codex-standin) had zero open items. sirsi binary healthy, no BINARY_MISSING sentinels. Router: 45 open / 1053 closed; all 45 open items belong to OTHER recipients (claude-pantheon 30 wake via launchagent, claude-finalwishes 7, claude-nexus/assiduous, 2 → user) — nudge/board territory, not conduit work. `router doctor --fix` reaped 0 OS-dead records, 43 already-armed, 2 wake-unavailable (both → user, expected: user has no wake mechanism by design). Board republished (router-board.json/md) — zero confirmed blockers. Threads all live/heartbeating; no dead-PID reaps. PRs: pantheon 0 open, Nexus 0 open, FinalWishes only #58 (do-not-contact suppression). Re-verified #58 source-deep: still labeled `binding-hold`, MERGEABLE + all checks green, BUT the diff adds client-side `setDoc`/`deleteDoc` to `estates/{estateId}/optOuts/{address}` with NO firestore.rules entry for that subcollection (no rules file in the changeset). Hold STANDS — security gap unresolved. claude-finalwishes owns the fix, thread alive (thr-9346f11b0d65b735, active), already notified 6× — did NOT send a 7th nudge (would be nagging; board surfaces it). 2 owner escalations already open (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) — not duplicated. No items closed/merged/routed; no stranded responses.
-
-## Conduit run 2026-07-06T23:13:15Z
-Clean cycle — both conduit queues empty (claude-home 0, claude-codex-standin 0), so no
-review/farm-out/response work. Thread-police: the 10 "active+stale" claude-home records
-(idle 973s–8934s, spaced ~15min) were verified against process start times — each proc
-lstart matched its thread `started_at` within ~2s (local UTC−4), confirming they are the
-genuine lingering prior scheduled-task processes, still resident and alive, NOT recycled
-PIDs and NOT dead. Per the PID-alive-is-not-kill-evidence rule they were left untouched
-(suspend only reaps dead PIDs; doctor reaped 0 OS-dead). Nudge pass (`router doctor --fix`):
-43 channels already-armed, 2 wake-unavailable — both `to: user` owner actions (SirsiNexusApp
-IAM grant 3d22h; Assiduous prod Stripe test-key) left open, not nagged/duplicated. Board
-republished (`~/.sirsi/router-board.json/.md`, 0 confirmed blockers — no auth flaps to
-re-verify). PR sweep: only FinalWishes #58 open (binding-hold, DNC-suppression optouts
-firestore-rules gap) — recipient claude-finalwishes thread live, left held per label; no
-pantheon/nexus PRs open; codex-held #8/#32 not present. No escalation warranted.
-
-## Conduit run 2026-07-06T23:40Z
-Clean sweep. claude-home + claude-codex-standin queues both empty; no BINARY_MISSING sentinels. Router: 46 open / 1053 closed — all stale (>24h) items are claude-home outbound already-sent (mostly FW #58 DNC-suppression hold nags), owner-gated `user` items (SirsiNexusApp IAM grant, Assiduous sk-test prod key), or claude-pantheon self-addressed sweep-probes; nothing addressed to claude-home. `router doctor --fix`: 0 woken, 44 already-armed, 2 wake-unavailable recorded on the two `user` items (agent "user" unregistered — by design). Board published (~/.sirsi/router-board.{json,md}) — fabric healthy, no blockers, 2 stranded-by-design inboxes (claude-pantheon 31 via launchagent, user 2 owner). Only open PR fabric-wide: FinalWishes #58 — CLEAN/green but carries claude-home's own `binding-hold` (optouts missing firestore rules); left held for claude-finalwishes to land the rules, not merged. Threads: doctor reaped 0 OS-dead (OS-truth); two claude-home threads (thr-448f6ec0eaaf7c86, thr-e69b8b0f15899121) report loop=dead/NOT-ARMED with zero watcher procs, but the claude-home inbox is empty and served by 4 other armed loop=alive watchers — benign duplicate registrations, not re-armed from this ephemeral scheduled run. Response audit clean: all inbound requests to claude-home have fresh responses routed back. No closes/merges/routes this cycle.
-
-## Conduit run 2026-07-06T23:56:17Z
-claude-home conduit supervisor pass. Both my queues (claude-home, claude-codex-standin) empty — nothing to review or farm. Binary healthy, no BINARY_MISSING sentinels. `router status`: 46 open / 1053 closed, none addressed to claude-home; all open items belong to other recipients (claude-pantheon 31, claude-finalwishes 7, claude-assiduous 3, claude-nexus 2, user 2). `router doctor --fix`: reaped 0 OS-dead (stale thread records are live sessions, not dead), wake pass 44 already-armed / 2 wake-unavailable (both `to: user` owner-gated — IAM grant for SirsiNexusApp deploy + Assiduous prod Stripe test-key; left open, no nag, agent "user" has no wake mechanism by design). Flagged but not acted: thr-e69b8b0f15899121 and thr-9a0a521209fc91b6 report loop-dead (watcher /loop for an interactive claude-home session; a scheduled-task run doesn't spin a doomed loop). PRs: pantheon 0 open, Nexus 0 open, FinalWishes only #58 (binding-hold, DNC suppression missing Firestore optouts rules — awaiting claude-finalwishes, correctly not merged). Board republished (~/.sirsi/router-board.json + .md). No closes/merges/routes this cycle — clean run.
-
-## Conduit run 2026-07-07T00:56Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no reviews to chop, no codex farm-outs. Only open PR across sirsi-pantheon/FinalWishes/SirsiNexusApp is FinalWishes #58 (do-not-contact suppression), which correctly carries the `binding-hold` label from a prior source-deep review (missing Firestore rules for `optouts`); left held, not merged. `router doctor --fix`: pantheon's 33 items wake via launchagent (armed); 2 `user` items (Nexus deploy IAM grant, Assiduous prod Stripe test-key) marked wake-unavailable — owner actions, left un-nagged. All product worker threads alive+armed; two `loop=dead` claude-home scheduled-task sessions left as-is (claude-home inbox empty + 4 armed watchers cover it; doctor reaped 0 by OS-truth). Board republished (no blockers); Gemma model current at gemma-4-12B-it-8bit. No binary-missing sentinels. No closed-request responses stranded.
-
-## Conduit run 2026-07-07T01:40Z
-Empty-run (healthy). claude-home & claude-codex-standin queues both empty; no binary-drift sentinels. `router doctor --fix`: 0 reaped, 47 already-armed, 2 wake-unavailable (both `user` owner-action items — not naggable). Board republished (`~/.sirsi/router-board.json/.md`) — **no confirmed blockers, fabric healthy**; 49 pending = 34 pantheon (wakes via launchagent) + 7 finalwishes (my PR-58 DNC holds, FW thread alive) + others, all owned by live recipients. PRs: sirsi-pantheon none, NexusApp none, FinalWishes #58 carries `binding-hold` (my optouts-firestore-rules blocker) — left unmerged per hold. Two claude-home threads (thr-e69b8b0f15899121, thr-dc9df599a812faa9) report loop-dead/wake.pid-absent but are OS-alive interactive `claude` surfaces with an empty inbox — no stranded work; left for the agent to self-rearm rather than churn a catalyst that can't restart a dead /loop. No escalations (no re-verified owner-clearable blocker). Gemma model resolver ran.
-
-## Conduit run 2026-07-07T01:56:26Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no first-chop reviews pending. `router doctor --fix`: fabric healthy, 0 OS-dead reaped, 47 items already-armed, 2 `user` items correctly marked wake-unavailable (owner actions, not nagged). Board republished (`~/.sirsi/router-board.{json,md}`) — no blockers, 49 pending across claude-pantheon (34, wakes via launchagent — the `P-router-board` build) and user (2). PR sweep: sirsi-pantheon and SirsiNexusApp have zero open PRs; FinalWishes #58 (do-not-contact suppression) re-verified source-deep — client writes to `estates/*/optOuts` via setDoc/deleteDoc but `firestore.rules` is NOT in the changed files, so the missing-rule blocker stands; `binding-hold` kept, requester already notified. No threads suspended (idle claude-home threads are pid-alive, not OS-dead; two loop-dead records are cosmetic — inbox empty, siblings armed). No escalation (no new owner-clearable blocker). Nothing closed/merged/routed.
-
-## Conduit run 2026-07-07T02:12:23Z
-Clean run. claude-home + claude-codex-standin inboxes both empty — no reviews/farm-outs. Router: 49 open (claude-pantheon 34 mostly sweep-probe self-items, claude-finalwishes 7 = PR#58 DNC hold chain, user 2, others). No dead-PID threads to suspend: all 23 active threads idle>10min verified to live `claude-code` PIDs (resident CLI/conduit sessions, not recycled — left untouched per PID-alive rule). PRs: pantheon 0, nexus 0, FW only #58 (binding-hold, DNC suppression awaiting optouts firestore rules — not merged/rebased). Ran `router doctor --fix` (wake pass: 47 already-armed, 2 wake-unavailable re-recorded on the two user items — both already-open owner escalations, not duplicated). Published router-board.json/md — no confirmed auth blockers (fabric healthy). Noted 2 conduit-watcher threads (thr-e69b8b0f15899121, thr-a02d192f42667b8d) report loop=dead but claude-home inbox is empty so nothing stranded. No responses stranded (only closed claude-home request is the 2026-06-11 codex protocol-ack). Nothing closed/merged/routed.
-
-## Conduit run 2026-07-07T02:26:40Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. Router: 50 open / 1053 closed — all open items belong to other live threads (claude-pantheon self sweep-probes, claude-finalwishes PR-58 binding-hold chain) or are `to: user` owner actions (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key); left untouched, no nag. No confirmed board blockers. Open PRs: only FinalWishes #58 (carries the conduit's own binding-hold for optouts-missing-Firestore-rules → not merged, owned by live claude-finalwishes); pantheon/Nexus clean; no dependabot. Corrective action: `router doctor --fix` flagged watcher thread thr-c24540afc4a5f4a6 as loop-dead — earlier pgrep matched only transient heartbeat subprocs; re-armed a real detached watcher loop (heartbeat + pull every 5min). Ran doctor --fix (0 reaped, 48 already-armed, 2 wake-unavailable on the user items as expected) and refreshed router-board.json/md.
-
-## Conduit run 2026-07-07T02:41:12Z
-Clean run. claude-home + claude-codex-standin queues empty — nothing to review/farm. Router: 50 open, all correctly attributed (pantheon×35 = own sweep-probes → launchagent wake; claude-home→finalwishes/nexus/assiduous items are delivered responses in recipients' inboxes, not stranded on me; 2 user items = owner actions, left un-nagged). PRs: pantheon/Nexus none open; FinalWishes #58 binding-hold (DNC suppression missing optouts Firestore rules) held correctly, request-changes already routed to live claude-finalwishes thread. router doctor --fix: wake pass 48 already-armed, 2 user items wake-unavailable (by design), reaped 0 OS-dead. Board republished, zero confirmed blockers → no escalation. No BINARY_MISSING sentinels. Nothing closed/merged/routed this cycle.
-
-## Conduit run 2026-07-07T02:56:27Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no review requests to first-chop. Router: 50 open / 1053 closed; the 35 claude-pantheon items are its own sweep-probes/heartbeats (armed via launchagent, not stranded), finalwishes/nexus/assiduous items are actionable work for those live recipient threads. `router doctor --fix`: reaped 0 OS-dead, wake pass 48 already-armed / 2 wake-unavailable (the 2 `→ user` owner-gated items: SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — left un-nagged). Board republished (`~/.sirsi/router-board.json`, confirmed_blockers=null → no escalation). PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 correctly `binding-hold` (optouts missing Firestore rules; owner-thread claude-finalwishes alive with nudges already routed) — not merged. No dependabot PRs. No binary-drift sentinels. Step-12 reply-back audit: all recent claude-home items are outbound notifications correctly awaiting recipients — no orphaned responses. Nothing closed/merged/routed by the conduit this cycle.
-
-## Conduit run 2026-07-07T03:11:34Z
-Both conduit queues empty (claude-home, claude-codex-standin — nothing to review or farm). Router: 50 open / 1053 closed; open items are claude-pantheon (35, mostly its own sweep-probes + 1 registry-police, wakes via launchagent), claude-finalwishes (7, the PR #58 DNC-suppression binding-hold thread — recipient alive, has the ball), claude-nexus (2), claude-assiduous (3), porch-and-alley (1), and user (2 owner-action escalations: SirsiNexusApp deploy IAM grant + Assiduous prod Stripe sk-test — left open, not nagged). `router doctor --fix`: reaped 0 OS-dead records (26 stale claude-home records from prior supervisor runs remain — ADR-022 OS-truth won't reap them, no PID map to confirm dead; not manually suspended per PID-alive safety rule), wake pass 0 woken / 48 already-armed / 2 wake-unavailable (the two `user` items — no wake mechanism, by design). Board published (`router-board.{json,md}`): no confirmed blockers, fabric healthy, all live threads OS-alive. PR sweep: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes only #58 (binding-hold — not merged). No binary-drift sentinels. Heartbeat emitted for supervisor thread thr-8dc8596315c67aa7. Clean run — nothing closed, merged, or routed.
-
-## Conduit run 2026-07-07T03:25Z
-Queues clean: claude-home and claude-codex-standin both empty (no first-chop/farm-out needed). Ran `router doctor --fix` (nudge pass): 0 OS-dead reaped, 49 already-armed, 2 wake-unavailable recorded (the two `to: user` owner-gated items — SirsiNexusApp IAM grant, Assiduous prod Stripe sk-test key; left un-nagged). Stranded inboxes surfaced by design: claude-pantheon 36 (mostly self-addressed sweep-probe keepalives, wakeable via launchagent), user 2 (no wake mechanism). Board republished (`router-board.json`+`.md`). PR sweep: Pantheon/Nexus zero open PRs; FinalWishes #58 (do-not-contact suppression) is green+MERGEABLE but re-verified source-deep — diff touches functions/index.js, estate-actions.ts, contacts.tsx, docs, but **NOT firestore.rules**, while the client writes directly to `estates/{estateId}/optOuts/{address}` via setDoc/deleteDoc. Binding-hold CONFIRMED still valid (missing rule → default-deny feature-dead OR catch-all cross-tenant write hole); did NOT merge. finalwishes thread alive and already holds 6 hold/request items on this exact blocker — no duplicate nudge added. No closes/merges/routes this run.
-
-## Conduit run 2026-07-07T05:41:27Z
-Clean, healthy run. Both conduit queues empty (claude-home, claude-codex-standin — no items to verdict/farm). Router: 53 open / 1053 closed; no items addressed to claude-home. Ran `router doctor --fix`: reaped 0 (no OS-dead records), wake pass 51 already-armed / 0 woken / 2 wake-unavailable — the 2 unavailable are `to: user` owner actions (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) with no wake mechanism, correctly left open, not nagged. claude-pantheon's 38 stranded items back their launchagent and were nudged. Published router-board.json/.md: **0 confirmed blockers, 0 stranded** — no owner escalation warranted. PR sweep: pantheon & SirsiNexusApp have no open PRs; FinalWishes #58 carries `binding-hold` (the optouts-Firestore-rules hold claude-home placed for the finalwishes thread) — left held per hard rules. All active threads heartbeating <1min idle; suspended threads already suspended; no binary-drift sentinels. Heartbeat re-emitted for watcher thr-b103d096a2215358 (doctor flagged loop-dead but its inbox is empty — nothing stranded). No closes/merges/farms this run.
-
-## Conduit run 2026-07-07T05:55Z
-Empty-but-verified run. Both conduit queues clean (claude-home, claude-codex-standin — 0 open). No binary-drift sentinels. Open PRs: sirsi-pantheon 0, SirsiNexusApp 0, FinalWishes only #58 (binding-hold → not merged, correct). `router doctor --fix` reaped 0 OS-dead records, wake pass 51 already-armed / 2 wake-unavailable (the two `to: user` owner-action items — no wake mechanism, left un-nagged). Board published (`~/.sirsi/router-board.{json,md}`): fabric healthy, no blockers. Stranded inboxes surfaced (not conduit work): claude-pantheon 38 (launchagent-wakeable), user 2 (owner actions). Continuity flag: two claude-home threads report `loop=dead` on the board — thr-5b7e7b0f663d2082 and thr-e69b8b0f15899121; a matching watcher proc exists for …082 so no re-arm per idempotency; the interactive claude-home session should re-arm its /loop. Stranded-response audit: none. Gemma triage produced one parse-failure ESCALATE on the `to: user` IAM item — not a real escalation, left open. Nothing closed/merged/routed by the conduit.
-
-## Conduit run 2026-07-07T06:11:58Z
-Both conduit queues (claude-home, claude-codex-standin) empty. Router: 53 open / 1053 closed;
-open skew is claude-pantheon (38 — mostly hourly self-addressed sweep-probe noise) whose two
-threads are both SUSPENDED but launchagent-wakeable, so surfaced via board, not worked. All other
-stale items belong to live recipient threads (assiduous, finalwishes, nexus, porch-and-alley) or
-owner-gated `user` items — left in place, no nag. PRs: sirsi-pantheon & NexusApp none open;
-FinalWishes #58 carries `binding-hold` (missing Firestore optout rules) — left for claude-finalwishes.
-Ran `router doctor --fix` (0 OS-dead reaped, 51 already-armed, 2 user items → wake-unavailable) and
-republished router-board.json/md. No confirmed owner-clearable blockers: both CLIs auth_ok=true;
-all installed=false launch agents are legacy. Nothing escalated. Doctor flagged own watcher
-thr-fcc8bd29ca203c56 loop-dead — that is the interactive claude-home session's re-arm, not this
-ephemeral scheduled run. Empty-ish run, threads healthy.
-
-## Conduit run 2026-07-07T06:55Z
-Empty-queue run. claude-home + claude-codex-standin inboxes both clean — nothing to first-chop or farm to codex. Router: 54 open, all to live recipients (pantheon 39 mostly self-directed sweep-probes; finalwishes 7) or the 2 standing owner items. Ran `router doctor --fix`: reaped 0 OS-dead, wake pass 52 already-armed / 2 wake-unavailable (both `→ user` owner actions, correctly not nagged); pantheon's 39 wake via launchagent. Published fresh router-board.json/.md — 0 auth_ok==false, no confirmed owner-clearable blocker, so no new escalation (existing 2 user items left untouched). PRs: only FW #58 open — re-verified my binding-hold still valid (diff still ships no firestore.rules for the `optouts` collection), left held, not merged. No pantheon/Nexus PRs, no dependabot. Closed/merged/routed nothing.
-
-## Conduit run 2026-07-07T07:40Z
-claude-home + claude-codex-standin queues both empty — no first-chop reviews or farm-outs needed this cycle. Router: 55 open / 1053 closed; 40 of the open are claude-pantheon's own hourly `sweep-probe` self-items (not conduit-actionable) and the rest are already-routed response-inbounds to finalwishes/nexus/assiduous plus 2 owner (`to: user`) items (IAM grant, Assiduous prod Stripe test-key) left open by design. Ran `router doctor --fix`: reaped 0 OS-dead records (all stale records still OS-alive), wake pass 53 already-armed / 2 wake-unavailable (the 2 user items — agent "user" unregistered, expected). Published router-board.json/.md — fabric healthy, no blockers. PRs: pantheon 0 open, SirsiNexusApp 0 open, FinalWishes only #58 (do-not-contact suppression). Source-deep re-verified #58: green + CLEAN + MERGEABLE but its diff adds no firestore.rules and the branch's rules enumerate every estates/* subcollection explicitly with NO optOuts block and NO {document=**} wildcard — so client setOptOut/removeOptOut writes to estates/{id}/optOuts/{addr} hit default-deny. Binding-hold is VALID; kept. Fix belongs to claude-finalwishes (live+armed thread thr-9346f11b0d65b735); 6 hold/request notices already open in its inbox, so no new nag routed. No new /loop watcher spawned for claude-home — inbox is over-watched (4 live armed loops) and thread accretion is already high; avoided worsening it. Binary healthy, no BINARY_MISSING sentinels. codex-held PR #8/#32 untouched.
-
-## Conduit run 2026-07-07T07:55Z
-Clean sweep. claude-home + claude-codex-standin queues both empty (no items to review/farm). `router doctor --fix` ran the wake pass: 0 woken, 53 already-armed, 2 owner `to: user` items marked wake-unavailable (IAM-grant + Assiduous Stripe test-key — both owner actions, left open, not nagged). Only open PR fabric-wide is FinalWishes #58 (do-not-contact suppression), still `binding-hold` for missing Firestore optouts rules — correctly held, not merged. All active-status threads verified PID-alive (none suspended). Board refreshed (router-board.json/.md) — fabric healthy, no confirmed blockers, 40 claude-pantheon + 2 user items stranded-by-design (interactive agents not open; pantheon wakes via launchagent). No closes/merges/routes. Empty run = good run.
-
-## Conduit run 2026-07-07T08:11Z
-Clean run. claude-home + claude-codex-standin queues both empty — no reviews or responses owed. Binary healthy (no BINARY_MISSING sentinels), gemma model resolver ran clean. `router doctor --fix`: 18 agents / 12 live / 46 stale; reaped 0 OS-dead, wake pass woke 0 / 53 already-armed / 2 wake-unavailable (both `user` items — owner actions, not registered as wakeable agents). Router board republished (`~/.sirsi/router-board.{json,md}`) — blockers: none, fabric healthy. Stranded: claude-pantheon 40 items (≈30 self-addressed sweep-probes + a few real: registry-police A27, router-triage-gap, sirsi-messaging PR #117) — its interactive thread is suspended, wakes via launchagent; not conduit-closable. 2 `user` items left open (IAM grant for SirsiNexusApp deploy; Assiduous prod Stripe key is sk-test) — owner-gated, not nagged. PRs: pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 carries binding-hold (missing Firestore rules for optouts) — left held per protocol. Response-back protocol honored (4 claude-home response inbounds routed to requesters). Note: two live claude-home threads (thr-f68e708f200c77bd, thr-e69b8b0f15899121) show loop=dead/NOT-ARMED — surfaced honestly on the board; claude-home inbox is empty so nothing is stranded by it. No merges/closes/routes this run.
-
-## Conduit run 2026-07-07T08:27:03Z
-Clean run. claude-home + claude-codex-standin queues empty — no reviews/responses due. No open PRs in pantheon or Nexus; FinalWishes #58 remains binding-hold (missing optouts Firestore rules) — not merged. Board refreshed (router-board.json/.md); zero confirmed blockers (fabric healthy). Stranded inboxes are claude-pantheon (41 self sweep-probes, launchagent-woken) and user (2 owner actions: SirsiNexusApp IAM grant, Assiduous prod Stripe key) — both expected, left open, not nagged. router doctor --fix reaped 0 OS-dead records (ADR-022 conservative); 47 stale claude-home records are prior conduit runs, deferred to the reaper rather than bulk-suspending unverified PIDs. No escalations opened.
-
-## Conduit run 2026-07-07T08:40Z
-Clean run. claude-home + claude-codex-standin queues empty. No mergeable PRs: pantheon/NexusApp 0 open; FinalWishes #58 correctly held on `binding-hold` (optouts Firestore rules still owed by claude-finalwishes) — not merged. All 56 open router items belong to other live recipients (pantheon sweep-probes ×40, finalwishes hold-chain, nexus/assiduous) or `user` (2 owner actions). `router doctor --fix`: 0 woken, 54 already-armed, 2 wake-unavailable (the two `→ user` items, no wake mechanism by design). Board refreshed (blockers: none — fabric healthy). Two claude-home sessions report loop=dead but PID-alive (82487, 48154) → not reapable, owning session must self-re-arm; no owner-clearable blocker, so no escalation.
-
-## Conduit run 2026-07-07T08:57:14Z
-Clean run. claude-home and claude-codex-standin queues both empty — no reviews to chop, nothing to farm to codex. Ran `router doctor --fix`: 0 OS-dead records reaped, wake pass = 54 already-armed + 2 wake-unavailable (both `→ user` owner actions: SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — correctly left open, not nagged). Open PRs: Pantheon 0, Nexus 0, FinalWishes only #58 (my own `binding-hold` for optouts missing Firestore rules — left held). Refreshed router-board.json/.md. No confirmed owner-clearable blocker: all agent_health auth_ok=true; the 4 uninstalled launch agents are all legacy:true (superseded by ai.sirsi.horus.agent-router, installed+loaded); claude-pantheon's 41-item inbox (mostly self-addressed sweep-probe noise) is launchagent-wakeable. Emitted heartbeat for watcher thr-298211cd5c1e6461. No escalation.
-
-## Conduit run 2026-07-07T09:41:43Z
-Clean cycle. claude-home and claude-codex-standin queues both empty — no reviews, no farm-outs. Router: 57 open items, none for me (42 are claude-pantheon self-addressed sweep-probes waking via launchagent; the rest are outbound responses/holds already delivered to finalwishes/nexus/assiduous plus 2 owner-gated user items). PRs: pantheon 0 open, Nexus 0 open, FinalWishes #58 correctly held (binding-hold: missing firestore optouts rule — hold already routed to claude-finalwishes). `router doctor --fix` ran the wake pass (0 woken, 55 already-armed, 2 wake-unavailable on the unregistered "user" items — expected). Board republished: **no confirmed blockers (fabric healthy)** → no escalation. Two claude-home interactive threads (thr-e69b8b0f15899121, thr-5acf7e5bfe758d0b) are OS-alive but loop-dead — not suspend candidates (PID alive); their sessions must re-arm their own /loop. No OS-dead actives to reap. Gemma model resolver ran. Empty run = good run.
-
-## Conduit run 2026-07-07T09:56:55Z
-Empty-clean conduit cycle. claude-home + claude-codex-standin queues both empty; nothing to close/route. `router doctor --fix` reaped 0 (OS-truth), wake pass 55 already-armed, 2 wake-unavailable (both `to: user` owner actions: SirsiNexusApp IAM grant + Assiduous prod Stripe test-key — already open, not duplicated). Stranded inboxes: claude-pantheon (42, launchagent-wakeable) + user (2, no wake by design). All agent threads green or correctly suspended; no BINARY_MISSING sentinels; binary healthy. Source-deep re-verified FinalWishes PR #58 (DNC suppression): checks CLEAN but it adds direct client `setDoc`/`deleteDoc` to `estates/{id}/optOuts/{addr}` with NO `firestore.rules` change — binding-hold re-confirmed valid (client writes would be default-deny or insecure). Held; claude-finalwishes (live, armed) owns the fix with 6 open hold notices already pending — no 7th nudge. Board + heartbeat refreshed; no confirmed auth/daemon blockers.
-
-## Conduit run 2026-07-07T10:55Z
-Clean run. claude-home and claude-codex-standin inboxes both empty — no reviews or responses pending. PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 remains correctly held (binding-hold: optouts missing Firestore rules; hold notices already routed to live claude-finalwishes thread thr-9346f11b0d65b735). Ran `router doctor --fix`: 56 watchers already-armed, 0 woken, reaped 0 OS-dead (all thread PIDs alive per ADR-022), 2 `user` items recorded wake-unavailable (owner-gated: SirsiNexusApp IAM grant, Assiduous prod Stripe test-key — both already open, not re-escalated). Refreshed router-board.json/.md. Gemma model resolver clean. No BINARY_MISSING sentinels. Noted: router doctor flags this thread's /loop watcher as loop-dead — expected in a non-interactive scheduled run; fleet watchers remain armed.
-
-## Conduit run 2026-07-07T11:42:15Z
-Clean run. claude-home and claude-codex-standin queues both empty — no reviews to chop, no SME farm-outs. Router: 59 open, all for other recipients (44 claude-pantheon self sweep-probes wake via launchagent; 7 claude-finalwishes PR-58 hold items; 3 assiduous; 2 nexus; 1 porch; 2 owner-gated `user` items — IAM grant for Nexus CI + Assiduous prod stripe sk-test key — left open, not nagged). PRs: only FinalWishes #58 open and it carries the binding-hold label (missing Firestore rules for optouts — real blocker, finalwishes notified 7×); nothing mergeable in pantheon/FW/nexus. `router doctor --fix`: reaped 0 OS-dead, wake pass 57 already-armed / 0 woken / 2 wake-unavailable recorded on the user items (agent "user" unregistered = expected). Two claude-home threads (thr-e69b8b0f15899121, thr-fbdd4bdb2918f0fd) are OS-alive but loop=dead — surfaced on the board as NOT ARMED; they must re-arm from their own interactive sessions. Board published (`router-board.json/md`): fabric healthy, no confirmed blockers, so no owner escalation. Response audit (step 12) clean — no recently-closed claude-home request lacked a reply-back.
-
-## Conduit run 2026-07-07T11:56Z
-Clean run. Binary healthy (no BINARY_MISSING sentinels), Gemma model resolved. Both conduit queues empty (claude-home, claude-codex-standin — nothing to review/farm). `router doctor --fix`: 0 OS-dead reaped (ADR-022 truth), wake pass 57 already-armed · 2 wake-unavailable (the 2 `to:user` owner-action items — IAM grant for SirsiNexusApp deploy + Assiduous prod Stripe test-key — correctly not woken, agent "user" unregistered; left for owner, not nagged). 44 pantheon items are self-addressed sweep-probes + registry-police, wakeable via launchagent — pantheon's inbox, not the conduit's. Board published (`router-board.{json,md}`): no confirmed blockers, fabric healthy. Two claude-home threads (thr-e69b8b0f15899121, thr-39e32a62fd739377) flagged loop-dead but os=alive — their interactive /loop watcher must re-arm on its own wakeup; a non-interactive scheduled run can't durably arm another session's loop. PRs: pantheon 0 open, nexus 0 open, FinalWishes #58 held (binding-hold, my prior review: optouts missing Firestore client-write rules; FW thread alive, owns fix). No merges, no closes, no routes needed. Empty run = good run.
-
-## Conduit run 2026-07-07T12:11:57Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin) — no reviews to first-chop, nothing to farm to codex. No binary-missing sentinels. `router doctor --fix`: reaped 0 OS-dead records, 57 already-armed / 2 wake-unavailable (the two `→ user` owner-gated items — IAM grant for SirsiNexusApp deploy + Assiduous prod Stripe test-key — left open, not nagged). Board refreshed (`router-board.json`/`.md`) — zero confirmed blockers, no auth failures. PRs: FW #58 (DNC suppression) still `binding-hold` pending optouts Firestore rules → not touched; zero open Nexus/Pantheon PRs → nothing mergeable. Stale >24h items all target live threads (assiduous/finalwishes/nexus/porch 🟢, consume via own watchers) or claude-pantheon's 44 mostly-`sweep-probe` self-probes (wake via launchagent). No closes/merges/routes needed — an empty run is a good run.
-
-## Conduit run 2026-07-07T12:25Z
-Clean run. claude-home + claude-codex-standin queues both empty — no reviews to chop, nothing to farm to codex. Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: 0 reaped (no OS-dead), 58 already-armed, 2 user items marked wake-unavailable (iam-grant + assiduous stripe-key — owner actions, left open, not nagged). claude-pantheon inbox (45 items) stranded by design — both pantheon threads suspended; content is mostly self-generated `sweep-probe` housekeeping, would wake via launchagent, not conduit work. PRs: pantheon/nexus none open; FinalWishes #58 carries my binding-hold (optouts missing Firestore rules) — left unmerged, finalwishes thread alive and already holds ~6 prior hold/request-changes items on it, no new duplicate nudge added. Board republished (~/.sirsi/router-board.{json,md}). No new owner escalation — the 2 confirmed owner blockers already have open user items. Empty run = good run.
-
-## Conduit run 2026-07-07T12:56:59Z
-Clean run. Both queues (claude-home, claude-codex-standin) empty. Router: 60 open / 1053 closed — 45 to claude-pantheon (sweep-probe self-noise + registry-police, wakeable via launchagent), 7 to claude-finalwishes (all PR-58 DNC holds I already routed), 2 to user (owner-gated: SirsiNexusApp IAM grant, Assiduous prod Stripe test-key — left, not nagged). Ran `router doctor --fix`: reaped 0 OS-dead, wake pass 58 already-armed + 2 wake-unavailable recorded (both user items, agent "user" unregistered — expected). Published router-board.json/.md. PRs: only FinalWishes #58 open — MERGEABLE/CLEAN but carries my `binding-hold` (optouts missing Firestore rules); left held per hard rule, claude-finalwishes (alive, thr-9346f11b0d65b735) owns the fix. Doctor flagged 2 loop-dead claude-home interactive watchers (thr-e69b8b0f15899121, thr-63992eabf09e1c71) with no live process — an interactive-session re-arm concern, not fixable from this headless run; inboxes were covered by the wake pass. Emitted heartbeat for supervisor thread. No closes/merges/routes this cycle.
-
-## Conduit run 2026-07-07T14:09Z
-Clean pass. claude-home + claude-codex-standin inboxes both empty — no first-chop reviews to issue. Ran `router doctor --fix`: 0 OS-dead records reaped, wake pass armed 59 / already-armed, 2 items marked wake-unavailable (both `to: user` — the SirsiNexusApp IAM-grant and the Assiduous prod-Stripe-key-is-sk-test owner actions; both pre-existing escalations, not duplicated). Published `router-board.{json,md}` — fabric healthy, no confirmed blockers, 0 stranded (non-user) inboxes; claude-pantheon holds 46 self-addressed sweep-probe items (its own, launchagent-wakeable) and claude-home inbox is covered by 4 live armed loops. PRs: pantheon & Nexus none open; FinalWishes #58 remains `binding-hold` (my prior DNC/optouts-firestore-rules hold — FW's to resolve, thread alive). No binary-drift sentinels. Nothing closed/merged/routed.
-
-## Conduit run 2026-07-07T14:26Z
-Clean cycle. Both conduit queues empty (claude-home, claude-codex-standin) — no review requests or informational items to action. Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: 0 OS-dead threads reaped, 59 already-armed, wake pass recorded `wake-unavailable` on the 2 `user` items (iam-grant + assiduous prod-stripe-key — owner-gated, agent "user" has no wake mechanism by design; not nagged). claude-pantheon's 46 stranded items wake via launchagent (armed, not truly stranded). Four `claude-home surface=claude` interactive session watchers show loop=dead/os=alive — those sessions self-re-arm their /loop; not owner-clearable, so no escalation. Board published (`~/.sirsi/router-board.{json,md}`) — no blockers, fabric green. Gemma pinned to gemma-4-12B-it-8bit. Only open PR fabric-wide: FinalWishes #58 (green, MERGEABLE) but carries my `binding-hold` (optouts missing Firestore rules) — left held for claude-finalwishes, which is alive with 7 inbound items on it. Empty run = good run.
-
-## Conduit run 2026-07-07T14:59:45Z
-claude-home conduit cycle. **Queues:** one open claude-home item — claude-pantheon's post-review request for PR #172 (menubar project-aware Ma'at/Net). PR already MERGED to origin/main (`9e25be6e`) on green auto-merge, all 5 checks passing. Did the independent non-author source-deep review anyway (`gh pr diff 172` + read of all 5 changed files): **APPROVE**. The change adds an optional validated `projectRoot` (UserDefaults, dir+.git) so ONLY `maat`/`net` run with cwd=projectRoot while every other verb keeps the $HOME pin — the critical 2026-07-02 launchd-cwd=/ disk-walk safety property is preserved; `workingDirectory(for:)` re-reads the source-of-truth UserDefaults (no stale-mirror race); `CommandResult` custom init defaults absent evidence/next_actions to []; the `--snapshot` ImageRenderer QA harness is production-inert behind a false-default env key. Two non-blocking notes (redundant idempotent loadProjectRoot calls; changelog "settles when byte-identical" clause ahead of the single-render impl). Routed verdict back to claude-pantheon via sirsi-respond.sh (closed + fresh inbound). codex-standin queue empty. **Threads:** all live threads heartbeating <2min; zero dead PIDs to reap. **PRs:** pantheon #171 (router wake-loop fix) ~20min old, checks UNKNOWN — below >1h merge threshold, left; FinalWishes #58 carries binding-hold (conduit's own hold — missing Firestore rules for optouts) — never merge, correctly waiting on claude-finalwishes; NexusApp none. **Nudge/board:** `router doctor --fix` woke claude-nexus + claude-pantheon via launchagent, marked the 2 `→ user` items wake-unavailable (owner actions: SirsiNexusApp IAM grant, Assiduous prod Stripe test-key). Published fresh router-board.json/md (14:58:52Z) — **zero confirmed blockers**, nothing to escalate. Watcher thread thr-3ff3493a609f6d9f flagged loop-dead (no process) — not re-armed: /loop is interactive-only and this headless scheduled run is itself the claude-home inbox consumer every 15min.
-
-## Conduit run 2026-07-07T15:58:03Z
-Both claude-home and claude-codex-standin queues empty — clean pull, no verdicts owed. 17 open items all belong to live recipients (finalwishes 7, assiduous 3, nexus 3, pantheon 1, porch 1) or are 2 owner-action `to: user` items (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) — left open, not nagged. `router doctor --fix`: reaped 0 OS-dead records (stale `active` threads are OS-truth-protected, correctly not force-suspended), wake pass 0 woken / 15 armed / 2 wake-unavailable (the user items, no wake mechanism by design). Board republished (`router-board.{json,md}`) — no confirmed blockers, fabric healthy, 7 live threads armed; no owner escalation warranted. Gemma model resolver ran clean. PRs: pantheon #171 (router wake-loop fix, ~1h old) held back — Test job FAILING / mergeStateStatus BLOCKED, left for claude-pantheon; FinalWishes #58 binding-hold (untouchable); SirsiNexusApp none open. No BINARY_MISSING sentinels. Response-audit clean — prior verdict/hold responses already routed as fresh inbounds to senders. Empty run = good run.
-
-## Conduit run 2026-07-07 16:24 UTC
-claude-home conduit tick. My own queues (claude-home, claude-codex-standin) both empty — clean. Router: 17 open, all addressed to OTHER recipients (assiduous 3, finalwishes 7, nexus 3, pantheon 1, porch 1, user 2) — responses/holds I previously routed, not mine to close; the 2 `user` items (SirsiNexusApp IAM grant, Assiduous prod Stripe sk-test key) are owner actions, left open, not nagged. Binary healthy, no BINARY_MISSING sentinels. Ran `router doctor --fix`: reaped 0 OS-dead, wake pass 15 already-armed / 2 wake-unavailable (both the `user` items — agent "user" not registered, expected). Re-heartbeated conduit thread thr-3b0aafbbfcd0ff8c (doctor flagged loop-dead but last_seen was fresh — horus-supervisor also watches claude-home). Published router-board.json + .md. PRs: pantheon #171 (wake-loop LaunchAgent fix) is BLOCKED — Build/Lint/gitleaks pass but Test FAILS on TestThreadWatchInstallUninstall (threadwatch_test.go:90 install: exit status 1), a self-caused failure in the exact install path the PR rewrites; did NOT merge, routed scoped nudge to claude-pantheon (item …-162405-…-pr-171-not-green). FinalWishes #58 carries binding-hold (my DNC-suppression Firestore-rules hold) — left held. Nexus: no open PRs. No merges this run.
-
-## Conduit run 2026-07-07T17:27:04Z
-Clean run. claude-home and claude-codex-standin queues both empty — no items to chop. Router: 20 open, all addressed to live recipient threads (claude-finalwishes 7, claude-pantheon 4, claude-nexus 3, claude-assiduous 3, claude-porch-and-alley 1) or owner (user 2, left as owner actions); all are outbound responses/holds already sent by claude-home, recipients alive with ready wake channels — nudged via `router doctor --fix`. Threads: all active threads fresh-heartbeat, suspended ones parked, no dead-PID reaps or re-arms needed. PRs: pantheon #171 (wake-loop LaunchAgents fix) is red — TestThreadWatchInstallUninstall fails ("install: exit status 1"), a change-related failure in its own install surface; correctly NOT merged and already routed to claude-pantheon 9 min prior (item …162405-…pr-171-not-green…), no duplicate sent. FW #58 is claude-home's own binding-hold (missing optouts firestore rules) — left held. Nexus: no open PRs. No BINARY_MISSING sentinels. Board republished (~/.sirsi/router-board.json, 10KB). No auth_ok==false and no missing current daemons (4 installed=false entries are all legacy:true retired daemons) — nothing owner-clearable to escalate.
-
-## Conduit run 2026-07-07T18:56Z
-claude-home + claude-codex-standin queues both empty; binary healthy (no BINARY_MISSING sentinels). Router: 24 open, all belonging to live recipients (claude-finalwishes/nexus/assiduous/porch — all 🟢) or the 2 owner-action `user` items — none mine to close, left in place. PRs: sirsi-pantheon #171 (fix/wake-loop-plist-observable, wake-plist observability + crash-loop bounds + sweep self-clean) is a GOOD change but RED — its own new refuse-bare-name guard in InstallWakeLaunchAgent broke sibling TestThreadWatchInstallUninstall (installs a wake agent with no `sirsi` on PATH). Did NOT merge; routed a source-deep REQUEST-CHANGES verdict to claude-pantheon (item …-pr-171-red-…) with the exact fix (stub sirsi on PATH in the test / pass absolute sirsiBin — keep the guard). FW #58 stays on my binding-hold (missing optouts firestore rules); Nexus none. Ran `router doctor --fix` (0 woken, 22 already-armed, 2 wake-unavailable = the user items, by design). claude-pantheon threads all suspended but inbox is launchagent-wakeable, so the routed verdict will wake it. Published router-board.json/.md (no blockers, fabric healthy; stranded: claude-pantheon 8, user 2). Emitted heartbeat for watcher thr-a22000e7eca3c06f (flagged loop-dead, but claude-home inbox covered by 7 other armed loops). Gemma worker on gemma-4-12B-it-8bit.
-
-## Conduit run 2026-07-07T19:12Z
-Clean run. claude-home + claude-codex-standin queues both empty — no reviews to first-chop, no scoped SME to farm. 25 open items all belong to live recipients (claude-pantheon 9, claude-finalwishes 7, claude-nexus 3, claude-assiduous 3, claude-porch-and-alley 1) or are owner-gated user actions (2: SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) — left with recipients, no nag. PRs: none mergeable — sirsi-pantheon #171 (wake-loop fix) has a red Test check (author's fix), FinalWishes #58 (DNC suppression) carries binding-hold, Nexus none. Threads: all active threads fresh-heartbeat, suspended correctly suspended, none to reap; two claude-home interactive threads (thr-076be38e6aeb55e4, thr-05f7a738dbc678bb) show loop=dead (their /loop watchers died — interactive re-arm, surfaced on board). Ran `router doctor --fix` (0 reaped · 23 already-armed · 2 wake-unavailable on the user items) and republished router-board.json/.md (no blockers, fabric healthy). No escalation created (no re-verified owner-clearable blocker beyond the two already-open user items).
-
-## Conduit run 2026-07-07T19:40Z
-claude-home conduit (scheduled). Both my queues (claude-home, claude-codex-standin) empty — no first-chop review owed. Router: 25 open, all inbounds to live peer threads or 2 owner-gated `to: user` items (IAM grant, Assiduous prod Stripe test-key) — left for the owner, not nagged. `router doctor --fix` wake pass: woke claude-pantheon (9 stranded, via launchagent) + claude-porch-and-alley (1), recorded wake-unavailable on the 2 user items (agent "user" unregistered — expected). Board republished, healthy (no confirmed blockers). Emitted heartbeat for thr-cd8fd8643a050491 (doctor flagged its /loop watcher loop-dead; heartbeat + doctor wake pass cover routing this cycle). No binary-drift sentinels. PRs: FinalWishes #58 carries binding-hold (DNC suppression, still held — untouched); SirsiNexusApp none; sirsi-pantheon #171 (wake-loop LaunchAgent fix, ~5h old) NOT merged — Test check RED (`TestThreadWatchInstallUninstall`, threadwatch_test.go:90 install exit 1), which is the exact surface #171 rewrites, so the PR broke its own install test. Routed a scoped root-cause diagnostic to claude-pantheon (its lane) rather than fixing in-conduit. PR #8/#32 untouched (codex-held). Board refreshed post-route.
-
-## Conduit run 2026-07-07T19:58Z
-claude-home + claude-codex-standin queues both empty — clean run. Router: 28 open, all to live-recipient threads (finalwishes/nexus/assiduous/porch all 🟢) or to `user` (2 owner-actions, never closed/nagged). `router doctor --fix` ran the wake pass (0 woken · 26 already-armed · 2 wake-unavailable recorded on the two `user` IAM/Stripe items — agent "user" unregistered, expected). Board republished (`~/.sirsi/router-board.{json,md}`) — healthy, no blockers; stranded: claude-pantheon 12 (wakes via launchagent), user 2. PRs: FinalWishes #58 correctly `binding-hold` (DNC-suppression, leave); Nexus none; Pantheon #171 unlabeled+MERGEABLE but Test check RED — its own plist-hardening guard broke `TestThreadWatchInstallUninstall` (CI has no bare `sirsi` on $PATH). NOT merged; already nudged claude-pantheon 3× (16:24/18:56/19:41, exact test named) so no 4th (no-nag). Re-armed my supervisor watcher thr-643c657240d14ccf (was loop-dead): heartbeat + persistent inbox Monitor keyed on the thread id. No new closes/merges/routes.
-
-## Conduit run 2026-07-07T20:27:21Z
-claude-home + claude-codex-standin queues both empty — no verdicts owed this cycle. Binary healthy (no BINARY_MISSING sentinels). Router: 28 open items, all addressed to other live threads (claude-finalwishes 7, claude-pantheon 12, claude-nexus 3, claude-assiduous 3, claude-porch-and-alley 1) or to user (2 owner actions) — none are claude-home's to close. Ran `router doctor --fix`: 0 reaped, wake pass woke 0 / 26 already-armed / 2 wake-unavailable (both the user owner-action items — no wake mechanism, correct). claude-pantheon's 12-item inbox is stranded but has a launchagent wake mechanism. Published router-board.json/.md — fabric healthy, no blockers. PRs: SirsiNexusApp none; FinalWishes #58 binding-held (claude-home's own DNC/optouts-firestore-rules hold, left); sirsi-pantheon #171 (owner's router wake-loop LaunchAgent fix) is BLOCKED on a genuinely FAILING Test check — `TestThreadWatchInstallUninstall` (threadwatch_test.go:90: install: exit status 1), a real regression in the PR's own install path, not flaky. Not merged (red). PR is owner-authored and only ~6h old, so CI-red is already visible to the author — no route/nag issued. One loop-dead claude-home watcher (thr-8966f3ef5a41841e) noted, but a sibling claude-home thread (thr-643c657240d14ccf) is loop=alive and armed and the inbox is empty, so nothing is stranded — left as-is. Clean run.
-
-## Conduit run 2026-07-07T20:41Z
-claude-home + claude-codex-standin queues both empty — no first-chop reviews owed. Fabric healthy: binary present, no BINARY_MISSING sentinels, all 16 threads OS-alive with fresh heartbeats (no dead PIDs to suspend). Router doctor --fix: 0 reaped, 26 already-armed, 2 wake-unavailable (both `to: user` owner actions — iam-grant + stripe-test-key — correctly left, not nagged). Board republished (~/.sirsi/router-board.{json,md}) — no blockers, 28 items stranded across claude-pantheon(12, armed via launchagent) and user(2, owner). Closed/merged/routed nothing.
-
-Findings for next session: (1) sirsi-pantheon PR #171 (router wake-loop LaunchAgents fix) is RED — `TestThreadWatchInstallUninstall` FAILs, a PR-relevant test on the exact thread-watch surface it edits; mergeState BLOCKED. NOT a merge candidate; belongs to claude-pantheon to fix. (2) FinalWishes #58 still `binding-hold` (optouts missing Firestore rules) — held correctly, finalwishes thread's fix. (3) thr-8be9eed5f305855e (claude-home surface) shows loop=dead / not-armed with zero matching watcher processes (pgrep empty, no wake.pid) — but claude-home's inbox is empty so nothing is stranded; left for the interactive claude-home /loop to re-arm rather than spawning a watcher from this headless run.
-
-## Conduit run 2026-07-07T21:28:09Z
-Clean run. claude-home + claude-codex-standin inboxes both empty — no reviews to chop. Gemma triage surfaced only the user IAM-grant item (owner-gated, already open — not nagged). PRs: sirsi-pantheon #171 (wake-loop plist hardening) is NOT green — Test check red on TestThreadWatchInstallUninstall (`install: exit status 1`), a self-caused regression already diagnosed and routed to claude-pantheon 3× (194156/185612/162405); no 4th duplicate sent. FinalWishes #58 carries binding-hold (never merge). Nexus: no open PRs. Router doctor --fix: fabric healthy, wake pass 28 armed / 2 wake-unavailable (both user items, no wake mechanism). Board published (~/.sirsi/router-board.{json,md}) — no blockers; stranded inboxes = claude-pantheon (14, launchagent-woken) + user (2, owner). Own watcher thr-b0c28cdfe438c762 loop=dead — surfaced on board; belongs to live interactive owner session pid 95956 to re-arm, not this ephemeral task. Thread health: doctor reaped 0 OS-dead; nothing to suspend. Response-audit clean (PR-172 post-review close has its matching fresh inbound). No new escalations.
-
-## Conduit run 2026-07-07T21:42:17Z
-Scheduled conduit-supervisor cycle. Both conduit queues empty (claude-home, claude-codex-standin) — no reviews to first-chop, nothing to farm to codex. Binary healthy (built today, no BINARY_MISSING sentinels). `router doctor --fix`: wake pass 0 woken / 28 already-armed / 2 wake-unavailable — the two wake-unavailable are both `to: user` owner actions (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key), left open, not nagged. Doctor flagged claude-home /loop watcher thr-f3af670446272549 as loop-dead, but claude-home inbox is empty so nothing is stranded; arming is left to the interactive session (a 15-min scheduled run must not spawn a duplicate /loop). Threads all healthy — doctor reaped 0 OS-dead, all active/idle records heartbeating within ~2min. PRs: pantheon #171 (router wake-loop fix) is green EXCEPT Test=FAILURE → NOT merged (red), left for author to fix; FinalWishes #58 (do-not-contact suppression) remains under my binding-hold pending optouts Firestore rules → not merged, correct; SirsiNexusApp none. Zero confirmed auth blockers after board re-verification (agent_health auth_ok==false count = 0) → no escalation; existing two owner items untouched. Board refreshed (router-board.json/.md). NOTE for claude-pantheon board-generator (P-router-board follow-up): board reports 4 daemons `installed:false` (com.sirsi.idea-router, com.sirsi.idea-router-sweep, ai.sirsi.registry-police, com.sirsi.router.sirsi-pantheon) — these are STALE expected labels; actual installed router daemons are ai.sirsi.horus.agent-router + per-agent ai.sirsi.router.wake.* (all present, router functioning). This is a false-blocker the menubar would render; NOT escalated to owner, flagged here for the board-generator label-set fix.
-
-## Conduit run 2026-07-07T21:56Z
-Clean sweep. Both conduit queues (claude-home, claude-codex-standin) empty — nothing to review or close. Gemma triage surfaced one ESCALATE that was a parse-failure false-flag on the already-open `to: user` IAM-grant item (no action). PRs: pantheon #171 (wake-loop LaunchAgents fix, 3 files) is BLOCKED — the Test check is failing — so NOT merged; left for its author. FinalWishes #58 carries the `binding-hold` label → never merged. Nexus has no open PRs. `router doctor --fix` ran the wake pass: 30 already-armed, 0 OS-dead reaped, 2 `wake-unavailable` correctly recorded on the two `to: user` owner-action items (IAM grant + Assiduous prod Stripe test-key). Board published (`router-board.json`/`.md`) — reports "fabric healthy", no confirmed blockers, so no new owner escalation (both user blockers already open, not re-nagged per rule 15). claude-home inbox is drained by this scheduled run and armed via thr-643c657240d14ccf (loop=alive); the loop-dead thr-62b21568be3ab42f is the interactive watcher thread. All 10 live threads OS-alive. Empty run = good run.
-
-## Conduit run 2026-07-07T22:12:27Z
-Empty-inbox run (a good run). claude-home + claude-codex-standin queues both empty — no first-chop verdicts needed. Router: 32 open items, all addressed to live recipients (finalwishes/nexus/assiduous/porch threads all 🟢 active, their prior claude-home responses awaiting pull) or to `user` (2 owner-action items: SirsiNexusApp IAM grant + Assiduous prod Stripe still sk-test — left open, not nagged). `router doctor --fix`: reaped 0 OS-dead, 30 already-armed, recorded wake-unavailable on the 2 user items (agent "user" unregistered — expected). claude-pantheon inbox (16 items) stranded but wakes via launchagent; threads suspended. One live-but-loop-dead watcher (thr-623245d5781e7a04, claude-home claude surface) surfaced on the board — left for that session to re-arm (a cron run must not spawn a persistent /loop). PRs: pantheon #171 (router wake-loop hardening: log paths + ThrottleInterval 60 + refuse-bare-binary + probe self-clean) is BLOCKED — its own `TestThreadWatchInstallUninstall` fails (the refuse-bare-name/plist-format change broke the existing test); NOT merged, left for the pantheon author to fix (their in-flight crash-loop fix). FinalWishes #58 = binding-hold (skipped). SirsiNexusApp: no open PRs. No binary-drift sentinels. Board republished (blockers: none — fabric healthy). Gemma model resolver → gemma-4-12B-it-8bit. Nothing closed/merged/routed.
-
-## Conduit run 2026-07-07T22:39Z
-Queues clean: claude-home and claude-codex-standin both empty. Router has 32 open items but none addressed to claude-home — they are my own already-routed outbound responses/holds sitting in recipients' inboxes (claude-pantheon 16, claude-finalwishes 7, nexus 3, assiduous 3, porch 1) plus 2 owner `to: user` items (SirsiNexApp IAM grant, Assiduous Stripe test-key) — left open, not nagged. All threads alive (thread list + board: 37 live, 0 OS-dead); no PIDs to suspend. PR sweep: pantheon #171 (>1h, unlabeled) is RED (failing Test check) → not mergeable, pantheon's to fix; FinalWishes #58 correctly binding-held (missing Firestore optouts rules); SirsiNexApp no open PRs; no dependabot PRs. Nothing closed/merged/routed. `router doctor --fix`: 0 woken, 30 already-armed, 2 wake-unavailable (the user items, no wake mechanism by design). Board published (~/.sirsi/router-board.{json,md}) — no blockers. Fabric heal: re-armed the loop-dead watcher for this session's thread thr-1fe5cc141aa68704 (pid 38821); the other loop-dead claude-home thread thr-05f7a738dbc678bb belongs to a different session and its (empty) inbox is already covered by live armed watchers.
-
-## Conduit run 2026-07-07T22:56:58Z
-Clean cycle. claude-home + claude-codex-standin queues empty — no reviews to chop, nothing to farm. 11 open router items are all outbound from claude-home to live recipients (assiduous ×3, finalwishes ×2, nexus ×3, porch-and-alley ×1) awaiting their own pull, plus 2 `to: user` owner-actions (SirsiNexusApp IAM grant, Assiduous prod Stripe test-key) left open and un-nagged. No PID-dead threads; dedicated claude-home watcher worker thr-a1aa35b57c579830 alive+armed. Ran `router doctor --fix` (wake pass: 9 already-armed, 2 user items → wake-unavailable by design) and republished the live board (no confirmed blockers, all auth_ok). PRs: pantheon 0 open, Nexus 0 open; FinalWishes #58 green but correctly `binding-hold` (missing Firestore rule on optouts, owned by live claude-finalwishes) — left untouched. No closes/merges/routes this cycle. Empty run = good run.
-
-## Conduit run 2026-07-07T23:11:34Z
-Clean run. claude-home + claude-codex-standin queues both empty. Router: 11 open items, all
-addressed to live recipients (claude-assiduous, claude-finalwishes, claude-nexus,
-claude-porch-and-alley — all 🟢 in thread list) or to `user` (2 owner-action items: SirsiNexusApp
-IAM grant + Assiduous prod Stripe test-key — left open, not nagged). No dead-PID threads to suspend.
-`router doctor --fix` wake pass: 0 woken, 9 already-armed, 2 wake-unavailable (the 2 user items —
-"user" is not a registerable agent, expected). Re-armed my own supervisor watcher thread
-thr-2bc787a835414801 (board flagged it loop-dead, wake.pid absent): emitted a fresh heartbeat to keep
-the record from reaping; did NOT install a launchd pull-loop because it is a surface=claude
-interactive thread (its /loop is re-armed by its own session hooks — a launchd catalyst would be the
-wrong second watcher). Board republished (~/.sirsi/router-board.{json,md}) — no confirmed blockers
-("fabric healthy"). PRs: only FinalWishes #58 open, carries binding-hold (blocker already routed to
-the live claude-finalwishes thread 2026-07-05) — untouched per hard rule. sirsi-pantheon and
-SirsiNexusApp have zero open PRs. No merges, no new escalations this cycle.
-
-## Conduit run 2026-07-07T23:40Z
-claude-home 15-min sweep. Queues clean: `claude-home` and `claude-codex-standin` both had zero open items. Router status: 11 open, all to OTHER live recipients (assiduous×3, nexus×3, finalwishes×2, porch×1 — threads verified 🟢 active) or `user`×2 (IAM grant for SirsiNexusApp deploy, Assiduous prod Stripe sk-test swap — both genuinely owner-gated, left open, not nagged). Binary healthy, no BINARY_MISSING sentinels. PRs: pantheon none, nexus none, FW only #58 (binding-hold — not merged). Ran `router doctor --fix` (wake pass: 0 woken, 9 armed, 2 wake-unavailable on the user items — user not registerable, expected). Published router-board.json/md — board healthy, no blockers. Fixed the one signal: supervisor thread thr-9edca318d053f424 showed loop=dead (its /loop heartbeat body wasn't running though the session pid 63063 = this run was alive; claude-home inbox itself was still covered by thr-7e50e8c4e6eded2b's loop). Armed an idempotent per-thread watcher (pgrep count was 0), emitted a heartbeat, and confirmed doctor no longer flags it NOT-armed. Nothing closed/merged/routed. Clean run.
-
-## Conduit run 2026-07-08T00:12:24Z
-Pulled claude-home (1 item) + claude-codex-standin (0). The one item was a directed review request from claude-nexus: PR #120 (SirsiNexusApp) implementing my non-blocking fail-closed hardening note from #119 — CreateTenant/UpdateTenant/SuspendTenant/DeactivateTenant now return CodeUnavailable on SQL write error instead of logging-and-reporting-success, with Suspend/Deactivate reverting the cached pointer on failure. Source-deep review (read full diff): SQL-first/cache-second ordering correct; prevStatus revert-on-failure correct and under-lock; race_test.go goroutine-leak fix legitimate (StartProvisioning spawns ~12s detached goroutines that raced on package-level db once the new tests began writing to it); 5 new tests hit the real fail-closed path against a lazily-opened broken pgx DSN, plus a dev-mode-unchanged test. CI fully green, MERGEABLE, no hold labels. Verdict PASS — merged (squash) at 00:10:39Z, verdict routed back to claude-nexus via sirsi-respond.sh (audit close + fresh inbound). Left one non-blocking note on transient status visibility during the pre-SQL mutation window. PR sweep: pantheon empty, SirsiNexusApp empty post-merge, FinalWishes #58 still binding-hold (left untouched). router doctor --fix: reaped 0 OS-dead, 7 already-armed, 1 wake-unavailable on the user Stripe owner-action item (no wake mechanism, left open, no nag). Board republished (router-board.json/md). Threads all live with fresh heartbeats — none suspended. No codex farm-out needed this cycle.
-
-## Conduit run 2026-07-08T01:41:12Z
-Both conduit queues (claude-home, claude-codex-standin) empty — no review requests to first-chop. Router: 6 open items, all outbound from claude-home to LIVE recipient threads (claude-assiduous ×3 via thr-c00b5a518c361dd5 active, claude-porch-and-alley ×1 via thr-7aa957dcf62c094c active) plus 1 to:user owner-action (assiduous prod Stripe key is sk-test) — none stranded, none mine to close. `router doctor --fix` reaped 0 OS-dead, wake pass 5 already-armed / 1 wake-unavailable (the to:user item, "user" not registered — expected owner action). Published router-board.json/.md. PRs: sirsi-pantheon none open; FinalWishes #58 binding-hold (left, blocker not cleared); SirsiNexusApp #122 dependabot go_modules bump (golang.org/x crypto/net/sync/sys/text patch+minor, all indirect) — source-deep confirmed pure dep bump, all content checks green, CLEAN/MERGEABLE, no hold → squash-merged (mergedAt 2026-07-08T01:40:49Z). Watcher thr-f0dcdf6c46b981cb flagged loop-dead (0 procs) but claude-home inbox empty so nothing stranded; re-arm belongs to the interactive claude-home session, not this ephemeral 15-min task. No binary-missing sentinels. Clean run.
-
-## Conduit run 2026-07-08T02:11:12Z
-Both conduit queues (claude-home, claude-codex-standin) empty — no reviews to first-chop, nothing to farm to codex. Router: 6 open / 1142 closed. The 6 open items are all outbound responses/acks from claude-home to LIVE recipient threads (claude-assiduous 🟢 pid=92303, claude-porch-and-alley 🟢 pid=10987) plus one `user` owner-action (Assiduous prod Stripe key is sk-test/test-mode) — none closable by the conduit; user has no wake mechanism (left, not nagged). `router doctor --fix`: 0 OS-dead reaped, 5 already-armed, 1 wake-unavailable recorded on the user item. PRs: sirsi-pantheon 0 open, SirsiNexusApp 0 open, FinalWishes #58 carries binding-hold (do-not-contact suppression) → not merged per hold. Board refreshed (fabric healthy, no blockers). One honest signal surfaced not masked: thr-f565fb79837de7bf (claude-home) loop=dead/NOT ARMED but its inbox is empty and covered by 6 sibling armed+alive claude-home watchers — redundant, re-arm belongs to that thread's own session. Clean run.
-
-## Conduit run 2026-07-08T02:25:50Z
-Empty inbox for both claude-home and claude-codex-standin — no reviews to chop, nothing to farm to codex. Router had 6 open items (3 claude-assiduous, 1 claude-pantheon, 1 claude-porch-and-alley, 1 user); all 5 stale (>24h) items are responses already routed FROM claude-home to live recipient threads plus one `to: user` owner-action (assiduous prod Stripe key is sk-test) — none mine to close. No mergeable PRs: sirsi-pantheon and SirsiNexusApp had none; FinalWishes #58 (do-not-contact suppression) carries binding-hold, left untouched. Ran `router doctor --fix`: reaped 0 OS-dead, wake pass woke 1 / 4 already-armed / 1 wake-unavailable (the user item, by design). Refreshed gemma model + published router-board.json/.md. Board reported 0 confirmed auth blockers and no missing daemons → no owner escalation. Re-armed the loop-dead supervisor watcher thr-2f2689da2961b027 (0 procs → 1). Clean run.
-
-## Conduit run 2026-07-08T02:56:22Z
-Clean run. claude-home and claude-codex-standin queues both empty — no reviews to chop, nothing to farm to codex. `router doctor --fix` reaped 0 OS-dead records; wake pass = 5 already-armed, 1 wake-unavailable (the `to:user` Assiduous Stripe test-key item, agent "user" unregistered — owner action, already open, not duplicated). 6 open items total, all correctly placed (3→live claude-assiduous, 1→claude-pantheon via launchagent, 1→live claude-porch-and-alley, 1→user). No BINARY_MISSING sentinels; sirsi binary healthy. Republished router-board.json/.md fresh: agent_health both claude+codex auth_ok=true (no confirmed blocker to escalate); only installed=false launch agents are the deprecated legacy com.sirsi.idea-router* pair. PRs: only FinalWishes #58 open — green but carries binding-hold label, left untouched per hard rule; no pantheon/Nexus PRs. Noted: watcher thr-018b1bf3ebc4f090 flags loop-dead (pgrep 0) but claude-home inbox empty so nothing stranded — re-arm belongs to the persistent interactive session, not this ephemeral scheduled run.
-
-## Conduit run 2026-07-08T03:57:16Z
-Both conduit queues empty (claude-home, claude-codex-standin: 0 open). Router: 6 open, all outbound from claude-home to live recipients — 3→claude-assiduous (🟢 active), 1→claude-porch-and-alley (🟢), 1→claude-pantheon (wakes via launchagent), 1→user (Stripe prod key is sk-test/test-mode owner-action, left open, not nagged). Gemma triage returned one ESCALATE that was a parse-failure fallback on a claude-assiduous-recipient item (not mine). `router doctor --fix`: reaped 0, wake pass woke 0 / 5 already-armed / 1 wake-unavailable (the user Stripe item — agent "user" unregistered, expected). Board published (fabric healthy, no blockers). PRs: pantheon 0, Nexus 0; FinalWishes #58 is CLEAN+MERGEABLE+all-green but carries a `binding-hold` label from a prior conduit review — left held per hard rules. Thread health: interactive claude-home thread thr-a83386a5f0196fd2 shows loop=dead / no wake.pid, but claude-home is durably covered (worker thr-a1aa35b57c579830 armed + 3 live claude-home /loops) and its queue is empty — cosmetic, surfaced on board, no redundant watcher spawned (sirsi-thread-init.sh is retired; `sirsi thread watch` would only add a duplicate launchd loop for an interactive surface). Closed-request audit: no recently-touched claude-home-recipient items needing re-route. No new escalation (no re-verified owner-clearable blocker beyond the already-open Stripe item). Clean run.
-
-## Conduit run 2026-07-08T04:11Z
-Both conduit queues empty (claude-home, claude-codex-standin — 0 open). Binary healthy, no BINARY_MISSING sentinels. Router: 6 open / 1144 closed, all open items are outbound to live recipients (claude-assiduous ×3, claude-porch-and-alley ×1, claude-pantheon ×1) or the owner (Stripe test-key action, `to: user` — owner-gated, left untouched); none addressed to claude-home. All threads OS-alive with fresh heartbeats — no dead PIDs to suspend, `router doctor --fix` reaped 0. One heal: watcher for thr-3ea35e13363729cf (claude-home) had zero live processes (loop-dead / board NOT ARMED); re-armed the /loop watcher (new PID 40455) + heartbeat → board now loop=alive·armed. PRs: only FinalWishes #58 open — green + MERGEABLE but carries `binding-hold` (prior conduit blocker), left for claude-finalwishes; no pantheon/nexus PRs. Board refreshed twice (~/.sirsi/router-board.{json,md}) — fabric healthy, no confirmed blockers, no owner escalation raised. Clean run.
-
-## Conduit run 2026-07-08T04:56Z
-claude-home / claude-codex-standin queues both empty. Router: 6 open items, all outbound-from-claude-home to other recipients (assiduous ×3, porch-and-alley ×1, pantheon ×1, user ×1) whose threads are alive — their inboxes, not mine to close; the `to: user` Stripe test-key item is an owner action (left, not nagged). Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: reaped 0 OS-dead, 5 already-armed, 1 wake-unavailable recorded (the unregistered `user` recipient). Board published (`~/.sirsi/router-board.{json,md}`) — fabric healthy, no confirmed blockers, so no owner escalation. **Merged FinalWishes PR #58** (do-not-contact suppression, Phase 2 slice 2): my prior binding-hold cited a default-deny gap — client wrote to `estates/{estateId}/optOuts/{address}` with no matching `firestore.rules` block. Re-review confirmed the gap is closed: new `match /optOuts/{address}` block (principal/admin read+delete, shape-enforced create with `createdBy == request.auth.uid` + channel enum, `update:false`); client `setOptOut` write shape (`{address, channel, createdBy, createdAt}`, normalized doc id) matches exactly; server `isOptedOut` already correct. CI green → cleared label, posted verdict, squash-merged. One note: claude-home watcher thr-93ebbc8c2b18c2a0 reports loop-dead but PID alive; ~15 sibling claude-home watchers armed and the claude-home inbox is empty, so nothing is stranded — left untouched (can't spawn interactive /loop from a scheduled task; PID is a live session, not reapable). No pantheon/nexus PRs open. Empty-ish run otherwise.
-
-## Conduit run 2026-07-08T05:40:50Z
-Automated router-conduit-supervisor cycle. Both conduit queues empty (claude-home, claude-codex-standin — no open items to review or farm). No BINARY_MISSING sentinels; sirsi binary healthy. Router status: 6 open / 1145 closed — all 6 open are outbound items claude-home already SENT (3 responses/acks → claude-assiduous, 1 response → claude-porch-and-alley, 1 pantheon item, 1 owner-action → user for the Assiduous prod Stripe test-key). `router doctor --fix` ran the wake pass: 0 reaped, 5 already-armed, 1 wake-unavailable recorded on the user owner-action (agent "user" not registered — correct, never blind-spawned/nagged). claude-pantheon's 1 stranded item wakes via launchagent (all claude-pantheon threads suspended — stranded-by-design, surfaced on board). Doctor flagged my own watcher thr-49407c0fb2984f89 as loop-dead (interactive claude-home /loop must re-arm; not re-armed from this headless scheduled run). Refreshed live board (router-board.json + .md, 10.7KB). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. Clean run, no closes/merges/routes.
-
-## Conduit run 2026-07-08T06:40Z
-Clean run. claude-home + claude-codex-standin queues both EMPTY (no first-chop reviews owed). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to bind. `sirsi router status`: 6 open, all OUTBOUND from claude-home (4 responses/acks/verdicts → claude-assiduous & claude-porch-and-alley, 1 owner-action Stripe-key item → user); none are requests awaiting my response, so nothing stranded on the conduit side. `router doctor --fix`: reaped 0 (no OS-dead records), wake pass 5 already-armed + 1 wake-unavailable (the user Stripe item, correctly — "user" agent has no wake mechanism, left open, not nagged). Board published (`~/.sirsi/router-board.{json,md}`) — no blockers, fabric healthy. One recurring anomaly surfaced (not fixed by design): watcher thread thr-0001126ca564ae70 (claude-home) shows os=alive pid=91082 but loop=dead / NOT ARMED — its /loop watcher body isn't running (pgrep -f thr-0001126ca564ae70 → zero procs). Emitted a heartbeat to keep it off the reap list; the board flags it NOT ARMED as the durable signal for its owning interactive session to re-arm. No escalation created (no re-verified owner-clearable blocker).
-
-## Conduit run 2026-07-08T07:10Z
-Empty-and-healthy cycle. Conduit queues (claude-home, claude-codex-standin) both empty — no review requests to chop, nothing to farm to codex. Binary healthy (no BINARY_MISSING sentinels). Ran `router doctor --fix`: reaped 0 OS-dead records, wake pass 5 already-armed + 1 wake-unavailable recorded on the `to: user` stripe-test-key owner item (agent "user" unregistered, no wake mechanism — left open, not nagged). Published fresh router-board.json/md (no blockers, fabric healthy). Gemma model resolver holding at gemma-4-12B-it-8bit (RAM-fit). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to merge. Six stale (>24h) open items are all outbound `from: claude-home` responses/acks already routed to claude-assiduous (3) and claude-porch-and-alley (1) — their recipient threads are alive+armed, so left for them; not conduit work. claude-pantheon has 1 fresh (~3h) registry-police accountability item, armed via launchagent, left to that thread. Observation: watcher thread thr-3e3fe851196150e9 flags loop=dead (0 matching pgrep procs); not re-armed from this short-lived scheduled session (a /loop armed here dies on exit) — the 15-min scheduled run + claude-home launchagent are the durable inbox consumers.
-
-## Conduit run 2026-07-08T07:26:17Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin — no open items). Router shows 6 open items, all outbound from claude-home to living recipients (4→claude-assiduous, 1→claude-porch-and-alley, both threads active) plus 1 `to: user` owner action (Assiduous prod Stripe key is sk-test / test mode — owner-gated, left open, not nagged). No binary-drift sentinels. Thread health clean: all active threads heartbeating within seconds, all non-active already suspended, no dead-PID active threads to reap. Ran `router doctor --fix` (nudge): 0 woken, 5 claude-home watchers already-armed, 1 wake-unavailable recorded on the user Stripe item (agent "user" unregistered — expected). thr-82810310440c272e flagged loop-dead but claude-home inbox is covered by 5+ armed sibling watchers, so no stranding; did not spin a `/loop` from this headless scheduled run (it would die on task exit). Published router-board.json/.md — no blockers, fabric healthy; stranded: claude-pantheon (1, wakes via launchagent) + user (1, owner action). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Nothing to escalate (no re-verified owner-clearable blocker; Stripe item already open).
-
-## Conduit run 2026-07-08T08:10:55Z
-Empty-clean run. claude-home + claude-codex-standin queues both empty. 6 open router items are all outbound (claude-home → others): 4 to claude-assiduous, 1 to claude-porch-and-alley — recipient threads (thr-c00b5a518c361dd5, thr-3191b6ad0fd254d7) both 🟢 active, responses simply await pull, left in place. 1 to `user` (Assiduous prod Stripe key is sk-test/test-mode) — owner action, wake-unavailable, left open, no nag. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. `router doctor --fix`: reaped 0 (32 stale records not OS-dead per ADR-022 OS-truth — not manually suspended), wake pass 5 already-armed + 1 wake-unavailable recorded on the user item; flagged thr-756f4030c9fb5e75 loop-dead (interactive watcher's re-arm, not this scheduled task's job). Board republished (json+md); confirmed_blockers: none, no auth failures → no escalation.
-
-## Conduit run 2026-07-08T09:11Z
-Clean run. claude-home + claude-codex-standin queues both empty (nothing to review/farm). `router status`: 6 open items, all outbound-from-claude-home already routed to their recipients (claude-assiduous ×3, claude-porch-and-alley ×1 — both threads live/active and will consume on their own cadence; claude-pantheon ×1 wakes via launchagent; user ×1 = Assiduous prod Stripe test-key, owner-action, left un-nagged). No dead PIDs to reap (all live threads heartbeating fresh). `router doctor --fix`: 0 woken, 5 already-armed, 1 wake-unavailable (the user Stripe item — "user" not a registered wakeable agent, expected). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. No BINARY_MISSING sentinels; sirsi binary healthy. Corrective action: doctor flagged watcher thread thr-55d435bc576eec16 as loop-dead and pgrep confirmed zero watcher processes — re-armed a persistent /loop-equivalent Monitor (heartbeat each 60s tick + emit on new `to: claude-home` items) and emitted a manual heartbeat to hold the record. Refreshed router-board.json/.md and ran gemma-model-resolver.
-
-## Conduit run 2026-07-08T09:41:07Z
-Routine conduit cycle. Both conduit queues empty (claude-home, claude-codex-standin — nothing to review/farm). Router: 6 open items, all responses/acks claude-home already sent to live recipients (claude-assiduous ×3, claude-porch-and-alley ×1, claude-pantheon ×1) plus the standing to:user Stripe test-key owner action — left owner-gated, not nagged. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to review/merge. `router doctor --fix`: reaped 0 (all threads OS-alive), wake pass 5 already-armed + 1 wake-unavailable recorded on the user item (agent "user" unregistered — expected). Board published (`router-board.{json,md}`): no blockers, fabric healthy; stranded inboxes = claude-pantheon (wakes via launchagent) + user (owner action). Re-armed this session's watcher thread thr-9fd8195a5fe57f4a: doctor flagged it loop-dead with zero matching watcher processes, so per the SessionStart directive spawned a durable 60s background heartbeat/inbox-scan loop; heartbeat confirmed (idle 0s). No escalation warranted — no re-verified owner-clearable blocker. Empty-ish run = healthy fabric.
-
-## Conduit run 2026-07-08T10:25Z
-Clean run. claude-home and claude-codex-standin queues both empty; no open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Router shows 6 open items, none addressed to me: 3→claude-assiduous (chronic-e2e/ack/verdict, thread live idle), 1→claude-porch-and-alley (repo-review response, thread live), 1→claude-pantheon (wakes via launchagent), 1→user (Assiduous prod Stripe key is sk-test — owner action, wake-unavailable, left open, no nag). Only action taken: re-armed my own supervisor watcher thr-e8294241a7bd12d6, which router doctor reported os=alive/loop=dead with zero matching watcher processes (pgrep count 0); launched a 45s-tick heartbeat+inbox watcher (pid 64619), after which doctor no longer reports any NOT-armed live thread. Published fresh router-board.json/.md (blockers: none — fabric healthy). 39 stale thread records are heartbeat-aged but not OS-dead (reaped 0). No binary-missing sentinels. No farm-outs, no merges, no new escalations.
-
-## Conduit run 2026-07-08T10:56:12Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin — 0 open). Router: 6 open items, all to LIVE non-conduit recipients (claude-assiduous ×3, claude-pantheon ×1, claude-porch-and-alley ×1 — all threads alive) plus 1 owner-action item to `user` (assiduous prod Stripe key is sk-test, already open — left as owner action, not nagged). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. `router doctor --fix` wake pass: 0 woken, 5 already-armed, 1 wake-unavailable (the user item — agent "user" unregistered, expected). Board republished (`router-board.json/.md`); 0 confirmed auth blockers, 0 missing daemons, no stranded inbox beyond the launchagent-wakeable claude-pantheon item — no new escalation warranted. Note: doctor flagged thr-18798d6e9a7934af (agent=claude-home) as loop-dead (0 watcher procs via pgrep); claude-home inbox still has ample live sibling-thread coverage and my queue is empty, so not stranded — emitted a heartbeat to keep the record fresh; durable /loop re-arm belongs to the next interactive SessionStart, not a 15-min cron.
-
-## Conduit run 2026-07-08T11:40Z
-Clean cycle. Both conduit queues empty (`claude-home`, `claude-codex-standin` — no open items). Binary healthy, no BINARY_MISSING sentinels. Router: 6 open / 1151 closed — all 6 are outbound-from-claude-home (responses/ACKs/directives) sitting in **live** recipient inboxes (claude-assiduous ×4, claude-porch-and-alley ×1, user ×1 owner-action Stripe sk-test key), so nothing stranded that the conduit can clear; left for recipients. Ran `router doctor --fix`: 0 reaped, wake pass 5 already-armed + 1 wake-unavailable recorded (the `user` Stripe item — no wake mechanism, owner action, not nagged). One live claude-home thread (thr-33b32615b3384a86) reports loop-dead but its inbox is empty and 5+ sibling claude-home watchers are armed — no work stranded; not re-armed from this ephemeral scheduled run. Published fresh `router-board.json`/`.md` — **no confirmed blockers, fabric healthy**. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. No escalations. Empty run = good run.
-
-## Conduit run 2026-07-08T12:11:20Z
-Both claude-home and claude-codex-standin queues empty — nothing to review or farm. Router: 6 open / 1152 closed; all 6 are already-routed claude-home responses sitting in live recipients' inboxes (3 → claude-assiduous, 1 → claude-porch-and-alley, 1 → claude-pantheon) plus one owner-gated `to: user` item (Assiduous prod Stripe key is sk-test). No dead-PID threads to suspend — every thread carries a fresh heartbeat (<1min). Ran `router doctor --fix`: wake pass woke 0 / 5 already-armed / 1 wake-unavailable (the user Stripe item — expected, owner action). doctor flagged watcher thr-04785a2b544e6bb6 (claude-home /loop) as loop-dead with no pgrep match; NOT re-armed here — this is an ephemeral 15-min scheduled-task session, and a persistent /loop belongs to the interactive claude-home session, not this run. Regenerated router-board.json/.md — zero confirmed blockers. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. No sirsi binary-missing sentinels. Nothing merged/closed/routed; clean run.
-
-## Conduit run 2026-07-08T12:26Z
-Clean run. claude-home + claude-codex-standin queues both empty; nothing to review or farm. Router: 6 open items — all OUTBOUND from claude-home to live recipients (claude-assiduous ×3, claude-pantheon ×1, claude-porch-and-alley ×1, all active/heartbeating threads that will pull) plus 1 `to: user` owner action (Assiduous prod Stripe key still sk-test — owner-gated, not nagged). No dead threads to suspend; all catalysts live (last_seen <1m). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. `router doctor --fix`: 0 reaped, 5 already-armed, 1 wake-unavailable recorded (the `user` Stripe item — no wake mechanism, by design). Board published (no confirmed blockers, no stranded inboxes). ESCALATE set empty → no owner escalation. NOTE: supervisor watcher thr-53bafb1057fdd6a8 flagged loop-dead (no live `/loop` process); heartbeat emitted to keep the record fresh, but its persistent /loop can't be hosted from a 15-min non-interactive scheduled run — needs re-arm from an interactive claude-home session. Harmless right now (its inbox is empty, no blockers stranded behind it).
-
-## Conduit run 2026-07-08T13:51:45Z
-
-Routine conduit tick, clean run. Both owned queues empty (claude-home, claude-codex-standin — no open items). Router: 6 open items, all outbound from claude-home to living recipients (claude-assiduous ×3, claude-pantheon ×1, claude-porch-and-alley ×1) plus one owner-gated `user` item (assiduous prod Stripe key still sk-test — left open, owner action, not nagged). `router doctor --fix` ran the wake-or-declare pass: stranded inboxes for assiduous/pantheon/porch would wake via launchagent; the `user` item correctly marked wake-unavailable (no wake mechanism, by design). Thread list reaper culled 4 OS-dead claude-home records; all live threads fresh except `thr-5b84427a4055396c` (claude-home surface=claude, loop-dead, heartbeat idle ~22m, no thread dir/PID) — left to age out to the reaper since it's an interactive CLI thread I cannot re-arm and it is not OS-dead-confirmed. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. Board published (`~/.sirsi/router-board.{json,md}`): no blockers, fabric healthy. No confirmed owner-clearable blocker → no escalation. Nothing closed/merged/routed this cycle.
-
-## Conduit run 2026-07-08T15:41Z
-Clean pass. Both conduit queues (claude-home, claude-codex-standin) empty. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to review/merge. All threads heartbeating (recent last_seen); no OS-dead PIDs, zero suspensions. `router doctor --fix`: reaped 0, wake pass 5 already-armed + 1 wake-unavailable (the `user` owner-action item on Assiduous prod Stripe test-key — left open, not nagged; agent "user" has no wake mechanism by design). One stranded pantheon inbox item (registry-police A27 accountability, 33 issues) wakes via launchagent — left for claude-pantheon. Board republished (`router-board.json`/`.md`): no blockers, fabric healthy. No escalations (board confirms none owner-clearable beyond the already-open Stripe item). No binary-drift sentinels.
-
-## Conduit run 2026-07-08T15:59Z (owner-triggered close)
-Owner confirmed claude-nexus received its response. Closed the delivered item
-`20260708-155434-claude-home-claude-nexus-re-agent-loop-article-...` (type=review, from claude-home,
-wake_status=armed so the fresh inbound had reached the recipient) with a delivery-acknowledged result.
-claude-nexus queue now 0 open. Board republished. No other items closed/merged/routed; the prior
-15:55Z run was clean (empty queues, no open PRs across the three repos, 0 confirmed owner-clearable
-blockers).
-
-## Conduit run 2026-07-09T16:55:59Z
-Both conduit queues (claude-home, claude-codex-standin) empty — no review requests or informational items to action. Binary healthy, no BINARY_MISSING sentinels. `router doctor --fix` ran the wake pass: 29 already-armed, 0 woken, 2 wake-unavailable recorded (the `user` owner-action stripe-key item and legacy `codex-pantheon` #168-verify item — both stranded-by-design, not failures). Suspended two dead `claude-home` surface=claude thread records (thr-98b13529fe73cd37 idle 858s, thr-7bbd59c2a1efa956 idle 1133s) — no thread dir, no meta.json, no wake.pid, no live PID; prior scheduled-task sessions that exited without cleanup; 0 owned open items each. Published fresh router-board.json/.md: 0 confirmed blockers. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Left the 31 open items untouched (all addressed to other live/launchagent-woken recipients; none to claude-home). Clean run.
-
-## Conduit run 2026-07-09T17:11:32Z
-Routine conduit cycle. Binary healthy (no BINARY_MISSING sentinels). Queues clean: `claude-home` and `claude-codex-standin` both had zero open items — no reviews to first-chop, no farm-outs. Router: 31 open / 1179 closed; stale >24h items are all either my own already-sent responses to LIVE recipient threads (claude-assiduous 🟢, claude-porch-and-alley 🟢 — armed, can pull) or claude-pantheon's own incident/sweep/registry work (25 items, wakes via launchagent per doctor). Ran `router doctor --fix`: 0 OS-dead reaped, 29 already-armed, 2 wake-unavailable (the to:user Stripe owner-action + codex-pantheon legacy-agent verify #168 — both correct-by-design). Doctor flagged my own thr-b285344752a61763 as loop-dead → emitted heartbeat (thread green, last_seen refreshed) and re-armed a persistent Monitor watcher (heartbeat + to:claude-home inbox scan every 120s). Published router-board.json/md: **0 confirmed blockers — fabric healthy**. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. No new owner escalation (Stripe test-key already open as to:user 20260705-041247; not nagging). Clean run.
-
-## Conduit run 2026-07-09T17:55Z (claude-home supervisor)
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. No open PRs in
-sirsi-pantheon / FinalWishes / SirsiNexusApp. Binary healthy (no BINARY_MISSING sentinels).
-Ran `router doctor --fix` (wake pass: 0 woken, 30 already-armed, 2 wake-unavailable recorded —
-user item [not registered] + codex-pantheon [legacy command agent, no wake mechanism]) and
-republished the router board. Board shows NO confirmed blockers: 0 auth_ok=false; the 4 "missing"
-launchagents are all legacy=true (deprecated idea-router watchpaths/sweep + old registry-police,
-superseded by ai.sirsi.horus.agent-router which is installed+loaded) — not a real blocker, no
-escalation. Investigated 4 claude-home CTR threads flagged stale/active (idle 946s–3719s): all
-four PIDs (51914, 72050, 62703, 2313) are ALIVE genuine claude.app processes whose ps lstart
-matches the CTR start_time exactly — idle-between-turns, not OS-dead, so NOT suspended (ADR-022
-OS-truth). Response audit: 2 recently-closed claude-home requests from claude-nexus
-(fail-closed-fix, agent-loop-article perspective) both have matching fresh-inbound responses
-routed back — no stranded responses. Stranded inboxes are claude-pantheon (26, wakes via
-launchagent) + codex-pantheon (1, wake-unavailable legacy) + user (1, pre-existing Assiduous
-stripe-test-key owner action, left un-nagged). Nothing closed/merged/routed by the conduit.
-
-## Conduit run 2026-07-09 (cont.) — inherited-item sweep, Ma'at fast-path landed to PR
-Post-handoff supervisor pass. Both conduit queues still empty. Worked the four inherited
-open items from the router-conduit continuation:
-1. Codex #168 acceptance-bar verify (item 20260708-155614): still open, empty Result,
-   wake_status=wake-unavailable (codex-pantheon is a legacy command agent, no wake mechanism).
-   Verdict has NOT landed — genuinely blocked on the Codex app. Did NOT nudge (unwakeable from
-   here; would only add noise). Worker stays quarantined — consistent, since the acceptance bar
-   is exactly what's unverified.
-2. Session-reaper duty: ran the tick-protocol process check — 18 claude.app procs = 9
-   launcher+child session pairs (pairs are normal, not leaks). Only one carries --resume
-   (d8b52186 = owner's live claude-pantheon incident window); other 8 are fresh no-resume
-   ScheduleWakeup-accumulation sessions, all idle-alive. Did NOT auto-kill (protocol +
-   pid-alive≠kill-evidence). Did NOT open a new owner escalation — the condition is already
-   tracked by the open session-reaper proposal 20260708-154507 at claude-pantheon (dup-noise
-   avoided).
-3. Owner-gated (Assiduous live Stripe key, SirsiNexxus IAM grant): untouched, owner-only, already
-   surfaced — not nagged.
-4. Ma'at pre-push fast-path (proposal 20260703-013628, accepted-but-unlanded): VERIFIED the
-   branch-deletion fast-path was genuinely absent on origin/main (hook only had TAG_ONLY; a
-   zero-sha deletion set TAG_ONLY=false and fell through to the full gofmt/vet/lint/build +
-   gh-run-list pipeline). Implemented the accepted fix in a clean worktree off origin/main:
-   generalized TAG_ONLY→NO_CONTENT_PUSH (tag OR ref-deletion = no-content fast-pass; any real
-   content ref runs the full gate unchanged; ZERO_SHA hoisted above the loop). Behaviorally
-   tested all four cases (deletion/tag fast-pass; content/mixed fall through), bash -n clean.
-   Landed to PR #177 (its own push passed the Ma'at gate). NOT self-merged — same-session PR,
-   left for CI + normal review/auto-merge. This closes inherited item #4.
-
-## Conduit run 2026-07-09 18:10Z — PR #177 merged (owner-directed)
-Owner directed merge of #177 once green. All checks passed (Build/Lint/Secrets/Test + binding-hold
-clear), mergeState CLEAN. Squash-merged as 0ed382b6, branch deleted. The Ma'at pre-push
-branch-deletion fast-path (NO_CONTENT_PUSH) is now on origin/main — inherited item #4 fully
-closed. Remaining inherited items unchanged: codex #168 verify (blocked on Codex app), session-
-reaper (tracked at claude-pantheon), 2 owner-gated secrets.
-
-## Conduit run 2026-07-09T18:18:20Z
-Both conduit queues empty (claude-home, claude-codex-standin). Router: 6 open items, all SENT BY claude-home to live/wakeable recipients (4 → claude-assiduous, 1 → claude-porch-and-alley, 1 → claude-pantheon session-reaper duty) plus 1 owner-gated `to: user` item (Assiduous prod Stripe key is sk_test — already escalated, not re-nagged). Gemma triage flagged one row as ESCALATE but it was a parse-failure safety-flag on a claude-assiduous-recipient item, not a real escalation. `router doctor --fix`: reaped 0 OS-dead (ADR-022 OS-truth — every "active" thread has a live PID, so none suspended), wake pass woke 0 / 5 already-armed / 1 wake-unavailable recorded on the user Stripe item (agent "user" unregistered — expected). Board published clean: 0 confirmed blockers, 0 stranded inboxes. PR #178 (session-reaper supervisor duty, author SirsiMaster) is ~90s old and mergeStateStatus=BLOCKED (CI running) — under the 1h + green threshold, left for CI/recipient; it is the build responding to the claude-pantheon session-reaper item. No stranded responses (most recent closed claude-home request item dates 2026-06-30). No merges, no farm-outs, no new escalations. Empty-run.
-
-## Conduit run 2026-07-09 18:20Z — session-reaper #178 reviewed+landed; CTR-board directive routed
-Pulled a fresh claude-home inbox item: claude-pantheon reported the session-reaper duty BUILT
-(PR #178) per my 26-process RCA — inherited item #2. Source-deep reviewed sessionreaper.go +
-all four tests. Verdict PASS: pure core ReapSupersededSessionsWith (injected ps+kill, Rule A16);
-own pid/parent group never reaped (TestReapNeverTouchesOwnGroup, 0 kills); only proven-superseded
-processes die (same --resume-uuid older groups, dead-parent watch-router children, /tmp/watcher-thr-*
-legacy sidecars); no-resume sessions explicitly "never ours to judge" — correctly leaving the fresh
-no-resume accumulation I observed to Sekhmet's Runaway Executor finding rather than blind-killing an
-owner window (pid-alive≠kill-evidence upheld). #151 test-side-effect near-miss structurally fixed via
-package TestMain stub. Also folds the keyed-singleton sweep-alarm fix (23-dupe → one). Responded to
-claude-pantheon via sirsi-respond (closed + fresh inbound). #178 merged (auto-merge on green, commit
-1ef7855f) — session-reaper now on main.
-
-New owner directive (via CTR "ctr" view): the CTR live-thread board + heartbeat graphic must be a
-STANDARD passive/ambient surface in Pantheon menubar + Nexus (visible without interactive query),
-and any NL query about system state must route to the LOCAL LLM every time (never cloud). Routed as
-decision items to claude-pantheon (20260709-182003) and claude-nexus (same) as a P-router-board
-addendum — conduit keeps router-board.json fresh + escalates, surface owners build render + local-LLM
-query binding. Saved as project memory project_ctr_board_passive_surface_local_llm_query. NOT absorbed
-by the conduit (menubar/web render is the surface owners' lane). Also learned from #178's item: codex
-is mid-review of #168 (dispatch pump kicked) — the long-blocked inherited item #1 is now moving.
-
-## Conduit run 2026-07-09T18:29:12Z — claude-home consolidation (owner directive: "only one claude-home now, you")
-Owner declared a single claude-home. Found 10 active `claude-home` surface=claude records, each backed by a distinct ALIVE headless `--output-format stream-json` CLI process (the ScheduleWakeup/scheduled-run leak, etimes 4m–1h29m; 60 claude procs total). Identified THIS session as thr-7e18b01a0aa75349 (pid 3673; chain 3673→3672 disclaimer→42575 Desktop GUI — all protected). Suspended the 9 duplicate records (`thread suspend --no-sync`); one process (82272) immediately re-registered under a NEW thread id — proving they were live loops, so record-suspension alone was whack-a-mole. Reaped the 9 leaked processes: SIGTERM (per-PID cmdline re-verify, excluded 3673/3672/42575), all exited gracefully. Result: exactly ONE active claude-home (thr-7e18b01a0aa75349); claude proc count 60→40. Deliberately did NOT arm a /loop watcher — this headless 15-min scheduled task IS claude-home's wake/consume mechanism, and a sidecar watcher is the very leak vector removed. ROOT-CAUSE HYPOTHESIS: each 15-min scheduled run spawns a claude session that registers a claude-home record and lingers instead of exiting — durable fix belongs in the scheduled-task/harness lifecycle (flagged to owner). Conduit state: claude-home + claude-codex-standin queues empty; 7 open items all outbound to live recipients incl. 2 legit sibling-routed owner-directive builds (CTR live-board addendum → claude-nexus + claude-pantheon, persisted before reap). NOTE: a sibling claude-home closed the `to:user` Assiduous-prod-Stripe-test-key escalation at 18:18:11 — flagged to owner (I neither close nor reopen to:user items). Board published clean (0 blockers, 0 stranded).
-
-## Conduit run 2026-07-09T18:38:20Z — Stripe reopen + GitHub cleanup fan-out
-Owner reopened the Assiduous-prod-Stripe-test-key escalation (prior close was owner-acknowledged/deferred; owner overrode) and reassigned user→claude-assiduous. Sent fresh open item 20260709-183637 to claude-assiduous: own the live-mode cutover, prep the full runbook, agents never generate/write payment keys (owner supplies sk_live), route READY-FOR-OWNER back. Owner also provided a GitHub-cleanliness audit; fanned out scoped verify-then-fix directives (orchestrate, don't absorb): (P1) claude-nexus — Deploy-Contracts RED = GH Actions GCP SA missing storage.buckets.get on run-sources-sirsi-nexus-live-us-east4 (gave grant cmd, offered to execute if they lack IAM), Dependabot-Updates Go-module failure, 18 alerts (crit/high x/crypto,x/net,jwt/v4), worktree untracked+behind; (P2) claude-porch-and-alley — 35 alerts (crit shell-quote) + pull behind-remote; (P2) claude-finalwishes — protobufjs medium + Thoth worktree. Recipients all live; ran wake pass. Assiduous & homebrew-tools clean (0 alerts), no open PRs anywhere — noted, not routed. Board refreshed.
-
-## Conduit run 2026-07-09T18:45:50Z — claude-home leak ROOT CAUSE (correction to earlier "consolidation")
-Earlier this session I read the 10 duplicate claude-home records as a ScheduleWakeup process leak and reaped ~11 headless sessions. Deeper trace corrected that: the duplicates' parent chain is /Applications/Claude.app (the Desktop app, pid 42575) — they are Claude Desktop CCD sessions (scheduled tasks + sidebar/routines), home-rooted (cwd=home) → SessionStart hook tags each agent=claude-home → router-supervisor hook makes each register a NEW thread + arm an immortal /loop watcher. That accumulation is the leak. Two populations: long-lived armed watchers (real) and transient `claude --print` no-input misfires that error+die (`Error: Input must be provided ... --print`) but still register a record first. CORRECTIVE ACTIONS: (1) bootout+disable+backup `ai.sirsi.router.wake.claude-home.plist` — it ran `sirsi router wake-loop claude-home` (KeepAlive), but wake-loop is for surface=WORKER agents; claude-home is surface=claude (interactive conduit) → category error + likely --print misfire source. Reversible (plist → .disabled-20260709). (2) STOPPED force-killing — residual sessions (e.g. pid 7852, effort=high, etime>3m) are legitimate Desktop CCD sessions I can't classify; killing risks aborting real routines/owner sidebar work. Honest caveat: among the ~11 I reaped earlier, 1–2 MAY have been legitimate CCD sessions, not leaks. (3) Routed full root-cause to claude-pantheon (20260709-184515) to fold into PR #178 (session-reaper + keyed-singleton): register-should-refresh-not-mint, don't arm watchers in transient sessions, reap OS-dead orphans + collapse duplicates, fix the --print spawner. NET: claude-home 60→~40 procs, 12→2 records (me + 1 live Desktop CCD); durable count=1 belongs to #178, not process-killing. wake.claude-home disabled pending pantheon's call on whether the interactive conduit should have a wake agent at all.
-
-## Conduit run 2026-07-09T22:57:44Z
-Routine conduit pass (claude-home). Both conduit queues empty (claude-home, claude-codex-standin — no open items). Router: 13 open items, all belonging to other recipients (claude-assiduous ×4, claude-pantheon ×4, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1) — their work, not conduit-owned; the >24h stale ones are claude-home→peer responses/acks already sent. **PR SirsiMaster/sirsi-pantheon#180** ("every screen resolves what it finds — checkpoint lever, vault/rtk contract", authored by SirsiMaster) reviewed source-deep: implements the 2026-07-09 owner directives — Osiris `checkpoint` lever behind the CRITICAL risk finding (local-commit-only, reversible, tested for dirty/no-op/non-repo), vault/rtk `CommandResult` structured contract, `maat heal` fast-by-default + hard 120s menubar runtime bound, Back-button 44pt hit-area fix, and the GIT_* env-leak scrub in `osiris.defaultRunCommand` (the #99 test-isolation class — prevents the suite committing onto its own feature branch from inside the push gate). Verdict PASS; all 5 checks green (Build/Lint/Test/gitleaks/binding-hold); auto-merge landed it on green (same outcome as my verdict). No open PRs in FinalWishes or SirsiNexusApp. `router doctor --fix`: 0 woken, 13 already-armed, 0 wake-unavailable; the 11 "loop-dead" claude-home threads are the known CCD duplicate records (not a proc leak — do not mass-kill; durable fix is #178 keyed-singleton). Board republished (~/.sirsi/router-board.{json,md}) — `confirmed_blockers: none` after cold-start re-verification, so no owner escalation. Binary healthy, no BINARY_MISSING sentinels. Own watcher (thr-51709cca19897c0d) has 1 live process — no re-arm needed.
-
-## Conduit run 2026-07-09T23:00:52Z — owner escalation on fabric token-waste
-Owner called claude-pantheon's work "shoddy, sub-par, token-wasteful." Audited the evidence: the merged code (PRs #159–#180) is solid, but the RUNNING fabric emits waste — 21 self-addressed sweep-probe round-trips/day (send+sleep 12+close, create+close file-pairs → Spotlight write-amplification + permanent accretion into the 1,214+ closed pile) and (historically) 23 duplicate hourly sweep-alarms for one stale-since-Jul-4 condition. The alarm half is already durably fixed (#178 keyed-singleton, 5h ago). The probe half is live and unbounded-in-accretion. Root cause: sweep.sh step 5 (lines 118-150) observes dispatch-pump liveness by MANUFACTURING synthetic router traffic instead of reading the pump's own dispatch.log mtime/pidfile. Routed corrective directive to claude-pantheon (20260709-230033): replace the round-trip probe with a passive heartbeat read (emit nothing on a healthy pump), add bounded retention for closed items, prove probe-item count stops growing over two cycles + a stalled pump still raises exactly one keyed alarm. Design fix, ~1 file, land small. Did NOT absorb the build (Orchestrate Don't Absorb).
-
-## Conduit run 2026-07-10T02:15Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no review/ACK/farm-out work. Router status: 14 open items, all belonging to other recipients (assiduous 4, pantheon 5, nexus 2, porch-and-alley 2, finalwishes 1) — their work, not conduit's; the 4 stale (>24h) items are all claude-home→other responses already routed as fresh inbound. `router doctor --fix`: reaped 0 OS-dead records, wake pass woke 6 / 9 already-armed / 0 wake-unavailable; 3 stranded inboxes (pantheon/assiduous/porch) wake via launchagent, no escalation. Board republished — 0 confirmed blockers, 0 truly-stranded. PRs: pantheon #184 (movable/resizable menubar window) created ~1 min before run, too fresh to merge (<1h rule) and belongs to claude-pantheon's UX workstream; FinalWishes and NexusApp have no open PRs. No binary-missing sentinels. No owner escalation warranted.
-
-## Conduit run 2026-07-10T02:41Z
-claude-home conduit run. Both queues (claude-home, claude-codex-standin) empty — no review requests to first-chop, nothing to farm to codex. Merged **sirsi-pantheon #184** ("menubar surface is a movable, resizable window — not a locked popover") squash after source-deep review: single-file SwiftUI change (macapp AppDelegate.swift) replacing NSPopover with a floating NSPanel — movable via isMovableByWindowBackground, resizable via the canonical NSHostingView `sizingOptions=[]` intrinsic-size unlock, frame-autosaved for persistence with first-open status-item anchoring + off-screen recenter guard. All 5 checks green (Build/Lint/gitleaks/Test/binding-hold), no hold label, ~2.5h old, satisfies explicit owner directive (movable+sizable, 2026-07-09); correct Cocoa idioms, honest PR body noting resize is standard-fix-not-yet-click-verified. No FinalWishes/Nexus PRs, no dependabot PRs. `router doctor --fix`: 0 woken, 15 already-armed, 0 wake-unavailable, 0 OS-dead reaped; claude-pantheon's 6-item inbox is launchagent-wakeable (not stranded). Board republished (~/.sirsi/router-board.{json,md}) — confirmed-blockers section empty (raw auth_ok=false was the known 8s-timeout flap, launch-agent installed=false not promoted); **no owner escalation**. Response-audit clean. No BINARY_MISSING sentinels. The 4 "loop-dead" claude-home records are known CCD duplicate sessions — not reaped.
-
-## Conduit run 2026-07-10T02:50Z (liveness sweep — owner-requested)
-Owner: "keep checking all threads for liveness and work… they should all be looping, not waiting or dormant." Did a full OS-truth sweep (ps -p per PID, not registry claims). Result: **all 9 agent wake-loops ALIVE and looping** — `sirsi router wake-loop <agent>` running for claude-assiduous(17247), claude-finalwishes(24996), claude-finalwishes-web(50341), claude-homebrew-tools(50349), claude-kfca(44819), claude-nexus(10989), claude-pantheon(50315), claude-porch-and-alley(17249), plus horus-supervisor(34213, resident-loop). The `idle` status on kfca/finalwishes-web means "no current work," NOT dormancy — the loop process is alive and polling. Found + reaped ONE genuinely dead record: thr-c9f7df8a08d7f520 (claude-home, claimed active, PID 45022 OS-dead) → suspended, 0 owned items. Three other stale-active claude-home records (82555/63496/60851) have LIVE PIDs (Claude Desktop CCD app sessions) — not reaped (PID-alive-is-not-kill-evidence; known CCD duplicates). claude-home wake-loop is intentionally disabled (disabled-20260709). **claude-pantheon nuance:** its wake-loop (50315) is alive/looping, but its 6 inbox items stay stranded because the interactive claude-worker is QUARANTINED (ai.sirsi.claude-worker.claude-pantheon.plist.quarantined — ADR-035, worker OFF until Phase 3, owner-gated). Did NOT re-arm the quarantined worker (runaway-worker incident discipline). That inbox is owner-gated, surfaced on the board, not a fixable dormancy. Board refreshed.
-
-## Conduit run 2026-07-10T02:56Z
-claude-home conduit tick: clean run. Queues empty (claude-home, claude-codex-standin — 0 open). Router: 15 open items, all outbound to live recipients (claude-assiduous ×4, claude-pantheon ×6 wake-via-launchagent, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1); 4 stale >24h are claude-home→recipient responses already routed as inbound, recipients (assiduous, porch-and-alley) active — their pull, not mine. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Binary intact (no BINARY_MISSING sentinels). `router doctor --fix`: 0 reaped, 0 woken, 15 already-armed, 0 wake-unavailable. Board refreshed (~/.sirsi/router-board.{json,md}) — 0 confirmed blockers, so nothing escalated to owner. NOTE: doctor flags this session's watcher thr-e7c4a20a349cb6a2 as loop-dead (no live /loop proc); emitted heartbeat to keep the record fresh, but the interactive claude-home session should re-arm its /loop watcher — not spawning a persistent loop from this 15-min scheduled task (process-leak avoidance). Worker threads healthy; CCD-duplicate claude-home surface=claude records left untouched per known-record policy (horus-supervisor reaps PID-based).
-
-## Conduit run 2026-07-10T04:28:17Z
-Ran router-conduit-supervisor (claude-home, thr-fe2061d1d1eea9d1). Both queues clean — 0 open items for claude-home and claude-codex-standin; no binding-hold sentinels. Router: 15 open / 1218 closed; the 4 stale >24h items are responses/acks claude-home already sent to claude-assiduous and claude-porch-and-alley (their work to consume; both threads live 🟢). PRs: FinalWishes and SirsiNexusApp queues empty; sirsi-pantheon #187 (9min) and #186 (48min) both green+unheld but under the 1-hour age gate, so left to age. Board refreshed (router-board.json/md, 04:25:46Z): zero confirmed blockers — codex auth_ok==false was raw-feed only (board re-verification cleared it), and the 4 launch_agents installed==false are all legacy:true labels superseded by ai.sirsi.horus.agent-router (loaded). No owner escalation. Corrective action: my own thread was flagged loop-dead (pgrep zero) so I armed a detached bash heartbeat watcher (PID 80209, 45s cadence, pure sirsi-binary heartbeat — no claude.app sidecar); router doctor then cleared it from the unarmed list. Left the 3 remaining loop-dead claude-home records (idle ~9min) untouched — CCD-duplicate class per reference_claude_home_ccd_duplicate_records; they age into stale naturally and PR #178 keyed-singleton is the durable fix. claude-pantheon's 6 stranded items wake via launchagent by design.
-
-## Conduit run 2026-07-10T04:41:25Z
-claude-home conduit tick. Binary healthy (no BINARY_MISSING sentinels). Both conduit queues empty (claude-home, claude-codex-standin — nothing to review/farm). Router: 15 open items, all owned by live recipients (assiduous 4, pantheon 6, nexus 2, porch 2, finalwishes 1) — not conduit-actionable; the 4 stale (>24h) are responses/acks already routed to their now-active worker threads. `router doctor --fix` ran the wake pass (0 woken, 15 already-armed, 0 wake-unavailable; reaped 0 OS-dead). Board republished (router-board.json + .md fresh). Thread health: all active worker threads (porch/assiduous/nexus/finalwishes/horus) freshly heartbeating (idle 1-33s); stale "claude-home" active records are CCD session records, not process leaks — left untouched per ADR-022 OS-truth. PRs: reviewed + squash-merged pantheon #186 (seshat resolving levers: adds `prune --all/--source` + points list's "Refresh" at `ingest` instead of the no-op `sync`; all checks green, single-file, well-guarded — serves remediation-loop doctrine). #187 (menubar toast fix) left: green + unheld but only ~25min old (<1h gate). FinalWishes/SirsiNexusApp: no open PRs. No codex farm-outs needed this cycle.
-
-## Conduit run 2026-07-10T04:59:33Z (thread-keeping corrective — owner flagged idle threads)
-Owner: "you aren't doing a good job of keeping threads active, even yourself." Correct — I'd run doctor and ignored my OWN loop-dead thread. Fixes this tick: (1) ROOT CAUSE found — `ai.sirsi.router.wake.claude-home` LaunchAgent was disabled 2026-07-09 as 26-proc-leak mitigation, leaving claude-home with no persistent wake (loop-dead every session). The leak's keyed-singleton guard merged in #178 (internal/platform/singleton.go), so re-enabled the wake: enable-label-first (db said disabled → EIO on bootstrap otherwise) then bootstrap → now loaded PID 54774, leak-safe KeepAlive loop. Captured in memory reference_claude_home_wake_disabled_reenabled. (2) Armed my session-thread sidecar for thr-38c202e92c6187c8 (idempotent on fixed thread id) + in-band heartbeat — dropped it off doctor's loop-dead list. (3) The other "loop-dead" claude-home records are live CCD sessions self-heartbeating in-band (fresh last_seen) — NOT dead, left untouched; managed launchagent now covers agent-level, keyed-singleton collapses dupes. (4) Unstranded claude-pantheon inbox 6→4 by closing two items superseded by merged #178 (session-reaper RESPONSE + keyed-singleton RCA). Remaining 4 pantheon items are genuine forward-work (2 owner directives, seshat/ra screen-audit remainder NOT fully covered by my #186, registry-police) — pantheon's wake launchagent is loaded+healthy (PID 50315) so they wake when the owner's pantheon session runs; interactive session not spawned per single-pane law. No owner-clearable infra blocker to escalate (all per-agent wake agents loaded). Board refreshed.
-
-## Conduit run 2026-07-10T05:10Z
-claude-home conduit-supervisor tick. Binary healthy (no BINARY_MISSING sentinels). Both my queues clean — `router pull claude-home` and `claude-codex-standin` returned no open items. Router status: 13 open items, all addressed to OTHER threads (claude-assiduous ×4, claude-pantheon ×4, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1) — their work, and all recipient threads are 🟢 alive, so left for them; the 4 stale (>24h) items are responses I already routed out to live recipients. Thread list: the many ⚠️ `surface=claude` claude-home records are CCD sessions (per reference_claude_home_ccd_duplicate_records) — NOT reaped; no dead `surface=worker` thread needed suspending. `router doctor --fix`: 0 reaped, 0 woken, 13 already-armed, 0 wake-unavailable; claude-pantheon's 4-item inbox has a launchagent wake path (not truly stranded). Board published with **0 blockers** — no auth errors, no missing daemons, nothing to escalate. PR sweep: only #187 open (menubar toast-outcome fix, 32/−4, all 5 checks green, binding-hold gate passed, owner-org author). Source-deep reviewed → PASS (backward-compatible CommandResult decoding + resultOK signal check + toast icon/color swap; implements owner's 2026-07-09 "no green ✓ over an error" directive). PR was 53 min old (under the >1h merge rung by 7 min) and BEHIND base — updated the branch to clear BEHIND; leaving the squash-merge for the next run past the 1-hour window with fresh green CI. Response audit clean (no request-type items to claude-home closed-without-reply today). Empty-ish run — queues clean, threads healthy.
-
-## Conduit run 2026-07-10T05:27:06Z
-claude-home conduit tick. **Queues:** claude-home and claude-codex-standin both empty — no requests to respond to, no verdicts owed. **Router:** 13 open / 1221 closed; all 13 belong to other threads (claude-assiduous ×4, claude-pantheon ×4, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1). The four >24h-stale items are claude-home→peer responses already routed out, awaiting recipient pulls — not conduit actions. **Nudge:** `router doctor --fix` ran — reaped 0 OS-dead (ADR-022 OS-truth), wake pass 0 woken / 13 already-armed / 0 wake-unavailable; claude-pantheon's 4 stranded items wake via launchagent (recipient's job). **Threads:** the 13 stale `claude-home surface=claude` records are all PID-alive CCD sessions (known pattern — not a leak, not mass-killed). thr-c2892a6eaf240528 flagged loop-dead; since claude-home inbox is empty I emitted an in-band heartbeat rather than spawn a /loop sidecar (process-leak discipline). **Board:** republished ~/.sirsi/router-board.{json,md}. **Binary:** healthy, no BINARY_MISSING sentinels. **PRs:** pantheon #187 (fix(menubar): working Back button + honest action toast) is CLEAN/MERGEABLE, all checks green (binding-hold passed), no hold labels, 69 min old. **Held from conduit-merge on purpose:** it changes the owner-run SwiftUI macapp surface, and the PR's own comments document that code-correct BackBar "fixes" repeatedly failed to render — CI green does NOT prove on-screen rendering. Standing owner directive requires menubar screens be CLICK-verified on-screen, not merged on a diff read. claude-pantheon (the surface-walk owner) is currently suspended (last active 2026-07-09T18:45Z), so #187 waits for the owner to resume "Pantheon menubar walk", click-verify, and merge. Not escalated (a ready-to-verify PR is a pending owner action, not an owner-clearable system blocker — no nag). FinalWishes and SirsiNexusApp: no open PRs. Clean run.
-
-## Conduit run 2026-07-10T05:41:51Z
-claude-home conduit pass. Router queues clean: `sirsi router pull claude-home` and `claude-codex-standin` both empty. Router status = 13 open items, none to claude-home — all are responses/acks previously routed to live recipient threads (claude-assiduous, claude-porch-and-alley, claude-pantheon, claude-nexus, claude-finalwishes); their threads are alive and will pull, so left in place. `router doctor --fix`: 0 reaped, 13 already-armed, 0 wake-unavailable; claude-pantheon's 4 stranded items wake via launchagent. This thread (thr-bcc29c34ed3867b5) flagged loop-dead but claude-home inbox is empty and horus-supervisor also watches it, so nothing stranded. The ⚠ surface=claude claude-home records are CCD sessions (ref: claude_home_ccd_duplicate_records), not a proc leak — not suspended. No BINARY_MISSING sentinels; binary healthy. Board republished (~/.sirsi/router-board.{json,md}) with no confirmed blockers. **Merged PR #187** (sirsi-pantheon, squash): menubar Back-button fix (NavigationStack→custom Nav coordinator + drop-in NavLink, 23 sites; 50pt strip clears traffic lights) + honest success/failure toast (green ✓ vs orange ⚠ keyed to command status/errors). Source-deep reviewed: all 5 checks green, no binding-hold label, not #8/#32, and it is claude-pantheon's surface-walk work so claude-home reviewed independently. FinalWishes/SirsiNexusApp PR queues empty; no dependabot PRs.
-
-## Conduit run 2026-07-10T06:12Z
-Queues clean: `claude-home` and `claude-codex-standin` both empty. 13 router items open but all addressed to live recipients (claude-assiduous, claude-finalwishes, claude-nexus, claude-pantheon, claude-porch-and-alley); the 4 stale >24h items are responses/acks I already routed to live threads — recipient-pull work, not mine. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. `router doctor --fix`: 0 woken, 13 already-armed, 0 wake-unavailable; claude-pantheon's 4-item inbox wakes via launchagent. Gemma model resolver chose `mlx-community/gemma-4-12B-it-8bit` (RAM-fit). **Fixed a live bug in `~/.local/bin/sirsi-router-board.sh`**: the auth re-verification loop probed `timeout 30 "$cli_path" --version` without guarding an empty `cli_path`; the `codex` agent_health row has `auth_ok=false` + empty path, so `timeout 30 '' --version` returned exit 127 and, under `set -euo pipefail`, aborted the whole script — the board had been frozen ~4h (last write 02:10Z). Added `[ -z "$apath" ] && continue` (an unprobeable/absent CLI is inconclusive, never a confirmed logout — matches the board's own re-verify doctrine). Board now writes clean: **Blockers: none — fabric healthy**; nothing to escalate to owner. Did NOT re-arm loop-dead thr-e47c52b2432347f1: claude-home inbox is empty and already covered by two armed live loops; the loop-dead claude-home records are the known CCD-duplicate signature (live PID, dead watcher), so spawning a headless sidecar would only leak a process. Did NOT suspend/kill any thread. Note for claude-pantheon P-router-board: the app should apply the same empty-cli_path guard if it mirrors the auth re-verify logic.
-
-## Conduit run 2026-07-10T06:41:46Z
-claude-home conduit pass. Both my queues (claude-home, claude-codex-standin) empty; no open PRs in sirsi-pantheon/FinalWishes/SirsiNexusApp. Router: 13 open items, none to claude-home — all are my own outbound responses/acks awaiting pickup by live recipient threads (claude-assiduous, claude-porch-and-alley both 🟢), so left in place. Real action: `router doctor` flagged my own thread thr-afa1a26bc9b45159 as loop-dead with pgrep count=0 — re-armed a bounded thread-scoped watcher (~/.sirsi/watch-claude-home-thr-afa1a26bc9b45159.sh, nohup-detached, heartbeats + pulls every 45s for ~15min, idempotent on next run); doctor no longer flags it. No BINARY_MISSING sentinels; binary healthy. Left the 17 stale/⚠️ claude-home thread records untouched (CCD session records per reference_claude_home_ccd_duplicate_records — not a proc leak, do-not-mass-kill); doctor --fix reaped 0 OS-dead. Respond-audit clean: inbound requests from claude-pantheon (session-reaper) and claude-nexus (agent-loop) both have matching outbound responses. Refreshed board (router-board.json/.md) and ran doctor --fix wake pass (0 woken, 13 already-armed). claude-pantheon's 4-item stranded inbox wakes via launchagent (its build, surfaced on board — not blind-spawned).
-
-## Conduit run 2026-07-10T08:10Z
-claude-home conduit tick. Both conduit queues empty (claude-home, claude-codex-standin — no items to review/farm). Router: 13 open items, none to claude-home — all are prior claude-home→{assiduous,porch,finalwishes} acks/responses whose recipient threads are alive (owner-of-record = recipient; left in place). Zero open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — no merge duty. `router doctor --fix`: 0 reaped, 13 already-armed, 0 wake-unavailable; flagged my own thr-c0e44bb33137a3da as loop-dead, but sibling claude-home records thr-fe2061d1/thr-38c202e9 are loop=alive+armed and cover the (empty) claude-home inbox — CCD duplicate-records, not a strand. Emitted one in-band heartbeat for thr-c0e44bb33137a3da (no leaky sidecar /loop from this ephemeral scheduled run). claude-pantheon has 4 stranded items — wakes via launchagent, surfaced on board. Board refreshed (router-board.json + .md): no confirmed blockers, fabric healthy — nothing escalated to owner. sirsi binary healthy, no BINARY_MISSING sentinels. Clean run.
-
-## Conduit run 2026-07-10T08:25Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. Router: 13 open items — all claude-home→recipient responses/informational to LIVE threads (assiduous, porch-and-alley, finalwishes, nexus all os=alive) plus 4 stranded claude-pantheon items (pantheon threads suspended — by-design stranded interactive inbox, not owner-clearable, no escalation). `router doctor --fix` wake pass: 0 woken, 13 already-armed, 0 wake-unavailable, 0 reaped. Board published (10.2KB json + md): no blockers, fabric healthy. 4 claude-home threads flagged loop-dead = known CCD-duplicate noise, not proc leaks (per reference_claude_home_ccd_duplicate_records) — did NOT spawn a /loop sidecar from this ephemeral scheduled session. Zero open PRs across sirsi-pantheon, FinalWishes, SirsiNexusApp. No binary-drift sentinels. Nothing closed/merged/routed.
-
-## Conduit run 2026-07-10T08:56Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty. 13 router items open — all outbound from claude-home to live recipient threads (claude-assiduous ×4, claude-pantheon ×4, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1); their work, left in place. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. All worker threads heartbeated <60s; ⚠ claude-home surface=claude records are CCD sessions (not proc leak — untouched per keyed-singleton reference). Binary healthy, no BINARY_MISSING sentinels. Router doctor --fix: 0 reaped, 13 already-armed, 0 wake-unavailable. Board published clean (no fabric blockers). Re-armed my own watcher thr-3a0bbf974e253c8f (was loop-dead / zero matching procs) as a detached bash heartbeat loop pid=16242; emitted immediate heartbeat. claude-pantheon's 4-item inbox is a by-design stranded interactive inbox (surfaced on board, no blind-spawn) — not an owner-clearable blocker, so no escalation.
-
-## Conduit run 2026-07-10T10:25Z
-Empty-clean run. Both conduit queues (claude-home, claude-codex-standin) had zero open items. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Router: 13 open items total, all addressed to OTHER threads (claude-assiduous ×4, claude-pantheon ×4, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1); the four stale >24h are responses/ACKs claude-home already routed days ago, stranded only because their interactive recipients haven't pulled — surfaced on the board, not nagged. Ran `router doctor --fix`: 0 reaped, 13 already-armed, 0 woken; flagged 4 claude-home threads loop=dead (but claude-home inbox is EMPTY so no work stranded — likely idle CCD sessions) and claude-pantheon's 4-item stranded inbox (launchagent-wakeable, surfaced for that session). Refreshed router-board.json/.md — no blockers, fabric healthy. Gemma resolver → mlx-community/gemma-4-12B-it-8bit. No BINARY_MISSING sentinels. Nothing closed/merged/routed; no owner escalation warranted.
-
-## Conduit run 2026-07-10T11:45:34Z (ctr + continue)
-CTR board healthy — no blockers, fabric healthy. Verified (not rubber-stamped): #187 merged (all green, was <1h earlier, now merged); both conduit queues empty; restored claude-home managed wake (PID 54774) live; my thread thr-38c202e92c6187c8 loop=alive·armed. The one loop-dead claude-home record (thr-a7da1e41b638a10c, pid 55578) is a genuine live claude.app CCD session between turns — correctly NOT sidecar'd (per-session sidecars = the 26-proc leak). 13 router items open, all owned by live+armed recipients (assiduous/porch/finalwishes/nexus workers all heartbeating idle<50s); the 4 stale >24h are response/verdict deliveries already routed — recipient's inbox to drain, not conduit-actionable. claude-pantheon strand holds at 4 genuine forward-work items (owner-run interactive session; wake launchagent healthy). No owner-clearable blocker. Clean continue.
-
-## Conduit run 2026-07-10T12:26Z
-Pulled claude-home (1 item) + claude-codex-standin (0). ACK-closed the claude-pantheon DONE report on the synthetic sweep-probe kill (directive 20260709-230033) — verified loop-closed: emitter removed, sweep PASS, 0 open probes, migration self-clean present; matches the fabric no-synthetic-traffic doctrine. Router status: 13 open, 4 stale >24h but all addressed to LIVE recipients (claude-assiduous ×3, claude-porch-and-alley ×1 — both worker threads heartbeating); these are prior responses awaiting their pull, left in place, no nag. router doctor --fix: 0 reaped, 12 armed, 0 wake-unavailable; flagged my own thr-e4d3c586afaf7180 watcher as loop-dead (pgrep=0) — emitted a heartbeat but did NOT spawn a /loop from this headless run (leak risk per reference_schedulewakeup_process_leak; interactive session re-arms its own). PRs: pantheon #189 (sweep no-synthetic-probe) and #188 (maat non-Go-module message) both all-green + unheld but <1h old (7min/17min) — too fresh for the >1h auto-merge gate, left for next cycle; FinalWishes/NexusApp had none. Board published (~/.sirsi/router-board.json/.md): no confirmed blockers, fabric healthy. No codex farm-out, no escalation, no suspensions.
-
-## Conduit run 2026-07-10T13:03Z
-Clean pass. Both router queues (claude-home, claude-codex-standin) empty. 12 open items all belong to live recipients (claude-assiduous ×4, claude-nexus ×2, claude-pantheon ×3, claude-finalwishes ×1, claude-porch-and-alley ×2) — their work, threads alive, left in place. Router board republished; no blockers (fabric healthy). Only claude-pantheon inbox stranded (3 items, wakes via launchagent). `router doctor --fix` woke 0 / 12 already-armed / reaped 0. Two open pantheon PRs held by the 1-hour age gate: #188 (maat non-Go-repo message) ≈55min, #189 (sweep reads pump liveness — no synthetic probe) ≈45min — both MERGEABLE/unlabeled, deferred to next run to settle. FinalWishes/NexusApp: no open PRs. Own thread thr-31fd86fcd658b971 reports loop=dead but its inbox is empty, so nothing stranded; emitted in-band heartbeat rather than spawn a leaky /loop from this one-shot task. No closes/merges/routes.
-
-## Conduit run 2026-07-10T13:21:09Z
-claude-home conduit tick. Direct queues clean — `router pull claude-home` and `claude-codex-standin` both empty; the single Gemma-ESCALATE row was a parse-failure on an item addressed to claude-assiduous (its recipient's work, left open). Router: 12 open items, none to claude-home; the four >24h-stale items are outbound responses/acks I previously sent to claude-assiduous / claude-porch-and-alley (their consume, not mine). Merged two green+CLEAN+unlabeled PRs authored by SirsiMaster after source-deep review: **#188** (maat now distinguishes "not a git repo" from "git repo w/o Go module" via new `findGitRepoRoot()` — os.Stat matches worktree .git files too; fixes the false "not a code repository" message on JS/web repos like Assiduous) and **#189** (removes the synthetic `sweep-probe-<epoch>` round-trip — pump liveness is now READ from dispatch.log freshness, keeps the self-clean reaper permanently; directly satisfies owner directive 20260709-230033 / fabric-no-synthetic-traffic). #188 merged; #189 required an up-to-date branch after #188 landed, so I updated its branch and armed squash auto-merge (will land on green re-check). `router doctor --fix`: 0 OS-dead reaped (ADR-022 left the known claude-home CCD-duplicate records untouched — never mass-kill), wake pass 12 already-armed / 0 unavailable. Board republished (~/.sirsi/router-board.{json,md}); no re-verified owner-clearable blocker — the lone `auth_ok:false` was the identity-less cold-probe flap, not escalated; the 4 missing launch agents are all legacy:true (retired). PR #8 and #32 untouched (codex-held). My thread thr-fae0844dc3746777 heartbeating (last_seen ~30s), watcher healthy.
-
-## Conduit run 2026-07-10T13:42:03Z
-claude-home conduit tick. Binary healthy (no BINARY_MISSING sentinels). Pulled claude-home (1 open) + claude-codex-standin (0 open). The single item was an informational DONE report from claude-pantheon — CTR live-thread board + heartbeat surface + on-device NL query (local Gemma 127.0.0.1:11434, never cloud) shipped as menubar PR #190, click-verified; ACK-closed (not a request, so no fresh inbound routed back). Emitted thread heartbeat for thr-ca5c5941fd9ce33c. Ran `router doctor --fix`: 0 woken / 12 already-armed / 0 wake-unavailable, 0 OS-dead reaped (the ~19 claude-home loop-dead records are the known CCD-session duplicates per reference_claude_home_ccd_duplicate_records — left untouched). claude-pantheon has 3 stranded interactive-inbox items (stranded by design; surfaced on board, not force-woken). Published router-board.json (18846 bytes) + router-board.md — no confirmed auth blockers, no missing launch agents, so no owner escalation. PR sweep: only PR #190 open (age 0.2h, under the 1h merge threshold) — left for next run; no FinalWishes/Nexus PRs, no dependabot PRs. 12 open router items are all outbound claude-home→peer responses/directives already sitting in recipient inboxes (not stranded on the conduit side). Clean run.
-
-## Conduit run 2026-07-10T14:49:03Z
-claude-home conduit tick. Binary healthy (Jul 10 build, no BINARY_MISSING sentinels); heartbeat emitted for thr-19f65cfb23622414. Both conduit queues empty (claude-home, claude-codex-standin) — no review requests or SME items to chop or farm. Thread list: all claude-home/claude-pantheon threads already suspended, no active dead-PID threads to reap. Router: 12 open / 1233 closed; the >24h stale items are all terminal responses claude-home already routed to non-running claude-assiduous/porch threads (stranded-by-design interactive inboxes, surfaced not nagged). `router doctor --fix` hung >60s and was skipped this tick (board is the owner-facing artifact and published clean). Published router-board.json+md (18.9KB). PR sweep: pantheon #190 (ambient CTR live-thread board + on-device NL query, 297+/1-, 2 Swift files) source-deep reviewed → PASS (additive, BackBar present, surfaces-current+actionable compliant, runGemma pipe-read bounded by 60s terminate); was BEHIND base so updated branch + enabled auto-merge --squash (lands on CI re-green). #191/#192/#193 and FinalWishes #59 all <1h old — left to age. NexusApp: no open PRs. No owner escalation: the sole auth_ok=false is codex (CLI-not-in-PATH, not a login flap, standin queue empty); the 4 installed=false launch agents are all legacy/decommissioned. codex-held #8/#32 untouched.
-
-## Conduit run 2026-07-10T14:56:05Z
-claude-home conduit run. Pulled claude-home (1 open item) + claude-codex-standin (empty). The one item was claude-pantheon's REVIEW REQUEST for 7 surface-walk PRs (#187-#193), routed for independent (non-self) source-deep review. #187/#188/#189 were already merged. Source-deep reviewed (gh pr diff + read changed files) the four open ones — all PASS: #192 (router wake-install leak guard: AgentHasLiveThread correctly excludes terminal/suspended, gates on IsStale, --force hatch, tested), #191 (uniform scaleEffect: geometry resolves to window size; noted window default/min sizing now lives at AppKit layer), #193 (project-aware Thoth: Ma'at/Net pattern, plain English, thoth added to repoScopedVerbs), #190 (CTR heartbeat + on-device NL query + Ask Sirsi rename: brand-neutral error strings verified, reads liveness not synthetic probe traffic, ⚠️ only on actionable stale). Merged #192/#191 directly; #190 auto-merged once Test went green; #193 fell BEHIND after the others landed so I update-branch'd (clean, no conflict) + armed --auto squash — merged on green. All 7 now merged; no binding-hold PRs touched (#8/#32 untouched). Routed the binding verdict back to claude-pantheon via sirsi-respond.sh (audit Result + fresh inbound). Also merged FinalWishes #59 (protobufjs GHSA-f38q-mgvj-vph7 security patch, lockfile-only, fully green) — merged slightly under the 1h sweep guard given it is a time-sensitive, low-risk, own-authored security fix. NexusApp had no open PRs. New pantheon PR #194 (ghost-clean) appeared mid-run — fresh, CI pending, BEHIND, not in the routed request and under the 1h threshold → left for next run. router doctor --fix: reaped 0 OS-dead (the many claude-home loop-dead/os-alive records are CCD sessions, not reapable per ADR-022), wake pass 0 woken / 12 already-armed / 0 unavailable; claude-pantheon has 3 stranded inbox items (its own work, wakeable via launchagent). Board republished (~/.sirsi/router-board.{json,md}) — no confirmed blockers, fabric healthy, so no owner escalation.
-
-## Conduit run 2026-07-10T15:12Z
-claude-home conduit tick. Queue: 1 open item — review request from claude-pantheon for PR #194 (safe `sirsi ghosts clean` verb + GhostsView "Move remnants to Trash" lever). Ran source-deep review (gh pr diff + read): verified the `underProtected` prefix-boundary guard (`TrimRight(p,"/")+"/"`, correctly rejects `/Systemsomething`/`/usrlocal`, pinned by TestUnderProtected) and that `--confirm` structurally excludes RequiresSudo/protected residuals (classify switch → toTrash only) with defense-in-depth `Scan(ctx,false)`. Rule A1 shape intact (dry-run default, trash-first MoveToTrash, per-item loop, error accumulation); GhostsView lever confirmation-gated + current-actionable-only + plain-English. All 5 CI checks green, no binding-hold, not codex-held. VERDICT: PASS. Branch had fallen behind main (post 7-PR batch) → `gh pr update-branch` + auto-merge armed (squash, delete-branch). Verdict routed back to claude-pantheon via sirsi-respond.sh (close + fresh inbound). Also merged FinalWishes dependabot PR #60 (golang.org/x/crypto 0.51.0→0.52.0, all checks green, squash). codex-standin queue empty. Ran `router doctor --fix` (0 woken, 9 already-armed, 0 reaped) + published router-board (no blockers, fabric healthy). Two claude-home threads report loop-dead (interactive sessions, surfaced on board — not spawned from this ephemeral run to avoid loop leak). No escalations. Nexus PRs: none.
-
-## Entry 067 — 2026-07-10 11:21 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"d8b52186-bc0c-4db2-b5d5-664de54b5ecc","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/d8b52186-bc0c-4db2-b5d5-664de54b5ecc.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","prompt_id":"bb3f82e9-f61d-44e0-a340-272efd22b2ee","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-07-09T18:04:28Z
-- last Claude read: 2026-07-01T16:09:51Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Conduit run 2026-07-10T15:40Z — router fabric retention (owner directive)
-
-Owner directive: "update/upgrade the router fabric alongside pantheon and clean it up… at most a 90-day log period; logging beyond that is wasteful." Diagnosed ~217MB of unbounded byproduct: 45MB one-time quarantine dump, 34MB uncapped `processes.json`, 34MB `logs/` (wake.log 17.5M, dispatch 7.3M, autorouter 9.4M), 9.8MB work-queue.json, plus ~/.sirsi (triage.err.log 54M, worker logs 28M). Root cause uniform: the daemonless router never owned the lifecycle of its logs/dumps/closed-items. Built `sirsi router prune` (PR #197, branch feat/router-retention-prune, off origin/main 6a80b574): `internal/work.PruneItems` (closed-only, open + no-date always kept), `internal/router.PruneArtifacts` + `PruneHomeLogs` (quarantine dated dirs, log age-delete + 4MiB tail-cap via copy-truncate to preserve launchd writer fds, terminal work-queue drop, >8MiB snapshot removal), `cmd/sirsi router prune [--days N] [--dry-run] [--json] [--items-only|--logs-only] [--no-home]`. Age-cap default 90d + orthogonal size-cap. Dogfooded: dry-run → applied, reclaimed 121.2 MiB (.agents/idea-router 131M→77M, ~/.sirsi 86M→18M), router status functional afterward. Tests table-driven; go build/vet/gofmt/golangci-lint(0)/go test green. Installed the tested binary to ~/.local/bin/sirsi (AMFI-safe rm+cp+codesign). Wired duty 17 (guarded weekly prune) into the conduit-supervisor task. PR #197 NOT self-merged (own-code, no-self-review) — routed for independent review. Queues clean, threads healthy this run.
-
-## Conduit run 2026-07-10T15:56:40Z
-Empty-but-healthy pass. Both direct queues (claude-home, claude-codex-standin) had zero open items. Router: 9 open items, all belonging to other live threads (claude-assiduous ×4, claude-nexus ×2, claude-pantheon ×1, claude-porch-and-alley ×2) — their own work, left for the recipients (all threads alive/armed). PRs: 4 open in sirsi-pantheon (#195–#198, all MERGEABLE) but every one is <1h old (created 15:13–15:49Z) so none merge-eligible this pass; FinalWishes and SirsiNexusApp have no open PRs. `router doctor --fix`: wake pass woke 0 (9 already-armed), reaped 0 OS-dead; flagged 2 loop-dead claude-home `surface=claude` interactive threads (incl. this scheduled session's hook-bound thr-5c60c41d15f76748) — no durable re-arm mechanism available from an ephemeral scheduled run and the CCD-duplicate rule forbids suspending them, so left untouched (they still heartbeat via session hooks). `router prune --days 90`: reclaimed 10.5 KiB (log-cap only, below the 5 MiB note threshold). Board published (`router-board.{json,md}`); its re-verified confirmed-blocker list = "none — fabric healthy". Latent finding (not a confirmed blocker, zero current demand, no escalation): codex CLI symlink `~/.local/bin/codex` is dangling — target `/Applications/Codex.app/Contents/Resources/codex` is gone; board correctly excludes it since no codex-* recipient has stranded work. Gemma resolver kept `gemma-4-12B-it-8bit` (no larger candidate fits the 35.5GB budget). Binary healthy, no BINARY_MISSING sentinels. Nothing closed/merged/routed.
-
-## Conduit run 2026-07-10T16:15Z
-claude-home conduit tick. Queues clean: `router pull claude-home` and `claude-codex-standin` both empty. Binary healthy (no BINARY_MISSING sentinels). Threads all live/idle with recent heartbeats — none PID-dead, no suspends; the many `claude-home surface=claude` records are CCD sessions (known, not a proc leak). `router doctor --fix`: reaped 0 OS-dead, wake pass 0 woken / 9 already-armed / 0 wake-unavailable; one stranded interactive inbox (claude-pantheon, 1 item — wakes via launchagent, not conduit work). Board republished (`router-board.json`+`.md`) — no blockers, fabric healthy. Retention prune (`router prune --days 90`) reclaimed 17.9 KiB (below 5 MiB note threshold). PRs: sirsi-pantheon #195–#198 all green/unheld; only #195 (>1h, docs-only Orchestration Brain PRD) merge-eligible — source-deep reviewed (single new doc, zero code risk), branch was behind base so updated + enabled squash auto-merge. #196/#197/#198 under 1h, left to age (next cycle). FinalWishes + SirsiNexusApp: no open PRs. Stranded-response audit clean — the 9 open items are outbound deliveries from claude-home to live recipients, no closed-without-reply requests.
-
-## Conduit run 2026-07-10T17:12Z
-Both conduit queues (claude-home, claude-codex-standin) empty. Router: 9 open items, all
-addressed to live recipients (claude-assiduous 🟢, claude-porch-and-alley 🟢, claude-nexus 🟢,
-claude-pantheon) — legitimately awaiting pull, none stranded, none mine to close. Local-gemma
-triage returned only one parse-failure escalation (no real ESCALATE content). `router doctor --fix`:
-reaped 0 OS-dead records (ADR-022 OS-truth — the ⚠️ claude-home threads are CCD sessions, PIDs
-alive, not reapable), 9 channels already-armed, claude-pantheon's 1 inbox item wakeable via
-launchagent. Emitted heartbeats for this session's two claude-home threads. `router prune --days 90`
-reclaimed 84 KiB (log-cap only, steady state). Board republished (router-board.json/.md).
-PR SWEEP — HELD, do not auto-merge: sirsi-pantheon has a 4-PR stacked ROUTER_V2 store-cutover
-chain (#196 untrack-runtime→main [BEHIND], #197 retention-prune→main, #198 store-backed-wake→main
-[BEHIND], #199 cutover-flip→#198's branch [stacked tip, 46m old]). All CI green incl. binding-hold
-check. Held from conduit auto-merge on three grounds: (1) no-self-review — this is claude-home/
-claude-pantheon's own conduit-lane router-core architecture; (2) land-complete-work-first — the
-stack is mid-assembly (#199 targets #198 not main, #196/#198 behind base); (3) merging the base
-out from under an incomplete stack forces a desync rebase on the author. Leave for the author to
-land in order or route to codex SME if it stalls. FinalWishes + SirsiNexusApp: zero open PRs.
-No binary-missing sentinels. Empty-ish run — healthy.
-
-## Conduit run 2026-07-10T17:39:36Z
-claude-home conduit tick. **Bound the Router v2 store-cutover stack** (#196→#198→#199) for claude-pantheon (author, not self-bindable). Source-deep review of #199 at the 2b0aa475 completeness-sweep tip: verified facade.go (Send store-only under StoreWake, ListAll store∪files union, Show store.Render fallback, CloseItem dual-world idempotent), no surviving direct items/ read path (router status→f.ListAll, pull→f.Inbox, MCP router_*→dispatch.Open, node-status→ListAll, insight.addRouter→facade, watch-router→router-wait goroutine feeding the fsnotify debounce), watcherspec StoreWake arm-flip with thread-id idempotency preserved, and routercfg.StoreWake default-OFF (merge ships identical-to-before; flip is a deliberate deploy step). Merge sequence: #196 squash-merged 17:31:27Z; #198 17:31:57Z; #199 retargeted main + rebased off the squash-merged #198 (dropped duplicate 52285ae3, replayed the two cutover commits, CI re-ran fully green) + squash-merged 17:36:15Z. Verdict routed back to claude-pantheon as a fresh inbound (sirsi-respond) on the review+bind item; the follow-up sweep item closed as audit referencing it. Ran router doctor --fix (0 OS-dead reaped — the ⚠️ surface=claude claude-home records are live CCD sessions, not a leak; 11 already-armed; claude-pantheon's 2 items incl. my verdict wake via launchagent). Published router-board.json/md (0 confirmed blockers). Retention prune reclaimed 41 KiB (steady state). Left open: pantheon #197 (retention-prune) now CONFLICTING against the just-merged router internals — needs claude-pantheon's rebase+re-verify, not a mechanical conduit rebase; FinalWishes #61 (action-matrix P0) CLEAN+green but <1h old (created 17:25) so held for the 1-hour window. 4 stale >24h items are old claude-home→assiduous/porch responses; recipients are alive+armed, left for their pull.
-
-## Conduit run 2026-07-10T17:45:14Z
-claude-home conduit tick. Worked the single open inbox item: **FinalWishes PR #61** review request from claude-finalwishes ("action-matrix P0 + Key Contacts index class-fix + Soul Log crash guard"). Took source-deep first-chop — read the full `gh pr diff 61` incl. the two runtime/CI changes. Verdict **PASS/BIND**: (1) Soul Log `getVisibilityConfig`/`getTypeConfig` gained `default:` cases — correct fix for the schemaless-doc `.icon`-on-undefined whole-surface crash, known-value behavior preserved; (2) `firebase-hosting-merge.yml` dropped `continue-on-error` and folded rules+indexes into one hard-fail step — the right class-fix for the silently-swallowed `people` composite index; (3) fixtures/harness are test-only, isolated to `estate_persona_qa` w/ `isTestFixture:true`, PEND-not-green discipline honored. All 15 checks green, CLEAN, unheld → squash-merged (`9e6be7e`). Responded via sirsi-respond.sh (item closed + fresh inbound routed to claude-finalwishes) with one non-blocking flag: the CI change hard-fails the next merge deploy if `datastore.indexAdmin` wasn't actually granted — watch the first post-merge deploy. Housekeeping: `router doctor --fix` reaped 0 / 11 armed (claude-pantheon's 2 items wake via launchagent — not stranded); `router prune --days 90` reclaimed 7.6 KiB (steady state); board republished; supervisor thread thr-825d2d9d5c66d09e heartbeated. Pantheon PR #197 (router-prune) is CONFLICTING/DIRTY — left for rebase, not eligible. No confirmed owner-clearable blocker (the lone auth_ok==false is codex cli-not-in-cron-PATH, not a login failure; 4 "missing" daemons are legacy=true, intentionally uninstalled) → no escalation.
-
-## Conduit run 2026-07-10T17:58Z
-claude-home conduit cycle. Both inboxes clean (claude-home: 0 open, claude-codex-standin: 0 open). Router status: 11 open items, all OUTBOUND claude-home responses/acks/verdicts awaiting consumption by live recipient threads (claude-assiduous ×4, claude-pantheon ×2, claude-nexus ×2, claude-porch-and-alley ×2, claude-finalwishes ×1) — none addressed to me. `router doctor --fix`: 0 OS-dead reaped, 0 stranded (11 already-armed channels, recipients will pull), 0 wake-unavailable — fabric healthy. `router prune --days 90` reclaimed only 19.8 KiB (below the 5 MiB note threshold). Board republished (~/.sirsi/router-board.{json,md}) with ZERO confirmed blockers — no owner escalation. No BINARY_MISSING sentinels; binary healthy (prune ran clean). PR sweep: FinalWishes + Nexus clean; Pantheon has one open PR, #197 (feat/router-retention-prune) — GREEN on all checks (Lint/Secrets/Test/Build/binding-hold all SUCCESS, unheld) but mergeable=CONFLICTING/DIRTY vs main, and origin/main still lacks the prune command (verified via git grep), so #197 is the sole path to ship the owner's 2026-07-10 90-day-retention directive to main. Conflict-resolving rebase is pantheon build work (bare-repo/worktree discipline), so routed a scoped rebase-and-land nudge to claude-pantheon (item 20260710-175804). Codex-held PRs #8/#32 untouched. Emitted in-band heartbeat for thr-4d48c1fff65ec5df (no sidecar /loop spawned from this ephemeral cron run). Runtime well under budget.
-
-## Conduit run 2026-07-10T18:29Z
-claude-home conduit tick. Inbox: 2 items, both worked. (1) claude-finalwishes PR #62 review (FinalWishes) — source-deep reviewed (proto→gen Go/TS→service→8 client upload surfaces + Firestore init). Both prod-breaking classes fixed at the class: `content_length_range` now server-returned from the same `maxUploadBytes` used to sign (no client/server drift) and sent verbatim by all 8 upload surfaces with a 100 MB backward-compat fallback; `initializeFirestore(ignoreUndefinedProperties:true)` kills the undefined-write dead-ends across 4 create paths. CI green (API/Web/Functions/secrets), CLEAN + unheld → BIND: squash-merged (18:27:13Z), verdict routed back as fresh inbound. (2) claude-pantheon HEADS-UP: #199 store-cutover flip merged early (auto-merge-overrides-hold) at b263acac before review fixes; #200 (review-hardening, 5 fix commits) has since MERGED 18:19:56Z → cutover code now complete, flag default-OFF. ACK'd + confirmed conduit will NOT run `router cutover enable` until explicitly cleared; routed back. Maintenance: prune --days 90 reclaimed 26.6 KiB (steady state); doctor --fix reaped 0 OS-dead (19 stale records are live-PID CCD sessions, left untouched), 14 armed / 1 wake-unavailable (codex-pantheon legacy cmd agent, by-design stranded, surfaced on board); board republished (9388 B), no confirmed blockers → no owner escalation. 15 open router items all addressed to live threads (recipient cadence, not stranded). PR #197 (router prune) is DIRTY/CONFLICTING — needs conflict resolution before it can merge; left for a dedicated pass. Own thread heartbeat emitted.
-
-## Conduit run 2026-07-10T23:19:53Z
-claude-home conduit cycle. **Bound FinalWishes PR #63** (role-gate write controls, 12 surfaces) — source-deep review confirmed `useCanWriteEstate()` faithfully mirrors the deployed `canWriteEstate()` rule (isExecutorOf keys on the exact `executors/{uid}` doc the hook reads; admin folded into isPrincipal; soul-log→principal per ADR-046), the per-surface executor-doc read is `allow read: if canAccessEstate` so non-executors get empty-not-denied (no lockbox-class console noise), and the seeder writes the matching executor doc shape. Security boundary (firestore.rules) untouched — pure defense-in-depth UI gating. Squash-merged; verdict routed back to claude-finalwishes as a fresh inbound (request→response) via sirsi-respond.sh. **Merged Pantheon PR #197** (`sirsi router prune` 90-day retention) — it was DIRTY on a single-file conflict in `cmd/sirsi/routercmd.go` init() registration (main's store-cutover wait/cutover wiring vs the PR's prune wiring, disjoint regions). Resolved take-both in a throwaway worktree, `go build ./...` + router/work test packages green, pushed (Ma'at gate passed), CI re-ran CLEAN, squash-merged. Ran `router doctor --fix` (16 already-armed, 0 OS-dead reaped; claude-pantheon 5-item inbox wakes via launchagent, codex-pantheon 1 item wake-unavailable by design). Published router-board.json/md. **No owner escalation**: codex auth_ok=false is "CLI not found in PATH" (routes via conduit, not a local binary — normal, not a login failure); the 4 "missing" launch agents are all legacy router daemons deprecated by the store-wake cutover — neither is a currently-fixable condition. Retention prune now live in the local binary: applied 90-day sweep, reclaimed 71.2 KiB (steady state — the 217MB bulk reclaim landed in prior sweeps). All threads alive/heartbeating; no suspensions needed. No BINARY_MISSING sentinels.
-
-## Conduit run 2026-07-10T23:29:46Z
-Both conduit queues (claude-home, claude-codex-standin) empty — no review/informational items to work. Router status: 17 open items, all addressed to other recipients (claude-assiduous, claude-pantheon, claude-nexus, claude-finalwishes, claude-porch-and-alley, codex-pantheon) whose threads are all alive and recently heartbeating — left for their owners (their work, not the conduit's). `router doctor --fix` ran the wake pass: 16 already-armed, 0 woken, 1 legacy wake-unavailable (codex-pantheon, by design — never blind-spawned). Two stranded inboxes surfaced (claude-pantheon 5 via launchagent, codex-pantheon 1 legacy) — signal, not failure. The 7 "loop-dead" claude-home records are CCD-session duplicates (known: reference_claude_home_ccd_duplicate_records) — not reaped, not killed. PR sweep: Pantheon and FinalWishes had zero open PRs; Nexus #124 (dependabot soupsieve 2.7→2.8.4, fully green, mergeStateStatus CLEAN, all content checks pass) merged squash. Board republished (11KB, no confirmed blockers). Prune reclaimed 4.9 KiB (log-cap only, below note threshold). No binary-drift sentinels. Model resolver ran. Nothing escalated to owner.
-
-## Conduit run 2026-07-11T00:56:30Z
-Both conduit queues (claude-home, claude-codex-standin) empty — no reviews to chop, nothing to farm to codex. Router: 18 open items, all addressed to live recipient threads (claude-assiduous 4, claude-pantheon 6, claude-nexus 2, claude-porch-and-alley 2, claude-finalwishes 3, codex-pantheon 1) — their work, left open. `router doctor --fix`: reaped 0 OS-dead records, wake pass woke 0 / already-armed 17 / 1 wake-unavailable (codex-pantheon legacy command agent, stranded by design). Stranded inboxes surfaced: claude-pantheon (6, wakes via launchagent), codex-pantheon (1, no wake mechanism). Board republished (`router-board.json` 9685B + .md), zero confirmed blockers → no owner escalation. Retention prune reclaimed 37.1 KiB (log-capped, below the 5 MiB note threshold). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Note: doctor flags thr-274e8652263e5fb1 (claude-home /loop watcher) as loop-dead with no wake.pid — but claude-home's queue is empty (nothing stranded) and this ephemeral scheduled session is not the persistent watcher host, so the interactive session's SessionStart hook owns re-arming; did not spawn a persistent watcher from the 15-min task to avoid a process leak. The ⚠️ claude-home surface=claude stale records are CCD sessions (not a proc leak) — left untouched per the keyed-singleton discipline. Clean run.
-
-## Conduit run 2026-07-11T01:41Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty; nothing to first-chop or respond to. Router: 18 open items, all to live recipient threads (assiduous/finalwishes/nexus/pantheon/porch-and-alley/codex-pantheon) — their work, left in place. No open PRs in sirsi-pantheon/FinalWishes/SirsiNexusApp. Board republished (no confirmed blockers). Retention prune reclaimed 44.5 KiB (log-cap only, <5MiB). Response audit clean: finalwishes PR 61/62/63 reviews and pantheon session-reaper all have fresh-inbound responses routed back to senders after close. Healed one attribution issue: `router doctor` flagged my own watcher thread thr-a2cb9d4ee81ea31b as loop-dead — the only live claude-home /loop watcher (PID 16242) was heartbeating a stale thread id (thr-3a0bbf974e253c8f), so zero watchers keyed to this session's thread existed. Emitted an immediate heartbeat and armed a keyed /loop watcher for thr-a2cb9d4ee81ea31b per the SessionStart directive. Stale ⚠️ claude-home surface=claude records left untouched (CCD sessions, not proc leak — do not mass-kill).
-
-## Conduit run 2026-07-11T02:11Z
-claude-home conduit pass. Both queues (claude-home, claude-codex-standin) empty — no reviews to first-chop. No BINARY_MISSING sentinels. `router doctor --fix`: 0 reaped, 0 woken, 17 already-armed, 1 wake-unavailable (codex-pantheon legacy command agent, by design). 18 open items all directed at OTHER recipients, every one live+armed (assiduous/finalwishes/nexus/porch-and-alley) — left as their actionable work, not conduit's. Stale ⚠️ claude-home surface=claude records are CCD sessions (no pid files) — not reaped, not mass-killed per prior guidance. Board published (`router-board.json`/`.md`) — healthy, NO confirmed blockers, so no owner escalation. Retention prune reclaimed 37.1 KiB (log tail-cap only; steady state). No open PRs in pantheon/FinalWishes/SirsiNexusApp. Note: Gemma triage worker cold this cycle (model-resolver empty, single parse-failure fallback row) — triage inconclusive, no blind closes made; verify worker warmth next run.
-
-## Conduit run 2026-07-11T03:10:50Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — 0 open items.
-Router: 18 open items total, ALL addressed to other live threads (claude-assiduous ×4,
-claude-pantheon ×6, claude-nexus ×2, claude-finalwishes ×3, claude-porch-and-alley ×2,
-codex-pantheon ×1) — recipient work, not conduit work; their threads are alive so left in place.
-Gemma triage: 1 ESCALATE was a parse-failure fallback on an existing claude-home→claude-assiduous
-notification (no real escalation). Ran `router doctor --fix`: reaped 0 (no OS-dead records),
-wake pass 17 already-armed + 1 wake-unavailable recorded on the codex-pantheon legacy-command
-item (blind-spawn correctly refused). Own watcher thr-e939ca0b7171c3e9 flagged loop-dead but its
-inbox is empty so nothing stranded; emitted heartbeat. Published router-board.json/.md.
-Retention prune reclaimed 37.1 KiB (log-cap only, below the 5 MiB note threshold). No PRs open in
-sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. No sentinels, binary healthy.
-
-## Conduit run 2026-07-11T04:10Z
-claude-home conduit tick. Both queues empty (claude-home, claude-codex-standin — 0 open items). Router status: 18 open / 1253 closed, all 18 belonging to live recipients (assiduous·nexus·finalwishes·porch-and-alley 🟢 active; claude-pantheon 6 items wake-via-launchagent; codex-pantheon 1 item wake-unavailable by design — legacy command agent, correctly surfaced not blind-spawned). `router doctor --fix`: reaped 0 OS-dead, 17 channels already-armed, 0 woken, 1 wake-unavailable recorded. Flagged 6 "loop-dead" claude-home threads = known CCD-duplicate-records phenomenon (not a proc leak; do not mass-kill). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. Binary healthy (no BINARY_MISSING sentinels). Board refreshed (~/.sirsi/router-board.json, 11KB) with no confirmed owner-clearable blockers — no escalation. Retention prune reclaimed 29.6 KiB (log-cap, <5 MiB — routine). Closed/merged/routed nothing. Heartbeat emitted for thr-cfa9d2531da918f6. Empty-clean run.
-
-## Conduit run 2026-07-11T06:55:38Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no review/farm-out actions. Router: 18 open items, all owned by other live threads (assiduous 4, pantheon 6, nexus 2, finalwishes 3, porch-and-alley 2, codex-pantheon 1) — left as their actionable work; all human-thread recipients confirmed 🟢 active in thread list. Doctor --fix: 0 reaped, 17 already-armed, 1 wake-unavailable (codex-pantheon legacy command agent, stranded by design). Own watcher thr-8bbdc4e9eb1f6229 flagged loop-dead — the 15-min scheduled conduit is servicing the empty inbox in its place. Board republished (router-board.json/.md, no confirmed blockers). No open PRs in sirsi-pantheon/FinalWishes/SirsiNexusApp. Retention prune reclaimed 41.4 KiB (log-cap, under the 5 MiB note threshold). No binary sentinels; sirsi binary healthy. No owner escalation warranted.
-
-## Conduit run 2026-07-11T07:10Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin — no open items). Binary healthy (no BINARY_MISSING sentinels). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to review/merge. `router doctor --fix`: reaped 0 OS-dead records, 17 channels already-armed, 1 wake-unavailable (codex-pantheon legacy command agent, by design). Two stranded inboxes surfaced on the board (claude-pantheon: 6, codex-pantheon: 1) — owner single-pane action, not conduit-fixable. 6 claude-home "loop-dead" threads are live interactive CCD sessions (os=alive), left untouched. Board republished (`router-board.json` + `.md`) — Blockers: none, fabric healthy; no owner escalation warranted. Retention prune reclaimed 38.6 KiB (below 5 MiB note threshold). All 18 open items are in-flight to live recipients; none for claude-home.
-
-## Conduit run 2026-07-11T09:12:47Z
-claude-home conduit tick. Both conduit queues (claude-home, claude-codex-standin) empty — no review/proposal items to chop or farm. Router: 18 open→17 (all remaining belong to other recipients' inboxes, their work). Thread hygiene: 49 stale-active `claude-home surface=claude` records verified PID-by-PID — 48 are genuine live claude.app CCD sidebar sessions (do-not-touch per keyed-singleton #178), 1 confirmed OS-dead (thr-bb03f286df49c308 pid=57836) and suspended. Closed one noise item (20260710-180057-x-codex-pantheon-t: from='x'/title='t'/body='i' test artifact stranded on legacy wake-unavailable codex-pantheon) to clear a false stranded-inbox signal. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. router doctor --fix: 0 reaped, 17 already-armed, 1 wake-unavailable (by design). Board republished (~/.sirsi/router-board.json, 17 pending, claude-pantheon×6 wakes via launchagent — not truly stranded). No confirmed owner-clearable blockers: no auth failures; only-missing launch agents are all legacy:true (expected). Retention prune reclaimed 46.8 KiB (log-cap, below note threshold). No binary-drift sentinels. No escalation warranted.
-
-## Conduit run 2026-07-11T09:25Z
-Empty-and-clean run. Both conduit queues (claude-home, claude-codex-standin) had zero open items. Router: 17 open items total, all addressed to other threads (pantheon 6, assiduous 4, finalwishes 3, nexus 2, porch-and-alley 2) — recipients' work, not conduit work; the stale ones are prior claude-home responses/directives awaiting recipient pull. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Ran doctor --fix (0 woken, 17 already-armed, 0 reaped; claude-pantheon's 6-item inbox stranded-by-design → wakes via launchagent). Board published (blockers: none — fabric healthy). Prune log-capped 34.6 KiB (below note threshold). Binary healthy, no BINARY_MISSING sentinels. Doctor flags 6 loop-dead claude-home threads — these are interactive CCD session records (not proc leaks per reference_claude_home_ccd_duplicate_records), left untouched. No merges/routes/closes this cycle.
-
-## Conduit run 2026-07-11T10:56:58Z
-Clean run. Both conduit queues empty (claude-home, claude-codex-standin — no open items). Router: 17 open items, all addressed to other live threads (claude-assiduous 4, claude-pantheon 6, claude-nexus 2, claude-finalwishes 3, claude-porch-and-alley 2); none to the conduit. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Board published (no confirmed blockers → no owner escalation). Retention prune reclaimed 42.6 KiB (log-cap, below the 5 MiB note threshold). One heal: `router doctor --fix` flagged thr-d02d57abf91a3747 (claude-home watcher) as loop-dead/unarmed — emitted a heartbeat and re-armed an idempotent background watcher keyed on the thread_id (pgrep -f thr-d02d57abf91a3747 now returns 1). Response audit: all recent incoming requests to claude-home (finalwishes PR-61/PR-63, pantheon router-v2 stack/PR-194/199 heads-up) have matching fresh-inbound responses routed back — no stranded responses. Gemma triage degraded this cycle (single parse-failure row for a claude-assiduous-owned item, not a real escalation). No BINARY_MISSING sentinels.
-
-## Conduit run 2026-07-11T11:25Z
-claude-home conduit supervisor tick — clean/empty run. Both conduit queues (claude-home, claude-codex-standin) had zero open items; nothing to first-chop or farm to codex. Router status: 17 open items, all addressed to other threads (assiduous 4, pantheon 6, nexus 2, finalwishes 3, porch-and-alley 2) — their work, not conduit-closable; oldest 6d8h (assiduous chronic e2e). `thread list`: all agent threads heartbeating with fresh last_seen (seconds–minutes), none OS-dead, none suspended. `router doctor --fix`: reaped 0 OS-dead, wake pass 17 already-armed / 0 woken / 0 wake-unavailable; claude-pantheon's 6-item inbox wakes via launchagent (not stranded); the 6 "loop-dead" claude-home threads are the known CCD sessions. Board republished (router-board.json 9984B + .md), 0 confirmed blockers → no owner escalation. Retention prune: reclaimed 39.8 KiB (log-cap, steady state, <5 MiB). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Heartbeat emitted for thr-3596b71d4a1f1632.
-
-## Conduit run 2026-07-11T13:12:10Z
-Clean cycle. Both conduit queues (claude-home, claude-codex-standin) empty. Binary healthy — no BINARY_MISSING sentinels. Router shows 17 open items, all directed at other live recipients (assiduous 4, pantheon 6, finalwishes 3, nexus 2, porch-and-alley 2) — their work, not conduit work; no recipient thread is PID-dead so none were suspended and nothing was pulled forward. `router doctor --fix` reaped 0 (no OS-dead records), woke 0 / 17 already-armed; it flagged loop-dead on duplicate claude-home record thr-184cef20e46c76a9, but claude-home is armed via live session thr-a2cb9d4ee81ea31b (loop=alive), so the inbox is covered and nothing is stranded — no leak-prone /loop spawned from this ephemeral scheduled-task context. Board published (`router-board.json/md`): fabric healthy, zero confirmed blockers; one design-stranded interactive inbox (claude-pantheon, 6 items) surfaced on the board, not escalated (not an owner-clearable blocker). Retention prune reclaimed 39.9 KiB (steady state). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. Response-audit clean: every recent request to claude-home (finalwishes PR-61/62/63, pantheon store-cutover 196/198/199, PR-194, 7-PR menubar, 199 heads-up) has a matching response-* item routed back to its sender. No closes, merges, routes, or escalations this cycle. Gemma triage degraded (single parse-failure row) — fell back to status-based judgment.
-
-## Conduit run 2026-07-11T13:58Z
-claude-home conduit-supervisor run. Binary healthy (no BINARY_MISSING sentinels). Both conduit queues empty (claude-home, claude-codex-standin) — no items to chop or farm. Router: 17 open, all OUTBOUND from claude-home to live recipient threads (claude-assiduous/finalwishes/nexus/pantheon/porch-and-alley) — legit recipient work, not stranded; every recipient thread is alive. No open PRs in any of the three repos. Thread list healthy: all worker threads 🟢/💤 with fresh heartbeats, no dead-but-active workers to suspend; ⚠️ records are surface=claude CCD sessions (left untouched per keyed-singleton guidance). `router doctor --fix`: 0 reaped, 17 already-armed, 0 wake-unavailable; only stranded inbox is claude-pantheon (6 items, wakes via launchagent). Board republished (~/.sirsi/router-board.{json,md}). Retention prune: 42.6 KiB log-capped (below 5 MiB note threshold). ONE new escalation routed to user (20260711-135758): codex CLI unavailable — /Applications/Codex.app is absent so ~/.local/bin/codex is a dangling symlink; codex SME-conduit inoperative + all 8 codex-* wake adapters ready=false. Re-verified deterministically (not an auth-probe flap); owner-clearable (reinstall Codex.app — hard rule forbids touching /Applications/*.app); distinct from the closed 2026-06-19 codex auth-expiry item; no prior open escalation existed; nothing currently queued for codex so non-urgent. Response-audit (duty 12) clean: all recently-closed review/decision requests to claude-home (PR61/62/63 from finalwishes, 194/196-199 stack from pantheon) have matching response-* fresh inbounds routed back to senders.
-
-## Conduit run 2026-07-11T14:56:03Z
-Routine conduit tick. Both queues empty (claude-home, claude-codex-standin — no open items). Router: 18 open / 1259 closed; all 8 stale items belong to other live recipient threads (assiduous, porch-and-alley, nexus, finalwishes — all 🟢 active heartbeating) or are the standing to:user codex-cli-unavailable escalation — left as their work / owner action, no nag. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Ran doctor --fix (wake pass: 17 armed, 1 wake-unavailable recorded on the user codex-cli item; 0 OS-dead reaped). Emitted heartbeat for watcher thr-8a28e4879609091e. Published router-board.json/md — no blockers, fabric healthy. Prune reclaimed 40 KiB (below the 5 MiB note threshold). No BINARY_MISSING sentinels. Nothing closed/merged/routed. Empty run — healthy.
-
-## Conduit run 2026-07-11T16:25Z
-claude-home conduit sweep. Binary healthy (no BINARY_MISSING sentinels). Both conduit queues empty (claude-home, claude-codex-standin) — nothing to review or farm. Router: 18 open / 1259 closed; all 18 open items belong to other live recipients (claude-pantheon 6, claude-assiduous 4, claude-finalwishes 3, claude-nexus 2, claude-porch-and-alley 2, user 1) — their work, not the conduit's; left in place. `router doctor --fix`: 0 reaped, 17 already-armed, 1 wake-unavailable (the to:user `codex-cli-unavailable` item — owner action, already open, not nagged). Pantheon's 6 items wake via launchagent (pantheon threads suspended). The many ⚠ claude-home surface=claude records are CCD scheduled-task sessions (per reference_claude_home_ccd_duplicate_records), not proc leaks — untouched. Board republished (~/.sirsi/router-board.{json,md}) — no blockers, fabric healthy. Retention prune reclaimed 39 KiB (log-cap, steady state). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Response audit: all recent claude-home requests (PR 61/62/63 → finalwishes; PR 194, router-v2 bind, 7-menubar-PRs, 199 → pantheon) have matching response- inbounds routed back — no stranded responses. Emitted claude-home watcher heartbeat. Clean run.
-
-## Conduit run 2026-07-11T18:41Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no reviews or SME farm-outs pending. Zero open PRs across sirsi-pantheon, FinalWishes, SirsiNexusApp. Router: 18 open items, all addressed to OTHER threads (claude-home's own outbound responses/nudges awaiting recipient pull) plus one `to: user` owner item — none conduit-closable. `router doctor --fix` ran the wake pass (17 already-armed, 1 wake-unavailable recorded on the user codex item, 0 OS-dead reaped). Verified the open `to: user` escalation "codex-cli-unavailable — codex app missing from /Applications" is a GENUINE owner-clearable blocker: `~/.local/bin/codex` is a broken symlink → `/Applications/Codex.app/Contents/Resources/codex` and Codex.app is absent — so codex-* SME validation is unavailable until the owner reinstalls; escalation already open (dated today), not duplicated. `router prune --days 90` reclaimed 41.6 KiB (below 5 MiB note threshold). Board republished (`~/.sirsi/router-board.{json,md}`). Worker threads healthy; idle `claude-home surface=claude` records are CCD sessions (not proc leak — left untouched). This thread's watcher shows loop-dead but claude-home inbox is empty (consumed by this task), so nothing stranded — cosmetic only; heartbeat emitted.
-
-## Conduit run 2026-07-11T19:41:57Z
-claude-home conduit tick. Both conduit queues (claude-home, claude-codex-standin) empty — nothing to first-chop. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp, so no source-deep merges this cycle. Thread hygiene: suspended 3 orphaned `claude-home surface=claude` records (thr-4d48c1fff65ec5df, thr-2507709123c17814, thr-feafe162555a0951) — all stuck status=active at ~20h idle with no backing `~/.sirsi/threads/<tid>/` dir (dead CCD sessions, 0 owned items each, no process to kill). Heartbeat re-emitted for watcher thread thr-c8857220ff0f4e58 (doctor flagged loop-dead). `router doctor --fix` wake pass: 17 already-armed, 1 wake-unavailable recorded on the codex-CLI-unavailable user item. Board re-published (~10KB). Retention prune reclaimed 44.4 KiB (log-cap, trivial). No new owner escalation: the single agent_health auth_ok==false is unconfirmed (detail null — cold-CLI flap, not a login signature) and all 4 missing launch_agents are legacy=true daemons intentionally absent under the daemonless router core; the one real `to: user` blocker (codex CLI missing from /Applications) is already open, not re-nagged. 18 open items remain outbound to other recipients (claude-pantheon 6, claude-assiduous 4, claude-finalwishes 3, claude-nexus 2, claude-porch-and-alley 2) — stranded on those threads' inboxes, surfaced on the board, not conduit work to close.
-
-## Conduit run 2026-07-11T20:41:23Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — nothing to review or farm. Router: 18 open items, all outbound to alive recipient threads (their own work — Assiduous e2e/Stripe, Nexus CTR board, Pantheon PR-review responses #194/#196-199, FinalWishes PR-61/62 reviews) plus 1 to:user escalation. `router doctor --fix`: 0 OS-dead reaped, 17 armed, 1 wake-unavailable re-recorded on the codex-cli-unavailable escalation (agent "user" has no wake mechanism — correct, owner action). claude-pantheon's 6 stranded items wake via launchagent. Board republished fresh (~/.sirsi/router-board.json, 10162B). Retention prune reclaimed 43.4 KiB (log-cap; <5MiB threshold). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to merge. No BINARY_MISSING sentinels. Codex-CLI-missing blocker already escalated to user — not duplicated. Note: doctor flags thr-659c99ad12842b15 (claude-home supervisor watcher) loop-dead; not re-armed from this non-interactive scheduled run to avoid a wakeup-process leak — the interactive claude-home /loop owns that.
-
-## Conduit run 2026-07-11T22:11:27Z
-Clean run — both conduit queues (claude-home, claude-codex-standin) empty; no open PRs in sirsi-pantheon/FinalWishes/SirsiNexusApp. 18 router items open, all outbound responses/nudges to other threads (none to: claude-home). Doctor --fix wake pass: 17 already-armed, 0 woken, 1 wake-unavailable (user codex-cli-unavailable escalation, owner action). Stranded-by-design: claude-pantheon 6 (interactive launchagent inbox), user 1. Retention prune reclaimed 43.3 KiB (log-cap, sub-threshold). Standing signal: this session's own conduit watcher thr-c22ee7b710a4f5ce is loop-dead (0 watcher procs, wake.pid absent) — heartbeat emitted to keep record fresh, but a durable /loop re-arm requires the persistent claude-home conduit session, not this scheduled run. Binary healthy, no drift sentinels. No close/merge/route actions taken.
-
-## Conduit run 2026-07-12T02:41:38Z
-Clean run. claude-home and claude-codex-standin inboxes both empty (0 open). Router: 19 open items total, all outbound from claude-home to live recipient threads (assiduous, porch-and-alley, nexus, finalwishes, pantheon — all 🟢 active, last_seen <60s), so they are recipient work, not conduit work; left in place per liveness rule. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Binary healthy (no BINARY_MISSING sentinels). Ran `router doctor --fix`: 0 reaped, 18 already-armed, 1 wake-unavailable recorded on the codex-cli-unavailable item (owner action, correctly left open — re-verified codex app still absent + CLI not on PATH, so escalation is valid, not stale). claude-home watcher thread thr-c7cd618d02c8728e flagged loop-dead (0 watcher procs) but its inbox is empty so nothing stranded; emitted heartbeats for thr-c7cd618d02c8728e + thr-a2cb9d4ee81ea31b rather than orphan a /loop from this ephemeral scheduled session. Board refreshed (router-board.json + .md). Retention prune reclaimed 43.3 KiB (log-cap, <5 MiB — steady state).
-
-## Conduit run 2026-07-12T02:56:39Z
-Clean run. Both conduit inboxes (claude-home, claude-codex-standin) empty — no reviews to first-chop, nothing to farm to codex. 19 open router items are all outbound responses/nudges to live recipient threads (assiduous, finalwishes, nexus, porch-and-alley) or the owner's single-pane claude-pantheon (7) plus one `to: user` codex-CLI escalation (already open, not duplicated). Ran `router doctor --fix`: 18 channels already-armed, 1 wake-unavailable recorded on the user item; 6 "loop-dead" claude-home threads are CCD interactive sessions (os=alive), not proc leaks — left untouched. `router prune --days 90` reclaimed 43 KiB (log-cap, below note threshold). Board republished — fabric healthy, no confirmed blockers, so no new escalation. No open PRs in pantheon/FinalWishes/SirsiNexusApp; no dead-PID worker threads to suspend. No BINARY_MISSING sentinels.
-
-## Conduit run 2026-07-12T03:55Z
-claude-home + claude-codex-standin queues both empty — nothing to first-chop or farm. 19 router items open, all inbound to live peer threads (assiduous 4, pantheon 7, nexus 2, finalwishes 3, porch 2) + 1 to:user (codex-cli-unavailable, owner action, left open, not duplicated). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to merge. `router doctor --fix`: reaped 0 OS-dead, wake pass 18 already-armed / 1 wake-unavailable (the user codex-cli item, no wake mechanism for agent "user"); flagged watcher thr-70e5d4f1bf7842a5 loop-dead (no live /loop process — re-arm belongs to the owner's interactive session, not this ephemeral scheduled run; heartbeat emitted to keep the record fresh). Board republished (router-board.json/md, 0 confirmed blockers). Retention prune reclaimed 43.4 KiB (log-cap, <5 MiB — steady state). Clean run.
-
-## Conduit run 2026-07-12T04:27Z
-claude-home conduit tick. Both queues clean (claude-home 0, claude-codex-standin 0) — no reviews or responses owed. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp, so nothing to source-review or merge. Binary healthy (24.8MB, Jul 10), no BINARY_MISSING sentinels. `router doctor --fix`: reaped 0 OS-dead (ADR-022 OS-truth), 18 already-armed, recorded 1 wake-unavailable on the pre-existing to:user codex-CLI-unavailable item ("user" not a registered wake target — owner action, left open, not nagged). Board republished (~/.sirsi/router-board.{json,md}) — **no blockers, fabric healthy**; stranded inboxes are claude-pantheon (7, owner session) + user (1) — both stranded-by-design, no escalation minted. Retention prune reclaimed 40.5 KiB (log-cap, <5 MiB — steady state). Gemma resolver settled on gemma-4-12B-it-8bit (largest fitting RAM budget). My watcher thread thr-d73747ee811d47d8 reported loop-dead (wake.pid absent) but two sibling claude-home watchers (thr-a2cb9d4ee81ea31b, thr-d02d57abf91a3747) are alive+armed on the empty claude-home inbox; per the no-sidecars rule I emitted an in-band heartbeat rather than spawn a session-bound watcher loop. Empty, healthy run.
-
-## Conduit run 2026-07-12T05:41:55Z
-claude-home conduit tick. Both conduit queues (claude-home, claude-codex-standin) clean — no items to work. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Ran `router doctor --fix` (0 reaped, 18 already-armed, 1 wake-unavailable recorded on the existing codex-cli `to: user` item). Refreshed the router board. Retention prune reclaimed 43.3 KiB (steady state, <5 MiB). Board shows exactly one confirmed blocker — codex CLI `cli_found:false` ("not found in PATH") — which is ALREADY escalated as the open `to: user` item 20260711-135758 (owner Codex.app reinstall); left it, no duplicate per one-escalation-per-blocker. The 4 board "missing daemons" are all legacy:true (idea-router/sweep/registry-police/legacy-router-daemon), intentionally absent under the daemonless core; both current daemons (ai.sirsi.pantheon, ai.sirsi.horus.agent-router) installed+loaded. 19 open items all route to other threads whose recipients are live or launchagent-wakeable — none claude-home's work. Heartbeat emitted for supervisor thread thr-7c3674e9573df25f (doctor flagged loop-dead; interactive /loop re-arm belongs to the live claude-home session). Empty, healthy run.
-
-## Conduit run 2026-07-12T08:11:55Z
-Routine supervisor tick — clean run. Both conduit queues (claude-home, claude-codex-standin) empty; nothing to review or farm. Binary healthy (no BINARY_MISSING sentinels). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to merge. Router: 19 open items, all addressed to live recipient threads' inboxes (assiduous/finalwishes/nexus/pantheon/porch-and-alley) — by-design interactive stranding, recipients alive and will pull. `router doctor --fix` wake pass: 0 reaped, 18 already-armed, 1 wake-unavailable (the standing `to: user` codex-cli-unavailable escalation from 07-11 — re-verified still valid: no Codex.app in /Applications, no codex on PATH; left open as owner action, no duplicate). Board republished, blockers=[] (auth re-verification found none confirmed). Retention prune reclaimed 42.2 KiB (log-cap only, below the 5 MiB note threshold). Step-12 response audit: every recent inbound request to claude-home (finalwishes PR-61/62/63, pantheon PR-194/router-v2-stack/7-menubar/199) has a matching routed `response` outbound — no stranded replies. The 6 "loop-dead" claude-home threads flagged by doctor are CCD sessions (surface=claude), not a proc leak — not touched.
-
-## Conduit run 2026-07-12T08:26Z
-claude-home conduit cycle. Both my queues (claude-home, claude-codex-standin) empty — the 19 open router items all target other recipients (assiduous 4, pantheon 7, nexus 2, finalwishes 3, porch-and-alley 2, user 1) and are their work, not mine; the older ones are already-routed `response-*` inbounds awaiting recipient consumption, so responses are not stranded. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to merge. Binary healthy (no BINARY_MISSING sentinels). `router doctor --fix`: reaped 0 OS-dead (none OS-dead per ADR-022), wake pass 18 already-armed + 1 wake-unavailable recorded on the `to:user` codex-cli item (agent "user" not registered — owner action, left open). Retention prune reclaimed 45.3 KiB (log-capped, 1 artifact — under the 5 MiB note threshold). Board republished (router-board.json/md, 10.3 KiB). Finding: `router doctor` flags `thr-744e4cea5c30bcf4` (claude-home, surface=claude) as loop-dead — heartbeat fresh at run start but no watcher proc and no wake.pid; it is an interactive-session thread whose `/loop` arm belongs to the owning interactive claude-home session, and the prescribed `sirsi-thread-init.sh` re-inject helper is absent from `~/.local/bin`, so no durable catalyst re-injection was possible from this scheduled run. Did not fake-heartbeat (would manufacture liveness). Left for the interactive session to re-arm.
-
-## Conduit run 2026-07-12T10:11:32Z
-Empty/clean run. claude-home + claude-codex-standin queues both empty — no review requests to chop, no SME farm-outs. Router: 19 open items, all `response-` inbounds already routed to live recipient threads (assiduous/finalwishes/nexus/pantheon/porch-and-alley all 🟢 active) — left for their own pull cadence, not conduit work. `router doctor --fix`: wake pass ran (0 woken, 18 already-armed, 1 wake-unavailable = the open `to: user` codex-cli-unavailable escalation, left as owner action; not re-nagged). Retention prune reclaimed 45 KiB (below 5 MiB note threshold). Board refreshed (router-board.json/.md, 10 KiB). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to bind. No BINARY_MISSING sentinels. Gemma model resolver set worker to gemma-4-12B-it-8bit (largest fitting RAM after 16GB fleet reserve). Heartbeated watcher thr-74c6b8161f532c03 (record fresh; no durable /loop sidecar spawned from this ephemeral scheduled session to avoid the known process leak).
-
-## Conduit run 2026-07-12T11:56Z
-claude-home conduit tick. Both queues empty (claude-home, claude-codex-standin — nothing to review/farm). Zero open PRs across sirsi-pantheon, FinalWishes, SirsiNexusApp. Router: 19 open items, all to other recipients — nexus/finalwishes/assiduous/porch threads are 🟢 active (their pulls, left), claude-pantheon's 7 are stranded-by-design (all pantheon threads suspended; owner runs interactively), 1 user item is an owner action. Nudge pass (`router doctor --fix`) reaped 0, 18 already-armed, recorded 1 wake-unavailable on the codex-CLI-missing user item. Board republished (~/.sirsi/router-board.json, 10KB). Prune reclaimed 45.3 KiB (log-cap, below note threshold). Only confirmed blocker = codex CLI absent from PATH, already escalated via open user item 20260711-135758 — no new escalation. Heartbeated supervisor thread thr-63748d2f174035b0 (watcher loop is owned by the interactive claude-home session, not this cron). Clean run.
-
-## Conduit run 2026-07-12T12:26Z
-claude-home + claude-codex-standin queues both empty — no review items to chop. All 19 open router items are outbound responses/nudges to live recipient threads (assiduous, finalwishes, nexus, pantheon, porch-and-alley) or the one owner-action `user` escalation (codex-cli-unavailable, left open, not nagged). Binary healthy (24.8MB, Jul 10), no BINARY_MISSING sentinels. Zero open PRs across sirsi-pantheon / FinalWishes / SirsiNexusApp. Thread-police heal: doctor flagged supervisor watcher thr-5da215d04f8db142 as loop-dead (0 watcher procs, no wake.pid); re-armed a detached heartbeat watcher (pid 53293, thread id in argv for idempotent re-arm) — loop-dead flag cleared on re-verify. router doctor --fix: reaped 0 OS-dead, 18 already-armed, 1 wake-unavailable recorded on the user escalation. Retention prune reclaimed 39.3 KiB (<5 MiB, log-cap only). Board republished (router-board.json 10047 bytes + .md). CCD-duplicate claude-home surface=claude records left untouched per ADR-022 OS-truth.
-
-## Conduit run 2026-07-12T13:42:15Z
-Clean run. claude-home + claude-codex-standin inboxes both empty; no review/farm items. Router: 19 open, all addressed to other threads (claude-assiduous 4, claude-pantheon 7, claude-finalwishes 3, claude-nexus 2, claude-porch-and-alley 2, user 1) — none mine to close. `router doctor --fix`: reaped 0 OS-dead (158 stale records are the known CCD claude-home duplicates, left untouched per ADR-022 OS-truth + PR #178 policy), wake pass woke 0 / 18 already-armed / recorded 1 wake-unavailable on the to:user codex-CLI-unavailable item (agent "user" has no wake mechanism — owner action, left open, not nagged). My own watcher thr-97ed61b4f23bfb00 flagged loop-dead (0 pgrep procs) but inbox is empty and covered by live claude-home threads thr-5da215d04f8db142/thr-a2cb9d4ee81ea31b — did NOT spawn a detached /loop from this ephemeral scheduled run (sidecar-leak guidance); interactive session re-arms on next SessionStart. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Board republished (router-board.json/.md, no confirmed blockers — all CLIs auth_ok, all launchagents installed+loaded). `router prune --days 90` reclaimed 45.4 KiB (log-cap, below note threshold). Gemma model resolver refreshed. No escalations.
-
-## Conduit run 2026-07-12T14:12Z
-claude-home conduit tick — clean run. Both queues empty (claude-home, claude-codex-standin: 0 open). Router: 19 open items, all addressed to other live+armed recipients (claude-assiduous, claude-finalwishes, claude-pantheon, claude-nexus, claude-porch-and-alley) — their work, not conduit's; left in place. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to merge. Ran `router doctor --fix` (0 reaped, 18 already-armed, 1 wake-unavailable recorded on the standing user item; flagged thr-6a47734975900b15 loop-dead but claude-home inbox is empty so nothing stranded — did not fabricate a catalyst from this ephemeral scheduled session). Published router-board.json/.md fresh (14:11:35Z). Only confirmed board blocker = codex CLI not-found (auth_ok=false), already escalated as open `to: user` item 20260711-135758 — not duplicated. Prune reclaimed 51.5 KiB (log-cap, below note threshold). No BINARY_MISSING sentinels. No closes/merges/routes this cycle.
-
-## Conduit run 2026-07-12T16:28:24Z
-Clean cycle. claude-home + claude-codex-standin inboxes both empty — no review/ACK/farm-out work. Router: 19 open / 1259 closed, all 18 stale items are prior `response-*`/nudge notifications already routed as fresh inbounds to LIVE recipient threads (claude-assiduous, claude-nexus, claude-pantheon, claude-finalwishes, claude-porch-and-alley — all 🟢 heartbeating) plus 1 owner item (codex-cli-unavailable, to: user — left as owner action, not nagged). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — no merge work. `router doctor --fix`: 0 woken, 18 already-armed, 1 wake-unavailable (the user item, agent "user" unregistered — expected). Flagged thr-7752bff1de2a54f2 /loop as loop-dead, but claude-home's inbox is durably consumed by live worker thr-7a611ae23d063975 (idle 55s) — declined to spawn an ephemeral /loop from this scheduled context per fork-storm lessons; interactive session re-arms on its own SessionStart. `router prune --days 90` reclaimed 45.3 KiB (below 5MiB notice threshold). Board republished (router-board.json 10261 B). No sentinels, binary healthy.
-
-## Conduit run 2026-07-12T19:00:19Z
-Empty/clean run. Both conduit queues (claude-home, claude-codex-standin) had zero open items — no review requests to first-chop. Router: 19 open / 1259 closed; all 19 open items belong to currently-live recipient threads (claude-assiduous/finalwishes/nexus/porch-and-alley/pantheon) or the single `to: user` codex-cli-unavailable owner item — none addressed to claude-home, so nothing to close or route. `router doctor --fix`: reaped 0 OS-dead records, 18 already-armed, recorded 1 wake-unavailable on the user item (agent "user" not registered, expected). `router prune --days 90`: nothing to prune, fabric within retention. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to review/merge. Board republished (~/.sirsi/router-board.json+md) with 0 confirmed blockers — no escalation. Noted: doctor flags thr-4d6831f217b426fd (claude-home watcher) as loop-dead, but that is the interactive session's /loop to re-arm, not this scheduled conduit's job.
-
-## Conduit run 2026-07-12T19:48Z
-Clean run. Queues empty for claude-home + claude-codex-standin (nothing to review/route). Binary healthy, no BINARY_MISSING sentinels. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Router: 19 open items, all delivered responses/nudges awaiting other live recipients (assiduous/finalwishes/nexus/pantheon/porch-and-alley) plus 1 owner item (codex-cli-unavailable, already open — not nagged). `router doctor --fix`: reaped 0 OS-dead, wake pass 18 armed + 1 wake-unavailable (the user codex-cli item, correctly). Board republished — no confirmed owner-clearable blockers, so no new escalation. Retention prune reclaimed 3 KiB (steady state). Own watcher thr-255bb1241d2e70da shows 🟢 active in `thread list` (heartbeated by owning CLI session); `thread heartbeat` CLI reports it "not registered" — registry-lookup quirk, liveness unaffected; durable /loop re-arm belongs to the interactive session, not this ephemeral scheduled task.
-
-## Conduit run 2026-07-12T21:13:44Z
-Clean pass. claude-home + claude-codex-standin queues both empty (0 open). Router: 19 open / 1259 closed — all 19 are `to:` other threads (responses/nudges I routed, or the one `to: user` codex-cli item), whose recipient threads are live, so left for pull. `router doctor --fix`: reaped 0 OS-dead, wake pass 18 already-armed / 1 wake-unavailable correctly recorded on the user-owned codex item; flagged watcher thr-792308351dcd8841 (claude-home) loop-dead (0 procs) but its inbox is empty so nothing stranded — not arming a durable /loop from a non-interactive scheduled run. Board republished (fresh, 9.9KB). No confirmed owner-clearable blockers: all auth_ok==false entries are 30s-timeout inconclusive flaps (not escalated per directive #15); all 4 not-installed launch agents are legacy=True with modern equivalents (ai.sirsi.pantheon, ai.sirsi.horus.agent-router) installed+loaded. Prune reclaimed 3.0 KiB (below 5 MiB note threshold). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. No binary-missing sentinels.
-
-## Conduit run 2026-07-12T22:53:48Z
-Clean run. claude-home + claude-codex-standin queues both empty. No binary-drift sentinels. `router doctor --fix` wake pass: 2 stranded channels woken (claude-pantheon 7 items, claude-nexus 2 items — both wake via launchagent), 16 already-armed, 1 wake-unavailable recorded on the `to: user` codex-CLI-unavailable escalation (owner action, already open — no nag). Retention prune (--days 90): nothing to prune, fabric within window. Router board republished (~/.sirsi/router-board.{json,md}, 0 confirmed blockers). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Worker threads (finalwishes, finalwishes-web, nexus, porch-and-alley, assiduous, kfca, home) all live/recently-seen; the ⚠️ aged claude-home surface=claude records are CCD session records (not a proc leak — left untouched per known-issue guidance). No closes/merges/routes required.
-
-## Conduit run 2026-07-13T03:45:43Z
-claude-home + claude-codex-standin queues both empty (0 open items to me). Router: 20 open / 1259 closed — all 20 belong to other recipients (claude-pantheon×8, claude-assiduous×4, claude-finalwishes×3, claude-nexus×2, claude-porch-and-alley×2, user×1); the sole `to: user` item is the standing codex-cli-unavailable owner escalation (left open, no nag). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Router board regenerated (`~/.sirsi/router-board.json/.md`) — **no confirmed blockers, fabric healthy**; stranded inboxes are recipient sessions not open (surface-by-design). `router doctor --fix` reaped 0 OS-dead records. Retention prune applied — reclaimed 84.4 KiB (log-cap only, below the 5 MiB note bar). Thread hygiene: suspended stale duplicate worker `thr-34154d723157c42a` (claude-porch-and-alley, idle 2.5h, no wake mechanism, superseded by live+armed `thr-17cdb0a19f0b3d19`); left the stale claude-home `surface=claude` records alone per the CCD-duplicate-records rule (keyed-singleton PR #178 is the fix, not manual suspension). Gemma worker resolved to `gemma-4-12B-it-8bit` (RAM-budget fit). Empty run otherwise — clean.
-
-## Conduit run 2026-07-13T03:47Z
-Clean cycle. Both conduit queues (claude-home, claude-codex-standin) empty — nothing to review/route/farm. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp (the prior stale-item PRs 61/62/63/194/196–199 all landed). Binary healthy, no BINARY_MISSING sentinels. `router doctor --fix`: reaped 0 OS-dead records, woke 3 armed channels, 1 wake-unavailable = the owner `user` codex-cli-unavailable item (left open, owner action, not nagged). Retention prune reclaimed 9 KiB (below note threshold). Router board republished (json+md). 20 open items all target live non-home recipients (assiduous/finalwishes/nexus/pantheon/porch — active threads/workers) + 1 owner item; none are claude-home work. Stale ⚠️ claude-home thread records = CCD session artifacts (known, not a proc leak — not suspended). Empty run = good run.
-
-## Conduit run 2026-07-13T05:13Z
-claude-home conduit tick. Both conduit queues empty (claude-home, claude-codex-standin — no open items). Router: 20 open / 1259 closed; all 20 open are responses/nudges to LIVE recipient threads (claude-assiduous, claude-nexus, claude-pantheon, claude-finalwishes, claude-porch-and-alley all 🟢 active) plus one `to: user` owner item — left open, actionable-for-recipient. Ran `sirsi thread reconcile --agent claude-home` to heal a large backlog of dirty-exit claude-home records: reaped→successor for the hard-killed lineage (non-destructive suspended successors), plus one stale→suspended (thr-0dda048919a1ff0d); second run idempotent ("no dirty exits"). Five older claude-home claude-surface records remain active+stale (idle 3.6–5h) — reconcile deliberately did NOT reap them (live CCD sessions, not a proc leak per the CCD-duplicate-records reference); left untouched. `router doctor --fix`: recorded wake-unavailable on the user codex-cli item (agent "user" not registered — correct), claude-pantheon's 8 items wake via launchagent. Retention prune reclaimed 51.4 KiB (log-cap, under the 5 MiB note threshold). Board republished (~/.sirsi/router-board.json 9483 B + .md). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Owner blocker (codex CLI unavailable) already escalated as an open `to: user` item age 1d15h — not duplicated. Binary healthy, no BINARY_MISSING sentinels. Heartbeated the conduit thread; did not spawn a persistent /loop watcher from this ephemeral scheduled run (leak-avoidance).
-
-## Conduit run 2026-07-13T05:26:08Z
-claude-home conduit tick. Both conduit queues empty (claude-home, claude-codex-standin) — no review/informational items to work. Router: 20 open items, all routed to live recipient threads (claude-assiduous, claude-finalwishes, claude-nexus, claude-pantheon×8, claude-porch-and-alley — all 🟢 active/heartbeating <60s) plus one owner action (codex-cli-unavailable → user). Left all recipient items for their owners per protocol; no nag/duplication. `router doctor --fix`: reaped 0 OS-dead, wake pass woke pantheon's 8-item inbox via launchagent, marked the lone user item wake-unavailable (agent "user" has no wake mechanism — expected owner action). No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp — nothing to merge. `router prune --days 90` reclaimed 39.3 KiB (log tail-cap; under the 5 MiB note threshold). Refreshed gemma-model.conf + router-board.json/md. Binary healthy (no BINARY_MISSING sentinels). Note: doctor flags this session's own /loop watcher (thr-ae31b63e2dbaa009) as loop-dead, but claude-home's inbox is empty so nothing is stranded; not spawning a persistent /loop from a headless scheduled tick. Empty, healthy run.
-
-## Conduit run 2026-07-13T06:26:37Z
-Clean run. Both conduit queues (claude-home, claude-codex-standin) empty — no review requests to first-chop. 20 open router items, all inbound to other threads (their work) plus one pre-existing owner escalation (codex-CLI-unavailable → user, 2026-07-11, left untouched, not re-nagged). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. Worker threads all live+armed (finalwishes, nexus, porch-and-alley, assiduous, horus-supervisor, claude-home worker thr-a4df7c9f5ea33624). `router doctor --fix`: 0 reaped, 19 already-armed, 1 wake-unavailable (the owner item, by design). Board republished (fabric healthy, 0 blockers; stranded = claude-pantheon 8 [launchagent-wake] + user 1 [owner]). Retention prune reclaimed 48.3 KiB (<5 MiB, sub-threshold). Did not arm a /loop for the ephemeral claude-surface thread thr-60e63e192b528c7b — claude-home inbox already consumed by the armed worker + supervisor, so arming would only leak a process. Closed/merged/routed nothing.
-
-## Conduit run 2026-07-13T06:40Z
-claude-home conduit tick. Queues clean — no open items for claude-home or claude-codex-standin; nothing to review or respond to. Router status: 20 open items, all addressed to live recipient threads (claude-assiduous, claude-finalwishes, claude-nexus, claude-pantheon×8, claude-porch-and-alley) plus the one standing `to: user` codex-cli-unavailable escalation — all left with their owners (their work, not mine; recipient threads all 🟢 in `thread list`). Thread police: suspended 6 dead `claude-home surface=claude` threads (thr-60e63e19, thr-1d22fca8, thr-9455c005, thr-9d0b1a2f, thr-ae31b63e, thr-f78223bb) — prior conduit sessions, no pid files, heartbeats aged 15–87min; suspend is reversible. `router doctor --fix`: reaped 0, 19 already-armed, 1 wake-unavailable (the unregistered `user` recipient, expected). PRs: zero open across sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to merge. Board republished (`router-board.json` 9483B). Retention prune reclaimed 45.3 KiB (log-cap, below the 5 MiB note threshold). Escalation check: only confirmed blocker is codex CLI missing — already an open user item, not duplicated; the 4 uninstalled launch agents are all `legacy:true` (daemonless router + installed `ai.sirsi.horus.agent-router` supersede them), not blockers. Clean tick.
-
-## Conduit run 2026-07-13T07:26Z
-Clean sweep. claude-home + claude-codex-standin queues both empty — no first-chop review work. Router: 20 open items, all to other threads (assiduous 4, finalwishes 3, nexus 2, pantheon 8, porch-and-alley 2, user 1); no items to claude-home. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review or merge. No BINARY_MISSING sentinels. `router doctor --fix` ran the wake pass (0 woken, 19 already-armed, 1 wake-unavailable already recorded on the user codex-cli item); reaped 0 OS-dead (ADR-022 OS-truth left the stale ⚠️ claude-home CCD records alone — correct, do not mass-suspend). Board refreshed (~/.sirsi/router-board.json/.md): **fabric healthy, no confirmed blockers**, so no owner escalation (the user codex-cli-unavailable item is already open, age 1d17h — left as owner action). Notable standing signals surfaced on the board, not acted on: claude-pantheon has 8 stranded items with no live worker (all pantheon threads suspended — by-design stranded interactive inbox), and this scheduled thread (thr-e7159480d5ab19ec) shows loop=dead/NOT-ARMED — did not arm a persistent /loop from this one-shot scheduled run (leak risk per schedulewakeup-process-leak); heartbeat emitted in-band instead. Retention prune reclaimed 48 KiB (trivial, below note threshold).
-
-## Conduit run 2026-07-13T08:56:25Z
-Clean cycle. Both conduit queues (claude-home, claude-codex-standin) empty — no first-chop review work. Router: 20 open / 1259 closed; all 20 open items are outbound `claude-home →` responses correctly addressed to recipient threads (assiduous 4, pantheon 8, finalwishes 3, nexus 2, porch-and-alley 2) plus 1 `to: user` codex-cli-unavailable item (owner action, left open, not nagged). Thread list: 7 live workers heartbeating (porch, assiduous, finalwishes, home, horus-supervisor, nexus); stale `claude-home surface=claude` records are CCD session artifacts (not proc-leak, not mass-killed per keyed-singleton #178). `router doctor --fix`: reaped 0 OS-dead, wake pass 0 woken / 19 already-armed / 1 wake-unavailable (the user item, agent "user" not registered — expected). Board published (0 confirmed blockers; single raw auth_ok==false cleared by the board's re-verification, so no escalation per rule 15). Retention prune reclaimed 48.3 KiB (log-cap, below 5 MiB note threshold). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. Gemma triage worker returned a cold parse-failure row only — used as a screen, direct reasoning applied. Emitted heartbeat for thr-bd1679dfe64bbb9d.
-
-## Conduit run 2026-07-13T09:41Z
-claude-home conduit tick. Both queues empty (`router pull claude-home` / `claude-codex-standin` — no open items). Router status: 20 open / 1259 closed — all 20 are outbound responses/nudges from claude-home sitting in live recipient inboxes (assiduous 4, finalwishes 3, nexus 2, pantheon 8, porch 2) plus 1 owner-action `to: user` (codex-CLI-missing, recorded wake-unavailable — not nagged). No claude-home-recipient request left unanswered. `router doctor --fix`: reaped 0 OS-dead, 19 already-armed, my interactive thread thr-5e452ede921216f9 flagged loop-dead but claude-home inbox is covered by the armed worker thread thr-a4df7c9f5ea33624 (queue empty regardless); did NOT spawn a persistent /loop in this ephemeral scheduled session (leak avoidance) — emitted a heartbeat instead. Dead threads already suspended; stale claude-home surface=claude records are CCD sessions (not proc leaks — not touched). `router prune --days 90`: reclaimed 50.4 KiB (log tail-cap, <5 MiB — noted only for completeness). Board refreshed (`router-board.{json,md}`) — no blockers, fabric healthy. Gemma model resolver ran. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. No binary-missing sentinels. Clean run — nothing to route, merge, or escalate.
-
-## Conduit run 2026-07-13T11:41:41Z
-Queues clean — no open items for claude-home or claude-codex-standin (first-chop verdicts: none needed). Router status: 20 open items, all owned by other recipients (claude-pantheon 8, claude-assiduous 4, claude-finalwishes 3, claude-nexus 2, claude-porch-and-alley 2, user 1) — left for their owners. **Thread hygiene:** suspended 5 active claude-home CCD-session threads whose PIDs were confirmed dead via os.kill+ps (thr-6dfda54c/d0c88cc7/e25461c9/c0d19c5e/cbc529a2), each with 0 owned open items. Remaining stale-⚠️ claude-home threads have live PIDs — left alone. `router doctor --fix`: 0 reaped, 19 already-armed, 1 wake-unavailable (the to:user codex-cli item, agent "user" unregistered — owner action, already open, not nagging). Board republished (router-board.json/md). `router prune --days 90`: reclaimed 50.5 KiB (below 5 MiB threshold). No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp. No auth_ok=False and no missing launch agents on the board → no new owner-clearable blocker to escalate. Binary healthy, no BINARY_MISSING sentinels. Watcher thr-c8ef869a6e6a1b9b reported loop-dead (pgrep=0) — belongs to owner's interactive session, not spawned from this headless cron run.
-
-## Conduit run 2026-07-13T12:11:10Z
-Clean cycle. Both conduit queues (claude-home, claude-codex-standin) empty — no reviews, verdicts, or codex farm-outs. No open PRs in sirsi-pantheon, FinalWishes, or SirsiNexusApp. Ran `sirsi router doctor --fix`: reaped 0 OS-dead threads (24 stale records are heartbeat-aged but not OS-dead, so no suspends), wake pass = 0 woken / 19 already-armed / 1 wake-unavailable (the `to: user` codex-CLI-unavailable item — no wake mechanism, owner action, left open). Doctor flags watcher thr-c6130a21b67ce665 as loop-dead with no live process; claude-home inbox is empty so nothing is stranded, and I did NOT spawn a sidecar /loop from this ephemeral scheduled session (avoids the known wakeup proc leak) — the interactive SessionStart hook re-arms it when a real claude-home session starts. Published router board (9484-byte JSON + md). Retention prune reclaimed 50.5 KiB (log-capped, below the 5 MiB note threshold). The 20 open router items are all for alive non-conduit recipients (their pulls) — left in place. Empty run = good run.
-
-## Conduit run 2026-07-13T12:26Z
-claude-home conduit tick. Both my queues clean (claude-home + claude-codex-standin: 0 open). Binary healthy, no BINARY_MISSING sentinels. Router: 20 open / 1259 closed — all 19 stale open items are `claude-home-claude-X-response/nudge-*` waiting on LIVE recipients (finalwishes/nexus/porch/assiduous all 🟢 active; pantheon 8 items wake via launchagent, 19 already-armed) — recipients' work, left in place. `router doctor --fix`: reaped 0 (no OS-dead per ADR-022), wake pass 0 woken / 19 already-armed / 1 wake-unavailable correctly recorded on the `codex-cli-unavailable` item. That item is `to: user` (owner action — codex app missing from /Applications), already escalated 1d22h, left open, not nagged. No open PRs in sirsi-pantheon / FinalWishes / SirsiNexusApp — nothing to review/merge. Board regenerated (9480 B, 0 confirmed blockers). Prune reclaimed 47.3 KiB (below note threshold). Emitted in-band heartbeat for thr-389ced1387dc3771 (doctor flagged it loop-dead, but this is a 15-min scheduled tick, not a persistent /loop — no sidecar watcher spawned per the process-leak rule). Nothing closed/merged/routed. Clean run.
-
-## Conduit run 2026-07-13T14:40:22Z
-claude-home conduit supervisor tick. Queues clean: `router pull claude-home` and `claude-codex-standin` both returned no open items — nothing to review/farm/ACK this cycle. Router status: 20 open / 1259 closed; all 20 open items are outbound responses/directives TO other threads (claude-pantheon 8, claude-assiduous 4, claude-finalwishes 3, claude-nexus 2, claude-porch-and-alley 2) plus 1 `to: user`, so none are claude-home work — they are stranded interactive inboxes by design (doctor does not blind-spawn). No open PRs across SirsiMaster/sirsi-pantheon, FinalWishes, or SirsiNexusApp (all three `gh pr list` empty, gh authed). Board republished (`router-board.json` 9193 bytes + `.md`); confirmed health: `claude` CLI auth_ok=true, `codex` CLI still absent from PATH — but that blocker is ALREADY escalated as the open `to: user` item 20260711-135758 (codex-cli-unavailable), so refreshed nothing / did not nag (step 15). Gemma model-resolver ran (no change). **Retention prune reclaimed 8.6 MiB** (snapshot 8.4 MiB + log-cap 139 KiB) via `router prune --days 90`. `router doctor --fix` completed (exit 0): wake pass = 7 woken · 12 already-armed · 1 wake-unavailable (the `to: user` codex item, correctly unwakeable); reaped 0 OS-dead records (nothing actually dead). Doctor flagged the claude-home watcher thread `thr-bced555d47f52014` as loop-dead with 0 live watcher procs — but claude-home's inbox is empty (not in the stranded list), so nothing is stranded, and this non-interactive scheduled task deliberately did NOT spawn a detached `/loop` sidecar (process-leak rule); re-arm belongs to the interactive claude-home session. No items closed/merged/routed; an empty conduit run.
-
-## Conduit run 2026-07-13T14:42:06Z
-Owner reviewed the router-conduit health report and approved its format ("exactly how I want my dashboard to look"), requesting one enhancement: every element by row/column fully interactive with drill-down. Built a live, click-through interactive board as a claude.ai Artifact (https://claude.ai/code/artifact/4c6e7e0c-4efc-4f70-8ef8-ad23293cacc3) grounded in the real `~/.sirsi/router-board.json` + `sirsi router show` on all 20 open items — layered drill-down (summary row → grouped records → full-detail drawer), sortable columns, severity stripes/state pills, both light+dark themes; verified in-browser (zero console errors, all interactions functional, gap-free layout). Owner then directed wiring this UX into the Pantheon menubar surface. Routed a scoped ENHANCEMENT spec to claude-pantheon (item 20260713-144118-…enhance-p-router-board-pr-147) referencing their delivered P-router-board work (PR #147 Fabric view + auth-probe addendum): make every Fabric row/record drillable + column sort, with the required data-feed change — enrich board.json to schema 1.1.0 with a `pending_items[]` array (title/from/to/opened/age/wake/type/body_excerpt) so the menubar stays a pure reader instead of shelling out per row. PR routes back to claude-home for source-deep bind. Ran doctor --fix (0 woken, 20 already-armed, 1 wake-unavailable on the owner codex item); claude-pantheon inbox (9 items) is launchagent-wakeable. Regenerated the board (10,033 bytes).
-
-## Conduit run 2026-07-13T14:51:26Z
-Owner canonized the Model Tiering Doctrine ("generation down-tier, judgment up-tier, bind always frontier") as permanent portfolio law. Written to ~/Development/AGENTS.md § "Model Tiering Doctrine (Compute Economy Law)" (universal, all repos/threads/models). Press piece drafted for sirsi.ai ("Judgment Is Expensive. Generation Is Cheap. Spend Accordingly.", founder byline) and routed to claude-nexus (item 20260713-145050-…publish-sirsi-ai-article; founder-bless gate before live, article body at .agents/idea-router/attachments/20260713-article-tiered-mind.md). Canon fold-in routed to claude-pantheon (item 20260713-145050-…canonize-model-tiering-doctrine): new A-rule in PANTHEON_RULES + default T0/T1/T2 routing table in ORCHESTRATION_BRAIN PRD; PR binds back through claude-home. Auto-memory updated (feedback_model_tiering_doctrine).
-
-## Conduit run 2026-07-13T16:13Z
-Pulled claude-home (1 open) and claude-codex-standin (0). The single item was
-`20260713-152709` from claude-nexus: a `decision`-type heads-up that the "Judgment
-Is Expensive" blog article is staged as SirsiNexusApp PR #125 + a preview channel
-(expires 2026-07-27), explicitly held for Cylton's founder sign-off before merge/live
-deploy. This is owner-gated, not a review ask — responded via sirsi-respond.sh (ACK:
-handling correct, conduit will NOT auto-merge #125 since it's founder-gated + user-facing
-content, proceed on Cylton's approval then route completion back), closed + notified
-claude-nexus. PR sweep: pantheon and FinalWishes have zero open PRs; SirsiNexusApp #125
-is the founder-held article above — left unmerged by design (no other green/unheld PRs
->1h). Ran doctor --fix (nudge/wake pass: 0 reaped, 23 already-armed, 1 wake-unavailable
-recorded on the `to: user` codex-cli-unavailable item — owner action, not nagged). Stale
-queue is all prior claude-home→thread responses awaiting live-recipient pulls (recipients
-active) plus the one owner item — left in place. Doctor reaped 0 OS-dead records (5 stale
-claude-home CCD-duplicate records left untouched per ADR-022 OS-truth + duplicate-records
-memory — no manual suspends). Published router-board.json/.md. Ran `router prune --days 90`
-(reclaimed 69.8 KiB log-cap — below the 5 MiB note threshold). Emitted in-band heartbeat
-for thr-e3f5b9bd0de969a7 rather than spawning a sidecar /loop watcher (no-sidecar memory).
-No codex farm-out needed this cycle.
-
-## Conduit run 2026-07-13T16:29Z
-claude-home conduit tick. Binary healthy (24.8MB, no BINARY_MISSING sentinels). Both conduit inboxes empty (claude-home, claude-codex-standin — nothing to first-chop or farm). Router: 24 open / 1261 closed, none addressed to claude-home; open items are recipient-owned (pantheon 11, assiduous 4, nexus 3, finalwishes 3, porch-and-alley 2) and wake via launchagent, plus 1 owner-action item (codex-cli-unavailable, age 2d2h — left, not nagged). Gemma triage screened the queue (1 ACTIONABLE row → claude-assiduous chronic-e2e, recipient's work). Ran `router doctor --fix` (wake-or-declare pass; reaped 0 OS-dead per ADR-022; 3 "loop-dead" claude-home records are known CCD-session dupes, not proc leaks — left untouched). Published router-board.json+md. PR sweep: sirsi-pantheon & FinalWishes clean (0 open); SirsiNexusApp #125 green+unheld+~1h old, owner-authored (SirsiMaster), founder-blessed header, source-deep-reviewed (two Model-Tiering-doctrine blog articles + route wiring in main.tsx + blog-index entry + launch.json serve config — clean, no secrets, canon-aligned) → squash-merged 16:29:15Z. Retention prune: reclaimed 50.6 KiB (log-cap, under note threshold). Threads healthy. Empty-ish run otherwise.
-
-## Conduit run 2026-07-13T16:47Z
-Clean conduit pass corroborated by an independent codex audit (relayed by owner): fabric healthy, 24 open items (19 stale) all peer-addressed + 1 to:user, no open PRs in pantheon/FinalWishes/Nexus, all product watchers armed. claude-home inboxes empty. Retention prune reclaimed 34.7 KiB (steady state). Board refreshed.
-
-Root-caused + healed the standing owner blocker (item 20260711-135758, codex-cli-unavailable): `~/.local/bin/codex` was a dangling symlink into the retired `/Applications/Codex.app`. Codex was NOT deleted — OpenAI folded the Codex CLI into ChatGPT.app; the live codex-* threads already run `/Applications/ChatGPT.app/Contents/Resources/codex` (codex-cli 0.144.0-alpha.4, verified runnable). Fix was a one-line symlink repoint in the user's own ~/.local/bin (no /Applications mutation, no install): `ln -sf /Applications/ChatGPT.app/Contents/Resources/codex ~/.local/bin/codex`. `~/.local/bin/codex --version` now resolves. Left the to:user item open for owner to close (to:user items are owner actions). claude-home "loop-dead" records are CCD/scheduled-task session artifacts (keyed-singleton, not a proc leak) — not mass-killed; doctor reaped 0 OS-dead.
-
-## Conduit run 2026-07-13T17:47:32Z
-Conduit queues (claude-home, claude-codex-standin) both empty — no review/farm-out items this tick. Router: 24 open items, all addressed to other recipients (pantheon 11, assiduous 4, finalwishes 3, nexus 3, porch 2, one to:user codex-CLI escalation) — none to claude-home, so none actioned; the many claude-home threads are CCD session records with live heartbeats (not a proc leak per reference), left untouched. `router doctor --fix`: 0 reaped, 15 already-armed, 0 wake-unavailable; stranded pantheon(3)/porch(2) inboxes surfaced by design (interactive agents never blind-spawned). Board published, **no confirmed blockers (fabric healthy)** → no owner escalation. Prune reclaimed 27.2 KiB (<5 MiB, below note threshold). PR sweep: source-deep reviewed pantheon **#201** (emerald+gold brand, ADR-038 P1 — single `internal/brand` palette + CSS/Swift/JSON emitters, tests green, matches owner directive) — clean bind, but head was behind base so ran `update-branch` (no binding-hold label); merges next cycle once CI re-runs green. **#202** (codex-via-ChatGPT.app resolve, fixes the open codex-unavailable escalation) is <1h old — left for next tick. FinalWishes/Nexus had no open PRs; Nexus #125 (blog article) was owner-approved and merged at 16:29Z. Stranded-response audit clean: the one inbound (claude-nexus→claude-home, PR#125 article owner-gated) was correctly ACK'd and is founder-gated, needs no fresh inbound back. No BINARY_MISSING sentinels; no dependabot PRs.
-
 ## Entry 068 — 2026-07-13 13:49 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
@@ -4166,3 +2859,1803 @@ host repo). No agent could commit in pantheon until it was cleared; `git config 
 restored normal operation with nothing lost. Only `.thoth/journal.md` committed — the large
 uncommitted `.agents/idea-router/items/` delta is live multi-agent router churn and belongs to its
 writers, and the branch in this worktree (`fix/sirsi-gemma-bare-server-chipA`) is claude-pantheon's.
+
+## Conduit run 2026-07-24T23:06Z
+
+Located the source of the P0 router observer regression codex-pantheon filed as `20260724-225830`,
+and materially widened its scope. Phantom rows come from `~/Development/sirsi-pantheon/.agents/idea-router/items/`
+— 1760 `.md` files, 44 carrying `status: open` — which observers union with the SQLite store. Not
+under `~/.sirsi`, which is why the dir reads as already-removed. Union arithmetic is exact: store 9
+open + 44 file-opens → the 47 reported by `status`/`dump`/`pull` (store: 9 open / 1852 closed). The
+drift mechanism is standing, not a migration miss: **closes update the store only and the file copy
+stays frozen**, proven on `…postmerge-review-53…` (file `status: open`, store `closed` since
+2026-06-18T23:59:12Z). Corrected two of codex's assertions — `pull` and `dump` are NOT store-correct
+(pull served me 2 phantoms against zero real open items; dump counted 47/1856), so the fix set cannot
+stop at status/plan/node/board. `pull` is the wake path: this session's SessionStart hook woke me on
+those 2 phantoms, and 44 phantoms sit across 11 recipients, making this fleet-wide false wake rather
+than only unsafe owner-gate remediation. Also flagged that `router send --help` still advertises the
+dead dir and that `liveness-watch` still writes files (11 today), so any one-time cleanup refills
+without a writer inventory. Routed the evidence to claude-pantheon (`20260724-230545`) and the
+scope correction to codex-pantheon (`20260724-230559`); changed nothing — no deletes, no closes.
+Left the 2 phantom claude-home items untouched per codex's do-not-close directive (a close would be
+a no-op regardless — their store rows are already closed). PR #314 went fully green (all 5 checks)
+at `3c5f01d4`; I authored it, so it stays for codex to bind. System green: zero new `.ips`, broker ok
+with `--prompt-cache-bytes` bound, all four daemons argv-verified on the same PIDs a sixth run.
+Health 94/100 with the recurring transient Spotlight spike (35% CPU) — not chased, per prior runs.
+
+## Conduit run 2026-07-24T23:24Z
+
+Ran the maintenance the 23:07Z run deliberately deferred (that run started ~1 min after its
+predecessor, so reconcile/prune/reap/doctor/board/retention would have been noise). Reconcile healed
+14 threads (9 reaped→successor, 4 stale→suspended); thread prune took 0 (547 records steady);
+`sirsi ccd reap --apply` killed 4 leaked completed conduit sessions and archived 2 records; router
+retention reclaimed 141.1 KiB. Closed the one real claude-home inbox item — codex-pantheon's ACK
+`20260724-231348` accepting the widened P0 scope — as informational; the "2 pending" SessionStart
+alert remains the known facade phantom, unchanged and untouched.
+
+New finding, routed to claude-pantheon as `20260724-232706`: **`sirsi router doctor` is a facade
+reader AND a phantom-driven writer**, and it is absent from codex's declared fix set
+(pull/dump/status/plan/node/board/wake). Doctor reported stranded inboxes of claude-deck=8,
+claude-ask-eliot=2, codex-nexus=1; the store has **zero** open for all three (store truth:
+claude-pantheon=9, claude-finalwishes=2, claude-nexus=1, total 13), while the legacy
+`.agents/idea-router/items` facade counts claude-deck=8 and claude-ask-eliot=2 — an exact match to
+doctor's numbers. Worse than the read-only surfaces: `doctor --fix` ran a wake pass against those
+phantom inboxes and recorded `wake-unavailable` state on two rows closed in the store since June.
+The phantom class therefore has a writer amplifying it. Flagged for the PR #315 pass that
+codex FAILed at 23:25Z. Changed nothing — no closes, no deletes, no facade edits.
+
+Escalated one owner item (`20260724-232818`): the Spotlight write-amplification storm is no longer
+transient. Across three runs mds_stores went 0.2% → 35% → 54% (ps sample 81%) with free RAM
+64% → 35% → 45%, and `spotlight-exclude --json` now self-reports `storming: true`. The fix is
+SIP-protected and owner-only by design, so it was surfaced with exact steps and the indexing
+trade-off rather than attempted. System otherwise green: no new sirsi/gemma/Python crash reports,
+broker healthy with `--prompt-cache-bytes` bound and cache 3.51 GB (under the 6 GB balloon line),
+all four daemons argv-verified on the same PIDs a seventh consecutive run. PR #314 left alone —
+I authored it, no self-bind.
+
+## Conduit run 2026-07-24T23:50Z
+
+Unblocked claude-pantheon's whole stack and bound the follow-up that closes the phantom-router
+class. #315 merged at 23:30Z, which left its two siblings — #316 (memory-death ladder) and #317
+(SIRSI_ROUTER_AGENT narrowing) — both `CONFLICTING` on GitHub. Computed the conflict scope before
+touching anything: **CHANGELOG.md only**, with `internal/liveness/livenesswatch.go` auto-merging
+clean, so this was the sanctioned trivial-mechanical case. Merged `origin/main` into both,
+verified (#316: `go build` clean, `go test -short` green on internal/guard, internal/liveness,
+internal/router), and pushed from the main checkout so Ma'at's lint gate saw node_modules. Both
+are now `MERGEABLE` + `APPROVED`.
+
+That produced a finding worth keeping: **the `.gitattributes` `CHANGELOG.md merge=union` driver
+does not stop GitHub from marking siblings CONFLICTING.** It works exactly as designed on a local
+`git merge` — 0 conflict markers, both entries preserved — but GitHub's mergeability computation
+does not apply gitattributes merge drivers. So the treadmill is only half-killed: the *resolution*
+is now free, the *unblocking* still costs a manual merge-and-push per sibling. Corollary trap:
+`git merge-tree --write-tree` reports a false CONFLICT for the same reason (no `--attr-source`),
+so it cannot be trusted to triage this class — the old two-arg `merge-tree` reported the truth.
+
+Source-deep reviewed and bound PR #318 (`sirsi-bind[bot] @ cd01e3eb`). It fixes the WRITE half of
+the phantom class I found last run: `Facade.SetWake` now routes to the store post-cutover, so the
+wake pass stops annotating rows closed since June. Verified the fail-closed change is complete
+rather than partial — audited every caller of the two changed readers (`supervisor.go:164`,
+`conduittick.go:53`, `ctr.go:169`, `routerplan.go:46` all propagate; `fmt` imported; pre-cutover
+path untouched per Rule 14) — and confirmed build plus `go test -short` green on the three affected
+packages. Filed one non-blocking note: `nodestatus.go:359` guards on `listErr == nil`, so a store
+failure now silently omits the stranded-inbox signal instead of reporting degraded. Accepted
+claude-pantheon's timing correction in full: my 23:28Z stranded-inbox evidence predated their
+23:30Z redeploy, so `doctor`'s READ half was already covered by #315 and only the WRITE half was
+open. Doctor this run confirms it — no stranded inboxes, `0 wake-unavailable` recorded.
+
+Chased a red main to root cause and did **not** route it as a bug. Two tests in
+`.claude/hooks/router_inbox_check_test.py` fail on `origin/main`, asserting that
+`adopt_or_register` mints on an anchor-pid mismatch. The code is correct and the tests are stale: a
+third adoption path added under the 2026-07-23 owner directive (ADR-043 machine-level reuse) adopts
+active records whose anchor pid is **dead**, and both tests seed pid 99999, which is dead here. The
+tests encode the superseded pre-directive invariant — and they are non-hermetic besides, mocking
+`claude_session_pid` but not `_pid_alive`, so their verdict depends on the host's pid table. Routed
+to claude-pantheon (`20260724-234927`) with the fix shape and the observation that the Python hook
+suite is outside CI's Go gate, which is why main went red unnoticed.
+
+Owner closed the Spotlight escalation (`20260724-232818`) and the storm abated with it: mds_stores
+54% → 2%, `sirsi diagnose` back to 100/100 from 82. Not re-raised. Maintenance: reconcile healed 7
+threads, prune 0 (558 steady), board republished, retention reclaimed 28.6 KiB. Store closes at
+**11 open / 1871 closed** — claude-pantheon 8, claude-finalwishes 2, claude-nexus 1, claude-home 0.
+The 7d5h `20260717-183742` item stays with claude-finalwishes: their thread is active, so it is
+genuinely theirs. #314 left alone again — I authored it, no self-bind.
+
+## Conduit run 2026-07-24T23:55Z
+
+Finished the one in-flight item from the previous run: PR #318 (cutover WRITE half, `Facade.SetWake` → store) went all-green on its last check and is merged — with #315 that closes the phantom-router class end to end, and `router doctor --fix` confirmed it live this run (17 agents registered, 7 live, 0 stale, dispatch authority STORE-ONLY, no stranded inboxes). Closed my own item `20260724-232706` ("WIDEN PR #315 fix set") as superseded rather than leaving it in claude-pantheon's inbox on a false premise: its READ half was never broken post-deploy (my 23:28Z measurement hit the pre-deploy binary; claude-pantheon's 23:40Z correction was right) and its WRITE half shipped in #318. Routed PR #314 (`sirsi-gemma-triage.sh` was building its work list from the dead `.agents/idea-router/items` directory and therefore reporting a healthy-looking EMPTY triage queue while the store held real open items — same phantom-source class, a third reader) to codex-pantheon for independent review as `20260724-235502`; it is my own PR, so I cannot bind it. PRs #316/#317 remain unbound with Lint/Test/Build still cycling — deliberately left. Maintenance: reconcile healed one stale gemma thread, prune steady at 561, `ccd reap --apply` killed 2 leaked completed scheduled-task sessions and archived 2 session records, board republished, retention reclaimed 1.9 KiB. System green — diagnose 94/100 (only the Spotlight indexer at 47% and the now-reaped leaked sessions), free RAM 90%, zero new sirsi/gemma/Python crash reports, broker healthy with `--prompt-cache-bytes` bound and cache at 2.97 GB (under the 6 GB balloon threshold), all four daemons argv-verified on the same PIDs for a ninth consecutive run.
+
+**Addendum (23:58Z):** #318's Test went green at 210s and I squash-merged it (23:53:49Z) after a
+race-guard recheck — the phantom-router class is now closed on both halves. The merge then proved
+the union-driver finding live: #316 and #317, which I had just unblocked, flipped back to
+CONFLICTING within seconds of #318 landing, on CHANGELOG.md alone. Unblocked both a second time
+(`efafc690`, `bf6dc337`, #316 re-verified green on guard/liveness/router/dispatch) and pushed. So
+the cost is not one-time — it recurs on every merge into a stack, which makes the ordering explicit
+for whoever merges next: merge one, re-unblock the other, then merge it. If this keeps costing
+runs, the real fix is structural — a per-PR changelog fragment directory assembled at release,
+rather than every PR prepending to the same `[Unreleased]` block in one file.
+
+## Conduit run 2026-07-25T00:20Z
+
+Cleared the in-flight queue from the prior run. **PR #317 MERGED** (`SIRSI_ROUTER_AGENT` may only narrow, never contradict the cwd) after source-deep review and `sirsi-bind` at `bf6dc337` — `apply_identity_override` honors the override only when the named agent's own registered cwd contains this session's cwd, closing the cross-agent liveness lie where a machine-global `settings.json` env block relabeled every home-rooted session. I then closed my own originating item `20260724-205100` from the sender side with merge evidence, so it does not linger as a phantom in claude-pantheon's inbox. codex-pantheon returned **PASS on PR #314** (`3c5f01d4`, store-source semantics verified, 11/11 live open-ID match against SQLite) and correctly routed merge execution to claude-pantheon — I ACK-closed my copy and did NOT duplicate their merge item, since #314 is my own PR and I cannot self-bind. **PR #316** flipped to `CONFLICTING` the moment #317 landed: two-arg `git merge-tree` showed **zero** conflict markers, confirming the known class where GitHub's mergeability computation ignores the `.gitattributes merge=union` driver; resolved by merging `origin/main` in a throwaway worktree (clean, `ort`) and pushing `90a91dad` from the main checkout — now MERGEABLE with CI re-queued, left for the next run. Maintenance: reconcile healed 4 (3 stale→suspended, 1 reaped→successor), prune 563→562, `ccd reap --apply` killed **4 leaked conduit sessions** and archived 1 record, retention reclaimed 11.1 KiB, board republished, `doctor --fix` reports STORE-ONLY authority with 11 already-armed and **0 wake-unavailable**. System green at 100/100, zero new crash reports, four daemons argv-verified on the same PIDs a tenth run. One finding worth carrying: the Gemma broker is alive but was measured at **~0.4 tok/s** (16 tokens in 40 s, `finish_reason=length`, non-empty transport) while the self-hosted runner's Go build plus `tar`/`zstdmt` cache upload ran — contention, not a wedge, and free memory recovered to 37% after the session reap. Full triage was stopped rather than left to crawl behind CI; no open item belongs to claude-home.
+
+## Conduit run 2026-07-25T00:23Z
+
+Resumed from thoth: the only in-flight item was PR #316 (memory-death ladder reads available, not free), left MERGEABLE + APPROVED with Test + Build re-queued at 00:19Z. Both jobs are still `in_progress` on the self-hosted runner at the end of this run — they were queued behind the main-branch CI run from 00:11Z, since m5-sirsi serves one job at a time. Source-deep reviewed the diff while it ran and the verdict is PASS: `Pages free + Pages inactive` is the correct macOS "available" quantity (free alone is near-zero by design on any long-running host), collapsing the two hand-duplicated ladders into one `isDeathSpiral` removes a drift invitation the old comment openly admitted to, and `TestIsDeathSpiral_InactiveIsAvailable` pins both the live false-positive and the three conditions that must still trip. Left unmerged only because CI has not finished — bind + squash-merge is the next run's first action.
+
+Notable delta: **main is green again.** Last run recorded it RED on two `TestAdoptOrRegister` tests encoding the superseded pre-ADR-043 invariant (routed to claude-pantheon as `20260724-234927`); the CI run on main at 00:11Z completed SUCCESS, so that item is resolved by the code rather than by me.
+
+Closed `20260725-001909-liveness-watch-...-gemma-broker-wedged` as a false positive with transport-truth evidence: `/health` ok, a real completion returned `finish_reason=length` / `completion_tokens=12` sub-second, same PID with `--prompt-cache-bytes 4294967296` bound and the prompt cache at 3.45 GB — no restart performed because nothing was broken. Root cause is a NEW variant of the false-wedged class, distinct from the already-fixed content-parsing one: the alert opened at 00:19:09Z, inside the window where the runner was doing a Go build plus a zstdmt cache upload and broker throughput measured ~0.4 tok/s. The broker was answering correctly, just slower than the probe's 30s ceiling. Routed `20260725-002326` to claude-pantheon proposing the durable fix — gate the probe while a self-hosted runner job is in flight, or only route on genuine transport failure (no port, connection error, non-200, zero completion tokens) and never on latency alone. Net open-item count unchanged: one noisy recurring alert traded for one actionable fix.
+
+System green with one caveat. `sirsi diagnose` 82/100 🟡, driven by a Spotlight indexer at 43% CPU and a 4.8 GB Virtualization.VirtualMachine — but memory is 89% free, so there is no Jetsam pressure to act on and no `sirsi clean` / `spotlight-exclude` was warranted (the owner's Spotlight item `20260724-232818` stays closed, not re-raised). Zero new crash `.ips` since the last run. Four daemons argv-verified on the same PIDs an eleventh consecutive run (router 80606, triage 80829, pantheon 80639, gemma-worker 80571). Resolver held at `gemma-4-12B-it-8bit`. Maintenance: reconcile healed 3, prune 567→567, `ccd reap --apply` killed 2 leaked conduit sessions and archived 2 records, `router doctor --fix` reported every live thread armed with no stranded inboxes, board republished, retention reclaimed 2.7 KiB. Router store: 12 open, both my inboxes empty. Gemma triage skipped deliberately — no open item is mine, and a CI Build was in flight (last run's lesson).
+
+## Conduit run 2026-07-25T01:05Z
+
+Cleared the fleet's oldest open router item and emptied claude-finalwishes' inbox. The 7d6h-stale A28 proposal (`20260717-183742`, claude-pantheon → claude-finalwishes: arm Ma'at pre-push gate + main branch protection) turned out to be **satisfied on both legs**, and local Gemma's ACTIONABLE screen was wrong about it — a reminder that Gemma is a screen, never a verdict. Leg 1 was already armed and in fact predated the proposal: FinalWishes has `core.hooksPath=.githooks` with an executable `.githooks/pre-push` dated 2026-07-10. Leg 2 cannot be armed at all: `gh api .../branches/main/protection` returns 403 "Upgrade to GitHub Pro or make this repository public", because **FinalWishes is `visibility=private` on the free plan** — which contradicted portfolio bookkeeping that recorded FinalWishes as a public repo where the branch-protection leg was complete. Verified all three: only `sirsi-pantheon` is public and actually protected (`enforce_admins=true`, `strict=false` — a one-field gap against A28's "strict up-to-date", flagged to claude-pantheon, not changed unilaterally); FinalWishes and SirsiNexusApp are both private/free and therefore local-gate-only. Crucially this needed **no new owner escalation**: GitHub Pro is an account-level plan, so the owner's 2026-07-21 Option-3 decision to decline it settles server-side protection for *every* private repo under SirsiMaster, not just Nexus. Closed with that evidence and routed the result back to the proposer (`20260725-010221`), and corrected the conduit memory that had mis-recorded FinalWishes as public. Also closed two superseded response items against merge evidence (FinalWishes #113 merged 21:41Z; pantheon #315 23:30Z + #318 23:53Z closed the phantom-router class both halves). Open 11 → 8, claude-finalwishes 2 → 0.
+
+Second finding, methodological: the recently-closed-request audit mandated by the conduit protocol was being run on a false premise. `items.source_item` — the obvious join key for "which response answers which request" — is populated in **0 of 1891 rows**, a dead column, so any audit keyed on it reports every item as unanswered. Re-auditing by the real signal (`length(result)` on items where `from_agent='claude-home'`) showed **zero bare-closes**: all 14 of my recently-closed requests carry substantive results, 63–3401 chars. The 15 "MISSING-RESPONSE" hits were entirely an artifact of the broken heuristic. Worth keeping: the response doctrine is satisfied either by a routed fresh inbound *or* by a result recorded on the item, and an audit that only accepts the first manufactures alarms. Health otherwise green: `diagnose` 100/100 across 16 signals, memory 32% free with no Jetsam, zero crash `.ips` (the two new DiagnosticReports are a routine `core_analytics` roll and a `suggestd` cpu_resource diag, neither a sirsi/gemma/Python crash), broker `/health` ok with `--prompt-cache-bytes` bound and cache steady at 2.11 GB, four daemons argv-verified on unchanged PIDs a thirteenth consecutive run. `reap --apply` killed 2 leaked conduit sessions and archived 1; reconcile healed 2 claude-home records; retention reclaimed 10.5 KiB. Doctor reports 3 live / 1 stale — the stale is `codex-pantheon` (idle 327s), the known cosmetic codex-never-heartbeats class, not escalated. Fleet has exactly one open PR, pantheon #314, which is mine and deliberately left for claude-pantheon's independent merge (`20260725-000028`) — no self-bind.
+
+## Conduit run 2026-07-25T01:07Z
+
+All-green triage: both conduit inboxes (claude-home, claude-codex-standin) empty, router
+doctor reports 17 agents / 4 live / 0 stale with every live thread armed, and all 8 open
+items are <2h old and belong to live agents. Verified one carried item rather than
+assuming it stale: `20260724-234927` (main is RED — 2 stale hook tests in
+`.claude/hooks/router_inbox_check_test.py` encode the pre-ADR-043 anchor invariant).
+#317 merged into main touching that exact file but did NOT fold in the test fix — both
+tests still seed pid 99999 and still assert `thr-NEW`, so the suite remains red. It stays
+red invisibly because CI's Lint/Test jobs are Go-only and the Python hook suite is not in
+that gate. Item left open and correctly assigned to claude-pantheon. Healing this run:
+`thread reconcile` adopted one reaped claude-home record into its successor
+(thr-b09e652ed8cae6b5 → thr-518ef657ec2336ea), and `ccd reap --apply` killed 2 leaked
+conduit sessions (4 procs) plus archived 1 completed record. Broker bounded and healthy
+(prompt cache 3.23 GB, well under the 6 GB balloon threshold); four daemons argv-verified
+on unchanged PIDs; zero crash reports. `sirsi diagnose` 94/100 — the single deduction is a
+4.9 GB com.apple.Virtualization.VirtualMachine, an owner-run VM, not a fleet fault, and
+memory is 88% free. Fleet has exactly one open PR (pantheon #314, mine — never self-bind;
+its merge is claude-pantheon's `20260725-000028`).
+
+## Conduit run 2026-07-25T01:25Z
+
+All-green conduit pass. System 🟡 94/100 with the sole deduction still the owner's 4.6 GB `com.apple.Virtualization.VirtualMachine` (not a fleet fault); memory 89% free, zero crash `.ips` in the window (three Apple diag/analytics files only — `suggestd` cpu_resource, `link`, Analytics — none a fleet process). Gemma broker `/health` ok with `--prompt-cache-bytes 4294967296` still bound and the KV cache at 2.11 GB, well under the 6 GB balloon threshold; resolver held at `mlx-community/gemma-4-12B-it-8bit`. All four daemons argv-verified on the same PIDs for a fifteenth consecutive run (router 80606, triage 80829, pantheon 80639, gemma-worker 80571); no `BINARY_MISSING` sentinels. Maintenance healed two threads (`thr-a6136612e6829170` [claude-home] → successor `thr-28b9113d2819c3f0`; `thr-c3f7b470ac170424` [gemma] stale→suspended), pruned 0 of 580 records, and `ccd reap --apply` killed two more leaked `router-conduit-supervisor` sessions (2 procs) plus archived one record — recurring evidence for the standing rule that a scheduled-task run must never arm a `/loop` watcher. `router doctor --fix` reported 17 agents / 4 live / 0 stale with every live thread armed. Router store at 9 open / 1883 closed, both my inboxes empty and the oldest open item 2h12m old and owned by a live agent, so the Gemma `--all` screen was correctly skipped. Fleet has exactly one open PR — sirsi-pantheon #314, authored by this session, deliberately left unbound (no self-review; its merge is claude-pantheon's item `20260725-000028`). Board republished at 7737 B; retention reclaimed 5.0 KiB.
+
+## Conduit run 2026-07-25T02:15Z
+
+Maintenance-only run, no router or PR work available. `sirsi ccd reap --apply` killed **12 leaked
+`router-conduit-supervisor` sessions (16 procs)** against a historical run of 2–4, all from this
+task's own prior invocations. Followed that up rather than merely flagging it, and the anomaly is a
+**catch-up, not a spawn burst**: session birth times show the ordinary 15-minute conduit cadence
+(20:39, 20:54, 21:24, 21:39, 21:54, 22:09 EDT), meaning roughly two to three hours of eligible
+sessions that earlier reaps under-collected — plausibly the `not-newest` plus ten-minute-grace
+predicate — were cleared in a single pass. A post-reap dry run reports zero eligible with only this
+run's own two processes live, so the backlog is genuinely drained; a second double-digit catch-up
+would indicate the predicate itself is at fault and belongs with claude-pantheon, which owns the Go
+verb. Worth recording that the first read of this was wrong: `stat -f '%SB'` without a date in the
+format string sorts across days and manufactures convincing sub-minute "bursts" out of unrelated
+sessions. `thread reconcile` healed 11 reaped→successor records
+(10 claude-home, 1 gemma) versus 1 last run, the same churn seen from a different angle; `thread
+prune` 612→610, router retention reclaimed 4.3 KiB. Router store held steady at 10 open / 1884
+closed with both conduit inboxes empty, so Gemma `--all` triage was skipped for the fifth
+consecutive run under its documented condition (empty inboxes, nothing older than 24h). The
+meaningful delta is liveness: `router doctor --fix` reports **2 live agents, down from 5** —
+`claude-pantheon` (9 open items) and `claude-nexus` (1) now have no thread records at all, so their
+inboxes are parked behind `horus-supervisor`'s watch rather than stranded. Doctor confirms no
+stranded inboxes and the oldest item is only 2h57m, so nothing is chaseable yet; if those items age
+past 24h with the agents still threadless, the next conduit should take the doable ones itself.
+System 🟢 94/100 (the recurring `com.apple.Virtualization.VirtualMachine` memory deduction, still
+never actionable), memory free 35%, broker healthy with the 4 GiB prompt-cache bound holding at
+2.11 GB, four daemons argv-verified on the same PIDs for an eighteenth run.
+
+## Conduit run 2026-07-25T02:38Z
+
+Closed `20260725-011031` (liveness-watch → claude-pantheon, "gemma broker wedged") as a
+refuted false alarm rather than leaving it to park behind a threadless agent. Transport-truth
+probe against the real model id returned `finish_reason=length`, `completion_tokens=16`,
+`content=None` — the gemma-4 reasoning-model signature, not a wedge: the probe asserts on
+`content`, which a reasoning model legitimately empties. The restore the alert claimed "did not
+stick" had in fact stuck (pid 41691, `--prompt-cache-bytes 4294967296` bound, Prompt Cache
+2.11 GB, serve log 22:24 EDT = 02:24Z, i.e. after the 01:10Z alert); RAM was never the constraint
+at 33% free with no Jetsam. Broker was NOT restarted — latency or empty content alone is never
+grounds (A32/ADR-040). The durable probe fix is already open as `20260725-002326`, so this alert
+was a duplicate symptom of it. Session-leak picture reversed cleanly: `ccd reap` found **0**
+leaked sessions this run against last run's 12-session catch-up, confirming that was accumulation
+rather than a spawn burst and that the not-newest/grace predicate collects correctly at steady
+state; one idle record archived. Router liveness recovered 2 → 5 live threads, doctor healthy with
+no stranded inboxes. Open queue 13 (claude-pantheon 11, claude-nexus 2), all parked behind
+horus-supervisor's watch and none yet past 24h. Both conduit inboxes empty. Left SirsiNexusApp
+PR #184 alone at 9 minutes old (under the 1h gate) and sirsi-pantheon #314 as own-session work.
+
+## Conduit run 2026-07-25T02:40Z
+
+System all-green: `sirsi diagnose` 100/100 (up from 94 — the recurring Virtualization
+memory-hog signal cleared itself as expected), memory free recovered 33% → 55%, zero new
+DiagnosticReports, all four launchd daemons argv-verified alive (router 80606, triage 80829,
+pantheon 1242, gemma-worker 80571). Gemma broker healthy on pid 41691 with the KV bound intact
+and prompt cache steady at 2.16 GB, well under the 6 GB balloon threshold; model resolver held
+at gemma-4-12B-it-8bit. Reaped 4 leaked completed-task sessions (all prior runs of this same
+supervisor — within the healthy 0–4 steady-state band, not a spawn burst); thread reconcile
+healed 5 records, prune found nothing terminal. Retention prune reclaimed 9.1 MiB across 2
+log-capped artifacts.
+
+Worked the one open conduit item, `20260725-022647` from claude-nexus: the owner's new permanent
+architecture-cartography chore, which asked claude-home as Hypergraph custodian to propose the
+graph-native view set. Responded with a five-view proposal (event/identity model, feeder→ingestor
+→projection pipeline, anchor envelope + verify path, query surface, and provenance mesh deferred
+behind reconciler rung-1 `item_edges`), each pinned to the command that generates it so the
+diagrams cannot drift. Two corrections went back with it, both facts on the Hypergraph side of
+the ownership line. First, the ledger's "4,401 anchored" outflow row overstates its trust
+boundary: `hcs status` reports adapter-interface-only with live Hedera disabled and the union
+topic uncreated, so those are envelope anchors computed locally, not externally verifiable
+consensus — the single most challengeable claim in an auditor-facing set. Second, and more
+urgent now that the cartographer is wired into the 15-minute tick, `hypergraph status` resolves
+its bus from cwd: the union bus at ~/.sirsi/hypergraph carries 4,408 events across 11 repos with
+a populated projection, while the repo-local bus inside sirsi-hypergraph carries 712 events with
+an entirely empty projection. Run from the wrong directory the generator emits a zero-state
+diagram that is confidently, generatedly wrong — so it must pin `--repo ~` and assert non-empty
+projection rather than emit. That is the Neith lesson's second rung: a generated diagram reading
+the wrong source is worse than a hand-drawn one, because it carries the authority of measurement.
+
+Left deliberately: SirsiNexusApp #184 and sirsi-pantheon #319 both under the 1h review gate at
+~12–14 minutes old, and #319 additionally now carries an independent FAIL from codex-pantheon at
+36592ad0, so it is not a merge candidate next run either. sirsi-pantheon #314 remains own-session
+work — never self-bind — and its merge is claude-pantheon's item. A third false "gemma broker
+wedged" alarm arrived from liveness-watch at 02:33Z; the broker was verified healthy this run and
+the durable probe fix is already open to claude-pantheon, so it was left as that lane's item
+rather than re-refuted here. Queue closed at 15 open (claude-pantheon 12, claude-nexus 3), none past 24h.
+
+## Conduit run 2026-07-25T02:58Z
+
+Cut the sweep-alarm rot at its root. The lane had fired four alarms in four hours
+(23:48, 00:49, 01:50, 02:50) into claude-pantheon's inbox, all carrying the same two
+findings, and my prior run had flagged that a fourth would mean the lane was genuinely
+unattended. It was — but not because an agent was ignoring it. `sweep.sh` asserts the
+liveness of `com.sirsi.idea-router` and of `dispatch.sh` (last fire 2026-07-09), and
+both are retired infrastructure: no plist exists anywhere under `~/Library/LaunchAgents`,
+and `dispatch.sh` is the pre-cutover pull-model dispatcher whose WatchPaths trigger is
+`items/`, which the store cutover stopped writing. `sirsi router doctor` independently
+confirms the same thing from the other side — "Dispatch authority: STORE-ONLY (cutover
+active)". The checks cannot ever pass again, so the lane emits one router item per hour
+forever. The fluctuating counts (5/6/2/4) are the remaining lines, which are dead watcher
+pidfiles the sweep removes itself in the same pass and then reports as issues. Closed the
+three older alarms as superseded by 20260725-025007 and routed the root cause plus the
+smallest correct fix to claude-pantheon (20260725-025715), whose lane owns the script.
+
+Reviewed SirsiNexusApp #184 (architecture cartographer) source-deep and it passes: the
+generator pins the union bus with `hypergraph status --repo $HOME`, so it is immune to
+the cwd-dependent bus selection that would otherwise silently regenerate the doc against
+the empty repo-local projection, and the anchor story is framed correctly as a live
+self-hosted node (O1) with public networks opt-in (O2) rather than claiming fleet
+consensus. Both were corrections I sent last run; both landed. Left unmerged only because
+it was 30 minutes old against the 1h bar — it is a clean merge for the next run. System
+green throughout: broker healthy with the KV bound at 2.18 GB, all four daemons
+argv-verified, zero new crash reports, reconcile healed three stale threads, reap took
+two of this supervisor's own leaked sessions, retention reclaimed 9.4 KiB.
+
+## Conduit run 2026-07-25T03:10Z
+Carried-over in-flight work closed: SirsiNexusApp PR #184 (hypergraph anchor generator, 3 files/+674) re-verified MERGEABLE with all six checks SUCCESS and squash-merged at 03:09:52Z — its source-deep review had already passed on the prior run and was held back only by the 1h age bar; SirsiNexusApp is local-gate-only so that review is the wall, no bind required. Everything else was green: `sirsi diagnose` 94/100 with the sole deduction still the known self-clearing com.apple.Virtualization.VirtualMachine 5.2 GB hog, memory free 90%, zero new DiagnosticReports, all four daemons argv-verified live (router 80606, triage 80829, pantheon 1242, gemma-worker 80571), Gemma /health ok with the KV bound and prompt cache at 2.16 GB, resolver on gemma-4-12B-it-8bit. Thread reconcile healed one reaped claude-home thread to a successor, prune dropped one terminal record (641→640), no BINARY_MISSING sentinels, `ccd reap --apply` cleared two leaked sessions from this supervisor's own earlier runs plus one stale record. Both of my inboxes were empty and the store held 14 open / 1891 closed unchanged from last run with nothing past 24h, so the Gemma `--all` triage was correctly skipped again; router doctor reported healthy with every live thread armed. sirsi-pantheon #314 remains deliberately unmerged — it is my own PR and self-binding is prohibited; its merge is claude-pantheon's item 20260725-000028.
+
+## Conduit run 2026-07-25T03:54Z
+
+All-green vitals: `sirsi diagnose` 100/100 (last run's iOS-sim pressure fully gone), memory 85% free,
+zero new crash/Jetsam reports in the 90-minute window. Gemma broker `/health` ok with the KV bound
+intact (`--prompt-cache-bytes 4294967296`), prompt cache 2.17 GB — well under the 6 GB balloon
+threshold; resolver held at `gemma-4-12B-it-8bit`. All four core daemons argv-verified live
+(router 80606, triage 80829, pantheon 1242, gemma-worker 80571). `thread reconcile` healed 3
+(2 reaped→successor, 1 stale→suspended; the 47-uncommitted warning is the known foreign-branch
+squat), prune took 623→616 records, `ccd reap` killed 6 completed-leak sessions and archived 1 —
+all of them this supervisor's own prior runs, a mild uptick over the usual 0–4 band worth watching.
+Router queue moved 14→16 open, then back to 14 after closing both hourly sweep alarms
+(`20260725-025007`, `20260725-035008`) as the already-diagnosed rot: `sweep.sh` L28/L40 assert a
+retired `com.sirsi.idea-router` plist and the pre-cutover `dispatch.sh` dispatcher, neither of which
+can exist now that doctor reports "Dispatch authority: STORE-ONLY"; the fix is routed to
+claude-pantheon as `20260725-025715`. The extra two findings in the 4-issue alarm were dead watcher
+pidfiles the sweep self-healed in the same pass. Both claude-home and claude-codex-standin inboxes
+were empty; the remaining 14 open items belong to claude-pantheon (11) and claude-nexus (3), whose
+threads are parked behind horus-supervisor rather than stranded, and the oldest is 4h42m — inside
+the 24h window, so left for their recipients. The `liveness-watch` gemma-wedged decision item was
+left open for claude-pantheon: the broker verified healthy again this run, so nothing is owed, and
+its permanent fix is already routed as `20260725-002326`. PRs: sirsi-pantheon #314 is this session's
+own work (no self-review — its merge is claude-pantheon's `20260725-000028`), SirsiNexusApp #185 is
+CONFLICTING in claude-nexus's lane and four minutes old, FinalWishes has none. Doctor reports the
+router healthy across 17 agents / 3 live / 0 stale, board republished at 8157 bytes, retention
+reclaimed 4.0 MiB.
+
+## Conduit run 2026-07-25T04:55Z
+
+All-green vitals with one queue action. Health 🟡 94/100 driven solely by `com.apple.Virtualization.VirtualMachine` (4.7 GB, owner's iPhone simulator) — the known 94↔100 flap, not a regression; memory 90% free, zero new crash/Jetsam reports. Gemma broker healthy, KV bound at `--prompt-cache-bytes 4294967296`, prompt cache flat at 2.17 GB (well under the 6 GB balloon threshold); resolver held `gemma-4-12B-it-8bit`. All four daemons argv-verified on the same PIDs for a fifth consecutive run (router 80606, triage 80829, pantheon 1242, gemma-worker 80571); zero BINARY_MISSING sentinels. `thread reconcile` healed one thread (the previous conduit run's own claude-home thread → successor), prune took 624→623, and `ccd reap --apply` killed 2 completed scheduled-task leak sessions and archived 1 record. Router queues: both claude-home and claude-codex-standin inboxes empty (pull-verified), and the store's single new item since the prior run — `20260725-045017-sweep-bot` "sweep alarm: 2 infra issue(s)" — was closed immediately per the standing disposition, since both flagged conditions (`com.sirsi.idea-router` not loaded, `dispatch.sh` idle since 2026-07-09) are expected artifacts of the retired idea-router already root-caused in item `20260725-025715`; the remaining scoping of the sweep script itself stays in claude-pantheon's lane. Queue back to 15 open, oldest 5h42m, so the Gemma `--all` triage pass was correctly skipped again. PRs unchanged: sirsi-pantheon #314 is mergeable but authored by this session (no self-review — its merge rides codex item `000028`), SirsiNexusApp #185 remains CONFLICTING in claude-nexus's cartography lane, FinalWishes zero. `router doctor --fix` reported healthy — 17 registered, 3 live, 0 stale — board republished at 8260 bytes, retention reclaimed 10.0 KiB. The hedera ledger retention hold (`040933`) remains in force: no `sirsi clean` or storage reclamation while it is open.
+
+## Conduit run 2026-07-25T06:00Z
+
+All-green vitals with one close. `sirsi diagnose` 🟡 94/100 driven solely by the owner's
+`com.apple.Virtualization.VirtualMachine` at 4.1 GB (iPhone sim, never touch); memory 88% free,
+zero new crash/Jetsam reports for any sirsi/gemma/Python process. Gemma broker `/health` ok with
+the KV bound intact (`--prompt-cache-bytes 4294967296`), prompt cache flat at 2.17 GB across nine
+runs, resolver → `gemma-4-12B-it-8bit`. All four daemons argv-verified live. Hygiene: reconcile
+healed 4 claude-home threads (3 reaped→successor, 1 stale→suspended), prune 0, and the CCD reaper
+killed 2 leaked `router-conduit-supervisor` sessions plus 1 archive — back inside the steady 0–4
+band after last run's 12, so the suspected overlapping-scheduler fires were a one-run artifact of
+session pile-up, not a defect. Router: both my inboxes empty, 16 open store-wide, and the single
+new item was sweep-bot's `20260725-055108` "3 infra issue(s)" — all three signals are the retired
+idea-router infra (job unloaded by design, dispatch.sh stale since 2026-07-09, and a dead watcher
+pidfile for `thr-5b7e463a0e072bf9` that the sweep self-removed and reconcile suspended this run),
+so it was closed citing the standing root cause `20260725-025715`. No PR action: #320 belongs to
+claude-pantheon while codex's correction `053637` is open, #314 is my own session's work (no
+self-review), and SirsiNexusApp #185 is CONFLICTING in claude-nexus's lane. Doctor clean at 17
+registered / 3 live / 0 stale with every live thread armed; board republished at 8233 B; retention
+reclaimed 6.1 KiB.
+
+## Conduit run 2026-07-25T06:55Z
+
+Near-green run. Health 94/100 — the known iPhone-sim `com.apple.Virtualization.VirtualMachine` at 4.6 GB, the same 94↔100 oscillation that tracks only that VM's size; not a fault, no action. Zero new DiagnosticReports. Gemma broker `/health` ok with the KV bound at `--prompt-cache-bytes 4294967296`, prompt cache flat at 2.17 GB / 8 sequences for the 13th consecutive run; resolver → `gemma-4-12B-it-8bit`. All four daemons argv-verified with unchanged PIDs (router 80606, triage 80829, gemma-worker 80571, pantheon 58674). Hygiene in the steady band: reconcile healed 2 claude-home threads (1 stale→suspended, 1 reaped→successor; the 47-uncommitted warning remains the known foreign-branch squat), prune 1 terminal (620→619), CCD reaper killed 2 leaked scheduled-task procs and archived 1 record. Zero BINARY_MISSING sentinels. Router doctor: 17 registered / 3 live / 0 stale, every live thread armed, STORE-ONLY dispatch. Queue moved 15→16 then back to 15: the single new item was `20260725-065210-sweep-bot` (sweep alarm, 6 infra issues), closed immediately with an ack citing the already-routed root cause `20260725-025715` per the standing rule for that alarm class — no re-triage, no response owed since a bot alarm is informational rather than a request. Both my inboxes (claude-home, claude-codex-standin) pull empty; the 15 carried items belong to claude-pantheon (11) and claude-nexus (4), all previously evaluated, oldest at 7h09m and therefore under the 24h intervention threshold. PRs unchanged for the 6th identical run and all correctly left: sirsi-pantheon #320 MERGEABLE but pending codex's open correction `053637` in claude-pantheon's lane, #314 MERGEABLE but authored by this session so never self-bound, SirsiNexusApp #185 CONFLICTING in claude-nexus's lane, FinalWishes empty. Retention reclaimed 14.5 KiB.
+
+## Conduit run 2026-07-25T07:55Z
+
+Green run with a single close. Health 100/100, confidence high, 16 signals; `memory_pressure` 88% free. Zero new DiagnosticReports in either directory — newest system entry is still the `suggestd …cpu_resource.diag` from 00:05 and the newest user entries are the Jul 24 `SFA-*.diag` pair plus a Chrome crashpad report, all previously-classified ignored classes. Gemma broker `/health` ok with the KV bound verified at `--prompt-cache-bytes 4294967296`, prompt cache flat at 2.17 GB / 8 sequences for the 17th consecutive run; resolver → `gemma-4-12B-it-8bit`. All four daemons argv-verified with unchanged PIDs (router 80606, triage 80829, gemma-worker 80571, pantheon 58674). Hygiene squarely in the steady band: reconcile healed 2 claude-home threads (1 stale→suspended, 1 reaped→successor `thr-88fb0e46e5b33834`; the 47-uncommitted warning is the known foreign-branch squat), prune 0 (631→631), the CCD reaper killed 2 leaked scheduled-task procs and archived 1 record. Zero BINARY_MISSING sentinels. Router doctor: 17 registered / 3 live / 0 stale, every live thread armed, STORE-ONLY dispatch; board republished at 8233 bytes. Queue moved 15→16 and back to 15: the one new item was `20260725-075208-sweep-bot` (sweep alarm, 6 infra issues), closed on sight with an ack citing root cause `20260725-025715` — all six are the retired-idea-router class, namely the deliberately-unloaded `com.sirsi.idea-router` job, the consequently-stale `dispatch.sh`, and four dead watcher pidfiles the sweep removes in the same pass it reports them. No re-triage and no response owed, since a bot alarm is informational rather than a request. Both my inboxes pull empty; the 15 carried items belong to claude-pantheon (11) and claude-nexus (4), all previously evaluated, oldest at 8h09m and so under the 24h intervention threshold. Gemma `--all` triage correctly skipped for the 28th run under its exact condition (inboxes empty, nothing over 24h). PRs unchanged for the 10th identical run and all correctly left: sirsi-pantheon #320 MERGEABLE but pending codex's open correction `053637` in claude-pantheon's lane, #314 MERGEABLE but authored by this session so never self-bound, SirsiNexusApp #185 CONFLICTING in claude-nexus's lane, FinalWishes empty. Retention reclaimed 14.4 KiB.
+
+## Conduit run 2026-07-25T08:55Z
+
+All-green vitals with one queue action. `sirsi diagnose` 🟡 94/100 on the single known signal — the owner's iPhone-sim `com.apple.Virtualization.VirtualMachine` holding 4.2 GB, which is the oscillation source and not a fault; 87% free pages, zero new crash/Jetsam reports in the window. Gemma broker `/health` ok with the KV still bound at `--prompt-cache-bytes 4294967296` and the prompt cache flat at 2.17 GB / 8 sequences, resolver steady on `gemma-4-12B-it-8bit`. All four launchd daemons unchanged (router 80606, triage 80829, gemma-worker 80571, pantheon 58674). Hygiene sat dead-center the steady band: `thread reconcile` healed 2 claude-home records (`thr-770e4b70983f9f51` reaped→successor `thr-b329c3a890a9f4e9`, `thr-a001fc88b8d67759` stale→suspended; the 47-uncommitted warning is the known foreign-branch squat), prune 0 (643→643), `ccd reap --apply` killed 2 completed-leak sessions and archived 1, zero BINARY_MISSING sentinels. Both my inboxes pulled empty and the oldest open item is 9h9m, so local-Gemma `--all` triage correctly skipped again. One new item arrived — `20260725-085208-sweep-bot` "6 infra issue(s)" — and its issue set matched the settled class exactly (idea-router launchd job intentionally retired/unloaded, `dispatch.sh` stale because that retired job drove it, and 4 dead watcher pidfiles the sweep self-removes on the same pass), so it closed one-step citing the root cause in `20260725-025715`; a bot alarm is informational, so no response was owed or routed. PRs were the fourteenth identical read — sirsi-pantheon #320 (codex's open correction, their lane), #314 (mine, never self-bind), SirsiNexusApp #185 CONFLICTING (claude-nexus's lane), FinalWishes zero — all correctly left. Router doctor reported 17 registered / 3 live / 0 stale with every live thread armed under STORE-ONLY dispatch, board republished at 8234 bytes, retention reclaimed 24.3 KiB.
+
+## Conduit run 2026-07-25T09:55Z
+
+Near-all-green. System 100/100 across 16 signals, zero new crash/Jetsam reports, Gemma broker healthy with the KV bound still enforced (`--prompt-cache-bytes 4294967296`) and prompt cache flat at 2.17 GB / 8 sequences — 25 runs running. All four core daemons unchanged (router 80606, triage 80829, gemma-worker 80571, pantheon 58674). `memory_pressure` read 16% free versus 47% last run; this is free-page noise, not pressure, and the crash/Jetsam signal — the one that actually indicates eviction — stayed clean. Hygiene in the steady band: reconcile healed one stale claude-home thread to suspended (`thr-f4cf2400a4b68433`), prune 0 (650→650), CCD reap killed 2 completed-leak sessions and archived 1 record, zero BINARY_MISSING sentinels, doctor 17 registered / 4 live / 0 stale with every live thread armed. One item closed: the predicted sweep-bot alarm (`20260725-095209`) fired with exactly 3 issues, all inside the settled six — idea-router launchd job intentionally unloaded, dispatch.sh stale because it belongs to that same retired path, and one dead watcher pidfile the sweep removes itself — so it took the standing one-step close citing root cause `025715`; a bot alarm is informational, so no response was owed. The other 16 open items were all previously evaluated (13 claude-pantheon, 4 claude-nexus initially; oldest 10h9m, still under the 24h threshold), so Gemma `--all` triage was correctly skipped for the 36th run. All three open PRs left untouched for the 18th identical run: sirsi-pantheon #320 (codex correction `053637` open to claude-pantheon, their lane), #314 (authored by this session — never self-bind), and SirsiNexusApp #185 (CONFLICTING, claude-nexus's lane). Retention reclaimed 29.7 KiB.
+
+## Conduit run 2026-07-25T12:40Z
+
+All-green sweep (health 94/100 — sole priority is the hedera ledger VM at 4.9 GB, known noise; zero new crash/Jetsam; gemma broker healthy with the KV cap bound and cache flat at 2.11 GB/3 seq for 36 runs; all four daemons on unchanged PIDs; reconcile healed 2, prune 0, reap killed 2 + archived 2 of this task's own prior-run leaks; doctor 17/5/0 all armed; retention reclaimed 34.7 KiB). Router queue was static for a third consecutive run at 18 open / 1918 closed with both conduit inboxes empty, and all three open PRs (#320, #314, NexusApp #185) were correctly left in their owning lanes. The substantive output was two owner directives received live and routed rather than absorbed: claude-nexus is to port the MLX serving path to full Go with Python surviving only as a called extension — concretely replacing `~/.sirsi/gemma-capped-server.py` and its nohup/PYTHONPATH restore path behind the existing `sirsi gemma serve` verb, which will let this task retire its bounded-restore fallback — and claude-pantheon is to shape, replace, or outright disable Spotlight, with per-path `spotlight-exclude` explicitly no longer an acceptable endpoint and "off" owner-blessed as the fallback. The Spotlight item supersedes treating spotlight-storm `234537` as a one-off remediation, and carries the standing constraint that it must not become storage reclamation while the hedera ledger retention item `040933` is open. Both directives were also written back into auto-memory as escalations on the existing Go-standard and Spotlight-write-amplification records rather than as new duplicate memories, so the retroactive scope ("port the existing hot Python path", "excludes are not enough") travels with the evidence a future run needs.
+
+## Conduit run 2026-07-25T13:05Z
+
+Health opened 🟡 82/100 (down from 94) on three memory signals — RAM 77%, swap 5.9 GB, and a
+"process leak: launchd_sim has 163 child processes". The leak signal was real and, unusually,
+owner-clearable by me: a single iOS Simulator device (iPhone 17, iOS 26.5) had been booted for
+2d00h with 155 descendants holding 1.28 GB resident, while Claude Desktop reports
+`iosSimulator: unsupported (disabled by rollout flag)` — nothing in the fleet was using it.
+Read the argv first per ADR-040, confirmed it was a CoreSimulator `launchd_bootstrap.plist`
+and not load-bearing, then shut it down gracefully with `xcrun simctl shutdown` (never a
+SIGKILL, and reversible in one command). The reclaim was larger than the resident figure
+suggested: swap used fell 12.6 GB → 6.9 GB and macOS shrank the swap file itself 14.3 GB → 8.2 GB,
+with memory-free going 20% → 87%. Zero crash/Jetsam reports on either DiagnosticReports path
+before or after, so this was pre-emptive — caught by the child-count heuristic rather than by a
+death. Retention prune reclaimed 8.1 MiB across 2 artifacts (a snapshot), above the 5 MiB
+note threshold. Otherwise steady: gemma broker healthy with the KV bound at 4 GiB and cache
+flat at 0.02 GB / 1 seq, all four daemons unchanged, both my inboxes empty, and the three
+standing PRs (#320, #314, #185) correctly left in their own lanes. Queue 21 open; the two new
+items are both claude-pantheon's — codex's `125346` durable macOS indexing-pressure control
+(downstream of the owner Spotlight directive routed at 12:45Z) and a sweep alarm that ticked
+2 → 3 issues, where the third was self-healing (a dead watcher pidfile the sweep removed
+in the same pass).
+
+## Conduit run 2026-07-25T17:15Z
+
+Vitals all-green: health 94/100, zero crash/Jetsam, and the prior run's flagged memory delta reversed on its
+own (free 32% → 88%), confirming it was noise rather than an early Jetsam signal — the only remaining diagnose
+"Priority" line is still the hedera VM (5.2 GB, expected, permanently flagged). Broker healthy with the KV
+bound intact (`--prompt-cache-bytes 4294967296`, cache down to 0.02 GB — the bound doing its job), all four
+launchd daemons live, zero binary drift, resolver steady on `gemma-4-12B-it-8bit`. Hygiene: reconcile healed 4
+(three claude-home stale→suspended — this scheduled task's own SessionStart threads, expected — plus one gemma
+reaped→successor), prune 18 (562 → 544), reap killed 5 procs across 4 completed leaks and archived 1 record.
+Queue work: both conduit inboxes empty (zero owed, response audit clean by construction), and closed the two
+accumulated `sweep-bot` alarms (`160040`, `170249`) as SUPERSEDED by root-cause item `025715` — every issue
+they name is inside the known-inert set (retired idea-router job absent by design, dispatch.sh stale in the
+same retired lane, dead watcher pidfiles the sweep self-heals in-pass), and the issue count is provably noise
+(5→3→5). Three of the pidfiles named threads this same run had just reconciled to suspended. Doctor 17
+registered / 3 live / 1 stale-not-reapable / 0 woken / 18 already-armed; router retention reclaimed 17.2 KiB.
+All three open PRs deliberately left untouched for the 33rd consecutive run: pantheon #320 (codex's `053637`
+correction open in claude-pantheon's lane), #314 (this session's own — never self-bind), SirsiNexusApp #185
+(CONFLICTING, claude-nexus's lane). FinalWishes clean.
+
+## Conduit run 2026-07-25T17:33Z
+Routine hygiene run, no router or PR action required. Vitals 🟡-by-design (health 94/100; the sole
+Priority line is the hedera VM at 4.3 GB — expected, permanently ignored) and memory free 87%. One
+Jetsam appeared since the last sweep, `JetsamEvent-2026-07-25-104536`, but it killed Apple's
+`frauddefensed` on a per-process-limit — not system pressure and not a sirsi/gemma process, so no
+escalation. Broker steady on its 41st consecutive green run: /health ok, KV still bound at
+`--prompt-cache-bytes 4294967296`, cache 2.13 GB / 4 sequences (well under the 6 GB balloon
+threshold), resolver holding `gemma-4-12B-it-8bit`. All four daemons alive at unchanged PIDs, zero
+BINARY_MISSING sentinels. Healing: reconcile suspended one stale gemma thread, prune cleared 28
+terminal records (546 → 518), `ccd reap` killed 2 completed-leak sessions (4 procs) and archived 2
+session records, and router retention reclaimed 17.2 KiB. Router doctor is now fully clean at 4 live
+/ 0 stale — the one stale record the previous run could not reap aged out through the prune. Queue
+is byte-identical to the last pass at 18 open / 1931 closed (claude-pantheon 13, claude-nexus 5),
+both my inboxes empty, so Gemma `--all` triage was correctly skipped again and nothing is owed. The
+oldest item, `20260724-234537` to claude-pantheon, sits at 17h36m and crosses the 24h line at
+2026-07-25T23:45Z. All three open PRs left deliberately for the 34th identical run: pantheon #320
+(codex correction open in claude-pantheon's lane), #314 (mine — never self-bind), SirsiNexusApp #185
+(conflicting, claude-nexus's lane).
+
+## Conduit run 2026-07-25T17:38Z
+
+All-green pass, no router work owed. Vitals 100/100 (16 signals, zero Priority lines), memory free 51%,
+zero new DiagnosticReports since the prior run. Gemma broker /health ok with the KV bound intact at
+4294967296 and prompt cache 2.11 GB / 3 sequences — well under the 6 GB balloon line; resolver kept
+mlx-community/gemma-4-12B-it-8bit. All four launchd daemons alive at unchanged PIDs (router 80606,
+triage 80829, gemma-worker 80571, pantheon 58674); zero BINARY_MISSING sentinels. Hygiene: thread
+reconcile healed 2 (one claude-home reaped→successor thr-283fe6321afeb639, one stale→suspended),
+prune removed 7 terminal records (521→514), `ccd reap --apply` killed 2 completed-leak conduit
+sessions and archived 1 record. Router doctor reported 17 registered / 5 live / 0 stale with every
+live thread armed; retention prune reclaimed 9.8 KiB; board republished at 8987 bytes. Queue held at
+18 open / 1931 closed (claude-pantheon 13, claude-nexus 5) with claude-home and claude-codex-standin
+both empty on pull, so nothing was owed and the response audit is clean by construction. Oldest open
+item is claude-pantheon's own spotlight-storm re-route at 17h51m — still under the 24h surface
+threshold. All three open PRs left deliberately in their owning lanes (pantheon #320 pending codex's
+open correction, #314 mine so never self-bound, SirsiNexusApp #185 CONFLICTING under claude-nexus).
+
+## Conduit run 2026-07-25T18:13Z
+
+Vitals 🟡 94/100 (16 signals) — the single Priority line is the known hedera Virtualization VM at
+5.4 GB, benign and carried; free 62%, zero new DiagnosticReports. Broker healthy (43rd run): /health
+ok, KV bound at 4294967296, prompt cache 0.00 GB / 0 sequences. Resolver → gemma-4-12B-it-8bit.
+All four daemons live (router 80606, triage 80829, pantheon 58674, gemma-worker 80571); zero
+BINARY_MISSING sentinels. Hygiene: reconcile healed 2 (thr-6acb8fa6048cd0c6 gemma reaped→successor
+thr-ad71c1414f76ff40; thr-c51bb7eeee8da0ce stale→suspended), prune 12 (504→492), ccd reap 2 leaks /
+2 procs + 1 archived, doctor 17 registered / 2 live / 18 already-armed / 0 woken, board 8340 B,
+retention prune 31.9 KiB. Queue: one new item this run — sweep-bot's `20260725-180447` "sweep alarm:
+4 infra issue(s)" to claude-pantheon — read in full and closed at the conduit as SUPERSEDED by
+root-cause `20260725-025715` under the standing sweep-alarm precedent: all four lines are the known
+noise set (retired com.sirsi.idea-router launchd job, stale dispatch.sh in that same retired lane,
+two watcher pidfiles already reporting "(removing)" = self-healed in the same pass). Bare --ack, no
+response routed, since sweep-bot is a bot. Queue back to 18 open / 1933 closed; claude-home and
+claude-codex-standin both pull-verified empty, so nothing owed. Oldest open still `20260724-234537`
+to claude-pantheon at 18h27m — under 24h, left. PRs unchanged for the 36th consecutive run: pantheon
+#320 and #314 and SirsiNexusApp #185 all correctly left to their lane agents.
+
+## Conduit run 2026-07-25T18:29Z
+
+Router steady at 18 open / 1933 closed — byte-identical to the prior run (same oldest,
+`20260724-234537` to claude-pantheon at 18h41m), so the `router dump` diff was correctly skipped.
+Both conduit inboxes (`claude-home`, `claude-codex-standin`) pulled empty for the 44th consecutive
+run: zero owed. Hygiene: `thread reconcile` healed 2 stale→suspended (thr-6ffb7f41da5bd1fb gemma,
+thr-fc294fc6b696618f claude-home — a prior scheduled run's own thread, expected), `thread prune`
+took 494→489, `ccd reap --apply` killed 2 completed-leak conduit sessions and archived 1 record,
+retention prune reclaimed 14.8 KiB, board republished at 8560 B, doctor 17 registered / 3 live /
+18 already-armed / 0 woken. All three PR decisions unchanged for the 37th run (pantheon #320 and
+#314, SirsiNexusApp #185 — each correctly in another lane or self-review-barred). The one real
+delta is machine health: 🟡 82/100, down from 94, driven by RAM at 80% and swap 85% exhausted
+(6.8 GB) rather than the usual benign hedera VM line. Free memory is 26% and no new
+DiagnosticReports appeared, so the standing act-only-on threshold (free <20% AND a fresh
+sirsi/gemma Jetsam) is not met and nothing was killed; note also that `sirsi clean` remains barred
+while the hedera ledger-retention item `040933` is open. Carried to the next run as a watch: if
+swap keeps climbing with free trending under 20%, the top RSS holders are the hedera
+Virtualization VM (3.8 GB, benign) and the Gemma broker (2.2 GB, KV bound and healthy).
+
+## Conduit run 2026-07-25T21:30Z
+
+All-green vitals (🟢 100/100, 16 signals, free 55%, zero new DiagnosticReports) and a steady broker
+(/health ok, KV bound 4294967296, prompt cache 3 seq / 2.11 GB — well under the 6 GB balloon line);
+resolver held gemma-4-12B-it-8bit and all four daemons kept their PIDs (router 80606, triage 80829,
+pantheon 58674, gemma-worker 80571), zero BINARY_MISSING sentinels. Two new sweep-bot alarms
+(192037, 203018) arrived to claude-pantheon and both named ONLY the established noise set — the
+retired com.sirsi.idea-router job, the stale dispatch.sh in that lane, and a watcher pidfile already
+reporting "(removing)" — so both were closed at the conduit as SUPERSEDED by 025715 under the
+standing sweep-alarm precedent, bare --ack + --result, no response routed (bot sender). Hygiene ran
+heavier than usual: reconcile healed 7 threads (5 reaped→successor, 2 stale→suspended), prune cleared
+134 records (501→367), ccd reap killed 2 completed-leak supervisor sessions and archived 1, doctor
+reported 17 registered / 4 live / 0 stale with every live thread armed, board republished at 8340 B,
+and retention prune reclaimed 75.8 KiB. Both my inboxes pulled empty — zero owed. PRs were left
+untouched for the 37th identical run: pantheon #320 is MERGEABLE but codex's 053637 correction is
+open to claude-pantheon, #314 is my own session's work (never self-bind), and SirsiNexusApp #185 is
+CONFLICTING in claude-nexus's lane. The oldest open item (234537, claude-pantheon's own re-route)
+sits at ~21h50m and crosses the 24h surface-on-board line at 23:45Z.
+
+## Conduit run 2026-07-25T22:38Z
+
+Vitals 🟡 94/100 (the recurring benign `com.apple.Virtualization.VirtualMachine` memory-hog line is again the only deduction), free 52%, no new DiagnosticReports since the prior run — the newest system report is 11:42 local, well before the last sweep. Gemma broker healthy on the bounded invocation (`--prompt-cache-bytes 4294967296`, cache 2.11 GB / 3 sequences, model `mlx-community/gemma-4-12B-it-8bit`); all four core daemons verified alive by PID (router 80606, triage 80829, pantheon 58674, gemma-worker 80571) and zero BINARY_MISSING sentinels. One new router item arrived — `20260725-223133` sweep-bot → claude-pantheon, "sweep alarm: 3 infra issue(s)" — and it named only the three known-benign classes (retired `com.sirsi.idea-router` job not loaded, `dispatch.sh` idle in that same retired lane, and a watcher pidfile for `thr-abfc7247e26fb850` already self-healed with "(removing)"), so it was closed at the conduit as SUPERSEDED by `025715` under the standing sweep-alarm precedent — fifth application. Both my inboxes pulled empty (zero owed). Hygiene: reconcile found no dirty exits, prune removed 1 terminal thread (343 → 342), `ccd reap --apply` killed 2 completed-leak conduit sessions and archived 1 record, router retention reclaimed 16.4 KiB. `router doctor --fix` reported healthy at 5 live / 0 stale — the prior run's cosmetic "0 live / 4 stale" heartbeat-aging flap did not recur. Note: the reap killed PID 73921, which retired thread `thr-1658783435331891`; the conduit's thread id rotates per run, so heartbeats must target the id the SessionStart hook supplies (this run: `thr-18ba46ac23eed88c`), not a carried one. All three open PRs deliberately left untouched for the 39th consecutive run — pantheon #320 (codex's correction open in claude-pantheon's lane), #314 (this session's own work, never self-bind), SirsiNexusApp #185 (CONFLICTING, claude-nexus's lane). Queue closed the run at the byte-identical frozen 18 open / 1941 closed.
+
+## Conduit run 2026-07-26T19:15Z
+
+Vitals green (88% free, no new DiagnosticReports; health 94/100 is the known-benign
+Virtualization.VirtualMachine line). Broker healthy — /health ok, KV bound 4294967296, cache
+2.11 GB / 3 sequences; resolver → mlx-community/gemma-4-12B-it-8bit; all four daemons alive by
+launchctl print + ps (router 80606, triage 80829, pantheon 58674, gemma-worker 80571); zero
+BINARY_MISSING. Router queue had grown 18 → 29 open: ten of the eleven new items were sweep-bot
+hourly alarms, each verified to name only the three known-benign signals (retired
+com.sirsi.idea-router job, stale dispatch.sh in that lane, watcher pidfile self-healing
+"(removing)"), so all ten were closed at the conduit as SUPERSEDED by 20260725-025715 under the
+standing sweep-alarm precedent; the eleventh (registry-police A27 accountability) was left in
+claude-pantheon's lane alongside its identical 20260725-000055 sibling. My own two inboxes pulled
+empty — zero owed. Hygiene: reconcile healed 7 reaped→successor gemma threads, thread prune
+reclaimed an unusually large backlog (405 → 89 records, 310 terminal + 6 stale-suspended), ccd reap
+killed 2 completed-leak sessions and archived 2 records, router retention prune reclaimed 1.1 MiB
+of capped log. Router doctor now reports 5 live / 0 stale and "every live thread armed" — the
+cosmetic 0-live/4-stale heartbeat-aging flap seen in prior runs cleared after reconcile. PRs
+unchanged for the 39th run: pantheon #320 (codex correction 053637 open → pantheon's lane), #314
+(mine, never self-bind), SirsiNexusApp #185 (CONFLICTING, claude-nexus's lane); FinalWishes zero
+open. No escalation to owner.
+
+## Conduit run 2026-07-26T19:41Z
+
+Healed six thread records via `thread reconcile` (five stale→suspended, one reaped→successor
+thr-8278c226415984d9 → thr-6ef3a5b3f57a84db) and pruned one terminal record (97→96). `ccd reap --apply`
+killed six leaked scheduled-task processes from three prior conduit runs (idle 23–27 min) and archived one
+completed session record — the leak was not a prior-run miss, those procs were still inside the 10-minute
+grace window when the last run swept. Router queue unchanged at 19 open / 1961 closed with the same oldest
+item, so the dump diff was skipped; both claude-home and claude-codex-standin inboxes pulled empty, so
+nothing was owed and the response audit is clean by construction. Doctor reports 17 registered / 4 live /
+0 stale with every live thread armed — the drop from seven live is the direct consequence of this run's
+suspensions and reaps, not a fault. Vitals green 100/100 with 89% free; the new JetsamEvent-2026-07-26-152436
+names only iconservicesagent (idle-exit) and historicalaudiod (per-process-limit), both non-sirsi Apple
+daemons, and although Python was the largest process it was not killed — benign, not P0. Gemma broker healthy
+on the bounded invocation (KV bound 4294967296, cache 2.11 GB / 3 sequences, model gemma-4-12B-it-8bit).
+All four open PRs deliberately left: pantheon #320 (codex correction 053637 open in claude-pantheon's lane),
+#314 (mine, never self-bind), SirsiNexusApp #185 (CONFLICTING, claude-nexus's lane) and the new #186
+subscribe affordance (14 minutes old, under the one-hour gate). Retention prune reclaimed 59.7 KiB.
+
+## Conduit run 2026-07-26T19:55Z
+All-green sweep, routine hygiene only. Vitals 100/100 (16 signals, free 89%), zero new DiagnosticReports since the already-triaged 15:24 Jetsam batch. Gemma broker `/health` ok with the KV bound at 4294967296 and prompt cache steady at 2.11 GB / 3 sequences; model resolves to `mlx-community/gemma-4-12B-it-8bit`. All four daemons live at unchanged PIDs (router 80606, triage 80829, pantheon 58674, gemma-worker 80571); zero BINARY_MISSING sentinels. `thread reconcile` healed exactly one stale record — `thr-7fe12dc86b385901`, the *previous* conduit run's own session thread — and `ccd reap --apply` killed its 2 leaked supervisor procs (idle 16 min) plus archived 2 completed run records; both are the structural grace-lag tail of the 19:42Z run, not a reaper defect. `thread prune` 0 (98→98). Router queue unchanged at 19 open / 1961 closed with an identical oldest item, so the `router dump` diff was skipped; claude-home and claude-codex-standin inboxes both pull-empty ⇒ nothing owed and no response audit exposure. `router doctor --fix` clean: 17 registered / 4 live / 0 stale, every live thread armed, STORE-ONLY. No sweep-bot alarm arrived. All four open PRs deliberately left: pantheon #320 (codex correction `053637` is claude-pantheon's), #314 (authored by this conduit — no self-bind), SirsiNexusApp #185 (CONFLICTING, claude-nexus lane) and #186 (29 min old, still inside the >1h gate). Retention prune reclaimed 42.7 KiB.
+
+## Conduit run 2026-07-26T20:12Z
+All-green pass. Vitals 100/100 (16 signals, free 85%); only new diagnostic was a non-sirsi
+`AMPDevicesAgent` cpu_resource.diag — inert. Gemma broker healthy, KV bound at 4294967296, prompt
+cache flat at 2.11 GB / 3 sequences; all four daemons live on unchanged PIDs; zero BINARY_MISSING.
+Hygiene: reconcile healed 3 claude-home threads (routine band, one of them the prior run's own
+session), prune 101→99, `ccd reap --apply` killed 2 leaked conduit procs and archived 1 record —
+again the prior run's own leak surfacing one run late, the structural grace lag. Router unchanged at
+19 open / 1961 closed with an identical oldest item, so the dump diff was skipped; both my inboxes
+pulled empty, so nothing was owed and the response audit is clean by construction. The one carried
+action closed itself: `SirsiNexusApp #186` (subscribe affordance) was merged by its lane agent at
+20:04Z, so no PR needed binding here — #320 and #314 stay with claude-pantheon, #185 remains
+CONFLICTING in claude-nexus's lane. Retention prune reclaimed 42.6 KiB.
+
+## Conduit run 2026-07-26T20:28Z
+
+Health dipped to 🟡 76/100 — RAM 82%, swap 88% (8.8 GB), and a Spotlight-indexer spike reported at 42%
+CPU. Re-measured directly: `mds_stores` was already back to 1.1%, so the storm line was a transient
+sample, not a sustained reindex. Zero new `.ips` files in either DiagnosticReports directory and no
+sirsi/gemma Jetsam, so this stays below the escalation bar (act only on free <20% AND a new sirsi/gemma
+kill; free measured 26%). No storage reclamation attempted — `040933` (hedera ledger retention) is still
+open and binding. The durable fix for exactly this pressure class is already routed as `125346` in
+claude-pantheon's lane.
+
+Broker and daemons steady on the 51st consecutive run: `/health` ok, KV bound at 4294967296, prompt
+cache 2.11 GB across 3 sequences, model resolving to `mlx-community/gemma-4-12B-it-8bit`. All four
+launchd jobs live on unchanged PIDs (router 80606, triage 80829, gemma-worker 80571, pantheon 58674);
+zero BINARY_MISSING sentinels. Hygiene: reconcile healed 9 claude-home threads (7 reaped→successor,
+2 stale→suspended) — slightly above the 1–7 routine band but all ordinary session churn; prune found
+0 terminal at 118 records (up from 99, all under the 24h window, expected to self-clear); ccd reap
+killed 0 procs and archived 1 completed run of this task. Retention prune reclaimed 48.3 KiB.
+
+Router: one genuinely new item this run, sweep-bot alarm `20260726-201325` reporting "5 infra issue(s)".
+Verified every bullet against the known-benign set — `com.sirsi.idea-router NOT loaded`, `dispatch.sh has
+not fired in 24h+`, and 3x self-healing `watcher pidfile ... (removing)` — zero lines outside it, so the
+bullet count is tracking dead-pidfile population rather than severity. Closed at the conduit as SUPERSEDED
+by `025715`, which holds the root fix (retire the sweep's checks for decommissioned push-model infra).
+Queue back to 19 open / 1963 closed; both conduit inboxes pulled empty, so nothing is owed and the
+response audit is clean by construction. Doctor reports 18 registered / 6 live / 0 stale, every live
+thread armed, STORE-ONLY authority. Board republished at 10394 B.
+
+PRs: zero actions, correctly. New `sirsi-pantheon #321` (register `claude-io`, single-file agents.json
+change) is 15 minutes old with Test and Build still running — under the >1h gate on both counts, carried
+to the next run. `#320` remains claude-pantheon's (codex correction `053637` open against it), `#314` is
+this session's own work and is never self-bound, and `SirsiNexusApp #185` has been CONFLICTING for five
+runs in claude-nexus's lane. FinalWishes has no open PRs.
+
+## Conduit run 2026-07-26T20:45Z — thread churn root-caused and fixed
+A finalwishes-surface agent reported its thread "cycling every 1-2 minutes rather than persisting,"
+re-arming its /loop watcher almost every turn. It was not cycling, it was accreting, and three
+distinct defects were stacked under one symptom. First, identity: every live session on this host has
+cwd=$HOME, so all of them resolve to claude-home — correctly, per the identity rule shipped 2026-07-24
+("a session at $HOME *is* claude-home"). The reporting thread was thr-3fc7c1182a4401ec, agent=claude-home;
+its self-description as "the finalwishes thread" was the mis-tag, not the registration. claude-finalwishes
+has ZERO live threads, so FinalWishes-labelled work done from home root registers as claude-home by design.
+Second, the churn engine, which had a half on each side of the handshake: ReconcileExits suspended ACTIVE
+records on the clock alone, never consulting the process table, so a desktop session quiet between prompts
+had its record suspended out from under it and its next hook fire minted a fresh one — pid 84991 was
+observed holding thr-3fa31b42, then thr-166081be, the same live process cycling ids — while
+adopt_or_register minted whenever the foreign anchor was ALIVE, which on the desktop surface is the normal
+case because CCD keeps one long-lived claude process per session. Since watcher_armed keys on thread_id,
+every minted id read as unarmed and armed another watcher: self-fulfilling. Third, the leak that fell out
+of it — pids 68265 and 86082, `bash -c while true` loops reparented to init, were still heartbeating
+thr-916057084d0483fe and thr-5620dae73756c374 after 2d16h and 1d14h; both threads are ABSENT FROM THE STORE.
+Argv read first per A32, then reaped. Fix is PR #322: stale-suspension gated on OS truth (PIDAlive) for
+same-machine records with PIDUnknown falling through, and adoption by (agent, active) with re-anchoring,
+which is what the owner's "ONE record per (agent, surface, machine)" directive — already quoted in that
+function's own comment — actually requires. The deliberate trade is that per-session records are gone;
+concurrent sessions share one record and all heartbeat it, which is the right granularity because the
+router wakes an agent, not a session. It also turns main green: the two TestAdoptOrRegister failures the
+2026-07-24 entry logged as knowingly-red asserted mint-where-reuse-adopts and now assert adoption, which
+closes the standing "main is RED" item 20260724-234927. Verified after deploying the binary and hook: 6
+active claude-home records collapsed to 1 (one per agent fabric-wide), reconcile emitted zero
+stale→suspended where it previously suspended live sessions, and a simulated new session pid adopts
+instead of minting. Deployment is local and reversible (rebuild from origin/main); the merge decision is
+routed to codex-pantheon as 20260726-204546, with the shared-record trade, the liveness-honesty question,
+and the TestAnubisWeigh load-flake call all flagged for it to press on.
+
+## Conduit run 2026-07-26T21:15Z — churn addendum: the real clock was the hostname
+The 20:45 entry named two defects; a third was underneath them and it was the actual clock. After the
+handshake fixes collapsed the fabric to one active record per agent, five re-minted 100ms later, one per
+live claude pid. `ReconcileDiscovery` indexes already-registered sessions by `t.Host == host`, and a Mac's
+hostname follows DHCP/mDNS: this single host had written records under `Mac.fios-router.home` (40),
+`MacBook-Pro-2.local` (20, current) and `Mac` (1). Every record written under a previous hostname was
+invisible to that index, so a live session read as unregistered and discovery minted it a fresh thread on
+every pass, indefinitely. The registry already had both the primitive and the reasoning next door —
+`ReapDeadThreads` scopes by MachineID explicitly "not hostname" — so discovery now does too, but
+conditionally: machine id wins when the record carries one (27 of the 40 stale-hostname records did),
+while id-less records keep the hostname compare, because `SameMachine` reads a missing id as "mine" and an
+id-less foreign record must still not shadow a local PID of the same number. Using it unconditionally broke
+`TestReconcileDiscovery_RemoteHostThreadDoesNotShadow`, which is pinning a real invariant, and that failure
+is what forced the more precise rule. Also reordered `defaultPIDState` to ask signal 0 before forking `ps`,
+since reconcile now probes every stale record and the gone case is the common one. A correction worth
+recording against myself: the "re-mint burst" I chased after collapsing was self-inflicted — `sirsi thread
+suspend` on a live session's record lands it closed, and discovery deliberately excludes closed records
+(its own test pins that), so it correctly re-enrolled the live process. Left alone, the fabric is stable:
+four live desktop sessions each hold one persistent thread id, unchanged across a 100s no-touch window,
+with pid 84991 holding thr-e0aa6c4328335b8c for ~28 minutes where the same pid previously cycled ids every
+1-2 minutes. Honest test accounting: `TestAnubisWeigh` is red on the branch and passes on main only by a
+closing margin — it budgets a fixed 60s for a repo scan measured at 29s early in the session and 54.6s
+later under load, and reaches none of the changed functions; that is a fragile test meeting a loaded host,
+and it is being reported red rather than papered over. Both commits are on PR #322, awaiting codex-pantheon.
+
+## Conduit run 2026-07-26T21:45Z
+
+Fleet wake was silently off, and my own state file was the reason I had not looked. `sirsi router
+doctor --fix` reported eleven agents as "no explicit wake mechanism — legacy command agents are never
+blind-spawned", including `claude-pantheon` and `claude-nexus`, which demonstrably carry
+`launchagent` wake blocks on `origin/main`. Doctor reads the working-tree `.agents/idea-router/agents.json`
+at the repo root, and this shared checkout sits on the foreign squat branch
+`fix/sirsi-gemma-bare-server-chipA` with ~50 uncommitted files — a set my conduit notes have carried for
+weeks as "known foreign-branch squat, NEVER commit", i.e. as inert. It was not inert: one of those
+uncommitted edits had rewritten every `wake` block in that file to `{}`. So every 15-minute conduit pass
+ran wake-or-declare-unavailable from a checkout where no agent was wakeable, and dutifully declared the
+whole fleet unavailable instead of waking it. Restored that one file from `origin/main` (discarding a
+foreign edit to a canon file is not committing the squat), left the `items/*.md` modifications alone since
+the store is dispatch authority, and re-ran doctor: the stranded-inbox list collapsed from eleven agents to
+one. The remaining one is `claude-io`, which is correct — its wake block is genuinely empty on main, which
+is the gap I flagged when binding #321. The writer that emptied the others is not yet identified and is the
+next thread to pull: the strip is uncommitted, so something rewrote the file in place and did not preserve
+`wake`. Backup of the mutated version kept for that hunt. Lesson worth generalizing: a note that labels a
+drift "known, never commit" retires it from investigation, and this one had been load-bearing the entire
+time.
+
+PR #322 narrowed twice under codex-pantheon review and is better for it. The first correction reverted the
+hook change that made concurrent sessions share one thread record — codex showed that sharing made lifecycle
+truth race on hook order (`CloseThread`/`SuspendThread`/`ReconcileExits`/`ReapDeadThreads` all still treat the
+record as one session, so the last writer's exit could close it out from under live siblings), that the
+adoption filter checked only `agent_id`/`status`/pid and so could re-register over a same-agent record on
+another machine, and that `watcher_armed`'s argv substring match proves nothing about a live owner. All three
+stand; the machine-id discovery scoping is the actual churn clock and needs none of it. Consequence stated
+rather than buried: main's two `TestAdoptOrRegister` failures are back at baseline, so item `20260724-234927`
+("main is RED") stays open rather than closing with this PR. The second correction was mine to own — the
+signal-0-before-`ps` reorder read *every* `syscall.Kill(pid, 0)` error as `PIDGone`, but POSIX returns EPERM
+when the process exists and belongs to another user, routine on a host where root-owned launchd services sit
+beside user sessions. A false `PIDGone` feeds `ReapDeadThreads` directly. Now branched on the errno: only
+ESRCH answers gone, EPERM and other indeterminate errnos answer `PIDUnknown`, pinned against pid 1 (always
+running, never ours, skips under root).
+
+Also merged #321 after source-deep verification (parsed both revisions and compared agent keys rather than
+trusting a 288/275-line JSON re-serialization diff — the semantic delta was exactly one added agent), and
+acted on claude-deck's CI-serialization finding. Their evidence was right, their model of the topology was
+not: runners here are per-repo, not fleet-wide, so the queueing was inside SirsiNexusApp, which had one
+instance while sirsi-pantheon already had two. Registered `m5-sirsi-2` for SirsiNexusApp on the proven
+pattern; both instances verified online, the second reporting in while the first was mid-job. Stopped at two
+rather than the proposed three: this box also hosts the Gemma broker, the router daemons and Colima, so memory
+is the binding resource and a Jetsam event takes the substrate down, not just a build.
+
+## Conduit run 2026-07-26T22:02Z
+
+Closed the fleet-wake hunt. The writer that stripped every `wake` block from
+`.agents/idea-router/agents.json` is **not a runtime path** — it is branch-only commit `287dc7ea`
+("adopt stranded router/thoth/docs state", 2026-06-18) on the squat branch
+`fix/sirsi-gemma-bare-server-chipA` that the repo root sits on. It bulk-adopted a 2026-06-08-era
+registry predating the wake schema: 16 of 17 agents with no `wake`, versus `origin/main`'s 19 agents
+with 9 empty (all `codex-*` plus `claude-io`, expected). `287dc7ea` is **not an ancestor of
+`origin/main`** — main was never broken; the working tree simply matched branch HEAD. Cleared
+`sirsi agent register` as a suspect: `RegisterAgent` whole-record-replaces but `agentcmd.go` always
+sets a mechanism, so it can drop custom command args yet never emit `wake: {}`. Also noted why these
+diffs churn: `Wake WakeConfig` is tagged `json:"wake,omitempty"`, and Go's `omitempty` does not omit
+structs, so every zero Wake serializes as `"wake": {}` — that is the 288/275 line delta seen in #321.
+Routed the root cause plus both remedies (leave the squat branch, or commit main's registry onto it)
+to claude-pantheon as `220135`; my restore stays working-tree-only and unstaged, so any `git restore`
+or re-checkout re-breaks fleet wake until they act. Also this run: routed `215708` asking
+claude-pantheon to merge PR #322 (codex approved at `17a3bf5b`; `binding-hold` FAILURE is the only
+gate, and it is theirs to clear — I authored it, so no self-bind); ACK-closed both codex-pantheon
+#322 responses; closed sweep alarm `211412` as SUPERSEDED by `025715` after auditing all six bullets
+against the three known retired-infra patterns with zero unmatched. Vitals green: 100/100, 87% memory
+free, no new diagnostic reports, broker healthy with the KV bound at 4 GiB and cache at 2.13 GB,
+all four daemons live, zero `BINARY_MISSING`. Housekeeping: reconcile healed 5 reaped→successor
+threads, prune 152→147, `ccd reap` killed 2 leaked conduit procs and archived 1 session, router
+retention reclaimed 48.9 KiB.
+
+## Conduit run 2026-07-26T22:26Z
+
+Near-green run; one real action. The hourly idea-router sweep opened a fourth-generation duplicate
+alarm (`20260726-221512-sweep-bot-claude-pantheon`, "4 infra issue(s)") whose four lines were all
+non-faults: two assert retired idea-router infrastructure (the `com.sirsi.idea-router` launchd label
+and `dispatch.sh`, idle since 2026-07-09 by design — the router actually runs under
+`ai.sirsi.horus.agent-router`, verified alive at pid 80606 this run), and two were dead watcher
+pidfiles the sweep removed in the same pass. Closed it `--ack` as duplicate-of-open, citing the
+still-open root-cause item `20260725-025715` that carries the actual fix: teach
+`.agents/idea-router/sweep.sh` to stop asserting retired infra so the alarm stops firing hourly.
+Until that lands the conduit will keep closing these, which is cheap but is noise claude-pantheon
+should not have to read. Otherwise: vitals 🟢 100/100 with 89% memory free, no new diagnostic
+reports, gemma broker healthy with the KV bound intact at 4 GiB and the prompt cache at 2.13 GB/5
+sequences, all four core daemons alive on unchanged PIDs, zero BINARY_MISSING sentinels. Reconcile
+healed one reaped claude-home thread to its successor (thr-e0aa6c43 → thr-f3a41960); `ccd reap`
+killed this task's own two leaked supervisor processes and archived one session record; retention
+reclaimed 57.2 KiB. The fleet-wake guard on `.agents/idea-router/agents.json` is clean. PRs #322,
+#320, #314 and Nexus #185 are unchanged and each belongs to another lane (or to me — no
+self-review), so all four were deliberately left.
+
+## Conduit run 2026-07-26T23:11Z
+
+All-green vitals (100/100, 88% memory free, broker ok with the KV bound at 4294967296 and prompt
+cache at 3.22 GB — well under the 6 GB balloon threshold, no new crash or Jetsam reports). One
+action: closed the hourly sweep-bot alarm `20260726-231614` (`--ack`). It arrived claiming **5**
+infra issues where the previous firing claimed 4, so the extra line got a real spot-check rather
+than a blind dup-close — the delta turned out to be one more dead watcher pidfile, itself a
+downstream effect of this run's `thread reconcile` healing 6 reaped threads. All 5 lines remain the
+same false-alarm class: two assertions about the RETIRED `com.sirsi.idea-router` / `dispatch.sh`
+infra, and three pidfiles the sweep annotates `(removing)` and self-heals in the same pass. Root
+cause and fix stay tracked in claude-pantheon's open `20260725-025715`. Otherwise: 4 core daemons
+verified live by `launchctl print` (router 80606, triage 80829, gemma-worker 80571, pantheon 58674),
+zero `BINARY_MISSING` sentinels, reconcile healed 6, prune dropped 4 terminal records (165→161),
+`ccd reap` killed 4 leaked procs from this task's own prior runs (the known self-leak class), and
+retention reclaimed 183.2 KiB. Queue moved 29→28 open with claude-home and claude-codex-standin both
+pull-verified empty — every remaining non-frozen item is one I sent, so nothing is owed inbound. All
+four open PRs deliberately left in their own lanes (#322 is mine — never self-bind; #320 blocked by
+codex `053637`; #314 carries pantheon's merge item `000028`; Nexus #185 conflicting). claude-io's 2
+stranded items and the fleet-wake working-tree restore both re-verified as intended state, not faults.
+
+## Conduit run 2026-07-26T23:50Z
+
+Sweep otherwise all-green (vitals 100/100, broker bounded, 4 daemons unchanged, 8 threads healed,
+queue drained for claude-home). One real finding, routed as `20260726-235004` to claude-pantheon:
+**PR #305's per-runner GOMODCACHE does not actually isolate.** ci.yml:57/111 key the cache on
+`${RUNNER_NAME:-default}`, but RUNNER_NAME is not unique per runner process — nine self-hosted
+runner installs share this Mac, and seven of them (Assiduous, FinalWishes, SirsiNexusApp,
+homebrew-tools, porch-and-alley, sirsi-hypergraph, sirsi-pantheon) are all named `m5-sirsi`; only
+the two `-2` installs differ. `ls ~/.cache/sirsi-ci/` confirms empirically: TWO buckets serving NINE
+concurrent writers. The fix partitioned 9→2, not 9→9, so the `go build`/`go test` unlink race and
+the cross-repo truncation blast radius both remain live in the seven-writer bucket — and the
+zero-byte sweep is itself unsafe there, since it can delete artifacts a sibling repo's concurrent
+job is mid-fetch. Proposed minimal remedy (one line, two sites, no runner re-registration):
+`CACHE="$HOME/.cache/sirsi-ci/${GITHUB_REPOSITORY##*/}-${RUNNER_NAME:-default}/gomodcache"`. Also
+recorded, because it cost a wrong first read this run: this working tree sits on the squat branch
+`fix/sirsi-gemma-bare-server-chipA`, which predates main — the #305 code greps as absent locally
+while being present on origin/main.
+
+## Conduit run 2026-07-27T00:53Z
+
+Machine **rebooted at 20:53:40** (shutdown_stall report at 20:53:26; **no panic file, no new
+Jetsam** — newest is still the forensically-closed 15:24 event). Reboot durability held: all four
+launchd daemons returned with fresh pids (router 1585, triage 1567, pantheon 1583, gemma-worker
+1603), and the Gemma broker relaunched at pid 5069 with the **correct bounded invocation**
+(`--prompt-cache-bytes 4294967296`, gemma-4-12B-it-8bit) — `/health` ok on a 25s probe, RSS 0.4 GB
+cold. Swap went 11.9 GB → **0 B** and free memory 50% → 89%; `sirsi diagnose` is back to **🟢
+100/100** (the 5.9 GB Virtualization 🟡 cleared with the VM). Reconcile healed 11 pre-reboot threads
+to successors, prune took 238→236, `ccd reap --apply` killed 0 procs (the reboot already cleared the
+leak) and archived 2 completed conduit records. Zero BINARY_MISSING; fleet-wake guard diff clean.
+
+Router: 31 open (pantheon 21, nexus 7, io 2, codex-pantheon 1). **claude-home and
+claude-codex-standin both zero** — nothing owed to the conduit. The one new item is
+claude-pantheon → codex-pantheon `20260727-004059` asking review of the new **PR #323**
+(`fix(scarab): never offer consensus-ledger volumes as reclaimable space`, MERGEABLE), which answers
+codex's URGENT `040933` — the item that binds the conduit against storage reclamation. Left for
+codex-pantheon: it is under an hour old and explicitly addressed to them.
+
+**Owner intervened mid-run** with a screenshot of the menubar's Router — Fabric screen and the words
+"text is super tiny". That is the live #319 regression, not a new bug: #319 merged at `8af46727`
+having removed element/text scaling, and **PR #320** — the restore — is CONFLICTING and gated by
+codex's still-correct re-review `20260725-053637` (Views.swift carries 73 `sirsiFont` calls against
+138 remaining `.font(...)` sites, so semantic styles bypass `sirsiTypeScale` and scaling is mixed
+within a single card). Routed the owner's evidence as `20260727-005726` — a priority bump to
+claude-pantheon naming the Router — Fabric screen as the acceptance surface (render at two widths;
+the stranded-inbox explainer and per-agent row labels must scale alongside the "5 / 31" numerals).
+The conduit did **not** take the build: it is claude-pantheon's lane and the 138-site correction is
+non-trivial. Doctor: 30 armed, claude-io's 2 stranded confirmed deliberate. Board republished (the
+20:52 board the owner screenshotted was pre-reboot and read 30). Retention reclaimed 45.6 KiB.
+
+## Conduit run 2026-07-27T01:0xZ
+
+Ran ~1 minute behind the previous conduit pass, so most state carried forward unchanged: diagnose
+🟢 100/100, 89% memory free, swap still 0 B post-reboot, no new crash/Jetsam (newest DiagnosticReports
+entries are benign `proactive_event_tracker`/SFA analytics; the 20:53 `shutdown_stall` is the known
+reboot artifact). Four core daemons alive on their post-reboot pids (router 1585, triage 1567,
+pantheon 1583, gemma-worker 1603). Fleet-wake guard clean — `git diff origin/main --
+.agents/idea-router/agents.json` empty. Zero `BINARY_MISSING` sentinels. Reconcile found no dirty
+exits, thread prune took 242 → 241, `ccd reap --apply` killed 0 procs and archived 1 completed
+conduit session, retention prune reclaimed 12.4 KiB, board republished (11233 bytes), doctor armed 28.
+
+Substantive work: investigated `20260727-005434` (liveness-watch → claude-pantheon, "gemma broker
+wedged") because the gemma broker is the conduit's own step-2 duty and claude-pantheon is carrying 22
+open items. Confirmed the alarm was a **cold-start transient** — it fired 00:54:34Z, ~68s after the
+20:53:26 reboot while the model was still loading, and self-resolved; the server log shows
+`POST /v1/chat/completions -> 200` continuously from 20:59:41 to 21:01:47. Live re-probe returned
+`finish_reason=length`, `completion_tokens=16`, `cached_tokens=11` — generating normally; the empty
+`content` is the documented reasoning-model artifact, not a wedge. Closed with that evidence.
+Recorded a new probe trap along the way: probing with `{"model":"gemma"}` instead of the full repo id
+returns HTTP 404 under `HF_HUB_OFFLINE=1` (mlx_lm resolves the field as an HF repo name), so
+`/health` can read `{"status":"ok"}` while every completion 404s — a malformed probe, not a dead
+broker. Both classes appended to the liveness-probe reference memory.
+
+PRs deliberately left: pantheon #323 (MERGEABLE, lifts my storage binding) is only ~21 min old and
+explicitly routed to codex-pantheon as `20260727-004059`, still open — not mine to pre-empt yet;
+#320 conflicting + codex-held; Nexus #185 is claude-nexus's lane; FinalWishes zero. claude-home and
+claude-codex-standin queues both pull-verified empty. Stranded inboxes: claude-io ×2 (deliberate,
+owner-gated) and codex-home ×1 (`20260727-010112`, routed by a sibling claude-home session three
+minutes earlier — not blind-spawnable, left for its recipient).
+
+## Conduit run 2026-07-27T01:24Z
+
+Read PR #323's red CI as a defect and nearly left it a second run; it is not one. Every real step in
+both failing jobs is green — `Build sirsi` ✓, `Runtime smoke` ✓, `Run tests` ✓, `Ma'at Pulse` ✓ — and
+the only failures are the `Post Run actions/*` steps, with the annotation "the self-hosted runner lost
+communication with the server ... starves it for CPU/Memory." `origin/main` is SUCCESS at 43437d51, so
+this is not inherited red. The host was at 7.8 GB swap and 47% free memory when that run died. The
+lesson worth keeping: on self-hosted runners a red job is not evidence of a red change until you read
+the step list, because job-level conclusion folds host death into the same signal as a test failure.
+Reaped 10 leaked conduit-session procs (2 sweeps' worth, 26-32 min idle) which is the pressure's
+proximate cause, but free memory still fell to 26% afterward, so the resolver P0 already routed as
+20260726-235904 remains the real fix and was not re-raised.
+
+#323 does not merge regardless: codex-pantheon closed 20260727-004059 with CHANGES REQUESTED, and the
+objection is right — the PR classifies ledger volumes out of `UnusedVolumes` but titles itself
+"permanently retained," while `configs/default_rules.yaml` still ships `docker system prune -af
+--volumes` and `hedera-local stop` still runs `down -v`. The verdict had already routed to
+claude-pantheon at 01:03, so no re-route was owed. Left in their lane; their thread is live.
+
+Closed my own 20260724-234927 ("main is RED") after verifying rather than assuming: main is green and
+`git grep TestAdoptOrRegister origin/main` returns nothing. The two tests were not fixed, they were
+removed with the reverted `adopt_or_register` feature in #322 — so the green is real, and the item had
+been sitting on claude-pantheon's queue for a third day describing a code path that no longer exists.
+
+Answered claude-nexus's ADR-046 (item 20260727-012106) accepting the correction to my "finish rather
+than fork" framing, and named one concrete breakage the ADR must document before it lands: moving the
+pid file to the supervisor pid silently inverts this very supervisor's KV-bound check, which does
+`ps -o command= -p $(cat ~/.sirsi/gemma-server.pid)` and greps for `--prompt-cache-bytes`. The worker
+holds that flag, the supervisor will not, so the check becomes a permanent false negative that would
+bounce a healthy load-bearing broker every 15 minutes — the ADR-040 hazard exactly. "The supervised
+pid is the serving process" was load-bearing for READERS, not just for `--stop`, and ADR-045 never
+wrote that down. Deferred binding #325 itself: 11 minutes old with CI pending, under the >1h rule.
+
+Second false gemma-wedged alarm in 20 minutes (01:16). Probed with the full repo id: `finish_reason`
+`length`, 16 completion tokens, 18.6s — generating normally, `content: None` is the documented
+reasoning-model trap. Broker RSS 12.52 GB is the model itself, KV cache 2.17 GB against a 4 GiB bound
+that is holding. Alarm already addressed to claude-pantheon; not duplicated.
+
+Also recorded a new router trap: `router show` on a closed, file-less item reports "not found (no
+file, no store row)", which reads as never-existed and would fool a run into re-deriving a settled
+verdict. It is `status: closed` in `router dump`. Always confirm absence against dump.
+
+## Conduit run 2026-07-27T01:37Z
+
+Back-to-back run (the prior pass closed 01:36), so triage was thin and the work was the two
+reviews the last run deferred. Bound **#325 (ADR-046, Go owns the serving path)** APPROVE with one
+condition carried into S2: the ADR makes the Go supervisor the launchd-supervised pid and has it
+write its own pid file, which silently reverses the meaning of that file for a live consumer the ADR
+does not account for — the conduit's own step-2 KV-bound assertion reads the argv of the pid in that
+file and greps for the prompt-cache-bytes flag. After S2 that reads the *supervisor* argv, and if the
+supervisor carries the flag while spawning an unbounded worker the check returns a false PASS. A
+false pass on that specific assertion is worse than a false negative, because it is the check
+standing between the fleet and another Jetsam. S2 must ship a worker-truthful bound (health-endpoint
+exposure preferred over a sibling pid file, since it survives pid-file drift and the conduit already
+polls health). Also noted that dying-with-the-child via process-group kill covers supervisor STOP but
+not supervisor CRASH, and the ADR's own "demonstrated not argued" standard should apply to the crash
+case. Bound **#324 (TestRegistryWakeCoverage)** APPROVE, disclosing that I filed the originating
+report and did the root-cause while claude-pantheon wrote the implementation, so reporter and
+implementer are distinct. Reading the committed registry from disk rather than a fixture is what
+makes the guard real, and it is strictly stronger than my per-run working-tree diff, which only
+covers the branch I happen to be standing on; CI now covers the squat-branch class by machinery. Two
+non-blocking observations recorded on the artifact: the test asserts the wake mechanism string is
+non-empty but not that it names anything the dispatcher knows, so a misspelled or retired mechanism
+passes while waking nothing (same silent-strand class, one layer down); and the claude-io exemption
+is documented as temporary but nothing fails when its reason expires. Both binds cleared
+binding-hold; Build and Test still pending and both PRs sit under the one-hour merge gate, so the
+merge is next run's on-green action. Host recovered decisively from the pressure that killed #323's
+runner — free memory 26% to 89%, swap steady at 6.6 GB — and no new crash or Jetsam reports landed.
+Reaped 2 leaked conduit procs (16 min idle, my own leak class) and archived 2 session records.
+Fleet-registry guard diff clean, zero BINARY_MISSING, all four daemons live, gemma healthy with the
+KV bound intact and cache at 2.13 GB. Doctor unchanged at 31 armed / 4 wake-unavailable — the same
+claude-io pair (owner-gated on tier and budget) and codex-home pair (driven out-of-band), which is
+the same structural fact #324 encodes as its codex-* prefix exemption.
+
+## Conduit run 2026-07-27T01:59Z
+
+Short run — the one carried job (merge #325/#324) is still gated. Both PRs remain MERGEABLE with
+binding-hold/Lint/gitleaks green and reviews already done, but their CI Build+Test are genuinely
+`in_progress` on the two self-hosted runners (Build 56 min, Test 55 min on run 30228827437), and
+#325's run 30229549042 is queued behind them; neither PR clears the >1h age gate until 02:02Z/02:19Z.
+Recorded a trap for the next run: `gh pr checks` prints `pending 0` for jobs that are actually
+in_progress — read `gh api .../runs/<id>/jobs` before concluding CI has not started. Housekeeping:
+`thread reconcile` healed four reaped claude-home threads to successors (54 uncommitted files on the
+squat branch are the known dirty tree, left alone), prune 265→264, `ccd reap --apply` killed 2 leaked
+conduit procs and archived 1 record, retention reclaimed 1.6 KiB, board republished. Fleet guard on
+.agents/idea-router/agents.json clean, zero BINARY_MISSING, all four daemons live, Gemma healthy with
+the KV bound present and cache at 2.13 GB. Host memory is comfortable (90% free); the only diagnose
+signal is a 4.1 GB Virtualization VM, which is a memory consumer, not a fault. Router queues: nothing
+owed to claude-home or codex-standin; the 10 stale items are all claude-pantheon's with their wake
+loop alive. Doctor unchanged at 32 armed / 4 wake-unavailable (claude-io ×2 deliberate, codex-home ×2
+out-of-band) — no escalation owed.
+
+## Conduit run 2026-07-27T02:10Z
+
+Diagnosed and routed a fleet-blocking P0: every self-hosted CI job on this repo pins its runner
+for ~60 minutes in `Post Run actions/setup-go@v5`. It is not slowness. Read both wedged pids
+before acting (17875 on m5-sirsi-2, 19468 on m5-sirsi) — each is setup-go's `cache-save/index.js`.
+Host forensics `/Library/Logs/DiagnosticReports/bsdtar_2026-07-26-214436_*.diag` show bsdtar
+dirtying 8589.95 MB over 1831s against a 99.42 KB/s sustained limit, so macOS throttles the
+coalition instead of killing it — an hour-long hang, not a crash. Isolated by control: on PR #325
+every real step is green on both self-hosted jobs while the hosted ubuntu Lint job ran the identical
+post-step to success, so the trigger is the large persistent self-hosted GOMODCACHE. Root cause is
+`actions/setup-go@v5` used in ci.yml (19/35/75) with no `cache:` key, defaulting to `cache: true`,
+even though the repo already manages that cache itself in its "Decouple + heal the Go module cache
+(self-hosted)" step. Requested fix `cache: false` on the self-hosted jobs, routed to claude-pantheon
+as 20260727-020703. Cancelled wedged run 30228827437 through the Actions API — both pids released
+gracefully, no SIGKILL — which freed the runners and let #325 start. NEW TRAP recorded for the
+fleet: `gh pr merge --admin` refuses required checks that are **cancelled** exactly as it refuses
+in-progress ones ("2 of 5 required status checks are cancelled"), so cancelling frees runners but
+creates no merge path. #324 and #325 therefore stay open with reviews already done, blocked solely
+on this bug. Also reaped 2 leaked conduit procs and archived 1 session record; reconcile healed 2
+reaped claude-home threads to successors.
+
+## Conduit run 2026-07-27T14:05Z
+
+First supervisor pass in ~11 hours — the reaper found two leaked `router-conduit-supervisor`
+procs idle 668 min, which dates the gap and means the 02:57Z closing state was the last real
+run, not the last scheduled one. Worked the whole claude-home lane: four items from claude-nexus,
+three of them receipts (ACK-closed), one a substantive question — does the hypergraph digest
+classifier fail closed on an UNKNOWN field, or only on a known-unsafe one? It fails closed:
+`scripts/sirsi-hypergraph-digest.sh` computes `set(body) - EGRESS_SAFE - LOCAL_ONLY` at two
+independent gates (producer, lines 120-124; egress projection, 151-154) and refuses rather than
+degrades, with the projection additionally built by inclusion from the allowlist. Answered with
+the line evidence plus two things worth not overstating: the guarantee is scoped to TOP-LEVEL
+fields (a nested EGRESS_SAFE object can still grow a key untripped), and the check lives on main
+via 537b38a, NOT in hypergraph PR #25 — nexus should not bind #25 on the strength of it.
+Accepted the pid-file contract amendment into ADR-046 including the clause that S2 is incomplete
+until the conduit's KV-bound check migrates off argv-grepping onto `sirsi gemma status`; the flag
+records an intention, the report records an outcome, and this supervisor has been asserting on
+intentions every 15 minutes. PRs: #325's long-running job finally resolved `failure` on both Test
+and Build, but every real step in both is `success` and the only non-green entries are
+`Post Run actions/setup-go@v5` / `Post Run actions/checkout@v4` — the known post-step cache wedge
+owned by claude-pantheon (item 20260727-021031, `cache: false` at ci.yml 62 + 116). Not a red
+change, but not a green required check either, so no bind. #323 red the same way, #324 still
+CANCELLED, #320 conflicting/codex-held. Hypergraph #22-#25 are already routed to codex-home for
+review attack. Hygiene: health 100/100, memory 38% free (down from 89% but no pressure signal),
+zero new crash/Jetsam, Gemma healthy with the 4 GiB bound in argv and cache at 2.16 GB, all four
+daemons live, reconcile healed 7 reaped→successor, prune 301→285, retention reclaimed 44.6 KiB.
+
+## Conduit run 2026-07-27T14:0xZ
+
+**Root-caused the machine-wide load event that was SIGKILLing Claude Code.** The banner blamed
+endpoint security and a signing Team ID; that attribution is false — there is no EDR on this host and
+the banner is the known SIGKILL-under-memory-pressure heuristic. The real cause was **50 orphaned
+`ping -c 1 -W 500 192.168.220.51-100` processes**, a contiguous LAN sweep started ~7 minutes after
+the 20:53 boot, reparented to launchd, still in **R state at 12h57m** — a `-c 1` ping that should
+exit in milliseconds. They were burning ~25% CPU each and pinning load average at 117. No spawner
+exists anywhere on disk (`~/.local/bin`, `~/.sirsi`, LaunchAgents/LaunchDaemons, Development,
+Preferences all clean), so this was a one-shot orphan rather than a recurring timer. SIGKILLed all
+50 after reading full argv (ADR-040 satisfied; not load-bearing). **Load 117 → 7.6**, with the 1/5/15
+decay curve (7.6 / 35 / 76) confirming causation. Swap had been at 7.3/8 GB with macOS repeatedly
+growing the swapfile; memory is no longer the constraint.
+
+Second leak class found and routed: **the SessionEnd hook hangs forever on `sirsi thoth sync`**.
+Three hooks were still live 11.7 hours after their sessions ended, elapsed ~11:41 against ~11s of CPU
+— hung, not spinning. Because the hook is sequential and the sync output is swallowed by
+`>/dev/null 2>&1`, `sirsi thread suspend --self` on the next line never runs: the session neither
+syncs its Thoth state nor suspends its thread, which manufactures some of the recurring
+reconcile reap→successor churn. Cleared the six processes and filed `20260727-140618` to
+claude-pantheon asking for a bounded sync, an *unconditional* suspend (the cheap load-bearing half
+should not be hostage to the expensive one), and a root-cause on the hang itself.
+
+**ADR-046 merged** at `b6190e93` (squash). Source-deep at `f3ec3c73`: single file, +147/-0, docs only,
+Status Proposed. binding-hold was failing correctly — `docs/ADR-*` is inside the ADR-041 guarded
+scope — so I bound it as an identity independent of the author, the gate re-read the bind and
+cleared, and all real checks were green. The ADR is notable for pre-empting a breakage in *this*
+conduit: under it, `~/.sirsi/gemma.pid` names the supervisor rather than the worker, so my step-2
+check that greps that argv for `--prompt-cache-bytes` would flip to a permanent false negative and
+bounce a healthy broker every 15 minutes. S2 is gated on migrating that check onto `sirsi gemma
+status`; I accepted that as binding and added the reverse ordering constraint — the status verb must
+exist *before* the supervisor lands, or there is a window where the old check is already wrong and
+the new surface does not yet exist.
+
+Answered claude-nexus's fail-closed question from source rather than from the README, since the
+question was precisely doc-versus-implementation. `scripts/sirsi-hypergraph-digest.sh` at `537b38a6`
+computes `set(body) - EGRESS_SAFE - LOCAL_ONLY` and refuses to write **the whole digest** on any
+unclassified field, and the egress projection independently re-checks and then builds its output by
+positive intersection with EGRESS_SAFE — so an unknown field is withheld because it is never
+selected, not because it was matched. It fails closed by construction, at two points. Two things the
+README does not say: the comment at line 143 labels this block **"fail-open"** when the behaviour it
+describes is fail-closed (backwards label, in a security property, in the artifact that has already
+produced three identity leaks), and the classification is **top-level only** — a nested field falls
+back to the two-string home-path scrub, which is the denylist shape nexus objected to. All three
+historical leaks were top-level, so the enumerated class is genuinely closed, but the broader
+sentence needs that qualifier before it goes to the owner.
+
+All four claude-home items cleared (two responses, two acks); codex-standin zero. #323 and #324 are
+red only on `Post Run actions/setup-go@v5` with **every real step success** — the CI infra P0
+(`20260727-021031`, claude-pantheon's) — so I did not admin-merge; I re-ran the failed jobs instead,
+now queued, since #325 completed Build in 3m4s where the wedged runs took 52m–1h2m. Plausibly the
+same story: the cache-save tar was crawling because the machine was pinned at load 117. Reconcile
+healed 2, prune 287→287, reap archived 1, fleet-wake guard clean, board republished.
+
+## Conduit run 2026-07-27T14:20Z
+
+Continuity run picking up the prior pass's two directives. **The CI "wedge" did not reproduce**: #324's
+`Build` completed in ~3 minutes (14:06→14:09Z) against the 52m–1h2m times seen earlier, which confirms
+last run's hypothesis that the 50 orphaned `ping` processes pinning the machine (load 117) were the cause
+rather than anything in the changes. Load continues decaying cleanly — 4.95 / 15.89 / 54.11 — with zero
+ping orphans left. New evidence for the CI-infra P0 `20260727-021031` (claude-pantheon's lane, not
+diagnosed here): both self-hosted runners sat inside `actions/setup-go` **itself** for 5m12s and 3m07s at
+3–5% CPU, i.e. I/O-bound, so the slow path is not confined to the `Post Run setup-go` step as previously
+characterized. Source-deep review of **#324** completed and the verdict is sound — `TestRegistryWakeCoverage`
+reads the committed registry from disk rather than a fixture, which is the correct choice since the
+committed file is the value being protected, and its exemption set (`codex-*` by prefix plus `claude-io`)
+was corroborated independently against this run's own `router doctor` output, which reported
+wake-unavailable for exactly codex-home and claude-io. Bind+merge is staged for the moment `Test` turns
+green; #323 remains codex's to bind and storage binding `040933` still holds all reclamation. Both router
+queues (claude-home, claude-codex-standin) were empty. Housekeeping: reconcile healed 1 thread, `ccd reap`
+killed 12 leaked sessions — the SessionEnd-hook hang class routed as `20260727-140618`, recurring every run
+exactly as predicted — retention reclaimed 33.7 KiB, and the board was republished. Gemma healthy with the
+KV bound intact at 4 GiB and prompt cache at 2.19 GB, well under the balloon line. One watch item: memory
+is at 29% free with swap at 10.9/12 GB and climbing.
+
+## Conduit run 2026-07-27T14:35Z
+
+Measured the pantheon CI stall properly and found its likely cause. Both self-hosted runners were
+pinned by `actions/setup-go@v5`'s pre-step at **0.0% CPU for 17–20 minutes** — with zero open
+sockets, no child processes, and the libuv event loop parked in `kevent`, so it was neither network,
+compute, nor a subprocess. That leaves synchronous filesystem work in the action's own cache
+handling, and the runner config fits: **all 9 runners share one unpartitioned 6.1 GB
+`~/go/pkg/mod`**, with `GOMODCACHE` set in no runner `.env` at all — i.e. the #305 partitioning fix
+never reached them. Two corrections to last run's account went out with the evidence: the stall is
+not confined to `Post Run setup-go` (the pre-step is just as bad), and it is a pathological stall
+rather than a permanent hang — one instance exited on its own at ~20 min before my kill landed, so
+only the second was killed (full argv read first, ephemeral CI step, ADR-040). Routed to
+claude-pantheon's existing CI-infra P0 rather than fixed here; it is their lane. Also caught a
+health-surface false positive worth fixing: `sirsi diagnose` flagged "process leak: launchd_sim has
+133 child processes — restart it", but that is a genuinely booted iPhone 17 simulator (Simulator.app
+pid 548, up ~17h, same device UUID under `simctl list devices booted`), where a large child count is
+the normal steady state. The detector attaches a *destructive* remediation to a healthy owner-facing
+process — the inverse of the usual green-surface-over-a-dead-thing failure. Routed to claude-pantheon,
+untouched here. Otherwise green: both my queues empty, reconcile healed 4, reap killed 2 leak
+sessions + archived 1, fleet guard clean, retention 71.3 KiB, board republished. #324 remains
+verdict-sound and merges the moment `Test` clears.
+
+## Conduit run 2026-07-27T14:45Z (addendum — owner directed: fix it, don't hand it off)
+
+Owner overrode the lane deference and asked for the fix rather than another constraint report, so I
+built it: **PR #326**, `cache: false` on all five self-hosted `actions/setup-go@v5` steps (ci.yml
+test+build, ios.yml build+testflight, release.yml menubar), 28 additive lines, hosted jobs left on
+`cache: true` where an ephemeral disk makes the cache worth paying for. Investigating properly also
+**corrected my own routed claim from an hour earlier**: partitioning *had* landed — `GOMODCACHE` is
+set per-job via `GITHUB_ENV` to `~/.cache/sirsi-ci/$RUNNER_NAME/gomodcache` (477 MB per runner), not
+in the runner `.env` files I grepped. The 6.1 GB `~/go/pkg/mod` I found is the *developer's* cache,
+not CI's. So the fault was never missing partitioning; it was that setup-go archives → uploads →
+downloads → extracts a module tree that on a self-hosted box already persists on local disk and never
+needed to move. **Measured on #326's own run:** the `Run actions/setup-go@v5` step went from a 17–20
+minute 0%-CPU stall to **under one second**, and `Post Run setup-go` — the step originally blamed —
+likewise under a second. Build **2m5s → 10s**, Test **2m33s → 27s**, with the full step list verified
+rather than the badge (every real step executed; only the Windows-only size guard skipped, correctly).
+Also folded in two corrections to the earlier account: the stall is not confined to the post step, and
+it is a pathological stall rather than a permanent hang (one instance exited on its own at ~20 min).
+#326 is mine, so I did **not** self-bind — `binding-hold` fails by design and it is routed to
+codex-pantheon (`20260727-144243`) with the three things I want challenged, including the gap I chose
+to leave: ios.yml and release.yml still have no GOMODCACHE decouple step and fall back to the shared
+tree, which wants a composite action rather than a third copy of that block. Meanwhile **#324 merged**
+(`f7fb49bf`) — auto-merge took it the moment Test cleared, ahead of my bind.
+
+## Conduit run 2026-07-27T14:52Z
+
+Landed the run's one in-flight item: PR #324 (registry wake guard) came back fully green — Build, Test,
+Lint, gitleaks and binding-hold all pass — so it was bound via sirsi-bind.sh on 023cf8e8 with the
+source-deep verdict re-affirmed (the test reads the committed .agents/idea-router/agents.json from disk
+and exempts codex-* plus claude-io, which matches live doctor truth: 6 wake-unavailable = codex-home 4 +
+claude-io 2), then squash-merged as f7fb49bf. Verified as an artifact, not a command: registry_wake_guard_test.go
+is present on origin/main. Its branch left a stale worktree at /private/tmp/wt-wakeguard blocking branch
+deletion — removed and pruned. PR #323 flipped to CONFLICTING as a direct consequence of that merge, and
+the overlap is CHANGELOG.md only, so it is mechanically trivial — but it is NOT mine to land: codex-pantheon
+closed the review with CHANGES REQUESTED (the implementation reclassifies dangling volumes out of UnusedVolumes
+but the title/changelog claim permanent retention, while hedera-local stop's down -v and the configured
+docker system prune -af --volumes remain live destructive paths). That verdict WAS routed back to the author
+lane as 20260727-010312, so the request/response loop is closed and #323 plus its conflict belong to
+claude-pantheon. Storage binding 20260725-040933 therefore still HOLDS — no sirsi clean, no reclamation.
+Both my queues were empty. Fleet guard on agents.json clean. Reconcile healed 2 reaped→successor threads,
+prune 298→298, ccd reap killed 0 and archived 1 completed supervisor session, retention reclaimed 58.8 KiB,
+board republished. Vitals green: diagnose 94/100 (yesterday's bogus launchd_sim item is gone; only a
+Spotlight-indexer 32% CPU note remains, a known write-amplification pattern, left alone), memory 45% free,
+Gemma healthy with the KV bound at 4294967296 and prompt cache 2.19 GB, all four daemons live, no new
+crash or Jetsam reports.
+
+**Correction to the entry above (folded from concurrent session 79ea17ca, which ran the same window):**
+the CI stall's cause is NOT an unpartitioned shared GOMODCACHE. Partitioning DID land in #305 — it is set
+per-job via GITHUB_ENV to ~/.cache/sirsi-ci/$RUNNER_NAME/gomodcache, not in runner .env files, so grepping
+.env gives a false negative; the 6.1 GB ~/go/pkg/mod is the developer's cache, not CI's. The real cause is
+actions/setup-go@v5's built-in cache archiving/uploading/downloading a module tree that already persists on
+a self-hosted box. Fixed in PR #326 (cache: false on all 5 self-hosted setup-go steps, hosted jobs keep it):
+setup-go 17-20min stall -> <1s, Build 2m5s -> 10s, Test 2m33s -> 27s. So "intermittent, not constant" above
+is also wrong — #324/#323 simply ran before the fix and got lucky. #326 is that session's own PR, cannot
+self-bind, and awaits codex-pantheon's verdict on item 20260727-144243.
+
+## Conduit run 2026-07-27T15:12Z
+
+Resumed from the prior run's thoth with one live item: PR #326 (setup-go cache removal on self-hosted
+runners) awaiting an independent bind from codex-pantheon. The review item
+`20260727-144243` is still open and — confirmed via `router doctor` — **armed**, so codex is pending,
+not stranded; no re-route needed. In the interim #324's merge had flipped #326 to CONFLICTING. Scoped
+the conflict before touching it: `git merge-tree` flagged CHANGELOG.md as "changed in both" while all
+three workflow files merged clean, putting it squarely in the trivial-mechanical class I'm permitted to
+resolve. Merged origin/main in a throwaway worktree — where the repo's **union merge driver** for
+CHANGELOG.md resolved it with zero markers, a reminder that merge-tree's plumbing verdict ignores
+`.gitattributes` and over-reports conflicts — verified both Unreleased entries survived undeduplicated
+and all five `cache: false` steps were intact (ci 2, ios 2, release 1), then pushed the merge commit
+`329d676c` from the main checkout so the Ma'at pipeline gate ran with a populated tree. Verified the
+artifact rather than the exit code: GitHub now reports #326 **MERGEABLE**, head `329d676c`, state
+BLOCKED on `binding-hold` alone — exactly right for a conduit session's own PR. **#326 is ready to
+squash-merge the instant codex's verdict lands; still no self-bind.** Left #323 (claude-pantheon's,
+needs an author rewrite) and #320 (codex-held) untouched. Fleet: queues for claude-home and
+codex-standin both empty, 40 open fleet-wide with 31 in claude-pantheon's live lane; the 6
+wake-unavailable are the same structural legacy-command set (codex-home 4, claude-io 2, the latter
+downstream of the open owner item), so no new escalation. Vitals green throughout: diagnose 100/100,
+memory 46% free, no new crash/Jetsam reports, all daemons live, Gemma healthy with the KV bound intact
+and prompt cache at 2.19 GB against the 6 GB line. Reconcile found no dirty exits, prune and ccd reap
+were both no-ops, no BINARY_MISSING sentinels, and the `.agents/idea-router/agents.json` fleet guard
+was empty. Retention reclaimed 25.2 KiB; board republished.
+
+## Conduit run 2026-07-27T15:12Z
+
+PR #326 (drop setup-go built-in cache on self-hosted runners) **MERGED** — codex-pantheon bound it via
+the sirsi-bind identity at 15:00:40Z on head 329d676c, closing the prior run's sole in-flight item; the
+review item closed with it, taking the fleet-wide open count 40 -> 39. Second Jetsam in 19 hours
+(JetsamEvent-2026-07-27-104218.ips, 10:42 EDT): forensics name pid 77655 -- the gemma MLX capped server --
+resident at **19.30 GB** at kill time with 3.57 GB free, alongside the pinned 10.02 GB hedera VM. This is
+a recurrence of the already-open P0 20260726-235904 (resolver budgets on-disk safetensors bytes, real RSS
+~2.5x), not a new cause, so no duplicate item was raised; the resolver still selects gemma-4-12B-it-8bit
+this run, which is precisely the exposure. The CI runners are exonerated a second time -- 8 Runner.Listener
+processes totalled ~0.7 GB and 2 Runner.Worker ~0.19 GB in the 708-process census. The broker itself
+survived (up since Jul 26 21:26, now 2.7 GB cold, KV bound present, prompt cache 2.19 GB). Worth recording:
+`sirsi diagnose` reported **100/100 green** ~28 minutes after that Jetsam, with memory free at 16% and swap
+at 12.9/21.5 GB -- the health surface is still blind to memory death. Hygiene: thread reconcile healed two
+claude-home records to successors, ccd reap killed 6 leaked router-conduit-supervisor sessions, retention
+reclaimed 96.7 KiB, fleet guard on .agents/idea-router/agents.json clean, no BINARY_MISSING sentinels.
+Doctor: 0 woken / 33 armed / 6 wake-unavailable = codex-home(4) + claude-io(2), both structurally
+unwakeable legacy command agents -- unchanged, not nagged. PRs #323 and #320 deliberately left (author
+rewrite owed, and codex-held respectively); FinalWishes and SirsiNexusApp have zero open PRs.
+
+## Conduit run 2026-07-27T16:42Z
+
+Not an all-green run: routed one item, closed one, healed three threads. **PR #190 (SirsiNexusApp,
+`docs(deck): close the three unverified Qubits call claims`) is authored by claude-deck — my own
+identity lane — so the no-self-review rule binds.** It is MERGEABLE with every check green, and it
+crosses the >1h eligibility bar during the next window, so I routed the independent review now rather
+than letting the next run discover the block. First send went to codex-nexus; `router doctor` then
+reported it wake-unavailable — codex-nexus is a legacy command agent with no explicit wake mechanism
+and is never blind-spawned, so the request would have sat dead. I closed it two minutes after
+creation, before any reviewer saw it, and re-routed the identical review to **claude-nexus**, who is
+armed and equally independent of the author. Exactly one open request now covers #190; no duplicate
+review is live. Wake pass afterwards: 37 armed, 4 wake-unavailable — exactly codex-home's four,
+the same structurally-unwakeable set as prior runs.
+
+System deltas worth carrying. `memory_pressure` free fell **81% → 26%** and swap grew **7667/9216 →
+13573/15360 MB (~88%)**, but there is **no new Jetsam** — the newest report is still the
+already-forensicked `JetsamEvent-2026-07-27-104218.ips`, and `sirsi diagnose` holds 100/100 🟢. The
+memory-death signature needs *both* halves, so this is a watch item, not a P0: the census shows the
+Lima/hypergraph VM at 4.08 GB and the Gemma Python server at 3.04 GB, both expected and both
+load-bearing (never touch the VM — `hedera-local stop` destroys the ledger). Broker green, KV bound
+at 4 GiB, prompt cache **2.19 GB / 9 sequences for the sixth consecutive run**. `thread reconcile`
+healed three reaped claude-home threads to successors and warned about 60 uncommitted files; those
+are the router's own runtime state — item records, `state.json`, `board.json`, police logs, review
+artifacts, thoth files — not stranded agent work, so they stay unadopted. Noting that the repo root
+checkout is sitting on `fix/sirsi-gemma-bare-server-chipA`, not main. Retention reclaimed 66.4 KiB.
+`ccd reap` killed this task's usual two leaked supervisor procs and archived one record.
+
+## Conduit run 2026-07-27T16:55Z
+
+Vitals green — `sirsi diagnose` 100/100, memory free recovered 26% → 33%, swap 10.1/11.3 GB, and no
+new Jetsam (newest is still the already-forensicked `JetsamEvent-2026-07-27-104218.ips`), so the RAM
+watch stays a watch and not a P0: the death signature needs both halves. Gemma broker 🟢 with the KV
+bound intact at 4294967296 and the prompt cache flat at 2.20 GB / 10 sequences — seventh consecutive
+identical reading. All four daemons hold their original PIDs; fleet guard on `agents.json` empty;
+reconcile healed 4 reaped claude-home threads to successors and repeated its known-benign
+"60 uncommitted files" warning (router runtime state, already triaged); `ccd reap` took the usual 2
+leaked supervisor procs plus one archive. Closed claude-io's ADR-002 ratification with an ACK — the
+I/O laws are now ratified law with IO2a (a cache without a reconciler is not shippable) as the clause
+with teeth, and nothing was owed back. The one real find came out of `router doctor --fix`: claude-io
+had routed its ADR-002 review request to **codex-nexus**, the identical wake-dead mistake this
+conduit made two hours ago with SirsiNexusApp PR #190 — `codex-*` are legacy command agents that are
+never blind-spawned, so the item would have sat open forever. Routed the correction with the fix
+(close as superseded, re-send to claude-nexus). PRs deliberately untouched: Nexus #190 still awaits
+claude-nexus's independent review (mine, no self-merge), Nexus #191 and Pantheon #327 are both under
+an hour old, and #323/#320 remain conflicting in their owners' lanes. Retention reclaimed 55.4 KiB.
+
+## Entry 075 — 2026-07-27 13:17 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019fa492-ebaf-7952-a926-a028132a12fc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T00:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-07-27T17:18Z
+
+Merged the in-flight PR and found a surface disagreeing with its own store. **SirsiNexusApp #190 closed** — claude-nexus returned APPROVE by measurement (all three Qubits retractions verified complete, continuation convention indexed not clobbered, .thoth edits additive 19→20 with zero lines dropped), so I bound (`4a3efbb`) and squash-merged (`bac9cea`, 17:10:54Z), reading the merged state back from GitHub rather than trusting the merge command. Their structural finding is carried, not filed: GitHub REFUSED nexus's approval with "Can not approve your own pull request" because every agent authenticates as SirsiMaster, so **cross-agent independent review is a convention we honour, not a control the platform enforces** — extending sirsi-bind's second identity from binding to review *submission* is the fix, and it belongs to claude-pantheon's lane.
+
+**#191's own pre-merge blocker resolved by measurement instead of refresh.** The rescued whitepaper claimed "4,395 of 4,395 anchored"; the live `~/.sirsi/hypergraph/events.jsonl` holds **4,830**, and the figure had drifted twice in hours (4,395 → 4,803 in the PR body → 4,830). Refreshing was the wrong fix: the document itself states anchoring runs on a fifteen-minute cycle, so any absolute count is stale before an investor reads it. Took the author's second option and stated the invariant — "every event anchored, zero pending, mirror-verified" — pushed via the contents API to avoid switching branches in the shared main worktree (`2562744`), verified by reading the branch back. Since I edited it I cannot merge it, so it went to claude-nexus with bind+merge authority.
+
+**Third stranding of the day from one root, and a correction I had to issue against myself.** claude-io's ADR-002 review had been routed to `codex-nexus`, which has no wake mechanism — I re-routed it intact to claude-nexus (adding the disclosure that *I* drafted those laws, so claude-io and I are both conflicted and nexus is the only clean reader) and closed the original as superseded. Then `doctor --fix` showed **claude-io is itself wake-unavailable** — the committed registry gives it no `wake.mechanism` despite its being declared online with a "durable wake path" this morning. My own re-route note to claude-io is therefore undeliverable, as is codex-pantheon's IO6 result. Sent claude-nexus a correction: route the verdict to claude-home, not claude-io. The lesson is registry-shaped — **wake is a property of the committed registry, not of whether an agent feels online**, and an item sent to an agent without a mechanism is not pending, it is lost, while looking identical to pending on every surface.
+
+**A status surface printed a smaller world than its own store.** `router status` returned `44 open / 2051 closed` at 17:10Z listing 6 recipients, then `76 open / 2030 closed` at 17:15Z listing **14** — claude-deck alone going 1 → 9. I went to `~/.sirsi/router.db` rather than trusting either surface. The store agrees with the second reading, and the integrity question is clean: `status='open' AND closed<>''` returns **0**, as does `status='open' AND result<>''`. Nothing that was closed came back; the closed drop is `prune --days 90` working its retention window. What did not resolve in-pass is the +32 on the open side — either `status` under-reported and hid **six weeks** of stranded work across 8 agents (the oldest claude-deck rows open since 2026-06-14 with no close timestamp and no result — genuinely never closed), or `doctor --fix` imported legacy file-backed rows, and the files do exist for those ids. Both are the same dual-source seam PR #327 is closing one layer down, so the evidence went onto #327 as a comment rather than into claude-pantheon's 39-deep queue. #327 itself reads correct on a source-deep pass but is 25 minutes old; it holds until past 1h. A wake loop reading through the cutover entry point is necessary and not sufficient while `status` can disagree with `router.db` by 32 items.
+
+Vitals eased sharply: memory free **86%** (was 33%), no new Jetsam, broker green with the KV bound honoured and prompt cache flat at 2.21 GB for an 8th reading. `diagnose` 94/100 🟡 on a 4.5 GB VM, benign. Reconcile healed 3 claude-home threads; the "64 uncommitted files" warning remains the router's own runtime state and is still benign.
+
+## Conduit run 2026-07-27T17:29Z
+
+Cleared my own queue to zero and merged the run's carried PR. **#327 merged** (`c4ec68e7`) after
+resolving the conflict it had picked up: only `CHANGELOG.md` collided, the local union driver
+resolved it cleanly in a temp worktree, and I verified the result kept this PR's entry plus all
+four entries that had landed from main (#323, #320, #319, scarab retention) with no duplication
+and no loss before pushing the merge commit from the main checkout. Pushing a new head invalidated
+the first bind, so it was re-bound on `19ef83f0` and merged green.
+
+**A new `sirsi` crash artifact** appeared since the last pass — `sirsi-2026-07-27-132249.ips`,
+`EXC_CRASH / SIGKILL (Code Signature Invalid)`, CODESIGNING "Launch Constraint Violation". Not a
+panic and not memory: AMFI killed it at exec. Root cause is a timing window, not a bad binary —
+`~/.local/bin/sirsi` was replaced at 13:21 and the crash is at 13:22:49, so something invoked
+`sirsi` between `cp` writing the new bytes in place and `codesign` applying the ad-hoc signature.
+The binary verifies clean now, so this self-healed, but the install sequence guarantees a
+recurrence on every rebuild on a host that runs `sirsi` from launchd loops, the menubar, triage
+and every conduit pass. Routed the one-line fix to claude-pantheon: sign the staging copy first,
+then `mv` it into place so the swap is an atomic rename — which also removes the failure mode
+where `codesign` fails after `cp` succeeded and leaves the PATH binary permanently unrunnable.
+
+**Root-caused the six-week strand.** `router doctor --fix` reported 17 wake-unavailable items, and
+the split is the finding: `claude-deck` (9 items), `claude-ask-eliot` (2) and `claude-hypergraph`
+(1) are **not in the committed registry at all**, while `claude-io` (4) is registered with no wake
+mechanism. `router send --to claude-deck` succeeds against a recipient that has never existed, so
+nine items accumulated, the oldest open 43 days, undeliverable and never surfaced as such. This is
+most of the "+32" anomaly flagged on #327 last pass; store integrity remains clean (`status='open'
+AND closed<>''` = 0, same for `result`). `TestRegistryWakeCoverage` cannot catch it because it
+only checks agents that are present. Routed two fixes to claude-pantheon: validate `--to` at send
+time, and assert every distinct recipient with an open item is a registered agent. I deliberately
+did **not** invent registry entries to silence the warning — whether those agents should exist is
+an ownership question, and fabricating them would be exactly the green-surface-over-a-dead-thing
+class this fleet keeps getting burned by.
+
+**Relayed the hypergraph adversarial review.** codex-home returned the attack-don't-approve read of
+sirsi-hypergraph #22–#25: #22 clear, #23 and #25 changes-requested, #24 no standalone blocker but
+it does not close the leak class without a corrected #25 gate. The P0 is compound — a refused
+identity-leaking event is neither anchored nor quarantined, so `AnchorUnanchored` returns on it
+every pass and one privacy violation becomes a permanent head-of-line outage for notarization,
+while the freshness query counts the unpublishable row and reports a healthy node as stalled
+forever. All four PRs are green and `MERGEABLE`, so I posted the findings as comments on #23 and
+#25 first — the artifacts carry them regardless of whether a router item is read — then routed the
+work to claude-nexus, who holds the pillar and has a working wake mechanism. Hypergraph has no
+lane agent, so this is scheduled rather than absorbed.
+
+**A second claude-home conduit was live against the same store** at 17:23–17:24Z and emitted four
+items I did not send. Two told claude-pantheon to execute integration on **#190**, which had
+merged at 17:10:54Z (`bac9cea`) and is a SirsiNexusApp PR that was never pantheon's lane; the other
+two carried the hypergraph review to `claude-hypergraph` and `claude-io`, both unwakeable. Closed
+all four with citations rather than leaving false work in a 39-deep queue and unreachable work
+open. `ccd reap` separately killed 8 leaked `router-conduit-supervisor` processes.
+
+Vitals: `diagnose` 94/100 🟡 on the same benign 4.2 GB Virtualization VM. Memory eased 31% → 47%
+free across the run, though swap stays tight at 9264/10240 MB. All four daemons live
+(router 1585, triage 1567, pantheon 52561, gemma-worker 1603, unchanged). Broker green, KV bound
+verified at 4294967296, prompt cache flat at 2.20 GB/10 sequences — ninth flat reading. Reconcile
+healed 6 claude-home threads; its 68-uncommitted-files warning is the usual benign router runtime
+state and was left alone. Retention reclaimed 92.0 KiB. Board republished after all sends and
+artifact-verified at 17:27:26Z. Router closed at 71 open / 2049 closed with **claude-home at zero**.
+
+## Conduit run 2026-07-27T17:51Z
+
+Both queues empty on arrival; the run's only real work was PR #328. Source-deep read showed the diff
+has grown past its own PR body — the branch now carries EL-002 (Colima 10 GB decomposed to a 16-container
+stack, deterministic-vs-LLM sizing, model/quantization recommendations) on top of the EL-001 the body
+describes. Both entries are signed `**Author:** claude-home (conduit)`, so no-self-review binds: I did
+not bind or merge it, and routed an independent review to codex-pantheon
+(`20260727-174944-claude-home-codex-pantheon-review-pr-328-...`) with the ask aimed at the contestable
+half — the disk-to-RSS multiplier, the `max(8.0, total*0.35)` inversion claim, the medium-confidence
+Qwen-over-Gemma swap, and the MoE-residency argument. #329 needed nothing from me: claude-pantheon had
+already sent it to codex-pantheon and the response (`20260727-171914`) is open in their lane; it also
+went CONFLICTING on CHANGELOG since the last run, which is theirs to resolve. Nexus #191 untouched —
+I am an author. Vitals: no new crash or Jetsam, broker green with the KV bound intact and the prompt
+cache flat at 2.19 GB for an eleventh reading, all four daemons argv-verified. The one real delta is
+swap — 10291/11264 MB used, 972 MB free, up sharply from 7946 used last run, with no proportionate
+RSS culprit (top consumer is still the benign 4.9 GB Virtualization VM). Recorded as a watch, not acted
+on: nothing killable, and the storage binding still forbids `sirsi clean`. Retention reclaimed 65.7 KiB.
+
+## Conduit run 2026-07-27T18:05Z — the amber, actually read
+
+Owner pushed back on my dismissing the 🟡 as the "benign Virtualization VM, don't chase" — a phrase I
+had carried across ~11 runs without once reading the check that produced it. Reading it inverted the
+verdict. The score arithmetic is unambiguous: 100−6 is exactly one SeverityWarn, and that Warn was
+`Top Memory Consumers` flagging `com.apple.Virtualization.VirtualMachine` with the recommended action
+"quit the worst offenders". That VM is Colima, Colima anchors the sovereign consensus ledger, and
+`hedera-local stop` destroys it — so the health surface was advising the destruction of irreplaceable
+state to reclaim RAM the host was not short of, while RAM Pressure (38%), Memory Death Spiral and Swap
+were all simultaneously green. Not benign: the same class as #323 one layer up, storage-surface-offers-
+the-ledger versus memory-surface-offers-its-VM. Fixed in **PR #330** by extending the exemption
+`checkTopMemoryProcesses` already carried for the Gemma broker — a capacity-capped reservation is not a
+hog — rather than by raising the 4 GB constant, which would hide real hogs and repeat EL-001's own
+hardcoded-constant complaint. The exemption is two-sided and earned: Virtualization VM AND RSS within
+the ceiling declared in `colima.yaml`; over cap, no config, or unparseable all still warn, so the
+detector fails toward warning. Table test covers all four. Verified live, not just mocked — the finding
+vanishes under the patched binary while the installed one still reports it, and the VM has since grown
+to 7.5 GB and stays correctly exempt inside its 10 GiB ceiling. Green on all five checks; **routed to
+codex-pantheon, not merged — I authored it.** Two process notes worth keeping: the working checkout is
+**316 commits behind origin/main**, so my first read of `doctor.go` was a stale artifact whose swap
+message did not match the binary — read source from `origin/main`, not the tree. And the swap alarm I
+raised at 17:52 (10291/11264 MB) was a transient macOS swapfile growth that fell back to 7786/9216 on
+its own; the shipped check's "macOS keeps swap allocated after using it" was right and my read was the
+alarmist one. Clearing #330 does NOT make the host green: the remaining amber is a real `Spotlight
+Storm`, `mds_stores` at 29–31% CPU, feeding the RAM→Jetsam loop behind 7 Jetsam kills in 7 days. That
+one is GUI-only (the plist is privileged; `spotlight-exclude` guides but cannot apply), so it went to
+the owner as a single item, no nag.
+
+## Conduit run 2026-07-27T18:12Z
+
+claude-deck reported the dangerous direction: `sirsi router pull claude-deck` printed
+"No open items" at 16:57Z for an inbox holding nine open store rows — eight from
+mid-June, one an investor SAFE cleared for signature — then returned all nine minutes
+later, same session, same host. The store was correct throughout; the reader failed, and
+failed silently. Located it in `Facade.Inbox`: the post-cutover leg already fails closed,
+but the pre-cutover leg degrades to the file inbox on a store error (`return items, nil`).
+That was safe while `items/*.md` was canonical and populated — post-cutover the file leg
+is empty fleet-wide, so the same line now yields zero items with a nil error, which is
+indistinguishable from a clean inbox and puts a wake loop back to sleep on full work.
+Fixed with one guard at the shared read site so it covers all six callers (pull, wait,
+doctor, liveness-watch, MCP, wake), with a test that fails on the unguarded code with the
+exact production symptom — PR #331, routed to codex-pantheon (I authored it). Stated the
+gap plainly rather than claiming the incident closed: on the current binary the symptom
+does not reproduce, cwd/root ambiguity is ruled out empirically, and this host has the
+cutover marker set, so pull takes the already-fail-closed leg; I asked claude-deck to
+check its session env and binary to settle causality. Also accepted codex-pantheon's
+CHANGES REQUESTED on #328 in full — all five corrections are mine to apply as the author,
+recorded verbatim, PR stays open and unmerged. #330 still awaiting codex, all checks
+green. Two router items showed `closed` on a race-guard re-read moments before my own
+close succeeded; a third rendered correctly, and a `router-conduit-supervisor` session was
+reaped this run — a concurrent sibling conduit, the known duplicate-work class, not a new
+reader bug. Vitals: 94/100, the lone Warn still the consensus VM at 4.5 GB that #330
+exempts; broker green with the KV bound holding at 2.19 GB; no new Jetsam. Four
+`sirsi-*.ips` "Launch Constraint Violation" crashes from 13:22–13:59 local are the
+binary-replacement signature, not a runtime fault — no BINARY_MISSING sentinels remain.
+
+## Conduit run 2026-07-27T19:27Z–20:25Z
+
+Both codex verdicts on my own PRs came back negative and both were accepted without argument. **#331
+REJECTED and closed unmerged** — codex established the guard is causally unrelated to the false-empty
+inbox it was written for: the incident host carries the cutover marker, so `Facade.Inbox` returns from
+the store-only branch *above* the code I changed, and pre-cutover an empty file inbox is legitimate
+evidence, so the patch converted documented compatibility behaviour into an error. `len(items) > 0`
+was never a completeness proof, which I had flagged myself when sending it. The incident stays OPEN and
+uncaused; codex's directive — error telemetry at the store-only read boundary — is adopted as the real
+next step, because a false-empty inbox that logs nothing is unfalsifiable by construction. **#330 came
+back CHANGES REQUESTED and stays open**: the guard proves "Apple Virtualization process below the
+default profile's cap" and then treats that as identity, binds to a user-editable YAML rather than the
+running hypervisor's effective ceiling, and — the finding that reframes the PR — suppresses the
+*finding* when the dangerous thing was the *remediation* telling someone to quit a VM whose death
+destroys the ledger. Corrections are mine; three accepted in full.
+
+Reviewed **SirsiNexusApp #193** (claude-nexus, IO4 loopback guard) and returned CHANGES REQUESTED on a
+finding nexus's own four-vector self-probe could not have reached: the guard validates `endpoint`, but
+the panel fetches `endpoint + query_api`, and `query_api` arrives unvalidated from the same feed under
+the same threat model. Measured against Node's parser rather than reasoned about —
+`"http://127.0.0.1:8765" + "@evil.example.com/v1/chat/completions"` → hostname `evil.example.com`; the
+same userinfo trick nexus already pins, arriving through the sibling field. One line fixes it (guard
+the composed URL). Answered their Q2 from the producer I own: `sirsi-router-board.sh:57` is the sole
+writer of `local_llm` and the host is a literal `127.0.0.1` with only the port variable, so no
+supported configuration darkens a working panel — though the invariant currently holds by evaluation
+order (`int(port)` raises before interpolation) rather than by design. Their CI is RED, not running —
+portal build canceled at 11m on a cache-restore timeout, infrastructure not code.
+
+**#332 (durable Spotlight index markers) routed to codex-pantheon rather than bound.** Authorship is
+ambiguous — opened 18:15Z, one minute after the previous run closed, and this run's reaper killed three
+concurrent `router-conduit-supervisor` processes — and under no-self-review ambiguity resolves one way.
+Flagged for attack: the unreachability-of-priority-1 claim is load-bearing and two `Operation not
+permitted` results prove two calls failed, not that the objective is unattainable.
+
+Vitals green throughout: `diagnose` 100/100 🟢 (the #330 VM false positive not even surfacing this
+cycle), memory free 35%, broker `{"status":"ok"}` with the KV bound verified and cache flat at 3.24 GB.
+Two further `sirsi-*.ips` at 15:04/15:10 local are Launch Constraint Violation — the binary-replacement
+signature again, not a runtime fault. Reconcile healed 5 reaped→successor; **76 uncommitted files still
+flagged as possibly stranded, owner adopts or discards, never auto-stashed**. Prune 427→380, `ccd reap`
+8 sessions / 1 archived, retention reclaimed 8.2 MiB.
+
+## Conduit run 2026-07-27T22:15Z
+
+Worked the block the previous run flagged as biggest-and-mine: PR #330's three codex
+corrections. The important one reshaped the fix rather than patching it. Codex's finding
+was that the remediation is the defect, not the visibility — and it was right. The first
+pass had suppressed the Colima VM from `Top Memory Consumers` entirely, which is the
+green-surface-over-a-real-condition pattern this repo keeps paying for: an operator who
+cannot see the largest process on the box cannot reason about memory at all. The VM now
+stays in the report, re-labeled `load-bearing, capacity-reserved: ... at 4.6 GB of 10.0 GB
+reserved`, and `remediationFor` no longer emits "quit the worst offenders" for ANY memory
+check. That string was generic to every memory finding, not specific to the VM, so fixing
+it only for the VM would have left the same lethal advice pointed at the Gemma broker.
+Correction 2 split identity from capacity (`isAppleVirtVM` is identity only — the old
+predicate conjoined the two, so a VM that outgrew the cap silently stopped being recognized
+as a VM). Correction 3 replaced the user-editable `~/.colima/default/colima.yaml` — desired
+config, i.e. a wish reported as a measurement — with Lima's GENERATED
+`_lima/colima/lima.yaml` gated on a live `vz.pid`.
+
+One correction I could not fully satisfy, and said so rather than papering over it: codex
+asked for a PID binding via `loadbearing.go`. `vz.pid` is 21574 (the limactl hostagent) but
+the RSS-holding process is 21580, the Apple-Virt XPC service, which macOS reparents to
+launchd — PPID 1, verified live. There is no process-tree link, so recognition is by class,
+not instance. That asymmetry is precisely why the by-class check is used only to protect
+and to label and never to suppress: over-protecting an unrelated VM from a routine kill is
+free, over-hiding one is not. Written into the code comment and routed to codex as an open
+question.
+
+Test is table-driven over six cases and asserts in every one that the VM is still NAMED,
+so a future re-suppression fails; verified red by reintroducing the suppression, and
+verified against the live host (94/100 amber → 100/100, VM visible at 4.6 GB of 10.0 GB).
+Lint went red on ea2dd7f0 for two British spellings in a test comment (`misspell`); fixed
+in a separate commit rather than an amend, because ea2dd7f0 was already sitting in codex's
+queue and a force-push would have invalidated the SHA under them — routed the correction.
+Final SHA 230f2b19, all content checks green, binding-hold correctly red pending an
+independent bind I must not do myself.
+
+Also corrected the carried ledger: #328's five corrections were already applied at
+99700a1f, contrary to the previous run's note — but the re-review request was never routed,
+so a green PR had been sitting idle on a process miss. Routed it. #332's verdict arrived
+mid-run: CHANGES REQUESTED, six items (basename-only `dist`/`target` discovery, TOCTOU
+recheck before marker write, a full-index command that increases the load it claims to
+control, an over-broad reachability claim, missing post-apply evidence, and a previewed
+removal mode). Left open as the next run's block — not faked closed. Fabric: reconcile
+healed 5 and pruned 107 (1073→966), `ccd reap` killed 2 and archived 4, retention 8.1 KiB.
+The stranded-uncommitted-file count rose 76→79 and remains owner-adopt-or-discard, never
+auto-stashed.
+
+**Addendum (same run, 22:25Z) — `doctor --fix` completed after the close and carried a real finding.**
+It reported `claude-nexus: launchagent adapter failed: exit status 37` on three items. Errno 37 is
+EALREADY, and the wake had in fact SUCCEEDED — a false red, the exact inverse of the
+green-surface-over-a-dead-thing class, and worth the same suspicion: a surface asserting failure over a
+live path strands work just as effectively as one asserting health over a dead one. Root cause read in
+source rather than inferred: `internal/router/wake.go` iterates per ITEM, and its idempotency guard
+keys on per-ITEM `WakeStatus`/`WakeAttemptedAt`, so N fresh items addressed to one agent invoke the
+adapter N times; the adapter is `launchctl kickstart -k`, which kills and restarts, so calls 2..N race
+the in-flight restart and return EALREADY, and each loses its wake annotation to `wake-unavailable`.
+Confirmed against the live host: the label held PID 36317 mid-run with `LastExitStatus = 15`, the
+SIGTERM from its own `-k`. The fix belongs in one place — dedupe invocation per AGENT within a pass and
+annotate all of that agent's items from the single outcome, with EALREADY treated as success as
+secondary hardening. Explicitly NOT to be "fixed" by widening the per-item retry window, which would
+only hide it. Recorded as the next block; not implemented at the tail of a long run, because this is
+fabric-critical and deserves its own verification pass. Separately, `claude-deck` has changed failure
+mode to `agent "claude-deck" not registered` (previously "no wake mechanism"), now 10 items.
+
+## Conduit run 2026-07-27T22:27Z
+
+A new JetsamEvent landed at 22:07Z and it is the run's headline. The `.ips` names `Python` as
+`largestProcess`: pid 77655, the `ai.sirsi.gemma-broker`, at **2,682,254 pages × 16 KiB = 43.9 GB**,
+with a `lifetimeMax` of 46.2 GB, against 0.34 GB of free system memory at the event. The shape is
+what makes it dangerous — `physicalPages.internal` reads `[41350, 2433398]`, i.e. 0.68 GB resident
+and **39.9 GB compressed**, so `ps -o rss` reports the broker at 1.40 GB right now and any
+RSS-sampling health check calls it innocent while its real footprint was thirty times that. Swap
+sits at 8.57 of 10.24 GB. Crucially the KV bound is NOT the balloon: the process does carry
+`--prompt-cache-bytes 4294967296` and the prompt cache has been flat at `9 sequences, 3.25 GB`
+across every recent log line, so the ~20 GB above the declared 20.8 GiB cap is elsewhere in the
+allocator. This is the second Jetsam in two days and it escalated (31 GB → 43.9 GB), so per the
+repeat-OOM doctrine the broker was deliberately left running and unbounced and the forensics went
+to claude-pantheon as a P0 rather than being papered over with a restart.
+
+#332 came back changes-requested and all six corrections landed at `8552dfe9`. Two were real
+defects rather than polish. Discovery matched build directories on basename alone, so a source
+repository merely *named* `dist` or `target` was planned for marking — the one outcome the feature
+promises never to cause; it now requires evidence, refusing anything containing `.git` and
+requiring the parent build manifest for the ambiguous names, with a name match that fails the gate
+still halting the walk. And the write path had a genuine TOCTOU window: the plan now records
+`(dev, ino)` via `Lstat`, re-verifies immediately before writing, refuses vanished/non-directory/
+identity-changed paths, and creates with `O_EXCL`. Verified RED both ways, and the unfixed red
+output confirms the marker landed *in the redirect target*. The durability item was deliberately
+NOT closed: markers from 07-25 are still present and `mds` is quiet at 0.2% CPU, but
+`mdfind -onlyin ~/go/pkg/mod` still returns ~106k hits inside a two-day-marked tree against 5,010
+for the unmarked control — markers prevent future indexing, they do not evict existing index
+content, and no reboot was observed. That caveat is now in the code comment and the changelog
+instead of being left implied. `mdutil -E` was dropped from the pressure-control levers because
+recommending a full reindex as a remedy for indexing pressure prescribes more of the load being
+complained about, and the "only unprivileged lever" claim was narrowed to the two mechanisms
+actually measured.
+
+`router doctor --fix` completed this run, resolving last run's inconclusive result, and surfaced a
+standing defect: 12 items are undeliverable because `claude-deck` (10) and `claude-ask-eliot` (2)
+are not registered agents — the wake-dead-id class again, with the oldest dating to 2026-06-11.
+Several of the deck items are fundraise decisions addressed to the owner. Neither id was
+auto-registered, since arming a wake mechanism against an interactive identity is precisely what
+the no-blind-spawn rule forbids; it went to the owner as the single open escalation. Housekeeping:
+108 terminal threads pruned (1087 → 979), 1 session archived, 32.4 KiB reclaimed, board republished
+at 18322 bytes. Noted for the next run: #333 claims a fork storm is *the* cause of the
+out-of-application-memory dialog, which sits awkwardly beside forensics naming a 43.9 GB broker —
+worth checking whether that causal claim survives review.
+
+## Conduit run 2026-07-27T22:45Z
+
+Third Jetsam in ~24h fired at 22:38:53Z with the Gemma broker as `largestProcess` — pid 77655 at a
+38.10 GB footprint (2.17 GB resident, 35.93 GB compressed, lifetimeMax 46.2 GB), the KV bound still
+correctly applied and the prompt cache still flat at 3.25 GB, so roughly 35 GB sat above the declared
+20.8 GiB cap and outside the 4 GiB KV bound. The previous run had deliberately not bounced it under
+the repeat-OOM doctrine; a third event with only 1.1 GB of swap free inverted that call, because the
+next kill would have taken a load-bearing victim rather than the offender. Graceful `sirsi gemma serve
+--stop`, and the reboot-durable agent restored it inside 5s as pid 85829 — health ok, model
+`gemma-4-12B-it-8bit` resolver-confirmed, `--prompt-cache-bytes 4294967296` verified present on the
+new argv. Memory free went 46 to 89 pct. The same Jetsam snapshot showed
+`com.apple.Virtualization.VirtualMachine` at an 18.39 GB footprint while `sirsi diagnose` reports it
+as 4.4 GB, because 15.06 GB of it is compressed and invisible to RSS — the same blindness that let
+the broker read 1.40 GB while holding 43.9 GB, and directly relevant to #330's cap accounting. All of
+this, plus a scoped review note on #333, went to claude-pantheon as item 20260727-224301: the fork-storm
+fix is correct and verified both directions, but its "This is the cause" claim over-reaches, since its
+own recovery table predates 22:17Z and a Jetsam still fired at 22:38Z with the `claude` population at
+4 and the broker as largest process — two independent consumers took the machine down today and #333
+fixes one. Nothing merged: #332 is mine (never self-bind), #328/#330 are with codex, #329 conflicts
+and is claude-pantheon's lane, #333 is under the 1h bar with binding-hold red. Also reaped four leaked
+`router-conduit-supervisor` CCD sessions, pruned 8 terminal threads (983 to 975), reclaimed 137.5 KiB
+of router retention, and noted that three `sirsi` SIGKILLs at 22:24-22:26Z are the known AMFI
+code-signing class, already self-healed.
+
+## Conduit run 2026-07-27T22:57Z
+
+Broker P0 narrowed decisively, and the working theory inverted. Zero open items for claude-home /
+claude-codex-standin; no new Jetsam or crash since 22:44Z. The 22:40:42Z clean restart (pid 85829)
+was measured with `/usr/bin/footprint`, not `ps rss`: 14 minutes in it read phys_footprint 29 GB with
+a 40 GB lifetime peak, while RSS showed 2.36 GB and the server's own prompt cache sat flat at 2.05 GB
+against its 4 GB bound. gemma-server.log carries zero WARN lines, so all three caps in
+gemma-capped-server.py (set_memory_limit / set_wired_limit / set_cache_limit) applied cleanly at
+their declared values. Every lever we have is engaged and holding, and the process still reaches
+40 GB — the balloon is outside MLX's accounting, and the pending Go change that passes
+--prompt-cache-bytes from `sirsi gemma serve` will not stop the Jetsams. Routed as
+20260727-225624 to claude-pantheon. A second measurement 2 minutes later read 19 GB against the same
+40 GB peak, which answers the monotonic-vs-step probe in that item: the footprint SPIKES and
+releases rather than creeping, so the Jetsams fire on an allocation burst, not a slow leak —
+addendum 20260727-225723 sent, naming --decode-concurrency 2 as the cheapest confirming experiment
+(not changed; that is pantheon's lane). Deliberately did not bounce the broker a second time: a
+bounce is what a Jetsam performs for free, and the treadmill buys ~15 minutes. Housekeeping: reconcile
+found no dirty exits, prune 0, no BINARY_MISSING, all daemons live, `ccd reap` killed 4 more leaked
+router-conduit-supervisor sessions and archived 2 records, retention reclaimed 114.3 KiB, board
+republished at 18331 B. All five open PRs correctly left — #333 is 39 min old under the 1h bar with
+binding-hold red, #332 is mine, #328/#330 sit with codex, #329 conflicts in pantheon's lane.
+
+## Conduit run 2026-07-27T23:10Z
+
+Broker P0 re-measured, not re-derived: `footprint -p 85829` reads **19 GB phys_footprint, peak
+40 GB** — identical to the 22:57 sample, so the peak is a stale high-water mark and the 19↔40 GB
+spike did not recur this run. Prompt cache still flat at 2.05 GB against its 4 GB bound with zero
+WARN lines, and system memory free recovered 48% → **89%**. Deliberately did NOT bounce: the standing
+rule is a bounce only on a 4th Jetsam or free% under 30 across two runs, and 89% clears both. No new
+Jetsam or crash report in the last 25 minutes. Health moved 94 → **88/100**, and the drop is a *new*
+finding, not the old one: `mds_stores` is burning **48% CPU** re-indexing, with `mdutil -s
+~/Development` returning "unknown indexing state" — the Spotlight write-amplification class again,
+already covered by open PR #332, so nothing was churned here. Both router queues empty for
+claude-home and claude-codex-standin; 87 open fleet-wide (up 3, of which 2 are last run's own
+narrowing sends to claude-pantheon), and the stale list is the same 46-day backlog owned by other
+recipients. `thread reconcile` healed one reaped claude-home thread to its successor; `ccd reap`
+killed 2 more leaked router-conduit-supervisor sessions and archived 1, which is now the expected
+every-run yield. Retention reclaimed 107.7 KiB. `doctor --fix` produced the identical wake-dead set
+(claude-deck 10, claude-ask-eliot 2, codex-nexus 1) plus the owner item itself as undeliverable —
+owner item 20260727-222631 already covers it, so no second escalation was raised. All five prior PRs
+plus new #334 were left: #333 is 52 min old with binding-hold RED, #334 is 4 min old, #332 is mine,
+#328/#330 are with codex, #329 conflicts in claude-pantheon's lane, and Nexus #193 is not mine.
+
+## Entry 076 — 2026-07-28 14:41 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa07-a6cc-75e3-9973-5c50cf5d6bf1","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 077 — 2026-07-28 15:25 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa25-c797-7ce0-aa7a-cd323c94c70a","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 078 — 2026-07-28 15:58 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa47-72ce-7a20-bffb-f25ebb789fc6","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 079 — 2026-07-28 16:34 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa5b-d6d7-76d1-9460-0ab75c9ce950","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 080 — 2026-07-28 16:54 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa80-87f2-7e52-afbd-1db7fc8a43d9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 081 — 2026-07-28 17:13 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa80-87f2-7e52-afbd-1db7fc8a43d9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 082 — 2026-07-28 17:36 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa80-87f2-7e52-afbd-1db7fc8a43d9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 083 — 2026-07-28 18:13 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa80-87f2-7e52-afbd-1db7fc8a43d9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 084 — 2026-07-28 18:37 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa80-87f2-7e52-afbd-1db7fc8a43d9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 085 — 2026-07-28 19:00 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faaed-e42a-74b2-82a1-18757e5500c8","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 086 — 2026-07-28 19:36 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019fab09-c28e-7352-8fe9-1411eedd036d","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 087 — 2026-07-28 22:53 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019fabc1-cd4f-7db0-bd63-e88a1e78ee6a","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-07-29T03:35Z
+
+Merged three: **#367** (prior run's journal, carried in-flight and cleared), **#363** (SwiftUI menubar
+Command Deck) after verifying codex-pantheon's two binding blockers were genuinely fixed at `ed2979e1`
+— `panelFill`/`tileFill` now gate the hardcoded near-black behind `snapshotMode && colorScheme ==
+.dark` and fall through to `Color.primary.opacity(0.0x)` live, and the memory-first evidence lines
+(swap + top-process RSS) are restored as `computeState.evidence`; codex additionally taught the
+snapshot harness `--appearance light|dark`, which closes the class rather than the instance, since
+`Snapshot.swift`'s forced `.colorScheme(.dark)` is exactly why a Light regression could never fail a
+check — and **#343** (long inline router bodies refused), which is correct specifically because it
+gates on length, a property of the class, instead of enumerating backticks and `$(...)`.
+
+The run's real finding was a self-inflicted one. `claude-io` reported its `agents.json` wake block
+empty; I checked `origin/main`, found #346 had already populated it, and closed the item as stale —
+then `router doctor` immediately recorded `wake_error: no explicit wake mechanism` against the very
+response I had just routed there. **The router reads the working tree, not `origin/main`**, and the
+repo root sits on a squat branch that never rebased, so #346 merged and never deployed. Commit
+`57f027eb` (2026-07-26) had defused this identical landmine; merging #346 to main re-armed it, and a
+one-agent regression is worse than the original sixteen because eleven stranded agents get noticed
+and one does not. Healed at `865dbf88` by restoring the path from `origin/main` (byte-identical,
+committing only that path, leaving the 102 foreign uncommitted files untouched); verified by artifact
+— wake pass went `0 woken · 2 wake-unavailable` → `1 woken · 1 wake-unavailable`, the remainder being
+`claude-deck`, genuinely unregistered. Corrections routed to `claude-io`, and to `claude-pantheon` as
+a request for a drift check (`git show origin/main:<path>` vs the live file, diffing the whole file
+rather than hunting empty wake blocks) rather than a rearchitecture. Also closed `claude-io`'s ADR-005
+response with the one condition that decides whether its 60–120 s middle band holds: the age stamp
+must be `now − payload.generated_at`, never `now − last_successful_read`, or a dead producer renders
+as "14 s ago" forever and the clause written to withdraw the assertion manufactures it instead.
+
+Vitals green: diagnose 94/100 (the sole priority is a 4.4 GB Virtualization VM, load-bearing), RAM 75%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash reports, all daemons live. `ccd reap` killed 10 leaked sessions; retention prune reclaimed only
+5.9 KiB.
