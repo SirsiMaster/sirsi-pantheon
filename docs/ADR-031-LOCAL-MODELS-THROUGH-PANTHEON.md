@@ -2,7 +2,7 @@
 
 **Status:** Accepted (the broker exists today: `sirsi-gemma` MCP server, the `gemma` router worker, and `sirsi gemma` CLI — PR #57; ratified 2026-06-17)
 **Custodian:** 𓁯 Net (Neith — architecture) with 𓁢 Pantheon as the runtime owner
-**Refs:** PANTHEON_RULES.md A11 (local-only, zero telemetry) / A16 / A23; reference_local_models_through_pantheon, reference_gemma_worker_surface, feedback_go_standard; ADR-027 (router menubar surface), ADR-030 (native menubar). Sibling: SirsiNexus location-transparency thesis.
+**Refs:** PANTHEON_RULES.md A11 (local-only, zero telemetry) / A16 / A23; reference_local_models_through_pantheon, reference_gemma_worker_surface, feedback_go_standard; ADR-027 (router menubar surface), ADR-030 (native menubar); [case study: Local Models Through Pantheon](case-studies/2026-06-14-local-models-through-pantheon.md). Sibling: SirsiNexus location-transparency thesis.
 
 ---
 
@@ -53,3 +53,6 @@ That path is wrong for a portfolio, for concrete reasons this machine has alread
 - Surface broker health (model resolved, RAM headroom, daemon alive) in `sirsi insight` / the menubar.
 - A `sirsi gemma chat` REPL; streaming output.
 - The networked-broker step when SirsiNexus lands (location-transparent consumption).
+- Shared Ask Sirsi identity context across local model entry points so the
+  product answers as Pantheon, while still naming Gemma/MLX as the engine when
+  asked.
