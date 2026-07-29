@@ -25,7 +25,9 @@ import (
 // The switch lives in the same owned config (~/.sirsi/brain.yaml) so it is
 // visible, swappable, and troubleshootable from one place, and is read by every
 // auto-apply path via brain.Config.AutonomousMode() as the single source of
-// truth. OFF is the safe default and takes effect on next read — no restart.
+// truth. OFF is the safe default and takes effect on the next unattended-loop
+// read — no restart. The explicit `run` action is operator approval to perform
+// one bounded fix pass even while the persistent switch remains OFF.
 
 var autonomousCmd = &cobra.Command{
 	Use:   "autonomous [on|off|status|run]",
@@ -49,10 +51,11 @@ plugged in. The eternal loop is the router, never a model.
   sirsi autonomous on         Let Pantheon act unattended and run one safe fix pass now
   sirsi autonomous off        Back to observe + propose only
   sirsi autonomous status     Show the current mode
-  sirsi autonomous run        Fix now: run one bounded approved-fix pass without changing the switch
+  sirsi autonomous run        Act now even when OFF: one bounded approved-fix pass; switch unchanged
 
 Turning it OFF is always immediate and safe: the next thing any loop reads is
-"observe only."`,
+"observe only." Explicit repeated 'run' commands act each time and bypass the
+unattended loop's cross-pass cooldown.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runAutonomous,
 }
@@ -77,7 +80,7 @@ func runAutonomous(cmd *cobra.Command, args []string) error {
 		}
 		outcomes, err := autonomousHealFn("", "")
 		if err != nil {
-			return err
+			return renderAutonomousFailure(cmd, true, true, err)
 		}
 		return renderAutonomous(cmd, true, true, outcomes)
 	case "off":
@@ -108,6 +111,25 @@ func runAutonomous(cmd *cobra.Command, args []string) error {
 	default:
 		return fmt.Errorf("unknown action %q (want: on | off | status | run)", action)
 	}
+}
+
+func renderAutonomousFailure(cmd *cobra.Command, on, changed bool, passErr error) error {
+	if autonomousJSON {
+		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"autonomous": on,
+			"fix_pass": map[string]any{
+				"error": passErr.Error(),
+			},
+		}); err != nil {
+			return err
+		}
+		return passErr
+	}
+	if err := renderAutonomous(cmd, on, changed, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "   Fix pass failed: %v\n", passErr)
+	return passErr
 }
 
 func renderAutonomous(cmd *cobra.Command, on, changed bool, outcomes []autoheal.Outcome) error {

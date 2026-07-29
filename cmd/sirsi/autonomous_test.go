@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,56 @@ func TestAutonomousOnRunsOneFixPassNow(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "Autonomous mode → ON") || !strings.Contains(got, "1 applied") {
 		t.Fatalf("output did not prove the pass:\n%s", got)
+	}
+}
+
+func TestAutonomousOnReportsModeWhenFixPassFails(t *testing.T) {
+	out, _ := withAutonomousHarness(t, nil)
+	wantErr := errors.New("repair lever failed")
+	autonomousHealFn = func(_, _ string) ([]autoheal.Outcome, error) {
+		return nil, wantErr
+	}
+	cmd := autonomousCmd
+	cmd.SetOut(out)
+
+	err := runAutonomous(cmd, []string{"on"})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runAutonomous error = %v, want %v", err, wantErr)
+	}
+	got := out.String()
+	if !strings.Contains(got, "Autonomous mode → ON") {
+		t.Fatalf("persisted ON state must be rendered even when the pass fails:\n%s", got)
+	}
+	if !strings.Contains(got, "Fix pass failed: repair lever failed") {
+		t.Fatalf("fix-pass failure must be visible in the same output:\n%s", got)
+	}
+}
+
+func TestAutonomousJSONReportsPersistedModeWhenFixPassFails(t *testing.T) {
+	out, _ := withAutonomousHarness(t, nil)
+	wantErr := errors.New("repair lever failed")
+	autonomousHealFn = func(_, _ string) ([]autoheal.Outcome, error) {
+		return nil, wantErr
+	}
+	autonomousJSON = true
+	cmd := autonomousCmd
+	cmd.SetOut(out)
+
+	err := runAutonomous(cmd, []string{"on"})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runAutonomous error = %v, want %v", err, wantErr)
+	}
+	var got struct {
+		Autonomous bool `json:"autonomous"`
+		FixPass    struct {
+			Error string `json:"error"`
+		} `json:"fix_pass"`
+	}
+	if decodeErr := json.Unmarshal(out.Bytes(), &got); decodeErr != nil {
+		t.Fatalf("decode JSON: %v\n%s", decodeErr, out.String())
+	}
+	if !got.Autonomous || got.FixPass.Error != wantErr.Error() {
+		t.Fatalf("JSON must disclose persisted ON plus pass failure: %+v", got)
 	}
 }
 
