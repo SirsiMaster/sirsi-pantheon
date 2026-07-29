@@ -70,18 +70,18 @@ fi
 echo
 echo "ranking invariants:"
 
-# 1. With NOTHING resident, mxfp8 and 8bit are both 8-bit so the qat tiebreak
-#    applies and qat-mxfp8 wins. This is the correct cold-start pick.
-check "qat-mxfp8 beats plain 8bit when nothing is resident (qat breaks the tie)" \
-  "mlx-community/gemma-4-12B-it-qat-mxfp8" \
-  "$(run_rank 18.0 "$(payload mlx-community/gemma-4-12B-it-qat-mxfp8 mlx-community/gemma-4-12B-it-8bit)")"
+# 1. At the 18GB steady-state budget, 12B 8bit no longer fits: runtime RSS is
+#    23-31GB, not the old 12.6GB disk-size estimate. A lower quant must win.
+check "12B 8bit excluded at 18GB runtime budget; lower quant wins" \
+  "mlx-community/gemma-4-12B-it-qat-4bit" \
+  "$(run_rank 18.0 "$(payload mlx-community/gemma-4-12B-it-qat-mxfp8 mlx-community/gemma-4-12B-it-8bit mlx-community/gemma-4-12B-it-qat-4bit)")"
 
 # 1b. THE CHURN FIX. Same two models, but 8bit is already being served. Resident
 #     outranks qat, so the pick STAYS PUT — no conf/resident split, no second 12B
 #     loaded by the probe, no broker bounce. This is the case that ran ~2x/hr.
 check "resident 8bit HOLDS against qat-mxfp8 (hysteresis suppresses a lateral swap)" \
   "mlx-community/gemma-4-12B-it-8bit" \
-  "$(run_rank 18.0 "$(payload mlx-community/gemma-4-12B-it-qat-mxfp8 mlx-community/gemma-4-12B-it-8bit)" mlx-community/gemma-4-12B-it-8bit)"
+  "$(run_rank 40.0 "$(payload mlx-community/gemma-4-12B-it-qat-mxfp8 mlx-community/gemma-4-12B-it-8bit)" mlx-community/gemma-4-12B-it-8bit)"
 
 # 1c. Hysteresis must NOT freeze out a genuine upgrade. A resident 12B loses to a
 #     31B that fits, because params outrank the resident flag.
@@ -93,7 +93,7 @@ check "resident 12B still LOSES to a 31B that fits (real upgrades still swap)" \
 #    qat-6bit win instead. Bits must dominate qat at EVERY depth, not just 8.
 check "8-bit plain beats qat-6bit (more bits wins over qat)" \
   "mlx-community/gemma-4-12B-it-8bit" \
-  "$(run_rank 18.0 "$(payload mlx-community/gemma-4-12B-it-qat-6bit mlx-community/gemma-4-12B-it-8bit)")"
+  "$(run_rank 40.0 "$(payload mlx-community/gemma-4-12B-it-qat-6bit mlx-community/gemma-4-12B-it-8bit)")"
 
 # 3. QAT IS STILL PREFERRED where it is meaningful: between EQUAL-bit variants.
 check "qat-4bit beats plain 4bit (equal bits, qat breaks the tie)" \
@@ -108,13 +108,13 @@ check "31B 4bit beats 12B 8bit when both fit (params outrank bits)" \
 
 # 5. Budget is respected — the 31B must be excluded on the real 18GB budget.
 check "31B excluded at the 18GB steady-state budget" \
-  "mlx-community/gemma-4-12B-it-8bit" \
-  "$(run_rank 18.0 "$(payload mlx-community/gemma-4-31B-it-qat-4bit mlx-community/gemma-4-12B-it-8bit)")"
+  "mlx-community/gemma-4-12B-it-qat-4bit" \
+  "$(run_rank 18.0 "$(payload mlx-community/gemma-4-31B-it-qat-4bit mlx-community/gemma-4-12B-it-qat-4bit)")"
 
 # 6. Newer family wins regardless of size/bits.
 check "newer family outranks older" \
-  "mlx-community/gemma-4-12B-it-8bit" \
-  "$(run_rank 18.0 "$(payload mlx-community/gemma-3-12B-it-8bit mlx-community/gemma-4-12B-it-8bit)")"
+  "mlx-community/gemma-4-12B-it-qat-4bit" \
+  "$(run_rank 18.0 "$(payload mlx-community/gemma-3-12B-it-qat-4bit mlx-community/gemma-4-12B-it-qat-4bit)")"
 
 echo
 echo "passed=$PASS failed=$FAIL"

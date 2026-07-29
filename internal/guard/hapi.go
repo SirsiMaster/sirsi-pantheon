@@ -50,6 +50,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seba"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/vitals"
 )
 
 // MemTier is the system memory-pressure level Hapi acts on, by free-RAM percent.
@@ -75,11 +76,20 @@ func (t MemTier) String() string {
 	}
 }
 
-// MemProc is one process and its resident memory.
+// MemProc is one process and its memory use. Footprint is authoritative on
+// macOS; RSS is retained as a portable fallback and for transparent reporting.
 type MemProc struct {
-	PID  int    `json:"pid"`
-	Name string `json:"name"`
-	RSS  int64  `json:"rss_bytes"`
+	PID       int    `json:"pid"`
+	Name      string `json:"name"`
+	RSS       int64  `json:"rss_bytes"`
+	Footprint int64  `json:"footprint_bytes,omitempty"`
+}
+
+func (p MemProc) memorySize() int64 {
+	if p.Footprint > 0 {
+		return p.Footprint
+	}
+	return p.RSS
 }
 
 // MemSample is a single read of system memory + the largest resident processes.
@@ -87,14 +97,15 @@ type MemSample struct {
 	TotalRAM    int64     `json:"total_ram"`
 	FreeBytes   int64     `json:"free_bytes"`
 	FreePercent float64   `json:"free_percent"`
-	Top         []MemProc `json:"top"` // RSS descending
+	Top         []MemProc `json:"top"` // physical footprint descending, RSS fallback
 }
 
 // Injectable sampler (Rule A16/A21) so the governor is testable without a real,
 // memory-pressured host.
 var (
-	hapiSampleMu sync.RWMutex
-	hapiSampleFn = defaultHapiSample
+	hapiSampleMu    sync.RWMutex
+	hapiSampleFn    = defaultHapiSample
+	hapiFootprintFn = vitals.PhysFootprint
 )
 
 func hapiSample() (MemSample, error) {
@@ -108,6 +119,18 @@ func setHapiSampleFn(fn func() (MemSample, error)) {
 	hapiSampleMu.Lock()
 	hapiSampleFn = fn
 	hapiSampleMu.Unlock()
+}
+
+func getHapiFootprintFn() func(int) (uint64, error) {
+	hapiSampleMu.RLock()
+	defer hapiSampleMu.RUnlock()
+	return hapiFootprintFn
+}
+
+func setHapiFootprintFn(fn func(int) (uint64, error)) {
+	hapiSampleMu.Lock()
+	defer hapiSampleMu.Unlock()
+	hapiFootprintFn = fn
 }
 
 func defaultHapiSample() (MemSample, error) {
@@ -178,7 +201,8 @@ func hapiFreeRAMBytes() int64 {
 	return (free + inactive + speculative) * pageSize
 }
 
-// hapiTopByRSS returns the top-N processes by resident memory, descending.
+// hapiTopByRSS retains its historical name for package compatibility, but ranks
+// by physical footprint where the platform exposes it and falls back to RSS.
 func hapiTopByRSS(topN int) ([]MemProc, error) {
 	out, err := hapiPsFn()
 	if err != nil {
@@ -202,9 +226,13 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 		}
 		pid, _ := strconv.Atoi(f[0])
 		rss, _ := strconv.ParseInt(f[1], 10, 64)
-		procs = append(procs, MemProc{PID: pid, Name: strings.Join(f[2:], " "), RSS: rss * 1024})
+		proc := MemProc{PID: pid, Name: strings.Join(f[2:], " "), RSS: rss * 1024}
+		if fp, fpErr := getHapiFootprintFn()(pid); fpErr == nil {
+			proc.Footprint = int64(fp)
+		}
+		procs = append(procs, proc)
 	}
-	sort.Slice(procs, func(i, j int) bool { return procs[i].RSS > procs[j].RSS })
+	sort.Slice(procs, func(i, j int) bool { return procs[i].memorySize() > procs[j].memorySize() })
 	if len(procs) > topN {
 		procs = procs[:topN]
 	}
@@ -255,12 +283,12 @@ func hapiIsAgent(name string) bool {
 	return strings.Contains(n, "claude") || strings.Contains(n, "codex")
 }
 
-// FindRunaway returns the largest-RSS process that is neither protected nor a live
+// FindRunaway returns the largest-memory process that is neither protected nor a live
 // agent — the thing a human would point at and say "that's the leak." Read-only;
 // safe for a status preview. Returns nil if only protected/agent processes are big.
 func FindRunaway(s MemSample) *MemProc {
 	loadBearing := LoadBearingPIDs()
-	for i := range s.Top { // RSS descending
+	for i := range s.Top { // physical footprint descending, RSS fallback
 		p := s.Top[i]
 		// Never treat load-bearing infrastructure (the local-model broker) as a
 		// runaway — it registers as "Python" and would otherwise be the top RSS
@@ -492,9 +520,9 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 	}
 
 	governed := getGovernedFn()()
-	rssOf := map[int]int64{}
+	sizeOf := map[int]int64{}
 	for _, p := range s.Top {
-		rssOf[p.PID] = p.RSS
+		sizeOf[p.PID] = p.memorySize()
 	}
 
 	// CRITICAL: suspend the largest not-yet-paused governed process to halt its
@@ -510,7 +538,7 @@ func (g *MemGovernor) GovernOnce() (GovernResult, error) {
 			if paused {
 				continue
 			}
-			if r := rssOf[pid]; r > tmax {
+			if r := sizeOf[pid]; r > tmax {
 				tmax, target, tname = r, pid, name
 			}
 		}
