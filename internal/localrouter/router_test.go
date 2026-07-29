@@ -17,6 +17,8 @@ func TestSystemPromptIsModelAgnosticSirsiIdentity(t *testing.T) {
 		"Ra owns CTR/router",
 		"Hypergraph and Sirsi IO",
 		"Cylton Collymore",
+		"baseline canon as of commit " + SystemPromptCanonCommit,
+		"not live state",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("system prompt missing %q:\n%s", want, p)
@@ -43,11 +45,17 @@ func TestResolveUsesConfiguredLocalProvider(t *testing.T) {
 	if route.ProviderRef != "local:qwen2.5-7b-instruct" || route.ProviderKind != "local" {
 		t.Fatalf("json route fields = %q/%q, want local qwen", route.ProviderKind, route.ProviderRef)
 	}
+	if route.Defaulted {
+		t.Fatal("configured route must not be marked defaulted")
+	}
 }
 
 func TestResolveDefaultsToLocalSlot(t *testing.T) {
 	route := Resolve(brain.DefaultConfig(), brain.RoleTriage)
 	if got := route.Provider.String(); got != DefaultLocalProvider {
 		t.Fatalf("provider = %q, want %q", got, DefaultLocalProvider)
+	}
+	if !route.Defaulted {
+		t.Fatal("unconfigured route must disclose that the provider was defaulted")
 	}
 }
