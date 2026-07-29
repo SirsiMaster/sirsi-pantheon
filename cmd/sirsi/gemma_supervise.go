@@ -139,8 +139,10 @@ func trimSpaceBytes(b []byte) []byte {
 // launchd-supervised parent (ADR-046 S2).
 //
 // Contract, stated because ADR-045's equivalent was implicit and broke a reader:
-//   - gemma-server.pid  = THIS process, the supervisor.
-//   - gemma-worker.pid  = the child, the process actually serving.
+//   - gemma-server.pid        = THIS process, the supervisor.
+//   - gemma-broker-worker.pid = the child, the process actually serving.
+//     (NOT gemma-worker.pid — that name is owned by the ai.sirsi.gemma-worker
+//     launchd job; see gemmaWorkerPidPath above.)
 //   - --stop kills the process group, so it still stops the whole tree.
 //
 // The supervisor must die WITH its child, never before it. ADR-046 named this
@@ -160,15 +162,15 @@ func gemmaSuperviseWorker(home, pyBin string, args []string) error {
 	c.Stderr = logf
 	// Own process group: one signal reaches supervisor and worker together.
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := c.Start(); err != nil {
-		return fmt.Errorf("starting mlx worker: %w", err)
+	if startErr := c.Start(); startErr != nil {
+		return fmt.Errorf("starting mlx worker: %w", startErr)
 	}
 
 	supPid, workerPid := os.Getpid(), c.Process.Pid
 	_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(supPid)), 0o644)
-	if err := gemmaWritePidExclusive(gemmaWorkerPidPath(home), workerPid); err != nil {
+	if pidErr := gemmaWritePidExclusive(gemmaWorkerPidPath(home), workerPid); pidErr != nil {
 		_ = syscall.Kill(-workerPid, syscall.SIGKILL) // do not leave an unrecorded worker
-		return err
+		return pidErr
 	}
 	_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
 

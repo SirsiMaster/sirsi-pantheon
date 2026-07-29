@@ -259,8 +259,8 @@ func gemmaServerStart(home string) error {
 		//
 		// Truthfulness is preserved rather than traded away: gemma-server.pid names
 		// the SUPERVISOR (a stated contract now, not an emergent property),
-		// gemma-worker.pid names the process actually serving, and --stop kills the
-		// process group so it still stops the whole thing.
+		// gemma-broker-worker.pid names the process actually serving, and --stop
+		// kills the process group so it still stops the whole thing.
 		return gemmaSuperviseWorker(home, pyBin, args)
 	}
 
