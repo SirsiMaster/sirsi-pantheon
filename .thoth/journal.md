@@ -1287,3 +1287,34 @@ healthy on pid 2154 with the `4294967296` cap intact and the prompt cache flat, 
 no new crash or Jetsam reports. `reconcile` healed 5 reaped→successor threads, prune 0, `ccd reap`
 archived 3 completed conduit-run sessions, retention reclaimed 2.0 KiB. `router doctor --fix` was
 still running after eight minutes and is recorded as inconclusive, not green.
+
+## Conduit run 2026-07-29T04:52Z
+
+Merged the in-flight journal PR #378, then closed out the two arcs the previous run left dangling —
+both by reading main rather than trusting the ledger. **PR #347 turned out CLOSED-unmerged**, not
+merged as the routed bind implied, but that is correct and needs no rework: `origin/main`'s
+`Facade.Inbox` already fails closed on a store error in the cutover path (`store inbox unavailable
+(store is the cutover authority)`), which is strictly stronger than what #347 proposed, and the
+pre-cutover path deliberately keeps the store additive so a broken store cannot strand the canonical
+file leg. The contribution is superseded, not lost. **PR #375 got a real verdict instead of another
+deferral.** Diffing its head `e053d7c0` against main file-by-file showed it is not merely stale: its
+`internal/work/recipient.go` duplicates the `internal/work/owner.go` authority #374 already merged,
+and its `strand.go` hunk **re-adds `AgentHasLiveThread`, the predicate #377 deliberately deleted as
+production-callerless**. Merging or rebasing #375 would revert merged work and re-arm the A29
+objection I had withdrawn — the load-bearing reason it must be closed rather than fixed up. Its only
+surviving unique content was two `internal/mcp/tools.go` description strings still reading `"Your
+agent name (codex or claude)"`, i.e. exactly the bare agent-type form `validateRecipient` has REFUSED
+since #371: the MCP schema was instructing every client to identify itself in the form the dispatch
+guard rejects. Those two lines are salvaged as **PR #379** (docs-only, green) so closing #375 loses
+nothing. Routed both the close recommendation and the standing `codex-pantheon` wake-registry gap to
+claude-pantheon — that agent has a LIVE `ai.sirsi.router.wake.codex-pantheon` LaunchAgent (pid 99109)
+and answers items within a minute, yet carries no `wake.mechanism` in the registry, so doctor
+under-reports it as wake-unavailable; the fix is either the `claude-io` registry treatment or, if
+withholding wake from codex lanes is deliberate policy, correcting doctor to say "deliberately
+withheld" rather than "unavailable", since those two states need different operator responses.
+Vitals green throughout: diagnose 94/100 on the load-bearing Virtualization VM only, RAM 78% free,
+broker pid 2154 still identity-verified as the capped server with `--prompt-cache-bytes 4294967296`
+and cache flat at 0.07 GB, all core daemons live, no new crash or Jetsam `.ips`. `ccd reap` killed
+two leaked sessions from this task's own earlier runs; reconcile and thread prune were both no-ops;
+retention reclaimed 7.8 KiB. #340 re-verified as based on `feat/provider-abstraction` (#339's branch)
+and left unmerged — never the child first.
