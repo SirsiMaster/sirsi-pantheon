@@ -128,8 +128,26 @@ func TestGetLocalSubnet_ReturnsValidCIDR(t *testing.T) {
 func TestFormatContainerStatus_Running(t *testing.T) {
 	c := Container{Status: "Up 3 hours", Running: true}
 	s := FormatContainerStatus(c)
-	if s != "🟢 Up 3 hours" {
-		t.Errorf("FormatContainerStatus() = %q, want %q", s, "🟢 Up 3 hours")
+	want := "🟡 Up 3 hours — running; no Docker healthcheck"
+	if s != want {
+		t.Errorf("FormatContainerStatus() = %q, want %q", s, want)
+	}
+}
+
+func TestFormatContainerStatus_DockerHealthyIsNotCorrectnessGreen(t *testing.T) {
+	c := Container{Status: "Up 2 days (healthy)", Running: true, Health: "healthy"}
+	s := FormatContainerStatus(c)
+	want := "🟡 Up 2 days (healthy) — docker reachable; workload correctness unverified"
+	if s != want {
+		t.Errorf("FormatContainerStatus() = %q, want %q", s, want)
+	}
+}
+
+func TestFormatContainerStatus_Unhealthy(t *testing.T) {
+	c := Container{Status: "Up 7 hours (unhealthy)", Running: true, Health: "unhealthy"}
+	s := FormatContainerStatus(c)
+	if s != "🔴 Up 7 hours (unhealthy)" {
+		t.Errorf("FormatContainerStatus() = %q", s)
 	}
 }
 
