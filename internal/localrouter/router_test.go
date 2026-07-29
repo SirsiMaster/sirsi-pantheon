@@ -32,7 +32,7 @@ func TestSystemPromptIsModelAgnosticSirsiIdentity(t *testing.T) {
 // which PINNED the defect: the old line read "Hypergraph and Sirsi IO are the
 // event, knowledge, conduit, and projection direction for Sirsi" — four nouns,
 // two planes, one clause — and the test guaranteed it stayed. A test can lock in
-// a bug as easily as a behaviour when it asserts wording instead of meaning.
+// a bug as easily as a behavior when it asserts wording instead of meaning.
 func TestSystemPromptKeepsTheFourPillarsDistinct(t *testing.T) {
 	p := SystemPrompt()
 
