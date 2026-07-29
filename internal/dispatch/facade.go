@@ -143,7 +143,9 @@ func validateRecipient(root, to string) error {
 	if to == "" {
 		return fmt.Errorf("dispatch: recipient is required")
 	}
-	if to == "codex" || to == "claude" {
+	// The durable owner-escalation aliases are not executable agents. They are
+	// intentionally absent from agents.json but remain valid targets.
+	if work.IsOwnerRecipient(to) {
 		return nil
 	}
 	data, err := os.ReadFile(filepath.Join(root, "agents.json"))

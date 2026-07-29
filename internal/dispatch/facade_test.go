@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,12 +78,20 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	f := testFacade(t)
 
-	_, err := f.Send("claude-pantheon", "claude-deck", "lost work", "review", "do not strand this")
-	if err == nil {
-		t.Fatal("Send to an unregistered recipient must fail")
+	for _, recipient := range []string{"user", "owner", "cylton", "sirsimaster", "cylton-collymore"} {
+		if _, err := f.Send("claude-pantheon", recipient, "owner decision", "decision", "choose one"); err != nil {
+			t.Fatalf("Send to owner escalation inbox %q must succeed: %v", recipient, err)
+		}
 	}
-	if !strings.Contains(err.Error(), `agent "claude-deck" not registered`) {
-		t.Fatalf("unexpected error: %v", err)
+
+	for _, recipient := range []string{"claude-deck", "codex"} {
+		_, err := f.Send("claude-pantheon", recipient, "lost work", "review", "do not strand this")
+		if err == nil {
+			t.Fatalf("Send to unregistered recipient %q must fail", recipient)
+		}
+		if !strings.Contains(err.Error(), fmt.Sprintf(`agent %q not registered`, recipient)) {
+			t.Fatalf("unexpected error for %q: %v", recipient, err)
+		}
 	}
 
 	inbox, inboxErr := f.Inbox("claude-deck")
@@ -96,8 +105,8 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	if allErr != nil {
 		t.Fatal(allErr)
 	}
-	if len(all) != 0 {
-		t.Fatalf("rejected send must not create any router item, got %+v", all)
+	if len(all) != 5 {
+		t.Fatalf("rejected sends must create no item beyond the owner escalation control, got %+v", all)
 	}
 }
 
