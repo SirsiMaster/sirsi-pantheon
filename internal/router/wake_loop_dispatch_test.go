@@ -9,97 +9,279 @@ import (
 	"time"
 )
 
-// markerScript writes a script that appends one line per invocation, so a test
-// can count how many times the loop actually spawned a consumer.
-func markerScript(t *testing.T, marker string) string {
+// recordingConsumer writes one line per invocation containing the full argv and
+// the router-contract env vars, then optionally sleeps to simulate work.
+//
+// The previous version of this test used a script that IGNORED its arguments. It
+// therefore passed while the production dispatch appended no prompt at all and
+// drained nothing — it proved "a process started", never "this inbox is being
+// consumed" (codex-pantheon review of #389, finding 2). Recording argv+env is
+// what makes the contract itself assertable.
+func recordingConsumer(t *testing.T, log string, sleep time.Duration) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "consumer.sh")
-	body := "#!/bin/sh\necho fired >> " + marker + "\n"
+	body := "#!/bin/sh\n" +
+		"echo \"argv=$* agent=$" + EnvConsumerAgent + " root=$" + EnvConsumerRoot + "\" >> " + log + "\n"
+	if sleep > 0 {
+		body += "sleep " + strings.TrimSuffix(sleep.String(), "0s") + "\n"
+	}
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write consumer script: %v", err)
+		t.Fatalf("write consumer: %v", err)
 	}
 	return path
 }
 
-func markerCount(t *testing.T, marker string) int {
+func consumerLines(t *testing.T, log string) []string {
 	t.Helper()
-	b, err := os.ReadFile(marker)
+	b, err := os.ReadFile(log)
 	if os.IsNotExist(err) {
-		return 0
+		return nil
 	}
 	if err != nil {
-		t.Fatalf("read marker: %v", err)
+		t.Fatalf("read log: %v", err)
 	}
-	return len(strings.Fields(string(b)))
+	var out []string
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
-// The loop must dispatch a consumer when its inbox is non-empty — the defect
-// this guards is a loop that heartbeats forever beside items it never drains,
-// which ALSO marks the agent `armed` in WakePass and so suppresses the adapter
-// wake that would otherwise rescue it.
+// awaitConsumerLines waits for at least n recorded invocations.
 //
-// And it must dispatch exactly ONCE while the inbox stays non-empty. `depth > 0`
-// is a level, not an edge: it holds for the entire time an agent works its
-// inbox, so a per-tick dispatch forks a new agent session every interval on top
-// of the one already draining (the PR #199 fork-storm class). The consumer here
-// deliberately does NOT drain the inbox, which is precisely the condition that
-// made the original loop storm.
-func TestWakeLoopDispatchesOnceWhileInboxStaysNonEmpty(t *testing.T) {
-	marker := filepath.Join(t.TempDir(), "fired.txt")
-	script := markerScript(t, marker)
+// A dispatched consumer is a detached child: it is started synchronously but
+// WRITES asynchronously, so reading the log the instant RunWakeLoop returns
+// races the child under parallel test load. Polling for the evidence is the
+// honest wait — the assertion is about what the child did, not about when.
+func awaitConsumerLines(t *testing.T, log string, n int) []string {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		lines := consumerLines(t, log)
+		if len(lines) >= n || time.Now().After(deadline) {
+			return lines
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The dispatched process must be TOLD which inbox to drain. A consumer that was
+// never handed its agent id cannot consume the queue whose depth triggered it,
+// which is the difference between "spawned something headless" and "consumed
+// this inbox".
+func TestDispatchedConsumerReceivesRouterContract(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	script := recordingConsumer(t, log, 0)
 
 	root := wakeTestRoot(t, AgentConfig{
-		ID:      "worker-agent",
-		Type:    "worker", // not interactive — constraint 3 does not apply
-		Command: []string{script},
+		ID:   "worker-agent",
+		Type: "worker",
+		Consumer: ConsumerConfig{
+			Command: []string{script, "--agent", consumerAgentPlaceholder},
+			Prompt:  "pull and work the inbox for " + consumerAgentPlaceholder,
+		},
 	})
-	sendItem(t, root, "worker-agent", "work that is never drained")
+	sendItem(t, root, "worker-agent", "work")
 
-	// ~6 ticks. A per-tick dispatch would leave ~6 marks; the latch leaves 1.
-	ctx, cancel := context.WithTimeout(context.Background(), 320*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
 	defer cancel()
-	if err := RunWakeLoop(ctx, root, "worker-agent", 50*time.Millisecond); err != nil {
+	if err := RunWakeLoop(ctx, root, "worker-agent", 40*time.Millisecond); err != nil {
 		t.Fatalf("RunWakeLoop: %v", err)
 	}
 
-	switch n := markerCount(t, marker); {
-	case n == 0:
-		t.Error("wake loop never dispatched a consumer — it heartbeat beside a non-empty " +
-			"inbox, which is the watch-only loop this fix removes")
-	case n > 1:
-		t.Errorf("wake loop dispatched %d consumers while the inbox stayed non-empty — "+
-			"dispatch is level-triggered, not edge-triggered (fork-storm)", n)
+	lines := awaitConsumerLines(t, log, 1)
+	if len(lines) == 0 {
+		t.Fatal("consumer was never dispatched")
+	}
+	first := lines[0]
+	if !strings.Contains(first, "--agent worker-agent") {
+		t.Errorf("argv did not carry the substituted agent id: %s", first)
+	}
+	if !strings.Contains(first, "pull and work the inbox for worker-agent") {
+		t.Errorf("prompt was not appended/substituted: %s", first)
+	}
+	if !strings.Contains(first, "agent=worker-agent") {
+		t.Errorf("%s env var not delivered: %s", EnvConsumerAgent, first)
+	}
+	if !strings.Contains(first, "root="+root) {
+		t.Errorf("%s env var not delivered: %s", EnvConsumerRoot, first)
 	}
 }
 
-// Constraint 3: a bare `claude` is a REPL. Detaching one per non-empty inbox
-// would fork orphaned TTY-less sessions, and even a working one is a NEW
-// conversation rather than a nudge to the running one. The loop must stay
-// watch-only for it — and must NOT be fooled into dispatching by the fact that
-// ProbeWakeReadiness calls such agents wakeable via the launchagent adapter.
-func TestInteractiveAgentIsNeverDispatched(t *testing.T) {
-	cmd, why := headlessConsumerCommand(AgentConfig{
+// Dispatch is gated on the consumer's own LIVENESS, not a clock. While a
+// consumer is still working, no second one may be dispatched on top of it — a
+// slow-but-healthy agent must be allowed to take as long as it needs.
+//
+// The earlier design used a 10-minute timer for this, which cannot tell "still
+// working" from "died" because Setsid+Release discards the handle (finding 3).
+func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	// Sleeps well past the loop's lifetime: it is still working at every tick.
+	script := recordingConsumer(t, log, 2*time.Second)
+
+	root := wakeTestRoot(t, AgentConfig{
+		ID:       "slow-agent",
+		Type:     "worker",
+		Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}},
+	})
+	sendItem(t, root, "slow-agent", "work that is never drained")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := RunWakeLoop(ctx, root, "slow-agent", 40*time.Millisecond); err != nil {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+
+	if n := len(consumerLines(t, log)); n != 1 {
+		t.Errorf("dispatched %d consumers while the first was still running — want exactly 1 "+
+			"(a still-working consumer must hold the slot)", n)
+	}
+}
+
+// The mirror of the above: when a consumer EXITS and the inbox is still
+// non-empty, the slot frees immediately and the loop dispatches again. A
+// permanent latch would strand the inbox behind a consumer that died mid-drain,
+// which is the failure the discarded 10-minute timer existed to cover.
+func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	script := recordingConsumer(t, log, 0) // exits at once, never drains
+
+	root := wakeTestRoot(t, AgentConfig{
+		ID:       "flaky-agent",
+		Type:     "worker",
+		Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}},
+	})
+	sendItem(t, root, "flaky-agent", "work that is never drained")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := RunWakeLoop(ctx, root, "flaky-agent", 40*time.Millisecond); err != nil {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+
+	if n := len(awaitConsumerLines(t, log, 2)); n < 2 {
+		t.Errorf("only %d dispatches after the consumer exited — the slot must free on "+
+			"completion or a consumer that dies mid-drain strands the inbox forever", n)
+	}
+}
+
+// Consumption is DECLARED, never inferred. Each refusal below was a way the
+// flag-heuristic version wrongly said yes.
+func TestResolveConsumerRefusesWhatIsNotAConsumer(t *testing.T) {
+	root := t.TempDir()
+
+	cases := []struct {
+		name string
+		cfg  AgentConfig
+		want string
+	}{{
+		name: "bare interactive claude command is not a declaration",
+		cfg:  AgentConfig{ID: "claude-deck", Type: "claude", Command: []string{"claude"}},
+		want: "no consumer declared",
+	}, {
+		// The old gate accepted this: --print proves CLI mode, not consumption,
+		// and Command's own contract says the prompt is appended by an executor.
+		name: "legacy --print command is still not a declaration",
+		cfg:  AgentConfig{ID: "claude-nexus", Type: "claude", Command: []string{"claude", "--print"}},
+		want: "no consumer declared",
+	}, {
+		// The old gate accepted this purely because the type was not "claude".
+		name: "bare codex REPL is not a consumer by virtue of its type",
+		cfg:  AgentConfig{ID: "codex-home", Type: "codex", Command: []string{"codex"}},
+		want: "no consumer declared",
+	}, {
+		name: "declaration that never names the agent carries no inbox contract",
+		cfg: AgentConfig{ID: "worker-agent", Type: "worker",
+			Consumer: ConsumerConfig{Command: []string{"sh", "-c", "true"}}},
+		want: "carries no inbox contract",
+	}, {
+		name: "explicitly interactive declaration is refused",
+		cfg: AgentConfig{ID: "worker-agent", Type: "worker",
+			Consumer: ConsumerConfig{Command: []string{"sh", consumerAgentPlaceholder}, Interactive: true}},
+		want: "not an inbox consumer",
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rc, why := ResolveConsumer(tc.cfg, root)
+			if rc != nil {
+				t.Fatalf("resolved a consumer for %q: %v", tc.name, rc.Argv)
+			}
+			if !strings.Contains(why, tc.want) {
+				t.Errorf("reason %q does not contain %q", why, tc.want)
+			}
+		})
+	}
+
+	// A complete declaration that names its agent IS a consumer.
+	rc, why := ResolveConsumer(AgentConfig{
+		ID: "worker-agent", Type: "worker",
+		Consumer: ConsumerConfig{Command: []string{"sh", "-c", "true", consumerAgentPlaceholder}},
+	}, root)
+	if rc == nil {
+		t.Errorf("valid declaration refused: %s", why)
+	}
+}
+
+// `armed` must mean "something will drain this inbox", not "some process for
+// this agent is alive". A watch-only wake loop heartbeats exactly like a working
+// one; crediting it suppressed the very wake pass that would have escalated the
+// lane (finding 4).
+func TestArmedRequiresAnActualConsumer(t *testing.T) {
+	cases := []struct {
+		name  string
+		thr   Thread
+		armed bool
+	}{
+		{"watch-only worker loop", Thread{Surface: surfaceWorker}, false},
+		{"worker loop with a resolved consumer", Thread{Surface: surfaceWorker, ConsumerCapable: true}, true},
+		{"live claude agent session", Thread{Surface: surfaceClaude}, true},
+		{"menubar observer", Thread{Surface: surfaceMenubar}, false},
+		{"unknown/empty surface", Thread{}, false},
+	}
+	for _, tc := range cases {
+		if got := tc.thr.IsInboxConsumer(); got != tc.armed {
+			t.Errorf("%s: IsInboxConsumer()=%v, want %v", tc.name, got, tc.armed)
+		}
+	}
+}
+
+// End-to-end on the pass itself: an agent whose ONLY thread is a watch-only loop
+// must not read as armed, so the wake pass stops skipping it.
+func TestWakePassDoesNotTreatWatchOnlyLoopAsArmed(t *testing.T) {
+	root := wakeTestRoot(t, AgentConfig{
 		ID: "claude-deck", Type: "claude", Command: []string{"claude"},
+		Wake: WakeConfig{Mechanism: WakeNone},
 	})
-	if cmd != nil {
-		t.Errorf("interactive agent returned a dispatch command %v — constraint 3 violated", cmd)
-	}
-	if !strings.Contains(why, "interactive") {
-		t.Errorf("refusal reason %q does not explain the interactive gate", why)
+	id := sendItem(t, root, "claude-deck", "stranded work")
+
+	if _, err := RegisterThread(root, &Thread{
+		ThreadID: "thr-watchonly", AgentID: "claude-deck", Surface: surfaceWorker,
+		Status: ThreadStatusActive, PID: os.Getpid(),
+	}); err != nil {
+		t.Fatalf("register thread: %v", err)
 	}
 
-	// A --print invocation IS headless, so it is a genuine consumer.
-	cmd, why = headlessConsumerCommand(AgentConfig{
-		ID: "claude-nexus", Type: "claude", Command: []string{"sh", "--print"},
-	})
-	if cmd == nil {
-		t.Errorf("headless --print agent was refused: %s", why)
+	rep, err := WakePass(root, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("WakePass: %v", err)
+	}
+	for _, o := range rep.Armed {
+		if o.ItemID == id {
+			t.Error("item reads as armed behind a watch-only loop — the loop is crediting its " +
+				"own lane and suppressing escalation")
+		}
+	}
+	if len(rep.Unavailable) == 0 {
+		t.Error("expected the lane to surface as wake-unavailable rather than silently armed")
 	}
 }
 
-// A loop with nothing to dispatch must still run: its heartbeat is the only
-// liveness signal the fabric has for that agent, so degrading to watch-only is
-// correct where refusing to start would trade a silent inbox for a silent agent.
+// A loop with no consumer must still run and heartbeat: its liveness is the only
+// signal the fabric has for that agent, so refusing to start would trade a
+// silent inbox for a silent agent. It must simply stop claiming to be armed.
 func TestWatchOnlyLoopStillRunsAndHeartbeats(t *testing.T) {
 	root := wakeTestRoot(t, AgentConfig{
 		ID: "claude-deck", Type: "claude", Command: []string{"claude"},
@@ -110,5 +292,22 @@ func TestWatchOnlyLoopStillRunsAndHeartbeats(t *testing.T) {
 	defer cancel()
 	if err := RunWakeLoop(ctx, root, "claude-deck", 40*time.Millisecond); err != nil {
 		t.Fatalf("watch-only loop returned error: %v", err)
+	}
+
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatalf("load threads: %v", err)
+	}
+	var found bool
+	for _, tr := range reg.Threads {
+		if tr != nil && tr.AgentID == "claude-deck" && tr.Surface == surfaceWorker {
+			found = true
+			if tr.ConsumerCapable {
+				t.Error("watch-only loop recorded itself as consumer-capable")
+			}
+		}
+	}
+	if !found {
+		t.Error("watch-only loop registered no thread record at all")
 	}
 }

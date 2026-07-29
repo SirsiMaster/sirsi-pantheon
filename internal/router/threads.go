@@ -92,9 +92,45 @@ type Thread struct {
 	// which stranded inboxes when a laptop's name changed. Empty on legacy
 	// records (treated as local; the registry is per-machine). See machineid.go.
 	MachineID string `json:"machine_id,omitempty"`
+	// ConsumerCapable records whether this thread can actually DRAIN the agent's
+	// inbox, as opposed to merely proving the process is alive.
+	//
+	// The distinction is the whole point: a wake loop with no declared consumer
+	// heartbeats exactly like one that works the queue, and because armed[] was
+	// computed from heartbeat freshness alone, a watch-only loop credited its own
+	// lane as armed and suppressed the wake pass that would otherwise have
+	// escalated it. Agent-session surfaces set this implicitly (they ARE the
+	// consumer); worker loops set it only when a consumer resolved.
+	ConsumerCapable bool `json:"consumer_capable,omitempty"`
+
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`
+}
+
+// IsInboxConsumer reports whether this thread can actually drain its agent's
+// inbox — the honest replacement for "has a fresh heartbeat".
+//
+// An agent-session surface (a live claude/codex/gemini session) IS a consumer:
+// that is what drained claude-deck's queue while its worker loop sat watching.
+// A worker loop is a consumer only if it resolved a declared consumer capability.
+func (t *Thread) IsInboxConsumer() bool {
+	if t == nil {
+		return false
+	}
+	if t.ConsumerCapable {
+		return true
+	}
+	switch t.Surface {
+	case surfaceWorker, surfaceMenubar, surfaceTUI, surfaceMacApp:
+		// Observer/worker surfaces must EARN it via ConsumerCapable.
+		return false
+	case "":
+		return false
+	default:
+		// A live agent-session surface works its own inbox.
+		return true
+	}
 }
 
 // SuspendPayload is the resumable snapshot captured when a thread is suspended

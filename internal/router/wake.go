@@ -350,9 +350,25 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 		return rep, fmt.Errorf("load threads: %w", err)
 	}
 
+	// "Armed" means SOMETHING WILL DRAIN THIS INBOX — not merely that some
+	// process for this agent is alive.
+	//
+	// This used to be heartbeat freshness alone, over any thread of any surface.
+	// A wake loop with nothing to dispatch heartbeats identically to one that
+	// works the queue, so a watch-only loop credited its own lane as armed and
+	// this pass then SKIPPED it — the loop manufactured the evidence that
+	// suppressed its own rescue, and claude-deck sat at 5 open items behind a
+	// green heartbeat while doctor reported "already-armed" (review finding 4).
+	//
+	// IsInboxConsumer is the honest predicate: agent-session surfaces count (they
+	// are the consumer), observer/worker surfaces must have resolved a declared
+	// consumer capability.
 	armed := map[string]bool{}
 	for _, t := range threadReg.SortedThreads() {
 		if t.Status.IsTerminal() || t.IsStale(now, DefaultThreadStaleAfter) {
+			continue
+		}
+		if !t.IsInboxConsumer() {
 			continue
 		}
 		armed[t.AgentID] = true
@@ -481,62 +497,87 @@ const DefaultWakeLoopInterval = 60 * time.Second
 // coffee-length gap, without turning the file into a tick log.
 const wakeLoopHeartbeatLog = 15 * time.Minute
 
-// headlessConsumerCommand returns the command that actually CONSUMES this
-// agent's inbox, or ("", reason) when spawning one would not be an honest wake.
-//
-// This is deliberately NOT ProbeWakeReadiness. That probe answers "can a
-// supervisor tick nudge this agent", and for every claude-* agent it answers
-// "yes, via launchagent" — but the launchagent adapter runs `launchctl kickstart
-// -k` on THIS loop's own label, so a loop that trusted it would restart itself
-// and consume nothing. The loop needs the orthogonal question: is there a
-// command that drains the inbox?
-//
-// Constraint 3 (never blind-spawn an interactive agent) is the hard gate. A bare
-// `claude` is a REPL: detaching one per pass would fork orphaned TTY-less
-// sessions forever, and even a working one is a NEW conversation, not a nudge to
-// the running one. A `--print`/`-p` invocation is headless and single-shot, so
-// it is a genuine consumer.
-func headlessConsumerCommand(cfg AgentConfig) ([]string, string) {
-	if len(cfg.Command) == 0 {
-		return nil, "no command array configured"
-	}
-	if isInteractiveSpawnType(cfg.Type) && !hasHeadlessFlag(cfg.Command) {
-		return nil, fmt.Sprintf(
-			"interactive %s agent with no headless flag — a fresh REPL is a new conversation, "+
-				"not a consumer of this inbox (constraint 3); give it a --print command or arm its /loop",
-			cfg.Type)
-	}
-	if _, err := exec.LookPath(cfg.Command[0]); err != nil {
-		return nil, fmt.Sprintf("command %q not found in PATH", cfg.Command[0])
-	}
-	return cfg.Command, ""
+// dispatchFailureBackoff holds the dispatch slot when a consumer could not even
+// START. There is no process to observe in that case, so a bounded pause is the
+// only available instrument — the tight-error-loop half of the PR #199 lesson.
+var dispatchFailureBackoff = 30 * time.Second
+
+// closedChan is an already-closed channel, so a failed dispatch records a run
+// that is complete on arrival.
+func closedChan() chan struct{} {
+	c := make(chan struct{})
+	close(c)
+	return c
 }
 
-// hasHeadlessFlag reports whether an agent command runs non-interactively.
-func hasHeadlessFlag(command []string) bool {
-	for _, a := range command {
-		if a == "--print" || a == "-p" {
-			return true
-		}
-	}
-	return false
-}
-
-// dispatchConsumer starts the agent's inbox-draining command detached, so it
-// outlives this loop's tick and leaves no zombie (the same Setsid+Release
-// pattern defaultWakeInvoke's cli-spawn branch uses).
-func dispatchConsumer(cfg AgentConfig, command []string) error {
-	cmd := exec.Command(command[0], command[1:]...)
-	cmd.Dir = cfg.Cwd
-	cmd.Env = os.Environ()
-	for k, v := range cfg.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-	cmd.SysProcAttr = detachedSysProcAttr()
-	if err := cmd.Start(); err != nil {
+// setThreadConsumerCapable persists whether a thread can drain its agent's
+// inbox. Written once at loop start rather than every heartbeat: it is a
+// property of the loop's configuration, not of a tick.
+func setThreadConsumerCapable(routerRoot, threadID string, capable bool) error {
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
 		return err
 	}
-	return cmd.Process.Release()
+	for _, t := range reg.Threads {
+		if t != nil && t.ThreadID == threadID {
+			t.ConsumerCapable = capable
+			return SaveThreadRegistry(routerRoot, reg)
+		}
+	}
+	return fmt.Errorf("thread %s not found", threadID)
+}
+
+// consumerRun tracks ONE dispatched consumer process for its whole lifetime.
+//
+// The first cut of this fix used a 10-minute timer as its re-dispatch authority,
+// because Setsid+Release deliberately discards the process handle — so the loop
+// could not tell "still working" from "died", and a slow-but-healthy agent got a
+// second consumer dispatched on top of it. A timer is not dispatch authority
+// (codex-pantheon review of #389, finding 3).
+//
+// So the handle is KEPT and reaped: Setsid still detaches the child from the
+// terminal/session, but we never Release, and a goroutine Waits. `done` closing
+// is real completion, not an elapsed guess.
+type consumerRun struct {
+	pid  int
+	done chan struct{}
+	err  error
+}
+
+// running reports whether the dispatched consumer is still alive.
+func (r *consumerRun) running() bool {
+	if r == nil {
+		return false
+	}
+	select {
+	case <-r.done:
+		return false
+	default:
+		return true
+	}
+}
+
+// dispatchConsumer starts a resolved consumer and returns a handle that
+// completes when the process exits.
+//
+// Setsid without Release is the deliberate combination: the child survives this
+// loop's own restart (it is in its own session), while this loop keeps the
+// handle it needs to know whether the work is still in flight. cmd.Wait also
+// reaps the child, so repeated dispatch cannot accumulate zombies.
+func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
+	cmd := exec.Command(rc.Argv[0], rc.Argv[1:]...)
+	cmd.Dir = rc.Cwd
+	cmd.Env = rc.Env
+	cmd.SysProcAttr = detachedSysProcAttr()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	run := &consumerRun{pid: cmd.Process.Pid, done: make(chan struct{})}
+	go func() {
+		run.err = cmd.Wait()
+		close(run.done)
+	}()
+	return run, nil
 }
 
 func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.Duration) error {
@@ -570,22 +611,31 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	}
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
-	// Resolve the consumer command ONCE. A loop that cannot dispatch still runs:
+	// Resolve the DECLARED consumer once. A loop that cannot dispatch still runs:
 	// its heartbeat is the only liveness signal the fabric has for this agent, and
-	// dropping that would trade a silent inbox for a silent agent. But it says so
-	// out loud at startup, because "loop running, inbox never drains" was
-	// previously indistinguishable from a healthy steady state.
-	var consumer []string
-	var agentCfg AgentConfig
+	// dropping that would trade a silent inbox for a silent agent. But it now says
+	// so out loud AND records it on its thread record, because "loop running,
+	// inbox never drains" was previously indistinguishable from a healthy steady
+	// state — and worse, its heartbeat marked the lane armed.
+	var consumer *ResolvedConsumer
 	if reg, rerr := LoadRegistry(routerRoot); rerr != nil {
 		log.Printf("wake-loop %s: registry unreadable, running WATCH-ONLY: %v", agentID, rerr)
 	} else if cfg, lerr := reg.Lookup(agentID); lerr != nil {
 		log.Printf("wake-loop %s: agent not registered, running WATCH-ONLY: %v", agentID, lerr)
-	} else if cmd, why := headlessConsumerCommand(*cfg); cmd == nil {
-		log.Printf("wake-loop %s: WATCH-ONLY (no consumer to dispatch): %s", agentID, why)
+	} else if rc, why := ResolveConsumer(*cfg, routerRoot); rc == nil {
+		log.Printf("wake-loop %s: WATCH-ONLY — this lane has NO consumer: %s", agentID, why)
 	} else {
-		consumer = cmd
-		agentCfg = *cfg
+		consumer = rc
+	}
+
+	// Publish the capability on the thread record. This is what stops a watch-only
+	// loop from crediting its own lane as armed: the armed predicate consults
+	// IsInboxConsumer, not heartbeat freshness alone.
+	if thr.ConsumerCapable != (consumer != nil) {
+		thr.ConsumerCapable = consumer != nil
+		if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, consumer != nil); err != nil {
+			log.Printf("wake-loop %s: could not record consumer capability: %v", agentID, err)
+		}
 	}
 
 	tick := time.NewTicker(interval)
@@ -594,9 +644,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		agentID, thr.ThreadID, os.Getpid(), interval, consumer != nil)
 	lastDepth := -1
 	lastBeat := time.Now()
-	// Edge-trigger state. `dispatchedAt` is zero whenever the inbox is known
-	// drained; it is the drain-before-re-arm latch.
-	var dispatchedAt time.Time
+	// The in-flight consumer, or nil. Completion — not elapsed time — is what
+	// authorizes the next dispatch.
+	var run *consumerRun
 	for {
 		// Surface the inbox depth into the heartbeat status; the worker surface's
 		// own logic processes the items — this loop only proves liveness + watches.
@@ -649,26 +699,37 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// is a whole agent session rather than a `router wait`, so it is far more
 		// expensive per iteration.
 		//
-		// So: fire once on the 0 -> N transition and latch. Clear the latch only
-		// when the inbox actually drains. The DefaultWakeRetryAfter ceiling is the
-		// escape hatch for the other failure — a consumer that died mid-drain would
-		// otherwise leave the latch set and the inbox stranded forever. A read
-		// error is NOT a drain (lerr leaves depth 0 but must not clear the latch).
-		if consumer != nil && lerr == nil {
-			switch {
-			case depth == 0:
-				dispatchedAt = time.Time{}
-			case dispatchedAt.IsZero() || now.Sub(dispatchedAt) >= DefaultWakeRetryAfter:
-				if derr := dispatchConsumer(agentCfg, consumer); derr != nil {
-					// Back off exactly as if we had dispatched: a command that fails
-					// to start will fail identically next tick, and retrying every
-					// interval is the tight error loop the same incident warns about.
-					dispatchedAt = now
-					log.Printf("wake-loop %s: dispatch FAILED (depth %d): %v", agentID, depth, derr)
-				} else {
-					dispatchedAt = now
-					log.Printf("wake-loop %s: dispatched consumer %v (depth %d)", agentID, consumer, depth)
+		// So the gate is the CONSUMER'S OWN LIVENESS, not a clock: dispatch only
+		// when nothing is in flight. A slow-but-healthy agent holds the slot for as
+		// long as it genuinely needs, and a dead one frees it the instant it exits —
+		// neither of which a 10-minute timer could distinguish (review finding 3).
+		//
+		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
+		// would treat an unreadable inbox as an empty one.
+		if consumer != nil && lerr == nil && depth > 0 && !run.running() {
+			// Report the previous run's exit before starting another, so a consumer
+			// that is failing fast leaves a trail rather than looking like progress.
+			if run != nil && run.err != nil {
+				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v",
+					agentID, run.pid, run.err)
+			}
+			next, derr := dispatchConsumer(consumer)
+			if derr != nil {
+				// A command that fails to START will fail identically next tick, so
+				// hold the slot for one retry window rather than tight-looping. This
+				// is the only place a timer is still the right instrument: there is no
+				// process to observe.
+				run = &consumerRun{done: closedChan(), err: derr}
+				log.Printf("wake-loop %s: dispatch FAILED (depth %d): %v", agentID, depth, derr)
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-time.After(dispatchFailureBackoff):
 				}
+			} else {
+				run = next
+				log.Printf("wake-loop %s: dispatched consumer pid %d %v (depth %d)",
+					agentID, run.pid, consumer.Argv, depth)
 			}
 		}
 

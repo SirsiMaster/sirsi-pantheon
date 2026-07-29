@@ -36,6 +36,13 @@ type AgentConfig struct {
 	// Wake describes how Horus should wake this agent when work is pending.
 	// Missing wake metadata defaults to cli-spawn for existing agents.
 	Wake WakeConfig `json:"wake,omitempty"`
+
+	// Consumer declares the invocation that actually DRAINS this agent's inbox.
+	// Distinct from Command on purpose: Command is a launch command whose work
+	// prompt is appended by an executor, so spawning it bare consumes nothing.
+	// Absent = this lane has no consumer, and every surface must say so rather
+	// than infer one from the shape of Command (see consumer.go).
+	Consumer ConsumerConfig `json:"consumer,omitempty"`
 }
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
