@@ -59,33 +59,6 @@ func AgentArmed(routerRoot, agentID string) bool {
 	return false
 }
 
-// AgentHasLiveThread reports whether agentID has at least one LIVE (non-terminal,
-// non-suspended, fresh-heartbeat) thread — a running session/loop, whether or not
-// it is "armed" in the loop-monitor sense. Used to guard `wake-install`: arming a
-// background wake LaunchAgent for an agent that already has a live session spawns
-// duplicate processes each tick (the 2026-07-08 wake-loop leak,
-// reference_schedulewakeup_process_leak). A live interactive session is already
-// handling the inbox; a background channel on top of it is the leak.
-func AgentHasLiveThread(routerRoot, agentID string) bool {
-	reg, err := LoadThreadRegistry(routerRoot)
-	if err != nil {
-		return false
-	}
-	now := time.Now().UTC()
-	for _, t := range reg.Threads {
-		if t == nil || t.AgentID != agentID {
-			continue
-		}
-		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
-			continue
-		}
-		if !t.IsStale(now, DefaultThreadStaleAfter) {
-			return true
-		}
-	}
-	return false
-}
-
 // AgentLoopDead reports whether agentID actually needs a loop-dead alarm: it
 // has open inbox items AND zero armed live threads. An agent needs ONE armed
 // watcher to consume its inbox — extra live sessions of the same agent (the
