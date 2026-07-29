@@ -16,6 +16,22 @@
         "launch_agent_label": "ai.sirsi.router.wake.claude-assiduous"
       }
     },
+    "claude-deck": {
+      "id": "claude-deck",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "env": {
+        "SIRSI_ROUTER_AGENT": "claude-deck"
+      },
+      "workstream": "deck",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-deck"
+      }
+    },
     "claude-finalwishes": {
       "id": "claude-finalwishes",
       "type": "claude",
