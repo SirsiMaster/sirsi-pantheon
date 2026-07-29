@@ -10,8 +10,6 @@ import os
 private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 
 private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
-private let deckPanel = Color(red: 0.105, green: 0.105, blue: 0.105)
-private let deckTile = Color(red: 0.145, green: 0.145, blue: 0.145)
 
 // openSystemURL opens a System Settings / file URL (e.g. the Full Disk Access
 // pane). macOS cannot self-grant FDA — this is the one click that gets the user
@@ -498,19 +496,36 @@ struct HomeView: View {
 // CommandDeckView is the first screen: the operator should know, at a glance,
 // whether local AI, compute, router, context, and risk are ready before opening
 // a drill-down. It uses existing live engine state only; no decorative claims.
+struct CommandDeckSignal {
+    let title: String
+    let detail: String
+    let tint: Color
+    var evidence: [String] = []
+}
+
 struct CommandDeckView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.colorScheme) private var colorScheme
 
-    private var aiState: (title: String, detail: String, tint: Color) {
+    private var panelFill: Color {
+        snapshotMode && colorScheme == .dark ? Color(red: 0.105, green: 0.105, blue: 0.105) : Color.primary.opacity(0.04)
+    }
+
+    private var tileFill: Color {
+        snapshotMode && colorScheme == .dark ? Color(red: 0.145, green: 0.145, blue: 0.145) : Color.primary.opacity(0.035)
+    }
+
+    private var aiState: CommandDeckSignal {
         guard let llm = engine.localLLM else {
-            return ("Local AI", "checking conduit", .yellow)
+            return CommandDeckSignal(title: "Local AI", detail: "checking conduit", tint: .yellow)
         }
         if llm.healthy == true {
             let model = llm.model?.isEmpty == false ? llm.model! : "local model"
             let memory = llm.rssMB.map { " · \($0) MB" } ?? ""
-            return ("Local AI", "\(model)\(memory)", .green)
+            return CommandDeckSignal(title: "Local AI", detail: "\(model)\(memory)", tint: .green)
         }
-        return ("Local AI", "offline or misregistered", .red)
+        return CommandDeckSignal(title: "Local AI", detail: "offline or misregistered", tint: .red)
     }
 
     private var aiStatusLabel: String {
@@ -518,39 +533,47 @@ struct CommandDeckView: View {
         return llm.healthy == true ? "ONLINE" : "OFFLINE"
     }
 
-    private var computeState: (title: String, detail: String, tint: Color) {
+    private var computeState: CommandDeckSignal {
         guard let v = engine.vitals else {
-            return ("Compute", "reading pressure", .yellow)
+            return CommandDeckSignal(title: "Compute", detail: "reading pressure", tint: .yellow)
         }
+        let evidence = [
+            "swap \(SirsiEngine.human(v.swapUsedBytes))",
+            v.top?.first.map { "top \($0.name) \(SirsiEngine.human($0.rssBytes))" },
+        ].compactMap { $0 }
         switch v.pressure {
         case "critical":
-            return ("Compute", "\(SirsiEngine.human(v.freeBytes)) free · critical", .red)
+            return CommandDeckSignal(title: "Compute", detail: "\(SirsiEngine.human(v.freeBytes)) free · critical", tint: .red, evidence: evidence)
         case "warn":
-            return ("Compute", "\(SirsiEngine.human(v.freeBytes)) free · tight", .orange)
+            return CommandDeckSignal(title: "Compute", detail: "\(SirsiEngine.human(v.freeBytes)) free · tight", tint: .orange, evidence: evidence)
         default:
-            return ("Compute", "\(SirsiEngine.human(v.freeBytes)) free", .green)
+            return CommandDeckSignal(title: "Compute", detail: "\(SirsiEngine.human(v.freeBytes)) free", tint: .green, evidence: evidence)
         }
     }
 
-    private var routerState: (title: String, detail: String, tint: Color) {
-        ("Router", engine.routerSummary, statusColor(engine.routerStatus))
+    private var routerState: CommandDeckSignal {
+        CommandDeckSignal(title: "Router", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
     }
 
-    private var contextState: (title: String, detail: String, tint: Color) {
+    private var contextState: CommandDeckSignal {
         let owner = engine.ownerGatedItems.count
-        if owner > 0 { return ("Context", "\(owner) owner decision\(owner == 1 ? "" : "s")", .yellow) }
-        if engine.threadsTotal > 0 { return ("Context", "\(engine.threadsTotal) live threads", .green) }
-        return ("Context", "wake digest ready", .secondary)
+        if owner > 0 {
+            return CommandDeckSignal(title: "Context", detail: "\(owner) owner decision\(owner == 1 ? "" : "s")", tint: .yellow)
+        }
+        if engine.threadsTotal > 0 {
+            return CommandDeckSignal(title: "Context", detail: "\(engine.threadsTotal) live threads", tint: .green)
+        }
+        return CommandDeckSignal(title: "Context", detail: "wake digest ready", tint: .secondary)
     }
 
-    private var riskState: (title: String, detail: String, tint: Color) {
+    private var riskState: CommandDeckSignal {
         if engine.healthStatus != "green" {
-            return ("Risk", engine.healthSummary, statusColor(engine.healthStatus))
+            return CommandDeckSignal(title: "Risk", detail: engine.healthSummary, tint: statusColor(engine.healthStatus))
         }
         if engine.safeBytes >= SirsiEngine.wasteThreshold {
-            return ("Risk", "\(SirsiEngine.human(engine.safeBytes)) reclaimable", .yellow)
+            return CommandDeckSignal(title: "Risk", detail: "\(SirsiEngine.human(engine.safeBytes)) reclaimable", tint: .yellow)
         }
-        return ("Risk", "clean checkpoint", .green)
+        return CommandDeckSignal(title: "Risk", detail: "clean checkpoint", tint: .green)
     }
 
     var body: some View {
@@ -573,7 +596,7 @@ struct CommandDeckView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(deckTile))
+                .background(Capsule().fill(tileFill))
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -595,10 +618,10 @@ struct CommandDeckView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
-                    CommandDeckMetric(state: computeState)
-                    CommandDeckMetric(state: routerState)
-                    CommandDeckMetric(state: contextState)
-                    CommandDeckMetric(state: riskState)
+                    CommandDeckMetric(state: computeState, fill: tileFill)
+                    CommandDeckMetric(state: routerState, fill: tileFill)
+                    CommandDeckMetric(state: contextState, fill: tileFill)
+                    CommandDeckMetric(state: riskState, fill: tileFill)
                 }
 
                 if let sentence = engine.lastRunSentence {
@@ -612,21 +635,21 @@ struct CommandDeckView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(deckPanel)
+                    .fill(panelFill)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(gold.opacity(0.34), lineWidth: 1))
             )
 
             HStack(spacing: 8) {
-                CommandDeckNav(title: "Ask", symbol: "sparkles") {
+                CommandDeckNav(title: "Ask", symbol: "sparkles", fill: panelFill) {
                     AskSirsiView(engine: engine)
                 }
-                CommandDeckNav(title: "Router", symbol: "point.3.connected.trianglepath.dotted") {
+                CommandDeckNav(title: "Router", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
                     RouterView(engine: engine)
                 }
-                CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg") {
+                CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg", fill: panelFill) {
                     HorusView(engine: engine)
                 }
-                CommandDeckNav(title: "Insight", symbol: "scope") {
+                CommandDeckNav(title: "Insight", symbol: "scope", fill: panelFill) {
                     InsightView(engine: engine)
                 }
             }
@@ -653,13 +676,14 @@ struct CommandDeckView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 7).fill(deckPanel))
+            .background(RoundedRectangle(cornerRadius: 7).fill(panelFill))
         }
     }
 }
 
 struct CommandDeckMetric: View {
-    let state: (title: String, detail: String, tint: Color)
+    let state: CommandDeckSignal
+    let fill: Color
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -675,21 +699,29 @@ struct CommandDeckMetric: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+            ForEach(state.evidence, id: \.self) { line in
+                Text(line)
+                    .sirsiFont(10, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 46, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: state.evidence.isEmpty ? 46 : 70, alignment: .topLeading)
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 7).fill(deckTile))
+        .background(RoundedRectangle(cornerRadius: 7).fill(fill))
     }
 }
 
 struct CommandDeckNav<Destination: View>: View {
     let title: String
     let symbol: String
+    let fill: Color
     private let destination: () -> Destination
 
-    init(title: String, symbol: String, @ViewBuilder destination: @escaping () -> Destination) {
+    init(title: String, symbol: String, fill: Color, @ViewBuilder destination: @escaping () -> Destination) {
         self.title = title
         self.symbol = symbol
+        self.fill = fill
         self.destination = destination
     }
 
@@ -703,7 +735,7 @@ struct CommandDeckNav<Destination: View>: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(deckPanel)
+                    .fill(fill)
                     .overlay(RoundedRectangle(cornerRadius: 7).stroke(gold.opacity(0.42), lineWidth: 1))
             )
             .foregroundStyle(gold)
@@ -750,6 +782,11 @@ struct DeityRow: View {
     let glyph: String; let title: String
     var detail: String? = nil
     var dot: Color? = nil
+    @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.colorScheme) private var colorScheme
+    private var panelFill: Color {
+        snapshotMode && colorScheme == .dark ? Color(red: 0.105, green: 0.105, blue: 0.105) : Color.primary.opacity(0.04)
+    }
     var body: some View {
         HStack(spacing: 10) {
             Text(glyph).sirsiFont(20).sirsiFrame(width: 28)
@@ -763,7 +800,7 @@ struct DeityRow: View {
         }
         .padding(.vertical, 8).padding(.horizontal, 10)
         .contentShape(Rectangle())
-        .background(RoundedRectangle(cornerRadius: 7).fill(deckPanel))
+        .background(RoundedRectangle(cornerRadius: 7).fill(panelFill))
     }
 }
 
