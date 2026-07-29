@@ -1080,3 +1080,32 @@ Vitals green: diagnose 94/100 (the sole priority is a 4.4 GB Virtualization VM, 
 free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
 crash reports, all daemons live. `ccd reap` killed 10 leaked sessions; retention prune reclaimed only
 5.9 KiB.
+
+## Conduit run 2026-07-29T03:38Z
+
+Cleared the in-flight ledger and took one PR off the conflicting pile. **PR #368** (the prior run's
+journal) was CLEAN on arrival and merged at `03:35:44Z`. **PR #365** — canon A29, *Scope The Check To
+The Claim*, +34/-0 docs — was the cheapest of the five CHANGELOG-conflicting PRs and is now **merged at
+`03:38:39Z`**. The rebase onto `origin/main` in a detached worktree resolved with **no manual conflict
+work at all**: the CHANGELOG union merge-driver lives in `.git/config`, which every worktree shares, so
+it applied automatically and preserved all sibling entries — verified by reading the diff back
+(CHANGELOG +1 line, PANTHEON_RULES.md +33), not by trusting the clean exit. Two process notes worth
+carrying. First, `--force-with-lease` rejected the initial push as "stale info" because the lease SHA
+was wrong, not because the remote had moved — `git ls-remote` settled it in one call, and the lesson is
+that a lease failure is a claim about the *remote* that deserves an artifact check before anyone starts
+re-fetching. Second, the Ma'at pre-push gate printed **"Tag push — fast pass"** for a SHA→branch
+refspec on the first attempt and then ran the full pipeline on the identical refspec on the second;
+the push that landed was fully gated, so nothing shipped unchecked, but a gate whose depth heuristic
+can misread a branch push as a tag is exactly the A29 shape the merged PR canonizes — a check narrower
+than its claim. Logged for claude-pantheon, not routed as a defect on this evidence alone.
+
+Router quiet: 17 open, one of them claude-home's — codex-pantheon's terminal ACK on the already-merged
+#363 — closed informational, re-affirming that the install/bundle-identity work stays owner-gated on
+the board rather than re-routed. Oldest open item is 3h29m, so nothing crossed the 24h staleness line.
+`doctor --fix`: 0 woken, 15 already-armed, 1 wake-unavailable (`claude-deck`, still unregistered and
+expected). The `865dbf88` registry heal **holds** — `agents.json` re-verified byte-clean against
+`origin/main` both before and after the merge, since merging to main is what re-arms that landmine.
+Vitals green: diagnose 94/100 with the same load-bearing Virtualization VM as sole priority, RAM 80%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash `.ips`, all daemons live. `reconcile` healed 6 threads to successors, `prune` 0, `ccd reap`
+archived 2 session records, retention prune 3.1 KiB.
