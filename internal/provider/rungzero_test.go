@@ -94,3 +94,77 @@ func names(ps []Provider) []string {
 	}
 	return out
 }
+
+// Presence is not usability. codex-pantheon's re-review (router item
+// 20260729-191819) caught that the presence fix left Model: conf.Model
+// unconditional, so with provider=openai and model=<a remote model> the local
+// rung EXISTED and then failed every request against a broker that never served
+// that name — silently escalating to remote. Same paid path, different shape.
+func TestLocalRungDoesNotInheritARemoteModelName(t *testing.T) {
+	home := localHome(t, "8765")
+
+	got := Local(home, Conf{Provider: "openai", Model: "gpt-4o"})
+	if got == nil {
+		t.Fatal("local rung deleted by a remote conf")
+	}
+	if got.Model != "" {
+		t.Fatalf("local rung model = %q — a remote model name must never be handed to the local broker; leave it empty so /v1/models resolves what is actually loaded", got.Model)
+	}
+}
+
+func TestLocalRungKeepsAnExplicitlyLocalModel(t *testing.T) {
+	home := localHome(t, "8765")
+	for _, prov := range []string{"", "gemma", "local"} {
+		got := Local(home, Conf{Provider: prov, Model: "gemma-3-12b-8bit"})
+		if got == nil {
+			t.Fatalf("provider=%q: local rung missing", prov)
+		}
+		if got.Model != "gemma-3-12b-8bit" {
+			t.Fatalf("provider=%q: a LOCAL conf's model must be honored, got %q", prov, got.Model)
+		}
+	}
+}
+
+// The remote rung must keep the model the conf names — the provenance fix must
+// not strip it from the provider it actually belongs to.
+func TestRemoteRungKeepsItsModelWhileLocalStaysEmpty(t *testing.T) {
+	home := localHome(t, "8765")
+	t.Setenv("SIRSI_REMOTE_API_KEY", "sk-test")
+	t.Setenv("SIRSI_REMOTE_ENDPOINT", "https://api.example.com/v1")
+	t.Setenv("SIRSI_REMOTE_MODEL", "gpt-4o")
+
+	lad := Ladder(context.Background(), home)
+	if len(lad) != 2 {
+		t.Fatalf("want local+remote, got %v", names(lad))
+	}
+	local, ok := lad[0].(*OpenAICompat)
+	if !ok || local.Name() != "local" {
+		t.Fatalf("rung 0 = %v, want local", names(lad))
+	}
+	remote, ok := lad[1].(*OpenAICompat)
+	if !ok || remote.Name() != "remote" {
+		t.Fatalf("rung 1 = %v, want remote", names(lad))
+	}
+	if local.Model != "" {
+		t.Fatalf("local model = %q, want empty", local.Model)
+	}
+	if remote.Model != "gpt-4o" {
+		t.Fatalf("remote model = %q, want the configured remote model", remote.Model)
+	}
+}
+
+// A loopback endpoint is the LOCAL rung by definition, whatever the provider is
+// called. Labeling it TierRemote would make the ladder claim a paid,
+// network-dependent rung for traffic that never leaves the machine, so any
+// caller reasoning about offline capability or cost from the tier is wrong.
+func TestLoopbackIsNeverClassifiedAsRemote(t *testing.T) {
+	home := localHome(t, "8765")
+	t.Setenv("SIRSI_REMOTE_API_KEY", "sk-test")
+	t.Setenv("SIRSI_REMOTE_ENDPOINT", "http://127.0.0.1:8765/v1")
+
+	for _, p := range Ladder(context.Background(), home) {
+		if p.Tier() == TierRemote {
+			t.Fatalf("a loopback endpoint was classified as %v — loopback is local by definition", p.Tier())
+		}
+	}
+}

@@ -90,18 +90,33 @@ func Local(home string, conf Conf) *OpenAICompat {
 	// exactly the one whose owner still expects the zero-token offline path to
 	// answer first. Local is dropped for ONE reason only — there is no local
 	// broker to talk to (no port file, or a non-loopback address).
+	localConf := conf.Provider == "" || conf.Provider == "gemma" || conf.Provider == "local"
+
 	ep := localEndpoint(home)
-	if isLoopbackEndpoint(conf.Endpoint) &&
-		(conf.Provider == "" || conf.Provider == "gemma" || conf.Provider == "local") {
+	if localConf && isLoopbackEndpoint(conf.Endpoint) {
 		ep = conf.Endpoint // explicit local override wins over the port file
 	}
 	if !isLoopbackEndpoint(ep) {
 		return nil
 	}
+
+	// MODEL PROVENANCE. Making the rung PRESENT is not enough — it has to be
+	// USABLE. conf.Model belongs to whichever provider conf names, so with
+	// provider=openai and model=<a remote model>, handing that name to the local
+	// broker produces a rung that exists and fails every request, then silently
+	// escalates to remote. Same paid path as before the presence fix, wearing a
+	// different shape (codex-pantheon, router item 20260729-191819).
+	//
+	// An empty model is not a gap: OpenAICompat resolves the served model from
+	// /v1/models, which is the honest source — the broker names what it loaded.
+	model := ""
+	if localConf {
+		model = conf.Model
+	}
 	return &OpenAICompat{
 		ProviderName:  "local",
 		Endpoint:      ep,
-		Model:         conf.Model,
+		Model:         model,
 		TierValue:     TierLocal,
 		SupportsTools: false, // mlx_lm.server has no tool-calling
 		ContextTokens: 8192,
@@ -150,6 +165,15 @@ func remoteFromEnv(conf Conf) *OpenAICompat {
 		ep = conf.Endpoint
 	}
 	if key == "" || ep == "" {
+		return nil
+	}
+	// A loopback endpoint is the LOCAL rung by definition, whatever the provider
+	// is called. Labeling it TierRemote would make the ladder claim a remote,
+	// paid, network-dependent rung for traffic that never leaves the machine —
+	// and any caller reasoning about offline capability or cost from the tier
+	// would be wrong in both directions (codex-pantheon, router item
+	// 20260729-191819). Reject it rather than classify it dishonestly.
+	if isLoopbackEndpoint(ep) {
 		return nil
 	}
 	return &OpenAICompat{
