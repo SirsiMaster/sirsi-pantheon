@@ -371,7 +371,7 @@ func registerTools(s *Server) {
 			Properties: map[string]SchemaField{
 				"agent": {
 					Type:        "string",
-					Description: "Your agent name (codex or claude). Lists pending inbox items. If omitted, returns recent documents by time.",
+					Description: "Your registered agent id, for example codex-pantheon or claude-home. Lists pending inbox items. If omitted, returns recent documents by time.",
 				},
 				"ack": {
 					Type:        "boolean",
@@ -395,7 +395,7 @@ func registerTools(s *Server) {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
-				"agent":     {Type: "string", Description: "Your agent name. Required. Blocks until items addressed to you appear."},
+				"agent":     {Type: "string", Description: "Your registered agent id. Required. Blocks until items addressed to you appear."},
 				"timeout_s": {Type: "number", Description: "Max seconds to block, capped at 50. Default 50. Returns early when an item arrives."},
 			},
 			Required: []string{"agent"},
