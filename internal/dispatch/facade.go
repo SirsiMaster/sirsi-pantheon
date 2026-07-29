@@ -143,9 +143,7 @@ func validateRecipient(root, to string) error {
 	if to == "" {
 		return fmt.Errorf("dispatch: recipient is required")
 	}
-	// user is the durable owner-escalation inbox, not an executable agent.
-	// It is intentionally absent from agents.json but remains a valid target.
-	if to == "user" {
+	if work.IsOwnerRecipient(to) {
 		return nil
 	}
 	data, err := os.ReadFile(filepath.Join(root, "agents.json"))

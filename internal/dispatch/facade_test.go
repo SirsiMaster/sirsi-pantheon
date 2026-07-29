@@ -78,8 +78,10 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	f := testFacade(t)
 
-	if _, err := f.Send("claude-pantheon", "user", "owner decision", "decision", "choose one"); err != nil {
-		t.Fatalf("Send to owner escalation inbox must succeed: %v", err)
+	for _, recipient := range work.OwnerRecipients() {
+		if _, err := f.Send("claude-pantheon", recipient, "owner decision", "decision", "choose one"); err != nil {
+			t.Fatalf("Send to owner escalation inbox %q must succeed: %v", recipient, err)
+		}
 	}
 
 	for _, recipient := range []string{"claude-deck", "codex"} {
@@ -103,8 +105,13 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	if allErr != nil {
 		t.Fatal(allErr)
 	}
-	if len(all) != 1 || all[0].To != "user" {
-		t.Fatalf("rejected sends must create no item beyond the owner escalation control, got %+v", all)
+	if len(all) != len(work.OwnerRecipients()) {
+		t.Fatalf("rejected sends must create no item beyond owner escalation controls, got %+v", all)
+	}
+	for _, item := range all {
+		if !work.IsOwnerRecipient(item.To) {
+			t.Fatalf("unexpected non-owner item after rejected sends: %+v", item)
+		}
 	}
 }
 
