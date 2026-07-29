@@ -1205,3 +1205,48 @@ Vitals green throughout: diagnose 94/100 with the known load-bearing
 new crash or Jetsam `.ips` since the last run. `thread reconcile` healed one reaped→successor
 record, `prune` 0, `ccd reap` archived one completed run of this task, retention prune reclaimed
 4.3 KiB. claude-home inbox closed to 0.
+
+## Conduit run 2026-07-29T04:30Z
+
+Merged **#373** (the prior run's journal, docs-only, all five checks green) at 04:24:56Z. The
+substantive work was **#374**, codex-pantheon's implementation of the follow-up I routed as
+`20260729-040924`: the five reserved owner-recipient aliases single-sourced into
+`internal/work` as `OwnerRecipients()`/`IsOwnerRecipient()` — pure stdlib, zero internal
+imports, so the `dispatch`→`router` cycle that forced the original copy stays broken — and
+consumed by both `facade.go:validateRecipient` and `gate.go:ClassifyGate`. Both regression
+tests now drive from the shared slice rather than a hand-copied list, which is what makes it
+A29-clean instead of the same divergence bug wearing a test costume. I bound it on `f546e80`
+at 04:25Z.
+
+Thirty seconds later a force-push moved the head to `990c5e29`, dropping the bind by design —
+and the amended head is **not the change I reviewed**. Its delta reaches into
+`cmd/sirsi/routercmd.go` and `internal/router/strand.go` and inverts the `wake-install` leak
+guard from `AgentHasLiveThread` to `AgentArmed`, relaxing the owner's 2026-07-10 finding
+(`reference_schedulewakeup_process_leak`). That may be the right call under "the durable unit
+is the worker loop, not the session" — but it is an authority-model decision about when a
+background LaunchAgent may be armed on top of a live session, and it rode in on a PR titled
+"single-source owner recipient aliases", *after* an independent bind. Worse, it is untested in
+the direction that now matters: after the diff `AgentHasLiveThread` has **zero production
+callers** and is exercised only by its own surviving test, while the predicate that actually
+gates arming has none. A suite that pins the retired check and ignores the live one is A29
+exactly. **Bind withheld**; verdict posted on the PR and routed back as `20260729-042822`,
+asking for #374 to be reset to the `f546e80` content (I re-bind on sight) and the guard change
+to be opened separately with a test that drives the new guard and a disposition for the
+callerless predicate.
+
+Also caught **#375** — a duplicate of #374 opened one minute apart, same fix under
+`internal/work/recipient.go` instead of `owner.go`, guaranteed to conflict. #374 is the keeper:
+it carries the CHANGELOG entry and the stronger `facade_test` assertion (#375 drops the
+per-item `IsOwnerRecipient` check on survivors). #375's only unique content is the two
+`internal/mcp/tools.go` schema-description lines — which are also the only unique content in
+the DIRTY #372. Recommended closing both and reopening those two lines as one small PR off
+main; #372 must never be rebase-merged, since its `facade.go` side deletes the bypass with no
+reserved lane and re-arms the `--to user` P0.
+
+Housekeeping: two codex responses ACK-closed as superseded by action already taken, leaving
+claude-home at zero open. `reconcile` healed one reaped→successor thread; `ccd reap` killed six
+leaked completed-run sessions; retention reclaimed 5.9 KiB. Vitals green — diagnose 94/100 with
+the load-bearing VM as sole priority, 77% RAM free, broker pid 33719 still capped at 4 GiB with
+the prompt cache flat at 2.74 GB, no new crash or Jetsam reports. The only open `to: user` item
+remains last run's `claude-deck` lane decision; `doctor` reports it as wake-unavailable by
+design, and it is not being nagged.
