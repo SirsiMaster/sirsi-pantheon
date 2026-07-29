@@ -90,30 +90,8 @@ try: mx.set_cache_limit(cap // 4)   # cap the buffer-cache pool (the thing that 
 except Exception as e: print("WARN: mx.set_cache_limit:", e, file=sys.stderr)
 argv = sys.argv[2:]
 
-# Wait-for-port-free (broker deaths #3+#4, 2026-07-23): a respawn that binds
-# while the dying predecessor still holds the port got Errno 48 INSIDE
-# mlx_lm.server, and the failed process wedged as a zombie — model loaded
-# (12.9 GB), main thread dead, port unheld. Probe-bind until the port frees
-# (the only competitor is our own dying predecessor, which never re-binds, so
-# the probe→release→server-bind window is benign); give up after 30s with a
-# distinct exit code so launchd KeepAlive retries on its ThrottleInterval.
-host, port = "127.0.0.1", 8080
-for i, a in enumerate(argv):
-    if a == "--host" and i + 1 < len(argv): host = argv[i + 1]
-    if a == "--port" and i + 1 < len(argv): port = int(argv[i + 1])
-deadline = time.time() + 30
-while True:
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        probe.bind((host, port))
-        probe.close()
-        break
-    except OSError:
-        probe.close()
-        if time.time() > deadline:
-            print("FATAL: port %d still held after 30s — exiting for launchd retry" % port, file=sys.stderr)
-            os._exit(48)
-        time.sleep(0.5)
+# Port-free waiting moved to the Go supervisor (ADR-046 S2): it is supervision,
+# not inference. This shim is now only: cap memory, run the module, exit cleanly.
 
 # Last-gasp + no-zombie guarantee: ANY exit path ends in os._exit so
 # non-daemon worker threads can never keep a dead server resident holding the
@@ -261,17 +239,29 @@ func gemmaServerStart(home string) error {
 		"--prompt-cache-bytes", strconv.FormatInt(promptCacheBytes, 10),
 	}
 
+	// Supervision is Go's now (ADR-046 S2). Wait for the port BEFORE launching a
+	// worker that would otherwise die on bind — this used to live in the generated
+	// Python shim, and it is supervision rather than inference.
+	if err := gemmaWaitPortFree("127.0.0.1", gemmaServePort, 30*time.Second); err != nil {
+		return err
+	}
+
 	if gemmaServeForeground {
-		// launchd mode (ADR-045): exec the capped server IN PLACE so the pid
-		// launchd supervises IS the serving process — KeepAlive revives it after
-		// any crash and at every boot, with zero cloud involvement. exec keeps
-		// our pid, so the pid file written here stays truthful for `--stop`,
-		// the load-bearing guard (ADR-040), and Hapi governance (ADR-031-A).
-		pid := os.Getpid()
-		_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(pid)), 0o644)
-		_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
-		_ = guard.HapiRegisterGoverned(pid, "gemma-broker")
-		return syscall.Exec(pyBin, append([]string{pyBin}, args...), os.Environ())
+		// launchd mode. ADR-046 REVERSES ADR-045's exec-in-place: this process
+		// STAYS RESIDENT as the supervised parent and runs the worker as a child.
+		//
+		// ADR-045 chose exec for a good reason — the supervised pid was then the
+		// serving process, keeping the pid file truthful for --stop, the
+		// load-bearing guard (ADR-040) and Hapi governance (ADR-031-A). But it had
+		// a consequence ADR-045 never had to weigh: after the exec there is no Go
+		// left on the machine, so every "move X into Go" proposal was blocked by
+		// that single line.
+		//
+		// Truthfulness is preserved rather than traded away: gemma-server.pid names
+		// the SUPERVISOR (a stated contract now, not an emergent property),
+		// gemma-worker.pid names the process actually serving, and --stop kills the
+		// process group so it still stops the whole thing.
+		return gemmaSuperviseWorker(home, pyBin, args)
 	}
 
 	logf, err := os.Create(gemmaServerLogPath(home))
