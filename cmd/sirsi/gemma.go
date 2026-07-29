@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 )
 
 // `sirsi gemma` is the human-facing way to talk to Gemma — the local MLX model
@@ -81,6 +82,7 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	if t := strings.ToLower(strings.TrimSpace(gemmaTask)); t != "" {
 		prompt = "TASK: " + t + "\n\n" + prompt
 	}
+	prompt = localrouter.Envelope(prompt)
 
 	home, _ := os.UserHomeDir()
 	model := gemmaResolveModel(home)

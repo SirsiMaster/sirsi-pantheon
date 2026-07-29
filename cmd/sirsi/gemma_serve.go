@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
@@ -366,8 +367,11 @@ func gemmaServerPing(base string) bool {
 // gemmaWarmComplete runs one chat completion against the warm broker (no reload).
 func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error) {
 	body, _ := json.Marshal(map[string]any{
-		"model":       model,
-		"messages":    []map[string]string{{"role": "user", "content": prompt}},
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": localrouter.SystemPrompt()},
+			{"role": "user", "content": prompt},
+		},
 		"max_tokens":  maxTokens,
 		"temperature": 0,
 	})
