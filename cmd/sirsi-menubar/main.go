@@ -181,8 +181,27 @@ func onReady() {
 		quit()
 	}()
 
+	// ── Command Deck — local intelligence control plane ─────────────────────
+	mDeck := systray.AddMenuItem("☥ Command Deck", "Live local AI, compute, router, context, and risk")
+	const deckRowCount = 5
+	deckRows := make([]*systray.MenuItem, deckRowCount)
+	for i := range deckRows {
+		deckRows[i] = mDeck.AddSubMenuItem("  —", "Live Sirsi control-plane signal")
+		deckRows[i].Disable()
+	}
+	mAskSirsi := mDeck.AddSubMenuItem("Ask Sirsi Local AI…", "Ask the on-device Gemma model for a status read")
+	mGemmaServe := mDeck.AddSubMenuItem("Start / Check Gemma Broker…", "Run the warm local Gemma broker")
+	mRouterDoctor := mDeck.AddSubMenuItem("Router Doctor…", "Inspect and repair safe router liveness issues")
+	mComputeProfile := mDeck.AddSubMenuItem("Compute Profile…", "Inspect Apple Silicon, GPU, and Neural Engine lanes")
+	wire(mAskSirsi, func() {
+		spawnTUIWithCommand("gemma --task analyze \"Report Sirsi local AI status and the next operator action.\"")
+	})
+	wire(mGemmaServe, func() { spawnTUIWithCommand("gemma serve --status") })
+	wire(mRouterDoctor, func() { spawnTUIWithCommand("router doctor") })
+	wire(mComputeProfile, func() { spawnTUIWithCommand("seba compute") })
+
 	// ── Status header (top level) ───────────────────────────────────────────
-	mStats := systray.AddMenuItem("Loading…", "Workstation status — click for full diagnostics in Terminal")
+	mStats := systray.AddMenuItem("Vitals loading…", "Workstation status — click for full diagnostics in Terminal")
 	wire(mStats, func() { spawnTUIWithCommand("diagnose") })
 	// Foundational visibility: without macOS Full Disk Access, Sirsi/Horus is
 	// blind to Desktop/Documents/Mail/app containers. Shown only when missing.
@@ -334,9 +353,11 @@ func onReady() {
 			applyFDAState(mFDA)
 
 			// Horus ops read-model rows (ADR-026 4b). Best-effort: an unresolved
-			// root / collect error leaves the prior titles in place.
+			// root / collect error leaves the ops rows in place, but the Command
+			// Deck still refreshes compute/risk from the local vitals snapshot.
+			sum := dashboard.OpsSummary{}
 			if ns, err := menubarNodeStatus(); err == nil && ns != nil {
-				sum := dashboard.Summarize(ns, opsRowCount)
+				sum = dashboard.Summarize(ns, opsRowCount)
 				mOpsHeader.SetTitle(opsLeadRow(sum))
 				rows := opsAgentRows(sum)
 				for i, item := range opsRows {
@@ -345,6 +366,11 @@ func onReady() {
 					} else {
 						item.SetTitle("  —")
 					}
+				}
+			}
+			for i, row := range commandDeckRows(snap, sum) {
+				if i < len(deckRows) {
+					deckRows[i].SetTitle(row)
 				}
 			}
 
@@ -498,12 +524,12 @@ func (s *menubarState) updateTitle() {
 
 	// 🔴 RED — active + bad: something is failing right now.
 	if guardAlert != "" && time.Since(guardAt) < 5*time.Minute {
-		systray.SetTitle("🔴 " + guardAlert)
+		systray.SetTitle("☥ Alert")
 		systray.SetTooltip(fmt.Sprintf("%s is using too much — Sirsi is calming it down", guardAlert))
 		return
 	}
 	if ramPressure == "high" {
-		systray.SetTitle("🔴 Memory")
+		systray.SetTitle("☥ Memory")
 		systray.SetTooltip("Your Mac is running low on memory")
 		return
 	}
@@ -516,7 +542,7 @@ func (s *menubarState) updateTitle() {
 	case platform.AccessFull, platform.AccessSome:
 		// healthy enough — fall through to green/white
 	default:
-		systray.SetTitle("🟡 Needs access")
+		systray.SetTitle("☥ Access")
 		systray.SetTooltip("Let Sirsi see your Mac so it can keep it healthy")
 		return
 	}
@@ -524,12 +550,12 @@ func (s *menubarState) updateTitle() {
 	// 🟢 GREEN / ⚪️ WHITE — nothing needs you. White until the first refresh
 	// populates a snapshot (idle/unknown), green once confirmed healthy.
 	if ramPressure == "" {
-		systray.SetTitle("⚪️ Sirsi")
+		systray.SetTitle("☥ Sirsi")
 		systray.SetTooltip("Sirsi — starting up")
 		return
 	}
-	systray.SetTitle("🟢 Sirsi")
-	systray.SetTooltip("Your Mac is healthy")
+	systray.SetTitle("☥ Ready")
+	systray.SetTooltip("Sirsi Pantheon — local intelligence control plane")
 }
 
 // startGuardBridge starts the guard watchdog and pipes alerts into live state.

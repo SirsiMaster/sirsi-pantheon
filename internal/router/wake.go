@@ -24,6 +24,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -194,6 +195,52 @@ func setWakeInvoke(fn WakeInvoke) {
 	wakeInvokeFn = fn
 }
 
+// launchctlTimeout bounds every launchctl subprocess this package spawns.
+//
+// `launchctl kickstart -k` against a label sitting at `state = spawn scheduled`
+// never returns: -k means kill-then-start, and with nothing running it blocks
+// waiting for a spawn that will not come. That is the RESTING state of an
+// interval-driven wake agent, not a corrupt one, so bootout+bootstrap buys a
+// single iteration and the next pass hangs again. Observed 2026-07-29: one
+// `sirsi router doctor --fix` stuck 18m15s in wait4 on this exact call, leaving
+// orphaned launchctl clients behind that blocked forever after their parent died.
+//
+// A doctor that never returns is strictly worse than one that reports a label it
+// could not reach, so the deadline is short and the failure is explicit.
+// A var, not a const, purely so the deadline test can shorten it — the timeout
+// path is only real if a test can drive a child that actually outlives it.
+var launchctlTimeout = 15 * time.Second
+
+// runLaunchctl runs launchctl under a hard deadline. On expiry CommandContext
+// kills the child, which is what keeps hung clients from accumulating.
+func runLaunchctl(args ...string) error {
+	return runBounded("launchctl", args...)
+}
+
+// runBounded runs name under launchctlTimeout and wraps context.DeadlineExceeded
+// on expiry so callers (and tests) can tell a timeout from a real exit status.
+// Run returning at all means the child was killed and reaped by CommandContext.
+//
+// Split out from runLaunchctl so the deadline is exercisable with a command that
+// genuinely blocks; any launchctl invocation the test could reach either returns
+// immediately or hangs the test suite for the full production bound.
+func runBounded(name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
+	defer cancel()
+	err := exec.CommandContext(ctx, name, args...).Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		// Deliberately says nothing about launchd state. This helper also carries
+		// print, bootout, and the checker probes, and a timeout there tells us
+		// only that launchctl did not answer — asserting a `spawn scheduled` label
+		// would be inventing an unobserved state, which is the same class of
+		// mistake as the "parked" diagnosis this change removed. Callers that
+		// actually know the operation add their own context.
+		return fmt.Errorf("%s %s: no response in %s: %w",
+			name, strings.Join(args, " "), launchctlTimeout, context.DeadlineExceeded)
+	}
+	return err
+}
+
 func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 	switch adapter {
 	case WakeCLISpawn:
@@ -235,7 +282,19 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		// The pull-loop is resident; kick it to poll immediately.
 		label := WakeLaunchAgentLabel(cfg.ID)
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		return exec.Command("launchctl", "kickstart", "-k", target).Run()
+		if err := runLaunchctl("kickstart", "-k", target); err != nil {
+			// Only here do we know the operation was a kickstart -k, which is the
+			// one that blocks when the label has a spawn scheduled but nothing
+			// running. runBounded stays silent about launchd state precisely so
+			// this inference lives where it is actually warranted.
+			if errors.Is(err, context.DeadlineExceeded) {
+				return fmt.Errorf("wake %s: launchctl kickstart -k %s did not return in %s — "+
+					"the label likely has a spawn scheduled with nothing running yet: %w",
+					cfg.ID, target, launchctlTimeout, err)
+			}
+			return err
+		}
+		return nil
 	default:
 		// Includes mcp-notification: ProbeWakeReadiness never yields it as a
 		// ready adapter (not yet wired), so this is the honest failure if reached.
@@ -332,6 +391,13 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 
 	invoke := getWakeInvoke()
+	// One wake per agent per pass. The adapter nudges an agent, not an item —
+	// once its pull-loop is kicked it drains its whole inbox — so invoking per
+	// item made an agent with N stranded items cost N identical adapter calls.
+	// With a blocking launchctl that turned 16 items into 16 sequential hangs.
+	// Items still each get their own annotation below; only the side effect is
+	// shared, so a failed wake still marks every one of that agent's items.
+	invoked := map[string]error{}
 	for _, item := range items {
 		agentID := item.To
 		if agentID == "" {
@@ -381,7 +447,12 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 
 		cfg, _ := reg.Lookup(agentID) // Ready implies registered
 		ann := work.WakeAnnotation{Status: WakeStatusAttempted, AttemptedAt: now.Format(time.RFC3339), Adapter: health.Adapter}
-		if ierr := invoke(*cfg, health.Adapter); ierr != nil {
+		ierr, alreadyInvoked := invoked[agentID]
+		if !alreadyInvoked {
+			ierr = invoke(*cfg, health.Adapter)
+			invoked[agentID] = ierr
+		}
+		if ierr != nil {
 			ann = work.WakeAnnotation{Status: WakeStatusUnavailable, Error: fmt.Sprintf("%s adapter failed: %v", health.Adapter, ierr)}
 			setWake(item.ID, ann)
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Adapter: health.Adapter, Detail: ann.Error})
@@ -695,7 +766,7 @@ func UninstallWakeLaunchAgent(cfg AgentConfig) (removed bool, path string, err e
 	// launchAgentsDirOverride to a temp dir don't touch the real launchd domain.
 	if launchAgentsDirOverride == "" {
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		_ = exec.Command("launchctl", "bootout", target).Run()
+		_ = runLaunchctl("bootout", target)
 	}
 	if rmErr := os.Remove(path); rmErr != nil {
 		return false, path, fmt.Errorf("remove wake LaunchAgent plist: %w", rmErr)

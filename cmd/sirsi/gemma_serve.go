@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
@@ -151,7 +153,12 @@ func gemmaServerStart(home string) error {
 	// KeepAlive then revives it after any crash and at every boot.
 	if !gemmaServeForeground && setup.GemmaBrokerInstalled() {
 		fmt.Println("gemma broker starting via launchd (reboot-durable) — loading onto the GPU…")
-		_ = exec.Command("launchctl", "kickstart", fmt.Sprintf("gui/%d/%s", os.Getuid(), setup.GemmaBrokerLabel)).Run()
+		// Bounded: launchctl kickstart can block indefinitely on a label launchd
+		// has scheduled but not spawned, and gemmaAwaitWarm below is the real
+		// readiness gate anyway — so a slow kick must not hang the command.
+		kickCtx, cancelKick := context.WithTimeout(context.Background(), 15*time.Second)
+		_ = exec.CommandContext(kickCtx, "launchctl", "kickstart", fmt.Sprintf("gui/%d/%s", os.Getuid(), setup.GemmaBrokerLabel)).Run()
+		cancelKick()
 		return gemmaAwaitWarm(home)
 	}
 	mlxsrv := filepath.Join(home, ".venvs/mlx/bin/mlx_lm.server")
@@ -356,8 +363,11 @@ func gemmaServerPing(base string) bool {
 // gemmaWarmComplete runs one chat completion against the warm broker (no reload).
 func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error) {
 	body, _ := json.Marshal(map[string]any{
-		"model":       model,
-		"messages":    []map[string]string{{"role": "user", "content": prompt}},
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": localrouter.SystemPrompt()},
+			{"role": "user", "content": prompt},
+		},
 		"max_tokens":  maxTokens,
 		"temperature": 0,
 	})

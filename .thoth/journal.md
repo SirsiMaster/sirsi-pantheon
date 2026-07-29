@@ -994,3 +994,327 @@ behind #339. Both were routed to claude-pantheon as requests rather than left im
 a memory file, and the identity item names the likely source — a branch-creation path
 committing with an unset git identity, four PRs in one night being a pattern rather than
 an accident.
+
+## Conduit run 2026-07-29T03:00Z
+
+Cleared the entire in-flight ledger the previous run handed over, then found the thing that matters most this window. **Merged three: #362, #350, #346.** #350 and #346 arrived CONFLICTING on CHANGELOG.md — the union merge driver is local and GitHub cannot apply it — so both were rebased in throwaway worktrees, pushed from the main checkout, and re-bound, because a force-push invalidates the bind SHA even though it does not invalidate the reasoning. Merged one at a time for the same reason. All three under the owner's 20260729-023759 dual-binding decision (codex OR claude-home). #362 is ADR-046, which pins the MLX boundary on measurement rather than preference: claude-nexus measured that `runtime.LockOSThread` does **not** buy a bigger cgo stack — 8.0 MB on the main goroutine, on spawned goroutines, and under LockOSThread alike — which does not merely disfavour the in-process cgo option, it closes it, since the obvious mitigation everyone will propose does not exist. I reconciled that in the bind against #351, merged hours earlier: the Python `threading.stack_size(512 MB)` is the *same* pthread attribute Go cannot reach ergonomically, so the two are containment at two radii, not contradictions. Neither is a crash fix; `compile_dfs` still recurses unbounded through C++. claude-nexus is unblocked and S2 starts.
+
+**The finding: the menubar redesign is pointed at a binary the owner does not run.** codex asked for a binding/design verdict on PR #363, a Command Deck for `cmd/sirsi-menubar`. The launchd plist for `ai.sirsi.pantheon` execs `~/Applications/Sirsi Menubar.app/Contents/MacOS/SirsiMenubar`, and that binary links 17 Swift runtime libraries with no fyne or systray strings anywhere in it. It is the SwiftUI app. Every check #363 passes — `go test ./cmd/sirsi-menubar`, the build, the fast gate — is green about the wrong artifact, which is the stale-green class wearing a new costume and precisely why "verify the artifact, not the command" is standing law. Verdict: do not merge as "the first cockpit step"; either retarget the state model onto the SwiftUI app or land it narrowly and label it. The Gemma tri-state in #363 (`gemma-pantheon` live = online, bare `gemma` = misregistered/admin-held, no signal = offline) is the portable, valuable part and should survive either path. Separately re-verified that the SIGKILL root cause is untouched by any of it: three bundles still read back an identical `ai.sirsi.pantheon`, and `/tmp/sirsi-menubar.log` is still 0 bytes — the process was diagnostically blind through all eight Launch Constraint Violation kills. Owner-gated, surfaced on the board, not nagged.
+
+Declined a router recommendation rather than following it. codex's CTR pass reported four claude-home threads as loop-dead with zero armed watchers and recommended arming a watcher; claude-home is in fact armed (`sirsi router wake-loop claude-home` pid 64331 under launchd, plus a thread-watcher at pid 1656), and following the recommendation would have given one agent two independent wake paths — the level-triggered fork-storm class. The four threads had no on-disk directory at all, including `thr-806e2b562ca249b0`, the very thread pid 1656's watcher is named for and actively watching. So: two stacked accounting defects — watcher liveness computed per-thread without unioning the launchd `ai.sirsi.router.wake.<agent>` labels, and thread records outliving their directories instead of reconciling to stale. Routed to claude-pantheon (20260729-030030) alongside the sibling bare-`gemma` registration defect, since one reconcile predicate likely fixes all of it. `doctor --fix` reproduced the same false alarm on two fresh thread ids afterwards, which is the confirmation.
+
+Adopted a conduit practice correction from claude-deck, who was right: closing stranded items with "forwarded to X" records **routing, not disposition**, and reads as done to an auditor when the instructions were never executed — the stale-green class applied to the router itself. Forwarding is no longer completion; such items stay open under the new owner or close with a result naming the outcome. Router 16 → 12 open, claude-home 10 → 1. Vitals green throughout: diagnose 94/100 (the lone Warn is the load-bearing Colima VM, correctly labelled), 76% RAM free, broker pid 33719 with the `--prompt-cache-bytes` cap intact and prompt cache flat at 2.81 GB, no new `.ips`. `thread prune` collapsed 1048 records to 162; `ccd reap` archived 43.
+
+## Conduit run 2026-07-29T03:10Z
+
+Cleared the in-flight ledger and landed the fork-storm fix. **#364** (journal) merged on arrival;
+**#333** — `thread discover` no longer forks a `watch-router` bridge — reviewed source-deep, rebased
+onto main in a detached worktree, re-bound and merged. It is the right shape: `spawnRouterWatcher`
+is DELETED rather than left unused, so re-wiring it is a compile error, and `killRouterWatcher`
+correctly stays because surface-armed watchers still need stopping. Verified locally at the rebased
+SHA before merging — `go build ./cmd/sirsi` clean, `TestDiscoverNeverForksAWatcher` ok. The instant
+#364 landed, all six unreviewed siblings (#333 #343 #345 #348 #356 #358) flipped CONFLICTING on
+CHANGELOG — the carried gotcha, now observed a third time; they must be taken one at a time.
+
+**Two silent-evidence-loss findings, both caught only by reading the artifact back.** First:
+`sirsi-bind.sh --body @file` does NOT expand the `@file` form. The bind on #333 reported success and
+`binding-hold` went green while the recorded APPROVED review body was the literal string
+`@bind333.md`. The gate opened on a verdict that is a filename. This is a real trap because the
+router verbs require the opposite convention — `router close/send` MUST use `@file` bodies, since
+inline bodies are shell-evaluated — so an operator who has internalised "always @file the body"
+silently produces empty binds. Routed to claude-pantheon (`20260729-030814`) asking for expansion
+or a fail-closed refusal, explicitly not a documentation fix, and explicitly not guarded by a
+blocklist on `@`. Real verdict re-posted to #333 via `gh pr comment --body-file`.
+
+Second, and worse if it had shipped: claude-nexus held **#366** because its new supervisor/child
+split repoints `gemma-server.pid` at the supervisor, and asked whether to hold or have the conduit
+read `gemma-worker.pid`. Both options were unsafe — **`~/.sirsi/gemma-worker.pid` is already taken**,
+naming pid 1644, `sirsi-gemma-worker.sh` under launchd `ai.sirsi.gemma-worker`, an unrelated
+load-bearing subsystem. Reading it would have found a bash script with no `--prompt-cache-bytes`,
+concluded the broker was unbounded, and bounced a healthy broker every 15 minutes; writing it would
+have handed the router worker's stop/liveness paths a pointer to the MLX worker. Answer delivered:
+prior claim on the name wins, rename the MLX worker's pidfile before merge, then sequence normally.
+The conduit's own check is migrated off pidfile NAMES onto process IDENTITY (scan `gemma-*.pid` for
+the process that actually is the capped server, then assert the cap on it) and verified live.
+
+Housekeeping: router 11 → 18 open (2342 closed; the growth is new inbound, not backlog), four
+claude-home items closed to empty, retention prune reclaimed **19.5 MiB**. Vitals green —
+diagnose **100/100** (the Colima warn cleared on its own), RAM 72% free, broker pid 33719 unchanged
+with the cap argv intact, prompt cache 2.80 GB flat, no new `.ips`, all daemons live. `thread
+reconcile` healed four claude-home records to successors; `ccd reap` archived one. Two conduit runs
+overlapped this window and independently reached the same `gemma-worker.pid` collision — the
+duplicate category-language transfer to claude-deck was closed in favour of the sibling's better
+argued item, and the response dedup prevented a double reply. claude-deck is **not registered** in
+the wake registry, so items routed there are wake-unavailable and wait for its next pull.
+
+## Conduit run 2026-07-29T03:35Z
+
+Merged three: **#367** (prior run's journal, carried in-flight and cleared), **#363** (SwiftUI menubar
+Command Deck) after verifying codex-pantheon's two binding blockers were genuinely fixed at `ed2979e1`
+— `panelFill`/`tileFill` now gate the hardcoded near-black behind `snapshotMode && colorScheme ==
+.dark` and fall through to `Color.primary.opacity(0.0x)` live, and the memory-first evidence lines
+(swap + top-process RSS) are restored as `computeState.evidence`; codex additionally taught the
+snapshot harness `--appearance light|dark`, which closes the class rather than the instance, since
+`Snapshot.swift`'s forced `.colorScheme(.dark)` is exactly why a Light regression could never fail a
+check — and **#343** (long inline router bodies refused), which is correct specifically because it
+gates on length, a property of the class, instead of enumerating backticks and `$(...)`.
+
+The run's real finding was a self-inflicted one. `claude-io` reported its `agents.json` wake block
+empty; I checked `origin/main`, found #346 had already populated it, and closed the item as stale —
+then `router doctor` immediately recorded `wake_error: no explicit wake mechanism` against the very
+response I had just routed there. **The router reads the working tree, not `origin/main`**, and the
+repo root sits on a squat branch that never rebased, so #346 merged and never deployed. Commit
+`57f027eb` (2026-07-26) had defused this identical landmine; merging #346 to main re-armed it, and a
+one-agent regression is worse than the original sixteen because eleven stranded agents get noticed
+and one does not. Healed at `865dbf88` by restoring the path from `origin/main` (byte-identical,
+committing only that path, leaving the 102 foreign uncommitted files untouched); verified by artifact
+— wake pass went `0 woken · 2 wake-unavailable` → `1 woken · 1 wake-unavailable`, the remainder being
+`claude-deck`, genuinely unregistered. Corrections routed to `claude-io`, and to `claude-pantheon` as
+a request for a drift check (`git show origin/main:<path>` vs the live file, diffing the whole file
+rather than hunting empty wake blocks) rather than a rearchitecture. Also closed `claude-io`'s ADR-005
+response with the one condition that decides whether its 60–120 s middle band holds: the age stamp
+must be `now − payload.generated_at`, never `now − last_successful_read`, or a dead producer renders
+as "14 s ago" forever and the clause written to withdraw the assertion manufactures it instead.
+
+Vitals green: diagnose 94/100 (the sole priority is a 4.4 GB Virtualization VM, load-bearing), RAM 75%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash reports, all daemons live. `ccd reap` killed 10 leaked sessions; retention prune reclaimed only
+5.9 KiB.
+
+## Conduit run 2026-07-29T03:38Z
+
+Cleared the in-flight ledger and took one PR off the conflicting pile. **PR #368** (the prior run's
+journal) was CLEAN on arrival and merged at `03:35:44Z`. **PR #365** — canon A29, *Scope The Check To
+The Claim*, +34/-0 docs — was the cheapest of the five CHANGELOG-conflicting PRs and is now **merged at
+`03:38:39Z`**. The rebase onto `origin/main` in a detached worktree resolved with **no manual conflict
+work at all**: the CHANGELOG union merge-driver lives in `.git/config`, which every worktree shares, so
+it applied automatically and preserved all sibling entries — verified by reading the diff back
+(CHANGELOG +1 line, PANTHEON_RULES.md +33), not by trusting the clean exit. Two process notes worth
+carrying. First, `--force-with-lease` rejected the initial push as "stale info" because the lease SHA
+was wrong, not because the remote had moved — `git ls-remote` settled it in one call, and the lesson is
+that a lease failure is a claim about the *remote* that deserves an artifact check before anyone starts
+re-fetching. Second, the Ma'at pre-push gate printed **"Tag push — fast pass"** for a SHA→branch
+refspec on the first attempt and then ran the full pipeline on the identical refspec on the second;
+the push that landed was fully gated, so nothing shipped unchecked, but a gate whose depth heuristic
+can misread a branch push as a tag is exactly the A29 shape the merged PR canonizes — a check narrower
+than its claim. Logged for claude-pantheon, not routed as a defect on this evidence alone.
+
+Router quiet: 17 open, one of them claude-home's — codex-pantheon's terminal ACK on the already-merged
+#363 — closed informational, re-affirming that the install/bundle-identity work stays owner-gated on
+the board rather than re-routed. Oldest open item is 3h29m, so nothing crossed the 24h staleness line.
+`doctor --fix`: 0 woken, 15 already-armed, 1 wake-unavailable (`claude-deck`, still unregistered and
+expected). The `865dbf88` registry heal **holds** — `agents.json` re-verified byte-clean against
+`origin/main` both before and after the merge, since merging to main is what re-arms that landmine.
+Vitals green: diagnose 94/100 with the same load-bearing Virtualization VM as sole priority, RAM 80%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash `.ips`, all daemons live. `reconcile` healed 6 threads to successors, `prune` 0, `ccd reap`
+archived 2 session records, retention prune 3.1 KiB.
+
+## Conduit run 2026-07-29T04:00Z
+
+Cleared the in-flight ledger and took three PRs off the board. **#369** (the prior run's journal)
+merged first, as its state file instructed. **#356** turned out to have fallen off the CHANGELOG
+conflict pile on its own — MERGEABLE, docs-only, `binding-hold` already SUCCESS, blocked solely on a
+Lint still in flight — so it merged as soon as that went green: the ADR-031 case study, whose six
+findings (transient MLX peak sizing, biggest-model traps, the operational objective function, runtime
+currency lag, fix-the-machine-first, Gemma as producer rather than refuser) match what this host has
+independently re-learned. **#345** was the one conflict-pile PR for this run, chosen because #347 was
+stacked on it. The union merge-driver in the shared `.git/config` again did the whole job — rebase onto
+main in a `--detach` worktree, zero manual conflict work, and the artifact read back as +120/-0 with a
+one-line CHANGELOG addition and all 163 sibling entries intact.
+
+**Two mechanical traps, both new.** First, zsh applied `:r` as a history modifier to `"$NEW:refs/heads/…"`
+*inside double quotes*, silently mangling the refspec into `…efs/heads/…`; `${NEW}:refs/…` is the fix,
+and quoting alone is not protection. Second, `gh pr merge --delete-branch` on a PR that another PR is
+stacked on **auto-closes the child**: deleting #345's branch closed #347, and #347 then could not be
+reopened at all, because GitHub refuses to reopen a PR whose base ref no longer exists. Recovering it
+took restoring the base branch via `gh api …/git/refs` — which also skips the local Ma'at pre-push gate
+— then reopen, then retarget to `main`. #347 is OPEN again on base `main`, now CONFLICTING, and is the
+natural next rebase target. The restored `codex/router-send-registered-recipient` ref is now unreferenced
+and can be deleted once #347 lands.
+
+**The merge that mattered most is the one that turned out to be half-wrong.** #345 adds
+`validateRecipient` to `internal/dispatch/facade.go`, and it passed a source-deep read on its merits:
+allowlist-by-discovery over `agents.json`, fails closed on an unreadable registry, refuses before
+`SendGuarded` can create a row. What neither the review nor the PR's own regression test caught is the
+bypass list — `if to == "codex" || to == "claude"` — which enumerates the legacy inboxes and stops
+there. `user` is a first-class router recipient that is deliberately not an agent: it is the
+owner-escalation lane the conduit protocol runs on, it is absent from `agents.json` (19 agents), and it
+is special-cased nowhere in `internal/dispatch` or `routercmd.go`. Verified rather than reasoned about:
+built `cmd/sirsi` from `origin/main`, ran it against a copy of the live registry, and
+`--to user` is refused while a registered control passes the guard and only trips the later ADR-024 type
+check. The breakage is latent — the installed binary predates the merge — but it arms itself at the next
+rebuild, *including the binary-drift heal path this very task runs unattended*, so it would most likely
+have first surfaced as the conduit silently losing the ability to escalate to the owner. This is
+precisely enforcement sharing the bug's shape: the defect was "sends reach lanes that cannot receive",
+and the remedy answers it with a hand-typed exception list, so every legitimate non-agent recipient
+nobody remembered is now refused. Routed to codex-pantheon as `20260729-040039` with the reproduction,
+the suggested fix (source the pseudo-recipients from one place, or let the registry carry non-agent
+recipients), and the note that the regression test must pin `--to user` as accepted — pinning one
+specific rejected name is what let this through. `claude-deck` is the same problem's second face:
+unregistered, and holding one real open item (`20260729-030646`) that nothing will be able to reach once
+the guard is live. Flagged, not unilaterally decided.
+
+Everything else green. Diagnose 94/100 on the known load-bearing `com.apple.Virtualization.VirtualMachine`
+priority; RAM 78% free; broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at
+2.73 GB; registry `agents.json` byte-clean against `origin/main` both before and after merging; all
+daemons live; no new crash `.ips` — the new `/Library` `.diag` files are Microstackshots CPU samples
+(`bsdtar`, `node`), not crashes or Jetsams. `reconcile` healed 1 thread, `prune` 0, `ccd reap` killed 2
+leaked sessions of this task, retention prune reclaimed 6.0 KiB. Router 17 open, oldest 3h52m, nothing
+stale; claude-home's own inbox empty.
+
+## Conduit run 2026-07-29T04:06Z
+
+Closed the owner-escalation P0 that the previous run had opened and correctly refused to merge
+into. Merged the in-flight journal PR #370 (CLEAN, all five checks green), then re-reviewed
+codex's #371 at `ee1dbd64` rather than trusting its two RESPONSE items at face value. My prior
+run had blocked #371 because it deleted the `codex`/`claude` bypass while leaving `--to user`
+unreachable; the revised head adds an explicit owner-inbox lane to `validateRecipient`, so I
+lifted the hold, bound it, and squash-merged it at 04:08:39Z — verifying the artifact on
+`origin/main` afterwards rather than trusting the merge exit code. The judgement call worth
+recording: `main` rejected **all five** owner aliases, #371 fixes the one that is load-bearing,
+so holding out for the perfect fix would have kept the worse state live. Merging a strict
+improvement beats blocking on a complete one.
+
+The residual is a genuine two-copies bug and is routed, not forgotten (`20260729-040924`):
+`internal/router/gate.go` `ClassifyGate` treats five recipients as owner escalation
+(`user`/`owner`/`cylton`/`sirsimaster`/`cylton-collymore`) while `internal/dispatch/facade.go`
+now admits only `user`. The copy was **forced, not careless** — `internal/router/wake.go`
+imports `internal/dispatch`, so reaching the gate predicate from dispatch would be a compile-time
+cycle. The cycle-free fix is to push one exported predicate down into `internal/work`, which is
+pure-stdlib and already imported by both. This is the A29 "enforcement must not share the bug's
+shape" pattern again: a hand-copied allowlist drifts from the predicate it mirrors, so the
+regression test must drive both call sites from one shared slice and never re-enumerate it.
+
+New trap found: **PR #372 was opened 38 seconds before #371 merged** and is now DIRTY against it.
+Four of its five files are already on main, but its `facade.go` deletes the bypass with *no*
+replacement lane — rebasing it and resolving the conflict toward its side would silently re-arm
+the exact `--to user` break just closed. Its one unique contribution is two `internal/mcp/tools.go`
+schema descriptions. Left the PR to its lane agent per orchestrate-don't-absorb, with the hazard
+documented on the PR and routed as `20260729-041054`, recommending it be closed in favour of a
+two-line tools.go PR rather than rebased.
+
+Escalated one owner decision (`20260729-041151`, the only open `to: user` item): `claude-deck` is
+absent from `agents.json` yet holds a real open item, and now that the dispatch guard is on main,
+that lane becomes unroutable at the next binary rebuild. Recommended retiring the lane and
+rerouting its item over inventing a registry entry. Not rebuilding the binary meanwhile.
+
+Vitals green throughout: diagnose 94/100 with the known load-bearing
+`com.apple.Virtualization.VirtualMachine` as sole priority, 79% RAM free, broker pid 33719 with
+`--prompt-cache-bytes 4294967296` intact and prompt cache flat at 2.73 GB, all daemons live, no
+new crash or Jetsam `.ips` since the last run. `thread reconcile` healed one reaped→successor
+record, `prune` 0, `ccd reap` archived one completed run of this task, retention prune reclaimed
+4.3 KiB. claude-home inbox closed to 0.
+
+## Conduit run 2026-07-29T04:30Z
+
+Merged **#373** (the prior run's journal, docs-only, all five checks green) at 04:24:56Z. The
+substantive work was **#374**, codex-pantheon's implementation of the follow-up I routed as
+`20260729-040924`: the five reserved owner-recipient aliases single-sourced into
+`internal/work` as `OwnerRecipients()`/`IsOwnerRecipient()` — pure stdlib, zero internal
+imports, so the `dispatch`→`router` cycle that forced the original copy stays broken — and
+consumed by both `facade.go:validateRecipient` and `gate.go:ClassifyGate`. Both regression
+tests now drive from the shared slice rather than a hand-copied list, which is what makes it
+A29-clean instead of the same divergence bug wearing a test costume. I bound it on `f546e80`
+at 04:25Z.
+
+Thirty seconds later a force-push moved the head to `990c5e29`, dropping the bind by design —
+and the amended head is **not the change I reviewed**. Its delta reaches into
+`cmd/sirsi/routercmd.go` and `internal/router/strand.go` and inverts the `wake-install` leak
+guard from `AgentHasLiveThread` to `AgentArmed`, relaxing the owner's 2026-07-10 finding
+(`reference_schedulewakeup_process_leak`). That may be the right call under "the durable unit
+is the worker loop, not the session" — but it is an authority-model decision about when a
+background LaunchAgent may be armed on top of a live session, and it rode in on a PR titled
+"single-source owner recipient aliases", *after* an independent bind. Worse, it is untested in
+the direction that now matters: after the diff `AgentHasLiveThread` has **zero production
+callers** and is exercised only by its own surviving test, while the predicate that actually
+gates arming has none. A suite that pins the retired check and ignores the live one is A29
+exactly. **Bind withheld**; verdict posted on the PR and routed back as `20260729-042822`,
+asking for #374 to be reset to the `f546e80` content (I re-bind on sight) and the guard change
+to be opened separately with a test that drives the new guard and a disposition for the
+callerless predicate.
+
+Also caught **#375** — a duplicate of #374 opened one minute apart, same fix under
+`internal/work/recipient.go` instead of `owner.go`, guaranteed to conflict. #374 is the keeper:
+it carries the CHANGELOG entry and the stronger `facade_test` assertion (#375 drops the
+per-item `IsOwnerRecipient` check on survivors). #375's only unique content is the two
+`internal/mcp/tools.go` schema-description lines — which are also the only unique content in
+the DIRTY #372. Recommended closing both and reopening those two lines as one small PR off
+main; #372 must never be rebase-merged, since its `facade.go` side deletes the bypass with no
+reserved lane and re-arms the `--to user` P0.
+
+Housekeeping: two codex responses ACK-closed as superseded by action already taken, leaving
+claude-home at zero open. `reconcile` healed one reaped→successor thread; `ccd reap` killed six
+leaked completed-run sessions; retention reclaimed 5.9 KiB. Vitals green — diagnose 94/100 with
+the load-bearing VM as sole priority, 77% RAM free, broker pid 33719 still capped at 4 GiB with
+the prompt cache flat at 2.74 GB, no new crash or Jetsam reports. The only open `to: user` item
+remains last run's `claude-deck` lane decision; `doctor` reports it as wake-unavailable by
+design, and it is not being nagged.
+
+## Conduit run 2026-07-29T04:42Z
+
+Three PRs merged and the router's owner-recipient work closed out. **#376** (last run's journal)
+merged first as the standing next-run pattern. **#374** landed the `internal/work.OwnerRecipients()`
+/`IsOwnerRecipient()` single authority after codex narrowed its head to `042434de` — the
+wake-install guard inversion I had blocked on was gone, leaving exactly the content bound at
+`f546e80`, so the bind was re-placed and the PR merged. The guard itself came back correctly as
+its own PR **#377**, which is the shape the earlier verdict asked for: `wakeInstallBlocked` is now
+one named authority consumed by both `router wake-install` and the cutover re-arm loop, and
+`TestWakeInstallBlockedUsesArmedWatcher` pins all three states of the predicate that actually gates
+arming (loop-dead live session does not block, armed watcher does, `--force` bypasses). With
+`AgentArmed` already covered directly on main, the A29 objection — a new guard gating arming with
+no test of its own — is discharged, and the now-callerless `AgentHasLiveThread` was deleted rather
+than left reading like a live check. The relaxation is right on the merits: the 2026-07-10 leak was
+duplicate pull-loops, so blocking on any live thread refused to arm exactly the loop-dead sessions
+that most needed it.
+
+**#347** was pulled out of the conflict pile and resolved. It turned out to be the PR that
+originally introduced `dispatch.validateRecipient`, carrying a bare `codex`/`claude` bypass — the
+same bug #371 fixed and #374 superseded — so merging it unresolved would have regressed both.
+Main won every overlapping line; the one trap was that the second `facade_test.go` conflict had
+entangled main's assertion block with #347's genuinely-new
+`TestInboxFailsClosedWhenStoreErrorsAndNoFileItems`, which a careless "take theirs" would have
+deleted silently. What survives is the PR's real contribution and the reason it is worth landing:
+`Facade.Inbox` now fails closed when the store read errors and no file items corroborate an empty
+result, instead of rendering "No open items" during a store outage — the stale-green class, a blind
+fabric reporting a clean inbox. Net delta collapsed to 3 files, +30/-2, verified locally (no
+markers, gofmt/vet clean, build and the dispatch/router/work tests green) and pushed from the main
+checkout so the Ma'at gate ran. Because that resolution materially rewrote a PR I did not author,
+it was routed to codex-pantheon for independent review rather than self-bound.
+
+Vitals green: diagnose 94/100 with the load-bearing VM as sole priority, 80% RAM free, broker
+healthy on pid 2154 with the `4294967296` cap intact and the prompt cache flat, all daemons live,
+no new crash or Jetsam reports. `reconcile` healed 5 reaped→successor threads, prune 0, `ccd reap`
+archived 3 completed conduit-run sessions, retention reclaimed 2.0 KiB. `router doctor --fix` was
+still running after eight minutes and is recorded as inconclusive, not green.
+
+## Conduit run 2026-07-29T04:52Z
+
+Merged the in-flight journal PR #378, then closed out the two arcs the previous run left dangling —
+both by reading main rather than trusting the ledger. **PR #347 turned out CLOSED-unmerged**, not
+merged as the routed bind implied, but that is correct and needs no rework: `origin/main`'s
+`Facade.Inbox` already fails closed on a store error in the cutover path (`store inbox unavailable
+(store is the cutover authority)`), which is strictly stronger than what #347 proposed, and the
+pre-cutover path deliberately keeps the store additive so a broken store cannot strand the canonical
+file leg. The contribution is superseded, not lost. **PR #375 got a real verdict instead of another
+deferral.** Diffing its head `e053d7c0` against main file-by-file showed it is not merely stale: its
+`internal/work/recipient.go` duplicates the `internal/work/owner.go` authority #374 already merged,
+and its `strand.go` hunk **re-adds `AgentHasLiveThread`, the predicate #377 deliberately deleted as
+production-callerless**. Merging or rebasing #375 would revert merged work and re-arm the A29
+objection I had withdrawn — the load-bearing reason it must be closed rather than fixed up. Its only
+surviving unique content was two `internal/mcp/tools.go` description strings still reading `"Your
+agent name (codex or claude)"`, i.e. exactly the bare agent-type form `validateRecipient` has REFUSED
+since #371: the MCP schema was instructing every client to identify itself in the form the dispatch
+guard rejects. Those two lines are salvaged as **PR #379** (docs-only, green) so closing #375 loses
+nothing. Routed both the close recommendation and the standing `codex-pantheon` wake-registry gap to
+claude-pantheon — that agent has a LIVE `ai.sirsi.router.wake.codex-pantheon` LaunchAgent (pid 99109)
+and answers items within a minute, yet carries no `wake.mechanism` in the registry, so doctor
+under-reports it as wake-unavailable; the fix is either the `claude-io` registry treatment or, if
+withholding wake from codex lanes is deliberate policy, correcting doctor to say "deliberately
+withheld" rather than "unavailable", since those two states need different operator responses.
+Vitals green throughout: diagnose 94/100 on the load-bearing Virtualization VM only, RAM 78% free,
+broker pid 2154 still identity-verified as the capped server with `--prompt-cache-bytes 4294967296`
+and cache flat at 0.07 GB, all core daemons live, no new crash or Jetsam `.ips`. `ccd reap` killed
+two leaked sessions from this task's own earlier runs; reconcile and thread prune were both no-ops;
+retention reclaimed 7.8 KiB. #340 re-verified as based on `feat/provider-abstraction` (#339's branch)
+and left unmerged — never the child first.

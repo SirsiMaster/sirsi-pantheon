@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 	"github.com/spf13/cobra"
 )
 
@@ -96,6 +97,43 @@ var brainLevelsCmd = &cobra.Command{
 			fmt.Fprintf(w, "  Level %d — %s  [%s]\n      %s\n", l.Level, l.Name, l.Cost, l.Unlocks)
 		}
 		fmt.Fprintln(w, "\nSwap a role with `sirsi brain use <role> <provider>`; `sirsi brain use <role> none` reverts to deterministic.")
+		return nil
+	},
+}
+
+var brainRouteCmd = &cobra.Command{
+	Use:   "route <role>",
+	Short: "Show which provider the Local LLM router would use for a role",
+	Long: `Show the Local LLM route for a role without loading a model or mutating
+the router. This is the LLM router, not the idea/thread router: it decides which
+model backend occupies Sirsi's Local LLM slot, then applies Sirsi identity above
+that backend.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		role := brain.Role(args[0])
+		known := false
+		for _, r := range brain.Roles() {
+			if r == role {
+				known = true
+			}
+		}
+		if !known {
+			return fmt.Errorf("unknown role %q (want dispatch|triage|execution)", role)
+		}
+		cfg, err := brain.LoadConfig()
+		if err != nil {
+			return err
+		}
+		route := localrouter.Resolve(cfg, role)
+		if brainStatusJSON {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(route)
+		}
+		w := cmd.OutOrStdout()
+		fmt.Fprintf(w, "𓁟 Local LLM Router\n\n")
+		fmt.Fprintf(w, "Role:     %s\n", route.Role)
+		fmt.Fprintf(w, "Provider: %s\n", route.Provider.String())
+		fmt.Fprintf(w, "Identity: Ask Sirsi internal system manager\n")
+		fmt.Fprintf(w, "\nThis route can point at Gemma, Qwen, Ollama, Core ML, or another local backend; Sirsi identity stays above the model.\n")
 		return nil
 	},
 }
@@ -209,5 +247,6 @@ model. A safe way to preview a ` + "`brain use`" + ` change (A29 §test/no-side-
 func init() {
 	brainStatusCmd.Flags().BoolVar(&brainStatusJSON, "json", false, "emit the status read-model as JSON (for menubar/Nexus surfaces)")
 	brainDoctorCmd.Flags().BoolVar(&brainDoctorJSON, "json", false, "emit the diagnoses as JSON")
-	brainCmd.AddCommand(brainStatusCmd, brainLevelsCmd, brainUseCmd, brainDoctorCmd, brainTestCmd)
+	brainRouteCmd.Flags().BoolVar(&brainStatusJSON, "json", false, "emit the resolved Local LLM route as JSON")
+	brainCmd.AddCommand(brainStatusCmd, brainLevelsCmd, brainRouteCmd, brainUseCmd, brainDoctorCmd, brainTestCmd)
 }
