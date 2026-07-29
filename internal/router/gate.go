@@ -22,7 +22,6 @@ package router
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -162,8 +161,7 @@ var gateRules = []gateRule{
 // Deterministic and side-effect free.
 func ClassifyGate(item work.Item) GateDecision {
 	// Addressed to the human is an explicit escalation — the owner IS the assignee.
-	switch strings.ToLower(strings.TrimSpace(item.To)) {
-	case "user", "owner", "cylton", "sirsimaster", "cylton-collymore":
+	if work.IsOwnerRecipient(item.To) {
 		return GateDecision{Gated: true, Class: GateEscalate, Reason: "item is addressed to the owner"}
 	}
 

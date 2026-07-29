@@ -13,8 +13,8 @@ extension EnvironmentValues {
     }
 }
 
-// Snapshot mode — `SirsiMenubar --snapshot <outDir>` renders the popover's key
-// screens to PNGs and exits: headless, display-gated QA proof of what the
+// Snapshot mode — `SirsiMenubar --snapshot <outDir> [--appearance light|dark]`
+// renders the popover's key screens to PNGs and exits: headless, display-gated QA proof of what the
 // surface really shows, with no Screen Recording TCC and no human at the screen.
 //
 // How: the harness first runs the SAME CLI calls the live views make
@@ -25,7 +25,7 @@ extension EnvironmentValues {
 // eternal spinner. (NSHostingView + cacheDisplay was tried first and cannot
 // composite SwiftUI's render-server content: captures come back nearly blank.)
 @MainActor
-func runSnapshotMode(outDir: String, width: CGFloat = 380) {
+func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorScheme = .dark) {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
@@ -105,13 +105,14 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380) {
             let renderer = ImageRenderer(content: shot.view
                 .environmentObject(Nav())
                 .environment(\.snapshotMode, true)
-                .environment(\.colorScheme, .dark)
+                .environment(\.colorScheme, appearance)
                 // Width is a parameter so the harness can prove RESPONSIVE
                 // behaviour headlessly: render the same screen at the panel's
                 // minSize and at a wide size and diff them. Verifying type
                 // scaling by driving the live panel needs an unlocked screen;
                 // this does not.
                 .frame(width: width, height: height)
+                .background(appearance == .light ? Color.white : Color.black)
                 .environment(\.sirsiTypeScale, typeScale(forWidth: width)))
             renderer.scale = 2.0
             var wrote = 0

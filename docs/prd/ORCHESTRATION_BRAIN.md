@@ -100,6 +100,7 @@ Config lives in `~/.sirsi/orchestrator.conf` (the existing `sirsi-brain.sh` cont
 
 - **`sirsi brain` CLI** (the control plane):
   - `status` — current tier/level, model per role, loop liveness, RAM headroom.
+  - `route <role>` — show the Local LLM router's resolved backend without loading a model.
   - `use <role> <provider>` — swap a role's model (e.g. `use triage local:qwen2.5-7b-instruct`); `use <role> none` drops to deterministic.
   - `test [item]` — dry-run a triage/route decision and show the reasoning (no side effects).
   - `doctor` — troubleshoot: is the model loaded? RAM ok? loop alive? config valid? auth present (Level 3)? Emits plain-English fixes.
@@ -134,7 +135,7 @@ Met when ALL hold:
 
 ## 7. Neith's Triad (A22) — seeds for the ADR
 
-**Data flow:** `inbox event → Tier-0 rules → {handled | ambiguous} → Tier-1 triage (rules→optional LLM) → {ROUTE/CLOSE/ACK | ESCALATE} → Tier-2 agentic execution → result back to router`. Fallback: any model-absent/error path degrades to deterministic (escalate or queue), never drops an item.
+**Data flow:** `inbox event → Tier-0 rules → {handled | ambiguous} → Local LLM Router resolves role backend → Tier-1 triage (rules→optional LLM) → {ROUTE/CLOSE/ACK | ESCALATE} → Tier-2 agentic execution → result back to router`. Fallback: any model-absent/error path degrades to deterministic (escalate or queue), never drops an item.
 
 **Implementation order:** P1 (dispatch) → P2 (control plane) → P3 (triage) → P4 (surfaces) → P5 (canon/docs) → P6 (validate/deploy). P1 is the minimum viable; P2-P3 deliver the swap UX; P4-P6 make it public-grade.
 
@@ -144,7 +145,7 @@ Met when ALL hold:
 |---|---|---|
 | What is the eternal loop? | a model / a Claude session / a daemon | **daemon (Tier-0), no LLM** — models are invoked, not resident loops |
 | Default for public download | needs an LLM / works with none | **Level 0 deterministic, ships on** — zero friction, zero cost |
-| Triage model | gemma-4 (reasoner) / format-instruct (Qwen-class) / rules-only | **rules-first + pluggable local instruct**; gemma-4 stays the build-draft model |
+| Triage model | gemma-4 (reasoner) / format-instruct (Qwen-class) / rules-only | **rules-first + Local LLM router**; Gemma is one resident backend, not the slot |
 | Cost model | per-token default / local default | **local/free default**; hosted (Level 3) strictly opt-in |
 | Where users manage it | code only / config + CLI + GUI + Nexus | **all of CLI `sirsi brain` + menubar + Nexus** — visible + modifiable |
 

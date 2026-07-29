@@ -87,6 +87,15 @@ func setupRouterRepoRoot(t *testing.T) string {
 	}`), 0o644); err != nil {
 		t.Fatalf("write state.json: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(rdir, "agents.json"), []byte(`{
+		"agents": {
+			"claude-home": {"type": "claude", "command": ["true"], "cwd": "/tmp"},
+			"claude-pantheon": {"type": "claude", "command": ["true"], "cwd": "/tmp"},
+			"codex-pantheon": {"type": "codex", "command": ["true"], "cwd": "/tmp"}
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("write agents.json: %v", err)
+	}
 
 	t.Chdir(root)
 
@@ -144,7 +153,7 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 		"author":       "claude",
 		"title":        "Addressed Review Beta",
 		"content":      "# Addressed Review Beta\nreviewer: claude\n\nPlease read.",
-		"addressed_to": "codex",
+		"addressed_to": "codex-pantheon",
 	})
 	if err != nil {
 		t.Fatalf("handleRouterSubmit addressed: %v", err)
@@ -153,13 +162,13 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 		t.Fatalf("addressed submit failed: %s", resultText(t, res))
 	}
 	text := resultText(t, res)
-	if !strings.Contains(text, "Added to codex's inbox (items/)") {
+	if !strings.Contains(text, "Added to codex-pantheon's inbox (items/)") {
 		t.Errorf("expected items/ inbox note, got: %s", text)
 	}
 	addressedID := extractDocID(t, text)
 
 	// Poll lists the canonical items/ inbox — the same view as `router pull`.
-	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex"})
+	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex-pantheon"})
 	if err != nil {
 		t.Fatalf("handleRouterPoll: %v", err)
 	}
@@ -170,7 +179,7 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 
 	// ack only clears LEGACY state.json pending entries — the items/ inbox is
 	// closed by `sirsi router close`, never by an ack.
-	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex", "ack": true})
+	res, err = handleRouterPoll(map[string]interface{}{"agent": "codex-pantheon", "ack": true})
 	if err != nil {
 		t.Fatalf("handleRouterPoll ack: %v", err)
 	}
@@ -246,7 +255,7 @@ func TestHandleRouterSubmit_InvalidAuthorAndType(t *testing.T) {
 		"author":       "claude",
 		"title":        "Bad Type",
 		"content":      "x",
-		"addressed_to": "codex",
+		"addressed_to": "codex-pantheon",
 	})
 	if !res.IsError {
 		t.Error("unknown doc type should be rejected")
@@ -261,7 +270,7 @@ func TestHandleRouterWait_PendingItemsReturnImmediately(t *testing.T) {
 		"author":       "claude",
 		"title":        "Wake Up Codex",
 		"content":      "# Wake Up Codex\nauthor: claude\n\nWork arrived.",
-		"addressed_to": "codex",
+		"addressed_to": "codex-pantheon",
 	})
 	if err != nil || res.IsError {
 		t.Fatalf("seed submit failed: %v / %+v", err, res)
@@ -271,7 +280,7 @@ func TestHandleRouterWait_PendingItemsReturnImmediately(t *testing.T) {
 	// timeout_s above the cap also exercises the clamp branch; the pending
 	// item guarantees an immediate return either way.
 	res, err = handleRouterWait(map[string]interface{}{
-		"agent":     "codex",
+		"agent":     "codex-pantheon",
 		"timeout_s": float64(100),
 	})
 	if err != nil {
@@ -281,7 +290,7 @@ func TestHandleRouterWait_PendingItemsReturnImmediately(t *testing.T) {
 		t.Fatalf("router_wait blocked %v despite a pending item", elapsed)
 	}
 	text := resultText(t, res)
-	if res.IsError || !strings.Contains(text, "item(s) waiting for codex") {
+	if res.IsError || !strings.Contains(text, "item(s) waiting for codex-pantheon") {
 		t.Errorf("expected waiting notice, got: %s", text)
 	}
 	if !strings.Contains(text, "Wake Up Codex") {
