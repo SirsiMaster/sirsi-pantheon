@@ -82,13 +82,18 @@
       "type": "claude",
       "command": [
         "claude",
+        "--model",
+        "opus",
         "--print",
         "--permission-mode",
         "auto"
       ],
       "cwd": "/Users/thekryptodragon/Development/sirsi-io",
       "workstream": "io",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-io"
+      }
     },
     "claude-kfca": {
       "id": "claude-kfca",

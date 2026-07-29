@@ -164,7 +164,7 @@ func TestContainer_Fields(t *testing.T) {
 
 func TestFormatContainerStatus_Running_Mocked(t *testing.T) {
 	s := FormatContainerStatus(Container{Running: true, Status: "Up 3 hours"})
-	if s != "🟢 Up 3 hours" {
+	if s != "🟡 Up 3 hours — running; no Docker healthcheck" {
 		t.Errorf("got %q", s)
 	}
 }

@@ -1,8 +1,10 @@
 package guard
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1129,6 +1131,100 @@ func TestRemediationCommand(t *testing.T) {
 		}
 		if got := remediationKind(f); got != c.wantKind {
 			t.Errorf("remediationKind(%q/%v) = %q, want %q", c.check, c.sev, got, c.wantKind)
+		}
+	}
+}
+
+// A VM inside the reservation it was LAUNCHED with is reserved capacity, not a
+// hog — and telling the operator to quit it would destroy the consensus ledger
+// it anchors. A VM that outgrows that reservation, or one with no live runtime
+// record behind it, must still alarm.
+//
+// The reservation is read from Lima's GENERATED record and gated on a live
+// vz.pid, so the table exercises the runtime record rather than the
+// user-editable desired-config file: an operator editing `colima.yaml` must not
+// be able to grant an exemption to a VM that is not actually running that way.
+func TestTopMemoryProcessesCapacityReservedVM(t *testing.T) {
+	const vmCmd = "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
+	live := strconv.Itoa(os.Getpid()) // this test process: guaranteed alive
+
+	tests := []struct {
+		name    string
+		rssKB   int64
+		vzPid   string // empty = write no vz.pid at all
+		lima    string // empty = write no lima.yaml at all
+		wantSev DiagnosticSeverity
+	}{
+		{"inside launched reservation", 5 * 1024 * 1024, live, "cpus: 6\nmemory: 10240MiB\n", SeverityOK},
+		{"reservation in GiB", 5 * 1024 * 1024, live, "memory: 10GiB\n", SeverityOK},
+		{"exceeds launched reservation", 12 * 1024 * 1024, live, "memory: 10240MiB\n", SeverityWarn},
+		{"no runtime record", 5 * 1024 * 1024, "", "", SeverityWarn},
+		{"vm not running (dead vz.pid)", 5 * 1024 * 1024, "2147483646", "memory: 10240MiB\n", SeverityWarn},
+		{"unparseable reservation", 5 * 1024 * 1024, live, "memory: lots\n", SeverityWarn},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			inst := filepath.Join(home, ".colima", "_lima", "colima")
+			if err := os.MkdirAll(inst, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if tc.vzPid != "" {
+				if err := os.WriteFile(filepath.Join(inst, "vz.pid"), []byte(tc.vzPid), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.lima != "" {
+				if err := os.WriteFile(filepath.Join(inst, "lima.yaml"), []byte(tc.lima), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// A desired-config file that would grant a far larger exemption must
+			// NOT be consulted: if this ever leaks back in, "exceeds launched
+			// reservation" silently flips to OK.
+			desired := filepath.Join(home, ".colima", "default")
+			if err := os.MkdirAll(desired, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(desired, "colima.yaml"), []byte("memory: 64\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("HOME", home)
+
+			m := healthyMock()
+			m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = fmt.Sprintf(
+				"  PID   RSS    VSZ  %%CPU USER     COMM\n 21580 %d 20000000 4.0 user %s", tc.rssKB, vmCmd)
+			m.CommandResults["ps -p 21580 -o command="] = vmCmd
+
+			var report DoctorReport
+			checkTopMemoryProcesses(m, &report)
+			if len(report.Findings) != 1 {
+				t.Fatalf("findings = %d, want 1", len(report.Findings))
+			}
+			f := report.Findings[0]
+			if f.Severity != tc.wantSev {
+				t.Fatalf("severity = %v, want %v (%q)", f.Severity, tc.wantSev, f.Message)
+			}
+			// The correction this test exists for: an exempt VM is RE-LABELED,
+			// never hidden. A surface that drops the largest process on the box
+			// leaves the operator unable to reason about memory at all.
+			if !strings.Contains(f.Detail, "VirtualMachine") {
+				t.Errorf("VM absent from Detail %q — exempt must mean re-labeled, not hidden", f.Detail)
+			}
+			if tc.wantSev == SeverityOK && !strings.Contains(f.Detail, "capacity-reserved") {
+				t.Errorf("Detail = %q, want the reservation named", f.Detail)
+			}
+		})
+	}
+}
+
+// The memory remediation must never tell an operator to quit the largest
+// process: on this host that is the Gemma broker or the ledger-anchoring VM.
+func TestMemoryRemediationDoesNotSayQuit(t *testing.T) {
+	for _, check := range []string{"RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral"} {
+		if got := remediationCommand(DiagnosticFinding{Check: check, Severity: SeverityWarn}); got != "sirsi relieve --memory" {
+			t.Errorf("remediationCommand(%s) = %q, want %q", check, got, "sirsi relieve --memory")
 		}
 	}
 }

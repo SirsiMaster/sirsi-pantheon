@@ -32,11 +32,16 @@ build-debug:
 # --- Install to PATH ---
 install: build
 	@mkdir -p $(INSTALL_DIR)
-	cp $(BUILD_DIR)/sirsi $(INSTALL_DIR)/sirsi
-	@# macOS arm64: cp over a signed binary stales the AMFI cdhash cache → SIGKILL on exec (exit 137).
-	@# Re-sign in place so `sirsi` runs post-install (macOS arm64 cdhash cache).
+	@tmp="$(INSTALL_DIR)/.sirsi.$$$$.new"; \
+		cp $(BUILD_DIR)/sirsi "$$tmp"; \
+		chmod +x "$$tmp"; \
+		if [ "$$(uname -s)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then \
+			codesign --force --sign "$(SIGN_ID)" "$$tmp" || { rm -f "$$tmp"; exit 1; }; \
+		fi; \
+		mv -f "$$tmp" "$(INSTALL_DIR)/sirsi"
+	@# macOS arm64: sign the staged inode before the atomic rename so AMFI never
+	@# sees an unsigned or partially-written binary at the canonical PATH.
 	@# SIGN_ID="<stable identity>" keeps FDA grants across rebuilds (A6; A27 drift).
-	@codesign --force --sign "$(SIGN_ID)" "$(INSTALL_DIR)/sirsi" 2>/dev/null || true
 	@# Re-sign changes the cdhash; launchd keeps enforcing the OLD one per job
 	@# (stale LWCR -> "Launch Constraint Violation" crash-loop; kickstart can't
 	@# clear it). Bootout+bootstrap every ai.sirsi.* job with the NEW binary.

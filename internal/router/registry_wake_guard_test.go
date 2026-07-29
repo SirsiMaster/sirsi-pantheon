@@ -8,21 +8,8 @@ import (
 	"testing"
 )
 
-// wakeExemptAgents are the agent ids allowed to carry an empty wake block.
-//
-// codex-* agents are woken out-of-band (their host drives them), so they have
-// never had a wake mechanism in the registry — an empty block is correct, not
-// missing. claude-io is exempt because the I/O pillar's wake path is carried
-// outside the registry today; that is tracked separately and should be removed
-// from this list once it registers a mechanism.
-//
-// Everything NOT listed here is a claude-* agent that Horus is expected to wake
-// through the registry, and an empty wake block for one of those means the
-// fleet silently stops waking it.
-var wakeExemptAgents = map[string]bool{"claude-io": true}
-
 func wakeExempt(id string) bool {
-	return strings.HasPrefix(id, "codex-") || wakeExemptAgents[id]
+	return strings.HasPrefix(id, "codex-")
 }
 
 // TestRegistryWakeCoverage asserts the checked-in agent registry actually

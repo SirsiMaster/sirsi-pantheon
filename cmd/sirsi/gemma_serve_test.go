@@ -27,6 +27,17 @@ func TestGemmaNeverAgainInvariants(t *testing.T) {
 	if !strings.Contains(gemmaCapWrapper, "set_memory_limit") || !strings.Contains(gemmaCapWrapper, "set_cache_limit") {
 		t.Error("the cap wrapper must set mx.set_memory_limit + set_cache_limit before launching the server")
 	}
+	stackIdx := strings.Index(gemmaCapWrapper, "threading.stack_size(512 * 1024 * 1024)")
+	runIdx := strings.Index(gemmaCapWrapper, "runpy.run_module")
+	if stackIdx < 0 {
+		t.Error("the cap wrapper must raise Python worker thread stack before MLX server threads start")
+	}
+	if runIdx < 0 {
+		t.Fatal("the cap wrapper must still launch mlx_lm.server through runpy")
+	}
+	if stackIdx > runIdx {
+		t.Error("threading.stack_size must run before mlx_lm.server creates worker threads")
+	}
 
 	// 3) The cold path now refuses through the SAME NodeCapacity.Fits gate as the
 	//    warm broker (no separate gemmaSafeConcurrency helper) — and the 2×model

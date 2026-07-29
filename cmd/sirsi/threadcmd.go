@@ -23,39 +23,17 @@ func watcherPidfile(threadID string) string {
 	return fmt.Sprintf("/tmp/sirsi-router-watch-%s.pid", threadID)
 }
 
-// spawnRouterWatcher forks a detached `sirsi thread watch-router` subprocess
-// that uses fsnotify on the router directory and fires the agent's spawn
-// command on every change. Dies when parent_pid exits or `sirsi thread close`
-// runs. Dedup via pidfile.
-func spawnRouterWatcher(threadID, agentID, routerRoot string, parentPID int) error {
-	pf := watcherPidfile(threadID)
-	if data, err := os.ReadFile(pf); err == nil {
-		if oldPID, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			if processAlive(oldPID) {
-				return nil // existing watcher alive, dedup
-			}
-		}
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(self, "thread", "watch-router",
-		"--thread", threadID,
-		"--agent", agentID,
-		"--router-root", routerRoot,
-		"--parent-pid", strconv.Itoa(parentPID))
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.SysProcAttr = detachedSysProcAttr() // detach so we survive caller exit (Unix Setsid; nil on Windows)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	_ = os.WriteFile(pf, []byte(strconv.Itoa(cmd.Process.Pid)), 0o644)
-	_ = cmd.Process.Release() // don't wait on it
-	return nil
-}
+// The fs-watcher is SPAWNED BY THE SURFACE, never by the router.
+//
+// `spawnRouterWatcher` used to live here and was forked by `thread discover`
+// for every process it adopted. That is a self-feeding storm: the forked
+// watch-router runs the agent's spawn command, starting a NEW agent process
+// which is itself unregistered, so the next discover pass adopts it and forks
+// again. Removed 2026-07-27 after it took the workstation to 358 `claude`
+// processes, load average 436, and swap 48.5 GB of 49 GB.
+//
+// killRouterWatcher stays: watchers armed BY A SURFACE still need stopping on
+// close/suspend, and the pidfile contract is unchanged.
 
 // killRouterWatcher cleanly stops the fs-watcher for a thread, if any.
 func killRouterWatcher(threadID string) {

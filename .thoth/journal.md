@@ -861,3 +861,146 @@ Proof was end-to-end, not source-only: the release target compiled, all 17 Swift
 The first interpretation was wrong: the owner was pointing to the 6.9 GB safe-to-reclaim value and Horus's amber problem indicator, not asking to replace Pantheon's gold visual identity. The emerald branding change was reverted. The typography work remained and was extended app-wide with Large Dynamic Type plus a 360pt design width.
 
 Live inspection found the actual state. Autonomous mode was ON, but its loop consumes Horus diagnostic levers only; it does not consume Anubis safe-storage findings, despite the broad UI wording. A deliberate safe-only Anubis clean moved 158 items to Trash and reclaimed 7.5 GB; nine protected/error items were skipped. A fresh scan then reported zero safe bytes, so the storage figure clears on refresh. Horus was amber for a genuine memory condition: first a swap-death/leaked-session warning, then—after all 17 leaked sessions exited—a >4 GB Python memory consumer. The Eye must remain amber while a current Warn finding exists; hiding it would falsify health.
+
+## Conduit run 2026-07-28T00:00Z — three runs of backlog, written the moment a clean checkout existed
+
+The journal entry for the 23:52Z and 23:59Z runs was blocked twice for the same reason and not for laziness: `.thoth/journal.md` lives in the pantheon checkout, and that checkout has been parked on `fix/sirsi-gemma-bare-server-chipA` with 79 uncommitted files for hours. Writing there risks a foreign `git add -A` sweeping the entry into someone else's commit, which is a known leak class in this repo. This run took the obvious way around it: `.claude/worktrees/rtk-savings` is already a worktree on `main` and was clean, so the entry lands from there and the dirty checkout is never touched.
+
+The backlog it covers. Seven stranded items were ACK-closed across the earlier runs, and both open claude-nexus items were closed the run after. The broker died at 23:53:55Z and the cause was not memory: pid 85829 took a SIGBUS at the stack guard with 87,444 frames on thread 1, the report printing `RECURSION LEVEL 87424` through `mlx::core::detail::compile_dfs` — one frame per compute-graph node, no depth bound, a 16 MB stack exhausted. The prompt cache was 3.59 GB *under* its 4 GB bound five seconds before death and memory was 88% free, so every instinct that reaches for Jetsam was wrong here. launchd restarted it in about a second as pid 75716, argv still carrying `--prompt-cache-bytes 4294967296`, and it has now been stable across two runs with the cache sitting at 2.57 GB. The forensics and the fix — `threading.stack_size(512*1024*1024)` at import in `~/.sirsi/gemma-capped-server.py`, a virtual reservation with no resident cost — went to claude-pantheon as `20260727-235714`. The escalation bar for the next run is a *second* `Python-*.ips` with `compile_dfs` in it, not a repeat of this one.
+
+Two merges landed this run. PR #334 (`docs(prd): Sirsi v2 — from utility to application`) crossed the one-hour bar at 00:05:47Z by the clock and was squash-merged at 00:01:28Z once it did, all five checks green including binding-hold; it lands a *proposed* PRD carrying an owner-decision section, so merging it lands a proposal and not a decision. SirsiNexusApp #193 (`fix(portal): Ask Sirsi refuses a non-loopback endpoint`) was bound and merged at 00:02:34Z after a second source-deep pass. Its IO5b fix is structural rather than an added check: compose the URL once, validate the composed string, hand that exact string to `fetch`, so nothing recomposes after validation and the userinfo-bypass class closes rather than one instance of it. The test suite is unusually honest — it pins the backslash case as an *accept* with the reasoning attached, because WHATWG normalises `\` to a path separator in special schemes and the request genuinely goes to loopback even though it reads like a bypass. Worth recording that the guard cannot darken a working panel today: the board producer hardcodes the loopback literal at `sirsi-router-board.sh:59-63` and only the port varies. It earns its keep the moment a second producer writes that feed.
+
+## Conduit run 2026-07-28T00:24Z
+
+The one inbound item was worth the whole pass. claude-nexus had traced my own scope limit from the
+#193 review — I said explicitly that I had not verified every path the portal reads an endpoint from —
+and found `routes/thread-board.tsx`, a second caller of the same feed that was never guarded and
+sends strictly more: the entire board JSON as context alongside the owner's question. PR #195 moves
+the guard into `src/lib/loopback.ts` so both callers import one implementation, which is the right
+shape and needs nothing from me. They asked me to attack the caller-coverage test rather than approve
+it, and said a spelling it misses would be worth more than an approval.
+
+It misses seven. The negative assertion is a source-text regex,
+`/fetch\(`\$\{[^`]*endpoint\}\$\{[^`]*query_api\}`/`, and rather than eyeball it I ran it against
+eight candidate rewrites: the control matches and everything else walks past it — hoisting the
+template to a variable, `+` concatenation, destructuring the field names, `new URL(query_api,
+endpoint)`, `sendBeacon`, `axios`, and — the one that needs no attacker at all — prettier wrapping
+the argument onto its own line, which breaks `fetch(` from the backtick and silently retires the
+guard on a reformat. `blog/_cta.tsx:21` already carries a comment about swapping in a sendBeacon, so
+non-`fetch` egress is a live direction here rather than a thought experiment.
+
+The deeper defect is the list, not the regex. `CALLERS` is hardcoded, so run that test against the
+tree as it stood the day #193 merged and it *passes* — thread-board.tsx would not have been in it,
+because nobody writes a file into a coverage list before they know it is a caller. It is a regression
+guard against re-breaking two known files wearing a coverage test's name. I inventoried the callers
+myself before claiming a gap and found exactly those two on main, so this is not a report of a third
+unguarded caller; it is that the test cannot fail on the next one. The asked-for change is small:
+derive `CALLERS` from a glob filtered on `query_api|local_llm` so a new caller is in the list the
+moment it touches the feed. The direction beyond that is to stop asserting on source text at N call
+sites at all — put the fetch inside the guard so no caller ever holds a raw URL, then assert
+behaviour with a fetch spy, and the spelling list stops mattering. Routed as `20260728-002633`.
+
+Three stale items of my own closed as superseded, each against an artifact rather than an assumption:
+FinalWishes PR #5 merged 2026-06-11 and #24 merged 2026-06-18, and that repo has zero open PRs today.
+The record I am *not* closing with them is the FinalWishes product work itself — CR-10 and the
+broader Photos consent question stay open. Housekeeping: reconcile healed three threads, `ccd reap`
+killed two leaked sessions and archived one, retention reclaimed 7.1 KiB, no `BINARY_MISSING`. Vitals
+94/100 with memory 86% free and the broker stable on pid 75716 at a 2.73 GB cache, still under bound;
+the 19:54 local JetsamEvent is the already-forensicked 23:54Z SIGBUS, not a second one. Worth
+recording a near-miss: the board publish ran inside a backgrounded chain and produced no output, and
+the file on disk still carried the previous run's 00:05Z timestamp and byte count. Only checking the
+artifact caught it — a re-run wrote 17217 bytes at 00:27Z. Exit status would have said the chain
+succeeded.
+
+## Conduit run 2026-07-28T00:55Z–00:59Z
+
+The merge stack is unblocked, and the thing that unblocked it was evidence rather than a decision.
+Last run I held every PR merge because a non-hermetic jackal test had rewritten the repo-local git
+identity and 5 of 7 open branches were authored `test@test.com`; I would not let `Test` into permanent
+history and I would not rewrite other agents' branches to fix it. That hold was correct in instinct and
+too broad in scope. This run I checked what GitHub actually does instead of what I assumed: PR #334's
+branch was 3/3 `test@test.com` and squash-merged onto `main` as `SirsiMaster`, and #336's 4 bad commits
+squashed the same way. A multi-commit squash takes the *PR author*, not the commit author — so the
+majority of the stack was never at risk and needed no re-authoring at all. What *is* at risk is the
+single-commit PR, where the squash carries the original author straight through: #339, #341, #342, #343
+and #333 each have exactly one commit and still need `git commit --amend --reset-author` from whoever
+owns them. `origin/main` remains 100% clean, and the identity bleed itself stayed fixed — the last
+`test@test.com` commit is 00:48Z, six minutes before the unset, and both the main checkout and every
+worktree now resolve to `SirsiMaster`.
+
+I also got one wrong and am recording it rather than letting the verdict stand. I approved #336 (the
+footprint ceiling with 3-breach hysteresis, a 10-minute cooldown, and `Apply` consent-gated with zero
+callers outside `internal/govern`, so it lands dormant) and squash-merged it — without reading its base.
+#336 was stacked on `fix/footprint-not-rss`, so the governor landed on **#335's branch**, not on main.
+#335 is now 4 commits and is still open, still blocked on my own review: `internal/guard/hapi.go` builds
+a separate `MemProc` type with no `Footprint` field, so `memSize` cannot reach it, and at `hapi.go:207`
+and `:497` the live memory governor still picks its suspension target by RSS — which, with that PR's own
+0.68 GB-resident / 39.87 GB-compressed broker, means it suspends an innocent process. Corrected on the
+PR and routed as `20260728-005733`. This is the fourth time this week that `feedback_verify_the_artifact_
+not_the_command` would have caught something: exit 0 is not evidence the change landed where you meant.
+
+Housekeeping was otherwise quiet. Both inbound items were informational and closed with results — one of
+them claude-pantheon's correction of a clause its own shell had eaten, which is now becoming PR #343; I
+sent back the one note that matters, that the guard must refuse the *inline body path itself* rather than
+blocklist backticks or gate on length, or it repeats the enumeration mistake that let the injection
+through. `ccd reap` killed 9 leaked processes across 8 completed conduit sessions. Reconcile healed 2,
+prune took 974→942, retention reclaimed 251.5 KiB. Broker pid 75716 stable a fifth run, argv bounded,
+cache 2.77 GB, resolver on `gemma-4-12B-it-8bit`. No new crash or Jetsam report since the known
+19:54 EDT pair. Health 82/100 — the VM reservation and the Spotlight indexer at 53%, both known, neither
+acted on with 83% of RAM free.
+
+## Conduit run 2026-07-28T01:10Z
+
+Re-reviewed PR #335 after `cf721cef` landed against my earlier block, and re-blocked it: the commit
+adds `internal/govern` (ceiling, enforce, hysteresis) but `git grep -ln "internal/govern"` outside the
+package itself returns nothing, so the new subsystem has zero callers. The path that actually runs is
+untouched — `cmd/sirsi/hapi.go:108` still calls `guard.FindRunaway`, which walks `s.Top` in
+RSS-descending order (`hapi.go:182/205/207/261`, `rssOf` at `:497`), and `MemProc` at `hapi.go:79` still
+has no `Footprint` field, so the `PhysFootprint` value the PR introduces has no route to the selector.
+The live inversion is therefore unchanged: the broker reads 0.68 GB resident against a 39.87 GB
+footprint, `FindRunaway` never sees it, and an innocent high-RSS process gets named the runaway — the
+exact behaviour the PR title claims to fix. A correct package sitting beside a wrong selector is the
+enforcement-must-not-share-the-bug's-shape pattern; the fix has to sit on the path the bug takes. Clear
+it either by giving `MemProc` a `Footprint` and selecting on it, or by wiring `:108` to `internal/govern`
+and deleting the RSS selector — one authority, not two. Everything else on #335 is green and its
+4-commit history is identity-safe, so this is the only thing left before merge. Also caught that PR #340
+is stacked on `feat/provider-abstraction` (#339), not main — #339 is a single-commit `test@test.com` PR
+and single-commit squashes carry the commit author through, so #340 cannot reach main until #339's owner
+re-authors. Both findings routed to claude-pantheon as `20260728-011117`. Both my queues were empty on
+pull. Vitals green: diagnose 94/100, 86% RAM free, broker pid 75716 bounded and stable with a 2.77 GB
+prompt cache, resolver on `gemma-4-12B-it-8bit`, all daemons live, no new `.ips` since the known 19:54
+EDT pair. reconcile healed 5, prune 947→928, `ccd reap` killed 5 procs across 4 leaked conduit sessions
+and archived 2 records, retention reclaimed 95.9 KiB, board republished at 01:11Z. `doctor --fix`
+reports the same 7 undeliverable items (6 claude-deck + 1 user) already covered by the open
+`20260727-222631` owner item — surfaced, not re-nagged.
+
+## Conduit run 2026-07-28T01:26Z
+
+All-vitals-green run whose only real work was closing two loops the previous run had
+identified but never routed. Broker pid 75716 held stable a seventh run with its
+`--prompt-cache-bytes` bound intact and cache at 2.77 GB; no new `.ips` since the 19:53
+EDT `Python-…195355` SIGBUS, so the second-crash escalation trigger stays unfired. All
+sirsi daemons live, reconcile healed one reaped thread to a successor, prune took the
+record set 929 → 925, `ccd reap` killed 2 leaked supervisor sessions and archived 2, and
+retention reclaimed 95.9 KiB. Both my router queues pulled empty and the stale list was
+byte-for-byte the already-evaluated set, so no re-reading was spent on it. PR #335 still
+heads at `cf721cef` — unchanged since the run that proved `internal/govern` has zero
+callers and `MemProc` still has no `Footprint` field — so that BLOCKED verdict stands
+without re-derivation. What was actually new: #337 and #338 are green, mergeable, and
+identity-safe but authored by me, and nothing had ever asked an independent agent to
+merge them; and #339/#341/#342/#343 have now sat three runs on a single commit authored
+`test@test.com`, which a single-commit squash would carry into main, with #340 stacked
+behind #339. Both were routed to claude-pantheon as requests rather than left implicit in
+a memory file, and the identity item names the likely source — a branch-creation path
+committing with an unset git identity, four PRs in one night being a pattern rather than
+an accident.
+
+## Conduit run 2026-07-29T03:00Z
+
+Cleared the entire in-flight ledger the previous run handed over, then found the thing that matters most this window. **Merged three: #362, #350, #346.** #350 and #346 arrived CONFLICTING on CHANGELOG.md — the union merge driver is local and GitHub cannot apply it — so both were rebased in throwaway worktrees, pushed from the main checkout, and re-bound, because a force-push invalidates the bind SHA even though it does not invalidate the reasoning. Merged one at a time for the same reason. All three under the owner's 20260729-023759 dual-binding decision (codex OR claude-home). #362 is ADR-046, which pins the MLX boundary on measurement rather than preference: claude-nexus measured that `runtime.LockOSThread` does **not** buy a bigger cgo stack — 8.0 MB on the main goroutine, on spawned goroutines, and under LockOSThread alike — which does not merely disfavour the in-process cgo option, it closes it, since the obvious mitigation everyone will propose does not exist. I reconciled that in the bind against #351, merged hours earlier: the Python `threading.stack_size(512 MB)` is the *same* pthread attribute Go cannot reach ergonomically, so the two are containment at two radii, not contradictions. Neither is a crash fix; `compile_dfs` still recurses unbounded through C++. claude-nexus is unblocked and S2 starts.
+
+**The finding: the menubar redesign is pointed at a binary the owner does not run.** codex asked for a binding/design verdict on PR #363, a Command Deck for `cmd/sirsi-menubar`. The launchd plist for `ai.sirsi.pantheon` execs `~/Applications/Sirsi Menubar.app/Contents/MacOS/SirsiMenubar`, and that binary links 17 Swift runtime libraries with no fyne or systray strings anywhere in it. It is the SwiftUI app. Every check #363 passes — `go test ./cmd/sirsi-menubar`, the build, the fast gate — is green about the wrong artifact, which is the stale-green class wearing a new costume and precisely why "verify the artifact, not the command" is standing law. Verdict: do not merge as "the first cockpit step"; either retarget the state model onto the SwiftUI app or land it narrowly and label it. The Gemma tri-state in #363 (`gemma-pantheon` live = online, bare `gemma` = misregistered/admin-held, no signal = offline) is the portable, valuable part and should survive either path. Separately re-verified that the SIGKILL root cause is untouched by any of it: three bundles still read back an identical `ai.sirsi.pantheon`, and `/tmp/sirsi-menubar.log` is still 0 bytes — the process was diagnostically blind through all eight Launch Constraint Violation kills. Owner-gated, surfaced on the board, not nagged.
+
+Declined a router recommendation rather than following it. codex's CTR pass reported four claude-home threads as loop-dead with zero armed watchers and recommended arming a watcher; claude-home is in fact armed (`sirsi router wake-loop claude-home` pid 64331 under launchd, plus a thread-watcher at pid 1656), and following the recommendation would have given one agent two independent wake paths — the level-triggered fork-storm class. The four threads had no on-disk directory at all, including `thr-806e2b562ca249b0`, the very thread pid 1656's watcher is named for and actively watching. So: two stacked accounting defects — watcher liveness computed per-thread without unioning the launchd `ai.sirsi.router.wake.<agent>` labels, and thread records outliving their directories instead of reconciling to stale. Routed to claude-pantheon (20260729-030030) alongside the sibling bare-`gemma` registration defect, since one reconcile predicate likely fixes all of it. `doctor --fix` reproduced the same false alarm on two fresh thread ids afterwards, which is the confirmation.
+
+Adopted a conduit practice correction from claude-deck, who was right: closing stranded items with "forwarded to X" records **routing, not disposition**, and reads as done to an auditor when the instructions were never executed — the stale-green class applied to the router itself. Forwarding is no longer completion; such items stay open under the new owner or close with a result naming the outcome. Router 16 → 12 open, claude-home 10 → 1. Vitals green throughout: diagnose 94/100 (the lone Warn is the load-bearing Colima VM, correctly labelled), 76% RAM free, broker pid 33719 with the `--prompt-cache-bytes` cap intact and prompt cache flat at 2.81 GB, no new `.ips`. `thread prune` collapsed 1048 records to 162; `ccd reap` archived 43.

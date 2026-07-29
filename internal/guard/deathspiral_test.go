@@ -15,6 +15,10 @@ func spiralMock(load1 string, swapUsed, swapTotal float64, freePages int, fanChi
 	for i := 0; i < fanChildren; i++ {
 		ps += fmt.Sprintf("  %d   500 claude-code\n", 1000+i)
 	}
+	return spiralMockWithPS(load1, swapUsed, swapTotal, freePages, ps)
+}
+
+func spiralMockWithPS(load1 string, swapUsed, swapTotal float64, freePages int, ps string) *platform.Mock {
 	return &platform.Mock{
 		NameStr: "mock",
 		CommandResults: map[string]string{
@@ -28,6 +32,17 @@ Pages occupied by compressor:  1620000.
 			"ps -axo pid=,ppid=,comm=": ps,
 		},
 	}
+}
+
+func simFanoutPS(simChildren, claudeChildren int) string {
+	ps := "  PID  PPID COMM\n    1     0 /sbin/launchd\n  500     1 /Applications/Claude.app/Contents/MacOS/Claude\n  700     1 /Library/Developer/CoreSimulator/Devices/A507/data/var/run/launchd_sim\n"
+	for i := 0; i < simChildren; i++ {
+		ps += fmt.Sprintf("  %d   700 sim-daemon\n", 2000+i)
+	}
+	for i := 0; i < claudeChildren; i++ {
+		ps += fmt.Sprintf("  %d   500 claude-code\n", 4000+i)
+	}
+	return ps
 }
 
 func spiralFinding(t *testing.T, m *platform.Mock) DiagnosticFinding {
@@ -86,6 +101,28 @@ func TestMemoryDeathSpiralForcesRed(t *testing.T) {
 	}
 	if remediationKind(f) != FixRelief {
 		t.Fatalf("remediationKind = %q, want relief", remediationKind(f))
+	}
+}
+
+func TestMemoryDeathSpiralIgnoresBootedSimulatorFanOut(t *testing.T) {
+	m := spiralMockWithPS("5.0", 2000, 26624, 500000, simFanoutPS(136, 5))
+	f := spiralFinding(t, m)
+	if f.Severity != SeverityOK {
+		t.Fatalf("severity = %d (%s), want OK for normal launchd_sim fan-out", f.Severity, f.Message)
+	}
+	if strings.Contains(f.Message, "restart") || strings.Contains(f.Message, "launchd_sim") {
+		t.Fatalf("message %q should not recommend restarting a booted simulator", f.Message)
+	}
+}
+
+func TestMemoryDeathSpiralStillFlagsRealFanOutBesideSimulator(t *testing.T) {
+	m := spiralMockWithPS("5.0", 2000, 26624, 500000, simFanoutPS(136, 244))
+	f := spiralFinding(t, m)
+	if f.Severity != SeverityWarn {
+		t.Fatalf("severity = %d (%s), want Warn for Claude fan-out", f.Severity, f.Message)
+	}
+	if !strings.Contains(f.Message, "Claude has 244 child processes") {
+		t.Fatalf("message %q should name the real fan-out parent", f.Message)
 	}
 }
 

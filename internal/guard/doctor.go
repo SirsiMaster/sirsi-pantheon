@@ -658,27 +658,63 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	// codebase keeps recording. Sirsi's own broker is the most likely offender on
 	// a developer's machine and must be the FIRST thing named, not the one thing
 	// exempted.
-	var hogs []string
+	//
+	// The Colima VM is different: it anchors the sovereign consensus ledger.
+	// Inside the reservation it was LAUNCHED with (Lima's generated record,
+	// bound to a live vz.pid), it is reserved capacity, not a hog. It stays
+	// visible as capacity-reserved instead of being hidden from the report.
+	var hogs, reserved []string
 	for _, proc := range processes {
-		if memSize(proc) > 4*1024*1024*1024 {
-			hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(memSize(proc))))
+		size := memSize(proc)
+		if size <= 4*1024*1024*1024 {
+			continue
 		}
+		if isAppleVirtVM(p, proc.PID) {
+			if capBytes, ok := ColimaVMReservation(); ok && size <= capBytes {
+				reserved = append(reserved, fmt.Sprintf("%s at %s of %s reserved",
+					proc.Name, FormatBytes(size), FormatBytes(capBytes)))
+				continue
+			}
+		}
+		hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(size)))
 	}
 
 	finding := DiagnosticFinding{
 		Check:  "Top Memory Consumers",
 		Detail: strings.Join(top, " | "),
 	}
+	if len(reserved) > 0 {
+		finding.Detail += fmt.Sprintf("  •  load-bearing, capacity-reserved: %s", strings.Join(reserved, ", "))
+	}
 
-	if len(hogs) > 0 {
+	switch {
+	case len(hogs) > 0:
 		finding.Severity = SeverityWarn
 		finding.Message = fmt.Sprintf("Memory hog detected: %s", strings.Join(hogs, ", "))
-	} else {
+	case len(reserved) > 0:
+		finding.Severity = SeverityOK
+		finding.Message = fmt.Sprintf("No unbounded process over 4 GB (%s)", strings.Join(reserved, ", "))
+	default:
 		finding.Severity = SeverityOK
 		finding.Message = "No individual process exceeding 4 GB"
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// isAppleVirtVM reports whether pid is an Apple Virtualization VM process. This
+// is IDENTITY ONLY — deliberately no longer a combined identity+cap predicate.
+// The first pass proved "an Apple-Virt process whose RSS fits a number read out
+// of a config file" and then treated that conjunction as identity, so a VM that
+// grew past the number silently stopped being recognized as a VM at all. The
+// reservation is now a separate, separately-sourced fact (ColimaVMReservation),
+// which keeps "what is this process" and "what was it promised" independent.
+func isAppleVirtVM(p platform.Platform, pid int) bool {
+	out, err := p.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "com.apple.Virtualization.VirtualMachine")
 }
 
 // memSize is the honest size of a process: physical footprint when available,

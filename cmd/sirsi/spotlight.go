@@ -14,6 +14,9 @@ import (
 )
 
 var spotlightExcludeJSON bool
+var spotlightMarkers bool
+var spotlightMarkersConfirm bool
+var spotlightMarkersRemove bool
 
 // spotlightPrivacyURL deep-links to System Settings ▸ Spotlight ▸ Privacy. The
 // pane id churned across macOS versions; the extension form is Ventura+.
@@ -49,6 +52,10 @@ func runSpotlightExclude(_ *cobra.Command, args []string) error {
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
+	}
+
+	if spotlightMarkers {
+		return runSpotlightMarkers(path)
 	}
 
 	// Read-only storm state from the shipped detector.
@@ -135,4 +142,124 @@ func detailOf(f *guard.DiagnosticFinding) string {
 
 func init() {
 	spotlightExcludeCmd.Flags().BoolVar(&spotlightExcludeJSON, "json", false, "read-only storm state as JSON (never opens the UI)")
+	spotlightExcludeCmd.Flags().BoolVar(&spotlightMarkers, "markers", false, "plan .metadata_never_index markers over high-churn trees (preview)")
+	spotlightExcludeCmd.Flags().BoolVar(&spotlightMarkersConfirm, "confirm", false, "with --markers: actually write the markers")
+	spotlightExcludeCmd.Flags().BoolVar(&spotlightMarkersRemove, "remove", false, "with --markers: plan removal of the markers instead (preview unless --confirm)")
+}
+
+// runSpotlightMarkers is the durable, unprivileged half of the remediation.
+// The Privacy pane is user-only and does not survive being described; a
+// .metadata_never_index marker is a file this process can actually write, and
+// re-running is a no-op rather than a duplicate.
+func runSpotlightMarkers(devDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home: %w", err)
+	}
+	plan := planIndexMarkers(home, devDir)
+
+	var already, todo, missing int
+	for _, st := range plan {
+		switch {
+		case !st.Exists:
+			missing++
+		case st.Marked:
+			already++
+		default:
+			todo++
+		}
+	}
+
+	if spotlightMarkersRemove {
+		return runSpotlightMarkerRemoval(plan, already, missing)
+	}
+
+	if !spotlightMarkersConfirm {
+		output.Header("Spotlight index markers — preview (nothing written)")
+		for _, st := range plan {
+			switch {
+			case !st.Exists:
+				continue
+			case st.Marked:
+				output.Dim("  already marked  %s", st.Path)
+			default:
+				output.Info("  would mark      %s", st.Path)
+			}
+		}
+		output.Info("\n  %d to mark, %d already marked, %d absent.", todo, already, missing)
+		output.Dim("     Re-run with --markers --confirm to write them. Reverse with --markers --remove.")
+		printRootOnlyLevers()
+		return nil
+	}
+
+	plan, applyErr := applyIndexMarkers(plan)
+	wrote := 0
+	for _, st := range plan {
+		if st.WroteNow {
+			wrote++
+			output.Success("  marked %s", st.Path)
+		}
+	}
+	output.Info("\n  %d newly marked, %d already marked, %d absent.", wrote, already, missing)
+	output.Dim("     Source trees are deliberately NOT marked — code search is the one Spotlight result worth keeping.")
+	printSkipped(plan)
+	printRootOnlyLevers()
+	return applyErr
+}
+
+// runSpotlightMarkerRemoval is the reverse gesture, and it previews by default
+// for the same reason apply does — except the stakes are inverted. Marking is
+// additive; removal hands whole trees back to the indexer and will produce real
+// reindex load, so the operator sees the complete list of affected paths, one
+// line each, before anything is unlinked.
+func runSpotlightMarkerRemoval(plan []markerState, already, missing int) error {
+	if !spotlightMarkersConfirm {
+		output.Header("Spotlight index markers — removal preview (nothing unlinked)")
+		for _, st := range plan {
+			if !st.Exists || !st.Marked {
+				continue
+			}
+			output.Info("  would unmark    %s", st.Path)
+		}
+		output.Info("\n  %d marker(s) to remove, %d absent.", already, missing)
+		output.Dim("     Re-run with --markers --remove --confirm to remove them.")
+		output.Dim("     Each removal returns that tree to Spotlight and will cost a reindex of it.")
+		return nil
+	}
+
+	plan, removeErr := removeIndexMarkers(plan)
+	removed := 0
+	for _, st := range plan {
+		if st.Removed {
+			removed++
+			output.Success("  unmarked %s", st.Path)
+		}
+	}
+	output.Info("\n  %d marker(s) removed of %d found.", removed, already)
+	output.Dim("     Those trees are indexable again; expect reindex load as mds catches up.")
+	printSkipped(plan)
+	return removeErr
+}
+
+// printSkipped surfaces paths the write path deliberately refused. A refusal
+// that is not printed is indistinguishable from a success, which is how a
+// partial apply gets reported as a complete one.
+func printSkipped(plan []markerState) {
+	for _, st := range plan {
+		if st.Skipped != "" {
+			output.Warn("  skipped %s — %s", st.Path, st.Skipped)
+		}
+	}
+}
+
+// printRootOnlyLevers states the part this process cannot do. Measured, not
+// assumed, and the claim is scoped to what was measured: renice and
+// taskpolicy -b were both tried here and both return EPERM, because mds is
+// root-owned and mds_stores runs as _mds_stores. Those are the two mechanisms
+// tested; no claim is made about mechanisms that were not.
+func printRootOnlyLevers() {
+	output.Dim("\n  The two mechanisms measured here both need root (renice and taskpolicy -b return EPERM; mds is root-owned):")
+	for _, l := range rootOnlyLevers() {
+		output.Dim("     %s", l)
+	}
 }
