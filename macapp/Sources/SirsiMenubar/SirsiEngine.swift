@@ -1183,28 +1183,45 @@ final class SirsiEngine: ObservableObject {
         return String(useful.prefix(limit)) + "\n[excerpt truncated]"
     }
 
+    private static let askSirsiCanonDocuments: [(String, String, Int)] = [
+        ("Pantheon rules", "AGENTS.md", 650),
+        ("Sirsi overview", "README.md", 550),
+        ("Deity registry", "docs/DEITY_REGISTRY.md", 750),
+        ("Portfolio standard", "docs/SIRSI_PORTFOLIO_STANDARD.md", 550),
+        ("Orchestration brain", "docs/prd/ORCHESTRATION_BRAIN.md", 750),
+        ("Pantheon unification", "docs/ADR-005-PANTHEON-UNIFICATION.md", 550),
+        ("Local model doctrine", "docs/ADR-034-ORCHESTRATION-BRAIN.md", 650),
+        ("Knowledge substrate", "docs/ADR-019-KNOWLEDGE-SUBSTRATE.md", 600),
+        ("Seshat specification", "docs/SESHAT_SPECIFICATION.md", 450),
+        ("Thoth specification", "docs/THOTH_SPECIFICATION.md", 450),
+        ("Thoth memory", ".thoth/memory.yaml", 450),
+    ]
+
+    func askSirsiCanonGroundingStatus() -> (value: String, detail: String, healthy: Bool) {
+        guard let root = askSirsiKnowledgeRoot() else {
+            return ("unavailable", "no Pantheon canon root configured or discoverable", false)
+        }
+        let readable = Self.askSirsiCanonDocuments.filter {
+            FileManager.default.isReadableFile(atPath: root + "/" + $0.1)
+        }.count
+        let total = Self.askSirsiCanonDocuments.count
+        guard readable > 0 else {
+            return ("unavailable", "Pantheon root found, but canon files are unreadable", false)
+        }
+        return readable == total
+            ? ("\(readable)/\(total) sources", "live bounded canon pack is readable", true)
+            : ("\(readable)/\(total) sources", "canon grounding is partial", false)
+    }
+
     private func askSirsiCanonPack() -> String {
         guard let root = askSirsiKnowledgeRoot() else {
             return "CANON PACK: no Sirsi Pantheon project root is configured or discoverable."
         }
-        let docs: [(String, String, Int)] = [
-            ("Pantheon rules", "AGENTS.md", 650),
-            ("Sirsi overview", "README.md", 550),
-            ("Deity registry", "docs/DEITY_REGISTRY.md", 750),
-            ("Portfolio standard", "docs/SIRSI_PORTFOLIO_STANDARD.md", 550),
-            ("Orchestration brain", "docs/prd/ORCHESTRATION_BRAIN.md", 750),
-            ("Pantheon unification", "docs/ADR-005-PANTHEON-UNIFICATION.md", 550),
-            ("Local model doctrine", "docs/ADR-034-ORCHESTRATION-BRAIN.md", 650),
-            ("Knowledge substrate", "docs/ADR-019-KNOWLEDGE-SUBSTRATE.md", 600),
-            ("Seshat specification", "docs/SESHAT_SPECIFICATION.md", 450),
-            ("Thoth specification", "docs/THOTH_SPECIFICATION.md", 450),
-            ("Thoth memory", ".thoth/memory.yaml", 450),
-        ]
 
         var chunks: [String] = []
         var total = 0
         let maxTotal = 4_400
-        for (title, relative, perDocLimit) in docs {
+        for (title, relative, perDocLimit) in Self.askSirsiCanonDocuments {
             guard total < maxTotal else { break }
             let path = root + "/" + relative
             guard let data = FileManager.default.contents(atPath: path),
