@@ -206,17 +206,33 @@ func setWakeInvoke(fn WakeInvoke) {
 //
 // A doctor that never returns is strictly worse than one that reports a label it
 // could not reach, so the deadline is short and the failure is explicit.
-const launchctlTimeout = 15 * time.Second
+// A var, not a const, purely so the deadline test can shorten it — the timeout
+// path is only real if a test can drive a child that actually outlives it.
+var launchctlTimeout = 15 * time.Second
 
 // runLaunchctl runs launchctl under a hard deadline. On expiry CommandContext
 // kills the child, which is what keeps hung clients from accumulating.
 func runLaunchctl(args ...string) error {
+	return runBounded("launchctl", args...)
+}
+
+// runBounded runs name under launchctlTimeout and wraps context.DeadlineExceeded
+// on expiry so callers (and tests) can tell a timeout from a real exit status.
+// Run returning at all means the child was killed and reaped by CommandContext.
+//
+// Split out from runLaunchctl so the deadline is exercisable with a command that
+// genuinely blocks; any launchctl invocation the test could reach either returns
+// immediately or hangs the test suite for the full production bound.
+func runBounded(name string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
 	defer cancel()
-	err := exec.CommandContext(ctx, "launchctl", args...).Run()
+	err := exec.CommandContext(ctx, name, args...).Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("launchctl %s: no response in %s (label parked at 'spawn scheduled'?)",
-			strings.Join(args, " "), launchctlTimeout)
+		// "remained at", not "parked at": `spawn scheduled` is the normal resting
+		// state of an interval wake agent — that misdiagnosis is what this change
+		// corrects, so the error text must not reintroduce it.
+		return fmt.Errorf("%s %s: no response in %s (label remained at 'spawn scheduled'): %w",
+			name, strings.Join(args, " "), launchctlTimeout, context.DeadlineExceeded)
 	}
 	return err
 }

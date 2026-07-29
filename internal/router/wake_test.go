@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -207,7 +208,7 @@ func TestWakePassSharedFailureAnnotatesEveryItem(t *testing.T) {
 	old := getWakeInvoke()
 	t.Cleanup(func() { setWakeInvoke(old) })
 	setWakeInvoke(func(cfg AgentConfig, adapter string) error {
-		return fmt.Errorf("no response in 15s (label parked at 'spawn scheduled'?)")
+		return fmt.Errorf("no response in 15s (label remained at 'spawn scheduled')")
 	})
 
 	if _, err := WakePass(root, time.Now().UTC()); err != nil {
@@ -221,10 +222,39 @@ func TestWakePassSharedFailureAnnotatesEveryItem(t *testing.T) {
 	}
 }
 
-// runLaunchctl must return rather than block forever. It shells the real
-// launchctl with a bogus subcommand, which exits immediately — the point is that
-// the deadline path compiles, is wired, and the happy path is not slowed.
-func TestRunLaunchctlReturnsWithinDeadline(t *testing.T) {
+// The deadline must actually fire and kill a child that would otherwise block
+// forever — the whole point of the fix. Drives a real blocking process against a
+// shortened bound: if runBounded reverted to unbounded exec.Command this hangs
+// for 30s and fails, which a bogus-subcommand launchctl call could never catch.
+func TestRunBoundedKillsBlockedChild(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not on PATH")
+	}
+	old := launchctlTimeout
+	launchctlTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { launchctlTimeout = old })
+
+	start := time.Now()
+	err := runBounded("sleep", "30")
+	elapsed := time.Since(start)
+
+	// Run returned, so CommandContext killed and reaped the child; an unbounded
+	// exec would still be inside wait4 here.
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("runBounded err = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("runBounded took %s against a %s bound — child was not killed on expiry",
+			elapsed, launchctlTimeout)
+	}
+	if strings.Contains(err.Error(), "parked") {
+		t.Fatalf("timeout text reintroduces the 'parked' misdiagnosis: %v", err)
+	}
+}
+
+// The happy path must not pay the deadline: a launchctl call that exits on its
+// own returns immediately.
+func TestRunLaunchctlFastPathNotSlowed(t *testing.T) {
 	if _, err := exec.LookPath("launchctl"); err != nil {
 		t.Skip("launchctl not on PATH")
 	}
