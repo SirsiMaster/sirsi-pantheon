@@ -16,6 +16,31 @@
         "launch_agent_label": "ai.sirsi.router.wake.claude-assiduous"
       }
     },
+    "claude-deck": {
+      "id": "claude-deck",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "env": {
+        "SIRSI_ROUTER_AGENT": "claude-deck"
+      },
+      "workstream": "deck",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-deck"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
+      }
+    },
     "claude-finalwishes": {
       "id": "claude-finalwishes",
       "type": "claude",
