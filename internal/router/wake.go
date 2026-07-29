@@ -405,6 +405,11 @@ const DefaultWakeLoopInterval = 60 * time.Second
 // thread. It is meant to be RUN BY the wake LaunchAgent — external automation
 // (A26 Automation Boundary) — and does NOT self-daemonize: it is a plain
 // foreground loop, not a reintroduced daemon verb.
+// wakeLoopHeartbeatLog bounds how long a running loop may stay silent. Chosen
+// so a reader of the log can distinguish "quiet" from "dead" within one
+// coffee-length gap, without turning the file into a tick log.
+const wakeLoopHeartbeatLog = 15 * time.Minute
+
 func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.Duration) error {
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
@@ -441,6 +446,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s)",
 		agentID, thr.ThreadID, os.Getpid(), interval)
 	lastDepth := -1
+	lastBeat := time.Now()
 	for {
 		// Surface the inbox depth into the heartbeat status; the worker surface's
 		// own logic processes the items — this loop only proves liveness + watches.
@@ -462,13 +468,26 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			status = ThreadStatusActive
 		}
 
-		// Log only on change. A per-tick line would be noise; a depth that moves is
-		// the thing an operator actually wants to see, and until now these loops
-		// wrote literally zero bytes — ten agents, 20 days, no forensics at all.
-		if depth != lastDepth {
+		// Log on CHANGE, and periodically regardless.
+		//
+		// Change-only was the first design and it is insufficient: at a constant
+		// depth the loop emits one start line and one transition, then can stay
+		// silent forever — so a healthy loop at depth 32 and a loop wedged
+		// immediately after observing depth 32 leave IDENTICAL forensic records.
+		// That is the exact ambiguity this logging exists to remove (codex review
+		// of #327). A liveness line is not noise; it is the evidence that the
+		// silence means "nothing changed" rather than "nothing is running".
+		now := time.Now()
+		switch {
+		case depth != lastDepth:
 			log.Printf("wake-loop %s: inbox depth %d -> %d (status=%s)",
 				agentID, lastDepth, depth, status)
 			lastDepth = depth
+			lastBeat = now
+		case now.Sub(lastBeat) >= wakeLoopHeartbeatLog:
+			log.Printf("wake-loop %s: alive, inbox depth %d unchanged (status=%s)",
+				agentID, depth, status)
+			lastBeat = now
 		}
 
 		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: status})

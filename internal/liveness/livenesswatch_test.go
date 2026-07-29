@@ -118,6 +118,8 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 	oldT, oldP := probeTimeout, probeRetryPause
 	probeTimeout, probeRetryPause = 150*time.Millisecond, 10*time.Millisecond
 	t.Cleanup(func() { probeTimeout, probeRetryPause = oldT, oldP })
+	oldRunner := getRunnerWorkerActive()
+	t.Cleanup(func() { setRunnerWorkerActive(oldRunner) })
 
 	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
 
@@ -139,6 +141,7 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 	})
 
 	t.Run("always_hangs_is_wedged", func(t *testing.T) {
+		setRunnerWorkerActive(func() bool { return false })
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(400 * time.Millisecond) // every attempt times out
 		}))
@@ -146,6 +149,18 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
 		if got != GemmaWedged {
 			t.Errorf("always-hangs = %v (%s), want GemmaWedged", got, detail)
+		}
+	})
+
+	t.Run("always_hangs_with_runner_is_busy_not_wedged", func(t *testing.T) {
+		setRunnerWorkerActive(func() bool { return true })
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(400 * time.Millisecond) // every attempt times out
+		}))
+		defer srv.Close()
+		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+		if got != GemmaBusy {
+			t.Errorf("always-hangs-with-runner = %v (%s), want GemmaBusy", got, detail)
 		}
 	})
 }

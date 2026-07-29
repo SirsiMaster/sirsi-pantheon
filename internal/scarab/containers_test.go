@@ -25,7 +25,7 @@ func TestAuditContainers_Success(t *testing.T) {
 	m := &platform.Mock{
 		CommandResults: map[string]string{
 			"docker info": "OK",
-			"docker ps -a --format {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}": "id1\tname1\timg1\tUp 2 hours\t80:80\nid2\tname2\timg2\tExited (0)\t",
+			"docker ps -a --format {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}": "id1\tname1\timg1\tUp 2 hours (healthy)\t80:80\nid2\tname2\timg2\tExited (0)\t",
 			"docker images -f dangling=true -q":                                              "img1\nimg2\n",
 			// Two dangling volumes: an ordinary one, and the hedera-local consensus
 			// ledger — anonymous, so identifiable ONLY by its compose label.
@@ -47,6 +47,12 @@ func TestAuditContainers_Success(t *testing.T) {
 	if audit.StoppedCount != 1 {
 		t.Errorf("StoppedCount = %d, want 1", audit.StoppedCount)
 	}
+	if audit.HealthyCount != 1 {
+		t.Errorf("HealthyCount = %d, want 1", audit.HealthyCount)
+	}
+	if audit.UnhealthyCount != 0 {
+		t.Errorf("UnhealthyCount = %d, want 0", audit.UnhealthyCount)
+	}
 	if audit.DanglingImages != 2 {
 		t.Errorf("DanglingImages = %d, want 2", audit.DanglingImages)
 	}
@@ -61,5 +67,23 @@ func TestAuditContainers_Success(t *testing.T) {
 	}
 	if len(audit.Containers) != 2 {
 		t.Errorf("Containers count = %d, want 2", len(audit.Containers))
+	}
+}
+
+func TestContainerHealthFromDockerStatus(t *testing.T) {
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{"Up 2 days (healthy)", "healthy"},
+		{"Up 7 hours (unhealthy)", "unhealthy"},
+		{"Up 4 seconds (health: starting)", "starting"},
+		{"Up 3 hours", "unknown"},
+		{"Exited (0) 2 days ago", "not-running"},
+	}
+	for _, tt := range tests {
+		if got := containerHealth(tt.status); got != tt.want {
+			t.Errorf("containerHealth(%q) = %q, want %q", tt.status, got, tt.want)
+		}
 	}
 }
