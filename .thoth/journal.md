@@ -1046,3 +1046,37 @@ overlapped this window and independently reached the same `gemma-worker.pid` col
 duplicate category-language transfer to claude-deck was closed in favour of the sibling's better
 argued item, and the response dedup prevented a double reply. claude-deck is **not registered** in
 the wake registry, so items routed there are wake-unavailable and wait for its next pull.
+
+## Conduit run 2026-07-29T03:35Z
+
+Merged three: **#367** (prior run's journal, carried in-flight and cleared), **#363** (SwiftUI menubar
+Command Deck) after verifying codex-pantheon's two binding blockers were genuinely fixed at `ed2979e1`
+— `panelFill`/`tileFill` now gate the hardcoded near-black behind `snapshotMode && colorScheme ==
+.dark` and fall through to `Color.primary.opacity(0.0x)` live, and the memory-first evidence lines
+(swap + top-process RSS) are restored as `computeState.evidence`; codex additionally taught the
+snapshot harness `--appearance light|dark`, which closes the class rather than the instance, since
+`Snapshot.swift`'s forced `.colorScheme(.dark)` is exactly why a Light regression could never fail a
+check — and **#343** (long inline router bodies refused), which is correct specifically because it
+gates on length, a property of the class, instead of enumerating backticks and `$(...)`.
+
+The run's real finding was a self-inflicted one. `claude-io` reported its `agents.json` wake block
+empty; I checked `origin/main`, found #346 had already populated it, and closed the item as stale —
+then `router doctor` immediately recorded `wake_error: no explicit wake mechanism` against the very
+response I had just routed there. **The router reads the working tree, not `origin/main`**, and the
+repo root sits on a squat branch that never rebased, so #346 merged and never deployed. Commit
+`57f027eb` (2026-07-26) had defused this identical landmine; merging #346 to main re-armed it, and a
+one-agent regression is worse than the original sixteen because eleven stranded agents get noticed
+and one does not. Healed at `865dbf88` by restoring the path from `origin/main` (byte-identical,
+committing only that path, leaving the 102 foreign uncommitted files untouched); verified by artifact
+— wake pass went `0 woken · 2 wake-unavailable` → `1 woken · 1 wake-unavailable`, the remainder being
+`claude-deck`, genuinely unregistered. Corrections routed to `claude-io`, and to `claude-pantheon` as
+a request for a drift check (`git show origin/main:<path>` vs the live file, diffing the whole file
+rather than hunting empty wake blocks) rather than a rearchitecture. Also closed `claude-io`'s ADR-005
+response with the one condition that decides whether its 60–120 s middle band holds: the age stamp
+must be `now − payload.generated_at`, never `now − last_successful_read`, or a dead producer renders
+as "14 s ago" forever and the clause written to withdraw the assertion manufactures it instead.
+
+Vitals green: diagnose 94/100 (the sole priority is a 4.4 GB Virtualization VM, load-bearing), RAM 75%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash reports, all daemons live. `ccd reap` killed 10 leaked sessions; retention prune reclaimed only
+5.9 KiB.
