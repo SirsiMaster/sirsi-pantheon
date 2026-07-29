@@ -127,3 +127,26 @@ func TestVerifyBaselineIsInvocationLocal(t *testing.T) {
 		}
 	}
 }
+
+// A restart that comes back serving a DIFFERENT model is not a clean reload: the
+// resolver re-ranked, usually because less RAM was free, and the machine now has
+// less capability than before. Observed live 2026-07-29 —
+// gemma-4-12B-it-8bit came back as Qwen2.5-3B-Instruct-4bit. That must be stated
+// in the summary a user reads, not left in an evidence field nobody prints.
+func TestRestartSummaryDisclosesAModelChange(t *testing.T) {
+	// The verdict rule itself must still PASS — a smaller model is a working
+	// broker, so this is a disclosure requirement, not a failure condition.
+	if ok, reason := restartVerdict(4242, 5150, "Qwen2.5-3B-Instruct-4bit", nil); !ok {
+		t.Fatalf("a serving broker must verify even if the model changed, got %q", reason)
+	}
+
+	// And the change must be detectable from the evidence the tool records.
+	ran := Result{Evidence: map[string]any{"pid_before": 4242, "model_before": "gemma-4-12B-it-8bit"}}
+	before, _ := ran.Evidence["model_before"].(string)
+	if before == "" {
+		t.Fatal("Run must record model_before, or Verify cannot detect a downgrade at all")
+	}
+	if before == "Qwen2.5-3B-Instruct-4bit" {
+		t.Fatal("fixture error: before and after must differ for this test to mean anything")
+	}
+}
