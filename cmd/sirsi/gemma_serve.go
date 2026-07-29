@@ -79,8 +79,9 @@ func gemmaCapWrapperPath(home string) string {
 // instead of growing into Jetsam — the guarantee that makes "never OOM the host"
 // true even when the pre-launch estimate is wrong or the KV cache grows mid-decode.
 // argv: <cap_bytes> <mlx_lm.server args...>
-const gemmaCapWrapper = `import os, socket, sys, time, traceback, runpy
+const gemmaCapWrapper = `import os, socket, sys, time, traceback, runpy, threading
 import mlx.core as mx
+threading.stack_size(512 * 1024 * 1024)  # MLX compile_dfs can recurse deeply on worker threads.
 cap = int(sys.argv[1])
 for fn in ("set_memory_limit", "set_wired_limit"):
     try: getattr(mx, fn)(cap)

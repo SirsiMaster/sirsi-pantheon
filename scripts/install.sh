@@ -42,6 +42,25 @@ esac
 
 echo -e "${DIM}  Platform: ${OS}/${ARCH}${NC}"
 
+install_executable() {
+    src="$1"
+    dest="$2"
+    tmp="${dest}.$$.$RANDOM.new"
+
+    cp "$src" "$tmp"
+    chmod +x "$tmp"
+
+    if [ "$OS" = "darwin" ] && command -v codesign &>/dev/null; then
+        if ! codesign --force --sign - "$tmp" >/dev/null 2>&1; then
+            rm -f "$tmp"
+            echo -e "${RED}  codesign failed for ${dest}; keeping existing binary in place.${NC}"
+            exit 1
+        fi
+    fi
+
+    mv -f "$tmp" "$dest"
+}
+
 # 2. Determine install directory
 INSTALL_DIR="${SIRSI_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$INSTALL_DIR"
@@ -93,8 +112,7 @@ tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
 # 6. Install binaries (sirsi always; sirsi-menubar on macOS when present)
 if [ -f "${TMPDIR}/sirsi" ]; then
-    cp "${TMPDIR}/sirsi" "${INSTALL_DIR}/sirsi"
-    chmod +x "${INSTALL_DIR}/sirsi"
+    install_executable "${TMPDIR}/sirsi" "${INSTALL_DIR}/sirsi"
 else
     echo -e "${RED}  Binary not found in archive.${NC}"
     exit 1
@@ -108,8 +126,7 @@ fi
 # wizard reports a missing menubar rather than aborting the whole install.
 if [ "$OS" = "darwin" ]; then
     if [ -f "${TMPDIR}/sirsi-menubar" ]; then
-        cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
-        chmod +x "${INSTALL_DIR}/sirsi-menubar"
+        install_executable "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
         echo -e "${DIM}  Installed sirsi-menubar${NC}"
     else
         MB_ARCHIVE="sirsi-menubar_${LATEST#v}_darwin_arm64.tar.gz"
@@ -118,8 +135,7 @@ if [ "$OS" = "darwin" ]; then
         if curl -fsSL -o "${TMPDIR}/${MB_ARCHIVE}" "$MB_URL" 2>/dev/null &&
             tar xzf "${TMPDIR}/${MB_ARCHIVE}" -C "$TMPDIR" 2>/dev/null &&
             [ -f "${TMPDIR}/sirsi-menubar" ]; then
-            cp "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
-            chmod +x "${INSTALL_DIR}/sirsi-menubar"
+            install_executable "${TMPDIR}/sirsi-menubar" "${INSTALL_DIR}/sirsi-menubar"
             echo -e "${DIM}  Installed sirsi-menubar${NC}"
         else
             echo -e "${DIM}  Menubar asset not found for ${LATEST} — 'sirsi setup' will note it.${NC}"

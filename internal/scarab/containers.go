@@ -11,13 +11,15 @@ import (
 
 // Container represents a Docker container.
 type Container struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Image   string `json:"image"`
-	Status  string `json:"status"`
-	Size    string `json:"size,omitempty"`
-	Ports   string `json:"ports,omitempty"`
-	Running bool   `json:"running"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Image        string `json:"image"`
+	Status       string `json:"status"`
+	Size         string `json:"size,omitempty"`
+	Ports        string `json:"ports,omitempty"`
+	Running      bool   `json:"running"`
+	Health       string `json:"health,omitempty"` // healthy|unhealthy|starting|unknown|not-running
+	HealthSource string `json:"health_source,omitempty"`
 }
 
 // ContainerAudit contains Docker/container scan results.
@@ -26,6 +28,9 @@ type ContainerAudit struct {
 	DanglingImages int         `json:"dangling_images"`
 	StoppedCount   int         `json:"stopped_count"`
 	RunningCount   int         `json:"running_count"`
+	HealthyCount   int         `json:"healthy_count"`
+	UnhealthyCount int         `json:"unhealthy_count"`
+	UnknownHealth  int         `json:"unknown_health_count"`
 	UnusedVolumes  int         `json:"unused_volumes"`
 	// RetainedVolumes are dangling volumes that hold irreplaceable state and are
 	// deliberately NOT counted as reclaimable. Surfaced separately so an operator
@@ -86,6 +91,14 @@ func AuditContainersWith(p platform.Platform) (*ContainerAudit, error) {
 			}
 			if c.Running {
 				audit.RunningCount++
+				switch c.Health {
+				case "healthy":
+					audit.HealthyCount++
+				case "unhealthy":
+					audit.UnhealthyCount++
+				default:
+					audit.UnknownHealth++
+				}
 			} else {
 				audit.StoppedCount++
 			}
@@ -158,16 +171,34 @@ func splitContainerLine(line string) *Container {
 		return nil
 	}
 	c := &Container{
-		ID:      parts[0],
-		Name:    parts[1],
-		Image:   parts[2],
-		Status:  parts[3],
-		Running: strings.HasPrefix(parts[3], "Up"),
+		ID:           parts[0],
+		Name:         parts[1],
+		Image:        parts[2],
+		Status:       parts[3],
+		Running:      strings.HasPrefix(parts[3], "Up"),
+		Health:       containerHealth(parts[3]),
+		HealthSource: "docker-status",
 	}
 	if len(parts) >= 5 {
 		c.Ports = strings.TrimSpace(parts[4])
 	}
 	return c
+}
+
+func containerHealth(status string) string {
+	lower := strings.ToLower(status)
+	switch {
+	case !strings.HasPrefix(status, "Up"):
+		return "not-running"
+	case strings.Contains(lower, "(unhealthy)"):
+		return "unhealthy"
+	case strings.Contains(lower, "(healthy)"):
+		return "healthy"
+	case strings.Contains(lower, "(health: starting)"):
+		return "starting"
+	default:
+		return "unknown"
+	}
 }
 
 // countNonEmptyLines counts non-blank lines in a string.
@@ -186,8 +217,17 @@ func countNonEmptyLines(s string) int {
 
 // FormatContainerStatus returns a styled status string.
 func FormatContainerStatus(c Container) string {
-	if c.Running {
-		return fmt.Sprintf("🟢 %s", c.Status)
+	if !c.Running {
+		return fmt.Sprintf("🔴 %s", c.Status)
 	}
-	return fmt.Sprintf("🔴 %s", c.Status)
+	switch c.Health {
+	case "unhealthy":
+		return fmt.Sprintf("🔴 %s", c.Status)
+	case "healthy":
+		return fmt.Sprintf("🟡 %s — docker reachable; workload correctness unverified", c.Status)
+	case "starting":
+		return fmt.Sprintf("🟡 %s", c.Status)
+	default:
+		return fmt.Sprintf("🟡 %s — running; no Docker healthcheck", c.Status)
+	}
 }
