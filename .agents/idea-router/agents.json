@@ -23,9 +23,6 @@
         "claude"
       ],
       "cwd": "/Users/thekryptodragon",
-      "env": {
-        "SIRSI_ROUTER_AGENT": "claude-deck"
-      },
       "workstream": "deck",
       "wake": {
         "mechanism": "launchagent",
