@@ -1162,3 +1162,46 @@ daemons live; no new crash `.ips` — the new `/Library` `.diag` files are Micro
 (`bsdtar`, `node`), not crashes or Jetsams. `reconcile` healed 1 thread, `prune` 0, `ccd reap` killed 2
 leaked sessions of this task, retention prune reclaimed 6.0 KiB. Router 17 open, oldest 3h52m, nothing
 stale; claude-home's own inbox empty.
+
+## Conduit run 2026-07-29T04:06Z
+
+Closed the owner-escalation P0 that the previous run had opened and correctly refused to merge
+into. Merged the in-flight journal PR #370 (CLEAN, all five checks green), then re-reviewed
+codex's #371 at `ee1dbd64` rather than trusting its two RESPONSE items at face value. My prior
+run had blocked #371 because it deleted the `codex`/`claude` bypass while leaving `--to user`
+unreachable; the revised head adds an explicit owner-inbox lane to `validateRecipient`, so I
+lifted the hold, bound it, and squash-merged it at 04:08:39Z — verifying the artifact on
+`origin/main` afterwards rather than trusting the merge exit code. The judgement call worth
+recording: `main` rejected **all five** owner aliases, #371 fixes the one that is load-bearing,
+so holding out for the perfect fix would have kept the worse state live. Merging a strict
+improvement beats blocking on a complete one.
+
+The residual is a genuine two-copies bug and is routed, not forgotten (`20260729-040924`):
+`internal/router/gate.go` `ClassifyGate` treats five recipients as owner escalation
+(`user`/`owner`/`cylton`/`sirsimaster`/`cylton-collymore`) while `internal/dispatch/facade.go`
+now admits only `user`. The copy was **forced, not careless** — `internal/router/wake.go`
+imports `internal/dispatch`, so reaching the gate predicate from dispatch would be a compile-time
+cycle. The cycle-free fix is to push one exported predicate down into `internal/work`, which is
+pure-stdlib and already imported by both. This is the A29 "enforcement must not share the bug's
+shape" pattern again: a hand-copied allowlist drifts from the predicate it mirrors, so the
+regression test must drive both call sites from one shared slice and never re-enumerate it.
+
+New trap found: **PR #372 was opened 38 seconds before #371 merged** and is now DIRTY against it.
+Four of its five files are already on main, but its `facade.go` deletes the bypass with *no*
+replacement lane — rebasing it and resolving the conflict toward its side would silently re-arm
+the exact `--to user` break just closed. Its one unique contribution is two `internal/mcp/tools.go`
+schema descriptions. Left the PR to its lane agent per orchestrate-don't-absorb, with the hazard
+documented on the PR and routed as `20260729-041054`, recommending it be closed in favour of a
+two-line tools.go PR rather than rebased.
+
+Escalated one owner decision (`20260729-041151`, the only open `to: user` item): `claude-deck` is
+absent from `agents.json` yet holds a real open item, and now that the dispatch guard is on main,
+that lane becomes unroutable at the next binary rebuild. Recommended retiring the lane and
+rerouting its item over inventing a registry entry. Not rebuilding the binary meanwhile.
+
+Vitals green throughout: diagnose 94/100 with the known load-bearing
+`com.apple.Virtualization.VirtualMachine` as sole priority, 79% RAM free, broker pid 33719 with
+`--prompt-cache-bytes 4294967296` intact and prompt cache flat at 2.73 GB, all daemons live, no
+new crash or Jetsam `.ips` since the last run. `thread reconcile` healed one reaped→successor
+record, `prune` 0, `ccd reap` archived one completed run of this task, retention prune reclaimed
+4.3 KiB. claude-home inbox closed to 0.
