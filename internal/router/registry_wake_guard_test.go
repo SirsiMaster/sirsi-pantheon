@@ -4,13 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"sort"
-	"strings"
 	"testing"
 )
-
-func wakeExempt(id string) bool {
-	return strings.HasPrefix(id, "codex-")
-}
 
 // TestRegistryWakeCoverage asserts the checked-in agent registry actually
 // carries wake metadata for every agent that needs it.
@@ -41,11 +36,27 @@ func TestRegistryWakeCoverage(t *testing.T) {
 		t.Fatalf("agent registry %s has no agents — a truncated or pre-schema copy", path)
 	}
 
+	// NO PREFIX EXEMPTION. This guard used to skip every id starting with
+	// "codex-", on the assumption that codex lanes are wake-dead. That
+	// assumption is false per-id and it hid a real defect for weeks:
+	// codex-pantheon had a LIVE ai.sirsi.router.wake.codex-pantheon LaunchAgent
+	// (pid 99109, status 0) while its registry block was {}, so doctor stamped
+	// its items wake-unavailable and the guard — exempting it by name — could
+	// never notice. Seven sibling codex ids genuinely are wake-dead. The prefix
+	// could not tell them apart, because wake capability is a property of an
+	// AGENT, not of its name (router items 20260729-045819, 20260729-141541).
+	//
+	// So the guard now tests a property of the DATA: every agent must state its
+	// wake posture explicitly. A real mechanism, or "none" — which is a claim
+	// the registry makes and can be checked — but never an empty block, which
+	// is merely an absence and is indistinguishable from an oversight.
+	//
+	// Note there is deliberately no launch_agent_label assertion: that JSON key
+	// appears in some entries but WakeConfig does not parse it, and the real
+	// label is DERIVED from the agent id by WakeLaunchAgentLabel(). Asserting on
+	// an inert field would be a check that reads strict and verifies nothing.
 	var missing []string
 	for id, cfg := range reg.Agents {
-		if wakeExempt(id) {
-			continue
-		}
 		if cfg.Wake.Mechanism == "" {
 			missing = append(missing, id)
 		}
@@ -53,8 +64,10 @@ func TestRegistryWakeCoverage(t *testing.T) {
 	sort.Strings(missing)
 
 	if len(missing) > 0 {
-		t.Errorf("%d of %d agents have no wake mechanism: %v\n"+
+		t.Errorf("%d of %d agents do not state a wake mechanism: %v\n"+
 			"Horus cannot wake these, so work routed to them strands silently.\n"+
+			"An agent that genuinely cannot be woken must say so with mechanism:none — "+
+			"an empty wake block is an absence, not a decision.\n"+
 			"If the registry looks reverted, check whether this worktree is on a branch "+
 			"whose HEAD carries a pre-wake copy (see 287dc7ea) rather than origin/main's.",
 			len(missing), len(reg.Agents), missing)

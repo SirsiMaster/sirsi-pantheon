@@ -173,7 +173,9 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/assiduous",
       "workstream": "assiduous-v110-completion",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "codex-finalwishes": {
       "id": "codex-finalwishes",
@@ -188,7 +190,9 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/FinalWishes",
       "workstream": "finalwishes",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "codex-finalwishes-web": {
       "id": "codex-finalwishes-web",
@@ -203,7 +207,9 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
       "workstream": "finalwishes-web",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "codex-home": {
       "id": "codex-home",
@@ -213,7 +219,9 @@
       ],
       "cwd": "/Users/thekryptodragon",
       "workstream": "home",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "codex-homebrew": {
       "id": "codex-homebrew",
@@ -228,7 +236,9 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
       "workstream": "homebrew",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "codex-nexus": {
       "id": "codex-nexus",
@@ -243,7 +253,9 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
       "workstream": "nexus",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "codex-pantheon": {
       "id": "codex-pantheon",
@@ -258,7 +270,10 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "workstream": "pantheon-pro-ux-loop",
-      "wake": {}
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-pantheon"
+      }
     },
     "codex-porch-and-alley": {
       "id": "codex-porch-and-alley",
@@ -273,7 +288,9 @@
       ],
       "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
       "workstream": "porch-and-alley",
-      "wake": {}
+      "wake": {
+        "mechanism": "none"
+      }
     },
     "gemma-pantheon": {
       "id": "gemma-pantheon",
