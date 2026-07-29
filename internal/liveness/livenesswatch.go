@@ -266,6 +266,10 @@ const (
 	// (2026-07-17). The correct restore is a GRACEFUL restart (stop + start),
 	// never a SIGKILL (A32/ADR-040).
 	GemmaWedged
+	// GemmaBusy — the broker timed out while the local self-hosted runner is
+	// active. That is degraded capacity, not proof of a wedge; the watch must not
+	// route a wedged item and the restore duty must not restart the broker.
+	GemmaBusy
 )
 
 // probeRetryPause is the drain between a timed-out probe and its single retry.
@@ -276,6 +280,27 @@ const (
 // pause lets the blocking generation drain; the retry then answers fast, while a
 // truly wedged broker fails both attempts.
 var probeRetryPause = 3 * time.Second
+
+var (
+	runnerWorkerMu     sync.RWMutex
+	runnerWorkerActive = defaultRunnerWorkerActive
+)
+
+func getRunnerWorkerActive() func() bool {
+	runnerWorkerMu.RLock()
+	defer runnerWorkerMu.RUnlock()
+	return runnerWorkerActive
+}
+
+func setRunnerWorkerActive(fn func() bool) {
+	runnerWorkerMu.Lock()
+	defer runnerWorkerMu.Unlock()
+	runnerWorkerActive = fn
+}
+
+func defaultRunnerWorkerActive() bool {
+	return exec.Command("pgrep", "-f", "Runner.Worker").Run() == nil
+}
 
 // ProbeGemmaState runs a real chat completion against the warm broker and
 // classifies the result. Health lies, so it generates and inspects the answer
@@ -300,6 +325,9 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 		status, detail, timedOut = probeGemmaAttempt(port, model)
 		switch {
 		case timedOut:
+			if getRunnerWorkerActive()() {
+				return GemmaBusy, detail + " (twice while self-hosted runner is active — degraded, not wedged)"
+			}
 			detail += " (twice — wedged, not just busy)"
 		case status == GemmaHealthy:
 			detail += " (on retry — broker was busy, not wedged)"
@@ -381,7 +409,7 @@ func probeGemma(home string) Finding {
 			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
 			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
 	status, detail := ProbeGemmaState(home)
-	f.OK = status == GemmaHealthy
+	f.OK = status == GemmaHealthy || status == GemmaBusy
 	f.Detail = detail
 	return f
 }

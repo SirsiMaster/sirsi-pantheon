@@ -32,16 +32,39 @@ resident_model() {
 }
 RESIDENT=$(resident_model || true)
 
-# Approx GB-per-billion-params by quant (safetensors on disk ≈ RAM at load).
-gb_per_b() { case "$1" in 8bit) echo 1.05;; 6bit) echo 0.80;; 5bit) echo 0.66;; 4bit|qat-4bit|nvfp4|mxfp4) echo 0.55;; *) echo 0.6;; esac; }
+# Approx runtime GB-per-billion-params by quant. This deliberately estimates
+# resident process footprint, not safetensors-on-disk bytes: MLX cache, KV cache,
+# tokenizer/Python overhead, and activation buffers make the 8-bit 12B server
+# measure 23-31GB on a 48GB host, not ~12.6GB.
+gb_per_b() { case "$1" in 8bit|mxfp8) echo 2.60;; 6bit) echo 1.90;; 5bit) echo 1.50;; 4bit|qat-4bit|nvfp4|mxfp4) echo 0.93;; bf16) echo 3.20;; *) echo 1.20;; esac; }
 
 # Total machine RAM (we size to TOTAL with a safety margin, not momentary free —
 # the worker is short-lived and macOS will page the rest; but we cap so we never
 # pick a model that can't fit physical RAM at all).
 total_gb() { python3 -c "import subprocess;print(round(int(subprocess.check_output(['sysctl','-n','hw.memsize']))/1e9,1))"; }
 
+pinned_gb() {
+  # Pinned non-fleet residents are load-bearing local services the resolver must
+  # not assume it can page away. Colima's VirtualMachine process is the canonical
+  # case on this host: it anchors the local consensus ledger under ADR-040.
+  ps -axo rss=,comm= 2>/dev/null | python3 -c '
+import sys
+total_kb=0
+for line in sys.stdin:
+    parts=line.strip().split(None,1)
+    if len(parts) != 2:
+        continue
+    rss, name = parts
+    base = name.rsplit("/", 1)[-1]
+    if base == "com.apple.Virtualization.VirtualMachine":
+        try: total_kb += int(rss)
+        except ValueError: pass
+print(round(total_kb / 1024 / 1024, 1))
+'
+}
+
 resolve() {
-  local total; total=$(total_gb)
+  local total pinned; total=$(total_gb); pinned=$(pinned_gb)
   # DEFAULT-pick budget = 35% of physical RAM (floor 8GB). The old `total - 16`
   # arithmetic selected the 31B (~28.8GB wired) as the ALWAYS-ON default on a
   # 51.5GB box — its base footprint + the live desktop drove the machine to the
@@ -50,8 +73,8 @@ resolve() {
   # (`MODEL: max`, RAM-gated per request by the worker). This budget sizes only
   # the default; MAX_CONF stays the on-demand ceiling. On a 128GB box the same
   # rule promotes the 31B to default automatically.
-  local budget; budget=$(python3 -c "print(max(8.0, round($total * 0.35, 1)))")
-  log "resolve: total=${total}GB default-budget=${budget}GB (35% steady-state rule)"
+  local budget; budget=$(python3 -c "print(max(8.0, round(($total - $pinned) * 0.35, 1)))")
+  log "resolve: total=${total}GB pinned=${pinned}GB default-budget=${budget}GB (35% of unpinned steady-state rule)"
 
   # Newest gemma dense instruction models on mlx-community, newest first.
   local json
@@ -67,7 +90,7 @@ budget=$budget
 resident='$RESIDENT'
 HUB=os.path.expanduser('~/.cache/huggingface/hub')
 def cached(mid): return os.path.isdir(os.path.join(HUB,'models--'+mid.replace('/','--')))
-gbper={'8bit':1.05,'6bit':0.93,'5bit':0.85,'4bit':0.93,'qat':0.93,'nvfp4':0.6,'mxfp4':0.6,'mxfp8':1.0,'bf16':2.0}  # measured: gemma-4-31b qat-4bit = 28.8GB → ~0.93 GB/B (QAT keeps hi-precision embeds/scales)
+gbper={'8bit':2.60,'6bit':1.90,'5bit':1.50,'4bit':0.93,'qat':0.93,'nvfp4':0.93,'mxfp4':0.93,'mxfp8':2.60,'bf16':3.20}  # runtime footprint, not disk bytes: 12B 8bit measures 23-31GB; gemma-4-31b qat-4bit measured ~28.8GB -> 0.93 GB/B
 items=[m['id'] for m in json.load(sys.stdin)]
 # Seed with already-downloaded models too: the API window is the 60 NEWEST uploads,
 # so a perfectly good on-disk quant can fall outside it and never be considered.
