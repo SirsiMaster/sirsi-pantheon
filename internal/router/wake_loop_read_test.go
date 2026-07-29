@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestWakeLoopReadsThroughCutoverEntryPoint pins that RunWakeLoop's inbox read
@@ -58,5 +59,34 @@ func TestWakeLoopReadsThroughCutoverEntryPoint(t *testing.T) {
 	}
 	if !strings.Contains(fn, "OpenItems(") {
 		t.Error("RunWakeLoop no longer reads the inbox through OpenItems")
+	}
+}
+
+// A running loop must be distinguishable from a wedged one in its own log.
+//
+// The first version logged only on inbox-depth CHANGE. At a constant depth that
+// means one start line, one transition, then silence forever — so a healthy
+// loop at depth 32 and a loop wedged immediately after observing depth 32 leave
+// IDENTICAL forensic records (codex review of #327). The heartbeat interval is
+// the bound on that ambiguity, and it must be short enough to be useful and
+// long enough not to become a tick log.
+func TestWakeLoopHeartbeatBoundsSilence(t *testing.T) {
+	if wakeLoopHeartbeatLog <= 0 {
+		t.Fatal("no heartbeat interval — a constant-depth loop would be silent forever")
+	}
+	if wakeLoopHeartbeatLog > 30*time.Minute {
+		t.Errorf("heartbeat every %s is too sparse to distinguish quiet from dead", wakeLoopHeartbeatLog)
+	}
+	if wakeLoopHeartbeatLog < time.Minute {
+		t.Errorf("heartbeat every %s turns the log into a tick log", wakeLoopHeartbeatLog)
+	}
+
+	// And the loop body must actually emit an unchanged-depth line.
+	src, err := os.ReadFile("wake.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "unchanged") {
+		t.Error("no unchanged-depth liveness line — silence still means both quiet and dead")
 	}
 }
