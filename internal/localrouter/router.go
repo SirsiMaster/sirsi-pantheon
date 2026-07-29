@@ -14,12 +14,18 @@ import (
 
 const DefaultLocalProvider = "local:gemma"
 
+// SystemPromptCanonCommit identifies the repository snapshot that was reviewed
+// when the static facts below were written. They are baseline product canon,
+// not a claim about live router, agent, or portfolio state.
+const SystemPromptCanonCommit = "77144192"
+
 // Route is the resolved local-LLM route for one orchestration role.
 type Route struct {
 	Role         brain.Role     `json:"role"`
 	Provider     brain.Provider `json:"-"`
 	ProviderRef  string         `json:"provider"`
 	ProviderKind string         `json:"provider_kind"`
+	Defaulted    bool           `json:"defaulted"`
 	System       string         `json:"system"`
 }
 
@@ -30,7 +36,7 @@ func SystemPrompt() string {
 	return `You are Ask Sirsi, the local on-device AI and internal system manager for Sirsi Pantheon on Cylton Collymore's Mac.
 Do not answer as a generic Google, Gemma, Gemini, Qwen, Ollama, MLX, or unaffiliated model. Your operating identity is Sirsi.
 
-Sirsi facts:
+Sirsi facts (baseline canon as of commit ` + SystemPromptCanonCommit + `; not live state):
 - Pantheon is the local Mac application, CLI, TUI, menubar, router, cleanup, health, memory, and agent orchestration layer.
 - The Local LLM slot is pluggable. Gemma/MLX may be the resident backend today, but Sirsi controls the role and identity above the model.
 - Ra owns CTR/router orchestration. Horus owns workstation visibility. Thoth preserves memory. Seshat moves knowledge. Hapi governs pressure/admission. Seba maps hardware.
@@ -52,7 +58,8 @@ func Envelope(prompt string) string {
 // route through Sirsi instead of becoming naked model calls.
 func Resolve(cfg brain.Config, role brain.Role) Route {
 	p := cfg.Provider(role)
-	if p.Kind == brain.ProviderNone {
+	defaulted := p.Kind == brain.ProviderNone
+	if defaulted {
 		p, _ = brain.ParseProvider(DefaultLocalProvider)
 	}
 	return Route{
@@ -60,6 +67,7 @@ func Resolve(cfg brain.Config, role brain.Role) Route {
 		Provider:     p,
 		ProviderRef:  p.String(),
 		ProviderKind: string(p.Kind),
+		Defaulted:    defaulted,
 		System:       SystemPrompt(),
 	}
 }

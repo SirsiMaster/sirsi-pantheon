@@ -2753,7 +2753,8 @@ struct AskSirsiView: View {
         return "READING LOCAL CONDUIT"
     }
     private var managerTiles: [ManagerTileSpec] {
-        [
+        let canon = engine.askSirsiCanonGroundingStatus()
+        return [
             ManagerTileSpec(symbol: "point.3.connected.trianglepath.dotted",
                             title: "Router Fabric",
                             value: "\(engine.threadsTotal) live threads",
@@ -2766,9 +2767,9 @@ struct AskSirsiView: View {
                             tint: engine.vitals?.pressure == "critical" ? .red : (engine.vitals?.pressure == "warn" ? .orange : .green)),
             ManagerTileSpec(symbol: "books.vertical",
                             title: "Knowledge",
-                            value: "canon-grounded",
-                            detail: "Pantheon, Hypergraph, Sirsi IO, portfolio history",
-                            tint: gold),
+                            value: canon.value,
+                            detail: canon.detail,
+                            tint: canon.healthy ? .green : .orange),
             ManagerTileSpec(symbol: "lock.shield",
                             title: "Authority",
                             value: engine.ownerGatedItems.isEmpty ? "action-gated" : "\(engine.ownerGatedItems.count) owner items",
