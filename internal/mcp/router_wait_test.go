@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,7 +29,14 @@ func newTestFacade(t *testing.T) *dispatch.Facade {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := dispatch.New(filepath.Join(t.TempDir(), "idea-router"), store)
+	root := filepath.Join(t.TempDir(), "idea-router")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(`{"agents":{"claude-pantheon":{},"codex-pantheon":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := dispatch.New(root, store)
 	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
@@ -53,14 +61,14 @@ func TestWait_FacadeSendWakesWaiter(t *testing.T) {
 	f := newTestFacade(t)
 	woke := make(chan int, 1)
 	go func() {
-		items, err := f.Wait(context.Background(), "claude", 5*time.Second)
+		items, err := f.Wait(context.Background(), "claude-pantheon", 5*time.Second)
 		if err != nil {
 			t.Errorf("Wait: %v", err)
 		}
 		woke <- len(items)
 	}()
 	time.Sleep(50 * time.Millisecond) // let the waiter block
-	if _, err := f.Send("codex", "claude", "wake up", "", "x"); err != nil {
+	if _, err := f.Send("codex-pantheon", "claude-pantheon", "wake up", "", "x"); err != nil {
 		t.Fatal(err)
 	}
 	select {
