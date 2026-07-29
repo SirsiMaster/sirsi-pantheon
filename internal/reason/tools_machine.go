@@ -226,12 +226,22 @@ func forkStormScan() Tool {
 func restartBroker() Tool {
 	return Tool{
 		Name:       "gemma.restart",
-		Does:       "restart the local model broker (it reloads in seconds; in-flight requests are lost)",
+		Does:       "restart the local model broker — stops it so launchd revives it (reloads in under a minute; in-flight requests are lost)",
 		Tier:       TierRepair,
 		Reversible: true,
 		Run: func(ctx context.Context) (Result, error) {
 			pidBefore := brokerPID(ctx)
-			cmd := exec.CommandContext(ctx, "sirsi", "gemma", "serve", "--restart")
+			// There is NO `sirsi gemma serve --restart`. This tool shelled that
+			// flag since it was written and had therefore never once worked —
+			// every invocation died on "unknown flag: --restart", exit 1. Found
+			// by the live E2E, which is the whole argument for running one: the
+			// unit tests exercised the VERDICT rule and never the command.
+			//
+			// The documented lever is --stop, and the broker's LaunchAgent is
+			// KeepAlive=true with ThrottleInterval=30, so launchd performs the
+			// revive. That throttle is also why a 30s verification deadline could
+			// never have passed: it was shorter than launchd's own respawn delay.
+			cmd := exec.CommandContext(ctx, "sirsi", "gemma", "serve", "--stop")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return Result{Summary: strings.TrimSpace(string(out))},
