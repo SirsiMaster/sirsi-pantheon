@@ -118,17 +118,37 @@ type Outcome struct {
 
 // Run executes one bounded auto-heal pass. It is the supervisor-duty entry
 // point: silent no-op when autonomous is OFF, error-isolated by the caller.
-func Run(_, _ string) error {
+func Run(routerRoot, repoRoot string) error {
+	_, err := RunReport(routerRoot, repoRoot)
+	return err
+}
+
+// RunReport executes one bounded auto-heal pass only when autonomous mode is
+// currently ON and returns the decisions it made.
+func RunReport(_, _ string) ([]Outcome, error) {
+	return runReport(false)
+}
+
+// RunApprovedReport executes one bounded auto-heal pass because the operator
+// explicitly asked for it (`sirsi autonomous run`). It still uses the same
+// whitelist, GateAction, budget, and Stele provenance. It bypasses the passive
+// master-switch check and loop cooldown for this one foreground command; the
+// underlying `sirsi ...` fix verbs still carry their own safety gates.
+func RunApprovedReport(_, _ string) ([]Outcome, error) {
+	return runReport(true)
+}
+
+func runReport(operatorApproved bool) ([]Outcome, error) {
 	mu.RLock()
 	auto, doc, gate, ex, statePath, inscribe := autonomousFn, doctorFn, gateFn, execFn, statePathFn(), inscribeFn
 	mu.RUnlock()
 
-	if !auto() {
-		return nil // OFF = propose: existing surfaces already carry the findings
+	if !operatorApproved && !auto() {
+		return nil, nil // OFF = propose: existing surfaces already carry the findings
 	}
 	findings, err := doc()
 	if err != nil {
-		return fmt.Errorf("auto-heal doctor: %w", err)
+		return nil, fmt.Errorf("auto-heal doctor: %w", err)
 	}
 
 	lastRun := loadState(statePath)
@@ -149,7 +169,7 @@ func Run(_, _ string) error {
 			o.Reason = "not-a-sirsi-verb" // whitelist: catalog levers only
 		case gate(action).Gated:
 			o.Reason = "gated-proposal" // second line of defense (ADR-039 P3)
-		case now.Sub(lastRun[f.Fix]) < fixCooldown:
+		case !operatorApproved && now.Sub(lastRun[f.Fix]) < fixCooldown:
 			o.Reason = "cooldown"
 		default:
 			if runErr := ex(strings.Fields(f.Fix)); runErr != nil {
@@ -171,7 +191,7 @@ func Run(_, _ string) error {
 			})
 		}
 	}
-	return nil
+	return outcomes, nil
 }
 
 func loadState(path string) map[string]time.Time {
