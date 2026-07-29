@@ -11,10 +11,14 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/reason"
 	"github.com/spf13/cobra"
 )
 
-var askJSON bool
+var (
+	askJSON bool
+	askFix  bool
+)
 
 var askCmd = &cobra.Command{
 	Use:   "ask [question]",
@@ -43,6 +47,7 @@ the machine that most needs help is the one with the least headroom to run a mod
 
 func init() {
 	askCmd.Flags().BoolVar(&askJSON, "json", false, "machine-readable answer with tier provenance")
+	askCmd.Flags().BoolVar(&askFix, "fix", false, "act on what was found: run the repair tools that apply, verify each, and re-check")
 	rootCmd.AddCommand(askCmd)
 }
 
@@ -93,6 +98,12 @@ func runAsk(_ *cobra.Command, args []string) error {
 		}
 		fmt.Println()
 		output.Dim("  Answered at the heuristic rung: zero tokens, no model loaded, works offline.")
+		if askFix {
+			return runAskFix(report)
+		}
+		if n := applicableRepairs(); n > 0 {
+			output.Dim("  %d repair(s) apply to this machine — `sirsi ask --fix` runs them and verifies each.", n)
+		}
 		return nil
 	}
 
@@ -206,4 +217,125 @@ func emitAskJSON(question string, r *guard.DoctorReport, alarms []guard.Diagnost
 	}
 	fmt.Println("]}")
 	return nil
+}
+
+// applicableRepairs counts the repair tools that say they apply to this machine
+// right now. Cheap enough to run on the read-only path so the offer is only made
+// when it is real — "run --fix" printed under a finding no tool addresses is a
+// dead lever, and a dead lever teaches an operator to ignore live ones.
+func applicableRepairs() int {
+	r := reason.NewRegistry()
+	if err := reason.MachineTools(r); err != nil {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	n := 0
+	for _, name := range r.Names() {
+		t, ok := r.Get(name)
+		if !ok || t.Tier < reason.TierRepair || t.Applies == nil {
+			continue
+		}
+		if ok, _ := t.Applies(ctx); ok {
+			n++
+		}
+	}
+	return n
+}
+
+// runAskFix is the act half of the loop. It runs every repair tool that declares
+// itself applicable, then RE-READS the machine and reports the severity delta per
+// check — because "the repair succeeded" and "the problem is gone" are different
+// claims, and only the second one is what the user asked for.
+func runAskFix(before *guard.DoctorReport) error {
+	r := reason.NewRegistry()
+	if err := reason.MachineTools(r); err != nil {
+		return fmt.Errorf("register repair tools: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	type ran struct {
+		name string
+		inv  reason.Invocation
+	}
+	var done []ran
+	fmt.Println()
+	for _, name := range r.Names() {
+		t, ok := r.Get(name)
+		if !ok || t.Tier < reason.TierRepair {
+			continue
+		}
+		if t.Applies == nil {
+			continue // never fire a repair that cannot say why it is relevant
+		}
+		applies, why := t.Applies(ctx)
+		if !applies {
+			output.Dim("  ○ %s — skipped: %s", name, why)
+			continue
+		}
+		output.Info("  ▸ %s — %s", name, why)
+		inv := reason.Invoke(ctx, r, name, reason.PolicyAutoRepair)
+		done = append(done, ran{name, inv})
+
+		if inv.Err != nil {
+			output.Warn("    ✘ %s", inv.Err)
+			continue
+		}
+		if inv.Result.Summary != "" {
+			output.Dim("    ran:      %s", inv.Result.Summary)
+		}
+		if inv.Verified != nil {
+			output.Success("    verified: %s", inv.Verified.Summary)
+		}
+	}
+
+	if len(done) == 0 {
+		fmt.Println()
+		output.Dim("  Nothing to repair — no tool declared itself applicable. The findings above")
+		output.Dim("  need a lever Sirsi does not have yet, which is a gap worth reporting.")
+		return nil
+	}
+
+	// Re-read the world. This is the whole point of --fix over printing a command.
+	after, err := guard.Doctor()
+	if err != nil {
+		return fmt.Errorf("re-check machine state: %w", err)
+	}
+	fmt.Println()
+	output.Info("  after re-checking:")
+	prev := map[string]guard.DiagnosticSeverity{}
+	for _, f := range before.Findings {
+		prev[f.Check] = f.Severity
+	}
+	changed := 0
+	for _, f := range after.Findings {
+		was, seen := prev[f.Check]
+		if !seen || was == f.Severity {
+			continue
+		}
+		changed++
+		arrow := "→"
+		if f.Severity < was {
+			output.Success("    %s %s %s %s  (%s)", f.Check, sevName(was), arrow, sevName(f.Severity), f.Message)
+		} else {
+			output.Warn("    %s %s %s %s  (%s)", f.Check, sevName(was), arrow, sevName(f.Severity), f.Message)
+		}
+	}
+	if changed == 0 {
+		output.Dim("    no severity changed — the repairs ran and verified, but the machine reads the same.")
+		output.Dim("    That is a real answer, not a failure: the cause is elsewhere.")
+	}
+	return nil
+}
+
+func sevName(s guard.DiagnosticSeverity) string {
+	switch {
+	case s >= guard.SeverityCritical:
+		return "CRITICAL"
+	case s >= guard.SeverityWarn:
+		return "WARN"
+	default:
+		return "OK"
+	}
 }

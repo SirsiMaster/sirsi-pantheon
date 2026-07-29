@@ -85,6 +85,16 @@ type Tool struct {
 	// recorded rather than inferred because inferring it is how irreversible
 	// things get automated.
 	Reversible bool
+	// Applies lets the TOOL decide whether the current machine state warrants
+	// it, and return the one-line reason a user should see. Optional: nil means
+	// "only when asked for by name".
+	//
+	// Relevance lives here rather than in a caller-side table on purpose. A map
+	// from finding to tool in cmd/ would be an enumeration that silently rots
+	// every time a tool or a check is added, and the caller cannot know what a
+	// tool actually addresses. The tool can. (PANTHEON_RULES.md A29: discover,
+	// never enumerate.)
+	Applies func(ctx context.Context) (bool, string)
 	// Run performs the tool. Observe tools must have no side effects — that is
 	// enforced by review, not by the type system, so the tier is a promise the
 	// author makes explicitly.

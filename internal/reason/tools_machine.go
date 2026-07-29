@@ -229,8 +229,38 @@ func restartBroker() Tool {
 		Does:       "restart the local model broker — stops it so launchd revives it (reloads in under a minute; in-flight requests are lost)",
 		Tier:       TierRepair,
 		Reversible: true,
+		// Restarting the broker only helps when the broker is ACTUALLY the
+		// memory offender. Offering it otherwise would be a fix that cannot
+		// address the finding it is offered for — the kind of suggestion that
+		// teaches an operator to distrust every suggestion.
+		Applies: func(ctx context.Context) (bool, string) {
+			pid := brokerPID(ctx)
+			if pid == 0 {
+				return false, "no local broker is running"
+			}
+			fp, err := vitals.PhysFootprint(pid)
+			if err != nil {
+				return false, "broker footprint unreadable"
+			}
+			peak, _ := vitals.PeakPhysFootprint(pid)
+			worst := fp
+			if peak > worst {
+				worst = peak
+			}
+			total, perr := strconv.ParseUint(strings.TrimSpace(sysctlStr(ctx, "hw.memsize")), 10, 64)
+			if perr != nil || total == 0 {
+				return false, "RAM size unavailable"
+			}
+			frac := float64(worst) / float64(total)
+			if frac < 0.33 {
+				return false, fmt.Sprintf("broker at %.0f%% of RAM — not the offender", frac*100)
+			}
+			return true, fmt.Sprintf("the local broker (pid %d) is holding %.0f%% of RAM; a restart reloads it clean",
+				pid, frac*100)
+		},
 		Run: func(ctx context.Context) (Result, error) {
 			pidBefore := brokerPID(ctx)
+			modelBefore, _ := brokerServing(ctx) // best-effort: for the downgrade check
 			// There is NO `sirsi gemma serve --restart`. This tool shelled that
 			// flag since it was written and had therefore never once worked —
 			// every invocation died on "unknown flag: --restart", exit 1. Found
@@ -249,7 +279,7 @@ func restartBroker() Tool {
 			}
 			return Result{
 				Summary:  fmt.Sprintf("restart issued (previous pid %d)", pidBefore),
-				Evidence: map[string]any{"pid_before": pidBefore},
+				Evidence: map[string]any{"pid_before": pidBefore, "model_before": modelBefore},
 				Changed:  true,
 			}, nil
 		},
@@ -257,6 +287,7 @@ func restartBroker() Tool {
 			// Baseline comes from THIS invocation's Run result, never from
 			// closure state shared across concurrent invocations.
 			pidBefore, _ := ran.Evidence["pid_before"].(int)
+			modelBefore, _ := ran.Evidence["model_before"].(string)
 			// Verification is the whole point, and it must assert what it CLAIMS
 			// to assert. The previous form only checked pid > 0, which passes in
 			// both failure modes that actually happen here:
@@ -282,12 +313,25 @@ func restartBroker() Tool {
 					lastErr = reason
 				} else {
 					fp, _ := vitals.PhysFootprint(pid)
+					// A restart that comes back serving a DIFFERENT model is not a
+					// clean reload — the resolver re-ranked, usually because less
+					// RAM was free, and the user now has less capability than
+					// before. That is a material change and must be stated, not
+					// buried in an evidence field: observed live on 2026-07-29,
+					// gemma-4-12B-it-8bit came back as Qwen2.5-3B-Instruct-4bit.
+					summary := fmt.Sprintf("broker back as pid %d (was %d), serving %q, footprint %.1f GB",
+						pid, pidBefore, model, float64(fp)/(1<<30))
+					downgraded := modelBefore != "" && model != modelBefore
+					if downgraded {
+						summary += fmt.Sprintf(" — ⚠ MODEL CHANGED, was %q: the resolver re-ranked on restart, so this machine now has less model than before", modelBefore)
+					}
 					return Result{
-						Summary: fmt.Sprintf("broker back as pid %d (was %d), serving %q, footprint %.1f GB",
-							pid, pidBefore, model, float64(fp)/(1<<30)),
+						Summary: summary,
 						Evidence: map[string]any{
 							"pid_before": pidBefore, "pid_after": pid,
-							"serving_model": model, "footprint_gb": float64(fp) / (1 << 30),
+							"serving_model": model, "model_before": modelBefore,
+							"model_changed": downgraded,
+							"footprint_gb":  float64(fp) / (1 << 30),
 						},
 					}, nil
 				}
