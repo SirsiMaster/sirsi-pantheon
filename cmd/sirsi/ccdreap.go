@@ -103,6 +103,65 @@ func ccdPidStart(pid int) (float64, bool) {
 	return float64(ts.Unix()), true
 }
 
+// reapT is one reap candidate: a live process attributed to a session record.
+type reapT struct {
+	pid  int
+	s    ccdSession
+	idle int
+}
+
+// dedupeSessionProcs collapses each session's process pair down to its
+// parent-most pid. `ppidOf` is injected so the rule is testable without ps.
+//
+// One leaked session is TWO processes, not two sessions: the app launches every
+// headless run as `Contents/Helpers/disclaimer <claude-path> --output-format …`,
+// so the SHIM'S OWN ARGV CONTAINS THE CLAUDE PATH and the reaper's pgrep matches
+// the shim and its child alike. Both then attribute to the same session record
+// by start-time proximity, so one session entered the reap list twice — counted
+// twice, and killed twice (harmlessly: the kill path already sweeps children via
+// pgrep -P, so the second pass targeted an already-dead pid).
+//
+// That double-count is why the leak read as "exactly 2 procs per run,
+// deterministic" (claude-home, router item 20260729-134030). It is ONE leaked
+// session per run. Keeping the parent preserves the -P sweep over the child.
+func dedupeSessionProcs(reap []reapT, ppidOf func(int) int) []reapT {
+	if len(reap) < 2 {
+		return reap
+	}
+	bySID := map[string]map[int]bool{}
+	for _, r := range reap {
+		if bySID[r.s.sid] == nil {
+			bySID[r.s.sid] = map[int]bool{}
+		}
+		bySID[r.s.sid][r.pid] = true
+	}
+	out := make([]reapT, 0, len(reap))
+	for _, r := range reap {
+		// Drop this pid only if its parent is another candidate for the SAME
+		// session — never merely because a parent exists (every process has one).
+		if bySID[r.s.sid][ppidOf(r.pid)] {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// ccdPPID returns pid's parent, or 0 if it cannot be read (dead/denied). Used
+// to tell a session's launcher shim from the claude child it spawned, since
+// both match the same pgrep pattern.
+func ccdPPID(pid int) int {
+	out, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0
+	}
+	ppid, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0
+	}
+	return ppid
+}
+
 func ccdPgrep(args ...string) []int {
 	out, _ := exec.Command("pgrep", args...).Output()
 	var pids []int
@@ -139,11 +198,6 @@ var ccdReapCmd = &cobra.Command{
 
 		// resident MAIN runners → attribute to a session by start-time proximity
 		me := os.Getpid()
-		type reapT struct {
-			pid  int
-			s    ccdSession
-			idle int
-		}
 		var reap []reapT
 		// Sessions with an attributed live runner. The archive pass consults this
 		// so a session that is still ALIVE is never archived out of the app's
@@ -188,6 +242,21 @@ var ccdReapCmd = &cobra.Command{
 			}
 			reap = append(reap, reapT{pid, *best, int(idleMin)})
 		}
+
+		// One leaked session is TWO processes, not two sessions. The app launches
+		// every headless run through `Contents/Helpers/disclaimer <claude-path>
+		// --output-format …`, so the shim's own argv CONTAINS the claude path and
+		// the pgrep above matches the shim AND its child. Both then attribute to
+		// the same session record by start-time proximity, so the same session
+		// landed in `reap` twice: counted twice, and killed twice (harmlessly —
+		// the kill path already takes children via pgrep -P, so the second pass
+		// targeted an already-dead pid).
+		//
+		// That double-count is why the leak read as "exactly 2 per run,
+		// deterministic" (claude-home, router item 20260729-134030). It is one
+		// leaked session per run. Dedupe by session, keeping the parent-most pid
+		// so the -P sweep still collects the child.
+		reap = dedupeSessionProcs(reap, ccdPPID)
 
 		killed := 0
 		verb := "WOULD-REAP"
