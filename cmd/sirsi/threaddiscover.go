@@ -97,10 +97,25 @@ left for the operator to disambiguate in agents.json.
 			}
 			registered++
 			actions[i].Reason = "registered " + out.ThreadID
-			// Anchor the watcher to the live session PID, not to sirsi.
-			if werr := spawnRouterWatcher(out.ThreadID, out.AgentID, routerRoot, a.Proc.PID); werr != nil {
-				actions[i].Reason += fmt.Sprintf(" (watcher warning: %v)", werr)
-			}
+
+			// ADR-024: discover REGISTERS, it does not arm. It used to fork a
+			// `watch-router` bridge here, and that fork is a self-feeding storm:
+			// watch-router runs the agent's spawn command, which starts a NEW
+			// agent process; that process is unregistered, so the next discover
+			// pass finds it, registers it, and forks another watcher — which
+			// starts another agent. On the supervisor's cadence the population
+			// multiplies every pass. Observed 2026-07-27: 358 `claude` processes
+			// and 267 zombies, load average 436, swap 48.5 GB of 49 GB, the
+			// machine reporting "system has run out of application memory".
+			//
+			// This is the same fix ADR-024 already applied to `register` ("a pure
+			// handshake — it no longer auto-spawns an fs-watcher; it RETURNS the
+			// canonical watcher the surface must arm"). discover was the caller
+			// that kept the old behavior. The surface arms its own watcher; a
+			// discovered process is ALREADY RUNNING and needs watching, never
+			// launching.
+			actions[i].Reason += " (watcher: " +
+				router.WatcherFor(out.Surface, out.AgentID, out.ThreadID).Type + " — arm at the surface)"
 		}
 
 		return renderDiscover(host, actions, registered)
