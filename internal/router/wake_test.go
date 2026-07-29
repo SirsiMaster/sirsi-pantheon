@@ -2,10 +2,12 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -130,6 +132,106 @@ func TestWakePassReadyAdapterInvokedOnce(t *testing.T) {
 	it := wakeStatusOf(t, root, id)
 	if it.WakeStatus != WakeStatusAttempted || it.WakeAttemptedAt == "" || it.WakeAdapter != WakeCLISpawn {
 		t.Fatalf("item wake fields = (%q,%q,%q), want attempted/non-empty/cli-spawn", it.WakeStatus, it.WakeAttemptedAt, it.WakeAdapter)
+	}
+}
+
+// One wake per AGENT per pass, not one per item. The adapter nudges an agent and
+// its pull-loop then drains the whole inbox, so N stranded items for one agent
+// must still cost exactly one adapter call — with a blocking launchctl, invoking
+// per item turned 16 items into 16 sequential hangs (18m doctor wedge,
+// 2026-07-29). Every item still gets annotated.
+func TestWakePassInvokesOncePerAgentNotPerItem(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("executable: %v", err)
+	}
+	a := AgentConfig{ID: "busy-worker", Type: "qwen", Cwd: t.TempDir(),
+		Command: []string{exe}, Wake: WakeConfig{Mechanism: WakeCLISpawn}}
+	b := AgentConfig{ID: "other-worker", Type: "qwen", Cwd: t.TempDir(),
+		Command: []string{exe}, Wake: WakeConfig{Mechanism: WakeCLISpawn}}
+	root := wakeTestRoot(t, a, b)
+
+	var ids []string
+	for i := 0; i < 5; i++ {
+		ids = append(ids, sendItem(t, root, a.ID, fmt.Sprintf("stranded-%d", i)))
+	}
+	ids = append(ids, sendItem(t, root, b.ID, "other-agent"))
+
+	// Count per agent so the assertion discovers who was woken rather than
+	// assuming the loop's ordering.
+	var mu sync.Mutex
+	perAgent := map[string]int{}
+	old := getWakeInvoke()
+	t.Cleanup(func() { setWakeInvoke(old) })
+	setWakeInvoke(func(cfg AgentConfig, adapter string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		perAgent[cfg.ID]++
+		return nil
+	})
+
+	if _, err := WakePass(root, time.Now().UTC()); err != nil {
+		t.Fatalf("WakePass: %v", err)
+	}
+
+	for agentID, n := range perAgent {
+		if n != 1 {
+			t.Fatalf("agent %q woken %d times in one pass, want exactly 1", agentID, n)
+		}
+	}
+	if len(perAgent) != 2 {
+		t.Fatalf("agents woken = %v, want both %q and %q exactly once", perAgent, a.ID, b.ID)
+	}
+	// Sharing the side effect must not cost any item its annotation.
+	for _, id := range ids {
+		if it := wakeStatusOf(t, root, id); it.WakeStatus != WakeStatusAttempted {
+			t.Fatalf("item %s wake_status = %q, want %q", id, it.WakeStatus, WakeStatusAttempted)
+		}
+	}
+}
+
+// A failed wake must still mark EVERY one of that agent's items, not just the
+// first — the dedup shares the error, it does not swallow it for the rest.
+func TestWakePassSharedFailureAnnotatesEveryItem(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("executable: %v", err)
+	}
+	a := AgentConfig{ID: "wedged-worker", Type: "qwen", Cwd: t.TempDir(),
+		Command: []string{exe}, Wake: WakeConfig{Mechanism: WakeCLISpawn}}
+	root := wakeTestRoot(t, a)
+	var ids []string
+	for i := 0; i < 3; i++ {
+		ids = append(ids, sendItem(t, root, a.ID, fmt.Sprintf("doomed-%d", i)))
+	}
+	old := getWakeInvoke()
+	t.Cleanup(func() { setWakeInvoke(old) })
+	setWakeInvoke(func(cfg AgentConfig, adapter string) error {
+		return fmt.Errorf("no response in 15s (label parked at 'spawn scheduled'?)")
+	})
+
+	if _, err := WakePass(root, time.Now().UTC()); err != nil {
+		t.Fatalf("WakePass: %v", err)
+	}
+	for _, id := range ids {
+		it := wakeStatusOf(t, root, id)
+		if it.WakeStatus != WakeStatusUnavailable {
+			t.Fatalf("item %s wake_status = %q, want %q", id, it.WakeStatus, WakeStatusUnavailable)
+		}
+	}
+}
+
+// runLaunchctl must return rather than block forever. It shells the real
+// launchctl with a bogus subcommand, which exits immediately — the point is that
+// the deadline path compiles, is wired, and the happy path is not slowed.
+func TestRunLaunchctlReturnsWithinDeadline(t *testing.T) {
+	if _, err := exec.LookPath("launchctl"); err != nil {
+		t.Skip("launchctl not on PATH")
+	}
+	start := time.Now()
+	_ = runLaunchctl("sirsi-no-such-subcommand")
+	if elapsed := time.Since(start); elapsed >= launchctlTimeout {
+		t.Fatalf("runLaunchctl took %s, must be bounded by %s", elapsed, launchctlTimeout)
 	}
 }
 
