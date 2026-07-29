@@ -115,7 +115,7 @@ func RunGemmaLivenessDuty(_, _ string) error {
 	home, _ := os.UserHomeDir()
 	status, detail := getGemmaProbeFn()(home)
 	switch status {
-	case liveness.GemmaHealthy:
+	case liveness.GemmaHealthy, liveness.GemmaBusy:
 		gemmaWedgeStrikes = 0
 		return nil
 	case liveness.GemmaDown:

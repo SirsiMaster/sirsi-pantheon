@@ -27,6 +27,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -113,6 +114,9 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	if err := work.EnsureRoot(f.root); err != nil {
 		return SendResult{}, fmt.Errorf("dispatch: ensure root: %w", err)
 	}
+	if err := validateRecipient(f.root, to); err != nil {
+		return SendResult{}, err
+	}
 	id, deduped, err := f.store.SendGuarded(routerstore.SendReq{
 		From: from, To: to, Title: title, Type: msgType, Instructions: instructions,
 	})
@@ -133,6 +137,29 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 			fmt.Errorf("dispatch: item %s dispatched but audit file write failed: %w", id, err)
 	}
 	return SendResult{ID: id, Deduped: deduped, AuditPath: path}, nil
+}
+
+func validateRecipient(root, to string) error {
+	if to == "" {
+		return fmt.Errorf("dispatch: recipient is required")
+	}
+	if work.IsOwnerRecipient(to) {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(root, "agents.json"))
+	if err != nil {
+		return fmt.Errorf("dispatch: validate recipient: read agents.json: %w", err)
+	}
+	var reg struct {
+		Agents map[string]json.RawMessage `json:"agents"`
+	}
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return fmt.Errorf("dispatch: validate recipient: parse agents.json: %w", err)
+	}
+	if _, ok := reg.Agents[to]; !ok {
+		return fmt.Errorf("dispatch: invalid recipient: agent %q not registered — add to .agents/idea-router/agents.json", to)
+	}
+	return nil
 }
 
 // Inbox lists open items addressed to agent. Post-cutover it is the store's

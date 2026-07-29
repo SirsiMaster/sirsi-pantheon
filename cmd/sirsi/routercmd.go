@@ -44,8 +44,27 @@ func workRootEnsure() (string, error) {
 	return root, nil
 }
 
+// inlineBodyLimit is the length above which a body MUST come from a file.
+//
+// Router bodies are composed in a shell. A backtick or $(...) inside a
+// double-quoted argument is EVALUATED BY THE SHELL before this binary ever
+// runs, so the text that arrives is already mangled — silently, with the
+// evaluated span replaced by command output or by nothing. It has corrupted a
+// stored record (an owner-gate row rewritten by an evaluated backtick) and, in
+// one session, blanked command names out of three separate item bodies written
+// by an author who knew about the hazard and had a memory note describing it.
+//
+// Discipline demonstrably does not fix this, so the safe path is made the only
+// path for bodies long enough to contain prose. Short bodies stay inline
+// because "ack" and "merged as abc123" are not worth a temp file.
+const inlineBodyLimit = 280
+
 // loadOrLiteral returns the literal value, or the contents of the file if it
-// starts with @. Lets callers pass --instructions "text" or --instructions @file.
+// starts with @.
+//
+// Refuses a long inline body rather than storing text the shell may already
+// have rewritten. The refusal is the feature: a truncated record looks
+// plausible, which is precisely what makes it dangerous.
 func loadOrLiteral(v string) (string, error) {
 	if strings.HasPrefix(v, "@") {
 		data, err := os.ReadFile(strings.TrimPrefix(v, "@"))
@@ -53,6 +72,14 @@ func loadOrLiteral(v string) (string, error) {
 			return "", err
 		}
 		return string(data), nil
+	}
+	if len(v) > inlineBodyLimit {
+		return "", fmt.Errorf(
+			"body is %d chars; anything over %d must be passed as @file.\n"+
+				"  Shells evaluate backticks and $(...) inside a quoted argument BEFORE sirsi sees it,\n"+
+				"  so a long inline body can arrive silently rewritten and be stored that way.\n"+
+				"  Write it to a file and pass @that-file.",
+			len(v), inlineBodyLimit)
 	}
 	return v, nil
 }
@@ -640,19 +667,15 @@ var routerWakeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// LEAK GUARD (owner finding 2026-07-10): a background wake LaunchAgent is
-		// for a HEADLESS agent with no live session. If the agent already has a
-		// LIVE thread (an interactive CCD/CLI session, or an armed loop), arming a
-		// background channel on top of it spawns duplicate processes each tick —
-		// the 2026-07-08 wake-loop leak (reference_schedulewakeup_process_leak).
-		// Its inbox is already being handled by the live session. Refuse unless
-		// --force; the headless case (no live thread) proceeds normally.
+		// LEAK GUARD (owner finding 2026-07-10): refuse only when the agent
+		// already has an ARMED watcher. A merely live-but-loop-dead interactive
+		// session is precisely the state wake-install repairs; blocking on any
+		// live thread strands work until the owner manually types /loop.
 		force, _ := cmd.Flags().GetBool("force")
-		if !force && router.AgentHasLiveThread(root, cfg.ID) {
-			fmt.Printf("⚠️  %s has a live session/thread right now — not arming a background wake channel.\n", cfg.ID)
-			fmt.Printf("   A background pull-loop on top of a live session spawns duplicate processes\n")
-			fmt.Printf("   each tick (the wake-loop leak). Its inbox is handled by the live session;\n")
-			fmt.Printf("   arm a background channel only when NO session is running — or use --force.\n")
+		if wakeInstallBlocked(root, cfg.ID, force) {
+			fmt.Printf("⚠️  %s already has an armed watcher — not arming a duplicate background wake channel.\n", cfg.ID)
+			fmt.Printf("   A second pull-loop on top of an armed watcher spawns duplicate processes\n")
+			fmt.Printf("   each tick (the wake-loop leak). Use --force only for deliberate repair.\n")
 			return nil
 		}
 		changed, path, err := router.InstallWakeLaunchAgent(*cfg, "")
@@ -667,6 +690,10 @@ var routerWakeInstallCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func wakeInstallBlocked(root, agentID string, force bool) bool {
+	return !force && router.AgentArmed(root, agentID)
 }
 
 // routerCutoverCmd manages the ADR-036/037 store-authority cutover as a
@@ -755,10 +782,10 @@ loop tick (the arm instruction is regenerated store-aware). Reversible with
 			}
 			rearmed, skipped := 0, 0
 			for _, a := range reg.Agents {
-				// Same leak guard as `router wake-install` (owner finding 2026-07-10):
-				// arming a background wake channel on an agent that has a LIVE session
-				// spawns duplicate processes each tick. Only re-arm headless agents.
-				if router.AgentHasLiveThread(root, a.ID) {
+				// Same leak guard as `router wake-install`: skip agents that already
+				// have an armed watcher, but allow loop-dead live sessions to be
+				// repaired by installing the pull-loop.
+				if wakeInstallBlocked(root, a.ID, false) {
 					skipped++
 					continue
 				}
@@ -768,7 +795,7 @@ loop tick (the arm instruction is regenerated store-aware). Reversible with
 			}
 			fmt.Printf("  Re-armed %d headless wake LaunchAgent(s) into store-wake mode", rearmed)
 			if skipped > 0 {
-				fmt.Printf("; skipped %d with a live session (their /loop re-arms itself)", skipped)
+				fmt.Printf("; skipped %d with an armed watcher", skipped)
 			}
 			fmt.Println(".")
 		}
@@ -1247,7 +1274,7 @@ func init() {
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
-	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent has a live session (bypasses the duplicate-spawn leak guard)")
+	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent already has an armed watcher (bypasses the duplicate-spawn leak guard)")
 	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)

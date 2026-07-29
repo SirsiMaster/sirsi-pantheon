@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,8 +22,27 @@ func testFacade(t *testing.T) *Facade {
 		t.Fatal(err)
 	}
 	f := New(filepath.Join(t.TempDir(), "idea-router"), store)
+	writeTestRegistry(t, f.root)
 	t.Cleanup(func() { _ = f.Close() })
 	return f
+}
+
+func writeTestRegistry(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registry := `{
+		"agents": {
+			"b": {"type": "test", "command": ["true"], "cwd": "/tmp"},
+			"victim": {"type": "test", "command": ["true"], "cwd": "/tmp"},
+			"codex-pantheon": {"type": "codex", "command": ["codex"], "cwd": "/tmp"},
+			"claude-home": {"type": "claude", "command": ["claude"], "cwd": "/tmp"}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestSendCommitsStoreThenAuditFile: the store row is the authority and the
@@ -52,6 +72,46 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != res.ID {
 		t.Fatalf("file router does not see the dispatched item: %+v", items)
+	}
+}
+
+func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
+	f := testFacade(t)
+
+	for _, recipient := range work.OwnerRecipients() {
+		if _, err := f.Send("claude-pantheon", recipient, "owner decision", "decision", "choose one"); err != nil {
+			t.Fatalf("Send to owner escalation inbox %q must succeed: %v", recipient, err)
+		}
+	}
+
+	for _, recipient := range []string{"claude-deck", "codex"} {
+		_, err := f.Send("claude-pantheon", recipient, "lost work", "review", "do not strand this")
+		if err == nil {
+			t.Fatalf("Send to unregistered recipient %q must fail", recipient)
+		}
+		if !strings.Contains(err.Error(), fmt.Sprintf(`agent %q not registered`, recipient)) {
+			t.Fatalf("unexpected error for %q: %v", recipient, err)
+		}
+	}
+
+	inbox, inboxErr := f.Inbox("claude-deck")
+	if inboxErr != nil {
+		t.Fatal(inboxErr)
+	}
+	if len(inbox) != 0 {
+		t.Fatalf("unregistered recipient send wrote work: %+v", inbox)
+	}
+	all, allErr := f.ListAll()
+	if allErr != nil {
+		t.Fatal(allErr)
+	}
+	if len(all) != len(work.OwnerRecipients()) {
+		t.Fatalf("rejected sends must create no item beyond owner escalation controls, got %+v", all)
+	}
+	for _, item := range all {
+		if !work.IsOwnerRecipient(item.To) {
+			t.Fatalf("unexpected non-owner item after rejected sends: %+v", item)
+		}
 	}
 }
 
@@ -277,6 +337,7 @@ func TestOpenCreatesStoreDirOnFreshHome(t *testing.T) {
 		t.Fatalf("Open on a fresh home must create the store dir: %v", err)
 	}
 	defer func() { _ = f.Close() }()
+	writeTestRegistry(t, f.root)
 	if _, err := f.Send("a", "b", "first ever send", "", "x"); err != nil {
 		t.Fatalf("send on fresh store: %v", err)
 	}
