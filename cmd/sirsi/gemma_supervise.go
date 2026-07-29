@@ -42,8 +42,33 @@ import (
 // --stop; it was load-bearing for READERS too and nobody wrote it down, so it
 // survived only as an implicit property and broke silently when the
 // implementation changed.
+//
+// NAME COLLISION, found by claude-home before this merged and confirmed on the
+// live host: ~/.sirsi/gemma-worker.pid is ALREADY TAKEN by `ai.sirsi.gemma-worker`,
+// the launchd-supervised router task worker (a bash script, pid 98745 at the time
+// of writing). The obvious name was the wrong name, and writing it would have
+// clobbered a live, load-bearing pidfile belonging to a different launchd job.
+// This one is named after the broker whose child it is: the broker's launchd label
+// is `ai.sirsi.gemma-broker`, so its worker is gemma-broker-worker.pid.
 func gemmaWorkerPidPath(home string) string {
-	return filepath.Join(home, ".sirsi/gemma-worker.pid")
+	return filepath.Join(home, ".sirsi/gemma-broker-worker.pid")
+}
+
+// gemmaWritePidExclusive writes a pidfile ONLY if it is unowned.
+//
+// The rename above fixes today's collision; this makes the class unrepeatable.
+// If the path already names a LIVE process that is not ours, refuse rather than
+// overwrite — an overwritten pidfile silently transfers ownership of a running
+// process to something that did not start it, and the damage shows up later as a
+// stop or kill aimed at the wrong pid. A stale file (named process is gone) is
+// reclaimed normally, since that is the ordinary restart case.
+func gemmaWritePidExclusive(path string, pid int) error {
+	if existing, alive := gemmaReadPid(path); alive && existing != pid {
+		return fmt.Errorf("refusing to overwrite %s: it names live pid %d, which this "+
+			"broker did not start. Pick a different path rather than clobbering another "+
+			"job's pidfile", path, existing)
+	}
+	return os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644)
 }
 
 // gemmaWaitPortFree blocks until the port can be bound, or gives up.
@@ -141,7 +166,10 @@ func gemmaSuperviseWorker(home, pyBin string, args []string) error {
 
 	supPid, workerPid := os.Getpid(), c.Process.Pid
 	_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(supPid)), 0o644)
-	_ = os.WriteFile(gemmaWorkerPidPath(home), []byte(strconv.Itoa(workerPid)), 0o644)
+	if err := gemmaWritePidExclusive(gemmaWorkerPidPath(home), workerPid); err != nil {
+		_ = syscall.Kill(-workerPid, syscall.SIGKILL) // do not leave an unrecorded worker
+		return err
+	}
 	_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
 
 	// Hapi governs the WORKER — it is the process that can balloon toward Jetsam,

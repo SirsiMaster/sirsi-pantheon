@@ -82,3 +82,33 @@ func TestGemmaPidPathsAreDistinct(t *testing.T) {
 		t.Fatal("supervisor and worker pid paths must differ (ADR-046 pid-file contract)")
 	}
 }
+
+// The obvious name (gemma-worker.pid) was already owned by the launchd job
+// ai.sirsi.gemma-worker. Pin the rename so nobody "tidies" it back.
+func TestGemmaWorkerPidDoesNotCollideWithTaskWorker(t *testing.T) {
+	got := gemmaWorkerPidPath("/h")
+	if filepath.Base(got) == "gemma-worker.pid" {
+		t.Fatal("gemma-worker.pid belongs to ai.sirsi.gemma-worker — writing it clobbers a live launchd job")
+	}
+}
+
+// Overwriting a pidfile that names another live job silently transfers ownership
+// of a running process to something that did not start it.
+func TestGemmaWritePidExclusiveRefusesLiveForeignPid(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "taken.pid")
+	if err := os.WriteFile(p, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := gemmaWritePidExclusive(p, os.Getpid()+100000); err == nil {
+		t.Fatal("overwrote a pidfile naming a live foreign process")
+	}
+	// Stale file is the ordinary restart case and must be reclaimed.
+	stale := filepath.Join(dir, "stale.pid")
+	if err := os.WriteFile(stale, []byte("999999\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := gemmaWritePidExclusive(stale, 4242); err != nil {
+		t.Fatalf("refused to reclaim a stale pidfile: %v", err)
+	}
+}
