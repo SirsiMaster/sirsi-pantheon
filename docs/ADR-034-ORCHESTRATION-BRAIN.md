@@ -36,6 +36,8 @@ Establish the **Orchestration Brain**: three tiers over a user-navigable LLM spe
 
 **Surfaces.** `sirsi brain {status, use, levels, doctor, test}` is the control plane (shipped in P1b). `status`/`doctor` emit `--json` for the menubar/Nexus surfaces to consume (later phases).
 
+**Local LLM Router.** The idea/thread router and the LLM router are separate layers. CTR/Ra routes work between agents and threads; the Local LLM router routes a role to whichever on-device backend currently occupies Sirsi's Local LLM slot. Gemma/MLX is only today's resident backend. Sirsi identity, canon grounding, Hapi admission, and provider selection live above the backend so Qwen, Ollama, Core ML, or future local engines can be inserted without changing Ask Sirsi, the menubar, or router intelligence callers. `sirsi brain route <role>` exposes this route without loading a model.
+
 ## Alternatives Considered
 
 1. **A single always-on model as the brain** — Rejected: it *is* the loop, breaks with no model, no keys, or RAM pressure; opaque and un-swappable. Violates the deterministic-floor requirement.
