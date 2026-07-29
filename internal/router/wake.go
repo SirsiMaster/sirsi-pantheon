@@ -24,6 +24,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -194,6 +195,33 @@ func setWakeInvoke(fn WakeInvoke) {
 	wakeInvokeFn = fn
 }
 
+// WakeExecTimeout bounds every external process a wake adapter shells out to.
+// A wake is a NUDGE — the target either polls now or polls on its own interval
+// — so there is no correct reason to wait on one. 12s is generous for launchctl
+// on a loaded machine and still well inside the conduit's per-run budget.
+const WakeExecTimeout = 12 * time.Second
+
+// ErrWakeExecTimeout marks a wake that hit WakeExecTimeout rather than failing.
+// Callers record it as wake-unavailable with an inconclusive detail: the nudge
+// may well have landed, so it must not be reported as a hard adapter failure.
+var ErrWakeExecTimeout = errors.New("wake exec timed out")
+
+// runBounded runs an external command under a hard deadline, SIGKILLing it on
+// expiry and reporting ErrWakeExecTimeout. Every wake adapter that shells out
+// goes through here so no single hung child can park a whole pass — the timeout
+// is a parameter (not a captured const) purely so the regression test can drive
+// a real hang in milliseconds instead of waiting out WakeExecTimeout.
+func runBounded(timeout time.Duration, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := exec.CommandContext(ctx, name, args...).Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("%w: %s exceeded %s", ErrWakeExecTimeout,
+			strings.Join(append([]string{name}, args...), " "), timeout)
+	}
+	return err
+}
+
 func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 	switch adapter {
 	case WakeCLISpawn:
@@ -233,9 +261,25 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		return nil
 	case WakeLaunchAgent:
 		// The pull-loop is resident; kick it to poll immediately.
+		//
+		// BOUNDED, and it must stay bounded. `launchctl kickstart -k` against a
+		// label in `state = spawn scheduled` — the NORMAL resting state of an
+		// interval-driven wake agent — does not return. It waits for a respawn
+		// that is not due yet. An unbounded .Run() here therefore blocks the
+		// whole wake pass forever, and the caller (doctor --fix, the conduit
+		// tick) parks in wait4 with no ceiling: a live 18-minute doctor wedge
+		// was captured this way (claude-home, router item 20260729-132508).
+		//
+		// bootout+bootstrap is NOT the fix: it releases the in-flight child, but
+		// the label comes back up in `spawn scheduled` again — because that is
+		// its correct resting state — and the next pass wedges identically.
+		// The only durable fix is a deadline on the exec itself.
+		//
+		// A doctor that reports one label as inconclusive is strictly better
+		// than a doctor that never returns.
 		label := WakeLaunchAgentLabel(cfg.ID)
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		return exec.Command("launchctl", "kickstart", "-k", target).Run()
+		return runBounded(WakeExecTimeout, "launchctl", "kickstart", "-k", target)
 	default:
 		// Includes mcp-notification: ProbeWakeReadiness never yields it as a
 		// ready adapter (not yet wired), so this is the honest failure if reached.
@@ -332,6 +376,23 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 
 	invoke := getWakeInvoke()
+
+	// Waking is a PER-AGENT action, not a per-item one: one nudge makes the
+	// target poll its whole inbox. Without this memo the loop invoked the
+	// adapter once per open ITEM, so an agent sitting on 15 items got 15
+	// kickstarts against the same label in a single pass — the amplifier that
+	// turned one hung launchctl into the 18-deep pile claude-home captured.
+	// The item annotations still go on every item; only the exec is deduped.
+	invokedThisPass := map[string]error{}
+	invokeOnce := func(cfg AgentConfig, adapter string) error {
+		if err, seen := invokedThisPass[cfg.ID]; seen {
+			return err
+		}
+		err := invoke(cfg, adapter)
+		invokedThisPass[cfg.ID] = err
+		return err
+	}
+
 	for _, item := range items {
 		agentID := item.To
 		if agentID == "" {
@@ -381,8 +442,16 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 
 		cfg, _ := reg.Lookup(agentID) // Ready implies registered
 		ann := work.WakeAnnotation{Status: WakeStatusAttempted, AttemptedAt: now.Format(time.RFC3339), Adapter: health.Adapter}
-		if ierr := invoke(*cfg, health.Adapter); ierr != nil {
-			ann = work.WakeAnnotation{Status: WakeStatusUnavailable, Error: fmt.Sprintf("%s adapter failed: %v", health.Adapter, ierr)}
+		if ierr := invokeOnce(*cfg, health.Adapter); ierr != nil {
+			// A timeout is INCONCLUSIVE, not a failure — the nudge may have
+			// landed and the resident loop polls on its own interval anyway.
+			// Recording it as "failed" would be the same class of lie as a
+			// health badge that is green over a dead thing, inverted.
+			detail := fmt.Sprintf("%s adapter failed: %v", health.Adapter, ierr)
+			if errors.Is(ierr, ErrWakeExecTimeout) {
+				detail = fmt.Sprintf("%s adapter inconclusive: %v", health.Adapter, ierr)
+			}
+			ann = work.WakeAnnotation{Status: WakeStatusUnavailable, Error: detail}
 			setWake(item.ID, ann)
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Adapter: health.Adapter, Detail: ann.Error})
 			continue
@@ -695,7 +764,9 @@ func UninstallWakeLaunchAgent(cfg AgentConfig) (removed bool, path string, err e
 	// launchAgentsDirOverride to a temp dir don't touch the real launchd domain.
 	if launchAgentsDirOverride == "" {
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		_ = exec.Command("launchctl", "bootout", target).Run()
+		// Bounded for the same reason kickstart is: launchctl can block on a job
+		// caught mid-spawn, and an uninstall that never returns is a wedge too.
+		_ = runBounded(WakeExecTimeout, "launchctl", "bootout", target)
 	}
 	if rmErr := os.Remove(path); rmErr != nil {
 		return false, path, fmt.Errorf("remove wake LaunchAgent plist: %w", rmErr)
