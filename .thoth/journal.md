@@ -1250,3 +1250,40 @@ the load-bearing VM as sole priority, 77% RAM free, broker pid 33719 still cappe
 the prompt cache flat at 2.74 GB, no new crash or Jetsam reports. The only open `to: user` item
 remains last run's `claude-deck` lane decision; `doctor` reports it as wake-unavailable by
 design, and it is not being nagged.
+
+## Conduit run 2026-07-29T04:42Z
+
+Three PRs merged and the router's owner-recipient work closed out. **#376** (last run's journal)
+merged first as the standing next-run pattern. **#374** landed the `internal/work.OwnerRecipients()`
+/`IsOwnerRecipient()` single authority after codex narrowed its head to `042434de` — the
+wake-install guard inversion I had blocked on was gone, leaving exactly the content bound at
+`f546e80`, so the bind was re-placed and the PR merged. The guard itself came back correctly as
+its own PR **#377**, which is the shape the earlier verdict asked for: `wakeInstallBlocked` is now
+one named authority consumed by both `router wake-install` and the cutover re-arm loop, and
+`TestWakeInstallBlockedUsesArmedWatcher` pins all three states of the predicate that actually gates
+arming (loop-dead live session does not block, armed watcher does, `--force` bypasses). With
+`AgentArmed` already covered directly on main, the A29 objection — a new guard gating arming with
+no test of its own — is discharged, and the now-callerless `AgentHasLiveThread` was deleted rather
+than left reading like a live check. The relaxation is right on the merits: the 2026-07-10 leak was
+duplicate pull-loops, so blocking on any live thread refused to arm exactly the loop-dead sessions
+that most needed it.
+
+**#347** was pulled out of the conflict pile and resolved. It turned out to be the PR that
+originally introduced `dispatch.validateRecipient`, carrying a bare `codex`/`claude` bypass — the
+same bug #371 fixed and #374 superseded — so merging it unresolved would have regressed both.
+Main won every overlapping line; the one trap was that the second `facade_test.go` conflict had
+entangled main's assertion block with #347's genuinely-new
+`TestInboxFailsClosedWhenStoreErrorsAndNoFileItems`, which a careless "take theirs" would have
+deleted silently. What survives is the PR's real contribution and the reason it is worth landing:
+`Facade.Inbox` now fails closed when the store read errors and no file items corroborate an empty
+result, instead of rendering "No open items" during a store outage — the stale-green class, a blind
+fabric reporting a clean inbox. Net delta collapsed to 3 files, +30/-2, verified locally (no
+markers, gofmt/vet clean, build and the dispatch/router/work tests green) and pushed from the main
+checkout so the Ma'at gate ran. Because that resolution materially rewrote a PR I did not author,
+it was routed to codex-pantheon for independent review rather than self-bound.
+
+Vitals green: diagnose 94/100 with the load-bearing VM as sole priority, 80% RAM free, broker
+healthy on pid 2154 with the `4294967296` cap intact and the prompt cache flat, all daemons live,
+no new crash or Jetsam reports. `reconcile` healed 5 reaped→successor threads, prune 0, `ccd reap`
+archived 3 completed conduit-run sessions, retention reclaimed 2.0 KiB. `router doctor --fix` was
+still running after eight minutes and is recorded as inconclusive, not green.
