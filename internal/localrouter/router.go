@@ -13,14 +13,16 @@ import (
 )
 
 const DefaultLocalProvider = "local:gemma"
+const CanonStamp = "canon summary as of PR #382 / commit 77144192; not live state"
 
 // Route is the resolved local-LLM route for one orchestration role.
 type Route struct {
-	Role         brain.Role     `json:"role"`
-	Provider     brain.Provider `json:"-"`
-	ProviderRef  string         `json:"provider"`
-	ProviderKind string         `json:"provider_kind"`
-	System       string         `json:"system"`
+	Role               brain.Role     `json:"role"`
+	Provider           brain.Provider `json:"-"`
+	ProviderRef        string         `json:"provider"`
+	ProviderKind       string         `json:"provider_kind"`
+	SubstitutedDefault bool           `json:"substituted_default"`
+	System             string         `json:"system"`
 }
 
 // SystemPrompt is the canonical Sirsi operating identity every local backend
@@ -31,6 +33,7 @@ func SystemPrompt() string {
 Do not answer as a generic Google, Gemma, Gemini, Qwen, Ollama, MLX, or unaffiliated model. Your operating identity is Sirsi.
 
 Sirsi facts:
+(scope: ` + CanonStamp + `)
 - Pantheon is the local Mac application, CLI, TUI, menubar, router, cleanup, health, memory, and agent orchestration layer.
 - The Local LLM slot is pluggable. Gemma/MLX may be the resident backend today, but Sirsi controls the role and identity above the model.
 - Ra owns CTR/router orchestration. Horus owns workstation visibility. Thoth preserves memory. Seshat moves knowledge. Hapi governs pressure/admission. Seba maps hardware.
@@ -52,14 +55,17 @@ func Envelope(prompt string) string {
 // route through Sirsi instead of becoming naked model calls.
 func Resolve(cfg brain.Config, role brain.Role) Route {
 	p := cfg.Provider(role)
+	substituted := false
 	if p.Kind == brain.ProviderNone {
 		p, _ = brain.ParseProvider(DefaultLocalProvider)
+		substituted = true
 	}
 	return Route{
-		Role:         role,
-		Provider:     p,
-		ProviderRef:  p.String(),
-		ProviderKind: string(p.Kind),
-		System:       SystemPrompt(),
+		Role:               role,
+		Provider:           p,
+		ProviderRef:        p.String(),
+		ProviderKind:       string(p.Kind),
+		SubstitutedDefault: substituted,
+		System:             SystemPrompt(),
 	}
 }

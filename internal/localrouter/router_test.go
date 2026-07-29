@@ -14,6 +14,7 @@ func TestSystemPromptIsModelAgnosticSirsiIdentity(t *testing.T) {
 		"internal system manager",
 		"Local LLM slot is pluggable",
 		"Do not answer as a generic Google, Gemma, Gemini, Qwen, Ollama, MLX",
+		"canon summary as of PR #382 / commit 77144192; not live state",
 		"Ra owns CTR/router",
 		"Hypergraph and Sirsi IO",
 		"Cylton Collymore",
@@ -43,11 +44,17 @@ func TestResolveUsesConfiguredLocalProvider(t *testing.T) {
 	if route.ProviderRef != "local:qwen2.5-7b-instruct" || route.ProviderKind != "local" {
 		t.Fatalf("json route fields = %q/%q, want local qwen", route.ProviderKind, route.ProviderRef)
 	}
+	if route.SubstitutedDefault {
+		t.Fatal("configured local provider must not report default substitution")
+	}
 }
 
 func TestResolveDefaultsToLocalSlot(t *testing.T) {
 	route := Resolve(brain.DefaultConfig(), brain.RoleTriage)
 	if got := route.Provider.String(); got != DefaultLocalProvider {
 		t.Fatalf("provider = %q, want %q", got, DefaultLocalProvider)
+	}
+	if !route.SubstitutedDefault {
+		t.Fatal("unconfigured local route must report default substitution")
 	}
 }

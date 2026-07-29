@@ -2752,6 +2752,29 @@ struct AskSirsiView: View {
         }
         return "READING LOCAL CONDUIT"
     }
+    private var knowledgeState: ManagerTileSpec {
+        guard let root = engine.projectRoot else {
+            return ManagerTileSpec(symbol: "books.vertical",
+                                   title: "Knowledge",
+                                   value: "root unknown",
+                                   detail: "set Pantheon project root to load canon",
+                                   tint: .yellow)
+        }
+        let canonFiles = ["AGENTS.md", "docs/ADR-034-ORCHESTRATION-BRAIN.md", "docs/prd/ORCHESTRATION_BRAIN.md"]
+        let readable = canonFiles.filter { FileManager.default.isReadableFile(atPath: root + "/" + $0) }.count
+        if readable == canonFiles.count {
+            return ManagerTileSpec(symbol: "books.vertical",
+                                   title: "Knowledge",
+                                   value: "canon loaded",
+                                   detail: "Pantheon, Hypergraph, Sirsi IO, portfolio history",
+                                   tint: .green)
+        }
+        return ManagerTileSpec(symbol: "books.vertical",
+                               title: "Knowledge",
+                               value: "\(readable)/\(canonFiles.count) canon files",
+                               detail: "canon grounding incomplete at \(root)",
+                               tint: .yellow)
+    }
     private var managerTiles: [ManagerTileSpec] {
         [
             ManagerTileSpec(symbol: "point.3.connected.trianglepath.dotted",
@@ -2764,11 +2787,7 @@ struct AskSirsiView: View {
                             value: engine.vitals.map { SirsiEngine.human($0.freeBytes) + " free" } ?? "sampling node",
                             detail: engine.vitals.map { "pressure \($0.pressure)" } ?? "ANE/MLX/Metal/CPU lanes",
                             tint: engine.vitals?.pressure == "critical" ? .red : (engine.vitals?.pressure == "warn" ? .orange : .green)),
-            ManagerTileSpec(symbol: "books.vertical",
-                            title: "Knowledge",
-                            value: "canon-grounded",
-                            detail: "Pantheon, Hypergraph, Sirsi IO, portfolio history",
-                            tint: gold),
+            knowledgeState,
             ManagerTileSpec(symbol: "lock.shield",
                             title: "Authority",
                             value: engine.ownerGatedItems.isEmpty ? "action-gated" : "\(engine.ownerGatedItems.count) owner items",
