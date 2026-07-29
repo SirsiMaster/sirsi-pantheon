@@ -80,12 +80,20 @@ func localEndpoint(home string) string {
 // model:"default" to mlx_lm.server returns a 404 about HF_HUB_OFFLINE that
 // reads like a broken broker and is not.
 func Local(home string, conf Conf) *OpenAICompat {
-	ep := ""
-	if conf.Provider == "" || conf.Provider == "gemma" || conf.Provider == "local" {
-		ep = conf.Endpoint
-		if ep == "" {
-			ep = localEndpoint(home)
-		}
+	// RUNG ZERO IS UNCONDITIONAL. conf.Provider selects which REMOTE to prefer;
+	// it must never be able to delete the local rung. The previous form only
+	// built an endpoint when Provider was ""/gemma/local, so configuring ANY
+	// remote provider silently dropped local out of the ladder entirely — no
+	// error, no log, the rung simply vanished and Sirsi became cloud-only.
+	//
+	// That inverts the whole premise: the machine with a cloud key configured is
+	// exactly the one whose owner still expects the zero-token offline path to
+	// answer first. Local is dropped for ONE reason only — there is no local
+	// broker to talk to (no port file, or a non-loopback address).
+	ep := localEndpoint(home)
+	if isLoopbackEndpoint(conf.Endpoint) &&
+		(conf.Provider == "" || conf.Provider == "gemma" || conf.Provider == "local") {
+		ep = conf.Endpoint // explicit local override wins over the port file
 	}
 	if !isLoopbackEndpoint(ep) {
 		return nil
