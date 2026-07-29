@@ -28,7 +28,7 @@ import (
 // truth. OFF is the safe default and takes effect on next read — no restart.
 
 var autonomousCmd = &cobra.Command{
-	Use:   "autonomous [on|off|status]",
+	Use:   "autonomous [on|off|status|run]",
 	Short: "Turn Pantheon's unattended action on or off (observe-only vs. self-managing)",
 	Long: `𓁟 Autonomous mode — the master action switch.
 
@@ -46,9 +46,10 @@ deterministic Tier-0 levers with zero AI configured, and equally when a model is
 plugged in. The eternal loop is the router, never a model.
 
   sirsi autonomous            Show the current mode (same as 'status')
-  sirsi autonomous on         Let Pantheon act unattended
+  sirsi autonomous on         Let Pantheon act unattended and run one safe fix pass now
   sirsi autonomous off        Back to observe + propose only
   sirsi autonomous status     Show the current mode
+  sirsi autonomous run        Fix now: run one bounded approved-fix pass without changing the switch
 
 Turning it OFF is always immediate and safe: the next thing any loop reads is
 "observe only."`,
@@ -58,6 +59,11 @@ Turning it OFF is always immediate and safe: the next thing any loop reads is
 
 var autonomousJSON bool
 
+var (
+	autonomousHealFn         = autoheal.RunReport
+	autonomousApprovedHealFn = autoheal.RunApprovedReport
+)
+
 func runAutonomous(cmd *cobra.Command, args []string) error {
 	action := "status"
 	if len(args) == 1 {
@@ -65,26 +71,56 @@ func runAutonomous(cmd *cobra.Command, args []string) error {
 	}
 
 	switch action {
-	case "on", "off":
+	case "on":
+		if err := brain.SetAutonomous(true); err != nil {
+			return err
+		}
+		outcomes, err := autonomousHealFn("", "")
+		if err != nil {
+			return err
+		}
+		return renderAutonomous(cmd, true, true, outcomes)
+	case "off":
 		on := action == "on"
 		if err := brain.SetAutonomous(on); err != nil {
 			return err
 		}
-		return renderAutonomous(cmd, on, true)
+		return renderAutonomous(cmd, on, true, nil)
+	case "run":
+		cfg, err := brain.LoadConfig()
+		if err != nil {
+			return err
+		}
+		outcomes, err := autonomousApprovedHealFn("", "")
+		if err != nil {
+			return err
+		}
+		if outcomes == nil {
+			outcomes = []autoheal.Outcome{}
+		}
+		return renderAutonomous(cmd, cfg.AutonomousMode(), false, outcomes)
 	case "status", "":
 		cfg, err := brain.LoadConfig()
 		if err != nil {
 			return err
 		}
-		return renderAutonomous(cmd, cfg.AutonomousMode(), false)
+		return renderAutonomous(cmd, cfg.AutonomousMode(), false, nil)
 	default:
-		return fmt.Errorf("unknown action %q (want: on | off | status)", action)
+		return fmt.Errorf("unknown action %q (want: on | off | status | run)", action)
 	}
 }
 
-func renderAutonomous(cmd *cobra.Command, on, changed bool) error {
+func renderAutonomous(cmd *cobra.Command, on, changed bool, outcomes []autoheal.Outcome) error {
 	if autonomousJSON {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]bool{"autonomous": on})
+		applied, proposed := summarizeAutoHeal(outcomes)
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"autonomous": on,
+			"fix_pass": map[string]any{
+				"outcomes": outcomes,
+				"applied":  applied,
+				"proposed": proposed,
+			},
+		})
 	}
 	w := cmd.OutOrStdout()
 	state := "OFF"
@@ -103,7 +139,34 @@ func renderAutonomous(cmd *cobra.Command, on, changed bool) error {
 	} else {
 		fmt.Fprintln(w, "   Turn it off with: sirsi autonomous off")
 	}
+	if outcomes != nil {
+		applied, proposed := summarizeAutoHeal(outcomes)
+		switch {
+		case len(outcomes) == 0:
+			fmt.Fprintln(w, "   Fix pass ran — no approved Warn+ remediation levers needed action.")
+		default:
+			fmt.Fprintf(w, "   Fix pass ran — %d applied · %d proposed/held\n", applied, proposed)
+			for _, o := range outcomes {
+				mark := "held"
+				if o.Applied {
+					mark = "applied"
+				}
+				fmt.Fprintf(w, "   - %s: %s (%s)\n", mark, o.Check, o.Reason)
+			}
+		}
+	}
 	return nil
+}
+
+func summarizeAutoHeal(outcomes []autoheal.Outcome) (applied, proposed int) {
+	for _, o := range outcomes {
+		if o.Applied {
+			applied++
+		} else {
+			proposed++
+		}
+	}
+	return applied, proposed
 }
 
 func init() {

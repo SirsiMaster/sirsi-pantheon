@@ -54,6 +54,22 @@ func TestAutoHeal_OffIsInert(t *testing.T) {
 	}
 }
 
+func TestAutoHeal_ExplicitApprovedRunBypassesPassiveSwitch(t *testing.T) {
+	calls := harness(t, false, []guard.DiagnosticFinding{
+		finding("Swap Usage", "sirsi relieve --memory", guard.SeverityCritical),
+	}, nil)
+	outcomes, err := RunApprovedReport("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("explicit approved run executed %v, want one fix", *calls)
+	}
+	if len(outcomes) != 1 || !outcomes[0].Applied {
+		t.Fatalf("outcomes = %+v, want applied fix", outcomes)
+	}
+}
+
 func TestAutoHeal_AppliesWarnPlusLevers(t *testing.T) {
 	calls := harness(t, true, []guard.DiagnosticFinding{
 		finding("Swap Usage", "sirsi relieve --memory", guard.SeverityCritical),
@@ -121,6 +137,28 @@ func TestAutoHeal_CooldownAndBudget(t *testing.T) {
 	ran := (*calls)[before:]
 	if len(ran) != 1 || strings.Join(ran[0], " ") != "sirsi self-update" {
 		t.Fatalf("second pass = %v, want only the budget-deferred sirsi self-update (cooldown holds the rest)", ran)
+	}
+}
+
+func TestAutoHeal_ExplicitApprovedRunBypassesLoopCooldown(t *testing.T) {
+	calls := harness(t, true, []guard.DiagnosticFinding{
+		finding("Swap Usage", "sirsi relieve --memory", guard.SeverityCritical),
+	}, nil)
+	if err := Run("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("first loop pass calls = %v, want one fix", *calls)
+	}
+	outcomes, err := RunApprovedReport("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 2 {
+		t.Fatalf("explicit run should bypass loop cooldown and fix now; calls = %v", *calls)
+	}
+	if len(outcomes) != 1 || !outcomes[0].Applied || outcomes[0].Reason != "applied" {
+		t.Fatalf("outcomes = %+v, want applied despite prior loop cooldown", outcomes)
 	}
 }
 
