@@ -149,9 +149,20 @@ func writeRouteHuman(w io.Writer, route localrouter.Route) {
 	fmt.Fprintf(w, "𓁟 Local LLM Router\n\n")
 	fmt.Fprintf(w, "Role:     %s\n", route.Role)
 	if route.Defaulted {
-		fmt.Fprintf(w, "Provider: %s  ⚠ DEFAULT — role %q is not configured\n", route.Provider.String(), route.Role)
+		// State the EFFECT, never a cause. brain.Config.Provider returns
+		// ProviderNone for three distinct states — role absent, role explicitly
+		// "none", role malformed — and Resolve collapses all three into
+		// Defaulted. An earlier draft said "is not configured", which is false
+		// for the explicit-none case: DefaultConfig() sets every role to none on
+		// purpose, and Config.Level() calls that "Level 0 — all roles
+		// deterministic (no LLM)". So a stock install told an operator who had
+		// deliberately chosen Level 0 that their config was missing, and invited
+		// them to undo it — on every role. "Has no provider selected" is true in
+		// all three states and asserts nothing about why.
+		// (claude-home review, router 20260729-224214.)
+		fmt.Fprintf(w, "Provider: %s  ⚠ DEFAULT — role %q has no provider selected\n", route.Provider.String(), route.Role)
 		fmt.Fprintf(w, "          Sirsi chose this so the call is not a naked model call.\n")
-		fmt.Fprintf(w, "          To configure it: sirsi brain use %s %s\n", route.Role, route.Provider.String())
+		fmt.Fprintf(w, "          To select one: sirsi brain use %s %s\n", route.Role, route.Provider.String())
 	} else {
 		fmt.Fprintf(w, "Provider: %s  (configured)\n", route.Provider.String())
 	}

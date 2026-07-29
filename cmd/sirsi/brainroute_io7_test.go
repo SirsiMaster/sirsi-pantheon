@@ -32,19 +32,30 @@ func renderRoute(t *testing.T, cfg brain.Config, role brain.Role) string {
 }
 
 func TestBrainRouteDisclosesASubstitutedDefault(t *testing.T) {
-	// DefaultConfig leaves triage unconfigured, so Resolve substitutes.
+	// DefaultConfig sets every role to "none" EXPLICITLY — that is Level 0, "all
+	// roles deterministic (no LLM)", a deliberate operator choice and not a gap.
+	// Resolve still substitutes, so the disclosure is still owed: the route WILL
+	// answer from local:gemma if called, which is exactly what an operator at
+	// Level 0 needs told. What the render may not do is claim a REASON.
 	out := renderRoute(t, brain.DefaultConfig(), brain.RoleTriage)
 
 	if !strings.Contains(out, localrouter.DefaultLocalProvider) {
 		t.Fatalf("render must still name the provider that will answer:\n%s", out)
 	}
 	// The disclosure itself. Without this the render is an IO7 violation.
-	if !strings.Contains(out, "DEFAULT") || !strings.Contains(out, "not configured") {
+	if !strings.Contains(out, "DEFAULT") || !strings.Contains(out, "has no provider selected") {
 		t.Fatalf("a substituted default MUST be disclosed at the value (IO7); got:\n%s", out)
 	}
 	// And it must tell the operator how to resolve it, not just that it happened.
 	if !strings.Contains(out, "sirsi brain use") {
-		t.Fatalf("disclosure must name the command that configures the role:\n%s", out)
+		t.Fatalf("disclosure must name the command that selects a provider:\n%s", out)
+	}
+	// It must NOT assert a cause. Provider() collapses three states into
+	// ProviderNone — absent, explicit "none", malformed — and this config is the
+	// explicit-none one, so "not configured" would be a false diagnosis on a
+	// stock install. State the effect; never guess why.
+	if strings.Contains(out, "not configured") {
+		t.Fatalf("render must state the EFFECT, not assert an unknowable cause:\n%s", out)
 	}
 }
 
@@ -57,7 +68,7 @@ func TestBrainRouteDoesNotCryWolfOnAConfiguredRole(t *testing.T) {
 	}
 	// A false substitution warning is its own defect: an operator who learns the
 	// warning is noise stops reading it, which costs the real one.
-	if strings.Contains(out, "DEFAULT") || strings.Contains(out, "not configured") {
+	if strings.Contains(out, "DEFAULT") || strings.Contains(out, "has no provider selected") {
 		t.Fatalf("configured role must NOT be reported as a default:\n%s", out)
 	}
 }
