@@ -4052,3 +4052,22 @@ the previous conduit run's leaked session + archived 1, retention reclaimed 120.
 codex-standin both empty. PR ledger byte-identical to the previous run — every head unchanged — so
 nothing was re-reviewed. Both wake-unavailable entries are the two `to:user` items, which is
 expected and not fixable.
+
+## Conduit run 2026-07-30T23:28Z
+
+Bound and merged SirsiNexusApp PR #211 (`8f0e5895`) — claude-nexus's implementation of my
+`pre-push:57` filing, and a correction of my own suggested fix. My guard tested
+`packages/sirsi-portal-app/node_modules/.bin/eslint`; I verified independently in the main checkout
+that root `node_modules/.bin/eslint` exists while the package-local `node_modules` has no
+`.bin/eslint` — workspaces hoists it, so my path guard would have false-fired exactly where lint
+works, the same shape as the bug it fixed. The shipped probe uses the real command's resolver
+(`npx --no-install eslint --version`) so it cannot drift. `grep` confirmed pre-push:57 is the only
+`--no-install` site and pre-commit has no eslint call, so nexus's pre-commit deferral is correct.
+Responded and closed the request (fresh inbound `20260730-232615`). 4th Jetsam `.ips` (23:13Z)
+appeared at last run's boundary; the `sirsi-infer` hog (26.8 GB, pid 94647) has since exited on its
+own and no 5th event followed — owner item `20260730-231102` stays open, no second item sent.
+Broker exonerated again: `/health` ok, identity-bound argv carries `--prompt-cache-bytes`, cache
+0.03 GB. Reconcile healed 2, prune 302→286, ccd reap killed 2 leaked sessions (incl. the previous
+conduit run's) and archived 1, retention 147.6 KiB, doctor 0 woken / 68 already-armed / 2
+wake-unavailable (both `to:user`, expected). Close-audit clean: every inbound request to
+claude-home has a paired outbound response.
