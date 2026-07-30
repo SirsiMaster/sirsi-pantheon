@@ -1,6 +1,7 @@
 package thoth
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,7 +79,61 @@ func Compact(opts CompactOptions) error {
 const (
 	sessionDecisionsHeader = "## Session Decisions"
 	defaultMaxKeep         = 20
+	// maxSessionDecisions bounds the memory.yaml decisions section. defaultMaxKeep
+	// above bounds the JOURNAL via PruneJournal; this section had no bound at all,
+	// which is how FinalWishes reached 937 lines / 310 KB with 780 of those lines
+	// being verbatim hook payloads (claude-home, router item 20260730-015122).
+	//
+	// The cap exists SEPARATELY from the payload filter below on purpose. A filter
+	// only rejects shapes it already knows; the cap bounds the damage from a shape
+	// nobody has seen yet. Filtering alone would share the shape of the bug it is
+	// meant to prevent.
+	maxSessionDecisions = 40
 )
+
+// isMachinePayload reports whether a summary line is machine telemetry rather
+// than a decision, with the reason.
+//
+// A hook payload is not a decision: it records THAT a compaction happened, not
+// what was decided. The PreCompact hook in ~/.claude/settings.json calls
+// `sirsi thoth sync`, and its raw JSON payload was landing here unmodified — so
+// 95% of one memory.yaml taught a reader nothing while making the file too
+// expensive to read at all. CLAUDE.md promises memory.yaml is "~100 lines" that
+// "replaces reading thousands of lines of code"; at 937 lines it WAS thousands of
+// lines, and a memory file too expensive to read is the same as no memory file.
+func isMachinePayload(line string) (bool, string) {
+	t := strings.TrimSpace(line)
+	if t == "" {
+		return false, ""
+	}
+	// The observed shape: a bare JSON object. Anything that parses as a JSON
+	// object is a payload, not prose — a human decision is never valid JSON.
+	if strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") {
+		var probe map[string]any
+		if json.Unmarshal([]byte(t), &probe) == nil {
+			if ev, ok := probe["hook_event_name"].(string); ok {
+				return true, "hook payload (" + ev + ")"
+			}
+			return true, "JSON object, not prose"
+		}
+	}
+	// Belt and braces: a line naming the hook contract is telemetry even if it
+	// has been reformatted or truncated out of valid JSON on its way here.
+	if strings.Contains(t, `"hook_event_name"`) || strings.Contains(t, `"transcript_path"`) {
+		return true, "carries hook-payload fields"
+	}
+	return false, ""
+}
+
+// trimDecisions bounds the decisions block to the newest maxSessionDecisions
+// entries. Entries are newest-first (appendSessionDecisions prepends), so this
+// keeps the head and drops the tail.
+func trimDecisions(block []string) []string {
+	if len(block) <= maxSessionDecisions {
+		return block
+	}
+	return block[:maxSessionDecisions]
+}
 
 // appendSessionDecisions adds decision lines under the "## Session Decisions" section.
 func appendSessionDecisions(memoryPath, summary string) error {
@@ -90,7 +145,7 @@ func appendSessionDecisions(memoryPath, summary string) error {
 	content := string(data)
 	datestamp := time.Now().Format("2006-01-02")
 
-	// Build the new decision lines
+	// Build the new decision lines, rejecting machine payloads.
 	lines := strings.Split(strings.TrimSpace(summary), "\n")
 	var newLines []string
 	for _, line := range lines {
@@ -98,21 +153,50 @@ func appendSessionDecisions(memoryPath, summary string) error {
 		if line == "" {
 			continue
 		}
+		if skip, why := isMachinePayload(line); skip {
+			// Dropped, not silently: a caller that keeps feeding payloads should
+			// be able to see that they are being rejected.
+			fmt.Fprintf(os.Stderr, "thoth: dropped a non-decision line from memory.yaml — %s\n", why)
+			continue
+		}
 		// Strip leading "- " if present
 		line = strings.TrimPrefix(line, "- ")
 		newLines = append(newLines, fmt.Sprintf("# %s: %s", datestamp, line))
 	}
-	newContent := strings.Join(newLines, "\n")
+	if len(newLines) == 0 {
+		return nil // nothing decision-shaped in this summary; leave memory untouched
+	}
 
-	// Check if section already exists
 	if strings.Contains(content, sessionDecisionsHeader) {
-		// Append after the existing section header
 		idx := strings.Index(content, sessionDecisionsHeader)
 		afterHeader := idx + len(sessionDecisionsHeader)
-		content = content[:afterHeader] + "\n" + newContent + content[afterHeader:]
+		head, tail := content[:afterHeader], content[afterHeader:]
+
+		// Bound the section: split the existing decision block off the tail,
+		// prepend the new lines, cap, then reassemble.
+		tailLines := strings.Split(strings.TrimPrefix(tail, "\n"), "\n")
+		var block []string
+		rest := 0
+		for i, l := range tailLines {
+			if strings.HasPrefix(strings.TrimSpace(l), "# ") {
+				block = append(block, l)
+				continue
+			}
+			rest = i
+			break
+		}
+		if rest == 0 && len(block) == len(tailLines) {
+			rest = len(tailLines)
+		}
+		kept := trimDecisions(append(newLines, block...))
+		remainder := strings.Join(tailLines[rest:], "\n")
+		content = head + "\n" + strings.Join(kept, "\n")
+		if remainder != "" {
+			content += "\n" + remainder
+		}
 	} else {
-		// Add section at the end
-		content = strings.TrimRight(content, "\n") + "\n\n" + sessionDecisionsHeader + "\n" + newContent + "\n"
+		content = strings.TrimRight(content, "\n") + "\n\n" + sessionDecisionsHeader + "\n" +
+			strings.Join(trimDecisions(newLines), "\n") + "\n"
 	}
 
 	return os.WriteFile(memoryPath, []byte(content), 0644)
