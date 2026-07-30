@@ -4027,3 +4027,28 @@ pushed), #389 and FinalWishes #114 are mine so no self-review or self-merge, the
 PRs belong to their lane agents, nexus 0 open. Swap at 24.6/52 GB with 27.6 GB free was recorded and
 not acted on; `memory_pressure` flapped 32% → 49% free inside the same minute, confirming again that
 a single read is worthless.
+
+## Conduit run 2026-07-30T23:11Z
+
+Third Jetsam (`JetsamEvent-2026-07-30-185428.ips`, 22:54Z) landed and **the driver was finally
+identified — it is not a rogue daemon.** `sirsi-infer` has no launchd plist and never respawned
+itself: every round is launched by a live interactive Claude Code session (pid 90787,
+`--resume=b05ee0ed-…`, opus-5) working in `~/Development/sirsi-inference`, which appends a
+`longDecodeProbe()` to `diag.go`, rebuilds, and runs `./sirsi-infer diag <gemma-4-12B-it-8bit>
+longdecode` at batch B=8 / 2200 steps. The "new pid each round" (71777→73154→74751→80886) was just
+that agent's own edit-rebuild-rerun loop. This supersedes the respawn theory carried by the last
+three runs. The event killed **463 processes**, all small — largest victim 0.55 GB (Claude Helper,
+gopls, four `claude` sessions, and the Gemma broker) — while both hogs (`sirsi-infer` 36.4 GB peak
+of 48, Python broker 12.8 GB) survived; the kernel is reaping bystanders and leaving the cause.
+Health fell 69 → 51/100 Critical, swap 95% exhausted, free RAM 13% → 5%. The broker stays
+**exonerated**: `/health` ok, identity-bound argv carries `--prompt-cache-bytes 4294967296`, cache
+0.02 GB. No process was touched — the hog is an active session doing sanctioned Inference Engine
+work and only the owner can size it — so this went out as a distinct `to:user` decision item
+(`20260730-231102-…`) with three concrete clearing options (drop B=8, stop the broker for the run,
+or accept the cost). Routine sweep otherwise: reconcile healed 1, prune 297 → 283, ccd reap killed
+the previous conduit run's leaked session + archived 1, retention reclaimed 120.1 KiB, board
+15471 B, resolver → gemma-4-12B-it-8bit, 0 BINARY_MISSING, all daemons live. Ledger 71 open
+(pantheon 51 · io 13 · nexus 2 · user 2 · deck/finalwishes/codex-pantheon 1 each); claude-home and
+codex-standin both empty. PR ledger byte-identical to the previous run — every head unchanged — so
+nothing was re-reviewed. Both wake-unavailable entries are the two `to:user` items, which is
+expected and not fixable.
