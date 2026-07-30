@@ -154,6 +154,18 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
+	case "Duplicate Model Brokers":
+		// Two brokers means two copies of a multi-GB model resident at once, and
+		// the extra one serves nothing — nothing routes to it, so its pages get
+		// swapped out and eat the swap file while it sits idle. `relieve --memory`
+		// flushes caches and would not touch it; the only real remedy is to stop
+		// the broker that is not the canonical one. `gemma serve --stop` targets
+		// the pidfile's broker, so this points at the sweep that reaps orphans by
+		// discovery instead. ADR-033: an alarming check ships a lever that acts on
+		// the thing it alarmed about.
+		if warn {
+			return "sirsi gemma reap-orphans"
+		}
 	case "Process Footprint":
 		// One process holding a third-to-half of RAM. `relieve --memory` flushes
 		// inactive caches, which does NOT touch a single process's footprint —
@@ -339,6 +351,7 @@ var doctorChecks = []doctorCheck{
 	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
 	{"Spotlight Storm", []string{"Spotlight Storm"}, checkSpotlightStorm},
 	{"Process Footprint", []string{"Process Footprint"}, checkProcessFootprint},
+	{"Duplicate Model Brokers", []string{"Duplicate Model Brokers"}, checkDuplicateModelBrokers},
 	{"Crash Logs", []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
 		func(_ platform.Platform, r *DoctorReport) { checkRecentCrashLogs(r) }},
 	{"App Crashes", []string{"App Crashes (7d)"},
