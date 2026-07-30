@@ -3993,3 +3993,37 @@ prompt cache at 0.04 GB, all daemons live, 0 binary drift, Jetsam still the same
 healed 1, prune took 330 → 316 records, ccd reap killed 2 sessions and archived 1, retention
 reclaimed 166.6 KiB. Ledger holds at 68 open — claude-home now empty; pantheon still carries 49 with
 its wake lane alive, so those stay theirs.
+
+## Conduit run 2026-07-30T22:55Z
+
+Health fell 94 → 69/100 Critical on a genuine P0, the first non-green run in a while. Two new
+JetsamEvent `.ips` landed at 22:45Z and 22:50Z, each killing 70–100 system daemons including
+`tccd`, `trustd`, `secd`, `accountsd`, `cfprefsd` and `TrustedPeersHelper` — security and keychain
+infrastructure reaped twice in five minutes. Parsing `processes[].physicalPages.internal` put the
+blame on one pair: the Python broker at 13–15 GB and `sirsi-infer` at ~12.7 GB, with everything
+else in both snapshots under 0.72 GB. `sirsi-infer` came back with a fresh pid each round
+(71777 → 73154 → 74751) and `sirsi diagnose` caught 74751 holding **63.6 GB of 48 GB physical RAM**
+before it vanished between two probes. The broker is exonerated and was left alone: `/health` ok,
+identity-bound argv still carrying `--prompt-cache-bytes 4294967296`, prompt cache 0.02 GB. It
+restarted across the two events (1913 → 72851), making it a victim rather than the cause — capping
+it further would have treated the wrong process. `sirsi-infer` has no launchd plist, so it will not
+self-respawn, but something re-ran it three times; forensics routed to claude-pantheon with the ask
+that the inference binary get the same hard reservation the broker already has.
+
+Routing the P0 surfaced a second defect worth its own item. `sirsi router send` printed an id that
+`router show` could not find, and the store showed why: slug truncation left a **trailing hyphen**
+that the printed id drops. Passing the byte-exact id works instantly. That matters because the
+conduit's race guard is "re-`show` before closing" — a truncated id returns "not found (no file, no
+store row)", which is indistinguishable from "a sibling already closed it". The guard would read an
+open, unhandled item as gone. Same green-surface-over-a-dead-thing shape: a confident negative from
+a lookup that never could have matched.
+
+Otherwise routine. Ledger 68 → 69 open (pantheon 49 → 50), claude-home and codex-standin both empty.
+Reconcile healed 2, prune took threads 320 → 294, `ccd reap` killed 1 leaked session and archived 1,
+retention reclaimed 166.4 KiB, board 15584 B. Doctor: 20 agents / 8 live / 2 stale, 1 woken, 68
+armed, 1 wake-unavailable — the `user` owner-gate item, expected and unfixable. PR ledger unchanged
+and deliberately untouched: pantheon #403 head still `95f605ab` (verdict already delivered, not
+pushed), #389 and FinalWishes #114 are mine so no self-review or self-merge, the five CONFLICTING
+PRs belong to their lane agents, nexus 0 open. Swap at 24.6/52 GB with 27.6 GB free was recorded and
+not acted on; `memory_pressure` flapped 32% → 49% free inside the same minute, confirming again that
+a single read is worthless.
