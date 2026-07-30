@@ -3913,3 +3913,27 @@ were skipped as zero-signal; health 88/100 with the known load-bearing Python ho
 identity-verified capped at 4 GiB prompt cache with the log line at 1.62 GB; four daemons live at
 unchanged PIDs; prune 340→334; `ccd reap` took one leak session; doctor 0 woken / 64 armed / 1
 wake-unavailable (the owner item, expected); retention reclaimed 164 KiB.
+
+## Conduit run 2026-07-30T19:15Z
+
+First non-green run in 23. `sirsi diagnose` came back **63/100 🔴** on a signal that did not
+exist at 19:00Z: three machine-wide **JetsamEvents in 82 s** (15:07:01, 15:07:35, 15:08:23 EDT),
+`largestProcess = sirsi-infer` in all three. Forensics off `physicalPages.internal` (never
+`rpages`): pid 66691 at ~1.9 GB, then pid 67688 at **~13.2 GB and ~13.0 GB** — second place in
+every event was ~0.3 GB, so this was a single-process event, not general pressure, the same
+shape as the earlier `python broker 46 GB drove ALL 4 Jetsams` finding. The process was
+`./sirsi-infer harness <gemma-4-12B-it-8bit> bench/m5max.json` out of
+`~/Development/sirsi-inference` — claude-io's lane, launched from a live interactive session,
+so argv-read and deliberately **not** killed (ADR-040). Routed the forensics to claude-io as
+`20260730-191110` with the ask: give the harness a memory ceiling the way the broker got one,
+and record killed rows rather than silently restarting, so `bench/m5max.json` is not written
+from a run that only survived the small batch sizes. The third attempt (68595) exited on its
+own before this run closed and free RAM recovered 25% → 73%; no fourth Jetsam. The **capped
+broker is exonerated** — pid 1913, argv-confirmed `--prompt-cache-bytes 4294967296`, `/health`
+ok, prompt cache 0.02 GB, and its file-backed weights keep its `internal` footprint small,
+which is exactly why it does not appear in the Jetsam tables. Otherwise: reconcile healed 1
+(`thr-d20efa3a5f50027e` → `thr-bde515e115f6049f`), prune 0 (326→326), `ccd reap` killed 2 procs
+/ 1 record and archived 2, doctor reaped 0 with 65 already-armed and the single expected
+`user` wake-unavailable, board 14676 B, retention reclaimed 145.9 KiB. PR ledger unchanged for
+the 23rd run — #403 still at `95f605ab`, #389 and FinalWishes #114 both mine, the rest
+conflicting in their lane.
