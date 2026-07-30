@@ -319,12 +319,7 @@ func restartBroker() Tool {
 					// before. That is a material change and must be stated, not
 					// buried in an evidence field: observed live on 2026-07-29,
 					// gemma-4-12B-it-8bit came back as Qwen2.5-3B-Instruct-4bit.
-					summary := fmt.Sprintf("broker back as pid %d (was %d), serving %q, footprint %.1f GB",
-						pid, pidBefore, model, float64(fp)/(1<<30))
-					downgraded := modelBefore != "" && model != modelBefore
-					if downgraded {
-						summary += fmt.Sprintf(" — ⚠ MODEL CHANGED, was %q: the resolver re-ranked on restart, so this machine now has less model than before", modelBefore)
-					}
+					summary, downgraded := restartSummary(pidBefore, pid, modelBefore, model, fp)
 					return Result{
 						Summary: summary,
 						Evidence: map[string]any{
@@ -341,6 +336,19 @@ func restartBroker() Tool {
 				fmt.Errorf("broker not verifiably restarted: %s", lastErr)
 		},
 	}
+}
+
+// restartSummary builds the exact operator-visible verification text. Keeping
+// the disclosure in a pure production helper lets regression tests prove the
+// warning itself, rather than merely proving that its inputs exist.
+func restartSummary(pidBefore, pidAfter int, modelBefore, modelAfter string, footprint uint64) (string, bool) {
+	summary := fmt.Sprintf("broker back as pid %d (was %d), serving %q, footprint %.1f GB",
+		pidAfter, pidBefore, modelAfter, float64(footprint)/(1<<30))
+	changed := modelBefore != "" && modelAfter != modelBefore
+	if changed {
+		summary += fmt.Sprintf(" — ⚠ MODEL CHANGED, was %q: the resolver re-ranked on restart, so this machine now has less model than before", modelBefore)
+	}
+	return summary, changed
 }
 
 // restartVerdict is the restart verifier's decision rule, separated from the
