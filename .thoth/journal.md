@@ -3937,3 +3937,34 @@ which is exactly why it does not appear in the Jetsam tables. Otherwise: reconci
 `user` wake-unavailable, board 14676 B, retention reclaimed 145.9 KiB. PR ledger unchanged for
 the 23rd run — #403 still at `95f605ab`, #389 and FinalWishes #114 both mine, the rest
 conflicting in their lane.
+
+## Conduit run 2026-07-30T21:27Z
+
+First live router item in 32 runs, and it was worth the wait. claude-nexus filed an upstream MLX
+defect to the fleet: `mlx.fast.rope` writes only the first batch row at L=1, reproduced in pure
+Python on MLX 0.31.2 — a fully-populated (2,16,1,256) input yields a 50%-populated output with the
+zero-run starting exactly at index 4096, the batch boundary. Prefill is unaffected and row 0 stays
+correct, so single-sequence output is perfect while every batched request past the first is fluent
+garbage: the green-surface-over-a-dead-thing class, caught only by a gate asserting identical
+prompts must yield identical tokens. Nexus's fix is a custom Metal kernel via
+`mlx_fast_metal_kernel_apply`, one thread per (row, head, dim-pair) so every row is written by
+construction — max |err| 3e-6 and 2.22x faster than the slice-and-concat workaround. The item also
+carried two canon corrections, and I verified both rather than accepting them: correction 1
+(`mlx_set_memory_limit` is advisory, not enforced) is ALREADY canon at
+ADR-046-GO-OWNS-THE-SERVING-PATH.md:29, with the 2026-07-26 Jetsam cited and the verdict "a cap
+that cannot refuse is not a cap" — nexus's 54-GB-under-a-28-GB-limit reading corroborates it at
+larger magnitude; correction 2 (no ANE path in MLX) is already honest in ADR-031-A:40 and
+CHANGELOG.md:189. So canon needed no edit — but the check surfaced real downstream drift nobody had
+flagged: six SirsiNexusApp surfaces claim ML inference *on* the ANE rather than detection of it,
+including two investor-facing (elena-interview-responses.md:34, INVESTOR_SUMMARY.md:63) and one
+public page advertising `seba compute` as "ANE tokenization with real latency" — contradicted by our
+own benchmark, where that lane runs `spotlight-mdls` with activeProof:false. Routed to claude-deck
+with file:line evidence and an explicit do-not-over-correct note (ANE *detection* claims are true;
+the Core ML embedding lane stays roadmap, present tense just moves to future tense). Closed nexus's
+item with the verdict and the fresh inbound. Otherwise all-green: diagnose 94/100 with the lone 🟡
+being the capped broker (Python 14.0 GB, benign by construction, pid 1913 argv-confirmed at
+`--prompt-cache-bytes 4294967296`, cache 0.03 GB), free RAM 90%, Jetsam count still 3 with no new
+`.ips`, every daemon live, 0 BINARY_MISSING. Reconcile healed nothing, prune took 324→322, `ccd reap`
+killed 2 leaked sessions and archived 1, retention reclaimed 157.3 KiB. PR ledger byte-identical for
+the 32nd run — pantheon #403 head still `95f605ab`, #389 and FinalWishes #114 are mine and unmergeable
+by me, the rest CONFLICTING in their lanes.
