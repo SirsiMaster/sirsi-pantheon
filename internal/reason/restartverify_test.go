@@ -140,13 +140,29 @@ func TestRestartSummaryDisclosesAModelChange(t *testing.T) {
 		t.Fatalf("a serving broker must verify even if the model changed, got %q", reason)
 	}
 
-	// And the change must be detectable from the evidence the tool records.
-	ran := Result{Evidence: map[string]any{"pid_before": 4242, "model_before": "gemma-4-12B-it-8bit"}}
-	before, _ := ran.Evidence["model_before"].(string)
-	if before == "" {
-		t.Fatal("Run must record model_before, or Verify cannot detect a downgrade at all")
+	summary, changed := restartSummary(
+		4242,
+		5150,
+		"gemma-4-12B-it-8bit",
+		"Qwen2.5-3B-Instruct-4bit",
+		8<<30,
+	)
+	if !changed {
+		t.Fatal("different before/after models must set model_changed")
 	}
-	if before == "Qwen2.5-3B-Instruct-4bit" {
-		t.Fatal("fixture error: before and after must differ for this test to mean anything")
+	for _, want := range []string{"⚠ MODEL CHANGED", `"gemma-4-12B-it-8bit"`, `"Qwen2.5-3B-Instruct-4bit"`} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+}
+
+func TestRestartSummaryDoesNotWarnWhenModelIsUnchanged(t *testing.T) {
+	summary, changed := restartSummary(4242, 5150, "gemma-4-12B-it-8bit", "gemma-4-12B-it-8bit", 8<<30)
+	if changed {
+		t.Fatal("same model must not be reported as changed")
+	}
+	if strings.Contains(summary, "MODEL CHANGED") {
+		t.Fatalf("unchanged model received a false warning:\n%s", summary)
 	}
 }
