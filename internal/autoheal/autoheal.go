@@ -116,6 +116,11 @@ type Outcome struct {
 	Reason  string `json:"reason"` // applied | gated-proposal | cooldown | fix-failed: … | budget
 }
 
+type applyPlan struct {
+	display string
+	argv    []string
+}
+
 // Run executes one bounded auto-heal pass. It is the supervisor-duty entry
 // point: silent no-op when autonomous is OFF, error-isolated by the caller.
 func Run(routerRoot, repoRoot string) error {
@@ -160,7 +165,12 @@ func runReport(operatorApproved bool) ([]Outcome, error) {
 		if f.Severity < guard.SeverityWarn || f.Fix == "" {
 			continue
 		}
-		o := Outcome{Check: f.Check, Fix: f.Fix}
+		plan, planErr := approvedApplyPlan(f.Fix)
+		fixDisplay := f.Fix
+		if planErr == nil {
+			fixDisplay = plan.display
+		}
+		o := Outcome{Check: f.Check, Fix: fixDisplay}
 		action := fmt.Sprintf("%s: %s → %s", f.Check, f.Message, f.Fix)
 		switch {
 		case applied >= maxFixesPerPass:
@@ -169,10 +179,12 @@ func runReport(operatorApproved bool) ([]Outcome, error) {
 			o.Reason = "not-a-sirsi-verb" // whitelist: catalog levers only
 		case gate(action).Gated:
 			o.Reason = "gated-proposal" // second line of defense (ADR-039 P3)
+		case planErr != nil:
+			o.Reason = "no-approved-apply-form: " + planErr.Error()
 		case !operatorApproved && now.Sub(lastRun[f.Fix]) < fixCooldown:
 			o.Reason = "cooldown"
 		default:
-			if runErr := ex(strings.Fields(f.Fix)); runErr != nil {
+			if runErr := ex(plan.argv); runErr != nil {
 				o.Reason = "fix-failed: " + runErr.Error()
 			} else {
 				o.Applied, o.Reason = true, "applied"
@@ -192,6 +204,42 @@ func runReport(operatorApproved bool) ([]Outcome, error) {
 		}
 	}
 	return outcomes, nil
+}
+
+func approvedApplyPlan(fix string) (applyPlan, error) {
+	fields := strings.Fields(fix)
+	if len(fields) < 2 || fields[0] != "sirsi" {
+		return applyPlan{}, fmt.Errorf("not a sirsi command")
+	}
+	verb, args := fields[1], append([]string{}, fields[2:]...)
+	switch verb {
+	case "clean":
+		args = ensureArg(args, "--confirm")
+		args = ensureArg(args, "--yes")
+	case "reclaim-snapshots":
+		args = ensureArg(args, "--confirm")
+	case "relieve":
+		args = ensureArg(args, "--confirm")
+	case "reap-sessions":
+		args = ensureArg(args, "--apply")
+	case "liveness-watch":
+		// `sirsi liveness-watch install` is already the apply form.
+	default:
+		return applyPlan{}, fmt.Errorf("%q has no noninteractive auto-apply form", verb)
+	}
+	display := strings.Join(append([]string{"sirsi", verb}, args...), " ")
+	argv := append([]string{"sirsi", verb}, args...)
+	argv = ensureArg(argv, "--quiet")
+	return applyPlan{display: display, argv: argv}, nil
+}
+
+func ensureArg(args []string, want string) []string {
+	for _, arg := range args {
+		if arg == want {
+			return args
+		}
+	}
+	return append(args, want)
 }
 
 func loadState(path string) map[string]time.Time {

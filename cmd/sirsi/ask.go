@@ -52,6 +52,9 @@ func init() {
 }
 
 func runAsk(_ *cobra.Command, args []string) error {
+	if askJSON && askFix {
+		return fmt.Errorf("--json and --fix cannot be combined: --fix performs interactive repairs; run without --json")
+	}
 	question := strings.TrimSpace(strings.Join(args, " "))
 	if question == "" {
 		question = "what is wrong with this machine right now?"
