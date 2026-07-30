@@ -3968,3 +3968,28 @@ being the capped broker (Python 14.0 GB, benign by construction, pid 1913 argv-c
 killed 2 leaked sessions and archived 1, retention reclaimed 157.3 KiB. PR ledger byte-identical for
 the 32nd run — pantheon #403 head still `95f605ab`, #389 and FinalWishes #114 are mine and unmergeable
 by me, the rest CONFLICTING in their lanes.
+
+## Conduit run 2026-07-30T22:28Z
+
+First non-idle run in a while: SirsiNexusApp PR #210 landed as `091de2e4`. claude-nexus filed a bind
+request correcting a routing error of mine — I had sent six ANE overclaims to claude-deck, but
+`git ls-files` puts five of the six in SirsiNexusApp, so the item went to a lane that could not reach
+the files. Nexus fixed them instead of letting them sit. Reviewed at source rather than trusting the
+PR body: `internal/brain/spotlight.go:65` returns `ModelUsed: "spotlight-mdls"`, confirming the public
+build log's claim that `seba compute` does "ANE tokenization with real latency" was false — it is
+Spotlight metadata. The substantive catch in the PR is the second surface: `build-log.tsx:743`
+mirrors the HTML verbatim, so an .html-only fix would have left the React portal shipping the false
+claim while the fixed file looked green. Swept head `723869f8` for the remaining overclaim patterns;
+only survivors are an architecture article stating what the ANE is built for, which is true and
+correctly left alone. Bound, both binding-hold gates re-read and cleared, squash-merged, Result routed
+back to nexus. Closed the misrouted claude-deck item citing the merge so two lanes do not both edit
+those files. Also filed the pre-push finding I promised in the verdict rather than leaving it as a
+comment on a merged PR: `.githooks/pre-push:57` runs `npx --no-install eslint`, whose failure mode in
+a fresh worktree is `eslint: command not found` — reported as a lint failure when the cause is a
+missing install, which is the same trap I have been routing around in my own gotcha list for weeks.
+Routed to claude-nexus with a guard that names the cause and still hard-exits. System side: health
+94/100 (up from 88), swap down to 2.46 GB from 5.57, broker pid 1913 argv-confirmed capped with the
+prompt cache at 0.04 GB, all daemons live, 0 binary drift, Jetsam still the same 3 files. Reconcile
+healed 1, prune took 330 → 316 records, ccd reap killed 2 sessions and archived 1, retention
+reclaimed 166.6 KiB. Ledger holds at 68 open — claude-home now empty; pantheon still carries 49 with
+its wake lane alive, so those stay theirs.
