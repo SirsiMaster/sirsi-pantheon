@@ -3889,3 +3889,27 @@ verdict back as `20260730-114122`. Otherwise all-green: broker bounded and healt
 1.98 GB ≪ 6 GB, argv-verified by identity), no new crash/Jetsam, four daemons live at unchanged PIDs,
 reconcile healed three reaped claude-home threads to successors, retention reclaimed 170 KiB. PR ledger
 unchanged — pantheon #389 and FinalWishes #114 both mine and unreviewable by me.
+
+## Conduit run 2026-07-30T14:15Z
+
+First PR-ledger change in 28 runs: **pantheon #403** (`feat(guard): detect duplicate model brokers +
+ship the reap lever`) appeared at 13:56Z, 15 minutes old, all content checks green with `binding-hold`
+failing by design. Reviewed it source-deep at `95f605ab` rather than from the description, and did not
+bind it. The check half is correct and correct for the stated reason — it discovers brokers by argv
+because a guard keyed to the pidfile shares the blind spot of the bug it catches (A29). The lever half
+then reintroduces exactly that pattern: `canonicalBrokerPID()` decides which broker is load-bearing by
+reading `~/.sirsi/gemma-server.pid` and accepting any live pid, so everything else in the discovered
+set takes SIGTERM then SIGKILL under `--apply`. **PR #366 merged 2026-07-29 moves supervision into Go**,
+which is precisely what repoints that pidfile at a supervisor — at which point the real capped broker is
+not canonical, is classified an orphan, and gets killed by a lever written to free memory. Plain pid
+reuse produces the same inversion. Fix is small (intersect the pidfile pid against the argv-discovered
+set; refuse when absent). Two further findings: `brokerCommand`'s `gemma\s+serve` matches `sirsi gemma
+serve --stop`, a live Go CLI whose tens-of-MB footprint clears the `worst == 0` guard, so a one-broker
+machine can alarm CRITICAL with two; and the destructive path — canonical selection, orphan choice,
+grace/escalate — has no test at all while all five tests cover the regex and the cap note. Routed as
+`20260730-141254` to claude-pantheon and posted on the PR. Everything else steady: both queues empty and
+the open ledger byte-identical for a ninth consecutive run (64 open), so Gemma `--all` and the close-audit
+were skipped as zero-signal; health 88/100 with the known load-bearing Python holder; broker 10970
+identity-verified capped at 4 GiB prompt cache with the log line at 1.62 GB; four daemons live at
+unchanged PIDs; prune 340→334; `ccd reap` took one leak session; doctor 0 woken / 64 armed / 1
+wake-unavailable (the owner item, expected); retention reclaimed 164 KiB.
