@@ -84,9 +84,62 @@ an installation token (see ADR-041 §Verify).
 > **✅ Completed 2026-07-22.** App `sirsi-bind` (App ID **4361030**) created, private
 > key placed at `~/.sirsi/bind-app.pem` (perms `600`), installed **org-wide**.
 > Token-mint verified against `sirsi-pantheon`, `FinalWishes`, `SirsiNexusApp`, and
-> `Assiduous`. The gate is **active only in `sirsi-pantheon`** (only repo carrying
-> `binding-hold.yml`); to extend it, wire that workflow into the target repo and note
-> it in that repo's canon.
+> `Assiduous`. To extend the gate to another repo, wire `binding-hold.yml` into it and
+> note it in that repo's canon.
+>
+> **Live in two repos as of 2026-07-29:** `sirsi-pantheon`, and **`SirsiNexusApp`**
+> (ported in SirsiNexusApp PR #206, merged `dd0ed63d`; authority paths there are
+> `.github/`, `scripts/bind/`, `proto/`, `packages/sirsi-auth/`, `SIRSI_RULES.md` plus its
+> synced `CLAUDE.md`/`GEMINI.md`, and `docs/ADR-*`). Branch protection requiring the check
+> is **not yet enabled in SirsiNexusApp** — see the sequencing warning below before turning
+> it on.
+
+## When the gate WEDGES instead of failing — toggle a label, never push
+
+**The failure mode:** the `binding-hold` run sits **queued indefinitely** and never reports, so the PR
+stays BLOCKED with every other check green. `gh run cancel` can return HTTP 500 and `gh run rerun`
+refuses with *"already running"*, so neither clears it. Observed on PR #391, run 30497693695.
+
+**Do not push a commit to shake it loose.** A new head SHA is exactly what drops every bind already
+recorded — the binds are pinned to the head SHA on purpose — so the "fix" costs you the reviews you
+just collected and puts you back at the start. That is the circular trap this gate is designed to
+create, and it catches you hardest when you are in a hurry.
+
+**Do this instead.** `binding-hold.yml` triggers on
+`[opened, synchronize, reopened, labeled, unlabeled]`, so **toggling any label re-fires the gate at the
+same head SHA** and the binds survive:
+
+```bash
+gh pr edit <n> --repo <owner>/<repo> --add-label documentation
+gh pr edit <n> --repo <owner>/<repo> --remove-label documentation
+```
+
+Two fresh runs complete and the PR goes CLEAN. Note the label must be applied by a **real user token** —
+a label applied via `secrets.GITHUB_TOKEN` does not re-trigger the workflow (GitHub suppresses
+GITHUB_TOKEN-triggered runs to prevent recursion), which is the same mechanic documented in
+`binding-hold.yml` and the reason the gate computes sensitivity inline rather than in a labeling job.
+
+Credit: claude-io found and used this on #391 after the gate wedged.
+
+## Enabling branch protection in a repo that already has open PRs
+
+Ordering matters and getting it backwards wedges every open PR permanently.
+
+`binding-hold` does **not** report on a PR whose runs predate the workflow — the file is in neither that
+PR's head nor its base. If you require the check before those PRs acquire it, they sit forever at
+`expected — waiting for status` with no way to clear them.
+
+Merging the workflow to `main` fixes the *base* but does **not** retroactively create check runs on
+already-open PRs. So:
+
+1. Bind and merge the PR that adds `binding-hold.yml`.
+2. **Re-run or synchronize every already-open PR**, then confirm with `gh pr checks <n>` that
+   `binding-hold` actually **appears** for each one.
+3. Only then enable branch protection requiring the check.
+
+Do step 3 before step 2 and you get the same permanent wedge, one move later. Same caution applies to
+**renaming** a required check: protection keeps expecting the old name forever, so rename before
+protection references it.
 
 ## What is now true, and what still isn't
 
