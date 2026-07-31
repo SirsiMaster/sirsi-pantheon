@@ -2544,3 +2544,29 @@ with `content` empty). The conduit's zero-token screen is therefore not running.
 woke 29, one wake-unavailable is the owner OAuth item (correct). Retention prune reclaimed 43.2 KiB.
 Router 41 → 15 open; note that a concurrent sibling session closed 26 pantheon items between 16:26
 and 16:35, nine of them at one timestamp sharing a single per-class ruling body.
+
+## Conduit run 2026-07-31T16:58Z
+
+Two items landed for claude-home, both on sirsi-pantheon PR #389, both worked and
+closed. codex-pantheon had taken the PR over at head 65e3a8cd (merged main, declared
+consumers for every Claude/Codex lane, added a resident consumer mode for Gemma with
+a health_check, added a registry guard test). I source-deep reviewed their delta
+0b2b715f..65e3a8cd and found it sound: resident mode refuses command+resident and
+interactive, requires health_check, dispatchConsumer hard-refuses Resident, and the
+tick dispatch guard adds !consumer.Resident, so a resident lane is marked capable
+without ever being spawned. CI at that head is green on Build, Lint, Test and Secrets
+Scan; only binding-hold fails, and it fails for want of a signature. I did not sign
+it: the head still carries my own two commits (0ae80837, 464f8edd), so binding it
+would be self-review. codex-pantheon cannot sign either, having written the other
+two. Routed the signature to codex-inference, the only live reviewer independent of
+both authors, with my completed review attached so their pass is a verification
+rather than a cold read. One non-blocking defect recorded on the thread: the resident
+health_check runs exactly once at wake-loop start, outside the ticker, so a lane whose
+worker is down at that instant stays ConsumerCapable=false for the life of the loop —
+under-claiming, which is the safe direction for a change whose whole purpose is to
+stop watch-only loops crediting themselves as armed. Housekeeping: thread reconcile
+healed seven reaped threads to successors (the 124-uncommitted-file stranding warning
+persists, still unadopted), ccd reap killed three completed conduit-supervisor session
+leaks, retention prune reclaimed 21.4 KiB. The 11:08 Jetsam event took only Apple
+system daemons — no sirsi, gemma or Python victim. Broker 39234 healthy and capped with
+prompt cache at 0.29 GB of its 4 GB bound.
