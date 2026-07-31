@@ -87,21 +87,30 @@ func checkProcessFootprint(p platform.Platform, report *DoctorReport) {
 	worst := max64(top.live, top.peak)
 	frac := float64(worst) / float64(totalRAM)
 
+	// The alarming number is max(live, peak), so the VERB has to say which one it
+	// is. "holds 41.5 GB" in the present tense, for a process whose LIFETIME peak
+	// was 41.5 GB but which currently holds 15.5 GB, tells the reader something
+	// false about right now — and the reader who checks Activity Monitor and sees
+	// a different number stops trusting the whole finding, including the part that
+	// was true. Peak is still the right thing to alarm on, because peak is what
+	// Jetsam judged; it just has to be named as a peak.
+	verb := footprintVerb(top.live, worst)
+
 	switch {
 	case frac >= footprintCriticalFraction:
 		finding.Severity = SeverityCritical
 		finding.Message = fmt.Sprintf(
-			"%s (pid %d) holds %.1f GB of %.0f GB RAM (%.0f%%) — one process at half the machine; the kernel will Jetsam something to survive it",
-			top.name, top.pid, fpGB(worst), fpGB(totalRAM), frac*100)
+			"%s (pid %d) %s %.1f GB of %.0f GB RAM (%.0f%%) — one process at half the machine; the kernel will Jetsam something to survive it",
+			top.name, top.pid, verb, fpGB(worst), fpGB(totalRAM), frac*100)
 	case frac >= footprintWarnFraction:
 		finding.Severity = SeverityWarn
 		finding.Message = fmt.Sprintf(
-			"%s (pid %d) holds %.1f GB of %.0f GB RAM (%.0f%%) — a third of the machine in one process",
-			top.name, top.pid, fpGB(worst), fpGB(totalRAM), frac*100)
+			"%s (pid %d) %s %.1f GB of %.0f GB RAM (%.0f%%) — a third of the machine in one process",
+			top.name, top.pid, verb, fpGB(worst), fpGB(totalRAM), frac*100)
 	default:
 		finding.Severity = SeverityOK
-		finding.Message = fmt.Sprintf("largest process %s at %.1f GB of %.0f GB (%.0f%%) — no single-process pressure",
-			top.name, fpGB(worst), fpGB(totalRAM), frac*100)
+		finding.Message = fmt.Sprintf("largest process %s %s %.1f GB of %.0f GB (%.0f%%) — no single-process pressure",
+			top.name, verb, fpGB(worst), fpGB(totalRAM), frac*100)
 	}
 
 	// The detail is where the RSS lie becomes visible. Showing live, peak AND
@@ -142,4 +151,21 @@ func totalPhysicalRAM(p platform.Platform) int64 {
 		return 0
 	}
 	return n
+}
+
+// footprintVerb names WHICH measurement the alarming number is, so the sentence
+// cannot claim the present tense for a historical peak.
+//
+// The finding alarms on max(live, peak) because peak is what Jetsam judged — a
+// process that already touched 41.5 GB is a standing risk wherever it sits now.
+// But saying it "holds 41.5 GB" when it currently holds 15.5 GB is false about
+// right now, and a reader who opens Activity Monitor, sees a different number,
+// and concludes the tool is wrong will discard the true part of the finding
+// along with the wrong verb. Same discipline as the check itself: say exactly
+// what was measured (PANTHEON_RULES.md A29).
+func footprintVerb(live, worst int64) string {
+	if worst > live {
+		return "peaked at"
+	}
+	return "holds"
 }

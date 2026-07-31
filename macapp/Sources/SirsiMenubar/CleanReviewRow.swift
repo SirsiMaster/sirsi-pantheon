@@ -21,13 +21,13 @@ struct CleanReviewRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.system(size: 13, weight: .medium))
+                    .sirsiFont(13, weight: .medium)
                 Text(path)
-                    .font(.caption2.monospaced())
+                    .sirsiFont(.caption2, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(reason)
-                    .font(.caption2)
+                    .sirsiFont(.caption2)
                     .foregroundStyle(isCaution ? .orange : .green)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -35,7 +35,7 @@ struct CleanReviewRow: View {
             Spacer()
 
             Text(sizeText)
-                .font(.caption.monospaced())
+                .sirsiFont(.caption, design: .monospaced)
         }
         .padding(.vertical, 6)
     }

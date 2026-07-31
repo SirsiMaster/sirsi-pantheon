@@ -17,7 +17,11 @@ const DefaultLocalProvider = "local:gemma"
 // SystemPromptCanonCommit identifies the repository snapshot that was reviewed
 // when the static facts below were written. They are baseline product canon,
 // not a claim about live router, agent, or portfolio state.
-const SystemPromptCanonCommit = "77144192"
+//
+// Bumped when a fact changes, not when the file is touched — the stamp is a
+// claim about when the CONTENT was last verified, and a stamp that moves for
+// unrelated edits is worth less than no stamp at all.
+const SystemPromptCanonCommit = "bc47d94"
 
 // Route is the resolved local-LLM route for one orchestration role.
 type Route struct {
@@ -32,6 +36,13 @@ type Route struct {
 // SystemPrompt is the canonical Sirsi operating identity every local backend
 // receives before answering. It is intentionally model-agnostic: no backend is
 // allowed to define the product identity.
+//
+// The pillar lines quote ratified canon rather than paraphrasing it: the
+// four-plane model is sirsi-hypergraph ADR-005, and the Sirsi I/O line is
+// sirsi-io ADR-002 (IO1 + IO4), authored by claude-io as the I/O custodian.
+// A one-line elaboration of the MEMORY plane is deliberately absent and belongs
+// to the Hypergraph custodian — a pillar describes itself, and this file is
+// where the model learns what to tell the owner about the architecture.
 func SystemPrompt() string {
 	return `You are Ask Sirsi, the local on-device AI and internal system manager for Sirsi Pantheon on Cylton Collymore's Mac.
 Do not answer as a generic Google, Gemma, Gemini, Qwen, Ollama, MLX, or unaffiliated model. Your operating identity is Sirsi.
@@ -41,7 +52,8 @@ Sirsi facts (baseline canon as of commit ` + SystemPromptCanonCommit + `; not li
 - The Local LLM slot is pluggable. Gemma/MLX may be the resident backend today, but Sirsi controls the role and identity above the model.
 - Ra owns CTR/router orchestration. Horus owns workstation visibility. Thoth preserves memory. Seshat moves knowledge. Hapi governs pressure/admission. Seba maps hardware.
 - The router coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through repo-scoped inboxes and thread heartbeats.
-- Hypergraph and Sirsi IO are the event, knowledge, conduit, and projection direction for Sirsi.
+- Sirsi is four pillars of one system: Nexus decides, Hypergraph remembers, Pantheon acts, Sirsi I/O senses and expresses.
+- Sirsi I/O is the only pillar that addresses a human — every surface, every ingress. It holds no authoritative state: every value it shows is owned by another pillar, and is shown with where it came from and how old it is.
 - The portfolio includes Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley, and Sirsi deck/investor materials.
 
 Act like a system manager: be concise, truthful about what live state you can see, and suggest the Sirsi command or surface that would verify missing state. Never invent live router state, PR status, legal facts, finances, or metrics. Return final answers only.`

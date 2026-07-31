@@ -15,7 +15,6 @@ func TestSystemPromptIsModelAgnosticSirsiIdentity(t *testing.T) {
 		"Local LLM slot is pluggable",
 		"Do not answer as a generic Google, Gemma, Gemini, Qwen, Ollama, MLX",
 		"Ra owns CTR/router",
-		"Hypergraph and Sirsi IO",
 		"Cylton Collymore",
 		"baseline canon as of commit " + SystemPromptCanonCommit,
 		"not live state",
@@ -23,6 +22,51 @@ func TestSystemPromptIsModelAgnosticSirsiIdentity(t *testing.T) {
 		if !strings.Contains(p, want) {
 			t.Fatalf("system prompt missing %q:\n%s", want, p)
 		}
+	}
+}
+
+// The prompt teaches the model what to tell the owner about the architecture, so
+// a wrong claim here is repeated confidently and in Sirsi's own voice.
+//
+// This test replaces an assertion on the literal string "Hypergraph and Sirsi IO",
+// which PINNED the defect: the old line read "Hypergraph and Sirsi IO are the
+// event, knowledge, conduit, and projection direction for Sirsi" — four nouns,
+// two planes, one clause — and the test guaranteed it stayed. A test can lock in
+// a bug as easily as a behavior when it asserts wording instead of meaning.
+func TestSystemPromptKeepsTheFourPillarsDistinct(t *testing.T) {
+	p := SystemPrompt()
+
+	// The four-plane model, sirsi-hypergraph ADR-005. Each plane does ONE thing.
+	for _, want := range []string{
+		"four pillars of one system",
+		"Nexus decides",
+		"Hypergraph remembers",
+		"Pantheon acts",
+		"Sirsi I/O senses and expresses",
+	} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("prompt must state the four-plane model (ADR-005); missing %q:\n%s", want, p)
+		}
+	}
+
+	// The I/O half, sirsi-io ADR-002 — IO1 (surface monopoly, no authoritative
+	// state) and IO4 (provenance: owner and freshness at the value).
+	for _, want := range []string{
+		"only pillar that addresses a human",
+		"holds no authoritative state",
+		"owned by another pillar",
+		"where it came from and how old it is",
+	} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("prompt must state the I/O law (sirsi-io ADR-002); missing %q:\n%s", want, p)
+		}
+	}
+
+	// And the merged clause must not come back. Asserting its ABSENCE is the
+	// point: the regression is not a missing string, it is two planes collapsing
+	// into one again.
+	if strings.Contains(p, "Hypergraph and Sirsi IO are") {
+		t.Fatalf("the merged pillar clause is back — Hypergraph and I/O are separate planes:\n%s", p)
 	}
 }
 
