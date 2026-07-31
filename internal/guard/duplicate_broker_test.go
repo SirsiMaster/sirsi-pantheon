@@ -63,3 +63,16 @@ func TestUncappedBrokerIsMarked(t *testing.T) {
 		t.Fatalf("the capped broker must not be marked uncapped, got %q", capNote(cappedArgv))
 	}
 }
+
+// claude-home's review of #403: `sirsi gemma serve --stop` — the sanctioned
+// graceful stop, likely running DURING an incident — matches the argv pattern.
+// A CLI wrapper is tens of MB; only a GB-scale footprint can be a resident
+// model, so the floor excludes it where a nonzero check could not.
+func TestCLIWrapperIsNotABroker(t *testing.T) {
+	if brokerFootprintFloor <= 100*1024*1024 {
+		t.Fatalf("floor %d is small enough to admit a CLI wrapper", brokerFootprintFloor)
+	}
+	if brokerFootprintFloor > 2*(int64(1)<<30) {
+		t.Fatalf("floor %d would exclude a small real model (3B 4-bit ≈ 1.5 GB)", brokerFootprintFloor)
+	}
+}
