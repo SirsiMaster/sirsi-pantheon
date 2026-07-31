@@ -5,383 +5,6 @@
 
 ---
 
-## Entry 075 — 2026-07-27 13:17 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019fa492-ebaf-7952-a926-a028132a12fc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-07-27T00:00:00Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Conduit run 2026-07-27T17:18Z
-
-Merged the in-flight PR and found a surface disagreeing with its own store. **SirsiNexusApp #190 closed** — claude-nexus returned APPROVE by measurement (all three Qubits retractions verified complete, continuation convention indexed not clobbered, .thoth edits additive 19→20 with zero lines dropped), so I bound (`4a3efbb`) and squash-merged (`bac9cea`, 17:10:54Z), reading the merged state back from GitHub rather than trusting the merge command. Their structural finding is carried, not filed: GitHub REFUSED nexus's approval with "Can not approve your own pull request" because every agent authenticates as SirsiMaster, so **cross-agent independent review is a convention we honour, not a control the platform enforces** — extending sirsi-bind's second identity from binding to review *submission* is the fix, and it belongs to claude-pantheon's lane.
-
-**#191's own pre-merge blocker resolved by measurement instead of refresh.** The rescued whitepaper claimed "4,395 of 4,395 anchored"; the live `~/.sirsi/hypergraph/events.jsonl` holds **4,830**, and the figure had drifted twice in hours (4,395 → 4,803 in the PR body → 4,830). Refreshing was the wrong fix: the document itself states anchoring runs on a fifteen-minute cycle, so any absolute count is stale before an investor reads it. Took the author's second option and stated the invariant — "every event anchored, zero pending, mirror-verified" — pushed via the contents API to avoid switching branches in the shared main worktree (`2562744`), verified by reading the branch back. Since I edited it I cannot merge it, so it went to claude-nexus with bind+merge authority.
-
-**Third stranding of the day from one root, and a correction I had to issue against myself.** claude-io's ADR-002 review had been routed to `codex-nexus`, which has no wake mechanism — I re-routed it intact to claude-nexus (adding the disclosure that *I* drafted those laws, so claude-io and I are both conflicted and nexus is the only clean reader) and closed the original as superseded. Then `doctor --fix` showed **claude-io is itself wake-unavailable** — the committed registry gives it no `wake.mechanism` despite its being declared online with a "durable wake path" this morning. My own re-route note to claude-io is therefore undeliverable, as is codex-pantheon's IO6 result. Sent claude-nexus a correction: route the verdict to claude-home, not claude-io. The lesson is registry-shaped — **wake is a property of the committed registry, not of whether an agent feels online**, and an item sent to an agent without a mechanism is not pending, it is lost, while looking identical to pending on every surface.
-
-**A status surface printed a smaller world than its own store.** `router status` returned `44 open / 2051 closed` at 17:10Z listing 6 recipients, then `76 open / 2030 closed` at 17:15Z listing **14** — claude-deck alone going 1 → 9. I went to `~/.sirsi/router.db` rather than trusting either surface. The store agrees with the second reading, and the integrity question is clean: `status='open' AND closed<>''` returns **0**, as does `status='open' AND result<>''`. Nothing that was closed came back; the closed drop is `prune --days 90` working its retention window. What did not resolve in-pass is the +32 on the open side — either `status` under-reported and hid **six weeks** of stranded work across 8 agents (the oldest claude-deck rows open since 2026-06-14 with no close timestamp and no result — genuinely never closed), or `doctor --fix` imported legacy file-backed rows, and the files do exist for those ids. Both are the same dual-source seam PR #327 is closing one layer down, so the evidence went onto #327 as a comment rather than into claude-pantheon's 39-deep queue. #327 itself reads correct on a source-deep pass but is 25 minutes old; it holds until past 1h. A wake loop reading through the cutover entry point is necessary and not sufficient while `status` can disagree with `router.db` by 32 items.
-
-Vitals eased sharply: memory free **86%** (was 33%), no new Jetsam, broker green with the KV bound honoured and prompt cache flat at 2.21 GB for an 8th reading. `diagnose` 94/100 🟡 on a 4.5 GB VM, benign. Reconcile healed 3 claude-home threads; the "64 uncommitted files" warning remains the router's own runtime state and is still benign.
-
-## Conduit run 2026-07-27T17:29Z
-
-Cleared my own queue to zero and merged the run's carried PR. **#327 merged** (`c4ec68e7`) after
-resolving the conflict it had picked up: only `CHANGELOG.md` collided, the local union driver
-resolved it cleanly in a temp worktree, and I verified the result kept this PR's entry plus all
-four entries that had landed from main (#323, #320, #319, scarab retention) with no duplication
-and no loss before pushing the merge commit from the main checkout. Pushing a new head invalidated
-the first bind, so it was re-bound on `19ef83f0` and merged green.
-
-**A new `sirsi` crash artifact** appeared since the last pass — `sirsi-2026-07-27-132249.ips`,
-`EXC_CRASH / SIGKILL (Code Signature Invalid)`, CODESIGNING "Launch Constraint Violation". Not a
-panic and not memory: AMFI killed it at exec. Root cause is a timing window, not a bad binary —
-`~/.local/bin/sirsi` was replaced at 13:21 and the crash is at 13:22:49, so something invoked
-`sirsi` between `cp` writing the new bytes in place and `codesign` applying the ad-hoc signature.
-The binary verifies clean now, so this self-healed, but the install sequence guarantees a
-recurrence on every rebuild on a host that runs `sirsi` from launchd loops, the menubar, triage
-and every conduit pass. Routed the one-line fix to claude-pantheon: sign the staging copy first,
-then `mv` it into place so the swap is an atomic rename — which also removes the failure mode
-where `codesign` fails after `cp` succeeded and leaves the PATH binary permanently unrunnable.
-
-**Root-caused the six-week strand.** `router doctor --fix` reported 17 wake-unavailable items, and
-the split is the finding: `claude-deck` (9 items), `claude-ask-eliot` (2) and `claude-hypergraph`
-(1) are **not in the committed registry at all**, while `claude-io` (4) is registered with no wake
-mechanism. `router send --to claude-deck` succeeds against a recipient that has never existed, so
-nine items accumulated, the oldest open 43 days, undeliverable and never surfaced as such. This is
-most of the "+32" anomaly flagged on #327 last pass; store integrity remains clean (`status='open'
-AND closed<>''` = 0, same for `result`). `TestRegistryWakeCoverage` cannot catch it because it
-only checks agents that are present. Routed two fixes to claude-pantheon: validate `--to` at send
-time, and assert every distinct recipient with an open item is a registered agent. I deliberately
-did **not** invent registry entries to silence the warning — whether those agents should exist is
-an ownership question, and fabricating them would be exactly the green-surface-over-a-dead-thing
-class this fleet keeps getting burned by.
-
-**Relayed the hypergraph adversarial review.** codex-home returned the attack-don't-approve read of
-sirsi-hypergraph #22–#25: #22 clear, #23 and #25 changes-requested, #24 no standalone blocker but
-it does not close the leak class without a corrected #25 gate. The P0 is compound — a refused
-identity-leaking event is neither anchored nor quarantined, so `AnchorUnanchored` returns on it
-every pass and one privacy violation becomes a permanent head-of-line outage for notarization,
-while the freshness query counts the unpublishable row and reports a healthy node as stalled
-forever. All four PRs are green and `MERGEABLE`, so I posted the findings as comments on #23 and
-#25 first — the artifacts carry them regardless of whether a router item is read — then routed the
-work to claude-nexus, who holds the pillar and has a working wake mechanism. Hypergraph has no
-lane agent, so this is scheduled rather than absorbed.
-
-**A second claude-home conduit was live against the same store** at 17:23–17:24Z and emitted four
-items I did not send. Two told claude-pantheon to execute integration on **#190**, which had
-merged at 17:10:54Z (`bac9cea`) and is a SirsiNexusApp PR that was never pantheon's lane; the other
-two carried the hypergraph review to `claude-hypergraph` and `claude-io`, both unwakeable. Closed
-all four with citations rather than leaving false work in a 39-deep queue and unreachable work
-open. `ccd reap` separately killed 8 leaked `router-conduit-supervisor` processes.
-
-Vitals: `diagnose` 94/100 🟡 on the same benign 4.2 GB Virtualization VM. Memory eased 31% → 47%
-free across the run, though swap stays tight at 9264/10240 MB. All four daemons live
-(router 1585, triage 1567, pantheon 52561, gemma-worker 1603, unchanged). Broker green, KV bound
-verified at 4294967296, prompt cache flat at 2.20 GB/10 sequences — ninth flat reading. Reconcile
-healed 6 claude-home threads; its 68-uncommitted-files warning is the usual benign router runtime
-state and was left alone. Retention reclaimed 92.0 KiB. Board republished after all sends and
-artifact-verified at 17:27:26Z. Router closed at 71 open / 2049 closed with **claude-home at zero**.
-
-## Conduit run 2026-07-27T17:51Z
-
-Both queues empty on arrival; the run's only real work was PR #328. Source-deep read showed the diff
-has grown past its own PR body — the branch now carries EL-002 (Colima 10 GB decomposed to a 16-container
-stack, deterministic-vs-LLM sizing, model/quantization recommendations) on top of the EL-001 the body
-describes. Both entries are signed `**Author:** claude-home (conduit)`, so no-self-review binds: I did
-not bind or merge it, and routed an independent review to codex-pantheon
-(`20260727-174944-claude-home-codex-pantheon-review-pr-328-...`) with the ask aimed at the contestable
-half — the disk-to-RSS multiplier, the `max(8.0, total*0.35)` inversion claim, the medium-confidence
-Qwen-over-Gemma swap, and the MoE-residency argument. #329 needed nothing from me: claude-pantheon had
-already sent it to codex-pantheon and the response (`20260727-171914`) is open in their lane; it also
-went CONFLICTING on CHANGELOG since the last run, which is theirs to resolve. Nexus #191 untouched —
-I am an author. Vitals: no new crash or Jetsam, broker green with the KV bound intact and the prompt
-cache flat at 2.19 GB for an eleventh reading, all four daemons argv-verified. The one real delta is
-swap — 10291/11264 MB used, 972 MB free, up sharply from 7946 used last run, with no proportionate
-RSS culprit (top consumer is still the benign 4.9 GB Virtualization VM). Recorded as a watch, not acted
-on: nothing killable, and the storage binding still forbids `sirsi clean`. Retention reclaimed 65.7 KiB.
-
-## Conduit run 2026-07-27T18:05Z — the amber, actually read
-
-Owner pushed back on my dismissing the 🟡 as the "benign Virtualization VM, don't chase" — a phrase I
-had carried across ~11 runs without once reading the check that produced it. Reading it inverted the
-verdict. The score arithmetic is unambiguous: 100−6 is exactly one SeverityWarn, and that Warn was
-`Top Memory Consumers` flagging `com.apple.Virtualization.VirtualMachine` with the recommended action
-"quit the worst offenders". That VM is Colima, Colima anchors the sovereign consensus ledger, and
-`hedera-local stop` destroys it — so the health surface was advising the destruction of irreplaceable
-state to reclaim RAM the host was not short of, while RAM Pressure (38%), Memory Death Spiral and Swap
-were all simultaneously green. Not benign: the same class as #323 one layer up, storage-surface-offers-
-the-ledger versus memory-surface-offers-its-VM. Fixed in **PR #330** by extending the exemption
-`checkTopMemoryProcesses` already carried for the Gemma broker — a capacity-capped reservation is not a
-hog — rather than by raising the 4 GB constant, which would hide real hogs and repeat EL-001's own
-hardcoded-constant complaint. The exemption is two-sided and earned: Virtualization VM AND RSS within
-the ceiling declared in `colima.yaml`; over cap, no config, or unparseable all still warn, so the
-detector fails toward warning. Table test covers all four. Verified live, not just mocked — the finding
-vanishes under the patched binary while the installed one still reports it, and the VM has since grown
-to 7.5 GB and stays correctly exempt inside its 10 GiB ceiling. Green on all five checks; **routed to
-codex-pantheon, not merged — I authored it.** Two process notes worth keeping: the working checkout is
-**316 commits behind origin/main**, so my first read of `doctor.go` was a stale artifact whose swap
-message did not match the binary — read source from `origin/main`, not the tree. And the swap alarm I
-raised at 17:52 (10291/11264 MB) was a transient macOS swapfile growth that fell back to 7786/9216 on
-its own; the shipped check's "macOS keeps swap allocated after using it" was right and my read was the
-alarmist one. Clearing #330 does NOT make the host green: the remaining amber is a real `Spotlight
-Storm`, `mds_stores` at 29–31% CPU, feeding the RAM→Jetsam loop behind 7 Jetsam kills in 7 days. That
-one is GUI-only (the plist is privileged; `spotlight-exclude` guides but cannot apply), so it went to
-the owner as a single item, no nag.
-
-## Conduit run 2026-07-27T18:12Z
-
-claude-deck reported the dangerous direction: `sirsi router pull claude-deck` printed
-"No open items" at 16:57Z for an inbox holding nine open store rows — eight from
-mid-June, one an investor SAFE cleared for signature — then returned all nine minutes
-later, same session, same host. The store was correct throughout; the reader failed, and
-failed silently. Located it in `Facade.Inbox`: the post-cutover leg already fails closed,
-but the pre-cutover leg degrades to the file inbox on a store error (`return items, nil`).
-That was safe while `items/*.md` was canonical and populated — post-cutover the file leg
-is empty fleet-wide, so the same line now yields zero items with a nil error, which is
-indistinguishable from a clean inbox and puts a wake loop back to sleep on full work.
-Fixed with one guard at the shared read site so it covers all six callers (pull, wait,
-doctor, liveness-watch, MCP, wake), with a test that fails on the unguarded code with the
-exact production symptom — PR #331, routed to codex-pantheon (I authored it). Stated the
-gap plainly rather than claiming the incident closed: on the current binary the symptom
-does not reproduce, cwd/root ambiguity is ruled out empirically, and this host has the
-cutover marker set, so pull takes the already-fail-closed leg; I asked claude-deck to
-check its session env and binary to settle causality. Also accepted codex-pantheon's
-CHANGES REQUESTED on #328 in full — all five corrections are mine to apply as the author,
-recorded verbatim, PR stays open and unmerged. #330 still awaiting codex, all checks
-green. Two router items showed `closed` on a race-guard re-read moments before my own
-close succeeded; a third rendered correctly, and a `router-conduit-supervisor` session was
-reaped this run — a concurrent sibling conduit, the known duplicate-work class, not a new
-reader bug. Vitals: 94/100, the lone Warn still the consensus VM at 4.5 GB that #330
-exempts; broker green with the KV bound holding at 2.19 GB; no new Jetsam. Four
-`sirsi-*.ips` "Launch Constraint Violation" crashes from 13:22–13:59 local are the
-binary-replacement signature, not a runtime fault — no BINARY_MISSING sentinels remain.
-
-## Conduit run 2026-07-27T19:27Z–20:25Z
-
-Both codex verdicts on my own PRs came back negative and both were accepted without argument. **#331
-REJECTED and closed unmerged** — codex established the guard is causally unrelated to the false-empty
-inbox it was written for: the incident host carries the cutover marker, so `Facade.Inbox` returns from
-the store-only branch *above* the code I changed, and pre-cutover an empty file inbox is legitimate
-evidence, so the patch converted documented compatibility behaviour into an error. `len(items) > 0`
-was never a completeness proof, which I had flagged myself when sending it. The incident stays OPEN and
-uncaused; codex's directive — error telemetry at the store-only read boundary — is adopted as the real
-next step, because a false-empty inbox that logs nothing is unfalsifiable by construction. **#330 came
-back CHANGES REQUESTED and stays open**: the guard proves "Apple Virtualization process below the
-default profile's cap" and then treats that as identity, binds to a user-editable YAML rather than the
-running hypervisor's effective ceiling, and — the finding that reframes the PR — suppresses the
-*finding* when the dangerous thing was the *remediation* telling someone to quit a VM whose death
-destroys the ledger. Corrections are mine; three accepted in full.
-
-Reviewed **SirsiNexusApp #193** (claude-nexus, IO4 loopback guard) and returned CHANGES REQUESTED on a
-finding nexus's own four-vector self-probe could not have reached: the guard validates `endpoint`, but
-the panel fetches `endpoint + query_api`, and `query_api` arrives unvalidated from the same feed under
-the same threat model. Measured against Node's parser rather than reasoned about —
-`"http://127.0.0.1:8765" + "@evil.example.com/v1/chat/completions"` → hostname `evil.example.com`; the
-same userinfo trick nexus already pins, arriving through the sibling field. One line fixes it (guard
-the composed URL). Answered their Q2 from the producer I own: `sirsi-router-board.sh:57` is the sole
-writer of `local_llm` and the host is a literal `127.0.0.1` with only the port variable, so no
-supported configuration darkens a working panel — though the invariant currently holds by evaluation
-order (`int(port)` raises before interpolation) rather than by design. Their CI is RED, not running —
-portal build canceled at 11m on a cache-restore timeout, infrastructure not code.
-
-**#332 (durable Spotlight index markers) routed to codex-pantheon rather than bound.** Authorship is
-ambiguous — opened 18:15Z, one minute after the previous run closed, and this run's reaper killed three
-concurrent `router-conduit-supervisor` processes — and under no-self-review ambiguity resolves one way.
-Flagged for attack: the unreachability-of-priority-1 claim is load-bearing and two `Operation not
-permitted` results prove two calls failed, not that the objective is unattainable.
-
-Vitals green throughout: `diagnose` 100/100 🟢 (the #330 VM false positive not even surfacing this
-cycle), memory free 35%, broker `{"status":"ok"}` with the KV bound verified and cache flat at 3.24 GB.
-Two further `sirsi-*.ips` at 15:04/15:10 local are Launch Constraint Violation — the binary-replacement
-signature again, not a runtime fault. Reconcile healed 5 reaped→successor; **76 uncommitted files still
-flagged as possibly stranded, owner adopts or discards, never auto-stashed**. Prune 427→380, `ccd reap`
-8 sessions / 1 archived, retention reclaimed 8.2 MiB.
-
-## Conduit run 2026-07-27T22:15Z
-
-Worked the block the previous run flagged as biggest-and-mine: PR #330's three codex
-corrections. The important one reshaped the fix rather than patching it. Codex's finding
-was that the remediation is the defect, not the visibility — and it was right. The first
-pass had suppressed the Colima VM from `Top Memory Consumers` entirely, which is the
-green-surface-over-a-real-condition pattern this repo keeps paying for: an operator who
-cannot see the largest process on the box cannot reason about memory at all. The VM now
-stays in the report, re-labeled `load-bearing, capacity-reserved: ... at 4.6 GB of 10.0 GB
-reserved`, and `remediationFor` no longer emits "quit the worst offenders" for ANY memory
-check. That string was generic to every memory finding, not specific to the VM, so fixing
-it only for the VM would have left the same lethal advice pointed at the Gemma broker.
-Correction 2 split identity from capacity (`isAppleVirtVM` is identity only — the old
-predicate conjoined the two, so a VM that outgrew the cap silently stopped being recognized
-as a VM). Correction 3 replaced the user-editable `~/.colima/default/colima.yaml` — desired
-config, i.e. a wish reported as a measurement — with Lima's GENERATED
-`_lima/colima/lima.yaml` gated on a live `vz.pid`.
-
-One correction I could not fully satisfy, and said so rather than papering over it: codex
-asked for a PID binding via `loadbearing.go`. `vz.pid` is 21574 (the limactl hostagent) but
-the RSS-holding process is 21580, the Apple-Virt XPC service, which macOS reparents to
-launchd — PPID 1, verified live. There is no process-tree link, so recognition is by class,
-not instance. That asymmetry is precisely why the by-class check is used only to protect
-and to label and never to suppress: over-protecting an unrelated VM from a routine kill is
-free, over-hiding one is not. Written into the code comment and routed to codex as an open
-question.
-
-Test is table-driven over six cases and asserts in every one that the VM is still NAMED,
-so a future re-suppression fails; verified red by reintroducing the suppression, and
-verified against the live host (94/100 amber → 100/100, VM visible at 4.6 GB of 10.0 GB).
-Lint went red on ea2dd7f0 for two British spellings in a test comment (`misspell`); fixed
-in a separate commit rather than an amend, because ea2dd7f0 was already sitting in codex's
-queue and a force-push would have invalidated the SHA under them — routed the correction.
-Final SHA 230f2b19, all content checks green, binding-hold correctly red pending an
-independent bind I must not do myself.
-
-Also corrected the carried ledger: #328's five corrections were already applied at
-99700a1f, contrary to the previous run's note — but the re-review request was never routed,
-so a green PR had been sitting idle on a process miss. Routed it. #332's verdict arrived
-mid-run: CHANGES REQUESTED, six items (basename-only `dist`/`target` discovery, TOCTOU
-recheck before marker write, a full-index command that increases the load it claims to
-control, an over-broad reachability claim, missing post-apply evidence, and a previewed
-removal mode). Left open as the next run's block — not faked closed. Fabric: reconcile
-healed 5 and pruned 107 (1073→966), `ccd reap` killed 2 and archived 4, retention 8.1 KiB.
-The stranded-uncommitted-file count rose 76→79 and remains owner-adopt-or-discard, never
-auto-stashed.
-
-**Addendum (same run, 22:25Z) — `doctor --fix` completed after the close and carried a real finding.**
-It reported `claude-nexus: launchagent adapter failed: exit status 37` on three items. Errno 37 is
-EALREADY, and the wake had in fact SUCCEEDED — a false red, the exact inverse of the
-green-surface-over-a-dead-thing class, and worth the same suspicion: a surface asserting failure over a
-live path strands work just as effectively as one asserting health over a dead one. Root cause read in
-source rather than inferred: `internal/router/wake.go` iterates per ITEM, and its idempotency guard
-keys on per-ITEM `WakeStatus`/`WakeAttemptedAt`, so N fresh items addressed to one agent invoke the
-adapter N times; the adapter is `launchctl kickstart -k`, which kills and restarts, so calls 2..N race
-the in-flight restart and return EALREADY, and each loses its wake annotation to `wake-unavailable`.
-Confirmed against the live host: the label held PID 36317 mid-run with `LastExitStatus = 15`, the
-SIGTERM from its own `-k`. The fix belongs in one place — dedupe invocation per AGENT within a pass and
-annotate all of that agent's items from the single outcome, with EALREADY treated as success as
-secondary hardening. Explicitly NOT to be "fixed" by widening the per-item retry window, which would
-only hide it. Recorded as the next block; not implemented at the tail of a long run, because this is
-fabric-critical and deserves its own verification pass. Separately, `claude-deck` has changed failure
-mode to `agent "claude-deck" not registered` (previously "no wake mechanism"), now 10 items.
-
-## Conduit run 2026-07-27T22:27Z
-
-A new JetsamEvent landed at 22:07Z and it is the run's headline. The `.ips` names `Python` as
-`largestProcess`: pid 77655, the `ai.sirsi.gemma-broker`, at **2,682,254 pages × 16 KiB = 43.9 GB**,
-with a `lifetimeMax` of 46.2 GB, against 0.34 GB of free system memory at the event. The shape is
-what makes it dangerous — `physicalPages.internal` reads `[41350, 2433398]`, i.e. 0.68 GB resident
-and **39.9 GB compressed**, so `ps -o rss` reports the broker at 1.40 GB right now and any
-RSS-sampling health check calls it innocent while its real footprint was thirty times that. Swap
-sits at 8.57 of 10.24 GB. Crucially the KV bound is NOT the balloon: the process does carry
-`--prompt-cache-bytes 4294967296` and the prompt cache has been flat at `9 sequences, 3.25 GB`
-across every recent log line, so the ~20 GB above the declared 20.8 GiB cap is elsewhere in the
-allocator. This is the second Jetsam in two days and it escalated (31 GB → 43.9 GB), so per the
-repeat-OOM doctrine the broker was deliberately left running and unbounced and the forensics went
-to claude-pantheon as a P0 rather than being papered over with a restart.
-
-#332 came back changes-requested and all six corrections landed at `8552dfe9`. Two were real
-defects rather than polish. Discovery matched build directories on basename alone, so a source
-repository merely *named* `dist` or `target` was planned for marking — the one outcome the feature
-promises never to cause; it now requires evidence, refusing anything containing `.git` and
-requiring the parent build manifest for the ambiguous names, with a name match that fails the gate
-still halting the walk. And the write path had a genuine TOCTOU window: the plan now records
-`(dev, ino)` via `Lstat`, re-verifies immediately before writing, refuses vanished/non-directory/
-identity-changed paths, and creates with `O_EXCL`. Verified RED both ways, and the unfixed red
-output confirms the marker landed *in the redirect target*. The durability item was deliberately
-NOT closed: markers from 07-25 are still present and `mds` is quiet at 0.2% CPU, but
-`mdfind -onlyin ~/go/pkg/mod` still returns ~106k hits inside a two-day-marked tree against 5,010
-for the unmarked control — markers prevent future indexing, they do not evict existing index
-content, and no reboot was observed. That caveat is now in the code comment and the changelog
-instead of being left implied. `mdutil -E` was dropped from the pressure-control levers because
-recommending a full reindex as a remedy for indexing pressure prescribes more of the load being
-complained about, and the "only unprivileged lever" claim was narrowed to the two mechanisms
-actually measured.
-
-`router doctor --fix` completed this run, resolving last run's inconclusive result, and surfaced a
-standing defect: 12 items are undeliverable because `claude-deck` (10) and `claude-ask-eliot` (2)
-are not registered agents — the wake-dead-id class again, with the oldest dating to 2026-06-11.
-Several of the deck items are fundraise decisions addressed to the owner. Neither id was
-auto-registered, since arming a wake mechanism against an interactive identity is precisely what
-the no-blind-spawn rule forbids; it went to the owner as the single open escalation. Housekeeping:
-108 terminal threads pruned (1087 → 979), 1 session archived, 32.4 KiB reclaimed, board republished
-at 18322 bytes. Noted for the next run: #333 claims a fork storm is *the* cause of the
-out-of-application-memory dialog, which sits awkwardly beside forensics naming a 43.9 GB broker —
-worth checking whether that causal claim survives review.
-
-## Conduit run 2026-07-27T22:45Z
-
-Third Jetsam in ~24h fired at 22:38:53Z with the Gemma broker as `largestProcess` — pid 77655 at a
-38.10 GB footprint (2.17 GB resident, 35.93 GB compressed, lifetimeMax 46.2 GB), the KV bound still
-correctly applied and the prompt cache still flat at 3.25 GB, so roughly 35 GB sat above the declared
-20.8 GiB cap and outside the 4 GiB KV bound. The previous run had deliberately not bounced it under
-the repeat-OOM doctrine; a third event with only 1.1 GB of swap free inverted that call, because the
-next kill would have taken a load-bearing victim rather than the offender. Graceful `sirsi gemma serve
---stop`, and the reboot-durable agent restored it inside 5s as pid 85829 — health ok, model
-`gemma-4-12B-it-8bit` resolver-confirmed, `--prompt-cache-bytes 4294967296` verified present on the
-new argv. Memory free went 46 to 89 pct. The same Jetsam snapshot showed
-`com.apple.Virtualization.VirtualMachine` at an 18.39 GB footprint while `sirsi diagnose` reports it
-as 4.4 GB, because 15.06 GB of it is compressed and invisible to RSS — the same blindness that let
-the broker read 1.40 GB while holding 43.9 GB, and directly relevant to #330's cap accounting. All of
-this, plus a scoped review note on #333, went to claude-pantheon as item 20260727-224301: the fork-storm
-fix is correct and verified both directions, but its "This is the cause" claim over-reaches, since its
-own recovery table predates 22:17Z and a Jetsam still fired at 22:38Z with the `claude` population at
-4 and the broker as largest process — two independent consumers took the machine down today and #333
-fixes one. Nothing merged: #332 is mine (never self-bind), #328/#330 are with codex, #329 conflicts
-and is claude-pantheon's lane, #333 is under the 1h bar with binding-hold red. Also reaped four leaked
-`router-conduit-supervisor` CCD sessions, pruned 8 terminal threads (983 to 975), reclaimed 137.5 KiB
-of router retention, and noted that three `sirsi` SIGKILLs at 22:24-22:26Z are the known AMFI
-code-signing class, already self-healed.
-
-## Conduit run 2026-07-27T22:57Z
-
-Broker P0 narrowed decisively, and the working theory inverted. Zero open items for claude-home /
-claude-codex-standin; no new Jetsam or crash since 22:44Z. The 22:40:42Z clean restart (pid 85829)
-was measured with `/usr/bin/footprint`, not `ps rss`: 14 minutes in it read phys_footprint 29 GB with
-a 40 GB lifetime peak, while RSS showed 2.36 GB and the server's own prompt cache sat flat at 2.05 GB
-against its 4 GB bound. gemma-server.log carries zero WARN lines, so all three caps in
-gemma-capped-server.py (set_memory_limit / set_wired_limit / set_cache_limit) applied cleanly at
-their declared values. Every lever we have is engaged and holding, and the process still reaches
-40 GB — the balloon is outside MLX's accounting, and the pending Go change that passes
---prompt-cache-bytes from `sirsi gemma serve` will not stop the Jetsams. Routed as
-20260727-225624 to claude-pantheon. A second measurement 2 minutes later read 19 GB against the same
-40 GB peak, which answers the monotonic-vs-step probe in that item: the footprint SPIKES and
-releases rather than creeping, so the Jetsams fire on an allocation burst, not a slow leak —
-addendum 20260727-225723 sent, naming --decode-concurrency 2 as the cheapest confirming experiment
-(not changed; that is pantheon's lane). Deliberately did not bounce the broker a second time: a
-bounce is what a Jetsam performs for free, and the treadmill buys ~15 minutes. Housekeeping: reconcile
-found no dirty exits, prune 0, no BINARY_MISSING, all daemons live, `ccd reap` killed 4 more leaked
-router-conduit-supervisor sessions and archived 2 records, retention reclaimed 114.3 KiB, board
-republished at 18331 B. All five open PRs correctly left — #333 is 39 min old under the 1h bar with
-binding-hold red, #332 is mine, #328/#330 sit with codex, #329 conflicts in pantheon's lane.
-
-## Conduit run 2026-07-27T23:10Z
-
-Broker P0 re-measured, not re-derived: `footprint -p 85829` reads **19 GB phys_footprint, peak
-40 GB** — identical to the 22:57 sample, so the peak is a stale high-water mark and the 19↔40 GB
-spike did not recur this run. Prompt cache still flat at 2.05 GB against its 4 GB bound with zero
-WARN lines, and system memory free recovered 48% → **89%**. Deliberately did NOT bounce: the standing
-rule is a bounce only on a 4th Jetsam or free% under 30 across two runs, and 89% clears both. No new
-Jetsam or crash report in the last 25 minutes. Health moved 94 → **88/100**, and the drop is a *new*
-finding, not the old one: `mds_stores` is burning **48% CPU** re-indexing, with `mdutil -s
-~/Development` returning "unknown indexing state" — the Spotlight write-amplification class again,
-already covered by open PR #332, so nothing was churned here. Both router queues empty for
-claude-home and claude-codex-standin; 87 open fleet-wide (up 3, of which 2 are last run's own
-narrowing sends to claude-pantheon), and the stale list is the same 46-day backlog owned by other
-recipients. `thread reconcile` healed one reaped claude-home thread to its successor; `ccd reap`
-killed 2 more leaked router-conduit-supervisor sessions and archived 1, which is now the expected
-every-run yield. Retention reclaimed 107.7 KiB. `doctor --fix` produced the identical wake-dead set
-(claude-deck 10, claude-ask-eliot 2, codex-nexus 1) plus the owner item itself as undeliverable —
-owner item 20260727-222631 already covers it, so no second escalation was raised. All five prior PRs
-plus new #334 were left: #333 is 52 min old with binding-hold RED, #334 is 4 min old, #332 is mine,
-#328/#330 are with codex, #329 conflicts in claude-pantheon's lane, and Nexus #193 is not mine.
-
 ## Entry 076 — 2026-07-28 14:41 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
@@ -2865,3 +2488,59 @@ with a 1.98 GB cache. Reconcile healed 4, prune took 280 → 274, ccd reap kille
 claude-nexus-lane-runner and archived one record. Doctor: 0 woken, 68 already-armed, 2
 wake-unavailable — both `to: user` owner gates, expected. Stale threads rose 3 → 6. codex-home read
 and closed the identity correction itself at 15:23:25Z, confirming that lane responsive.
+
+## Conduit run 2026-07-31T16:28Z
+
+SirsiNexusApp #212 confirmed MERGED (the carried unconditional first action returned "already merged",
+exit 0; the repo now shows zero open PRs) and the originating request was answered and closed via
+sirsi-respond.sh, routing a fresh Result back to claude-nexus. Router thread reconcile healed 5 reaped
+claude-home threads to successors; ccd reap killed 1 completed-leak session (pid 17781,
+claude-nexus-lane-runner) and archived 1 record; retention reclaimed 128.7 KiB. Two forensic items were
+run down and both cleared: the new sirsi-2026-07-31-121910.ips is the SAME stale-launchd-LWCR class as the
+11:04-11:05 trio (CODESIGNING / Launch Constraint Violation, SIGKILL Code Signature Invalid) rather than a
+memory event, but it proves the defect is still actively killing launchd-spawned sirsi and was already
+routed as 20260731-151504; and JetsamEvent-2026-07-31-110818 killed only spotlightknowledged.updater on
+its own per-process-limit, with the 14.9 GB Python (the capped broker) untouched, so it is the known
+Spotlight write-amplification class and not a broker P0. diagnose's "2 duplicate model brokers" signal is
+a FALSE POSITIVE: exactly one gemma-capped-server.py process exists (87281, cap confirmed by identity),
+the second counted process being the bash gemma-worker. The pantheon lane drained itself hard this run,
+58 open items down to 43, taking the whole ledger from 73 to 58 without conduit intervention.
+
+## Entry 095 — 2026-07-31 12:32 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019fb8ff-7147-7603-b0c3-1e1ff03b5e4d","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-07-31T16:37Z
+
+Vitals green-with-a-known-yellow: `sirsi diagnose` 88/100 🟡 on the gemma broker's lifetime peak
+(17.5 GB of 48), memory 85% free, broker pid 87281 healthy and capped (`--prompt-cache-bytes`
+confirmed by argv, prompt cache 2.40 GB against its 4 GB bound). All sirsi launchd labels have live
+PIDs. Three crash `.ips` in the window are all `SIGKILL (Code Signature Invalid)` /
+`Launch Constraint Violation` on `sirsi` and `SirsiMenubar` — the known AMFI-copy class, and the
+installed binary works. `thread reconcile` healed one reaped claude-home thread to a successor,
+`thread prune` took records 277 → 276; the only stale threads left are the three live app-hosted
+Claude sessions (the known no-durable-PID defect). `ccd reap --apply` killed nothing and archived one
+completed lane-runner record. **Closed 20260729-194426** (diagnose reported a lifetime peak in the
+present tense) as resolved at source and verified live: `footprintVerb` in
+`internal/guard/footprint_check.go`, merged as bc47d947 (#390), now prints "peaked at" whenever the
+alarming number is a peak — reproduced this run as "peaked at 17.5 GB … a third of the machine",
+🟡 not 🔴. **Routed a new review to claude-pantheon** (`20260731-163553`): `sirsi-gemma-triage.sh
+--all` managed two of 41 items in 300s because its warm call returns an empty body and the script
+mislabels that as "warm unreachable", buying a 180s cold reload per item — the endpoint is demonstrably
+alive (the same body classified in 2.6s on a direct call; gemma-4 answers in the `reasoning` channel
+with `content` empty). The conduit's zero-token screen is therefore not running. `router doctor --fix`
+woke 29, one wake-unavailable is the owner OAuth item (correct). Retention prune reclaimed 43.2 KiB.
+Router 41 → 15 open; note that a concurrent sibling session closed 26 pantheon items between 16:26
+and 16:35, nine of them at one timestamp sharing a single per-class ruling body.
