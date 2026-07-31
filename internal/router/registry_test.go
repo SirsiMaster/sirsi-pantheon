@@ -138,3 +138,40 @@ func TestSaveAndLoadRegistry(t *testing.T) {
 		t.Errorf("expected 1 agent after save/load, got %d", len(loaded.Agents))
 	}
 }
+
+// TestLaunchAgentLabelRoundTrip is the regression test for the root cause of
+// registry drift: WakeConfig had no LaunchAgentLabel field, so encoding/json
+// silently discarded the JSON key on unmarshal, and every SaveRegistry call
+// wrote the field away. One field addition closes the cycle permanently.
+func TestLaunchAgentLabelRoundTrip(t *testing.T) {
+	const label = "ai.sirsi.router.wake.claude-test"
+	tmp := t.TempDir()
+	reg := &Registry{Agents: map[string]AgentConfig{
+		"claude-test": {
+			ID: "claude-test", Type: "claude",
+			Command: []string{"claude"}, Cwd: "/tmp",
+			Wake: WakeConfig{Mechanism: WakeLaunchAgent, LaunchAgentLabel: label},
+		},
+	}}
+	if err := SaveRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveRegistry: %v", err)
+	}
+	loaded, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	got := loaded.Agents["claude-test"].Wake.LaunchAgentLabel
+	if got != label {
+		t.Errorf("launch_agent_label not preserved across save/load: got %q, want %q", got, label)
+	}
+}
+
+func TestValidate_NoneWake(t *testing.T) {
+	cfg := AgentConfig{
+		ID: "codex-nexus", Type: "codex",
+		Wake: WakeConfig{Mechanism: WakeNone},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("WakeNone must be valid (explicit opt-out), got: %v", err)
+	}
+}
