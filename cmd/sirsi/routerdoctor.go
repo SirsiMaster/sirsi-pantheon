@@ -119,7 +119,11 @@ var routerDoctorCmd = &cobra.Command{
 		if werr != nil {
 			return fmt.Errorf("wake pass: %w", werr)
 		}
-		fmt.Printf("✔ Wake pass: %d woken · %d already-armed · %d wake-unavailable (recorded on the items).\n",
+		// These are ITEM counts, and the label must say so: "62 already-armed"
+		// read as 62 armed AGENTS, overstating fleet health — "armed" here means
+		// only that the item's recipient had a heartbeat-fresh watcher when the
+		// pass ran (claude-home, router item 20260730-052314).
+		fmt.Printf("✔ Wake pass: %d item(s) wake-attempted · %d item(s) on heartbeat-armed agents · %d item(s) wake-unavailable (recorded on the items).\n",
 			len(wp.Attempted), len(wp.Armed), len(wp.Unavailable))
 		for _, u := range wp.Unavailable {
 			fmt.Printf("    ✗ %s → %s: %s\n", u.ItemID, u.AgentID, u.Detail)
