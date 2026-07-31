@@ -61,7 +61,11 @@ func slugify(s string) string {
 		s = "untitled"
 	}
 	if len(s) > 60 {
-		s = s[:60]
+		// Re-trim after the cut: truncating mid-word can leave a trailing
+		// hyphen, and `router send` then prints an id the store does not have —
+		// which breaks any consumer that pins the printed id (the conduit race
+		// guard did; claude-home, router item 20260730-225729).
+		s = strings.Trim(s[:60], "-")
 	}
 	return s
 }

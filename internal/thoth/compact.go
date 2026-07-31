@@ -125,6 +125,22 @@ func isMachinePayload(line string) (bool, string) {
 	return false, ""
 }
 
+// SanitizeSummary strips machine-payload lines from a compact summary. It is
+// the SHARED gate for every memory.yaml writer: the Go path filters inside
+// appendSessionDecisions, and the npm delegation path must apply the same rule
+// before handing the summary to a binary that writes the file itself.
+func SanitizeSummary(summary string) string {
+	var kept []string
+	for _, line := range strings.Split(summary, "\n") {
+		if skip, why := isMachinePayload(strings.TrimSpace(line)); skip {
+			fmt.Fprintf(os.Stderr, "thoth: dropped a non-decision line — %s\n", why)
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
 // trimDecisions bounds the decisions block to the newest maxSessionDecisions
 // entries. Entries are newest-first (appendSessionDecisions prepends), so this
 // keeps the head and drops the tail.

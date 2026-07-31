@@ -139,3 +139,20 @@ func TestMixedSummaryKeepsTheDecision(t *testing.T) {
 		t.Fatal("the payload survived alongside the decision")
 	}
 }
+
+// Router item 20260730-040045: the npm delegation path handed the RAW summary to
+// a binary that writes memory.yaml itself, bypassing the Go-side filter
+// entirely. SanitizeSummary is the shared gate both writers now pass through.
+func TestSanitizeSummaryStripsPayloadsKeepsDecisions(t *testing.T) {
+	in := realPayload + "\nChose the intersect rule for reap-orphans\n" + realPayload
+	out := SanitizeSummary(in)
+	if strings.Contains(out, "hook_event_name") {
+		t.Fatal("payload survived sanitization — the delegation path is still bypassable")
+	}
+	if !strings.Contains(out, "Chose the intersect rule") {
+		t.Fatal("a real decision was stripped")
+	}
+	if strings.TrimSpace(SanitizeSummary(realPayload)) != "" {
+		t.Fatal("an all-payload summary must sanitize to empty so no writer is invoked")
+	}
+}
