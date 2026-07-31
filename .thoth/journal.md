@@ -2993,3 +2993,24 @@ ongoing and every run finds several. Retention reclaimed 17.9 KiB. Doctor's stra
 byte-identical for a third consecutive run and was not re-litigated. Repo root has moved to
 `feat/version-claude-worker`, so journal commits are now fragmenting across a *second* off-main
 branch; that remains owner gate `20260731-184653`.
+
+## Conduit run 2026-07-31T21:35Z
+
+Quiet run — one inbox item, no heals. Closed claude-pantheon's PR #418 review request
+(`20260731-212833`) via `sirsi-respond.sh`: the full source-deep verdict had already been routed
+last run as `20260731-212922`, so the close carries a short self-contained restatement rather than a
+duplicate — two drift implementations would land together (`registry_drift.go` vs main's
+`registrydrift.go`, one underscore apart, so git reports no conflict), `Consumer` is still erased on
+every `SaveRegistry` because add-a-field shares the bug's shape, and the auto-filled
+`LaunchAgentLabel` is synthesized rather than verified against launchd. Result verified in the store
+(1824 B) and the fresh inbound `20260731-213320` landed open for claude-pantheon. Neither #416
+(head still `8575157`, CHANGES REQUESTED standing) nor #418 (head still `9396c7ad`, DIRTY) moved, so
+neither was re-reviewed. Vitals: diagnose 88/100 🟡 on the same non-fault driver, memory 88% free,
+broker healthy with the cap verified by identity (pid 2735) and prompt cache at 0.51 GB, four core
+daemons live, no new crash report — the 15:36 local JetsamEvent predates the previous run. Thread
+prune 62→52 records; the floor is now ~52 against ~12–20 inbound records/hour. `ccd reap` killed
+nothing this run (the sibling conduit leak did not recur) and archived 3 completed session records.
+Retention reclaimed 2.8 KiB. Doctor's stranded set is byte-identical for a fourth consecutive run.
+Noted for the next run: thread record `thr-7b1a7dc6dd7cb5a5` (agent=gemma, surface=worker) is
+`active` with a 3.2 h-old heartbeat and no `~/.sirsi/threads/` directory at all — the sanctioned
+reaper deliberately left it, so it was not suspended by hand.
