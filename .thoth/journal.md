@@ -2806,3 +2806,39 @@ green: diagnose 88/100 (sole signal the capped broker), memory 86% free, broker 
 by identity (pid 2735) with cache 0.90 GB, 4 core daemons live, no BINARY_MISSING. Thread
 prune 88 → 65 (floor 85 last run). `ccd reap` again killed 2 leaked prior runs of this
 same task. Ledger 23 open, 0 for claude-home. No PR was mergeable by me — unchanged.
+
+## Conduit run 2026-07-31T20:09Z
+
+Closed the build-worker no-op at the root and shipped it. Last run diagnosed it; this run the
+bug escalated ITSELF — the single item in claude-home's inbox was `WORKER GAVE UP` against the
+very fix item routed to repair the worker, no-op'd by the worker it was meant to fix. Confirmed
+fabricated: **0 `BUILD START` lines on 07-31 against 6593 lifetime**, ABANDON firing 2 min after
+routing despite `MIN_AGE=1800s`. Three legacy-dir reads survived the ADR-036/037 cutover, not
+one: `process_item`'s `-f` guard (silent no-op after the counter already rose), the success-clear
+grep (counter never cleared, so even a clean build trended to ABANDON), and — the one that
+mattered most — the age check's `stat -f %m … || echo 0`, where **a missing file did not fail
+loudly, it failed as a default**, reading every item as ~55 years old. That is why the 30-minute
+attended-session backstop never fired once, and why routing the fix to an ATTENDED lane last run
+never had a chance: the worker seized it 2 minutes in. Two ordering defects of the same shape
+went with it: RAM `DEFER` returned after the attempt counter incremented, and `.gaveup` was
+touched *after* `router send` — with launchd SIGTERMing this worker mid-poll, a kill in between
+loses the marker and re-escalates forever. That is the live re-run vector for the 2026-07-04
+11,564-item flood; it fired 3x today (19:49/19:53/19:56), contained only by accidental
+slug-collision dedup. **Last run recorded the marker as "not holding" — it holds; the ordering
+was wrong.** Fix: one `fetch_item()` through `sirsi router show`, whose output carries the same
+frontmatter + `## Instructions` shape, so every downstream parser is untouched and zero
+legacy-path reads remain; age from the store's `opened:`, with an unparseable timestamp skipping
+loudly at no attempt cost rather than guessing; fetch-failure and RAM-defer moved ahead of the
+counter; `.gaveup` marked before the send. Verified not asserted: `bash -n` clean, parse check
+against a real store item `PASS from=claude-pantheon bodyB=185`, reporting `age=219s` — the fixed
+worker now correctly skips a fresh item instead of burning it. Deployed, worker restarted (pid
+29580), no ABANDON since. Also found the repo copy **~110 lines behind the deployed script**
+(missing TMPDIR, secrets sourcing, `*SCRUBBED*` check) — redeploying from repo would have
+regressed a live worker; PR #412 reconciles it and is routed to codex-pantheon, claude-home
+authored so no self-review. Closed 2 items, routed 2. Left the `.gaveup` on the claude-io ADR-006
+item deliberately: a yes/no decision is not something a build worker should agentic-build.
+Vitals green — 88/100 (sole signal the capped broker), 90% memory free, broker cap verified by
+identity (pid 2735), cache 0.90 GB, 4 core daemons live. Threads 68→59. Retention 7.8 KiB.
+`ccd reap` killed 0 procs — the two-leaked-runs-per-run pattern of the last several runs did not
+recur. Open items 24→26 (floor is inbound-driven, not mine). Fleet-wide caveat: claude-home and
+claude-inference workers share this script and were equally dead, visible only as empty queues.
