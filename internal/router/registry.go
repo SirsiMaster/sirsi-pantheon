@@ -36,6 +36,67 @@ type AgentConfig struct {
 	// Wake describes how Horus should wake this agent when work is pending.
 	// Missing wake metadata defaults to cli-spawn for existing agents.
 	Wake WakeConfig `json:"wake,omitempty"`
+
+	// extra preserves JSON fields not known to this version of AgentConfig
+	// (e.g. "consumer") so a LoadRegistry→SaveRegistry round-trip never
+	// silently erases metadata the struct does not model. Adding a typed field
+	// later is additive and safe — the extra copy is just dropped on load.
+	extra map[string]json.RawMessage
+}
+
+// UnmarshalJSON decodes known fields into the struct and captures everything
+// else in extra so it is re-emitted on save.
+func (cfg *AgentConfig) UnmarshalJSON(b []byte) error {
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(b, &all); err != nil {
+		return err
+	}
+	// type plain breaks the UnmarshalJSON recursion.
+	type plain AgentConfig
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*cfg = AgentConfig(p)
+
+	// Marshal the typed struct to discover its canonical key set, then
+	// keep anything left over as extra. This avoids a hard-coded whitelist
+	// that would need updating every time a new field is added to the struct.
+	knownJSON, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	var known map[string]json.RawMessage
+	if err := json.Unmarshal(knownJSON, &known); err != nil {
+		return err
+	}
+	for k := range known {
+		delete(all, k)
+	}
+	if len(all) > 0 {
+		cfg.extra = all
+	}
+	return nil
+}
+
+// MarshalJSON emits the typed fields followed by any extras captured on load.
+func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
+	type plain AgentConfig
+	knownJSON, err := json.Marshal(plain(cfg))
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.extra) == 0 {
+		return knownJSON, nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(knownJSON, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range cfg.extra {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
