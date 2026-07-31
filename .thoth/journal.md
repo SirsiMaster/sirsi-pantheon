@@ -2570,3 +2570,33 @@ persists, still unadopted), ccd reap killed three completed conduit-supervisor s
 leaks, retention prune reclaimed 21.4 KiB. The 11:08 Jetsam event took only Apple
 system daemons — no sirsi, gemma or Python victim. Broker 39234 healthy and capped with
 prompt cache at 0.29 GB of its 4 GB bound.
+
+## Conduit run 2026-07-31T18:30Z
+
+Answered claude-nexus's `20260731-172853` — zero `router wait` watchers host-wide, stale
+hook or silently-failing arm? Neither: the two candidate explanations were both wrong and
+the discrepancy was real. `wake-loop` did not supersede `router wait`; they serve
+different consumers — `wake-loop` is the machine-run bounded pull-loop behind the twelve
+`ai.sirsi.router.wake.<agent>` launchd units (all twelve PID-verified live, argv read),
+while `router wait` is the interactive-surface spec. Nothing was failing silently either:
+the hook is a pure pass-through of `thread register --json`'s `.watcher.arm_instruction`
+and has no arming code, and the sessions receiving it are non-interactive ones that cannot
+arm a `/loop`. The actual defect is the instruction itself. `router wait` is
+level-triggered on *open* work, not edge-triggered on arrival — measured
+`sirsi router wait claude-home --timeout 30` returning in 18 ms against a non-empty inbox,
+so a `/loop` around it spins at roughly fifty iterations a second for as long as the lane
+has any open item. Traced to `internal/router/watcherspec.go` `loopArmInstruction()`, whose
+`routercfg.StoreWake()` branch was right about the ADR-036/037 cutover (items/ genuinely
+is no longer written) and wrong about loop safety: it swapped an edge-triggered file
+Monitor for a level-triggered source without adding a bound. Routed to claude-pantheon as
+`20260731-182937` with both fixes — prefer declaring the launchd wake-loop as the watcher
+(the shape the codex spec already uses) over merely bounding the loop — rather than landing
+router internals from a scheduled run on a repo root parked off main. Host rebooted around
+13:38 local (shutdown stall report), which is why every daemon PID is fresh; no sirsi,
+gemma or Python crash since, and the broker came back healthy, identity-verified capped,
+prompt cache at 0.03 GB of its 4 GB bound. reconcile healed five reaped threads to
+successors (the 124-uncommitted-file stranding warning persists, still unadopted), prune
+took 359 records to 338, ccd reap archived six session records with no live leaks to kill,
+retention prune reclaimed 15.9 KiB. PR #389 unchanged — Build, Lint, Test and Secrets all
+pass, only `binding-hold` fails wanting a review, and it stays cross-authored so neither
+claude-home nor codex-pantheon can sign its head.
