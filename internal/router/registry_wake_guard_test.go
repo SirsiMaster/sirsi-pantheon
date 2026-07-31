@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -72,4 +73,61 @@ func TestRegistryWakeCoverage(t *testing.T) {
 			"whose HEAD carries a pre-wake copy (see 287dc7ea) rather than origin/main's.",
 			len(missing), len(reg.Agents), missing)
 	}
+}
+
+func TestRegistryConsumerCoverage(t *testing.T) {
+	const path = "../../.agents/idea-router/agents.json"
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read agent registry %s: %v", path, err)
+	}
+
+	var reg Registry
+	if err := json.Unmarshal(raw, &reg); err != nil {
+		t.Fatalf("parse agent registry %s: %v", path, err)
+	}
+
+	var missing []string
+	var invalid []string
+	for id, cfg := range reg.Agents {
+		switch cfg.Consumer.Mode {
+		case "", ConsumerModeCommand:
+			if len(cfg.Consumer.Command) == 0 {
+				missing = append(missing, id)
+				continue
+			}
+			joined := ""
+			for _, arg := range cfg.Consumer.Command {
+				joined += arg + " "
+			}
+			joined += cfg.Consumer.Prompt
+			if !containsEither(joined, id, consumerAgentPlaceholder) {
+				invalid = append(invalid, id+": command consumer does not carry an inbox identity")
+			}
+		case ConsumerModeResident, "external/resident":
+			if len(cfg.Consumer.Command) > 0 {
+				invalid = append(invalid, id+": resident consumer declares a spawn command")
+			}
+			if len(cfg.Consumer.HealthCheck) == 0 {
+				invalid = append(invalid, id+": resident consumer lacks health_check")
+			}
+		default:
+			invalid = append(invalid, id+": unsupported consumer.mode "+cfg.Consumer.Mode)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(invalid)
+
+	if len(missing) > 0 {
+		t.Errorf("%d of %d agents do not declare an inbox consumer: %v",
+			len(missing), len(reg.Agents), missing)
+	}
+	if len(invalid) > 0 {
+		t.Errorf("invalid consumer declarations: %v", invalid)
+	}
+}
+
+func containsEither(s, a, b string) bool {
+	return strings.Contains(s, a) || strings.Contains(s, b)
 }

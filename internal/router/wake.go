@@ -565,6 +565,9 @@ func (r *consumerRun) running() bool {
 // handle it needs to know whether the work is still in flight. cmd.Wait also
 // reaps the child, so repeated dispatch cannot accumulate zombies.
 func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
+	if rc.Resident {
+		return nil, fmt.Errorf("resident consumer is external and must not be spawned")
+	}
 	cmd := exec.Command(rc.Argv[0], rc.Argv[1:]...)
 	cmd.Dir = rc.Cwd
 	cmd.Env = rc.Env
@@ -706,7 +709,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		//
 		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
 		// would treat an unreadable inbox as an empty one.
-		if consumer != nil && lerr == nil && depth > 0 && !run.running() {
+		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() {
 			// Report the previous run's exit before starting another, so a consumer
 			// that is failing fast leaves a trail rather than looking like progress.
 			if run != nil && run.err != nil {

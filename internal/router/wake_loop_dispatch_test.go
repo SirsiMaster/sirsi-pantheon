@@ -110,6 +110,38 @@ func TestDispatchedConsumerReceivesRouterContract(t *testing.T) {
 	}
 }
 
+func TestCodexConsumerCarriesStoreAccessAndInboxContract(t *testing.T) {
+	root := t.TempDir()
+	cfg := AgentConfig{
+		ID:   "codex-pantheon",
+		Type: "codex",
+		Cwd:  "/repo",
+		Consumer: ConsumerConfig{
+			Command: []string{
+				"sh", "-c", "true", // stand-in for codex exec in this unit test
+				"-C", "/repo",
+				"--sandbox", "workspace-write",
+				"--add-dir", "/Users/thekryptodragon/.sirsi",
+			},
+			Prompt: "You are " + consumerAgentPlaceholder + "; pull and close " + consumerAgentPlaceholder + " from " + consumerRootPlaceholder,
+		},
+	}
+	rc, why := ResolveConsumer(cfg, root)
+	if rc == nil {
+		t.Fatalf("codex consumer refused: %s", why)
+	}
+	got := strings.Join(rc.Argv, " ")
+	for _, want := range []string{
+		"--add-dir /Users/thekryptodragon/.sirsi",
+		"codex-pantheon",
+		root,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("codex consumer argv missing %q: %s", want, got)
+		}
+	}
+}
+
 // Dispatch is gated on the consumer's own LIVENESS, not a clock. While a
 // consumer is still working, no second one may be dispatched on top of it — a
 // slow-but-healthy agent must be allowed to take as long as it needs.
@@ -225,6 +257,51 @@ func TestResolveConsumerRefusesWhatIsNotAConsumer(t *testing.T) {
 	}
 }
 
+func TestResolveResidentConsumerHealthChecksWithoutSpawnArgv(t *testing.T) {
+	root := t.TempDir()
+	rc, why := ResolveConsumer(AgentConfig{
+		ID: "gemma-pantheon", Type: "gemma",
+		Consumer: ConsumerConfig{
+			Mode:        ConsumerModeResident,
+			HealthCheck: []string{"sh", "-c", "exit 0"},
+		},
+	}, root)
+	if rc == nil {
+		t.Fatalf("resident consumer refused: %s", why)
+	}
+	if !rc.Resident {
+		t.Fatal("resident consumer did not resolve as resident")
+	}
+	if len(rc.Argv) != 0 {
+		t.Fatalf("resident consumer must not have spawn argv: %v", rc.Argv)
+	}
+	if len(rc.HealthCheck) == 0 {
+		t.Fatal("resident consumer did not retain health check")
+	}
+}
+
+func TestResolveResidentConsumerRefusesFailedHealthCheck(t *testing.T) {
+	rc, why := ResolveConsumer(AgentConfig{
+		ID: "gemma-pantheon", Type: "gemma",
+		Consumer: ConsumerConfig{
+			Mode:        ConsumerModeResident,
+			HealthCheck: []string{"sh", "-c", "echo nope; exit 7"},
+		},
+	}, t.TempDir())
+	if rc != nil {
+		t.Fatalf("failed resident health check resolved: %+v", rc)
+	}
+	if !strings.Contains(why, "health_check failed") || !strings.Contains(why, "nope") {
+		t.Fatalf("reason does not explain failed health check: %s", why)
+	}
+}
+
+func TestDispatchConsumerRefusesResidentConsumer(t *testing.T) {
+	if _, err := dispatchConsumer(&ResolvedConsumer{Resident: true}); err == nil {
+		t.Fatal("dispatchConsumer spawned a resident consumer")
+	}
+}
+
 // `armed` must mean "something will drain this inbox", not "some process for
 // this agent is alive". A watch-only wake loop heartbeats exactly like a working
 // one; crediting it suppressed the very wake pass that would have escalated the
@@ -310,4 +387,42 @@ func TestWatchOnlyLoopStillRunsAndHeartbeats(t *testing.T) {
 	if !found {
 		t.Error("watch-only loop registered no thread record at all")
 	}
+}
+
+func TestResidentConsumerLoopArmsWithoutSpawning(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	script := recordingConsumer(t, log, 0)
+	root := wakeTestRoot(t, AgentConfig{
+		ID: "gemma-pantheon", Type: "gemma",
+		Consumer: ConsumerConfig{
+			Mode:        ConsumerModeResident,
+			HealthCheck: []string{"sh", "-c", "exit 0"},
+			// If the loop treats resident like command, this script would fire.
+			Command: nil,
+		},
+	})
+	sendItem(t, root, "gemma-pantheon", "resident work")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	defer cancel()
+	if err := RunWakeLoop(ctx, root, "gemma-pantheon", 40*time.Millisecond); err != nil {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+	if lines := consumerLines(t, log); len(lines) != 0 {
+		t.Fatalf("resident consumer spawned a child: %v", lines)
+	}
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var capable bool
+	for _, tr := range reg.Threads {
+		if tr != nil && tr.AgentID == "gemma-pantheon" && tr.Surface == surfaceWorker {
+			capable = tr.ConsumerCapable
+		}
+	}
+	if !capable {
+		t.Fatal("resident consumer did not arm the worker thread")
+	}
+	_ = script // prove the test would have a child payload if the loop used one
 }

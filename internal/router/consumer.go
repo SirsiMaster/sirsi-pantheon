@@ -22,10 +22,12 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Consumer placeholders substituted into the declared argv/prompt.
@@ -42,6 +44,12 @@ const (
 	EnvConsumerRoot  = "SIRSI_ROUTER_ROOT"
 )
 
+const (
+	ConsumerModeCommand        = "command"
+	ConsumerModeResident       = "resident"
+	consumerHealthCheckTimeout = 5 * time.Second
+)
+
 // ConsumerConfig declares how an agent's router inbox is actually DRAINED.
 //
 // This is deliberately separate from AgentConfig.Command. Command is the
@@ -50,6 +58,12 @@ const (
 // precisely why spawning it drained nothing. A consumer is a COMPLETE, runnable
 // invocation that pulls and works the inbox on its own.
 type ConsumerConfig struct {
+	// Mode selects the consumer contract. Empty means "command" for backwards
+	// compatibility with the first #389 declaration. "resident" means an
+	// already-running worker owns the inbox; the wake loop may mark the lane
+	// consumer-capable after a health check but must never spawn a duplicate.
+	Mode string `json:"mode,omitempty"`
+
 	// Command is the complete argv of the draining invocation. Placeholders
 	// {{agent}} and {{router_root}} are substituted at dispatch.
 	Command []string `json:"command,omitempty"`
@@ -63,13 +77,19 @@ type ConsumerConfig struct {
 	// an error rather than a silent refusal: it means the operator believed they
 	// had configured a consumer when they had configured a session.
 	Interactive bool `json:"interactive,omitempty"`
+
+	// HealthCheck is required for resident consumers. It proves the external
+	// worker surface exists without spawning another copy of it.
+	HealthCheck []string `json:"health_check,omitempty"`
 }
 
 // ResolvedConsumer is a validated, ready-to-dispatch draining invocation.
 type ResolvedConsumer struct {
-	Argv []string
-	Env  []string
-	Cwd  string
+	Argv        []string
+	Env         []string
+	Cwd         string
+	Resident    bool
+	HealthCheck []string
 }
 
 // ResolveConsumer validates cfg's declared consumer and substitutes the router
@@ -79,6 +99,18 @@ type ResolvedConsumer struct {
 // watch-only loop used to hide.
 func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, string) {
 	c := cfg.Consumer
+	mode := strings.TrimSpace(c.Mode)
+	if mode == "" {
+		mode = ConsumerModeCommand
+	}
+	switch mode {
+	case ConsumerModeCommand:
+	case ConsumerModeResident, "external/resident":
+		return resolveResidentConsumer(cfg, routerRoot)
+	default:
+		return nil, fmt.Sprintf("unsupported consumer.mode %q", c.Mode)
+	}
+
 	if len(c.Command) == 0 {
 		return nil, "no consumer declared — set consumer.command to the invocation that pulls and works this inbox " +
 			"(agent.command is the launch command, not a complete draining invocation)"
@@ -125,6 +157,59 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 	}
 
 	return &ResolvedConsumer{Argv: argv, Env: env, Cwd: cfg.Cwd}, ""
+}
+
+func resolveResidentConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, string) {
+	c := cfg.Consumer
+	if len(c.Command) > 0 {
+		return nil, "consumer.mode resident must not declare consumer.command — resident workers are health-checked, not spawned"
+	}
+	if c.Interactive {
+		return nil, "consumer.interactive is set — a REPL is a session, not an inbox consumer"
+	}
+	if len(c.HealthCheck) == 0 {
+		return nil, "consumer.mode resident requires consumer.health_check to prove the external worker is alive"
+	}
+	subst := func(s string) string {
+		s = strings.ReplaceAll(s, consumerAgentPlaceholder, cfg.ID)
+		return strings.ReplaceAll(s, consumerRootPlaceholder, routerRoot)
+	}
+	health := make([]string, 0, len(c.HealthCheck))
+	for _, a := range c.HealthCheck {
+		health = append(health, subst(a))
+	}
+	if _, err := exec.LookPath(health[0]); err != nil {
+		return nil, fmt.Sprintf("resident consumer health_check command %q not found in PATH", health[0])
+	}
+	if err := runConsumerHealthCheck(health); err != nil {
+		return nil, fmt.Sprintf("resident consumer health_check failed: %v", err)
+	}
+	env := append(os.Environ(),
+		EnvConsumerAgent+"="+cfg.ID,
+		EnvConsumerRoot+"="+routerRoot,
+	)
+	for k, v := range cfg.Env {
+		env = append(env, k+"="+v)
+	}
+	return &ResolvedConsumer{Env: env, Cwd: cfg.Cwd, Resident: true, HealthCheck: health}, ""
+}
+
+func runConsumerHealthCheck(argv []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), consumerHealthCheckTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("timed out after %s", consumerHealthCheckTimeout)
+	}
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
 }
 
 // HasConsumerCapability reports whether cfg declares a dispatchable consumer.

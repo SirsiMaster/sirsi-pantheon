@@ -14,6 +14,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-assiduous"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-deck": {
@@ -55,6 +64,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-finalwishes-web": {
@@ -71,6 +89,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-finalwishes-web"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-home": {
@@ -84,6 +111,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-home"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-homebrew-tools": {
@@ -100,6 +136,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-homebrew-tools"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-io": {
@@ -118,6 +163,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-io"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-kfca": {
@@ -135,6 +189,15 @@
           "--version"
         ],
         "launch_agent_label": "ai.sirsi.router.wake.claude-kfca"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-nexus": {
@@ -151,6 +214,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-nexus"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-pantheon": {
@@ -167,6 +239,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-pantheon"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "claude-porch-and-alley": {
@@ -183,6 +264,15 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.claude-porch-and-alley"
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-assiduous": {
@@ -200,6 +290,20 @@
       "workstream": "assiduous-v110-completion",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/assiduous",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-finalwishes": {
@@ -217,6 +321,20 @@
       "workstream": "finalwishes",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/FinalWishes",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-finalwishes-web": {
@@ -234,6 +352,20 @@
       "workstream": "finalwishes-web",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/FinalWishes/web",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-home": {
@@ -246,6 +378,21 @@
       "workstream": "home",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral",
+          "--skip-git-repo-check"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-homebrew": {
@@ -263,6 +410,20 @@
       "workstream": "homebrew",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/homebrew-tools",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-nexus": {
@@ -280,6 +441,20 @@
       "workstream": "nexus",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/SirsiNexusApp",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-pantheon": {
@@ -298,6 +473,20 @@
       "wake": {
         "mechanism": "launchagent",
         "launch_agent_label": "ai.sirsi.router.wake.codex-pantheon"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/sirsi-pantheon",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "codex-porch-and-alley": {
@@ -315,6 +504,20 @@
       "workstream": "porch-and-alley",
       "wake": {
         "mechanism": "none"
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/porch-and-alley",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
       }
     },
     "gemma-pantheon": {
@@ -327,6 +530,13 @@
       "workstream": "pantheon",
       "wake": {
         "mechanism": "cli-spawn",
+        "health_check": [
+          "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh",
+          "--version"
+        ]
+      },
+      "consumer": {
+        "mode": "resident",
         "health_check": [
           "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh",
           "--version"
