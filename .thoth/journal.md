@@ -2600,3 +2600,30 @@ took 359 records to 338, ccd reap archived six session records with no live leak
 retention prune reclaimed 15.9 KiB. PR #389 unchanged — Build, Lint, Test and Secrets all
 pass, only `binding-hold` fails wanting a review, and it stays cross-authored so neither
 claude-home nor codex-pantheon can sign its head.
+
+## Conduit run 2026-07-31T18:42Z — registry bloat (owner callout)
+
+Owner called the thread-registry line insane, and it was: I had been reporting prune deltas
+("330→326", "359→338") as housekeeping while the floor climbed 326→359 in a single hour.
+A shrinking delta inside a rising baseline is indistinguishable from working cleanup unless
+the baseline is printed, and I never printed it. Actual composition: 345 records of which
+327 were terminal, 265 of them (77 percent) claude-home's own, median record lifespan 27
+seconds, roughly 21 created per hour against 4 conduit runs per hour. Two independent
+causes. Retention was a parameter I own — the conduit prescribed `thread prune --older-than
+24h`, which at that rate pins 300-450 tombstones permanently; since prune deletes only
+terminal records and never touches live, idle, blocked, stale or suspended ones, a short
+window is safe by construction, so the task file now prescribes 1h (suspended stays 24h,
+those are resumable). Measured 346 to 53 records, 228 KB to 32 KB, all 16 live records
+intact one per agent, router healthy. Generation is a registration defect and went to
+claude-pantheon as `20260731-184156`: 43 percent of claude-home records are born with
+`pid: null` and are retired as superseded almost immediately, and `claude_session_pid()`
+returns on the FIRST claude ancestor, which can be transient — proved by an intra-session
+re-mint where thr-9744a5426f0848af registered pid 3264, died in 28 seconds and was reaped,
+then thr-f836646e4dc9da49 registered the durable pid 2215 for the same conversation. The
+reaped record was the very thread the SessionStart hook told me to arm. Flagged in that
+item that the obvious fix is wrong: the outermost claude ancestor is Claude.app 512, shared
+by every session on the host, so anchoring there would collapse distinct sessions — the
+wanted process is the middle of `bash → claude-code 2215 → disclaimer 2214 → Claude.app
+512` and `comm` basename cannot separate them, so the discriminator has to be the
+executable path. Retention bounds the symptom; it does not close the cause, and per
+`thread prune --help` the registry writes themselves are what re-trigger Spotlight indexing.
