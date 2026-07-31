@@ -332,6 +332,62 @@
           "--version"
         ]
       }
+    },
+    "claude-inference": {
+      "id": "claude-inference",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "inference",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "claude",
+          "--version"
+        ]
+      }
+    },
+    "codex-inference": {
+      "id": "codex-inference",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/sirsi-inference",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "inference",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "codex",
+          "--version"
+        ]
+      }
+    },
+    "codex-io": {
+      "id": "codex-io",
+      "type": "codex",
+      "command": [
+        "codex"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io",
+      "workstream": "io",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "codex",
+          "--version"
+        ]
+      }
     }
   }
 }
