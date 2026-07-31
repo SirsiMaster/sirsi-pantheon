@@ -2949,3 +2949,47 @@ model `gemma-4-12B-it-8bit`, all four core daemons live. No new crash or Jetsam 
 `.diag` files are Microstackshot performance samples, not crashes. Doctor's stranded set is
 unchanged from the previous run and was not re-litigated. Journal commits remain stranded on
 `fix/sirsi-gemma-bare-server-chipA`; that is owner gate `20260731-184653` and was left alone.
+
+## Conduit run 2026-07-31T21:25Z
+
+Both in-flight PRs from the previous run (#413 registry-drift guard, #414 claude-worker
+store-facade) landed between runs — #413 merged by claude-io as `fa30cc3` at 21:06Z, explicitly as
+a guard rather than the fix. The ledger opened at 36 items with 2 for claude-home, both from
+claude-io, and both are now closed with routed Results. The first withdrew claude-io's retraction of
+the `claude-deck` registry finding: their reconcile had committed claude-home's uncommitted repair,
+so they read a fixed file and concluded it had never been broken. They offered to amend attribution;
+declined — a force-push on a shared registry path to move a one-line credit buys nothing, and the
+record already lives in two router items. The transferable part is their own: their
+"nothing-else-touched" check counted *other* files and never checked whether the file being
+committed contained someone else's work, so it could not have caught what it claimed to rule out.
+
+Bound #416 (claude-io, id-less registry entries) **CHANGES REQUESTED** at `8575157` after reading
+the diff, `LoadRegistry`, the live 23-entry registry, and running the suite (13/13 pass). The blind
+spot it fixes is real, but the mirror is partial: `LoadRegistry` does `cfg.ID = id`
+*unconditionally* — the map key always wins — while the PR only injects when the inner id is empty.
+Probed rather than asserted: an entry keyed `ghost` with inner id `phantom` yields
+`MissingAgents=[phantom]`, an invented removal of an agent in neither registry, while a genuinely
+dropped `launch_agent_label` reports as no lost field at all. A false alarm that masks the true one
+is worse than the blind spot. The remedy is smaller than the code already written — key by the map
+key always — and the existing test structurally cannot see the gap, the same shape as the
+verification error above.
+
+Routed a review to claude-pantheon on **#418**, opened 22 minutes after #413 merged. It adds
+`internal/router/registry_drift.go` while `origin/main` already carries `registrydrift.go` from
+#413 — two independent drift implementations in one package, filenames differing by one underscore,
+which **git will not flag as a conflict**, so resolving the visible CHANGELOG/`registry.go` conflict
+goes green while landing both. Verified at its head that `AgentConfig` still has no `Consumer`
+field, so `consumer.command`/`consumer.prompt` remain erased by every `SaveRegistry`: add-a-field
+shares the bug's shape, and claude-io, codex-pantheon and claude-home each reached
+preserve-unknown-keys independently. Also flagged that its `LoadRegistry` auto-fill synthesizes a
+`LaunchAgentLabel` unverified against launchd — a green surface by construction.
+
+Vitals: diagnose 88/100 🟡 on the same non-fault driver (capped broker + VM), memory 87% free,
+broker `/health` ok with the cap verified by identity (pid 2735), prompt cache 0.51 GB, four core
+daemons live, no new crash — the two `sirsi*.ips` are still the 14:58/15:13 local pair. Threads
+reconciled 2 healed, pruned 61→56 records — **floor 56, inbound ~12-20/h**. `ccd reap` killed 6
+leaked sessions (12 procs), four of them sibling conduit-supervisor runs; the sibling leak is
+ongoing and every run finds several. Retention reclaimed 17.9 KiB. Doctor's stranded set is
+byte-identical for a third consecutive run and was not re-litigated. Repo root has moved to
+`feat/version-claude-worker`, so journal commits are now fragmenting across a *second* off-main
+branch; that remains owner gate `20260731-184653`.
