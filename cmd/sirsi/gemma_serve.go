@@ -350,6 +350,32 @@ func gemmaServerBase(home string) string {
 	return ""
 }
 
+// gemmaServedModelID asks the broker what it ACTUALLY serves. Empty on any
+// failure. This is the ground truth the DIFFERENT-model diagnosis must consult
+// before it speaks: the broker naming what it loaded is evidence, a guess from
+// a failed completion is not (router item: budget truncation reported as a
+// false DIFFERENT-model error).
+func gemmaServedModelID(base string) string {
+	cl := &http.Client{Timeout: 3 * time.Second}
+	resp, err := cl.Get(base + "/v1/models")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&out) != nil || len(out.Data) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(out.Data[0].ID)
+}
+
 func gemmaServerPing(base string) bool {
 	cl := &http.Client{Timeout: 2 * time.Second}
 	resp, err := cl.Get(base + "/v1/models")
