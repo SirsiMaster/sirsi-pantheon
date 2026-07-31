@@ -40,13 +40,14 @@ type AgentConfig struct {
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
 type WakeConfig struct {
-	Mechanism   string            `json:"mechanism,omitempty"`
-	Endpoint    string            `json:"endpoint,omitempty"`
-	Auth        string            `json:"auth,omitempty"`
-	MCPServer   string            `json:"mcp_server,omitempty"`
-	HealthCheck []string          `json:"health_check,omitempty"`
-	AuthCheck   []string          `json:"auth_check,omitempty"`
-	Hooks       map[string]string `json:"hooks,omitempty"`
+	Mechanism        string            `json:"mechanism,omitempty"`
+	Endpoint         string            `json:"endpoint,omitempty"`
+	Auth             string            `json:"auth,omitempty"`
+	MCPServer        string            `json:"mcp_server,omitempty"`
+	HealthCheck      []string          `json:"health_check,omitempty"`
+	AuthCheck        []string          `json:"auth_check,omitempty"`
+	Hooks            map[string]string `json:"hooks,omitempty"`
+	LaunchAgentLabel string            `json:"launch_agent_label,omitempty"`
 }
 
 // Registry holds all registered agent configurations.
@@ -156,6 +157,8 @@ func (cfg *AgentConfig) Validate() error {
 		if cfg.Wake.MCPServer == "" {
 			return fmt.Errorf("agent %q: wake.mcp_server is required for mcp-notification", cfg.ID)
 		}
+	case WakeNone:
+		// explicit opt-out: agent cannot be auto-woken, operator must start it manually
 	default:
 		return fmt.Errorf("agent %q: unsupported wake mechanism %q", cfg.ID, cfg.Wake.Mechanism)
 	}
