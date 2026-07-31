@@ -8,7 +8,7 @@ import "testing"
 // field whose earlier absence caused peers to be told a live agent was
 // unreachable.
 //
-// Each case is written against BEHAVIOUR rather than wording, so a copy edit
+// Each case is written against BEHAVIOR rather than wording, so a copy edit
 // does not fail them but deleting the detection does.
 
 const upstream = `[
