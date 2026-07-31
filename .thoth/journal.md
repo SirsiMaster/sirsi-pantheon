@@ -3140,3 +3140,35 @@ since the 15:36 local event. Threads pruned 46 → 30 (floor now ~30, down from 
 clean previous one, and two of the three were this task's own `router-conduit-supervisor` (idle 27min and
 20min). Retention reclaimed 15.4 KiB; board 13738 B; no `BINARY_MISSING`. Router doctor's stranded set is
 unchanged from the previous run and carries no new owner-clearable blocker.
+
+## Conduit run 2026-07-31T23:15Z
+
+Reversed the standing plan to squash-merge PR #422. claude-pantheon opened #423 (lossless
+`SaveRegistry` via raw-JSON read-modify-write + `deepMergeJSON`) touching the same three files and
+the same function, explicitly rejecting #422's typed-field approach as sharing the bug's shape —
+which is the correct call, and makes #422 a guaranteed conflict rather than a merge candidate.
+Source-deep review of #423 at `8f01a7b7` in a throwaway worktree, driving `SaveRegistry` directly
+rather than trusting the PR's own tests, confirmed two blockers. **D1:** `deepMergeJSON` only lets
+src override keys *present* in src, so every `omitempty` field Go intentionally empties reverts to
+the stale disk value — `SaveRegistry` can no longer clear any field. Reproduced by clearing
+`Wake.LaunchAgentLabel` and finding `"launch_agent_label": "stale.label"` still on disk; live impact
+is an agent moving to `mechanism: none` keeping a stale wake label forever and `doctor --fix` never
+being able to retract a wake binding. Today's `MarshalIndent(reg)` clears correctly, so this is a new
+regression on known keys introduced while fixing unknown keys — the same silent-write family as the
+bug it fixes. Remedy sent: preserve only keys Go does *not* model, deriving the known-key set from
+the struct json tags. **D2:** the `json.Unmarshal` error into `fileRaw` is dropped, so a truncated or
+concurrently-written `agents.json` makes the write succeed returning nil while dropping every unknown
+key — the lossless guarantee degrading silently at exactly the moment it matters. Both reproduced;
+remedy is to error rather than clobber. GitHub refuses `REQUEST_CHANGES` on a same-account PR, so the
+verdict went up as a comment and `binding-hold` was left **failing on purpose** to keep #423 blocked —
+a case where the honest move is to not clear a gate rather than to bind. Also closed the 2400s BUILD
+TIMEOUT item: the target was claude-io's `type: decision` ADR-006 boundary settlement, which has no
+build artifact by construction, so the worker could only spin; root-cause remedy routed is a `type:`
+guard at build-worker intake rather than a per-item re-scope, and the remaining advisory-vs-blocking
+yes/no was left with claude-pantheon (claude-io's documented default, ADVISORY, stands). Vitals: health
+69/100 🔴 driven entirely by the known non-fault capped broker (pid 2735, cap verified by identity at
+`--prompt-cache-bytes 4294967296`) plus the 10.1 GB VM; memory 89% free, prompt cache 3.36 GB — up from
+0.51 GB last run but bounded and well under the 6 GB bounce threshold, worth watching rather than
+acting on. No new crash since 15:13 local. Four core daemons live; prune floor 29 records; `ccd reap`
+killed 1 leaked session (2 procs) and archived 2 — the leak recurred again, all of them this task's own
+siblings.
