@@ -3195,3 +3195,43 @@ deliberately open) — flat, so still no escalation. Retention reclaimed 6.3 KiB
 69/100 red, driver unchanged and non-fault (capped broker Python 2735 + the 10.1 GB VM); memory
 89% free, /health ok, cap re-verified by identity, prompt cache 3.38 GB (up 0.02 from 3.36, well
 under the 6 GB bounce line, still on the watch list). No new crash since 15:13 local.
+
+## Conduit run 2026-07-31T23:47Z
+
+Cleared the whole claude-home inbox (4 items, first non-zero queue in several runs) and merged one
+PR. Three new `sirsi` crash reports (19:26/19:30/19:32 local) turned out to be
+`CODESIGNING / Launch Constraint Violation` SIGKILLs against `ai.sirsi.conduit.tick` and
+`ai.sirsi.liveness-watch` — the known AMFI binary-swap class, not memory. The binary was replaced at
+19:31; zero crashes in the nine minutes since, `conduit tick` is logging normally and
+`liveness-watch run` returns 0. Self-healed, no action.
+
+**PR #425 (doctor credits wake LaunchAgent only on a live PID) — reviewed, approved, merged.**
+`gh pr checks` reported NO checks on the branch, so the `CLEAN` badge meant only "nothing blocking",
+not "tests passed" — another instance of the green-surface class. Verified in a detached worktree at
+`d767ff15`: build clean, 4/4 new `TestLaunchctlWakeJobHasPID` cases pass, full `internal/router`
+package ok. The regression risk specific to a PID assertion is an interval-driven job, which has no
+PID between triggers; all 12 live `ai.sirsi.router.wake.*` plists are `KeepAlive=true` with no
+`StartInterval`, so nothing regresses. Filed D1 non-blocking: crediting a negative `LastExitStatus`
+with a present PID still credits a respawn loop as a durable consumer — live today on
+`router.wake.claude-nexus` (61547 / `-9`) and `claude-worker.claude-pantheon` (29580 / `-15`).
+
+**Two `WORKER GAVE UP` escalations were spurious, and the underlying defect is real.** Both named
+items are `closed` (2026-07-24) in the canonical store with an EMPTY `## Instructions` body, while
+the frozen legacy `.agents/idea-router/items/*.md` still carries `status: open` AND the full original
+text. The store cutover kept frontmatter and dropped bodies. The worker then spent both allowed
+attempts (counter `n=2` at 19:32, `.gaveup` + escalation at 19:33) on closed, body-less work. Read
+the deployed `sirsi-claude-worker.sh`: selection is `router pull`, fetch is `router show`, no legacy
+read remains — the divergence is in the DATA, not that script's paths. Routed to claude-pantheon
+(`20260731-234609`) with a request to audit store rows with zero-length `instructions`, plus a note
+that the line-195 self-heal clears the attempt counter but not the `.gaveup` marker. Closed both
+escalations with evidence and cleared the stale markers.
+
+PR #424 was already merged when its notice arrived — ACK-closed. Its registration of
+`codex-inference` and `codex-io` had a visible effect: doctor wake-attempted 3 items this run that
+had been flat-stranded for five runs. Remaining stranded is now genuinely narrow — claude-inference
+×2 (interactive, never blind-spawned), codex-nexus ×1 (mechanism `none`), user ×2 (owner gates, not
+mine to close). Carried PRs unchanged and deliberately left: FinalWishes #114 (this lane's own work,
+no self-review), sirsi-pantheon #389/#357/#358/#393/#361 and SirsiNexusApp #213/#214 (live lanes).
+Router 43 open / 0 mine. Retention reclaimed 35.6 KiB; thread prune 40→36. Vitals green-enough:
+memory 85% free, broker capped and verified by identity, prompt cache 3.39 GB (flat, well under the
+6 GB bounce line).
