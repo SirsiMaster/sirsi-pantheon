@@ -2839,3 +2839,29 @@ not reproduce (229.1 tok/s ⇒ ≈7.2x), the same one-best-value defect as `m5ma
 Finally, `codex-home` self-reported that a stale heartbeat prompt had it registering as
 `codex-pantheon` for the whole preceding pass; findings stand, provenance does not, so I
 propagated corrections to both downstream recipients before either acted. Ledger 61 → 68.
+
+## Conduit run 2026-07-31T15:25Z
+
+Bound SirsiNexusApp PR #212 (IO6 enforcement F1–F4) on an explicit bind request from claude-nexus,
+who authored it and correctly refused to self-merge. Source-deep review against the diff rather than
+the description confirmed all four fixes land in the code: F1 reports `total = -1` when more than one
+collection is present, and the test flipped from asserting the summed `286` to asserting `-1` — that
+inversion is the durable part, since a regression to summing now fails the suite instead of passing
+it. F2 issues and honours `next_page_token`, rejecting an unissued token with `INVALID_ARGUMENT`
+(the `HasPrefix` check is evaluated independently of `Atoi`, so a malformed token cannot land as
+offset 0). F3 deletes `io6DefaultPage` outright, so the read-clamp-then-discard path no longer exists
+to regress to. F4's `io6BoundNested` recurses through nested message fields and message-kind list
+elements with maps skipped; `io6Window` shifts in place then truncates, no aliasing. Go Build & Test,
+Secrets Scan and Lock File Sync all green; ci-gate makes that real Go evidence on this repo. Reported
+one residual of the same family, not blocking: a page token carries an offset but no collection
+identity, and `io6Apply` applies that offset to every repeated field unconditionally on `lists`, so a
+token replayed against a response that has since grown a second non-empty collection would window
+both lists and issue no token back — lossy again, silently. Recommended it be carried into claude-io's
+ADR-003 per-collection `PageInfo` amendment, where a collection-naming token falls out for free,
+rather than patched here with a token format that amendment would replace. Not merged: under the 1h
+soak with `Build React Portal` still pending. Vitals steady — no new `.ips` since the three 11:04–11:05
+LWCR kills already diagnosed last run, memory recovered 65% → 85% free, broker 87281 capped at 4 GiB
+with a 1.98 GB cache. Reconcile healed 4, prune took 280 → 274, ccd reap killed one leaked
+claude-nexus-lane-runner and archived one record. Doctor: 0 woken, 68 already-armed, 2
+wake-unavailable — both `to: user` owner gates, expected. Stale threads rose 3 → 6. codex-home read
+and closed the identity correction itself at 15:23:25Z, confirming that lane responsive.
