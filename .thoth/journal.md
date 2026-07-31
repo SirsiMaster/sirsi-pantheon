@@ -2753,3 +2753,27 @@ The earlier Claude wake activation remains valid evidence, but at this later che
 ## Conduit run 2026-07-31T19:27Z
 
 All-green vitals (health 88/100, sole signal the capped Gemma broker at 8.5 GB against its 22.3 GB cap; memory 86% free; no new crash/Jetsam — newest .ips is 15:13, inside the already-healed AMFI wave). All four core daemons verified per-label with live PIDs; broker /health ok and bounded by IDENTITY with --prompt-cache-bytes 4294967296, cache 1.26 GB. Worked both claude-home items rather than deferring them. Bound sirsi-inference PR #1 SOUND as an independent reviewer (claude-nexus authored it): re-derived the certify() truth table against the expression it replaces, confirmed the pointer-receiver mutation lands before the append so the JSON field and the console line cannot drift, and verified at source the one judgement call — harness.go writes the report exactly once after both loops close, so a killed run writes no file and a complete:true field would describe an impossible failure mode. Upgraded the author own CI caveat from a maybe to a fact: the repo has total_count 0 self-hosted runners registered, so the gates check will stay pending forever — a dead gate, not a slow run — and I bound the review without merging a PR whose gate has never run. Answered claude-io ADR-006 explicitly with (a) advisory rather than letting silence elect the default, accepted the moves-an-item-is-transport verb line, and confirmed that record retention (the conduit-cleanup concern) stays transport and is NOT closed by that ADR. Housekeeping: thread prune 114 -> 96 records (floor ~96, minting still ~19/20min, already routed to claude-pantheon — not re-raised), reconcile healed 4, ccd reap killed 3 leaked prior runs of this task and archived 2 records, retention prune reclaimed 20.1 KiB, board republished. PRs otherwise unchanged and none mergeable by me.
+
+## Conduit run 2026-07-31T19:45Z
+
+All-green with one investigated non-event. A JetsamEvent landed at 19:36Z — eight minutes
+after the previous run closed, so it was genuinely new — but parsing the victim list rather
+than trusting the filename showed the only kill was `spotlightknowledged.updater` at 32 MB
+against its own `per-process-limit`, not system pressure. The Gemma broker survived as
+largest process at 16.49 GB, comfortably inside its 22.3 GB cap, so this was not a P0 and no
+forensics were routed. Broker health verified by identity (PID 2735 carries
+`--prompt-cache-bytes 4294967296`), prompt cache flat at 1.26 GB across three consecutive log
+lines, resolver still electing `gemma-4-12B-it-8bit`. Health 94/100, memory 86% free, all four
+core daemons live with matching argv. Thread hygiene: reconcile healed 7 reaped→successor
+records, prune at the 1h window took the registry 104 → 85, so the floor improved 96 → 85
+versus last run while the mint rate held near 15 records per 20 minutes — the cause is already
+routed to claude-pantheon and was not re-raised. `ccd reap --apply` killed one leaked prior run
+of this same task and archived two completed session records. Router: 17 open, none addressed
+to claude-home, both queues empty on pull, and the response audit came back clean — last run's
+two replies to claude-io and claude-nexus are both present as fresh inbound at the recipients.
+Three ⚠️ stale-active threads were left deliberately: both `gemma` records map to provably live
+processes, and `codex-nexus` exposes no PID to verify, so suspending any of them would have been
+inference rather than evidence. PR set unchanged; nothing mergeable by me. Retention reclaimed
+12.5 KiB. The off-main journal history is now 28 commits ahead of origin/main with 126
+uncommitted stranded files — both already covered by open owner gate 20260731-184653, not
+re-escalated.
