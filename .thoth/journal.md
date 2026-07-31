@@ -2690,3 +2690,52 @@ conduit. Worth noting for the next run that `--all` against a queue this size ma
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
+
+## Conduit run 2026-07-31T19:07Z
+
+P0 of the run was a **code-signing SIGKILL wave, now self-cleared**. The `sirsi` binary at
+`~/.local/bin/sirsi` was replaced at **14:50:05 EDT** (inode 300890278, mtime unchanged since),
+and every launchd unit that exec'd it in the following minutes was killed by AMFI with
+`EXC_CRASH / SIGKILL (Code Signature Invalid)`, termination namespace `CODESIGNING`, indicator
+`Launch Constraint Violation`. Three units took the hit: `ai.sirsi.conduit.tick` (14:50:40),
+`ai.sirsi.liveness-watch` (14:53:36), and `ai.sirsi.router.wake.claude-nexus` (LastExitStatus 9).
+This is a recurrence of the archived "AMFI cp SIGKILL" class. The trap is that `codesign -v -vvv`
+reports **"valid on disk / satisfies its Designated Requirement", exit 0** the whole time — it
+re-hashes the file, while AMFI consults the kernel's cached signing state for the vnode
+established at first map. The on-disk badge is green over a dead thing; only an actual `exec()`
+is evidence. Verified by kickstarting both units and counting `.ips` files before/after: **no new
+crash reports**, `liveness-watch` exit status moved `-9 → 0`, and `wake.claude-nexus` respawned on
+its own to PID 61547. A follow-on `router doctor --fix` confirmed claude-nexus is no longer
+stranded — its 2 items moved from wake-unavailable to heartbeat-armed (armed 5 → 8,
+unavailable 6 → 4). No fix was applied; the condition aged out of the AMFI cache. Nothing to route.
+
+Secondary correction worth recording: `launchctl list | grep sirsi` printed a **stale PID** for
+`wake.claude-nexus` (1332, since dead) while the per-label `launchctl list <label>` query showed
+no PID key at all and `LastExitStatus = 9`. Rather than checking only the label the doctor named,
+the whole fleet was swept by discovery (listed PID vs `ps -p` liveness vs LastExitStatus) — all
+23 `ai.sirsi.*` labels resolve to live PIDs, so the fleet is healthy and the single stale line was
+a listing artifact, not a dead lane.
+
+Registry floor, reported as a level and not a delta: `thread prune --older-than 1h
+--suspended-older-than 24h` accounted **88 → 88 records, 0 pruned** — every terminal record is
+younger than the window. Floor trend across runs is **58 → 73 → 88, roughly +15/run**, so the 1h
+window remains correct but is still not reclaiming; the root cause is minting, already routed to
+claude-pantheon (`20260731-184156`), deliberately not re-raised. Note `sirsi thread list` renders
+only **22** records against prune's authoritative 88 — the two disagree, and the 88 is the real
+floor. `reconcile` healed 6 reaped→successor records (down from 11 last run) and still warns 124
+uncommitted files stranded and unadopted (standing, owner-adopt). `ccd reap --apply` killed 1
+completed-leak session (pid 5058, a prior run of this same supervisor task); 0 archived.
+
+Vitals otherwise green: `diagnose` **94/100 🟡**, sole signal "Python at 13.9 GB" = the capped
+gemma broker against its 22.3 GB cap, expected. Memory **89% free**. Broker `/health` ok with
+`--prompt-cache-bytes 4294967296` verified **by identity** (not pidfile name), prompt cache
+**1.32 GB**, well under the 6 GB balloon threshold; resolver → `gemma-4-12B-it-8bit`. No
+`BINARY_MISSING` sentinels. Queues: **16 open, 0 for claude-home** (down from 19) — both
+`router pull claude-home` and `router pull claude-codex-standin` returned empty, so no items were
+worked and no responses were owed. Gemma `--all` triage was skipped by design: 0 items are mine and
+16 items would again overrun the 15-minute cadence. Retention prune reclaimed 11.8 KiB. Repo root
+is still parked on `fix/sirsi-gemma-bare-server-chipA`, now **26 commits ahead of origin/main**
+(was 24) — already escalated to the owner as `20260731-184653`, not re-escalated, count noted as
+climbing per instruction. No PR was mergeable by this agent: pantheon #389 is cross-authored so
+neither this agent nor codex-pantheon can sign the head, #357/#358 belong to their lane agents,
+#393/#361 are drafts, and FinalWishes #114 is this agent's own work (no self-review).
