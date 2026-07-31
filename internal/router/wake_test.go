@@ -576,3 +576,82 @@ func TestCutoverReadersFailClosed(t *testing.T) {
 		t.Errorf("pre-cutover OpenItems = %+v, want the one legacy file item", items)
 	}
 }
+
+// ── TestLaunchctlWakeJobHasPID ───────────────────────────────────────────────
+//
+// These tests verify that LaunchctlWakeJobHasPID asserts on a live PID, not on
+// load state. The critical case is a fixture whose `launchctl list` exits 0 (the
+// label is loaded) but contains no "PID" line — this MUST still return false, so
+// a crashed/exited wake job does not clear the loop-dead verdict (PR #415 review).
+
+func TestLaunchctlWakeJobHasPID_RunningJobReturnsTrue(t *testing.T) {
+	old := getLaunchctlListOutput()
+	setLaunchctlListOutput(func(label string) ([]byte, error) {
+		// Simulate `launchctl list ai.sirsi.router.wake.claude-io` for a running job.
+		return []byte(`{
+	"Label" = "ai.sirsi.router.wake.claude-io";
+	"OnDemand" = false;
+	"LastExitStatus" = 0;
+	"PID" = 5763;
+};`), nil
+	})
+	t.Cleanup(func() { setLaunchctlListOutput(old) })
+
+	if !LaunchctlWakeJobHasPID("ai.sirsi.router.wake.claude-io") {
+		t.Error("LaunchctlWakeJobHasPID = false for a job with a live PID, want true")
+	}
+}
+
+// TestLaunchctlWakeJobHasPID_LoadedButNoPID is the regression guard for the PR
+// #415 defect: a loaded-but-not-running job (PID absent, LastExitStatus nonzero)
+// must NOT clear the loop-dead verdict. The old implementation used exit status
+// only, so it returned "loaded == armed" — this test fails on that shape.
+func TestLaunchctlWakeJobHasPID_LoadedButNoPID(t *testing.T) {
+	old := getLaunchctlListOutput()
+	setLaunchctlListOutput(func(label string) ([]byte, error) {
+		// Simulate a crashed wake job: label is registered (exit 0), no PID.
+		// Real example: ai.sirsi.hypergraph.digest — LastExitStatus=256, no PID.
+		return []byte(`{
+	"Label" = "ai.sirsi.router.wake.claude-nexus";
+	"OnDemand" = false;
+	"LastExitStatus" = 256;
+};`), nil
+	})
+	t.Cleanup(func() { setLaunchctlListOutput(old) })
+
+	if LaunchctlWakeJobHasPID("ai.sirsi.router.wake.claude-nexus") {
+		t.Error("LaunchctlWakeJobHasPID = true for a loaded-but-not-running job (no PID field), want false — the old exit-status-only check had this bug")
+	}
+}
+
+func TestLaunchctlWakeJobHasPID_SIGTERM_LoopReturnsTrue(t *testing.T) {
+	old := getLaunchctlListOutput()
+	setLaunchctlListOutput(func(label string) ([]byte, error) {
+		// SIGTERM crash-loop: LastExitStatus=-15 but PID is still present (launchd
+		// is actively respawning it). Credit as armed — it has a live consumer.
+		return []byte(`{
+	"Label" = "ai.sirsi.claude-worker.claude-pantheon";
+	"OnDemand" = false;
+	"LastExitStatus" = -15;
+	"PID" = 9812;
+};`), nil
+	})
+	t.Cleanup(func() { setLaunchctlListOutput(old) })
+
+	if !LaunchctlWakeJobHasPID("ai.sirsi.claude-worker.claude-pantheon") {
+		t.Error("LaunchctlWakeJobHasPID = false for a SIGTERM-looping job that still has a PID, want true")
+	}
+}
+
+func TestLaunchctlWakeJobHasPID_NotLoaded(t *testing.T) {
+	old := getLaunchctlListOutput()
+	setLaunchctlListOutput(func(label string) ([]byte, error) {
+		// Label not known to launchd — launchctl list exits nonzero.
+		return nil, fmt.Errorf("launchctl list: exit status 113")
+	})
+	t.Cleanup(func() { setLaunchctlListOutput(old) })
+
+	if LaunchctlWakeJobHasPID("ai.sirsi.router.wake.ghost-agent") {
+		t.Error("LaunchctlWakeJobHasPID = true for an unknown label, want false")
+	}
+}
