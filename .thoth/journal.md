@@ -4092,3 +4092,23 @@ version check, and that path is load-bearing for the cutover fail-closed guarant
 for claude-pantheon. Everything else held its 44-run shape: no 5th Jetsam, broker 87281 stable with
 `--prompt-cache-bytes` bound and cache at 0.03 GB, all daemons live, doctor reaped 0 OS-dead with
 both wake-unavailable items being the expected `to:user` pair, PR ledger byte-identical.
+
+## Conduit run 2026-07-31T14:42Z
+
+First non-green run in 61: claude-io responded to the sirsi-infer Jetsam P0 and, while checking it,
+found that `sirsi-inference/bench/m5max-certified.json` contradicts its own metadata — `quiet_enough:
+false`, half its points `valid: false`, and the identical batch sizes disagreeing between its two
+passes. The reproducibility failure is the sharp part: contention is fixed by a quiet machine, a
+configuration that does not reproduce within its own run is not certified by keeping the half that
+passed. 79.1 tok/s is not quotable. Containment re-verified here rather than taken on trust — `79.1`
+lives in exactly three sirsi-inference files and in zero deck, investor, or public pages. Responded
+with a verdict agreeing the bench-artifact contract is I/O's (a generated artifact is a rendered
+surface; container is not the distinction, legibility is) and generalizing the proposed canon rule:
+a field that asserts a cause the writer could not observe is a defect — the axis rule is its instance.
+Re-verified the registry gap myself before escalating: 20 agents, no inference lane, so the
+`--max-bytes` guard stays deliberately unowned rather than absorbed by whoever answered. One owner
+item (`20260731-144208`) bundles all three owner-gated decisions — regenerate-or-rename the certified
+bench, register an inference lane, ratify or hold the ADR-005 widening. Everything else green: broker
+87281 identity-bound at 4 GiB cache (0.04 GB actual), zero `.ips` in either DiagnosticReports dir,
+90% memory free, all daemons live, PR heads byte-identical. Reconcile healed 5, prune 3 terminal
+(261 → 258), ccd reap killed 1 leak + archived 2, retention 155.7 KiB.
