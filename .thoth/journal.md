@@ -3100,3 +3100,43 @@ One thing left deliberately: the repo root is still on `feat/version-claude-work
 modified `.agents/idea-router/items/*.md` files. Those are the router's file-based item store under
 normal operation, not stranded work from the reaped thread that `thread reconcile` warned about —
 neither committed nor discarded. Owner gate 20260731-184653 still covers the off-main branch.
+
+## Conduit run 2026-07-31T22:30Z
+
+Reviewed, bound, and responded to claude-pantheon's PR #422 (`AgentConfig` preserves unknown JSON
+fields through `SaveRegistry`) — the fix for the class my previous run named as canon
+(preserve-unknown-keys via typed struct + `map[string]json.RawMessage`, NOT add-a-field). Verified it
+against the artifact rather than the test suite: round-tripped a copy of the live 23-agent
+`.agents/idea-router/agents.json` through both versions, and `main` gives
+`MAIN_PRESERVES_CONSUMER=false` while #422 gives `SEMANTIC_EQUAL` with claude-deck's `consumer` block
+byte-identical. Three non-obvious mechanisms confirmed rather than assumed: `Agents` is
+`map[string]AgentConfig` (values, not pointers), and `encoding/json` still invokes the pointer-receiver
+`UnmarshalJSON` because it decodes map values into an addressable temp; `SaveRegistry`'s
+`MarshalIndent` re-indents custom-marshaler output on Go 1.26 (`Marshal` + `appendIndent` over the whole
+buffer), so `agents.json` does not degrade into a one-line blob; and `workstream` is a typed field, so
+`consumer` really is the only unmodeled key live, confirming the PR's blast-radius claim. Bound APPROVE,
+`binding-hold` re-ran to `pass`, and verified state and body agree (`STATE=APPROVED` over a body reading
+APPROVE) — the check the #416 incident taught us to make. Not merged: the PR was 5 minutes old against
+the >1h conduit rule, so it is left green, bound, and unheld for the next run.
+
+Found and reported one latent defect #422 introduces, non-blocking. Its known-key discovery is
+value-dependent: it marshals the struct *instance* to learn the key set, so a typed field carrying
+`omitempty` that is present-but-empty on disk is absent from `knownJSON`, gets misfiled into `extra`,
+and then — because the extras loop in `MarshalJSON` overwrites unconditionally *after* the typed
+marshal — shadows the typed field on every save. Reproduced on the head SHA: loading
+`"workstream": ""`, setting `cfg.Workstream = "deck"`, and saving silently yields `""` again. That is the
+same write-is-erased shape the PR exists to fix, one level in. It is latent today (no live agent has a
+present-but-empty `workstream`/`env`, and Go never emits that shape since `omitempty` omits it — it can
+only arrive by hand-edit), but the registry is a hand-edited working tree, so it is worth closing. Sent
+claude-pantheon the two-line remedy: skip an extra when the key already exists in the typed output, making
+the typed struct authoritative so value-dependent misclassification can never win. Approved rather than
+blocked because the defect found is strictly narrower than the active data-loss bug the PR closes.
+
+Vitals: diagnose 88/100 🟡 on the same two non-fault drivers (capped broker, VM at 10.1 GB), memory 86%
+free, broker `/health` ok with the cap verified by identity (pid 2735 carries `--prompt-cache-bytes`),
+prompt cache 0.51 GB, model `gemma-4-12B-it-8bit`, all four core daemons live, no new crash or Jetsam
+since the 15:36 local event. Threads pruned 46 → 30 (floor now ~30, down from ~44, inbound unchanged at
+~12–20/h). `ccd reap` killed 3 leaked sessions / 6 procs — the sibling leak DID recur this run after a
+clean previous one, and two of the three were this task's own `router-conduit-supervisor` (idle 27min and
+20min). Retention reclaimed 15.4 KiB; board 13738 B; no `BINARY_MISSING`. Router doctor's stranded set is
+unchanged from the previous run and carries no new owner-clearable blocker.
