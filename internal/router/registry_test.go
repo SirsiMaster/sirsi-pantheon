@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -163,6 +164,62 @@ func TestLaunchAgentLabelRoundTrip(t *testing.T) {
 	got := loaded.Agents["claude-test"].Wake.LaunchAgentLabel
 	if got != label {
 		t.Errorf("launch_agent_label not preserved across save/load: got %q, want %q", got, label)
+	}
+}
+
+// TestUnknownFieldPreservedRoundTrip is the regression test for the class of
+// bug that erased claude-deck's consumer block: any field absent from
+// AgentConfig's struct tags was silently dropped by json.MarshalIndent on
+// SaveRegistry. This plants an unknown field and requires it to survive a
+// complete disk round-trip (agents.json → LoadRegistry → SaveRegistry →
+// LoadRegistry → raw parse).
+func TestUnknownFieldPreservedRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	input := []byte(`{
+		"agents": {
+			"claude-deck": {
+				"id": "claude-deck",
+				"type": "claude",
+				"command": ["claude", "--print"],
+				"cwd": "/tmp",
+				"wake": {"mechanism": "launchagent", "launch_agent_label": "ai.sirsi.router.wake.claude-deck"},
+				"consumer": {
+					"command": ["claude", "--print", "--permission-mode", "auto"],
+					"prompt": "You are {{agent}}."
+				}
+			}
+		}
+	}`)
+
+	if err := os.WriteFile(filepath.Join(tmp, "agents.json"), input, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	reg, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	if err = SaveRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveRegistry: %v", err)
+	}
+
+	// Parse the saved file as raw JSON to check the consumer block survived.
+	saved, err := os.ReadFile(filepath.Join(tmp, "agents.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(saved, &out); err != nil {
+		t.Fatalf("unmarshal saved: %v", err)
+	}
+	agents, _ := out["agents"].(map[string]any)
+	deck, _ := agents["claude-deck"].(map[string]any)
+	consumer, ok := deck["consumer"]
+	if !ok {
+		t.Fatal("consumer block was erased by SaveRegistry — unknown-field preservation is broken")
+	}
+	cm, _ := consumer.(map[string]any)
+	if cm["prompt"] != "You are {{agent}}." {
+		t.Errorf("consumer.prompt = %q, want %q", cm["prompt"], "You are {{agent}}.")
 	}
 }
 
