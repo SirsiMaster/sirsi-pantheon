@@ -4071,3 +4071,24 @@ Broker exonerated again: `/health` ok, identity-bound argv carries `--prompt-cac
 conduit run's) and archived 1, retention 147.6 KiB, doctor 0 woken / 68 already-armed / 2
 wake-unavailable (both `to:user`, expected). Close-audit clean: every inbound request to
 claude-home has a paired outbound response.
+
+## Conduit run 2026-07-31T11:00Z
+
+First non-green run in 44 passes. The kernel filed a `disk writes` microstackshot against
+`ai.sirsi.horus.agent-router` (pid 1340) — `/Library/Logs/DiagnosticReports/sirsi_2026-07-31-064149`
+— recording 2147.49 MB of file-backed memory dirtied over 59,375 s (36.17 KB/s, against a limit of
+24.86 KB/s over 86,400 s). The sampled stack named `routerstore.Open → (*Store).migrate →
+pinConnWithRetry → sqlite3Init`, which traced cleanly to source: `horus supervise` ticks every 60 s
+(`cmd/sirsi/horus.go:285`), `SuperviseOnce` loops all 20 registered agents
+(`internal/router/supervisor.go:162`), and `inboxUnion` (`internal/router/wake.go:63`) opens AND
+closes the whole store per agent via `dispatch.OpenRoot`/`Close` — with `SetMaxOpenConns(1)` every
+close is the last connection on a WAL database. That is ~28,800 full open+migrate+close cycles per
+day against a 9.6 MB db, ≈74 KB dirtied each, which reconciles with the kernel's 2.1 GB. Routed to
+claude-pantheon (router internals are their lane) as item `20260731-105700` with the suggested
+minimal fix: hoist the facade out of the per-agent loop (20x), or to supervisor lifetime (~28,800x),
+keeping `inboxUnion` as an open/close wrapper for its other callers. Explicitly warned against
+"fixing" it by widening `migrate()`'s early-return — the cost is the open/close cycle, not the
+version check, and that path is load-bearing for the cutover fail-closed guarantee. Ledger 52 → 53
+for claude-pantheon. Everything else held its 44-run shape: no 5th Jetsam, broker 87281 stable with
+`--prompt-cache-bytes` bound and cache at 0.03 GB, all daemons live, doctor reaped 0 OS-dead with
+both wake-unavailable items being the expected `to:user` pair, PR ledger byte-identical.
