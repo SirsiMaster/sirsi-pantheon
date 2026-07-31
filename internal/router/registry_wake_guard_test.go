@@ -51,10 +51,11 @@ func TestRegistryWakeCoverage(t *testing.T) {
 	// the registry makes and can be checked — but never an empty block, which
 	// is merely an absence and is indistinguishable from an oversight.
 	//
-	// Note there is deliberately no launch_agent_label assertion: that JSON key
-	// appears in some entries but WakeConfig does not parse it, and the real
-	// label is DERIVED from the agent id by WakeLaunchAgentLabel(). Asserting on
-	// an inert field would be a check that reads strict and verifies nothing.
+	// Note: launch_agent_label is now parsed by WakeConfig (LaunchAgentLabel
+	// field) and auto-filled on load from WakeLaunchAgentLabel(id) when absent,
+	// so a missing label in JSON is not an alarm — the derived value is always
+	// authoritative. The guard below focuses on the mechanism field, which IS
+	// an explicit decision that cannot be derived.
 	var missing []string
 	for id, cfg := range reg.Agents {
 		if cfg.Wake.Mechanism == "" {

@@ -95,8 +95,25 @@ var routerDoctorCmd = &cobra.Command{
 			fmt.Printf("⚠ %d stale thread record(s) — heartbeat aged out (OS-dead ones are reapable).\n\n", len(ns.StaleThreads))
 		}
 
+		// Registry drift check — compare working-tree agents.json against
+		// origin/main. A drift that announces itself cannot silently re-arm.
+		// (claude-io router item 20260731-201952; ADR-006 observer contract)
+		drifted, driftErr := router.RegistryDrift(repoRoot)
+		if driftErr != nil {
+			fmt.Printf("ℹ Registry drift check skipped (%v — git/origin unavailable)\n\n", driftErr)
+		} else if len(drifted) > 0 {
+			issues++
+			fmt.Printf("⚠ %d agent(s) have wake config that diverged from origin/main:\n", len(drifted))
+			for _, d := range drifted {
+				fmt.Printf("    %s: %s\n", d.AgentID, d.Detail)
+			}
+			fmt.Println("    → Working-tree agents.json has drifted. Rebase or cherry-pick from origin/main to restore.")
+			fmt.Println("    → Root cause: `SaveRegistry` drops unknown JSON fields unless they are in the WakeConfig struct.")
+			fmt.Println()
+		}
+
 		if issues == 0 {
-			fmt.Println("✅ Router healthy — every live thread armed, no stranded inboxes, no stale records.")
+			fmt.Println("✅ Router healthy — every live thread armed, no stranded inboxes, no stale records, no registry drift.")
 			return nil
 		}
 

@@ -47,6 +47,12 @@ type WakeConfig struct {
 	HealthCheck []string          `json:"health_check,omitempty"`
 	AuthCheck   []string          `json:"auth_check,omitempty"`
 	Hooks       map[string]string `json:"hooks,omitempty"`
+	// LaunchAgentLabel is the launchd label for the per-agent pull-loop plist
+	// (mechanism: launchagent). It is the authoritative label that LaunchAgent
+	// installers and wake-readiness probes use to locate the plist file.
+	// LoadRegistry auto-fills this from WakeLaunchAgentLabel(id) if missing —
+	// making SaveRegistry idempotent: a round-trip never drops the field.
+	LaunchAgentLabel string `json:"launch_agent_label,omitempty"`
 }
 
 // Registry holds all registered agent configurations.
@@ -73,9 +79,13 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 		reg.Agents = make(map[string]AgentConfig)
 	}
 
-	// Inject IDs from map keys
+	// Inject IDs from map keys; auto-fill LaunchAgentLabel for launchagent
+	// entries so SaveRegistry never drops it on a round-trip.
 	for id, cfg := range reg.Agents {
 		cfg.ID = id
+		if cfg.Wake.Mechanism == WakeLaunchAgent && cfg.Wake.LaunchAgentLabel == "" {
+			cfg.Wake.LaunchAgentLabel = WakeLaunchAgentLabel(id)
+		}
 		reg.Agents[id] = cfg
 	}
 
@@ -156,6 +166,8 @@ func (cfg *AgentConfig) Validate() error {
 		if cfg.Wake.MCPServer == "" {
 			return fmt.Errorf("agent %q: wake.mcp_server is required for mcp-notification", cfg.ID)
 		}
+	case WakeNone:
+		// no requirements — the agent has explicitly opted out of waking
 	default:
 		return fmt.Errorf("agent %q: unsupported wake mechanism %q", cfg.ID, cfg.Wake.Mechanism)
 	}
