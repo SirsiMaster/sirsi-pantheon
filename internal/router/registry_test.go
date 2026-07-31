@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -220,6 +221,90 @@ func TestUnknownFieldPreservedRoundTrip(t *testing.T) {
 	cm, _ := consumer.(map[string]any)
 	if cm["prompt"] != "You are {{agent}}." {
 		t.Errorf("consumer.prompt = %q, want %q", cm["prompt"], "You are {{agent}}.")
+	}
+}
+
+// TestSaveRegistry_PreservesUnknownKeys is the regression test for the lossy
+// round-trip defect: every SaveRegistry call via json.MarshalIndent(reg)
+// silently dropped keys the Go struct has never modeled (e.g. "consumer" and
+// nested "launch_agent_label" before it was added to WakeConfig). The lossless
+// fix reads the existing file, deep-merges Go-known fields over the raw JSON
+// map, and writes back — preserving every unknown key at every nesting depth.
+func TestSaveRegistry_PreservesUnknownKeys(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Seed agents.json with keys the Go struct does not model.
+	seed := `{
+  "agents": {
+    "claude-deck": {
+      "id": "claude-deck",
+      "type": "claude",
+      "command": ["claude"],
+      "cwd": "/tmp/deck",
+      "consumer": {
+        "command": ["claude", "--print"],
+        "prompt": "You are {{agent}}."
+      },
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.claude-deck"
+      }
+    }
+  }
+}`
+	path := filepath.Join(tmp, "agents.json")
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load and re-save — this is the exact operation that previously lost keys.
+	reg, loadErr := LoadRegistry(tmp)
+	if loadErr != nil {
+		t.Fatalf("LoadRegistry: %v", loadErr)
+	}
+	if saveErr := SaveRegistry(tmp, reg); saveErr != nil {
+		t.Fatalf("SaveRegistry: %v", saveErr)
+	}
+
+	// Read the raw output and verify unknown keys survived.
+	out, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{`"consumer"`, `"prompt"`, `"launch_agent_label"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("SaveRegistry dropped key %s — lossless round-trip broken\n%s", want, s)
+		}
+	}
+}
+
+func TestDeepMergeJSON_PreservesUnknown(t *testing.T) {
+	dst := json.RawMessage(`{"known":"old","unknown":"keep","nested":{"a":1,"extra":"yes"}}`)
+	src := json.RawMessage(`{"known":"new","nested":{"a":2}}`)
+	got, err := deepMergeJSON(dst, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(got, &m); err != nil {
+		t.Fatal(err)
+	}
+	if string(m["known"]) != `"new"` {
+		t.Errorf("known key not updated: %s", m["known"])
+	}
+	if string(m["unknown"]) != `"keep"` {
+		t.Errorf("unknown key was dropped: %s", m["unknown"])
+	}
+	var nested map[string]json.RawMessage
+	if err := json.Unmarshal(m["nested"], &nested); err != nil {
+		t.Fatal(err)
+	}
+	if string(nested["a"]) != "2" {
+		t.Errorf("nested known key not updated: %s", nested["a"])
+	}
+	if string(nested["extra"]) != `"yes"` {
+		t.Errorf("nested unknown key was dropped: %s", nested["extra"])
 	}
 }
 
