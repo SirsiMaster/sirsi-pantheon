@@ -241,6 +241,62 @@ func runBounded(name string, args ...string) error {
 	return err
 }
 
+// launchctlListOutputMu guards launchctlListOutputFn (Rule A21: injectable
+// function pointers used by goroutine consumers must be read under a lock).
+var (
+	launchctlListOutputMu sync.RWMutex
+	launchctlListOutputFn = defaultLaunchctlListOutput
+)
+
+func getLaunchctlListOutput() func(string) ([]byte, error) {
+	launchctlListOutputMu.RLock()
+	defer launchctlListOutputMu.RUnlock()
+	return launchctlListOutputFn
+}
+
+func setLaunchctlListOutput(fn func(string) ([]byte, error)) {
+	launchctlListOutputMu.Lock()
+	defer launchctlListOutputMu.Unlock()
+	launchctlListOutputFn = fn
+}
+
+func defaultLaunchctlListOutput(label string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "launchctl", "list", label).Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("launchctl list %s: no response in %s: %w", label, launchctlTimeout, context.DeadlineExceeded)
+	}
+	return out, err
+}
+
+// launchctlPIDRe matches the PID entry in `launchctl list <label>` output:
+//
+//	"PID" = 5763;
+//
+// The PID line is absent entirely when the job is not running. A loaded-but-not-
+// running job (crashed, exited, interval-driven waiting for next trigger) has no
+// PID field — launchctl exits 0 in both cases, which is why exit-status alone is
+// not a reliable liveness signal.
+var launchctlPIDRe = regexp.MustCompile(`"PID"\s*=\s*(\d+)\s*;`)
+
+// LaunchctlWakeJobHasPID reports whether the named wake LaunchAgent label has a
+// live PID — i.e. the job is loaded AND a process is currently running under it.
+//
+// This is distinct from merely "loaded": launchctl list exits 0 whenever a label
+// is registered, regardless of whether the process is running (PID=-) or crashed.
+// A wake job that crashed on startup, exited, or is wedged still clears the
+// exit-status check and would be (incorrectly) credited as an armed consumer.
+// Trust the PID field, not the exit code.
+func LaunchctlWakeJobHasPID(label string) bool {
+	out, err := getLaunchctlListOutput()(label)
+	if err != nil {
+		return false
+	}
+	m := launchctlPIDRe.FindSubmatch(out)
+	return len(m) == 2 && len(m[1]) > 0 && m[1][0] != '0'
+}
+
 func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 	switch adapter {
 	case WakeCLISpawn:

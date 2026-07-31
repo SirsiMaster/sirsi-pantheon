@@ -51,12 +51,13 @@ var routerDoctorCmd = &cobra.Command{
 			verdict, seen := loopDead[t.AgentID]
 			if !seen {
 				verdict = router.AgentLoopDead(routerRoot, t.AgentID, ns.PendingByAgent)
-				// Credit a loaded per-agent launchd wake job as armed — for an
-				// app-hosted session (CLI respawned each turn, no durable process)
-				// the wake LaunchAgent is the ONLY durable consumer available, and
-				// it is one of the two remedies the doctor itself recommends.
-				// Ignoring it causes false loop-dead alarms and misroutes peers.
-				if verdict && router.DefaultLaunchctlChecker("list", "ai.sirsi.router.wake."+t.AgentID) == nil {
+				// Credit a per-agent wake LaunchAgent as armed — but only when it
+				// has a live PID, not merely when it is loaded. A loaded-but-not-
+				// running job (crashed, exited, interval-waiting) exits launchctl
+				// list with status 0 exactly like a running one; only a present
+				// "PID" field in the output distinguishes them. Credit the PID, not
+				// the load state.
+				if verdict && router.LaunchctlWakeJobHasPID("ai.sirsi.router.wake."+t.AgentID) {
 					verdict = false
 				}
 				loopDead[t.AgentID] = verdict
