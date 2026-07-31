@@ -47,6 +47,11 @@ type WakeConfig struct {
 	HealthCheck []string          `json:"health_check,omitempty"`
 	AuthCheck   []string          `json:"auth_check,omitempty"`
 	Hooks       map[string]string `json:"hooks,omitempty"`
+	// LaunchAgentLabel is the launchd label for the per-agent pull-loop plist
+	// (mechanism: launchagent). LoadRegistry auto-fills this from
+	// WakeLaunchAgentLabel(id) when absent, so SaveRegistry never drops it on a
+	// round-trip — the root cause of the three registry drift incidents.
+	LaunchAgentLabel string `json:"launch_agent_label,omitempty"`
 }
 
 // Registry holds all registered agent configurations.
@@ -73,9 +78,13 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 		reg.Agents = make(map[string]AgentConfig)
 	}
 
-	// Inject IDs from map keys
+	// Inject IDs from map keys; auto-fill LaunchAgentLabel so SaveRegistry
+	// never drops it on a round-trip (the root cause of the registry drift).
 	for id, cfg := range reg.Agents {
 		cfg.ID = id
+		if cfg.Wake.Mechanism == WakeLaunchAgent && cfg.Wake.LaunchAgentLabel == "" {
+			cfg.Wake.LaunchAgentLabel = WakeLaunchAgentLabel(id)
+		}
 		reg.Agents[id] = cfg
 	}
 
@@ -156,6 +165,8 @@ func (cfg *AgentConfig) Validate() error {
 		if cfg.Wake.MCPServer == "" {
 			return fmt.Errorf("agent %q: wake.mcp_server is required for mcp-notification", cfg.ID)
 		}
+	case WakeNone:
+		// Agent explicitly opts out of waking — no requirements.
 	default:
 		return fmt.Errorf("agent %q: unsupported wake mechanism %q", cfg.ID, cfg.Wake.Mechanism)
 	}

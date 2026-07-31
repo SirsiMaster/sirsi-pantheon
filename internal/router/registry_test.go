@@ -138,3 +138,70 @@ func TestSaveAndLoadRegistry(t *testing.T) {
 		t.Errorf("expected 1 agent after save/load, got %d", len(loaded.Agents))
 	}
 }
+
+// TestSaveLoadRoundTripPreservesLaunchAgentLabel guards the root cause of the
+// three registry drift incidents: WakeConfig lacked the LaunchAgentLabel field,
+// so any SaveRegistry call silently dropped launch_agent_label from agents.json.
+func TestSaveLoadRoundTripPreservesLaunchAgentLabel(t *testing.T) {
+	tmp := t.TempDir()
+	want := "ai.sirsi.router.wake.claude-pantheon"
+	reg := &Registry{Agents: map[string]AgentConfig{
+		"claude-pantheon": {
+			ID: "claude-pantheon", Type: "claude",
+			Command: []string{"claude"}, Cwd: "/tmp",
+			Wake: WakeConfig{Mechanism: WakeLaunchAgent, LaunchAgentLabel: want},
+		},
+	}}
+	if err := SaveRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveRegistry() error: %v", err)
+	}
+	loaded, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error: %v", err)
+	}
+	got := loaded.Agents["claude-pantheon"].Wake.LaunchAgentLabel
+	if got != want {
+		t.Errorf("launch_agent_label after round-trip = %q, want %q (field was dropped by SaveRegistry)", got, want)
+	}
+}
+
+// TestLoadRegistryAutoFillsLaunchAgentLabel verifies that LoadRegistry fills
+// LaunchAgentLabel for launchagent entries that lack it in the JSON — so the
+// first save after this fix self-heals registries written before the field existed.
+func TestLoadRegistryAutoFillsLaunchAgentLabel(t *testing.T) {
+	tmp := t.TempDir()
+	// JSON without launch_agent_label — as every registry written before this fix.
+	os.WriteFile(filepath.Join(tmp, "agents.json"), []byte(`{
+		"agents": {
+			"claude-io": {
+				"type": "claude",
+				"command": ["claude"],
+				"cwd": "/tmp",
+				"wake": {"mechanism": "launchagent"}
+			}
+		}
+	}`), 0o644)
+
+	reg, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error: %v", err)
+	}
+	got := reg.Agents["claude-io"].Wake.LaunchAgentLabel
+	want := WakeLaunchAgentLabel("claude-io")
+	if got != want {
+		t.Errorf("auto-fill: LaunchAgentLabel = %q, want %q", got, want)
+	}
+}
+
+// TestValidateAcceptsWakeNone verifies that mechanism:none passes Validate,
+// fixing ValidateAll() failures for every codex-* agent that opts out of waking.
+func TestValidateAcceptsWakeNone(t *testing.T) {
+	cfg := AgentConfig{
+		ID:   "codex-nexus",
+		Type: "codex",
+		Wake: WakeConfig{Mechanism: WakeNone},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() for mechanism:none error: %v", err)
+	}
+}
