@@ -5,38 +5,6 @@
 
 ---
 
-## Entry 076 — 2026-07-28 14:41 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa07-a6cc-75e3-9973-5c50cf5d6bf1","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-07-27T12:00:00Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 077 — 2026-07-28 15:25 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019faa25-c797-7ce0-aa7a-cd323c94c70a","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-11T04:28:50Z
-- last Claude read: 2026-07-27T12:00:00Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
 ## Entry 078 — 2026-07-28 15:58 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
@@ -2678,3 +2646,47 @@ by 18 items versus 8 last run). No triage verdicts were used this run; every ope
 accounted for directly from the store and from carried state, and none required action from this
 conduit. Worth noting for the next run that `--all` against a queue this size may simply exceed a
 15-minute cadence.
+
+## Entry 096 — 2026-07-31 14:52 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Queue cleared 58→0 under owner directive; router held at zero (3 arrivals closed with live evidence).
+- Gemma guard batch complete: #409 triage warm path survives reasoning-shaped models (verified against live broker), #410 DIFFERENT-model diagnosis consults /v1/models ground truth before speaking.
+- #409 also versioned installed-script drift: codex Jul-24 fail-closed fix was ahead of main.
+- Landed earlier today: #404 deck drill-downs + #407 atomic routes, #405 close-resolved demoted to surface-only (both codex P1s), #406 reap-orphans intersect+floor, #408 slug/label/delegation fixes.
+- Machine: Health 94/100, one broker, swap 3GB. Remaining debt in tasks #52-54 (level-triggered wait and mint churn now have two reports each — front of batch). #49 blocked on owner token rotation.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 097 — 2026-07-31 14:52 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Conduit/Horus run 2026-07-31T18:52Z (claude-home). All-green vitals, one owner escalation.
+- Router: 19 open, ZERO for claude-home or claude-codex-standin. The +2 vs prior run was fully explained (fresh codex-inference->claude-nexus item, plus this conduit's own response delivery back to claude-nexus) and needed no action.
+- DECISION - escalated one owner gate, item 20260731-184653, store-verified via sqlite3 (a printed router send id is a claim, the store row is the fact). The sirsi-pantheon repo root is parked on branch fix/sirsi-gemma-bare-server-chipA, so every conduit journal commit lands off main: 24 commits ahead of origin/main of which 20 are conduit journal commits back to 9ca65646 on 2026-07-29, with .thoth/journal.md diverged 2163 insertions (up from 2136 one run earlier). Nothing is broken, which is exactly why no automated pass catches it; the exposure is that three days of conduit forensics ride a branch that may be squashed or abandoned. Three owner options offered: land the branch, cherry-pick .thoth/journal.md alone (union merge driver keeps it low-conflict), or move the repo root back to main. Only the third stops recurrence.
+- PATTERN - report the registry FLOOR, never the prune delta. Entry floor 58 records, 73 after thread reconcile, and prune --older-than 1h deleted ZERO because every terminal record was younger than the window. New finding: sirsi thread reconcile is itself a minter, producing 11 reaped->successor records per run, roughly 44 records/hour at 4 runs/hour. Deliberately NOT routed as a new item because claude-pantheon already holds open item 20260731-184156 for this exact root cause and a second would be a nag.
+- CARRIED VERDICT, do not re-derive: sirsi router wait is LEVEL-triggered, returning in 0.018s against a non-empty inbox, so a /loop wrapped around it spins about 50 times a second. The SessionStart/UserPromptSubmit hook that tells claude-home to arm that /loop must be ignored on every run; a watcher count of zero is correct, not a gap. Fix already routed as 20260731-182937. Confirmed live again this session: the hook fired with a THIRD distinct thread id (thr-d86565a905772ba9 then thr-0d13db769eee58b2), so its pgrep-based idempotency guard can never match a prior arm and every firing looks un-armed by construction.
+- PRs unchanged, none mergeable by this session. pantheon #389 has Build/Lint/Test/Secrets PASS with only binding-hold failing, MERGEABLE but BLOCKED, and is cross-authored so neither claude-home nor codex-pantheon can sign the head. FinalWishes #114 is MERGEABLE and CLEAN but authored by this session, so no self-review. #357/#358 belong to their lanes, #361/#393 are drafts, SirsiNexusApp is empty.
+- Vitals: diagnose 88/100 amber whose sole priority signal is the capped Gemma broker at 14.3 GB against a 22.3 GB cap, memory 74 percent free, broker health ok with the --prompt-cache-bytes cap verified BY IDENTITY rather than by pidfile name, prompt cache 1.82 GB against a 6 GB balloon threshold, resolver on gemma-4-12B-it-8bit, all core launchd labels PID-verified alive, no BINARY_MISSING sentinels, no new crash or Jetsam artifacts beyond the already-evaluated set. ccd reap found 0 leaks and archived 0. Retention prune reclaimed 14.1 KiB.
+- NOT FINISHED, budget rather than breakage: local Gemma triage across all 18 open items was still on item 1 after several minutes and was stopped. No triage verdicts informed any decision this run; every open item was accounted for directly from the store and from carried state instead. At this queue size --all likely cannot fit a 15-minute cadence.
+- TOOLING HAZARD found this session: sirsi thoth sync run from $HOME never completes in bounded time because $HOME is not a git repository, so the sync has no repo boundary and walks the entire home tree to count modules. Run thoth sync inside an actual repo; at $HOME it produces nothing useful while burning CPU and Spotlight write amplification.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---

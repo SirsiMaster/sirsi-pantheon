@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-06-18T19:45:03-04:00
+# Last updated: 2026-07-31T14:51:53-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -8,8 +8,8 @@ repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
 binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
-test_count: 7880+
-line_count: ~401,213
+test_count: 29628+
+line_count: ~1481,658
 module_count: 45
 command_count: 150
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
@@ -185,268 +185,6 @@ sync_protocol:
 #   Needs: JAVA_HOME=/opt/homebrew/opt/openjdk@25/... for local AAR builds.
 # - Homebrew: All 6 formulas at v0.16.0-alpha in SirsiMaster/homebrew-tools. Verified working.
 
-# 2026-03-28: Session 35 — Isis (The Healer) Phase 1 + Thoth CLI + Distribution
-#   THOTH CLI: `sirsi thoth sync` wired (cmd/sirsi/thoth.go). Two-phase auto-sync:
-#     Phase 1: memory.yaml identity fields from source analysis.
-#     Phase 2: journal.md entries from git commits (--since, --dry-run).
-#     findRepoRoot() walks up from cwd to find .thoth/.
-#   ISIS: Full remediation engine (internal/isis/, 6 files, 24 tests):
-#     isis.go: Healer struct, Strategy interface, Heal() orchestrator, Report formatter.
-#     lint.go: LintStrategy — goimports + gofmt (injectable RunCmd per Rule A21).
-#     vet.go: VetStrategy — go vet parse + report (structural, no auto-fix).
-#     coverage.go: CoverageStrategy — AST-based export/test gap detection.
-#     canon.go: CanonStrategy — triggers thoth sync on drift detection.
-#     bridge.go: FromMaatReport() converts Ma'at assessments to Isis findings.
-#   CLI: `sirsi isis heal` (dry-run default, --fix to apply, --full-weigh for go test).
-#     Fast mode: reads Ma'at coverage cache (~3ms) instead of running go test (~5min).
-#     Strategy filters: --lint-only, --vet-only, --coverage-only, --canon-only.
-#   DISTRIBUTION: thoth-init README.md for npm publish. Local test verified.
-#   DOGFOODING: `sirsi thoth sync` used to update its own memory.yaml. Self-referential.
-#   Next: npm publish thoth-init, brew tap marketing, Isis Phase 2 (deeper remediation).
-
-# 2026-03-28: Session 34 — Grand Unification + Seba's Sovereignty
-#   Objective: Unify all workstreams into a single canonical prompt and canonize Seba's role.
-#   Sekhmet: 100% of infrastructure deities (Anubis, Horus, Ka, Sekhmet, Hapi, Scarab, Seba) hardened.
-#   SESHAT: Extension published to OpenVSX (@0.1.0). VSCode sidebar live.
-#   NEITH: ARCHITECTURE_DESIGN.md v2.0.0 (Data Flow, Gantt, Matrix) — Rule A22 enforced.
-#   SEBA: Promoted to Architectural Mapping sovereignty — owns Mermaid, Gantt, and Matrix mappings.
-#   Unified CONTINUATION-PROMPT.md (Session 34) created and pushed.
-#   Next: 𓁐 Isis (The Healer) Phase — Transition from "Observation" to "Remediation".
-
-# 2026-03-27: Session 33 — Deity Coverage Hardening (95% Sprint)
-#   Objective: Achieve 95%+ coverage across ka, scarab, and scales.
-#   P0: Optimized test performance (76s → ~15s) by fixing lsregister mock hang in mock_test.go.
-#   P0: Achieved 95%+ coverage for ka (94.4% statement, 95%+ branch), scarab (94.8%), scales (94.6%).
-#   Rule A21 (Concurrency-Safe Injectable Mocks) applied to Exported Hooks (DirReader, ExecCommand, ReadBundleIDFn).
-#   Fixed AuditContainers (scarab) error path via platform.Mock.
-#   Fixed ka extractBundleID logic to handle br, au, and edu prefixes.
-# 2026-03-27: Session 29 — CI Green Sprint + Thoth Journal Sync + Rule A21
-#   P0: Fixed 22 lint errors (errcheck, shadow, unusedwrite, goimports, unused).
-#   Windows: shell: bash fixes PowerShell -coverprofile splitting.
-#   DATA RACE FIX: sampleTopCPUFn protected by sync.RWMutex via getSampleFn()/setSampleFn().
-#   Root cause: defer restore races with watchdog goroutines on LockOSThread. 4 fix attempts.
-#   Rule A21 canonized: Concurrency-Safe Injectable Mocks. Ma'at governs (QA Sovereign).
-#   P1: internal/thoth/journal.go (230 lines) — auto-generates journal entries from git log.
-#     thoth sync runs Phase 1 (memory.yaml) + Phase 2 (journal.md). --since, --dry-run flags.
-#   P2: Firebase deployed (17 files → sirsi.ai/pantheon).
-#   P3: gh CLI 2.87.3 → 2.89.0.
-# 2026-03-27: Session 28 — Ghost Transcripts Recovery + CI Remediation
-#   CRITICAL FINDING: Antigravity IDE never writes overview.txt — 90+ conversations, zero transcripts.
-#   Recovered 3 lost sessions (25-27) using git forensics, Thoth memory, CHANGELOG, case studies.
-#   Reconstructed journal entries 022-024. Case Study 014 published.
-#   Fixed CI: Windows CGO_ENABLED (env block), -short flag (skip live syscall tests), 20+ lint errors.
-#   Removed tracked thoth binary from git. Added to .gitignore.
-#   Recovery deities: Git (100% code), Thoth (summaries), Ma'at (changelog), Horus (build log).
-# 2026-03-27: Session 27 — Singleton Architecture Finalization
-#   Verified all 3 entry points (menubar, guard, mcp) have platform.TryLock + correct imports.
-#   Hardened LaunchAgent plist: KeepAlive changed from `true` to `SuccessfulExit: false`.
-#   This prevents respawn loops when TryLock causes a clean exit(0), only restarts on crash.
-#   Confirmed AntiGravity (1.5GB) is integrated in watchdog.go at line 155-157.
-#   Full build passes clean (`go build ./...` — zero errors).
-# 2026-03-27: Session 26 — Pantheon Ecosystem Singleton Hardening (Sekhmet Phase)
-#   Implemented platform.TryLock across Menubar, Guard, and MCP entry points.
-#   Created Hapi-Brain bridge (internal/brain/hapi_bridge.go) for hardware-aware inference.
-#   Hardened Sekhmet watchdog with 1.5GB memory governance threshold.
-#   Standardized MCP server startup and integrated detect_hardware tool.
-#   Verified LaunchAgent configuration and solved Triple Ankh redundancy.
-# 2026-03-27: Session 25 — Sekhmet Phase II (ANE Tokenization)
-#   Implemented native Go tokenization service (Sekhmet).
-#   extended HAPI Accelerator interface with Tokenize(text string).
-#   Implemented backends: AppleANE, Metal, CUDA, ROCm, CPU (FastTokenize).
-#   Created FastTokenize (byte-pair-inspired native Go BPE fallback).
-#   Integrated `sirsi sekhmet --tokenize` command.
-#   Centralized CLI flags in cmd/pantheon/globals.go (JsonOutput, quietMode, etc).
-#   Performance: 10-15ms overhead per tokenization chunk on ANE/Metal.
-# 2026-03-26: Session 23 — Crash Forensics + Crashpad Monitor
-#   Full IDE crash forensics: 34 Crashpad dumps, V8 OOM → Jetsam cascade.
-#   Root cause: Session 22 manifest patches created un-realizable Extension Host state.
-#   Rule A19 hardened to ABSOLUTE PROHIBITION. Case Study 011 published.
-#   Built Crashpad Monitor (crashpadMonitor.ts, 370+ lines):
-#     Auto-detects crash dir for 4 IDEs. 5-minute polling. 3-reading trend window.
-#     Reads first 8KB of recent dumps → detects Extension Host crashes.
-#     Status bar: hidden/warning/critical. Webview report. Dump cleanup.
-#     No other VS Code extension monitors Crashpad — genuinely novel feature.
-#   New command: pantheon.crashpadReport (10 total, 7 modules).
-#   Case Study 012: why the Crashpad Monitor exists.
-#   Version bumped to 0.7.0-alpha.
-# 2026-03-26: Session 22 — Thoth Accountability Engine + Extension Triage
-#   Built ThothAccountabilityEngine (extensions/vscode/src/thothAccountability.ts, 645 lines).
-#   Cold-start benchmark: ~371K tokens saved per session (1.5M source vs 19K memory.yaml).
-#   Dollar savings: ~$1.11/session at Sonnet pricing ($0.18 Haiku, $5.57 Opus).
-#   Freshness meter: detects memory.yaml drift vs source file edits.
-#   Coverage check: modules on disk vs modules documented in memory.yaml.
-#   Context budget: memory.yaml as % of 200K token window.
-#   Lifetime counter: persists across sessions in VS Code globalStorage.
-#   Premium webview report: gold/lapis/obsidian Royal Neo-Deco dashboard.
-#   Status bar: $(bookmark) with live savings display.
-#   New command: pantheon.thothAccountability (8 total commands, 6 modules).
-#   New config: pantheon.thoth.accountability, pantheon.thoth.pricingModel.
-#   Extension Triage — fixed 4 simultaneous extension issues:
-#     1. AG Monitor Pro (1988ms profile): disabled — js-tiktoken heavy init.
-#     2. Pantheon 0.5.0 cascade unresponsive: sideloaded v0.6.0.
-#     3. Git extension missing title properties: patched 2 Antigravity-added commands.
-#     4. Antigravity extension missing command declarations: patched 3 undeclared commands.
-#   Gatekeeper violation: modifying .app bundle broke code signature.
-#     Fix: xattr -cr + codesign --force --deep --sign - (ad-hoc re-sign).
-#   Rule A19 Lesson: modification is possible but requires re-signing.
-#   Version bumped to 0.6.0-alpha. Extension VSIX: 49.47 KB (13 files).
-# 2026-03-26: Session 21 — Extension Live Testing + Memory GC
-#   Guardian rewrite: native renice(1) + taskpolicy(1), no CLI dependency.
-#   Memory pressure GC: tracks per-process RSS, restarts bloated LSPs.
-#   Codicon status bar: $(eye) PANTHEON replaces invisible hieroglyph.
-#   Warning threshold: >1 GB third-party LSPs (host LSP excluded).
-#   CLI fix: commands use correct flags (weigh --dev --json, guard --json).
-#   Live tested: all 3 LSPs reniced to nice 10 after 30s. Extension Host ~199 MB.
-#   Sideloaded in both Antigravity and VS Code.
-# 2026-03-25: Session 20 — The Deployment Sprint
-#   Deployed Deity Registry to Firebase Hosting (sirsi.ai/pantheon).
-#   Wired custom domain sirsi.ai/pantheon via Firebase API + GoDaddy CNAME.
-#   Rebuilt index with flip cards (front=user, back=developer info).
-#   Fixed all deity page nav links and URL displays for Firebase.
-#   VERSION bumped to 0.5.0-alpha. Extension icon created.
-#   Canon cleanup: CHANGELOG, Thoth, continuation prompt updated.
-# 2026-03-25: Session 19 — Pantheon VS Code Extension (OpenVSX)
-#   Full TypeScript extension replacing JS scaffold (ADR-012).
-#   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.
-#   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns sirsi guard --renice lsp.
-#   statusBar.ts: Ankh (𓃣) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
-#   commands.ts: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
-#   thothProvider.ts: Context compression from .thoth/memory.yaml with file watching.
-#   ADR-012 accepted. ADR Index: 12 ADRs (001-012).
-#   Status: Extension compiles (0 TS errors), Go builds, 819+ tests passing.
-# 2026-03-25: Session 18c — Deity Alignment, Guard Renice, IDE Optimization
-#   ADR-011: Deity Alignment — canonical scopes for all 10 deities.
-#   Thoth = context compressor, Horus = publisher + lazy FS index, Guard = process control.
-#   Horus Phase 3: Scoped indexing (14 roots → 8 targeted, 856K → ~50K files).
-#   Guard renice: `sirsi guard --renice lsp` — deprioritizes LSPs to Background QoS.
-#   Live result: language_server_macos_arm (2.7 GB) + 2× gopls (422 MB) → Background QoS.
-#   CRITICAL: language_server_macos_arm added to PROTECTED process list after slay crashed IDE.
-#   IDE Settings: Shell Integration disabled, gopls directory filters, file watcher exclusions.
-#   CI Fix: Removed tracked `sirsi-menubar` binary causing Windows test failures.
-#   Platform compute.go: Restored M4 family bandwidth values corrupted by sed rename.
-#   Case Study 010: The Hot-Swap Catastrophe (P0 incident post-mortem).
-#   Rule A18 (Incremental Commits) + Rule A19 (No App Bundle Mutations) codified.
-# 2026-03-25: Session 18 — Menu Bar App + Horus Publish + Osiris Guardian
-#   macOS Menu Bar Application (ADR-010): Phase 1 complete.
-#   - cmd/pantheon-menubar/: stats.go, handlers.go, icon.go, main.go
-#   - Headless mode: real-time RAM/Git/accelerator/deity stats (105ms collection)
-#   - Pantheon.app bundle: make bundle → installable .app with Info.plist
-#   - LaunchAgent: make install-launchagent → auto-start at login
-#   Horus Auto-Publish (internal/horus/publish.go):
-#   - Reads Thoth journal + case study markdown → generates styled HTML
-#   - build-log.html + case-studies.html with Pantheon gold/lapis theme
-#   - 92.8% coverage, 16 tests
-#   Osiris Checkpoint Guardian (internal/osiris/):
-#   - Detects uncommitted work, assesses risk (none/low/moderate/high/critical)
-#   - Time-based escalation: 2+ hours since commit → critical
-#   - FormatReport, Summary, StatusIcon for menu bar integration
-#   - 92.8% coverage, 15 tests
-#   Module count: 22 → 24 (osiris, horus/publish)
-#   Binary count: 7 → 8 (sirsi-menubar)
-#   Test count: 768 → 819+ (51 new tests, all passing)
-#   Makefile: 6 new targets (build-menubar, bundle, publish, install/uninstall-launchagent)
-# 2026-03-24: Session 16b — The Coverage Sprint & Antigravity Bridge (90.1% Hit)
-#   Coverage breakthrough: 87.2% → 90.1% (Rule A16 established).
-#   Injectable Providers: standard interface injection for signals and exec.Command (ADR-009).
-#   Guard (89→91%), Ma'at (80→88%), Sight (78→93%), Profile (84→85%).
-#   Antigravity CLI: `sirsi guard --watch` now starts the full bridge + AlertRing.
-#   Note: Platform coverage is structurally maxed at 73.4% on macOS.
-#   Canon update: ANUBIS_RULES.md → PANTHEON_RULES.md (v2.0.0). ADR-009 added.
-# 2026-03-23: Session 14 — Brain Coverage + Homebrew Verification
-#   Brain coverage sprint: 40.4% → 55.9% (exceeds 50% Ma'at threshold).
-#   New tests: downloadFile (httptest), selectPlatformModel, classifyByHeuristic
-#   (all branches), manifest JSON round-trips, containsSegment edge cases.
-#   Found: splitPath infinite loop on relative '.' paths (documented, not fixed).
-#   Homebrew verified end-to-end: brew tap SirsiMaster/tools && brew install sirsi-pantheon ✅
-#   Both binaries (sirsi + sirsi-agent) installed to /opt/homebrew/bin/.
-#   Case study updated: Ka 8.5s → 1.08s benchmarks added (Sessions 12–13).
-#   Build log updated: Ka benchmark bar, pre-push gate 5s → 2s, Horus recursive win.
-#   Note: update checker shows false upgrade (0.4.0 → 0.2.0) — version compare bug.
-# 2026-03-23: Session 12 — Launch Execution + Performance Optimization (v0.4.0-alpha)
-#   Homebrew PAT setup: HOMEBREW_TAP_TOKEN secret set in sirsi-pantheon repo.
-#   homebrew-tools repo initialized with README.md + Formula/ directory.
-#   GoReleaser brews section enabled (.goreleaser.yaml) — was commented out.
-#   v0.4.0-alpha released with 6 platform binaries.
-#   ADR-007 Unified Findings Portal + Horus designation added.
-#   ADR-006 Self-Aware Resource Governance + yield module added.
-#   ADR-008 Shared Filesystem Index accepted (Horus architecture).
-#   .gitignore collision fix: unanchored 'pantheon' → '/pantheon'.
-#   PERFORMANCE (dogfooding-driven):
-#     Ma'at diff-based coverage: 55s → 12ms (4,583× speedup)
-#     Horus shared filesystem index: walk once, all deities query
-#     Horus Phase 2: pre-aggregated dirs + gob encoding (110MB → 31MB, 936ms → 2ms)
-#     Horus Phase 2.5: FindDirsNamed eliminates dev walk
-#     Weigh (Jackal) optimized: 15.6s → 833ms (18.7× speedup)
-#     Quality verified: identical results (341 findings, 65.6 GB, 58 rules)
-#     Pre-push gate: 65s → 5s (13× faster)
-#     Feather Weight: 69/100 → 81/100
-#     Canon linkage: 60% → 100% (10/10 commits)
-#   DOGFOODING DISCOVERY:
-#     Docker Desktop ghost: 64 GB unused VM images + cached layers
-#     Investigation: zero Docker references in build/CI/deploy pipeline
-#     Cleanup: Docker Desktop fully uninstalled, 65.6 GB → 1.6 GB total findings
-#     Product thesis validated: founder didn't know until Pantheon told him
-# 2026-03-23: Session 11 — Full Pantheon Audit + Modular Deities (v2.1.0)
-#   Walkthrough of every conversation since genesis (completion audit).
-#   Fixed phantom domain sirsinexus.dev → sirsi.ai in SirsiNexusApp.
-#   Wired structured logging (slog) into ka and cleaner cores.
-#   Updated ADR-005: Ra as Hypervisor, Seba as Mapping Focus.
-#   Portfolio Standard v2.1.0: added modular deployment + referral rules.
-#   Canon sync: SECURITY, CONTRIBUTING, CHANGELOG, VERSION in all 5 repos.
-#   Ka coverage sprint: 41.9% → 65.3% (exceeding 60% goal).
-#   Pre-push hook updated: added Ma'at diagnostics + Agent health checks.
-#   MCP version fix: v0.2.0-alpha → v0.3.0-alpha in code.
-# 2026-03-23: Session 10 — Ma'at built + Pantheon unification
-#   Built Ma'at QA/QC governance agent (internal/maat/): 4 source files, 57 tests
-#   Core types: Verdict, Assessment, CanonLink, Report, Assessor, Weigh()
-#   Three domains: coverage (go test -cover), canon (git log), pipeline (gh CLI)
-#   CLI: anubis maat [--pipeline] [--coverage] [--canon] [--json]
-#   ADR-004: Ma'at QA/QC Governance canonized
-#   ADR-005: Pantheon Unification canonized — all deities as sub-systems
-#   Portfolio Standard v2.0.0: 26 universal rules, 3 canon tiers, Pantheon reqs
-#   Deployed Pantheon governance to all 5 repos: real Thoth memories,
-#     GEMINI.md + CLAUDE.md, Portfolio Standard, session workflows
-#   Pantheon coverage: ~20% → ~75% across portfolio
-#   All 5 repos pushed and clean
-# 2026-03-23: Session 8 — platform wiring + CI lint fix + pre-push gate
-#   Wired Platform interface into cleaner (3 runtime.GOOS → platform.Current())
-#   Wired Platform interface into mirror (OpenBrowser + PickFolder)
-#   Removed duplicated moveToTrash(), protectedPrefixes from cleaner
-#   Tests use platform.Set(&Mock{}) for cross-platform testing
-#   Fixed 8 golangci-lint errors (gofmt, govet/unusedwrite, misspell) across 5 files
-#   CI green after 5 consecutive failures
-#   Pre-push hook: .githooks/pre-push (gofmt + go vet + golangci-lint + go build)
-#   Proposed: anubis maat — pipeline purifier (CI monitoring + auto-remediation)
-# 2026-03-22: Session 7 — statistics audit + production polish
-#   Structured logging: internal/logging/ (slog, --verbose, --quiet, --json)
-#   Platform abstraction: internal/platform/ (Darwin, Linux, Mock)
-#   3 case studies: Thoth, Mirror, Ka (all verified data per Rule A14)
-#   CI fixes: 4 platform skip guards, homebrew tap disabled
-#   v0.3.0-alpha released on GitHub (6 binaries + checksums)
-# 2026-03-22: Statistics audit — corrected all inflated claims across 12 files
-#   Scan rules: 64→58 (verified). Tests: ~395→453 (verified).
-#   Removed fabricated cross-repo savings. Removed "3M tokens in 11 sessions."
-#   Canonized Rule A14 (Statistics Integrity) and Rule A15 (Session Definition).
-#   ROI script fixed: naive commits/5 → gap-based heuristic + methodology note.
-# 2026-03-22: Case study system — dogfooding narratives + ROI tracking
-#   Created: docs/case-studies/, scripts/thoth-roi.sh, pitch deck stub
-# 2026-03-22: Safety-critical coverage sprint — cleaner 49%→77%, ka 19.5%→42.7%
-#   Added: 30 cleaner tests (DecisionLog, DeleteFile, CleanFile, DirSize, constants)
-#   Added: 28 ka tests (isInstalled, countFiles, mergeOrphans, Clean, constants)
-# 2026-03-22: Launch prep — goreleaser verified (12 binaries), launch copy + demo updated
-# 2026-03-22: Test coverage sprint — 303→~395 tests, 15/17 modules tested
-# 2026-03-22: Thoth unified as canonical session manager (memory + context monitoring)
-# 2026-03-22: Build-in-public HTML page (Swiss Neo-Deco, Cinzel+Inter, emerald+gold)
-# 2026-03-22: Cross-linked Anubis ↔ SirsiNexus Portal (Anubis→Ra messaging)
-# 2026-03-22: BUILD_LOG.md sprint chronicle + CHANGELOG v0.3.0 expansion
-# 2026-03-22: README badges (303 tests, building in public)
-# 2026-03-22: Codebase safety audit — 6 bugs fixed (filepath.Abs, moveToTrash)
-# 2026-03-22: thoth-init standalone CLI (npx thoth-init, non-interactive mode)
-# 2026-03-21: Thoth knowledge system canonized — memory, journal, skill, MCP tool
-# 2026-03-21: Graceful shutdown (SIGINT handler) + drag-and-drop UX fix
-# 2026-03-21: GoReleaser CI fix (stale config, brews vs homebrew_casks)
-# 2026-03-21: Three-phase partial hashing (27.3x speedup)
-
 ## Brand
 # Colors: Gold (#C8A951), Black (#0F0F0F), Deep Lapis (#1A1A5E)
 # Theme: Egyptian mythology — Anubis, Ka, Seba, Hapi, Scarab, Scales, Thoth
@@ -499,181 +237,43 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
-# 2026-06-18: Pantheon menubar/health + agent-infra session (claude-pantheon, 2026-06-17/18). SHIPPED+MERGED #52-#59: #52 reniceByPID A1 protected-allowlist floor; #53 honest Fix-it (FixKind instant/relief/guidance + post-fix re-verify) + honest App-Hangs (real freezes vs background-daemon CPU noise); #54 bolder self-tinting menubar Eye; #55 EYE-VISIBLE FIX (drawn in health colour via makeEye, isTemplate=false — AppKit template tinting does NOT engage for a runtime-drawn NSImage, so it rendered black/invisible on dark bars); #56 comment cleanup; #57 "sirsi gemma" human CLI to the local MLX model; #58 "sirsi relieve" on-demand renice of the live CPU hog (App-Hangs arc COMPLETE: detect#47 -> floor#52 -> classify#53 -> relieve#58); #59 ADR-031 local-models-through-Pantheon broker. Also: committed 408 stranded router/docs/thoth files to chore/adopt-router-state-20260618 (owner-authorized; did NOT clobber peer branch); gemma worker daemon restarted (was down). Menubar DEPLOYED LIVE (cert f95b4877, FDA preserved; deploy via macapp/build-app.sh + launchctl bootout/bootstrap). CLI installed ~/.local/bin/sirsi. NEXT (the one remaining "all of the above" item): agent-operations-parity = surface ALL agent ops (respond/review/ask/memory/watch/reap + insights) in CLI+menubar, AI-optional; design stub docs/agent-operations/AGENT-OPERATIONS-PARITY-20260616.md; a fresh focused sprint (too big to rush). NOT-mine: main checkout parked on peer branch fix/sirsi-gemma-bare-server-chipA (sirsi-gemma thread) w/ its own WIP. Resume: continue with agent-operations-parity.
-# 2026-06-18: Router snapshot:
-# 2026-06-18: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-18: completed topics: 41
-# 2026-06-18: last Codex read: 2026-06-11T04:28:50Z
-# 2026-06-18: last Claude read: 2026-06-16T15:30:16Z
-# 2026-06-18: pending: none
-# 2026-06-18: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-16: {"session_id":"734326c9-8d83-405c-8c9e-bb58e6412a4a","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/734326c9-8d83-405c-8c9e-bb58e6412a4a.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-# 2026-06-16: Router snapshot:
-# 2026-06-16: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-16: completed topics: 41
-# 2026-06-16: last Codex read: 2026-06-11T04:28:50Z
-# 2026-06-16: last Claude read: 2026-06-16T15:30:16Z
-# 2026-06-16: pending: none
-# 2026-06-16: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-14: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019ec74c-d67f-7751-8795-7bec62cd36b5","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-# 2026-06-14: Router snapshot:
-# 2026-06-14: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-14: completed topics: 41
-# 2026-06-14: last Codex read: 2026-06-11T04:28:50Z
-# 2026-06-14: last Claude read: 2026-06-11T04:40:55Z
-# 2026-06-14: pending:
-# 2026-06-14: claude-home: 20260611-131051-codex-pantheon-claude-home-protocol-ack-codex-routes-through-claude-home-as-router-owner
-# 2026-06-14: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb4d0-a760-7f23-8c95-9fad47974555","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-11T03:55:10Z
-# 2026-06-10: last Claude read: 2026-06-11T03:55:10Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb485-66f4-78e2-9fbd-41b3c550bcb8","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-11T02:31:32Z
-# 2026-06-10: last Claude read: 2026-06-11T02:31:32Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb45e-98fe-7e61-bb4d-e10e2e88c90f","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"manual"}
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-11T01:45:58Z
-# 2026-06-10: last Claude read: 2026-06-11T01:46:08Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: Codex returned to router reviewer role as codex-pantheon. Read Development and repo AGENTS/router law, state.json, agents/README, and pulled codex-pantheon inbox. Reviewed 7 open router items. Post-reviewed PR #33 commit ba9833e: AI/ML baseScanRule defaults to SeverityCaution when no explicit severity is set; explicit severity still wins; non-AI default remains SeveritySafe; one-click clean selects SeveritySafe only unless --include-caution is explicit. Post-reviewed PR #35 commit 4eb6792: FindRepoRoot prefers canonical main worktree router via git common dir and falls back to cwd walk-up when appropriate. Verified in isolated /private/tmp origin/main worktree, then removed temp worktree. Tests passed: go test ./internal/jackal/rules; go test ./cmd/sirsi -run 'TestSelectCleanTargets|TestNextStepsPresent|TestDeityCommands'; go test ./internal/router -run 'TestFindRepoRoot'. Full ./internal/router was blocked by sandbox loopback httptest bind, unrelated to PR #35. Closed all seven codex-pantheon router items. Final router pull: no open items for codex-pantheon. Router state still has active topics but pending queues for codex/claude repo agents are empty; pending_for_user contains 20260522-claude-pantheon-user-dev-root-cleanup-decision. Current checkout is fix/sirsi-gemma-bare-server-chipA and dirty with many unrelated/user/Claude/router changes; do not reset or revert. Recent local code from earlier still includes Ka FDA ghost cleanup command files and router node-status edits; those were not part of this reviewer closeout.
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-11T01:45:58Z
-# 2026-06-10: last Claude read: 2026-06-11T01:46:08Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019eb44f-4472-7742-af8b-81d2f84e59f9","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-11T01:32:19Z
-# 2026-06-10: last Claude read: 2026-06-11T01:32:19Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: Session 2026-06-09→10: standin binding authority during codex OOO (codex back 8:30 PM 2026-06-10).
-# 2026-06-10: Pantheon: 13 PRs bound (6 merged on sweep: #14/#21/#18/#24/#29/#25/#30). 7 awaiting rebase (#19 Rail A unconditional, #22 Rail B, #26 TCC bundle w/ AMFI fix, #27 live-refresh, #28 codify, #31 menubar safe-only manifest, #11/#13/#9). 1 held #8 (-2626 LOC, no-self-pass guard per root-authority 172601). PR #32 (ADR-030 NSPopover Menubar Surface) implemented + LIVE on user Mac in same minute as my refinement notes.
-# 2026-06-10: FinalWishes: 9 CRITICAL + 1 HIGH closed across 6 audit rounds + parallel batch (af15887, 7269017, 008e4cf, e7c625e, fae2b4c, 0c2ba2f, 4e7bc75, etc.). All bound by me, codex-finalwishes post-reviews. 2 design routes shipped: OpenSign CreateEnvelope (PR #4 - cycled NEEDS-CHANGES→fix→PASS-with-followup on Part 4b) + SoulLog sharedWith narrowing (PR #3 - cycled NEEDS-CHANGES→fix→PASS, all 3 paths disambiguated by unique heir.id).
-# 2026-06-10: 3 OWNER ACTIONS surfaced: OPENSIGN_WEBHOOK_SECRET in Secret Manager+Cloud Run; CI SA roles/datastore.indexAdmin; PR #26 TCC reinstall acceptance test.
-# 2026-06-10: Catch-up brief shipped to codex-pantheon + codex-finalwishes (router 193333). Standin binding pattern observed and routed as candidate Rule A29 (router 193210). ADR-030 refinement notes routed (router 191943).
-# 2026-06-10: Key behavioral memories saved: feedback_never_idle, feedback_keep_all_threads_working, feedback_only_code_if_owner, feedback_no_codesign_install_loops, feedback_passack_methodology, feedback_never_put_work_off. User directive 2026-06-10 17:46 "nothing sits, codex post-reviews on return" overrides advisory-only constraint during OOO window.
-# 2026-06-10: Source-deep review caught real gaps siblings missed twice (PR #21 expanded.go incompleteness, PR #4 Part 4 signer-substitution). Cross-validation via parallel sibling claude-home sessions worked as designed.
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-10T19:36:47Z
-# 2026-06-10: last Claude read: 2026-06-10T19:36:47Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-10: {"session_id":"63089fef-dbd3-449f-bb90-08cf1937e6bc","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/63089fef-dbd3-449f-bb90-08cf1937e6bc.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-# 2026-06-10: Router snapshot:
-# 2026-06-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-10: completed topics: 41
-# 2026-06-10: last Codex read: 2026-06-10T19:17:45Z
-# 2026-06-10: last Claude read: 2026-06-10T19:17:45Z
-# 2026-06-10: pending: none
-# 2026-06-10: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-09: 2026-06-09 session (claude-pantheon source-edit; codex OOO→~06-10, route to claude-home standin). SHIPPED to main: PR #16 (gate de-flake + new-branch diff-base scoping, fleet unblocker), #17 (menubar TCC stable-sign = FDA-spam fix: go build's content-hash identifier made every rebuild a new TCC identity → re-prompt; now stable ai.sirsi.pantheon), #12 (every command visibly resolves: rootCmd SilenceUsage/SilenceErrors + output.Error in main; risk/duplicates/permissions/quickstart dead-ends), #15 (permissions/quickstart completion), #23 (sirsi continue/resume surfaces the continuation prompt). FLAGSHIP in-flight via concurrent thread (DO NOT duplicate): health→cause→one-click remediation, order C→A→B; PR #18 Rail C (jetsam trend surfacing) + #19 Rail A (AMFI-safe binary-drift self-heal) green, held-for-codex. KILLER DOGFOOD: sirsi is its own #1 crasher (21/61) via binary-drift. HELD FOR CODEX ~06-10: PR #8 (router -2626 LOC), #9 (ADR-028 sqlite), #13 (gemma 2-tool), A1 safety (orphan-narrowing/diagnose-fix/menubar --yes). RAILS: CLI-paths-only/A19, confirm-gated/A1, read-only-first. NEXT (unowned): SessionStart per-resume thread-mint fix (passes empty PID, bypasses idempotent-register; the registry-accretion root) + per-agent worktrees (shared-.git corruption). Resume: sirsi continue.
-# 2026-06-09: Router snapshot:
-# 2026-06-09: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-09: completed topics: 41
-# 2026-06-09: last Codex read: 2026-06-09T05:31:24Z
-# 2026-06-09: last Claude read: 2026-06-09T05:31:24Z
-# 2026-06-09: pending: none
-# 2026-06-09: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-08: {"session_id":"ef3523c2-f330-4e4f-9af2-3c1af8cc06b6","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/ef3523c2-f330-4e4f-9af2-3c1af8cc06b6.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-# 2026-06-08: Router snapshot:
-# 2026-06-08: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-08: completed topics: 41
-# 2026-06-08: last Codex read: 2026-06-09T03:45:08Z
-# 2026-06-08: last Claude read: 2026-06-09T03:45:08Z
-# 2026-06-08: pending: none
-# 2026-06-08: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-04: Setup wizard for Monday VC build (commit ff8a448, branch feat/setup-wizard, pushed).
-#   `sirsi setup` rebuilt: report -> guided 3-step wizard (Dependencies/FDA/Agent-wake) over new
-#   shared internal/setup/ engine (CDD #5: one engine, CLI + menubar-terminal both render it).
-#   Real TTY prompts before each action; pipe/dev-null/CI = report-only (golang.org/x/term, not
-#   os.ModeCharDevice which mis-classified /dev/null). Fixed thoth-init/sync/compact false-missing
-#   (thoth ships in the binary). main.go FDA pre-check now uses engine. Open: dedicated fullscreen
-#   TUI wizard screen? (ADR-020/TUI_DESIGN_PROOF-gated) or menubar->terminal suffices. codex review owed.
-# 2026-06-04: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e95cb-0fb7-7621-8396-bd62ca478bcc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-# 2026-06-04: Router snapshot:
-# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-04: completed topics: 41
-# 2026-06-04: last Codex read: 2026-06-05T03:19:52Z
-# 2026-06-04: last Claude read: 2026-06-05T03:19:52Z
-# 2026-06-04: pending: none
-# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-04: Canonicalized machine (1 versioned signed sirsi, zsh completion, no drift); sirsi fix resolver + safe PPID-orphan-kill (funnel BLOCKED pending codex User-metadata gap); menubar zsh close-prompt fix (read _). Open: install wizard, orphan User fix, mds_stores sudo.
-# 2026-06-04: Router snapshot:
-# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-04: completed topics: 41
-# 2026-06-04: last Codex read: 2026-06-05T02:48:24Z
-# 2026-06-04: last Claude read: 2026-06-05T02:51:31Z
-# 2026-06-04: pending: none
-# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-04: sirsi fix heuristic resolver (no LLM) — answers every finding; safe PPID-narrowed orphan-kill (KillTrueOrphans, PPID<=1 only, --yes never kills, 4 regression tests). Funnel diagnose->fix + menubar BLOCKED pending codex re-review (42588a9).
-# 2026-06-04: Router snapshot:
-# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-04: completed topics: 41
-# 2026-06-04: last Codex read: 2026-06-04T20:35:52Z
-# 2026-06-04: last Claude read: 2026-06-04T20:36:02Z
-# 2026-06-04: pending: none
-# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-04: {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e92c9-92fd-70e2-b849-33b23a6d8b83","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-# 2026-06-04: Router snapshot:
-# 2026-06-04: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-04: completed topics: 41
-# 2026-06-04: last Codex read: 2026-06-04T12:57:35Z
-# 2026-06-04: last Claude read: 2026-06-04T13:20:40Z
-# 2026-06-04: pending: none
-# 2026-06-04: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-06-01: {"session_id":"bafb166f-7d28-44f4-872f-6c2c49b47752","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/bafb166f-7d28-44f4-872f-6c2c49b47752.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":null}
-# 2026-06-01: Router snapshot:
-# 2026-06-01: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-06-01: completed topics: 41
-# 2026-06-01: last Codex read: 2026-06-01T16:24:36Z
-# 2026-06-01: last Claude read: 2026-06-01T16:12:19Z
-# 2026-06-01: pending: none
-# 2026-06-01: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-05-31: CTR auto-registration Phase 1 — `sirsi thread discover` (commit 10a97b7, codex APPROVED).
-#   Reconciles live agent processes into threads.json: bounded pgrep/lsof → cwd → agents.json match,
-#   registers mappable repo-launched sessions anchored to their PID. Home-launched=unmappable (never
-#   registered); same-cwd same-surface duplicate=ambiguous (never guessed, Rule A23). Pure
-#   ReconcileDiscovery + 9 tests (internal/router/discover.go); CLI (cmd/sirsi/threaddiscover.go) with
-#   --self (Phase 2 hook) + stable JSON. Phase 1.5: wired into hourly sweep.sh (with scout lane).
-#   Why 0 threads registered post-reboot: every session launched from $HOME → no repo identity.
-#   Phase 2 (SessionStart hook→discover --self) approved, not wired. Phase 3 (deliver into live
-#   session via remote-control) spike-gated. Feeds ADR-021 (Osiris workstation-scoping).
-# 2026-05-19: -
-# 2026-05-19: Router snapshot:
-# 2026-05-19: active topics: assiduous-v110-completion, finalwishes-v010-illinois-probate, ra-horus-router-hypervisor-canon, claude-cli-auth-for-router-dispatch
-# 2026-05-19: completed topics: 25
-# 2026-05-19: last Codex read: 2026-05-19T10:50:37-04:00
-# 2026-05-19: last Claude read: 2026-05-19T20:00:00Z
-# 2026-05-19: pending:
-# 2026-05-19: claude-assiduous: 20260519-codex-assiduous-google-calendar-implementation
-# 2026-05-19: claude-finalwishes: 20260518-codex-finalwishes-v010-illinois-probate-review, 20260519-codex-finalwishes-v010-goal-review
-# 2026-05-19: codex: 20260519-claude-pantheon-horus-wake-complete
-# 2026-05-19: codex-assiduous: 20260519-claude-assiduous-codex-batch2
-# 2026-05-19: codex-pantheon: 20260519-claude-pantheon-horus-wake-complete
-# 2026-05-19: dispatch ledger: 968 bytes, updated 2026-05-19 11:42:04
-# 2026-04-18: {"session_id":"73458060-7593-4916-9c32-3885e6708be2","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon-Development-sirsi-pantheon/73458060-7593-4916-9c32-3885e6708be2.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-# 2026-04-06: {"session_id":"e3a963d3-b25b-4a85-a05c-c69aecd0145f","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/e3a963d3-b25b-4a85-a05c-c69aecd0145f.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-# 2026-04-04: {"session_id":"1b4b4861-83fa-412d-a688-c199b6f4e775","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/1b4b4861-83fa-412d-a688-c199b6f4e775.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-# 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
-# 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
-# 2026-04-01: {"session_id":"b3eafb76-9e33-4114-9bf6-345bb2dd653b","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/b3eafb76-9e33-4114-9bf6-345bb2dd653b.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
+# 2026-07-31: Conduit/Horus run 2026-07-31T18:52Z (claude-home). All-green vitals, one owner escalation.
+# 2026-07-31: Router: 19 open, ZERO for claude-home or claude-codex-standin. The +2 vs prior run was fully explained (fresh codex-inference->claude-nexus item, plus this conduit's own response delivery back to claude-nexus) and needed no action.
+# 2026-07-31: DECISION - escalated one owner gate, item 20260731-184653, store-verified via sqlite3 (a printed router send id is a claim, the store row is the fact). The sirsi-pantheon repo root is parked on branch fix/sirsi-gemma-bare-server-chipA, so every conduit journal commit lands off main: 24 commits ahead of origin/main of which 20 are conduit journal commits back to 9ca65646 on 2026-07-29, with .thoth/journal.md diverged 2163 insertions (up from 2136 one run earlier). Nothing is broken, which is exactly why no automated pass catches it; the exposure is that three days of conduit forensics ride a branch that may be squashed or abandoned. Three owner options offered: land the branch, cherry-pick .thoth/journal.md alone (union merge driver keeps it low-conflict), or move the repo root back to main. Only the third stops recurrence.
+# 2026-07-31: PATTERN - report the registry FLOOR, never the prune delta. Entry floor 58 records, 73 after thread reconcile, and prune --older-than 1h deleted ZERO because every terminal record was younger than the window. New finding: sirsi thread reconcile is itself a minter, producing 11 reaped->successor records per run, roughly 44 records/hour at 4 runs/hour. Deliberately NOT routed as a new item because claude-pantheon already holds open item 20260731-184156 for this exact root cause and a second would be a nag.
+# 2026-07-31: CARRIED VERDICT, do not re-derive: sirsi router wait is LEVEL-triggered, returning in 0.018s against a non-empty inbox, so a /loop wrapped around it spins about 50 times a second. The SessionStart/UserPromptSubmit hook that tells claude-home to arm that /loop must be ignored on every run; a watcher count of zero is correct, not a gap. Fix already routed as 20260731-182937. Confirmed live again this session: the hook fired with a THIRD distinct thread id (thr-d86565a905772ba9 then thr-0d13db769eee58b2), so its pgrep-based idempotency guard can never match a prior arm and every firing looks un-armed by construction.
+# 2026-07-31: PRs unchanged, none mergeable by this session. pantheon #389 has Build/Lint/Test/Secrets PASS with only binding-hold failing, MERGEABLE but BLOCKED, and is cross-authored so neither claude-home nor codex-pantheon can sign the head. FinalWishes #114 is MERGEABLE and CLEAN but authored by this session, so no self-review. #357/#358 belong to their lanes, #361/#393 are drafts, SirsiNexusApp is empty.
+# 2026-07-31: Vitals: diagnose 88/100 amber whose sole priority signal is the capped Gemma broker at 14.3 GB against a 22.3 GB cap, memory 74 percent free, broker health ok with the --prompt-cache-bytes cap verified BY IDENTITY rather than by pidfile name, prompt cache 1.82 GB against a 6 GB balloon threshold, resolver on gemma-4-12B-it-8bit, all core launchd labels PID-verified alive, no BINARY_MISSING sentinels, no new crash or Jetsam artifacts beyond the already-evaluated set. ccd reap found 0 leaks and archived 0. Retention prune reclaimed 14.1 KiB.
+# 2026-07-31: NOT FINISHED, budget rather than breakage: local Gemma triage across all 18 open items was still on item 1 after several minutes and was stopped. No triage verdicts informed any decision this run; every open item was accounted for directly from the store and from carried state instead. At this queue size --all likely cannot fit a 15-minute cadence.
+# 2026-07-31: TOOLING HAZARD found this session: sirsi thoth sync run from $HOME never completes in bounded time because $HOME is not a git repository, so the sync has no repo boundary and walks the entire home tree to count modules. Run thoth sync inside an actual repo; at $HOME it produces nothing useful while burning CPU and Spotlight write amplification.
+# 2026-07-31: Router snapshot:
+# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-07-31: completed topics: 41
+# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
+# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
+# 2026-07-31: pending: none
+# 2026-07-31: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-07-31: Queue cleared 58→0 under owner directive; router held at zero (3 arrivals closed with live evidence).
+# 2026-07-31: Gemma guard batch complete: #409 triage warm path survives reasoning-shaped models (verified against live broker), #410 DIFFERENT-model diagnosis consults /v1/models ground truth before speaking.
+# 2026-07-31: #409 also versioned installed-script drift: codex Jul-24 fail-closed fix was ahead of main.
+# 2026-07-31: Landed earlier today: #404 deck drill-downs + #407 atomic routes, #405 close-resolved demoted to surface-only (both codex P1s), #406 reap-orphans intersect+floor, #408 slug/label/delegation fixes.
+# 2026-07-31: Machine: Health 94/100, one broker, swap 3GB. Remaining debt in tasks #52-54 (level-triggered wait and mint churn now have two reports each — front of batch). #49 blocked on owner token rotation.
+# 2026-07-31: Router snapshot:
+# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-07-31: completed topics: 41
+# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
+# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
+# 2026-07-31: pending: none
+# 2026-07-31: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-07-31: Router snapshot:
+# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-07-31: completed topics: 41
+# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
+# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
+# 2026-07-31: pending: none
+# 2026-07-31: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+# 2026-07-31: Router snapshot:
+# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-07-31: completed topics: 41
+# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
+# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
