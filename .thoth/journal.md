@@ -3049,3 +3049,54 @@ floor, not the delta; inbound remains ~12-20/h. `ccd reap` killed two leaked
 `router-conduit-supervisor` sessions (4 procs), so the sibling leak that did not recur last run has
 recurred. Retention reclaimed 20.3 KiB. Doctor's stranded set is byte-identical for the fifth
 consecutive run and was left alone.
+
+## Conduit run 2026-07-31T22:15Z — the binder could not say no
+
+Found and closed a P1 integrity defect in the review gate itself. `scripts/bind/sirsi-bind.sh`
+hardcoded `-f event=APPROVE`, so every bind — approval *or* rejection — was recorded by GitHub as
+an APPROVED review, and the gate re-run at the bottom of the same script then cleared binding-hold
+on the PR that had just been blocked. The tool had no way to express a block: recording one was
+mechanically indistinguishable from approving, and it unblocked the merge as a side effect.
+
+Caught on PR #416, where `reviewDecision=APPROVED`, `mergeable=MERGEABLE` and `binding-hold=pass`
+all sat over a review body opening "CHANGES REQUESTED at 8575157 … Blocking on one thing" — my own
+verdict from the previous run. Three green surfaces over a rejection, one `gh pr merge` from landing
+an explicitly blocked change. The badge and the body disagreed and only the body was true; this is
+the green-surface-over-a-dead-thing class again, and the tell was that #416 read APPROVED while its
+head SHA had never moved off the one I rejected.
+
+`binding-hold.yml` was never at fault — it selects `.state == "APPROVED"` and its own suite already
+asserts "non-APPROVED review does NOT bind". The gate read the API correctly; the writer put the
+wrong state in. Worth recording because the instinct on a bad gate is to go audit the gate.
+
+Contained first: dismissed review 4832323502 and re-ran binding-hold on 8575157 — #416 now reads
+`binding-hold=fail` with no review decision, verified on the check, not on the dismissal command.
+Swept the blast radius: no other open PR across pantheon/FinalWishes/SirsiNexusApp carries a
+sirsi-bind review at all, and none of the last 18 merged pantheon PRs merged over a block. The
+defect was live but had not yet done damage.
+
+Fix opened as #421: `--request-changes` records REQUEST_CHANGES; a body opening
+CHANGES REQUESTED/REJECT/BLOCKED without that flag is refused rather than silently flipped
+(inferring intent from prose is the move that created the bug); the gate re-run fires only for
+APPROVE. It also ports `--body @file` support, which the *installed* copy at `~/.local/bin` carried
+but `main` never did — undeployed drift that would have regressed the #333 evidence-loss fix on the
+next install. Added `bind-event-selection.test.sh`, 6 cases, no credentials or network needed since
+the guard runs ahead of the App-key check. Authored in this session, so routed to codex-pantheon for
+an independent bind rather than self-reviewed — with the warning that binding a *rejection* of #421
+through the current installed script would reproduce the bug, so a block must be posted via raw API
+until #421 lands. Corrected the record with claude-io, whose #416 it is; my verdict and remedy are
+unchanged and its head is still 8575157.
+
+Vitals: diagnose 88/100 🟡 on the same two non-fault drivers (capped broker, VM at 10.1 GB), memory
+88% free, broker healthy with the cap verified by identity (pid 2735, `--prompt-cache-bytes`
+present) and prompt cache at 0.51 GB, four core daemons live, no new crash reports. Threads pruned
+47→44 — the floor is ~44 against ~12-20 records/hour inbound, not a 3-record win. `ccd reap` killed
+nothing this run (the sibling leak did not recur) and archived 2 completed supervisor sessions.
+Retention reclaimed 7.9 KiB. Doctor's stranded set is no longer byte-identical: codex-inference ×2
+moved to wake-attempted, leaving claude-inference ×2, codex-io ×1, codex-nexus ×1 and the two owner
+gates, which stay open and un-nagged.
+
+One thing left deliberately: the repo root is still on `feat/version-claude-worker` carrying 125
+modified `.agents/idea-router/items/*.md` files. Those are the router's file-based item store under
+normal operation, not stranded work from the reaped thread that `thread reconcile` warned about —
+neither committed nor discarded. Owner gate 20260731-184653 still covers the off-main branch.
