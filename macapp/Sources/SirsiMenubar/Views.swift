@@ -588,48 +588,90 @@ struct CommandDeckView: View {
                         .foregroundStyle(gold)
                 }
                 Spacer()
-                HStack(spacing: 6) {
-                    Circle().fill(aiState.tint).frame(width: 8, height: 8)
-                    Text(aiStatusLabel)
-                        .sirsiFont(10, weight: .bold)
-                        .foregroundStyle(.secondary)
+                // The status capsule annotates the local AI — so it opens it.
+                NavLink { AskSirsiView(engine: engine) } label: {
+                    HStack(spacing: 6) {
+                        Circle().fill(aiState.tint).frame(width: 8, height: 8)
+                        Text(aiStatusLabel)
+                            .sirsiFont(10, weight: .bold)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(tileFill))
+                    .contentShape(Capsule())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(tileFill))
+                .accessibilityLabel("\(aiStatusLabel) — open Ask Sirsi")
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 10) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(aiState.tint)
-                        .frame(width: 4)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(aiState.title)
-                            .sirsiFont(24, weight: .bold)
-                            .foregroundStyle(.primary)
-                        Text(aiState.detail)
-                            .sirsiFont(13, weight: .medium)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                // The hero annotates the local AI; tapping it opens Ask Sirsi.
+                NavLink { AskSirsiView(engine: engine) } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(aiState.tint)
+                            .frame(width: 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(aiState.title)
+                                .sirsiFont(24, weight: .bold)
+                                .foregroundStyle(.primary)
+                            Text(aiState.detail)
+                                .sirsiFont(13, weight: .medium)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .sirsiFont(11, weight: .semibold)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 6)
                     }
-                    Spacer(minLength: 8)
+                    .contentShape(Rectangle())
                 }
+                .accessibilityLabel("\(aiState.title) — open Ask Sirsi")
 
+                // Every chip is a drill-down into the surface it annotates (owner
+                // gate): a chip that names a number the user cannot open teaches
+                // them the panel is a poster, not an instrument. Context and Risk
+                // pick their destination from the SAME condition that picked their
+                // text, so the tap always lands on the thing the words describe.
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
-                    CommandDeckMetric(state: computeState, fill: tileFill)
-                    CommandDeckMetric(state: routerState, fill: tileFill)
-                    CommandDeckMetric(state: contextState, fill: tileFill)
-                    CommandDeckMetric(state: riskState, fill: tileFill)
+                    CommandDeckMetric(state: computeState, fill: tileFill) { HorusView(engine: engine) }
+                    CommandDeckMetric(state: routerState, fill: tileFill) { RouterView(engine: engine) }
+                    CommandDeckMetric(state: contextState, fill: tileFill) {
+                        if engine.ownerGatedItems.count > 0 {
+                            OwnerActionsListView(engine: engine)
+                        } else {
+                            ThreadsView(engine: engine)
+                        }
+                    }
+                    CommandDeckMetric(state: riskState, fill: tileFill) {
+                        if engine.healthStatus != "green" {
+                            HorusView(engine: engine)
+                        } else if engine.safeBytes >= SirsiEngine.wasteThreshold {
+                            AnubisView(engine: engine)
+                        } else {
+                            RiskView(engine: engine)
+                        }
+                    }
                 }
 
                 if let sentence = engine.lastRunSentence {
-                    Text(sentence)
-                        .sirsiFont(12, weight: .medium)
-                        .foregroundStyle(engine.lastRun?.outcome == "degraded" ? Color.orange : Color.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    NavLink { ActivityView(engine: engine) } label: {
+                        HStack(spacing: 4) {
+                            Text(sentence)
+                                .sirsiFont(12, weight: .medium)
+                                .foregroundStyle(engine.lastRun?.outcome == "degraded" ? Color.orange : Color.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Image(systemName: "chevron.right")
+                                .sirsiFont(9, weight: .semibold)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Last run — open Activity")
                 }
             }
             .padding(12)
@@ -681,34 +723,54 @@ struct CommandDeckView: View {
     }
 }
 
-struct CommandDeckMetric: View {
+// CommandDeckMetric is a DRILL-DOWN, not a poster (owner gate 2026-07-30):
+// every chip on the deck opens the surface whose state it annotates. The
+// chevron and hover ring exist so it also LOOKS openable — an affordance the
+// user cannot see is one they will never try.
+struct CommandDeckMetric<Destination: View>: View {
     let state: CommandDeckSignal
     let fill: Color
+    @ViewBuilder let destination: () -> Destination
+    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Circle().fill(state.tint).frame(width: 7, height: 7)
-                Text(state.title.uppercased())
-                    .sirsiFont(9, weight: .bold)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+        NavLink { destination() } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle().fill(state.tint).frame(width: 7, height: 7)
+                    Text(state.title.uppercased())
+                        .sirsiFont(9, weight: .bold)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
+                    Image(systemName: "chevron.right")
+                        .sirsiFont(8, weight: .semibold)
+                        .foregroundStyle(hovering ? .secondary : .tertiary)
+                }
+                Text(state.detail)
+                    .sirsiFont(12, weight: .semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(state.evidence, id: \.self) { line in
+                    Text(line)
+                        .sirsiFont(10, weight: .medium)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-            Text(state.detail)
-                .sirsiFont(12, weight: .semibold)
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            ForEach(state.evidence, id: \.self) { line in
-                Text(line)
-                    .sirsiFont(10, weight: .medium)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            .frame(maxWidth: .infinity, minHeight: state.evidence.isEmpty ? 46 : 70, alignment: .topLeading)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(fill)
+                    .overlay(RoundedRectangle(cornerRadius: 7)
+                        .stroke(hovering ? Color.secondary.opacity(0.35) : .clear, lineWidth: 1))
+            )
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, minHeight: state.evidence.isEmpty ? 46 : 70, alignment: .topLeading)
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 7).fill(fill))
+        .onHover { hovering = $0 }
+        .accessibilityLabel("\(state.title): \(state.detail) — open \(state.title)")
     }
 }
 
