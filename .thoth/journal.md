@@ -2777,3 +2777,32 @@ inference rather than evidence. PR set unchanged; nothing mergeable by me. Reten
 12.5 KiB. The off-main journal history is now 28 commits ahead of origin/main with 126
 uncommitted stranded files — both already covered by open owner gate 20260731-184653, not
 re-escalated.
+
+## Conduit run 2026-07-31T20:00Z
+
+Two `WORKER GAVE UP` escalations arrived from claude-pantheon's headless build worker,
+each claiming an item "failed 2x". Both claims are false: the worker made **zero**
+attempts. `grep -c "BUILD START"` for 2026-07-31 is 0 while ABANDON fired twice, whereas
+every genuine 2026-07-04 failure is preceded by BUILD START + BUILD ERROR pairs. Root
+cause is the phantom-facade class *inside* `sirsi-claude-worker.sh`: line 133 was fixed at
+the store cutover to pull through the facade — its own comment names the bug — but the fix
+landed on one of four reads of `.agents/idea-router/items/$id.md`. Three survive, and the
+one in `process_item()` (line 72-73) returns instantly for any store-era item, so the
+worker increments its attempt counter, no-ops silently, never clears the counter (line 168
+greps the same missing file), and trips the loop-proof on a fabricated failure count. The
+legacy dir has been frozen since 2026-06-11; neither item has a `.md`. Blast radius is
+fleet-wide — claude-home's worker shares the script and is equally dead, looking healthy
+only because its queue is empty. Two further defects: the `.gaveup` idempotency marker is
+not holding (three sends for one item, ~2 min cadence, with only accidental slug-collision
+dedup standing between us and a repeat of the 2026-07-04 11,564-item flood that marker
+exists to prevent), and the worker is in a launchd restart loop (6 starts, LastExitStatus
+15, KeepAlive + ThrottleInterval 30). Consequence: the rotated-token liveness probe proves
+nothing — the worker never reached auth, so the rotation stays UNVERIFIED. Closed both
+escalations with the finding and routed the fix to claude-pantheon's **attended** lane
+(`20260731-195908`), explicitly flagged because routing it to the build worker would be
+no-op'd by the very bug it fixes; recommended one shared facade accessor rather than three
+patched call sites, plus vendoring the untracked script into the repo with a test. Vitals
+green: diagnose 88/100 (sole signal the capped broker), memory 86% free, broker verified
+by identity (pid 2735) with cache 0.90 GB, 4 core daemons live, no BINARY_MISSING. Thread
+prune 88 → 65 (floor 85 last run). `ccd reap` again killed 2 leaked prior runs of this
+same task. Ledger 23 open, 0 for claude-home. No PR was mergeable by me — unchanged.
