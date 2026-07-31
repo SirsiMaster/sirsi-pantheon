@@ -636,24 +636,22 @@ struct CommandDeckView: View {
                 // them the panel is a poster, not an instrument. Context and Risk
                 // pick their destination from the SAME condition that picked their
                 // text, so the tap always lands on the thing the words describe.
+                // Text and destination are derived ATOMICALLY: the route enum is
+                // computed in the same body pass as the chip text and captured BY
+                // VALUE in the destination closure. Re-reading engine state at tap
+                // time could show "owner decisions" and open Threads if the engine
+                // updated between render and tap (codex post-merge finding 3).
+                let ctxRoute: DeckRoute = engine.ownerGatedItems.count > 0 ? .ownerActions : .threads
+                let riskRoute: DeckRoute = engine.healthStatus != "green" ? .horus
+                    : (engine.safeBytes >= SirsiEngine.wasteThreshold ? .anubis : .osiris)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
-                    CommandDeckMetric(state: computeState, fill: tileFill) { HorusView(engine: engine) }
-                    CommandDeckMetric(state: routerState, fill: tileFill) { RouterView(engine: engine) }
-                    CommandDeckMetric(state: contextState, fill: tileFill) {
-                        if engine.ownerGatedItems.count > 0 {
-                            OwnerActionsListView(engine: engine)
-                        } else {
-                            ThreadsView(engine: engine)
-                        }
+                    CommandDeckMetric(state: computeState, fill: tileFill, destinationName: DeckRoute.horus.surfaceName) { HorusView(engine: engine) }
+                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RouterView(engine: engine) }
+                    CommandDeckMetric(state: contextState, fill: tileFill, destinationName: ctxRoute.surfaceName) {
+                        DeckRouteView(route: ctxRoute, engine: engine)
                     }
-                    CommandDeckMetric(state: riskState, fill: tileFill) {
-                        if engine.healthStatus != "green" {
-                            HorusView(engine: engine)
-                        } else if engine.safeBytes >= SirsiEngine.wasteThreshold {
-                            AnubisView(engine: engine)
-                        } else {
-                            RiskView(engine: engine)
-                        }
+                    CommandDeckMetric(state: riskState, fill: tileFill, destinationName: riskRoute.surfaceName) {
+                        DeckRouteView(route: riskRoute, engine: engine)
                     }
                 }
 
@@ -723,6 +721,39 @@ struct CommandDeckView: View {
     }
 }
 
+// DeckRoute is a VALUE captured at render time, so the surface a tap opens is
+// the one the chip's text described — text and destination cannot diverge.
+enum DeckRoute {
+    case horus, routerFabric, ownerActions, threads, anubis, osiris
+
+    var surfaceName: String {
+        switch self {
+        case .horus: return "Horus — Ops"
+        case .routerFabric: return "Router — Fabric"
+        case .ownerActions: return "Owner Actions"
+        case .threads: return "Threads"
+        case .anubis: return "Anubis — Hygiene"
+        case .osiris: return "Osiris — Checkpoints"
+        }
+    }
+}
+
+struct DeckRouteView: View {
+    let route: DeckRoute
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        switch route {
+        case .horus: HorusView(engine: engine)
+        case .routerFabric: RouterView(engine: engine)
+        case .ownerActions: OwnerActionsListView(engine: engine)
+        case .threads: ThreadsView(engine: engine)
+        case .anubis: AnubisView(engine: engine)
+        case .osiris: RiskView(engine: engine)
+        }
+    }
+}
+
 // CommandDeckMetric is a DRILL-DOWN, not a poster (owner gate 2026-07-30):
 // every chip on the deck opens the surface whose state it annotates. The
 // chevron and hover ring exist so it also LOOKS openable — an affordance the
@@ -730,6 +761,9 @@ struct CommandDeckView: View {
 struct CommandDeckMetric<Destination: View>: View {
     let state: CommandDeckSignal
     let fill: Color
+    // Named so the accessibility label can say where the tap actually lands —
+    // "open Context" names the chip, not the surface (codex post-merge finding 4).
+    let destinationName: String
     @ViewBuilder let destination: () -> Destination
     @State private var hovering = false
 
@@ -770,7 +804,7 @@ struct CommandDeckMetric<Destination: View>: View {
             .contentShape(Rectangle())
         }
         .onHover { hovering = $0 }
-        .accessibilityLabel("\(state.title): \(state.detail) — open \(state.title)")
+        .accessibilityLabel("\(state.title): \(state.detail) — open \(destinationName)")
     }
 }
 

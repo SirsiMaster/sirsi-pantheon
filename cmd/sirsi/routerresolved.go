@@ -50,7 +50,7 @@ var routerCloseResolvedApply bool
 
 var routerCloseResolvedCmd = &cobra.Command{
 	Use:   "close-resolved",
-	Short: "Retire acknowledgement items whose referenced PRs all landed; surface the rest (dry-run by default)",
+	Short: "List items whose referenced PRs all landed, for a reader to judge (surface-only; --apply refuses)",
 	RunE:  runRouterCloseResolved,
 }
 
@@ -165,10 +165,23 @@ func runRouterCloseResolved(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	verb := "WOULD-CLOSE"
 	if routerCloseResolvedApply {
-		verb = "CLOSING"
+		// SURFACE-ONLY until typed acknowledgements exist (codex post-merge
+		// review of #405, two P1s):
+		//  1. resolvedBy matches bare #NNN against THIS repo's PRs while items
+		//     span repo-scoped lanes — "ACK: FinalWishes PR #24 merged" would
+		//     close on Pantheon's #24. A number is not an identity.
+		//  2. Title vocabulary is not structural proof of no-outstanding-ask:
+		//     "Re: defect persists after PR #401" announces live work and
+		//     qualifies. The honest gate is a router-generated typed ack with an
+		//     explicit resolves_item relation — which does not exist yet.
+		// A close is destructive and irreversible in practice (nobody re-reads
+		// closed items), so the flag refuses rather than trusts inference.
+		return fmt.Errorf("close-resolved is surface-only: closing on inferred PR numbers and title prefixes can retire live work " +
+			"(cross-repo #NNN collision; ack titles that announce new defects). It lists candidates for a reader; " +
+			"close individual items with `sirsi router close <id> --result @file` after reading them")
 	}
+	verb := "WOULD-CLOSE"
 	closed := 0
 	for _, c := range closable {
 		nums := make([]string, 0, len(c.refs))
