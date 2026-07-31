@@ -113,3 +113,27 @@ func TestBothRegistryShapesParse(t *testing.T) {
 		t.Fatalf("object-wrapped and bare-list registries must compare equal, got %+v", d)
 	}
 }
+
+// A map-shaped entry with NO inner "id" is fully live to the router, because
+// LoadRegistry injects the map key as the ID. A check that skipped it would be
+// blind to an agent the router happily addresses — a facade of its own, which is
+// the exact class this file exists to catch.
+//
+// Found by codex-pantheon reviewing #413. Zero of 23 live entries hit it that
+// day, which is why it is a latent blind spot rather than a live defect: the
+// worst kind to leave, because nothing will remind you.
+func TestEntryWithoutInnerIDIsStillSeen(t *testing.T) {
+	up := `{"agents":{"ghost":{"wake":{"mechanism":"launchagent","launch_agent_label":"ai.sirsi.router.wake.ghost"}}}}`
+	live := `{"agents":{"ghost":{"wake":{"mechanism":"launchagent"}}}}`
+
+	d := diffRegistries([]byte(up), []byte(live))
+	if !d.Checked {
+		t.Fatalf("id-less entries must not make the whole comparison unknown: %+v", d)
+	}
+	if !d.Drifted() {
+		t.Fatal("an agent the router CAN address must not be invisible to the drift check")
+	}
+	if len(d.LostFields) != 1 || d.LostFields[0].AgentID != "ghost" {
+		t.Fatalf("must attribute the loss to the map key, got %+v", d.LostFields)
+	}
+}

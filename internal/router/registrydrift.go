@@ -154,6 +154,35 @@ func agentsByID(raw []byte) (map[string]map[string]any, error) {
 		}
 		out[id] = m
 	}
+	// Map-shaped registries key each entry by id and LoadRegistry INJECTS that
+	// key as the ID, so an entry with no inner "id" is fully live to the router.
+	// Skipping it here would make such an entry invisible to this check while
+	// the router happily addresses it — the check must see exactly what the
+	// loader sees, or it is a facade of its own. (Found by codex-pantheon in the
+	// #413 bind review; 0 of 23 live entries hit it that day.)
+	if m, ok := anyDoc.(map[string]any); ok {
+		inner := m
+		if a, ok := m["agents"].(map[string]any); ok {
+			inner = a
+		}
+		for key, e := range inner {
+			em, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, already := out[key]; already {
+				continue
+			}
+			if id, _ := em["id"].(string); id == "" {
+				withID := map[string]any{}
+				for k, v := range em {
+					withID[k] = v
+				}
+				withID["id"] = key // mirror LoadRegistry's injection
+				out[key] = withID
+			}
+		}
+	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no agent entries found")
 	}
