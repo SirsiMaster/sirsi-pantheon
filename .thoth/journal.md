@@ -2905,3 +2905,47 @@ bare-closed), routed 1. Nothing else mergeable: #412/#114 mine, #389 cross-autho
 minutes old and codex-pantheon's, rest conflicting or draft. Vitals: diagnose 82/100 🟡 (sole driver
 is the capped broker), broker healthy and cap verified by identity (pid 2735, cache 0.52 GB), four
 core daemons live, no new crash/Jetsam, threads 53→53, retention 5.5 KiB.
+
+## Conduit run 2026-07-31T21:00Z
+
+Two open PRs turned out to be one change. #412 (mine, 20:08Z) and #414 (claude-pantheon,
+20:46Z) both fixed the headless build worker's frozen-legacy-dir reads; diffing the two
+patches showed the change to `scripts/router/sirsi-claude-worker.sh` is byte-identical and
+only the CHANGELOG prose differs. Rather than let two identical PRs race, I kept #414 and
+closed #412 — a mechanical call, not a quality one: #412 is mine and I can never merge my
+own PR, so keeping it would have parked the fix behind an extra reviewer round-trip, while
+#414 has an independent author. Source-deep review of #414 before binding at `e95fe262`:
+fetched the branch blob and diffed it against the live deployed worker — byte-identical
+(11884 B), so this merge makes the repo match what already runs rather than proposing new
+behavior. Verified each claimed fix in the source rather than the description: zero
+functional legacy-path reads (the lone `idea-router/items` hit is a comment), `fetch_item`
+goes through `router show` with a nothing-returned fetch costing no attempt, age derives
+from the store's `opened:` with an unparseable value skipping loudly instead of defaulting
+to epoch 0, RAM-defer returns ahead of the attempt counter, and `.gaveup` is touched before
+`router send`. Held only for the 1h soak. #413 (registry drift check) still bound at its
+exact head `4642d16` with all five checks green — 22 min old at sweep time, so it also
+waits on soak, not on review.
+
+Caught a regime mismatch heading for an investor deck. SirsiNexusApp #214 publishes a
+TRACTION proof band whose 224 tok/s headline is properly qualified inline (96 concurrent,
+median of 3, 5% spread, warmup discarded), but whose companion claim — "~32 to 224 tokens/s
+= 7x serving capacity, in software" — states no regime for its ~32 baseline. In
+`INVESTOR-CANON.md` the concurrency table sits ten lines above that sentence and prints
+32.6 tok/s as the *current* engine's concurrency-1 rate, so the same figure carries two
+meanings in one document and the 7x reads as a load increase (1 conversation to 96) rather
+than a software gain. The two numbers are also different measurement shapes — the table is
+closed-loop fixed-batch, the 224 is open-loop with independent arrivals, which is why 224 at
+96 concurrent is legitimately below 620.3 at 64. Both honest, not comparable, and placed
+where they invite comparison. Routed to claude-deck as `20260731-210001` asking for one
+clause naming the baseline's regime; not a merge block, their lane, codex-approved. Verified
+the item landed in the store (2898 B) rather than trusting the printed id.
+
+Housekeeping: threads 61 → 52 (pruned 9 terminal at the 1h window; reconcile healed one
+reaped claude-home record to a successor and still warns 125 uncommitted files at repo
+root). `ccd reap` killed 2 leaked sibling conduit-supervisor sessions (4 procs). Retention
+reclaimed 11.1 KiB. Vitals green: diagnose 88/100, memory 88% free, broker `/health` ok with
+the cap verified by identity (pid 2735, `--prompt-cache-bytes` present), prompt cache 0.52 GB,
+model `gemma-4-12B-it-8bit`, all four core daemons live. No new crash or Jetsam — the newest
+`.diag` files are Microstackshot performance samples, not crashes. Doctor's stranded set is
+unchanged from the previous run and was not re-litigated. Journal commits remain stranded on
+`fix/sirsi-gemma-bare-server-chipA`; that is owner gate `20260731-184653` and was left alone.
