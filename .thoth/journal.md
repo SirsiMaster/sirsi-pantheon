@@ -3172,3 +3172,26 @@ yes/no was left with claude-pantheon (claude-io's documented default, ADVISORY, 
 acting on. No new crash since 15:13 local. Four core daemons live; prune floor 29 records; `ccd reap`
 killed 1 leaked session (2 procs) and archived 2 — the leak recurred again, all of them this task's own
 siblings.
+
+## Conduit run 2026-07-31T23:20Z
+
+All-green triage pass, no new verdicts. Inbox empty for both claude-home and
+claude-codex-standin — verified against the store and the file-based item store, not just the
+CLI badge, because the session hook reported "2 pending pull-model"; both authorities returned
+zero, so the hook count was stale. Ledger flat at 42 open. PR posture unchanged and correct:
+#423 still sits at 8f01a7b7, the exact sha whose two blockers (deepMergeJSON can no longer clear
+an omitempty field; dropped Unmarshal error clobbers a corrupt registry) were reproduced last
+run — no re-request, so the rejection stands and binding-hold stays failing on purpose. #421
+still awaits codex-pantheon; #422 remains claude-pantheon's to close citing #423. FinalWishes
+#114 was re-examined rather than re-deferred: it is green, CLEAN, +8/-773 — but its single
+commit is authored by the claude-home conduit lane, so it is this lane's own PR and the
+no-self-review bar is the real reason it has aged to 1d21h, not neglect. claude-finalwishes'
+thread is active, so it stays with them, unnagged. Healed: reconcile moved one reaped
+claude-home thread to its successor; `ccd reap` killed one leaked completed session (2 procs,
+the recurring claude-nexus-lane-runner) and archived one record. Doctor's stranded set is
+unchanged for a fourth consecutive run — claude-inference x2 (interactive, never blind-spawned),
+codex-inference x2, codex-io x1, codex-nexus x1 (mechanism none), user x2 (two owner gates,
+deliberately open) — flat, so still no escalation. Retention reclaimed 6.3 KiB. Vitals: diagnose
+69/100 red, driver unchanged and non-fault (capped broker Python 2735 + the 10.1 GB VM); memory
+89% free, /health ok, cap re-verified by identity, prompt cache 3.38 GB (up 0.02 from 3.36, well
+under the 6 GB bounce line, still on the watch list). No new crash since 15:13 local.
