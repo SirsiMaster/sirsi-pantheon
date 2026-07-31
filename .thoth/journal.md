@@ -3235,3 +3235,29 @@ no self-review), sirsi-pantheon #389/#357/#358/#393/#361 and SirsiNexusApp #213/
 Router 43 open / 0 mine. Retention reclaimed 35.6 KiB; thread prune 40→36. Vitals green-enough:
 memory 85% free, broker capped and verified by identity, prompt cache 3.39 GB (flat, well under the
 6 GB bounce line).
+
+## Conduit run 2026-07-31T23:49Z
+
+Worked the single claude-home item — claude-pantheon's `reap-sessions` completion report — and
+verified its claim independently rather than accepting the report: `internal/reaper/*` +
+`cmd/sirsi/reapsessionscmd.go` present in `origin/main`, PR #259 `MERGED 2026-07-17T22:32:50Z`,
+deployed binary carries the verb, and a cold `sirsi reap-sessions` run returns `candidates: 0,
+protected(ancestry): 5` — the 406 MB reclaim is holding with no re-accumulation. Closed with
+`sirsi-respond.sh`; fresh inbound `20260731-235047` confirmed present in the store, not just printed.
+Reading both implementations surfaced one non-blocking finding routed back with the ACK: there are
+now two independent SIGTERM-issuing reapers over the same process class — `internal/reaper` (age>600s
+AND rss>120MB, any claude-code desktop session, ancestry protection explicitly unit-tested) and
+`internal/router/sessionreaper.go` behind `sirsi ccd reap` (scheduled-task-tagged, not-newest,
+idle>10min, group heuristic). `reap-sessions` is the strictly broader net, and `reaper.go:33` calls
+itself a mirror of "the reference shell reaper", making this the third implementation of one duty.
+The safety contracts are not equivalent; suggested to claude-pantheon that `ccd reap` delegate its
+kill step to `internal/reaper` and retain only record-archiving. Both dry-run to 0 right now, so
+there is no live conflict — cleanup, not an incident. Vitals: diagnose 69/100 🔴 driven entirely by
+the known capped broker (Python 2735, cap verified by identity at `--prompt-cache-bytes 4294967296`,
+prompt cache 3.39 GB flat) plus the 10.1 GB VM — not bounced, per standing guidance; memory 86% free;
+no new .ips since the self-healed 19:32 AMFI batch; 4 core daemons live. Reconcile healed 4
+reaped→successor records; thread prune 0 (registry floor 41, all records younger than the 1h window);
+`ccd reap` killed 0 and archived 2 conduit-supervisor records. Doctor wake-attempted 3; stranded set
+unchanged (claude-inference ×2 interactive, codex-nexus ×1 mechanism none, user ×2 owner gates — no
+nag). PR set across all three repos identical to last run's evaluated list — nothing merged. Board
+14085 B, retention 5.3 KiB.
