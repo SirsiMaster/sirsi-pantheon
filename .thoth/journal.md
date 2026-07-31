@@ -2627,3 +2627,54 @@ wanted process is the middle of `bash → claude-code 2215 → disclaimer 2214 �
 512` and `comm` basename cannot separate them, so the discriminator has to be the
 executable path. Retention bounds the symptom; it does not close the cause, and per
 `thread prune --help` the registry writes themselves are what re-trigger Spotlight indexing.
+
+## Conduit run 2026-07-31T18:50Z
+
+All-green vitals with one escalation. `sirsi diagnose` 88/100 🟡 — sole priority signal is
+"Python at 14.3 GB", which is the capped Gemma broker (cap 22.3 GB) and expected; memory 74% free.
+No new crash or Jetsam artifacts since the previously-evaluated set (newest user `.ips` still the
+pre-reboot 12:19 sirsi, 11:08 Jetsam took only Apple daemons). Broker `/health` ok and the
+`--prompt-cache-bytes 4294967296` cap verified BY IDENTITY via `gemma-server.pid`; prompt cache
+1.82 GB, well under the 6 GB balloon threshold. Resolver → `gemma-4-12B-it-8bit`. All core launchd
+labels PID-verified alive (horus.agent-router 1325, triage 1308, pantheon 1323, gemma-worker 1345,
+gemma-broker 2735). No BINARY_MISSING sentinels.
+
+Router: 18 open at entry, **zero for claude-home and zero for claude-codex-standin**. The +2 versus
+the prior run is fully explained and needs no action — `20260731-183600` is fresh inbound
+codex-inference→claude-nexus, and `20260731-182945` is this conduit's own response delivery back to
+claude-nexus. `router doctor --fix` reproduced the known picture exactly: claude-inference stranded
+(interactive, correctly not blind-spawned), codex-inference wake-attempted, and the `user` OAuth item
+recorded wake-unavailable, which is correct rather than a defect. All four stale >24h items were
+already evaluated in prior runs with live recipients; left untouched. PRs unchanged and none
+mergeable by this session — pantheon #389 still Build/Lint/Test/Secrets PASS with only `binding-hold`
+failing and mergeStateStatus BLOCKED, but it is cross-authored so neither claude-home nor
+codex-pantheon can sign the head; #357/#358/#361/#393 belong to their lanes; FinalWishes #114 is
+MERGEABLE/CLEAN but authored by this session, so no self-review. SirsiNexusApp empty.
+
+**Escalated one owner gate — `20260731-184653`, store-verified.** The repo root is parked on
+`fix/sirsi-gemma-bare-server-chipA`, so every conduit journal commit lands off main. Now
+re-verified across three runs and still growing: 24 commits ahead of origin/main of which **20 are
+conduit/Horus journal commits** dating back to `9ca65646` on 2026-07-29, and `.thoth/journal.md`
+diverged 2163 insertions (up from 2136 one run ago). Nothing is broken, which is exactly why no
+automated pass catches it — the exposure is that three days of conduit forensics ride a feature
+branch that may be squashed or abandoned. Routed with three owner options (land the branch,
+cherry-pick the journal file alone, or move the repo root back to main) and flagged option 3 as the
+only one that stops recurrence.
+
+**Registry floor, reported as a level rather than a delta.** Entry floor 58 records; after
+`thread reconcile` healed 11 reaped→successor pairs the floor was 73, and `thread prune
+--older-than 1h` deleted **0** because every terminal record was younger than the window. Composition
+at close: 13 active, 8 suspended, 2 idle, claude-home still the largest single minter at 11. New
+evidence for the already-routed churn item `20260731-184156`: **`thread reconcile` is itself a
+minter** — 11 successor records per run at ~4 runs/hour is ~44 records/hour from reconcile alone,
+which amplifies the `pid:null` birth defect already reported. Deliberately NOT routed as a second
+item, since claude-pantheon already holds an open unpulled item for this exact root cause and a
+second would be a nag. `ccd reap --apply`: 0 leaks, 0 archived. Retention prune reclaimed 14.1 KiB
+(<5 MiB, noted only for completeness).
+
+Local-Gemma triage was started against all 18 items but did **not** complete inside the run budget —
+it was still on item 1 of 18 after several minutes (the known silent-for-minutes behavior, scaled up
+by 18 items versus 8 last run). No triage verdicts were used this run; every open item was instead
+accounted for directly from the store and from carried state, and none required action from this
+conduit. Worth noting for the next run that `--all` against a queue this size may simply exceed a
+15-minute cadence.
