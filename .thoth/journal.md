@@ -3014,3 +3014,38 @@ Retention reclaimed 2.8 KiB. Doctor's stranded set is byte-identical for a fourt
 Noted for the next run: thread record `thr-7b1a7dc6dd7cb5a5` (agent=gemma, surface=worker) is
 `active` with a 3.2 h-old heartbeat and no `~/.sirsi/threads/` directory at all — the sanctioned
 reaper deliberately left it, so it was not suspended by hand.
+
+## Conduit run 2026-07-31T22:01Z
+
+Merged PR #420 (`WakeConfig.LaunchAgentLabel` + `case WakeNone` in `Validate`), closing the root
+cause of three registry drift incidents in six days: `WakeConfig` had no field for
+`launch_agent_label`, so `encoding/json` discarded the key on every unmarshal and `SaveRegistry`
+wrote the loss back. Verified on `origin/main` rather than on the merge command —
+`internal/router/registry.go:50` and `:160`. Preferred #420 over the near-identical #419, which is
+the same diff plus a `LoadRegistry` auto-fill that synthesizes `ai.sirsi.router.wake.<id>` for every
+launchagent entry; that value is never checked against a loaded launchd job, so the first
+`SaveRegistry` after it would write an assertion of arming nobody verified. Checked, rather than
+assumed, that the auto-fill could not have blinded the drift check either way: `registrydrift.go`
+reads raw JSON via `os.ReadFile` and `git show origin/main:`, never `LoadRegistry`. Flagged that
+#420 is not the class fix — `grep -i consumer` on `origin/main:internal/router/registry.go` returns
+zero hits while `claude-deck` carries a `consumer` block in both the live and merged registries, so
+the same loader mechanism is poised to strip it exactly as it stripped `launch_agent_label`; routed
+the agreed preserve-unknown-keys remedy (typed struct + `map[string]json.RawMessage` catch-all) back
+to claude-pantheon along with the ask to close #419 and the superseded, conflicting #418. Relayed
+claude-pantheon's request to claude-io not to build a working-tree-vs-origin/main divergence check
+(`registrydrift.go` is its generic form), bundled with the note that #416's head is unmoved at
+`8575157` and still needs its id-keying fix. Routed one new finding: thread
+`thr-7b1a7dc6dd7cb5a5` renders 🟢 `status=active` for `sirsi-gemma-worker.sh` (pid 1345, alive
+3h37m) whose `last_seen` is 18:22:24Z — twenty-three seconds after the process started at 18:22:01Z.
+The worker heartbeats once at registration and never again; OS-truth correctly refuses to reap a
+live PID, `status=active` is correctly preserved, the renderer correctly prints green, and the
+composite still cannot say stale-but-alive even though `idle 13007s` is already on the line.
+Deliberately did not suspend it — the process is genuinely alive, and suspending would trade a
+misleading green for a false red. Vitals: diagnose 88/100 🟡 on the same two non-fault drivers
+(capped broker, 10.1 GB VM), memory 83% free, broker `/health` ok with the cap verified BY IDENTITY
+(pid 2735 carries `--prompt-cache-bytes`), prompt cache 0.51 GB, model `gemma-4-12B-it-8bit`, four
+core daemons live, no new crash report. Threads reconciled clean and pruned 53 → 46 records — the
+floor, not the delta; inbound remains ~12-20/h. `ccd reap` killed two leaked
+`router-conduit-supervisor` sessions (4 procs), so the sibling leak that did not recur last run has
+recurred. Retention reclaimed 20.3 KiB. Doctor's stranded set is byte-identical for the fifth
+consecutive run and was left alone.
