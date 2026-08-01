@@ -839,6 +839,33 @@ func jsonPrint(v any) error {
 	return enc.Encode(v)
 }
 
+// threadGlyph returns the display glyph for a thread given its status and
+// whether it is stale (heartbeat quiet past the configured stale-after window).
+// Stale overrides liveness glyphs (active/idle/stale-heartbeat) but not
+// terminal (closed/reaped) or blocked statuses — those have semantic priority.
+func threadGlyph(status router.ThreadStatus, stale bool) string {
+	marker := "🟢"
+	switch status {
+	case router.ThreadStatusClosed:
+		marker = "⚫"
+	case router.ThreadStatusReaped:
+		marker = "💀"
+	case router.ThreadStatusBlocked:
+		marker = "⛔"
+	case router.ThreadStatusIdle:
+		marker = "💤"
+	case router.ThreadStatusStale:
+		marker = "⚠️"
+	}
+	// A stale-by-time thread (live PID, quiet heartbeat) shows ⚠️ regardless of
+	// reported status unless the status already has semantic priority (terminal /
+	// blocked). This is the "stale-but-alive" signal the operator needs.
+	if stale && !status.IsTerminal() && status != router.ThreadStatusBlocked {
+		marker = "⚠️"
+	}
+	return marker
+}
+
 var threadListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List registered threads (active by default)",
@@ -918,19 +945,7 @@ var threadListCmd = &cobra.Command{
 			return nil
 		}
 		for _, r := range rows {
-			marker := "🟢"
-			if r.stale {
-				marker = "⚠️"
-			}
-			if r.thr.Status == router.ThreadStatusClosed {
-				marker = "⚫"
-			} else if r.thr.Status == router.ThreadStatusReaped {
-				marker = "💀"
-			} else if r.thr.Status == router.ThreadStatusBlocked {
-				marker = "⛔"
-			} else if r.thr.Status == router.ThreadStatusIdle {
-				marker = "💤"
-			}
+			marker := threadGlyph(r.thr.Status, r.stale)
 			fmt.Printf("  %s %s  agent=%s surface=%s status=%s\n",
 				marker, r.thr.ThreadID, r.thr.AgentID, r.thr.Surface, r.thr.Status)
 			fmt.Printf("      last_seen=%s (idle %.0fs)\n",
