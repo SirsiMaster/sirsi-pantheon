@@ -3261,3 +3261,58 @@ reaped→successor records; thread prune 0 (registry floor 41, all records young
 unchanged (claude-inference ×2 interactive, codex-nexus ×1 mechanism none, user ×2 owner gates — no
 nag). PR set across all three repos identical to last run's evaluated list — nothing merged. Board
 14085 B, retention 5.3 KiB.
+
+## Conduit run 2026-08-01T00:14Z
+
+Host rebooted at 20:06:54 local (shutdown stall logged 20:06); this pass began 54 seconds into the
+new boot. `sirsi diagnose` reported 🟢 100/100 with high confidence while the ENTIRE agent fabric was
+down — `launchctl list | grep sirsi` was empty and the Gemma broker `/health` answered nothing. The
+badge was scoring a machine with zero sirsi daemons on it. Trust raw metrics, never a health badge.
+
+Root cause was not the reboot. `/var/db/com.apple.xpc.launchd/disabled.501.plist` carried an explicit
+`disabled` override for every `ai.sirsi.*` label except the four newest (`claude-worker.claude-inference`,
+`router.wake.claude-inference`, `router.wake.codex-inference`, `ai.sirsi.gemma`) — the signature of a
+bulk `launchctl disable` sweep over the label set that existed when it ran, leaving anything created
+afterward untouched. All ten `actions.runner.SirsiMaster-*` self-hosted CI runners were disabled by the
+same sweep. Because `launchctl disable` only gates FUTURE bootstraps and never stops a running job, the
+fabric kept running normally for however long the flag had been set: the previous conduit pass at 19:52
+legitimately observed horus.agent-router 1325, triage 1308, pantheon 1323 and gemma-worker 1345 all live
+with status 0. The disable was invisible to every liveness probe we have, and the reboot was simply the
+first moment launchd consulted it. This is the green-surface-over-a-dead-thing class with a latency
+fuse attached — the surface was not merely stale, it was correct right up until a boundary that could
+arrive weeks later. Note that the usual step-3 heal, `launchctl kickstart -k`, cannot repair this: a
+label that is both disabled and unloaded rejects kickstart. The repair is `enable` then `bootstrap`.
+
+Restored in verified batches: five core daemons (horus.agent-router 4726 `sirsi horus supervise`,
+triage 4731, pantheon 4736, gemma-worker 4743, gemma-broker 4751), then the watcher/worker layer
+(thread-watcher.claude-home, claude-worker.claude-home, claude-worker.claude-pantheon, conduit.tick,
+fabric-watchdog, liveness-watch), then all twelve `router.wake.*` agents — 23 labels live, each PID
+confirmed against its real argv rather than against launchctl's own report. Broker verified BY IDENTITY
+carrying `--prompt-cache-bytes 4294967296` on gemma-4-12B-it-8bit, `/health` ok. The ten CI runners were
+re-enabled after `gh api` independently confirmed `m5-sirsi` and `m5-sirsi-2` were `offline` on GitHub;
+both report `online` again. Left deliberately disabled: `hypergraph.digest` (owner-operated lane). The
+payoff is measurable in the doctor pass — 40 open items now sit on heartbeat-armed agents that would
+otherwise every one have stranded silently.
+
+Worked the single inbox item, claude-pantheon's audit of 20260731-212922, by re-verifying all three
+claims against origin/main @ 6bff676e rather than accepting the report. Claims 1 and 2 hold exactly:
+only `internal/router/registrydrift.go` exists with no underscore variant, and `registry.go:44` carries
+`extra map[string]json.RawMessage`. Claim 3 reached the right verdict on false evidence. The report
+stated "WakeLaunchAgentLabel does not exist in origin/main ... the feature was never merged"; it does
+exist and is load-bearing, called at `supervisor.go:401` and `threadcmd.go:731,733,737`. The concern is
+nonetheless resolved for the reason the project's own guard test gives: `LoadRegistry`'s only
+post-unmarshal mutation is injecting `cfg.ID` from the map key, the label is derived from the agent id
+by convention at call time, and a missing one is caught generically by registrydrift.go. Verdict
+accepted, evidence corrected, and the correction routed back rather than quietly absorbed — a correct
+conclusion resting on an incorrect finding survives only by luck, and the next reader inherits the luck,
+not the reasoning.
+
+Vitals: memory 91% free, load settled 30.4 → 5.6 as the boot storm drained. Thread reconcile healed 9
+reaped→successor pairs (all pre-reboot, expected); registry floor is 60 records after pruning 5 terminal
+— up from 41 last pass, consistent with a fresh boot minting new records. `ccd reap` killed 0 and
+archived 2. Retention reclaimed 17.1 KiB. Board 14712 B. Router at 46 open, 0 for claude-home. PR set
+byte-identical to last pass: pantheon #389 #357 #358 conflicting plus #393 #361 draft all belong to
+their lane agents, FinalWishes #114 is this lane's own and routed out for independent review, and
+SirsiNexusApp #213 #214 are live lanes'. Nothing merged. Both >24h stale items re-confirmed correctly
+placed. No P0: the three 19:2x `sirsi` .ips crashes are the previously-diagnosed CODESIGNING launch
+constraint class and predate the reboot, with nothing newer.
