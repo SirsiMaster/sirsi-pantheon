@@ -54,9 +54,8 @@ func killRouterWatcher(threadID string) {
 // (remote process tables are unobservable) and delegates the OS-truth check to
 // router.ReapDeadThreads, which detects zombies that `kill -0` cannot.
 //
-// Called automatically at the top of `sirsi thread list` so orphans get
-// swept whenever anyone reads the registry — no daemon, no polling,
-// per AGENTS.md §Lean #1 (the read IS the event).
+// Called by explicit lifecycle writers such as discover/suspend. Observer
+// commands such as `thread list` must remain read-only.
 func reapDeadPIDThreads(routerRoot string) []router.ReapedThread {
 	reaped, _ := router.ReapDeadThreads(routerRoot)
 	// ADR-024: after dead-PID actives retire, sweep superseded strays (duplicate
@@ -762,31 +761,15 @@ var threadListCmd = &cobra.Command{
 			return fmt.Errorf("no idea-router found: %w", err)
 		}
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
-		// Sweep dead/defunct-PID threads to `reaped` before reading (OS truth).
-		reapedNow := reapDeadPIDThreads(routerRoot)
-		reg, err := router.LoadThreadRegistry(routerRoot)
-		if err != nil {
-			return err
-		}
 		stale := threadListStale
 		if stale <= 0 {
 			stale = router.DefaultThreadStaleAfter
 		}
 		now := time.Now().UTC()
 
-		type row struct {
-			thr   *router.Thread
-			stale bool
-		}
-		var rows []row
-		for _, t := range reg.SortedThreads() {
-			if t.Status.IsTerminal() && !threadListAll {
-				continue
-			}
-			// Loop-evidence-aware (A28): a thread with a live watcher loop is NOT
-			// stale even if its heartbeat aged out (harness-gated surfaces). This
-			// is the `.stale` field the registry-police trusts. Write-free.
-			rows = append(rows, row{thr: t, stale: router.EffectiveStale(t, now, stale)})
+		rows, err := readThreadList(routerRoot, stale, threadListAll, now)
+		if err != nil {
+			return err
 		}
 
 		if JsonOutput {
@@ -805,15 +788,6 @@ var threadListCmd = &cobra.Command{
 
 		output.Header("CTR — Live Threads")
 		fmt.Println()
-		// OS-truth integrity warning: surface what the reaper just retired so
-		// the operator knows the registry disagreed with the live process table.
-		if len(reapedNow) > 0 {
-			fmt.Printf("  ⚠️  integrity: reaped %d dead/defunct thread(s) against OS truth this read:\n", len(reapedNow))
-			for _, r := range reapedNow {
-				fmt.Printf("       %s (agent=%s pid=%d %s)\n", r.ThreadID, r.AgentID, r.PID, r.State)
-			}
-			fmt.Println()
-		}
 		if len(rows) == 0 {
 			fmt.Println("  No registered threads. Run `sirsi thread register --agent <id> --surface <surface>`.")
 			return nil
@@ -837,6 +811,7 @@ var threadListCmd = &cobra.Command{
 			fmt.Printf("      last_seen=%s (idle %.0fs)\n",
 				r.thr.LastSeenAt.Format(time.RFC3339),
 				now.Sub(r.thr.LastSeenAt).Seconds())
+			fmt.Printf("      repo=%s workstream=%s\n", displayUnknown(r.thr.Repo), displayUnknown(r.thr.Workstream))
 			if len(r.thr.Watches) > 0 {
 				fmt.Printf("      watches=%s\n", strings.Join(r.thr.Watches, ","))
 			}
@@ -849,6 +824,38 @@ var threadListCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+type threadListRow struct {
+	thr   *router.Thread
+	stale bool
+}
+
+// readThreadList is the observer boundary for `thread list`: it loads and
+// projects registry state without reaping, heartbeating, or writing anything.
+func readThreadList(routerRoot string, staleAfter time.Duration, includeTerminal bool, now time.Time) ([]threadListRow, error) {
+	reg, err := router.LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]threadListRow, 0, len(reg.Threads))
+	for _, thread := range reg.SortedThreads() {
+		if thread.Status.IsTerminal() && !includeTerminal {
+			continue
+		}
+		rows = append(rows, threadListRow{
+			thr:   thread,
+			stale: router.EffectiveStale(thread, now, staleAfter),
+		})
+	}
+	return rows, nil
+}
+
+func displayUnknown(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func init() {

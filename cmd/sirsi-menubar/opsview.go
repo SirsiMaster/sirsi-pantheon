@@ -9,14 +9,20 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 // opsLeadRow renders the menubar's lead ops row: the worst-status glyph plus a
 // compact roll-up of the read-model. WorstIcon is the source's own health hint
 // (🟢/🟡/🔴); default to 🟢 when absent.
 func opsLeadRow(s dashboard.OpsSummary) string {
+	return opsLeadRowAt(s, time.Now().UTC())
+}
+
+func opsLeadRowAt(s dashboard.OpsSummary, now time.Time) string {
 	icon := s.WorstIcon
 	if icon == "" {
 		icon = "🟢"
@@ -32,7 +38,28 @@ func opsLeadRow(s dashboard.OpsSummary) string {
 	if s.HasDriftOrAuthIssue {
 		lead += " · ⚠ drift/auth"
 	}
+	generated, err := time.Parse(time.RFC3339, s.GeneratedAt)
+	if err != nil || generated.IsZero() {
+		lead += " · age unknown"
+	} else {
+		age := now.Sub(generated)
+		if age < 0 {
+			age = 0
+		}
+		lead += fmt.Sprintf(" · age %s", age.Round(time.Second))
+	}
 	return lead
+}
+
+// opsSnapshotRows converts one collection attempt into a complete render. An
+// error replaces every prior value with an explicit unavailable state; callers
+// must apply the returned rows even on failure so stale success cannot linger.
+func opsSnapshotRows(ns *router.NodeStatus, collectErr error, max int, now time.Time) (dashboard.OpsSummary, string, []string) {
+	if collectErr != nil || ns == nil {
+		return dashboard.OpsSummary{}, "🔴 ops: unavailable · age unknown", []string{"  ⚠ node status unavailable"}
+	}
+	sum := dashboard.Summarize(ns, max)
+	return sum, opsLeadRowAt(sum, now), opsAgentRows(sum)
 }
 
 // opsAgentRows renders one indented row per bounded agent, matching the menubar's

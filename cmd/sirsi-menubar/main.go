@@ -352,20 +352,17 @@ func onReady() {
 			// Disk-access tier (all/some/none) — drops to hidden at full access.
 			applyFDAState(mFDA)
 
-			// Horus ops read-model rows (ADR-026 4b). Best-effort: an unresolved
-			// root / collect error leaves the ops rows in place, but the Command
-			// Deck still refreshes compute/risk from the local vitals snapshot.
-			sum := dashboard.OpsSummary{}
-			if ns, err := menubarNodeStatus(); err == nil && ns != nil {
-				sum = dashboard.Summarize(ns, opsRowCount)
-				mOpsHeader.SetTitle(opsLeadRow(sum))
-				rows := opsAgentRows(sum)
-				for i, item := range opsRows {
-					if i < len(rows) {
-						item.SetTitle(rows[i])
-					} else {
-						item.SetTitle("  —")
-					}
+			// Horus ops read-model rows (ADR-026 4b). Every collection attempt
+			// replaces the prior render, including failures: retaining old values
+			// would present stale success as current truth.
+			ns, collectErr := menubarNodeStatus()
+			sum, lead, rows := opsSnapshotRows(ns, collectErr, opsRowCount, time.Now().UTC())
+			mOpsHeader.SetTitle(lead)
+			for i, item := range opsRows {
+				if i < len(rows) {
+					item.SetTitle(rows[i])
+				} else {
+					item.SetTitle("  —")
 				}
 			}
 			for i, row := range commandDeckRows(snap, sum) {

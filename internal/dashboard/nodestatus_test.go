@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
@@ -14,6 +15,7 @@ import (
 func sampleNodeStatus() *router.NodeStatus {
 	return &router.NodeStatus{
 		SchemaVersion:    router.NodeStatusSchemaVersion,
+		GeneratedAt:      "2026-08-01T03:00:00Z",
 		RouterHome:       "/tmp/router",
 		RepoRoot:         "/tmp/repo",
 		RegisteredAgents: []string{"claude-home", "claude-pantheon", "codex-pantheon"},
@@ -53,11 +55,23 @@ func TestNodeStatus_Full_ServesContractType(t *testing.T) {
 	if got.SchemaVersion != router.NodeStatusSchemaVersion {
 		t.Errorf("schema_version = %q, want %q", got.SchemaVersion, router.NodeStatusSchemaVersion)
 	}
+	if got.GeneratedAt != "2026-08-01T03:00:00Z" {
+		t.Errorf("summary generated_at = %q, want source timestamp", got.GeneratedAt)
+	}
 	if got.LiveThreadCount != 2 || len(got.LiveThreads) != 2 || len(got.StaleThreads) != 1 {
 		t.Errorf("live/stale counts = (%d,%d,%d), want (2,2,1)", got.LiveThreadCount, len(got.LiveThreads), len(got.StaleThreads))
 	}
 	if got.TotalPending != 2 {
 		t.Errorf("TotalPending = %d, want 2", got.TotalPending)
+	}
+}
+
+func TestSummarizePreservesSourceTimestamp(t *testing.T) {
+	ns := sampleNodeStatus()
+	ns.GeneratedAt = time.Date(2026, 8, 1, 3, 4, 5, 0, time.UTC).Format(time.RFC3339)
+	got := Summarize(ns, DefaultOpsSummaryMax)
+	if got.GeneratedAt != ns.GeneratedAt {
+		t.Fatalf("GeneratedAt = %q, want unchanged source %q", got.GeneratedAt, ns.GeneratedAt)
 	}
 }
 
