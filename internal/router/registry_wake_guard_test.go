@@ -52,10 +52,10 @@ func TestRegistryWakeCoverage(t *testing.T) {
 	// the registry makes and can be checked — but never an empty block, which
 	// is merely an absence and is indistinguishable from an oversight.
 	//
-	// Note there is deliberately no launch_agent_label assertion: that JSON key
-	// appears in some entries but WakeConfig does not parse it, and the real
-	// label is DERIVED from the agent id by WakeLaunchAgentLabel(). Asserting on
-	// an inert field would be a check that reads strict and verifies nothing.
+	// No launch_agent_label assertion here: WakeConfig.LaunchAgentLabel now round-
+	// trips correctly, so the drift check (registrydrift.go) catches a missing
+	// label generically. WakeLaunchAgentLabel() still derives the operational label
+	// from the agent id by convention; the stored field is preserved for fidelity.
 	var missing []string
 	for id, cfg := range reg.Agents {
 		if cfg.Wake.Mechanism == "" {

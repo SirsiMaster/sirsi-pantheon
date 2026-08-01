@@ -542,6 +542,99 @@
           "--version"
         ]
       }
+    },
+    "claude-inference": {
+      "id": "claude-inference",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "inference",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "claude",
+          "--version"
+        ]
+      },
+      "consumer": {
+        "command": [
+          "claude",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
+      }
+    },
+    "codex-inference": {
+      "id": "codex-inference",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/sirsi-inference",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "inference",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "codex",
+          "--version"
+        ]
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/sirsi-inference",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
+      }
+    },
+    "codex-io": {
+      "id": "codex-io",
+      "type": "codex",
+      "command": [
+        "codex"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io",
+      "workstream": "io",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "codex",
+          "--version"
+        ]
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "exec",
+          "-C",
+          "/Users/thekryptodragon/Development/sirsi-io",
+          "--sandbox",
+          "workspace-write",
+          "--add-dir",
+          "/Users/thekryptodragon/.sirsi",
+          "--ephemeral"
+        ],
+        "prompt": "You are {{agent}}. Run `sirsi router pull {{agent}}` to list your open router items, then work each one to completion and close it: `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item is a request that owes its sender a reply. Router root is {{router_root}}. If the inbox is empty, exit immediately and do nothing else. Do not start unrelated work, and do not open a session for anything outside your inbox."
+      }
     }
   }
 }

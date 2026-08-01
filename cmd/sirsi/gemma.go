@@ -140,8 +140,24 @@ func runGemma(cmd *cobra.Command, args []string) error {
 		// can't fit it either (the broker is holding RAM). Report the warm cause
 		// so a warm-vs-cold routing gap is diagnosable, not a bare cold refusal.
 		if warmUp && warmErr != nil {
-			return fmt.Errorf("the warm broker is up but did not serve %s (%v), and a cold load won't fit (~%dGB model + ~%dGB reserve > %dGB free). The warm broker likely holds a DIFFERENT model resident — restart it on this model with `sirsi gemma serve --port <p>` (its default reads gemma-model.conf = %s), or free memory. Refusing rather than OOM the machine",
-				gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30), gemmaShortModel(model))
+			// GROUND TRUTH BEFORE DIAGNOSIS. The old message guessed "likely
+			// holds a DIFFERENT model" for ANY warm failure — including a
+			// token-budget/reasoning truncation on the RIGHT model, which sent
+			// operators restarting a healthy broker (router item: budget
+			// truncation reported as a false DIFFERENT-model error). Ask the
+			// broker what it serves and say only what the evidence supports.
+			served := gemmaServedModelID(gemmaServerBase(home))
+			switch {
+			case served != "" && served == model:
+				return fmt.Errorf("the warm broker IS serving %s but the answer failed (%v) — this is a truncation/generation failure on the right model, not a model mismatch; retry with a larger --max-tokens, and do NOT restart the broker. A cold load also won't fit (~%dGB model + ~%dGB reserve > %dGB free)",
+					gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
+			case served != "":
+				return fmt.Errorf("the warm broker serves %s, not the requested %s (%v), and a cold load won't fit (~%dGB model + ~%dGB reserve > %dGB free) — use the served model, or restart the broker on this one with `sirsi gemma serve` (default reads gemma-model.conf = %s). Refusing rather than OOM the machine",
+					gemmaShortModel(served), gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30), gemmaShortModel(model))
+			default:
+				return fmt.Errorf("the warm broker is up but did not serve %s (%v) and its /v1/models did not answer, so the cause cannot be named; a cold load won't fit (~%dGB model + ~%dGB reserve > %dGB free). Refusing rather than OOM the machine",
+					gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
+			}
 		}
 		return fmt.Errorf("not enough RAM to load Gemma cold (~%dGB model + ~%dGB dynamic reserve > %dGB free) — start the warm broker (`sirsi gemma serve`) or free memory. Refusing rather than OOM the machine",
 			modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))

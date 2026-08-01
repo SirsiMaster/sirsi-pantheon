@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -50,6 +51,14 @@ var routerDoctorCmd = &cobra.Command{
 			verdict, seen := loopDead[t.AgentID]
 			if !seen {
 				verdict = router.AgentLoopDead(routerRoot, t.AgentID, ns.PendingByAgent)
+				// Credit a loaded per-agent launchd wake job as armed — for an
+				// app-hosted session (CLI respawned each turn, no durable process)
+				// the wake LaunchAgent is the ONLY durable consumer available, and
+				// it is one of the two remedies the doctor itself recommends.
+				// Ignoring it causes false loop-dead alarms and misroutes peers.
+				if verdict && router.DefaultLaunchctlChecker("list", "ai.sirsi.router.wake."+t.AgentID) == nil {
+					verdict = false
+				}
 				loopDead[t.AgentID] = verdict
 			}
 			if verdict {
@@ -95,6 +104,41 @@ var routerDoctorCmd = &cobra.Command{
 			fmt.Printf("⚠ %d stale thread record(s) — heartbeat aged out (OS-dead ones are reapable).\n\n", len(ns.StaleThreads))
 		}
 
+		// REGISTRY DRIFT — the router reads the WORKING TREE, so a registry fix
+		// that merged to main has not necessarily reached the live registry. That
+		// landmine armed three times in six days and every remedy was a copy;
+		// this is the check instead, so it announces itself rather than
+		// re-arming silently. Report-only, deliberately: --fix must never
+		// overwrite the working tree from origin, because the working tree is
+		// legitimately ahead sometimes and clobbering it would destroy
+		// unpushed registrations.
+		if drift := router.CheckRegistryDrift(repoRoot); !drift.Checked {
+			// IO7a: unknown is NOT clean, and must not be rendered as clean.
+			issues++
+			fmt.Printf("⚠ registry drift UNKNOWN — could not compare the live registry against origin/main: %s\n", drift.Unknown)
+			fmt.Println("    → `git fetch origin main` and re-run; an unchecked registry is not a clean one.")
+			fmt.Println()
+		} else if drift.Drifted() {
+			issues++
+			fmt.Printf("⚠ registry DRIFT — %s is the live registry and it is missing what origin/main has:\n", router.RegistryPath)
+			for _, a := range drift.MissingAgents {
+				fmt.Printf("    agent %s: merged but ABSENT live — the router cannot address it\n", a)
+			}
+			for _, f := range drift.LostFields {
+				fmt.Printf("    %s: lost %s (origin/main has %q)\n", f.AgentID, f.Path, f.Upstream)
+			}
+			for _, c := range drift.ChangedFields {
+				fmt.Printf("    %s: %s differs — live %q, origin/main %q\n", c.AgentID, c.Path, c.Live, c.Upstream)
+			}
+			fmt.Println("    → a merged registry change is NOT a deployed one. Reconcile the branch; do not hand-copy the file.")
+			fmt.Println()
+		} else if len(drift.AheadAgents) > 0 {
+			// Not an issue: unpushed registrations are normal. Visible anyway,
+			// because "live-only" is exactly what someone needs to know when an
+			// agent works here and nowhere else.
+			fmt.Printf("ℹ registry is ahead of origin/main (not drift): %s\n\n", strings.Join(drift.AheadAgents, ", "))
+		}
+
 		if issues == 0 {
 			fmt.Println("✅ Router healthy — every live thread armed, no stranded inboxes, no stale records.")
 			return nil
@@ -119,7 +163,11 @@ var routerDoctorCmd = &cobra.Command{
 		if werr != nil {
 			return fmt.Errorf("wake pass: %w", werr)
 		}
-		fmt.Printf("✔ Wake pass: %d woken · %d already-armed · %d wake-unavailable (recorded on the items).\n",
+		// These are ITEM counts, and the label must say so: "62 already-armed"
+		// read as 62 armed AGENTS, overstating fleet health — "armed" here means
+		// only that the item's recipient had a heartbeat-fresh watcher when the
+		// pass ran (claude-home, router item 20260730-052314).
+		fmt.Printf("✔ Wake pass: %d item(s) wake-attempted · %d item(s) on heartbeat-armed agents · %d item(s) wake-unavailable (recorded on the items).\n",
 			len(wp.Attempted), len(wp.Armed), len(wp.Unavailable))
 		for _, u := range wp.Unavailable {
 			fmt.Printf("    ✗ %s → %s: %s\n", u.ItemID, u.AgentID, u.Detail)

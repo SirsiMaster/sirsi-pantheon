@@ -166,14 +166,6 @@ while true; do
       case "$id" in *sweep-probe*|*arm-proof*|*-${AGENT_ID}-${AGENT_ID}-*)
         (cd "$REPO" && "$SIRSI" router close "$id" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
         log "SKIP+CLOSE self-probe $id"; continue;; esac
-      # Skip non-build item types: decision + review items have no build artifact
-      # by construction — a build worker can only spin for 2400s then time out.
-      # Root cause of the ADR-006 burn: type:decision was queued, looped twice,
-      # burned 80 min. Route back to a human lane instead of consuming quota.
-      itype=$(sed -n 's/^type:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' "$f" | head -1)
-      case "$itype" in decision|review)
-        log "SKIP $id — type=$itype has no build target; leaving open for attended session"
-        continue;; esac
       # Bounded retries — the structural loop-proof (2026-07-03). Count attempts
       # per item id; after MAX_ATTEMPTS, abandon + surface to the owner and never
       # pull it again. No item can loop, whatever the failure cause.
@@ -200,7 +192,7 @@ while true; do
       # Success clears the counter (item is closed by the session on success).
       # Re-read through the facade — the legacy path checked here never existed,
       # so the counter never cleared and even a clean build trended to ABANDON.
-      if fetch_item "$id" "$f" && grep -q "^status: closed" "$f"; then rm -f "$af" "$af.gaveup"; fi
+      if fetch_item "$id" "$f" && grep -q "^status: closed" "$f"; then rm -f "$af"; fi
       rm -f "$f"
     done <<< "$ids"
   fi

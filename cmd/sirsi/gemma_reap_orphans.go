@@ -42,7 +42,26 @@ var gemmaReapOrphansCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("discover brokers: %w", err)
 		}
+		// INTERSECT, don't trust (claude-home, review of #403): the pidfile pid
+		// is canonical ONLY if it is also a member of the argv-discovered broker
+		// set. #366 moved supervision into Go, so gemma-server.pid can name the
+		// SUPERVISOR — accepting any live pid would classify the real capped
+		// broker as an orphan and SIGKILL the machine's local intelligence. Same
+		// hazard from plain pid reuse in a stale file. One source of identity for
+		// both halves, which is the property the check's own comment argues for.
 		canonical := canonicalBrokerPID(home)
+		if canonical != 0 {
+			member := false
+			for _, b := range brokers {
+				if b.PID == canonical {
+					member = true
+					break
+				}
+			}
+			if !member {
+				canonical = 0 // pidfile names a non-broker → refuse-to-guess branch
+			}
+		}
 		me := os.Getpid()
 
 		var orphans []guard.BrokerProc

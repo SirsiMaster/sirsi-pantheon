@@ -42,6 +42,15 @@ var workboardCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println()
 
+		// Distinguish "nothing to do" from "couldn't read" — the board's job is
+		// a positive claim ("nothing needs you right now"), so an empty result
+		// after a successful read must say so explicitly. A failure surfaces as
+		// an error above; reaching here with no agents IS the healthy-empty state.
+		if len(board.Agents) == 0 {
+			fmt.Println("    — none — fabric healthy")
+			return nil
+		}
+
 		for _, a := range board.Agents {
 			if workboardAgent != "" && a.AgentID != workboardAgent {
 				continue
