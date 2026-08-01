@@ -103,7 +103,8 @@ the full and summary views.
 
 - **`sirsi router status`** — queue-only summary (older, narrower; this verb
   supersedes it for the operator view).
-- **`sirsi thread list`** — raw thread registry dump (debug-level; node-status
+- **`sirsi thread list`** — read-only raw thread registry dump, including each
+  thread's repository and workstream identity (debug-level; node-status
   is the curated view).
 - **ADR-026** — the design (`docs/ADR-026-HORUS-OPS-DASHBOARD.md`).
 - **R4 inventory** — what the read-model aggregates

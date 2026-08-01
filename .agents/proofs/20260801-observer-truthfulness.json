@@ -1,0 +1,31 @@
+{
+  "work_item_ids": [
+    "20260801-031112-codex-nexus-codex-pantheon-pantheon-ownership-remaining-observer-surfaces-after-i-o-rev",
+    "20260801-032740-codex-io-codex-pantheon-pantheon-host-fixes-from-i-o-observer-review"
+  ],
+  "agent_id": "codex-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "goal": "Every observer represents unknown state honestly, preserves snapshot time, refreshes live data, and performs no transport mutation.",
+  "commercialization_gate": "not_applicable_internal_operator_reliability",
+  "implemented": [
+    "OpsSummary preserves NodeStatus.generated_at without restamping",
+    "menubar replaces prior success with explicit unavailable state on collection failure",
+    "menubar renders source snapshot age and reports unknown age honestly",
+    "thread list no longer reaps or mutates registry state",
+    "thread list human output includes repository and workstream identity"
+  ],
+  "verified_existing_non_findings": [
+    "dashboard already wires NodeStatusFn to CollectNodeStatus and returns explicit 503 or 500 errors",
+    "current five-screen TUI has no production fixture fallback and renders runner failures with an honest retry path",
+    "current TUI refresh key is u; r is reserved by the newer ADR-020 memory-relief contract"
+  ],
+  "verification": {
+    "targeted_tests": "pass",
+    "go_test_all": "pass",
+    "golangci_lint": "pass with 0 issues",
+    "go_build": "pass for cmd/sirsi and cmd/sirsi-menubar",
+    "git_diff_check": "pass"
+  },
+  "merge_deploy": "not_performed_owner_gated",
+  "status": "ready_for_independent_review"
+}

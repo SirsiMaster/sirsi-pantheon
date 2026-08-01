@@ -53,6 +53,7 @@ const DefaultOpsSummaryMax = 12
 // thread list (claude-pantheon constraint #2 from boundary ack 235652).
 type OpsSummary struct {
 	SchemaVersion string `json:"schema_version"` // mirrors router.NodeStatus
+	GeneratedAt   string `json:"generated_at"`   // source snapshot time; never restamped by a surface
 
 	// Roll-ups (reduce loops, not separate sources)
 	LiveThreadCount    int `json:"live_thread_count"`
@@ -103,6 +104,7 @@ func Summarize(ns *router.NodeStatus, max int) OpsSummary {
 	}
 	sum := OpsSummary{
 		SchemaVersion:      ns.SchemaVersion,
+		GeneratedAt:        ns.GeneratedAt,
 		LiveThreadCount:    ns.LiveThreadCount,
 		StaleThreadCount:   len(ns.StaleThreads),
 		QueueOpenItems:     ns.TotalPending,

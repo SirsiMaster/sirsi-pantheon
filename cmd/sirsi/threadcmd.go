@@ -64,8 +64,7 @@ func killRouterWatcher(threadID string) {
 // MUST surface the error — a failed sweep is byte-identical to "nothing to
 // reap", which causes dead threads to appear 🟢 active.
 func reapDeadPIDThreads(routerRoot string) ([]router.ReapedThread, error) {
-	reaped, err1 := router.ReapDeadThreads(routerRoot)
-	// ADR-024: after dead-PID actives retire, sweep superseded strays (duplicate
+	reaped, err1 := router.ReapDeadThreads(routerRoot) // ADR-024: after dead-PID actives retire, sweep superseded strays (duplicate
 	// suspends/ghosts of a surface a live watcher already holds), so the read
 	// enforces one-live-watcher-per-surface — not just OS-truth on actives.
 	strays, err2 := router.ReapStrayThreads(routerRoot)
@@ -881,12 +880,8 @@ var threadListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		stale := threadListStale
-		if stale <= 0 {
-			stale = router.DefaultThreadStaleAfter
-		}
-		now := time.Now().UTC()
 
+		now := time.Now().UTC()
 		type row struct {
 			thr   *router.Thread
 			stale bool
@@ -905,7 +900,7 @@ var threadListCmd = &cobra.Command{
 			// stale even if its heartbeat aged out (harness-gated surfaces). This
 			// is the `.stale` field the registry-police trusts. Write-free.
 			isNewest := newestByAgent[t.AgentID] == t.ThreadID
-			rows = append(rows, row{thr: t, stale: router.EffectiveStaleForNewest(t, now, stale, isNewest)})
+			rows = append(rows, row{thr: t, stale: router.EffectiveStaleForNewest(t, now, threadListStale, isNewest)})
 		}
 
 		if JsonOutput {
@@ -951,6 +946,7 @@ var threadListCmd = &cobra.Command{
 			fmt.Printf("      last_seen=%s (idle %.0fs)\n",
 				r.thr.LastSeenAt.Format(time.RFC3339),
 				now.Sub(r.thr.LastSeenAt).Seconds())
+			fmt.Printf("      repo=%s workstream=%s\n", displayUnknown(r.thr.Repo), displayUnknown(r.thr.Workstream))
 			if len(r.thr.Watches) > 0 {
 				fmt.Printf("      watches=%s\n", strings.Join(r.thr.Watches, ","))
 			}
@@ -965,12 +961,44 @@ var threadListCmd = &cobra.Command{
 		// threshold isn't a mystery (D-TL medium — ⚠ must name its criterion).
 		for _, r := range rows {
 			if r.stale {
-				fmt.Printf("\n  (⚠ = heartbeat older than %s; override with --stale-after)\n", stale)
+				fmt.Printf("\n  (⚠ = heartbeat older than %s; override with --stale-after)\n", threadListStale)
 				break
 			}
 		}
 		return nil
 	},
+}
+
+type threadListRow struct {
+	thr   *router.Thread
+	stale bool
+}
+
+// readThreadList is the observer boundary for `thread list`: it loads and
+// projects registry state without reaping, heartbeating, or writing anything.
+func readThreadList(routerRoot string, staleAfter time.Duration, includeTerminal bool, now time.Time) ([]threadListRow, error) {
+	reg, err := router.LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]threadListRow, 0, len(reg.Threads))
+	for _, thread := range reg.SortedThreads() {
+		if thread.Status.IsTerminal() && !includeTerminal {
+			continue
+		}
+		rows = append(rows, threadListRow{
+			thr:   thread,
+			stale: router.EffectiveStale(thread, now, staleAfter),
+		})
+	}
+	return rows, nil
+}
+
+func displayUnknown(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func init() {
