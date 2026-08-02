@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-08-02T14:04:41-04:00
+# Last updated: 2026-08-02T16:19:19-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -9,7 +9,7 @@ language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.23.8-beta
 binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
 test_count: 2738+
-line_count: ~123,236
+line_count: ~123,257
 module_count: 62
 command_count: 231
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
@@ -246,15 +246,19 @@ sync_protocol:
 
 ## Session Decisions
 # 2026-08-02 (codex-inference, owner-directed quiet regime): Router Universal Task Ledger v0
-# implemented on isolated branch `codex/router-universal-task-ledger`, exact local head 303b404b
-# (implementation 50838f87). SQLite migration v3 adds lossless item blocked_by and durable per-agent
+# implemented on isolated branch `codex/router-universal-task-ledger`; independently reviewed exact
+# head b08bac6d (implementation 50838f87). SQLite migration v3 adds lossless item blocked_by and durable per-agent
 # tasks; internal/ledger is the ONE producer for exact age, 4h-configurable heartbeat staleness,
 # dependency chains, current_item pickup, blocked, and unblocked/unpicked. CLI: router ledger,
 # router task add|update|list, router depend; CTR is a thin summary projection. ADR-049 proposed.
-# Full go test ./... and isolated CLI replay PASS. Claude Nexus review pending via router item
-# 20260802-180100 plus head amendment 20260802-180412. Remote push was export-safety blocked;
-# do not claim a PR. Three homes: repo ADR, Desktop Reading Room 08, Google Doc id
-# 1i00_61RwKxUspxV-HWtsTLp0pNtkJTQwlC1QEJknAcs. Only Claude Nexus + codex-inference remain active;
+# Full go test ./... and isolated CLI replay PASS. Claude Nexus APPROVED and first live integration
+# reconciled 35 truthful rows: 32-task SNE snapshot plus three later router-grounded obligations;
+# current closeout counts done=24, in-progress=1, pending=7, blocked=3, with no orphaned dependency
+# targets. Remote push was export-safety blocked; do not claim a PR. Three homes: repo ADR, Desktop
+# Reading Room 08, Google Doc id 1i00_61RwKxUspxV-HWtsTLp0pNtkJTQwlC1QEJknAcs.
+# P1 rollout lesson: never let a shadow/new binary migrate the shared live store before atomic
+# replacement of the canonical installed binary; v2 correctly failed closed on v3 and temporarily
+# stranded router surfaces until the approved v3 binary was atomically installed. Only Claude Nexus + codex-inference remain active;
 # do not wake fleet or run GPU work until owner lifts the SNE quiet regime.
 # ⚠ 2026-07-30 (claude-home, owner-directed): this file was 8× Thoth's own "~100 line compressed
 # state" spec. Removed: 7 raw PreCompact hook-payload lines (a hook payload is not a decision)

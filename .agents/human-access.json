@@ -3,7 +3,18 @@
   "artifacts": [
     {
       "id": "adr-049-universal-task-ledger",
-      "status": "proposed-independent-review",
+      "status": "implemented-nexus-reviewed-pantheon-ratification-pending",
+      "independently_reviewed_head": "b08bac6d",
+      "first_live_integration": {
+        "agent": "claude-nexus",
+        "task_count": 35,
+        "status_counts_at_closeout": {
+          "done": 24,
+          "in-progress": 1,
+          "pending": 7,
+          "blocked": 3
+        }
+      },
       "canonical_repo_path": "docs/ADR-049-UNIVERSAL-TASK-LEDGER.md",
       "desktop_path": "/Users/thekryptodragon/Desktop/Sirsi - Owner Reading Room/02 Supporting Canon/08 Router Universal Task Ledger.md",
       "google_workspace_url": "https://docs.google.com/document/d/1i00_61RwKxUspxV-HWtsTLp0pNtkJTQwlC1QEJknAcs",

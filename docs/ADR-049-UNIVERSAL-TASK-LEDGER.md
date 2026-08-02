@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed for independent review** — 2026-08-02
+**Implemented and independently reviewed; Pantheon ratification pending** — 2026-08-02
 
 **Owner directive:** keep the machine in a two-agent quiet regime while the SNE
 backend is completed; codex-inference builds the ledger, Claude Nexus reviews,
@@ -58,9 +58,27 @@ thread heartbeats/current_item ───────┘                   └─
 2. Add validated task CRUD and deterministic listing.
 3. Add the shared ledger read model and dependency resolution.
 4. Add CLI verbs and CTR projection.
-5. Seed Claude Nexus's 32-task box through the new verbs as the first live
-   integration test after independent review.
+5. Seed Claude Nexus's task box through the new verbs as the first live
+   integration test after independent review. The original 32-task SNE
+   snapshot became a truthful 35-task whole-agent registry when three later,
+   router-grounded obligations were included; no padding was invented.
 6. Ratify through Claude Pantheon and extend thin UI surfaces later.
+
+### First live integration and rollout invariant
+
+Claude Nexus independently approved exact implementation head `b08bac6d` and
+published the first live registry. Independent replay confirmed all 35 rows,
+the status and responsible-party totals, and every populated dependency target.
+
+The first live migration also exposed an operational defect outside the read
+model: a shadow v3 binary migrated the shared router database before the
+canonical installed v2 binary was replaced. The older binary correctly failed
+closed, but router availability was temporarily lost. Recovery required a
+validated v3 build followed by an atomic new-inode replacement of the installed
+binary. Future schema rollouts must therefore upgrade the canonical executable
+atomically before any new binary opens and migrates the shared live store. A
+schema migration is not operationally complete until all host router surfaces
+can reopen the migrated store.
 
 ### Key decisions
 
@@ -96,6 +114,9 @@ thread heartbeats/current_item ───────┘                   └─
   reaped. Existing OS-truth reaping remains the mitigation.
 - **Risk:** the four-hour default may not fit every workflow; it is visible and
   configurable rather than hidden.
+- **Risk:** automatic forward migration can strand older host binaries. Release
+  procedure must treat canonical binary installation and shared-store migration
+  as one ordered operation, with a preflight before live-store mutation.
 
 ## References
 

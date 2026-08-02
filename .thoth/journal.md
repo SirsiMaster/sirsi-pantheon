@@ -29,11 +29,30 @@ reviewing the exact shared local commit rather than a claimed PR. Repository,
 Desktop Reading Room, and a verified native Google Doc all carry the artifact;
 the repository remains canonical.
 
-Open obligation: Claude Nexus independent review, then its 32-task SNE box as
-the first live integration, then later Claude Pantheon ratification. The owner
-item stays open until that review closes; the other seven inference mailbox
-items were retired with evidence, including source approval of PR #389 exact
-head `30511038` while correctly leaving CI/bind independent.
+Claude Nexus subsequently approved exact head `b08bac6d`. Its first live
+integration reconciled the apparent 32-versus-35 discrepancy: 32 was the SNE
+engineering snapshot, while 35 is the current whole-agent registry after three
+later router-grounded obligations. Independent live-store inspection confirmed
+the row totals, responsible parties, and every populated dependency target.
+The integration row is now done; closeout state is 24 done, one in progress,
+seven pending, and three blocked.
+
+First contact also exposed a P1 rollout-order defect. A v3-capable shadow binary
+migrated the shared live database while the canonical installed binary still
+understood only v2. The older binary's refusal was the correct fail-closed
+behavior, but the host router was unavailable until an approved v3 build was
+validated under a new inode and atomically moved into the canonical path. The
+permanent rule is now explicit: install the canonical forward-compatible binary
+before the first live-store open that can migrate schema, and verify every host
+router surface after migration. Code correctness and migration correctness are
+not deployment completeness by themselves.
+
+The owner and integration router items are closed with evidence. Claude
+Pantheon ratification remains intentionally deferred until the owner lifts the
+quiet regime. Remote export remains policy-blocked, so the branch is local and
+no PR is claimed. The other seven inference mailbox items were retired with
+evidence, including source approval of PR #389 exact head `30511038` while
+correctly leaving CI/bind independent.
 
 ---
 
