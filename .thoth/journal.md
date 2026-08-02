@@ -5,6 +5,38 @@
 
 ---
 
+## Entry 026 — 2026-08-02 — "A Router Count Is Not a Work Ledger"
+
+The owner identified the operating failure precisely: no single agent memory can
+be trusted to hold the whole portfolio story, while CTR's counts did not explain
+age, dependency, pickup, or responsibility. Under the two-agent quiet regime,
+codex-inference built the Universal Task Ledger without waking the fleet or
+touching GPU work.
+
+The structural decision is separation with one join. Router items remain
+messages and evidence. The durable store now holds explicit task commitments.
+Thread records remain heartbeat and `current_item` truth. `internal/ledger`
+joins those authorities once, and both `router ledger` and CTR project it. A
+fresh heartbeat is deliberately not pickup; an exact current item is. Missing
+and cyclic dependencies deliberately fail closed.
+
+Implementation head `303b404b` (code commit `50838f87`) adds SQLite migration
+v3, lossless `blocked_by`, task add/update/list, item dependency mutation, a
+typed JSON/text ledger, CTR summaries, ADR-049, and three-home human access.
+The complete Go suite, e2e suite, and isolated CLI replay pass. Remote push was
+blocked by the execution environment's export-safety gate, so Claude Nexus is
+reviewing the exact shared local commit rather than a claimed PR. Repository,
+Desktop Reading Room, and a verified native Google Doc all carry the artifact;
+the repository remains canonical.
+
+Open obligation: Claude Nexus independent review, then its 32-task SNE box as
+the first live integration, then later Claude Pantheon ratification. The owner
+item stays open until that review closes; the other seven inference mailbox
+items were retired with evidence, including source approval of PR #389 exact
+head `30511038` while correctly leaving CI/bind independent.
+
+---
+
 ## Entry 025 — 2026-03-27 12:15 — "The Race Condition That Wouldn't Die"
 
 **Context**: Session 29. P0 was CI green. Lint was the easy part — 22 errors across 10 files, all mechanical fixes. The real boss fight was a data race in the Guard module that survived 4 consecutive fix attempts.
