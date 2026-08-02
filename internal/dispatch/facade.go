@@ -50,6 +50,10 @@ type Facade struct {
 	root  string // <repo>/.agents/idea-router
 }
 
+// Store exposes the shared durable store to sibling read models. Facade.Close
+// remains the owner of the handle; callers must not close it directly.
+func (f *Facade) Store() *routerstore.Store { return f.store }
+
 // Open resolves the repo's router root and the durable store
 // (~/.sirsi/router.db — outside any git tree, PRD /goal #2).
 // SIRSI_ROUTER_DB overrides the store path — REQUIRED for tests and sandboxes
@@ -286,6 +290,21 @@ func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
 	return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
 }
 
+// SetBlockedBy replaces one item's dependency edge on the authoritative store,
+// with the legacy file kept in sync during the pre-cutover dual-write window.
+func (f *Facade) SetBlockedBy(id, blockedBy string) error {
+	if routercfg.StoreWake() {
+		return f.store.SetBlockedBy(id, blockedBy)
+	}
+	if err := work.SetBlockedBy(f.root, id, blockedBy); err == nil {
+		_ = f.store.SetBlockedBy(id, blockedBy)
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("dispatch: set blocked_by on canonical item %s: %w", id, err)
+	}
+	return f.store.SetBlockedBy(id, blockedBy)
+}
+
 // itemFromRow adapts a store row into the file router's work.Item shape — the
 // one conversion every read path shares, so a new column can never be wired
 // into some reads and forgotten in others.
@@ -295,7 +314,7 @@ func itemFromRow(r routerstore.Item) work.Item {
 		Status: r.Status, Opened: r.Opened, Closed: r.Closed,
 		Instructions: r.Instructions, Result: r.Result,
 		WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
-		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError,
+		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError, BlockedBy: r.BlockedBy,
 	}
 }
 
