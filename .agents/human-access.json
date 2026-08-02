@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "artifacts": [
+    {
+      "id": "adr-049-universal-task-ledger",
+      "status": "proposed-independent-review",
+      "canonical_repo_path": "docs/ADR-049-UNIVERSAL-TASK-LEDGER.md",
+      "desktop_path": "/Users/thekryptodragon/Desktop/Sirsi - Owner Reading Room/02 Supporting Canon/08 Router Universal Task Ledger.md",
+      "google_workspace_url": "https://docs.google.com/document/d/1i00_61RwKxUspxV-HWtsTLp0pNtkJTQwlC1QEJknAcs",
+      "updated": "2026-08-02"
+    }
+  ]
+}
