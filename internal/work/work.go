@@ -41,6 +41,23 @@ type Item struct {
 	WakeError       string // why the item is wake-unavailable, when it is
 }
 
+// IsBuildable reports whether this item is a build-shaped work item that a
+// headless build worker (e.g. claude-pantheon) can execute. Items with an
+// explicit type of "decision", "review", or "proposal" have no build artifact
+// by construction; sending them to a build worker causes it to spin for the
+// full timeout with nothing to produce. Items with type "" (plain) or
+// "build"/"task" are build-shaped.
+//
+// ponytail: set-based lookup; add types here if the ADR-024 vocabulary grows.
+func (it Item) IsBuildable() bool {
+	switch strings.ToLower(strings.TrimSpace(it.Type)) {
+	case "decision", "review", "proposal":
+		return false
+	default: // "", "build", "task", anything else that implies actionable work
+		return true
+	}
+}
+
 // WakeAnnotation is the wake-pass outcome written onto an item's frontmatter by
 // SetWake. Empty fields are REMOVED from the frontmatter (so an armed item drops
 // a stale wake_error), making the annotation a full, idempotent replace of the
