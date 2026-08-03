@@ -2,10 +2,10 @@ package router
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 )
 
@@ -116,11 +116,13 @@ func TestGemmaLiveness_TransientWedgeResets(t *testing.T) {
 }
 
 // TestGemmaLiveness_RestoreFailRoutesToUser: when serve itself errors (e.g. RAM
-// won't fit), the duty routes ONE non-duplicate item to `user`.
+// won't fit), the duty routes ONE non-duplicate item to `user` via the dispatch
+// facade (store + file, not file-only).
 func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	zeroRestoreWait(t)
 	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, "items"), 0o755)
+	// Isolate from the live store so test sends never reach the user's DB.
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
@@ -138,36 +140,46 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 		t.Fatal("expected error from failed serve, got nil")
 	}
 
-	// Verify a restore-fail item landed in items/.
-	items, listErr := os.ReadDir(filepath.Join(root, "items"))
+	// Verify a restore-fail item landed in the store (dispatch facade reads store).
+	f, openErr := dispatch.OpenRoot(root)
+	if openErr != nil {
+		t.Fatalf("open dispatch: %v", openErr)
+	}
+	defer func() { _ = f.Close() }()
+
+	items, listErr := f.Inbox("user")
 	if listErr != nil {
-		t.Fatalf("read items dir: %v", listErr)
+		t.Fatalf("read user inbox: %v", listErr)
+	}
+	if len(items) == 0 {
+		t.Error("no router item written after restore failure; expected one item in user inbox")
 	}
 	found := false
-	for _, f := range items {
-		if filepath.Ext(f.Name()) == ".md" {
+	for _, it := range items {
+		if it.Title == restoreFailTitle {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("no router item written after restore failure; expected one .md item in items/")
+		t.Errorf("restore-fail item not found in user inbox; got %d items", len(items))
 	}
 
 	// Second call: item already exists — must not duplicate.
 	_ = RunGemmaLivenessDuty(root, "")
-	items2, _ := os.ReadDir(filepath.Join(root, "items"))
+	items2, _ := f.Inbox("user")
 	if len(items2) != len(items) {
 		t.Errorf("second call wrote a duplicate item (got %d items, want %d)", len(items2), len(items))
 	}
 }
 
 // TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser: serve succeeds but the
-// broker is still wedged after the restart — route to user, no error.
+// broker is still wedged after the restart — route to user via dispatch, no error.
 func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 	zeroRestoreWait(t)
 	root := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(root, "items"), 0o755)
+	// Isolate from the live store so test sends never reach the user's DB.
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
@@ -201,16 +213,22 @@ func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 		t.Errorf("serve calls %v, want [restart]", calls)
 	}
 
-	// A restore-fail item must exist in items/.
-	items, _ := os.ReadDir(filepath.Join(root, "items"))
+	// A restore-fail item must exist in the store (dispatch facade reads store).
+	f, openErr := dispatch.OpenRoot(root)
+	if openErr != nil {
+		t.Fatalf("open dispatch: %v", openErr)
+	}
+	defer func() { _ = f.Close() }()
+
+	items, _ := f.Inbox("user")
 	found := false
-	for _, f := range items {
-		if filepath.Ext(f.Name()) == ".md" {
+	for _, it := range items {
+		if it.Title == restoreFailTitle {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("post-restore wedge did not route an item to the owner")
+		t.Error("post-restore wedge did not route an item to the owner via dispatch")
 	}
 }
