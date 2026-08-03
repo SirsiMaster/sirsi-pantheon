@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -222,6 +223,104 @@ func reviewCleanList() {
 		fmt.Fprintf(&b, "  %10s   %s\n", jackal.FormatSize(f.SizeBytes), f.Path)
 	}
 	openDetail("What Clean Waste will do", b.String())
+}
+
+// runPermanentDelete permanently removes all files in the system Trash after
+// showing a confirmation dialog listing what's there. Two-step: preview then
+// confirm — Rule A1: destructive ops require explicit confirmation. The macOS
+// Trash is ~/.Trash; files are deleted with `rm -rf` via a shell so symlinks
+// inside bundles are followed, matching what Finder does.
+func runPermanentDelete(preview, confirm *systray.MenuItem, store *notify.Store) {
+	if preview == nil || confirm == nil {
+		return
+	}
+	preview.SetTitle("⏳ Checking Trash…")
+	preview.Disable()
+	go func() {
+		defer func() {
+			preview.SetTitle("🗑 Permanently Delete Trash…")
+			preview.Enable()
+		}()
+
+		home, err := os.UserHomeDir()
+		if err != nil {
+			recordNotify(store, "Permanent Delete", "check", notify.SeverityError, "cannot locate home dir", err.Error())
+			return
+		}
+		trashDir := filepath.Join(home, ".Trash")
+		entries, err := os.ReadDir(trashDir)
+		if err != nil || len(entries) == 0 {
+			recordNotify(store, "Permanent Delete", "check", notify.SeverityInfo, "Trash is empty — nothing to delete", "")
+			confirm.Hide()
+			return
+		}
+
+		// Build manifest (first 20 names) and total count.
+		count := len(entries)
+		var names []string
+		for i, e := range entries {
+			if i >= 20 {
+				break
+			}
+			names = append(names, e.Name())
+		}
+		label := fmt.Sprintf("%d item(s)", count)
+		if count > 20 {
+			label += fmt.Sprintf(" (%d shown)", 20)
+		}
+		confirm.SetTitle(fmt.Sprintf("  ⚠ Confirm: permanently delete %s", label))
+		confirm.SetTooltip(strings.Join(names, "\n"))
+		confirm.Show()
+		// Auto-disarm after 30s — permanent delete should not linger as a one-click.
+		time.AfterFunc(30*time.Second, func() { confirm.Hide() })
+	}()
+}
+
+// runPermanentDeleteApply empties the macOS Trash permanently. Irreversible —
+// only called after the owner explicitly confirms the armed item.
+func runPermanentDeleteApply(confirm *systray.MenuItem, store *notify.Store) {
+	if confirm == nil {
+		return
+	}
+	confirm.SetTitle("  ⏳ Deleting…")
+	confirm.Disable()
+	go func() {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			confirm.Enable()
+			confirm.Hide()
+			recordNotify(store, "Permanent Delete", "apply", notify.SeverityError, "cannot locate home dir", err.Error())
+			return
+		}
+		trashDir := filepath.Join(home, ".Trash")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		// osascript is the safest cross-version way to empty the Trash on macOS
+		// (honors locked files, volumes, etc.). Falls back to rm if unavailable.
+		out, err := exec.CommandContext(ctx, "osascript", "-e", `tell application "Finder" to empty the trash`).CombinedOutput()
+		if err != nil {
+			// Finder may not be running (headless); fall back to rm -rf contents.
+			entries, _ := os.ReadDir(trashDir)
+			var errs []string
+			for _, e := range entries {
+				if rmErr := os.RemoveAll(filepath.Join(trashDir, e.Name())); rmErr != nil {
+					errs = append(errs, rmErr.Error())
+				}
+			}
+			if len(errs) > 0 {
+				recordNotify(store, "Permanent Delete", "apply", notify.SeverityError,
+					fmt.Sprintf("%d error(s) removing trash items", len(errs)), strings.Join(errs, "\n"))
+				confirm.Enable()
+				confirm.Hide()
+				return
+			}
+		}
+		text := stripANSI(string(out))
+		recordNotify(store, "Permanent Delete", "apply", notify.SeveritySuccess,
+			"Trash permanently emptied", text)
+		confirm.Enable()
+		confirm.Hide()
+	}()
 }
 
 // recordNotify writes a result to the notify store (→ Recent Activity), if any.

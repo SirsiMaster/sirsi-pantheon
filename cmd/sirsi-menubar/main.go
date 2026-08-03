@@ -297,12 +297,20 @@ func onReady() {
 	mCleanConfirm.Hide()
 	mKa := mAnubis.AddSubMenuItem("Find leftover app files", "Find bits left behind by apps you deleted")
 	mGuard := mAnubis.AddSubMenuItem("Watch for problems…", "Keep an eye on apps using too much")
+	// Permanent delete — owner request 2026-08-03. Two-click: preview arms the
+	// confirm item (auto-disarms after 30s); confirm executes. Rule A1 compliant.
+	mAnubis.AddSubMenuItem("──────────", "").Disable()
+	mPermDelete := mAnubis.AddSubMenuItem("🗑 Permanently Delete Trash…", "Check what's in Trash, then permanently delete it")
+	mPermDeleteConfirm := mAnubis.AddSubMenuItem("  ⚠ Confirm: permanently delete", "This cannot be undone — files are gone forever")
+	mPermDeleteConfirm.Hide()
 	wire(mScan, func() { runService(mScan, "Find stuff to clear", sirsiBin, "scan", nStore, rrAnubis) })
 	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clear stuff…", sirsiBin, nStore, rrAnubis) })
 	wire(mReview, func() { reviewCleanList() })
 	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
 	wire(mKa, func() { runService(mKa, "Find leftover app files", sirsiBin, "ghosts", nStore, rrAnubis) })
 	wire(mGuard, func() { spawnTUIWithCommand("guard") })
+	wire(mPermDelete, func() { runPermanentDelete(mPermDelete, mPermDeleteConfirm, nStore) })
+	wire(mPermDeleteConfirm, func() { runPermanentDeleteApply(mPermDeleteConfirm, nStore) })
 
 	systray.AddSeparator()
 
