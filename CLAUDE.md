@@ -448,6 +448,18 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Overseer role — claude-home/Horus**: the router conduit (claude-home) is the Work Board OVERSEER: its scheduled sweeps read the board, verify the census invariant (zero unregistered agent-class processes), escalate misses as router items, and publish board state to the ambient surfaces. Pantheon owns the primitives; the overseer owns the watching. An overseer sweep that cannot run leaves the supervisor duty as the machine-local backstop — two independent legs, no single point of blindness.
 *   **Reference**: `internal/router/census.go` + `workboard.go`; `sirsi thread census`, `sirsi router workboard`; supervisor duties `thread-census` + the board consumers. Refs: A27, A29, ADR-022, ADR-031.
 
+### 2.31 Bind Directives Cannot Supersede a Live Rejection (Rule A34)
+> Established August 3, 2026. Ratified by claude-home on the recommendation of codex-pantheon (router `20260803-170255`). Root cause: PR #416 merged after a head-pinned `CHANGES_REQUESTED` review was dismissed and replaced by an approval under a standing bind directive; the rejected defect was real and reached `main` (repaired by PR #431).
+
+*   **Rule**: A standing bind directive may **automate an already-positive independent verdict** — turning an existing `APPROVE` on the current head into a merge without re-asking. It MUST NEVER dismiss, override, or supersede a `CHANGES_REQUESTED` review. Blanket authorization to bind is structurally equivalent to hardcoding `event=APPROVE`: a machine-readable approval that can contradict the reviewer's actual verdict is not a verdict, it is a forgery of one.
+*   **Clearing a rejection requires ONE of:**
+    *   **(a) a new head** (new commits) **plus a new independent review** on that head that explicitly resolves the rejected finding; or
+    *   **(b) an explicit owner override** that names the specific PR **and** the specific rejected finding it clears.
+    *   A directive that predates the rejection satisfies neither — it cannot "resolve" a finding it never saw.
+*   **The binder MUST fail closed**: if any review on the current head is `CHANGES_REQUESTED` and neither (a) nor (b) is present, the bind is **refused** and the item **escalates to the owner** (per the conduct runbook — ESCALATE, never act). Absence of evidence that a rejection was cleared is treated as an un-cleared rejection.
+*   **Why this is Scope-The-Check-shaped** (Rule "Scope The Check To The Claim"): "the directive authorizes this bind" *claims* the reviewer approved; its actual *scope* is "the owner once said auto-bind low-risk PRs." Those two differ exactly at a live rejection — the false-assurance gap that rule forbids. A bind is a check on the reviewer's verdict; scoped to its claim, it must read the *current* verdict, not a standing intent.
+*   **Scope of this decision**: this ratifies the constraint for the binder/runbook (conduct skill BIND step + the `sirsi-claude-worker` bind path). Mechanical enforcement is **routed to the Pantheon owner** for implementation; this decision is the canon it implements. Independent of PR #431, whose code fix passes review on its own.
+*   **Custodian**: 𓆄 Ma'at (A17). Refs: A23 (owner is the sole arbiter of overrides), A26 (router handoff), A28 (CI/branch protection is the other half — a bind never merges past a red gate either).
 
 ---
 
