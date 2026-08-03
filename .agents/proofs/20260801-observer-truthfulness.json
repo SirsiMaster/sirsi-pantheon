@@ -12,7 +12,9 @@
     "menubar replaces prior success with explicit unavailable state on collection failure",
     "menubar renders source snapshot age and reports unknown age honestly",
     "thread list no longer reaps or mutates registry state",
-    "thread list human output includes repository and workstream identity"
+    "thread list human output includes repository and workstream identity",
+    "CollectNodeStatus no longer reaps dead or stray threads; local OS-dead records render stale and unarmed until an explicit lifecycle writer reconciles them",
+    "menubar unavailable rows preserve a bounded source class (registry, router state, or collection) without leaking raw paths or transport errors"
   ],
   "verified_existing_non_findings": [
     "dashboard already wires NodeStatusFn to CollectNodeStatus and returns explicit 503 or 500 errors",

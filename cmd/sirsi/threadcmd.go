@@ -969,31 +969,6 @@ var threadListCmd = &cobra.Command{
 	},
 }
 
-type threadListRow struct {
-	thr   *router.Thread
-	stale bool
-}
-
-// readThreadList is the observer boundary for `thread list`: it loads and
-// projects registry state without reaping, heartbeating, or writing anything.
-func readThreadList(routerRoot string, staleAfter time.Duration, includeTerminal bool, now time.Time) ([]threadListRow, error) {
-	reg, err := router.LoadThreadRegistry(routerRoot)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]threadListRow, 0, len(reg.Threads))
-	for _, thread := range reg.SortedThreads() {
-		if thread.Status.IsTerminal() && !includeTerminal {
-			continue
-		}
-		rows = append(rows, threadListRow{
-			thr:   thread,
-			stale: router.EffectiveStale(thread, now, staleAfter),
-		})
-	}
-	return rows, nil
-}
-
 func displayUnknown(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "unknown"

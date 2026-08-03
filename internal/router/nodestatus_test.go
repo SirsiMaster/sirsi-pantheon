@@ -749,8 +749,8 @@ func TestCollectNodeStatus_DoesNotCountSuspendedThreadsAsLive(t *testing.T) {
 // TestCollectNodeStatus_HonestLiveness locks the owner-priority "honest liveness"
 // contract (2026-06-19): node-status must not report a thread armed when its
 // surface-native loop is actually dead, and must not false-flag surfaces that
-// prove liveness by heartbeat. It also confirms OS-dead threads auto-reap on the
-// live CollectNodeStatus path (criterion 3).
+// prove liveness by heartbeat. It also confirms OS-dead threads render dead on
+// the live CollectNodeStatus path (criterion 3) without mutating the registry.
 func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	repoRoot := setupNodeTestRouter(t)
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
@@ -780,7 +780,11 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	cCodex := mk("codex-x", "codex", 10003)    // app-heartbeat — loop-evidence N/A
 	eMenu := mk("menubar-x", "menubar", 10005) // native-runloop resident — loop-evidence N/A
 	fGemma := mk("gemma-x", "gemma", 10006)    // surface-loop — loop-evidence N/A (NOT pgrep-gated)
-	dGone := mk("claude-d", "claude", 10004)   // OS-dead → must auto-reap
+	dGone := mk("claude-d", "claude", 10004)   // OS-dead → observed dead, maintenance reaps
+	registryBefore, err := os.ReadFile(filepath.Join(routerRoot, threadsFilename))
+	if err != nil {
+		t.Fatalf("read registry before collection: %v", err)
+	}
 
 	// Only thread A has a live watcher loop (stub both probes — tests must not pgrep the real host).
 	setWatcherAliveFn(func(id string) bool { return id == aLive.ThreadID })
@@ -825,9 +829,17 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	if s := find(eMenu.ThreadID); s == nil || !s.Armed || s.LoopState != "na" || s.ArmedReason != "resident-runloop-fresh" {
 		t.Errorf("menubar native-runloop: got %+v, want armed=true loop_state=na reason=resident-runloop-fresh", s)
 	}
-	// (5) OS-dead → auto-reaped off the live path (absent from live + stale), ADR-022 safety preserved.
-	if s := find(dGone.ThreadID); s != nil {
-		t.Errorf("OS-dead thread must auto-reap, still present: %+v", s)
+	// (5) OS-dead → projected as unarmed/dead, never live, while the observer
+	// leaves lifecycle reconciliation to an explicit writer.
+	if s := find(dGone.ThreadID); s == nil || !s.Stale || s.Armed || s.OSState != PIDGone || s.ArmedReason != "os-gone" {
+		t.Errorf("OS-dead thread must render stale/unarmed with OS truth: %+v", s)
+	}
+	registryAfter, err := os.ReadFile(filepath.Join(routerRoot, threadsFilename))
+	if err != nil {
+		t.Fatalf("read registry after collection: %v", err)
+	}
+	if string(registryAfter) != string(registryBefore) {
+		t.Fatal("CollectNodeStatus mutated the thread registry")
 	}
 	// (6) surface-loop (gemma) → NOT pgrep-gated (loop-monitor-only verdict): armed by
 	// heartbeat, loop_state na. Under a broadened gate this would be armed:false/dead

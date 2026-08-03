@@ -15,7 +15,9 @@ sirsi router node-status --json     # raw JSON (contract-identical to the HTTP e
 ```
 
 The verb is **read-only**: it never registers a thread, writes the inbox, or
-mutates registry state. Safe to run from any context, including audit scripts.
+mutates registry state. Dead and mismatched local PIDs render stale and unarmed;
+an explicit lifecycle path such as `router doctor --fix` performs any later
+reconciliation. Safe to run from any context, including audit scripts.
 
 ## What you'll see
 

@@ -41,6 +41,30 @@ func TestOpsSnapshotRows_ErrorReplacesPriorSuccess(t *testing.T) {
 	}
 }
 
+func TestOpsSnapshotRows_ErrorPreservesBoundedSourceReason(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "registry", err: errors.New("load registry: open /secret/agents.json: permission denied"), want: "registry read failed"},
+		{name: "router state", err: errors.New("read state: store unavailable at /secret/router.db"), want: "router state read failed"},
+		{name: "other", err: errors.New("launchctl exploded with private detail"), want: "collection failed"},
+		{name: "nil snapshot", err: nil, want: "empty snapshot"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, rows := opsSnapshotRows(nil, tc.err, 12, time.Now())
+			if len(rows) != 1 || !strings.Contains(rows[0], tc.want) {
+				t.Fatalf("rows = %v, want bounded class %q", rows, tc.want)
+			}
+			if strings.Contains(rows[0], "/secret/") || strings.Contains(rows[0], "private detail") {
+				t.Fatalf("row leaked raw error detail: %q", rows[0])
+			}
+		})
+	}
+}
+
 func TestOpsAgentRows(t *testing.T) {
 	s := dashboard.OpsSummary{
 		Agents: []dashboard.AgentSummary{

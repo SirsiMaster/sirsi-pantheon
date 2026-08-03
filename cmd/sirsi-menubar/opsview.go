@@ -9,6 +9,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
@@ -56,10 +57,28 @@ func opsLeadRowAt(s dashboard.OpsSummary, now time.Time) string {
 // must apply the returned rows even on failure so stale success cannot linger.
 func opsSnapshotRows(ns *router.NodeStatus, collectErr error, max int, now time.Time) (dashboard.OpsSummary, string, []string) {
 	if collectErr != nil || ns == nil {
-		return dashboard.OpsSummary{}, "🔴 ops: unavailable · age unknown", []string{"  ⚠ node status unavailable"}
+		return dashboard.OpsSummary{}, "🔴 ops: unavailable · age unknown", []string{"  ⚠ " + opsUnavailableReason(collectErr)}
 	}
 	sum := dashboard.Summarize(ns, max)
 	return sum, opsLeadRowAt(sum, now), opsAgentRows(sum)
+}
+
+// opsUnavailableReason converts internal errors into bounded source classes.
+// Menubar text must distinguish which input failed without leaking local paths,
+// raw database errors, or unbounded transport details into a public surface.
+func opsUnavailableReason(err error) string {
+	if err == nil {
+		return "node status unavailable: empty snapshot"
+	}
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, "registry"):
+		return "node status unavailable: registry read failed"
+	case strings.Contains(lower, "router"), strings.Contains(lower, "state"), strings.Contains(lower, "store"):
+		return "node status unavailable: router state read failed"
+	default:
+		return "node status unavailable: collection failed"
+	}
 }
 
 // opsAgentRows renders one indented row per bounded agent, matching the menubar's
