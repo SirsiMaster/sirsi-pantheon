@@ -41,6 +41,16 @@ jobs:
       - name: menubar font scaling (structural guard)
         run: ./macapp/check-font-scaling.sh
 
+      # Gemma resolver guards run on the HOSTED runner (bash + python3 only, no
+      # Xcode/MLX): they EXTRACT the real ranking + conf-write blocks from the
+      # versioned resolver and assert against synthetic payloads, so a live
+      # resolver change that breaks the empty-cache refusal or the candidate
+      # ranking reddens CI here. On all PRs, unlike the self-hosted test job.
+      - name: gemma resolver guards
+        run: |
+          bash scripts/gemma/model-resolver-ranking.test.sh
+          bash scripts/gemma/model-resolver-cache.test.sh
+
   test:
     name: Test
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)

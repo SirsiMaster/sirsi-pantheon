@@ -175,11 +175,21 @@ fi
 # a perfectly good cached model (live gap 2026-07-17: conf named an uncached
 # 12B-mxfp8; the broker restore fell back to serving the 31B instead).
 is_cached() { [ -d "$HF_CACHE/models--$(echo "$1" | sed 's/\//--/')" ]; }
-if ! is_cached "$MODEL" && is_cached "$FALLBACK"; then
+# Three cases, not two. The old `! is_cached MODEL && is_cached FALLBACK` guard
+# fell through to `echo MODEL` whenever the FALLBACK was ALSO missing — so when
+# the whole HF cache is gone (fresh box, cache cleared) conf got written with an
+# UNCACHED model, the exact "conf names a model nobody has" failure this block
+# exists to prevent. Refuse instead: leave conf untouched and exit non-zero so a
+# caller sees the failure rather than a poisoned conf. Guarded by
+# model-resolver-cache.test.sh.
+if is_cached "$MODEL"; then
+  echo "$MODEL" > "$CONF"
+elif is_cached "$FALLBACK"; then
   log "chosen $MODEL not cached yet — conf serves cached $FALLBACK until the prefetch completes"
   echo "$FALLBACK" > "$CONF"
 else
-  echo "$MODEL" > "$CONF"
+  log "REFUSING: neither $MODEL nor fallback $FALLBACK is cached under $HF_CACHE — conf unchanged"
+  exit 1
 fi
 log "conf -> $(cat "$CONF")"
 
