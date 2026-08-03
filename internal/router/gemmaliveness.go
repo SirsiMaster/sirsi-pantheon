@@ -27,8 +27,10 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // gemmaWedgeThreshold is how many consecutive wedged observations must occur
@@ -109,9 +111,19 @@ func defaultGemmaServe(restart bool) error {
 	return exec.Command(exe, "gemma", "serve").Run()
 }
 
+// restoreWait is the pause after `sirsi gemma serve` before the post-restore
+// re-probe: long enough for the broker to bind its port, short enough not to
+// block the supervisor tick. Var (not const) so tests can zero it out.
+var restoreWait = 5 * time.Second
+
+// restoreFailTitle is the router item title deduped against the open user inbox
+// so a persistent RAM gap does not flood every 2-minute duty tick.
+const restoreFailTitle = "gemma-liveness: broker restore failed — free memory"
+
 // RunGemmaLivenessDuty is the supervisor duty: probe the broker and restore it.
 // Signature matches the SupervisorDuty GoRun contract (routerRoot, repoRoot).
-func RunGemmaLivenessDuty(_, _ string) error {
+// routerRoot is used to route an owner alert when a restore does not stick.
+func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	home, _ := os.UserHomeDir()
 	status, detail := getGemmaProbeFn()(home)
 	switch status {
@@ -123,6 +135,8 @@ func RunGemmaLivenessDuty(_, _ string) error {
 		// Nothing serving — start it (RAM-gated inside serve; non-forcing).
 		fmt.Fprintf(os.Stderr, "gemma-liveness: broker down (%s) — starting\n", detail)
 		if err := getGemmaServeFn()(false); err != nil {
+			// serve refused (RAM won't fit, install missing, etc.) — route once.
+			gemmaRouteRestoreFail(routerRoot, err.Error())
 			return err
 		}
 		RecordHeal("local AI was down — restarted (bounded)")
@@ -138,10 +152,67 @@ func RunGemmaLivenessDuty(_, _ string) error {
 		gemmaWedgeStrikes = 0
 		fmt.Fprintf(os.Stderr, "gemma-liveness: broker wedged confirmed (%s) — graceful restart\n", detail)
 		if err := getGemmaServeFn()(true); err != nil { // stop + start; never SIGKILL (A32/ADR-040)
+			gemmaRouteRestoreFail(routerRoot, err.Error())
 			return err
+		}
+		// Post-restore re-probe: wait briefly for the port to bind, then verify.
+		// If the broker is still wedged (e.g. RAM won't fit) the restart silently
+		// failed — route once so the owner sees "restore did not stick."
+		getRestoreWait()()
+		if postStatus, postDetail := getGemmaProbeFn()(home); postStatus == liveness.GemmaWedged || postStatus == liveness.GemmaDown {
+			statusStr := map[liveness.GemmaStatus]string{liveness.GemmaWedged: "wedged", liveness.GemmaDown: "down"}[postStatus]
+			gemmaRouteRestoreFail(routerRoot, "broker still "+statusStr+" after graceful restart — "+postDetail)
+			return nil
 		}
 		RecordHeal("local AI stopped answering — gracefully restarted (bounded)")
 		return nil
 	}
 	return nil
+}
+
+// restoreWaitFn is the injectable sleep before the post-restore re-probe (A16/A21).
+var (
+	restoreWaitMu sync.RWMutex
+	restoreWaitFn = func() { time.Sleep(restoreWait) }
+)
+
+func getRestoreWait() func() {
+	restoreWaitMu.RLock()
+	defer restoreWaitMu.RUnlock()
+	return restoreWaitFn
+}
+
+func setRestoreWaitFn(fn func()) {
+	restoreWaitMu.Lock()
+	defer restoreWaitMu.Unlock()
+	restoreWaitFn = fn
+}
+
+// gemmaRouteRestoreFail sends ONE non-duplicate "restore did not stick" item
+// to the owner (via `user` inbox) so a persistent RAM gap does not flood every
+// 2-minute duty tick. Silently skips when routerRoot is "" (test scaffolds,
+// library consumers without a real router).
+func gemmaRouteRestoreFail(routerRoot, reason string) {
+	if routerRoot == "" {
+		return
+	}
+	// Dedup: skip if the owner already has an open item with this title.
+	if items, err := work.ListInbox(routerRoot, "user"); err == nil {
+		for _, it := range items {
+			if it.Title == restoreFailTitle {
+				fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open, skipping route\n")
+				return
+			}
+		}
+	}
+	body := "The gemma-liveness supervisor duty attempted to restore the warm broker " +
+		"(load-bearing Tier-0 substrate for router/reconcile/gemma-builder) but the " +
+		"broker did not recover. Reason: " + reason + ". " +
+		"Most likely cause: RAM won't fit the model. " +
+		"Fix: free memory (run `sirsi reap-sessions --apply` to reclaim leaked sessions, " +
+		"or right-size the model in ~/.sirsi/gemma-model.conf to a smaller variant), " +
+		"then run `sirsi gemma serve` to restart manually."
+	if _, err := work.Send(routerRoot, "gemma-liveness", "user", restoreFailTitle, body); err != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", err)
+	}
 }
