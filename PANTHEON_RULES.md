@@ -30,6 +30,20 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | **sirsi-rook** (reserved) | **Database Tool** | Database & storage orchestration |
 | **sirsi-rogue** (reserved) | **Security Tool** | Cybersecurity sweeper |
 
+### Deity Hierarchy (canon — ADR-015, ADR-017, ADR-028)
+
+```
+Ra 𓇶 (Fleet Aggregator — Enterprise SKU)
+ └── aggregates ConduitReports from all Horus instances (internal dev fabric = Ra #1)
+
+Horus 𓂀 (ONE per node — shared node conduit)
+ └── router items + observability = one unified flow → Ra
+ └── per-node singleton: ~/.config/sirsi/horus/conduit.json
+
+Anubis 𓃣 (single-node product = SNE + local Horus)
+ └── SNE (Sirsi Node Engine, profile selected)
+```
+
 ### Internal Modules
 | Module | Codename | Archetype | Role |
 | :--- | :--- | :--- | :--- |
@@ -40,7 +54,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | Resource Optimizer | **Hapi** 🌊 | The Flow | Controls VRAM, GPU memory, and storage flow |
 | Output Filter | **RTK** ⚡ | The Sieve | Strips noise from tool output before it hits AI context |
 | Context Vault | **Vault** 🏛️ | The Keeper | Sandboxes large output in SQLite FTS5, indexes code for BM25 search |
-| Code Graph | **Horus** 𓂀 | The All-Seeing | The all-seeing Local Lord — structural code graph, live file watching, AND the workstation ops dashboard (ADR-015/026) |
+| Node Conduit | **Horus** 𓂀 | The All-Seeing | Per-node singleton conduit; unified router + observability flow → Ra; code graph + ops dashboard capabilities (ADR-028) |
 
 ---
 
