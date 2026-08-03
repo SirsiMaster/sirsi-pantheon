@@ -147,7 +147,15 @@ const brokerFootprintFloor = int64(1) << 30
 // brokerCommand matches a process that is SERVING a model, however it was
 // started. Deliberately not anchored to gemma-capped-server.py or to the
 // configured port: the orphan matched neither.
-var brokerCommand = regexp.MustCompile(`(?i)(gemma-capped-server|gemma\s+serve|mlx_lm\.server|llama[-_]server|vllm\.entrypoints)`)
+// The list is broad ON PURPOSE and must keep growing: this check exists because
+// a guard that only inspects the thing it launched shares the blind spot of the
+// bug it catches — and this pattern had that same gap one level up. Observed
+// live 2026-08-03: `omlx-server` held a 23.3 GB peak footprint against 18 MB RSS
+// (its whole working set in swap, 90% of the swap file) and matched NOTHING
+// here, so the duplicate-broker check reported a clean machine while an unmanaged
+// model server ate the swap. An enumeration of names is the weakest part of this
+// file; anything that serves a model locally belongs in it.
+var brokerCommand = regexp.MustCompile(`(?i)(gemma-capped-server|gemma\s+serve|omlx[-_]?server|mlx[-_]?server|mlx_lm\.server|llama[-_]server|ollama\s+serve|vllm\.entrypoints|text-generation-launcher)`)
 
 // capNote marks a broker that carries no memory ceiling — the more dangerous of
 // a duplicated pair, because nothing bounds it.
