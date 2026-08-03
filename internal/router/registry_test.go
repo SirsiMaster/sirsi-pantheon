@@ -356,3 +356,36 @@ func TestValidate_NoneWake(t *testing.T) {
 		t.Errorf("WakeNone must be valid (explicit opt-out), got: %v", err)
 	}
 }
+
+// TestMarshalJSON_ExtraDoesNotShadowTypedField is the regression test for the
+// latent defect in MarshalJSON: a typed field with omitempty present-but-empty
+// on disk ("workstream":"") is absent from the instance-based knownJSON
+// discovery, so it lands in extra. Without the "!ok" guard, the extra copy
+// unconditionally overwrites the typed map entry — silently reverting any
+// programmatic write to that field on every save.
+func TestMarshalJSON_ExtraDoesNotShadowTypedField(t *testing.T) {
+	// Simulate a hand-edited agents.json with an empty workstream field.
+	// encoding/json with omitempty omits this field when marshaling, so the
+	// discovery loop files it as "extra" rather than a known key.
+	const raw = `{"id":"a","type":"claude","command":["x"],"cwd":"/tmp","workstream":""}`
+	var cfg AgentConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	// Programmatic write to the typed field — this must survive marshal.
+	cfg.Workstream = "deck"
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	got := strings.Trim(string(m["workstream"]), `"`)
+	if got != "deck" {
+		t.Errorf("workstream = %q after programmatic write; want %q — extra shadowed typed field", got, "deck")
+	}
+}
