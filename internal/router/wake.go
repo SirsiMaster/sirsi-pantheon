@@ -77,6 +77,35 @@ func inboxUnion(routerRoot, agent string) ([]work.Item, error) {
 	return f.Inbox(agent)
 }
 
+// inboxUnionAll reads EVERY open item once and partitions by recipient.
+//
+// The supervisor used to call inboxUnion(routerRoot, id) inside its per-agent
+// loop, and each call is a full dispatch.OpenRoot → Inbox → Close. With 22
+// registered agents that is 22 SQLite open/close cycles PER TICK, every tick,
+// each one dirtying WAL and journal pages — measured at ~2.1 GB/day of disk
+// writes, enough that the kernel filed a disk-writes report (claude-home,
+// router item 20260731-105700).
+//
+// The work is identical: one open, one read, partition in memory. Agents with
+// no items get an empty slice rather than being absent, so callers keep their
+// existing "every registered agent appears" contract.
+func inboxUnionAll(routerRoot string, agentIDs []string) (map[string][]work.Item, error) {
+	all, err := inboxUnion(routerRoot, "")
+	if err != nil {
+		return nil, err
+	}
+	byAgent := make(map[string][]work.Item, len(agentIDs))
+	for _, id := range agentIDs {
+		byAgent[id] = nil
+	}
+	for _, it := range all {
+		if _, tracked := byAgent[it.To]; tracked {
+			byAgent[it.To] = append(byAgent[it.To], it)
+		}
+	}
+	return byAgent, nil
+}
+
 // OpenItems is inboxUnion for callers outside this package (the CLI's ctr,
 // conduit-tick, and plan surfaces). Every reader of open work must go through
 // ONE cutover-aware entry point — a surface still calling work.ListInbox
