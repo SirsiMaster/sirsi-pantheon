@@ -351,9 +351,27 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 	}
 
 	armed := map[string]bool{}
+	thisMachine := MachineID()
 	for _, t := range threadReg.SortedThreads() {
 		if t.Status.IsTerminal() || t.IsStale(now, DefaultThreadStaleAfter) {
 			continue
+		}
+		// HEARTBEAT FRESHNESS IS NOT LIVENESS when the process is PROVABLY gone.
+		// A record keeps its last heartbeat for the whole stale window, so a
+		// worker that died mid-window still reads "armed" and its inbox is never
+		// woken. Observed live 2026-08-03: the claude-pantheon worker died at
+		// 21:21Z, 24 launchd jobs sat down ~15 hours, and CTR reported the lane
+		// heartbeat-fresh the entire time — a green surface over a dead thing,
+		// and the reason nobody noticed the fabric was down.
+		//
+		// Same asymmetry ReapDeadThreads and ReconcileExits already use: ONLY a
+		// gone/defunct pid demotes. PIDUnknown (unreadable table, EPERM) and
+		// foreign-machine records keep the old heartbeat behavior rather than
+		// stranding a lane on a probe failure, and a record with no pid at all —
+		// the normal shape for an app-hosted session — is untouched.
+		if t.PID > 0 && SameMachine(t.MachineID, thisMachine) &&
+			getPIDStateFn()(t.PID) == PIDGone {
+			continue // provably dead: not armed, so its inbox gets woken
 		}
 		armed[t.AgentID] = true
 	}
