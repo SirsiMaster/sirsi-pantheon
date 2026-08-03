@@ -35,7 +35,7 @@ func TestComputeStranded_FlagsUnarmedBacklog(t *testing.T) {
 		"claude-dead":  {"i3", "i4"}, // loop dead → STRANDED (2)
 		"claude-gone":  {"i5"},       // no thread at all → STRANDED (1)
 	}
-	got := computeStranded(root, pending, nil)
+	got := computeStranded(root, pending, nil, nil)
 	if len(got) != 2 {
 		t.Fatalf("got %d stranded, want 2: %+v", len(got), got)
 	}
@@ -70,7 +70,7 @@ func TestComputeStranded_CreditsWakeJobAndSkipsUser(t *testing.T) {
 	// liveWake mirrors what liveWakeAgents(launchctlCheck) would produce.
 	liveWake := map[string]bool{"claude-wakeonly": true}
 
-	got := computeStranded(root, pending, liveWake)
+	got := computeStranded(root, pending, liveWake, nil)
 	if len(got) != 1 {
 		t.Fatalf("got %d stranded, want exactly 1 (claude-nobody): %+v", len(got), got)
 	}
@@ -95,5 +95,43 @@ func TestLiveWakeAgents(t *testing.T) {
 	}
 	if got := liveWakeAgents([]string{"claude-up"}, nil); len(got) != 0 {
 		t.Errorf("nil checker must yield empty set, got %+v", got)
+	}
+}
+
+// TestComputeStranded_SkipsNoWakeAgents pins the mechanism:none exclusion: agents
+// that have explicitly opted out of automatic waking (WakeNone) must never appear
+// in the stranded report — stranding is expected and not actionable for them.
+func TestComputeStranded_SkipsNoWakeAgents(t *testing.T) {
+	root := t.TempDir()
+	pending := map[string][]string{
+		"claude-interactive": {"i1", "i2"}, // mechanism:none → must be excluded
+		"claude-real":        {"i3"},       // no no-wake → STRANDED
+	}
+	noWake := map[string]bool{"claude-interactive": true}
+	got := computeStranded(root, pending, nil, noWake)
+	if len(got) != 1 {
+		t.Fatalf("got %d stranded, want 1: %+v", len(got), got)
+	}
+	if got[0].AgentID != "claude-real" {
+		t.Errorf("stranded = %+v, want claude-real", got[0])
+	}
+}
+
+// TestNoWakeAgents pins that noWakeAgents correctly identifies mechanism:none
+// agents from the registry and excludes all others.
+func TestNoWakeAgents(t *testing.T) {
+	reg := &Registry{
+		Agents: map[string]AgentConfig{
+			"agent-none":  {ID: "agent-none", Type: "claude", Wake: WakeConfig{Mechanism: WakeNone}},
+			"agent-spawn": {ID: "agent-spawn", Type: "codex", Command: []string{"codex"}, Cwd: "/tmp"},
+			"agent-la":    {ID: "agent-la", Type: "claude", Command: []string{"claude"}, Cwd: "/tmp", Wake: WakeConfig{Mechanism: WakeLaunchAgent}},
+		},
+	}
+	got := noWakeAgents(reg)
+	if !got["agent-none"] {
+		t.Error("mechanism:none agent must be in noWake set")
+	}
+	if got["agent-spawn"] || got["agent-la"] {
+		t.Error("non-none agents must not be in noWake set")
 	}
 }

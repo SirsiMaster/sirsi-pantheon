@@ -344,11 +344,7 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
       "workstream": "inference",
       "wake": {
-        "mechanism": "cli-spawn",
-        "health_check": [
-          "claude",
-          "--version"
-        ]
+        "mechanism": "none"
       }
     },
     "codex-inference": {

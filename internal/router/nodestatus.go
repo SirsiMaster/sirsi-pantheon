@@ -574,7 +574,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	for a := range ns.PendingByAgent {
 		strandAgents = append(strandAgents, a)
 	}
-	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck))
+	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg))
 
 	return ns, nil
 }
