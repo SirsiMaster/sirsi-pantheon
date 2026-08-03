@@ -1,4 +1,4 @@
-# ADR-051: Horus as Per-Node Conduit — Router + Observability are One Flow
+# ADR-053: Horus as Per-Node Conduit — Router + Observability are One Flow
 
 ## Status
 **Accepted** — 2026-08-03
