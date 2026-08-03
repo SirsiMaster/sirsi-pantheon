@@ -52,7 +52,7 @@ and cyclic dependencies deliberately fail closed.
 
 Implementation head `303b404b` (code commit `50838f87`) adds SQLite migration
 v3, lossless `blocked_by`, task add/update/list, item dependency mutation, a
-typed JSON/text ledger, CTR summaries, ADR-049, and three-home human access.
+typed JSON/text ledger, CTR summaries, ADR-050, and three-home human access.
 The complete Go suite, e2e suite, and isolated CLI replay pass. Remote push was
 blocked by the execution environment's export-safety gate, so Claude Nexus is
 reviewing the exact shared local commit rather than a claimed PR. Repository,

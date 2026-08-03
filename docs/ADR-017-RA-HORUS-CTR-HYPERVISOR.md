@@ -117,7 +117,7 @@ remains inspectable in git.
 7. Thoth compact includes a router snapshot — this bridges Ra (state) and Thoth (memory)
 8. Other repos must not fork or re-home the router — they carry startup pointers only
 9. Filesystem protocol is inspectable in git, works offline, requires zero infrastructure
-10. ADR-049 adds the Universal Task Ledger as Ra's typed execution view; CTR and future surfaces are thin projections over it
+10. ADR-050 adds the Universal Task Ledger as Ra's typed execution view; CTR and future surfaces are thin projections over it
 
 ## Alternatives Considered
 

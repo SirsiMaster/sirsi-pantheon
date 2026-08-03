@@ -262,7 +262,7 @@ sync_protocol:
 # head b08bac6d (implementation 50838f87). SQLite migration v3 adds lossless item blocked_by and durable per-agent
 # tasks; internal/ledger is the ONE producer for exact age, 4h-configurable heartbeat staleness,
 # dependency chains, current_item pickup, blocked, and unblocked/unpicked. CLI: router ledger,
-# router task add|update|list, router depend; CTR is a thin summary projection. ADR-049 proposed.
+# router task add|update|list, router depend; CTR is a thin summary projection. ADR-050 proposed.
 # Full go test ./... and isolated CLI replay PASS. Claude Nexus APPROVED and first live integration
 # reconciled 35 truthful rows: 32-task SNE snapshot plus three later router-grounded obligations;
 # current closeout counts done=24, in-progress=1, pending=7, blocked=3, with no orphaned dependency
