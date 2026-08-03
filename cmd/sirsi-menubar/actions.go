@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -222,6 +223,188 @@ func reviewCleanList() {
 		fmt.Fprintf(&b, "  %10s   %s\n", jackal.FormatSize(f.SizeBytes), f.Path)
 	}
 	openDetail("What Clean Waste will do", b.String())
+}
+
+// ── Empty Trash (permanent delete) ─────────────────────────────────────────
+
+// trashInfo returns the number of items and total byte count in ~/.Trash.
+// Returns 0,0 on any error (permission denied, no home dir, etc.).
+func trashInfo() (items int, size int64) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	trashDir := filepath.Join(home, ".Trash")
+	entries, err := os.ReadDir(trashDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.Name() == ".DS_Store" {
+			continue
+		}
+		items++
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			size += dirSize(trashDir, e.Name())
+		} else {
+			size += info.Size()
+		}
+	}
+	return
+}
+
+// dirSize returns the recursive byte count of dir/name, ignoring errors.
+func dirSize(parent, name string) int64 {
+	var total int64
+	_ = filepath.Walk(filepath.Join(parent, name), func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// runEmptyTrashPreview checks what is in ~/.Trash and, if non-empty, arms the
+// permanent-delete confirm item. This is the first half of the two-click
+// empty-trash flow (Rule A1: always preview before permanent deletion).
+func runEmptyTrashPreview(preview, confirm *systray.MenuItem, store *notify.Store, rr *resultRow) {
+	if preview == nil || confirm == nil {
+		return
+	}
+	preview.SetTitle("⏳ Empty Trash…")
+	preview.Disable()
+	go func() {
+		n, sz := trashInfo()
+		preview.SetTitle("Empty Trash…")
+		preview.Enable()
+
+		if n == 0 {
+			recordNotify(store, "Empty Trash", "preview", notify.SeverityInfo, "Trash is already empty", "")
+			if rr != nil {
+				rr.set("Empty Trash", "•", "Trash is already empty", "")
+			}
+			notify.Toast("Sirsi — Empty Trash", "Trash is already empty.")
+			confirm.Hide()
+			return
+		}
+
+		label := fmt.Sprintf("%d item", n)
+		if n != 1 {
+			label += "s"
+		}
+		label += " · " + formatTrashSize(sz)
+		recordNotify(store, "Empty Trash", "preview", notify.SeverityWarning,
+			"Trash contains "+label+" (permanent delete pending confirmation)", "")
+		if rr != nil {
+			rr.set("Empty Trash (preview)", "⚠", label+" in Trash — confirm to delete permanently", "")
+		}
+		notify.Toast("Sirsi — Trash contains "+label,
+			"Reopen → Anubis → '⚠ Delete permanently' to permanently delete. This cannot be undone.")
+		confirm.SetTitle("  ⚠ Delete permanently — " + label)
+		confirm.Show()
+		// Auto-disarm: never leave a standing one-click permanent delete in the menu.
+		// ponytail: shorter than confirmArmWindow so a permanent-delete confirm ages out faster.
+		time.AfterFunc(90*time.Second, func() { confirm.Hide() })
+	}()
+}
+
+// runEmptyTrashApply permanently deletes everything in ~/.Trash. This is the
+// second half of the two-click flow — the user's click on the armed confirm
+// item is their explicit consent (Rule A1: confirm before permanent deletion).
+func runEmptyTrashApply(confirm *systray.MenuItem, store *notify.Store, rr *resultRow) {
+	if confirm == nil {
+		return
+	}
+	confirm.SetTitle("  ⏳ Deleting permanently…")
+	confirm.Disable()
+	go func() {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			confirm.SetTitle("  ⚠ Delete permanently — error")
+			confirm.Enable()
+			return
+		}
+		trashDir := filepath.Join(home, ".Trash")
+		entries, err := os.ReadDir(trashDir)
+		if err != nil {
+			confirm.Enable()
+			confirm.Hide()
+			return
+		}
+
+		var freed int64
+		var errs []string
+		for _, e := range entries {
+			if e.Name() == ".DS_Store" {
+				continue
+			}
+			p := filepath.Join(trashDir, e.Name())
+			info, _ := e.Info()
+			var itemSize int64
+			if info != nil {
+				if info.IsDir() {
+					itemSize = dirSize(trashDir, e.Name())
+				} else {
+					itemSize = info.Size()
+				}
+			}
+			var rmErr error
+			if info != nil && info.IsDir() {
+				rmErr = os.RemoveAll(p)
+			} else {
+				rmErr = os.Remove(p)
+			}
+			if rmErr != nil {
+				errs = append(errs, e.Name()+": "+rmErr.Error())
+			} else {
+				freed += itemSize
+			}
+		}
+
+		sev, icon, summary := notify.SeveritySuccess, "✓", "Trash emptied — "+formatTrashSize(freed)+" deleted permanently"
+		if len(errs) > 0 {
+			sev, icon = notify.SeverityError, "✗"
+			summary = fmt.Sprintf("%d error(s): %s", len(errs), strings.Join(errs[:min(3, len(errs))], "; "))
+		}
+		recordNotify(store, "Empty Trash", "delete permanently", sev, summary, strings.Join(errs, "\n"))
+		if rr != nil {
+			rr.set("Empty Trash", icon, summary, strings.Join(errs, "\n"))
+		}
+		if len(errs) > 0 {
+			notify.Toast("Sirsi — Empty Trash error", summary)
+		} else {
+			notify.Toast("Sirsi — Trash emptied", summary)
+		}
+		confirm.Enable()
+		confirm.Hide()
+	}()
+}
+
+// formatTrashSize formats bytes as a human-readable size string.
+func formatTrashSize(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%d KB", b>>10)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+// min returns the smaller of two ints.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // recordNotify writes a result to the notify store (→ Recent Activity), if any.

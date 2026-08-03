@@ -297,12 +297,23 @@ func onReady() {
 	mCleanConfirm.Hide()
 	mKa := mAnubis.AddSubMenuItem("Find leftover app files", "Find bits left behind by apps you deleted")
 	mGuard := mAnubis.AddSubMenuItem("Watch for problems…", "Keep an eye on apps using too much")
+	// ── Permanent-delete path: preview Trash → confirm → permanently deleted ──
+	// Distinct from the clean→trash flow (Rule A1): this is irreversible. The
+	// preview item checks the current Trash and arms the confirm only when
+	// non-empty; the confirm auto-disarms after 90 s to prevent stale standing
+	// one-click permanent-delete.
+	mAnubis.AddSubMenuItem("──────────────────────", "").Disable()
+	mTrashPreview := mAnubis.AddSubMenuItem("Empty Trash…", "Check what's in Trash and get a permanent-delete confirm button")
+	mEmptyTrashConfirm := mAnubis.AddSubMenuItem("  ⚠ Delete permanently", "Permanently delete all items in Trash — cannot be undone")
+	mEmptyTrashConfirm.Hide()
 	wire(mScan, func() { runService(mScan, "Find stuff to clear", sirsiBin, "scan", nStore, rrAnubis) })
 	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clear stuff…", sirsiBin, nStore, rrAnubis) })
 	wire(mReview, func() { reviewCleanList() })
 	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
 	wire(mKa, func() { runService(mKa, "Find leftover app files", sirsiBin, "ghosts", nStore, rrAnubis) })
 	wire(mGuard, func() { spawnTUIWithCommand("guard") })
+	wire(mTrashPreview, func() { runEmptyTrashPreview(mTrashPreview, mEmptyTrashConfirm, nStore, rrAnubis) })
+	wire(mEmptyTrashConfirm, func() { runEmptyTrashApply(mEmptyTrashConfirm, nStore, rrAnubis) })
 
 	systray.AddSeparator()
 
