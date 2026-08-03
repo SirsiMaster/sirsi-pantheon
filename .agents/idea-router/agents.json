@@ -149,8 +149,7 @@
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
       "workstream": "nexus",
       "wake": {
-        "mechanism": "launchagent",
-        "launch_agent_label": "ai.sirsi.router.wake.claude-nexus"
+        "mechanism": "none"
       }
     },
     "claude-pantheon": {
