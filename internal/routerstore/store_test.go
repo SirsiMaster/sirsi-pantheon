@@ -531,6 +531,7 @@ var columnFor = map[string]string{
 	"WakeAttemptedAt": "wake_attempted_at",
 	"WakeAdapter":     "wake_adapter",
 	"WakeError":       "wake_error",
+	"BlockedBy":       "blocked_by",
 }
 
 func fieldNames(t reflect.Type) map[string]bool {

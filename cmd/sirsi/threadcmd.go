@@ -130,7 +130,10 @@ var threadRegisterCmd = &cobra.Command{
 		// thread immediately after register exits.
 		anchor := threadRegAnchorPID
 		if anchor <= 0 {
-			anchor = resolveAnchorPID()
+			anchor, err = resolveAnchorPID(threadRegSurface)
+			if err != nil {
+				return fmt.Errorf("resolve durable thread anchor: %w; pass --anchor-pid for resident surfaces without a recognizable runtime", err)
+			}
 		}
 
 		// ADR-024 Amendment 1 §2: a one-shot (`--print`/`-p`) worker is neither an
@@ -235,23 +238,6 @@ var threadRegisterCmd = &cobra.Command{
 		fmt.Printf("  sirsi thread heartbeat --thread %s\n", out.ThreadID)
 		return nil
 	},
-}
-
-// resolveAnchorPID returns the grandparent of sirsi (caller's caller),
-// which is typically the agent runtime binary when register is invoked
-// from a hook script. Falls back to PPID if grandparent lookup fails.
-func resolveAnchorPID() int {
-	ppid := os.Getppid()
-	// macOS: ps -p <ppid> -o ppid= returns ppid's parent
-	out, err := exec.Command("ps", "-p", strconv.Itoa(ppid), "-o", "ppid=").Output()
-	if err != nil {
-		return ppid
-	}
-	gp, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil || gp <= 1 {
-		return ppid
-	}
-	return gp
 }
 
 var threadHeartbeatCmd = &cobra.Command{
@@ -859,7 +845,7 @@ func init() {
 	threadRegisterCmd.Flags().StringSliceVar(&threadRegWatches, "watch", nil, "Inboxes this thread watches (defaults to --agent)")
 	threadRegisterCmd.Flags().StringVar(&threadRegWake, "wake", "", "Wake mechanism (defaults to agent registry entry)")
 	threadRegisterCmd.Flags().StringVar(&threadRegID, "thread", "", "Reuse a known thread_id instead of generating a new one")
-	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor the fs-watcher lifetime to (defaults to grandparent of sirsi)")
+	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor thread lifetime to (default: verified durable runtime ancestor for known interactive surfaces)")
 
 	threadHeartbeatCmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required)")
 	threadHeartbeatCmd.Flags().StringVar(&threadHbStatus, "status", "", "Set status: active|idle|blocked")

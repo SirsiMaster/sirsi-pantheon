@@ -60,6 +60,7 @@ type Item struct {
 	Closed       string // RFC3339, empty if open
 	Instructions string
 	Result       string
+	BlockedBy    string // optional item id dependency; terminal dependencies do not block
 
 	// Wake-delivery truth, mirroring internal/work.Item's wake_* frontmatter
 	// (PR#2 wake-or-declare-unavailable). Dropping these in a backfill would
@@ -212,6 +213,26 @@ CREATE TABLE counters (
     name  TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
 );
+	`,
+
+	// v3 — Universal Task Ledger. Items gain an optional dependency edge and
+	// agents gain a durable task registry distinct from routed messages.
+	`
+ALTER TABLE items ADD COLUMN blocked_by TEXT NOT NULL DEFAULT '';
+CREATE INDEX idx_items_blocked_by ON items(blocked_by) WHERE blocked_by <> '';
+
+CREATE TABLE tasks (
+    agent             TEXT NOT NULL,
+    task_id           TEXT NOT NULL,
+    subject           TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    responsible_party TEXT NOT NULL,
+    blocked_by        TEXT NOT NULL DEFAULT '',
+    created           TEXT NOT NULL,
+    updated           TEXT NOT NULL,
+    PRIMARY KEY (agent, task_id)
+);
+CREATE INDEX idx_tasks_agent_status ON tasks(agent, status);
 `,
 }
 

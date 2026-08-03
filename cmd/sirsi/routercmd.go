@@ -87,10 +87,9 @@ func loadOrLiteral(v string) (string, error) {
 var routerCmd = &cobra.Command{
 	Use:   "router",
 	Short: "Pull-model work queue between agent threads",
-	Long: `Five verbs over a directory of markdown files: send, pull, show,
-close, and status. send/pull/show/close are the workflow loop; status is a
-read-only observer over items/. No daemon, no dispatch, no launch agents —
-each agent session reads its own inbox on wake.
+	Long: `Ra's durable work router: send, pull, show, close, status, ledger,
+and task-registry verbs. The message loop and task commitments share one
+offline-first store; ledger joins them with thread heartbeat/current-item truth.
 
 Thread registration is handled separately by sirsi thread register.`,
 }

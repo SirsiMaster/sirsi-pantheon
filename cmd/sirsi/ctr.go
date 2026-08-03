@@ -30,6 +30,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -95,6 +96,8 @@ type ctrResult struct {
 	AlreadyLive   []router.WakeOutcome   `json:"already_live,omitempty"` // armed — already watching
 	NeedsOwner    []router.WakeOutcome   `json:"needs_owner,omitempty"`  // wake-unavailable
 	Stranded      []router.StrandedAgent `json:"stranded,omitempty"`
+	LedgerAgents  []ledger.Agent         `json:"ledger_agents,omitempty"`
+	LedgerError   string                 `json:"ledger_error,omitempty"`
 }
 
 func runCtr(_ *cobra.Command, args []string) error {
@@ -128,6 +131,11 @@ func runCtr(_ *cobra.Command, args []string) error {
 	}
 
 	res := buildCtrResult(repoRoot, scope, ns, wp)
+	if snapshot, lerr := ledger.Build(repoRoot, scope, time.Now().UTC(), ledger.DefaultStaleAfter); lerr == nil {
+		res.LedgerAgents = snapshot.Agents
+	} else {
+		res.LedgerError = lerr.Error()
+	}
 
 	if ctrJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -307,6 +315,22 @@ func renderCtr(res ctrResult) {
 			fmt.Printf("    • %-22s %s%s\n", o.AgentID, o.ItemID, detail)
 		}
 		fmt.Println()
+	}
+	if len(res.LedgerAgents) > 0 {
+		fmt.Println("📋 Universal task ledger:")
+		for _, a := range res.LedgerAgents {
+			stale := ""
+			if a.Stale {
+				stale = " STALE"
+			}
+			fmt.Printf("    • %-22s oldest=%-7s blocked=%d unblocked/unpicked=%d%s\n",
+				a.AgentID, ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked, stale)
+		}
+		fmt.Println("    → Full detail: sirsi router ledger [agent]")
+		fmt.Println()
+	}
+	if res.LedgerError != "" {
+		fmt.Printf("⚠ Task ledger unavailable — %s\n\n", res.LedgerError)
 	}
 
 	switch {

@@ -86,7 +86,10 @@ func ownedOpenItems(repoRoot, agentID string) []string {
 // entry point for `suspend --self`. Errors if no live thread matches (nothing to
 // suspend).
 func resolveSelfThreadID(routerRoot string) (string, error) {
-	anchor := resolveAnchorPID()
+	anchor, err := resolveAnchorPID("")
+	if err != nil {
+		return "", fmt.Errorf("resolve current session anchor: %w; pass --thread explicitly", err)
+	}
 	host, _ := os.Hostname()
 	reg, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {

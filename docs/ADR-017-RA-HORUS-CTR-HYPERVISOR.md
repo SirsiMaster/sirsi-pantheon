@@ -81,6 +81,8 @@ The CTR hypervisor exposes these user-facing commands:
 | `sirsi router show <item>` | Inspect a routed artifact |
 | `sirsi router send` | Create a routed artifact addressed to one registered agent |
 | `sirsi router close <item>` | Close a routed artifact with evidence |
+| `sirsi router ledger [agent]` | Join item age, staleness, dependencies, pickup, and task commitments |
+| `sirsi router task add\|update\|list` | Manage the durable per-agent task registry |
 | `sirsi router node-status` | Report the local Horus node, threads, aliases, and LaunchAgent inventory |
 
 ### User-Facing Summary
@@ -115,6 +117,7 @@ remains inspectable in git.
 7. Thoth compact includes a router snapshot — this bridges Ra (state) and Thoth (memory)
 8. Other repos must not fork or re-home the router — they carry startup pointers only
 9. Filesystem protocol is inspectable in git, works offline, requires zero infrastructure
+10. ADR-050 adds the Universal Task Ledger as Ra's typed execution view; CTR and future surfaces are thin projections over it
 
 ## Alternatives Considered
 

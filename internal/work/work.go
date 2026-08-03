@@ -29,6 +29,7 @@ type Item struct {
 	Closed       string // RFC3339, empty if open
 	Instructions string
 	Result       string
+	BlockedBy    string // optional work-item dependency id; empty means independently actionable
 
 	// Wake-delivery truth (PR#2 wake-or-declare-unavailable). The supervisor/
 	// doctor wake pass records the outcome HERE — in the item itself, not a
@@ -134,6 +135,38 @@ opened: %s
 		return "", err
 	}
 	return id, nil
+}
+
+// SetBlockedBy replaces an item's optional dependency edge. An empty value
+// clears the edge; ledger readers resolve whether the referenced item is done.
+func SetBlockedBy(root, id, blockedBy string) error {
+	path := filepath.Join(itemsDir(root), id+".md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") {
+		return fmt.Errorf("missing frontmatter")
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	if end < 0 {
+		return fmt.Errorf("unterminated frontmatter")
+	}
+	fm := content[4 : 4+end]
+	rest := content[4+end:]
+	lines := strings.Split(fm, "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "blocked_by:") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if blockedBy = strings.TrimSpace(blockedBy); blockedBy != "" {
+		filtered = append(filtered, "blocked_by: "+quoteYAML(blockedBy))
+	}
+	return os.WriteFile(path, []byte("---\n"+strings.Join(filtered, "\n")+rest), 0o644)
 }
 
 // Get loads one item by ID.
@@ -311,6 +344,8 @@ func parse(id, content string) (Item, error) {
 			it.Opened = v
 		case "closed":
 			it.Closed = v
+		case "blocked_by":
+			it.BlockedBy = v
 		case "wake_status":
 			it.WakeStatus = v
 		case "wake_attempted_at":
