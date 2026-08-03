@@ -15,10 +15,10 @@ import (
 )
 
 var (
-	ledgerJSON                                                                      bool
-	ledgerStaleAfter                                                                time.Duration
-	taskAddSubject, taskAddStatus, taskAddResponsible, taskAddBlockedBy             string
-	taskUpdateSubject, taskUpdateStatus, taskUpdateResponsible, taskUpdateBlockedBy string
+	ledgerJSON                                                                                       bool
+	ledgerStaleAfter                                                                                 time.Duration
+	taskAddSubject, taskAddStatus, taskAddPhase, taskAddResponsible, taskAddBlockedBy                string
+	taskUpdateSubject, taskUpdateStatus, taskUpdatePhase, taskUpdateResponsible, taskUpdateBlockedBy string
 )
 
 var routerLedgerCmd = &cobra.Command{
@@ -84,11 +84,14 @@ func renderLedger(s ledger.Snapshot) {
 		if len(a.Tasks) > 0 {
 			fmt.Println("  TASK REGISTRY")
 			for _, t := range a.Tasks {
-				blocked := ""
-				if t.BlockedBy != "" {
-					blocked = " blocked_by=" + t.BlockedBy
+				meta := ""
+				if t.Phase != "" {
+					meta += " phase=" + t.Phase
 				}
-				fmt.Printf("    • %s  %s  responsible=%s%s  %s\n", t.TaskID, t.Status, t.ResponsibleParty, blocked, t.Subject)
+				if t.BlockedBy != "" {
+					meta += " blocked_by=" + t.BlockedBy
+				}
+				fmt.Printf("    • %s  %s  responsible=%s%s  %s\n", t.TaskID, t.Status, t.ResponsibleParty, meta, t.Subject)
 			}
 		}
 	}
@@ -107,7 +110,7 @@ var routerTaskAddCmd = &cobra.Command{
 			return err
 		}
 		defer f.Close()
-		err = f.Store().AddTask(routerstore.Task{Agent: args[0], TaskID: args[1], Subject: taskAddSubject, Status: taskAddStatus, ResponsibleParty: taskAddResponsible, BlockedBy: taskAddBlockedBy})
+		err = f.Store().AddTask(routerstore.Task{Agent: args[0], TaskID: args[1], Subject: taskAddSubject, Status: taskAddStatus, Phase: taskAddPhase, ResponsibleParty: taskAddResponsible, BlockedBy: taskAddBlockedBy})
 		if err == nil {
 			fmt.Printf("  Added task %s/%s\n", args[0], args[1])
 		}
@@ -123,7 +126,7 @@ var routerTaskUpdateCmd = &cobra.Command{
 			return err
 		}
 		defer f.Close()
-		u := routerstore.TaskUpdate{Subject: taskUpdateSubject, Status: taskUpdateStatus, ResponsibleParty: taskUpdateResponsible}
+		u := routerstore.TaskUpdate{Subject: taskUpdateSubject, Status: taskUpdateStatus, Phase: taskUpdatePhase, ResponsibleParty: taskUpdateResponsible}
 		u.BlockedBySet = cmd.Flags().Changed("blocked-by")
 		u.BlockedBy = taskUpdateBlockedBy
 		t, err := f.Store().UpdateTask(args[0], args[1], u)
@@ -154,7 +157,7 @@ var routerTaskListCmd = &cobra.Command{
 			return json.NewEncoder(os.Stdout).Encode(tasks)
 		}
 		for _, t := range tasks {
-			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", t.Agent, t.TaskID, t.Subject, t.Status, t.ResponsibleParty, t.BlockedBy, t.Created, t.Updated)
+			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", t.Agent, t.TaskID, t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Created, t.Updated)
 		}
 		return nil
 	},
@@ -194,10 +197,12 @@ func init() {
 	routerLedgerCmd.Flags().DurationVar(&ledgerStaleAfter, "stale-after", ledger.DefaultStaleAfter, "Heartbeat age that marks open work stale")
 	routerTaskAddCmd.Flags().StringVar(&taskAddSubject, "subject", "", "Task subject (required)")
 	routerTaskAddCmd.Flags().StringVar(&taskAddStatus, "status", "pending", "pending|in-progress|blocked|done")
+	routerTaskAddCmd.Flags().StringVar(&taskAddPhase, "phase", "", "Plain-English phase group for Ledger Board (e.g. Infrastructure)")
 	routerTaskAddCmd.Flags().StringVar(&taskAddResponsible, "responsible-party", "self", "self|codex|owner|agent id")
 	routerTaskAddCmd.Flags().StringVar(&taskAddBlockedBy, "blocked-by", "", "Dependency task id")
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateSubject, "subject", "", "Replacement subject")
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateStatus, "status", "", "pending|in-progress|blocked|done")
+	routerTaskUpdateCmd.Flags().StringVar(&taskUpdatePhase, "phase", "", "Plain-English phase group for Ledger Board")
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateResponsible, "responsible-party", "", "self|codex|owner|agent id")
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateBlockedBy, "blocked-by", "", "Dependency task id; empty clears")
 	routerTaskListCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")

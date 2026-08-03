@@ -234,6 +234,10 @@ CREATE TABLE tasks (
 );
 CREATE INDEX idx_tasks_agent_status ON tasks(agent, status);
 `,
+
+	// v4 — Phase grouping for the Ledger Board (ADR-050 cross-surface spec).
+	// Phase clusters tasks into plain-English groups for owner-facing rendering.
+	`ALTER TABLE tasks ADD COLUMN phase TEXT NOT NULL DEFAULT '';`,
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
