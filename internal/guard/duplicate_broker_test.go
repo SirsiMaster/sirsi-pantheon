@@ -76,3 +76,22 @@ func TestCLIWrapperIsNotABroker(t *testing.T) {
 		t.Fatalf("floor %d would exclude a small real model (3B 4-bit ≈ 1.5 GB)", brokerFootprintFloor)
 	}
 }
+
+// Observed live 2026-08-03: omlx-server held a 23.3 GB peak footprint against
+// 18 MB RSS — its entire working set in swap, 90% of the swap file — and matched
+// NOTHING in brokerCommand, so the duplicate-broker check reported a clean
+// machine. An enumeration of names is the weakest part of that file; these pin
+// the servers we know serve models locally.
+func TestBrokerCommandCoversKnownServers(t *testing.T) {
+	for _, argv := range []string{
+		"omlx-server",
+		"/opt/homebrew/bin/mlx-server --model foo",
+		"ollama serve",
+		"text-generation-launcher --model-id bar",
+		"python -m mlx_lm.server --model baz",
+	} {
+		if !brokerCommand.MatchString(argv) {
+			t.Fatalf("a local model server went undiscovered: %q", argv)
+		}
+	}
+}
