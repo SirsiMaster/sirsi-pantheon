@@ -41,6 +41,9 @@ jobs:
       - name: menubar font scaling (structural guard)
         run: ./macapp/check-font-scaling.sh
 
+      - name: Check ADR number uniqueness
+        run: bash scripts/check-adr-numbers.sh
+
   test:
     name: Test
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
