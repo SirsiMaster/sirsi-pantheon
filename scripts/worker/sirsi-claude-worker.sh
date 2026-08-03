@@ -163,6 +163,17 @@ while true; do
       # Skip fabric self-probes (sweep-probe / arm-proof): these are liveness
       # pings, not build tasks — the triage tier closes them. A build worker
       # agentic-building a heartbeat is the 2026-07-03 waste bug.
+      # RE-CHECK STATUS IMMEDIATELY BEFORE SPENDING A BUILD. The id list is a
+      # SNAPSHOT taken once per poll, but a build takes 10-15 minutes — so an
+      # item closed by an attended session mid-pass was still built. Observed
+      # 2026-08-03: three full `claude -p` sessions burned on RESPONSE
+      # acknowledgements the owner's session had already closed, and a fourth
+      # in flight. A stale work list is not a work order; the store is.
+      st=$( (cd "$REPO" && "$SIRSI" router show "$id" 2>/dev/null) | grep -m1 '^status:' | awk '{print $2}' | tr -d '"' )
+      if [ -n "$st" ] && [ "$st" != "open" ]; then
+        log "SKIP $id — no longer open (status=$st) since this pass began"
+        continue
+      fi
       case "$id" in *sweep-probe*|*arm-proof*|*-${AGENT_ID}-${AGENT_ID}-*)
         (cd "$REPO" && "$SIRSI" router close "$id" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
         log "SKIP+CLOSE self-probe $id"; continue;; esac
