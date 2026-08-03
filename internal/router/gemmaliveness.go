@@ -29,8 +29,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // gemmaWedgeThreshold is how many consecutive wedged observations must occur
@@ -189,15 +189,24 @@ func setRestoreWaitFn(fn func()) {
 }
 
 // gemmaRouteRestoreFail sends ONE non-duplicate "restore did not stick" item
-// to the owner (via `user` inbox) so a persistent RAM gap does not flood every
-// 2-minute duty tick. Silently skips when routerRoot is "" (test scaffolds,
-// library consumers without a real router).
+// to the owner via the dispatch facade (not work.Send directly) so the alert
+// is written to BOTH the router store AND the audit file — without the store
+// row the wake path (router wait) never delivers the alert. Silently skips
+// when routerRoot is "" (test scaffolds, library consumers without a real
+// router).
 func gemmaRouteRestoreFail(routerRoot, reason string) {
 	if routerRoot == "" {
 		return
 	}
+	f, err := dispatch.OpenRoot(routerRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: open dispatch: %v\n", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
 	// Dedup: skip if the owner already has an open item with this title.
-	if items, err := work.ListInbox(routerRoot, "user"); err == nil {
+	if items, listErr := f.Inbox("user"); listErr == nil {
 		for _, it := range items {
 			if it.Title == restoreFailTitle {
 				fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open, skipping route\n")
@@ -212,7 +221,7 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 		"Fix: free memory (run `sirsi reap-sessions --apply` to reclaim leaked sessions, " +
 		"or right-size the model in ~/.sirsi/gemma-model.conf to a smaller variant), " +
 		"then run `sirsi gemma serve` to restart manually."
-	if _, err := work.Send(routerRoot, "gemma-liveness", "user", restoreFailTitle, body); err != nil {
-		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", err)
+	if _, sendErr := f.Send("gemma-liveness", "user", restoreFailTitle, "decision", body); sendErr != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", sendErr)
 	}
 }
