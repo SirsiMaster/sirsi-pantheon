@@ -21,6 +21,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -269,6 +270,22 @@ func onReady() {
 	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
 	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
 
+	// ── 📋 Ledger — universal task board (ADR-050/051) ──────────────────────────
+	// Same board the owner sees in CLI (`sirsi router ledger`) and MCP
+	// (`router_ledger`). Completion %, done/review/queued/blocked counts,
+	// and blocked items waiting on owner.
+	const ledgerRowCount = 5
+	mLedger := systray.AddMenuItem("📋 Ledger — loading…", "Universal task ledger board: completion %, done/queued/blocked")
+	mLedgerProgress := mLedger.AddSubMenuItem("  Progress: loading…", "Overall completion %")
+	mLedgerProgress.Disable()
+	ledgerRows := make([]*systray.MenuItem, ledgerRowCount)
+	for i := range ledgerRows {
+		ledgerRows[i] = mLedger.AddSubMenuItem("  —", "")
+		ledgerRows[i].Disable()
+	}
+	mLedgerOpen := mLedger.AddSubMenuItem("View full ledger…", "Run sirsi router ledger in Terminal")
+	wire(mLedgerOpen, func() { runService(mLedgerOpen, "Ledger", sirsiBin, "router ledger", nStore, nil) })
+
 	// ── 🐺 Anubis — Cleanup (secondary: storage upkeep lives BELOW the live view) ─
 	// Memory is the pre-eminent view; disk cleanup is demoted here, plain-English.
 	mAnubis := systray.AddMenuItem("🐺 Anubis — Cleanup", "Find and clear files you don't need")
@@ -345,6 +362,37 @@ func onReady() {
 					} else {
 						item.SetTitle("  —")
 						item.Disable()
+					}
+				}
+			}
+
+			// Ledger board: global view, best-effort (no root = silent skip).
+			if repoRoot, rerr := router.FindRepoRoot(); rerr == nil {
+				if snap, serr := ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter); serr == nil {
+					bs := ledger.Summarize(snap)
+					pct := fmt.Sprintf("  Tasks  [%s]  %d%%", ledgerProgressBar(bs.PctDone, 12), bs.PctDone)
+					mLedgerProgress.SetTitle(pct)
+					mLedgerProgress.Enable()
+					rows := []string{
+						fmt.Sprintf("  ✅ Done: %d   🔄 Active: %d   🚫 Blocked: %d   📬 Open: %d",
+							bs.DoneTasks, bs.ActiveTasks, bs.BlockedTasks, bs.OpenItems),
+					}
+					for _, bl := range bs.Blockers {
+						rows = append(rows, fmt.Sprintf("  ⚠ %s ← %s (%s)", truncate(bl.Title, 36), bl.Agent, bl.Age))
+					}
+					title := "📋 Ledger"
+					if bs.TotalTasks > 0 {
+						title = fmt.Sprintf("📋 Ledger — %d%% done", bs.PctDone)
+					}
+					mLedger.SetTitle(title)
+					for i, item := range ledgerRows {
+						if i < len(rows) {
+							item.SetTitle(rows[i])
+							item.Enable()
+						} else {
+							item.SetTitle("  —")
+							item.Disable()
+						}
 					}
 				}
 			}
