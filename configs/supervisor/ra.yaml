@@ -1,0 +1,7 @@
+# Pantheon Ra — supervisor configuration
+# Enterprise tier: fleet nodes; no foreground user to yield to.
+# Explicit opt-in — NEVER use for single-user Anubis instances.
+#
+# Refs: ADR-028, sirsi-inference docs/adr/ADR-001-sne-anubis-ra.md
+sne:
+  profile: fleet  # prior unconstrained behavior, no ceiling
