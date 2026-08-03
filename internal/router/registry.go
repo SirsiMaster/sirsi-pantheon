@@ -153,53 +153,43 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 }
 
 // SaveRegistry writes agents.json losslessly: unknown JSON keys present in the
-// existing file (e.g. "consumer", "launch_agent_label") are preserved on every
-// write. Only keys the Go struct knows about are updated; everything else
-// survives the round-trip unchanged.
+// existing file (e.g. "consumer") are preserved on every write because
+// AgentConfig.MarshalJSON re-emits them via the extra field. Known fields
+// reflect the current Go state — a field cleared to its zero value is absent
+// from output (not restored from disk). Top-level JSON keys the schema has not
+// modeled survive because we seed from the existing file before overwriting.
 func SaveRegistry(routerRoot string, reg *Registry) error {
 	path := filepath.Join(routerRoot, "agents.json")
 
-	// Seed from existing file so unknown keys survive the round-trip.
+	// Preserve any top-level JSON keys the schema hasn't modeled by seeding
+	// from the existing file. D2: a non-empty but unparseable file is an error —
+	// silently dropping it would erase the very unknown keys we aim to keep.
 	var fileRaw map[string]json.RawMessage
 	if existing, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(existing, &fileRaw)
+		if len(existing) > 0 {
+			if err := json.Unmarshal(existing, &fileRaw); err != nil {
+				return fmt.Errorf("parse existing agents.json: %w", err)
+			}
+		}
 	}
 	if fileRaw == nil {
 		fileRaw = make(map[string]json.RawMessage)
 	}
 
-	var existingAgents map[string]json.RawMessage
-	if raw, ok := fileRaw["agents"]; ok {
-		_ = json.Unmarshal(raw, &existingAgents)
-	}
-	if existingAgents == nil {
-		existingAgents = make(map[string]json.RawMessage)
-	}
-
-	// Patch each agent: Go-known fields override, unknown fields are preserved.
+	// AgentConfig.MarshalJSON is already lossless: typed fields reflect the
+	// current Go state (cleared omitempty = absent), extra unknown fields are
+	// re-emitted. No deepMerge against the old disk bytes is needed or wanted —
+	// deepMerge would restore stale cleared values from disk (D1).
+	agents := make(map[string]json.RawMessage, len(reg.Agents))
 	for id, cfg := range reg.Agents {
 		cfgBytes, err := json.Marshal(cfg)
 		if err != nil {
 			return fmt.Errorf("marshal agent %q: %w", id, err)
 		}
-		if prev, ok := existingAgents[id]; ok {
-			merged, err := deepMergeJSON(prev, cfgBytes)
-			if err != nil {
-				return fmt.Errorf("merge agent %q: %w", id, err)
-			}
-			existingAgents[id] = merged
-		} else {
-			existingAgents[id] = json.RawMessage(cfgBytes)
-		}
-	}
-	// Remove agents that no longer exist in the registry.
-	for id := range existingAgents {
-		if _, ok := reg.Agents[id]; !ok {
-			delete(existingAgents, id)
-		}
+		agents[id] = json.RawMessage(cfgBytes)
 	}
 
-	agentsBytes, err := json.MarshalIndent(existingAgents, "  ", "  ")
+	agentsBytes, err := json.MarshalIndent(agents, "  ", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal agents map: %w", err)
 	}
@@ -237,37 +227,6 @@ func SaveRegistry(routerRoot string, reg *Registry) error {
 		return fmt.Errorf("replace agents.json: %w", err)
 	}
 	return nil
-}
-
-// deepMergeJSON merges src into dst where both are JSON objects.
-// Keys present in src override the corresponding keys in dst; keys present only
-// in dst are preserved. Nested objects are merged recursively. If either value
-// is not a JSON object, src is returned as-is (scalar/array: src wins).
-func deepMergeJSON(dst, src json.RawMessage) (json.RawMessage, error) {
-	var dstMap, srcMap map[string]json.RawMessage
-	if json.Unmarshal(dst, &dstMap) != nil || json.Unmarshal(src, &srcMap) != nil {
-		return src, nil
-	}
-	result := make(map[string]json.RawMessage, len(dstMap))
-	for k, v := range dstMap {
-		result[k] = v
-	}
-	for k, v := range srcMap {
-		if existing, ok := result[k]; ok {
-			merged, err := deepMergeJSON(existing, v)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = merged
-		} else {
-			result[k] = v
-		}
-	}
-	out, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // Lookup returns the agent config for the given ID, or an error if not registered.
