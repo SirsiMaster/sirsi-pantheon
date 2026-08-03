@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-08-02T16:19:19-04:00
+# Last updated: 2026-08-02T22:17:29-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -8,8 +8,8 @@ repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.23.8-beta
 binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
-test_count: 2738+
-line_count: ~123,257
+test_count: 2746+
+line_count: ~123,455
 module_count: 62
 command_count: 231
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
@@ -245,6 +245,18 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-08-02 (codex-inference): CTR durable-host selection was repaired at the
+# source and installed. Fixed-depth parent/grandparent resolution was replaced
+# by exact executable-identity ancestry; helper/prefix matches are rejected and
+# unknown resident surfaces fail closed unless given --anchor-pid. Codex Desktop
+# required an additional structural repair: tool commands descend from the
+# application-wide `codex` broker while the task lifetime belongs to its sibling
+# `codex-code-mode-host`, so the resolver now refines the broker to exactly one
+# host child and fails closed on zero/multiple candidates. Commit `728fefcd`.
+# Targeted and broader cmd/router Go suites passed. Two separate live proofs—
+# first the candidate binary, then the installed ~/.local/bin/sirsi—registered
+# thread 019f8fc4-96a4-7f00-b564-d91a64d0a4d1 without --anchor-pid and selected
+# durable task host PID 40821, not broker PID 37423. Quiet-machine policy held.
 # 2026-08-02 (codex-inference, owner-directed quiet regime): Router Universal Task Ledger v0
 # implemented on isolated branch `codex/router-universal-task-ledger`; independently reviewed exact
 # head b08bac6d (implementation 50838f87). SQLite migration v3 adds lossless item blocked_by and durable per-agent

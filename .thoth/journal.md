@@ -5,6 +5,36 @@
 
 ---
 
+## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
+
+CTR's original registration heuristic assumed a stable process-tree depth: the
+agent runtime would be the caller's parent or grandparent. That assumption made
+live tasks disappear because desktop applications insert a changing number of
+per-turn shells and helpers. Replacing the fixed depth with a simple ancestry
+walk was necessary but still insufficient.
+
+The live Codex proof exposed why. Codex Desktop runs tool commands beneath an
+application-wide `codex` broker (PID 37423), while this task's durable lifetime
+belongs to `codex-code-mode-host` (PID 40821), which is another child of the
+broker. The correct task host is therefore a sibling of the command process,
+not an ancestor. No amount of walking upward can find it. Worse, treating every
+`codex-*` or `claude-*` executable as durable allows wrappers and helpers to
+masquerade as sessions.
+
+Commit `728fefcd` makes one resolver authoritative for registration,
+self-discovery, and self-suspend. It walks past transient processes using exact
+known runtime identities. Under Codex Desktop it recognizes the generic broker,
+selects exactly one `codex-code-mode-host` child, and fails closed when zero or
+multiple hosts make task ownership ambiguous. Other unknown resident surfaces
+must provide `--anchor-pid`; the router no longer converts uncertainty into a
+false liveness claim.
+
+The targeted resolver/thread tests and broader `cmd/sirsi` plus
+`internal/router` suites passed. The candidate binary and the atomically
+installed `~/.local/bin/sirsi` each repeated the decisive live test without an
+explicit anchor and selected PID 40821. The owner-requested quiet-machine rule
+remained intact: the repair and proofs were CPU/process-metadata work only.
+
 ## Entry 026 — 2026-08-02 — "A Router Count Is Not a Work Ledger"
 
 The owner identified the operating failure precisely: no single agent memory can
