@@ -63,7 +63,10 @@ left for the operator to disambiguate in agents.json.
 
 		var procs []router.DiscoveredProc
 		if threadDiscoverSelf {
-			procs = selfProc()
+			procs, err = selfProc()
+			if err != nil {
+				return err
+			}
 		} else {
 			procs = enumerateAgentProcs(localSurfaces(reg))
 		}
@@ -169,7 +172,7 @@ func enumerateAgentProcs(surfaces []string) []router.DiscoveredProc {
 // the SessionStart hook (`discover --self`). The session process is sirsi's
 // grandparent (the agent binary); the project dir comes from the runtime env
 // when set, falling back to the current working directory.
-func selfProc() []router.DiscoveredProc {
+func selfProc() ([]router.DiscoveredProc, error) {
 	cwd := os.Getenv("CLAUDE_PROJECT_DIR")
 	if cwd == "" {
 		cwd, _ = os.Getwd()
@@ -178,7 +181,11 @@ func selfProc() []router.DiscoveredProc {
 	if surface == "" {
 		surface = "claude"
 	}
-	return []router.DiscoveredProc{{PID: resolveAnchorPID(), Surface: surface, Cwd: cwd}}
+	anchor, err := resolveAnchorPID(surface)
+	if err != nil {
+		return nil, fmt.Errorf("discover current %s session: %w", surface, err)
+	}
+	return []router.DiscoveredProc{{PID: anchor, Surface: surface, Cwd: cwd}}, nil
 }
 
 // resolveProcCwd returns a process's working directory via lsof, or "" if it
