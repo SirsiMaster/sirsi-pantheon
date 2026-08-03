@@ -41,6 +41,25 @@ jobs:
       - name: menubar font scaling (structural guard)
         run: ./macapp/check-font-scaling.sh
 
+      # ADR-number uniqueness guard. Three PRs claimed ADR-051 simultaneously on
+      # 2026-08-03 because the hand-maintained "Next available" line is not a lock.
+      # This check derives the occupied set from the actual filenames and fails if
+      # any number appears more than once — catching a collision at lint time instead
+      # of at merge time.
+      - name: ADR number uniqueness (structural guard)
+        run: |
+          set -euo pipefail
+          dupes=$(ls docs/ADR-*.md 2>/dev/null \
+            | grep -oP '(?<=ADR-)\d+' \
+            | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "ERROR: duplicate ADR numbers detected: $dupes"
+            echo "Rename one of the conflicting files before merging."
+            ls docs/ADR-*.md | grep -P "ADR-($(echo "$dupes" | tr '\n' '|' | sed 's/|$//'))[-.]"
+            exit 1
+          fi
+          echo "ADR numbers: all unique."
+
   test:
     name: Test
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
