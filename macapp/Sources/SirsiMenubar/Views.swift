@@ -1669,6 +1669,15 @@ struct AnubisView: View {
                                    sub: "Remnants of apps you've uninstalled (Ka)")
                     }.buttonStyle(.plain)
 
+                    // The Trash is where every OTHER clean path leaves things —
+                    // recoverable by design. This is the one screen that can make
+                    // that permanent, so it is its own drill-down with its own
+                    // confirmation, never folded into the one-click clean.
+                    NavLink { EmptyTrashView(engine: engine) } label: {
+                        ActionCard(glyph: "🗑", title: "Empty Trash",
+                                   sub: "Permanently delete what Sirsi (and you) moved to Trash — no undo")
+                    }.buttonStyle(.plain)
+
                     // Legible, plain-English note about what's held back (was tiny).
                     if engine.cautionBytes > 0 {
                         ExclusionNote(bytes: engine.cautionBytes, count: engine.caution.count)
@@ -1678,6 +1687,104 @@ struct AnubisView: View {
             }
         }
         .navigationTitle("Anubis")
+    }
+}
+
+// EmptyTrashView — the only surface in Sirsi that destroys something
+// permanently. Everything else is trash-first and recoverable, so this screen
+// is deliberately shaped against the rest of the app:
+//
+//   - it SHOWS the contents before offering the action (you cannot permanently
+//     delete a list you have not seen);
+//   - the destructive button is disabled until that list has loaded, so it can
+//     never fire against unknown contents;
+//   - it takes TWO taps, and the second one is the one that says "permanently";
+//   - the result line reports what was actually freed, read back from the CLI,
+//     not an optimistic "done".
+struct EmptyTrashView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var count = 0
+    @State private var sizeText = ""
+    @State private var items: [String] = []
+    @State private var loading = true
+    @State private var arming = false
+    @State private var result: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Empty Trash")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if loading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Reading Trash…").sirsiFont(12).foregroundStyle(.secondary)
+                        }
+                    } else if let r = result {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                            Text(r).sirsiFont(13, weight: .semibold)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else if count == 0 {
+                        Text("Trash is empty — nothing to delete.")
+                            .sirsiFont(13).foregroundStyle(.secondary)
+                    } else {
+                        Text("\(count) item\(count == 1 ? "" : "s") · \(sizeText)")
+                            .sirsiFont(17, weight: .bold).foregroundStyle(gold)
+                        Text("These are already in the Trash. Emptying it removes them for good — Sirsi cannot restore them, and neither can Finder.")
+                            .sirsiFont(12).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(items.prefix(12), id: \.self) { line in
+                                Text("· " + line).sirsiFont(11).foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            if items.count > 12 {
+                                Text("… and \(items.count - 12) more")
+                                    .sirsiFont(11).foregroundStyle(.tertiary)
+                            }
+                        }
+
+                        if arming {
+                            Button(role: .destructive) {
+                                Task {
+                                    let out = await engine.emptyTrash()
+                                    result = out
+                                    arming = false
+                                }
+                            } label: {
+                                Text("Permanently delete \(count) item\(count == 1 ? "" : "s")")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .disabled(engine.busy)
+                            Button("Cancel") { arming = false }
+                                .buttonStyle(.plain)
+                                .sirsiFont(12)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                arming = true
+                            } label: {
+                                Text("Empty Trash…").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(loading || count == 0)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .task {
+            let r = await engine.trashList()
+            count = r.count; sizeText = r.size; items = r.lines
+            loading = false
+        }
+        .navigationTitle("Empty Trash")
     }
 }
 
