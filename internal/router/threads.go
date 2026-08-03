@@ -28,6 +28,18 @@ import (
 // a recent heartbeat is considered stale.
 const DefaultThreadStaleAfter = 5 * time.Minute
 
+// LeaseSessionTTL is the renewal window for session-keyed (app-hosted) thread
+// records — those that carry a SessionID but no durable PID. Derived from the
+// observed inter-heartbeat gap distribution: the canonical /loop heartbeat
+// interval is 60 s, but app-hosted turns (e.g. Claude Code in the desktop app)
+// can sit idle between turns for tens of minutes. Live registry sample showed
+// active claude-surface sessions with last_seen gaps of 10–27 min; conduit runs
+// are ~15–30 min. 2 h = 120× the 60 s heartbeat cadence, covers realistic
+// idle-between-turns pauses without pinning a genuinely-dead session alive. A
+// session-keyed record that misses renewal for 2 h reads expired in ReapDeadThreads
+// (the lease expiry path), not via OS-truth reaping.
+const LeaseSessionTTL = 2 * time.Hour
+
 // TerminalRetention is how long a terminal (closed/reaped) record is kept
 // before opportunistic register-time compaction GCs it. PR #25 introduced
 // this drain; codex's PID-identity refactor accidentally elided the const
@@ -92,6 +104,16 @@ type Thread struct {
 	// which stranded inboxes when a laptop's name changed. Empty on legacy
 	// records (treated as local; the registry is per-machine). See machineid.go.
 	MachineID string `json:"machine_id,omitempty"`
+	// SessionID is the stable conversation identity for app-hosted surfaces that
+	// have no durable OS PID (e.g. CLAUDE_CODE_SESSION_ID for Claude Code desktop
+	// sessions). When set, the mint key is (session_id, surface) instead of
+	// (pid, agent_id). pid becomes optional evidence — a null PID is the normal
+	// shape for an app-hosted record, not an error state. One record per
+	// (session_id, surface) is enforced at mint time: a returning hook fire finds
+	// its own record and renews its lease (LastSeenAt) instead of minting a fresh
+	// one. The record expires when LastSeenAt + LeaseSessionTTL elapses without
+	// renewal. Populated from CLAUDE_CODE_SESSION_ID by `sirsi thread register`.
+	SessionID string `json:"session_id,omitempty"`
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`
@@ -234,6 +256,57 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	newStart := t.StartTime
 	if newStart == "" && t.PID >= minAgentPID {
 		newStart = PIDStartTimeOf(t.PID)
+	}
+
+	// Session-keyed reuse path (app-hosted surfaces, e.g. Claude Code desktop).
+	// App-hosted sessions have no durable PID — each hook fire gets a fresh OS
+	// process. The stable identity is the session_id (CLAUDE_CODE_SESSION_ID),
+	// which is constant across all turns of one conversation. If the caller
+	// provides one, search for an existing LIVE record keyed on (session_id,
+	// surface) and renew it instead of minting. This is what structurally bounds
+	// the pile: one record per (session_id, surface) is now impossible to exceed.
+	if t.ThreadID == "" && t.SessionID != "" {
+		for _, existing := range reg.Threads {
+			if existing == nil {
+				continue
+			}
+			if existing.SessionID != t.SessionID || existing.Surface != t.Surface {
+				continue
+			}
+			if existing.Status.IsTerminal() || existing.Status == ThreadStatusSuspended {
+				continue
+			}
+			// Found the live record for this session — renew the lease.
+			existing.LastSeenAt = now
+			if existing.MachineID == "" {
+				existing.MachineID = t.MachineID
+			}
+			// Carry forward the caller's PID as optional evidence (may vary
+			// turn-to-turn on app-hosted surfaces; the session_id is the
+			// true identity, so PID is evidence-only, not the key).
+			if t.PID >= minAgentPID {
+				existing.PID = t.PID
+			}
+			if t.CurrentItem != "" {
+				existing.CurrentItem = t.CurrentItem
+			}
+			if len(t.Watches) > 0 {
+				existing.Watches = normalizeWatches(existing.AgentID, t.Watches)
+			}
+			if t.Workstream != "" {
+				existing.Workstream = t.Workstream
+			}
+			if t.WakeMechanism != "" {
+				existing.WakeMechanism = t.WakeMechanism
+			}
+			if t.Repo != "" {
+				existing.Repo = t.Repo
+			}
+			if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+				return nil, err
+			}
+			return existing, nil
+		}
 	}
 
 	if t.ThreadID == "" && t.PID >= minAgentPID {
@@ -705,11 +778,28 @@ func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
 		// the cmdline-identity check, but PR #29 established: a stale phantom
 		// heartbeat is dead — reap it. A pid-less surface (e.g. MCP server)
 		// that is freshly heartbeating stays alive; only stale phantoms retire.
+		//
+		// Session-keyed records (SessionID != "") use LeaseSessionTTL rather
+		// than DefaultThreadStaleAfter. Their PID is intentionally null — that
+		// is the normal shape for an app-hosted surface, not a phantom. Their
+		// liveness is established by the lease (LastSeenAt + LeaseSessionTTL),
+		// not by OS-truth (ADR-022: a LIVE pid is never reaped; no pid means
+		// there is no OS-truth claim to probe). Stale-after-lease is still a
+		// reap so the terminal invariant holds and the supersession path
+		// (ReapStrayThreads) remains unaffected.
 		if t.PID < minAgentPID {
-			if now.Sub(t.LastSeenAt) > DefaultThreadStaleAfter {
+			ttl := DefaultThreadStaleAfter
+			if t.SessionID != "" {
+				ttl = LeaseSessionTTL
+			}
+			if now.Sub(t.LastSeenAt) > ttl {
 				t.Status = ThreadStatusReaped
 				t.LastSeenAt = now
-				t.LastError = fmt.Sprintf("reaped: phantom PID %d stale > %s at %s", t.PID, DefaultThreadStaleAfter, now.Format(time.RFC3339))
+				if t.SessionID != "" {
+					t.LastError = fmt.Sprintf("reaped: session %s lease expired (no renewal in > %s) at %s", t.SessionID, ttl, now.Format(time.RFC3339))
+				} else {
+					t.LastError = fmt.Sprintf("reaped: phantom PID %d stale > %s at %s", t.PID, ttl, now.Format(time.RFC3339))
+				}
 				reaped = append(reaped, ReapedThread{ThreadID: t.ThreadID, AgentID: t.AgentID, PID: t.PID, State: PIDUnknown})
 			}
 			continue

@@ -171,6 +171,11 @@ var threadRegisterCmd = &cobra.Command{
 			WakeMechanism: threadRegWake,
 			PID:           anchor,
 			Host:          host,
+			// Session-keyed lease: capture the stable app-hosted session identity
+			// so re-registrations from subsequent hook fires renew the same record
+			// instead of minting fresh ones (claude-home mint-churn fix). No-op
+			// for process-backed surfaces (non-Claude) where this env var is unset.
+			SessionID: router.CurrentSessionID(),
 		}
 		// Fill wake mechanism from registry if not provided.
 		if thr.WakeMechanism == "" {
