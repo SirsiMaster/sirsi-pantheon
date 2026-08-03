@@ -49,8 +49,12 @@ jobs:
       - name: ADR number uniqueness (structural guard)
         run: |
           set -euo pipefail
+          # Extract ADR key including optional sub-ADR letter suffix so that the
+          # intentional ADR-031-A/B/C series is not misread as four copies of "031".
+          # Pattern: \d+(-[A-Z])? anchored by a lookahead on the next hyphen.
+          # Examples: ADR-031-A-TITLE.md → "031-A"; ADR-031-TITLE.md → "031".
           dupes=$(ls docs/ADR-*.md 2>/dev/null \
-            | grep -oP '(?<=ADR-)\d+' \
+            | grep -oP '(?<=ADR-)\d+(-[A-Z])?(?=-)' \
             | sort | uniq -d)
           if [ -n "$dupes" ]; then
             echo "ERROR: duplicate ADR numbers detected: $dupes"

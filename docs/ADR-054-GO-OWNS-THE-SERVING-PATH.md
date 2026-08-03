@@ -1,4 +1,4 @@
-# ADR-046 — Go owns the serving path; Python becomes a called extension
+# ADR-054 — Go owns the serving path; Python becomes a called extension
 
 - **Status:** Proposed
 - **Date:** 2026-07-27

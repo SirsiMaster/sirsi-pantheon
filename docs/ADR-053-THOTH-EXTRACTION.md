@@ -1,4 +1,4 @@
-# ADR-016: Extract Thoth as Standalone Package
+# ADR-053: Extract Thoth as Standalone Package
 
 **Status**: Accepted — Phase 1 Complete (May 5, 2026)
 **Deciders**: Cylton Collymore

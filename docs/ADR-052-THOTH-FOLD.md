@@ -1,4 +1,4 @@
-# ADR-013: Fold sirsi-thoth into sirsi-pantheon
+# ADR-052: Fold sirsi-thoth into sirsi-pantheon
 
 **Status:** Accepted
 **Date:** 2026-03-30

@@ -236,8 +236,11 @@ func TestSirsiGemmaLivePaths_ProtectsConfiguredModel(t *testing.T) {
 		t.Fatalf("Scan error: %v", err)
 	}
 	for _, f := range findings {
-		if hasPrefixPath(f.Path, modelDir) || f.Path == modelDir {
-			t.Errorf("configured model %q surfaced as a finding — A1 violation: sirsi clean would delete its own substrate", f.Path)
+		// Reject findings at-or-below the model dir AND findings that are parents
+		// of the model dir (e.g. the hub root — the exact granularity that deleted
+		// 12 GB of weights in the 2026-08-03 incident).
+		if hasPrefixPath(f.Path, modelDir) || f.Path == modelDir || hasPrefixPath(modelDir, f.Path) {
+			t.Errorf("configured model %q surfaced as a finding at path %q — A1 violation: sirsi clean would delete its own substrate", modelDir, f.Path)
 		}
 	}
 }
