@@ -249,6 +249,8 @@ cutover live the store row IS the record.
 	},
 }
 
+var pullBuildFilter bool
+
 var routerPullCmd = &cobra.Command{
 	Use:   "pull <agent>",
 	Short: "Pull open work items addressed to an agent",
@@ -269,13 +271,39 @@ var routerPullCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if pullBuildFilter {
+			// Guard: headless build workers cannot execute decision/review/proposal
+			// items (no build artifact exists). Split into buildable vs. deferred and
+			// warn about deferred ones so they don't silently spin for the full timeout.
+			var buildable, nonBuildable []work.Item
+			for _, it := range items {
+				if it.IsBuildable() {
+					buildable = append(buildable, it)
+				} else {
+					nonBuildable = append(nonBuildable, it)
+				}
+			}
+			if len(nonBuildable) > 0 {
+				fmt.Printf("  ⚠ %d item(s) skipped — not build-shaped (type: decision/review/proposal):\n", len(nonBuildable))
+				for _, it := range nonBuildable {
+					fmt.Printf("    • %s  type:%s  from:%s\n      → route to human/agent lane: sirsi router respond %s --result \"<answer>\"\n\n", it.ID, it.Type, it.From, it.ID)
+				}
+			}
+			items = buildable
+		}
+
 		if len(items) == 0 {
 			fmt.Printf("  No open items for %s.\n", args[0])
 			return nil
 		}
 		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
 		for _, it := range items {
-			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
+			typeHint := ""
+			if it.Type != "" {
+				typeHint = fmt.Sprintf("  type: %s\n    ", it.Type)
+			}
+			fmt.Printf("  • %s\n    %sfrom: %s\n      title: %s\n      opened: %s\n\n", it.ID, typeHint, it.From, it.Title, it.Opened)
 		}
 		fmt.Printf("  Read full: sirsi router show <id>\n")
 		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
@@ -1274,6 +1302,7 @@ func init() {
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
 	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent already has an armed watcher (bypasses the duplicate-spawn leak guard)")
+	routerPullCmd.Flags().BoolVar(&pullBuildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
 	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)
