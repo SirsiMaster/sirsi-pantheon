@@ -97,8 +97,8 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.BlockedBySet {
 		t.BlockedBy = strings.TrimSpace(u.BlockedBy)
 	}
-	if err := validateTask(t); err != nil {
-		return Task{}, err
+	if validationErr := validateTask(t); validationErr != nil {
+		return Task{}, validationErr
 	}
 	t.Updated = s.clock().Format(time.RFC3339)
 	_, err = s.db.Exec(`UPDATE tasks SET subject=?, status=?, responsible_party=?, blocked_by=?, updated=? WHERE agent=? AND task_id=?;`,
