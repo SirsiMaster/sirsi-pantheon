@@ -317,3 +317,54 @@ func TestValidate_NoneWake(t *testing.T) {
 		t.Errorf("WakeNone must be valid (explicit opt-out), got: %v", err)
 	}
 }
+
+// TestMarshalJSON_TypedFieldWinOverExtra is the regression test for the
+// present-but-empty omitempty shadowing defect: a typed field with omitempty
+// that arrives as "" on disk is absent from knownJSON, so UnmarshalJSON
+// misfiled it into extra. MarshalJSON then unconditionally wrote the empty
+// extra back, silently reverting any programmatic write to the field.
+//
+// The fix adds a guard so extras never shadow typed fields.
+func TestMarshalJSON_TypedFieldWinOverExtra(t *testing.T) {
+	// Seed agents.json with workstream="" — a present-but-empty omitempty field.
+	// Go's omitempty omits zero strings, so after UnmarshalJSON the empty
+	// workstream would slip into extra under the old code.
+	input := []byte(`{
+		"agents": {
+			"claude-deck": {
+				"id": "claude-deck",
+				"type": "claude",
+				"command": ["claude", "--print"],
+				"cwd": "/tmp",
+				"workstream": ""
+			}
+		}
+	}`)
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "agents.json"), input, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	reg, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+
+	// Programmatically assign a non-empty workstream — this must survive Save.
+	cfg := reg.Agents["claude-deck"]
+	cfg.Workstream = "deck"
+	reg.Agents["claude-deck"] = cfg
+
+	if saveErr := SaveRegistry(tmp, reg); saveErr != nil {
+		t.Fatalf("SaveRegistry: %v", saveErr)
+	}
+
+	reloaded, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry (after save): %v", err)
+	}
+	got := reloaded.Agents["claude-deck"].Workstream
+	if got != "deck" {
+		t.Errorf("programmatic workstream write was reverted: got %q, want %q", got, "deck")
+	}
+}
