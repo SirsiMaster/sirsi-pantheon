@@ -252,7 +252,7 @@ type BoardBlocker struct {
 	Age    string `json:"age"`
 }
 
-// Summarize distils a Snapshot into a BoardSummary for compact surface rendering.
+// Summarize distills a Snapshot into a BoardSummary for compact surface rendering.
 func Summarize(s Snapshot) BoardSummary {
 	bs := BoardSummary{GeneratedAt: s.GeneratedAt}
 	for _, a := range s.Agents {
