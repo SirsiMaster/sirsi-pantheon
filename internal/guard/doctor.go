@@ -364,6 +364,7 @@ var doctorChecks = []doctorCheck{
 	{"Runaway Executor", []string{"Runaway Executor"}, checkRunawayExecutor},
 	{"Local Snapshots", []string{"Local Snapshots"},
 		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
+	{"launchd Disabled", []string{"launchd Disabled Override"}, checkLaunchdDisabled},
 }
 
 // externalFindingChecks are finding Check names appended to the report OUTSIDE
@@ -1455,3 +1456,71 @@ func calculateScore(findings []DiagnosticFinding) int {
 // and not just a diagnosis — a measured problem with no offered remedy is half
 // an answer (ADR-033).
 func RemediationFor(f DiagnosticFinding) string { return remediationCommand(f) }
+
+// checkLaunchdDisabled reads launchctl print-disabled and reports any
+// ai.sirsi.* or actions.runner.* label marked disabled in the override DB.
+//
+// A disabled label keeps running until the next reboot — after which launchd
+// will not restart it. This is the "green surface over a dead thing with a
+// latency fuse" class: every current-state probe (ps, launchctl list, /health)
+// sees healthy; only the override DB reveals the post-reboot fate.
+// macOS (darwin) only.
+func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
+	if p.Name() != "darwin" && p.Name() != "mock" {
+		return
+	}
+	uid := os.Getuid()
+	out, err := p.Command("launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid))
+	if err != nil || len(out) == 0 {
+		// print-disabled is macOS 10.11+. Fail-open: don't penalize hosts that
+		// can't run it (CI, Linux, older macOS in tests).
+		return
+	}
+	disabled := parseLaunchdDisabled(string(out))
+	if len(disabled) == 0 {
+		report.Findings = append(report.Findings, DiagnosticFinding{
+			Check:    "launchd Disabled Override",
+			Severity: SeverityOK,
+			Message:  "No Sirsi/runner labels disabled in launchd override DB",
+		})
+		return
+	}
+	report.Findings = append(report.Findings, DiagnosticFinding{
+		Check:    "launchd Disabled Override",
+		Severity: SeverityCritical,
+		Message:  fmt.Sprintf("%d Sirsi/runner label(s) disabled in launchd override DB — will NOT start after next reboot", len(disabled)),
+		Detail: fmt.Sprintf(
+			"Disabled: %s\n"+
+				"These labels are currently running (if launched before the disable) but launchd will not restart them after reboot.\n"+
+				"Fix (per label): launchctl enable gui/%d/<label> && launchctl bootstrap gui/%d ~/Library/LaunchAgents/<label>.plist\n"+
+				"Or run: sirsi liveness-watch run (the supervisor duty re-enables+bootstraps on its next pass)",
+			strings.Join(disabled, ", "), uid, uid,
+		),
+	})
+}
+
+// parseLaunchdDisabled extracts ai.sirsi.* and actions.runner.* labels from
+// `launchctl print-disabled gui/<uid>` output that are marked disabled.
+// Output format (one label per line):
+//
+//	"label.name" => disabled
+//	"label.name2" => enabled
+func parseLaunchdDisabled(output string) []string {
+	var found []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasSuffix(line, "=> disabled") {
+			continue
+		}
+		start := strings.Index(line, `"`)
+		end := strings.LastIndex(line, `"`)
+		if start < 0 || end <= start {
+			continue
+		}
+		label := line[start+1 : end]
+		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
+			found = append(found, label)
+		}
+	}
+	return found
+}

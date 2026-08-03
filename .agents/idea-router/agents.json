@@ -149,8 +149,7 @@
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
       "workstream": "nexus",
       "wake": {
-        "mechanism": "launchagent",
-        "launch_agent_label": "ai.sirsi.router.wake.claude-nexus"
+        "mechanism": "none"
       }
     },
     "claude-pantheon": {
@@ -345,11 +344,7 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
       "workstream": "inference",
       "wake": {
-        "mechanism": "cli-spawn",
-        "health_check": [
-          "claude",
-          "--version"
-        ]
+        "mechanism": "none"
       }
     },
     "codex-inference": {

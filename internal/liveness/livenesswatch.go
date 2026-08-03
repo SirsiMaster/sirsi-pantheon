@@ -155,6 +155,7 @@ func Run(routerRoot string, w io.Writer) error {
 	// swap-kills the broker; a leaked-session pileup is the precursor that CAUSES
 	// that spiral; a dead menubar only loses the operator surface.
 	findings := []Finding{
+		probeLaunchdDisabled(),
 		probeGemma(home),
 		probeMemoryDeath(),
 		probeSessionLeak(),
@@ -215,7 +216,7 @@ func Run(routerRoot string, w io.Writer) error {
 // condition still reaches the owner rather than being silently misrouted.
 func recipientFor(check string) string {
 	switch check {
-	case "gemma-broker", "memory-death", "session-leak", "menubar":
+	case "gemma-broker", "memory-death", "session-leak", "menubar", "launchd-disabled":
 		return "claude-pantheon"
 	default:
 		return "user"
@@ -524,5 +525,65 @@ func probeMemoryDeath() Finding {
 	}
 	f.OK = true
 	f.Detail = fmt.Sprintf("swap %.0f%% / available %.2f GB / load %.1f/%d", md.SwapPct, md.AvailableGB, md.Load1, md.Cores)
+	return f
+}
+
+// probeLaunchdDisabled checks for ai.sirsi.* or actions.runner.* labels that
+// are marked disabled in launchd's override DB. A disabled-but-running label
+// is the "latency fuse" class: every current-state probe sees green, but after
+// the next reboot launchd will refuse to restart it. This probe surfaces the
+// flag BEFORE the reboot so the supervisor can re-enable them on its next pass.
+// macOS only; fail-open on any exec error.
+func probeLaunchdDisabled() Finding {
+	f := Finding{
+		Check:   "launchd-disabled",
+		Fixable: true,
+		Title:   "liveness-watch: ai.sirsi/runner labels disabled in launchd override DB",
+		Body: "The launchd liveness watch found Sirsi or self-hosted-runner labels marked " +
+			"disabled in launchd's override DB (launchctl print-disabled). These labels are " +
+			"currently running IF launched before the disable swept them — but launchd will " +
+			"NOT restart them after the next reboot. This is the 2026-07-31 fabric-loss class. " +
+			"The supervisor duty (KickstartDeadLabels) now calls `launchctl enable` before " +
+			"`bootstrap` to clear this flag automatically on its next pass. Alternatively fix " +
+			"manually: launchctl enable gui/<uid>/<label> && launchctl bootstrap gui/<uid> " +
+			"~/Library/LaunchAgents/<label>.plist — repeat per disabled label.",
+	}
+	if runtime.GOOS != "darwin" {
+		f.OK, f.Fixable, f.Detail = true, false, "not macOS"
+		return f
+	}
+	uid := os.Getuid()
+	out, err := exec.Command("launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid)).Output()
+	if err != nil {
+		// print-disabled may be unavailable (older macOS, restricted sandbox). Fail-open.
+		f.OK, f.Fixable, f.Detail = true, false, "launchctl print-disabled unavailable"
+		return f
+	}
+	var disabled []string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasSuffix(line, "=> disabled") {
+			continue
+		}
+		start := strings.Index(line, `"`)
+		end := strings.LastIndex(line, `"`)
+		if start < 0 || end <= start {
+			continue
+		}
+		label := line[start+1 : end]
+		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
+			disabled = append(disabled, label)
+		}
+	}
+	if len(disabled) == 0 {
+		f.OK = true
+		f.Detail = "no Sirsi/runner labels disabled"
+		return f
+	}
+	f.Detail = fmt.Sprintf("%d label(s) disabled (will not start after reboot): %s",
+		len(disabled), strings.Join(disabled, ", "))
+	f.Body += "\nDisabled now: " + strings.Join(disabled, ", ")
+	// Append uid into the body for the repair command.
+	f.Body = strings.ReplaceAll(f.Body, "<uid>", strconv.Itoa(uid))
 	return f
 }

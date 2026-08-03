@@ -837,6 +837,42 @@ final class SirsiEngine: ObservableObject {
         return Self.firstMeaningful(out)
     }
 
+    // trashList reads what is in the Trash. Read-only, safe to call on render.
+    // Returns (count, humanSize, rawLines) — empty count means nothing to purge.
+    func trashList() async -> (count: Int, size: String, lines: [String]) {
+        let out = await Self.run(args: ["anubis", "empty-trash"], stdin: nil)
+        // "𓁟 N item(s) in Trash, SIZE total:" — parse the header, keep the
+        // item lines for display. An "already empty" reply yields count 0.
+        var count = 0
+        var size = ""
+        var lines: [String] = []
+        for raw in out.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            if line.contains("item(s) in Trash") {
+                let digits = line.split(whereSeparator: { !$0.isNumber })
+                count = Int(digits.first.map(String.init) ?? "") ?? 0
+                if let r = line.range(of: "Trash, "), let e = line.range(of: " total") {
+                    size = String(line[r.upperBound..<e.lowerBound])
+                }
+            } else if line.hasPrefix("   · ") {
+                lines.append(String(line.dropFirst(5)))
+            }
+        }
+        return (count, size, lines)
+    }
+
+    // emptyTrash PERMANENTLY deletes the Trash contents. The ONLY Sirsi action
+    // with no undo — every other clean path is trash-first and recoverable — so
+    // the UI gates it behind an explicit second confirmation and this method is
+    // never called from a one-click path.
+    func emptyTrash() async -> String {
+        busy = true; lastError = nil
+        let out = await Self.run(args: ["anubis", "empty-trash", "--yes"], stdin: nil)
+        busy = false
+        refresh()
+        return Self.firstMeaningful(out)
+    }
+
     // lastDiagnoseAt throttles diagnose to once per 5 minutes: the popover used
     // to spawn a full multi-second `sirsi diagnose` on EVERY open (the 2026-07-03
     // "menubar feels slow" report — same storm class as the session-hook cache).

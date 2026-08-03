@@ -54,6 +54,19 @@ func refreshSirsiLaunchAgentsIn(dir string, uid int) (refreshed, problems []stri
 			continue
 		}
 		label := strings.TrimSuffix(filepath.Base(plist), ".plist")
+		// ENABLE FIRST. `disabled` lives in launchd's PERSISTENT override
+		// database, not in the plist and not in the loaded-job set — so bootout
+		// and bootstrap cannot clear it, and a disabled label fails bootstrap
+		// with a bare "5: Input/output error" forever. Observed live 2026-08-03:
+		// 23 of 28 ai.sirsi labels were disabled, refresh reported 22 failures
+		// with that opaque errno on every run, and the entire agent fabric sat
+		// down for ~15 hours with no consumer.
+		//
+		// `enable` is idempotent and harmless on an already-enabled label, so it
+		// costs nothing on the healthy path and is the only thing that clears the
+		// unhealthy one. Best-effort: a failure here still lets bootstrap try and
+		// report its own error rather than masking it.
+		_ = runLaunchctl("enable", fmt.Sprintf("gui/%d/%s", uid, label))
 		// Bootout is best-effort: "not loaded" is fine — the point is that no
 		// stale LWCR survives into the bootstrap below.
 		_ = runLaunchctl("bootout", fmt.Sprintf("gui/%d/%s", uid, label))
@@ -69,7 +82,14 @@ func refreshSirsiLaunchAgentsIn(dir string, uid int) (refreshed, problems []stri
 			sleepFn(bootstrapRetryDelay)
 		}
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: bootstrap failed: %v", label, err))
+			// Name the most likely cause instead of surfacing a bare errno. EIO
+			// from bootstrap is almost always either a still-tearing-down job
+			// (which the retry loop above already absorbed) or a persistent
+			// disable we just tried to clear — and "Input/output error" alone
+			// sent this diagnosis down a memory-pressure dead end for an hour.
+			problems = append(problems, fmt.Sprintf(
+				"%s: bootstrap failed: %v (if this is 'Input/output error', check `launchctl print-disabled gui/$UID` — a persistently disabled label cannot be bootstrapped)",
+				label, err))
 			continue
 		}
 		refreshed = append(refreshed, label)

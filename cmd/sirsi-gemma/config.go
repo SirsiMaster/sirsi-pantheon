@@ -9,17 +9,24 @@ import (
 	"strings"
 )
 
-// Config controls how sirsi-gemma drives a local MLX-Gemma install.
+// Config controls how sirsi-gemma drives a local MLX-Gemma install or an
+// SNE-compatible HTTP endpoint.
 //
 // Loaded from ~/.config/sirsi/gemma.toml (flat key=value). Missing file
-// or missing keys fall back to the defaults below — operator can run the
-// binary with no config at all, as long as the defaults match the install
-// chip A wrote in docs/setup/MLX_GEMMA_LOCAL.md.
+// or missing keys fall back to the defaults below.
+//
+// SNE seam (ADR-003 in sirsi-inference): set sne_url to activate the HTTP
+// runner instead of the MLX subprocess. Example:
+//
+//	sne_url = http://localhost:11434/v1
 type Config struct {
 	ModelID     string  // e.g. "mlx-community/gemma-2-27b-it-4bit"
 	VenvPath    string  // absolute path to the Python venv root
 	MaxTokens   int     // default max tokens per generation
 	Temperature float64 // default sampling temperature
+	// SNE seam — when non-empty, sirsi-gemma uses SNERunner instead of MLXRunner.
+	SNEURL   string // base URL of SNE's OpenAI-compatible API, e.g. "http://localhost:11434/v1"
+	SNEModel string // model name forwarded to SNE (default: "gemma-2-27b-it")
 }
 
 // DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
@@ -93,6 +100,10 @@ func (c *Config) set(key, val string) error {
 			return fmt.Errorf("temperature: %w", err)
 		}
 		c.Temperature = f
+	case "sne_url":
+		c.SNEURL = val
+	case "sne_model":
+		c.SNEModel = val
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}

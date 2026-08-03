@@ -15,6 +15,7 @@ type Task struct {
 	TaskID           string `json:"task_id"`
 	Subject          string `json:"subject"`
 	Status           string `json:"status"`
+	Phase            string `json:"phase,omitempty"`
 	ResponsibleParty string `json:"responsible_party"`
 	BlockedBy        string `json:"blocked_by,omitempty"`
 	Created          string `json:"created"`
@@ -62,8 +63,8 @@ func (s *Store) AddTask(t Task) error {
 	if t.Updated == "" {
 		t.Updated = now
 	}
-	_, err := s.db.Exec(`INSERT INTO tasks(agent, task_id, subject, status, responsible_party, blocked_by, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-		t.Agent, t.TaskID, strings.TrimSpace(t.Subject), t.Status, t.ResponsibleParty, strings.TrimSpace(t.BlockedBy), t.Created, t.Updated)
+	_, err := s.db.Exec(`INSERT INTO tasks(agent, task_id, subject, status, phase, responsible_party, blocked_by, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+		t.Agent, t.TaskID, strings.TrimSpace(t.Subject), t.Status, strings.TrimSpace(t.Phase), t.ResponsibleParty, strings.TrimSpace(t.BlockedBy), t.Created, t.Updated)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return ErrTaskExists
@@ -76,8 +77,8 @@ func (s *Store) AddTask(t Task) error {
 // UpdateTask replaces mutable task fields. Empty values mean keep the current
 // value, except BlockedBySet permits an explicit dependency clear.
 type TaskUpdate struct {
-	Subject, Status, ResponsibleParty, BlockedBy string
-	BlockedBySet                                 bool
+	Subject, Status, Phase, ResponsibleParty, BlockedBy string
+	BlockedBySet                                        bool
 }
 
 func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
@@ -91,6 +92,9 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.Status != "" {
 		t.Status = u.Status
 	}
+	if u.Phase != "" {
+		t.Phase = u.Phase
+	}
 	if u.ResponsibleParty != "" {
 		t.ResponsibleParty = u.ResponsibleParty
 	}
@@ -101,8 +105,8 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 		return Task{}, validationErr
 	}
 	t.Updated = s.clock().Format(time.RFC3339)
-	_, err = s.db.Exec(`UPDATE tasks SET subject=?, status=?, responsible_party=?, blocked_by=?, updated=? WHERE agent=? AND task_id=?;`,
-		t.Subject, t.Status, t.ResponsibleParty, t.BlockedBy, t.Updated, agent, taskID)
+	_, err = s.db.Exec(`UPDATE tasks SET subject=?, status=?, phase=?, responsible_party=?, blocked_by=?, updated=? WHERE agent=? AND task_id=?;`,
+		t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, agent, taskID)
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w", agent, taskID, err)
 	}
@@ -111,8 +115,8 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 
 func (s *Store) GetTask(agent, taskID string) (Task, error) {
 	var t Task
-	err := s.db.QueryRow(`SELECT agent, task_id, subject, status, responsible_party, blocked_by, created, updated FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).
-		Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated)
+	err := s.db.QueryRow(`SELECT agent, task_id, subject, status, phase, responsible_party, blocked_by, created, updated FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).
+		Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Task{}, ErrNotFound
 	}
@@ -125,7 +129,7 @@ func (s *Store) GetTask(agent, taskID string) (Task, error) {
 // ListTasks returns every task, optionally filtered by agent, ordered by agent
 // then creation time and id for deterministic surfaces.
 func (s *Store) ListTasks(agent string) ([]Task, error) {
-	query := `SELECT agent, task_id, subject, status, responsible_party, blocked_by, created, updated FROM tasks`
+	query := `SELECT agent, task_id, subject, status, phase, responsible_party, blocked_by, created, updated FROM tasks`
 	var rows *sql.Rows
 	var err error
 	if strings.TrimSpace(agent) == "" {
@@ -140,7 +144,7 @@ func (s *Store) ListTasks(agent string) ([]Task, error) {
 	var out []Task
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated); err != nil {
+		if err := rows.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated); err != nil {
 			return nil, fmt.Errorf("routerstore: ListTasks scan: %w", err)
 		}
 		out = append(out, t)

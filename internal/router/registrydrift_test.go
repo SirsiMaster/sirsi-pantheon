@@ -137,3 +137,35 @@ func TestEntryWithoutInnerIDIsStillSeen(t *testing.T) {
 		t.Fatalf("must attribute the loss to the map key, got %+v", d.LostFields)
 	}
 }
+
+// claude-home's probe against PR #416, reproduced verbatim as a regression test.
+//
+// LoadRegistry does `cfg.ID = id` UNCONDITIONALLY — the map key always wins,
+// even when an inner "id" disagrees. #416 mirrored that with an `if inner id is
+// empty` guard, so an entry KEYED ghost carrying INNER id phantom was addressed
+// by the router as ghost and indexed by the check as phantom. Their measured
+// result, which this test now forbids:
+//
+//	Checked=true Drifted=true LostFields=[] MissingAgents=[phantom]
+//
+// Two wrong answers from one line: it invented the removal of an agent present
+// in neither registry, AND reported no lost field while launch_agent_label had
+// in fact been dropped from a live one. A check that is confidently wrong in two
+// directions at once is worse than no check.
+func TestMapKeyWinsOverAContradictoryInnerID(t *testing.T) {
+	up := `{"agents":{"ghost":{"id":"phantom","wake":{"mechanism":"launchagent","launch_agent_label":"ai.sirsi.router.wake.ghost"}}}}`
+	live := `{"agents":{"ghost":{"id":"phantom","wake":{"mechanism":"launchagent"}}}}`
+
+	d := diffRegistries([]byte(up), []byte(live))
+
+	if len(d.MissingAgents) != 0 {
+		t.Fatalf("must not invent a missing agent from a disagreeing inner id, got %+v", d.MissingAgents)
+	}
+	if len(d.LostFields) != 1 {
+		t.Fatalf("the dropped launch_agent_label MUST still be reported, got %+v", d.LostFields)
+	}
+	if d.LostFields[0].AgentID != "ghost" {
+		t.Fatalf("the router addresses this agent as the MAP KEY (ghost); the check must agree, got %q",
+			d.LostFields[0].AgentID)
+	}
+}

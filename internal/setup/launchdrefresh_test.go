@@ -80,15 +80,21 @@ func TestRefreshSirsiLaunchAgents_BootoutThenBootstrapPerJob(t *testing.T) {
 	if len(refreshed) != len(want) || refreshed[0] != want[0] || refreshed[1] != want[1] {
 		t.Fatalf("refreshed = %v, want %v", refreshed, want)
 	}
-	// Per job: bootout gui/<uid>/<label>, then bootstrap gui/<uid> <plist>.
-	if len(*calls) != 4 {
-		t.Fatalf("launchctl calls = %d, want 4: %v", len(*calls), *calls)
+	// Per job, IN ORDER: enable, bootout, bootstrap. `enable` must come first —
+	// `disabled` lives in launchd's persistent override database, so bootout and
+	// bootstrap cannot clear it and bootstrap fails with a bare EIO forever
+	// (observed live 2026-08-03: 23 disabled labels, whole fabric down ~15h).
+	if len(*calls) != 6 {
+		t.Fatalf("launchctl calls = %d, want 6 (enable+bootout+bootstrap per job): %v", len(*calls), *calls)
 	}
-	if got := strings.Join((*calls)[0], " "); got != "bootout gui/501/ai.sirsi.conduit.tick" {
-		t.Errorf("call[0] = %q", got)
+	if got := strings.Join((*calls)[0], " "); got != "enable gui/501/ai.sirsi.conduit.tick" {
+		t.Errorf("call[0] = %q, want enable FIRST — bootout cannot clear a persistent disable", got)
 	}
-	if got := strings.Join((*calls)[1], " "); got != "bootstrap gui/501 "+filepath.Join(dir, "ai.sirsi.conduit.tick.plist") {
+	if got := strings.Join((*calls)[1], " "); got != "bootout gui/501/ai.sirsi.conduit.tick" {
 		t.Errorf("call[1] = %q", got)
+	}
+	if got := strings.Join((*calls)[2], " "); got != "bootstrap gui/501 "+filepath.Join(dir, "ai.sirsi.conduit.tick.plist") {
+		t.Errorf("call[2] = %q", got)
 	}
 }
 
