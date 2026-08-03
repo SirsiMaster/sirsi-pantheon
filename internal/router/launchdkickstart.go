@@ -24,6 +24,8 @@ import (
 // launchdDeps are the OS seams (Rule A16) — tests stub these.
 type launchdDeps struct {
 	listLabels     func() (map[string]bool, error) // labels currently known to launchd
+	disabledLabels func() (map[string]bool, error) // labels disabled in override DB
+	enableLabel    func(domain, label string) error
 	bootstrapPlist func(plistPath string) error
 	uid            func() int
 }
@@ -42,6 +44,36 @@ var launchdOS = launchdDeps{
 			}
 		}
 		return labels, nil
+	},
+	disabledLabels: func() (map[string]bool, error) {
+		uid := os.Getuid()
+		out, err := exec.Command("launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid)).Output()
+		if err != nil {
+			// print-disabled may be unavailable in some contexts — fail-open so the
+			// rest of the duty (bootstrap missing labels) still runs.
+			return map[string]bool{}, nil
+		}
+		disabled := map[string]bool{}
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasSuffix(line, "=> disabled") {
+				continue
+			}
+			start := strings.Index(line, `"`)
+			end := strings.LastIndex(line, `"`)
+			if start < 0 || end <= start {
+				continue
+			}
+			disabled[line[start+1:end]] = true
+		}
+		return disabled, nil
+	},
+	enableLabel: func(domain, label string) error {
+		out, err := exec.Command("launchctl", "enable", domain+"/"+label).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("enable %s: %v (%s)", label, err, strings.TrimSpace(string(out)))
+		}
+		return nil
 	},
 	bootstrapPlist: func(plistPath string) error {
 		uid := os.Getuid()
@@ -70,7 +102,9 @@ func labelForPlist(name string) string {
 }
 
 // KickstartDeadLabels bootstraps every managed plist on disk whose label is
-// missing from launchd. Returns the labels it revived (for the run report).
+// missing from launchd. If a label is also disabled in the override DB, it
+// calls `launchctl enable` first — kickstart cannot recover a disabled+unloaded
+// label (2026-07-31 fabric-loss post-mortem). Returns revived labels.
 func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 	entries, err := os.ReadDir(agentsDir)
 	if err != nil {
@@ -83,6 +117,18 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("launchctl list: %w", err)
 	}
+	// Read the override DB once; disabled labels require enable before bootstrap.
+	// Fail-open: nil fn (e.g. tests that don't stub it) or exec error both yield
+	// an empty map — bootstrap still runs and will fail on a truly disabled label,
+	// surfacing the error rather than silently skipping the label.
+	var disabled map[string]bool
+	if deps.disabledLabels != nil {
+		disabled, _ = deps.disabledLabels()
+	}
+
+	uid := deps.uid()
+	domain := fmt.Sprintf("gui/%d", uid)
+
 	var revived []string
 	var firstErr error
 	for _, e := range entries {
@@ -93,6 +139,17 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 		label := labelForPlist(name)
 		if loaded[label] {
 			continue
+		}
+		// Enable before bootstrap when the override DB has disabled this label.
+		// Without this step, bootstrap silently fails (Operation not permitted)
+		// and the duty appears to succeed — the exact failure mode from 2026-07-31.
+		if disabled[label] && deps.enableLabel != nil {
+			if err := deps.enableLabel(domain, label); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
 		}
 		if err := deps.bootstrapPlist(filepath.Join(agentsDir, name)); err != nil {
 			if firstErr == nil {
