@@ -28,9 +28,10 @@ var bannedFixCommands = map[string]bool{
 // empty remediationCommand is correct for them. Anything NOT here that can alarm
 // MUST have a real lever.
 var noLeverRequired = map[string]bool{
-	"Kernel Panics (7d)": true, // guidance: hardware/driver — nothing safe to auto-do
-	"Sirsi Processes":    true, // info
-	"Local Snapshots":    true, // info: always SeverityInfo; carries an OPTIONAL reclaim, never alarms
+	"Kernel Panics (7d)":        true, // guidance: hardware/driver — nothing safe to auto-do
+	"Sirsi Processes":           true, // info
+	"Local Snapshots":           true, // info: always SeverityInfo; carries an OPTIONAL reclaim, never alarms
+	"launchd Disabled Override": true, // guidance: fix requires per-label launchctl enable+bootstrap; Detail carries the steps
 }
 
 // firstToken returns the verb from a "sirsi <verb> …" remediation command — the
