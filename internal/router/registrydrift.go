@@ -123,66 +123,64 @@ func agentsByID(raw []byte) (map[string]map[string]any, error) {
 	if err := json.Unmarshal(raw, &anyDoc); err != nil {
 		return nil, err
 	}
-	var list []any
-	switch v := anyDoc.(type) {
-	case []any:
-		list = v
-	case map[string]any:
-		if inner, ok := v["agents"]; ok {
-			if l, ok := inner.([]any); ok {
-				list = l
-			} else if m, ok := inner.(map[string]any); ok {
-				for _, e := range m {
-					list = append(list, e)
-				}
-			}
-		} else {
-			for _, e := range v {
-				list = append(list, e)
-			}
-		}
-	}
 	out := map[string]map[string]any{}
-	for _, e := range list {
-		m, ok := e.(map[string]any)
-		if !ok {
-			continue
-		}
-		id, _ := m["id"].(string)
-		if id == "" {
-			continue
-		}
-		out[id] = m
-	}
-	// Map-shaped registries key each entry by id and LoadRegistry INJECTS that
-	// key as the ID, so an entry with no inner "id" is fully live to the router.
-	// Skipping it here would make such an entry invisible to this check while
-	// the router happily addresses it — the check must see exactly what the
-	// loader sees, or it is a facade of its own. (Found by codex-pantheon in the
-	// #413 bind review; 0 of 23 live entries hit it that day.)
-	if m, ok := anyDoc.(map[string]any); ok {
-		inner := m
-		if a, ok := m["agents"].(map[string]any); ok {
-			inner = a
-		}
-		for key, e := range inner {
+
+	// The SHAPE decides which key is authoritative, because that is what
+	// LoadRegistry does — and this check is worthless unless it indexes agents
+	// exactly as the loader addresses them.
+	//
+	//   map-shaped : `for id, cfg := range reg.Agents { cfg.ID = id }` —
+	//                UNCONDITIONAL. The map key always wins, even when an inner
+	//                "id" disagrees with it.
+	//   list-shaped: the inner "id" is the only key there is.
+	//
+	// An earlier cut mirrored the loader with an `if inner id is empty` guard.
+	// The loader has no such condition, so the mirror was wrong in the one case
+	// that matters: an entry keyed `ghost` carrying inner id `phantom` is
+	// addressed by the router as ghost and was indexed here as phantom —
+	// inventing a missing agent AND hiding a real lost field, two wrong answers
+	// from one line. Do not reintroduce a condition the loader does not have.
+	// (claude-home, probing PR #416 rather than reading it.)
+	addMap := func(m map[string]any) {
+		for key, e := range m {
 			em, ok := e.(map[string]any)
 			if !ok {
 				continue
 			}
-			if _, already := out[key]; already {
+			entry := make(map[string]any, len(em)+1)
+			for k, v := range em {
+				entry[k] = v
+			}
+			entry["id"] = key // the map key wins, unconditionally
+			out[key] = entry
+		}
+	}
+	addList := func(l []any) {
+		for _, e := range l {
+			em, ok := e.(map[string]any)
+			if !ok {
 				continue
 			}
-			if id, _ := em["id"].(string); id == "" {
-				withID := map[string]any{}
-				for k, v := range em {
-					withID[k] = v
-				}
-				withID["id"] = key // mirror LoadRegistry's injection
-				out[key] = withID
+			if id, _ := em["id"].(string); id != "" {
+				out[id] = em
 			}
 		}
 	}
+
+	switch v := anyDoc.(type) {
+	case []any:
+		addList(v)
+	case map[string]any:
+		switch inner := v["agents"].(type) {
+		case map[string]any:
+			addMap(inner)
+		case []any:
+			addList(inner)
+		default:
+			addMap(v) // bare map of id -> entry
+		}
+	}
+
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no agent entries found")
 	}
