@@ -92,10 +92,13 @@ type Deps struct {
 	Alive func(pid int) bool
 }
 
-// ancestrySet walks the caller's PID up the ppid chain to 1, returning every
-// PID in the chain — the protected set. A pid→ppid map from the process table
-// makes this a pure lookup (no /proc, no ps re-shell).
-func ancestrySet(self int, procs []Proc) map[int]bool {
+// AncestrySet walks the caller's PID up the ppid chain to 1, returning every
+// PID in the chain — the protected set. Exported so other packages (e.g. the
+// ccd session-reaper) can share the tested safety contract instead of
+// maintaining a parallel, shallower check.
+// A pid→ppid map from the process table makes this a pure lookup (no /proc, no
+// ps re-shell).
+func AncestrySet(self int, procs []Proc) map[int]bool {
 	ppidOf := make(map[int]int, len(procs))
 	for _, p := range procs {
 		ppidOf[p.PID] = p.PPID
@@ -143,7 +146,7 @@ func Plan(opts Options, deps Deps) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	protected := ancestrySet(deps.SelfPID, procs)
+	protected := AncestrySet(deps.SelfPID, procs)
 	kill, mb := selectCandidates(procs, protected, opts)
 	return Result{
 		Candidates:        kill,
