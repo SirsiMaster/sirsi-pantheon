@@ -101,14 +101,19 @@ func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
 type WakeConfig struct {
-	Mechanism        string            `json:"mechanism,omitempty"`
-	Endpoint         string            `json:"endpoint,omitempty"`
-	Auth             string            `json:"auth,omitempty"`
-	MCPServer        string            `json:"mcp_server,omitempty"`
-	HealthCheck      []string          `json:"health_check,omitempty"`
-	AuthCheck        []string          `json:"auth_check,omitempty"`
-	Hooks            map[string]string `json:"hooks,omitempty"`
-	LaunchAgentLabel string            `json:"launch_agent_label,omitempty"`
+	Mechanism   string            `json:"mechanism,omitempty"`
+	Endpoint    string            `json:"endpoint,omitempty"`
+	Auth        string            `json:"auth,omitempty"`
+	MCPServer   string            `json:"mcp_server,omitempty"`
+	HealthCheck []string          `json:"health_check,omitempty"`
+	AuthCheck   []string          `json:"auth_check,omitempty"`
+	Hooks       map[string]string `json:"hooks,omitempty"`
+	// LaunchAgentLabel stores whatever value is present in agents.json for
+	// round-trip fidelity. LoadRegistry does NOT auto-fill this field.
+	// The operational label is always derived at call time via
+	// WakeLaunchAgentLabel(cfg.ID) — never read back from this stored value.
+	// A missing or stale stored label is caught by registrydrift.go.
+	LaunchAgentLabel string `json:"launch_agent_label,omitempty"`
 }
 
 // Registry holds all registered agent configurations.
@@ -135,7 +140,10 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 		reg.Agents = make(map[string]AgentConfig)
 	}
 
-	// Inject IDs from map keys
+	// Inject IDs from map keys — this is the ONLY post-unmarshal mutation
+	// LoadRegistry performs. No other fields (including WakeConfig.LaunchAgentLabel)
+	// are auto-filled. The operational launchd label is derived at call time via
+	// WakeLaunchAgentLabel(cfg.ID); see wake.go.
 	for id, cfg := range reg.Agents {
 		cfg.ID = id
 		reg.Agents[id] = cfg
