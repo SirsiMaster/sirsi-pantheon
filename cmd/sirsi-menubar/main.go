@@ -388,6 +388,13 @@ func onReady() {
 					for _, bl := range bs.Blockers {
 						rows = append(rows, fmt.Sprintf("  ⚠ %s ← %s (%s)", truncate(bl.Title, 36), bl.Agent, bl.Age))
 					}
+					// ledgerRowCount slots; if blockers overflow the remaining slots,
+					// replace the last slot with a "+N more…" tail so nothing drops silently.
+					if len(rows) > ledgerRowCount {
+						dropped := len(rows) - (ledgerRowCount - 1)
+						rows = rows[:ledgerRowCount-1]
+						rows = append(rows, fmt.Sprintf("  + %d more blocker(s)…", dropped))
+					}
 					title := "📋 Ledger"
 					if bs.TotalTasks > 0 {
 						title = fmt.Sprintf("📋 Ledger — %d%% done", bs.PctDone)
