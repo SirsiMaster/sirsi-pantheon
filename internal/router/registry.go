@@ -94,7 +94,9 @@ func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	for k, v := range cfg.extra {
-		m[k] = v
+		if _, ok := m[k]; !ok { // never let an extra shadow a typed field
+			m[k] = v
+		}
 	}
 	return json.Marshal(m)
 }
