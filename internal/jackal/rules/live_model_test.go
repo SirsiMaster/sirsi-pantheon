@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/cleaner"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 )
 
@@ -68,6 +69,14 @@ func TestHuggingFaceRule_SkipsLiveSNEModel(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(agents, "ai.sirsi.gemma-broker.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	// Stub launchd. Protection now requires the job to be LOADED, and shelling
+	// out to the real launchctl would make this pass or fail based on whether
+	// the developer's own machine happens to be serving a model.
+	restore := cleaner.SetLaunchdLoadedProbe(func(label string) bool {
+		return label == "ai.sirsi.gemma-broker"
+	})
+	defer restore()
 
 	findings, err := NewHuggingFaceCacheRule().Scan(context.Background(), jackal.ScanOptions{HomeDir: home})
 	if err != nil {

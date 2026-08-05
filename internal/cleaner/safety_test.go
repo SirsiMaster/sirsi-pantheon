@@ -114,16 +114,26 @@ func TestValidatePath_EdgeCases(t *testing.T) {
 	// jobs for live model substrate, so without this the outcome depends on
 	// whether the developer's own machine happens to be serving a model —
 	// green on CI, red on a workstation with SNE installed.
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	tests := []struct {
 		name      string
 		path      string
 		wantError bool
 	}{
-		{"root path", "/", false},
-		{"home dir itself", "/Users/test", false},
+		// These two were pinned as ALLOWED. They are the two widest deletes
+		// this package can be asked to perform, and neither was covered by
+		// any protected prefix, name, or $HOME-relative rule — so the guard
+		// waved them through. codex-pantheon ruled it blocking on PR #493.
+		{"filesystem root", "/", true},
+		// The REAL test home, not a fictional /Users/test that no rule could
+		// ever match and that therefore proved nothing.
+		{"home dir itself", home, true},
 		{"relative path", "relative/path/file.txt", false},
+		// Narrowness check: the guard must stop at the root, not swallow the
+		// tree under it, or ordinary cleanup breaks.
+		{"path inside home", filepath.Join(home, "Library", "Caches", "junk"), false},
 	}
 
 	for _, tt := range tests {
