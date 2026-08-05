@@ -11,12 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// `sirsi gemma` is the human-facing way to talk to Gemma — the local MLX model
-// that runs on this Mac at zero API tokens. Until now Gemma was only reachable by
-// agents (the router `to: gemma` inbox + the sirsi-gemma MCP tools); a person had
-// no one-line way in. This is a thin, synchronous wrapper over the SAME
-// `mlx_lm.generate` path the gemma-worker uses, so the CLI and the daemon speak to
-// the identical model. Single-shot text reasoning: no tools, no binding verdicts.
+// `sirsi gemma` is the human-facing client for SNE's local Go inference server.
+// The model stays on this Mac, costs zero API tokens, and is shared with Horus so
+// the CLI and desktop surface use one canonical runtime. Single-shot text
+// reasoning only: no tools and no binding verdicts.
 
 var (
 	gemmaMaxTokens int
@@ -137,7 +135,9 @@ func gemmaShortModel(m string) string {
 
 var gemmaCtrlTok = regexp.MustCompile(`<\|?[a-zA-Z_]+\|?>`)
 
-// gemmaClean turns raw mlx_lm.generate output into just the answer:
+// gemmaClean turns a local inference response into just the answer. It also
+// tolerates framing emitted by older MLX-backed runtimes so upgrades do not leak
+// implementation noise into the CLI:
 //  1. drop the trailing stats footer (the `====` banner + Prompt/Generation lines);
 //  2. this model is a REASONING model — it emits "<|channel>thought …reasoning…
 //     <channel|>FINAL ANSWER". Keep only what's after the final `<channel|>` so the
