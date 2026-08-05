@@ -7,7 +7,7 @@
 **Reviewer agent:** codex-pantheon
 **User authorization required before:** any scaffold code under `cmd/sirsi-app/`, any TUI deletion, any change to `cmd/sirsi-menubar/` user-visible surfaces.
 
-> **Per Rule 14 (Sprint Planning is Mandatory) and ADR-018 conditions: no code in this sprint. Phase 0 is foundation-only.**
+> **Per Rule 17 (Sprint Planning is Mandatory) and ADR-018 conditions: no code in this sprint. Phase 0 is foundation-only.**
 
 ## /goal
 

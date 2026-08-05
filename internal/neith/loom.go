@@ -256,7 +256,7 @@ func (l *Loom) WeaveScope(scope ScopeConfig) (string, error) {
 
 	b.WriteString("## Ra Autonomy Directive\n")
 	b.WriteString("You are a Ra-deployed autonomous agent. This scope was pre-approved by the user.\n")
-	b.WriteString("**Override Rule 14 (Sprint Planning is Mandatory)**: The canon below IS the approved plan.\n")
+	b.WriteString("**Override Rule 17 (Sprint Planning is Mandatory)**: The canon below IS the approved plan.\n")
 	b.WriteString("Do NOT present a plan and ask for approval. Do NOT ask clarifying questions.\n")
 	b.WriteString("Execute as much work as you can this sprint. If a task is blocked, skip it and continue.\n\n")
 	b.WriteString("**Sprint loop**: You are running in a multi-sprint session. Between sprints, the governance\n")

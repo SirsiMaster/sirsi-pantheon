@@ -511,7 +511,7 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 ### 2.21 Ra Scope Autonomy (Rule A24)
 > Established April 3, 2026, after 4 Ra-deployed agents blocked indefinitely waiting for sprint plan approval that could never arrive in non-interactive mode.
 
-*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 14 (Sprint Planning is Mandatory).
+*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 17 (Sprint Planning is Mandatory).
 *   **Scope Authoring**: Scopes MUST be written as directive, numbered task lists — not vague descriptions. Each task must name specific files, paths, or concrete actions. Vague scopes cause agents to ask clarifying questions, which hang forever in `--print` mode. See `configs/scopes/README.md` for the full authoring guide.
 *   **Prompt Structure**: The autonomy directive and scope of work are placed at the **top** of the woven prompt and are **never truncated**. Canon context (AGENTS.md, Thoth memory, ADRs) fills the remaining token budget and may be truncated.
 *   **Permission Model**: Ra agents run with `--dangerously-skip-permissions` because the scope is pre-approved. This flag MUST NOT be used outside of Ra-deployed agents.
