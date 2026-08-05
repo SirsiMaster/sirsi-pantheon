@@ -1054,7 +1054,8 @@ struct HorusView: View {
     private var statusDetail: String {
         let n = engine.healthIssueCount
         if n == 0 { return "No active issues. Horus is watching quietly." }
-        return "\(n) check\(n == 1 ? "" : "s") need attention. Related signals are grouped into one clear story."
+        let count = "\(n) check\(n == 1 ? "" : "s") need attention."
+        return memoryIssues.count > 1 ? count + " Related signals are grouped into one clear story." : count
     }
 
     var body: some View {
