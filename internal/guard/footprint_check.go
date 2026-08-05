@@ -84,6 +84,7 @@ func checkProcessFootprint(p platform.Platform, report *DoctorReport) {
 	})
 
 	top := ranked[0]
+	topName := processDisplayName(p, ProcessInfo{PID: top.pid, Name: top.name})
 	worst := max64(top.live, top.peak)
 	frac := float64(worst) / float64(totalRAM)
 
@@ -101,16 +102,16 @@ func checkProcessFootprint(p platform.Platform, report *DoctorReport) {
 		finding.Severity = SeverityCritical
 		finding.Message = fmt.Sprintf(
 			"%s (pid %d) %s %.1f GB of %.0f GB RAM (%.0f%%) — one process at half the machine; the kernel will Jetsam something to survive it",
-			top.name, top.pid, verb, fpGB(worst), fpGB(totalRAM), frac*100)
+			topName, top.pid, verb, fpGB(worst), fpGB(totalRAM), frac*100)
 	case frac >= footprintWarnFraction:
 		finding.Severity = SeverityWarn
 		finding.Message = fmt.Sprintf(
 			"%s (pid %d) %s %.1f GB of %.0f GB RAM (%.0f%%) — a third of the machine in one process",
-			top.name, top.pid, verb, fpGB(worst), fpGB(totalRAM), frac*100)
+			topName, top.pid, verb, fpGB(worst), fpGB(totalRAM), frac*100)
 	default:
 		finding.Severity = SeverityOK
 		finding.Message = fmt.Sprintf("largest process %s %s %.1f GB of %.0f GB (%.0f%%) — no single-process pressure",
-			top.name, verb, fpGB(worst), fpGB(totalRAM), frac*100)
+			topName, verb, fpGB(worst), fpGB(totalRAM), frac*100)
 	}
 
 	// The detail is where the RSS lie becomes visible. Showing live, peak AND
