@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,18 +42,30 @@ import (
 // label. Injectable per Rule A16, guarded per Rule A21 — scans run
 // concurrently, and an unguarded package-level pointer is the data race that
 // rule exists to prevent.
+// JobArgs is one launchd job's discovery result. Err is non-empty when the
+// job is loaded but its argv could not be determined.
+//
+// Carrying the error rather than dropping the job is the whole point: at a
+// deletion boundary, UNKNOWN authority is not the same as NO live substrate.
+// Collapsing a `launchctl print` failure into "nothing is serving" turns a
+// broken probe into permission to delete live weights.
+type JobArgs struct {
+	Args []string
+	Err  string
+}
+
 var (
 	jobsMu    sync.RWMutex
 	jobsProbe = defaultLoadedJobs
 )
 
-func getJobsProbe() func() map[string][]string {
+func getJobsProbe() func() map[string]JobArgs {
 	jobsMu.RLock()
 	defer jobsMu.RUnlock()
 	return jobsProbe
 }
 
-func setJobsProbe(fn func() map[string][]string) {
+func setJobsProbe(fn func() map[string]JobArgs) {
 	jobsMu.Lock()
 	defer jobsMu.Unlock()
 	jobsProbe = fn
@@ -65,19 +78,21 @@ func setJobsProbe(fn func() map[string][]string) {
 //
 // Production code never calls this. Tests that do MUST restore, or a later
 // test inherits a stubbed launchd and passes for the wrong reason.
-func SetLoadedJobsProbe(fn func() map[string][]string) (restore func()) {
+func SetLoadedJobsProbe(fn func() map[string]JobArgs) (restore func()) {
 	old := getJobsProbe()
 	setJobsProbe(fn)
 	return func() { setJobsProbe(old) }
 }
 
 // defaultLoadedJobs asks launchd what it is actually running.
-func defaultLoadedJobs() map[string][]string {
+func defaultLoadedJobs() map[string]JobArgs {
 	out, err := exec.Command("launchctl", "list").Output()
 	if err != nil {
-		return nil
+		// The whole listing failed. Report it against the canonical SNE label
+		// so the fail-closed path engages rather than silently seeing no jobs.
+		return map[string]JobArgs{canonicalSNELabel: {Err: "launchctl list failed: " + err.Error()}}
 	}
-	jobs := map[string][]string{}
+	jobs := map[string]JobArgs{}
 	uid := strconv.Itoa(os.Getuid())
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
@@ -90,13 +105,46 @@ func defaultLoadedJobs() map[string][]string {
 		}
 		printed, err := exec.Command("launchctl", "print", "gui/"+uid+"/"+label).Output()
 		if err != nil {
-			continue // not bootstrapped in this domain
+			jobs[label] = JobArgs{Err: "launchctl print failed: " + err.Error()}
+			continue
 		}
-		if args := parseLaunchctlArguments(string(printed)); len(args) > 0 {
-			jobs[label] = args
+		args := parseLaunchctlArguments(string(printed))
+		if len(args) == 0 {
+			jobs[label] = JobArgs{Err: "launchctl print returned no parseable arguments block"}
+			continue
 		}
+		jobs[label] = JobArgs{Args: args}
 	}
 	return jobs
+}
+
+// canonicalSNELabel is the label the SNE engine ships under today.
+const canonicalSNELabel = "ai.sirsi.gemma-broker"
+
+// isSNEOwnedLabel reports whether a label belongs to the local inference
+// engine, and therefore whether a discovery failure on it is safety-relevant.
+//
+// Kept deliberately narrow (codex-pantheon, PR #493): a malformed UNRELATED
+// ai.sirsi.* job must not freeze all cleanup. Only the engine's own labels can
+// put the cleaner into its fail-closed state.
+func isSNEOwnedLabel(label string) bool {
+	return label == canonicalSNELabel || strings.HasPrefix(label, "ai.sirsi.sne")
+}
+
+// UnknownSubstrate returns the SNE-owned labels that are loaded but whose model
+// directory could not be determined, each with the reason.
+//
+// Non-empty means: something IS serving, and we cannot say what it holds open.
+// Every destructive path must refuse while this is true.
+func UnknownSubstrate() []string {
+	var unknown []string
+	for label, job := range getJobsProbe()() {
+		if job.Err != "" && isSNEOwnedLabel(label) {
+			unknown = append(unknown, label+": "+job.Err)
+		}
+	}
+	sort.Strings(unknown)
+	return unknown
 }
 
 // parseLaunchctlArguments extracts the argv from `launchctl print` output.
@@ -157,8 +205,8 @@ func sneModelDir(args []string) (string, bool) {
 func LiveModelPaths() []string {
 	var live []string
 	seen := map[string]bool{}
-	for _, args := range getJobsProbe()() {
-		modelDir, ok := sneModelDir(args)
+	for _, job := range getJobsProbe()() {
+		modelDir, ok := sneModelDir(job.Args)
 		if !ok || seen[modelDir] {
 			continue
 		}
@@ -219,3 +267,7 @@ func isCatastrophicRoot(abs string) bool {
 	}
 	return false
 }
+
+// osGetuid is a seam so the darwin-only canary can compile without importing
+// os into a file that must stay dependency-light.
+func osGetuid() int { return os.Getuid() }

@@ -10,7 +10,17 @@ import (
 // launchctl — the result would depend on the developer's own machine.
 func stubJobs(t *testing.T, jobs map[string][]string) {
 	t.Helper()
-	restore := SetLoadedJobsProbe(func() map[string][]string { return jobs })
+	m := make(map[string]JobArgs, len(jobs))
+	for label, args := range jobs {
+		m[label] = JobArgs{Args: args}
+	}
+	stubJobResults(t, m)
+}
+
+// stubJobResults installs discovery results verbatim, including failures.
+func stubJobResults(t *testing.T, jobs map[string]JobArgs) {
+	t.Helper()
+	restore := SetLoadedJobsProbe(func() map[string]JobArgs { return jobs })
 	t.Cleanup(restore)
 }
 
@@ -237,5 +247,67 @@ func TestValidatePath_RejectsTreeRoots(t *testing.T) {
 		if err := ValidatePath(p); err != nil {
 			t.Errorf("ValidatePath(%q) = %v, want nil — the guard must stop at the root", p, err)
 		}
+	}
+}
+
+// A loaded SNE job whose argv cannot be read is UNKNOWN authority, not absence
+// of a live model. Collapsing that into an empty live set turns a broken probe
+// into permission to delete the running engine's weights.
+func TestValidatePath_FailsClosedWhenSNEDiscoveryFails(t *testing.T) {
+	cases := []struct {
+		name string
+		job  JobArgs
+	}{
+		{"launchctl print failed", JobArgs{Err: "launchctl print failed: exit 1"}},
+		{"unparseable argv", JobArgs{Err: "launchctl print returned no parseable arguments block"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := liveSNEFixture(t)
+			stubJobResults(t, map[string]JobArgs{"ai.sirsi.gemma-broker": tc.job})
+
+			if got := UnknownSubstrate(); len(got) != 1 {
+				t.Fatalf("UnknownSubstrate() = %v, want one entry naming the label", got)
+			}
+			if err := ValidatePath(f.coldRepo); err == nil {
+				t.Error("ValidatePath = nil while the live substrate is unknown — a broken probe must never read as permission to delete")
+			}
+			if _, err := DeleteFile(f.hub, true /*dryRun*/, true /*useTrash*/); err == nil {
+				t.Error("DeleteFile dry-run = nil while the live substrate is unknown")
+			}
+		})
+	}
+}
+
+// Keep the failure NARROW: a malformed UNRELATED ai.sirsi.* job must not freeze
+// all cleanup, or one broken sibling service makes the machine un-cleanable.
+func TestValidatePath_UnrelatedBrokenJobDoesNotFreezeCleanup(t *testing.T) {
+	f := liveSNEFixture(t)
+	stubJobResults(t, map[string]JobArgs{
+		"ai.sirsi.gemma-broker":   {Args: serveArgs(f.servedSnap)},
+		"ai.sirsi.router-conduit": {Err: "launchctl print failed: exit 1"},
+	})
+
+	if got := UnknownSubstrate(); len(got) != 0 {
+		t.Errorf("UnknownSubstrate() = %v, want empty — the broken job is not SNE-owned", got)
+	}
+	if err := ValidatePath(f.coldRepo); err != nil {
+		t.Errorf("ValidatePath(cold model) = %v, want nil — an unrelated broken job must not freeze cleanup", err)
+	}
+	// The real substrate is still protected.
+	if err := ValidatePath(f.servedSnap); err == nil {
+		t.Error("ValidatePath(served snapshot) = nil, want BLOCKED")
+	}
+}
+
+// A total launchctl list failure must engage the same fail-closed path rather
+// than presenting as "no jobs loaded".
+func TestUnknownSubstrate_ListFailureIsNotEmptiness(t *testing.T) {
+	liveSNEFixture(t)
+	stubJobResults(t, map[string]JobArgs{
+		canonicalSNELabel: {Err: "launchctl list failed: exec error"},
+	})
+	if got := UnknownSubstrate(); len(got) != 1 {
+		t.Fatalf("UnknownSubstrate() = %v, want the list failure surfaced", got)
 	}
 }

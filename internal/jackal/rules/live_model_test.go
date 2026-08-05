@@ -50,8 +50,8 @@ func TestHuggingFaceRule_SkipsLiveSNEModel(t *testing.T) {
 	// Stub launchd. Protection now requires the job to be LOADED, and shelling
 	// out to the real launchctl would make this pass or fail based on whether
 	// the developer's own machine happens to be serving a model.
-	restore := cleaner.SetLoadedJobsProbe(func() map[string][]string {
-		return map[string][]string{"ai.sirsi.gemma-broker": {"/opt/sne/sne-server", "serve", servedSnap, "127.0.0.1:8477"}}
+	restore := cleaner.SetLoadedJobsProbe(func() map[string]cleaner.JobArgs {
+		return map[string]cleaner.JobArgs{"ai.sirsi.gemma-broker": {Args: []string{"/opt/sne/sne-server", "serve", servedSnap, "127.0.0.1:8477"}}}
 	})
 	defer restore()
 

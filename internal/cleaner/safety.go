@@ -109,6 +109,14 @@ func checkProtected(absPath string) error {
 		return fmt.Errorf("BLOCKED: %q is a tree root — deleting it is never a cleanup", absPath)
 	}
 
+	// Discovery failed for a loaded engine job. Something IS serving and we
+	// cannot say what it holds open, so nothing is safe to delete. Fail
+	// CLOSED: at a deletion boundary, unknown authority is not the same as no
+	// live substrate, and a broken probe must never read as permission.
+	if unknown := UnknownSubstrate(); len(unknown) > 0 {
+		return fmt.Errorf("BLOCKED: cannot determine the live model substrate (%s) — refusing all deletion until the engine's arguments can be read", strings.Join(unknown, "; "))
+	}
+
 	// Live model substrate — a running SNE service has this directory open.
 	// Checked here rather than in each caller because ValidatePath is the one
 	// gate every delete path (DeleteFile, DeleteFileReversible, CleanFile)

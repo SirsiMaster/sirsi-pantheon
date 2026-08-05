@@ -2,8 +2,10 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/cleaner"
@@ -48,6 +50,15 @@ func (r *baseScanRule) Description() string       { return r.description }
 func (r *baseScanRule) Platforms() []string       { return r.platforms }
 
 func (r *baseScanRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jackal.Finding, error) {
+	// Discovery failed for a loaded engine job — we cannot tell which paths are
+	// live, so no path may be presented as reclaimable. Refusing loudly is the
+	// honest answer: a size total offered while the guard is blind is a number
+	// the user must not act on. Checked once per scan, not per match.
+	if unknown := cleaner.UnknownSubstrate(); len(unknown) > 0 {
+		return nil, fmt.Errorf("%s: cannot determine the live model substrate — refusing to report reclaimable space (%s)",
+			r.name, strings.Join(unknown, "; "))
+	}
+
 	var findings []jackal.Finding
 	homeDir := opts.HomeDir
 	if homeDir == "" {
