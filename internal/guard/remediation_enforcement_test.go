@@ -32,6 +32,14 @@ var noLeverRequired = map[string]bool{
 	"Sirsi Processes":           true, // info
 	"Local Snapshots":           true, // info: always SeverityInfo; carries an OPTIONAL reclaim, never alarms
 	"launchd Disabled Override": true, // guidance: fix requires per-label launchctl enable+bootstrap; Detail carries the steps
+	// guidance: the resume lever lives in sirsi-inference (scripts/quiet.sh),
+	// not in this binary, so there is no `sirsi` command to map. Detail carries
+	// both the resume command and the archive fallback. Deliberately NOT
+	// pointed at `sirsi liveness-watch run` — that re-enables the labels but
+	// leaves the ledger, so the next pause merges into it and the fleet goes
+	// down again. A lever that fixes the symptom and re-arms the cause is worse
+	// than honest guidance.
+	"Agent Pause Ledger": true,
 }
 
 // firstToken returns the verb from a "sirsi <verb> …" remediation command — the
