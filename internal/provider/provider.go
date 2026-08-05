@@ -67,6 +67,8 @@ type Caps struct {
 	Tools         bool // can the model call tools?
 	Streaming     bool
 	ContextTokens int
+	Deterministic bool
+	JSONMode      bool
 	Offline       bool // usable with no network
 }
 

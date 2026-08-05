@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/modelrouter"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/reason"
@@ -17,11 +16,13 @@ import (
 )
 
 var (
-	askJSON      bool
-	askFix       bool
-	askTask      string
-	askPrivacy   string
-	askShowRoute bool
+	askJSON       bool
+	askFix        bool
+	askRoute      bool
+	askTask       string
+	askPrivacy    string
+	askLane       string
+	askMinContext int
 )
 
 var askCmd = &cobra.Command{
@@ -52,9 +53,11 @@ the machine that most needs help is the one with the least headroom to run a mod
 func init() {
 	askCmd.Flags().BoolVar(&askJSON, "json", false, "machine-readable answer with tier provenance")
 	askCmd.Flags().BoolVar(&askFix, "fix", false, "act on what was found: run the repair tools that apply, verify each, and re-check")
-	askCmd.Flags().StringVar(&askTask, "task", "generation", "task class for model routing: generation|judgment|extraction|embedding")
-	askCmd.Flags().StringVar(&askPrivacy, "privacy", "local-only", "privacy class: local-only|shareable")
-	askCmd.Flags().BoolVar(&askShowRoute, "show-route", false, "print the model routing decision before the answer")
+	askCmd.Flags().BoolVar(&askRoute, "route", false, "run the model router even when heuristic findings are conclusive")
+	askCmd.Flags().StringVar(&askTask, "task", string(provider.TaskGeneration), "model task: generation, judgment, extraction, or embedding")
+	askCmd.Flags().StringVar(&askPrivacy, "privacy", string(provider.PrivacyLocalOnly), "privacy boundary: local-only or shareable")
+	askCmd.Flags().StringVar(&askLane, "lane", "", "explicit lane override: local or remote")
+	askCmd.Flags().IntVar(&askMinContext, "min-context", 0, "minimum qualified context window in tokens")
 	rootCmd.AddCommand(askCmd)
 }
 
@@ -88,7 +91,7 @@ func runAsk(_ *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	if len(alarms) > 0 {
+	if len(alarms) > 0 && !askRoute {
 		if askJSON {
 			return emitAskJSON(question, report, alarms)
 		}
@@ -131,85 +134,50 @@ func runAsk(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
 
-	ladder := provider.Ladder(ctx, home)
-	if len(ladder) == 0 {
-		if askJSON {
-			return emitAskJSON(question, report, alarms)
-		}
-		fmt.Println()
-		output.Dim("  No model configured, so no further rung to escalate to.")
-		output.Dim("  Sirsi still answered — the heuristic rung needs no model at all.")
-		return nil
+	router := provider.NewModelRouter(ctx, home)
+	policyReq := provider.PolicyRequest{
+		Task: provider.TaskClass(askTask), Privacy: provider.PrivacyClass(askPrivacy),
+		Latency: provider.LatencyInteractive, Override: provider.Lane(askLane),
+		Needs: provider.CapabilityNeeds{ContextTokens: askMinContext},
 	}
-
-	rt := modelrouter.New(ladder)
-	routeReq := modelrouter.Request{
-		Task:    modelrouter.TaskClass(askTask),
-		Privacy: modelrouter.PrivacyClass(askPrivacy),
-	}
-	decision, rerr := rt.Route(ctx, routeReq)
-	if rerr != nil {
-		if !askJSON {
-			fmt.Println()
-			output.Dim("  Model router: %v", rerr)
-			output.Dim("  Every model rung was unavailable or policy-blocked. The heuristic answer above still stands.")
-		} else {
-			return emitAskJSON(question, report, alarms)
-		}
-		return nil
-	}
-
-	if askShowRoute && !askJSON {
-		fmt.Println()
-		output.Dim("  [router] %s", decision.DecisionSummary())
-	}
-	if !askJSON {
-		fmt.Println()
-		output.Dim("  [heuristic] inconclusive → escalating to %s (%s)", decision.Lane, decision.Provider.Name())
-	}
-
-	resp, cerr := decision.Provider.Complete(ctx, provider.Request{
+	resp, decision, routeErr := router.Run(ctx, policyReq, provider.Request{
 		System: "You are Sirsi, answering about the user's own machine. " +
 			"Be concise and concrete. If you do not have the evidence, say so plainly.",
 		Prompt:    question + "\n\nMeasured state: " + summarize(report),
 		MaxTokens: 400,
 	})
-	if cerr != nil {
-		if !askJSON {
-			output.Dim("  [%s] failed: %v", decision.Lane, cerr)
-			output.Dim("  Every model rung was unavailable. The heuristic answer above still stands.")
-		} else {
-			return emitAskJSON(question, report, alarms)
-		}
-		return nil
+	if routeErr != nil {
+		return fmt.Errorf("model route: %w", routeErr)
 	}
 	if askJSON {
-		return emitAskModelJSON(question, report, resp)
+		return emitAskModelJSON(question, report, resp, decision)
 	}
 	fmt.Println()
 	output.Info("  %s", strings.TrimSpace(resp.Text))
 	fmt.Println()
-	output.Dim("  [%s] %s · %s · %d tokens · finish=%s",
-		resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
+	output.Dim("  [%s] %s · %s · %d tokens · finish=%s", resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
+	output.Dim("  route: %s — %s", decision.Lane, decision.Reason)
 	return nil
 }
 
-func emitAskModelJSON(question string, r *guard.DoctorReport, resp provider.Response) error {
+func emitAskModelJSON(question string, r *guard.DoctorReport, resp provider.Response, decision provider.Decision) error {
 	payload := struct {
-		Question     string `json:"question"`
-		Tier         string `json:"tier"`
-		Status       string `json:"status"`
-		Signals      int    `json:"signals"`
-		Answer       string `json:"answer"`
-		Provider     string `json:"provider"`
-		Model        string `json:"model"`
-		OutputTokens int    `json:"output_tokens"`
-		FinishReason string `json:"finish_reason"`
+		Question     string            `json:"question"`
+		Tier         string            `json:"tier"`
+		Status       string            `json:"status"`
+		Signals      int               `json:"signals"`
+		Answer       string            `json:"answer"`
+		Provider     string            `json:"provider"`
+		Model        string            `json:"model"`
+		OutputTokens int               `json:"output_tokens"`
+		FinishReason string            `json:"finish_reason"`
+		Route        provider.Decision `json:"route"`
 	}{
 		Question: question, Tier: resp.Tier.String(), Status: string(r.Status),
 		Signals: len(r.Findings), Answer: strings.TrimSpace(resp.Text),
 		Provider: resp.Provider, Model: resp.Model, OutputTokens: resp.OutputTokens,
 		FinishReason: resp.FinishReason,
+		Route:        decision,
 	}
 	return json.NewEncoder(os.Stdout).Encode(payload)
 }

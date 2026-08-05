@@ -27,8 +27,11 @@ type OpenAICompat struct {
 	// SupportsTools is declared, not assumed. mlx_lm.server does not implement
 	// tool-calling; claiming otherwise would make the loop believe a silent
 	// no-op was the model declining to act.
-	SupportsTools bool
-	ContextTokens int
+	SupportsTools       bool
+	SupportsStreaming   bool
+	SupportsDeterminism bool
+	SupportsJSON        bool
+	ContextTokens       int
 	// UseRealCompletionProbe changes Available() from a /v1/models check to a
 	// real 1-token completion. Required for the SNE local lane per
 	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
@@ -42,10 +45,24 @@ func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 func (o *OpenAICompat) Caps() Caps {
 	return Caps{
 		Tools:         o.SupportsTools,
-		Streaming:     false,
+		Streaming:     o.SupportsStreaming,
+		Deterministic: o.SupportsDeterminism,
+		JSONMode:      o.SupportsJSON,
 		ContextTokens: o.ContextTokens,
 		Offline:       o.TierValue == TierLocal,
 	}
+}
+
+// ProbeCompletion is the readiness gate for an inference lane. A health route,
+// listening socket, or loaded model name does not prove that inference works.
+func (o *OpenAICompat) ProbeCompletion(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := o.Complete(ctx, Request{Prompt: "Reply with OK.", MaxTokens: 1})
+	if err != nil {
+		return fmt.Errorf("%w: %s one-token completion: %v", ErrUnavailable, o.ProviderName, err)
+	}
+	return nil
 }
 
 func (o *OpenAICompat) client() *http.Client {

@@ -119,7 +119,8 @@ func Local(home string, conf Conf) *OpenAICompat {
 		Model:                  model,
 		TierValue:              TierLocal,
 		SupportsTools:          false, // mlx_lm.server has no tool-calling
-		ContextTokens:          8192,
+		SupportsStreaming:      true,
+		ContextTokens:          0,
 		UseRealCompletionProbe: true, // MODEL-ROUTER-DESIGN.md: liveness = real completion, not /health
 	}
 }
@@ -178,13 +179,15 @@ func remoteFromEnv(conf Conf) *OpenAICompat {
 		return nil
 	}
 	return &OpenAICompat{
-		ProviderName:  "remote",
-		Endpoint:      ep,
-		Model:         firstNonEmpty(os.Getenv("SIRSI_REMOTE_MODEL"), conf.Model),
-		APIKey:        key,
-		TierValue:     TierRemote,
-		SupportsTools: true,
-		ContextTokens: 128000,
+		ProviderName:      "remote",
+		Endpoint:          ep,
+		Model:             firstNonEmpty(os.Getenv("SIRSI_REMOTE_MODEL"), conf.Model),
+		APIKey:            key,
+		TierValue:         TierRemote,
+		SupportsTools:     true,
+		SupportsStreaming: true,
+		SupportsJSON:      true,
+		ContextTokens:     128000,
 	}
 }
 
