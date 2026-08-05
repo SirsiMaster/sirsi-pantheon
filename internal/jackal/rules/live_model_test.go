@@ -2,7 +2,6 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,33 +47,11 @@ func TestHuggingFaceRule_SkipsLiveSNEModel(t *testing.T) {
 		}
 	}
 
-	agents := filepath.Join(home, "Library", "LaunchAgents")
-	if err := os.MkdirAll(agents, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-	<key>Label</key><string>ai.sirsi.gemma-broker</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>/opt/sne/sne-server</string>
-		<string>serve</string>
-		<string>%s</string>
-		<string>127.0.0.1:8477</string>
-	</array>
-</dict>
-</plist>
-`, servedSnap)
-	if err := os.WriteFile(filepath.Join(agents, "ai.sirsi.gemma-broker.plist"), []byte(plist), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	// Stub launchd. Protection now requires the job to be LOADED, and shelling
 	// out to the real launchctl would make this pass or fail based on whether
 	// the developer's own machine happens to be serving a model.
-	restore := cleaner.SetLaunchdLoadedProbe(func(label string) bool {
-		return label == "ai.sirsi.gemma-broker"
+	restore := cleaner.SetLoadedJobsProbe(func() map[string][]string {
+		return map[string][]string{"ai.sirsi.gemma-broker": {"/opt/sne/sne-server", "serve", servedSnap, "127.0.0.1:8477"}}
 	})
 	defer restore()
 

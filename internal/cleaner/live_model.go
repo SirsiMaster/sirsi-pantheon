@@ -1,7 +1,6 @@
 package cleaner
 
 import (
-	"encoding/xml"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,121 +23,107 @@ import (
 //     after the literal `serve` verb — not "any absolute directory argument".
 //     The loose form would enroll any future job that happens to pass a working
 //     directory, silently making unrelated trees undeletable.
-//   - The job must be LOADED in launchd. An installed plist is a file on disk,
-//     not a running service; a job the operator unloaded protects nothing.
-//   - Parsing is structured XML, so `&amp;` in a path decodes to `&`. At a
-//     deletion boundary a mis-parsed path is a mis-aimed guard.
+//   - Authority is the LOADED launchd job's own argv, read back from
+//     `launchctl print`. The plist on disk is *desired* configuration and is
+//     not consulted at all: editing it does not mutate an already-bootstrapped
+//     job, so a plist-derived guard would protect model B while the loaded
+//     process still served model A — and would protect nothing at all if the
+//     file were deleted out from under a running job. Both are deletion-
+//     boundary false negatives.
 //
-// LOADED, not RUNNING, is the liveness bar on purpose. A KeepAlive job being
-// kickstarted is momentarily process-dead while still very much owning its
-// model directory — binding to process liveness would open a window where a
-// scan during a restart offers 24 GB of live weights as reclaimable.
+// LOADED, not RUNNING, is the liveness bar on purpose (ruled by codex-pantheon
+// on PR #493). A KeepAlive job being kickstarted is momentarily process-dead
+// while still owning its model directory; binding to process liveness would
+// open a window where a scan during a restart offers live weights as
+// reclaimable. An operator who means to release the model unloads the job.
 
-// launchctlLoaded reports whether a launchd label is bootstrapped in the user
-// domain. Injectable per Rule A16, guarded per Rule A21 — scans run
+// loadedJobs returns the argv of every loaded ai.sirsi.* launchd job, keyed by
+// label. Injectable per Rule A16, guarded per Rule A21 — scans run
 // concurrently, and an unguarded package-level pointer is the data race that
 // rule exists to prevent.
 var (
-	loadedMu    sync.RWMutex
-	loadedCheck = defaultLaunchctlLoaded
+	jobsMu    sync.RWMutex
+	jobsProbe = defaultLoadedJobs
 )
 
-func getLoadedCheck() func(string) bool {
-	loadedMu.RLock()
-	defer loadedMu.RUnlock()
-	return loadedCheck
+func getJobsProbe() func() map[string][]string {
+	jobsMu.RLock()
+	defer jobsMu.RUnlock()
+	return jobsProbe
 }
 
-func setLoadedCheck(fn func(string) bool) {
-	loadedMu.Lock()
-	defer loadedMu.Unlock()
-	loadedCheck = fn
+func setJobsProbe(fn func() map[string][]string) {
+	jobsMu.Lock()
+	defer jobsMu.Unlock()
+	jobsProbe = fn
 }
 
-func defaultLaunchctlLoaded(label string) bool {
-	// `launchctl print` exits non-zero for a label that is not bootstrapped.
-	return exec.Command("launchctl", "print", "gui/"+currentUID()+"/"+label).Run() == nil
-}
-
-func currentUID() string {
-	return strconv.Itoa(os.Getuid())
-}
-
-// launchAgentsDir resolves off $HOME rather than a package-level injectable —
-// $HOME already parameterizes it, so tests point the whole lookup elsewhere
-// with t.Setenv and no mock is needed.
-func launchAgentsDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, "Library", "LaunchAgents")
-}
-
-// plistJob is the slice of a launchd plist this package cares about.
-type plistJob struct {
-	Label string
-	Args  []string
-}
-
-// parsePlistJob reads Label and ProgramArguments with a real XML decoder.
+// SetLoadedJobsProbe replaces the launchd job reader and returns a restore
+// function. Exported because protection spans packages: the jackal scan-rule
+// tests must assert that a live substrate is suppressed at report time, and
+// they cannot reach an unexported seam.
 //
-// A plist dict pairs a <key> with the element that FOLLOWS it, which no struct
-// tag expresses, so this walks tokens. Using encoding/xml rather than a regex
-// is the point: CharData arrives entity-decoded, so a path containing `&`
-// (written `&amp;`) is compared as the path it actually is.
-func parsePlistJob(path string) (plistJob, error) {
-	f, err := os.Open(path) //nolint:gosec // path comes from a LaunchAgents glob
+// Production code never calls this. Tests that do MUST restore, or a later
+// test inherits a stubbed launchd and passes for the wrong reason.
+func SetLoadedJobsProbe(fn func() map[string][]string) (restore func()) {
+	old := getJobsProbe()
+	setJobsProbe(fn)
+	return func() { setJobsProbe(old) }
+}
+
+// defaultLoadedJobs asks launchd what it is actually running.
+func defaultLoadedJobs() map[string][]string {
+	out, err := exec.Command("launchctl", "list").Output()
 	if err != nil {
-		return plistJob{}, err
+		return nil
 	}
-	defer func() { _ = f.Close() }()
-
-	var job plistJob
-	dec := xml.NewDecoder(f)
-	var pendingKey string   // the most recent <key> value
-	var currentKey string   // the key whose value we are inside
-	var elem string         // current leaf element name
-	var inArray bool        // inside the <array> belonging to currentKey
-	var buf strings.Builder // accumulates CharData for the current leaf
-
-	for {
-		tok, err := dec.Token()
+	jobs := map[string][]string{}
+	uid := strconv.Itoa(os.Getuid())
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		label := fields[len(fields)-1]
+		if !strings.HasPrefix(label, "ai.sirsi.") {
+			continue
+		}
+		printed, err := exec.Command("launchctl", "print", "gui/"+uid+"/"+label).Output()
 		if err != nil {
-			break // EOF or malformed tail — return whatever parsed cleanly
+			continue // not bootstrapped in this domain
 		}
-		switch t := tok.(type) {
-		case xml.StartElement:
-			elem = t.Name.Local
-			buf.Reset()
-			if elem == "array" {
-				currentKey = pendingKey
-				inArray = true
-			}
-		case xml.CharData:
-			if elem == "key" || elem == "string" {
-				buf.Write(t)
-			}
-		case xml.EndElement:
-			switch t.Name.Local {
-			case "key":
-				pendingKey = strings.TrimSpace(buf.String())
-			case "string":
-				val := strings.TrimSpace(buf.String())
-				if inArray && currentKey == "ProgramArguments" {
-					job.Args = append(job.Args, val)
-				} else if pendingKey == "Label" {
-					job.Label = val
-				}
-			case "array":
-				inArray = false
-				currentKey = ""
-			}
-			elem = ""
-			buf.Reset()
+		if args := parseLaunchctlArguments(string(printed)); len(args) > 0 {
+			jobs[label] = args
 		}
 	}
-	return job, nil
+	return jobs
+}
+
+// parseLaunchctlArguments extracts the argv from `launchctl print` output.
+//
+//	arguments = {
+//		/path/to/binary
+//		serve
+//		/path/to/model
+//	}
+//
+// This is plain text, not XML — the entity-decoding concern that applied to
+// reading the plist directly does not exist here.
+func parseLaunchctlArguments(printed string) []string {
+	var args []string
+	inBlock := false
+	for _, line := range strings.Split(printed, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case !inBlock && strings.HasPrefix(t, "arguments") && strings.HasSuffix(t, "{"):
+			inBlock = true
+		case inBlock && t == "}":
+			return args
+		case inBlock && t != "":
+			args = append(args, t)
+		}
+	}
+	return args
 }
 
 // sneModelDir returns the model directory named by an SNE serve invocation.
@@ -167,33 +152,14 @@ func sneModelDir(args []string) (string, bool) {
 }
 
 // LiveModelPaths returns model directories held open by a LOADED Sirsi engine
-// job. Empty when nothing is serving — this protects a running service, not a
-// file that happens to sit in LaunchAgents.
+// job, derived from that job's own argv as launchd reports it. Empty when
+// nothing is serving.
 func LiveModelPaths() []string {
-	dir := launchAgentsDir()
-	if dir == "" {
-		return nil
-	}
-	plists, err := filepath.Glob(filepath.Join(dir, "ai.sirsi.*.plist"))
-	if err != nil || len(plists) == 0 {
-		return nil
-	}
-
-	isLoaded := getLoadedCheck()
 	var live []string
 	seen := map[string]bool{}
-	for _, p := range plists {
-		job, err := parsePlistJob(p)
-		if err != nil || job.Label == "" {
-			continue
-		}
-		modelDir, ok := sneModelDir(job.Args)
+	for _, args := range getJobsProbe()() {
+		modelDir, ok := sneModelDir(args)
 		if !ok || seen[modelDir] {
-			continue
-		}
-		// launchctl last: it is the only expensive step, and the argument
-		// contract has already reduced the candidate set to ~1.
-		if !isLoaded(job.Label) {
 			continue
 		}
 		seen[modelDir] = true
@@ -252,19 +218,4 @@ func isCatastrophicRoot(abs string) bool {
 		}
 	}
 	return false
-}
-
-// SetLaunchdLoadedProbe replaces the launchd liveness probe and returns a
-// restore function. Exported because protection spans packages: the jackal
-// scan-rule tests must assert that a live substrate is suppressed at report
-// time, and they cannot reach an unexported seam. Per Rule A16 the real
-// side effect stays behind an injection point; per Rule A21 the swap goes
-// through the mutex rather than a bare assignment.
-//
-// Production code never calls this. Tests that do MUST restore, or a later
-// test inherits a stubbed launchd and passes for the wrong reason.
-func SetLaunchdLoadedProbe(fn func(label string) bool) (restore func()) {
-	old := getLoadedCheck()
-	setLoadedCheck(fn)
-	return func() { setLoadedCheck(old) }
 }

@@ -1,64 +1,25 @@
 package cleaner
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// writeJob writes a launchd plist with the given label and ProgramArguments.
-func writeJob(t *testing.T, dir, label string, args ...string) {
+// stubJobs installs a launchd stand-in. Tests must never shell out to the real
+// launchctl — the result would depend on the developer's own machine.
+func stubJobs(t *testing.T, jobs map[string][]string) {
 	t.Helper()
-	body := ""
-	for _, a := range args {
-		body += fmt.Sprintf("\t\t<string>%s</string>\n", a)
-	}
-	doc := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-	<key>Label</key>
-	<string>%s</string>
-	<key>ProgramArguments</key>
-	<array>
-%s	</array>
-	<key>RunAtLoad</key>
-	<true/>
-</dict>
-</plist>
-`, label, body)
-	if err := os.WriteFile(filepath.Join(dir, label+".plist"), []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// allLoaded/noneLoaded install a launchctl stand-in. Tests must never shell out
-// to the real launchctl — the result would depend on the developer's machine.
-func allLoaded(t *testing.T) {
-	t.Helper()
-	old := getLoadedCheck()
-	setLoadedCheck(func(string) bool { return true })
-	t.Cleanup(func() { setLoadedCheck(old) })
-}
-
-func loadedOnly(t *testing.T, labels ...string) {
-	t.Helper()
-	set := map[string]bool{}
-	for _, l := range labels {
-		set[l] = true
-	}
-	old := getLoadedCheck()
-	setLoadedCheck(func(l string) bool { return set[l] })
-	t.Cleanup(func() { setLoadedCheck(old) })
+	restore := SetLoadedJobsProbe(func() map[string][]string { return jobs })
+	t.Cleanup(restore)
 }
 
 type fixture struct {
-	home, hub, servedSnap, servedRepo, coldRepo, agents string
+	home, hub, servedSnap, servedRepo, coldRepo, otherSnap string
 }
 
-// liveSNEFixture builds a HuggingFace hub with one served and one cold model,
-// plus an installed gemma-broker job following the real serve contract.
+// liveSNEFixture builds a HuggingFace hub with one served model, one cold
+// model, and a second (unserved) snapshot used by the edited-config tests.
 func liveSNEFixture(t *testing.T) fixture {
 	t.Helper()
 	home := t.TempDir()
@@ -67,30 +28,24 @@ func liveSNEFixture(t *testing.T) fixture {
 	f := fixture{home: home}
 	f.hub = filepath.Join(home, ".cache", "huggingface", "hub")
 	f.servedRepo = filepath.Join(f.hub, "models--mlx-community--gemma-4-12B-it-8bit")
-	f.servedSnap = filepath.Join(f.servedRepo, "snapshots", "200bb6db075e137a4deb08838865ac4ddb86292e")
+	f.servedSnap = filepath.Join(f.servedRepo, "snapshots", "200bb6db")
+	f.otherSnap = filepath.Join(f.hub, "models--mlx-community--gemma-4-12B-it-5bit", "snapshots", "bbbb")
 	f.coldRepo = filepath.Join(f.hub, "models--someone--abandoned-7b")
-	f.agents = filepath.Join(home, "Library", "LaunchAgents")
-	for _, d := range []string{f.servedSnap, filepath.Join(f.coldRepo, "snapshots", "aaaa"), f.agents} {
+	for _, d := range []string{f.servedSnap, f.otherSnap, filepath.Join(f.coldRepo, "snapshots", "aaaa")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-
-	sne := filepath.Join(home, ".sirsi", "sne", "current", "sne-server-macos-arm64")
-	if err := os.MkdirAll(filepath.Dir(sne), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(sne, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeJob(t, f.agents, "ai.sirsi.gemma-broker",
-		sne, "serve", f.servedSnap, "--profile", "interactive", "127.0.0.1:8477")
 	return f
 }
 
-func TestLiveModelPaths_ReadsServedSnapshotFromServeContract(t *testing.T) {
+func serveArgs(modelDir string) []string {
+	return []string{"/opt/sne/sne-server-macos-arm64", "serve", modelDir, "--profile", "interactive", "127.0.0.1:8477"}
+}
+
+func TestLiveModelPaths_ReadsServedSnapshotFromLoadedArgv(t *testing.T) {
 	f := liveSNEFixture(t)
-	allLoaded(t)
+	stubJobs(t, map[string][]string{"ai.sirsi.gemma-broker": serveArgs(f.servedSnap)})
 
 	got := LiveModelPaths()
 	if len(got) != 1 || got[0] != f.servedSnap {
@@ -98,36 +53,71 @@ func TestLiveModelPaths_ReadsServedSnapshotFromServeContract(t *testing.T) {
 	}
 }
 
-// An installed plist is a file on disk, not a running service. A job the
-// operator unloaded must protect nothing, or every stale plist ever left in
-// LaunchAgents permanently freezes a tree.
-func TestLiveModelPaths_StoppedJobProtectsNothing(t *testing.T) {
+// Nothing loaded means nothing protected. An operator who means to release the
+// model unloads the job.
+func TestLiveModelPaths_UnloadedJobProtectsNothing(t *testing.T) {
 	f := liveSNEFixture(t)
-	loadedOnly(t /* nothing is loaded */)
+	stubJobs(t, map[string][]string{})
 
 	if got := LiveModelPaths(); len(got) != 0 {
-		t.Errorf("LiveModelPaths() = %v with the job unloaded, want none", got)
+		t.Errorf("LiveModelPaths() = %v with nothing loaded, want none", got)
 	}
 	if err := ValidatePath(f.hub); err != nil {
-		t.Errorf("ValidatePath(hub) = %v with the job unloaded, want nil", err)
+		t.Errorf("ValidatePath(hub) = %v with nothing loaded, want nil", err)
 	}
 }
 
-// The original detector took ANY absolute directory argument of ANY ai.sirsi
-// job. That silently enrolls unrelated services — a job passing a working
-// directory, a data root, a queue path — and makes their trees undeletable
-// with no way for the operator to see why.
+// THE deletion-boundary false negative: the plist on disk is desired
+// configuration, and editing it does not mutate an already-bootstrapped job.
+// A plist-derived guard would protect model B while the loaded process still
+// served model A — and would then happily delete A.
+func TestLiveModelPaths_EditedPlistDoesNotMoveProtection(t *testing.T) {
+	f := liveSNEFixture(t)
+
+	// Operator edits ~/Library/LaunchAgents to point at the 5bit model but
+	// never reloads. launchd still reports the 8bit argv.
+	agents := filepath.Join(f.home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agents, "ai.sirsi.gemma-broker.plist"),
+		[]byte("<plist><dict><key>ProgramArguments</key><array><string>serve</string><string>"+f.otherSnap+"</string></array></dict></plist>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stubJobs(t, map[string][]string{"ai.sirsi.gemma-broker": serveArgs(f.servedSnap)})
+
+	if err := ValidatePath(f.servedSnap); err == nil {
+		t.Error("ValidatePath(model the loaded job is actually serving) = nil — protection followed the edited file instead of the running job")
+	}
+	if err := ValidatePath(f.otherSnap); err != nil {
+		t.Errorf("ValidatePath(model only the edited file names) = %v, want nil — nothing is serving it", err)
+	}
+}
+
+// Deleting the plist does not unload the job. A file-derived guard would see
+// nothing and protect nothing while the engine kept serving.
+func TestLiveModelPaths_RemovedPlistDoesNotDropProtection(t *testing.T) {
+	f := liveSNEFixture(t)
+	// No plist written at all — the job is loaded regardless.
+	stubJobs(t, map[string][]string{"ai.sirsi.gemma-broker": serveArgs(f.servedSnap)})
+
+	if err := ValidatePath(f.servedSnap); err == nil {
+		t.Error("ValidatePath(served model) = nil with no plist on disk — protection must come from the loaded job")
+	}
+}
+
+// The original detector took ANY absolute directory argument. That silently
+// enrolls unrelated services and makes their trees undeletable.
 func TestLiveModelPaths_IgnoresNonServeDirectoryArguments(t *testing.T) {
 	f := liveSNEFixture(t)
-	allLoaded(t)
-
 	workDir := filepath.Join(f.home, "Development", "sirsi-pantheon", ".agents", "idea-router", "items")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A real-shaped sibling job: absolute directory argument, no serve verb.
-	writeJob(t, f.agents, "ai.sirsi.router-conduit",
-		"/bin/zsh", "-c", "conduit", "--items", workDir)
+	stubJobs(t, map[string][]string{
+		"ai.sirsi.gemma-broker":   serveArgs(f.servedSnap),
+		"ai.sirsi.router-conduit": {"/bin/zsh", "-c", "conduit", "--items", workDir},
+	})
 
 	for _, p := range LiveModelPaths() {
 		if p == workDir {
@@ -140,11 +130,10 @@ func TestLiveModelPaths_IgnoresNonServeDirectoryArguments(t *testing.T) {
 }
 
 // Only the argument immediately after `serve` is substrate. The binary and the
-// listen address are ProgramArguments too; if either leaked in, the blast
-// radius would be wrong.
+// listen address are argv too; if either leaked in the blast radius is wrong.
 func TestLiveModelPaths_IgnoresBinaryAndAddressArguments(t *testing.T) {
 	f := liveSNEFixture(t)
-	allLoaded(t)
+	stubJobs(t, map[string][]string{"ai.sirsi.gemma-broker": serveArgs(f.servedSnap)})
 
 	for _, p := range LiveModelPaths() {
 		if p != f.servedSnap {
@@ -153,50 +142,55 @@ func TestLiveModelPaths_IgnoresBinaryAndAddressArguments(t *testing.T) {
 	}
 }
 
-// Regex parsing compares the escaped text; a path containing "&" is written
-// "&amp;" in the plist and would never match the real path on disk — the guard
-// would silently aim at nothing.
-func TestLiveModelPaths_DecodesXMLEntitiesInPaths(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	allLoaded(t)
+func TestParseLaunchctlArguments(t *testing.T) {
+	printed := `ai.sirsi.gemma-broker = {
+	active count = 1
+	arguments = {
+		/Users/x/.sirsi/sne/current/sne-server-macos-arm64
+		serve
+		/Users/x/.cache/huggingface/hub/models--m--g/snapshots/abc
+		--profile
+		interactive
+		127.0.0.1:8477
+	}
 
-	modelDir := filepath.Join(home, "models", "r&d-checkpoint")
-	agents := filepath.Join(home, "Library", "LaunchAgents")
-	for _, d := range []string{modelDir, agents} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
+	stdout path = /Users/x/.sirsi/sne-server.log
+}`
+	got := parseLaunchctlArguments(printed)
+	want := []string{
+		"/Users/x/.sirsi/sne/current/sne-server-macos-arm64",
+		"serve",
+		"/Users/x/.cache/huggingface/hub/models--m--g/snapshots/abc",
+		"--profile",
+		"interactive",
+		"127.0.0.1:8477",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("parseLaunchctlArguments = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("arg %d = %q, want %q", i, got[i], want[i])
 		}
 	}
-	writeJob(t, agents, "ai.sirsi.gemma-broker",
-		"/opt/sne", "serve", "/PLACEHOLDER", "127.0.0.1:8477")
-	// Write the entity form the way launchd actually stores it.
-	plist := filepath.Join(agents, "ai.sirsi.gemma-broker.plist")
-	b, err := os.ReadFile(plist)
-	if err != nil {
-		t.Fatal(err)
-	}
-	escaped := filepath.Join(home, "models", "r&amp;d-checkpoint")
-	if err := os.WriteFile(plist, []byte(strings.ReplaceAll(string(b), "/PLACEHOLDER", escaped)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	got := LiveModelPaths()
-	if len(got) != 1 || got[0] != modelDir {
-		t.Fatalf("LiveModelPaths() = %v, want [%s] — the entity must decode to the real path", got, modelDir)
+	// Must stop at the closing brace, not run into stdout path.
+	for _, a := range got {
+		if a == "stdout path = /Users/x/.sirsi/sne-server.log" {
+			t.Error("parser ran past the end of the arguments block")
+		}
 	}
 }
 
 func TestValidatePath_BlocksLiveModelSubstrate(t *testing.T) {
 	f := liveSNEFixture(t)
-	allLoaded(t)
+	stubJobs(t, map[string][]string{"ai.sirsi.gemma-broker": serveArgs(f.servedSnap)})
 
 	blocked := []struct{ name, path string }{
 		{"the served snapshot itself", f.servedSnap},
 		{"a file inside the served snapshot", filepath.Join(f.servedSnap, "model-00001.safetensors")},
-		// The ancestor cases are the ones that actually bite: the scan rule's
-		// finding is a directory ABOVE the snapshot, so a same-or-below check
-		// would wave both of these straight through to os.RemoveAll.
+		// The ancestor cases are the ones that bite: the scan rule's finding
+		// is a directory ABOVE the snapshot, so a same-or-below check would
+		// wave both straight through to os.RemoveAll.
 		{"the served model's repo directory", f.servedRepo},
 		{"the whole HuggingFace hub", f.hub},
 	}
@@ -206,33 +200,17 @@ func TestValidatePath_BlocksLiveModelSubstrate(t *testing.T) {
 		}
 	}
 
-	// Protection must not spread: a cold sibling model is still reclaimable.
 	if err := ValidatePath(f.coldRepo); err != nil {
-		t.Errorf("ValidatePath(cold model) = %v, want nil — protection over-reached to an unserved model", err)
-	}
-}
-
-func TestValidatePath_NoLiveJobLeavesHubDeletable(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	allLoaded(t)
-
-	hub := filepath.Join(home, ".cache", "huggingface", "hub")
-	if err := os.MkdirAll(hub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ValidatePath(hub); err != nil {
-		t.Errorf("ValidatePath(hub) = %v with no SNE job installed, want nil", err)
+		t.Errorf("ValidatePath(cold model) = %v, want nil — protection over-reached", err)
 	}
 }
 
 // A dry run must refuse too. Reporting "would free 24 GB" for the live model is
-// the failure the owner sees — the deletion never has to happen for the number
-// to be a lie.
+// the failure the operator sees — the deletion never has to happen for the
+// number to be a lie.
 func TestDeleteFile_DryRunRefusesLiveModelSubstrate(t *testing.T) {
 	f := liveSNEFixture(t)
-	allLoaded(t)
+	stubJobs(t, map[string][]string{"ai.sirsi.gemma-broker": serveArgs(f.servedSnap)})
 
 	if _, err := DeleteFile(f.hub, true /*dryRun*/, true /*useTrash*/); err == nil {
 		t.Error("DeleteFile(hub, dryRun=true) = nil, want BLOCKED")
@@ -244,7 +222,7 @@ func TestDeleteFile_DryRunRefusesLiveModelSubstrate(t *testing.T) {
 func TestValidatePath_RejectsTreeRoots(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	allLoaded(t)
+	stubJobs(t, map[string][]string{})
 
 	for _, p := range []string{"/", home, "/Volumes/ExternalDisk"} {
 		if err := ValidatePath(p); err == nil {
