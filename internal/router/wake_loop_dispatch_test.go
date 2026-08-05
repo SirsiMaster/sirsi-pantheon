@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,13 +161,29 @@ func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
 	})
 	sendItem(t, root, "slow-agent", "work that is never drained")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	// Synchronize on the dispatch actually LANDING, then keep the loop running
+	// and observe. The earlier shape ran the loop for a fixed 300ms and read the
+	// log after canceling — asserting on a detached process's side effect
+	// against a wall clock. On a loaded runner the process loses that race and
+	// the count reads 0, which is a slow machine, not a broken latch.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := RunWakeLoop(ctx, root, "slow-agent", 40*time.Millisecond); err != nil {
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "slow-agent", 40*time.Millisecond) }()
+
+	awaitConsumerLines(t, log, 1) // the first dispatch has provably happened
+
+	// Give the loop many more ticks with the consumer still sleeping. If the
+	// latch were broken, a second line appears here.
+	time.Sleep(400 * time.Millisecond)
+	n := len(consumerLines(t, log))
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunWakeLoop: %v", err)
 	}
 
-	if n := len(consumerLines(t, log)); n != 1 {
+	if n != 1 {
 		t.Errorf("dispatched %d consumers while the first was still running — want exactly 1 "+
 			"(a still-working consumer must hold the slot)", n)
 	}
@@ -187,13 +204,24 @@ func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
 	})
 	sendItem(t, root, "flaky-agent", "work that is never drained")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	// The loop must still be RUNNING while we wait for the re-dispatch. The
+	// earlier shape canceled it after 300ms and only then polled for a second
+	// line — so awaitConsumerLines was interrogating a stopped loop that could
+	// never produce one, and the test passed only when both dispatches happened
+	// to fit inside that fixed window.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := RunWakeLoop(ctx, root, "flaky-agent", 40*time.Millisecond); err != nil {
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "flaky-agent", 40*time.Millisecond) }()
+
+	n := len(awaitConsumerLines(t, log, 2))
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunWakeLoop: %v", err)
 	}
 
-	if n := len(awaitConsumerLines(t, log, 2)); n < 2 {
+	if n < 2 {
 		t.Errorf("only %d dispatches after the consumer exited — the slot must free on "+
 			"completion or a consumer that dies mid-drain strands the inbox forever", n)
 	}
