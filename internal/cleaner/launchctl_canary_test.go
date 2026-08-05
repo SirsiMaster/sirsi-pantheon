@@ -3,6 +3,7 @@
 package cleaner
 
 import (
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ import (
 // loaded, so it is meaningful on the self-hosted macOS runner and quiet on
 // hosted runners and clean checkouts.
 func TestLaunchctlPrintShapeCanary(t *testing.T) {
-	uid := strconv.Itoa(osGetuid())
+	uid := strconv.Itoa(os.Getuid())
 	out, err := exec.Command("launchctl", "print", "gui/"+uid+"/"+canonicalSNELabel).Output()
 	if err != nil {
 		t.Skipf("%s not loaded in this domain — canary is only meaningful where the engine runs", canonicalSNELabel)

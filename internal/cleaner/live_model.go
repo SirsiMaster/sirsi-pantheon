@@ -2,10 +2,8 @@ package cleaner
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -85,39 +83,6 @@ func SetLoadedJobsProbe(fn func() map[string]JobArgs) (restore func()) {
 }
 
 // defaultLoadedJobs asks launchd what it is actually running.
-func defaultLoadedJobs() map[string]JobArgs {
-	out, err := exec.Command("launchctl", "list").Output()
-	if err != nil {
-		// The whole listing failed. Report it against the canonical SNE label
-		// so the fail-closed path engages rather than silently seeing no jobs.
-		return map[string]JobArgs{canonicalSNELabel: {Err: "launchctl list failed: " + err.Error()}}
-	}
-	jobs := map[string]JobArgs{}
-	uid := strconv.Itoa(os.Getuid())
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		label := fields[len(fields)-1]
-		if !strings.HasPrefix(label, "ai.sirsi.") {
-			continue
-		}
-		printed, err := exec.Command("launchctl", "print", "gui/"+uid+"/"+label).Output()
-		if err != nil {
-			jobs[label] = JobArgs{Err: "launchctl print failed: " + err.Error()}
-			continue
-		}
-		args := parseLaunchctlArguments(string(printed))
-		if len(args) == 0 {
-			jobs[label] = JobArgs{Err: "launchctl print returned no parseable arguments block"}
-			continue
-		}
-		jobs[label] = JobArgs{Args: args}
-	}
-	return jobs
-}
-
 // canonicalSNELabel is the label the SNE engine ships under today.
 const canonicalSNELabel = "ai.sirsi.gemma-broker"
 
@@ -267,7 +232,3 @@ func isCatastrophicRoot(abs string) bool {
 	}
 	return false
 }
-
-// osGetuid is a seam so the darwin-only canary can compile without importing
-// os into a file that must stay dependency-light.
-func osGetuid() int { return os.Getuid() }
