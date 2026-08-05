@@ -221,6 +221,24 @@
         "mechanism": "none"
       }
     },
+    "codex-deck": {
+      "id": "codex-deck",
+      "type": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "/Users/thekryptodragon/Development/SirsiNexusApp/marketing",
+        "--sandbox",
+        "workspace-write"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing",
+      "workstream": "deck",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": ["codex", "--version"]
+      }
+    },
     "codex-finalwishes": {
       "id": "codex-finalwishes",
       "type": "codex",
