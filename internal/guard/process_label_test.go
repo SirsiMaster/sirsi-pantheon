@@ -1,8 +1,9 @@
 package guard
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
 func TestProcessDisplayName(t *testing.T) {
