@@ -690,7 +690,11 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 				continue
 			}
 		}
-		hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(size)))
+		// "(live)" disambiguates this from the Process Footprint check, which
+		// alarms on max(live, peak) and can legitimately show a HIGHER number
+		// for the same process — without the label the two rows read as
+		// contradicting each other over the same PID (owner report, 2026-08-05).
+		hogs = append(hogs, fmt.Sprintf("%s at %s (live)", proc.Name, FormatBytes(size)))
 	}
 
 	finding := DiagnosticFinding{
