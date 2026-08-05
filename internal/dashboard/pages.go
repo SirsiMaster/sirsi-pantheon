@@ -188,7 +188,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 <div class="terminal-wrap">
  <div class="term-input-bar">
   <span class="term-prompt">𓉴 </span>
-  <input type="text" class="term-input" id="term-input" placeholder="Type a command... (scan, ghosts, doctor, guard, network, hardware)" autocomplete="off">
+  <input type="text" class="term-input" id="term-input" placeholder="Ask a question, or type a command (scan, ghosts, doctor, guard, network, hardware)" autocomplete="off">
   <span class="term-view-label" id="view-label">home</span>
  </div>
  <div class="terminal" id="terminal">
@@ -536,11 +536,44 @@ function exec(raw){
  const cmdMap={scan:'scan',ghosts:'ghosts',doctor:'doctor',guard:'guard',
   network:'network',hardware:'hardware',quality:'quality',dedup:'dedup'};
  const key=cmdMap[raw];
- if(!key){out('Unknown command: '+raw,'t-err');out('Available: scan, ghosts, doctor, guard, network, hardware, quality, dedup, kill <target>, deprioritize','t-dim');return}
+ /* Not a command — treat it as a question about this machine. The bar reads
+    like a prompt, so operators type questions at it; answering "Unknown
+    command" was the surface refusing an affordance it visibly offers. The
+    answer is grounded in this workstation's live diagnostics and never leaves
+    loopback. */
+ if(!key){ask(raw);return}
  running=true;
  fetch('/api/run?cmd='+key,{method:'POST'}).then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error)});
  }).catch(function(e){out('✗ '+e.message,'t-err');running=false});
+}
+
+/* Natural-language question about this machine, answered by the LOCAL engine
+   from this machine's live diagnostics. Every failure is stated plainly: a
+   made-up answer here would be indistinguishable from a real one. */
+let asking=false;
+function ask(q){
+ if(asking){out('Still answering the previous question.','t-err');return}
+ asking=true;
+ out('');out('▸ '+q,'t-gold');
+ out('  asking the local engine (nothing leaves this machine)…','t-dim');
+ fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({question:q})})
+  .then(function(r){return r.json().then(function(d){
+   if(!r.ok)throw new Error(d.error||r.statusText);return d})})
+  .then(function(d){
+   String(d.answer).split('\n').forEach(function(l){out('  '+l)});
+   /* Say what this is. Observed 2026-08-05: a correct answer transcribed
+      launchd labels as "action.runner…" (actual: "actions.runner…") — the
+      substance was right, an identifier was not. Anything you would paste
+      into a shell must come from the finding, not from the summary. */
+   out('  — summary by '+d.model+', from '+d.grounding+'. Run "guard" for the exact findings; do not copy identifiers from here.','t-dim');
+  })
+  .catch(function(e){
+   out('✗ '+e.message,'t-err');
+   out('  Commands that always work: scan, ghosts, doctor, guard, network, hardware, quality, dedup, kill <target>, deprioritize','t-dim');
+  })
+  .finally(function(){asking=false});
 }
 
 /* A terminal line that runs its own command when clicked. The home screen used
