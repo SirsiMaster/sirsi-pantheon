@@ -26,14 +26,14 @@ cache_dir() { echo "models--$(echo "$1" | sed 's/\//--/')"; }
 
 run_write() { # $1=which models to seed cache with ("model"|"fallback"|"none") → prints "<exit>|<conf>"
   local hub conf tmp rc
-  hub=$(mktemp -d -t gemmacache); conf=$(mktemp -t gemmaconf)
+  hub=$(mktemp -d "${TMPDIR:-/tmp}/gemmacache.XXXXXX"); conf=$(mktemp "${TMPDIR:-/tmp}/gemmaconf.XXXXXX")
   echo "SENTINEL-UNCHANGED" > "$conf"     # detect an untouched conf
   case "$1" in
     model)    mkdir -p "$hub/$(cache_dir "$MODEL_ID")";;
     fallback) mkdir -p "$hub/$(cache_dir "$FB_ID")";;
     none)     : ;;                          # empty cache — the defect case
   esac
-  tmp=$(mktemp -t gemmawrite)
+  tmp=$(mktemp "${TMPDIR:-/tmp}/gemmawrite.XXXXXX")
   { echo "HF_CACHE='$hub'; MODEL='$MODEL_ID'; FALLBACK='$FB_ID'; CONF='$conf'; log(){ :; }"
     printf '%s\n' "$BLOCK"
   } > "$tmp"
