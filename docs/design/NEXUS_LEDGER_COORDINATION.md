@@ -63,12 +63,15 @@ sirsi router ledger --json                   # Fleet-wide board
 
 The Nexus component MUST use the status colors from the spec:
 
-| Status | Color |
-|--------|-------|
-| done | `#1D9E75` |
-| active/in-review | `#EF9F27` |
-| queued | neutral gray |
-| blocked | `#D85A30` |
+| Status | Color | Notes |
+|--------|-------|-------|
+| done | `#1D9E75` | |
+| active (includes blocked) | `#EF9F27` | `BoardSummary.ActiveTasks` — one bucket, no queued/in-review split |
+| blocked (subset overlay) | `#D85A30` | `BoardSummary.BlockedTasks` ⊆ `ActiveTasks` — do NOT add as independent segment |
+
+**Important:** `blocked_tasks` is already counted inside `active_tasks`. A bar that stacks
+done + active + blocked as three independent segments will exceed 100%. See §2 of
+`LEDGER_BOARD_COMPONENT_SPEC.md` for the rendering contract.
 
 Any divergence from these colors is a visual bug that breaks cross-surface consistency.
 File a defect against claude-nexus if Nexus renders different colors.

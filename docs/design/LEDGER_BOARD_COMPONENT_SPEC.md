@@ -70,13 +70,20 @@ A stale or cached board is worse than no board — surfaces must poll `ledger.Bu
 | Blocked | N | **coral/red** only when >0 AND stale (>48h); amber when fresh |
 
 ### 2. Stacked completion bar
-One bar, fixed segment order: `done / in-review / queued / blocked`. Legend below with counts.
+One bar, fixed segment order: `done / active / blocked`. Legend below with counts.
+
+**Data-contract note (important for cross-surface implementers):** `BoardSummary` carries three
+counts — `done_tasks`, `active_tasks`, and `blocked_tasks`. `blocked_tasks` is a **subset** of
+`active_tasks` (a blocked task is also counted as active); do not treat them as independent
+segments or the bar will exceed 100%. The `queued`/`in-review` split in the visual labels is **not**
+carried in `BoardSummary` today — render the single `active_tasks` bucket as one amber segment,
+with the blocked portion shown as a coral overlay or callout. If a future `BoardSummary` version
+adds a `queued_tasks` or `in_review_tasks` field this spec will be updated.
 
 Colors (consistent across all surfaces):
 - done → `#1D9E75` (teal-green)
-- in-review / active → `#EF9F27` (amber)
-- queued / pending → neutral gray
-- blocked → `#D85A30` (coral-red)
+- active (superset that includes blocked) → `#EF9F27` (amber)
+- blocked (subset of active, visual overlay or callout) → `#D85A30` (coral-red)
 
 ASCII/TUI equivalent: `[████████░░░░░░░░░░░░]  58%`
 
