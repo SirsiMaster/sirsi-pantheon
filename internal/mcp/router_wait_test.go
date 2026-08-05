@@ -33,7 +33,7 @@ func newTestFacade(t *testing.T) *dispatch.Facade {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(`{"agents":{"claude-pantheon":{},"codex-pantheon":{}}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(`{"agents":{"claude-home":{"id":"claude-home","type":"claude","repo":"/tmp","workstream":"home","wake":{"mechanism":"none"}},"claude-pantheon":{"id":"claude-pantheon","type":"claude","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},"codex-pantheon":{"id":"codex-pantheon","type":"codex","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	f := dispatch.New(root, store)
@@ -44,7 +44,7 @@ func newTestFacade(t *testing.T) *dispatch.Facade {
 func TestWait_TimesOutCleanly(t *testing.T) {
 	f := newTestFacade(t)
 	start := time.Now()
-	items, err := f.Wait(context.Background(), "claude", 200*time.Millisecond)
+	items, err := f.Wait(context.Background(), "claude-home", 200*time.Millisecond)
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}

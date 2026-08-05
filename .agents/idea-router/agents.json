@@ -383,6 +383,36 @@
           "--version"
         ]
       }
+    },
+    "horus": {
+      "id": "horus",
+      "type": "service",
+      "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "workstream": "pantheon",
+      "wake": {
+        "mechanism": "none"
+      }
+    },
+    "owner": {
+      "id": "owner",
+      "type": "human",
+      "repo": "/Users/thekryptodragon/Development",
+      "cwd": "/Users/thekryptodragon/Development",
+      "workstream": "portfolio",
+      "wake": {
+        "mechanism": "owner-surface"
+      }
+    },
+    "user": {
+      "id": "user",
+      "type": "human",
+      "repo": "/Users/thekryptodragon/Development",
+      "cwd": "/Users/thekryptodragon/Development",
+      "workstream": "portfolio-alias",
+      "wake": {
+        "mechanism": "owner-surface"
+      }
     }
   }
 }
