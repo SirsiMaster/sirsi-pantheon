@@ -562,12 +562,14 @@ function ask(q){
   .then(function(r){return r.json().then(function(d){
    if(!r.ok)throw new Error(d.error||r.statusText);return d})})
   .then(function(d){
-   String(d.answer).split('\n').forEach(function(l){out('  '+l)});
-   /* Say what this is. Observed 2026-08-05: a correct answer transcribed
-      launchd labels as "action.runner…" (actual: "actions.runner…") — the
-      substance was right, an identifier was not. Anything you would paste
-      into a shell must come from the finding, not from the summary. */
-   out('  — summary by '+d.model+', from '+d.grounding+'. Run "guard" for the exact findings; do not copy identifiers from here.','t-dim');
+   /* Findings are rendered by the SERVER from its own diagnostic data — the
+      model only chose which ones. Nothing here was written by the model, so
+      no name, path or number on screen can have been paraphrased. */
+   if(d.summary)out('  '+d.summary);
+   (d.findings||[]).forEach(function(l){out('  '+l)});
+   if(d.dropped)out('  ('+d.dropped+')','t-dim');
+   if(!d.summary&&!(d.findings||[]).length)out('  Nothing in the current diagnostics answers that. Try "doctor".','t-dim');
+   out('  — findings quoted verbatim from this machine; selection by '+d.model,'t-dim');
   })
   .catch(function(e){
    out('✗ '+e.message,'t-err');

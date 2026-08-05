@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -66,12 +65,38 @@ type askRequest struct {
 	Question string `json:"question"`
 }
 
+// askResponse carries SERVER-OWNED text. Findings are rendered from the
+// DoctorReport, not from anything the model wrote, so no identifier the
+// operator sees can have been paraphrased. Summary is the model's one free-text
+// field and is dropped entirely if it contains a factual token absent from the
+// grounding.
 type askResponse struct {
-	Answer string `json:"answer"`
-	Model  string `json:"model"`
-	// Grounding names what the answer was allowed to be based on, so the UI can
-	// say so out loud rather than presenting a model opinion as a measurement.
-	Grounding string `json:"grounding"`
+	Summary  string   `json:"summary"`
+	Findings []string `json:"findings"`
+	Model    string   `json:"model"`
+	// Dropped reports that a summary was withheld and why, so the surface can
+	// say so instead of silently showing less.
+	Dropped string `json:"dropped,omitempty"`
+}
+
+// modelSelection is the only thing the model returns.
+type modelSelection struct {
+	Findings []int  `json:"findings"`
+	Summary  string `json:"summary"`
+}
+
+func severityLabel(sev guard.DiagnosticSeverity) string {
+	switch int(sev) {
+	case 0:
+		return "OK"
+	case 1:
+		return "INFO"
+	case 2:
+		return "WARNING"
+	case 3:
+		return "CRITICAL"
+	}
+	return "UNKNOWN"
 }
 
 // groundingFromDoctor renders the live diagnostic report as the only facts the
@@ -80,13 +105,8 @@ func groundingFromDoctor(rpt *guard.DoctorReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Workstation health score: %d/100 (status: %s)\n", rpt.Score, rpt.Status)
 	b.WriteString("Diagnostic findings:\n")
-	sev := map[int]string{0: "OK", 1: "INFO", 2: "WARNING", 3: "CRITICAL"}
-	for _, f := range rpt.Findings {
-		label := sev[int(f.Severity)]
-		if label == "" {
-			label = "UNKNOWN"
-		}
-		fmt.Fprintf(&b, "- [%s] %s: %s\n", label, f.Check, f.Message)
+	for i, f := range rpt.Findings {
+		fmt.Fprintf(&b, "[%d] [%s] %s: %s\n", i, severityLabel(f.Severity), f.Check, f.Message)
 		if f.Detail != "" {
 			fmt.Fprintf(&b, "    detail: %s\n", f.Detail)
 		}
@@ -94,18 +114,25 @@ func groundingFromDoctor(rpt *guard.DoctorReport) string {
 	return b.String()
 }
 
+// The model SELECTS; the server RENDERS. Asking for prose and hoping it stays
+// faithful is what produced "action.runner…" for a finding that says
+// "actions.runner…". Indices cannot be misspelled.
 const askSystemPrompt = `You are Horus, the local workstation monitor for Sirsi Pantheon.
 
-Answer the operator's question USING ONLY the diagnostic report below. It is a
-live reading of this specific machine taken seconds ago.
+Below is a numbered list of live diagnostic findings for this machine.
 
-Rules:
-- If the report does not contain the answer, say exactly what is missing and
-  name the command that would produce it. Do not guess.
-- Never invent a process name, a number, or a size. Every figure you state must
-  appear verbatim in the report.
-- Be brief and concrete. Two or three sentences. Lead with the answer.
-- Plain language, no jargon.`
+Reply with ONLY a JSON object, no other text:
+{"findings": [<indices>], "summary": "<one short sentence>"}
+
+- "findings": the indices of the findings that answer the question, most
+  relevant first, at most 4. Empty if none of them answer it.
+- "summary": one plain-language sentence framing the answer. Do NOT restate
+  process names, paths, labels, sizes, or numbers in it — the findings you
+  selected are shown to the operator verbatim, so repeating their details only
+  risks getting them wrong. Say what it MEANS.
+
+If nothing in the list answers the question, use an empty findings array and say
+so in the summary.`
 
 type chatMessage struct {
 	Role    string `json:"role"`
@@ -150,7 +177,8 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answer, model, err := askLocalEngine(r.Context(), req.Question, groundingFromDoctor(report))
+	grounding := groundingFromDoctor(report)
+	sel, model, err := askLocalEngine(r.Context(), req.Question, grounding)
 	if err != nil {
 		// Fail loud. A degraded answer here would be indistinguishable from a
 		// real one, which is the failure mode this whole surface exists to avoid.
@@ -158,15 +186,44 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, askResponse{
-		Answer:    answer,
-		Model:     model,
-		Grounding: fmt.Sprintf("%d live diagnostic findings from this machine", len(report.Findings)),
-	})
+	resp := askResponse{Model: model}
+
+	// Findings are rendered from the report, never from model text. An index
+	// out of range is dropped rather than guessed at.
+	for _, i := range sel.Findings {
+		if i < 0 || i >= len(report.Findings) {
+			continue
+		}
+		f := report.Findings[i]
+		line := fmt.Sprintf("[%s] %s — %s", severityLabel(f.Severity), f.Check, f.Message)
+		resp.Findings = append(resp.Findings, line)
+		if len(resp.Findings) == 4 {
+			break
+		}
+	}
+
+	// The summary is the model's only free text. Fail closed: if it names
+	// anything factual that is not in the grounding verbatim, it is withheld
+	// entirely rather than shown with a caveat. The findings above still answer
+	// the question, and they are exact.
+	if sum := strings.TrimSpace(sel.Summary); sum != "" {
+		if bad := unverifiableTokens(sum, grounding); len(bad) > 0 {
+			resp.Dropped = "summary withheld — it contained " + strings.Join(bad, ", ") +
+				", which does not appear in this machine's diagnostics"
+		} else {
+			resp.Summary = sum
+		}
+	}
+
+	if len(resp.Findings) == 0 && resp.Summary == "" {
+		resp.Dropped = strings.TrimSpace(resp.Dropped + " · nothing in the current diagnostics answers that")
+	}
+
+	writeJSON(w, resp)
 }
 
 // askLocalEngine sends one grounded completion to the loopback SNE server.
-func askLocalEngine(ctx context.Context, question, grounding string) (string, string, error) {
+func askLocalEngine(ctx context.Context, question, grounding string) (modelSelection, string, error) {
 	port := snePort()
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port)
 
@@ -180,7 +237,7 @@ func askLocalEngine(ctx context.Context, question, grounding string) (string, st
 		Temperature: 0.2,
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("build request: %w", err)
+		return modelSelection{}, "", fmt.Errorf("build request: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, askTimeout)
@@ -188,54 +245,53 @@ func askLocalEngine(ctx context.Context, question, grounding string) (string, st
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", "", fmt.Errorf("build request: %w", err)
+		return modelSelection{}, "", fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return "", "", fmt.Errorf("local engine not reachable on 127.0.0.1:%d — is ai.sirsi.gemma-broker running? (%v)", port, err)
+		return modelSelection{}, "", fmt.Errorf("local engine not reachable on 127.0.0.1:%d — is ai.sirsi.gemma-broker running? (%v)", port, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("local engine returned %s", resp.Status)
+		return modelSelection{}, "", fmt.Errorf("local engine returned %s", resp.Status)
 	}
 
 	var out chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", "", fmt.Errorf("local engine sent an unreadable response: %w", err)
+	if decErr := json.NewDecoder(resp.Body).Decode(&out); decErr != nil {
+		return modelSelection{}, "", fmt.Errorf("local engine sent an unreadable response: %w", decErr)
 	}
 	if len(out.Choices) == 0 {
-		return "", "", fmt.Errorf("local engine returned no choices")
+		return modelSelection{}, "", fmt.Errorf("local engine returned no choices")
 	}
-	answer := cleanCompletion(out.Choices[0].Message.Content)
-	if answer == "" {
-		return "", "", fmt.Errorf("local engine returned an empty answer")
+	raw, err := cleanCompletion(out.Choices[0].Message.Content)
+	if err != nil {
+		return modelSelection{}, "", err
 	}
-	return answer, out.Model, nil
+	if raw == "" {
+		return modelSelection{}, "", fmt.Errorf("local engine returned an empty answer")
+	}
+	sel, err := parseSelection(raw)
+	if err != nil {
+		return modelSelection{}, "", err
+	}
+	return sel, out.Model, nil
 }
 
-// controlToken matches the chat-template markers this model family emits
-// inline: <|channel>, <channel|>, <turn|>, <start_of_turn>, <end_of_turn>.
-// Restricted to lowercase and underscores, which is what those token
-// vocabularies use, so ordinary prose containing angle brackets survives.
-var controlToken = regexp.MustCompile(`<\|?[a-z_]+\|?>`)
-
-// cleanCompletion strips chat-template scaffolding from raw model output.
-//
-// gemma-4-12b-it-8bit answers through a channel protocol and returns it
-// verbatim in the completion — a correct answer arrived as
-// "<|channel>thought\n<channel|>The top consumer is …<turn|>". Rendering that
-// to an operator is indistinguishable from a broken surface.
-//
-// The answer is whatever follows the LAST channel header; anything before it
-// is the model's scratch channel and must not reach the screen as if it were
-// the response.
-func cleanCompletion(s string) string {
-	const chanClose = "<channel|>"
-	if i := strings.LastIndex(s, chanClose); i >= 0 {
-		s = s[i+len(chanClose):]
+// parseSelection extracts the JSON object the model was asked for. Models
+// wrap JSON in prose or fences often enough that locating the outermost braces
+// is worth more than a strict decode that fails on a stray "Here you go:".
+func parseSelection(raw string) (modelSelection, error) {
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return modelSelection{}, fmt.Errorf("local engine did not return a finding selection")
 	}
-	return strings.TrimSpace(controlToken.ReplaceAllString(s, ""))
+	var sel modelSelection
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &sel); err != nil {
+		return modelSelection{}, fmt.Errorf("local engine returned an unparseable selection: %w", err)
+	}
+	return sel, nil
 }

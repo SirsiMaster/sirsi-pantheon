@@ -7,43 +7,116 @@ import "testing"
 // never reach the screen as if it were the answer.
 func TestCleanCompletion(t *testing.T) {
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name    string
+		in      string
+		want    string
+		wantErr bool
 	}{
 		{
 			// Verbatim from gemma-4-12b-it-8bit, 2026-08-05.
 			name: "channel protocol with scratch channel",
-			in:   "<|channel>thought\n<channel|>The top consumer of memory is sne-server-macos-arm64, which is using 34.9 GB.<turn|>",
-			want: "The top consumer of memory is sne-server-macos-arm64, which is using 34.9 GB.",
+			in:   "<|channel>thought\n<channel|>{\"findings\":[6]}<turn|>",
+			want: `{"findings":[6]}`,
 		},
 		{
 			name: "turn markers only",
-			in:   "<start_of_turn>Disk is healthy at 1%.<end_of_turn>",
-			want: "Disk is healthy at 1%.",
+			in:   "<start_of_turn>{\"findings\":[]}<end_of_turn>",
+			want: `{"findings":[]}`,
 		},
 		{
-			name: "plain answer untouched",
-			in:   "  Swap is in use but pressure is normal.  ",
-			want: "Swap is in use but pressure is normal.",
+			name: "plain output untouched",
+			in:   "  {\"findings\":[1]}  ",
+			want: `{"findings":[1]}`,
 		},
 		{
-			// Must not eat ordinary angle brackets — a real answer can name a
-			// command like `kill <target>`.
-			name: "preserves prose angle brackets it should not own",
-			in:   "Run kill <TARGET> to clear it.",
-			want: "Run kill <TARGET> to clear it.",
+			// The earlier regex `<\|?[a-z_]+\|?>` ate these. The old
+			// preservation test used uppercase <TARGET>, which never
+			// exercised the pattern it claimed to cover.
+			name: "preserves lowercase prose placeholders",
+			in:   "Run kill <target> on <path> for <pid>.",
+			want: "Run kill <target> on <path> for <pid>.",
 		},
 		{
-			name: "scratch channel alone yields nothing",
-			in:   "<|channel>thought<turn|>",
-			want: "thought",
+			// Returning the scratch text would put the model's private
+			// reasoning on screen as though it were the response.
+			name:    "scratch-only channel is an error, not a value",
+			in:      "<|channel>thought<turn|>",
+			wantErr: true,
+		},
+		{
+			name:    "unterminated channel is an error",
+			in:      "<|channel>analysis I think the answer is",
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := cleanCompletion(tt.in); got != tt.want {
+			got, err := cleanCompletion(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("cleanCompletion(%q) = %q, want error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("cleanCompletion(%q) unexpected error: %v", tt.in, err)
+			}
+			if got != tt.want {
 				t.Errorf("cleanCompletion(%q)\n got %q\nwant %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// The integrity rule: anything factual-looking in the model's one free-text
+// field must appear verbatim in the grounding, or the sentence is withheld.
+// This is the check that would have caught "action.runner" for a report that
+// says "actions.runner".
+func TestUnverifiableTokens(t *testing.T) {
+	grounding := `Workstation health score: 51/100 (status: degraded)
+Diagnostic findings:
+[0] [CRITICAL] launchd Disabled Override: 4 label(s) disabled — actions.runner.SirsiMaster-Assiduous.m5-sirsi
+[1] [WARNING] Top Memory Consumers: sne-server-macos-arm64 at 32.7 GB (live)`
+
+	tests := []struct {
+		name    string
+		summary string
+		wantBad []string
+	}{
+		{
+			name:    "faithful summary passes",
+			summary: "Four launchd labels will not restart, and sne-server-macos-arm64 is holding 32.7 GB.",
+		},
+		{
+			// The exact observed failure.
+			name:    "paraphrased identifier is caught",
+			summary: "The disabled label is action.runner.SirsiMaster-Assiduous.m5-sirsi.",
+			wantBad: []string{"action.runner.SirsiMaster-Assiduous.m5-sirsi"},
+		},
+		{
+			name:    "invented number is caught",
+			summary: "Memory use reached 48.9 GB.",
+			wantBad: []string{"48.9"},
+		},
+		{
+			name:    "plain prose with no factual tokens passes",
+			summary: "Some services will not come back after a restart.",
+		},
+		{
+			name:    "small counting integers are allowed",
+			summary: "There are 4 problems worth your attention.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := unverifiableTokens(tt.summary, grounding)
+			if len(got) != len(tt.wantBad) {
+				t.Fatalf("unverifiableTokens = %v, want %v", got, tt.wantBad)
+			}
+			for i := range got {
+				if got[i] != tt.wantBad[i] {
+					t.Errorf("token %d = %q, want %q", i, got[i], tt.wantBad[i])
+				}
 			}
 		})
 	}
