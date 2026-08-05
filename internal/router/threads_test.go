@@ -676,3 +676,207 @@ func TestRegisterThread_AlwaysWatchesSelf(t *testing.T) {
 		t.Errorf("reuse re-register must keep self-watch; got %v", second.Watches)
 	}
 }
+
+// ── Session-lease tests (mint-churn fix) ─────────────────────────────────
+//
+// These tests verify the (session_id, surface) reuse path and the
+// LeaseSessionTTL expiry path. They are written so that they FAIL against
+// the code before this PR:
+//
+//   BEFORE: RegisterThread keyed only on (agent_id, pid); a pid=0 record
+//   skipped the reuse fast-path and minted a fresh thread every call.
+//   Running the first test against the old code yields:
+//     second.ThreadID != first.ThreadID (FAIL — a fresh record was minted)
+//
+//   BEFORE: ReapDeadThreads used DefaultThreadStaleAfter (5 min) for all
+//   pid<minAgentPID records, including session-keyed ones. Running the second
+//   test against the old code yields:
+//     session-keyed record reaped after 5 min (FAIL — too short)
+
+// TestRegisterThread_SessionKeyed_Reuse verifies that a second RegisterThread
+// call with the same session_id and surface returns the SAME thread record
+// (no fresh mint) — the structural fix for ~21 mints/hour on claude-home.
+func TestRegisterThread_SessionKeyed_Reuse(t *testing.T) {
+	tmp := t.TempDir()
+	sessID := "test-session-abc123"
+
+	first, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+
+	// Simulate a subsequent hook fire in the same conversation: same session_id,
+	// no PID (app-hosted surface has no durable PID). Before this fix, pid=0
+	// skips the reuse path and mints a fresh record every call.
+	second, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("second register: %v", err)
+	}
+
+	if second.ThreadID != first.ThreadID {
+		t.Errorf("session-keyed reuse: got new thread %s, want %s (no fresh mint)", second.ThreadID, first.ThreadID)
+	}
+
+	// Verify the registry has exactly one record.
+	reg, err := LoadThreadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	active := 0
+	for _, thr := range reg.Threads {
+		if thr == nil || thr.Status.IsTerminal() {
+			continue
+		}
+		if thr.SessionID == sessID {
+			active++
+		}
+	}
+	if active != 1 {
+		t.Errorf("expected exactly 1 live session-keyed record, got %d", active)
+	}
+}
+
+// TestRegisterThread_SessionKeyed_DifferentSessions verifies that two distinct
+// session_ids mint two independent records (sessions are not cross-contaminated).
+func TestRegisterThread_SessionKeyed_DifferentSessions(t *testing.T) {
+	tmp := t.TempDir()
+
+	first, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: "session-A",
+	})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	second, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: "session-B",
+	})
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if first.ThreadID == second.ThreadID {
+		t.Errorf("different sessions must produce different thread records; both got %s", first.ThreadID)
+	}
+}
+
+// TestReapDeadThreads_SessionKeyed_UsesLeaseTTL verifies that a session-keyed
+// record (SessionID set, PID=0) is NOT reaped before LeaseSessionTTL and IS
+// reaped after it. Before this fix, all pid<minAgentPID records used
+// DefaultThreadStaleAfter (5 min), so a session-keyed record was reaped after
+// 5 min even while the conversation was still live.
+func TestReapDeadThreads_SessionKeyed_UsesLeaseTTL(t *testing.T) {
+	tmp := t.TempDir()
+
+	reg, _ := LoadThreadRegistry(tmp)
+	// Write a session-keyed record whose LastSeenAt is 6 minutes ago
+	// (past DefaultThreadStaleAfter but well within LeaseSessionTTL).
+	sixMinAgo := time.Now().UTC().Add(-6 * time.Minute)
+	reg.Threads["thr-sess-test"] = &Thread{
+		ThreadID:   "thr-sess-test",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		SessionID:  "live-session-xyz",
+		Status:     ThreadStatusActive,
+		StartedAt:  sixMinAgo,
+		LastSeenAt: sixMinAgo,
+		MachineID:  MachineID(), // same machine so the reaper checks it
+	}
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	reaped, err := ReapDeadThreads(tmp)
+	if err != nil {
+		t.Fatalf("reap: %v", err)
+	}
+	for _, r := range reaped {
+		if r.ThreadID == "thr-sess-test" {
+			t.Errorf("session-keyed record reaped after 6 min; want it to survive until LeaseSessionTTL (%s)", LeaseSessionTTL)
+		}
+	}
+
+	// Verify the record is still active.
+	reg2, _ := LoadThreadRegistry(tmp)
+	thr := reg2.Threads["thr-sess-test"]
+	if thr == nil || thr.Status.IsTerminal() {
+		t.Errorf("session-keyed record should still be active after 6 min, got %v", thr)
+	}
+}
+
+// TestReapDeadThreads_SessionKeyed_ExpiresAfterLease verifies that a
+// session-keyed record IS reaped once LeaseSessionTTL elapses without renewal.
+func TestReapDeadThreads_SessionKeyed_ExpiresAfterLease(t *testing.T) {
+	tmp := t.TempDir()
+
+	reg, _ := LoadThreadRegistry(tmp)
+	expired := time.Now().UTC().Add(-(LeaseSessionTTL + time.Minute))
+	reg.Threads["thr-expired-sess"] = &Thread{
+		ThreadID:   "thr-expired-sess",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		SessionID:  "dead-session-abc",
+		Status:     ThreadStatusActive,
+		StartedAt:  expired,
+		LastSeenAt: expired,
+		MachineID:  MachineID(),
+	}
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	reaped, err := ReapDeadThreads(tmp)
+	if err != nil {
+		t.Fatalf("reap: %v", err)
+	}
+	found := false
+	for _, r := range reaped {
+		if r.ThreadID == "thr-expired-sess" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("session-keyed record not reaped after LeaseSessionTTL (%s) + 1 min", LeaseSessionTTL)
+	}
+}
+
+// TestRegisterThread_SessionKeyed_RenewsLastSeen verifies that a returning
+// hook fire advances LastSeenAt on the reused record (the lease renewal).
+func TestRegisterThread_SessionKeyed_RenewsLastSeen(t *testing.T) {
+	tmp := t.TempDir()
+	sessID := "renew-test-session"
+
+	first, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+
+	second, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+
+	if !second.LastSeenAt.After(first.LastSeenAt) {
+		t.Errorf("lease renewal must advance LastSeenAt; first=%s second=%s", first.LastSeenAt, second.LastSeenAt)
+	}
+}

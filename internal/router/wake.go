@@ -690,9 +690,24 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	// Publish the capability on the thread record. This is what stops a watch-only
 	// loop from crediting its own lane as armed: the armed predicate consults
 	// IsInboxConsumer, not heartbeat freshness alone.
-	if thr.ConsumerCapable != (consumer != nil) {
-		thr.ConsumerCapable = consumer != nil
-		if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, consumer != nil); err != nil {
+	//
+	// A RESIDENT consumer never arms this watcher, even when its health check
+	// passes. The check runs ONCE at startup and proves only that a binary could
+	// print something — `gemma-pantheon`'s is literally
+	// `sirsi-gemma-worker.sh --version`, which proves a file exists, not that an
+	// external inbox consumer is alive. Crediting the watcher on that basis
+	// means: external worker dies at any point after startup, watcher keeps
+	// heartbeating as ConsumerCapable, WakePass skips the lane, inbox strands.
+	// That is precisely the false-green this change exists to remove, so a
+	// resident lane stays WATCH-ONLY here (codex-pantheon, PR #389).
+	//
+	// The real fix is the inverse: a resident must PUBLISH AND HEARTBEAT ITS OWN
+	// consumer-capable thread. Liveness you did not observe is not liveness you
+	// can borrow. That is the immediate follow-up, not this PR.
+	capable := consumer != nil && !consumer.Resident
+	if thr.ConsumerCapable != capable {
+		thr.ConsumerCapable = capable
+		if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, capable); err != nil {
 			log.Printf("wake-loop %s: could not record consumer capability: %v", agentID, err)
 		}
 	}

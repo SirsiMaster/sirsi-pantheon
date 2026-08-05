@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/modelrouter"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/reason"
@@ -16,8 +17,11 @@ import (
 )
 
 var (
-	askJSON bool
-	askFix  bool
+	askJSON      bool
+	askFix       bool
+	askTask      string
+	askPrivacy   string
+	askShowRoute bool
 )
 
 var askCmd = &cobra.Command{
@@ -48,6 +52,9 @@ the machine that most needs help is the one with the least headroom to run a mod
 func init() {
 	askCmd.Flags().BoolVar(&askJSON, "json", false, "machine-readable answer with tier provenance")
 	askCmd.Flags().BoolVar(&askFix, "fix", false, "act on what was found: run the repair tools that apply, verify each, and re-check")
+	askCmd.Flags().StringVar(&askTask, "task", "generation", "task class for model routing: generation|judgment|extraction|embedding")
+	askCmd.Flags().StringVar(&askPrivacy, "privacy", "local-only", "privacy class: local-only|shareable")
+	askCmd.Flags().BoolVar(&askShowRoute, "show-route", false, "print the model routing decision before the answer")
 	rootCmd.AddCommand(askCmd)
 }
 
@@ -115,10 +122,11 @@ func runAsk(_ *cobra.Command, args []string) error {
 			len(report.Findings), report.Status)
 	}
 
-	// ── Rung 2+: escalate ────────────────────────────────────────────────────
-	// Only reached when measurement found nothing to say. The escalation is
-	// announced before it happens; silently moving a user onto a paid rung
-	// would betray the whole model.
+	// ── Rung 2+: escalate via model router ──────────────────────────────────
+	// Only reached when measurement found nothing to say. The router applies
+	// the owner-ratified policy (task class, privacy class) and selects the
+	// cheapest qualified lane. Escalation is always announced — silently moving
+	// a user onto a paid rung would betray the whole model.
 	home, _ := os.UserHomeDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
@@ -134,46 +142,55 @@ func runAsk(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
-	for _, p := range ladder {
-		if !p.Available(ctx) {
-			if !askJSON {
-				output.Dim("  [%s] unavailable — escalating", p.Tier())
-			}
-			continue
-		}
+	rt := modelrouter.New(ladder)
+	routeReq := modelrouter.Request{
+		Task:    modelrouter.TaskClass(askTask),
+		Privacy: modelrouter.PrivacyClass(askPrivacy),
+	}
+	decision, rerr := rt.Route(ctx, routeReq)
+	if rerr != nil {
 		if !askJSON {
 			fmt.Println()
-			output.Dim("  [heuristic] inconclusive → escalating to %s (%s)", p.Tier(), p.Name())
+			output.Dim("  Model router: %v", rerr)
+			output.Dim("  Every model rung was unavailable or policy-blocked. The heuristic answer above still stands.")
+		} else {
+			return emitAskJSON(question, report, alarms)
 		}
-
-		resp, cerr := p.Complete(ctx, provider.Request{
-			System: "You are Sirsi, answering about the user's own machine. " +
-				"Be concise and concrete. If you do not have the evidence, say so plainly.",
-			Prompt:    question + "\n\nMeasured state: " + summarize(report),
-			MaxTokens: 400,
-		})
-		if cerr != nil {
-			if !askJSON {
-				output.Dim("  [%s] failed: %v — escalating", p.Tier(), cerr)
-			}
-			continue
-		}
-		if askJSON {
-			return emitAskModelJSON(question, report, resp)
-		}
-		fmt.Println()
-		output.Info("  %s", strings.TrimSpace(resp.Text))
-		fmt.Println()
-		output.Dim("  [%s] %s · %s · %d tokens · finish=%s",
-			resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
 		return nil
 	}
 
+	if askShowRoute && !askJSON {
+		fmt.Println()
+		output.Dim("  [router] %s", decision.DecisionSummary())
+	}
+	if !askJSON {
+		fmt.Println()
+		output.Dim("  [heuristic] inconclusive → escalating to %s (%s)", decision.Lane, decision.Provider.Name())
+	}
+
+	resp, cerr := decision.Provider.Complete(ctx, provider.Request{
+		System: "You are Sirsi, answering about the user's own machine. " +
+			"Be concise and concrete. If you do not have the evidence, say so plainly.",
+		Prompt:    question + "\n\nMeasured state: " + summarize(report),
+		MaxTokens: 400,
+	})
+	if cerr != nil {
+		if !askJSON {
+			output.Dim("  [%s] failed: %v", decision.Lane, cerr)
+			output.Dim("  Every model rung was unavailable. The heuristic answer above still stands.")
+		} else {
+			return emitAskJSON(question, report, alarms)
+		}
+		return nil
+	}
 	if askJSON {
-		return emitAskJSON(question, report, alarms)
+		return emitAskModelJSON(question, report, resp)
 	}
 	fmt.Println()
-	output.Dim("  Every model rung was unavailable. The heuristic answer above still stands.")
+	output.Info("  %s", strings.TrimSpace(resp.Text))
+	fmt.Println()
+	output.Dim("  [%s] %s · %s · %d tokens · finish=%s",
+		resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
 	return nil
 }
 

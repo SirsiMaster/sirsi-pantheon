@@ -421,7 +421,11 @@ func TestWatchOnlyLoopStillRunsAndHeartbeats(t *testing.T) {
 	}
 }
 
-func TestResidentConsumerLoopArmsWithoutSpawning(t *testing.T) {
+// Renamed from TestResidentConsumerLoopArmsWithoutSpawning. That name asserted
+// the behavior codex-pantheon ruled out: a resident health check arming the
+// watcher. The no-spawn half is still a real invariant and is kept; the arming
+// half was pinning the defect and now asserts the opposite.
+func TestResidentConsumerLoopNeverSpawnsAndStaysWatchOnly(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0)
 	root := wakeTestRoot(t, AgentConfig{
@@ -447,14 +451,15 @@ func TestResidentConsumerLoopArmsWithoutSpawning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var capable bool
 	for _, tr := range reg.Threads {
-		if tr != nil && tr.AgentID == "gemma-pantheon" && tr.Surface == surfaceWorker {
-			capable = tr.ConsumerCapable
+		if tr == nil || tr.AgentID != "gemma-pantheon" || tr.Surface != surfaceWorker {
+			continue
 		}
-	}
-	if !capable {
-		t.Fatal("resident consumer did not arm the worker thread")
+		if tr.ConsumerCapable {
+			t.Fatal("resident health check armed the worker thread — a one-shot " +
+				"`--version` probe proves a binary exists, not that an external consumer " +
+				"is alive, and an armed watcher suppresses rescue for an inbox it cannot drain")
+		}
 	}
 	_ = script // prove the test would have a child payload if the loop used one
 }
@@ -519,5 +524,59 @@ func TestResolveConsumer_RefusesUnusableCwd(t *testing.T) {
 				t.Error("refusal carried no reason; the log is the only place this surfaces")
 			}
 		})
+	}
+}
+
+// A resident consumer must NEVER mark the wake watcher consumer-capable, even
+// when its health check succeeds.
+//
+// gemma-pantheon's real declaration is `sirsi-gemma-worker.sh --version`. That
+// proves a file can print a string; it says nothing about whether an external
+// inbox consumer is alive NOW. The check runs once at startup, so crediting the
+// watcher on it means the watcher keeps heartbeating as armed after the external
+// worker dies — WakePass then skips the lane and the inbox strands behind a
+// consumer nobody is running. Liveness you did not observe is not liveness you
+// can borrow.
+func TestResidentHealthCheckNeverArmsTheWatcher(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	// A health check that SUCCEEDS — the point is that success is not enough.
+	health := recordingConsumer(t, log, 0)
+
+	root := wakeTestRoot(t, AgentConfig{
+		ID:   "resident-agent",
+		Type: "worker",
+		Cwd:  t.TempDir(),
+		Consumer: ConsumerConfig{
+			Mode:        ConsumerModeResident,
+			HealthCheck: []string{health},
+		},
+	})
+	sendItem(t, root, "resident-agent", "work only an external resident could drain")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "resident-agent", 40*time.Millisecond) }()
+	time.Sleep(250 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatalf("LoadThreadRegistry: %v", err)
+	}
+	for _, th := range reg.SortedThreads() {
+		if th.AgentID != "resident-agent" {
+			continue
+		}
+		if th.ConsumerCapable {
+			t.Error("resident health check armed the watcher thread — the watcher would then " +
+				"suppress rescue for an inbox it cannot drain")
+		}
+		if th.IsInboxConsumer() {
+			t.Error("resident watcher counts as an inbox consumer; it must be watch-only")
+		}
 	}
 }

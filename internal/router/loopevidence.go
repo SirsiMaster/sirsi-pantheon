@@ -11,11 +11,16 @@
 // aged out — producing the recurring "registered-but-not-looping" false alarm.
 //
 // The fix is read-time and WRITE-FREE (option 2): a thread counts as having loop
-// evidence if its heartbeat is fresh OR a live watcher process exists for its
-// thread_id. We do NOT bump LastSeenAt on every inbox tick (option 1) — that
-// would add a threads.json write per agent per ~60s, re-introducing the exact
-// mds_stores write-amplification → Jetsam storm the health surface (Rail B)
-// exists to eliminate.
+// evidence if its heartbeat is fresh OR a confirmed live agent PID exists for it
+// OR a live watcher process (pgrep -f thr-<id>) exists. We do NOT bump LastSeenAt
+// on every inbox tick (option 1) — that would add a threads.json write per agent
+// per ~60s, re-introducing the exact mds_stores write-amplification → Jetsam
+// storm the health surface (Rail B) exists to eliminate.
+//
+// PID-alive short-circuit (A27 alarm fix): when the registered PID is a confirmed
+// live agent surface (PIDAlive via PIDStateOfThread's cmdline check), the session
+// is running under a harness-gated heartbeat — not truly abandoned. pgrep-for-
+// watcher is the fallback for surfaces that have no recorded PID.
 package router
 
 import (
@@ -37,6 +42,10 @@ var watcherAliveFn = func(threadID string) bool {
 	return strings.TrimSpace(string(out)) != ""
 }
 
+// pidStateOfThreadFn delegates to PIDStateOfThread (injectable for tests,
+// Rule A16 — the real PIDStateOfThread shells out, so tests stub this).
+var pidStateOfThreadFn = PIDStateOfThread
+
 // WatcherAlive reports whether a live watcher loop process exists for threadID —
 // the surface-agnostic loop-evidence signal. A process surface looping under a
 // harness-gated heartbeat is still alive; a non-process surface (mcp/api/webhook,
@@ -49,13 +58,27 @@ func WatcherAlive(threadID string) bool {
 }
 
 // EffectiveStale is the loop-evidence-aware staleness used for the police-trusted
-// `.stale` field: a thread is stale only when its heartbeat has aged past the
-// window AND no live watcher loop exists for it. Read-time, write-free.
+// `.stale` field. A thread is NOT stale when any of these hold:
+//  1. Its heartbeat is fresh (IsStale = false).
+//  2. Its recorded PID is a confirmed live agent surface (PIDAlive): the session
+//     is running under a harness-gated heartbeat, not truly abandoned.
+//  3. A live watcher loop process exists for its thread_id (pgrep -f thr-<id>):
+//     process surfaces that do NOT use a recorded PID (mcp, webhook, etc.) prove
+//     liveness this way.
+//
+// All checks are read-time and write-free.
 func EffectiveStale(t *Thread, now time.Time, window time.Duration) bool {
 	if t == nil {
 		return false
 	}
 	if !t.IsStale(now, window) {
+		return false
+	}
+	// PID-alive short-circuit: if the registered PID is confirmed live and its
+	// command line matches the expected agent surface, the session is running.
+	// This eliminates false A27 alarms for claude/codex/gemma sessions that rely
+	// on harness-gated heartbeats rather than an external watch-router process.
+	if t.PID >= minAgentPID && pidStateOfThreadFn(t) == PIDAlive {
 		return false
 	}
 	return !WatcherAlive(t.ThreadID)
