@@ -4,16 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/cobra"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 )
 
 // `sirsi gemma` is the human-facing way to talk to Gemma — the local MLX model
@@ -29,12 +24,6 @@ var (
 	gemmaModelFlag string
 	gemmaTask      string
 )
-
-// gemmaColdMaxKVSize caps the cold-path mlx_lm.generate KV cache (in tokens) so
-// no bare `sirsi gemma` call can balloon its Python unbounded and trigger a
-// jetsam (2026-07-21: a separate unbounded Python hit 28.88 GB). Generous for
-// Tier-0 work; the model rotates the cache past this cap rather than growing.
-const gemmaColdMaxKVSize = 32768
 
 var gemmaCmd = &cobra.Command{
 	Use:   "gemma [prompt]",
@@ -94,16 +83,10 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	model := gemmaResolveModel(home)
 
 	// Prefer the WARM Pantheon broker if it's up: no model reload, instant answer,
-	// concurrent with other requests on the GPU. Falls through to the cold path on
-	// any error so a single prompt never fails just because the server hiccuped.
-	// warmErr/warmUp are captured so the cold path can report the REAL cause when
-	// the warm broker was up but declined — otherwise a warm-vs-cold routing gap
-	// (broker holds model X, request asks for Y) surfaces as a bare cold RAM
-	// refusal that hides why (claude-nexus flag, 2026-07-17).
+	// concurrent with other requests on the GPU. SNE is the only inference path;
+	// failure is visible and repairable rather than spawning a second runtime.
 	var warmErr error
-	warmUp := false
 	if base := gemmaServerBase(home); base != "" {
-		warmUp = true
 		fmt.Fprintf(os.Stderr, "gemma · %s · warm broker, thinking…\n", gemmaShortModel(model))
 		ans, err := gemmaWarmComplete(base, model, prompt, gemmaMaxTokens)
 		if err == nil && ans != "" {
@@ -116,80 +99,13 @@ func runGemma(cmd *cobra.Command, args []string) error {
 			warmErr = fmt.Errorf("warm broker returned an empty answer")
 		}
 	}
-
-	// Cold path: shell mlx_lm.generate (reloads the model each call). Nudge the user
-	// toward `sirsi gemma serve` for instant, concurrent answers.
-	mlx := filepath.Join(home, ".venvs/mlx/bin/mlx_lm.generate")
-	if _, err := os.Stat(mlx); err != nil {
-		return fmt.Errorf("Gemma's local runtime isn't installed (%s missing) — run the MLX/Gemma setup first", mlx)
+	// SNE is the sole inference path. Do not resurrect the historical cold
+	// Python/mlx_lm process when the Go server is unavailable; fail visibly so
+	// launchd/Horus can repair the one canonical service.
+	if warmErr != nil {
+		return fmt.Errorf("SNE local inference did not answer: %w", warmErr)
 	}
-
-	// LAYER 4 (ADR-031-A) — the cold path is the 06-18 OOM culprit: 4 concurrent
-	// `sirsi gemma` calls each forked a full ~12 GB model load (5 at once → Jetsam).
-	// (1) RAM-gate it like the broker; (2) serialize it machine-wide with a file
-	// lock so concurrent callers can NEVER stack N full model loads.
-	_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
-	// ADR-031-B: the cold path now refuses through the SAME NodeCapacity self-model
-	// as the warm broker — one node-derived budget, not a separate gemmaSafeConcurrency
-	// with its own constants. Fits requires 2×model + DynamicReserve (resident model +
-	// one model of working memory + OS/agents/margin), so the cold path keeps the
-	// #63 2×model conservatism, now node-proportional and cross-agent-aware.
-	modelBytes := gemmaEstimateModelBytes(home, model)
-	if nc := guard.SampleNodeCapacity(); !nc.Fits(modelBytes) {
-		// The warm broker was up but declined THIS model, and now the cold path
-		// can't fit it either (the broker is holding RAM). Report the warm cause
-		// so a warm-vs-cold routing gap is diagnosable, not a bare cold refusal.
-		if warmUp && warmErr != nil {
-			// GROUND TRUTH BEFORE DIAGNOSIS. The old message guessed "likely
-			// holds a DIFFERENT model" for ANY warm failure — including a
-			// token-budget/reasoning truncation on the RIGHT model, which sent
-			// operators restarting a healthy broker (router item: budget
-			// truncation reported as a false DIFFERENT-model error). Ask the
-			// broker what it serves and say only what the evidence supports.
-			served := gemmaServedModelID(gemmaServerBase(home))
-			switch {
-			case served != "" && served == model:
-				return fmt.Errorf("the warm broker IS serving %s but the answer failed (%v) — this is a truncation/generation failure on the right model, not a model mismatch; retry with a larger --max-tokens, and do NOT restart the broker. A cold load also won't fit (~%dGB model + ~%dGB reserve > %dGB free)",
-					gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
-			case served != "":
-				return fmt.Errorf("the warm broker serves %s, not the requested %s (%v), and a cold load won't fit (~%dGB model + ~%dGB reserve > %dGB free) — use the served model, or restart the broker on this one with `sirsi gemma serve` (default reads gemma-model.conf = %s). Refusing rather than OOM the machine",
-					gemmaShortModel(served), gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30), gemmaShortModel(model))
-			default:
-				return fmt.Errorf("the warm broker is up but did not serve %s (%v) and its /v1/models did not answer, so the cause cannot be named; a cold load won't fit (~%dGB model + ~%dGB reserve > %dGB free). Refusing rather than OOM the machine",
-					gemmaShortModel(model), warmErr, modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
-			}
-		}
-		return fmt.Errorf("not enough RAM to load Gemma cold (~%dGB model + ~%dGB dynamic reserve > %dGB free) — start the warm broker (`sirsi gemma serve`) or free memory. Refusing rather than OOM the machine",
-			modelBytes/(1<<30), nc.DynamicReserve()/(1<<30), nc.FreeRAM/(1<<30))
-	}
-	if lf, lerr := os.OpenFile(filepath.Join(home, ".sirsi/gemma-cold.lock"), os.O_CREATE|os.O_RDWR, 0o644); lerr == nil {
-		defer lf.Close()
-		if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX) == nil { // blocks until we hold it
-			defer func() { _ = syscall.Flock(int(lf.Fd()), syscall.LOCK_UN) }()
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "gemma · %s · cold (reloading — run `sirsi gemma serve` to keep it warm)…\n", gemmaShortModel(model))
-	// Bound the KV cache (--max-kv-size) so a pathologically long prompt can NEVER
-	// balloon the cold-path Python unbounded — the 2026-07-21 jetsam was a separate,
-	// unbounded Python that hit 28.88 GB → forced OS jetsam. The warm broker bounds
-	// its cache via --prompt-cache-bytes (#215); this is the generate-path analog on
-	// the ONLY non-serve mlx spawn a bare `sirsi gemma` call makes. 32K tokens is
-	// generous for Tier-0 tasks while hard-capping the balloon (mlx uses a rotating
-	// cache past the cap). Refs A32/ADR-040; claude-home P0 2026-07-21.
-	out, err := exec.Command(mlx, "--model", model,
-		"--max-tokens", fmt.Sprint(gemmaMaxTokens),
-		"--max-kv-size", fmt.Sprint(gemmaColdMaxKVSize),
-		"--prompt", localrouter.Envelope(prompt)).Output()
-	if err != nil {
-		return fmt.Errorf("gemma generation failed: %w (first run downloads the model — that can take a while)", err)
-	}
-	cleaned := gemmaClean(string(out))
-	if cleaned == "" {
-		return fmt.Errorf("gemma returned no text (model may still be downloading; try again)")
-	}
-	fmt.Println(cleaned)
-	return nil
+	return fmt.Errorf("SNE local inference is not running — start it with `sirsi gemma serve`; Python fallback is retired")
 }
 
 // gemmaResolveModel mirrors the worker: flag > env > ~/.sirsi/gemma-model[-max].conf > fallback.

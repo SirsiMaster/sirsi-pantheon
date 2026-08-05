@@ -1,29 +1,24 @@
 package guard
 
 import (
-	"testing"
-
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"testing"
 )
 
 func TestProcessDisplayName(t *testing.T) {
-	const command = "ps -p 94812 -o args="
 	tests := []struct {
 		name string
 		proc ProcessInfo
-		argv string
 		want string
 	}{
 		{
-			name: "sanctioned MLX broker names the service",
-			proc: ProcessInfo{PID: 94812, Name: "Python"},
-			argv: "/Library/Frameworks/Python Python ~/.sirsi/gemma-capped-server.py --model gemma",
-			want: "Gemma local AI broker",
+			name: "native SNE names the service",
+			proc: ProcessInfo{PID: 94812, Name: "sirsi-inference"},
+			want: "SNE local inference",
 		},
 		{
-			name: "unrelated Python remains honest",
+			name: "Python remains honest",
 			proc: ProcessInfo{PID: 94812, Name: "Python"},
-			argv: "/usr/bin/python3 build_docs.py",
 			want: "Python",
 		},
 		{
@@ -34,7 +29,7 @@ func TestProcessDisplayName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &platform.Mock{NameStr: "mock", CommandResults: map[string]string{command: tt.argv}}
+			m := &platform.Mock{NameStr: "mock"}
 			if got := processDisplayName(m, tt.proc); got != tt.want {
 				t.Fatalf("processDisplayName() = %q, want %q", got, tt.want)
 			}

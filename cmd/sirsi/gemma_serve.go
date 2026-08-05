@@ -28,7 +28,9 @@ import (
 // hits one warm model instead of cold-reloading ~12 GB per call on a single thread.
 // macOS truth: MLX runs on the GPU (not the ANE); the 40-core GPU is the right home.
 
-const gemmaServerDefaultPort = 8765
+// SNE owns local inference on the portfolio-standard OpenAI-compatible socket.
+// The retired Python mlx_lm broker used 8765.
+const gemmaServerDefaultPort = 8477
 
 // gemmaPromptCacheSlots is how many DISTINCT prompt-prefix KV caches the broker
 // retains (mlx_lm.server --prompt-cache-size). Pantheon's router alternates
@@ -133,7 +135,19 @@ func runGemmaServe(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	default:
-		return gemmaServerStart(home)
+		// SNE is the only production inference server. setup installs launchd's
+		// ai.sirsi.gemma-broker label directly against the Go binary; this command
+		// only asks that durable supervisor to start it. Never fall back to the
+		// historical Python mlx_lm launcher.
+		if setup.GemmaBrokerInstalled() {
+			kickCtx, cancelKick := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancelKick()
+			if err := exec.CommandContext(kickCtx, "launchctl", "kickstart", fmt.Sprintf("gui/%d/%s", os.Getuid(), setup.GemmaBrokerLabel)).Run(); err != nil {
+				return fmt.Errorf("starting SNE through launchd: %w", err)
+			}
+			return gemmaAwaitWarm(home)
+		}
+		return fmt.Errorf("SNE is not installed — run `sirsi setup`; Python inference fallback is retired")
 	}
 }
 
