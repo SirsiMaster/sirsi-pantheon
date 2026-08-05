@@ -54,7 +54,9 @@ left for the operator to disambiguate in agents.json.
 			return err
 		}
 		// Reap dead-PID threads first so "already registered" reflects reality.
-		reapDeadPIDThreads(routerRoot)
+		if _, reapErr := reapDeadPIDThreads(routerRoot); reapErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: OS-truth sweep incomplete (discover may show stale actives): %v\n", reapErr)
+		}
 		threads, err := router.LoadThreadRegistry(routerRoot)
 		if err != nil {
 			return err
