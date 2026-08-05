@@ -1668,6 +1668,16 @@ and left unmerged — never the child first.
 
 # Pre-July Session Decisions (hook payloads + duplicate router snapshots stripped):
 
+# 2026-08-05: SNE-52 Universal Task Ledger schema v7 implementation
+#   Implemented the ADR-054 Part B contract on codex/router-unification-store-v7:
+#   one additive v4→v7 migration with explicit migration targets (v5/v6 stay
+#   reserved), legacy commissioning backfill, all drill-down fields, a single
+#   shared 4h derived-liveness constant, evidence-gated pass state, governed
+#   charter/stage updates, deduped typed links, JSON timeline replacement, and
+#   atomic additive task-owned token/duration counters. Added CLI flags and
+#   v4 migration/default/liveness/governance/accounting tests. `go test ./...`,
+#   `go test -race ./internal/routerstore`, and `git diff --check` pass.
+
 # 2026-06-10: Flagship train landed (19 PRs to main) + 2 governance fixes. (claude-pantheon source-edit;
 #   claude-home binding reviewer while codex OOO.) Merged: A28 registry-trust (#24 per-resume-mint fix +
 #   ADR-029 worktrees, #25/#29/#30), Rails A/B/C (#19/#22/#18), UX pains (#26 TCC .app bundle, #27 fsnotify
