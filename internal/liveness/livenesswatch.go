@@ -49,6 +49,58 @@ const StartInterval = 900
 // (not const) so tests can shrink it to exercise the timeout/retry path fast.
 var probeTimeout = 30 * time.Second
 
+// minWeightedRSSKB is the RSS floor (in KB) below which a running broker is
+// treated as weightless — no model loaded onto the GPU. Any serious gemma model
+// (even the smallest 2B variant) maps several GB of weights; a process under
+// this floor cannot be serving real inference regardless of what /health says.
+// Set to 1 GB (1,048,576 KB) — conservative, never false-positive on a loaded
+// model, catches the "broker up, weights deleted" class that a generation probe
+// alone cannot distinguish from "broker wedged for another reason."
+const minWeightedRSSKB = 1 * 1024 * 1024 // 1 GB in KB
+
+// brokerRSSFn reads the RSS (in KB) of the gemma broker process. Returns 0 if
+// the PID file is absent or the process cannot be queried. Injectable (A16/A21)
+// so tests can stub it without a live process.
+var (
+	brokerRSSMu sync.RWMutex
+	brokerRSSFn = defaultBrokerRSS
+)
+
+func getBrokerRSSFn() func(pidFile string) int64 {
+	brokerRSSMu.RLock()
+	defer brokerRSSMu.RUnlock()
+	return brokerRSSFn
+}
+
+func setBrokerRSSFn(fn func(pidFile string) int64) {
+	brokerRSSMu.Lock()
+	defer brokerRSSMu.Unlock()
+	brokerRSSFn = fn
+}
+
+// defaultBrokerRSS reads the PID from pidFile and returns the process RSS in KB
+// via `ps -o rss=`. Returns 0 on any error — fail-open (never falsely reap a
+// live broker because the PID file is missing or ps is unavailable).
+func defaultBrokerRSS(pidFile string) int64 {
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		return 0
+	}
+	pid := strings.TrimSpace(string(raw))
+	if pid == "" {
+		return 0
+	}
+	out, err := exec.Command("ps", "-o", "rss=", "-p", pid).Output()
+	if err != nil {
+		return 0
+	}
+	rss, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return rss
+}
+
 // PlistPath is where the LaunchAgent is written (per-user).
 func PlistPath() string {
 	home, _ := os.UserHomeDir()
@@ -318,6 +370,22 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	if err != nil || port == 0 {
 		return GemmaDown, "port file unreadable"
 	}
+
+	// RSS floor: a broker whose resident set is below 1 GB cannot have model
+	// weights loaded — any serious gemma model maps several GB onto the GPU.
+	// This catches the "weightless broker" class (RSS ~99 MB, /health ok, zero
+	// generation capacity) that a restart cannot fix when the HF cache is absent.
+	// Fail-open: if the PID file is missing or ps fails, rss==0 and we skip the
+	// floor check rather than falsely classifying a healthy broker as weightless.
+	pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
+	if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
+		return GemmaWedged, fmt.Sprintf(
+			"broker RSS %d MB is below the %d MB weight floor — model weights likely absent; "+
+				"a restart will not fix this (check HF model cache and re-download weights)",
+			rss/1024, minWeightedRSSKB/1024,
+		)
+	}
+
 	model := resolveModel(home)
 	status, detail, timedOut := probeGemmaAttempt(port, model)
 	if timedOut {
@@ -404,9 +472,12 @@ func probeGemmaAttempt(port int, model string) (GemmaStatus, string, bool) {
 func probeGemma(home string) Finding {
 	f := Finding{Check: "gemma-broker", Fixable: true,
 		Title: "liveness-watch: gemma broker wedged",
-		Body: "The launchd liveness watch generated against the warm gemma broker and it did not answer " +
-			"(no port, connection error, non-200, zero tokens produced, or >30s). The broker is the Tier-0 substrate " +
-			"the router/reconcile/gemma-builder depend on. The router's gemma-liveness duty auto-restores it " +
+		Body: "The launchd liveness watch found the warm gemma broker unresponsive " +
+			"(no port, connection error, non-200, zero tokens produced, >30s, or RSS below the 1 GB weight floor). " +
+			"The broker is the Tier-0 substrate the router/reconcile/gemma-builder depend on. " +
+			"If the detail says 'weights likely absent': the HF model cache was deleted — a restart will NOT fix this; " +
+			"re-download the model weights first (`huggingface-cli download <model>`). " +
+			"Otherwise the router's gemma-liveness duty auto-restores it " +
 			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
 			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
 	status, detail := ProbeGemmaState(home)
