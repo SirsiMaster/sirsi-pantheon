@@ -240,7 +240,12 @@ func runPermanentDelete(preview, confirm *systray.MenuItem, store *notify.Store)
 			preview.Enable()
 		}()
 
-		n, sz := trashInfo()
+		n, sz, trashErr := trashInfo()
+		if trashErr != nil {
+			recordNotify(store, "Permanent Delete", "check", notify.SeverityError, "cannot read Trash", trashErr.Error())
+			confirm.Hide()
+			return
+		}
 		if n == 0 {
 			recordNotify(store, "Permanent Delete", "check", notify.SeverityInfo, "Trash is empty — nothing to delete", "")
 			confirm.Hide()
@@ -347,15 +352,18 @@ func runPermanentDeleteApply(confirm *systray.MenuItem, store *notify.Store) {
 }
 
 // trashInfo returns the item count and total byte size of ~/.Trash, skipping
-// .DS_Store. Returns 0,0 on any error.
-func trashInfo() (items int, size int64) {
-	home, err := os.UserHomeDir()
-	if err != nil {
+// .DS_Store. Returns a non-nil error if the directory cannot be read (distinct
+// from an empty Trash, which returns 0, 0, nil).
+func trashInfo() (items int, size int64, err error) {
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		err = homeErr
 		return
 	}
 	trashDir := filepath.Join(home, ".Trash")
-	entries, err := os.ReadDir(trashDir)
-	if err != nil {
+	entries, rdErr := os.ReadDir(trashDir)
+	if rdErr != nil {
+		err = rdErr
 		return
 	}
 	for _, e := range entries {
