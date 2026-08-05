@@ -91,6 +91,20 @@ border-left:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);border-ri
 font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 .stat-value{font-size:16px;color:%s;font-weight:400}
 .stat-sub{font-size:10px;color:var(--dim);margin-top:2px}
+/* Only tiles that actually go somewhere get a pointer and a chevron. A readout
+   that looks clickable and isn't is worse than one that plainly isn't. */
+.stat-go{cursor:pointer}
+.stat-go:hover{background:color-mix(in srgb, var(--gold) 7%%, transparent)}
+.stat-go:focus-visible{outline:1px solid var(--gold);outline-offset:-1px}
+.stat-go .stat-label::after{content:' \203A';color:var(--gold);opacity:.6}
+
+/* Clickable command rows (home screen) */
+.t-cmd{display:flex;gap:14px;cursor:pointer;padding:2px 8px;margin:0 -8px;border-radius:3px}
+.t-cmd:hover,.t-cmd:focus-visible{background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:none}
+.t-cmd-name{color:var(--ink2);min-width:96px;flex-shrink:0}
+.t-cmd-desc{color:var(--dim)}
+.t-cmd:hover .t-cmd-name,.t-cmd:focus-visible .t-cmd-name{color:var(--gold)}
+.t-cmd:hover .t-cmd-desc,.t-cmd:focus-visible .t-cmd-desc{color:var(--ink2)}
 
 /* Terminal */
 .terminal-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -154,7 +168,8 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 
 <!-- Stats bar -->
 <div class="stats-bar">
- <div class="stat"><div class="stat-label">RAM</div>
+ <div class="stat stat-go" data-cmd="guard" tabindex="0" role="button"
+  title="Open Guard — the view that explains memory pressure and can act on it"><div class="stat-label">RAM</div>
   <div class="stat-value" id="ram-val">—</div>
   <div class="stat-sub" id="ram-label"></div></div>
  <div class="stat"><div class="stat-label">Git</div>
@@ -163,7 +178,8 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
  <div class="stat"><div class="stat-label">Deities</div>
   <div class="stat-value" id="deity-val">0</div>
   <div class="stat-sub" id="deity-label"></div></div>
- <div class="stat"><div class="stat-label">Platform</div>
+ <div class="stat stat-go" data-cmd="hardware" tabindex="0" role="button"
+  title="Run hardware detection — CPU / GPU / ANE"><div class="stat-label">Platform</div>
   <div class="stat-value" id="accel-val">—</div>
   <div class="stat-sub" id="accel-label"></div></div>
 </div>
@@ -228,16 +244,16 @@ window.switchView=function(view){
 function viewHome(){
  out('𓂀 Horus — Local Workstation Monitor','t-gold');
  out('');
- out('  scan        Scan for infrastructure waste + ghost remnants','t-dim');
- out('  ghosts      Hunt dead application residuals','t-dim');
- out('  guard       System health, process slayer','t-dim');
- out('  doctor      Full diagnostic health check','t-dim');
- out('  network     Network security audit','t-dim');
- out('  hardware    CPU/GPU/ANE detection','t-dim');
- out('  quality     Code governance audit','t-dim');
- out('  dedup       Find duplicate files','t-dim');
+ cmdRow('scan','Scan for infrastructure waste + ghost remnants');
+ cmdRow('ghosts','Hunt dead application residuals');
+ cmdRow('guard','System health, process slayer');
+ cmdRow('doctor','Full diagnostic health check');
+ cmdRow('network','Network security audit');
+ cmdRow('hardware','CPU/GPU/ANE detection');
+ cmdRow('quality','Code governance audit');
+ cmdRow('dedup','Find duplicate files');
  out('');
- out('Type a command or click a sidebar item.','t-dim');
+ out('Click any command above, or type it. The sidebar switches views.','t-dim');
 }
 
 function viewScan(){
@@ -369,11 +385,19 @@ function viewGhosts(){
 function viewGuard(){
  out('🛡 Guard — System Monitor','t-gold');
  out('');out('Running diagnostics...','t-dim');
+ /* Lowercase keys only — /api/doctor marshals guard.DoctorReport through its
+    json tags (score/findings/check/severity/message). This block used to read
+    the Go field names instead, so the score rendered "undefined/100" and the
+    findings list fell through ||[] and silently discarded EVERY diagnostic:
+    16 real findings shown as none, on the one screen whose whole job is to
+    tell you something is wrong. Pinned by TestGuardView_ReadsDoctorJSONKeys… */
  fetch('/api/doctor').then(r=>r.json()).then(function(rpt){
-  out('  Health Score: '+rpt.Score+'/100','t-head');sep();
-  (rpt.Findings||[]).forEach(function(f){
-   const icon=({0:'✅',1:'ℹ️',2:'⚠️',3:'🔴'}[f.Severity]||'⚪');
-   out('  '+icon+' '+f.Check+' — '+f.Message)});
+  out('  Health Score: '+rpt.score+'/100','t-head');sep();
+  const fs=rpt.findings||[];
+  if(!fs.length){out('  No diagnostics returned.','t-dim')}
+  fs.forEach(function(f){
+   const icon=({0:'✅',1:'ℹ️',2:'⚠️',3:'🔴'}[f.severity]||'⚪');
+   out('  '+icon+' '+f.check+' — '+f.message)});
   sep();out('');
   out('Process Slayer — type: kill node | kill electron | kill docker | kill lsp | kill build | kill ai','t-dim');
   out('Deprioritize — type: deprioritize (safe, reversible — lowers background process priority)','t-dim');
@@ -422,10 +446,16 @@ function viewRa(){
 
 /* ── Command input ────────────────────────────────────── */
 const input=document.getElementById('term-input');
+
+/* Typing Enter and clicking an affordance both land here. Keeping ONE dispatch
+   means a clickable row can never drift from what the typed word does. */
 input.addEventListener('keydown',function(e){
  if(e.key!=='Enter')return;
  const raw=this.value.trim();this.value='';if(!raw)return;
+ exec(raw);
+});
 
+function exec(raw){
  /* Built-in commands */
  if(raw==='clear'){clear();return}
  if(raw==='home'){switchView('home');return}
@@ -511,7 +541,40 @@ input.addEventListener('keydown',function(e){
  fetch('/api/run?cmd='+key,{method:'POST'}).then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error)});
  }).catch(function(e){out('✗ '+e.message,'t-err');running=false});
+}
+
+/* A terminal line that runs its own command when clicked. The home screen used
+   to print these as inert text, so the only way to act on a listed capability
+   was to retype it by hand — the surface named eight things it could do and
+   afforded none of them. */
+function cmdRow(cmd,desc){
+ const row=document.createElement('div');
+ row.className='t-line t-cmd';
+ row.tabIndex=0;row.setAttribute('role','button');
+ const name=document.createElement('span');name.className='t-cmd-name';name.textContent=cmd;
+ const d=document.createElement('span');d.className='t-cmd-desc';d.textContent=desc;
+ row.appendChild(name);row.appendChild(d);
+ const go=function(){input.value='';exec(cmd)};
+ row.addEventListener('click',go);
+ row.addEventListener('keydown',function(e){
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}});
+ T.appendChild(row);T.scrollTop=T.scrollHeight;
+}
+
+/* Stat tiles that map to a real destination act like the command they stand
+   for. Git and Deities have no view to open, so they stay plain readouts —
+   deliberately, rather than half-wiring every tile. */
+document.querySelectorAll('.stat-go').forEach(function(tile){
+ const go=function(){exec(tile.dataset.cmd)};
+ tile.addEventListener('click',go);
+ tile.addEventListener('keydown',function(e){
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}});
 });
+
+/* Land ready to type. Without this the first keystroke goes nowhere and the
+   page reads as inert. */
+input.focus();
+window.addEventListener('focus',function(){input.focus()});
 
 /* ── SSE ──────────────────────────────────────────────── */
 if(typeof EventSource!=='undefined'){
