@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-08-02T22:17:29-04:00
+# Last updated: 2026-08-05T17:30:00-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -20,6 +20,11 @@ android_app: android/ (Jetpack Compose, 9 screens, nav drawer, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
 ## Current UI State
+# 2026-08-05: SNE-52 ledger schema v7 implementation is active on
+# codex/router-unification-store-v7. The v4→v7 additive migration, derived
+# four-hour liveness, governed stage/test/charter fields, append-deduped links,
+# task-owned monotonic accounting, and CLI update flags are implemented. Full
+# Go suite and routerstore race tests pass; completion proof/review remain.
 # 2026-07-21: Pantheon menubar keeps its gold identity and semantic amber health
 # signals. Home's evidence, automation, deity-row, and footer typography has
 # explicit 13–17pt floors (15pt semibold row titles); the full popover uses Large

@@ -19,6 +19,9 @@ var (
 	ledgerStaleAfter                                                                                 time.Duration
 	taskAddSubject, taskAddStatus, taskAddPhase, taskAddResponsible, taskAddBlockedBy                string
 	taskUpdateSubject, taskUpdateStatus, taskUpdatePhase, taskUpdateResponsible, taskUpdateBlockedBy string
+	taskUpdateCharter, taskUpdateOutline, taskUpdateTimeline, taskUpdateTestState, taskUpdateStage   string
+	taskUpdateLinks                                                                                  []string
+	taskUpdateAddTokens, taskUpdateAddSeconds                                                        int64
 )
 
 var routerLedgerCmd = &cobra.Command{
@@ -129,12 +132,51 @@ var routerTaskUpdateCmd = &cobra.Command{
 		u := routerstore.TaskUpdate{Subject: taskUpdateSubject, Status: taskUpdateStatus, Phase: taskUpdatePhase, ResponsibleParty: taskUpdateResponsible}
 		u.BlockedBySet = cmd.Flags().Changed("blocked-by")
 		u.BlockedBy = taskUpdateBlockedBy
+		u.CharterSet = cmd.Flags().Changed("charter")
+		u.Charter = taskUpdateCharter
+		u.OutlineSet = cmd.Flags().Changed("outline")
+		if u.OutlineSet {
+			u.Outline, err = readTaskFile(taskUpdateOutline)
+			if err != nil {
+				return err
+			}
+		}
+		u.TimelineSet = cmd.Flags().Changed("timeline")
+		if u.TimelineSet {
+			body, readErr := readTaskFile(taskUpdateTimeline)
+			if readErr != nil {
+				return readErr
+			}
+			if err = json.Unmarshal([]byte(body), &u.Timeline); err != nil {
+				return fmt.Errorf("--timeline: %w", err)
+			}
+		}
+		for _, raw := range taskUpdateLinks {
+			parts := strings.SplitN(raw, ":", 3)
+			if len(parts) != 3 {
+				return fmt.Errorf("--link must be kind:label:url")
+			}
+			u.Links = append(u.Links, routerstore.TaskLink{Kind: parts[0], Label: parts[1], URL: parts[2]})
+		}
+		u.TestState, u.Stage = taskUpdateTestState, taskUpdateStage
+		u.AddTokens, u.AddSeconds = taskUpdateAddTokens, taskUpdateAddSeconds
 		t, err := f.Store().UpdateTask(args[0], args[1], u)
 		if err == nil {
 			fmt.Printf("  Updated task %s/%s → %s\n", t.Agent, t.TaskID, t.Status)
 		}
 		return err
 	},
+}
+
+func readTaskFile(value string) (string, error) {
+	if !strings.HasPrefix(value, "@") || len(value) == 1 {
+		return "", fmt.Errorf("value must use @file syntax")
+	}
+	body, err := os.ReadFile(strings.TrimPrefix(value, "@"))
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 var routerTaskListCmd = &cobra.Command{
@@ -205,6 +247,14 @@ func init() {
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdatePhase, "phase", "", "Plain-English phase group for Ledger Board")
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateResponsible, "responsible-party", "", "self|codex|owner|agent id")
 	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateBlockedBy, "blocked-by", "", "Dependency task id; empty clears")
+	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateCharter, "charter", "", "Task charter")
+	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateOutline, "outline", "", "Formal outline as @file")
+	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateTimeline, "timeline", "", "Timeline JSON array as @file")
+	routerTaskUpdateCmd.Flags().StringArrayVar(&taskUpdateLinks, "link", nil, "Append kind:label:url (repeatable)")
+	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateTestState, "test-state", "", "untested|tested|passed|failed")
+	routerTaskUpdateCmd.Flags().StringVar(&taskUpdateStage, "stage", "", "spec|build|review|verify|shipped")
+	routerTaskUpdateCmd.Flags().Int64Var(&taskUpdateAddTokens, "add-tokens", 0, "Add output tokens to the task cost center")
+	routerTaskUpdateCmd.Flags().Int64Var(&taskUpdateAddSeconds, "add-seconds", 0, "Add active-work seconds to the task cost center")
 	routerTaskListCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
 	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
