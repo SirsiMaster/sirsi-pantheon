@@ -17,6 +17,11 @@
 #
 # Usage:  scripts/bind/sirsi-bind.sh <pr-number> [--repo owner/name] [--body "verdict"|@file]
 #                                    [--request-changes]
+#                                    [--override-pr <n> --override-finding "text"|@file]
+#
+# A34 (PANTHEON_RULES.md 2.31): a bind MUST NOT record APPROVE while any reviewer's most
+# recent verdict on this PR is CHANGES_REQUESTED. --override-pr/--override-finding is the
+# explicit owner-override escape hatch (A34 clause b) — it must name THIS pr and the finding.
 set -euo pipefail
 
 APP_ID_FILE="${SIRSI_BIND_APP_ID_FILE:-$HOME/.sirsi/bind-app.id}"
@@ -25,11 +30,23 @@ REPO="SirsiMaster/sirsi-pantheon"
 BODY="Independent bind recorded by the sirsi-bind identity (ADR-041)."
 PR=""
 EVENT="APPROVE"
+OVERRIDE_PR=""
+OVERRIDE_FINDING=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="$2"; shift 2 ;;
     --request-changes) EVENT="REQUEST_CHANGES"; shift ;;
+    --override-pr) OVERRIDE_PR="$2"; shift 2 ;;
+    --override-finding)
+      if [ "${2#@}" != "$2" ]; then
+        _of="${2#@}"
+        [ -r "$_of" ] || { echo "sirsi-bind: --override-finding @$_of is not readable" >&2; exit 2; }
+        OVERRIDE_FINDING="$(cat "$_of")"
+      else
+        OVERRIDE_FINDING="$2"
+      fi
+      shift 2 ;;
     --body)
       # @file support, matching `sirsi router send/close --instructions/--result`
       # and `gh --body-file`.
@@ -49,7 +66,7 @@ while [ $# -gt 0 ]; do
         BODY="$2"
       fi
       shift 2 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) PR="$1"; shift ;;
   esac
 done
@@ -108,6 +125,37 @@ TOKEN=$(gh api -X POST -H "Authorization: Bearer $JWT" \
 
 HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')
 AUTHOR=$(gh api "repos/$REPO/pulls/$PR" --jq '.user.login')
+
+# A34 fail-closed: refuse to record APPROVE while any reviewer's most recent
+# verdict on this PR is CHANGES_REQUESTED. "Most recent per reviewer" mirrors
+# GitHub's own semantics — a rejection stands until THAT reviewer submits a new
+# review, new commits alone do not clear it (PANTHEON_RULES.md 2.31, clause a).
+# A different reviewer resolving someone else's finding is a judgment call this
+# script cannot make; that path requires the explicit --override flags (clause b).
+if [ "$EVENT" = "APPROVE" ]; then
+  BLOCKING=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+    --jq '[.[] | select(.user.login != "sirsi-bind[bot]") | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED")]
+          | group_by(.user.login) | map(max_by(.submitted_at))
+          | map(select(.state == "CHANGES_REQUESTED")) | .[0].user.login // empty') || {
+    echo "✗ could not read PR #$PR reviews — failing closed, refusing to bind APPROVE." >&2
+    exit 6
+  }
+  if [ -n "$BLOCKING" ]; then
+    if [ "$OVERRIDE_PR" = "$PR" ] && [ -n "$OVERRIDE_FINDING" ]; then
+      BODY="$BODY
+
+A34 owner override recorded: PR #$PR, finding cleared: $OVERRIDE_FINDING"
+      echo "  A34 override: $BLOCKING's CHANGES_REQUESTED on PR #$PR overridden by owner." >&2
+    else
+      cat >&2 <<EOF
+✗ A34 fail-closed: $BLOCKING's most recent review on PR #$PR is CHANGES_REQUESTED — refusing to
+  record APPROVE. Clear it with a new review from $BLOCKING, or pass
+  --override-pr $PR --override-finding "<text>|@file" (explicit owner override, PANTHEON_RULES.md 2.31).
+EOF
+      exit 6
+    fi
+  fi
+fi
 
 # Pin the review to the head SHA the binder actually reviewed. The gate re-checks
 # this; a later push drops the bind rather than inheriting it.
