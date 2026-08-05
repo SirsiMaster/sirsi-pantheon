@@ -1,4 +1,4 @@
-# ADR-054 — SNE Licensing, Anubis/Ra Product Seam, and Disclosure Posture
+# ADR-055 — SNE Licensing, Anubis/Ra Product Seam, and Disclosure Posture
 
 **Status:** Accepted  
 **Date:** 2026-08-03  
@@ -95,7 +95,7 @@ outward numbers. Prior claims-package language is superseded.
 - **Distribution**: open Anubis is the free distribution channel — gets the
   engine in front of every Apple silicon enthusiast; Ra adds fleet management
   on top.
-- **ADR-INDEX updated**: ADR-054 added; next available becomes ADR-055.
+- **ADR-INDEX updated**: ADR-055 added; next available becomes ADR-055.
 
 ---
 
@@ -111,4 +111,4 @@ Refs: ANUBIS_RULES.md §2.2 (Rule A1 — safety, no engine source crosses),
 ANUBIS_RULES.md (Rule A33 — humble claims law);
 sirsi-inference/docs/adr/ADR-002-sne-licensing-disclosure-posture.md;
 docs/CLAIMS-TABLE-DRAFT-A33.md; docs/REPRODUCTION.md
-Changelog: v0.9.1 — ADR-054 SNE licensing and Anubis/Ra seam canon landed (renumbered from ADR-051; collision with #449)
+Changelog: v0.9.1 — ADR-055 SNE licensing and Anubis/Ra seam canon landed (renumbered from ADR-051; collision with #449)
