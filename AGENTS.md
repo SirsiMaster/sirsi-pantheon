@@ -1,5 +1,13 @@
 # PANTHEON_RULES.md
 
+## Sirsi Portfolio Manifesto
+
+Before non-trivial work, read `$HOME/Development/SIRSI_MANIFESTO.md` (workspace-root-relative;
+see `docs/WORKSPACE_PATH_CONVENTION.md` for gate-script resolution). It governs Pantheon's
+portfolio role, Mac-first product and surface strategy, relationship to
+Nexus/Hypergraph/SNE/I/O, product-design standard, public presentation, and integrated
+completion. Pantheon-local canon governs mechanisms and must be amended where it conflicts.
+
 ## Development Workspace Router Law
 
 This repo inherits the workspace-wide agent law at `/Users/thekryptodragon/Development/AGENTS.md`.
