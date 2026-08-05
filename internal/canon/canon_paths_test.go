@@ -95,3 +95,45 @@ func TestCanonSyncedCopiesAgreeOnSection4(t *testing.T) {
 		}
 	}
 }
+
+// ruleHeading matches a rule DEFINITION heading (not a citation inside prose).
+var ruleHeading = regexp.MustCompile(`^### (2\.[0-9]+) .*\(Rule (A[0-9]+)\)`)
+
+// TestNoDuplicateRuleNumbers is the guard for the collision class that has now
+// bitten this repo twice.
+//
+// §2.26 / Rule A29 was held by BOTH "Orchestration Brain" and "Scope The Check
+// To The Claim". An agent resolving a citation to "A29" got whichever it found
+// first — and a careful agent resolving by number is exactly the one that gets
+// it wrong. The first instance of this class was the Rule 14/17 collision (PR
+// #491), where every Ra-deployed agent was handed written permission to
+// override "Do No Harm" because a markdown list ordinal had been written as a
+// rule tag.
+//
+// Citations inside prose are fine and expected (A22's text legitimately cites
+// A17). Only DEFINITIONS must be unique, which is why this matches headings.
+func TestNoDuplicateRuleNumbers(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("../..", "PANTHEON_RULES.md"))
+	if err != nil {
+		t.Fatalf("read canon: %v", err)
+	}
+	sections := map[string]string{}
+	rules := map[string]string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		m := ruleHeading.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		sec, rule := m[1], m[2]
+		if prev, dup := sections[sec]; dup {
+			t.Errorf("section §%s defined twice: %q and %q — a citation by section number is ambiguous", sec, prev, line)
+		}
+		if prev, dup := rules[rule]; dup {
+			t.Errorf("Rule %s defined twice: %q and %q — an agent resolving this citation gets whichever it finds first", rule, prev, line)
+		}
+		sections[sec], rules[rule] = line, line
+	}
+	if len(rules) < 25 {
+		t.Fatalf("only found %d rule definitions; the heading parser has drifted and this guard is no longer checking what it claims to", len(rules))
+	}
+}

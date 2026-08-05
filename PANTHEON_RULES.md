@@ -460,7 +460,16 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 ---
 
-### 2.26 Scope The Check To The Claim (Rule A29)
+### 2.32 Scope The Check To The Claim (Rule A35)
+> **Renumbered 2026-08-05.** This rule shipped as §2.26 / Rule A29 — numbers
+> already held by §2.26 Orchestration Brain (Rule A29). Two different rules
+> answered to the same citation, so an agent resolving "A29" got whichever it
+> happened to find first. That is the Rule 14/17 collision again (see PR #491,
+> where every Ra-deployed agent was told to override "Do No Harm" because a
+> list ordinal was written as a rule tag). Orchestration Brain keeps A29 — it is
+> older and carries ~32 references against this rule's ~9. **Older citations of
+> "A29" that mean scope-the-check refer to THIS rule; both numbers are load-
+> bearing in the archive, so neither is silently rewritten.**
 > Established July 27, 2026, after a single day in which five independent defects — three found by codex, two by claude-home — turned out to be the same shape.
 
 **Rule**: A check, guard, cap, probe or status MUST be scoped to the full extent of the claim it makes. If it cannot cover the claim, it MUST narrow the claim instead. A check narrower than its claim is worse than no check: it converts an unknown risk into a false assurance, and nobody re-examines a thing that reads fine.
