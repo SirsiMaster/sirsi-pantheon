@@ -33,37 +33,61 @@ func isFactual(word string) bool {
 	if word == "" {
 		return false
 	}
-	hasDigit := strings.ContainsAny(word, "0123456789")
+	// EVERY digit-bearing token is factual. There is no small-integer
+	// exemption: an invented "48" or "99" is a fabricated measurement no
+	// matter how few characters it takes to write. The earlier exemption went
+	// unnoticed because its test used "4", which happened to be present in the
+	// grounding — the case proved nothing about the exemption it justified.
+	if strings.ContainsAny(word, "0123456789") {
+		return true
+	}
 	// Separators strictly inside the word — a trailing period is punctuation.
-	inner := strings.Trim(word, "./_-")
-	hasStructure := strings.ContainsAny(inner, "./_-")
-
-	if !hasDigit && !hasStructure {
-		return false
-	}
-	// Bare small integers ("4 problems", "one of 3") are counting words the
-	// model may legitimately compute. They carry no identity and cannot be
-	// pasted into a shell.
-	if hasDigit && !hasStructure && len(word) <= 2 {
-		return false
-	}
-	return true
+	return strings.ContainsAny(strings.Trim(word, "./_-"), "./_-")
 }
 
-// unverifiableTokens returns the factual-looking words in summary that do not
-// appear verbatim in the grounding text.
+// normalizeToken strips surrounding punctuation and case so grounding and
+// summary are tokenized the same way. Both sides MUST go through this, or a
+// comparison is really a comparison of two different tokenizations.
+func normalizeToken(word string) string {
+	return strings.ToLower(strings.Trim(word, ".,;:!?()[]{}\"'"))
+}
+
+func groundingTokens(grounding string) map[string]bool {
+	set := make(map[string]bool)
+	for _, w := range strings.Fields(grounding) {
+		if t := normalizeToken(w); t != "" {
+			set[t] = true
+		}
+	}
+	return set
+}
+
+// unverifiableTokens returns the factual words in summary that are not present
+// in the grounding as WHOLE tokens.
+//
+// Whole-token equality, not substring containment — ruled by codex-pantheon on
+// PR #494. Substring matching let `sne-server-macos` pass against a report that
+// says `sne-server-macos-arm64`: a truncated identifier is precisely the class
+// this gate exists to withhold, and the exact value is already rendered in the
+// selected finding directly beneath the summary. There is no legitimate need
+// for a partial identifier, because the prompt tells the model not to restate
+// identifiers at all.
 func unverifiableTokens(summary, grounding string) []string {
-	lowerGround := strings.ToLower(grounding)
+	set := groundingTokens(grounding)
 	var bad []string
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, raw := range strings.Fields(summary) {
-		t := strings.Trim(raw, ".,;:!?()[]\"'")
-		if !isFactual(t) || seen[t] {
+		key := normalizeToken(raw)
+		if !isFactual(key) || seen[key] {
 			continue
 		}
-		seen[t] = true
-		if !strings.Contains(lowerGround, strings.ToLower(t)) {
-			bad = append(bad, t)
+		seen[key] = true
+		if !set[key] {
+			// Report the token AS THE MODEL WROTE IT. Echoing the normalized
+			// form back would show the operator a lowercased identifier that
+			// nothing actually produced — a small lie inside the message whose
+			// entire job is to flag a lie.
+			bad = append(bad, strings.Trim(raw, ".,;:!?()[]{}\"'"))
 		}
 	}
 	return bad

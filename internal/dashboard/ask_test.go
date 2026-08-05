@@ -103,8 +103,30 @@ Diagnostic findings:
 			summary: "Some services will not come back after a restart.",
 		},
 		{
-			name:    "small counting integers are allowed",
+			// A number that IS in the grounding passes. The old test used only
+			// this case to justify a small-integer exemption — but "4" is
+			// present here, so it never exercised the exemption at all.
+			name:    "integer present in the grounding passes",
 			summary: "There are 4 problems worth your attention.",
+		},
+		{
+			// The hole that exemption left: an invented small number was never
+			// checked. A fabricated measurement is fabricated at any length.
+			name:    "invented bare integers are caught",
+			summary: "Memory hit 48 and swap hit 99.",
+			wantBad: []string{"48", "99"},
+		},
+		{
+			// Whole-token equality, not substring. This truncation is exactly
+			// the class the gate exists to withhold — the exact value is
+			// rendered in the selected finding directly beneath the summary.
+			name:    "truncated identifier is caught even though it is a substring",
+			summary: "The hog is sne-server-macos.",
+			wantBad: []string{"sne-server-macos"},
+		},
+		{
+			name:    "exact identifier passes",
+			summary: "The hog is sne-server-macos-arm64.",
 		},
 	}
 	for _, tt := range tests {
