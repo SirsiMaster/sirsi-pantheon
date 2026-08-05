@@ -113,7 +113,7 @@ var routerTaskAddCmd = &cobra.Command{
 			return err
 		}
 		defer f.Close()
-		err = f.Store().AddTask(routerstore.Task{Agent: args[0], TaskID: args[1], Subject: taskAddSubject, Status: taskAddStatus, Phase: taskAddPhase, ResponsibleParty: taskAddResponsible, BlockedBy: taskAddBlockedBy})
+		err = f.AddTask(routerstore.Task{Agent: args[0], TaskID: args[1], Subject: taskAddSubject, Status: taskAddStatus, Phase: taskAddPhase, ResponsibleParty: taskAddResponsible, BlockedBy: taskAddBlockedBy})
 		if err == nil {
 			fmt.Printf("  Added task %s/%s\n", args[0], args[1])
 		}
@@ -160,7 +160,7 @@ var routerTaskUpdateCmd = &cobra.Command{
 		}
 		u.TestState, u.Stage = taskUpdateTestState, taskUpdateStage
 		u.AddTokens, u.AddSeconds = taskUpdateAddTokens, taskUpdateAddSeconds
-		t, err := f.Store().UpdateTask(args[0], args[1], u)
+		t, err := f.UpdateTask(args[0], args[1], u)
 		if err == nil {
 			fmt.Printf("  Updated task %s/%s → %s\n", t.Agent, t.TaskID, t.Status)
 		}

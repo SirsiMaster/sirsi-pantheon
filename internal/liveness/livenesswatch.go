@@ -198,7 +198,7 @@ type Finding struct {
 	Body    string // routed instructions when !OK && Fixable
 }
 
-// Run performs the liveness checks and routes ONE non-duplicate item to `user`
+// Run performs the liveness checks and routes ONE non-duplicate item to owner
 // for the worst current owner-fixable blocker. routerRoot is the idea-router
 // root (…/.agents/idea-router). Read-and-route only — never kills a process.
 func Run(routerRoot string, w io.Writer) error {
@@ -254,7 +254,7 @@ func Run(routerRoot string, w io.Writer) error {
 		fmt.Fprintf(w, "route          skip    already open: %q\n", worst.Title)
 		return nil
 	}
-	res, err := f.Send("liveness-watch", recipient, worst.Title, "decision", worst.Body)
+	res, err := f.Send("horus", recipient, worst.Title, "decision", worst.Body)
 	if err != nil {
 		return fmt.Errorf("route blocker: %w", err)
 	}
@@ -271,7 +271,7 @@ func recipientFor(check string) string {
 	case "gemma-broker", "memory-death", "session-leak", "menubar", "launchd-disabled":
 		return "claude-pantheon"
 	default:
-		return "user"
+		return "owner"
 	}
 }
 

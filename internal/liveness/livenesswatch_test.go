@@ -247,7 +247,9 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 	t.Helper()
 	registry := `{
 		"agents": {
-			"claude-pantheon": {"type": "claude", "command": ["true"], "cwd": "/tmp"}
+			"horus": {"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},
+			"owner": {"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}},
+			"claude-pantheon": {"id":"claude-pantheon","type":"claude","cwd":"/tmp","workstream":"pantheon","wake":{"mechanism":"launchagent"}}
 		}
 	}`
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
@@ -325,8 +327,8 @@ func TestRecipientFor(t *testing.T) {
 			t.Errorf("recipientFor(%q) = %q, want claude-pantheon", c, got)
 		}
 	}
-	if got := recipientFor("some-future-owner-only-condition"); got != "user" {
-		t.Errorf("unclassified condition = %q, want user (fail-safe to owner)", got)
+	if got := recipientFor("some-future-owner-only-condition"); got != "owner" {
+		t.Errorf("unclassified condition = %q, want owner (fail-safe to owner)", got)
 	}
 }
 

@@ -283,8 +283,8 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	}
 	t.TokensConsumed += u.AddTokens
 	t.DurationSeconds += u.AddSeconds
-	if err := validateTask(t); err != nil {
-		return Task{}, err
+	if validationErr := validateTask(t); validationErr != nil {
+		return Task{}, validationErr
 	}
 	t.Updated = s.clock().UTC().Format(time.RFC3339)
 	timeline, err := json.Marshal(t.Timeline)
