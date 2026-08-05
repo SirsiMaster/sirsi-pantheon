@@ -121,15 +121,23 @@ func (t *Thread) IsInboxConsumer() bool {
 	if t.ConsumerCapable {
 		return true
 	}
+	// ALLOW-LIST, not a deny-list. The earlier shape credited every surface
+	// except four named observers, so `automation`, `resident-loop`, `mcp`,
+	// `api`, `webhook`, `vscode`, `jetbrains`, `cursor`, `gemini`, `gemma`,
+	// `qwen` — and any surface spelling invented after this line was written —
+	// became armed by default without ever declaring a consumer contract.
+	//
+	// That is the same false-green-by-default class this whole change exists to
+	// remove: a thread credited as draining an inbox it cannot drain suppresses
+	// its own rescue in WakePass. A new surface must now EARN the credit via
+	// ConsumerCapable rather than inherit it by not being on a list someone
+	// remembered to update (codex-pantheon, PR #389).
 	switch t.Surface {
-	case surfaceWorker, surfaceMenubar, surfaceTUI, surfaceMacApp:
-		// Observer/worker surfaces must EARN it via ConsumerCapable.
-		return false
-	case "":
-		return false
-	default:
-		// A live agent-session surface works its own inbox.
+	case surfaceClaude, surfaceCodex:
+		// Real agent sessions: a live one works its own inbox.
 		return true
+	default:
+		return false
 	}
 }
 

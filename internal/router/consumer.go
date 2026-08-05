@@ -156,6 +156,22 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 		env = append(env, k+"="+v)
 	}
 
+	// A declared cwd that does not exist is WORSE than no consumer at all.
+	// RunWakeLoop would persist ConsumerCapable=true, every cmd.Start would fail
+	// on the invalid directory, and WakePass would then suppress rescue because
+	// the worker reads armed — an inbox stranded behind a consumer that can
+	// never start (codex-pantheon, PR #389). Refusing here keeps the loop
+	// watch-only and UNARMED, which is the honest state.
+	if cfg.Cwd != "" {
+		info, err := os.Stat(cfg.Cwd)
+		if err != nil {
+			return nil, fmt.Sprintf("consumer cwd %q is not usable: %v", cfg.Cwd, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Sprintf("consumer cwd %q is not a directory", cfg.Cwd)
+		}
+	}
+
 	return &ResolvedConsumer{Argv: argv, Env: env, Cwd: cfg.Cwd}, ""
 }
 

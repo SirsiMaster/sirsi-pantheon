@@ -131,3 +131,43 @@ func TestRegistryConsumerCoverage(t *testing.T) {
 func containsEither(s, a, b string) bool {
 	return strings.Contains(s, a) || strings.Contains(s, b)
 }
+
+// The consumer prompt IS the contract handed to a spawned agent. It previously
+// ended "If the inbox is empty, exit immediately and do nothing else", which
+// contradicts the owner's standing permanent-loop instruction: an empty inbox
+// alone is never completion — reconcile the task registry and work the ledger
+// before stopping. A prompt that tells the agent to quit early makes the whole
+// dispatch mechanism finish less work than it should.
+func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
+	// Read the COMMITTED registry from disk, same as the sibling guards: the
+	// value being protected is the file that ships, not a fixture of it.
+	raw, err := os.ReadFile("../../.agents/idea-router/agents.json")
+	if err != nil {
+		t.Fatalf("read agent registry: %v", err)
+	}
+	var reg Registry
+	if err := json.Unmarshal(raw, &reg); err != nil {
+		t.Fatalf("parse agent registry: %v", err)
+	}
+	required := []string{
+		"ledger",         // work the ledger, not just the inbox
+		"task",           // reconcile the task registry
+		"pull again",     // it is a loop
+		"NOT COMPLETION", // the explicit correction of the old behavior
+		"EVIDENCE",       // never a bare ack
+	}
+	for id, cfg := range reg.Agents {
+		p := cfg.Consumer.Prompt
+		if p == "" {
+			continue // resident consumers carry no prompt
+		}
+		if strings.Contains(p, "exit immediately and do nothing else") {
+			t.Errorf("%s: prompt still tells the agent to quit on an empty inbox", id)
+		}
+		for _, want := range required {
+			if !strings.Contains(p, want) {
+				t.Errorf("%s: prompt omits %q — the permanent-loop contract is incomplete", id, want)
+			}
+		}
+	}
+}

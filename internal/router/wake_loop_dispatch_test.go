@@ -113,14 +113,18 @@ func TestDispatchedConsumerReceivesRouterContract(t *testing.T) {
 
 func TestCodexConsumerCarriesStoreAccessAndInboxContract(t *testing.T) {
 	root := t.TempDir()
+	// A REAL directory: ResolveConsumer now refuses a cwd that cannot work, so
+	// the old fictional "/repo" would be rejected before the argv assertions
+	// this test actually cares about.
+	repo := t.TempDir()
 	cfg := AgentConfig{
 		ID:   "codex-pantheon",
 		Type: "codex",
-		Cwd:  "/repo",
+		Cwd:  repo,
 		Consumer: ConsumerConfig{
 			Command: []string{
 				"sh", "-c", "true", // stand-in for codex exec in this unit test
-				"-C", "/repo",
+				"-C", repo,
 				"--sandbox", "workspace-write",
 				"--add-dir", "/Users/thekryptodragon/.sirsi",
 			},
@@ -453,4 +457,67 @@ func TestResidentConsumerLoopArmsWithoutSpawning(t *testing.T) {
 		t.Fatal("resident consumer did not arm the worker thread")
 	}
 	_ = script // prove the test would have a child payload if the loop used one
+}
+
+// Every registered surface constant, plus spellings that do not exist yet.
+// The allow-list must be exhaustive by construction: a surface invented after
+// this file was written defaults to NOT-a-consumer, so it can never be credited
+// as draining an inbox it has no contract to drain.
+func TestIsInboxConsumer_AllowListCoversEverySurface(t *testing.T) {
+	consumers := map[string]bool{surfaceClaude: true, surfaceCodex: true}
+
+	all := []string{
+		surfaceClaude, surfaceCodex, surfaceMCP, surfaceAPI, surfaceWebhook,
+		surfaceWorker, surfaceMenubar, surfaceTUI, surfaceVSCode,
+		surfaceJetBrains, surfaceCursor, surfaceMacApp,
+		// Not constants here, but real spellings seen in the wild and in the
+		// review that produced this test.
+		"automation", "resident-loop", "gemini", "gemma", "qwen",
+		// The case that matters most: something nobody has thought of yet.
+		"surface-invented-next-year", "",
+	}
+	for _, s := range all {
+		got := (&Thread{Surface: s}).IsInboxConsumer()
+		if want := consumers[s]; got != want {
+			t.Errorf("surface %q IsInboxConsumer() = %v, want %v — only real agent sessions may be credited by surface alone", s, got, want)
+		}
+	}
+
+	// ConsumerCapable is the ONLY way a non-session surface earns the credit.
+	if !(&Thread{Surface: surfaceWorker, ConsumerCapable: true}).IsInboxConsumer() {
+		t.Error("an explicitly ConsumerCapable worker must count as a consumer")
+	}
+}
+
+// A declared cwd that cannot work must refuse resolution outright. Accepting it
+// would persist ConsumerCapable=true on a loop whose every cmd.Start fails,
+// and WakePass would then skip the agent as armed — stranding the inbox.
+func TestResolveConsumer_RefusesUnusableCwd(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct{ name, cwd string }{
+		{"missing directory", filepath.Join(t.TempDir(), "does-not-exist")},
+		{"cwd is a file", file},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := AgentConfig{
+				ID: "a", Type: "claude", Cwd: tc.cwd,
+				Consumer: ConsumerConfig{
+					Command: []string{"sh", "-c", "true"},
+					Prompt:  "pull " + consumerAgentPlaceholder,
+				},
+			}
+			rc, why := ResolveConsumer(cfg, root)
+			if rc != nil {
+				t.Fatalf("resolved a consumer with unusable cwd %q — the loop would arm and never start", tc.cwd)
+			}
+			if why == "" {
+				t.Error("refusal carried no reason; the log is the only place this surfaces")
+			}
+		})
+	}
 }
