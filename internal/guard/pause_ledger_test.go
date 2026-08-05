@@ -114,3 +114,60 @@ func TestCheckPauseLedger_CountsLabels(t *testing.T) {
 		t.Errorf("message = %q, want it to report %q (blank lines must not count)", f.Message, want)
 	}
 }
+
+// A stat failure that is NOT "does not exist" is unknown evidence. Reporting OK
+// there would be the same defect this check exists to catch, one level up: a
+// surface claiming health it could not measure.
+func TestCheckPauseLedger_UninspectableIsNotAbsence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Make the parent directory untraversable so Stat on the child fails with
+	// EACCES rather than ENOENT.
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	var r DoctorReport
+	checkPauseLedger(&platform.Mock{}, &r)
+
+	f, ok := findFinding(&r, "Agent Pause Ledger")
+	if !ok {
+		t.Fatal("no finding produced")
+	}
+	if f.Severity == SeverityOK {
+		t.Errorf("severity = OK for an UNINSPECTABLE ledger — permission denial is not absence")
+	}
+	if !strings.Contains(f.Message, "Cannot determine") {
+		t.Errorf("message = %q, want it to say the state is undetermined", f.Message)
+	}
+}
+
+// An existing-but-unreadable ledger must not render as a measured zero.
+func TestCheckPauseLedger_UnreadableIsNotZero(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root — mode bits do not deny access")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := writeLedger(t, home, 5*24*time.Hour, "ai.sirsi.gemma-broker")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+
+	var r DoctorReport
+	checkPauseLedger(&platform.Mock{}, &r)
+
+	f, _ := findFinding(&r, "Agent Pause Ledger")
+	if strings.Contains(f.Message, "0 agent(s)") {
+		t.Errorf("message = %q — an unreadable ledger became a measured zero", f.Message)
+	}
+	if !strings.Contains(f.Message, "unknown number") {
+		t.Errorf("message = %q, want it to admit the count is unknown", f.Message)
+	}
+}

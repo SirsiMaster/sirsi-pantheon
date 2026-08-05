@@ -1555,22 +1555,44 @@ func checkPauseLedger(p platform.Platform, report *DoctorReport) {
 	path := filepath.Join(home, pauseLedgerPath)
 	info, err := os.Stat(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			report.Findings = append(report.Findings, DiagnosticFinding{
+				Check:    "Agent Pause Ledger",
+				Severity: SeverityOK,
+				Message:  "No leftover agent pause ledger — nothing is recorded as paused",
+			})
+			return
+		}
+		// Permission denial or I/O failure is UNKNOWN EVIDENCE, not absence.
+		// Reporting green here would be the same defect this check exists to
+		// catch, one level up: a surface claiming health it could not measure.
 		report.Findings = append(report.Findings, DiagnosticFinding{
 			Check:    "Agent Pause Ledger",
-			Severity: SeverityOK,
-			Message:  "No leftover agent pause ledger — nothing is recorded as paused",
+			Severity: SeverityWarn,
+			Message:  "Cannot determine whether agents are paused — the ledger could not be inspected",
+			Detail: fmt.Sprintf("Ledger: %s\ninspect failed: %v\n"+
+				"This is not the same as 'no ledger'. Until it can be read, treat pause state as unknown:\n"+
+				"  ls -l %s", path, err, path),
 		})
 		return
 	}
 
 	age := time.Since(info.ModTime())
-	labels := 0
+	// A read failure must not become a measured zero. "0 agent(s) recorded as
+	// paused" for a ledger that exists but cannot be read is a fabricated
+	// number, and the operator would read it as harmless.
+	labels := -1
 	if data, readErr := os.ReadFile(path); readErr == nil { //nolint:gosec // fixed path under $HOME
+		labels = 0
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.TrimSpace(line) != "" {
 				labels++
 			}
 		}
+	}
+	countPhrase := fmt.Sprintf("%d agent(s)", labels)
+	if labels < 0 {
+		countPhrase = "An unknown number of agents (ledger exists but is unreadable)"
 	}
 
 	sev := SeverityWarn
@@ -1580,8 +1602,8 @@ func checkPauseLedger(p platform.Platform, report *DoctorReport) {
 	report.Findings = append(report.Findings, DiagnosticFinding{
 		Check:    "Agent Pause Ledger",
 		Severity: sev,
-		Message: fmt.Sprintf("%d agent(s) recorded as paused %s ago and never resumed",
-			labels, formatAge(age)),
+		Message: fmt.Sprintf("%s recorded as paused %s ago and never resumed",
+			countPhrase, formatAge(age)),
 		Detail: fmt.Sprintf(
 			"Ledger: %s (written %s)\n"+
 				"`quiet.sh pause` boots out AND disables every agent it records here; `resume` is what removes this file.\n"+
