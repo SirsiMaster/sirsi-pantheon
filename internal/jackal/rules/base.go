@@ -83,6 +83,14 @@ func (r *baseScanRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jac
 				continue
 			}
 
+			// Never surface a path that holds a running engine's model
+			// substrate. The cleaner refuses to delete it either way, but a
+			// finding the user cannot act on is noise — and one presented as
+			// reclaimable space is a lie about 20 GB they must not touch.
+			if _, hit := cleaner.ConflictsWithLiveModel(match); hit {
+				continue
+			}
+
 			// Get file info — use Horus Exists for quick check, then Lstat for age.
 			// Age filtering still needs real stat (manifest doesn't store modtime).
 			info, err := os.Lstat(match)

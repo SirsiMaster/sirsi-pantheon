@@ -110,6 +110,12 @@ func TestValidatePath_AllowedPaths(t *testing.T) {
 }
 
 func TestValidatePath_EdgeCases(t *testing.T) {
+	// Pin HOME to an empty tree. ValidatePath consults the installed launchd
+	// jobs for live model substrate, so without this the outcome depends on
+	// whether the developer's own machine happens to be serving a model —
+	// green on CI, red on a workstation with SNE installed.
+	t.Setenv("HOME", t.TempDir())
+
 	tests := []struct {
 		name      string
 		path      string

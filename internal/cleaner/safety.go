@@ -101,6 +101,14 @@ func ValidatePath(path string) error {
 // single absolute path. ValidatePath applies it to both the lexical path and the
 // symlink-resolved real target.
 func checkProtected(absPath string) error {
+	// Live model substrate — a running SNE service has this directory open.
+	// Checked here rather than in each caller because ValidatePath is the one
+	// gate every delete path (DeleteFile, DeleteFileReversible, CleanFile)
+	// already funnels through.
+	if live, hit := ConflictsWithLiveModel(absPath); hit {
+		return fmt.Errorf("BLOCKED: %q holds the live model substrate %q used by a running Sirsi engine", absPath, live)
+	}
+
 	// Check platform-specific protected prefixes
 	for _, prefix := range platform.Current().ProtectedPrefixes() {
 		if strings.HasPrefix(absPath, prefix) {
