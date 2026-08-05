@@ -88,7 +88,7 @@ func init() {
 type ctrResult struct {
 	Repo          string                 `json:"repo"`
 	Scope         string                 `json:"scope,omitempty"` // agent id when scoped
-	GeneratedAt   string                 `json:"generated_at"`    // RFC3339 UTC; stamps the serialisation boundary
+	GeneratedAt   string                 `json:"generated_at"`    // RFC3339 UTC; stamps the serialization boundary
 	PendingTotal  int                    `json:"pending_total"`
 	AgentsPending int                    `json:"agents_pending"`
 	LiveThreads   int                    `json:"live_threads"`
