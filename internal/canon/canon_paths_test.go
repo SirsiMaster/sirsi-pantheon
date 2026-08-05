@@ -137,3 +137,45 @@ func TestNoDuplicateRuleNumbers(t *testing.T) {
 		t.Fatalf("only found %d rule definitions; the heading parser has drifted and this guard is no longer checking what it claims to", len(rules))
 	}
 }
+
+// TestSyncedCopiesDefineTheSameRules is the guard for a divergence nobody was
+// checking: canon declares PANTHEON_RULES.md "synced to GEMINI.md and
+// CLAUDE.md", and §4 was in fact identical across all three — but Rule A35
+// (Scope The Check To The Claim) existed ONLY in the canonical file. Every
+// agent reading CLAUDE.md had never seen it.
+//
+// §4 agreement was not enough to catch that, which is itself the A35 failure
+// shape: a check narrower than its claim. "The copies are synced" is a claim
+// about the whole document; comparing one section is not that check.
+func TestSyncedCopiesDefineTheSameRules(t *testing.T) {
+	rules := func(name string) map[string]bool {
+		raw, err := os.ReadFile(filepath.Join("../..", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		out := map[string]bool{}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if m := ruleHeading.FindStringSubmatch(line); m != nil {
+				out[m[2]] = true
+			}
+		}
+		return out
+	}
+	want := rules("PANTHEON_RULES.md")
+	if len(want) < 25 {
+		t.Fatalf("only found %d rules in canon; the parser has drifted", len(want))
+	}
+	for _, copyName := range []string{"CLAUDE.md", "GEMINI.md"} {
+		got := rules(copyName)
+		for r := range want {
+			if !got[r] {
+				t.Errorf("%s is missing Rule %s — an agent reading this file never sees that rule", copyName, r)
+			}
+		}
+		for r := range got {
+			if !want[r] {
+				t.Errorf("%s defines Rule %s which canon does not — the copy has diverged forward", copyName, r)
+			}
+		}
+	}
+}
