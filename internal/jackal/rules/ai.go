@@ -26,8 +26,13 @@ func NewHuggingFaceCacheRule() jackal.ScanRule {
 			category:    jackal.CategoryAI,
 			description: "Cold HuggingFace Hub model weights (unused 30+ days, no runtime pin)",
 			platforms:   []string{"darwin", "linux"},
-			paths:       []string{"~/.cache/huggingface/hub"},
-			minAgeDays:  aiCacheMinAgeDays,
+			// One finding per model repo, not one for the whole hub. The hub
+			// directory is an ancestor of every snapshot a local engine serves
+			// from, so at hub granularity a single live model suppresses the
+			// entire rule — per-repo findings keep the cold models reportable
+			// while only the served one drops out.
+			paths:      []string{"~/.cache/huggingface/hub/models--*"},
+			minAgeDays: aiCacheMinAgeDays,
 		},
 		envVars: []string{"HF_HOME", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"},
 	}
