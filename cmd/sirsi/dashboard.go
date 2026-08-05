@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -58,6 +60,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			return json.Marshal(snap)
 		},
 		NodeStatusFn: collectDashboardNodeStatus,
+		LedgerFn:     collectDashboardLedger,
 	})
 
 	if err := srv.Start(); err != nil {
@@ -86,6 +89,22 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+// collectDashboardLedger wires GET /api/ledger (A26 Nexus seam) to the
+// same ledger.Build + Summarize pipeline that `sirsi router ledger` uses.
+// Repo root is resolved per request so the endpoint stays correct across
+// repo appears/disappears events.
+func collectDashboardLedger() (ledger.BoardSummary, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return ledger.BoardSummary{}, fmt.Errorf("locate repo root: %w", err)
+	}
+	snap, err := ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter)
+	if err != nil {
+		return ledger.BoardSummary{}, fmt.Errorf("build ledger: %w", err)
+	}
+	return ledger.Summarize(snap), nil
 }
 
 // collectDashboardNodeStatus wires GET /api/node-status (ADR-026) to the
