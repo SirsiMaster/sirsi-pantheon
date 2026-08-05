@@ -12,7 +12,14 @@ import (
 
 // pageShell wraps page-specific content in the shared dashboard layout.
 // activePage is the nav item to highlight (e.g., "/", "/scan", "/guard").
-func pageShell(title, activePage, bodyContent string) string {
+//
+// port is the port the server is ACTUALLY listening on, not the package
+// default. The footer renders it as this node's address, so it has to be the
+// live value: rendering the DashboardPort constant made `--port 8080` serve a
+// working UI that told the operator the node was on 9119. Callers pass
+// s.cfg.Port, which NewServer has already normalized to DashboardPort when
+// unset, so this can never render :0.
+func pageShell(title, activePage, bodyContent string, port int) string {
 	navItems := []struct {
 		Key   string
 		Glyph string
@@ -130,7 +137,7 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 		ColorEmerald, ColorEmerald,
 		ColorBorder, ColorEmerald, ColorWhite,
 		navHTML.String(),
-		DashboardPort,
+		port,
 		bodyContent,
 	)
 }
@@ -528,7 +535,7 @@ viewHome();
 </script>`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, pageShell("Horus", "home", body))
+	fmt.Fprint(w, pageShell("Horus", "home", body, s.cfg.Port))
 }
 
 // ── Page Redirects (all views are SPA now) ─────────────────────────────
