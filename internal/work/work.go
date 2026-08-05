@@ -29,6 +29,7 @@ type Item struct {
 	Closed       string // RFC3339, empty if open
 	Instructions string
 	Result       string
+	BlockedBy    string // optional work-item dependency id; empty means independently actionable
 
 	// Wake-delivery truth (PR#2 wake-or-declare-unavailable). The supervisor/
 	// doctor wake pass records the outcome HERE — in the item itself, not a
@@ -38,6 +39,23 @@ type Item struct {
 	WakeAttemptedAt string // RFC3339, set when an adapter was invoked
 	WakeAdapter     string // the adapter that fired (cli-spawn/api-call/launchagent/...)
 	WakeError       string // why the item is wake-unavailable, when it is
+}
+
+// IsBuildable reports whether this item is a build-shaped work item that a
+// headless build worker (e.g. claude-pantheon) can execute. Items with an
+// explicit type of "decision", "review", or "proposal" have no build artifact
+// by construction; sending them to a build worker causes it to spin for the
+// full timeout with nothing to produce. Items with type "" (plain) or
+// "build"/"task" are build-shaped.
+//
+// ponytail: set-based lookup; add types here if the ADR-024 vocabulary grows.
+func (it Item) IsBuildable() bool {
+	switch strings.ToLower(strings.TrimSpace(it.Type)) {
+	case "decision", "review", "proposal":
+		return false
+	default: // "", "build", "task", anything else that implies actionable work
+		return true
+	}
 }
 
 // WakeAnnotation is the wake-pass outcome written onto an item's frontmatter by
@@ -61,7 +79,11 @@ func slugify(s string) string {
 		s = "untitled"
 	}
 	if len(s) > 60 {
-		s = s[:60]
+		// Re-trim after the cut: truncating mid-word can leave a trailing
+		// hyphen, and `router send` then prints an id the store does not have —
+		// which breaks any consumer that pins the printed id (the conduit race
+		// guard did; claude-home, router item 20260730-225729).
+		s = strings.Trim(s[:60], "-")
 	}
 	return s
 }
@@ -130,6 +152,38 @@ opened: %s
 		return "", err
 	}
 	return id, nil
+}
+
+// SetBlockedBy replaces an item's optional dependency edge. An empty value
+// clears the edge; ledger readers resolve whether the referenced item is done.
+func SetBlockedBy(root, id, blockedBy string) error {
+	path := filepath.Join(itemsDir(root), id+".md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") {
+		return fmt.Errorf("missing frontmatter")
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	if end < 0 {
+		return fmt.Errorf("unterminated frontmatter")
+	}
+	fm := content[4 : 4+end]
+	rest := content[4+end:]
+	lines := strings.Split(fm, "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "blocked_by:") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if blockedBy = strings.TrimSpace(blockedBy); blockedBy != "" {
+		filtered = append(filtered, "blocked_by: "+quoteYAML(blockedBy))
+	}
+	return os.WriteFile(path, []byte("---\n"+strings.Join(filtered, "\n")+rest), 0o644)
 }
 
 // Get loads one item by ID.
@@ -307,6 +361,8 @@ func parse(id, content string) (Item, error) {
 			it.Opened = v
 		case "closed":
 			it.Closed = v
+		case "blocked_by":
+			it.BlockedBy = v
 		case "wake_status":
 			it.WakeStatus = v
 		case "wake_attempted_at":

@@ -16,6 +16,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
@@ -425,6 +426,20 @@ func registerTools(s *Server) {
 			Required: []string{"id"},
 		},
 	}, handleRouterGet)
+
+	s.RegisterTool(Tool{
+		Name:        "router_ledger",
+		Description: "Universal task ledger board: completion %, done/in-review/queued/blocked counts, and blocked-item list. The same board the owner sees in the menubar and TUI. Call without agent for global view.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"agent": {
+					Type:        "string",
+					Description: "Optional: filter to one agent id (e.g. \"claude-pantheon\"). Omit for global.",
+				},
+			},
+		},
+	}, handleRouterLedger)
 }
 
 // handleScanWorkspace runs the Jackal scan engine on a workspace.
@@ -1435,4 +1450,19 @@ func handleRouterGet(args map[string]interface{}) (*ToolResult, error) {
 	sb.WriteString(doc.Content)
 
 	return textResult(sb.String(), false), nil
+}
+
+func handleRouterLedger(args map[string]interface{}) (*ToolResult, error) {
+	agent, _ := args["agent"].(string)
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return textResult(fmt.Sprintf("router_ledger: no .agents/idea-router found: %v", err), true), nil
+	}
+	snap, err := ledger.Build(repoRoot, agent, time.Now().UTC(), ledger.DefaultStaleAfter)
+	if err != nil {
+		return textResult(fmt.Sprintf("router_ledger: %v", err), true), nil
+	}
+	bs := ledger.Summarize(snap)
+	data, _ := json.MarshalIndent(bs, "", "  ")
+	return textResult(bs.TextBoard()+"\nJSON:\n"+string(data), false), nil
 }

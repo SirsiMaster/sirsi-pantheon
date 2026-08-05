@@ -255,6 +255,66 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 	}
 }
 
+// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard.
+// A broker with RSS below 1 GB cannot have model weights loaded — this is the
+// class that /health passes but generation probes see as wedged, and that a
+// restart cannot fix when the HF model cache is absent (2026-08-05 incident).
+// The RSS floor must fire BEFORE the generation probe so the detail message
+// clearly says "weights likely absent" instead of "restore — free memory."
+func TestProbeGemmaState_RSSFloor(t *testing.T) {
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+
+	// Stub a tiny RSS (100 MB — well below the 1 GB floor).
+	const tinyRSSKB = 100 * 1024 // 100 MB
+	setBrokerRSSFn(func(_ string) int64 { return tinyRSSKB })
+
+	// The test server should never be reached — the RSS floor fires first.
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaWedged {
+		t.Errorf("low RSS = %v (%s), want GemmaWedged", got, detail)
+	}
+	if !strings.Contains(detail, "weight floor") {
+		t.Errorf("detail should mention weight floor, got: %s", detail)
+	}
+	if !strings.Contains(detail, "restart will not fix") {
+		t.Errorf("detail should say restart will not fix, got: %s", detail)
+	}
+	if called {
+		t.Error("generation probe should not be called when RSS is below the floor")
+	}
+}
+
+// TestProbeGemmaState_RSSFloor_ZeroSkips verifies that a zero RSS (PID file
+// absent or ps unavailable) does not falsely classify a healthy broker as
+// weightless — fail-open is required (never falsely reap a live broker).
+func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+
+	setBrokerRSSFn(func(_ string) int64 { return 0 }) // pid file absent
+
+	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(healthy))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaHealthy {
+		t.Errorf("zero RSS (pid absent) with healthy server = %v (%s), want GemmaHealthy (fail-open)", got, detail)
+	}
+}
+
 // TestRecipientFor pins the ownership routing: machine-health conditions go to
 // claude-pantheon (which remediates them under A32/ADR-040), unclassified
 // conditions fall through to the owner so nothing is silently misrouted.

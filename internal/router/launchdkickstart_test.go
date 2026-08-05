@@ -84,6 +84,48 @@ func TestKickstartMissingDirIsQuiet(t *testing.T) {
 	}
 }
 
+// TestKickstartDisabledPlusUnloaded verifies the 2026-07-31 fabric-loss class:
+// a label disabled in the override DB AND absent from launchctl list requires
+// enable before bootstrap — bootstrap alone silently fails on a disabled label.
+func TestKickstartDisabledPlusUnloaded(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.disabled-label.plist") // disabled+unloaded → enable then bootstrap
+	writeAgentPlist(t, dir, "ai.sirsi.normal-label.plist")   // not disabled → bootstrap only
+
+	var enabledLabels, bootstrapped []string
+	deps := launchdDeps{
+		listLabels: func() (map[string]bool, error) {
+			return map[string]bool{}, nil // both missing from launchd
+		},
+		disabledLabels: func() (map[string]bool, error) {
+			return map[string]bool{"ai.sirsi.disabled-label": true}, nil
+		},
+		enableLabel: func(domain, label string) error {
+			enabledLabels = append(enabledLabels, label)
+			return nil
+		},
+		bootstrapPlist: func(p string) error {
+			bootstrapped = append(bootstrapped, filepath.Base(p))
+			return nil
+		},
+		uid: func() int { return 501 },
+	}
+	revived, err := KickstartDeadLabels(dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revived) != 2 {
+		t.Fatalf("want 2 revived, got %v", revived)
+	}
+	// Enable must be called for the disabled label, not the normal one.
+	if len(enabledLabels) != 1 || enabledLabels[0] != "ai.sirsi.disabled-label" {
+		t.Errorf("enable called on wrong labels: %v", enabledLabels)
+	}
+	if len(bootstrapped) != 2 {
+		t.Errorf("bootstrap called %d times: %v", len(bootstrapped), bootstrapped)
+	}
+}
+
 func TestHealCollectorDrains(t *testing.T) {
 	drainHeals() // clean slate
 	RecordHeal("one")

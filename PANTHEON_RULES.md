@@ -30,6 +30,20 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | **sirsi-rook** (reserved) | **Database Tool** | Database & storage orchestration |
 | **sirsi-rogue** (reserved) | **Security Tool** | Cybersecurity sweeper |
 
+### Deity Hierarchy (canon — ADR-015, ADR-017, ADR-028)
+
+```
+Ra 𓇶 (Fleet Aggregator — Enterprise SKU)
+ └── aggregates ConduitReports from all Horus instances (internal dev fabric = Ra #1)
+
+Horus 𓂀 (ONE per node — shared node conduit)
+ └── router items + observability = one unified flow → Ra
+ └── per-node singleton: ~/.config/sirsi/horus/conduit.json
+
+Anubis 𓃣 (single-node product = SNE + local Horus)
+ └── SNE (Sirsi Node Engine, profile selected)
+```
+
 ### Internal Modules
 | Module | Codename | Archetype | Role |
 | :--- | :--- | :--- | :--- |
@@ -40,7 +54,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | Resource Optimizer | **Hapi** 🌊 | The Flow | Controls VRAM, GPU memory, and storage flow |
 | Output Filter | **RTK** ⚡ | The Sieve | Strips noise from tool output before it hits AI context |
 | Context Vault | **Vault** 🏛️ | The Keeper | Sandboxes large output in SQLite FTS5, indexes code for BM25 search |
-| Code Graph | **Horus** 𓂀 | The All-Seeing | The all-seeing Local Lord — structural code graph, live file watching, AND the workstation ops dashboard (ADR-015/026) |
+| Node Conduit | **Horus** 𓂀 | The All-Seeing | Per-node singleton conduit; unified router + observability flow → Ra; code graph + ops dashboard capabilities (ADR-028) |
 
 ---
 
@@ -324,7 +338,7 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 ### 2.21 Ra Scope Autonomy (Rule A24)
 > Established April 3, 2026, after 4 Ra-deployed agents blocked indefinitely waiting for sprint plan approval that could never arrive in non-interactive mode.
 
-*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 14 (Sprint Planning is Mandatory).
+*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 17 (Sprint Planning is Mandatory).
 *   **Scope Authoring**: Scopes MUST be written as directive, numbered task lists — not vague descriptions. Each task must name specific files, paths, or concrete actions. Vague scopes cause agents to ask clarifying questions, which hang forever in `--print` mode. See `configs/scopes/README.md` for the full authoring guide.
 *   **Prompt Structure**: The autonomy directive and scope of work are placed at the **top** of the woven prompt and are **never truncated**. Canon context (CLAUDE.md, Thoth memory, ADRs) fills the remaining token budget and may be truncated.
 *   **Permission Model**: Ra agents run with `--dangerously-skip-permissions` because the scope is pre-approved. This flag MUST NOT be used outside of Ra-deployed agents.
@@ -431,6 +445,18 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Overseer role — claude-home/Horus**: the router conduit (claude-home) is the Work Board OVERSEER: its scheduled sweeps read the board, verify the census invariant (zero unregistered agent-class processes), escalate misses as router items, and publish board state to the ambient surfaces. Pantheon owns the primitives; the overseer owns the watching. An overseer sweep that cannot run leaves the supervisor duty as the machine-local backstop — two independent legs, no single point of blindness.
 *   **Reference**: `internal/router/census.go` + `workboard.go`; `sirsi thread census`, `sirsi router workboard`; supervisor duties `thread-census` + the board consumers. Refs: A27, A29, ADR-022, ADR-031.
 
+### 2.31 Bind Directives Cannot Supersede a Live Rejection (Rule A34)
+> Established August 3, 2026. Ratified by claude-home on the recommendation of codex-pantheon (router `20260803-170255`). Root cause: PR #416 merged after a head-pinned `CHANGES_REQUESTED` review was dismissed and replaced by an approval under a standing bind directive; the rejected defect was real and reached `main` (repaired by PR #431).
+
+*   **Rule**: A standing bind directive may **automate an already-positive independent verdict** — turning an existing `APPROVE` on the current head into a merge without re-asking. It MUST NEVER dismiss, override, or supersede a `CHANGES_REQUESTED` review. Blanket authorization to bind is structurally equivalent to hardcoding `event=APPROVE`: a machine-readable approval that can contradict the reviewer's actual verdict is not a verdict, it is a forgery of one.
+*   **Clearing a rejection requires ONE of:**
+    *   **(a) a new head** (new commits) **plus a new independent review** on that head that explicitly resolves the rejected finding; or
+    *   **(b) an explicit owner override** that names the specific PR **and** the specific rejected finding it clears.
+    *   A directive that predates the rejection satisfies neither — it cannot "resolve" a finding it never saw.
+*   **The binder MUST fail closed**: if any review on the current head is `CHANGES_REQUESTED` and neither (a) nor (b) is present, the bind is **refused** and the item **escalates to the owner** (per the conduct runbook — ESCALATE, never act). Absence of evidence that a rejection was cleared is treated as an un-cleared rejection.
+*   **Why this is Scope-The-Check-shaped** (Rule "Scope The Check To The Claim"): "the directive authorizes this bind" *claims* the reviewer approved; its actual *scope* is "the owner once said auto-bind low-risk PRs." Those two differ exactly at a live rejection — the false-assurance gap that rule forbids. A bind is a check on the reviewer's verdict; scoped to its claim, it must read the *current* verdict, not a standing intent.
+*   **Mechanical enforcement**: `scripts/bind/sirsi-bind.sh` and `scripts/router/sirsi-claude-worker.sh`'s bind path query `gh pr view <pr> --json reviews` for the current head SHA before binding. Any `CHANGES_REQUESTED` review on that exact head blocks the bind (`--request-changes`-style refusal) unless a later review on the same head is `APPROVED`, or the caller passes an explicit `--override-pr <n> --override-finding "<text>"` naming both. Fails closed on an API error (treat as unknown = uncleared, never as cleared).
+*   **Custodian**: 𓆄 Ma'at (A17). Refs: A23 (owner is the sole arbiter of overrides), A26 (router handoff), A28 (CI/branch protection is the other half — a bind never merges past a red gate either).
 
 ---
 

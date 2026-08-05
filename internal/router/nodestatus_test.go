@@ -110,6 +110,9 @@ func TestCollectNodeStatus_BasicFields(t *testing.T) {
 	if ns.RouterHome == "" {
 		t.Error("RouterHome is empty")
 	}
+	if ns.GeneratedAt == "" {
+		t.Error("GeneratedAt must be stamped by CollectNodeStatus")
+	}
 	if len(ns.WakeHealth) != 2 {
 		t.Fatalf("WakeHealth = %d, want 2", len(ns.WakeHealth))
 	}

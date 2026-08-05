@@ -86,7 +86,10 @@ func ownedOpenItems(repoRoot, agentID string) []string {
 // entry point for `suspend --self`. Errors if no live thread matches (nothing to
 // suspend).
 func resolveSelfThreadID(routerRoot string) (string, error) {
-	anchor := resolveAnchorPID()
+	anchor, err := resolveAnchorPID("")
+	if err != nil {
+		return "", fmt.Errorf("resolve current session anchor: %w; pass --thread explicitly", err)
+	}
 	host, _ := os.Hostname()
 	reg, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
@@ -281,7 +284,9 @@ suspend/resume always work).`,
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 
 		// Reap dead PIDs first so reaped records reflect OS truth before healing.
-		reapDeadPIDThreads(routerRoot)
+		if _, reapErr := reapDeadPIDThreads(routerRoot); reapErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: OS-truth sweep incomplete (reconcile may see stale actives): %v\n", reapErr)
+		}
 
 		reg, err := router.LoadThreadRegistry(routerRoot)
 		if err != nil {

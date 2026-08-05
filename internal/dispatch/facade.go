@@ -27,12 +27,15 @@ package dispatch
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
@@ -46,6 +49,10 @@ type Facade struct {
 	store *routerstore.Store
 	root  string // <repo>/.agents/idea-router
 }
+
+// Store exposes the shared durable store to sibling read models. Facade.Close
+// remains the owner of the handle; callers must not close it directly.
+func (f *Facade) Store() *routerstore.Store { return f.store }
 
 // Open resolves the repo's router root and the durable store
 // (~/.sirsi/router.db — outside any git tree, PRD /goal #2).
@@ -283,6 +290,21 @@ func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
 	return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
 }
 
+// SetBlockedBy replaces one item's dependency edge on the authoritative store,
+// with the legacy file kept in sync during the pre-cutover dual-write window.
+func (f *Facade) SetBlockedBy(id, blockedBy string) error {
+	if routercfg.StoreWake() {
+		return f.store.SetBlockedBy(id, blockedBy)
+	}
+	if err := work.SetBlockedBy(f.root, id, blockedBy); err == nil {
+		_ = f.store.SetBlockedBy(id, blockedBy)
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("dispatch: set blocked_by on canonical item %s: %w", id, err)
+	}
+	return f.store.SetBlockedBy(id, blockedBy)
+}
+
 // itemFromRow adapts a store row into the file router's work.Item shape — the
 // one conversion every read path shares, so a new column can never be wired
 // into some reads and forgotten in others.
@@ -292,7 +314,7 @@ func itemFromRow(r routerstore.Item) work.Item {
 		Status: r.Status, Opened: r.Opened, Closed: r.Closed,
 		Instructions: r.Instructions, Result: r.Result,
 		WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
-		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError,
+		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError, BlockedBy: r.BlockedBy,
 	}
 }
 
@@ -412,6 +434,34 @@ func (f *Facade) CloseItem(id, result string) error {
 // waiter even when no items/<id>.md exists. Using Inbox here is what lets a
 // `/loop` watcher move off the items/ directory-watch onto the store event
 // wake without stranding at cutover.
+// waitRedeliverAfter bounds the edge-trigger's other direction: a consumer that
+// crashed after delivery (cursor written, items never closed) gets the same
+// inbox REDELIVERED once the cursor is this old, so edge semantics can never
+// strand work forever. One hour keeps redelivery rare without hiding a wedge.
+const waitRedeliverAfter = time.Hour
+
+// Wait blocks until the agent's inbox CHANGES, and delivers each inbox state
+// exactly once.
+//
+// It used to be LEVEL-triggered: any non-empty inbox returned instantly. The
+// documented /loop arming instruction — injected into every session — calls
+// wait in a shell loop, so ONE stuck-open item (owner-gated, tracked, or simply
+// unclosed) turned the loop into a full-speed spin: wait returned the same
+// unchanged inbox thousands of times. Reported independently twice (router
+// items 20260729-225311 and 20260731-182937), and it is the recorded
+// fork-storm class (a `router wait` in `while true` while items are open).
+//
+// Edge semantics via a durable per-agent cursor (a hash of the sorted open item
+// ids, stored under the router root):
+//   - inbox differs from the cursor → deliver it and advance the cursor;
+//     a first-ever wait (no cursor) always delivers, so a consumer arriving to
+//     existing work still sees it — the anti-stranding property that made
+//     level-triggering tempting in the first place;
+//   - inbox unchanged → park on the store FIFO until it changes or the timeout
+//     lapses (returning empty), so a stuck item costs ONE wake per timeout
+//     period instead of a spin;
+//   - cursor older than waitRedeliverAfter → redeliver, so a consumer that
+//     died after delivery cannot strand the inbox on its stale cursor.
 func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) ([]work.Item, error) {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -419,7 +469,8 @@ func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) 
 		if err != nil {
 			return nil, err
 		}
-		if len(items) > 0 {
+		if len(items) > 0 && f.waitCursorDiffers(agent, items) {
+			f.writeWaitCursor(agent, items)
 			return items, nil
 		}
 		remaining := time.Until(deadline)
@@ -434,4 +485,55 @@ func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) 
 			return nil, err
 		}
 	}
+}
+
+func (f *Facade) waitCursorPath(agent string) string {
+	return filepath.Join(f.root, ".wait-cursor-"+sanitizeAgentFile(agent))
+}
+
+// sanitizeAgentFile keeps the cursor filename safe for any agent id.
+func sanitizeAgentFile(agent string) string {
+	var b strings.Builder
+	for _, r := range agent {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
+func inboxHash(items []work.Item) string {
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	sort.Strings(ids)
+	sum := sha256.Sum256([]byte(strings.Join(ids, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+// waitCursorDiffers reports whether this inbox state is NEW relative to the last
+// delivery. Missing/unreadable cursor and stale cursor both answer true — every
+// failure mode falls toward delivery, never toward stranding.
+func (f *Facade) waitCursorDiffers(agent string, items []work.Item) bool {
+	st, err := os.Stat(f.waitCursorPath(agent))
+	if err != nil {
+		return true
+	}
+	if time.Since(st.ModTime()) > waitRedeliverAfter {
+		return true
+	}
+	prev, err := os.ReadFile(f.waitCursorPath(agent))
+	if err != nil {
+		return true
+	}
+	return strings.TrimSpace(string(prev)) != inboxHash(items)
+}
+
+func (f *Facade) writeWaitCursor(agent string, items []work.Item) {
+	// Best-effort: a failed cursor write degrades to level-triggered delivery
+	// (the old behavior), never to stranding.
+	_ = os.WriteFile(f.waitCursorPath(agent), []byte(inboxHash(items)+"\n"), 0o644)
 }

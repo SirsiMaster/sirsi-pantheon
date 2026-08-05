@@ -79,6 +79,9 @@ func renderMarkdown(it Item) string {
 	if it.WakeError != "" {
 		b.WriteString("wake_error: " + quoteYAML(it.WakeError) + "\n")
 	}
+	if it.BlockedBy != "" {
+		b.WriteString("blocked_by: " + quoteYAML(it.BlockedBy) + "\n")
+	}
 	b.WriteString("---\n\n## Instructions\n\n")
 	b.WriteString(strings.TrimSpace(it.Instructions))
 	b.WriteString("\n")

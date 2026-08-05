@@ -96,12 +96,28 @@ func liveWakeAgents(agents []string, launchctlCheck LaunchctlChecker) map[string
 	return live
 }
 
+// noWakeAgents builds the set of agents whose wake mechanism is WakeNone —
+// agents that have explicitly opted out of automatic waking. Pass this to
+// computeStranded so those agents are excluded from the stranded report.
+// Stranding is expected and not actionable for mechanism:none agents; including
+// them only produces noise (the same category error as stranding "user").
+func noWakeAgents(reg *Registry) map[string]bool {
+	out := make(map[string]bool, len(reg.Agents))
+	for id, cfg := range reg.Agents {
+		if cfg.WakeMechanism() == WakeNone {
+			out[id] = true
+		}
+	}
+	return out
+}
+
 // computeStranded returns the agents that have pending items but no watcher
 // consuming them, sorted by descending backlog. Reuses the already-computed
 // PendingByAgent, so it adds no extra item scan. `liveWake` is the set of agents
 // whose launchd wake job is loaded (see liveWakeAgents) — pass nil for
-// registry-only classification.
-func computeStranded(routerRoot string, pendingByAgent map[string][]string, liveWake map[string]bool) []StrandedAgent {
+// registry-only classification. `noWake` is the set of agents with mechanism:none;
+// they are excluded because stranding is expected and not actionable for them.
+func computeStranded(routerRoot string, pendingByAgent map[string][]string, liveWake map[string]bool, noWake map[string]bool) []StrandedAgent {
 	var stranded []StrandedAgent
 	for agent, items := range pendingByAgent {
 		if len(items) == 0 {
@@ -111,6 +127,12 @@ func computeStranded(routerRoot string, pendingByAgent map[string][]string, live
 		// the owner reading the menubar. Telling the owner to "arm a watcher" for
 		// their own inbox is a category error, so `user` is never stranded.
 		if agent == "user" {
+			continue
+		}
+		// Agents with mechanism:none have explicitly declared "do not auto-wake me"
+		// — operator must start them manually. Stranding is expected; no automated
+		// action can resolve it.
+		if noWake[agent] {
 			continue
 		}
 		// Watched = a live consumer: an armed registry thread (a running /loop

@@ -5,6 +5,87 @@
 
 ---
 
+## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
+
+CTR's original registration heuristic assumed a stable process-tree depth: the
+agent runtime would be the caller's parent or grandparent. That assumption made
+live tasks disappear because desktop applications insert a changing number of
+per-turn shells and helpers. Replacing the fixed depth with a simple ancestry
+walk was necessary but still insufficient.
+
+The live Codex proof exposed why. Codex Desktop runs tool commands beneath an
+application-wide `codex` broker (PID 37423), while this task's durable lifetime
+belongs to `codex-code-mode-host` (PID 40821), which is another child of the
+broker. The correct task host is therefore a sibling of the command process,
+not an ancestor. No amount of walking upward can find it. Worse, treating every
+`codex-*` or `claude-*` executable as durable allows wrappers and helpers to
+masquerade as sessions.
+
+Commit `728fefcd` makes one resolver authoritative for registration,
+self-discovery, and self-suspend. It walks past transient processes using exact
+known runtime identities. Under Codex Desktop it recognizes the generic broker,
+selects exactly one `codex-code-mode-host` child, and fails closed when zero or
+multiple hosts make task ownership ambiguous. Other unknown resident surfaces
+must provide `--anchor-pid`; the router no longer converts uncertainty into a
+false liveness claim.
+
+The targeted resolver/thread tests and broader `cmd/sirsi` plus
+`internal/router` suites passed. The candidate binary and the atomically
+installed `~/.local/bin/sirsi` each repeated the decisive live test without an
+explicit anchor and selected PID 40821. The owner-requested quiet-machine rule
+remained intact: the repair and proofs were CPU/process-metadata work only.
+
+## Entry 026 — 2026-08-02 — "A Router Count Is Not a Work Ledger"
+
+The owner identified the operating failure precisely: no single agent memory can
+be trusted to hold the whole portfolio story, while CTR's counts did not explain
+age, dependency, pickup, or responsibility. Under the two-agent quiet regime,
+codex-inference built the Universal Task Ledger without waking the fleet or
+touching GPU work.
+
+The structural decision is separation with one join. Router items remain
+messages and evidence. The durable store now holds explicit task commitments.
+Thread records remain heartbeat and `current_item` truth. `internal/ledger`
+joins those authorities once, and both `router ledger` and CTR project it. A
+fresh heartbeat is deliberately not pickup; an exact current item is. Missing
+and cyclic dependencies deliberately fail closed.
+
+Implementation head `303b404b` (code commit `50838f87`) adds SQLite migration
+v3, lossless `blocked_by`, task add/update/list, item dependency mutation, a
+typed JSON/text ledger, CTR summaries, ADR-050, and three-home human access.
+The complete Go suite, e2e suite, and isolated CLI replay pass. Remote push was
+blocked by the execution environment's export-safety gate, so Claude Nexus is
+reviewing the exact shared local commit rather than a claimed PR. Repository,
+Desktop Reading Room, and a verified native Google Doc all carry the artifact;
+the repository remains canonical.
+
+Claude Nexus subsequently approved exact head `b08bac6d`. Its first live
+integration reconciled the apparent 32-versus-35 discrepancy: 32 was the SNE
+engineering snapshot, while 35 is the current whole-agent registry after three
+later router-grounded obligations. Independent live-store inspection confirmed
+the row totals, responsible parties, and every populated dependency target.
+The integration row is now done; closeout state is 24 done, one in progress,
+seven pending, and three blocked.
+
+First contact also exposed a P1 rollout-order defect. A v3-capable shadow binary
+migrated the shared live database while the canonical installed binary still
+understood only v2. The older binary's refusal was the correct fail-closed
+behavior, but the host router was unavailable until an approved v3 build was
+validated under a new inode and atomically moved into the canonical path. The
+permanent rule is now explicit: install the canonical forward-compatible binary
+before the first live-store open that can migrate schema, and verify every host
+router surface after migration. Code correctness and migration correctness are
+not deployment completeness by themselves.
+
+The owner and integration router items are closed with evidence. Claude
+Pantheon ratification remains intentionally deferred until the owner lifts the
+quiet regime. Remote export remains policy-blocked, so the branch is local and
+no PR is claimed. The other seven inference mailbox items were retired with
+evidence, including source approval of PR #389 exact head `30511038` while
+correctly leaving CI/bind independent.
+
+---
+
 ## Entry 025 — 2026-03-27 12:15 — "The Race Condition That Wouldn't Die"
 
 **Context**: Session 29. P0 was CI green. Lint was the easy part — 22 errors across 10 files, all mechanical fixes. The real boss fight was a data race in the Guard module that survived 4 consecutive fix attempts.

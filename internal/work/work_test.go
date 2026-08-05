@@ -221,3 +221,25 @@ legacy body
 		t.Fatalf("legacy parse broke: %+v", it)
 	}
 }
+
+func TestItemIsBuildable(t *testing.T) {
+	cases := []struct {
+		typ  string
+		want bool
+	}{
+		{"", true},          // plain item — no type means build-shaped
+		{"build", true},     // explicit build
+		{"task", true},      // task is build-shaped
+		{"decision", false}, // decision has no build artifact
+		{"review", false},   // review has no build artifact
+		{"proposal", false}, // proposal has no build artifact
+		{"DECISION", false}, // case-insensitive
+		{"Review", false},   // case-insensitive
+	}
+	for _, c := range cases {
+		it := Item{Type: c.typ}
+		if got := it.IsBuildable(); got != c.want {
+			t.Errorf("IsBuildable() for type=%q = %v, want %v", c.typ, got, c.want)
+		}
+	}
+}

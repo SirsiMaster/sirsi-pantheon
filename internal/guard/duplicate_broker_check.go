@@ -123,13 +123,16 @@ func FindModelBrokers(p platform.Platform) ([]BrokerProc, error) {
 			continue
 		}
 		worst := brokerFootprint(pid)
-		// A broker holding a multi-GB model always has a nonzero footprint. Zero
-		// means the pid was gone (or unreadable) by the time we measured it — a
-		// transient that matched mid-scan, not a resident model. Counting those
-		// produces a phantom duplicate, which is worse than missing one: an alarm
-		// that cries wolf gets the real alarm ignored. Observed while validating
-		// this check: pid 75492 matched at 0.0 GB against a single real broker.
-		if worst == 0 {
+		// A broker holding a resident model is always GB-SCALE. The floor is a
+		// gigabyte, not merely nonzero, for two observed reasons (claude-home,
+		// review of #403): a zero footprint is a transient that matched mid-scan
+		// (pid 75492 at 0.0 GB against one real broker), and a tens-of-MB match
+		// is a CLI wrapper — `sirsi gemma serve --stop`, the sanctioned graceful
+		// stop and the process most likely to be running DURING an incident,
+		// matches the argv pattern but never holds a model. Counting either
+		// produces a phantom duplicate, and an alarm that cries wolf gets the
+		// real alarm ignored.
+		if worst < brokerFootprintFloor {
 			continue
 		}
 		brokers = append(brokers, BrokerProc{PID: pid, Worst: worst, Note: capNote(argv)})
@@ -137,10 +140,22 @@ func FindModelBrokers(p platform.Platform) ([]BrokerProc, error) {
 	return brokers, nil
 }
 
+// brokerFootprintFloor is the smallest footprint that can be a resident model.
+// A 4-bit 3B model is still >1.5 GB resident; no CLI wrapper reaches 1 GB.
+const brokerFootprintFloor = int64(1) << 30
+
 // brokerCommand matches a process that is SERVING a model, however it was
 // started. Deliberately not anchored to gemma-capped-server.py or to the
 // configured port: the orphan matched neither.
-var brokerCommand = regexp.MustCompile(`(?i)(gemma-capped-server|gemma\s+serve|mlx_lm\.server|llama[-_]server|vllm\.entrypoints)`)
+// The list is broad ON PURPOSE and must keep growing: this check exists because
+// a guard that only inspects the thing it launched shares the blind spot of the
+// bug it catches — and this pattern had that same gap one level up. Observed
+// live 2026-08-03: `omlx-server` held a 23.3 GB peak footprint against 18 MB RSS
+// (its whole working set in swap, 90% of the swap file) and matched NOTHING
+// here, so the duplicate-broker check reported a clean machine while an unmanaged
+// model server ate the swap. An enumeration of names is the weakest part of this
+// file; anything that serves a model locally belongs in it.
+var brokerCommand = regexp.MustCompile(`(?i)(sirsi-infer(?:ence)?\s+serve|gemma-capped-server|gemma\s+serve|omlx[-_]?server|mlx[-_]?server|mlx_lm\.server|llama[-_]server|ollama\s+serve|vllm\.entrypoints|text-generation-launcher)`)
 
 // capNote marks a broker that carries no memory ceiling — the more dangerous of
 // a duplicated pair, because nothing bounds it.

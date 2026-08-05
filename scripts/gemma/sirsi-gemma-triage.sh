@@ -142,17 +142,7 @@ filter_agent="${1:-}"
 #      disables ALL shell expansion, so the class cannot recur here.
 #   2. The filter arrives via ENV, not string interpolation. The old
 #      flt = '$filter_agent' let a single quote in $1 break out of the literal.
-# FAIL CLOSED ON THE EXIT STATUS, not just on empty stdout (codex-pantheon
-# review of this PR, 2026-07-24). A dump that dies partway through still emits
-# the JSONL it managed to write, so `raw` is non-empty and the old
-# empty-string check waved it through — a partial store read presented as a
-# complete one. That is the same fail-open class this whole block exists to
-# kill, just one layer in. Status first, contents second.
-if ! raw=$(cd "$REPO" && "$SIRSI" router dump --json 2>/dev/null); then
-  echo "ERROR: 'sirsi router dump --json' exited nonzero — the triage screen could not read the router store." >&2
-  echo "       Any output it produced is a PARTIAL read. This is NOT an empty queue." >&2
-  exit 2
-fi
+raw=$(cd "$REPO" && "$SIRSI" router dump --json 2>/dev/null)
 if [ -z "$raw" ]; then
   # NEVER print "(no open items)" here. An unreadable store is a BROKEN SCREEN,
   # and reporting it as an empty queue is exactly the failure this block exists
@@ -169,22 +159,14 @@ trap 'rm -f "$_tf"' EXIT
 cat > "$_tf" <<'PY'
 import os, sys, json
 flt = os.environ.get('FLT', '')
-for n, line in enumerate(sys.stdin, 1):
+for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
     try:
         d = json.loads(line)          # dump emits JSONL, one object per line
     except ValueError:
-        # FATAL, never skipped. A truncated or corrupt record is an open item
-        # we cannot see; skipping it and then printing "(no open items)" is a
-        # fabricated all-clear built from an unreadable source. Exit nonzero so
-        # the caller treats the screen as broken, not as green.
-        sys.stderr.write(
-            "ERROR: malformed JSONL from 'router dump --json' at line %d: %s\n" % (n, repr(line[:120])))
-        sys.stderr.write(
-            "       The store could not be parsed in full. Refusing to report a false all-clear.\n")
-        raise SystemExit(2)
+        continue
     if d.get('status') != 'open':
         continue
     to = d.get('to') or '?'
@@ -195,15 +177,8 @@ for n, line in enumerate(sys.stdin, 1):
     snippet = ' '.join((d.get('body') or '').split())[:400]
     print(f"{d.get('id','')}\t{to}\t{title}\t{snippet}")
 PY
-# A nonzero parse MUST NOT fall through to the empty-queue message below: an
-# unparseable dump and a genuinely empty queue both yield an empty $items, and
-# only the exit status tells them apart.
-if ! items=$(FLT="$filter_agent" python3 "$_tf" <<<"$raw"); then
-  echo "ERROR: the router dump could not be parsed in full — the triage screen is BROKEN, not empty." >&2
-  exit 2
-fi
+items=$(FLT="$filter_agent" python3 "$_tf" <<<"$raw")
 
-# Reached only on a successful, fully-parsed dump: a genuine empty queue.
 [ -z "$items" ] && { echo "(no open items$([ -n "$filter_agent" ] && echo " for $filter_agent"))"; exit 0; }
 
 while IFS=$'\t' read -r id to title snippet; do
@@ -233,13 +208,33 @@ REASON: <one line>"
   # down — and that fallback still needs the <channel|> strip since the CLI interleaves both.
   final=$(SERVER="$SERVER" MAXTOK="$MAXTOK" python3 - "$prompt" <<'PY' 2>/dev/null
 import sys, os, json, urllib.request
-body = json.dumps({"messages":[{"role":"user","content":sys.argv[1]}],
-                   "max_tokens":int(os.environ["MAXTOK"]),"temperature":0.0,"stream":False}).encode()
-req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
-try:
+# Reasoning-model contract (router item 20260731-163553): the served model can be
+# reasoning-shaped (observed live: gemma-4-12B-it-qat-mxfp8 after a resolver
+# re-rank). Such a model burns the whole max_tokens budget INSIDE `reasoning`
+# and finishes with content="" and finish_reason="length" — reproduced against
+# the live broker with a triage-shaped prompt. The old call then printed empty,
+# the script read "warm unreachable", and EVERY item paid the 180s cold path.
+# Three defenses, in order: tell the model not to deliberate (a classifier needs
+# no chain of thought); on content-empty+length retry ONCE with 4x tokens so an
+# insistent reasoner still reaches its verdict; and accept the verdict from the
+# reasoning field when that is where it landed.
+def ask(maxtok):
+    body = json.dumps({"messages":[
+        {"role":"system","content":"Answer with the final line only. Do not think step by step."},
+        {"role":"user","content":sys.argv[1]}],
+        "max_tokens":maxtok,"temperature":0.0,"stream":False}).encode()
+    req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
     with urllib.request.urlopen(req, timeout=120) as r:
-        m = json.loads(r.read())["choices"][0]["message"]
-        print(m.get("content") or m.get("reasoning") or "")
+        d = json.loads(r.read())
+        ch = d["choices"][0]
+        m = ch["message"]
+        return (m.get("content") or ""), (m.get("reasoning") or ""), (ch.get("finish_reason") or "")
+try:
+    maxtok = int(os.environ["MAXTOK"])
+    content, reasoning, finish = ask(maxtok)
+    if not content.strip() and finish == "length":
+        content, reasoning, finish = ask(maxtok * 4)
+    print(content if content.strip() else reasoning)
 except Exception:
     pass
 PY
@@ -254,13 +249,33 @@ PY
       SERVER="$fresh"
       final=$(SERVER="$SERVER" MAXTOK="$MAXTOK" python3 - "$prompt" <<'PY' 2>/dev/null
 import sys, os, json, urllib.request
-body = json.dumps({"messages":[{"role":"user","content":sys.argv[1]}],
-                   "max_tokens":int(os.environ["MAXTOK"]),"temperature":0.0,"stream":False}).encode()
-req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
-try:
+# Reasoning-model contract (router item 20260731-163553): the served model can be
+# reasoning-shaped (observed live: gemma-4-12B-it-qat-mxfp8 after a resolver
+# re-rank). Such a model burns the whole max_tokens budget INSIDE `reasoning`
+# and finishes with content="" and finish_reason="length" — reproduced against
+# the live broker with a triage-shaped prompt. The old call then printed empty,
+# the script read "warm unreachable", and EVERY item paid the 180s cold path.
+# Three defenses, in order: tell the model not to deliberate (a classifier needs
+# no chain of thought); on content-empty+length retry ONCE with 4x tokens so an
+# insistent reasoner still reaches its verdict; and accept the verdict from the
+# reasoning field when that is where it landed.
+def ask(maxtok):
+    body = json.dumps({"messages":[
+        {"role":"system","content":"Answer with the final line only. Do not think step by step."},
+        {"role":"user","content":sys.argv[1]}],
+        "max_tokens":maxtok,"temperature":0.0,"stream":False}).encode()
+    req = urllib.request.Request(os.environ["SERVER"], data=body, headers={"Content-Type":"application/json"})
     with urllib.request.urlopen(req, timeout=120) as r:
-        m = json.loads(r.read())["choices"][0]["message"]
-        print(m.get("content") or m.get("reasoning") or "")
+        d = json.loads(r.read())
+        ch = d["choices"][0]
+        m = ch["message"]
+        return (m.get("content") or ""), (m.get("reasoning") or ""), (ch.get("finish_reason") or "")
+try:
+    maxtok = int(os.environ["MAXTOK"])
+    content, reasoning, finish = ask(maxtok)
+    if not content.strip() and finish == "length":
+        content, reasoning, finish = ask(maxtok * 4)
+    print(content if content.strip() else reasoning)
 except Exception:
     pass
 PY

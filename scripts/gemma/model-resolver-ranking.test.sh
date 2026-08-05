@@ -23,7 +23,7 @@ run_rank() { # $1=budget  $2=json payload  [$3=resident model] → prints winnin
   # stdin itself, so piping the code in too makes them fight (silent empty result).
   # Neutralize the on-disk cache probes so the test is hermetic — `cached()` and the
   # local-seed listdir must not depend on this machine's real HF cache.
-  local tmp; tmp=$(mktemp -t gemmarank)
+  local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/gemmarank.XXXXXX")
   printf '%s\n' "$BLOCK" \
     | sed "s|^budget=.*|budget=$1|" \
     | sed "s|^resident=.*|resident='${3:-}'|" \
@@ -115,6 +115,49 @@ check "31B excluded at the 18GB steady-state budget" \
 check "newer family outranks older" \
   "mlx-community/gemma-4-12B-it-qat-4bit" \
   "$(run_rank 18.0 "$(payload mlx-community/gemma-3-12B-it-qat-4bit mlx-community/gemma-4-12B-it-qat-4bit)")"
+
+echo
+echo "prefetch binary resolution (guard against silent skip):"
+
+# Gap 1: the old `command -v huggingface-cli` took the false branch on every run
+# because huggingface-cli is never on bare PATH — only in the venv. These checks
+# pin that the new code looks in the venv and logs WARN when the binary is absent,
+# so a renamed CLI can never silently disable the prefetch again.
+if grep -q 'command -v huggingface-cli' "$RESOLVER"; then
+  echo "  FAIL prefetch still uses bare PATH 'command -v huggingface-cli' — will silently skip"; FAIL=$((FAIL+1))
+else
+  echo "  ok   prefetch does not use bare 'command -v huggingface-cli'"; PASS=$((PASS+1))
+fi
+
+if grep -q '\.venvs/mlx/bin' "$RESOLVER"; then
+  echo "  ok   prefetch resolves HF binary from venv path"; PASS=$((PASS+1))
+else
+  echo "  FAIL prefetch does not reference venv path — binary lookup will miss huggingface-cli"; FAIL=$((FAIL+1))
+fi
+
+if grep -q 'WARN prefetch skipped' "$RESOLVER"; then
+  echo "  ok   resolver logs WARN when prefetch binary is unresolvable (never silent)"; PASS=$((PASS+1))
+else
+  echo "  FAIL resolver has no WARN for unresolvable prefetch binary — silent skip survives"; FAIL=$((FAIL+1))
+fi
+
+echo
+echo "zero-weights WEDGE detection:"
+
+# Gap 2: when both MODEL and FALLBACK are uncached the old two-way branch fell
+# through to else and wrote conf as though a load would succeed. These checks pin
+# the three-way branch and explicit WEDGE log.
+if grep -q 'WEDGE:' "$RESOLVER"; then
+  echo "  ok   resolver has explicit WEDGE log branch"; PASS=$((PASS+1))
+else
+  echo "  FAIL resolver has no WEDGE detection — writes clean conf when weights are absent"; FAIL=$((FAIL+1))
+fi
+
+if grep -q 'elif is_cached "\$FALLBACK"' "$RESOLVER"; then
+  echo "  ok   resolver uses three-way cache check (chosen / fallback / wedge)"; PASS=$((PASS+1))
+else
+  echo "  FAIL resolver still uses two-way is_cached — WEDGE falls through to else"; FAIL=$((FAIL+1))
+fi
 
 echo
 echo "passed=$PASS failed=$FAIL"

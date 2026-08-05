@@ -17,7 +17,7 @@ import (
 // healthyMock returns a Mock platform simulating a healthy macOS system:
 // 16 GB RAM, low usage, no swap, 50% disk, small processes, no sirsi procs.
 func healthyMock() *platform.Mock {
-	return &platform.Mock{
+	m := &platform.Mock{
 		NameStr: "mock",
 		CommandResults: map[string]string{
 			// 16 GB total RAM
@@ -68,6 +68,10 @@ Pages occupied by compressor:             25000.`,
   200  30720 /usr/local/bin/gopls`,
 		},
 	}
+	// launchctl print-disabled key uses the real UID (checkLaunchdDisabled calls os.Getuid()).
+	m.CommandResults[fmt.Sprintf("launchctl print-disabled gui/%d", os.Getuid())] =
+		"{\n\t\"ai.sirsi.pantheon\" => enabled\n\t\"ai.sirsi.gemma\" => enabled\n}"
+	return m
 }
 
 // ── TestDoctorWith_HealthySystem ─────────────────────────────────────────
@@ -1225,6 +1229,93 @@ func TestMemoryRemediationDoesNotSayQuit(t *testing.T) {
 	for _, check := range []string{"RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral"} {
 		if got := remediationCommand(DiagnosticFinding{Check: check, Severity: SeverityWarn}); got != "sirsi relieve --memory" {
 			t.Errorf("remediationCommand(%s) = %q, want %q", check, got, "sirsi relieve --memory")
+		}
+	}
+}
+
+// TestCheckLaunchdDisabled verifies that disabled ai.sirsi.* labels in the
+// override DB are reported as Critical (the 2026-07-31 fabric-loss class).
+func TestCheckLaunchdDisabled(t *testing.T) {
+	// Build the command key with the real UID (checkLaunchdDisabled uses os.Getuid()).
+	uidKey := fmt.Sprintf("launchctl print-disabled gui/%d", os.Getuid())
+
+	t.Run("no disabled labels → OK", func(t *testing.T) {
+		m := &platform.Mock{
+			NameStr: "mock",
+			CommandResults: map[string]string{
+				uidKey: "{\n\t\"ai.sirsi.pantheon\" => enabled\n\t\"ai.sirsi.gemma\" => enabled\n}",
+			},
+		}
+		report := &DoctorReport{}
+		checkLaunchdDisabled(m, report)
+		f := findByCheck(report.Findings, "launchd Disabled Override")
+		if f == nil {
+			t.Fatal("expected finding")
+		}
+		if f.Severity != SeverityOK {
+			t.Errorf("severity = %v, want OK", f.Severity)
+		}
+	})
+
+	t.Run("disabled ai.sirsi label → Critical", func(t *testing.T) {
+		m := &platform.Mock{
+			NameStr: "mock",
+			CommandResults: map[string]string{
+				uidKey: "{\n\t\"ai.sirsi.pantheon\" => disabled\n\t\"ai.sirsi.gemma\" => enabled\n\t\"actions.runner.SirsiMaster-m5-sirsi\" => disabled\n\t\"com.other.thing\" => disabled\n}",
+			},
+		}
+		report := &DoctorReport{}
+		checkLaunchdDisabled(m, report)
+		f := findByCheck(report.Findings, "launchd Disabled Override")
+		if f == nil {
+			t.Fatal("expected finding")
+		}
+		if f.Severity != SeverityCritical {
+			t.Errorf("severity = %v, want Critical", f.Severity)
+		}
+		// Should report ai.sirsi.* and actions.runner.* but not com.other.thing.
+		if !strings.Contains(f.Message, "2 ") {
+			t.Errorf("message = %q, want count 2", f.Message)
+		}
+		if strings.Contains(f.Detail, "com.other.thing") {
+			t.Error("Detail must not include non-sirsi label")
+		}
+	})
+
+	t.Run("launchctl unavailable → no finding (fail-open)", func(t *testing.T) {
+		// No CommandResults → Command() returns nil, nil (empty). Empty output
+		// triggers fail-open: no finding is added so the overall score is unaffected.
+		m := &platform.Mock{NameStr: "mock"}
+		report := &DoctorReport{}
+		checkLaunchdDisabled(m, report)
+		if findByCheck(report.Findings, "launchd Disabled Override") != nil {
+			t.Error("should not add finding when print-disabled is unavailable")
+		}
+	})
+}
+
+// TestParseLaunchdDisabled exercises the parser on real-format output.
+func TestParseLaunchdDisabled(t *testing.T) {
+	output := `{
+	"ai.sirsi.horus.agent-router" => disabled
+	"ai.sirsi.liveness-watch" => enabled
+	"actions.runner.SirsiMaster-m5-sirsi" => disabled
+	"actions.runner.SirsiMaster-m5-sirsi-2" => disabled
+	"ai.sirsi.gemma" => enabled
+	"com.apple.something" => disabled
+}`
+	got := parseLaunchdDisabled(output)
+	want := map[string]bool{
+		"ai.sirsi.horus.agent-router":           true,
+		"actions.runner.SirsiMaster-m5-sirsi":   true,
+		"actions.runner.SirsiMaster-m5-sirsi-2": true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %d labels", got, len(want))
+	}
+	for _, l := range got {
+		if !want[l] {
+			t.Errorf("unexpected label %q", l)
 		}
 	}
 }

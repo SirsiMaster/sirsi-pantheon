@@ -254,6 +254,21 @@ struct MaybeList<Content: View>: View {
     }
 }
 
+// ScrollView has the same ImageRenderer limitation as List: its hosted content
+// is blank in snapshot mode. This wrapper keeps the live app scrollable while
+// rendering the identical stack directly for visual regression proof.
+struct MaybeScroll<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    @ViewBuilder let content: Content
+    var body: some View {
+        if snapshotMode {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView { content }
+        }
+    }
+}
+
 struct NavLink<Label: View, Destination: View>: View {
     @EnvironmentObject private var nav: Nav
     private let destination: () -> Destination
@@ -636,24 +651,22 @@ struct CommandDeckView: View {
                 // them the panel is a poster, not an instrument. Context and Risk
                 // pick their destination from the SAME condition that picked their
                 // text, so the tap always lands on the thing the words describe.
+                // Text and destination are derived ATOMICALLY: the route enum is
+                // computed in the same body pass as the chip text and captured BY
+                // VALUE in the destination closure. Re-reading engine state at tap
+                // time could show "owner decisions" and open Threads if the engine
+                // updated between render and tap (codex post-merge finding 3).
+                let ctxRoute: DeckRoute = engine.ownerGatedItems.count > 0 ? .ownerActions : .threads
+                let riskRoute: DeckRoute = engine.healthStatus != "green" ? .horus
+                    : (engine.safeBytes >= SirsiEngine.wasteThreshold ? .anubis : .osiris)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
-                    CommandDeckMetric(state: computeState, fill: tileFill) { HorusView(engine: engine) }
-                    CommandDeckMetric(state: routerState, fill: tileFill) { RouterView(engine: engine) }
-                    CommandDeckMetric(state: contextState, fill: tileFill) {
-                        if engine.ownerGatedItems.count > 0 {
-                            OwnerActionsListView(engine: engine)
-                        } else {
-                            ThreadsView(engine: engine)
-                        }
+                    CommandDeckMetric(state: computeState, fill: tileFill, destinationName: DeckRoute.horus.surfaceName) { HorusView(engine: engine) }
+                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RouterView(engine: engine) }
+                    CommandDeckMetric(state: contextState, fill: tileFill, destinationName: ctxRoute.surfaceName) {
+                        DeckRouteView(route: ctxRoute, engine: engine)
                     }
-                    CommandDeckMetric(state: riskState, fill: tileFill) {
-                        if engine.healthStatus != "green" {
-                            HorusView(engine: engine)
-                        } else if engine.safeBytes >= SirsiEngine.wasteThreshold {
-                            AnubisView(engine: engine)
-                        } else {
-                            RiskView(engine: engine)
-                        }
+                    CommandDeckMetric(state: riskState, fill: tileFill, destinationName: riskRoute.surfaceName) {
+                        DeckRouteView(route: riskRoute, engine: engine)
                     }
                 }
 
@@ -723,6 +736,39 @@ struct CommandDeckView: View {
     }
 }
 
+// DeckRoute is a VALUE captured at render time, so the surface a tap opens is
+// the one the chip's text described — text and destination cannot diverge.
+enum DeckRoute {
+    case horus, routerFabric, ownerActions, threads, anubis, osiris
+
+    var surfaceName: String {
+        switch self {
+        case .horus: return "Horus — Ops"
+        case .routerFabric: return "Router — Fabric"
+        case .ownerActions: return "Owner Actions"
+        case .threads: return "Threads"
+        case .anubis: return "Anubis — Hygiene"
+        case .osiris: return "Osiris — Checkpoints"
+        }
+    }
+}
+
+struct DeckRouteView: View {
+    let route: DeckRoute
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        switch route {
+        case .horus: HorusView(engine: engine)
+        case .routerFabric: RouterView(engine: engine)
+        case .ownerActions: OwnerActionsListView(engine: engine)
+        case .threads: ThreadsView(engine: engine)
+        case .anubis: AnubisView(engine: engine)
+        case .osiris: RiskView(engine: engine)
+        }
+    }
+}
+
 // CommandDeckMetric is a DRILL-DOWN, not a poster (owner gate 2026-07-30):
 // every chip on the deck opens the surface whose state it annotates. The
 // chevron and hover ring exist so it also LOOKS openable — an affordance the
@@ -730,6 +776,9 @@ struct CommandDeckView: View {
 struct CommandDeckMetric<Destination: View>: View {
     let state: CommandDeckSignal
     let fill: Color
+    // Named so the accessibility label can say where the tap actually lands —
+    // "open Context" names the chip, not the surface (codex post-merge finding 4).
+    let destinationName: String
     @ViewBuilder let destination: () -> Destination
     @State private var hovering = false
 
@@ -770,7 +819,7 @@ struct CommandDeckMetric<Destination: View>: View {
             .contentShape(Rectangle())
         }
         .onHover { hovering = $0 }
-        .accessibilityLabel("\(state.title): \(state.detail) — open \(state.title)")
+        .accessibilityLabel("\(state.title): \(state.detail) — open \(destinationName)")
     }
 }
 
@@ -980,6 +1029,35 @@ struct FDAGuideView: View {
 struct HorusView: View {
     @ObservedObject var engine: SirsiEngine
 
+    private static let memoryChecks: Set<String> = [
+        "RAM Pressure", "Memory Death Spiral", "Swap", "Top Memory Consumers",
+        "Process Footprint", "Duplicate Model Brokers",
+    ]
+
+    private var memoryFindings: [DiagFinding] {
+        engine.health.filter { Self.memoryChecks.contains($0.check) }
+    }
+    private var memoryIssues: [DiagFinding] { memoryFindings.filter { $0.severity >= 2 } }
+    private var otherIssues: [DiagFinding] {
+        engine.health.filter { $0.severity >= 2 && !Self.memoryChecks.contains($0.check) }
+    }
+    private var quietFindings: [DiagFinding] { engine.health.filter { $0.severity < 2 } }
+
+    private var statusTitle: String {
+        switch engine.healthStatus {
+        case "red": return "System needs attention"
+        case "amber": return "Worth a look"
+        default: return "Your Mac looks good"
+        }
+    }
+
+    private var statusDetail: String {
+        let n = engine.healthIssueCount
+        if n == 0 { return "No active issues. Horus is watching quietly." }
+        let count = "\(n) check\(n == 1 ? "" : "s") need attention."
+        return memoryIssues.count > 1 ? count + " Related signals are grouped into one clear story." : count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Horus — Ops")
@@ -990,22 +1068,52 @@ struct HorusView: View {
                         .sirsiFont(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                MaybeList {
-                    Section {
-                        ForEach(engine.health) { f in
-                            HealthRow(engine: engine, finding: f)
+                MaybeScroll {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HorusStatusCard(status: engine.healthStatus, title: statusTitle,
+                                        detail: statusDetail, issueCount: engine.healthIssueCount)
+
+                        if !memoryIssues.isEmpty {
+                            SectionLabel("WHAT'S HAPPENING")
+                            HorusMemoryStory(engine: engine, findings: memoryFindings,
+                                             issueCount: memoryIssues.count)
                         }
-                    } header: {
-                        // Canonical green/amber/red roll-up — NOT raw worst-severity
-                        // (which read CRITICAL on historical 7-day trends).
-                        let n = engine.healthIssueCount
-                        Text(engine.healthStatus == "green" ? "ALL SYSTEMS HEALTHY"
-                             : (engine.healthStatus == "amber" ? "ATTENTION — \(n) item(s)"
-                                : "CRITICAL — \(n) item(s)"))
-                            .foregroundStyle(statusColor(engine.healthStatus))
+
+                        if !otherIssues.isEmpty {
+                            SectionLabel(memoryIssues.isEmpty ? "WHAT'S HAPPENING" : "ALSO NEEDS ATTENTION")
+                            VStack(spacing: 0) {
+                                ForEach(Array(otherIssues.enumerated()), id: \.element.id) { index, finding in
+                                    HealthRow(engine: engine, finding: finding)
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                    if index != otherIssues.count - 1 { Divider().padding(.leading, 26) }
+                                }
+                            }
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.045)))
+                        }
+
+                        if !quietFindings.isEmpty {
+                            DisclosureGroup {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(quietFindings.enumerated()), id: \.element.id) { index, finding in
+                                        HealthRow(engine: engine, finding: finding)
+                                            .padding(.horizontal, 8).padding(.vertical, 4)
+                                        if index != quietFindings.count - 1 { Divider().padding(.leading, 24) }
+                                    }
+                                }.padding(.top, 6)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    Text("Healthy checks").sirsiFont(12, weight: .semibold)
+                                    Spacer()
+                                    Text("\(quietFindings.count)").sirsiFont(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.035)))
+                        }
                     }
+                    .padding(14)
                 }
-                .listStyle(.inset)
             }
             Divider()
             HStack {
@@ -1018,6 +1126,120 @@ struct HorusView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .navigationTitle("Horus — Ops")
+    }
+}
+
+// The calm overview keeps the canonical roll-up exactly as reported by Go, but
+// expresses it in human language. Colour is a compact accent, never a wall of
+// alarm text; the explanation carries the meaning for accessibility.
+private struct HorusStatusCard: View {
+    let status: String
+    let title: String
+    let detail: String
+    let issueCount: Int
+
+    private var label: String {
+        switch status { case "red": return "Critical"; case "amber": return "Attention"; default: return "Healthy" }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle().fill(statusColor(status).opacity(0.16)).frame(width: 38, height: 38)
+                Image(systemName: status == "green" ? "checkmark" : "waveform.path.ecg")
+                    .sirsiFont(15, weight: .semibold).foregroundStyle(statusColor(status))
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title).sirsiFont(16, weight: .semibold)
+                    Spacer(minLength: 8)
+                    Text(label.uppercased()).sirsiFont(.caption2, weight: .bold)
+                        .foregroundStyle(statusColor(status))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(statusColor(status).opacity(0.12)))
+                }
+                Text(detail).sirsiFont(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.055)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.07)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(issueCount == 0 ? "\(label). \(detail)" : "\(label). \(issueCount) checks need attention. \(detail)")
+    }
+}
+
+// Memory findings are intentionally different measurements (live usage, peak
+// footprint, system pressure, broker count). Presenting each as a peer row made
+// one process look like several unrelated emergencies. This card preserves all
+// measurements while telling one story and offering one path to the strongest
+// actionable finding.
+private struct HorusMemoryStory: View {
+    @ObservedObject var engine: SirsiEngine
+    let findings: [DiagFinding]
+    let issueCount: Int
+
+    private var actionable: DiagFinding {
+        findings.sorted {
+            if $0.severity != $1.severity { return $0.severity > $1.severity }
+            return !($0.fix ?? "").isEmpty && ($1.fix ?? "").isEmpty
+        }.first!
+    }
+    private var current: DiagFinding? { findings.first { $0.check == "Top Memory Consumers" } }
+    private var peak: DiagFinding? { findings.first { $0.check == "Process Footprint" } }
+    private var pressure: DiagFinding? {
+        findings.first { $0.check == "RAM Pressure" || $0.check == "Memory Death Spiral" || $0.check == "Swap" }
+    }
+    private var broker: DiagFinding? { findings.first { $0.check == "Duplicate Model Brokers" } }
+
+    var body: some View {
+        NavLink { FindingView(engine: engine, finding: actionable) } label: {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 9) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8).fill(findingColor(actionable).opacity(0.15))
+                        Image(systemName: "memorychip").foregroundStyle(findingColor(actionable))
+                    }.frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Memory load").sirsiFont(14, weight: .semibold)
+                        Text("\(issueCount) related check\(issueCount == 1 ? "" : "s") · one system story")
+                            .sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").sirsiFont(.caption).foregroundStyle(.tertiary)
+                }
+
+                if let current { HorusEvidence(label: "NOW", text: current.message) }
+                if let peak { HorusEvidence(label: "PEAK", text: peak.message) }
+                if current == nil, let pressure { HorusEvidence(label: "NOW", text: pressure.message) }
+
+                if let broker, broker.severity < 2 {
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(broker.message).sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.055)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(findingColor(actionable).opacity(0.24)))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
+
+private struct HorusEvidence: View {
+    let label: String
+    let text: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Text(label).sirsiFont(.caption2, weight: .bold).foregroundStyle(.secondary)
+                .sirsiFrame(width: 34)
+                .frame(alignment: .leading)
+            Text(text).sirsiFont(.callout).foregroundStyle(.primary.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -1635,6 +1857,15 @@ struct AnubisView: View {
                                    sub: "Remnants of apps you've uninstalled (Ka)")
                     }.buttonStyle(.plain)
 
+                    // The Trash is where every OTHER clean path leaves things —
+                    // recoverable by design. This is the one screen that can make
+                    // that permanent, so it is its own drill-down with its own
+                    // confirmation, never folded into the one-click clean.
+                    NavLink { EmptyTrashView(engine: engine) } label: {
+                        ActionCard(glyph: "🗑", title: "Empty Trash",
+                                   sub: "Permanently delete what Sirsi (and you) moved to Trash — no undo")
+                    }.buttonStyle(.plain)
+
                     // Legible, plain-English note about what's held back (was tiny).
                     if engine.cautionBytes > 0 {
                         ExclusionNote(bytes: engine.cautionBytes, count: engine.caution.count)
@@ -1644,6 +1875,104 @@ struct AnubisView: View {
             }
         }
         .navigationTitle("Anubis")
+    }
+}
+
+// EmptyTrashView — the only surface in Sirsi that destroys something
+// permanently. Everything else is trash-first and recoverable, so this screen
+// is deliberately shaped against the rest of the app:
+//
+//   - it SHOWS the contents before offering the action (you cannot permanently
+//     delete a list you have not seen);
+//   - the destructive button is disabled until that list has loaded, so it can
+//     never fire against unknown contents;
+//   - it takes TWO taps, and the second one is the one that says "permanently";
+//   - the result line reports what was actually freed, read back from the CLI,
+//     not an optimistic "done".
+struct EmptyTrashView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var count = 0
+    @State private var sizeText = ""
+    @State private var items: [String] = []
+    @State private var loading = true
+    @State private var arming = false
+    @State private var result: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Empty Trash")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if loading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Reading Trash…").sirsiFont(12).foregroundStyle(.secondary)
+                        }
+                    } else if let r = result {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                            Text(r).sirsiFont(13, weight: .semibold)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else if count == 0 {
+                        Text("Trash is empty — nothing to delete.")
+                            .sirsiFont(13).foregroundStyle(.secondary)
+                    } else {
+                        Text("\(count) item\(count == 1 ? "" : "s") · \(sizeText)")
+                            .sirsiFont(17, weight: .bold).foregroundStyle(gold)
+                        Text("These are already in the Trash. Emptying it removes them for good — Sirsi cannot restore them, and neither can Finder.")
+                            .sirsiFont(12).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(items.prefix(12), id: \.self) { line in
+                                Text("· " + line).sirsiFont(11).foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            if items.count > 12 {
+                                Text("… and \(items.count - 12) more")
+                                    .sirsiFont(11).foregroundStyle(.tertiary)
+                            }
+                        }
+
+                        if arming {
+                            Button(role: .destructive) {
+                                Task {
+                                    let out = await engine.emptyTrash()
+                                    result = out
+                                    arming = false
+                                }
+                            } label: {
+                                Text("Permanently delete \(count) item\(count == 1 ? "" : "s")")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .disabled(engine.busy)
+                            Button("Cancel") { arming = false }
+                                .buttonStyle(.plain)
+                                .sirsiFont(12)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                arming = true
+                            } label: {
+                                Text("Empty Trash…").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(loading || count == 0)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .task {
+            let r = await engine.trashList()
+            count = r.count; sizeText = r.size; items = r.lines
+            loading = false
+        }
+        .navigationTitle("Empty Trash")
     }
 }
 

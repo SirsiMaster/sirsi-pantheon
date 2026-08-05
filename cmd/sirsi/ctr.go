@@ -30,6 +30,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -87,6 +88,7 @@ func init() {
 type ctrResult struct {
 	Repo          string                 `json:"repo"`
 	Scope         string                 `json:"scope,omitempty"` // agent id when scoped
+	GeneratedAt   string                 `json:"generated_at"`    // RFC3339 UTC; stamps the serialization boundary
 	PendingTotal  int                    `json:"pending_total"`
 	AgentsPending int                    `json:"agents_pending"`
 	LiveThreads   int                    `json:"live_threads"`
@@ -95,6 +97,8 @@ type ctrResult struct {
 	AlreadyLive   []router.WakeOutcome   `json:"already_live,omitempty"` // armed — already watching
 	NeedsOwner    []router.WakeOutcome   `json:"needs_owner,omitempty"`  // wake-unavailable
 	Stranded      []router.StrandedAgent `json:"stranded,omitempty"`
+	LedgerAgents  []ledger.Agent         `json:"ledger_agents,omitempty"`
+	LedgerError   string                 `json:"ledger_error,omitempty"`
 }
 
 func runCtr(_ *cobra.Command, args []string) error {
@@ -128,6 +132,11 @@ func runCtr(_ *cobra.Command, args []string) error {
 	}
 
 	res := buildCtrResult(repoRoot, scope, ns, wp)
+	if snapshot, lerr := ledger.Build(repoRoot, scope, time.Now().UTC(), ledger.DefaultStaleAfter); lerr == nil {
+		res.LedgerAgents = snapshot.Agents
+	} else {
+		res.LedgerError = lerr.Error()
+	}
 
 	if ctrJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -137,6 +146,12 @@ func runCtr(_ *cobra.Command, args []string) error {
 	if ctrQuiet {
 		fmt.Printf("ctr: %d pending across %d agent(s) · woke %d · watching %d · needs-owner %d\n",
 			res.PendingTotal, res.AgentsPending, len(res.Woke), len(res.AlreadyLive), len(res.NeedsOwner))
+		// D-CTR-1: LedgerError must reach every renderer, including --quiet,
+		// because hooks and shell prompts consume quiet output and an unknown
+		// ledger state should not vanish on the path a machine reads.
+		if res.LedgerError != "" {
+			fmt.Printf("ctr: ledger-error: %s\n", res.LedgerError)
+		}
 		return nil
 	}
 	renderCtr(res)
@@ -226,6 +241,7 @@ func buildCtrResult(repoRoot, scope string, ns *router.NodeStatus, wp router.Wak
 	res := ctrResult{
 		Repo:         filepath.Base(repoRoot),
 		Scope:        scope,
+		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
 		LiveThreads:  ns.LiveThreadCount,
 		StaleThreads: len(ns.StaleThreads),
 	}
@@ -307,6 +323,22 @@ func renderCtr(res ctrResult) {
 			fmt.Printf("    • %-22s %s%s\n", o.AgentID, o.ItemID, detail)
 		}
 		fmt.Println()
+	}
+	if len(res.LedgerAgents) > 0 {
+		fmt.Println("📋 Universal task ledger:")
+		for _, a := range res.LedgerAgents {
+			stale := ""
+			if a.Stale {
+				stale = " STALE"
+			}
+			fmt.Printf("    • %-22s oldest=%-7s blocked=%d unblocked/unpicked=%d%s\n",
+				a.AgentID, ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked, stale)
+		}
+		fmt.Println("    → Full detail: sirsi router ledger [agent]")
+		fmt.Println()
+	}
+	if res.LedgerError != "" {
+		fmt.Printf("⚠ Task ledger unavailable — %s\n\n", res.LedgerError)
 	}
 
 	switch {

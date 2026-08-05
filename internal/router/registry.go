@@ -43,6 +43,71 @@ type AgentConfig struct {
 	// Absent = this lane has no consumer, and every surface must say so rather
 	// than infer one from the shape of Command (see consumer.go).
 	Consumer ConsumerConfig `json:"consumer,omitempty"`
+
+	// extra preserves JSON fields not known to this version of AgentConfig so a
+	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the
+	// struct does not model. "consumer" was the original motivating example and
+	// is now typed above — exactly the additive evolution this was built for:
+	// the extra copy is simply dropped on load once a real field claims the key.
+	extra map[string]json.RawMessage
+}
+
+// UnmarshalJSON decodes known fields into the struct and captures everything
+// else in extra so it is re-emitted on save.
+func (cfg *AgentConfig) UnmarshalJSON(b []byte) error {
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(b, &all); err != nil {
+		return err
+	}
+	// type plain breaks the UnmarshalJSON recursion.
+	type plain AgentConfig
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*cfg = AgentConfig(p)
+
+	// Marshal the typed struct to discover its canonical key set, then
+	// keep anything left over as extra. This avoids a hard-coded whitelist
+	// that would need updating every time a new field is added to the struct.
+	knownJSON, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	var known map[string]json.RawMessage
+	if err := json.Unmarshal(knownJSON, &known); err != nil {
+		return err
+	}
+	for k := range known {
+		delete(all, k)
+	}
+	if len(all) > 0 {
+		cfg.extra = all
+	}
+	return nil
+}
+
+// MarshalJSON emits the typed fields followed by any extras captured on load.
+func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
+	type plain AgentConfig
+	knownJSON, err := json.Marshal(plain(cfg))
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.extra) == 0 {
+		return knownJSON, nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(knownJSON, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range cfg.extra {
+		if _, ok := m[k]; !ok { // never let an extra shadow a typed field
+			m[k] = v
+		}
+	}
+	return json.Marshal(m)
+
 }
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
@@ -54,6 +119,12 @@ type WakeConfig struct {
 	HealthCheck []string          `json:"health_check,omitempty"`
 	AuthCheck   []string          `json:"auth_check,omitempty"`
 	Hooks       map[string]string `json:"hooks,omitempty"`
+	// LaunchAgentLabel stores whatever value is present in agents.json for
+	// round-trip fidelity. LoadRegistry does NOT auto-fill this field.
+	// The operational label is always derived at call time via
+	// WakeLaunchAgentLabel(cfg.ID) — never read back from this stored value.
+	// A missing or stale stored label is caught by registrydrift.go.
+	LaunchAgentLabel string `json:"launch_agent_label,omitempty"`
 }
 
 // Registry holds all registered agent configurations.
@@ -80,7 +151,10 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 		reg.Agents = make(map[string]AgentConfig)
 	}
 
-	// Inject IDs from map keys
+	// Inject IDs from map keys — this is the ONLY post-unmarshal mutation
+	// LoadRegistry performs. No other fields (including WakeConfig.LaunchAgentLabel)
+	// are auto-filled. The operational launchd label is derived at call time via
+	// WakeLaunchAgentLabel(cfg.ID); see wake.go.
 	for id, cfg := range reg.Agents {
 		cfg.ID = id
 		reg.Agents[id] = cfg
@@ -89,18 +163,59 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 	return &reg, nil
 }
 
-// SaveRegistry writes agents.json to the router directory.
+// SaveRegistry writes agents.json losslessly: unknown JSON keys present in the
+// existing file (e.g. "consumer") are preserved on every write because
+// AgentConfig.MarshalJSON re-emits them via the extra field. Known fields
+// reflect the current Go state — a field cleared to its zero value is absent
+// from output (not restored from disk). Top-level JSON keys the schema has not
+// modeled survive because we seed from the existing file before overwriting.
 func SaveRegistry(routerRoot string, reg *Registry) error {
-	data, err := json.MarshalIndent(reg, "", "  ")
+	path := filepath.Join(routerRoot, "agents.json")
+
+	// Preserve any top-level JSON keys the schema hasn't modeled by seeding
+	// from the existing file. D2: a non-empty but unparseable file is an error —
+	// silently dropping it would erase the very unknown keys we aim to keep.
+	var fileRaw map[string]json.RawMessage
+	if existing, err := os.ReadFile(path); err == nil {
+		if len(existing) > 0 {
+			if err := json.Unmarshal(existing, &fileRaw); err != nil {
+				return fmt.Errorf("parse existing agents.json: %w", err)
+			}
+		}
+	}
+	if fileRaw == nil {
+		fileRaw = make(map[string]json.RawMessage)
+	}
+
+	// AgentConfig.MarshalJSON is already lossless: typed fields reflect the
+	// current Go state (cleared omitempty = absent), extra unknown fields are
+	// re-emitted. No deepMerge against the old disk bytes is needed or wanted —
+	// deepMerge would restore stale cleared values from disk (D1).
+	agents := make(map[string]json.RawMessage, len(reg.Agents))
+	for id, cfg := range reg.Agents {
+		cfgBytes, err := json.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("marshal agent %q: %w", id, err)
+		}
+		agents[id] = json.RawMessage(cfgBytes)
+	}
+
+	agentsBytes, err := json.MarshalIndent(agents, "  ", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal agents map: %w", err)
+	}
+	fileRaw["agents"] = json.RawMessage(agentsBytes)
+
+	data, err := json.MarshalIndent(fileRaw, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal agents.json: %w", err)
 	}
-	path := filepath.Join(routerRoot, "agents.json")
+	data = append(data, '\n')
+
 	mode := os.FileMode(0o644)
 	if info, statErr := os.Stat(path); statErr == nil {
 		mode = info.Mode().Perm()
 	}
-
 	tmp, err := os.CreateTemp(routerRoot, ".agents.json-*")
 	if err != nil {
 		return fmt.Errorf("create temporary agents.json: %w", err)
@@ -163,6 +278,8 @@ func (cfg *AgentConfig) Validate() error {
 		if cfg.Wake.MCPServer == "" {
 			return fmt.Errorf("agent %q: wake.mcp_server is required for mcp-notification", cfg.ID)
 		}
+	case WakeNone:
+		// explicit opt-out: agent cannot be auto-woken, operator must start it manually
 	default:
 		return fmt.Errorf("agent %q: unsupported wake mechanism %q", cfg.ID, cfg.Wake.Mechanism)
 	}

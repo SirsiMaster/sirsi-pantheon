@@ -28,6 +28,11 @@ const NodeStatusSchemaVersion = "1.0.0"
 type NodeStatus struct {
 	// Contract
 	SchemaVersion string `json:"schema_version"` // = NodeStatusSchemaVersion at stamp time
+	// GeneratedAt is when THIS snapshot was collected — the data's timestamp, not
+	// any renderer's serving time. Observers MUST derive age from this field; a
+	// missing value ranks worse than a known-old one (fail-closed: refuse, do not
+	// assume fresh). Set once in CollectNodeStatus; never mutated by a surface.
+	GeneratedAt string `json:"generated_at"` // RFC3339
 
 	// Router
 	RouterHome string `json:"router_home"`
@@ -313,6 +318,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 
 	ns := &NodeStatus{
 		SchemaVersion:   NodeStatusSchemaVersion,
+		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
 		RouterHome:      routerRoot,
 		RepoRoot:        repoRoot,
 		PendingByAgent:  make(map[string][]string),
@@ -568,7 +574,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	for a := range ns.PendingByAgent {
 		strandAgents = append(strandAgents, a)
 	}
-	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck))
+	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg))
 
 	return ns, nil
 }
