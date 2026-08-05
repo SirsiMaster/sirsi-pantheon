@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
@@ -672,5 +674,78 @@ func TestAPIGhostClean_RequiresPost(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("GET ghosts/clean = %d, want 405", resp.StatusCode)
+	}
+}
+
+// ── /api/ledger Tests (A26 Nexus seam) ─────────────────────────────────────
+
+func TestAPILedger_NilFn_Returns503(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{}) // LedgerFn not wired
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/ledger")
+	if err != nil {
+		t.Fatalf("GET /api/ledger: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET /api/ledger (nil fn) = %d, want 503", resp.StatusCode)
+	}
+}
+
+func TestAPILedger_Wired_ReturnsBoardSummaryJSON(t *testing.T) {
+	t.Parallel()
+	want := ledger.BoardSummary{
+		TotalTasks:   3,
+		DoneTasks:    1,
+		ActiveTasks:  2,
+		PctDone:      33,
+		OpenItems:    5,
+		BlockedItems: 2,
+		GeneratedAt:  "2026-08-05T00:00:00Z",
+	}
+	ts := testServer(t, Config{
+		LedgerFn: func() (ledger.BoardSummary, error) { return want, nil },
+	})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/ledger")
+	if err != nil {
+		t.Fatalf("GET /api/ledger: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/ledger = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", ct)
+	}
+	var got ledger.BoardSummary
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode BoardSummary: %v", err)
+	}
+	if got.TotalTasks != want.TotalTasks || got.DoneTasks != want.DoneTasks ||
+		got.OpenItems != want.OpenItems || got.BlockedItems != want.BlockedItems {
+		t.Fatalf("BoardSummary mismatch: got %+v, want %+v", got, want)
+	}
+}
+
+func TestAPILedger_FnError_Returns500(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{
+		LedgerFn: func() (ledger.BoardSummary, error) {
+			return ledger.BoardSummary{}, fmt.Errorf("simulated ledger error")
+		},
+	})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/ledger")
+	if err != nil {
+		t.Fatalf("GET /api/ledger: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("GET /api/ledger (fn error) = %d, want 500", resp.StatusCode)
 	}
 }
