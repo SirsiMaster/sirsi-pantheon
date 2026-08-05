@@ -284,7 +284,9 @@ suspend/resume always work).`,
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 
 		// Reap dead PIDs first so reaped records reflect OS truth before healing.
-		reapDeadPIDThreads(routerRoot)
+		if _, reapErr := reapDeadPIDThreads(routerRoot); reapErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: OS-truth sweep incomplete (reconcile may see stale actives): %v\n", reapErr)
+		}
 
 		reg, err := router.LoadThreadRegistry(routerRoot)
 		if err != nil {

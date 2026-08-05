@@ -725,7 +725,11 @@ func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
 	}
 	if len(reaped) > 0 {
 		if err := SaveThreadRegistry(routerRoot, reg); err != nil {
-			return reaped, err
+			// Return nil, not reaped: the in-memory mutations were never persisted,
+			// so a caller checking len(reaped)>0 must not print a completion banner
+			// for a mutation that did not happen. Fail closed — no claim without
+			// persistence (sirsi-io #18 amendment).
+			return nil, err
 		}
 	}
 	return reaped, nil
@@ -816,7 +820,10 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 	}
 	if len(retired) > 0 {
 		if err := SaveThreadRegistry(routerRoot, reg); err != nil {
-			return retired, err
+			// Return nil, not retired: in-memory mutations were never persisted;
+			// a caller must not announce a completed sweep that did not persist
+			// (sirsi-io #18 amendment — same invariant as ReapDeadThreads).
+			return nil, err
 		}
 	}
 	return retired, nil

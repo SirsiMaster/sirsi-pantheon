@@ -563,6 +563,89 @@ func containsStr(xs []string, s string) bool {
 	return false
 }
 
+// TestReapDeadThreads_SaveFailReturnsNil locks the sirsi-io #18 amendment:
+// when SaveThreadRegistry fails after mutations, ReapDeadThreads MUST return
+// (nil, err) — not (reaped, err). A caller checking len>0 must not print a
+// completion banner for a mutation that was never persisted.
+func TestReapDeadThreads_SaveFailReturnsNil(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can write to read-only dirs")
+	}
+	tmp := t.TempDir()
+	// Register a thread with a dead PID so the reaper has work to do.
+	thr, err := RegisterThread(tmp, &Thread{AgentID: "claude-test", Surface: "claude", PID: 9001})
+	if err != nil {
+		t.Fatalf("RegisterThread: %v", err)
+	}
+	// Stub PID as gone so the thread is eligible for reaping.
+	old := getPIDStateFn()
+	setPIDStateFn(func(int) PIDState { return PIDGone })
+	defer setPIDStateFn(old)
+	_ = thr
+
+	// Make the directory read-only so SaveThreadRegistry fails at CreateTemp.
+	if err := os.Chmod(tmp, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(tmp, 0o755) //nolint:errcheck
+
+	reaped, saveErr := ReapDeadThreads(tmp)
+	if saveErr == nil {
+		t.Fatal("expected save error on read-only dir, got nil")
+	}
+	if len(reaped) != 0 {
+		// The fix: a failed save must return nil so callers don't print a
+		// completion banner for an un-persisted mutation.
+		t.Errorf("save failure must return nil slice, got %d entries (sirsi-io #18)", len(reaped))
+	}
+}
+
+// TestReapStrayThreads_SaveFailReturnsNil is the same invariant for ReapStrayThreads
+// (sirsi-io #18 amendment — both functions share the same two branches).
+func TestReapStrayThreads_SaveFailReturnsNil(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can write to read-only dirs")
+	}
+	tmp := t.TempDir()
+	// Anchor = alive (PID 9002); stray = dead (PID 9003) so the stray reaper
+	// has a non-terminal sibling to sweep. Only the anchor's PID is alive.
+	defer perPIDProbe(t, 9002)()
+	anchor, err := RegisterThread(tmp, &Thread{AgentID: "claude-test", Surface: "claude", PID: 9002, StartTime: "sig"})
+	if err != nil {
+		t.Fatalf("register anchor: %v", err)
+	}
+	// A second record for the same (agent, surface) — stale and dead PID.
+	stray := &Thread{
+		ThreadID:   "thr-stray-savefail",
+		AgentID:    "claude-test",
+		Surface:    "claude",
+		Status:     ThreadStatusActive,
+		PID:        9003,
+		MachineID:  anchor.MachineID,
+		LastSeenAt: anchor.LastSeenAt.Add(-time.Minute),
+		StartedAt:  anchor.StartedAt.Add(-time.Minute),
+	}
+	reg, _ := LoadThreadRegistry(tmp)
+	reg.Threads[stray.ThreadID] = stray
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveThreadRegistry (setup): %v", err)
+	}
+
+	// Make the directory read-only so SaveThreadRegistry fails inside Reap.
+	if err := os.Chmod(tmp, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(tmp, 0o755) //nolint:errcheck
+
+	retired, saveErr := ReapStrayThreads(tmp)
+	if saveErr == nil {
+		t.Fatal("expected save error on read-only dir, got nil")
+	}
+	if len(retired) != 0 {
+		t.Errorf("save failure must return nil slice, got %d entries (sirsi-io #18)", len(retired))
+	}
+}
+
 // TestRegisterThread_AlwaysWatchesSelf locks the A27 contract that a thread always
 // watches its OWN inbox, even when the --watch declaration omits self (claude-home
 // #76 follow-up: a `--watch other-agent` that drops self would leave the thread
