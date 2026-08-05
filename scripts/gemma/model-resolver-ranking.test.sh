@@ -23,7 +23,7 @@ run_rank() { # $1=budget  $2=json payload  [$3=resident model] → prints winnin
   # stdin itself, so piping the code in too makes them fight (silent empty result).
   # Neutralize the on-disk cache probes so the test is hermetic — `cached()` and the
   # local-seed listdir must not depend on this machine's real HF cache.
-  local tmp; tmp=$(mktemp -t gemmarank)
+  local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/gemmarank.XXXXXX")
   printf '%s\n' "$BLOCK" \
     | sed "s|^budget=.*|budget=$1|" \
     | sed "s|^resident=.*|resident='${3:-}'|" \
