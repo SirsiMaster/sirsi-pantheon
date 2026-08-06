@@ -601,13 +601,21 @@ func extractModelGen(idLower string) string {
 //  2. approximateModelGB — name-based fallback for when the broker is not
 //     running or /health is unreachable (e.g. during a memory death spiral).
 //
-// Headroom: modelGB+4 in both cases. mlx_active_bytes already includes KV cache;
-// approximateModelGB already scales for the quantizer suffix (8bit→×2), so
-// a second ×2 would double-count (12b-8bit: base 7×2=14 GB, 2×14+4=32 vs
-// actual ~11.5 GB peak). RSS is never used here.
+// Headroom formulas differ by path — approximateModelGB returns *weights only*
+// while mlx_active_bytes already includes KV cache:
+//
+//	measured path:   modelGB + 4          (KV already counted; +4 = OS headroom)
+//	estimated path:  1.4*modelGB + 4      (×1.4 reserves for KV cache not in the
+//	                                       weight estimate; gb+4 alone falls below
+//	                                       the live KV-inclusive allocator pool,
+//	                                       causing false-fits in the death-spiral
+//	                                       fallback where /health is unreachable)
+//
+// RSS is never used here.
 func rightSizeAdvice(home string, availableGB float64) string {
 	model := resolveModel(home)
 	var modelGB float64
+	measured := false
 
 	// Prefer /health mlx_active_bytes (reads port from gemma-server.port).
 	portRaw, err := os.ReadFile(filepath.Join(home, ".sirsi/gemma-server.port"))
@@ -615,6 +623,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 		if port, pErr := strconv.Atoi(strings.TrimSpace(string(portRaw))); pErr == nil && port > 0 {
 			if activeBytes, hErr := getBrokerMLXActive()(port); hErr == nil && activeBytes > 0 {
 				modelGB = float64(activeBytes) / (1 << 30)
+				measured = true
 			}
 		}
 	}
@@ -624,7 +633,16 @@ func rightSizeAdvice(home string, availableGB float64) string {
 		modelGB = approximateModelGB(model)
 	}
 
-	if modelGB == 0 || modelGB+4 <= availableGB {
+	// kvScale accounts for KV cache on the estimated path (approximateModelGB is
+	// weights-only); measured path already includes KV in mlx_active_bytes.
+	// ponytail: 1.4 is calibrated to observed 12b-8bit allocator pool (~20 GB);
+	// revisit if a measured-peak survey shows consistent divergence above 25%.
+	kvScale := 1.0
+	if !measured {
+		kvScale = 1.4
+	}
+
+	if modelGB == 0 || kvScale*modelGB+4 <= availableGB {
 		return "" // unknown size or fits
 	}
 
@@ -649,7 +667,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 				continue // skip cross-generation downgrade
 			}
 		}
-		if t.gb+4 <= availableGB {
+		if kvScale*t.gb+4 <= availableGB {
 			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
 				"available — switch to the %s tier: "+
 				"`echo '%s' > %s && sirsi gemma serve --stop && sirsi gemma serve`",
