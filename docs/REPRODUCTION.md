@@ -75,4 +75,4 @@ upstream-filing decision). The engine repo is private; a provisional
 patent disclosure on the deterministic-serving method precedes any
 public artifact that reveals its mechanics.
 
-Refs: ADR-051, docs/CLAIMS-TABLE-DRAFT-A33.md, ANUBIS_RULES.md § Rule A33
+Refs: ADR-051, docs/CLAIMS-TABLE-A33.md, ANUBIS_RULES.md § Rule A33
