@@ -12,13 +12,21 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/supervision"
 )
 
-// activeThreadCountByAgent returns a map of agent-id → count of non-terminal,
-// non-suspended thread records. A positive count means the lane has at least
-// one registered session or worker that is not confirmed dead — the lane may be
-// running even when it has no automatic wake mechanism. Errors are silenced and
-// return an empty map (fail-open: we escalate rather than suppress if we cannot
-// read thread state, which is the safe direction for an alerting function).
-func activeThreadCountByAgent(repoRoot string) map[string]int {
+// activeThreadCountByAgent returns a map of agent-id → count of threads that
+// are non-terminal, non-suspended, AND have a fresh heartbeat. A positive count
+// means the lane has at least one registered session or worker that is both
+// confirmed not dead AND recently heard from — the lane may be running even when
+// it has no automatic wake mechanism.
+//
+// Staleness check is intentional: status:"active" is stored state, populated at
+// registration and only updated when the conduit sweep runs (~15 min cadence).
+// A session that died without reaping keeps status:"active" until the next
+// conduit pass — trusting status alone would suppress escalation for a lane that
+// is genuinely stopped. LastSeenAt is the real liveness signal.
+//
+// Errors return an empty map (fail-open: escalate rather than suppress when
+// thread state is unreadable — the safe direction for an alerting function).
+func activeThreadCountByAgent(repoRoot string, now time.Time) map[string]int {
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 	treg, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
@@ -27,6 +35,10 @@ func activeThreadCountByAgent(repoRoot string) map[string]int {
 	counts := make(map[string]int)
 	for _, thr := range treg.SortedThreads() {
 		if thr.Status.IsTerminal() || thr.Status == router.ThreadStatusSuspended {
+			continue
+		}
+		// ponytail: reuses IsStale() from threads.go — single staleness predicate
+		if thr.IsStale(now, router.DefaultThreadStaleAfter) {
 			continue
 		}
 		counts[thr.AgentID]++
@@ -75,7 +87,7 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 		return nil, fmt.Errorf("escalate lanes: %w — refusing to escalate on unknown routability", err)
 	}
 	board := dashboard.NewFleetTracker(unroutable).Observe(snap, now)
-	threadCounts := activeThreadCountByAgent(repoRoot)
+	threadCounts := activeThreadCountByAgent(repoRoot, now)
 
 	lanes := make([]supervision.LaneInput, 0, len(board.Lanes))
 	states := make(map[string]supervision.LaneState, len(board.Lanes))
