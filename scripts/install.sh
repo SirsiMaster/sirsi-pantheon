@@ -42,6 +42,29 @@ esac
 
 echo -e "${DIM}  Platform: ${OS}/${ARCH}${NC}"
 
+# 1b. Acquire install lock — one accepted install per host at a time.
+# 2026-08-06: three distinct lanes raced ~/.local/bin/sirsi within 20 minutes;
+# each ran schema-check against the pre-install binary and then raced mv.
+# mkdir is atomic on POSIX — no race window between test and create.
+SIRSI_HOME="${SIRSI_HOME:-$HOME/.sirsi}"
+mkdir -p "$SIRSI_HOME"
+LOCK_DIR="${SIRSI_HOME}/binary-install.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo -e "${RED}  Another install is already running (PID ${LOCK_PID}).${NC}"
+        echo -e "${DIM}  Wait for it to finish, then retry.${NC}"
+        exit 1
+    fi
+    echo -e "${DIM}  Clearing stale install lock (PID ${LOCK_PID:-unknown} is gone)...${NC}"
+    rm -rf "$LOCK_DIR"
+    mkdir "$LOCK_DIR"
+fi
+echo $$ > "$LOCK_DIR/pid"
+# cleanup runs on any exit — tmpdir may not exist yet when the trap fires early.
+cleanup() { [ -n "${TMPDIR:-}" ] && rm -rf "$TMPDIR"; rm -rf "$LOCK_DIR"; }
+trap cleanup EXIT
+
 install_executable() {
     src="$1"
     dest="$2"
@@ -97,7 +120,6 @@ TARBALL="sirsi-pantheon_${LATEST#v}_${OS}_${ARCH}.${EXT}"
 URL="https://github.com/${REPO}/releases/download/${LATEST}/${TARBALL}"
 
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
 
 echo -e "${DIM}  Downloading ${TARBALL}...${NC}"
 if command -v curl &>/dev/null; then
