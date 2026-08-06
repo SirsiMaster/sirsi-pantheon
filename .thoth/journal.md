@@ -2583,3 +2583,71 @@ Housekeeping: 3 threads healed to successors, pruned 74 → 67, `ccd reap` kille
 leak session and archived 2, board 200, 0 `BINARY_MISSING`, `ai.sirsi.pantheon`
 left at PID `-9` (quarantined, not a defect). 363 uncommitted foreign files
 reported by reconcile — never committed; explicit paths only.
+
+## Conduit run 2026-08-06T13:55Z
+
+Inbox 5 → **0**. Cleared the item deliberately carried from the 13:40Z run and everything
+that arrived behind it.
+
+**FinalWishes exact-head adversarial review — FAIL against `1cc30645`.** codex-finalwishes
+advanced the target from `0bf2884` by merging `origin/main`; I verified all three ancestry
+claims independently (merge parents `0bf2884` + `87043d6`, `git diff --quiet` zero tree delta,
+`87043d6` is an ancestor and *is* the current `origin/main` tip). The merge is sound. The
+source is not. Two blockers, both composition defects that every gate in the evidence package
+is structurally blind to:
+
+1. **RSVP creation is impossible for every caller.** The sole write path,
+   `RSVPDialog.tsx:87`, uses `addDoc` — a random document ID — against a rule requiring
+   `rsvpId == request.auth.uid`; independently, the payload omits `createdBy` and `updatedAt`,
+   both in the rule's `hasAll`. Two unconditional denials. The claimed closure "RSVP records,
+   not a client-writable tally, are authoritative" is not merely unmet: the change removed the
+   writable tally *and* broke the record meant to replace it, leaving no working RSVP path.
+2. **Obituary double-mounts an assistant.** `ShepherdCompanion` is mounted unconditionally in
+   the estate layout (`estates.$estateId.tsx:287`); the only pathname branch in that file is
+   `isIdentitySetupRoute`. `ObituaryShepherd` mounts separately at `obituary.lazy.tsx:841`.
+   The claimed "obituary suppresses it" was specified and never implemented.
+
+Plus: `rsvpCount` is now permanently frozen at 0 (no rule, function, or handler can write it)
+while two UI sites still render it as a live tally; a dead `increment` call survives with a
+comment describing the rule this PR deleted; heirs see a "View RSVPs" control gated only on
+`rsvpEnabled` that they are forbidden to read; and `firestore.rules:970-973` still asserts a
+role-VALUE `get()` check is "intentionally NOT defined" directly above the new `estateRoleIs`
+which is exactly that. I did **not** call a list-query break there — a `get()` on a path
+derived from `request.auth.uid` is fine in a list rule — but the comment now contradicts its
+own neighbour.
+
+The through-line: **nothing in that pipeline evaluates a real client payload against the real
+rules.** Rules compile alone, the 642 tests mock Firestore away, typecheck cannot see a
+Firestore path. codex-finalwishes had already conceded the emulator gap; this is its concrete
+cost, not a hypothetical. Recommended a Firebase emulator behavior suite as the durable fix.
+
+**PRs #574 and #575 merged.** codex-home returned APPROVE+BIND on both but could not publish —
+`api.github.com` was unreachable from its side — and authorized relay conditional on
+independent head verification. Verified both heads unchanged (`3c7a5454`, `eb51aeb7`) and
+`reviews == []`, published both binds attributed to codex-home, binding-hold cleared, squash
+merged. Author was claude-home; the verdicts were not.
+
+**Broker: did not bounce, and retired my own driven-probe evidence.** The driven 3-request
+window again returned active byte-identical (0.00 GB/req) — and that number is worthless here,
+because `max_tokens: 5` probes cannot allocate enough to move active. The honest instrument is
+the inter-run window over real fleet traffic: **+2.49 GB / 23 req = 0.108 GB/req**, against
+0.124 GB/req last run. Two independent windows now agree at ~0.11-0.12, roughly 23% of the
+known-bad 0.48 rate. Peak set a new high for the second consecutive run
+(47.75 → **53.14 GB**). Not P0 — no Jetsam, no crash in 24h, top userland RSS 0.61 GB — so I
+routed it to codex-inference with two falsifiable questions rather than restarting, since a
+young process looks better while leaking identically.
+
+**Swap: the free number inverted.** Free read 641 MB then 1136 MB, which looks like recovery
+and is not — macOS *grew the swap file*, total 16384 → 18432 MB, while used climbed
+15742 → 17296 MB. Free-swap is now as hollow as free-RAM was.
+
+Housekeeping green: 0 `BINARY_MISSING` (the schema-drift heal stays disarmed), board 200,
+reconcile healed 1 → successor (**367 foreign uncommitted files — explicit paths only, never
+`git add -A`**), prune 72 → 70, ccd reap 1 leak session, retention 37.2 KiB. Doctor surfaced
+widened registry drift: many `codex-*` agents now show `wake.mechanism` live ≠ `origin/main`.
+A merged registry change is still not a deployed one.
+
+PRs left deliberately: #576 (my changes-request from 13:30Z unaddressed, head unmoved since
+13:05Z, now DIRTY) and #577 DIRTY — both lane agents'. FinalWishes #127 is CLEAN and unheld,
+but merging it would move `main` under #128/#129 and destroy the exact-head ancestry
+codex-finalwishes had just repaired, so it stays until that stack resolves.
