@@ -2065,3 +2065,96 @@ not a finding. No new Jetsam or crash reports. Threads 186 → 181, one leaked c
 6.2 KiB retention reclaimed, board on :8734 returning 200, zero BINARY_MISSING sentinels so the
 binary heal stayed disarmed. Inbox reached and held zero. The three owner-surface items remain open
 and untouched, as they must be.
+
+## Conduit run 2026-08-06T09:35Z
+
+The previous pass wrote a false event into this journal and this pass had to take it back out, so
+that is where the entry starts. PR #559 carried a paragraph saying codex-home reviewed #557, could
+not reach `api.github.com`, and had its verdict relayed by claude-home. codex-home returned CHANGES
+REQUIRED and said flatly that it had fetched and bound #557 itself. Rather than arbitrate between
+two accounts I asked the artifact: `gh api repos/SirsiMaster/sirsi-pantheon/pulls/557/reviews` lists
+`sirsi-bind[bot]` publishing APPROVED at exact head `ca2e91fc` at **09:04:21Z**, four minutes and
+thirty-three seconds before my "relay" published a second approval on the same PR. The relay was
+redundant and the transport failure never happened. That call cost nothing and was available the
+entire time.
+
+The mechanism is worth more than the correction. codex-home sent two near-identical responses to one
+request, at 09:04:30 and 09:05:58; the first followed its successful publication and the second
+carried a connectivity complaint. I took the later message as the current state. That heuristic is
+exactly inverted when a *retry* is what produced the duplicate, because a retry replays an earlier
+attempt's failure after the real attempt has already succeeded. **A duplicate response is not a
+state update, and message order is not event order.** The standing precondition now is that no
+verdict gets relayed until the PR's own review list has been read: if a verdict is already published
+there the relay is redundant, and if it is not, the relay premise is confirmed rather than assumed.
+It earned its keep within the hour — #559's re-review came back with the same connectivity claim, the
+review list returned zero, and the relay went out legitimately with the head re-verified as
+unmoved. Merged as `9d8c6adb`.
+
+The connectivity story also resolved into something narrower and more useful than "the reviewer has
+no network." codex-home's session reaches GitHub through `gh` — it fetched #557 and published a
+blocking comment on #559 at 09:14:38Z — while `sirsi-bind.sh` fails at its first `api.github.com`
+call. Those are different paths: `gh` carries the agent's own credential, `sirsi-bind.sh`
+authenticates as the `sirsi-bind` GitHub App with `~/.sirsi/bind-app.pem`. So the fault is
+transport-specific to the App-key path, not session-wide, which is how both of codex-home's
+contradictory reports could feel true from inside its own session. The script's trailing "App is not
+installed" line remains the misleading part: it fires unconditionally after any upstream failure and
+asserts an installation state that was never established.
+
+PR #560 (claude-pantheon) extended the schema-ceiling gate to the two install vectors that still
+bypassed it — `sirsi update --cli` and `scripts/install.sh` — closing the v14-over-v15 fleet-lockout
+class end to end. Source-deep review confirmed the ordering that matters and that the diff cannot
+show: the gate sits after `VerifyChecksum` and before `SafeReplace`, so the probe never *executes*
+an unverified asset and a rejected candidate never reaches a write. The named incident tests are the
+right shape — they pin the exact v14/v15 versions and say in-comment why they must not be collapsed
+into a generic duplicate, which is how that coverage would otherwise be tidied away. Approved, bound,
+merged as `18f81125`, with three non-blocking findings registered rather than left in prose. The
+sharpest: `install.sh` redirects `schema-check`'s stderr to `/dev/null` and then prints a single
+cause — "your router.db is at a higher schema version" — for a command that exits non-zero for three
+different reasons, one of which is an unreadable store, and follows it with advice to reset the
+store. That is the same two-failures-wearing-one-message shape as the `sirsi-bind.sh` line above,
+pointed at a destructive remedy.
+
+Then the ADR-057 thread-store adversarial bind, which is the substantive review of the pass.
+codex-pantheon's head `4745a598` makes thread lifecycle SQLite-authoritative under STORE-ONLY, and
+it genuinely repairs what codex-home blocked earlier: migration v16 is appended after v15 so the
+computed ceiling is right for both a live-v15 and a fresh store, the whole-table `ReplaceThreads`
+delete is gone, and `DeleteThreadCAS` is a real compare-and-swap. The `ON CONFLICT` predicate I
+expected to be a precedence bug is not one — `A AND B OR C AND B OR D AND E AND B` binds as
+`B ∧ (A ∨ C ∨ (D∧E))` and is correct as written. The defect is one layer down, in the *encoding* of
+the ordering key rather than in any interleaving, which is why a good concurrency test suite cannot
+see it. Every guard compares `excluded.last_seen_at > threads.last_seen_at` as **text**, and the
+column is written with `time.RFC3339Nano`, which strips trailing zeros from the fractional seconds.
+A `LastSeenAt` with nanoseconds exactly zero formats as `…T09:31:00Z`; a heartbeat 500 ms later
+formats as `…T09:31:00.5Z`; comparing as strings, `'.'` (0x2E) < `'Z'` (0x5A), so the later timestamp
+compares *smaller* and the write is discarded. Go's own documentation says this format may not sort
+correctly once formatted. Zero-nanosecond times are not exotic here — they are what a
+second-granularity timestamp parses back to, which is exactly what the legacy `threads.json` cutover
+import seeds. And because `UpsertThreads` and `DeleteThreadCAS` both discard `sql.Result`, a
+rejected write is indistinguishable from an applied one: a close returns success and the row never
+changes, a prune reports N removed having deleted zero. A lane that reads live after its session is
+gone is precisely the dishonesty ADR-057 exists to eliminate, reintroduced underneath it. Third
+blocker, and the one with the shortest half-life: `openThreadStore` hand-rolls the store path
+resolver that #560 merged twenty-five minutes earlier for exactly this reason, and calls
+`os.MkdirAll` unconditionally — a write, in a change whose headline claim is that it grants no
+repository writes, which fails on a read-only `~/.sirsi` even when `router.db` exists and opens fine.
+CHANGES REQUIRED, no bind. The publication half was unblockable though, and it is now unblocked: the
+commit existed only in an isolated clone whose push was rejected, so I pushed it from the writable
+lane and `origin/codex/adr057-thread-store-boundary` now resolves to `4745a598`. A head no one else
+can fetch cannot be reviewed by anyone, which makes "route it for adversarial bind" unsatisfiable by
+construction.
+
+Health carries one honest watch and no findings. The broker (PID 53576, build `8eacb2bc`) served
+224→233 requests across the pass; `mlx_active_bytes + mlx_cache_bytes` moved 30.03 GB → 30.73 GB over
+six requests, about 117 MB per request. That is a quarter of the 480 MB/req known-bad rate and an
+order of magnitude above the 11.7 MB/req the previous pass measured over a fifty-five-request window
+— and a six-request sample cannot distinguish a trend from noise, so it is recorded as a watch with
+its ceiling stated rather than as a slope. Active alone is 30.7 GB against a 20 GiB scheduler limit
+that is documented backpressure, not a cap; peak 31.3 GB. `diagnose` reads 🔴 Critical on
+`phys_footprint`, which is the file-backed-weights trap and not a reason to bounce anything. Swap sits
+at 3186 MB of 4096 (78%) — the kernel resized the swap file up from 3072 MB since the last pass,
+which is itself the signal, since free RAM reads a comfortable 59% precisely because paging keeps it
+there. No new Jetsam or crash reports. Threads 184 → 102 after reconcile and prune, one reaped thread
+healed to a successor, two leaked conduit sessions reaped and one archived, 14.3 KiB of retention
+reclaimed, board on :8734 returning 200, zero `BINARY_MISSING` sentinels so the binary heal stayed
+disarmed. Inbox reached zero four times and refilled three times; the three owner-surface items
+remain open and untouched, as they must be.
