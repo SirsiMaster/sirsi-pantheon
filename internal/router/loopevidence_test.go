@@ -258,13 +258,13 @@ func TestThreadArmed_ReRegistrationCase(t *testing.T) {
 		Surface:  "claude",
 	}
 
-	// Thread-id probe misses (old watcher in argv).
+	// Thread-id probe misses (old watcher has old id in argv).
 	setWatcherAliveFn(func(string) bool { return false })
 	// Agent-id probe finds the script.
 	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-pantheon" })
 
 	if !threadArmed(thr, now) {
-		t.Error("threadArmed must credit agent-id watcher for re-registered loop-monitor thread")
+		t.Error("re-registered thread with live agent-id watcher must be armed")
 	}
 
 	// Negative control: both probes dead → not armed.
