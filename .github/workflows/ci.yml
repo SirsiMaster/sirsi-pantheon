@@ -33,6 +33,9 @@ jobs:
       - name: golangci-lint
         run: golangci-lint run --timeout=5m
 
+      - name: ADR number uniqueness
+        run: bash scripts/check-adr-numbers.sh
+
       # Structural invariant, not a style check: every user-visible font on the
       # menubar surface must route through the width-derived type scale. It runs
       # on the HOSTED runner because it needs no Xcode — a guard that only runs
