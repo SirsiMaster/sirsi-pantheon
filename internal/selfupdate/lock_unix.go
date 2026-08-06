@@ -76,9 +76,10 @@ func acquireInstallLockWith(recordPID func(*os.File) error) (*InstallLock, error
 	return &InstallLock{closer: func() error {
 		// Truncate PID to empty rather than unlinking: keeps the inode live in the
 		// directory so any concurrent opener that already has a descriptor on this
-		// inode will flock the same inode (not a newly-created one), preserving the
-		// kernel's arbitration guarantee. Shell's acquire_lock() empty-PID reap branch
-		// removes the file on the next acquire.
+		// inode will flock the same inode (not a newly-created one), preserving
+		// kernel arbitration between Go holders. Shell's acquire_lock() confirms
+		// the empty state persists (~1 s) before reaping, covering this release
+		// window as well as the pre-write-PID acquire window.
 		_ = f.Truncate(0)
 		return f.Close() // releases the kernel flock
 	}}, nil

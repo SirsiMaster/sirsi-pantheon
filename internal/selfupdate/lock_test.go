@@ -99,6 +99,53 @@ func TestAcquireInstallLock_pidTruncatedAfterClose(t *testing.T) {
 	}
 }
 
+// TestAcquireInstallLock_nonEmptyWhileHeld pins the invariant the shell
+// empty-PID reap branch relies on: the lock file is non-empty (contains the
+// holder PID) for the entire interval the flock is held, and a concurrent
+// acquire attempt fails at that same moment. Shell must not rm -f a live
+// holder — the two-observation guard in acquire_lock() depends on this.
+func TestAcquireInstallLock_nonEmptyWhileHeld(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+
+	lock, err := AcquireInstallLock()
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer lock.Close()
+
+	path := filepath.Join(home, ".sirsi", lockFile)
+
+	// PID must be non-empty while lock is held.
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open lock file while held: %v", err)
+	}
+	pid := readLockPID(f)
+	f.Close()
+	if pid == "" {
+		t.Fatal("readLockPID must be non-empty while flock is held")
+	}
+
+	// A concurrent acquire must fail while the first is held.
+	// POSIX flock: separate open() calls produce independent file descriptions;
+	// LOCK_EX|LOCK_NB on the second returns EWOULDBLOCK even from the same pid.
+	lock2, err2 := AcquireInstallLock()
+	if err2 == nil {
+		lock2.Close()
+		t.Fatal("second AcquireInstallLock must fail while first is held")
+	}
+
+	// PID must still be non-empty at the exact moment the concurrent acquire failed.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read lock file after failed concurrent acquire: %v", err)
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		t.Fatal("PID must remain non-empty at the moment a concurrent acquire fails")
+	}
+}
+
 func TestAcquireInstallLock_releasedAfterClose(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
