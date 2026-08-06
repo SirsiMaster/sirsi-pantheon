@@ -488,9 +488,41 @@ func probeGemma(home string) Finding {
 			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
 			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
 	status, detail := ProbeGemmaState(home)
+	if suppressGemmaDown(status, launchAgentPlistPresent(BrokerLabel)) {
+		f.OK = true
+		f.Fixable = false
+		f.Detail = detail + " — broker not installed (no " + BrokerLabel +
+			".plist in LaunchAgents): deliberately absent, nothing to restore"
+		return f
+	}
 	f.OK = status == GemmaHealthy || status == GemmaBusy
 	f.Detail = detail
 	return f
+}
+
+// BrokerLabel is the LaunchAgent label for the warm gemma broker. The label
+// says "gemma" but the process it starts is sne-server, not python — probing
+// by process name finds the wrong thing.
+const BrokerLabel = "ai.sirsi.gemma-broker"
+
+// suppressGemmaDown reports whether a GemmaDown result describes a DELIBERATE
+// absence rather than a failure, and so must not raise a finding.
+//
+// A35 (scope the check to the claim): probeGemma claims "the gemma broker is
+// wedged" and prescribes a restore. Its actual scope is "nothing answered on
+// the port" — which is equally what a broker that was never started looks
+// like. Retiring or quarantining a service moves its plist out of
+// LaunchAgents, so there is nothing to bootstrap and the prescribed restore
+// cannot succeed; firing anyway pages the owner every StartInterval about an
+// intended state, with a guessed cause ("RAM won't fit the model") that was
+// never measured. Observed 2026-08-06: 23 plists parked in
+// ~/.sirsi/quarantined-wake-plists/ produced a standing alarm loop on the
+// owner board while the binary and model were both present on disk.
+//
+// Only GemmaDown collapses this way. A wedged or busy broker is a running
+// process, so whether its plist is installed says nothing about its health.
+func suppressGemmaDown(status GemmaStatus, plistPresent bool) bool {
+	return status == GemmaDown && !plistPresent
 }
 
 // resolveModel mirrors the worker/CLI: env > ~/.sirsi/gemma-model.conf > fallback.
