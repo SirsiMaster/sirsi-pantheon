@@ -77,7 +77,7 @@ func (s *Store) ClassifyLane(agent string, wakeRoutable bool, recentWithin time.
 	if err = s.db.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM items WHERE to_agent=? AND status='dead_letter') +
 		(SELECT COUNT(*) FROM requirements WHERE owner=? AND status='satisfied' AND (commit_ref='' OR tests_ref='' OR security_ref='' OR design_ref='' OR deployment_ref='' OR production_ref='')) +
-		(SELECT COUNT(*) FROM tasks WHERE agent=? AND status='done' AND result_ref='' AND updated>=(SELECT value FROM state WHERE key='operational_enforcement_since'))`,
+		(SELECT COUNT(*) FROM tasks WHERE agent=? AND status='done' AND result_ref='' AND `+postEnforcementTaskPredicate("tasks")+`)`,
 		agent, agent, agent).Scan(&out.CompletionIntegrityFailures); err != nil {
 		return LaneOperationalState{}, fmt.Errorf("routerstore: classify completion integrity: %w", err)
 	}

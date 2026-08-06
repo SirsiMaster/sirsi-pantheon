@@ -25,11 +25,34 @@ func actionableTaskDependency(alias string) string {
 	return fmt.Sprintf(`(%[1]s.blocked_by='' OR EXISTS (SELECT 1 FROM tasks d WHERE d.agent=%[1]s.agent AND d.task_id=%[1]s.blocked_by AND d.status='done'))`, alias)
 }
 
+// actionableTaskPredicate names durable ledger work whether it is waiting for
+// a worker or already held by one. That total keeps the three-source runnable
+// predicate truthful while claimableTaskPredicate below controls dispatch.
+func actionableTaskPredicate(alias string) string {
+	return fmt.Sprintf(`%[1]s.status IN ('pending','in-progress') AND %[2]s`, alias, actionableTaskDependency(alias))
+}
+
+// claimableTaskPredicate is the single definition used by claim and wake
+// backfill. A live/expired lease is not another worker's invitation; per-agent
+// reconciliation clears expired leases before this predicate is evaluated.
+func claimableTaskPredicate(alias string) string {
+	return fmt.Sprintf(`%s AND %s.lease_token=''`, actionableTaskPredicate(alias), alias)
+}
+
 const requirementAuditPrefix = "requirements:audit:"
+
+// postEnforcementTaskPredicate scopes evidence admission to tasks updated on or
+// after a real cutover timestamp. Empty/missing legacy state means "cutover not
+// established" instead of comparing every RFC3339 timestamp greater than ”.
+func postEnforcementTaskPredicate(alias string) string {
+	return fmt.Sprintf(`(SELECT value FROM state WHERE key='operational_enforcement_since')<>'' AND %[1]s.updated>=(SELECT value FROM state WHERE key='operational_enforcement_since')`, alias)
+}
 
 // OperationalAgents returns every lane named by durable nonterminal work.
 // Supervisors union this with configured adapters and live thread records so a
-// missing registry entry cannot hide a stranded lane.
+// missing registry entry cannot hide a stranded lane. The task union is also
+// load-bearing recovery coverage: task-lease expiry is reconciled per agent, so
+// a crashed holder must keep its lane enumerated until reconciliation repairs it.
 func (s *Store) OperationalAgents() ([]string, error) {
 	rows, err := s.db.Query(`SELECT agent FROM (
 		SELECT to_agent AS agent FROM items WHERE status IN ('open','claimed','working','blocked')
@@ -62,6 +85,8 @@ type RunnableState struct {
 	Agent                  string `json:"agent"`
 	OpenRouterItems        int    `json:"open_router_items"`
 	ActionableLedgerTasks  int    `json:"actionable_ledger_tasks"`
+	ClaimableLedgerTasks   int    `json:"claimable_ledger_tasks"`
+	LeasedLedgerTasks      int    `json:"leased_ledger_tasks"`
 	UnmetRequirements      int    `json:"unmet_requirements"`
 	RequirementAuditNeeded bool   `json:"requirement_audit_needed"`
 	Runnable               bool   `json:"runnable"`
@@ -120,11 +145,15 @@ func (s *Store) RunnableFor(agent string) (RunnableState, error) {
 		return RunnableState{}, fmt.Errorf("routerstore: runnable router items: %w", err)
 	}
 
-	if err = tx.QueryRow(`SELECT COUNT(*) FROM tasks t
-		WHERE t.agent=? AND t.status IN ('pending','in-progress') AND `+actionableTaskDependency("t")+`;`, agent).
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM tasks t WHERE t.agent=? AND `+actionableTaskPredicate("t")+`;`, agent).
 		Scan(&state.ActionableLedgerTasks); err != nil {
 		return RunnableState{}, fmt.Errorf("routerstore: runnable ledger tasks: %w", err)
 	}
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM tasks t WHERE t.agent=? AND `+claimableTaskPredicate("t")+`;`, agent).
+		Scan(&state.ClaimableLedgerTasks); err != nil {
+		return RunnableState{}, fmt.Errorf("routerstore: runnable claimable ledger tasks: %w", err)
+	}
+	state.LeasedLedgerTasks = state.ActionableLedgerTasks - state.ClaimableLedgerTasks
 
 	if err = tx.QueryRow(`SELECT COUNT(*) FROM requirements
 		WHERE owner=? AND status NOT IN ('satisfied','waived');`, agent).

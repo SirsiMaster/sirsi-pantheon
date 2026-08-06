@@ -40,8 +40,7 @@ func (s *Store) VerifyCompletion(agent string) (CompletionReport, error) {
 		{&report.TerminalWakeFailures, `SELECT COUNT(*) FROM wake_events WHERE agent=? AND status='terminal_failed';`},
 		{&report.InvalidSatisfiedRequirements, `SELECT COUNT(*) FROM requirements WHERE owner=? AND status='satisfied'
 			AND (commit_ref='' OR tests_ref='' OR security_ref='' OR design_ref='' OR deployment_ref='' OR production_ref='');`},
-		{&report.PostCutoverDoneWithoutProof, `SELECT COUNT(*) FROM tasks WHERE agent=? AND status='done' AND result_ref=''
-			AND updated>=(SELECT value FROM state WHERE key='operational_enforcement_since');`},
+		{&report.PostCutoverDoneWithoutProof, `SELECT COUNT(*) FROM tasks WHERE agent=? AND status='done' AND result_ref='' AND ` + postEnforcementTaskPredicate("tasks") + `;`},
 	}
 	for _, query := range queries {
 		if err := s.db.QueryRow(query.q, agent).Scan(query.dst); err != nil {
