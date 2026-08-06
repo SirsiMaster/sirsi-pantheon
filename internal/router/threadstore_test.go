@@ -30,10 +30,12 @@ func TestThreadTimestampKeyAdvancesAcrossZeroNanoseconds(t *testing.T) {
 	if !(later.LastSeenAt > first.LastSeenAt) {
 		t.Fatalf("fixed-width timestamp lost ordering: %q <= %q", later.LastSeenAt, first.LastSeenAt)
 	}
-	if err := store.UpsertThreads([]routerstore.ThreadRecord{first}); err != nil {
+	err = store.UpsertThreads([]routerstore.ThreadRecord{first})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.UpsertThreads([]routerstore.ThreadRecord{later}); err != nil {
+	err = store.UpsertThreads([]routerstore.ThreadRecord{later})
+	if err != nil {
 		t.Fatal(err)
 	}
 	rows, err := store.ListThreads()
@@ -61,7 +63,8 @@ func TestStoreOnlyThreadLifecycleDoesNotWriteRegistryFile(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	item := "adr057-thread-heartbeat-store-boundary"
-	if _, err := Heartbeat(routerRoot, thread.ThreadID, HeartbeatUpdate{CurrentItem: &item}); err != nil {
+	_, err = Heartbeat(routerRoot, thread.ThreadID, HeartbeatUpdate{CurrentItem: &item})
+	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
 	reg, err := LoadThreadRegistry(routerRoot)
@@ -71,11 +74,13 @@ func TestStoreOnlyThreadLifecycleDoesNotWriteRegistryFile(t *testing.T) {
 	if got := reg.Threads[thread.ThreadID].CurrentItem; got != item {
 		t.Fatalf("current item = %q, want %q", got, item)
 	}
-	if _, err := CloseThread(routerRoot, thread.ThreadID); err != nil {
+	_, err = CloseThread(routerRoot, thread.ThreadID)
+	if err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(routerRoot, "threads.json")); !os.IsNotExist(err) {
-		t.Fatalf("STORE-ONLY wrote threads.json: %v", err)
+	_, statErr := os.Stat(filepath.Join(routerRoot, "threads.json"))
+	if !os.IsNotExist(statErr) {
+		t.Fatalf("STORE-ONLY wrote threads.json: %v", statErr)
 	}
 }
 
@@ -91,15 +96,14 @@ func TestStoreOnlyConcurrentDistinctRegistrationsSurvive(t *testing.T) {
 	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
 	done := make(chan error, 2)
 	for _, id := range []string{"thread-a", "thread-b"} {
-		id := id
-		go func() {
-			_, err := RegisterThread(root, &Thread{ThreadID: id, AgentID: "codex-pantheon", Surface: "codex"})
-			done <- err
-		}()
+		go func(threadID string) {
+			_, registerErr := RegisterThread(root, &Thread{ThreadID: threadID, AgentID: "codex-pantheon", Surface: "codex"})
+			done <- registerErr
+		}(id)
 	}
 	for range 2 {
-		if err := <-done; err != nil {
-			t.Fatal(err)
+		if chErr := <-done; chErr != nil {
+			t.Fatal(chErr)
 		}
 	}
 	reg, err := LoadThreadRegistry(root)
@@ -132,10 +136,12 @@ func TestStoreOnlySuspendResumePersistsAndImportsLegacy(t *testing.T) {
 	if reg.Threads["legacy"] == nil {
 		t.Fatal("legacy thread not imported")
 	}
-	if _, err := SuspendThread(root, "legacy", &SuspendPayload{ResumePrompt: "continue"}); err != nil {
+	_, err = SuspendThread(root, "legacy", &SuspendPayload{ResumePrompt: "continue"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResumeThread(root, "legacy"); err != nil {
+	_, err = ResumeThread(root, "legacy")
+	if err != nil {
 		t.Fatal(err)
 	}
 	reg, err = LoadThreadRegistry(root)
@@ -167,7 +173,8 @@ func TestStoreOnlyPruneDeletesOnlyObservedTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg.PruneClosed(time.Now(), TerminalRetention)
-	if err := SaveThreadRegistry(root, reg); err != nil {
+	err = SaveThreadRegistry(root, reg)
+	if err != nil {
 		t.Fatal(err)
 	}
 	reg, err = LoadThreadRegistry(root)
