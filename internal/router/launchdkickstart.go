@@ -28,6 +28,18 @@ type launchdDeps struct {
 	enableLabel    func(domain, label string) error
 	bootstrapPlist func(plistPath string) error
 	uid            func() int
+	isQuarantined  func() bool // true if the operator deliberately stopped the gemma broker
+}
+
+// quarantinedLabels are launchd labels this duty must never revive while the
+// broker is quarantined. A deliberate operator stop (`sirsi gemma quarantine`)
+// only guards RunGemmaLivenessDuty (PR #611) — it does not remove these plists
+// from ~/Library/LaunchAgents, so without this check the very next kickstart
+// tick silently undoes the stop, exactly the failure class PR #611 exists to
+// close (codex-inference finding, 2026-08-06).
+var quarantinedLabels = map[string]bool{
+	"ai.sirsi.gemma-broker": true,
+	"ai.sirsi.gemma-worker": true,
 }
 
 var launchdOS = launchdDeps{
@@ -84,6 +96,14 @@ var launchdOS = launchdDeps{
 		return nil
 	},
 	uid: os.Getuid,
+	isQuarantined: func() bool {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(QuarantineMarkerPath(home))
+		return err == nil
+	},
 }
 
 // managedPlist reports whether a LaunchAgents entry is one of ours and a real
@@ -129,6 +149,8 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 	uid := deps.uid()
 	domain := fmt.Sprintf("gui/%d", uid)
 
+	quarantined := deps.isQuarantined != nil && deps.isQuarantined()
+
 	var revived []string
 	var firstErr error
 	for _, e := range entries {
@@ -139,6 +161,9 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 		label := labelForPlist(name)
 		if loaded[label] {
 			continue
+		}
+		if quarantined && quarantinedLabels[label] {
+			continue // deliberate operator stop — never silently revive
 		}
 		// Enable before bootstrap when the override DB has disabled this label.
 		// Without this step, bootstrap silently fails (Operation not permitted)
