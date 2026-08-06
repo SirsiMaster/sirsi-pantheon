@@ -615,7 +615,8 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 	// under the strict no-invented-columns law.
 	dispatchContractCols := map[string]bool{
 		"lease_token": true, "lease_expires": true, "claimed_by": true,
-		"attempts": true, "idem_key": true, "source_item": true,
+		"lease_updated": true,
+		"attempts":      true, "idem_key": true, "source_item": true,
 		"failure_class": true, "occurrences": true, "first_seen": true, "last_seen": true,
 	}
 	for col := range schemaCols {

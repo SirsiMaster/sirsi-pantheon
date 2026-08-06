@@ -30,6 +30,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -75,8 +77,9 @@ type Item struct {
 // Store is a durable index over the work queue backed by SQLite.
 // A Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	db  *sql.DB
-	now func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
+	db   *sql.DB
+	path string
+	now  func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
 
 	// Event-driven dispatch (Phase 2): in-process waiters per agent, woken by
 	// SendGuarded/NotifyAgent. Guarded by waitMu per Rule A21.
@@ -103,7 +106,7 @@ func Open(path string) (*Store, error) {
 	// SQLite is single-writer; serializing to one connection avoids
 	// "database is locked" under concurrent writes (Rule A21 intent).
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -508,6 +511,28 @@ BEGIN
  WHERE agent=NEW.agent AND status='leased' AND ((source_kind='ledger_task' AND source_id=NEW.task_id) OR (source_kind='requirement' AND NEW.task_id='requirement/'||source_id) OR source_kind='lane');
 END;
 `},
+	// v15 — task dependencies release mechanically on successful completion,
+	// matching router-item dependency semantics and the shared Go predicate.
+	{15, `
+DROP TRIGGER IF EXISTS wake_task_dependency_done;
+DROP TRIGGER IF EXISTS wake_continue_after_task;
+CREATE TRIGGER wake_task_dependency_done AFTER UPDATE OF status ON tasks
+WHEN NEW.status='done'
+BEGIN
+  INSERT OR IGNORE INTO wake_events(event_id,event_key,agent,source_kind,source_id,reason,created,updated)
+  SELECT lower(hex(randomblob(16))),'task:dependency-done:'||d.agent||':'||d.task_id||':'||NEW.task_id,d.agent,'ledger_task',d.task_id,'ledger task dependency completed successfully',strftime('%Y-%m-%dT%H:%M:%SZ','now'),strftime('%Y-%m-%dT%H:%M:%SZ','now')
+  FROM tasks d WHERE d.agent=NEW.agent AND d.status IN ('pending','in-progress') AND d.blocked_by=NEW.task_id;
+END;
+CREATE TRIGGER wake_continue_after_task AFTER UPDATE OF status ON tasks
+WHEN NEW.status='done' AND EXISTS (
+  SELECT 1 FROM tasks t WHERE t.agent=NEW.agent AND t.status IN ('pending','in-progress')
+  AND (t.blocked_by='' OR EXISTS (SELECT 1 FROM tasks d WHERE d.agent=t.agent AND d.task_id=t.blocked_by AND d.status='done'))
+)
+BEGIN
+  INSERT OR IGNORE INTO wake_events(event_id,event_key,agent,source_kind,source_id,reason,created,updated)
+  VALUES(lower(hex(randomblob(16))),'continue:task:'||NEW.agent||':'||NEW.task_id,NEW.agent,'lane',NEW.agent,'worker completed task while more work exists',strftime('%Y-%m-%dT%H:%M:%SZ','now'),strftime('%Y-%m-%dT%H:%M:%SZ','now'));
+END;
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
@@ -547,11 +572,14 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("routerstore: migrate: read user_version: %w", err)
 		}
 		maxVersion := migrations[len(migrations)-1].version
-		if version > maxVersion {
-			return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, maxVersion)
+		if err := checkSchemaCompatibility(version, maxVersion); err != nil {
+			return err
 		}
 		if version == maxVersion {
 			return nil // up to date
+		}
+		if isSharedProductionStore(s.path) && os.Getenv("SIRSI_ALLOW_SCHEMA_MIGRATE") != "1" {
+			return fmt.Errorf("routerstore: live schema advancement v%d→v%d is a deployment event; set SIRSI_ALLOW_SCHEMA_MIGRATE=1 only during an atomic reviewed binary rollout", version, maxVersion)
 		}
 		var next schemaMigration
 		for _, candidate := range migrations {
@@ -593,6 +621,52 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("routerstore: migrate to v%d: commit: %w", next.version, err)
 		}
 	}
+}
+
+func checkSchemaCompatibility(current, maxSupported int) error {
+	if current > maxSupported {
+		return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", current, maxSupported)
+	}
+	return nil
+}
+
+func isSharedProductionStore(path string) bool {
+	if path == "" || path == ":memory:" {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return true // unknown identity fails closed
+	}
+	live := filepath.Join(home, ".sirsi", "router.db")
+	if liveInfo, liveErr := os.Stat(live); liveErr == nil {
+		if pathInfo, pathErr := os.Stat(path); pathErr == nil {
+			return os.SameFile(liveInfo, pathInfo)
+		}
+	}
+	// Pre-creation fallback: resolve cwd, symlinked parent directories, and
+	// case-folding without requiring the database file itself to exist.
+	canonical := func(p string) (string, error) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return "", err
+		}
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			return resolved, nil
+		}
+		parent, base := filepath.Dir(abs), filepath.Base(abs)
+		resolvedParent, err := filepath.EvalSymlinks(parent)
+		if err != nil {
+			return filepath.Clean(abs), nil
+		}
+		return filepath.Join(resolvedParent, base), nil
+	}
+	p, pErr := canonical(path)
+	l, lErr := canonical(live)
+	if pErr != nil || lErr != nil {
+		return true
+	}
+	return strings.EqualFold(filepath.Clean(p), filepath.Clean(l))
 }
 
 // pinConnWithRetry acquires a pinned connection, retrying on a transient

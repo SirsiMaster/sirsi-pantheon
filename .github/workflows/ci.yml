@@ -103,6 +103,22 @@ jobs:
           name: coverage
           path: coverage.out
 
+      # ADR-057: ADR numbers are allocated through the router store, not by
+      # counting files. This gate fails the build when two documents claim one
+      # number — every citation of a collided number is ambiguous, and the repo
+      # already carries four such collisions (013, 016, 046, 054).
+      # SIRSI_ROUTER_DB points at a scratch store so CI never touches the live one.
+      - name: ADR number collisions
+        shell: bash
+        env:
+          SIRSI_ROUTER_DB: ${{ runner.temp }}/adr-audit/router.db
+        run: |
+          go build -o sirsi ./cmd/sirsi/
+          # --allow is the pre-existing debt list (ADR 013/016/046/054 each
+          # have two documents). New collisions fail; these are reported and
+          # grandfathered. Only ever REMOVE numbers from this list.
+          ./sirsi adr audit --docs docs --allow 13,16,46,54
+
       - name: Ma'at Pulse — Dynamic Metrics
         shell: bash
         run: |

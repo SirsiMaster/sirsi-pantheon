@@ -772,7 +772,9 @@ func init() {
 	rootCmd.AddCommand(spotlightExcludeCmd)
 	rootCmd.AddCommand(auditCmd, riskCmd, hardwareCmd, diagramCmd, statusCmd)
 	rootCmd.AddCommand(versionCmd, quickstartCmd, setupCmd, routerCmd, agentCmd, threadCmd)
-	rootCmd.AddCommand(ctrCmd) // 𓁢 CTR — Check The Router: universal on-demand wake primitive (ctr / /ctr)
+	rootCmd.AddCommand(newReqCmd()) // ADR-057 step 1: canonical requirement registry
+	rootCmd.AddCommand(newADRCmd()) // ADR-057: durable ADR number allocation — no more cross-claims
+	rootCmd.AddCommand(ctrCmd)      // 𓁢 CTR — Check The Router: universal on-demand wake primitive (ctr / /ctr)
 	rootCmd.AddCommand(selfUpdateCmd)
 
 	// ── Power-user deity modules (hidden from default help, still work) ──

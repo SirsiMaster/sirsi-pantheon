@@ -1,6 +1,7 @@
 # ADR-054 — One Horus: the unified agent fabric (identity & lifecycle, messages, work, models)
 
-**Status:** DRAFT — owner-directed 2026-08-05 (claude-nexus, sne-50); review: codex-home.
+**Status:** Accepted in principle by owner directive 2026-08-05; continuous
+execution mechanism amended by ADR-057 on 2026-08-06.
 **Supersedes nothing; composes:** ADR-051 (event-woken A2A conduit), the Router
 Universal Task Ledger, `sirsi-inference/docs/design/MODEL-ROUTER-DESIGN.md`,
 ADR-039 (continuous work surface), ADR-040 (verify-before-kill), ADR-043
@@ -24,19 +25,27 @@ registry, exposing three planes. Beneath all three sits the layer the owner
 correctly named as the key unlock: **identity & lifecycle**, whose core is
 the wake matrix.
 
-### 0. The wake matrix (foundation — every mechanism is real today)
+### 0. Provider-neutral wake adapter contract
+
+The matrix below records observed deployments; it is not the architectural
+contract. The contract is capability-based and enforced by the Go runtime. An
+adapter declares how to reach a worker and must support readiness probing,
+bounded invocation, durable delivery identity, acknowledgment by an exact
+source-store claim, lease renewal, and reconstitution. Provider or product
+names never alter the lifecycle state machine.
 
 | Lane shape | Wake mechanism | Status | Notes |
 |---|---|---|---|
 | codex-* headless CLI | launchd cli-spawn adapter; `ctr` triggers it on open items | **LIVE** — observed waking codex-io repeatedly | fresh process boots, reads inbox+ledger, works, exits |
 | claude-* pinned interactive (CCD) | **session message injection** — a message sent into the running session arrives as a turn and the agent processes it | **LIVE — proven 2026-08-05**: the 43h-idle claude-pantheon lane was woken this way by Horus | the sanctioned "nudge, don't open sessions"; unavailable to/from unattended runs |
 | claude-* headless routine | fresh `claude -p` session per wake, boots from ledger + thoth + continuation, exits (ADR-051 model) | designed, partially deployed | the owner's standing conversion directive for non-owner-facing lanes |
-| any session, self-cadence | schedule/cron wakeups within the session runtime | LIVE | used for self-pacing only, never polling `ctr` |
+| any session, self-cadence | schedule/cron wakeups within the session runtime | advisory only | may accelerate a wake; cannot enforce continuity or acknowledge work |
 | services (broker, dashboards) | launchd KeepAlive + fabric-watchdog with **real-completion probes** | LIVE | probes read the canonical port file; "healed" claims meet the same evidence bar as "healthy" |
 
-Wake triggers are events, not timers: an item landing in an inbox, a task
-assigned/unblocked, or a gone-stale projection (ADR-051's transactional
-task events). Timers exist only as the supervision sweep's cadence.
+Wake triggers are durable store events, not timers or prompts: an item landing
+or becoming unblocked, a task being created/assigned/unblocked, a requirement
+audit creating a gap, lease expiry, or completion while more work remains.
+Timers exist only for reconciliation and retry cadence.
 
 ### 1. Identity & lifecycle (enforced, not conventional)
 
@@ -83,13 +92,16 @@ REGISTER → BIND → WAKE → WORK → HEARTBEAT → EXIT/PARK → RECONSTITUTE
 
 - The sweep keys on **task-touch age, never session heartbeats** — a
   breathing session with a stale registry is "alive but not working."
-- Lane with unblocked open tasks quiet >4h → wake via the matrix +
-  work-or-declare-blocked item, by name.
-- Two failed wake cycles → owner escalation card (never silent).
-- The live dashboard renders IDLE WITH WORK in red (shipped 2026-08-05);
+- Any runnable lane without recent source-store mutation is IDLE WITH WORK and
+  is woken immediately through its declared adapter; there is no four-hour grace
+  period.
+- Delivery is bounded and retried durably. Retry exhaustion becomes a terminal
+  wake failure and an explicit escalation; it never disappears into a log.
+- The dashboard read model can render IDLE WITH WORK in red; installed-runtime and cross-surface acceptance remain open under ADR-057.
   the portal board inherits it.
-- Until the conduit hosts the scheduled sweep, supervision runs in every
-  claude-nexus session and on every `ctr` (interim, declared honestly).
+- The resident Go Horus supervisor is the enforcement authority. Session loops,
+  prompts, heartbeats, and manual `ctr` invocations are observations or recovery
+  edges only and cannot satisfy this duty.
 
 ## Consequences
 
