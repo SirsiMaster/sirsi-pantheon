@@ -104,6 +104,17 @@ type Thread struct {
 	// which stranded inboxes when a laptop's name changed. Empty on legacy
 	// records (treated as local; the registry is per-machine). See machineid.go.
 	MachineID string `json:"machine_id,omitempty"`
+	// ConsumerCapable records whether this thread can actually DRAIN the agent's
+	// inbox, as opposed to merely proving the process is alive.
+	//
+	// The distinction is the whole point: a wake loop with no declared consumer
+	// heartbeats exactly like one that works the queue, and because armed[] was
+	// computed from heartbeat freshness alone, a watch-only loop credited its own
+	// lane as armed and suppressed the wake pass that would otherwise have
+	// escalated it. Agent-session surfaces set this implicitly (they ARE the
+	// consumer); worker loops set it only when a consumer resolved.
+	ConsumerCapable bool `json:"consumer_capable,omitempty"`
+
 	// SessionID is the stable conversation identity for app-hosted surfaces that
 	// have no durable OS PID (e.g. CLAUDE_CODE_SESSION_ID for Claude Code desktop
 	// sessions). When set, the mint key is (session_id, surface) instead of
@@ -114,9 +125,43 @@ type Thread struct {
 	// one. The record expires when LastSeenAt + LeaseSessionTTL elapses without
 	// renewal. Populated from CLAUDE_CODE_SESSION_ID by `sirsi thread register`.
 	SessionID string `json:"session_id,omitempty"`
+
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`
+}
+
+// IsInboxConsumer reports whether this thread can actually drain its agent's
+// inbox — the honest replacement for "has a fresh heartbeat".
+//
+// An agent-session surface (a live claude/codex/gemini session) IS a consumer:
+// that is what drained claude-deck's queue while its worker loop sat watching.
+// A worker loop is a consumer only if it resolved a declared consumer capability.
+func (t *Thread) IsInboxConsumer() bool {
+	if t == nil {
+		return false
+	}
+	if t.ConsumerCapable {
+		return true
+	}
+	// ALLOW-LIST, not a deny-list. The earlier shape credited every surface
+	// except four named observers, so `automation`, `resident-loop`, `mcp`,
+	// `api`, `webhook`, `vscode`, `jetbrains`, `cursor`, `gemini`, `gemma`,
+	// `qwen` — and any surface spelling invented after this line was written —
+	// became armed by default without ever declaring a consumer contract.
+	//
+	// That is the same false-green-by-default class this whole change exists to
+	// remove: a thread credited as draining an inbox it cannot drain suppresses
+	// its own rescue in WakePass. A new surface must now EARN the credit via
+	// ConsumerCapable rather than inherit it by not being on a list someone
+	// remembered to update (codex-pantheon, PR #389).
+	switch t.Surface {
+	case surfaceClaude, surfaceCodex:
+		// Real agent sessions: a live one works its own inbox.
+		return true
+	default:
+		return false
+	}
 }
 
 // SuspendPayload is the resumable snapshot captured when a thread is suspended
