@@ -123,6 +123,25 @@ var routerTaskClaimCmd = &cobra.Command{
 	},
 }
 
+var routerTaskClaimIDCmd = &cobra.Command{
+	Use: "claim-id <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Atomically lease one exact actionable task",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(taskLeaseWorker) == "" || strings.TrimSpace(taskLeaseThread) == "" {
+			return fmt.Errorf("--worker and --thread are required")
+		}
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		lease, err := f.Store().ClaimTask(args[0], args[1], taskLeaseWorker, taskLeaseThread, taskLeaseTTL)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(lease)
+	},
+}
+
 var routerTaskRenewCmd = &cobra.Command{
 	Use: "renew <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Renew a fenced task lease",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -319,12 +338,15 @@ func init() {
 	routerTaskClaimCmd.Flags().StringVar(&taskLeaseWorker, "worker", "", "Concrete worker identity (required)")
 	routerTaskClaimCmd.Flags().StringVar(&taskLeaseThread, "thread", "", "Durable thread/task identity (required)")
 	routerTaskClaimCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
+	routerTaskClaimIDCmd.Flags().StringVar(&taskLeaseWorker, "worker", "", "Concrete worker identity (required)")
+	routerTaskClaimIDCmd.Flags().StringVar(&taskLeaseThread, "thread", "", "Durable thread/task identity (required)")
+	routerTaskClaimIDCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
 	for _, c := range []*cobra.Command{routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd} {
 		c.Flags().StringVar(&taskLeaseToken, "lease", "", "Fenced task lease token (required)")
 	}
 	routerTaskRenewCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
 	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "result-ref", "", "Evidence/proof reference (required)")
 	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
-	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd)
+	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }
