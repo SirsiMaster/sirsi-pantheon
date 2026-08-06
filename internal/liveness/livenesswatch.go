@@ -539,18 +539,12 @@ func approximateModelGB(modelID string) float64 {
 
 // rightSizeAdvice returns a runnable command string when the current broker
 // model is clearly too large for availableGB of RAM; empty string otherwise.
-// Prefers the actual broker RSS (already-measured, no sysctl) over name-derived
-// estimates — name patterns miss quantizer suffixes and multimodal overheads.
-// Falls back to approximateModelGB (quantizer-aware since 2026-08-06) when
-// the broker is not running.
+// Uses approximateModelGB (quantizer-aware) for size estimation — ps RSS is
+// unreliable for this process because model weights are file-backed (mmap'd)
+// and do not count toward RSS; a 37 GB model reads as ~185 MB RSS.
 func rightSizeAdvice(home string, availableGB float64) string {
 	model := resolveModel(home)
 	modelGB := approximateModelGB(model)
-	// Use actual broker RSS when available — beats name-derived approximation.
-	pidFile := filepath.Join(home, ".sirsi", "gemma-server.pid")
-	if rssKB := getBrokerRSSFn()(pidFile); rssKB > 0 {
-		modelGB = float64(rssKB) / (1024 * 1024) // KB → GB
-	}
 	if modelGB == 0 || 2*modelGB+4 <= availableGB {
 		return "" // unknown size or already fits
 	}
