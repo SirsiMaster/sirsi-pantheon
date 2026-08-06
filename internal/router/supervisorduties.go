@@ -101,6 +101,13 @@ func supervisorDuties() []SupervisorDuty {
 		{Name: "launchd-kickstart", GoRun: func(routerRoot, repoRoot string) error {
 			return getLaunchdKickstartFn()(routerRoot, repoRoot)
 		}, Cadence: 5 * time.Minute},
+		// Stale-thread reconcile (A27): heals registered-but-not-looping threads
+		// that the registry-police flags. Runs just after the police cadence (15 min
+		// vs 10 min) so the police fires first, logs the alarm, then this duty
+		// transitions the stale-active records to suspended. Reaped records are
+		// intentionally skipped — they need the full transcript-backed recovery path
+		// that only SessionStart can provide. See stalethreadheal.go.
+		{Name: "stale-thread-reconcile", GoRun: RunStaleThreadReconcileDuty, Cadence: 15 * time.Minute},
 	}
 }
 
