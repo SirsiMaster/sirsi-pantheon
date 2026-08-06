@@ -260,6 +260,13 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	// Status observed at read time. Every decision below — including whether the
+	// row may legally shed lease ownership — is derived from this value, so the
+	// write must refuse to land if it changed underneath us (see the CAS guard).
+	observedStatus := t.Status
+	if afterTaskReadHook != nil {
+		afterTaskReadHook()
+	}
 	if u.Status != "" && u.Status != t.Status {
 		if u.Status == "done" || u.Status == "in-progress" || t.Status == "in-progress" {
 			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
@@ -333,10 +340,20 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if t.Status != "in-progress" {
 		leaseClear = `,lease_token='',lease_expires='',claimed_by='',thread_id=''`
 	}
-	_, err = s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=?;`,
-		t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID)
+	// Compare-and-swap on the observed status. Read and write are separate
+	// statements, so a concurrent ClaimTask can install a valid fenced lease and
+	// flip the row to in-progress in between. Without this guard the write would
+	// land a stale status AND — because leaseClear was decided from the stale
+	// read — strip the newly valid ownership fields, silently un-fencing live
+	// work. That is a worse failure than the poison this clearing exists to
+	// prevent, so the update refuses rather than clobbers.
+	res, err := s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=? AND status=?;`,
+		t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID, observedStatus)
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w", agent, taskID, err)
+	}
+	if n, rowsErr := res.RowsAffected(); rowsErr == nil && n == 0 {
+		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w (status changed from %q since read)", agent, taskID, ErrConcurrentTaskUpdate, observedStatus)
 	}
 	return s.GetTask(agent, taskID)
 }

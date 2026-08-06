@@ -46,6 +46,18 @@ var ErrNotFound = errors.New("routerstore: item not found")
 // mirroring internal/work.Close semantics.
 var ErrAlreadyClosed = errors.New("routerstore: item already closed")
 
+// ErrConcurrentTaskUpdate is returned when a task's status changed between
+// UpdateTask's read and its write. The caller must re-read and retry: landing
+// the stale write would overwrite a newer status and, worse, could strip a
+// fenced lease installed by a concurrent claim.
+var ErrConcurrentTaskUpdate = errors.New("routerstore: task changed concurrently")
+
+// afterTaskReadHook runs inside UpdateTask between the read and the write. It
+// exists solely so concurrency regression tests can force the interleaving
+// deterministically instead of racing goroutines and hoping. Always nil in
+// production.
+var afterTaskReadHook func()
+
 // MaxSupportedSchemaVersion is the newest router-store schema this binary can
 // safely open. It is exported into `sirsi version --json` so installers can
 // reject an older candidate before replacing a live binary.
