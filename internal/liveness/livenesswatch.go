@@ -205,13 +205,15 @@ func Run(routerRoot string, w io.Writer) error {
 	home, _ := os.UserHomeDir()
 	// Order = severity: a wedged broker strands every agent; a memory spiral
 	// swap-kills the broker; a leaked-session pileup is the precursor that CAUSES
-	// that spiral; a dead menubar only loses the operator surface.
+	// that spiral; a dead menubar only loses the operator surface; a wedged CI
+	// runner halts merges but does not affect agent work (lowest severity).
 	findings := []Finding{
 		probeLaunchdDisabled(),
 		probeGemma(home),
 		probeMemoryDeath(),
 		probeSessionLeak(),
 		probeMenubar(),
+		ProbeRunnerWedge(),
 	}
 
 	for _, f := range findings {
@@ -268,7 +270,8 @@ func Run(routerRoot string, w io.Writer) error {
 // condition still reaches the owner rather than being silently misrouted.
 func recipientFor(check string) string {
 	switch check {
-	case "gemma-broker", "memory-death", "session-leak", "menubar", "launchd-disabled":
+	case "gemma-broker", "memory-death", "session-leak", "menubar", "launchd-disabled",
+		"ci-runner-wedge":
 		return "claude-pantheon"
 	default:
 		return "owner"
