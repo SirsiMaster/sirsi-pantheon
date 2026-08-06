@@ -1,3 +1,4 @@
+//nolint:govet // Test setup deliberately scopes operation errors next to each assertion.
 package router
 
 import (
@@ -91,7 +92,7 @@ func TestStoreOnlyConcurrentDistinctRegistrationsSurvive(t *testing.T) {
 	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
 	done := make(chan error, 2)
 	for _, id := range []string{"thread-a", "thread-b"} {
-		id := id
+
 		go func() {
 			_, err := RegisterThread(root, &Thread{ThreadID: id, AgentID: "codex-pantheon", Surface: "codex"})
 			done <- err

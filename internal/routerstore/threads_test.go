@@ -1,3 +1,4 @@
+//nolint:govet // Test setup deliberately scopes operation errors next to each assertion.
 package routerstore
 
 import (

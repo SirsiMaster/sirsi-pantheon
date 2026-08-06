@@ -230,8 +230,8 @@ func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 				if seedErr != nil {
 					return nil, seedErr
 				}
-				if err := store.ImportThreadsIfEmpty(seed); err != nil {
-					return nil, err
+				if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
+					return nil, importErr
 				}
 				records, err = store.ListThreads()
 				if err != nil {
@@ -374,8 +374,8 @@ func openThreadStore() (*routerstore.Store, error) {
 		return nil, err
 	}
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, fmt.Errorf("create thread store directory: %w", err)
+		if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+			return nil, fmt.Errorf("create thread store directory: %w", mkdirErr)
 		}
 	}
 	store, err := routerstore.Open(path)
