@@ -2343,14 +2343,18 @@ outage, it does not prevent it.
 **PR #567 CHANGES REQUESTED a second time, and the second round is the more instructive one.** Round
 one found that `approximateModelGB` sized `gemma-4-12B-it-8bit` from the `12b` name pattern at 7 GB
 against a ~35 GB reality. The fix reached for a measured value instead — correct instinct, wrong
-value, twice over. (1) `rightSizeAdvice` reads `~/.sirsi/gemma-server.pid`, and **that file is empty**
+value, twice over. (1) `rightSizeAdvice` reads `~/.sirsi/gemma-server.pid`, and **that file is absent**
 on this host right now with the broker live and serving (launchd `ai.sirsi.gemma-broker`, PID 53576,
-349 requests): `getBrokerRSSFn()` returns 0, the guard `rssKB > 0` is false, and control falls
+349 requests) — `stat` returns ENOENT on the canonical path; only a
+`gemma-server.pid.quarantined-20260806` sibling remains. Absent or unreadable,
+`getBrokerRSSFn()` returns 0, the guard `rssKB > 0` is false, and control falls
 straight through to the name estimate it was written to replace — production behaviour unchanged,
 only the test suite changed. (2) Even with a populated pidfile, **RSS is off by ~190x for this
 process**: at one instant, `ps -o rss=` gave 185728 KB = 0.18 GB, `footprint -p` gave 34 GB, and
-`/health` `mlx_active_bytes` gave 36.47 GB, because the weights are mmapped file-backed pages RSS
-does not count. `2*0.18+4 = 4.36 <= 20` returns empty — the identical false "fits already" silence,
+`/health` `mlx_active_bytes` gave 36.47 GB. These are three different metrics and the measurement
+establishes only that they diverge by ~190x, i.e. that RSS is the wrong sizing authority for this
+process — not *why* they diverge; no instrumented proof of the accounting cause was taken here.
+`2*0.18+4 = 4.36 <= 20` returns empty — the identical false "fits already" silence,
 reached by a different wrong number. The PR body's "actual RSS measured 34.9 GB" is `phys_footprint`,
 not RSS. (3) The new test stubs 35 GB RSS, a value no real broker will ever return from RSS, so it
 passes green over a path that is both unreachable and wrong when reached — **a stub is evidence only
