@@ -49,7 +49,7 @@ func (s *Store) UpsertThreads(records []ThreadRecord) error {
 	}
 	defer tx.Rollback()
 	for _, r := range records {
-		result, err := tx.Exec(`
+		if _, err := tx.Exec(`
 INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload
@@ -57,22 +57,39 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
           AND (excluded.status IN ('closed','reaped','suspended')
-               OR excluded.status = threads.status AND excluded.payload > threads.payload))`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload)
-		if err != nil {
+               OR excluded.status = threads.status AND excluded.payload > threads.payload))`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload); err != nil {
 			return fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
-		}
-		affected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("routerstore: count upsert thread %q: %w", r.ThreadID, err)
-		}
-		if affected != 1 {
-			return fmt.Errorf("routerstore: thread %q mutation rejected by lifecycle fence", r.ThreadID)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("routerstore: commit thread upsert: %w", err)
 	}
 	return nil
+}
+
+// UpsertThreadCAS applies one explicitly mutated lifecycle row and reports
+// whether its fence accepted the write. Snapshot reconciliation uses
+// UpsertThreads, where an unrelated stale row is an expected no-op; lifecycle
+// verbs use this method so losing their own target fence fails loudly.
+func (s *Store) UpsertThreadCAS(r ThreadRecord) (bool, error) {
+	result, err := s.db.Exec(`
+INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)
+ON CONFLICT(thread_id) DO UPDATE SET
+ agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload
+WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (excluded.last_seen_at > threads.last_seen_at
+       OR excluded.last_seen_at = threads.last_seen_at
+          AND (excluded.status IN ('closed','reaped','suspended')
+               OR excluded.status = threads.status AND excluded.payload > threads.payload))`,
+		r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload)
+	if err != nil {
+		return false, fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("routerstore: count upsert thread %q: %w", r.ThreadID, err)
+	}
+	return affected == 1, nil
 }
 
 // ResumeThreadCAS is the sole suspended-to-active transition. Requiring the

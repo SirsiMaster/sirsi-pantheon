@@ -304,8 +304,14 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 				dirty = append(dirty, record)
 			}
 		}
-		if err := store.UpsertThreads(dirty); err != nil {
-			return err
+		for _, record := range dirty {
+			applied, err := store.UpsertThreadCAS(record)
+			if err != nil {
+				return err
+			}
+			if !applied {
+				return fmt.Errorf("thread %q mutation lost lifecycle fence", record.ThreadID)
+			}
 		}
 		for id, old := range reg.baseline {
 			if _, ok := reg.Threads[id]; !ok {
