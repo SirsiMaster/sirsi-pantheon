@@ -289,8 +289,22 @@ func TestResolveConsumerRefusesWhatIsNotAConsumer(t *testing.T) {
 	}
 }
 
+// H6 REVERSAL: this test previously qualified the lane on `sh -c "exit 0"`
+// alone. That was the borrowing — a probe that exits 0 identically whether the
+// resident is draining an inbox or was stopped an hour ago, and which therefore
+// could never withdraw the credit.
+//
+// A resident is now credited ONLY on a thread it published itself, so this test
+// stands up that published thread. What it still asserts is unchanged and still
+// true: a resident resolves as Resident, carries NO spawn argv (it is never
+// spawned), and retains its declared health check (now a disqualifying-only
+// secondary signal).
 func TestResolveResidentConsumerHealthChecksWithoutSpawnArgv(t *testing.T) {
 	root := t.TempDir()
+	orig := residentConsumerThreadFn
+	residentConsumerThreadFn = func(string, string, time.Time) (bool, string) { return true, "" }
+	t.Cleanup(func() { residentConsumerThreadFn = orig })
+
 	rc, why := ResolveConsumer(AgentConfig{
 		ID: "gemma-pantheon", Type: "gemma",
 		Consumer: ConsumerConfig{
@@ -312,7 +326,16 @@ func TestResolveResidentConsumerHealthChecksWithoutSpawnArgv(t *testing.T) {
 	}
 }
 
+// H6: the published thread is stood up so this reaches the health check at all.
+// Under the new contract the resident credit is checked FIRST, so without a
+// published thread this would refuse for that reason instead — which is correct
+// but would stop testing what this test exists to test: that a DECLARED check
+// which fails still disqualifies, and that its output reaches the operator.
 func TestResolveResidentConsumerRefusesFailedHealthCheck(t *testing.T) {
+	orig := residentConsumerThreadFn
+	residentConsumerThreadFn = func(string, string, time.Time) (bool, string) { return true, "" }
+	t.Cleanup(func() { residentConsumerThreadFn = orig })
+
 	rc, why := ResolveConsumer(AgentConfig{
 		ID: "gemma-pantheon", Type: "gemma",
 		Consumer: ConsumerConfig{
