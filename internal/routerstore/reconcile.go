@@ -9,6 +9,7 @@ type ReconcileReport struct {
 	Agent                   string               `json:"agent"`
 	ExpiredItemLeases       int                  `json:"expired_item_leases"`
 	ExpiredTaskLeases       int                  `json:"expired_task_leases"`
+	RepairedNonActiveLeases int                  `json:"repaired_non_active_leases"`
 	ExpiredWakeLeases       int                  `json:"expired_wake_leases"`
 	RequirementTasksCreated int                  `json:"requirement_tasks_created"`
 	WakeEventsCreated       int                  `json:"wake_events_created"`
@@ -48,7 +49,7 @@ func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (Reco
 	if err != nil {
 		return report, err
 	}
-	repairedNonActive, _ := rowsAffectedInt(res)
+	report.RepairedNonActiveLeases, _ = rowsAffectedInt(res)
 
 	res, err = tx.Exec(`UPDATE tasks SET
 		status=CASE WHEN attempts>=? THEN 'blocked' ELSE status END,
@@ -60,7 +61,6 @@ func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (Reco
 		return report, err
 	}
 	report.ExpiredTaskLeases, _ = rowsAffectedInt(res)
-	report.ExpiredTaskLeases += repairedNonActive
 
 	res, err = expireWakeLeasesTx(tx, now, agent)
 	if err != nil {

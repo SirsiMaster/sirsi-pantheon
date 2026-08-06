@@ -82,8 +82,11 @@ func TestReconcileRepairsLeaseOnNonActiveTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.ExpiredTaskLeases != 1 {
+	if report.RepairedNonActiveLeases != 1 {
 		t.Fatalf("doctor reconciliation did not report poison repair: %+v", report)
+	}
+	if report.ExpiredTaskLeases != 0 {
+		t.Fatalf("repair incorrectly counted as expired lease: %+v", report)
 	}
 	// After reconciliation the row must be exactly claimable without operator
 	// touching SQLite directly.
