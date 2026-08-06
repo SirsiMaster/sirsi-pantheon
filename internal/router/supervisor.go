@@ -174,8 +174,8 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		return nil, fmt.Errorf("open operational store: %w", err)
 	}
 	defer durable.Close()
-	if _, err := durable.Migrate(); err != nil {
-		return nil, fmt.Errorf("migrate operational sources: %w", err)
+	if _, migrateErr := durable.Migrate(); migrateErr != nil {
+		return nil, fmt.Errorf("migrate operational sources: %w", migrateErr)
 	}
 	durableAgents, err := durable.Store().OperationalAgents()
 	if err != nil {

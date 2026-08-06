@@ -53,8 +53,8 @@ func TestSuperviseOnceIncludesUnregisteredDurableWorkOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Store().AddTask(routerstore.Task{Agent: "future-llm", TaskID: "work", Subject: "must not disappear"}); err != nil {
-		t.Fatal(err)
+	if addErr := f.Store().AddTask(routerstore.Task{Agent: "future-llm", TaskID: "work", Subject: "must not disappear"}); addErr != nil {
+		t.Fatal(addErr)
 	}
 	_ = f.Close()
 

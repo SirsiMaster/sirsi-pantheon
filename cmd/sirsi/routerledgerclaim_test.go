@@ -15,21 +15,21 @@ func TestRouterTaskClaimIDCommandClaimsExactTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddTask(routerstore.Task{Agent: "codex-home", TaskID: "older", Subject: "older"}); err != nil {
-		t.Fatal(err)
+	if addErr := s.AddTask(routerstore.Task{Agent: "codex-home", TaskID: "older", Subject: "older"}); addErr != nil {
+		t.Fatal(addErr)
 	}
-	if err := s.AddTask(routerstore.Task{Agent: "codex-home", TaskID: "exact", Subject: "exact"}); err != nil {
-		t.Fatal(err)
+	if addErr := s.AddTask(routerstore.Task{Agent: "codex-home", TaskID: "exact", Subject: "exact"}); addErr != nil {
+		t.Fatal(addErr)
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := s.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 
 	oldWorker, oldThread, oldTTL := taskLeaseWorker, taskLeaseThread, taskLeaseTTL
 	t.Cleanup(func() { taskLeaseWorker, taskLeaseThread, taskLeaseTTL = oldWorker, oldThread, oldTTL })
 	taskLeaseWorker, taskLeaseThread, taskLeaseTTL = "worker", "thread", time.Minute
-	if err := routerTaskClaimIDCmd.RunE(routerTaskClaimIDCmd, []string{"codex-home", "exact"}); err != nil {
-		t.Fatal(err)
+	if runErr := routerTaskClaimIDCmd.RunE(routerTaskClaimIDCmd, []string{"codex-home", "exact"}); runErr != nil {
+		t.Fatal(runErr)
 	}
 
 	s, err = routerstore.Open(db)
