@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Apple AI stack — where Sirsi sits</title>
+<style>body{font-family:-apple-system,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;color:#1a1a19;background:#fff}
+.lyr{border:1px solid #ddd;border-radius:12px;padding:.7rem 1rem;margin-bottom:8px}
+.lt{font-size:12px;color:#777;margin-bottom:6px}.row{display:flex;gap:8px;flex-wrap:wrap}
+.bx{flex:1;min-width:130px;border-radius:8px;padding:.55rem .8rem;font-size:13.5px}
+.bx small{display:block;font-size:11.5px;margin-top:2px}
+.ours{background:#E1F5EE;color:#04342C}.ours small{color:#0F6E56}
+.comp{background:#FAECE7;color:#4A1B0C}.comp small{color:#993C1D}
+.appl{background:#F4F3EF;color:#1a1a19}.appl small{color:#5F5E5A}
+.arrow{text-align:center;color:#999;font-size:14px;margin:-2px 0 6px}
+.lg{display:flex;gap:14px;font-size:12px;color:#5F5E5A;margin-bottom:10px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}</style></head><body>
+<h2 style="font-weight:500">The Apple AI stack — where Sirsi sits</h2>
+<div class="lg"><span><span class="sw" style="background:#1D9E75"></span>Sirsi</span><span><span class="sw" style="background:#D85A30"></span>Competing serving layers</span><span><span class="sw" style="background:#B4B2A9"></span>Apple's stack</span></div>
+<div class="lyr"><div class="lt">Products — what people actually use</div><div class="row">
+<div class="bx ours">Pantheon Anubis<small>open source, free, enthusiast</small></div>
+<div class="bx ours">Pantheon Ra<small>commercial, enterprise fleet</small></div>
+<div class="bx appl">Any OpenAI-compatible app<small>same API, any client</small></div></div></div>
+<div class="arrow">&darr; published API contract</div>
+<div class="lyr" style="border:2px solid #1D9E75"><div class="lt">The serving layer — many users, one machine. The contested ground.</div><div class="row">
+<div class="bx ours">SNE (sealed)<small>Go engine + custom Metal kernels: batching, determinism</small></div>
+<div class="bx comp">oMLX<small>open-source MLX server — closest competitor</small></div>
+<div class="bx comp">mlx_lm<small>Apple research's Python runner — one user at a time</small></div></div></div>
+<div class="arrow">&darr;</div>
+<div class="lyr"><div class="lt">Frameworks — the math libraries</div><div class="row">
+<div class="bx appl">MLX<small>Apple's open array framework; turns math into GPU work</small></div>
+<div class="bx appl">CoreML<small>app-deployment lane; sole key to the Neural Engine</small></div>
+<div class="bx appl">BNNS / Accelerate<small>CPU-side neural math</small></div></div></div>
+<div class="arrow">&darr;</div>
+<div class="lyr"><div class="lt">GPU access</div><div class="row">
+<div class="bx appl">Metal<small>Apple's GPU language — CUDA's equivalent; our kernels live here</small></div></div></div>
+<div class="arrow">&darr;</div>
+<div class="lyr"><div class="lt">Apple silicon — four compute engines, one memory pool</div><div class="row">
+<div class="bx appl">GPU<small>the workhorse — all LLM serving today</small></div>
+<div class="bx appl">ANE<small>Neural Engine — efficient, nearly untapped for LLMs</small></div>
+<div class="bx appl">CPU + AMX<small>matrix blocks on the CPU</small></div>
+<div class="bx appl">Unified memory<small>48 GB every engine can see</small></div></div></div>
+</body></html>
