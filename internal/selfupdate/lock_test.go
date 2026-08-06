@@ -70,6 +70,27 @@ func TestAcquireInstallLock_writesPID(t *testing.T) {
 	}
 }
 
+// TestAcquireInstallLock_fileRemovedAfterClose verifies that Close() removes the
+// lock file, preventing a stale file-shaped lock from wedging install.sh's
+// shell acquire_lock() which reads the PID from $LOCK_DIR/pid (ENOTDIR on a file).
+func TestAcquireInstallLock_fileRemovedAfterClose(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+
+	lock, err := AcquireInstallLock()
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	path := filepath.Join(home, ".sirsi", lockFile)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("lock file must exist before close: %v", err)
+	}
+	lock.Close()
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock file must be removed after close; stat returned: %v", err)
+	}
+}
+
 func TestAcquireInstallLock_releasedAfterClose(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)

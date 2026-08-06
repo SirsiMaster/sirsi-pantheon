@@ -71,11 +71,23 @@ acquire_lock() {
     local waited=0
     while ! mkdir "$LOCK_DIR" 2>/dev/null; do
         local pid
-        pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
-        if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-            # Stale lock from a dead process — reclaim it.
-            rm -rf "$LOCK_DIR"
-            continue
+        if [ -f "$LOCK_DIR" ]; then
+            # Go-style file lock: PID is stored as the file content, not in a
+            # $LOCK_DIR/pid subfile (mkdir on a file path cannot create a subdir).
+            # An empty file means Go crashed before writing its PID — treat as stale.
+            pid=$(cat "$LOCK_DIR" 2>/dev/null || true)
+            if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+                rm -f "$LOCK_DIR"
+                continue
+            fi
+        else
+            # Shell-style directory lock: PID lives in the subfile.
+            pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+            if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                # Stale lock from a dead process — reclaim it.
+                rm -rf "$LOCK_DIR"
+                continue
+            fi
         fi
         if [ $waited -eq 0 ]; then
             echo -e "${DIM}  Another install is in progress (pid ${pid:-?}); waiting up to 120s...${NC}"

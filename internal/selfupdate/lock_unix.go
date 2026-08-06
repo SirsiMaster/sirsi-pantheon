@@ -5,11 +5,14 @@
 // Nonblocking, loud advisory install lock. Prevents concurrent `sirsi
 // self-update --confirm` runs from racing through SafeReplace on the same
 // target binaries. The lock is a kernel flock(2) so it is automatically
-// released if the process crashes or is killed — no stale-lock cleanup needed.
+// released if the process crashes or is killed.
 //
-// The lock file body stores the holder PID so a concurrent caller can report
-// it clearly. The file is kept at ~/.sirsi/binary-install.lock (same dir as
-// the rest of the sirsi state).
+// Shape: ~/.sirsi/binary-install.lock is a REGULAR FILE whose content is the
+// holder PID. This is visible to the shell-side acquire_lock() in install.sh,
+// which detects a file-shaped lock (vs. its own mkdir-directory shape) and
+// reads the PID from the file content rather than from $LOCK_DIR/pid.
+// InstallLock.Close() removes the file so a released Go lock does not persist
+// as a stale file that would cause shell to time out awaiting a dead holder.
 package selfupdate
 
 import (
@@ -32,16 +35,17 @@ func installLockPath() (string, error) {
 }
 
 // AcquireInstallLock tries to take an exclusive flock on
-// ~/.sirsi/binary-install.lock without blocking. On success it returns the
-// open file; the caller must close it (or defer f.Close()) to release.
+// ~/.sirsi/binary-install.lock without blocking. On success it returns an
+// InstallLock; the caller must Close() it to release the flock and remove
+// the file.
 //
 // On failure it returns a loud error. If the lock file contains a PID, the
 // error reports that it is recorded without presenting unverified kill advice.
-func AcquireInstallLock() (*os.File, error) {
+func AcquireInstallLock() (*InstallLock, error) {
 	return acquireInstallLockWith(writeLockPID)
 }
 
-func acquireInstallLockWith(recordPID func(*os.File) error) (*os.File, error) {
+func acquireInstallLockWith(recordPID func(*os.File) error) (*InstallLock, error) {
 	path, err := installLockPath()
 	if err != nil {
 		return nil, fmt.Errorf("install lock: %w", err)
@@ -68,7 +72,11 @@ func acquireInstallLockWith(recordPID func(*os.File) error) (*os.File, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("install lock: record holder PID: %w", recordErr)
 	}
-	return f, nil
+	return &InstallLock{closer: func() error {
+		err := f.Close() // releases the kernel flock
+		_ = os.Remove(path)
+		return err
+	}}, nil
 }
 
 func writeLockPID(f *os.File) error {
