@@ -2401,8 +2401,9 @@ override in `rightSizeAdvice` that discards the estimate it just made correct:
 
 Measured against the live broker (PID 53576, `sne-server-macos-arm64`, `gemma-4-12b-it-8bit`) rather
 than reasoned about: `ps` RSS **185360 KB = 0.177 GB**; `footprint -p` `phys_footprint` **35 GB**;
-`/health` `mlx_active_bytes` **37220958312 = 37.22 GB**. The weights are file-backed and mapped, so
-they are absent from RSS entirely — the number is off by more than two orders of magnitude. Run the
+`/health` `mlx_active_bytes` **37220958312 = 37.22 GB**. The measured values diverge by more than two
+orders of magnitude, proving RSS is the wrong sizing authority for this process; this run did not
+instrument the accounting cause. Run the
 guard on the actual incident this PR was written for (`availableGB = 9.68`): `2×0.177 + 4 = 4.354 ≤
 9.68` → empty advice. The feature suppresses itself in exactly the case it exists to serve, and it
 does so *more* reliably than the pre-fix name estimate did.
