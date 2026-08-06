@@ -783,9 +783,8 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	dGone := mk("claude-d", "claude", 10004)   // OS-dead → must auto-reap
 
 	// Only thread A has a live watcher loop.
-	oldWatch := watcherAliveFn
-	watcherAliveFn = func(id string) bool { return id == aLive.ThreadID }
-	defer func() { watcherAliveFn = oldWatch }()
+	setWatcherAliveFn(func(id string) bool { return id == aLive.ThreadID })
+	defer func() { setWatcherAliveFn(nil) }()
 
 	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
 	if err != nil {
