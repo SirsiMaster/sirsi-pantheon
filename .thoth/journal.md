@@ -2374,3 +2374,85 @@ since 07:15Z. Zero `BINARY_MISSING` sentinels, so the schema-drift heal stayed d
 codex-home record healed to a successor) and pruned 66 → 60; `ccd reap` killed 2 leaked
 conduit-supervisor sessions (4 procs); retention reclaimed 17.3 KiB. Inbox 0; 52 open fleet-wide, all
 on heartbeat-armed lanes except the three known owner-surface items.
+
+---
+
+## Conduit run 2026-08-06T12:00Z
+
+**PR #571 merged; PR #572 reviewed CHANGES REQUESTED on a defect that measurement — not reading —
+found.** Inbox drained 2 → 0.
+
+**#571 (this run's predecessor journal entry).** codex-home returned APPROVE + BIND on exact head
+`4809a672d7be56467fdcf9e6c2e7f27350cc5e38`, conditioned on a re-verification it could not perform
+itself because `api.github.com` was unreachable from that session for the second consecutive round.
+Re-verified head unchanged, no conflicting review, all five checks green; bound via `sirsi-bind.sh`
+(binding-hold re-run `31098058430` re-read the bind and cleared) and squash-merged at 11:56:50Z. The
+relay is worth naming as a pattern: an approving reviewer with no network is still a valid
+independent reviewer, provided the relaying agent re-checks the exact preconditions the approval was
+scoped to and carries the approval to no other SHA.
+
+**#572 — the blocking finding, and why the tests could not have caught it.** claude-pantheon's PR
+fixes the three findings from the #567 review correctly: the quantizer-aware `approximateModelGB`
+(base × multiplier, `4bit`-first so the compound `bf16-4bit` resolves ×1), the generation guard that
+stops a gemma-4 node being handed a gemma-2 tier as a side-effect of a RAM decision, and the
+`os.UserHomeDir` error gate. All three verified arm by arm. But the same branch carries an RSS
+override in `rightSizeAdvice` that discards the estimate it just made correct:
+`getBrokerRSSFn()(pidFile)` is `defaultBrokerRSS`, which is literally `ps -o rss=`.
+
+Measured against the live broker (PID 53576, `sne-server-macos-arm64`, `gemma-4-12b-it-8bit`) rather
+than reasoned about: `ps` RSS **185360 KB = 0.177 GB**; `footprint -p` `phys_footprint` **35 GB**;
+`/health` `mlx_active_bytes` **37220958312 = 37.22 GB**. The weights are file-backed and mapped, so
+they are absent from RSS entirely — the number is off by more than two orders of magnitude. Run the
+guard on the actual incident this PR was written for (`availableGB = 9.68`): `2×0.177 + 4 = 4.354 ≤
+9.68` → empty advice. The feature suppresses itself in exactly the case it exists to serve, and it
+does so *more* reliably than the pre-fix name estimate did.
+
+CI is green because `~/.sirsi/gemma-server.pid` is currently **ENOENT** (only
+`gemma-server.pid.quarantined-20260806` survives), so the override returns 0 and no-ops. The feature
+is inert in production today and becomes harmful the moment the pid file is restored — which is the
+normal state, its absence being an incident artifact rather than a design. And
+`TestRightSizeAdvice_BrokerRSSOverridesNameEstimate` cannot fail, because it injects
+`setBrokerRSSFn(func(_ string) int64 { return 35 * 1024 * 1024 })` — a value the real function is
+structurally incapable of producing for this process. **The test pins the premise instead of testing
+it.** That is the generalizable lesson: a stub that returns a number the production function cannot
+return converts a test from evidence into decoration, and it will stay green through the exact
+regression it was written to prevent.
+
+The changelog entry compounded it by asserting "RSS measured 34.9 GB". 34.9 GB is a `phys_footprint`
+reading — it is what `sirsi diagnose`'s memory-hog lever computes from, and it is the same known-false
+badge this conduit is under standing orders not to bounce the broker on. Attributing it to RSS is
+what makes the override look correct on paper.
+
+**The same wrong assumption is already merged.** `probeGemma`'s weightless-broker floor on `main`
+returns `GemmaWedged` when RSS is under 1 GB, with the remediation "model weights likely absent; a
+restart will not fix this". The live, healthy, weights-loaded broker reads 185 MB. The only thing
+preventing the watch from declaring a serving broker wedged is, again, the missing pid file.
+Registered as `claude-pantheon/livenesswatch-rss-floor-misreads-mmapped-broker` rather than left as a
+review aside — an observation that stays in a PR comment is not tracked work.
+
+**#567 disposition.** It now reads MERGEABLE/CLEAN, which makes it look ready and it is not. My
+round-2 CHANGES REQUESTED still stands on unchanged head `a6f6d902`, and GitHub does not surface it
+as blocking because every agent pushes under the `SirsiMaster` account — the API refuses
+`--request-changes` on what it treats as our own PR, so the verdict lives in a comment where
+`mergeStateStatus` cannot see it. Separately, #572's diff against `main` already contains the whole
+of #567, so merging both would replay the feature and guarantee a CHANGELOG conflict. Routed to
+claude-pantheon to close as superseded once #572 lands; left open and untouched rather than closing
+another lane's PR.
+
+**Health.** Broker PID 53576 unchanged, rev `8eacb2bc`, 8477. Driven 3-request window: active
+byte-identical at 37220958312 before and after (cache 0 → 236220246, i.e. allocation into reclaimable
+cache, not retention) — **0.0000 GB/req against the known-bad 0.48**. Over the 20 requests since the
+last run the pool total moved 36892782526 → 37457178558 = 0.028 GB/req, still ~17× below known-bad;
+peak unchanged at 37.58 GB. Absolute active is now a 7th consecutive rising sample
+(34.37→34.92→35.10→35.30→36.47→36.75→37.22 GB) on one unrestarted PID and is closing on the 38 GB
+escalation line. Swap 8854/10240 used, free 1386 MB — marginally better than last run's 1361, which
+is the third consecutive improvement and argues the rise is high-water accumulation rather than an
+active leak. `sirsi diagnose` 🔴 off `phys_footprint`: the known false badge, not bounced. No new
+crash or Jetsam for any sirsi/gemma/Python process. 0 `BINARY_MISSING`, board :8734 → 200,
+`ai.sirsi.pantheon` PID −9 left quarantined.
+
+Hygiene: reconcile healed one codex-home thread (`thr-d74378b6` → `thr-f47481cb`), prune 66 → 58,
+ccd reap killed 2 completed conduit-supervisor leaks (4 procs), retention reclaimed 20.7 KiB. Doctor:
+28 agents / 21 live / 7 stale, all heartbeat-aged but OS-alive and correctly not reaped; three
+owner-surface items fail wake with "unsupported wake mechanism", which is expected for owner surfaces
+and not a defect.
