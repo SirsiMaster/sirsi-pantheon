@@ -1,18 +1,19 @@
 // Package selfupdate — provenance.go
 //
-// Candidate provenance and schema-compatibility gates for the serialized
-// self-update flow. Both gates are HARD failures by default — no silent
-// advisory downgrade (owner/codex-home P0 acceptance contract).
+// Candidate provenance and version-probe gates for the serialized self-update
+// flow. Both gates are HARD failures by default — no silent advisory downgrade.
 //
 // Provenance: the source binary must be a clean, fully-stamped release build.
 // A dirty build (uncommitted changes) or an unstamped build (plain `go build`
 // without -ldflags) must not propagate to other CLI install locations because
 // its hash is non-reproducible and its cdhash is unpredictable after a re-sign.
 //
-// Schema compatibility: the source binary must respond to `<binary> version
-// --json` with a valid version.Info payload. An empty or malformed response
-// means the binary cannot participate in the drift-detection contract, so
-// installing it would break the next drift check silently.
+// Version probe: the source binary must answer `<binary> version --json` with a
+// parseable version.Info payload. This is a liveness check — it proves the
+// binary speaks the version protocol. It does NOT check store schema
+// compatibility; the real schema ceiling gate (PRAGMA user_version vs highest
+// migration entry) is tracked separately as ledger task
+// `selfupdate-real-schema-ceiling-gate`.
 package selfupdate
 
 import (
@@ -34,10 +35,10 @@ var (
 	// -ldflags version stamping (Version == "dev" or Commit == "none").
 	ErrUnstampedBuild = errors.New("refusing unstamped build: install a release build (goreleaser or go build -ldflags)")
 
-	// ErrSchemaIncompatible is returned when the source binary does not
-	// respond to `version --json` with a parseable version.Info payload.
-	// A binary that can't speak the schema breaks the drift-detection contract.
-	ErrSchemaIncompatible = errors.New("refusing schema-incompatible binary: `version --json` did not return a valid payload")
+	// ErrVersionProbeFailed is returned when the source binary does not respond
+	// to `version --json` with a parseable version.Info payload. This is a
+	// version-protocol liveness check, not a store schema compatibility check.
+	ErrVersionProbeFailed = errors.New("version probe failed: `version --json` did not return a valid payload")
 )
 
 // CheckProvenance verifies that info represents a clean, stamped release
@@ -60,27 +61,28 @@ func CheckProvenance(info version.Info) error {
 	return nil
 }
 
-// CheckSchema probes the binary at path via `version --json` and returns
+// CheckVersionProbe runs `version --json` on the binary at path and returns
 // its Info on success. If the binary is absent, does not respond, or returns
-// an unparseable payload the error is ErrSchemaIncompatible.
+// an unparseable payload, the error wraps ErrVersionProbeFailed.
 //
-// This is the schema-compatibility half of the two-gate check. It is separate
-// from CheckProvenance so each gate is individually testable and its failure
-// is attributed correctly.
-func CheckSchema(path string) (version.Info, error) {
+// This is a version-protocol liveness check, not a store schema compatibility
+// gate. It proves the binary speaks the version protocol. The real schema
+// ceiling gate (PRAGMA user_version vs highest migration entry) requires a new
+// field on the probe payload and is tracked as `selfupdate-real-schema-ceiling-gate`.
+func CheckVersionProbe(path string) (version.Info, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return version.Info{}, fmt.Errorf("%w: resolve path: %v", ErrSchemaIncompatible, err)
+		return version.Info{}, fmt.Errorf("%w: resolve path: %v", ErrVersionProbeFailed, err)
 	}
 	if _, statErr := os.Stat(abs); statErr != nil {
-		return version.Info{}, fmt.Errorf("%w: binary not found at %s", ErrSchemaIncompatible, abs)
+		return version.Info{}, fmt.Errorf("%w: binary not found at %s", ErrVersionProbeFailed, abs)
 	}
 	info, err := probeFn(abs)
 	if err != nil {
-		return version.Info{}, fmt.Errorf("%w: probe %s: %v", ErrSchemaIncompatible, abs, err)
+		return version.Info{}, fmt.Errorf("%w: probe %s: %v", ErrVersionProbeFailed, abs, err)
 	}
 	if info.Version == "" {
-		return version.Info{}, fmt.Errorf("%w: probe %s returned empty version field", ErrSchemaIncompatible, abs)
+		return version.Info{}, fmt.Errorf("%w: probe %s returned empty version field", ErrVersionProbeFailed, abs)
 	}
 	return info, nil
 }

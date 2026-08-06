@@ -96,12 +96,12 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Provenance gate: the running binary must be a clean, stamped release.
-	// This runs before the interactive prompt so the user gets a fast-fail
-	// rather than wasting a [y/N] keystroke on a build that will be rejected.
-	selfInfo, schemaErr := selfupdate.CheckSchema(self)
-	if schemaErr != nil {
-		return fmt.Errorf("provenance gate: %w", schemaErr)
+	// Version-probe gate: confirm the running binary answers `version --json`.
+	// This is a liveness check on the version protocol, not a store schema gate.
+	// Runs before the interactive prompt for a fast-fail.
+	selfInfo, probeErr := selfupdate.CheckVersionProbe(self)
+	if probeErr != nil {
+		return fmt.Errorf("version-probe gate: %w", probeErr)
 	}
 	if provErr := selfupdate.CheckProvenance(selfInfo); provErr != nil {
 		return fmt.Errorf("provenance gate: %w\n  (install a proper release build via goreleaser or Homebrew, then re-run self-update)", provErr)

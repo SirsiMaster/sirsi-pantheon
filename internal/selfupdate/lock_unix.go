@@ -62,8 +62,17 @@ func AcquireInstallLock() (*os.File, error) {
 			"sirsi self-update is already running (lock: %s) — wait for it to finish", path)
 	}
 	// Write our PID so a concurrent attempt can report it loudly.
-	_ = f.Truncate(0)
-	_, _ = f.WriteString(strconv.Itoa(os.Getpid()))
+	// If either write fails, close (releasing the flock) and surface the error —
+	// a stale PID left in the file would make the contention message advise
+	// killing a recycled, unrelated process.
+	if err := f.Truncate(0); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("install lock: write PID: %w", err)
+	}
+	if _, err := f.WriteString(strconv.Itoa(os.Getpid())); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("install lock: write PID: %w", err)
+	}
 	return f, nil
 }
 

@@ -62,14 +62,14 @@ func TestCheckProvenance(t *testing.T) {
 	}
 }
 
-func TestCheckSchema_missingBinary(t *testing.T) {
-	_, err := CheckSchema("/nonexistent/path/to/sirsi")
-	if !errors.Is(err, ErrSchemaIncompatible) {
-		t.Fatalf("expected ErrSchemaIncompatible, got %v", err)
+func TestCheckVersionProbe_missingBinary(t *testing.T) {
+	_, err := CheckVersionProbe("/nonexistent/path/to/sirsi")
+	if !errors.Is(err, ErrVersionProbeFailed) {
+		t.Fatalf("expected ErrVersionProbeFailed, got %v", err)
 	}
 }
 
-func TestCheckSchema_badJSON(t *testing.T) {
+func TestCheckVersionProbe_badJSON(t *testing.T) {
 	// Write a fake binary that outputs garbage.
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "sirsi")
@@ -81,13 +81,13 @@ func TestCheckSchema_badJSON(t *testing.T) {
 	})
 	defer setProbeForTestRestore(t, old)
 
-	_, err := CheckSchema(fake)
-	if !errors.Is(err, ErrSchemaIncompatible) {
-		t.Fatalf("expected ErrSchemaIncompatible, got %v", err)
+	_, err := CheckVersionProbe(fake)
+	if !errors.Is(err, ErrVersionProbeFailed) {
+		t.Fatalf("expected ErrVersionProbeFailed, got %v", err)
 	}
 }
 
-func TestCheckSchema_emptyVersion(t *testing.T) {
+func TestCheckVersionProbe_emptyVersion(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "sirsi")
 	if err := os.WriteFile(fake, []byte("x"), 0o755); err != nil {
@@ -98,13 +98,13 @@ func TestCheckSchema_emptyVersion(t *testing.T) {
 	})
 	defer setProbeForTestRestore(t, old)
 
-	_, err := CheckSchema(fake)
-	if !errors.Is(err, ErrSchemaIncompatible) {
-		t.Fatalf("expected ErrSchemaIncompatible, got %v", err)
+	_, err := CheckVersionProbe(fake)
+	if !errors.Is(err, ErrVersionProbeFailed) {
+		t.Fatalf("expected ErrVersionProbeFailed, got %v", err)
 	}
 }
 
-func TestCheckSchema_valid(t *testing.T) {
+func TestCheckVersionProbe_valid(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "sirsi")
 	if err := os.WriteFile(fake, []byte("x"), 0o755); err != nil {
@@ -115,7 +115,7 @@ func TestCheckSchema_valid(t *testing.T) {
 	})
 	defer setProbeForTestRestore(t, old)
 
-	info, err := CheckSchema(fake)
+	info, err := CheckVersionProbe(fake)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
