@@ -1,23 +1,40 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-08-06T15:04:15-04:00
+# Last updated: 2026-08-05T17:30:00-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
-version: 0.22.0-beta
+version: 0.23.8-beta
 binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
-test_count: 70171+
-line_count: ~3362,344
-module_count: 45
-command_count: 150
+test_count: 2746+
+line_count: ~123,455
+module_count: 62
+command_count: 231
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
 mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, Horus 4, Brain 3, Version 1, Categories 1)
 ios_app: ios/ (SwiftUI, 9 deity views, WidgetKit, Fastlane, Siri Shortcuts)
 android_app: android/ (Jetpack Compose, 9 screens, nav drawer, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
+
+## Current UI State
+# 2026-08-05: codex-inference uses thread-scoped Codex app automation. Its
+# checked-in agent fallback wake is explicitly `none`; legacy `cli-spawn` is
+# prohibited because it creates a new worker instead of waking the durable app
+# task. A registry regression test pins this split.
+# 2026-08-05: SNE-52 ledger schema v7 implementation is active on
+# codex/router-unification-store-v7. The v4→v7 additive migration, derived
+# four-hour liveness, governed stage/test/charter fields, append-deduped links,
+# task-owned monotonic accounting, and CLI update flags are implemented. Full
+# Go suite and routerstore race tests pass; completion proof/review remain.
+# 2026-07-21: Pantheon menubar keeps its gold identity and semantic amber health
+# signals. Home's evidence, automation, deity-row, and footer typography has
+# explicit 13–17pt floors (15pt semibold row titles); the full popover uses Large
+# Dynamic Type and a 360pt design width so drilled-in screens are legible too.
+# Safe Anubis cleanup reclaimed 7.5 GB; fresh scan reports 0 safe bytes. Horus
+# remained honestly amber while a live >4 GB memory-consumer warning persisted.
 
 ## Knowledge Graph (Understand-Anything)
 # Semantic verification layer. Thoth holds memory/intent; Seba owns architectural map sovereignty;
@@ -237,43 +254,38 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
-# 2026-07-31: Conduit/Horus run 2026-07-31T18:52Z (claude-home). All-green vitals, one owner escalation.
-# 2026-07-31: Router: 19 open, ZERO for claude-home or claude-codex-standin. The +2 vs prior run was fully explained (fresh codex-inference->claude-nexus item, plus this conduit's own response delivery back to claude-nexus) and needed no action.
-# 2026-07-31: DECISION - escalated one owner gate, item 20260731-184653, store-verified via sqlite3 (a printed router send id is a claim, the store row is the fact). The sirsi-pantheon repo root is parked on branch fix/sirsi-gemma-bare-server-chipA, so every conduit journal commit lands off main: 24 commits ahead of origin/main of which 20 are conduit journal commits back to 9ca65646 on 2026-07-29, with .thoth/journal.md diverged 2163 insertions (up from 2136 one run earlier). Nothing is broken, which is exactly why no automated pass catches it; the exposure is that three days of conduit forensics ride a branch that may be squashed or abandoned. Three owner options offered: land the branch, cherry-pick .thoth/journal.md alone (union merge driver keeps it low-conflict), or move the repo root back to main. Only the third stops recurrence.
-# 2026-07-31: PATTERN - report the registry FLOOR, never the prune delta. Entry floor 58 records, 73 after thread reconcile, and prune --older-than 1h deleted ZERO because every terminal record was younger than the window. New finding: sirsi thread reconcile is itself a minter, producing 11 reaped->successor records per run, roughly 44 records/hour at 4 runs/hour. Deliberately NOT routed as a new item because claude-pantheon already holds open item 20260731-184156 for this exact root cause and a second would be a nag.
-# 2026-07-31: CARRIED VERDICT, do not re-derive: sirsi router wait is LEVEL-triggered, returning in 0.018s against a non-empty inbox, so a /loop wrapped around it spins about 50 times a second. The SessionStart/UserPromptSubmit hook that tells claude-home to arm that /loop must be ignored on every run; a watcher count of zero is correct, not a gap. Fix already routed as 20260731-182937. Confirmed live again this session: the hook fired with a THIRD distinct thread id (thr-d86565a905772ba9 then thr-0d13db769eee58b2), so its pgrep-based idempotency guard can never match a prior arm and every firing looks un-armed by construction.
-# 2026-07-31: PRs unchanged, none mergeable by this session. pantheon #389 has Build/Lint/Test/Secrets PASS with only binding-hold failing, MERGEABLE but BLOCKED, and is cross-authored so neither claude-home nor codex-pantheon can sign the head. FinalWishes #114 is MERGEABLE and CLEAN but authored by this session, so no self-review. #357/#358 belong to their lanes, #361/#393 are drafts, SirsiNexusApp is empty.
-# 2026-07-31: Vitals: diagnose 88/100 amber whose sole priority signal is the capped Gemma broker at 14.3 GB against a 22.3 GB cap, memory 74 percent free, broker health ok with the --prompt-cache-bytes cap verified BY IDENTITY rather than by pidfile name, prompt cache 1.82 GB against a 6 GB balloon threshold, resolver on gemma-4-12B-it-8bit, all core launchd labels PID-verified alive, no BINARY_MISSING sentinels, no new crash or Jetsam artifacts beyond the already-evaluated set. ccd reap found 0 leaks and archived 0. Retention prune reclaimed 14.1 KiB.
-# 2026-07-31: NOT FINISHED, budget rather than breakage: local Gemma triage across all 18 open items was still on item 1 after several minutes and was stopped. No triage verdicts informed any decision this run; every open item was accounted for directly from the store and from carried state instead. At this queue size --all likely cannot fit a 15-minute cadence.
-# 2026-07-31: TOOLING HAZARD found this session: sirsi thoth sync run from $HOME never completes in bounded time because $HOME is not a git repository, so the sync has no repo boundary and walks the entire home tree to count modules. Run thoth sync inside an actual repo; at $HOME it produces nothing useful while burning CPU and Spotlight write amplification.
-# 2026-07-31: Router snapshot:
-# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-07-31: completed topics: 41
-# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
-# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
-# 2026-07-31: pending: none
-# 2026-07-31: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-07-31: Queue cleared 58→0 under owner directive; router held at zero (3 arrivals closed with live evidence).
-# 2026-07-31: Gemma guard batch complete: #409 triage warm path survives reasoning-shaped models (verified against live broker), #410 DIFFERENT-model diagnosis consults /v1/models ground truth before speaking.
-# 2026-07-31: #409 also versioned installed-script drift: codex Jul-24 fail-closed fix was ahead of main.
-# 2026-07-31: Landed earlier today: #404 deck drill-downs + #407 atomic routes, #405 close-resolved demoted to surface-only (both codex P1s), #406 reap-orphans intersect+floor, #408 slug/label/delegation fixes.
-# 2026-07-31: Machine: Health 94/100, one broker, swap 3GB. Remaining debt in tasks #52-54 (level-triggered wait and mint churn now have two reports each — front of batch). #49 blocked on owner token rotation.
-# 2026-07-31: Router snapshot:
-# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-07-31: completed topics: 41
-# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
-# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
-# 2026-07-31: pending: none
-# 2026-07-31: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-07-31: Router snapshot:
-# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-07-31: completed topics: 41
-# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
-# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
-# 2026-07-31: pending: none
-# 2026-07-31: dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-# 2026-07-31: Router snapshot:
-# 2026-07-31: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-07-31: completed topics: 41
-# 2026-07-31: last Codex read: 2026-06-11T04:28:50Z
-# 2026-07-31: last Claude read: 2026-07-27T12:00:00Z
+# 2026-08-02 (codex-inference): CTR durable-host selection was repaired at the
+# source and installed. Fixed-depth parent/grandparent resolution was replaced
+# by exact executable-identity ancestry; helper/prefix matches are rejected and
+# unknown resident surfaces fail closed unless given --anchor-pid. Codex Desktop
+# required an additional structural repair: tool commands descend from the
+# application-wide `codex` broker while the task lifetime belongs to its sibling
+# `codex-code-mode-host`, so the resolver now refines the broker to exactly one
+# host child and fails closed on zero/multiple candidates. Commit `728fefcd`.
+# Targeted and broader cmd/router Go suites passed. Two separate live proofs—
+# first the candidate binary, then the installed ~/.local/bin/sirsi—registered
+# thread 019f8fc4-96a4-7f00-b564-d91a64d0a4d1 without --anchor-pid and selected
+# durable task host PID 40821, not broker PID 37423. Quiet-machine policy held.
+# 2026-08-02 (codex-inference, owner-directed quiet regime): Router Universal Task Ledger v0
+# implemented on isolated branch `codex/router-universal-task-ledger`; independently reviewed exact
+# head b08bac6d (implementation 50838f87). SQLite migration v3 adds lossless item blocked_by and durable per-agent
+# tasks; internal/ledger is the ONE producer for exact age, 4h-configurable heartbeat staleness,
+# dependency chains, current_item pickup, blocked, and unblocked/unpicked. CLI: router ledger,
+# router task add|update|list, router depend; CTR is a thin summary projection. ADR-050 proposed.
+# Full go test ./... and isolated CLI replay PASS. Claude Nexus APPROVED and first live integration
+# reconciled 35 truthful rows: 32-task SNE snapshot plus three later router-grounded obligations;
+# current closeout counts done=24, in-progress=1, pending=7, blocked=3, with no orphaned dependency
+# targets. Remote push was export-safety blocked; do not claim a PR. Three homes: repo ADR, Desktop
+# Reading Room 08, Google Doc id 1i00_61RwKxUspxV-HWtsTLp0pNtkJTQwlC1QEJknAcs.
+# P1 rollout lesson: never let a shadow/new binary migrate the shared live store before atomic
+# replacement of the canonical installed binary; v2 correctly failed closed on v3 and temporarily
+# stranded router surfaces until the approved v3 binary was atomically installed. Only Claude Nexus + codex-inference remain active;
+# do not wake fleet or run GPU work until owner lifts the SNE quiet regime.
+# ⚠ 2026-07-30 (claude-home, owner-directed): this file was 8× Thoth's own "~100 line compressed
+# state" spec. Removed: 7 raw PreCompact hook-payload lines (a hook payload is not a decision)
+# and 48 lines of near-identical "Router snapshot" blocks (stale registry state; `sirsi router
+# status` is the live source). Relocated, NOT deleted: 262 lines of 2026-03 session histories
+# (were misfiled inside Known Limitations) and 35 lines of real pre-July decisions → journal.md
+# "## Archive: relocated from memory.yaml (2026-07-30)". Root cause = `sirsi thoth sync` appending
+# payloads/snapshots as decisions; routed as 20260730-015122. If hook_event_name or "Router snapshot:"
+# lines reappear below, the sync regressed — strip, don't compress. Keep this section to ~10 entries.
