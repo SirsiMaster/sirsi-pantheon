@@ -72,7 +72,10 @@ func TestCheckSchemaCeiling(t *testing.T) {
 	}{
 		{name: "equal", max: 15, live: 15},
 		{name: "candidate newer", max: 16, live: 15},
-		{name: "candidate older", max: 14, live: 15, want: true},
+		// v14-over-v15: the exact schema versions from the 2026-08-06 fleet lockout.
+		// A branch-cut binary at ceiling 14 replaced the live binary at schema 15
+		// and fail-closed every agent. Named here so this case survives "cleanup" PRs.
+		{name: "v14-over-v15 fleet lockout (2026-08-06)", max: 14, live: 15, want: true},
 		{name: "missing ceiling fails closed", max: 0, live: 15, want: true},
 		{name: "invalid live version", max: 15, live: -1, want: true},
 	}

@@ -126,6 +126,19 @@ func installCLIRelease(rel *updater.Release) error {
 		return err
 	}
 
+	// Schema ceiling gate: the candidate must be able to open the live router
+	// store. This is the path that caused the 2026-08-06 fleet lockout — a binary
+	// whose migration ceiling was below the live schema replaced the running one
+	// and fail-closed every agent on next launch. Probe the new binary directly;
+	// its router_schema_max is the authoritative ceiling claim.
+	newInfo, probeErr := selfupdate.CheckVersionProbe(bin)
+	if probeErr != nil {
+		return fmt.Errorf("schema-ceiling gate: version probe: %w", probeErr)
+	}
+	if gateErr := schemaCompatibilityGate(newInfo); gateErr != nil {
+		return fmt.Errorf("schema-ceiling gate: %w", gateErr)
+	}
+
 	self, err := os.Executable()
 	if err != nil {
 		return err

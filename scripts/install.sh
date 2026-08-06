@@ -110,6 +110,23 @@ fi
 echo -e "${DIM}  Extracting...${NC}"
 tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
+# 5b. Schema ceiling gate — refuse to install a candidate that cannot open the
+# live router store. This is the 2026-08-06 fleet-lockout vector: a binary
+# whose migration ceiling was below the live schema replaced the running one and
+# fail-closed every agent on next launch. Probe with the new binary; it exits 0
+# if compatible, non-zero (with a diagnostic) if not.
+DB_PATH="${SIRSI_ROUTER_DB:-$HOME/.sirsi/router.db}"
+if [ -f "$DB_PATH" ]; then
+    echo -e "${DIM}  Checking router schema compatibility...${NC}"
+    if ! "${TMPDIR}/sirsi" schema-check --db "$DB_PATH" 2>/dev/null; then
+        echo -e "${RED}  ✗ Schema ceiling gate: this release cannot open your live router store.${NC}"
+        echo -e "${DIM}  Your router.db is at a higher schema version than this release supports.${NC}"
+        echo -e "${DIM}  Wait for a compatible release, or back up and reset: ${DB_PATH}${NC}"
+        exit 1
+    fi
+    echo -e "${DIM}  Schema compatible ✓${NC}"
+fi
+
 # 6. Install binaries (sirsi always; sirsi-menubar on macOS when present)
 if [ -f "${TMPDIR}/sirsi" ]; then
     install_executable "${TMPDIR}/sirsi" "${INSTALL_DIR}/sirsi"
