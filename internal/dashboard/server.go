@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -39,7 +40,16 @@ type Config struct {
 	// Typically wired to a closure over ledger.Build + ledger.Summarize.
 	// If nil, /api/ledger returns 503 (graceful degrade).
 	LedgerFn LedgerSummarizer
+	// FleetFn is the producer for GET /api/fleet (A32 owner-reporting board).
+	// Typically wired to a closure over ledger.Build. If nil, /api/fleet
+	// returns 503 (graceful degrade) rather than an empty board, which would
+	// read as "the fleet has no work".
+	FleetFn FleetProducer
 }
+
+// FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
+// transition feed.
+type FleetProducer func() (ledger.Snapshot, error)
 
 // Server is the Pantheon local dashboard HTTP server.
 type Server struct {
@@ -50,6 +60,7 @@ type Server struct {
 	running bool
 	runner  *Runner
 	confirm *ConfirmGuard
+	fleet   *FleetTracker
 }
 
 // New creates a dashboard server with all routes registered.
@@ -58,7 +69,7 @@ func New(cfg Config) *Server {
 		cfg.Port = DashboardPort
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard()}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker()}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
@@ -104,6 +115,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/ra/status", s.apiRaStatus)
 	mux.HandleFunc("/api/ra/scopes", s.apiRaScopes)
 	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
+	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
 
 	s.srv = &http.Server{

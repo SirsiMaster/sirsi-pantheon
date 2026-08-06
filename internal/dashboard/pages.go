@@ -26,6 +26,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		Label string
 	}{
 		{"home", "☥", "Home"},
+		{"fleet", "⚑", "Fleet"},
 		{"scan", "𓁢", "Scan"},
 		{"ghosts", "𓂓", "Ghosts"},
 		{"guard", "🛡", "Guard"},
@@ -236,7 +237,7 @@ window.switchView=function(view){
  document.querySelectorAll('.nav-item').forEach(function(n){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
- var loader={home:viewHome,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
+ var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
   notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
@@ -353,6 +354,56 @@ function cleanIdx(el,idx){
   if(d.cleaned>0){el.textContent='✓ '+d.freed_human;el.style.color='var(--ok)'}
   else{el.textContent='skip';el.style.color='var(--dim)'}
  }).catch(function(){el.textContent='err';el.style.color='var(--danger)'});
+}
+
+function viewFleet(){
+ out('⚑ Fleet — every lane, live','t-gold');
+ fetch('/api/fleet').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()}).then(function(d){
+  const s=d.summary||{};
+  out('');
+  // Summary tiles. Percent is stated WITH its numerator and denominator so a
+  // number can never be read without the count it came from.
+  out('  COMPLETED / IN FLIGHT    '+s.done+' / '+s.total+'   ('+s.pct_done+'% done, '+s.in_flight+' still in flight)','t-head');
+  out('  IN PROGRESS / ASSIGNED   '+s.active+' / '+(s.active+s.assigned)+'   ('+s.assigned+' assigned but not started)','t-head');
+  out('  STALLED / BLOCKED        '+(s.stalled+s.blocked)+'   ('+s.stalled+' stalled · '+s.blocked+' blocked · '+s.idle_lanes+' idle lanes)','t-head');
+  sep();
+  out('  ACTIVITY — real status changes, in order, as they happen','t-dim');
+  const acts=d.activity||[];
+  if(!acts.length){
+   // A seeded tracker with no events means genuine quiet; an unseeded one
+   // means no baseline yet. Saying "no activity" for the second is a lie.
+   out(d.seeded?'  (no status changes since this board started)':'  (baseline being taken — changes appear from the next poll)','t-dim');
+  } else {
+   acts.forEach(function(e){
+    const row=document.createElement('div');row.className='t-line t-row';
+    const at=document.createElement('span');at.className='t-col';at.style.width='90px';at.style.color='var(--dim)';at.textContent=e.at;
+    const ag=document.createElement('span');ag.className='t-col';ag.style.width='170px';ag.style.color='var(--dim)';ag.textContent=e.agent;
+    const sub=document.createElement('span');sub.className='t-col';sub.style.flex='1';sub.textContent=e.task_id+' — '+(e.subject||'');
+    const tr=document.createElement('span');tr.className='t-col-r';
+    tr.style.color=(e.to==='done')?'var(--ok)':(e.to==='blocked')?'var(--warn)':'var(--gold)';
+    tr.textContent=e.from+' → '+e.to;
+    row.appendChild(at);row.appendChild(ag);row.appendChild(sub);row.appendChild(tr);T.appendChild(row)});
+  }
+  sep();
+  out('  APPLICATIONS — every lane, active first','t-dim');
+  out('  '+s.lanes_working+' of '+s.lanes_total+' lanes actively working','t-dim');
+  (d.lanes||[]).forEach(function(l){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const ag=document.createElement('span');ag.className='t-col';ag.style.width='210px';ag.style.whiteSpace='nowrap';ag.textContent=l.agent;
+   const st=document.createElement('span');st.className='t-col';st.style.width='200px';st.style.whiteSpace='nowrap';
+   st.style.color=(l.state==='working')?'var(--ok)':(l.state==='blocked')?'var(--warn)':'var(--dim)';
+   st.textContent=(l.state==='working')?'WORKING':(l.state==='blocked')?'blocked':'stopped — no open work';
+   const cts=document.createElement('span');cts.className='t-col';cts.style.flex='1';cts.style.color='var(--dim)';
+   let parts=[l.open+' open'];
+   if(l.active)parts.push(l.active+' active');
+   if(l.stalled)parts.push(l.stalled+' stalled');
+   if(l.blocked)parts.push(l.blocked+' blocked');
+   if(l.touched_ago)parts.push('touched '+l.touched_ago);
+   cts.textContent=parts.join(' · ');
+   row.appendChild(ag);row.appendChild(st);row.appendChild(cts);T.appendChild(row)});
+ }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
 }
 
 function viewGhosts(){
