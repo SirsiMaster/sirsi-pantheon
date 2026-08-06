@@ -97,6 +97,42 @@ func TestSafeReplace_HappyPath(t *testing.T) {
 	}
 }
 
+func TestSafeReplace_VerifiesPostCodesignArtifact(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("codesign mutation is macOS-specific")
+	}
+	binDir := t.TempDir()
+	withAllowList(t, binDir)
+	withExec(t, func(_ string, args ...string) ([]byte, error) {
+		f, err := os.OpenFile(args[3], os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		_, writeErr := f.WriteString("SIGNED")
+		closeErr := f.Close()
+		if writeErr != nil {
+			return nil, writeErr
+		}
+		return nil, closeErr
+	})
+
+	src := filepath.Join(t.TempDir(), "fresh")
+	writeExe(t, src, "FRESH")
+	dst := filepath.Join(binDir, "sirsi")
+	writeExe(t, dst, "STALE")
+
+	if err := SafeReplace(src, dst); err != nil {
+		t.Fatalf("SafeReplace must accept convergence with the signed staged artifact: %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "FRESHSIGNED" {
+		t.Fatalf("installed content = %q, want signed staged content", got)
+	}
+}
+
 func TestSafeReplace_RejectsAppBundleWithoutWriting(t *testing.T) {
 	withAllowList(t, t.TempDir())
 	src := filepath.Join(t.TempDir(), "fresh")
