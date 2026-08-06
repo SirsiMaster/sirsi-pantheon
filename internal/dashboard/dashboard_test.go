@@ -750,6 +750,58 @@ func TestAPILedger_FnError_Returns500(t *testing.T) {
 	}
 }
 
+func TestAPIFabric_NilFn_Returns503(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/fabric")
+	if err != nil {
+		t.Fatalf("GET /api/fabric: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET /api/fabric = %d, want 503", resp.StatusCode)
+	}
+}
+
+func TestAPIFabric_WiredReturnsCanonicalBoard(t *testing.T) {
+	t.Parallel()
+	want := ledger.FabricBoard{Work: ledger.FabricWork{Done: 2, Open: 3, Total: 5}, Messages: ledger.FabricMessages{Open: 7}, Build: "v1", GeneratedAt: "2026-08-05T00:00:00Z"}
+	ts := testServer(t, Config{FabricFn: func() (ledger.FabricBoard, error) { return want, nil }})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/fabric")
+	if err != nil {
+		t.Fatalf("GET /api/fabric: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/fabric = %d, want 200", resp.StatusCode)
+	}
+	var got ledger.FabricBoard
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode FabricBoard: %v", err)
+	}
+	if got.Work != want.Work || got.Messages != want.Messages || got.Build != want.Build {
+		t.Fatalf("FabricBoard mismatch: got %+v, want %+v", got, want)
+	}
+}
+
+func TestAPIFabric_FnErrorReturns500(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{FabricFn: func() (ledger.FabricBoard, error) {
+		return ledger.FabricBoard{}, fmt.Errorf("simulated fabric error")
+	}})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/fabric")
+	if err != nil {
+		t.Fatalf("GET /api/fabric: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("GET /api/fabric = %d, want 500", resp.StatusCode)
+	}
+}
+
 // ── Footer port truthfulness ───────────────────────────────────────────────
 
 // TestPageShell_FooterShowsRuntimePort pins the fix for a display that lied

@@ -60,6 +60,11 @@ type Config struct {
 	// broken the owner's habit; sharing the handler keeps the address and makes
 	// the disagreement structurally impossible.
 	AltPorts []int
+	// FabricFn is the canonical producer for GET /api/fabric — the single
+	// cross-surface work/message/lane contract (dashboard + menubar derive
+	// their state from this producer). If nil, the endpoint returns 503
+	// rather than a misleading zero-valued payload.
+	FabricFn FabricProducer
 }
 
 // FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
@@ -134,6 +139,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
 	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
+	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
 
 	s.handler = mux
 	s.srv = &http.Server{
