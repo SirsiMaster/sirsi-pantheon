@@ -26,7 +26,6 @@
 package router
 
 import (
-	"os"
 	"time"
 )
 
@@ -50,7 +49,17 @@ func RunStaleThreadReconcileDuty(routerRoot, repoRoot string) error {
 	}
 
 	now := time.Now().UTC()
-	host, _ := os.Hostname()
+
+	// Read router state ONCE, above the closure. retro runs per stale record, and
+	// New+ReadState+NormalizePending is a full state read each time — wasteful on a
+	// 15-minute duty that may see many records.
+	var pendingByAgent map[string][]string
+	if r, newErr := New(repoRoot); newErr == nil {
+		if st, stErr := r.ReadState(); stErr == nil {
+			st.NormalizePending()
+			pendingByAgent = st.Pending
+		}
+	}
 
 	retro := func(t *Thread) (*SuspendPayload, bool) {
 		// Reaped records: signal ReconcileExits to record unrecoverable but
@@ -63,27 +72,38 @@ func RunStaleThreadReconcileDuty(routerRoot, repoRoot string) error {
 		// suspend payload. No Thoth sync; attach open items best-effort so
 		// resume has context for what work was in flight.
 		p := &SuspendPayload{SuspendedAt: now}
-		if r, newErr := New(repoRoot); newErr == nil {
-			if st, stErr := r.ReadState(); stErr == nil {
-				st.NormalizePending()
-				if t != nil {
-					p.OwnedOpenItems = st.Pending[t.AgentID]
-				}
-			}
+		if t != nil && pendingByAgent != nil {
+			p.OwnedOpenItems = pendingByAgent[t.AgentID]
 		}
 		return p, true
 	}
 
-	outcomes := ReconcileExits(reg, host, "" /* all agents */, now, DefaultThreadStaleAfter, retro)
+	// Empty host, NOT os.Hostname(). The thread registry is per-machine, and
+	// ReconcileExits already scopes by MachineID/SameMachine. Passing a hostname
+	// reintroduces the exact bug ReapDeadThreads was migrated off: a hostname is
+	// mutable across networks, so host-equality treats this laptop's own older
+	// records (written under a prior name) as a foreign host and skips them —
+	// the root cause of a 1d16h stranded inbox. Reaping already ignores hostname,
+	// so a hostname filter here heals only half the records it should.
+	outcomes := ReconcileExits(reg, "" /* all hosts; registry is per-machine */, "" /* all agents */, now, DefaultThreadStaleAfter, retro)
 
-	healed := 0
+	// Save if ANY mutating outcome occurred, not just suspended-stale.
+	// ReconcileExits mutates reg via BOTH ReconcileSuspendedStale and
+	// ReconcileMintedSuccessor. Minting is unreachable from this caller only
+	// because retro returns ok=false for reaped records — an invariant held by
+	// the closure above, not by this guard. Counting only suspended-stale meant
+	// that if reaped ever became recoverable here, a successor would be minted
+	// into reg and then silently discarded, with no test failing. Counting every
+	// mutating action makes the guard survive that change.
+	mutated := 0
 	for _, o := range outcomes {
-		if o.Action == ReconcileSuspendedStale {
-			healed++
+		switch o.Action {
+		case ReconcileSuspendedStale, ReconcileMintedSuccessor:
+			mutated++
 		}
 	}
 
-	if healed > 0 {
+	if mutated > 0 {
 		return SaveThreadRegistry(routerRoot, reg)
 	}
 	return nil
