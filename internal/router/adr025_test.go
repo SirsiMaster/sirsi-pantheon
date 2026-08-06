@@ -263,7 +263,8 @@ func TestReconcileExits_SuccessorIsDirectlyHeartbeatable(t *testing.T) {
 	}
 	reg.Threads[thr.ThreadID].Status = ThreadStatusReaped
 	reg.Threads[thr.ThreadID].LastSeenAt = now.Add(-1 * time.Minute)
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+	err = SaveThreadRegistry(routerRoot, reg)
+	if err != nil {
 		t.Fatalf("SaveThreadRegistry: %v", err)
 	}
 
@@ -277,13 +278,15 @@ func TestReconcileExits_SuccessorIsDirectlyHeartbeatable(t *testing.T) {
 	if len(outcomes) != 1 || outcomes[0].Action != ReconcileMintedSuccessor {
 		t.Fatalf("outcomes = %+v, want one minted-successor", outcomes)
 	}
-	if err := SaveThreadRegistry(routerRoot, reg2); err != nil {
+	err = SaveThreadRegistry(routerRoot, reg2)
+	if err != nil {
 		t.Fatalf("SaveThreadRegistry: %v", err)
 	}
 
 	// Heartbeat the successor directly — must NOT error with "suspended and cannot heartbeat".
 	succID := outcomes[0].SuccessorID
-	if _, err := Heartbeat(routerRoot, succID, HeartbeatUpdate{Status: ThreadStatusActive}); err != nil {
+	_, err = Heartbeat(routerRoot, succID, HeartbeatUpdate{Status: ThreadStatusActive})
+	if err != nil {
 		t.Errorf("Heartbeat on active successor failed: %v — want direct heartbeat without thread resume", err)
 	}
 }
