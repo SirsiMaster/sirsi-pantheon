@@ -46,7 +46,21 @@ var (
 	MaxRetriesPerItem = 3
 	// MaxTotalActive caps items in claimed/working across the whole store.
 	MaxTotalActive = 200
+	// MaxLeaseTTL is the hard ceiling for every item/task claim and renewal.
+	// Legitimate long work renews periodically; no caller may suppress recovery
+	// for an arbitrary duration by minting a year-long lease.
+	MaxLeaseTTL = 30 * time.Minute
 )
+
+func boundedLeaseTTL(ttl time.Duration) (time.Duration, error) {
+	if ttl <= 0 {
+		return 10 * time.Minute, nil
+	}
+	if ttl > MaxLeaseTTL {
+		return 0, fmt.Errorf("routerstore: lease ttl %s exceeds maximum %s; renew bounded leases for long work", ttl, MaxLeaseTTL)
+	}
+	return ttl, nil
+}
 
 // Lifecycle errors.
 var (
@@ -107,8 +121,10 @@ func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: ClaimNext: agent is required")
 	}
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return nil, err
 	}
 	token, err := newToken()
 	if err != nil {
@@ -208,8 +224,10 @@ const leaseFence = ` AND lease_token = ? AND lease_expires > ? AND status IN ('c
 
 // RenewLease extends a live lease's expiry (token-fenced).
 func (s *Store) RenewLease(id, token string, ttl time.Duration) error {
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return err
 	}
 	now := s.clock()
 	return s.fencedUpdate(id, token, now,
