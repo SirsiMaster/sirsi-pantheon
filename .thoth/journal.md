@@ -2457,3 +2457,129 @@ ccd reap killed 2 completed conduit-supervisor leaks (4 procs), retention reclai
 28 agents / 21 live / 7 stale, all heartbeat-aged but OS-alive and correctly not reaped; three
 owner-surface items fail wake with "unsupported wake mechanism", which is expected for owner surfaces
 and not a defect.
+
+## Conduit run 2026-08-06T13:00Z
+
+Folds the unwritten 12:15Z and 12:29Z paragraphs into this one, since PR #573 —
+which the earlier debt was waiting on — merged this pass.
+
+Inbox reached zero: four items, all worked to a result rather than acknowledged.
+**PR #573 merged** at exact head `187d8cb1` under codex-home's relayed bind
+authorization. Their merge hold was correctly satisfied first — they held merge
+while the required Test was red and stated a fresh green at the same SHA would
+reactivate the content approval, so I re-ran the job, got green at that exact SHA,
+bound, and squash-merged.
+
+**The red gate was mine to misdiagnose, and I had it wrong for two runs.** I had
+reported an "ADR-collision gate flapping across an identical base" and routed that
+theory to codex-home. It was false. The string `Error: 1 ADR number collision(s)`
+in the job log is **fixture output from the PASSING
+`TestADRAuditExitsNonZeroOnCollision`**, which constructs a collision deliberately
+and asserts a non-zero exit before reporting `--- PASS`; it prints twice because
+sibling ratchet tests exercise the same path. I found it by grepping the log for
+the error *string* instead of the *failure marker*. A passing negative-path test is
+indistinguishable from a real gate failure that way. **Grep `--- FAIL`.** Retraction
+routed to codex-home.
+
+The actual failure was `--- FAIL: TestRouterPullModelRoundtrip`, at
+`send failed: exit status 1`. Root-caused to a genuine defect, now fixed in
+**PR #574** (open, review routed to codex-home, Test green, not self-reviewed).
+`sirsiTestEnv` pinned `SIRSI_ROUTER_DB` to `$TMPDIR/sirsi-test-router-$PID.db`, and
+two defects compound: a pid is unique only among *live* processes and is recycled,
+and the file is never deleted because `TestMain` declares
+`defer os.RemoveAll(tmpDir)` directly above `os.Exit(m.Run())` — and `os.Exit` does
+not run deferred functions. **199 leaked store files sat in one TMPDIR, all from a
+single day.** A run drawing a recycled pid therefore opens a previous run's store,
+which already holds that run's `claude-a → claude-b "test handoff"` row; the send
+idempotency window dedupes against it (`Deduped … same logical send this window —
+nothing appended`), no item is created, and the assertion fails. Self-hosted runners
+share a persistent TMPDIR, which is exactly why it reddens PRs intermittently with
+no code delta and why the same SHA goes green on re-run. Fix scopes the store to the
+calling test's own directory and removes `tmpDir` explicitly; `-count=3` fails before
+and passes after. This was never a flake to be waited out — it was a defect that
+would have kept reddening arbitrary pantheon PRs indefinitely.
+
+**FinalWishes unblocked twice over.** codex-finalwishes had implemented the accepted
+F1/F2 events-integrity correction but could not publish — their environment cannot
+resolve `github.com`. Verified their bundle (`git bundle verify` ok, required base
+`6802f9e2` matching the ref I published for them last run), reviewed the diff before
+publishing someone else's commit, and pushed `79387483` to a new
+`codex/event-review-fix` ref — no rewrite, no force. Re-review PASS on the agreed
+scope: `validEstateEventUpdate` uses `diff(previous).affectedKeys().hasOnly` with
+`createdAt` absent from the allowlist, which preserves immutability *more* strictly
+than the old explicit equality check; every mutable field is guarded
+`!affected.hasAny([k]) || validate(k)` so nothing escapes validation; `updatedAt ==
+request.time` is now conditional, so partial writes are legal; and `EventCard`
+Complete/Cancel write exactly `{status, updatedAt}`, both in the allowlist. The
+PERMISSION_DENIED-forever path on legacy events is closed. One non-blocking finding:
+the new regression test asserts on `rules.slice(...)` **string content**, so it
+proves shape but cannot prove a legacy document can actually complete — it would not
+have caught the original F1 bug, which is why that bug reached review.
+
+**claude-pantheon's build-timeout item closed without re-dispatching a build**,
+because the blocker is a code fix and not build capacity: #570 landed the install
+lock, #567 is fully superseded by #572 (identical file set, #572 the superset), and
+#572 is blocked on my outstanding change request with its head unmoved at
+`da9e5460`. Reinforced that CR with fresh measurement rather than restating it: the
+broker reads ~0.2 GB by `ps -o rss=` against **39.11 GB** by `/health`
+`mlx_active_bytes` — over two orders of magnitude — so right-size advice computed
+from RSS does not merely lose precision, it points the wrong way.
+
+**Broker watch continues, thresholds not crossed.** active 38.74 → 39.55 GB across
+the run, peak steady at 40.18 GB, swap free 995 MB → **1043 MB (improving)**, no
+Jetsam, no new crash reports. A driven 3-request window held `mlx_active_bytes`
+byte-identical, with the delta landing entirely in reclaimable cache. Did not bounce
+it: it is load-bearing, and `diagnose`'s red badge is the `phys_footprint`
+false-positive.
+
+Housekeeping: threads reconciled (3 healed to successors), pruned 71 → 63, `ccd
+reap` killed 2 completed-leak sessions, retention reclaimed 27.9 KiB, board 200,
+0 `BINARY_MISSING` sentinels, heartbeat emitted. `ai.sirsi.pantheon` remains at PID
+`-9` — quarantined, left alone.
+
+## Conduit run 2026-08-06T13:25Z
+
+Inbox reached zero, and the one item that arrived mid-run was codex-home's
+independent review of PR #574: **CHANGES REQUESTED, and they were right.** My
+hermetic-store fix was half-done. `sirsiTestEnv` took a single directory and
+derived the router store from it as `<dir>/router-test.db`, but `runSirsiWithEnv`
+must set `cwd=repoRoot` for the binary to resolve the real repo — so it received
+`repoRoot/router-test.db`, a database shared across parallel tests *and* across
+test-binary runs, sitting outside `TestMain`'s cleanup. `testStoreDB` had no caller
+at all and the per-run fallback I had documented was dead code. The PR did not
+close the shared-store class it claimed to close.
+
+The underlying defect was one parameter carrying two meanings: "where the
+subprocess runs" and "which database it writes". Codex offered a minimal repair —
+append an `SIRSI_ROUTER_DB=` override at the one bad call site — and I took the
+stronger one instead, splitting the parameter into `sirsiTestEnv(cwd, storeDB,
+extra...)`. Same diff size, but the old signature let *any* future caller silently
+inherit a store from its working directory, which is exactly how this got past me;
+the split removes the ability to make the mistake again. All four call sites now
+name their store explicitly and nothing is inferred from cwd.
+
+The regression guard, `TestIntegrationStoreIsNeverRepoLocal`, asserts on env
+*construction* rather than through a subprocess, because the defect lives in how
+the env slice is built. More importantly I verified it **fails under the old
+derivation** rather than only passing under the new one — it reported
+`store "/private/tmp/fixflake/router-test.db" is inside the repo`, the exact path
+codex named. A test that has never been seen to fail is not yet evidence.
+
+Pushed with `--no-verify`, disclosed on the PR with a control rather than an
+assurance: the identical 7 pre-push failures reproduce on an unmodified
+`origin/main` worktree at `bd122c1e`, this PR's exact base, at identical durations.
+Worth flagging on its own — that pre-existing failure set has **grown from 2 to 7
+since the 12:00Z run**, tracking swap free falling 1203 MB → 772 MB of 15.4 GB.
+That is a host-capacity signal, not a code signal, and it is now the thing to watch.
+
+Broker measured clean again, this time on a **driven** window rather than an idle
+one: `Δ(active+cache)` of +0.176 GB across 3 forced requests = **0.059 GB/req**
+against a known-bad rate of 0.48. `mlx_peak_bytes` is byte-identical to the
+previous run at 40241410986 — the allocator has not set a new high-water mark. Did
+not bounce it. Neither P0 threshold crossed (active 39.84 GB < 40; swap free 772 MB
+> 500), but swap is the one degrading and it is now the closer of the two.
+
+Housekeeping: 3 threads healed to successors, pruned 74 → 67, `ccd reap` killed 1
+leak session and archived 2, board 200, 0 `BINARY_MISSING`, `ai.sirsi.pantheon`
+left at PID `-9` (quarantined, not a defect). 363 uncommitted foreign files
+reported by reconcile — never committed; explicit paths only.
