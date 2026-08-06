@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,6 +121,11 @@ var restoreWait = 5 * time.Second
 // so a persistent RAM gap does not flood every 2-minute duty tick.
 const restoreFailTitle = "gemma-liveness: broker restore failed — free memory"
 
+// weightsAbsentTitle is the router item title for the "weights likely absent"
+// class: the HF model cache was deleted and a restart cannot restore it. Distinct
+// from restoreFailTitle so the two conditions have independent dedup tracks.
+const weightsAbsentTitle = "gemma-liveness: model weights absent — re-download required"
+
 // RunGemmaLivenessDuty is the supervisor duty: probe the broker and restore it.
 // Signature matches the SupervisorDuty GoRun contract (routerRoot, repoRoot).
 // routerRoot is used to route an owner alert when a restore does not stick.
@@ -142,6 +148,15 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 		RecordHeal("local AI was down — restarted (bounded)")
 		return nil
 	case liveness.GemmaWedged:
+		// "Weights likely absent" class: RSS below the weight floor means the HF
+		// model cache was deleted — a restart will NOT fix it (the process comes
+		// back up but still can't load weights from a missing cache). Skip the
+		// restart entirely; route a re-download item to the owner instead.
+		if strings.Contains(detail, liveness.WeightsAbsentSentinel) {
+			gemmaWedgeStrikes = 0
+			gemmaRouteWeightsAbsent(routerRoot, detail)
+			return nil
+		}
 		gemmaWedgeStrikes++
 		if gemmaWedgeStrikes < gemmaWedgeThreshold {
 			// Confirm across ticks — a single transient never bounces the broker.
@@ -223,5 +238,40 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 		"then run `sirsi gemma serve` to restart manually."
 	if _, sendErr := f.Send("horus", "owner", restoreFailTitle, "decision", body); sendErr != nil {
 		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", sendErr)
+	}
+}
+
+// gemmaRouteWeightsAbsent routes ONE non-duplicate "re-download weights" item to
+// the owner when the broker is running but has no model weights (RSS < 1 GB).
+// A restart cannot fix this — it sends the same broker back up with an empty HF
+// cache. Only the owner can re-download the model, so we alert immediately rather
+// than wasting two ticks on a futile restart.
+func gemmaRouteWeightsAbsent(routerRoot, detail string) {
+	if routerRoot == "" {
+		return
+	}
+	f, err := dispatch.OpenRoot(routerRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route weights-absent: open dispatch: %v\n", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	// Dedup: skip if the owner already has an open item with this title.
+	if items, listErr := f.Inbox("owner"); listErr == nil {
+		for _, it := range items {
+			if it.Title == weightsAbsentTitle {
+				fmt.Fprintf(os.Stderr, "gemma-liveness: weights-absent item already open, skipping route\n")
+				return
+			}
+		}
+	}
+	body := "The gemma broker process is running but its RSS is below the 1 GB weight floor — " +
+		"the model weights are absent from the HuggingFace cache. Detail: " + detail + ". " +
+		"A restart will NOT fix this: the broker comes back up but still cannot load weights from an empty cache. " +
+		"Re-download the weights: `huggingface-cli download $(cat ~/.sirsi/gemma-model.conf)`, " +
+		"then run `sirsi gemma serve` to reload."
+	if _, sendErr := f.Send("horus", "owner", weightsAbsentTitle, "decision", body); sendErr != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route weights-absent: %v\n", sendErr)
 	}
 }

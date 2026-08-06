@@ -58,6 +58,13 @@ var probeTimeout = 30 * time.Second
 // alone cannot distinguish from "broker wedged for another reason."
 const minWeightedRSSKB = 1 * 1024 * 1024 // 1 GB in KB
 
+// WeightsAbsentSentinel is the canonical marker embedded in ProbeGemmaState's
+// GemmaWedged detail string when the broker process is running but has no model
+// weights loaded (RSS below the weight floor). Exported so the self-healing
+// duty in internal/router/gemmaliveness.go can match it without duplicating the
+// string — a restart cannot fix this class of wedge.
+const WeightsAbsentSentinel = "weights likely absent"
+
 // brokerRSSFn reads the RSS (in KB) of the gemma broker process. Returns 0 if
 // the PID file is absent or the process cannot be queried. Injectable (A16/A21)
 // so tests can stub it without a live process.
