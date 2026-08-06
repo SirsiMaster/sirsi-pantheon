@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
@@ -870,6 +871,11 @@ var routerWakeLoopCmd = &cobra.Command{
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// launchd runs this without -v, and the default level (Warn) drops every
+		// log.Printf in the loop — the wake-*.log files sat at 0 bytes while the
+		// loops ran. This loop's stderr IS its dedicated log file, so Info is the
+		// correct floor for it. Honors --quiet.
+		logging.EnableDaemonLogging()
 		root, err := workRootEnsure()
 		if err != nil {
 			return err
