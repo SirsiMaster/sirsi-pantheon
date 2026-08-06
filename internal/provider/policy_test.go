@@ -25,8 +25,9 @@ func TestDecidePolicy(t *testing.T) {
 		{"extraction exceeds local context", PolicyRequest{Task: TaskExtraction, Privacy: PrivacyShareable, Needs: CapabilityNeeds{ContextTokens: 9000}}, PolicyState{Local: local, Remote: remote}, Decision{Lane: LaneRemote, Reason: "request capabilities exceed the local envelope"}, false},
 		{"offline remote is not qualified", PolicyRequest{Task: TaskGeneration, Privacy: PrivacyShareable, Needs: CapabilityNeeds{ContextTokens: 9000}}, PolicyState{Local: local, Remote: LaneState{Availability: Offline, Caps: full}}, Decision{}, true},
 		{"explicit remote override", PolicyRequest{Task: TaskGeneration, Privacy: PrivacyShareable, Override: LaneRemote}, PolicyState{Local: local, Remote: remote}, Decision{Lane: LaneRemote, Reason: "explicit per-request override", Override: true}, false},
-		{"explicit hybrid override", PolicyRequest{Task: TaskGeneration, Privacy: PrivacyShareable, Override: LaneHybrid}, PolicyState{Local: local, Remote: remote}, Decision{Lane: LaneHybrid, Fallback: LaneRemote, Reason: "explicit hybrid override", Override: true}, false},
+		{"explicit hybrid override is unavailable", PolicyRequest{Task: TaskGeneration, Privacy: PrivacyShareable, Override: LaneHybrid}, PolicyState{Local: local, Remote: remote}, Decision{}, true},
 		{"hybrid override requires both lanes", PolicyRequest{Task: TaskGeneration, Privacy: PrivacyShareable, Override: LaneHybrid}, PolicyState{Local: local, Remote: LaneState{Availability: Offline, Caps: full}}, Decision{}, true},
+		{"embedding requires qualified adapter", PolicyRequest{Task: TaskEmbedding, Privacy: PrivacyLocalOnly}, PolicyState{Local: local}, Decision{}, true},
 		{"remote override cannot violate privacy", PolicyRequest{Task: TaskGeneration, Privacy: PrivacyLocalOnly, Override: LaneRemote}, PolicyState{Local: local, Remote: remote}, Decision{}, true},
 		{"required JSON mode is qualified", PolicyRequest{Task: TaskExtraction, Privacy: PrivacyShareable, Needs: CapabilityNeeds{JSONMode: true}}, PolicyState{Local: LaneState{Availability: Available, Caps: LaneCaps{ContextTokens: 8192}}, Remote: remote}, Decision{Lane: LaneRemote, Reason: "request capabilities exceed the local envelope"}, false},
 		{"gemini 2 is below floor", PolicyRequest{Task: TaskJudgment, Privacy: PrivacyShareable}, PolicyState{Local: local, Remote: LaneState{Availability: Available, Caps: full, Provider: "gemini", Model: "gemini-2.5-pro"}}, Decision{Lane: LaneLocal, Reason: "local lane satisfies the request capabilities"}, false},
@@ -53,6 +54,7 @@ func TestDecideRejectsInvalidInputs(t *testing.T) {
 		{Task: "unknown", Privacy: PrivacyShareable},
 		{Task: TaskGeneration, Privacy: "unknown"},
 		{Task: TaskGeneration, Privacy: PrivacyShareable, Needs: CapabilityNeeds{ContextTokens: -1}},
+		{Task: TaskGeneration, Privacy: PrivacyLocalOnly, Latency: "eventual"},
 	}
 	for _, req := range tests {
 		if _, err := Decide(req, PolicyState{}); err == nil {

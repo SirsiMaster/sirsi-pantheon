@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -39,6 +40,68 @@ type OpenAICompat struct {
 	UseRealCompletionProbe bool
 }
 
+type sirsiCapabilities struct {
+	ContractVersion string `json:"contract_version"`
+	Model           struct {
+		ID                    string `json:"id"`
+		QualifiedPromptTokens int    `json:"qualified_prompt_tokens"`
+	} `json:"model"`
+	Serving struct {
+		Streaming bool `json:"streaming"`
+	} `json:"serving"`
+	Determinism struct {
+		BatchInvariantActive bool `json:"batch_invariant_active"`
+	} `json:"determinism"`
+}
+
+func (o *OpenAICompat) DiscoverCapabilities(ctx context.Context) (Caps, string, error) {
+	caps := o.Caps()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(o.Endpoint, "/")+"/sirsi/capabilities", nil)
+	if err != nil {
+		return Caps{}, "", err
+	}
+	o.auth(req)
+	resp, err := o.client().Do(req)
+	if err != nil {
+		return Caps{}, "", fmt.Errorf("%w: %s capability discovery: %v", ErrUnavailable, o.ProviderName, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		caps.ContextTokens = 0
+		caps.Deterministic = false
+		caps.JSONMode = false
+		caps.Tools = false
+		return caps, "", nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return Caps{}, "", classifyHTTPError(o.ProviderName+" capability discovery", resp.StatusCode)
+	}
+	var discovered sirsiCapabilities
+	if err := json.NewDecoder(resp.Body).Decode(&discovered); err != nil {
+		return Caps{}, "", fmt.Errorf("%s: decode capabilities: %w", o.ProviderName, err)
+	}
+	if discovered.ContractVersion != "1" && !strings.HasPrefix(discovered.ContractVersion, "1.") {
+		return Caps{}, "", fmt.Errorf("%s: unsupported capabilities contract %q", o.ProviderName, discovered.ContractVersion)
+	}
+	caps.ContextTokens = discovered.Model.QualifiedPromptTokens
+	caps.Streaming = discovered.Serving.Streaming
+	caps.Deterministic = discovered.Determinism.BatchInvariantActive
+	caps.JSONMode = false
+	caps.Tools = false
+	return caps, discovered.Model.ID, nil
+}
+
+func classifyHTTPError(op string, status int) error {
+	switch status {
+	case http.StatusTooManyRequests:
+		return fmt.Errorf("%w: %s: http %d", ErrRateLimited, op, status)
+	case http.StatusPaymentRequired:
+		return fmt.Errorf("%w: %s: http %d", ErrBudgetExhausted, op, status)
+	default:
+		return fmt.Errorf("%w: %s: http %d", ErrUnavailable, op, status)
+	}
+}
+
 func (o *OpenAICompat) Name() string { return o.ProviderName }
 func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 
@@ -60,6 +123,9 @@ func (o *OpenAICompat) ProbeCompletion(ctx context.Context) error {
 	defer cancel()
 	_, err := o.Complete(ctx, Request{Prompt: "Reply with OK.", MaxTokens: 1})
 	if err != nil {
+		if errors.Is(err, ErrRateLimited) || errors.Is(err, ErrBudgetExhausted) {
+			return fmt.Errorf("%s one-token completion: %w", o.ProviderName, err)
+		}
 		return fmt.Errorf("%w: %s one-token completion: %v", ErrUnavailable, o.ProviderName, err)
 	}
 	return nil
@@ -80,62 +146,48 @@ func (o *OpenAICompat) client() *http.Client {
 // is DOWN per MODEL-ROUTER-DESIGN.md. Otherwise it probes /v1/models, which
 // proves a model is loaded but not that inference works.
 func (o *OpenAICompat) Available(ctx context.Context) bool {
+	return o.Availability(ctx) == Available
+}
+
+func (o *OpenAICompat) Availability(ctx context.Context) Availability {
 	if strings.TrimSpace(o.Endpoint) == "" {
-		return false
+		return Offline
 	}
 	if o.UseRealCompletionProbe {
-		return o.probeCompletion(ctx)
+		err := o.ProbeCompletion(ctx)
+		switch {
+		case err == nil:
+			return Available
+		case errors.Is(err, ErrRateLimited):
+			return RateLimit
+		case errors.Is(err, ErrBudgetExhausted):
+			return Budgeted
+		default:
+			return Offline
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(o.Endpoint, "/")+"/models", nil)
 	if err != nil {
-		return false
+		return Offline
 	}
 	o.auth(req)
 	resp, err := o.client().Do(req)
 	if err != nil {
-		return false
+		return Offline
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return resp.StatusCode == http.StatusOK
-}
-
-// probeCompletion sends a 1-token chat completion to verify the engine can
-// actually infer, not just bind a port. The SNE design specifies this over
-// /health because two incidents proved a wedged model passes /health while
-// returning 500s on real prompts.
-func (o *OpenAICompat) probeCompletion(ctx context.Context) bool {
-	// 30s timeout: a cold model load can be slow but >30s means it is wedged.
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	model, err := o.ProbeServedModel(ctx)
-	if err != nil {
-		return false
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return Available
+	case http.StatusTooManyRequests:
+		return RateLimit
+	case http.StatusPaymentRequired:
+		return Budgeted
+	default:
+		return Offline
 	}
-
-	body, err := json.Marshal(ccRequest{
-		Model:     model,
-		Messages:  []ccMessage{{Role: "user", Content: "1"}},
-		MaxTokens: 1,
-	})
-	if err != nil {
-		return false
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		strings.TrimRight(o.Endpoint, "/")+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return false
-	}
-	o.auth(req)
-	resp, err := o.client().Do(req)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-	// 200 means the engine completed. Any 5xx means it is serving but broken.
-	return resp.StatusCode == http.StatusOK
 }
 
 func (o *OpenAICompat) auth(r *http.Request) {
@@ -270,7 +322,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		// appropriate cached snapshot ... HF_HUB_OFFLINE" — which was a wrong
 		// model NAME in the request, not a broken broker. Swallowing it would
 		// have sent an operator hunting the wrong fault.
-		return Response{}, fmt.Errorf("%s: http %d: %v", o.ProviderName, hresp.StatusCode, cc.Error)
+		return Response{}, fmt.Errorf("%w: %v", classifyHTTPError(o.ProviderName, hresp.StatusCode), cc.Error)
 	}
 	if len(cc.Choices) == 0 {
 		return Response{}, fmt.Errorf("%s: no choices in response", o.ProviderName)

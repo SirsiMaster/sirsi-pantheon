@@ -120,6 +120,9 @@ func Decide(req PolicyRequest, state PolicyState) (Decision, error) {
 	if err := validatePolicyRequest(req); err != nil {
 		return Decision{}, err
 	}
+	if req.Task == TaskEmbedding {
+		return Decision{}, fmt.Errorf("%w: no qualified embedding adapter is configured", ErrNoQualifiedLane)
+	}
 	if req.Privacy == PrivacyLocalOnly {
 		if req.Override == LaneRemote {
 			return Decision{}, fmt.Errorf("%w: remote override conflicts with local-only privacy", ErrNoQualifiedLane)
@@ -167,9 +170,7 @@ func decideOverride(lane Lane, needs CapabilityNeeds, state PolicyState) (Decisi
 	case LaneRemote:
 		qualified = state.Remote.qualified(needs) && qualifiedRemoteModel(state.Remote)
 	case LaneHybrid:
-		if state.Local.qualified(needs) && state.Remote.qualified(needs) && qualifiedRemoteModel(state.Remote) {
-			return Decision{Lane: LaneHybrid, Fallback: LaneRemote, Reason: "explicit hybrid override", Override: true}, nil
-		}
+		return Decision{}, fmt.Errorf("%w: hybrid execution is not implemented", ErrNoQualifiedLane)
 	default:
 		return Decision{}, fmt.Errorf("invalid lane override %q", lane)
 	}
@@ -189,6 +190,11 @@ func validatePolicyRequest(req PolicyRequest) error {
 	case PrivacyLocalOnly, PrivacyShareable:
 	default:
 		return fmt.Errorf("invalid privacy class %q", req.Privacy)
+	}
+	switch req.Latency {
+	case "", LatencyInteractive, LatencyBackground:
+	default:
+		return fmt.Errorf("invalid latency class %q", req.Latency)
 	}
 	if req.Needs.ContextTokens < 0 {
 		return errors.New("minimum context tokens cannot be negative")

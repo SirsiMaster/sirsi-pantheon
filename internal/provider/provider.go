@@ -136,3 +136,8 @@ type Provider interface {
 // ErrUnavailable is returned when a backend cannot serve. Callers escalate to
 // the next rung rather than surfacing an error, but the escalation is recorded.
 var ErrUnavailable = errors.New("provider unavailable")
+
+var (
+	ErrRateLimited     = errors.New("provider rate limited")
+	ErrBudgetExhausted = errors.New("provider budget exhausted")
+)

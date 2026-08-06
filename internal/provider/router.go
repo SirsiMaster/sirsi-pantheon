@@ -76,13 +76,17 @@ func (r *ModelRouter) Run(ctx context.Context, policyReq PolicyRequest, req Requ
 	state := PolicyState{Local: r.laneState(ctx, r.Local), Remote: r.laneState(ctx, r.Remote)}
 	decision, err := Decide(policyReq, state)
 	if err != nil {
-		r.record(policyReq, decision, Response{}, "rejected", err)
+		if logErr := r.record(policyReq, decision, Response{}, "rejected", err); logErr != nil {
+			return Response{}, decision, errors.Join(err, logErr)
+		}
 		return Response{}, decision, err
 	}
 
 	resp, runErr := r.completeLane(ctx, decision.Lane, req)
 	if runErr == nil {
-		r.record(policyReq, decision, resp, "completed", nil)
+		if logErr := r.record(policyReq, decision, resp, "completed", nil); logErr != nil {
+			return resp, decision, logErr
+		}
 		return resp, decision, nil
 	}
 	if decision.Fallback != "" {
@@ -92,12 +96,16 @@ func (r *ModelRouter) Run(ctx context.Context, policyReq PolicyRequest, req Requ
 			decision.Reason += fmt.Sprintf("; %s failed (%v), fell back to %s", decision.Lane, runErr, fallback)
 			decision.Lane = fallback
 			decision.Fallback = ""
-			r.record(policyReq, decision, fallbackResp, "fallback-completed", nil)
+			if logErr := r.record(policyReq, decision, fallbackResp, "fallback-completed", nil); logErr != nil {
+				return fallbackResp, decision, logErr
+			}
 			return fallbackResp, decision, nil
 		}
 		runErr = errors.Join(runErr, fallbackErr)
 	}
-	r.record(policyReq, decision, Response{}, "failed", runErr)
+	if logErr := r.record(policyReq, decision, Response{}, "failed", runErr); logErr != nil {
+		return Response{}, decision, errors.Join(runErr, logErr)
+	}
 	return Response{}, decision, runErr
 }
 
@@ -106,6 +114,15 @@ func (r *ModelRouter) laneState(ctx context.Context, p Provider) LaneState {
 		return LaneState{Availability: Offline}
 	}
 	caps := p.Caps()
+	discoveredModel := ""
+	if compat, ok := p.(*OpenAICompat); ok {
+		discovered, model, err := compat.DiscoverCapabilities(ctx)
+		if err != nil {
+			return LaneState{Availability: compat.Availability(ctx), Provider: p.Name()}
+		}
+		caps = discovered
+		discoveredModel = model
+	}
 	state := LaneState{Availability: Offline, Provider: p.Name(), Caps: LaneCaps{
 		ContextTokens: caps.ContextTokens, Streaming: caps.Streaming,
 		Deterministic: caps.Deterministic, JSONMode: caps.JSONMode,
@@ -115,16 +132,28 @@ func (r *ModelRouter) laneState(ctx context.Context, p Provider) LaneState {
 			return state
 		}
 		model, err := local.ProbeServedModel(ctx)
-		if err == nil {
+		if discoveredModel != "" {
+			state.Model = discoveredModel
+		} else if err == nil {
 			state.Model = model
 		}
 		state.Availability = Available
 		return state
 	}
-	if p.Available(ctx) {
-		state.Availability = Available
+	availability := Offline
+	if compat, ok := p.(*OpenAICompat); ok {
+		availability = compat.Availability(ctx)
+	} else if p.Available(ctx) {
+		availability = Available
+	}
+	state.Availability = availability
+	if availability == Available {
 		if compat, ok := p.(*OpenAICompat); ok {
-			state.Model = compat.Model
+			if discoveredModel != "" {
+				state.Model = discoveredModel
+			} else {
+				state.Model = compat.Model
+			}
 		}
 	}
 	return state
@@ -146,9 +175,9 @@ func (r *ModelRouter) completeLane(ctx context.Context, lane Lane, req Request) 
 	return p.Complete(ctx, req)
 }
 
-func (r *ModelRouter) record(req PolicyRequest, decision Decision, resp Response, outcome string, runErr error) {
+func (r *ModelRouter) record(req PolicyRequest, decision Decision, resp Response, outcome string, runErr error) error {
 	if r.Log == nil {
-		return
+		return nil
 	}
 	now := time.Now
 	if r.Now != nil {
@@ -158,5 +187,8 @@ func (r *ModelRouter) record(req PolicyRequest, decision Decision, resp Response
 	if runErr != nil {
 		rec.Error = runErr.Error()
 	}
-	_ = r.Log.Append(rec)
+	if err := r.Log.Append(rec); err != nil {
+		return fmt.Errorf("record model route decision: %w", err)
+	}
+	return nil
 }

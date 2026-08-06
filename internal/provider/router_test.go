@@ -31,6 +31,20 @@ func (m *memoryDecisionLog) Append(r DecisionRecord) error {
 	return nil
 }
 
+type failingDecisionLog struct{ err error }
+
+func (f failingDecisionLog) Append(DecisionRecord) error { return f.err }
+
+func TestModelRouterSurfacesDecisionLogFailure(t *testing.T) {
+	local := &fakeProvider{name: "sne", tier: TierLocal, caps: Caps{Streaming: true}, up: true, resp: Response{Text: "ok"}}
+	want := errors.New("disk full")
+	r := &ModelRouter{Local: local, Log: failingDecisionLog{err: want}}
+	resp, _, err := r.Run(context.Background(), PolicyRequest{Task: TaskGeneration, Privacy: PrivacyLocalOnly}, Request{Prompt: "hello"})
+	if resp.Text != "ok" || !errors.Is(err, want) {
+		t.Fatalf("resp=%+v err=%v, want completed response plus log failure", resp, err)
+	}
+}
+
 func TestModelRouterJudgmentFallsDownToLocal(t *testing.T) {
 	caps := Caps{Streaming: true}
 	local := &fakeProvider{name: "sne", tier: TierLocal, caps: caps, up: true,
