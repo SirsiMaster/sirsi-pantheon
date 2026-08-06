@@ -45,7 +45,7 @@ func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, std
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, append([]string{"thread", "watch"}, args...)...)
 	cmd.Dir = dir
-	env := sirsiTestEnv(dir)
+	env := sirsiTestEnv(dir, filepath.Join(dir, "router-test.db"))
 	env = append(env,
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),

@@ -19,6 +19,22 @@ var testBinary string
 // repoRoot is the absolute path to the repository root.
 var repoRoot string
 
+// testStoreDB is the router store every sirsi subprocess in this test binary
+// writes to. It lives inside TestMain's MkdirTemp directory, which is unique per
+// test-binary run and removed when the run ends.
+//
+// It must NOT be keyed on os.Getpid(). That was the previous scheme, and a pid is
+// unique only among LIVE processes — it is recycled, while the file it named is
+// not removed. On a long-lived self-hosted runner those files accumulate (199 were
+// found in one TMPDIR on 2026-08-06, all from a single day), so a `go test` that
+// draws a recycled pid opens a PREVIOUS run's store. It already contains that
+// run's `claude-a → claude-b "test handoff"` row, the send idempotency window
+// dedupes against it, no new item is created, and TestRouterPullModelRoundtrip
+// fails at "send failed: exit status 1" — intermittently, with no code delta,
+// which is exactly how it reddened PR #573 at 187d8cb1 while passing at the same
+// SHA on re-run.
+var testStoreDB string
+
 func TestMain(m *testing.M) {
 	// Determine the repo root (two levels up from cmd/sirsi/).
 	wd, err := os.Getwd()
@@ -34,9 +50,8 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "cannot create temp dir: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmpDir)
-
 	testBinary = filepath.Join(tmpDir, "sirsi")
+	testStoreDB = filepath.Join(tmpDir, "router.db")
 
 	buildCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -49,11 +64,26 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	// os.Exit does not run deferred functions, so tmpDir must be removed
+	// explicitly — a `defer os.RemoveAll(tmpDir)` here never fires and leaks the
+	// build directory and the router store on every run.
+	code := m.Run()
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
 }
 
-// sirsiTestEnv returns the parent environment with every GIT_* variable removed
-// and PWD pinned to dir, for handing to a sirsi subprocess.
+// sirsiTestEnv returns the parent environment with every GIT_* variable removed,
+// PWD pinned to cwd, and SIRSI_ROUTER_DB pinned to storeDB, for handing to a
+// sirsi subprocess.
+//
+// cwd and storeDB are SEPARATE parameters on purpose. An earlier revision took
+// one directory and derived the store from it as <dir>/router-test.db. That
+// silently coupled "where the subprocess runs" to "which store it writes",
+// so runSirsiWithEnv — which must run in repoRoot for the binary to resolve the
+// real repo — got repoRoot/router-test.db: a repo-local database shared across
+// parallel tests AND across test-binary runs, outside TestMain's cleanup. That
+// is the very persistent-shared-store class this file exists to eliminate.
+// Every caller now names its store explicitly; nothing is inferred from cwd.
 //
 // Stripping GIT_* is what makes per-test router roots actually isolated. When
 // the suite runs under a git hook — most importantly the Ma'at pre-push gate,
@@ -69,7 +99,8 @@ func TestMain(m *testing.M) {
 // to the cwd walk-up) but red under the pre-push gate. Removing GIT_* forces
 // the subprocess to resolve from its own cwd. Pinning PWD additionally keeps any
 // os.Getwd()-based resolution consistent with cmd.Dir.
-func sirsiTestEnv(dir string, extra ...string) []string {
+func sirsiTestEnv(cwd, storeDB string, extra ...string) []string {
+	dir := cwd
 	base := os.Environ()
 	out := make([]string, 0, len(base)+len(extra)+1)
 	for _, kv := range base {
@@ -114,11 +145,20 @@ func sirsiTestEnv(dir string, extra ...string) []string {
 		out = append(out, "PWD="+dir)
 	}
 	// Sandbox the router store: without this, every test send lands in the
-	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07, and
-	// the idempotency window made TestRouterPullModelRoundtrip dedupe against
-	// a PREVIOUS run's row — flaky by the hour bucket). Per-process temp file;
-	// an explicit SIRSI_ROUTER_DB in extra still wins (append order).
-	out = append(out, "SIRSI_ROUTER_DB="+filepath.Join(os.TempDir(), fmt.Sprintf("sirsi-test-router-%d.db", os.Getpid())))
+	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07).
+	//
+	// The caller names the store. Mutating router tests pass a path inside their
+	// own t.TempDir(), so each gets a virgin store — that is what actually
+	// defeats the send idempotency window: dedupe keys on (from, to, title)
+	// within a time bucket, so any two tests — or any two runs — that share a
+	// store and send the same logical item will see the second send return
+	// "Deduped ... nothing appended" and fail on an item that was never created.
+	// A per-run store narrows that race; only a per-test store closes it.
+	// Read-only commands (version, help) pass testStoreDB, the per-run store
+	// inside TestMain's MkdirTemp, which is removed when the run ends.
+	//
+	// An explicit SIRSI_ROUTER_DB in extra still wins (append order).
+	out = append(out, "SIRSI_ROUTER_DB="+storeDB)
 	return append(out, extra...)
 }
 
@@ -135,8 +175,10 @@ func runSirsiWithEnv(t *testing.T, timeout time.Duration, env []string, args ...
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, testBinary, args...)
+	// cwd is repoRoot so the binary resolves the real repo, but the store is the
+	// per-run temp one — never repoRoot/router-test.db.
 	cmd.Dir = repoRoot
-	cmd.Env = sirsiTestEnv(repoRoot, env...)
+	cmd.Env = sirsiTestEnv(repoRoot, testStoreDB, env...)
 	// Prevent interactive prompts by closing stdin.
 	cmd.Stdin = nil
 
@@ -146,6 +188,53 @@ func runSirsiWithEnv(t *testing.T, timeout time.Duration, env []string, args ...
 
 	err = cmd.Run()
 	return outBuf.String(), errBuf.String(), err
+}
+
+// TestIntegrationStoreIsNeverRepoLocal is the regression guard for the coupling
+// that made the per-test-store fix incomplete: sirsiTestEnv used to derive the
+// store from the subprocess cwd, so runSirsi/runSirsiWithEnv — which must run in
+// repoRoot — silently wrote to repoRoot/router-test.db, a database shared across
+// parallel tests and across test-binary runs and outside TestMain's cleanup.
+//
+// It asserts the property directly rather than through a subprocess, because the
+// bug is in how the env is CONSTRUCTED, not in how the binary reads it.
+func TestIntegrationStoreIsNeverRepoLocal(t *testing.T) {
+	t.Parallel()
+
+	storeOf := func(env []string) string {
+		got := ""
+		for _, kv := range env {
+			if v, ok := strings.CutPrefix(kv, "SIRSI_ROUTER_DB="); ok {
+				got = v // last wins, matching exec semantics
+			}
+		}
+		return got
+	}
+
+	// The env runSirsi/runSirsiWithEnv actually hand to the subprocess.
+	got := storeOf(sirsiTestEnv(repoRoot, testStoreDB))
+	if got != testStoreDB {
+		t.Errorf("runSirsi store = %q, want the per-run temp store %q", got, testStoreDB)
+	}
+	if strings.HasPrefix(got, repoRoot+string(filepath.Separator)) {
+		t.Errorf("runSirsi store %q is inside the repo; it must live in TestMain's temp dir", got)
+	}
+
+	// runSirsiInDir keeps its per-test store, and two distinct dirs never collide.
+	a, b := t.TempDir(), t.TempDir()
+	sa := storeOf(sirsiTestEnv(a, filepath.Join(a, "router-test.db")))
+	sb := storeOf(sirsiTestEnv(b, filepath.Join(b, "router-test.db")))
+	if sa == sb {
+		t.Errorf("two isolated dirs resolved to the same store %q", sa)
+	}
+	if !strings.HasPrefix(sa, a) {
+		t.Errorf("runSirsiInDir store %q is not inside its own dir %q", sa, a)
+	}
+
+	// An explicit override in extra still wins (append order).
+	if got := storeOf(sirsiTestEnv(repoRoot, testStoreDB, "SIRSI_ROUTER_DB=/tmp/override.db")); got != "/tmp/override.db" {
+		t.Errorf("explicit SIRSI_ROUTER_DB override = %q, want it to win", got)
+	}
 }
 
 // isolatedHomeEnv returns env vars pinning HOME and XDG_* to a per-test temp
@@ -162,7 +251,9 @@ func isolatedHomeEnv(t *testing.T) []string {
 }
 
 // runSirsiInDir is like runSirsi but runs the binary in the given working
-// directory instead of repoRoot. Used to isolate router state mutations.
+// directory instead of repoRoot, with its store inside that same directory.
+// Used to isolate router state mutations: dir MUST be a per-test isolated
+// directory (a t.TempDir()), because every call sharing a dir shares a store.
 func runSirsiInDir(t *testing.T, dir string, timeout time.Duration, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -172,7 +263,7 @@ func runSirsiInDir(t *testing.T, dir string, timeout time.Duration, args ...stri
 	// Strip GIT_* (e.g. GIT_DIR leaked by the pre-push gate) and pin PWD so the
 	// subprocess resolves its router root from dir, not the gate's repo. See
 	// sirsiTestEnv for the full rationale (TestRouterAckLegacyPending flake).
-	cmd.Env = sirsiTestEnv(dir)
+	cmd.Env = sirsiTestEnv(dir, filepath.Join(dir, "router-test.db"))
 	cmd.Stdin = nil
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
@@ -1042,7 +1133,7 @@ func TestRouterRespondStoreOnlyItem(t *testing.T) {
 	writeRouterTestAgents(t, tmp, "claude-fw", "claude-home")
 	db := filepath.Join(tmp, "router.db")
 	env := func() []string {
-		return sirsiTestEnv(tmp, "SIRSI_ROUTER_STORE_WAKE=1", "SIRSI_ROUTER_DB="+db)
+		return sirsiTestEnv(tmp, db, "SIRSI_ROUTER_STORE_WAKE=1")
 	}
 	run := func(args ...string) (string, string, error) {
 		t.Helper()
