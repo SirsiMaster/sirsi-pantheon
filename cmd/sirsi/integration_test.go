@@ -19,6 +19,22 @@ var testBinary string
 // repoRoot is the absolute path to the repository root.
 var repoRoot string
 
+// testStoreDB is the router store every sirsi subprocess in this test binary
+// writes to. It lives inside TestMain's MkdirTemp directory, which is unique per
+// test-binary run and removed when the run ends.
+//
+// It must NOT be keyed on os.Getpid(). That was the previous scheme, and a pid is
+// unique only among LIVE processes — it is recycled, while the file it named is
+// not removed. On a long-lived self-hosted runner those files accumulate (199 were
+// found in one TMPDIR on 2026-08-06, all from a single day), so a `go test` that
+// draws a recycled pid opens a PREVIOUS run's store. It already contains that
+// run's `claude-a → claude-b "test handoff"` row, the send idempotency window
+// dedupes against it, no new item is created, and TestRouterPullModelRoundtrip
+// fails at "send failed: exit status 1" — intermittently, with no code delta,
+// which is exactly how it reddened PR #573 at 187d8cb1 while passing at the same
+// SHA on re-run.
+var testStoreDB string
+
 func TestMain(m *testing.M) {
 	// Determine the repo root (two levels up from cmd/sirsi/).
 	wd, err := os.Getwd()
@@ -34,9 +50,8 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "cannot create temp dir: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmpDir)
-
 	testBinary = filepath.Join(tmpDir, "sirsi")
+	testStoreDB = filepath.Join(tmpDir, "router.db")
 
 	buildCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -49,7 +64,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	// os.Exit does not run deferred functions, so tmpDir must be removed
+	// explicitly — a `defer os.RemoveAll(tmpDir)` here never fires and leaks the
+	// build directory and the router store on every run.
+	code := m.Run()
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
 }
 
 // sirsiTestEnv returns the parent environment with every GIT_* variable removed
@@ -114,11 +134,23 @@ func sirsiTestEnv(dir string, extra ...string) []string {
 		out = append(out, "PWD="+dir)
 	}
 	// Sandbox the router store: without this, every test send lands in the
-	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07, and
-	// the idempotency window made TestRouterPullModelRoundtrip dedupe against
-	// a PREVIOUS run's row — flaky by the hour bucket). Per-process temp file;
-	// an explicit SIRSI_ROUTER_DB in extra still wins (append order).
-	out = append(out, "SIRSI_ROUTER_DB="+filepath.Join(os.TempDir(), fmt.Sprintf("sirsi-test-router-%d.db", os.Getpid())))
+	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07).
+	//
+	// Scope it to the caller's own directory whenever there is one, so each test
+	// gets a virgin store. That is what actually defeats the send idempotency
+	// window: dedupe keys on (from, to, title) within a time bucket, so any two
+	// tests — or any two runs — that share a store and send the same logical item
+	// will see the second send return "Deduped ... nothing appended" and fail on
+	// an item that was never created. A per-run store narrows that race; only a
+	// per-test store closes it. Tests with no directory of their own (version,
+	// help, and other read-only commands) fall back to the per-run store.
+	//
+	// An explicit SIRSI_ROUTER_DB in extra still wins (append order).
+	storeDB := testStoreDB
+	if dir != "" {
+		storeDB = filepath.Join(dir, "router-test.db")
+	}
+	out = append(out, "SIRSI_ROUTER_DB="+storeDB)
 	return append(out, extra...)
 }
 
