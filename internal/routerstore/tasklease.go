@@ -74,6 +74,27 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 		return nil, fmt.Errorf("routerstore: reclaim task leases: %w", err)
 	}
 
+	// Lease poison repair. Only an in-progress row may hold a lease, but that
+	// invariant had no enforcer, and the reclaim above cannot fix a violation
+	// because its own WHERE clause assumes it holds: a non-active row carrying a
+	// lease_token is excluded from reclaim AND from claimableTaskPredicate, so it
+	// becomes permanently unclaimable — claim-id returns ErrNoWork while
+	// renew/release reject the stale token. Observed in production on schema v15
+	// (pantheon-serialized-binary-installer, lease 038b5d77…, expiry
+	// 2026-08-06T07:40:25Z, reconciled blocked -> pending with ownership retained).
+	//
+	// Clearing here rather than shipping an operator repair command means every
+	// claim pass self-heals; there is no poisoned state an operator must go into
+	// SQLite to fix. Status is deliberately NOT changed — the row keeps whatever
+	// disposition reconciliation gave it, so ledger history is not falsified.
+	if _, err = tx.Exec(`UPDATE tasks SET
+		lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
+		WHERE agent=? AND status<>'in-progress'
+		  AND (lease_token<>'' OR lease_expires<>'' OR claimed_by<>'' OR thread_id<>'');`,
+		now.Format(time.RFC3339), agent); err != nil {
+		return nil, fmt.Errorf("routerstore: clear non-active task leases: %w", err)
+	}
+
 	var taskID string
 	selectQuery := `SELECT t.task_id FROM tasks t
 		WHERE t.agent=? AND ` + claimableTaskPredicate("t") + ` AND t.attempts<?`

@@ -324,7 +324,16 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: encode links: %w", err)
 	}
-	_, err = s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+? WHERE agent=? AND task_id=?;`,
+	// Only an in-progress row may hold a lease. Enforce that at the write
+	// boundary rather than trusting callers: a row left non-active while still
+	// carrying lease ownership is excluded from both lease reclaim and
+	// claimableTaskPredicate, making it permanently unclaimable. ClaimTask also
+	// repairs already-poisoned rows; this stops new ones being created.
+	leaseClear := ""
+	if t.Status != "in-progress" {
+		leaseClear = `,lease_token='',lease_expires='',claimed_by='',thread_id=''`
+	}
+	_, err = s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=?;`,
 		t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID)
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w", agent, taskID, err)
