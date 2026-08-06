@@ -18,9 +18,15 @@ import (
 func dashboardUnroutable() map[string]bool {
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
-		return map[string]bool{}
+		fmt.Fprintf(os.Stderr, "dashboard: routability unknown (repo root: %v) — lanes will not be classified UNROUTABLE\n", err)
+		return nil
 	}
-	return unroutableAgents(repoRoot)
+	un, err := unroutableAgents(repoRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "dashboard: routability unknown (%v) — lanes will not be classified UNROUTABLE\n", err)
+		return nil
+	}
+	return un
 }
 
 // escalateStuckLanes routes lanes that no wake can reach to the owner, and
@@ -39,7 +45,14 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("escalate lanes: build ledger: %w", err)
 	}
-	board := dashboard.NewFleetTracker(unroutableAgents(repoRoot)).Observe(snap, now)
+	// Escalation REQUIRES known routability. Paging the owner about a lane whose
+	// reachability we could not establish is a claim we have not earned, and a
+	// wrong escalation trains the channel to be ignored.
+	unroutable, err := unroutableAgents(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("escalate lanes: %w — refusing to escalate on unknown routability", err)
+	}
+	board := dashboard.NewFleetTracker(unroutable).Observe(snap, now)
 
 	lanes := make([]supervision.LaneInput, 0, len(board.Lanes))
 	states := make(map[string]supervision.LaneState, len(board.Lanes))
