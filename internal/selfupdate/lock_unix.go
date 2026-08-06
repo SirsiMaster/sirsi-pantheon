@@ -35,10 +35,13 @@ func installLockPath() (string, error) {
 // ~/.sirsi/binary-install.lock without blocking. On success it returns the
 // open file; the caller must close it (or defer f.Close()) to release.
 //
-// On failure it returns a loud error: if the lock file contains a PID the
-// error names it ("PID 12345 holds the lock"), so the operator can decide
-// whether to kill the competing process.
+// On failure it returns a loud error. If the lock file contains a PID, the
+// error reports that it is recorded without presenting unverified kill advice.
 func AcquireInstallLock() (*os.File, error) {
+	return acquireInstallLockWith(writeLockPID)
+}
+
+func acquireInstallLockWith(recordPID func(*os.File) error) (*os.File, error) {
 	path, err := installLockPath()
 	if err != nil {
 		return nil, fmt.Errorf("install lock: %w", err)
@@ -55,25 +58,27 @@ func AcquireInstallLock() (*os.File, error) {
 		f.Close()
 		if holder != "" {
 			return nil, fmt.Errorf(
-				"sirsi self-update is already running (PID %s holds %s) — wait for it to finish or `kill %s`",
-				holder, path, holder)
+				"sirsi self-update is already running (PID %s is recorded in %s) — wait for it to finish; verify process identity before taking action",
+				holder, path)
 		}
 		return nil, fmt.Errorf(
 			"sirsi self-update is already running (lock: %s) — wait for it to finish", path)
 	}
-	// Write our PID so a concurrent attempt can report it loudly.
-	// If either write fails, close (releasing the flock) and surface the error —
-	// a stale PID left in the file would make the contention message advise
-	// killing a recycled, unrelated process.
-	if err := f.Truncate(0); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("install lock: write PID: %w", err)
-	}
-	if _, err := f.WriteString(strconv.Itoa(os.Getpid())); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("install lock: write PID: %w", err)
+	if recordErr := recordPID(f); recordErr != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("install lock: record holder PID: %w", recordErr)
 	}
 	return f, nil
+}
+
+func writeLockPID(f *os.File) error {
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("truncate PID record: %w", err)
+	}
+	if _, err := f.WriteString(strconv.Itoa(os.Getpid())); err != nil {
+		return fmt.Errorf("write PID record: %w", err)
+	}
+	return nil
 }
 
 func readLockPID(f *os.File) string {

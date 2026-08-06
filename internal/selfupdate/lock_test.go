@@ -3,6 +3,7 @@
 package selfupdate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -111,5 +112,36 @@ func TestReadLockPID_withPID(t *testing.T) {
 	f.Seek(0, 0)
 	if got := readLockPID(f); got != "9999" {
 		t.Fatalf("expected 9999, got %q", got)
+	}
+}
+
+func TestAcquireInstallLock_PIDRecordFailureNeverAdvisesKillingStalePID(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	path := filepath.Join(home, ".sirsi", lockFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const stalePID = "424242"
+	if err := os.WriteFile(path, []byte(stalePID), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := acquireInstallLockWith(func(*os.File) error {
+		return errors.New("forced PID-record write failure")
+	})
+	if f != nil {
+		_ = f.Close()
+		t.Fatal("failed PID record must not return a held install lock")
+	}
+	if err == nil {
+		t.Fatal("forced PID-record write failure returned nil error")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, stalePID) || strings.Contains(msg, "`kill") {
+		t.Fatalf("failure emitted stale/recycled PID kill advice: %q", msg)
+	}
+	if !strings.Contains(msg, "record holder PID") {
+		t.Fatalf("failure did not identify the PID-record boundary: %q", msg)
 	}
 }
