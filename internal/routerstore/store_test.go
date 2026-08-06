@@ -531,6 +531,7 @@ var columnFor = map[string]string{
 	"WakeAttemptedAt": "wake_attempted_at",
 	"WakeAdapter":     "wake_adapter",
 	"WakeError":       "wake_error",
+	"BlockedBy":       "blocked_by",
 }
 
 func fieldNames(t reflect.Type) map[string]bool {
@@ -854,8 +855,9 @@ func TestMigrateVersioning(t *testing.T) {
 	if err := s.db.QueryRow(`PRAGMA user_version;`).Scan(&version); err != nil {
 		t.Fatalf("read user_version: %v", err)
 	}
-	if version != len(migrations) {
-		t.Errorf("fresh db user_version = %d, want %d", version, len(migrations))
+	wantVersion := migrations[len(migrations)-1].version
+	if version != wantVersion {
+		t.Errorf("fresh db user_version = %d, want %d", version, wantVersion)
 	}
 	// Stamp a future version and re-open: must refuse.
 	if _, err := s.db.Exec(`PRAGMA user_version = 99;`); err != nil {

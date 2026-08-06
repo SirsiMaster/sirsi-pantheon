@@ -97,3 +97,12 @@ func (l *Linux) Kill(pid int) error {
 	_ = exec.Command("kill", "-15", fmt.Sprintf("%d", pid)).Run()
 	return proc.Kill()
 }
+
+// TrashContents: linux has no trash Sirsi manages.
+func (l *Linux) TrashContents() ([]TrashEntry, error) { return nil, nil }
+
+// EmptyTrash: refused rather than silently no-op — a permanent-delete caller
+// must never be told "done" by a platform that cannot do it.
+func (l *Linux) EmptyTrash([]string) ([]string, int64, error) {
+	return nil, 0, errTrashUnsupported
+}

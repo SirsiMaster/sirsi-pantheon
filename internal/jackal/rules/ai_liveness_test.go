@@ -1,9 +1,11 @@
 package rules
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,5 +154,93 @@ func TestEnvGuardedRule_SuppressesPinnedPath(t *testing.T) {
 	}
 	if len(findings) != 0 {
 		t.Fatalf("pinned vLLM cache must be suppressed, got %d findings", len(findings))
+	}
+}
+
+// TestSirsiGemmaLivePaths_ProtectsConfiguredModel is the A1 regression guard:
+// a clean dry-run over a fixture HF cache that contains the configured model
+// must report that model dir as a live path (skipped), not reclaimable.
+// This is the exact failure that caused the Gemma substrate to be deleted:
+// the rule had no conf-file guard, so a cold-mtime model was listed as waste.
+func TestSirsiGemmaLivePaths_ProtectsConfiguredModel(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+
+	// Write a realistic gemma-model.conf — one model ID per line.
+	sirsiDir := filepath.Join(tmp, ".sirsi")
+	if err := os.MkdirAll(sirsiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelID := "mlx-community/gemma-4-12B-it-qat-mxfp8"
+	confPath := filepath.Join(sirsiDir, "gemma-model.conf")
+	if err := os.WriteFile(confPath, []byte(modelID+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Redirect readFileLines to the fixture sirsi dir so the test is hermetic.
+	savedRead := readFileLines
+	defer func() { readFileLines = savedRead }()
+	readFileLines = func(path string) ([]string, error) {
+		// Rewrite any ~/.sirsi/* path to point at the fixture dir.
+		base := strings.TrimPrefix(filepath.Base(path), "")
+		fixture := filepath.Join(sirsiDir, base)
+		f, err := os.Open(fixture) //nolint:gosec
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		var lines []string
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			if line := strings.TrimSpace(sc.Text()); line != "" {
+				lines = append(lines, line)
+			}
+		}
+		return lines, sc.Err()
+	}
+
+	got := sirsiGemmaLivePaths(tmp)
+	wantDir := filepath.Join(tmp, ".cache", "huggingface", "hub", "models--mlx-community--gemma-4-12B-it-qat-mxfp8")
+	found := false
+	for _, p := range got {
+		if p == wantDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("sirsiGemmaLivePaths = %v, want to include %q — configured model must be a live path", got, wantDir)
+	}
+
+	// Regression: cold model dir under HF hub with mtime >30 days ago must
+	// be suppressed when it IS the configured model.
+	hubDir := filepath.Join(tmp, ".cache", "huggingface", "hub")
+	modelDir := filepath.Join(hubDir, "models--mlx-community--gemma-4-12B-it-qat-mxfp8")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.safetensors"), make([]byte, 1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Stamp mtime 60 days ago — past both the 30-day guard AND the conf guard would be needed.
+	old := time.Now().AddDate(0, 0, -60)
+	os.Chtimes(modelDir, old, old)
+
+	savedGetEnv := getEnv
+	defer func() { getEnv = savedGetEnv }()
+	getEnv = func(string) string { return "" } // no env var pins
+
+	rule := NewHuggingFaceCacheRule().(*envGuardedRule)
+	rule.baseScanRule.paths = []string{hubDir} // scan only our fixture hub
+	findings, err := rule.Scan(context.Background(), jackal.ScanOptions{HomeDir: tmp})
+	if err != nil {
+		t.Fatalf("Scan error: %v", err)
+	}
+	for _, f := range findings {
+		// Reject findings at-or-below the model dir AND findings that are parents
+		// of the model dir (e.g. the hub root — the exact granularity that deleted
+		// 12 GB of weights in the 2026-08-03 incident).
+		if hasPrefixPath(f.Path, modelDir) || f.Path == modelDir || hasPrefixPath(modelDir, f.Path) {
+			t.Errorf("configured model %q surfaced as a finding at path %q — A1 violation: sirsi clean would delete its own substrate", modelDir, f.Path)
+		}
 	}
 }

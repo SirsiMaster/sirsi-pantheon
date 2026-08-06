@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,39 +24,17 @@ func watcherPidfile(threadID string) string {
 	return fmt.Sprintf("/tmp/sirsi-router-watch-%s.pid", threadID)
 }
 
-// spawnRouterWatcher forks a detached `sirsi thread watch-router` subprocess
-// that uses fsnotify on the router directory and fires the agent's spawn
-// command on every change. Dies when parent_pid exits or `sirsi thread close`
-// runs. Dedup via pidfile.
-func spawnRouterWatcher(threadID, agentID, routerRoot string, parentPID int) error {
-	pf := watcherPidfile(threadID)
-	if data, err := os.ReadFile(pf); err == nil {
-		if oldPID, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			if processAlive(oldPID) {
-				return nil // existing watcher alive, dedup
-			}
-		}
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(self, "thread", "watch-router",
-		"--thread", threadID,
-		"--agent", agentID,
-		"--router-root", routerRoot,
-		"--parent-pid", strconv.Itoa(parentPID))
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.SysProcAttr = detachedSysProcAttr() // detach so we survive caller exit (Unix Setsid; nil on Windows)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	_ = os.WriteFile(pf, []byte(strconv.Itoa(cmd.Process.Pid)), 0o644)
-	_ = cmd.Process.Release() // don't wait on it
-	return nil
-}
+// The fs-watcher is SPAWNED BY THE SURFACE, never by the router.
+//
+// `spawnRouterWatcher` used to live here and was forked by `thread discover`
+// for every process it adopted. That is a self-feeding storm: the forked
+// watch-router runs the agent's spawn command, starting a NEW agent process
+// which is itself unregistered, so the next discover pass adopts it and forks
+// again. Removed 2026-07-27 after it took the workstation to 358 `claude`
+// processes, load average 436, and swap 48.5 GB of 49 GB.
+//
+// killRouterWatcher stays: watchers armed BY A SURFACE still need stopping on
+// close/suspend, and the pidfile contract is unchanged.
 
 // killRouterWatcher cleanly stops the fs-watcher for a thread, if any.
 func killRouterWatcher(threadID string) {
@@ -79,13 +58,18 @@ func killRouterWatcher(threadID string) {
 // Called automatically at the top of `sirsi thread list` so orphans get
 // swept whenever anyone reads the registry — no daemon, no polling,
 // per AGENTS.md §Lean #1 (the read IS the event).
-func reapDeadPIDThreads(routerRoot string) []router.ReapedThread {
-	reaped, _ := router.ReapDeadThreads(routerRoot)
+// reapDeadPIDThreads returns every thread retired this pass and any error that
+// prevented a full sweep. A non-nil error means the OS-truth reconciliation is
+// incomplete: the returned slice contains whatever was salvaged, but callers
+// MUST surface the error — a failed sweep is byte-identical to "nothing to
+// reap", which causes dead threads to appear 🟢 active.
+func reapDeadPIDThreads(routerRoot string) ([]router.ReapedThread, error) {
+	reaped, err1 := router.ReapDeadThreads(routerRoot)
 	// ADR-024: after dead-PID actives retire, sweep superseded strays (duplicate
 	// suspends/ghosts of a surface a live watcher already holds), so the read
 	// enforces one-live-watcher-per-surface — not just OS-truth on actives.
-	strays, _ := router.ReapStrayThreads(routerRoot)
-	return append(reaped, strays...)
+	strays, err2 := router.ReapStrayThreads(routerRoot)
+	return append(reaped, strays...), errors.Join(err1, err2)
 }
 
 var (
@@ -152,7 +136,10 @@ var threadRegisterCmd = &cobra.Command{
 		// thread immediately after register exits.
 		anchor := threadRegAnchorPID
 		if anchor <= 0 {
-			anchor = resolveAnchorPID()
+			anchor, err = resolveAnchorPID(threadRegSurface)
+			if err != nil {
+				return fmt.Errorf("resolve durable thread anchor: %w; pass --anchor-pid for resident surfaces without a recognizable runtime", err)
+			}
 		}
 
 		// ADR-024 Amendment 1 §2: a one-shot (`--print`/`-p`) worker is neither an
@@ -184,6 +171,11 @@ var threadRegisterCmd = &cobra.Command{
 			WakeMechanism: threadRegWake,
 			PID:           anchor,
 			Host:          host,
+			// Session-keyed lease: capture the stable app-hosted session identity
+			// so re-registrations from subsequent hook fires renew the same record
+			// instead of minting fresh ones (claude-home mint-churn fix). No-op
+			// for process-backed surfaces (non-Claude) where this env var is unset.
+			SessionID: router.CurrentSessionID(),
 		}
 		// Fill wake mechanism from registry if not provided.
 		if thr.WakeMechanism == "" {
@@ -257,23 +249,6 @@ var threadRegisterCmd = &cobra.Command{
 		fmt.Printf("  sirsi thread heartbeat --thread %s\n", out.ThreadID)
 		return nil
 	},
-}
-
-// resolveAnchorPID returns the grandparent of sirsi (caller's caller),
-// which is typically the agent runtime binary when register is invoked
-// from a hook script. Falls back to PPID if grandparent lookup fails.
-func resolveAnchorPID() int {
-	ppid := os.Getppid()
-	// macOS: ps -p <ppid> -o ppid= returns ppid's parent
-	out, err := exec.Command("ps", "-p", strconv.Itoa(ppid), "-o", "ppid=").Output()
-	if err != nil {
-		return ppid
-	}
-	gp, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil || gp <= 1 {
-		return ppid
-	}
-	return gp
 }
 
 var threadHeartbeatCmd = &cobra.Command{
@@ -785,7 +760,7 @@ var threadListCmd = &cobra.Command{
 		}
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 		// Sweep dead/defunct-PID threads to `reaped` before reading (OS truth).
-		reapedNow := reapDeadPIDThreads(routerRoot)
+		reapedNow, reapErr := reapDeadPIDThreads(routerRoot)
 		reg, err := router.LoadThreadRegistry(routerRoot)
 		if err != nil {
 			return err
@@ -829,6 +804,13 @@ var threadListCmd = &cobra.Command{
 		fmt.Println()
 		// OS-truth integrity warning: surface what the reaper just retired so
 		// the operator knows the registry disagreed with the live process table.
+		// A sweep error is a separate warning: a failed reconciliation is
+		// byte-identical to "nothing to reap", so dead threads would silently
+		// render as 🟢 active without this notice (D-TL-1).
+		if reapErr != nil {
+			fmt.Printf("  ⚠️  integrity: OS-truth sweep incomplete — dead threads may appear active: %v\n", reapErr)
+			fmt.Println()
+		}
 		if len(reapedNow) > 0 {
 			fmt.Printf("  ⚠️  integrity: reaped %d dead/defunct thread(s) against OS truth this read:\n", len(reapedNow))
 			for _, r := range reapedNow {
@@ -869,6 +851,14 @@ var threadListCmd = &cobra.Command{
 				fmt.Printf("      last_error=%s\n", r.thr.LastError)
 			}
 		}
+		// Legend: only print when at least one stale row was shown so the
+		// threshold isn't a mystery (D-TL medium — ⚠ must name its criterion).
+		for _, r := range rows {
+			if r.stale {
+				fmt.Printf("\n  (⚠ = heartbeat older than %s; override with --stale-after)\n", stale)
+				break
+			}
+		}
 		return nil
 	},
 }
@@ -881,7 +871,7 @@ func init() {
 	threadRegisterCmd.Flags().StringSliceVar(&threadRegWatches, "watch", nil, "Inboxes this thread watches (defaults to --agent)")
 	threadRegisterCmd.Flags().StringVar(&threadRegWake, "wake", "", "Wake mechanism (defaults to agent registry entry)")
 	threadRegisterCmd.Flags().StringVar(&threadRegID, "thread", "", "Reuse a known thread_id instead of generating a new one")
-	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor the fs-watcher lifetime to (defaults to grandparent of sirsi)")
+	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor thread lifetime to (default: verified durable runtime ancestor for known interactive surfaces)")
 
 	threadHeartbeatCmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required)")
 	threadHeartbeatCmd.Flags().StringVar(&threadHbStatus, "status", "", "Set status: active|idle|blocked")

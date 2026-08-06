@@ -66,6 +66,7 @@ Examples:
 			ID:         id,
 			Type:       agentType,
 			Cwd:        cwd,
+			Repo:       cwd,
 			Workstream: "pantheon",
 		}
 		mechanism := agentRegisterMechanism
@@ -76,13 +77,13 @@ Examples:
 			case agentRegisterMCPServer != "":
 				mechanism = router.WakeMCPNotification
 			default:
-				mechanism = router.WakeCLISpawn
+				mechanism = router.WakeRoutine
 			}
 		}
 		cfg.Wake.Mechanism = mechanism
 
 		switch mechanism {
-		case router.WakeCLISpawn:
+		case router.WakeCLISpawn, router.WakeRoutine:
 			cli := agentRegisterCLI
 			if cli == "" {
 				cli = agentType
@@ -101,6 +102,9 @@ Examples:
 				server = "sirsi"
 			}
 			cfg.Wake.MCPServer = server
+		case router.WakeSessionMessage, router.WakeOwnerSurface, router.WakeNone:
+			// These mechanisms bind to an existing surface or explicitly disable
+			// wake; they require no command or network credential.
 		default:
 			return fmt.Errorf("unsupported wake mechanism %q", mechanism)
 		}

@@ -42,7 +42,19 @@ mkdir -p "$(dirname "$LOG")"
 log(){ echo "[$(date -u +%FT%TZ)] $*" >> "$LOG"; }
 
 # Auth: the long-lived headless token MUST be present (launchd setenv or env).
+# The token lives in the secrets file (mode 600), NEVER in the plist: the plist
+# copy leaked into transcripts and was scrubbed 2026-07-23. Sourcing here
+# OVERRIDES whatever launchd exported — including the scrub placeholder that
+# passed the old non-empty check and crash-looped the worker at auth every 30s
+# (claude-home RCA: "un-quarantining alone crash-loops").
+# launchd gui jobs get no TMPDIR, and bash heredocs need one — every item
+# attempt died with "cannot create temp file for here document" until this.
+# A private tmp under ~/.sirsi also survives /tmp cleaners.
+export TMPDIR="$HOME/.sirsi/tmp"; mkdir -p "$TMPDIR"
+
+[ -f "$HOME/.sirsi/secrets/claude-worker.env" ] && . "$HOME/.sirsi/secrets/claude-worker.env"
 [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || { log "ERROR: CLAUDE_CODE_OAUTH_TOKEN unset — headless claude can't auth; exiting"; exit 1; }
+case "$CLAUDE_CODE_OAUTH_TOKEN" in *SCRUBBED*) log "ERROR: CLAUDE_CODE_OAUTH_TOKEN is the scrub placeholder, not a token — rotate into ~/.sirsi/secrets/claude-worker.env"; exit 1;; esac
 [ -x "$CLAUDE" ] || { log "ERROR: claude CLI not found at $CLAUDE"; exit 1; }
 
 free_gb() {
@@ -55,23 +67,27 @@ for l in sys.stdin:
 print(round((d.get('Pages free',0)+d.get('Pages inactive',0)+d.get('Pages speculative',0))/1e9,1))"
 }
 
+# Fetch an item THROUGH THE FACADE (ADR-036/037). The legacy dir
+# .agents/idea-router/items/ has been frozen since the store cutover — every
+# read of it finds nothing. The loop was fixed to pull via the facade, but
+# THREE reads of the legacy path survived (item body, age check, closed check)
+# and silently no-op'd every store-era item while fabricating "failed 2x".
+# `router show` emits the same ---frontmatter--- + "## Instructions" shape the
+# legacy .md had, so every downstream parser below works unchanged.
+fetch_item() {
+  local id=$1 dest=$2
+  (cd "$REPO" && "$SIRSI" router show "$id" 2>/dev/null) > "$dest"
+  [ -s "$dest" ]
+}
+
 process_item() {
-  local id=$1
-  local f="$REPO/.agents/idea-router/items/$id.md"
-  [ -f "$f" ] || return 0
+  local id=$1 f=$2
 
   local from body
   from=$(awk '/^---$/{n++; if(n==2)exit; next} n==1 && /^from:/{gsub(/^from:[[:space:]]*"?|"?$/,""); print; exit}' "$f")
   body=$(awk 'f{print} /## Instructions/{f=1}' "$f" | sed '/## Result/,$d')
 
-  # RAM guardrail (Horus): defer if the box can't take another build worker.
-  local fg; fg=$(free_gb)
-  if python3 -c "import sys;sys.exit(0 if $fg < $MIN_FREE_GB else 1)"; then
-    log "DEFER $id — only ${fg}GB free (< ${MIN_FREE_GB}GB); leaving queued to avoid Jetsam"
-    return 0
-  fi
-
-  log "BUILD START $id (from $from, free=${fg}GB, model=$MODEL)"
+  log "BUILD START $id (from $from, model=$MODEL)"
 
   local prompt
   prompt="You are ${AGENT_ID}, a headless agentic build worker in the Sirsi fleet. Execute the build task below end-to-end, then STOP. Repo: ${REPO}.
@@ -114,33 +130,50 @@ echo $$ > "$HOME/.sirsi/claude-worker-${AGENT_ID}.pid"
 trap 'rm -f "$HOME/.sirsi/claude-worker-${AGENT_ID}.pid"' EXIT
 
 while true; do
-  ids=$(cd "$REPO" && AGENT_ID="$AGENT_ID" python3 -c "
-import os, re, sys
-agent=os.environ['AGENT_ID']
-d='.agents/idea-router/items'
-for fn in sorted(os.listdir(d)):
-    if not fn.endswith('.md'): continue
-    txt=open(os.path.join(d,fn)).read()
-    m=re.match(r'---\n(.*?)\n---', txt, re.DOTALL)
-    if not m: continue
-    fm=m.group(1)
-    if not re.search(r'^status:\s*\"?open\"?', fm, re.MULTILINE): continue
-    if re.search(r'^to:\s*\"?'+re.escape(agent)+r'\"?\s*$', fm, re.MULTILINE): print(fn[:-3])
-")
+  # THROUGH THE FACADE, never the legacy dir (ADR-036/037): after the store
+  # cutover a send is a store row and items/*.md is never written — this loop
+  # scanned the frozen directory and polled an EMPTY world forever while real
+  # items sat in the store. The phantom class, inside the worker itself.
+  ids=$(cd "$REPO" && "$SIRSI" router pull "$AGENT_ID" 2>/dev/null | sed -n 's/^  • //p')
   if [ -n "$ids" ]; then
     while IFS= read -r id; do
       [ -z "$id" ] && continue
+      f="$TMPDIR/item-$$.md"
+      fetch_item "$id" "$f" || { log "SKIP $id — router show returned nothing (no attempt counted)"; continue; }
       # Staleness threshold: the worker is the anti-stall BACKSTOP, not a racer.
       # Fresh items belong to whatever attended session is live (claim/lease gap).
-      f="$REPO/.agents/idea-router/items/$id.md"
-      age=$(( $(date +%s) - $(stat -f %m "$f" 2>/dev/null || echo 0) ))
+      # Age comes from the store's `opened:`, NOT file mtime: stat on the frozen
+      # legacy path failed to epoch 0, so every item read as ~55 years old and
+      # this backstop never once fired — fresh items were burned immediately.
+      opened=$(sed -n 's/^opened:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' "$f" | head -1)
+      ots=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$opened" +%s 2>/dev/null || echo 0)
+      if [ "$ots" -eq 0 ]; then
+        log "SKIP $id — unparseable opened='$opened'; refusing to guess age (no attempt counted)"; continue
+      fi
+      age=$(( $(date +%s) - ots ))
       if [ "$age" -lt "$MIN_AGE" ]; then continue; fi
+      # RAM guardrail (Horus): defer BEFORE spending an attempt. This ran inside
+      # process_item after the counter rose, so a low-RAM box permanently
+      # abandoned items it had never actually tried to build.
+      fg=$(free_gb)
+      if python3 -c "import sys;sys.exit(0 if $fg < $MIN_FREE_GB else 1)"; then
+        log "DEFER $id — only ${fg}GB free (< ${MIN_FREE_GB}GB); leaving queued to avoid Jetsam"
+        continue
+      fi
       # Skip fabric self-probes (sweep-probe / arm-proof): these are liveness
       # pings, not build tasks — the triage tier closes them. A build worker
       # agentic-building a heartbeat is the 2026-07-03 waste bug.
       case "$id" in *sweep-probe*|*arm-proof*|*-${AGENT_ID}-${AGENT_ID}-*)
         (cd "$REPO" && "$SIRSI" router close "$id" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
         log "SKIP+CLOSE self-probe $id"; continue;; esac
+      # Skip non-build item types: decision + review items have no build artifact
+      # by construction — a build worker can only spin for 2400s then time out.
+      # Root cause of the ADR-006 burn: type:decision was queued, looped twice,
+      # burned 80 min. Route back to a human lane instead of consuming quota.
+      itype=$(sed -n 's/^type:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' "$f" | head -1)
+      case "$itype" in decision|review)
+        log "SKIP $id — type=$itype has no build target; leaving open for attended session"
+        continue;; esac
       # Bounded retries — the structural loop-proof (2026-07-03). Count attempts
       # per item id; after MAX_ATTEMPTS, abandon + surface to the owner and never
       # pull it again. No item can loop, whatever the failure cause.
@@ -151,17 +184,24 @@ for fn in sorted(os.listdir(d)):
         # every future poll. The 2026-07-04 flood (11,564 spam items) was this
         # branch firing per-poll without the marker.
         if [ ! -f "$af.gaveup" ]; then
+          # Mark BEFORE sending. `router send` is a slow subprocess and this
+          # worker gets SIGTERMed by launchd mid-poll; a kill landing between
+          # send and touch loses the marker and re-escalates on every restart.
+          # Losing one escalation beats re-running the 2026-07-04 11,564 flood.
+          touch "$af.gaveup"
           log "ABANDON $id after $n failed attempts — surfacing to owner ONCE"
         (cd "$REPO" && "$SIRSI" router send --from "$AGENT_ID" --to claude-home --type review           --title "WORKER GAVE UP: $id failed ${MAX_ATTEMPTS}x"           --instructions "The headless build worker failed this item ${MAX_ATTEMPTS} times and has STOPPED retrying it (loop-proof). Needs a human/owner: build it directly or re-scope. Item stays OPEN, no longer auto-pulled." >/dev/null 2>&1)
-          touch "$af.gaveup"
         fi
         continue
       fi
       # Count only REAL processing attempts (increment just before spending one).
       echo "$((n+1))" > "$af"
-      process_item "$id"
+      process_item "$id" "$f"
       # Success clears the counter (item is closed by the session on success).
-      if grep -q "^status: closed" "$REPO/.agents/idea-router/items/$id.md" 2>/dev/null; then rm -f "$af"; fi
+      # Re-read through the facade — the legacy path checked here never existed,
+      # so the counter never cleared and even a clean build trended to ABANDON.
+      if fetch_item "$id" "$f" && grep -q "^status: closed" "$f"; then rm -f "$af" "$af.gaveup"; fi
+      rm -f "$f"
     done <<< "$ids"
   fi
   sleep "$POLL"

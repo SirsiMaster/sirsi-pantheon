@@ -44,8 +44,27 @@ func workRootEnsure() (string, error) {
 	return root, nil
 }
 
+// inlineBodyLimit is the length above which a body MUST come from a file.
+//
+// Router bodies are composed in a shell. A backtick or $(...) inside a
+// double-quoted argument is EVALUATED BY THE SHELL before this binary ever
+// runs, so the text that arrives is already mangled — silently, with the
+// evaluated span replaced by command output or by nothing. It has corrupted a
+// stored record (an owner-gate row rewritten by an evaluated backtick) and, in
+// one session, blanked command names out of three separate item bodies written
+// by an author who knew about the hazard and had a memory note describing it.
+//
+// Discipline demonstrably does not fix this, so the safe path is made the only
+// path for bodies long enough to contain prose. Short bodies stay inline
+// because "ack" and "merged as abc123" are not worth a temp file.
+const inlineBodyLimit = 280
+
 // loadOrLiteral returns the literal value, or the contents of the file if it
-// starts with @. Lets callers pass --instructions "text" or --instructions @file.
+// starts with @.
+//
+// Refuses a long inline body rather than storing text the shell may already
+// have rewritten. The refusal is the feature: a truncated record looks
+// plausible, which is precisely what makes it dangerous.
 func loadOrLiteral(v string) (string, error) {
 	if strings.HasPrefix(v, "@") {
 		data, err := os.ReadFile(strings.TrimPrefix(v, "@"))
@@ -54,16 +73,23 @@ func loadOrLiteral(v string) (string, error) {
 		}
 		return string(data), nil
 	}
+	if len(v) > inlineBodyLimit {
+		return "", fmt.Errorf(
+			"body is %d chars; anything over %d must be passed as @file.\n"+
+				"  Shells evaluate backticks and $(...) inside a quoted argument BEFORE sirsi sees it,\n"+
+				"  so a long inline body can arrive silently rewritten and be stored that way.\n"+
+				"  Write it to a file and pass @that-file.",
+			len(v), inlineBodyLimit)
+	}
 	return v, nil
 }
 
 var routerCmd = &cobra.Command{
 	Use:   "router",
 	Short: "Pull-model work queue between agent threads",
-	Long: `Five verbs over a directory of markdown files: send, pull, show,
-close, and status. send/pull/show/close are the workflow loop; status is a
-read-only observer over items/. No daemon, no dispatch, no launch agents —
-each agent session reads its own inbox on wake.
+	Long: `Ra's durable work router: send, pull, show, close, status, ledger,
+and task-registry verbs. The message loop and task commitments share one
+offline-first store; ledger joins them with thread heartbeat/current-item truth.
 
 Thread registration is handled separately by sirsi thread register.`,
 }
@@ -223,6 +249,8 @@ cutover live the store row IS the record.
 	},
 }
 
+var pullBuildFilter bool
+
 var routerPullCmd = &cobra.Command{
 	Use:   "pull <agent>",
 	Short: "Pull open work items addressed to an agent",
@@ -243,13 +271,39 @@ var routerPullCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if pullBuildFilter {
+			// Guard: headless build workers cannot execute decision/review/proposal
+			// items (no build artifact exists). Split into buildable vs. deferred and
+			// warn about deferred ones so they don't silently spin for the full timeout.
+			var buildable, nonBuildable []work.Item
+			for _, it := range items {
+				if it.IsBuildable() {
+					buildable = append(buildable, it)
+				} else {
+					nonBuildable = append(nonBuildable, it)
+				}
+			}
+			if len(nonBuildable) > 0 {
+				fmt.Printf("  ⚠ %d item(s) skipped — not build-shaped (type: decision/review/proposal):\n", len(nonBuildable))
+				for _, it := range nonBuildable {
+					fmt.Printf("    • %s  type:%s  from:%s\n      → route to human/agent lane: sirsi router respond %s --result \"<answer>\"\n\n", it.ID, it.Type, it.From, it.ID)
+				}
+			}
+			items = buildable
+		}
+
 		if len(items) == 0 {
 			fmt.Printf("  No open items for %s.\n", args[0])
 			return nil
 		}
 		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
 		for _, it := range items {
-			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
+			typeHint := ""
+			if it.Type != "" {
+				typeHint = fmt.Sprintf("  type: %s\n    ", it.Type)
+			}
+			fmt.Printf("  • %s\n    %sfrom: %s\n      title: %s\n      opened: %s\n\n", it.ID, typeHint, it.From, it.Title, it.Opened)
 		}
 		fmt.Printf("  Read full: sirsi router show <id>\n")
 		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
@@ -640,19 +694,15 @@ var routerWakeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// LEAK GUARD (owner finding 2026-07-10): a background wake LaunchAgent is
-		// for a HEADLESS agent with no live session. If the agent already has a
-		// LIVE thread (an interactive CCD/CLI session, or an armed loop), arming a
-		// background channel on top of it spawns duplicate processes each tick —
-		// the 2026-07-08 wake-loop leak (reference_schedulewakeup_process_leak).
-		// Its inbox is already being handled by the live session. Refuse unless
-		// --force; the headless case (no live thread) proceeds normally.
+		// LEAK GUARD (owner finding 2026-07-10): refuse only when the agent
+		// already has an ARMED watcher. A merely live-but-loop-dead interactive
+		// session is precisely the state wake-install repairs; blocking on any
+		// live thread strands work until the owner manually types /loop.
 		force, _ := cmd.Flags().GetBool("force")
-		if !force && router.AgentHasLiveThread(root, cfg.ID) {
-			fmt.Printf("⚠️  %s has a live session/thread right now — not arming a background wake channel.\n", cfg.ID)
-			fmt.Printf("   A background pull-loop on top of a live session spawns duplicate processes\n")
-			fmt.Printf("   each tick (the wake-loop leak). Its inbox is handled by the live session;\n")
-			fmt.Printf("   arm a background channel only when NO session is running — or use --force.\n")
+		if wakeInstallBlocked(root, cfg.ID, force) {
+			fmt.Printf("⚠️  %s already has an armed watcher — not arming a duplicate background wake channel.\n", cfg.ID)
+			fmt.Printf("   A second pull-loop on top of an armed watcher spawns duplicate processes\n")
+			fmt.Printf("   each tick (the wake-loop leak). Use --force only for deliberate repair.\n")
 			return nil
 		}
 		changed, path, err := router.InstallWakeLaunchAgent(*cfg, "")
@@ -667,6 +717,10 @@ var routerWakeInstallCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func wakeInstallBlocked(root, agentID string, force bool) bool {
+	return !force && router.AgentArmed(root, agentID)
 }
 
 // routerCutoverCmd manages the ADR-036/037 store-authority cutover as a
@@ -755,10 +809,10 @@ loop tick (the arm instruction is regenerated store-aware). Reversible with
 			}
 			rearmed, skipped := 0, 0
 			for _, a := range reg.Agents {
-				// Same leak guard as `router wake-install` (owner finding 2026-07-10):
-				// arming a background wake channel on an agent that has a LIVE session
-				// spawns duplicate processes each tick. Only re-arm headless agents.
-				if router.AgentHasLiveThread(root, a.ID) {
+				// Same leak guard as `router wake-install`: skip agents that already
+				// have an armed watcher, but allow loop-dead live sessions to be
+				// repaired by installing the pull-loop.
+				if wakeInstallBlocked(root, a.ID, false) {
 					skipped++
 					continue
 				}
@@ -768,7 +822,7 @@ loop tick (the arm instruction is regenerated store-aware). Reversible with
 			}
 			fmt.Printf("  Re-armed %d headless wake LaunchAgent(s) into store-wake mode", rearmed)
 			if skipped > 0 {
-				fmt.Printf("; skipped %d with a live session (their /loop re-arms itself)", skipped)
+				fmt.Printf("; skipped %d with an armed watcher", skipped)
 			}
 			fmt.Println(".")
 		}
@@ -941,21 +995,21 @@ var routerMigrateCmd = &cobra.Command{
 	},
 }
 
-// routerBoardCmd prints the owner-actionable router board the conduit regenerates
-// at ~/.sirsi/router-board.md each cycle (blockers, stranded inboxes, live
-// threads). Read-only convenience mirror of what the menubar Router view renders.
+// routerBoardCmd prints the owner-actionable router board. It renders live
+// NodeStatus first; the historical ~/.sirsi/router-board.md file is only a
+// visibly-stale fallback when the live read-model is unavailable.
 var routerBoardCmd = &cobra.Command{
 	Use:   "board",
-	Short: "Print the owner-actionable router board (~/.sirsi/router-board.md)",
-	Long: `Prints ~/.sirsi/router-board.md — the lean, owner-actionable board the
-router conduit regenerates each cycle (blockers, stranded inboxes, live threads).
+	Short: "Print the live owner-actionable router board",
+	Long: `Prints the live owner-actionable router board from the router's
+authoritative read-model (queue, stranded inboxes, live threads, helpers).
 
-This is a read-only convenience mirror of the menubar's Router view. If the board
-file is absent (no conduit has run), it points you at 'sirsi router node-status'.
+The old ~/.sirsi/router-board.md conduit artifact is used only as a marked
+fallback when the live read-model cannot be collected.
 
-With --json the verb emits a real JSON envelope ({path, exists, content,
-modified_at}) instead of raw markdown, so scripted callers never have to
-scrape human output.`,
+With --json the verb emits an explicit source envelope. source=live-node-status
+is current truth; source=cached-markdown is a stale fallback and includes the
+cached file's modified_at.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -967,36 +1021,77 @@ scrape human output.`,
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("read board: %w", err)
 		}
+		var modifiedAt string
+		if info, serr := os.Stat(boardPath); serr == nil {
+			modifiedAt = info.ModTime().UTC().Format(time.RFC3339)
+		}
+
+		live, liveErr := collectLiveRouterBoard()
 		// The root --json flag must yield machine output here too — before this
 		// branch existed it was silently swallowed (markdown printed, exit 0),
 		// which is a contract violation for scripted callers (#147 review, minor 5).
 		if JsonOutput {
-			envelope := map[string]any{
-				"path":    boardPath,
-				"exists":  exists,
-				"content": string(data),
-			}
-			if info, serr := os.Stat(boardPath); serr == nil {
-				envelope["modified_at"] = info.ModTime().UTC().Format(time.RFC3339)
-			}
-			if !exists {
-				envelope["hint"] = "no conduit run recorded — use `sirsi router node-status --json` for the live fabric view"
-			}
+			envelope := routerBoardEnvelope(boardPath, data, exists, modifiedAt, live, liveErr)
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(envelope)
 		}
-		if !exists {
-			fmt.Println("No router board yet (no conduit run recorded).")
-			fmt.Println("Run `sirsi router node-status` for the live fabric view.")
+		if liveErr == nil {
+			renderNodeStatus(live)
 			return nil
 		}
-		fmt.Print(string(data))
-		if !strings.HasSuffix(string(data), "\n") {
+		if exists {
+			fmt.Printf("⚠ live router board unavailable (%v); showing stale cached markdown", liveErr)
+			if modifiedAt != "" {
+				fmt.Printf(" from %s", modifiedAt)
+			}
+			fmt.Println(".")
 			fmt.Println()
+			fmt.Print(string(data))
+			if !strings.HasSuffix(string(data), "\n") {
+				fmt.Println()
+			}
+			return nil
 		}
-		return nil
+		return fmt.Errorf("collect live router board: %w", liveErr)
 	},
+}
+
+func collectLiveRouterBoard() (*router.NodeStatus, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return nil, fmt.Errorf("locate repo root: %w", err)
+	}
+	ns, err := router.CollectNodeStatus(repoRoot, nil)
+	if err != nil {
+		return nil, fmt.Errorf("collect node-status: %w", err)
+	}
+	return ns, nil
+}
+
+func routerBoardEnvelope(boardPath string, cached []byte, exists bool, modifiedAt string, live *router.NodeStatus, liveErr error) map[string]any {
+	if liveErr == nil && live != nil {
+		return map[string]any{
+			"source":      "live-node-status",
+			"stale":       false,
+			"node_status": live,
+		}
+	}
+	envelope := map[string]any{
+		"source":     "cached-markdown",
+		"stale":      true,
+		"path":       boardPath,
+		"exists":     exists,
+		"content":    string(cached),
+		"live_error": fmt.Sprint(liveErr),
+	}
+	if modifiedAt != "" {
+		envelope["modified_at"] = modifiedAt
+	}
+	if !exists {
+		envelope["hint"] = "no cached conduit board exists and live node-status collection failed"
+	}
+	return envelope
 }
 
 var (
@@ -1206,7 +1301,8 @@ func init() {
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
-	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent has a live session (bypasses the duplicate-spawn leak guard)")
+	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent already has an armed watcher (bypasses the duplicate-spawn leak guard)")
+	routerPullCmd.Flags().BoolVar(&pullBuildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
 	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)

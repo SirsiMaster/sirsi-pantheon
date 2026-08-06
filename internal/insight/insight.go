@@ -4,7 +4,7 @@
 // deterministic, prioritized recommendation of what to do next.
 //
 // AI-OPTIONAL CONTRACT: Build() is 100% deterministic and never needs a model.
-// When the optional local Gemma backend is present (internal/gemma.Available),
+// When the optional native SNE service is present,
 // the caller may enrich the recommendation with a natural-language narration —
 // but its absence is normal and changes nothing about correctness. Pantheon
 // operates fully without an AI backend; it includes one when there is one.
@@ -46,7 +46,7 @@ type Platform struct {
 	Actions   []Action      `json:"actions"`
 	Worst     int           `json:"worst"`
 	Narrative string        `json:"narrative,omitempty"` // optional Gemma enrichment
-	Source    string        `json:"source"`              // "rules" or "rules+gemma"
+	Source    string        `json:"source"`              // "rules" or "rules+sne"
 }
 
 // Build assembles the platform state deterministically. repoRoot scopes the

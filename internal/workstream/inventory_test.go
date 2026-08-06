@@ -2,10 +2,13 @@ package workstream
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
 func TestScanInventory(t *testing.T) {
@@ -212,3 +215,12 @@ func (m *mockPlatform) OpenBrowser(url string) error                        { re
 func (m *mockPlatform) PickFolder() (string, error)                         { return "", nil }
 func (m *mockPlatform) ReadDir(dirname string) ([]os.DirEntry, error)       { return nil, nil }
 func (m *mockPlatform) Kill(pid int) error                                  { return nil }
+
+// Platform gained TrashContents/EmptyTrash (permanent-delete lever). This mock
+// has no trash; EmptyTrash refuses rather than reporting success, matching the
+// non-darwin stubs — a caller asking to permanently delete must never be told
+// the work happened by something that cannot do it.
+func (m *mockPlatform) TrashContents() ([]platform.TrashEntry, error) { return nil, nil }
+func (m *mockPlatform) EmptyTrash([]string) ([]string, int64, error) {
+	return nil, 0, errors.New("mock platform has no trash")
+}

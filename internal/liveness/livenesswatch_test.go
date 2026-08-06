@@ -45,6 +45,7 @@ func TestPlistContent_LeverShape(t *testing.T) {
 // adds no duplicate.
 func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	root := t.TempDir()
+	writeLivenessTestAgents(t, root)
 	// Ensure the gemma probe reads "down": point HOME at an empty dir with no
 	// gemma-server.port, so probeGemma returns wedged deterministically.
 	t.Setenv("HOME", t.TempDir())
@@ -118,6 +119,8 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 	oldT, oldP := probeTimeout, probeRetryPause
 	probeTimeout, probeRetryPause = 150*time.Millisecond, 10*time.Millisecond
 	t.Cleanup(func() { probeTimeout, probeRetryPause = oldT, oldP })
+	oldRunner := getRunnerWorkerActive()
+	t.Cleanup(func() { setRunnerWorkerActive(oldRunner) })
 
 	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
 
@@ -139,6 +142,7 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 	})
 
 	t.Run("always_hangs_is_wedged", func(t *testing.T) {
+		setRunnerWorkerActive(func() bool { return false })
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(400 * time.Millisecond) // every attempt times out
 		}))
@@ -146,6 +150,18 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
 		if got != GemmaWedged {
 			t.Errorf("always-hangs = %v (%s), want GemmaWedged", got, detail)
+		}
+	})
+
+	t.Run("always_hangs_with_runner_is_busy_not_wedged", func(t *testing.T) {
+		setRunnerWorkerActive(func() bool { return true })
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(400 * time.Millisecond) // every attempt times out
+		}))
+		defer srv.Close()
+		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+		if got != GemmaBusy {
+			t.Errorf("always-hangs-with-runner = %v (%s), want GemmaBusy", got, detail)
 		}
 	})
 }
@@ -227,6 +243,80 @@ func dirExists(p string) bool {
 	return err == nil && fi.IsDir()
 }
 
+func writeLivenessTestAgents(t *testing.T, root string) {
+	t.Helper()
+	registry := `{
+		"agents": {
+			"horus": {"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},
+			"owner": {"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}},
+			"claude-pantheon": {"id":"claude-pantheon","type":"claude","cwd":"/tmp","workstream":"pantheon","wake":{"mechanism":"launchagent"}}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard.
+// A broker with RSS below 1 GB cannot have model weights loaded — this is the
+// class that /health passes but generation probes see as wedged, and that a
+// restart cannot fix when the HF model cache is absent (2026-08-05 incident).
+// The RSS floor must fire BEFORE the generation probe so the detail message
+// clearly says "weights likely absent" instead of "restore — free memory."
+func TestProbeGemmaState_RSSFloor(t *testing.T) {
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+
+	// Stub a tiny RSS (100 MB — well below the 1 GB floor).
+	const tinyRSSKB = 100 * 1024 // 100 MB
+	setBrokerRSSFn(func(_ string) int64 { return tinyRSSKB })
+
+	// The test server should never be reached — the RSS floor fires first.
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaWedged {
+		t.Errorf("low RSS = %v (%s), want GemmaWedged", got, detail)
+	}
+	if !strings.Contains(detail, "weight floor") {
+		t.Errorf("detail should mention weight floor, got: %s", detail)
+	}
+	if !strings.Contains(detail, "restart will not fix") {
+		t.Errorf("detail should say restart will not fix, got: %s", detail)
+	}
+	if called {
+		t.Error("generation probe should not be called when RSS is below the floor")
+	}
+}
+
+// TestProbeGemmaState_RSSFloor_ZeroSkips verifies that a zero RSS (PID file
+// absent or ps unavailable) does not falsely classify a healthy broker as
+// weightless — fail-open is required (never falsely reap a live broker).
+func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+
+	setBrokerRSSFn(func(_ string) int64 { return 0 }) // pid file absent
+
+	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(healthy))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaHealthy {
+		t.Errorf("zero RSS (pid absent) with healthy server = %v (%s), want GemmaHealthy (fail-open)", got, detail)
+	}
+}
+
 // TestRecipientFor pins the ownership routing: machine-health conditions go to
 // claude-pantheon (which remediates them under A32/ADR-040), unclassified
 // conditions fall through to the owner so nothing is silently misrouted.
@@ -237,8 +327,8 @@ func TestRecipientFor(t *testing.T) {
 			t.Errorf("recipientFor(%q) = %q, want claude-pantheon", c, got)
 		}
 	}
-	if got := recipientFor("some-future-owner-only-condition"); got != "user" {
-		t.Errorf("unclassified condition = %q, want user (fail-safe to owner)", got)
+	if got := recipientFor("some-future-owner-only-condition"); got != "owner" {
+		t.Errorf("unclassified condition = %q, want owner (fail-safe to owner)", got)
 	}
 }
 
@@ -250,6 +340,7 @@ func TestRecipientFor(t *testing.T) {
 // now go through the dispatch facade, so the second Run must skip.
 func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	root := t.TempDir()
+	writeLivenessTestAgents(t, root)
 	home := t.TempDir() // no gemma-server.port → probeGemma reads wedged
 	t.Setenv("HOME", home)
 	t.Setenv(routercfg.StoreWakeEnv, "1")

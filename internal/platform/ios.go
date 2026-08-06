@@ -126,3 +126,12 @@ func (p *IOS) sysctl(args ...string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("sysctl %v not available on iOS", args)
 }
+
+// TrashContents: iOS has no trash Sirsi manages.
+func (p *IOS) TrashContents() ([]TrashEntry, error) { return nil, nil }
+
+// EmptyTrash: refused rather than silently no-op — a permanent-delete caller
+// must never be told "done" by a platform that cannot do it.
+func (p *IOS) EmptyTrash([]string) ([]string, int64, error) {
+	return nil, 0, errTrashUnsupported
+}

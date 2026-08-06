@@ -1,0 +1,7 @@
+# Pantheon Anubis — supervisor configuration
+# Enthusiast tier: one Mac, one user.
+# SNE must yield to foreground user work on this machine.
+#
+# Refs: ADR-028, sirsi-inference docs/adr/ADR-001-sne-anubis-ra.md
+sne:
+  profile: interactive  # batch 4, 20 GB ceiling, yield posture

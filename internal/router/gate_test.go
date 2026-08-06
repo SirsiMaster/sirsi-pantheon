@@ -135,7 +135,7 @@ func TestClassifyGateSafetyWinsOrdering(t *testing.T) {
 }
 
 func TestClassifyGateOwnerAssignee(t *testing.T) {
-	for _, to := range []string{"user", "owner", "cylton", "sirsimaster"} {
+	for _, to := range work.OwnerRecipients() {
 		if got := ClassifyGate(work.Item{To: to, Title: "anything benign"}); !got.Gated || got.Class != GateEscalate {
 			t.Errorf("to=%q should escalate-gate, got %+v", to, got)
 		}

@@ -47,3 +47,28 @@ func TestMemSizePrefersFootprint(t *testing.T) {
 		t.Errorf("memSize did not fall back to RSS: got %d", got)
 	}
 }
+
+// The finding alarms on max(live, peak). The verb has to say which one, or the
+// sentence claims the present tense for a lifetime peak — "holds 41.5 GB" for a
+// process currently holding 15.5 GB, which is what the owner caught in the
+// standalone `sirsi ask` output before the V2 demo.
+func TestFootprintVerbNamesWhichMeasurement(t *testing.T) {
+	const gb = int64(1) << 30
+
+	// Live IS the worst: present tense is correct.
+	if got := footprintVerb(41*gb, 41*gb); got != "holds" {
+		t.Fatalf("live==worst must read as present tense, got %q", got)
+	}
+	// Peak exceeds live: the alarming number is historical.
+	if got := footprintVerb(15*gb, 41*gb); got != "peaked at" {
+		t.Fatalf("a peak above live must not be reported in the present tense, got %q", got)
+	}
+	// A process that has since exited entirely still peaked.
+	if got := footprintVerb(0, 41*gb); got != "peaked at" {
+		t.Fatalf("zero live with a real peak must read as a peak, got %q", got)
+	}
+	// Degenerate: nothing measured. Must not claim a peak.
+	if got := footprintVerb(0, 0); got != "holds" {
+		t.Fatalf("no measurement must not invent a peak claim, got %q", got)
+	}
+}

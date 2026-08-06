@@ -11,7 +11,7 @@ import (
 // itemCols is the canonical items column list, in the exact order scanItem
 // reads them. One definition keeps Put/Get/Inbox/ListAll from drifting;
 // TestFieldFidelityWithWorkItem enforces the columns↔Item-fields bijection.
-const itemCols = "id, from_agent, to_agent, title, type, status, opened, closed, instructions, result, wake_status, wake_attempted_at, wake_adapter, wake_error"
+const itemCols = "id, from_agent, to_agent, title, type, status, opened, closed, instructions, result, wake_status, wake_attempted_at, wake_adapter, wake_error, blocked_by"
 
 // validStatus reports whether status is one of the accepted item states —
 // the file-router pair (open/closed) plus the Phase-2 §2b lifecycle states,
@@ -49,7 +49,7 @@ func (s *Store) Put(it Item) error {
 	}
 	const q = `
 INSERT INTO items (` + itemCols + `)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     from_agent=excluded.from_agent,
     to_agent=excluded.to_agent,
@@ -63,14 +63,27 @@ ON CONFLICT(id) DO UPDATE SET
     wake_status=excluded.wake_status,
     wake_attempted_at=excluded.wake_attempted_at,
     wake_adapter=excluded.wake_adapter,
-    wake_error=excluded.wake_error;`
+    wake_error=excluded.wake_error,
+    blocked_by=excluded.blocked_by;`
 	_, err := s.db.Exec(q,
 		it.ID, it.From, it.To, it.Title, it.Type, it.Status, it.Opened, it.Closed,
 		it.Instructions, it.Result,
-		it.WakeStatus, it.WakeAttemptedAt, it.WakeAdapter, it.WakeError,
+		it.WakeStatus, it.WakeAttemptedAt, it.WakeAdapter, it.WakeError, it.BlockedBy,
 	)
 	if err != nil {
 		return fmt.Errorf("routerstore: Put %q: %w", it.ID, err)
+	}
+	return nil
+}
+
+// SetBlockedBy replaces an item's optional dependency edge.
+func (s *Store) SetBlockedBy(id, blockedBy string) error {
+	res, err := s.db.Exec(`UPDATE items SET blocked_by=? WHERE id=?;`, strings.TrimSpace(blockedBy), id)
+	if err != nil {
+		return fmt.Errorf("routerstore: SetBlockedBy %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -214,7 +227,7 @@ func scanItem(scan func(dest ...any) error) (Item, error) {
 	err := scan(
 		&it.ID, &it.From, &it.To, &it.Title, &it.Type,
 		&it.Status, &it.Opened, &it.Closed, &it.Instructions, &it.Result,
-		&it.WakeStatus, &it.WakeAttemptedAt, &it.WakeAdapter, &it.WakeError,
+		&it.WakeStatus, &it.WakeAttemptedAt, &it.WakeAdapter, &it.WakeError, &it.BlockedBy,
 	)
 	return it, err
 }

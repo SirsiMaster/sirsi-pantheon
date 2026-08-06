@@ -24,6 +24,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -74,6 +75,35 @@ func inboxUnion(routerRoot, agent string) ([]work.Item, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return f.Inbox(agent)
+}
+
+// inboxUnionAll reads EVERY open item once and partitions by recipient.
+//
+// The supervisor used to call inboxUnion(routerRoot, id) inside its per-agent
+// loop, and each call is a full dispatch.OpenRoot → Inbox → Close. With 22
+// registered agents that is 22 SQLite open/close cycles PER TICK, every tick,
+// each one dirtying WAL and journal pages — measured at ~2.1 GB/day of disk
+// writes, enough that the kernel filed a disk-writes report (claude-home,
+// router item 20260731-105700).
+//
+// The work is identical: one open, one read, partition in memory. Agents with
+// no items get an empty slice rather than being absent, so callers keep their
+// existing "every registered agent appears" contract.
+func inboxUnionAll(routerRoot string, agentIDs []string) (map[string][]work.Item, error) {
+	all, err := inboxUnion(routerRoot, "")
+	if err != nil {
+		return nil, err
+	}
+	byAgent := make(map[string][]work.Item, len(agentIDs))
+	for _, id := range agentIDs {
+		byAgent[id] = nil
+	}
+	for _, it := range all {
+		if _, tracked := byAgent[it.To]; tracked {
+			byAgent[it.To] = append(byAgent[it.To], it)
+		}
+	}
+	return byAgent, nil
 }
 
 // OpenItems is inboxUnion for callers outside this package (the CLI's ctr,
@@ -194,6 +224,52 @@ func setWakeInvoke(fn WakeInvoke) {
 	wakeInvokeFn = fn
 }
 
+// launchctlTimeout bounds every launchctl subprocess this package spawns.
+//
+// `launchctl kickstart -k` against a label sitting at `state = spawn scheduled`
+// never returns: -k means kill-then-start, and with nothing running it blocks
+// waiting for a spawn that will not come. That is the RESTING state of an
+// interval-driven wake agent, not a corrupt one, so bootout+bootstrap buys a
+// single iteration and the next pass hangs again. Observed 2026-07-29: one
+// `sirsi router doctor --fix` stuck 18m15s in wait4 on this exact call, leaving
+// orphaned launchctl clients behind that blocked forever after their parent died.
+//
+// A doctor that never returns is strictly worse than one that reports a label it
+// could not reach, so the deadline is short and the failure is explicit.
+// A var, not a const, purely so the deadline test can shorten it — the timeout
+// path is only real if a test can drive a child that actually outlives it.
+var launchctlTimeout = 15 * time.Second
+
+// runLaunchctl runs launchctl under a hard deadline. On expiry CommandContext
+// kills the child, which is what keeps hung clients from accumulating.
+func runLaunchctl(args ...string) error {
+	return runBounded("launchctl", args...)
+}
+
+// runBounded runs name under launchctlTimeout and wraps context.DeadlineExceeded
+// on expiry so callers (and tests) can tell a timeout from a real exit status.
+// Run returning at all means the child was killed and reaped by CommandContext.
+//
+// Split out from runLaunchctl so the deadline is exercisable with a command that
+// genuinely blocks; any launchctl invocation the test could reach either returns
+// immediately or hangs the test suite for the full production bound.
+func runBounded(name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
+	defer cancel()
+	err := exec.CommandContext(ctx, name, args...).Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		// Deliberately says nothing about launchd state. This helper also carries
+		// print, bootout, and the checker probes, and a timeout there tells us
+		// only that launchctl did not answer — asserting a `spawn scheduled` label
+		// would be inventing an unobserved state, which is the same class of
+		// mistake as the "parked" diagnosis this change removed. Callers that
+		// actually know the operation add their own context.
+		return fmt.Errorf("%s %s: no response in %s: %w",
+			name, strings.Join(args, " "), launchctlTimeout, context.DeadlineExceeded)
+	}
+	return err
+}
+
 func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 	switch adapter {
 	case WakeCLISpawn:
@@ -235,7 +311,19 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		// The pull-loop is resident; kick it to poll immediately.
 		label := WakeLaunchAgentLabel(cfg.ID)
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		return exec.Command("launchctl", "kickstart", "-k", target).Run()
+		if err := runLaunchctl("kickstart", "-k", target); err != nil {
+			// Only here do we know the operation was a kickstart -k, which is the
+			// one that blocks when the label has a spawn scheduled but nothing
+			// running. runBounded stays silent about launchd state precisely so
+			// this inference lives where it is actually warranted.
+			if errors.Is(err, context.DeadlineExceeded) {
+				return fmt.Errorf("wake %s: launchctl kickstart -k %s did not return in %s — "+
+					"the label likely has a spawn scheduled with nothing running yet: %w",
+					cfg.ID, target, launchctlTimeout, err)
+			}
+			return err
+		}
+		return nil
 	default:
 		// Includes mcp-notification: ProbeWakeReadiness never yields it as a
 		// ready adapter (not yet wired), so this is the honest failure if reached.
@@ -291,10 +379,53 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 		return rep, fmt.Errorf("load threads: %w", err)
 	}
 
+	// "Armed" means SOMETHING WILL DRAIN THIS INBOX — not merely that some
+	// process for this agent is alive.
+	//
+	// This used to be heartbeat freshness alone, over any thread of any surface.
+	// A wake loop with nothing to dispatch heartbeats identically to one that
+	// works the queue, so a watch-only loop credited its own lane as armed and
+	// this pass then SKIPPED it — the loop manufactured the evidence that
+	// suppressed its own rescue, and claude-deck sat at 5 open items behind a
+	// green heartbeat while doctor reported "already-armed" (review finding 4).
+	//
+	// IsInboxConsumer is the honest predicate: agent-session surfaces count (they
+	// are the consumer), observer/worker surfaces must have resolved a declared
+	// consumer capability.
 	armed := map[string]bool{}
+	thisMachine := MachineID()
 	for _, t := range threadReg.SortedThreads() {
 		if t.Status.IsTerminal() || t.IsStale(now, DefaultThreadStaleAfter) {
 			continue
+		}
+		// Two independent ways a thread can be fresh-looking and still not be
+		// draining its inbox. Both must demote, so this is a UNION of the two
+		// fixes that landed either side of this merge — taking one would have
+		// silently dropped the other's guarantee.
+
+		// (1) A watcher that never dispatches is not armed. RunWakeLoop used to
+		// heartbeat beside an inbox forever without consuming it, and that
+		// heartbeat marked the agent armed — the loop manufactured the evidence
+		// that suppressed its own rescue.
+		if !t.IsInboxConsumer() {
+			continue
+		}
+
+		// (2) HEARTBEAT FRESHNESS IS NOT LIVENESS when the process is PROVABLY
+		// gone. A record keeps its last heartbeat for the whole stale window, so
+		// a worker that died mid-window still reads "armed" and its inbox is
+		// never woken. Observed live 2026-08-03: the claude-pantheon worker died
+		// at 21:21Z, 24 launchd jobs sat down ~15 hours, and CTR reported the
+		// lane heartbeat-fresh the entire time.
+		//
+		// Same asymmetry ReapDeadThreads and ReconcileExits already use: ONLY a
+		// gone/defunct pid demotes. PIDUnknown (unreadable table, EPERM) and
+		// foreign-machine records keep the old heartbeat behavior rather than
+		// stranding a lane on a probe failure, and a record with no pid at all —
+		// the normal shape for an app-hosted session — is untouched.
+		if t.PID > 0 && SameMachine(t.MachineID, thisMachine) &&
+			getPIDStateFn()(t.PID) == PIDGone {
+			continue // provably dead: not armed, so its inbox gets woken
 		}
 		armed[t.AgentID] = true
 	}
@@ -332,6 +463,13 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 
 	invoke := getWakeInvoke()
+	// One wake per agent per pass. The adapter nudges an agent, not an item —
+	// once its pull-loop is kicked it drains its whole inbox — so invoking per
+	// item made an agent with N stranded items cost N identical adapter calls.
+	// With a blocking launchctl that turned 16 items into 16 sequential hangs.
+	// Items still each get their own annotation below; only the side effect is
+	// shared, so a failed wake still marks every one of that agent's items.
+	invoked := map[string]error{}
 	for _, item := range items {
 		agentID := item.To
 		if agentID == "" {
@@ -381,7 +519,12 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 
 		cfg, _ := reg.Lookup(agentID) // Ready implies registered
 		ann := work.WakeAnnotation{Status: WakeStatusAttempted, AttemptedAt: now.Format(time.RFC3339), Adapter: health.Adapter}
-		if ierr := invoke(*cfg, health.Adapter); ierr != nil {
+		ierr, alreadyInvoked := invoked[agentID]
+		if !alreadyInvoked {
+			ierr = invoke(*cfg, health.Adapter)
+			invoked[agentID] = ierr
+		}
+		if ierr != nil {
 			ann = work.WakeAnnotation{Status: WakeStatusUnavailable, Error: fmt.Sprintf("%s adapter failed: %v", health.Adapter, ierr)}
 			setWake(item.ID, ann)
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Adapter: health.Adapter, Detail: ann.Error})
@@ -405,6 +548,97 @@ const DefaultWakeLoopInterval = 60 * time.Second
 // thread. It is meant to be RUN BY the wake LaunchAgent — external automation
 // (A26 Automation Boundary) — and does NOT self-daemonize: it is a plain
 // foreground loop, not a reintroduced daemon verb.
+// wakeLoopHeartbeatLog bounds how long a running loop may stay silent. Chosen
+// so a reader of the log can distinguish "quiet" from "dead" within one
+// coffee-length gap, without turning the file into a tick log.
+const wakeLoopHeartbeatLog = 15 * time.Minute
+
+// dispatchFailureBackoff holds the dispatch slot when a consumer could not even
+// START. There is no process to observe in that case, so a bounded pause is the
+// only available instrument — the tight-error-loop half of the PR #199 lesson.
+var dispatchFailureBackoff = 30 * time.Second
+
+// closedChan is an already-closed channel, so a failed dispatch records a run
+// that is complete on arrival.
+func closedChan() chan struct{} {
+	c := make(chan struct{})
+	close(c)
+	return c
+}
+
+// setThreadConsumerCapable persists whether a thread can drain its agent's
+// inbox. Written once at loop start rather than every heartbeat: it is a
+// property of the loop's configuration, not of a tick.
+func setThreadConsumerCapable(routerRoot, threadID string, capable bool) error {
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return err
+	}
+	for _, t := range reg.Threads {
+		if t != nil && t.ThreadID == threadID {
+			t.ConsumerCapable = capable
+			return SaveThreadRegistry(routerRoot, reg)
+		}
+	}
+	return fmt.Errorf("thread %s not found", threadID)
+}
+
+// consumerRun tracks ONE dispatched consumer process for its whole lifetime.
+//
+// The first cut of this fix used a 10-minute timer as its re-dispatch authority,
+// because Setsid+Release deliberately discards the process handle — so the loop
+// could not tell "still working" from "died", and a slow-but-healthy agent got a
+// second consumer dispatched on top of it. A timer is not dispatch authority
+// (codex-pantheon review of #389, finding 3).
+//
+// So the handle is KEPT and reaped: Setsid still detaches the child from the
+// terminal/session, but we never Release, and a goroutine Waits. `done` closing
+// is real completion, not an elapsed guess.
+type consumerRun struct {
+	pid  int
+	done chan struct{}
+	err  error
+}
+
+// running reports whether the dispatched consumer is still alive.
+func (r *consumerRun) running() bool {
+	if r == nil {
+		return false
+	}
+	select {
+	case <-r.done:
+		return false
+	default:
+		return true
+	}
+}
+
+// dispatchConsumer starts a resolved consumer and returns a handle that
+// completes when the process exits.
+//
+// Setsid without Release is the deliberate combination: the child survives this
+// loop's own restart (it is in its own session), while this loop keeps the
+// handle it needs to know whether the work is still in flight. cmd.Wait also
+// reaps the child, so repeated dispatch cannot accumulate zombies.
+func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
+	if rc.Resident {
+		return nil, fmt.Errorf("resident consumer is external and must not be spawned")
+	}
+	cmd := exec.Command(rc.Argv[0], rc.Argv[1:]...)
+	cmd.Dir = rc.Cwd
+	cmd.Env = rc.Env
+	cmd.SysProcAttr = detachedSysProcAttr()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	run := &consumerRun{pid: cmd.Process.Pid, done: make(chan struct{})}
+	go func() {
+		run.err = cmd.Wait()
+		close(run.done)
+	}()
+	return run, nil
+}
+
 func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.Duration) error {
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
@@ -436,11 +670,57 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	}
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
+	// Resolve the DECLARED consumer once. A loop that cannot dispatch still runs:
+	// its heartbeat is the only liveness signal the fabric has for this agent, and
+	// dropping that would trade a silent inbox for a silent agent. But it now says
+	// so out loud AND records it on its thread record, because "loop running,
+	// inbox never drains" was previously indistinguishable from a healthy steady
+	// state — and worse, its heartbeat marked the lane armed.
+	var consumer *ResolvedConsumer
+	if reg, rerr := LoadRegistry(routerRoot); rerr != nil {
+		log.Printf("wake-loop %s: registry unreadable, running WATCH-ONLY: %v", agentID, rerr)
+	} else if cfg, lerr := reg.Lookup(agentID); lerr != nil {
+		log.Printf("wake-loop %s: agent not registered, running WATCH-ONLY: %v", agentID, lerr)
+	} else if rc, why := ResolveConsumer(*cfg, routerRoot); rc == nil {
+		log.Printf("wake-loop %s: WATCH-ONLY — this lane has NO consumer: %s", agentID, why)
+	} else {
+		consumer = rc
+	}
+
+	// Publish the capability on the thread record. This is what stops a watch-only
+	// loop from crediting its own lane as armed: the armed predicate consults
+	// IsInboxConsumer, not heartbeat freshness alone.
+	//
+	// A RESIDENT consumer never arms this watcher, even when its health check
+	// passes. The check runs ONCE at startup and proves only that a binary could
+	// print something — `gemma-pantheon`'s is literally
+	// `sirsi-gemma-worker.sh --version`, which proves a file exists, not that an
+	// external inbox consumer is alive. Crediting the watcher on that basis
+	// means: external worker dies at any point after startup, watcher keeps
+	// heartbeating as ConsumerCapable, WakePass skips the lane, inbox strands.
+	// That is precisely the false-green this change exists to remove, so a
+	// resident lane stays WATCH-ONLY here (codex-pantheon, PR #389).
+	//
+	// The real fix is the inverse: a resident must PUBLISH AND HEARTBEAT ITS OWN
+	// consumer-capable thread. Liveness you did not observe is not liveness you
+	// can borrow. That is the immediate follow-up, not this PR.
+	capable := consumer != nil && !consumer.Resident
+	if thr.ConsumerCapable != capable {
+		thr.ConsumerCapable = capable
+		if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, capable); err != nil {
+			log.Printf("wake-loop %s: could not record consumer capability: %v", agentID, err)
+		}
+	}
+
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
-	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s)",
-		agentID, thr.ThreadID, os.Getpid(), interval)
+	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s consumer=%v)",
+		agentID, thr.ThreadID, os.Getpid(), interval, consumer != nil)
 	lastDepth := -1
+	lastBeat := time.Now()
+	// The in-flight consumer, or nil. Completion — not elapsed time — is what
+	// authorizes the next dispatch.
+	var run *consumerRun
 	for {
 		// Surface the inbox depth into the heartbeat status; the worker surface's
 		// own logic processes the items — this loop only proves liveness + watches.
@@ -462,13 +742,69 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			status = ThreadStatusActive
 		}
 
-		// Log only on change. A per-tick line would be noise; a depth that moves is
-		// the thing an operator actually wants to see, and until now these loops
-		// wrote literally zero bytes — ten agents, 20 days, no forensics at all.
-		if depth != lastDepth {
+		// Log on CHANGE, and periodically regardless.
+		//
+		// Change-only was the first design and it is insufficient: at a constant
+		// depth the loop emits one start line and one transition, then can stay
+		// silent forever — so a healthy loop at depth 32 and a loop wedged
+		// immediately after observing depth 32 leave IDENTICAL forensic records.
+		// That is the exact ambiguity this logging exists to remove (codex review
+		// of #327). A liveness line is not noise; it is the evidence that the
+		// silence means "nothing changed" rather than "nothing is running".
+		now := time.Now()
+		switch {
+		case depth != lastDepth:
 			log.Printf("wake-loop %s: inbox depth %d -> %d (status=%s)",
 				agentID, lastDepth, depth, status)
 			lastDepth = depth
+			lastBeat = now
+		case now.Sub(lastBeat) >= wakeLoopHeartbeatLog:
+			log.Printf("wake-loop %s: alive, inbox depth %d unchanged (status=%s)",
+				agentID, depth, status)
+			lastBeat = now
+		}
+
+		// Dispatch a consumer — EDGE-TRIGGERED, never per tick.
+		//
+		// `depth > 0` is a LEVEL, not an edge: it stays true for the whole time an
+		// agent takes to work its inbox, so "if depth > 0 { dispatch }" would spawn
+		// a fresh agent every interval on top of the one already draining. That is
+		// the router-cutover fork-storm (PR #199) in slow motion, and each fork here
+		// is a whole agent session rather than a `router wait`, so it is far more
+		// expensive per iteration.
+		//
+		// So the gate is the CONSUMER'S OWN LIVENESS, not a clock: dispatch only
+		// when nothing is in flight. A slow-but-healthy agent holds the slot for as
+		// long as it genuinely needs, and a dead one frees it the instant it exits —
+		// neither of which a 10-minute timer could distinguish (review finding 3).
+		//
+		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
+		// would treat an unreadable inbox as an empty one.
+		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() {
+			// Report the previous run's exit before starting another, so a consumer
+			// that is failing fast leaves a trail rather than looking like progress.
+			if run != nil && run.err != nil {
+				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v",
+					agentID, run.pid, run.err)
+			}
+			next, derr := dispatchConsumer(consumer)
+			if derr != nil {
+				// A command that fails to START will fail identically next tick, so
+				// hold the slot for one retry window rather than tight-looping. This
+				// is the only place a timer is still the right instrument: there is no
+				// process to observe.
+				run = &consumerRun{done: closedChan(), err: derr}
+				log.Printf("wake-loop %s: dispatch FAILED (depth %d): %v", agentID, depth, derr)
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-time.After(dispatchFailureBackoff):
+				}
+			} else {
+				run = next
+				log.Printf("wake-loop %s: dispatched consumer pid %d %v (depth %d)",
+					agentID, run.pid, consumer.Argv, depth)
+			}
 		}
 
 		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: status})
@@ -676,7 +1012,7 @@ func UninstallWakeLaunchAgent(cfg AgentConfig) (removed bool, path string, err e
 	// launchAgentsDirOverride to a temp dir don't touch the real launchd domain.
 	if launchAgentsDirOverride == "" {
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		_ = exec.Command("launchctl", "bootout", target).Run()
+		_ = runLaunchctl("bootout", target)
 	}
 	if rmErr := os.Remove(path); rmErr != nil {
 		return false, path, fmt.Errorf("remove wake LaunchAgent plist: %w", rmErr)

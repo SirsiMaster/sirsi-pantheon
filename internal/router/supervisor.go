@@ -159,12 +159,14 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 
 	agents := make([]AgentSurfaceStatus, 0, len(agentIDs))
 	pendingTotal := 0
+	// ONE store open for the whole pass, not one per agent — see inboxUnionAll.
+	inboxes, ierr := inboxUnionAll(routerRoot, agentIDs)
+	if ierr != nil {
+		return nil, fmt.Errorf("list inboxes: %w", ierr)
+	}
 	for _, id := range agentIDs {
 		cfg := reg.Agents[id]
-		inbox, ierr := inboxUnion(routerRoot, id)
-		if ierr != nil {
-			return nil, fmt.Errorf("list inbox for %s: %w", id, ierr)
-		}
+		inbox := inboxes[id]
 
 		status := AgentSurfaceStatus{
 			AgentID:       id,

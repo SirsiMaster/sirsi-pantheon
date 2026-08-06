@@ -154,7 +154,16 @@ func TryDelegateCompact(opts CompactOptions) (delegated bool, err error) {
 		args = append(args, "--path", opts.RepoRoot)
 	}
 	if opts.Summary != "" {
-		args = append(args, "--summary", opts.Summary)
+		// The npm binary writes memory.yaml ITSELF, so the Go-side payload
+		// filter in appendSessionDecisions never sees this path — hook payloads
+		// rode straight through delegation into "Session Decisions" (claude-home,
+		// router item 20260730-040045: "npm delegation skips it entirely").
+		// Sanitize at the boundary so both writers receive the same summary.
+		clean := SanitizeSummary(opts.Summary)
+		if strings.TrimSpace(clean) == "" {
+			return true, nil // nothing decision-shaped; do not invoke a writer at all
+		}
+		args = append(args, "--summary", clean)
 	}
 	if opts.MaxAge > 0 {
 		args = append(args, "--max-age", fmt.Sprintf("%d", opts.MaxAge))
