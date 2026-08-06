@@ -71,6 +71,20 @@ var routerDoctorCmd = &cobra.Command{
 		fmt.Printf("   Dispatch authority: %s\n\n", cutoverModeLine())
 
 		issues := 0
+		threadReg, threadErr := router.LoadThreadRegistry(routerRoot)
+		if threadErr != nil {
+			issues++
+			fmt.Printf("⚠ supervision truth UNKNOWN — cannot read thread registry: %v\n\n", threadErr)
+		} else if staleSupervisors := router.StaleActiveSupervisors(threadReg, time.Now().UTC(), router.DefaultThreadStaleAfter); len(staleSupervisors) > 0 {
+			issues++
+			fmt.Printf("⚠ %d active supervisory registration(s) missed their own heartbeat contract — not healthy:\n", len(staleSupervisors))
+			for _, thread := range staleSupervisors {
+				fmt.Printf("    %s  agent=%s  surface=%s  wake=%s  last_seen=%s\n",
+					thread.ThreadID, thread.AgentID, thread.Surface, thread.WakeMechanism, thread.LastSeenAt.Format(time.RFC3339))
+			}
+			fmt.Println("    → restore that exact loop or demit the obsolete registration; a live shared host PID is not heartbeat proof.")
+			fmt.Println()
+		}
 		if len(unarmed) > 0 {
 			issues++
 			fmt.Printf("⚠ %d live thread(s) of loop-dead agent(s) — open items, zero armed watchers:\n", len(unarmed))
