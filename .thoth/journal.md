@@ -2211,7 +2211,11 @@ current main → published and merged at `e047e6e4`, and only that last step is 
 The publication raced itself: **codex-home's PR #564 (`33ce9f7f`) and claude-pantheon's PR #565 were
 competing publications of the identical work** — same seven files, with
 `internal/routerstore/store.go` and `internal/routerstore/threads.go` byte-identical, so both carried
-the same schema v16 migration and merging both would have applied it twice. The only production
+the same schema v16 migration, so they were competing publications of one schema transition and
+exactly one should land. (The versioned migration runner does not rerun an already-applied version:
+once the first binary advances the durable store to v16, a second binary carrying the same migration
+observes the stored ceiling and skips it. The hazard is competing publication of one schema
+transition and its production change, not double execution.) The only production
 divergence was a shadow-lint rename. #565 won on one specific point: #564 isolated
 `TestWakeInstallBlockedUsesArmedWatcher` by setting `routercfg.StoreWakeEnv=0`, which makes
 `StoreWake()` false and drops the test off the store path onto the legacy JSON registry — hermeticity
