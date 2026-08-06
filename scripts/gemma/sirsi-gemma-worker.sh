@@ -326,7 +326,7 @@ EOF
   # audit-only and never wakes anyone. Without this, gemma's drafts sit unseen.
   local title
   title=$(awk '/^---$/{n++; if(n==2)exit; next} n==1 && /^title:/{gsub(/^title:[[:space:]]*"?|"?$/,""); print; exit}' "$f")
-  if [ -n "$from" ] && [ "$from" != "gemma" ]; then
+  if [ -n "$from" ] && [ "$from" != "gemma-pantheon" ]; then
     (cd "$REPO" && "$SIRSI" router send --from gemma --to "$from" --type review \
       --title "gemma deliverable: ${title:-$id}" \
       --instructions "@$result_file" >/dev/null 2>&1) \
@@ -341,7 +341,7 @@ EOF
   # package, not a dead result buried in a closed item. Skip when the requester
   # IS claude-pantheon (the normal relay above already put it on that board) or
   # gemma itself (never self-loop).
-  if [ "$blocked" = "yes" ] && [ "$from" != "claude-pantheon" ] && [ "$from" != "gemma" ]; then
+  if [ "$blocked" = "yes" ] && [ "$from" != "claude-pantheon" ] && [ "$from" != "gemma-pantheon" ]; then
     local blocked_file; blocked_file=$(mktemp -t gemma-blocked)
     cat > "$blocked_file" <<EOF
 BLOCKED by gemma — this task exceeds the local model and needs the review/bind layer.
@@ -399,7 +399,7 @@ while true; do
   # globbing items/*.md: dispatch/facade.go stops writing item files when
   # StoreWake flips (SIRSI_ROUTER_STORE_WAKE) — a file-globbing worker would go
   # silently blind that day. `pull` reads store ∪ files. (Spec-fix Gap 2.)
-  ids=$(cd "$REPO" && "$SIRSI" router pull gemma 2>/dev/null | awk '/^  • /{print $2}')
+  ids=$(cd "$REPO" && "$SIRSI" router pull gemma-pantheon 2>/dev/null | awk '/^  • /{print $2}')
   if [ -n "$ids" ]; then
     while IFS= read -r id; do
       [ -z "$id" ] && continue
