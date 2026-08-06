@@ -26,7 +26,7 @@ func newReqCmd() *cobra.Command {
 			"runnable predicate. `satisfy` refuses unless every ADR-057 §6 evidence\n" +
 			"reference is present — a green build is one of six, never the whole.",
 	}
-	cmd.AddCommand(newReqAddCmd(), newReqEvidenceCmd(), newReqSatisfyCmd(), newReqWaiveCmd(), newReqListCmd())
+	cmd.AddCommand(newReqAddCmd(), newReqEvidenceCmd(), newReqSatisfyCmd(), newReqWaiveCmd(), newReqAuditCmd(), newReqListCmd())
 	return cmd
 }
 
@@ -108,7 +108,7 @@ func newReqSatisfyCmd() *cobra.Command {
 }
 
 func newReqWaiveCmd() *cobra.Command {
-	var reason string
+	var reason, ownerDecision string
 	cmd := &cobra.Command{
 		Use:   "waive <REQ-NNN>",
 		Short: "Record an explicit decision not to meet a requirement",
@@ -119,7 +119,7 @@ func newReqWaiveCmd() *cobra.Command {
 				return err
 			}
 			defer st.Close()
-			if err := st.Waive(args[0], reason); err != nil {
+			if err := st.Waive(args[0], reason, ownerDecision); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s waived: %s\n", strings.ToUpper(args[0]), reason)
@@ -127,7 +127,32 @@ func newReqWaiveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why it will not be met (required)")
+	cmd.Flags().StringVar(&ownerDecision, "owner-decision", "", "terminal router decision item sent by owner (required)")
 	_ = cmd.MarkFlagRequired("reason")
+	_ = cmd.MarkFlagRequired("owner-decision")
+	return cmd
+}
+
+func newReqAuditCmd() *cobra.Command {
+	var evidence string
+	cmd := &cobra.Command{
+		Use: "audit <agent>", Short: "Record a completed canon enumeration for one lane",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openRouterStoreForADR()
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+			if err := st.MarkRequirementAudit(args[0], evidence); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "requirement audit recorded for %s\n", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&evidence, "evidence", "", "durable audit evidence reference (required)")
+	_ = cmd.MarkFlagRequired("evidence")
 	return cmd
 }
 

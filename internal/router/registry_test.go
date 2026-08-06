@@ -105,6 +105,13 @@ func TestValidate_MCPWake(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsUnknownWakeSessionMode(t *testing.T) {
+	cfg := AgentConfig{ID: "future-worker", Type: "future-llm", Command: []string{"worker"}, Cwd: "/tmp", Wake: WakeConfig{Mechanism: WakeCLISpawn, SessionMode: "sometimes"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("unknown wake session mode was accepted")
+	}
+}
+
 func TestValidate_EmptyType(t *testing.T) {
 	cfg := AgentConfig{ID: "test", Command: []string{"cmd"}, Cwd: "/tmp"}
 	if err := cfg.Validate(); err == nil {
