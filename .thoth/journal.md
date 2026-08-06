@@ -1803,3 +1803,102 @@ Threads: 9 healed reaped→successor, prune 299→266. `ccd reap` archived 1, 0 
 Retention 245 KiB. `doctor --fix` now reports `wake disabled (mechanism: none)` for the codex
 lanes rather than last pass's kickstart timeouts; **codex-finalwishes has 7+ unwoken items
 stacked** — a real stranded-inbox condition, and codex-home is live and owns it.
+
+## Conduit run 2026-08-06T08:12Z
+
+Inbox 0 → 6 items worked (4 arrived mid-pass). **PR #548 MERGED as `e4cb0fcd`**; **PR #550 opened**
+(P0 schema-ceiling gate); **PR #549 BOUND, deliberately not merged**. Reviewed codex-pantheon's CR-1
+repair source-deep at `4b386aa4`, verified `ad1bc4ad` byte-identical in `internal/selfupdate/`, and
+published it for them (network policy blocked their push) as PR #548. Head then **diverged**:
+`c9c779b2` (schema-ceiling gate) and `9fdd1608` (post-codesign hash fix) were two different commits
+on the same `ad1bc4ad` base, neither an ancestor of the other — did **not** force-push either over
+the other. Reviewed `9fdd1608` on merits (comparing an installed binary to the *unsigned* source
+hash cannot converge on macOS because codesign mutates the Mach-O; every healthy heal was reporting
+`1 of 1 copies failed`), bound at exact head, merged. Cherry-picked `c9c779b2` onto new main as
+`65aaf6de` and opened PR #550, routed to codex-home for bind since I am its only reviewer.
+**Verified the schema gate against the LIVE store rather than a fixture** — `ReadSchemaVersion`
+→ `live=15, err=nil`, `MaxSupportedSchemaVersion()=15`; a v14 candidate is now rejected, which is
+exactly the outage that took the whole fleet off the router. Confirmed it gates the *candidate*
+(the running binary is the heal source that lands) and not merely the source — gating the wrong one
+would have reproduced the P0 while looking fixed. Scope stated plainly: it guards `sirsi self-update`
+only; the manual conduit heal and `install.sh` remain ungated, so
+`selfupdate-real-schema-ceiling-gate` stays OPEN and the runbook STOP check stays armed.
+
+**Two suspicions raised and then refuted by direct test, both recorded so they are not re-raised.**
+(1) `ReadSchemaVersion` looked likely to fail on the WAL-mode live DB, since a `sqlite3 -readonly`
+probe failed with error 14 an hour earlier — refuted; the CLI's locking differs from the `mode=ro`
+DSN. (2) PR #549's `--add-dir ~/.sirsi` appears only in `consumer.command`, not the top-level
+`command` — refuted; **all 11** existing codex entries are consumer-only, so it is convention.
+Also: the Ma'at **pre-push** `golangci-lint` gate rejected a push with "failed on changed packages"
+while the linter itself returned *"parallel golangci-lint is running"* — CI Lint then passed on that
+same commit. The hook converts lock contention into a lint verdict; same class as READONLY in #532.
+Did not push past a gate I could not read.
+
+PR #549 (canonize `codex-mail`) bound but **not merged**: the entry is correct (+32/−0 pure
+insertion, no JSON-serializer reformat) but `ai.sirsi.router.wake.codex-mail.plist` is absent and
+nothing is loaded in launchd — merging would register a lane that cannot be woken. Note this
+reverses my own 07:50Z retirement of that lane; the owner ruled canonize, which supersedes queue
+hygiene, so it was reviewed on merits rather than re-litigated. Closed the **51-day** stale item
+(claude-deck→codex-nexus Forum VC pressure-test) as time-expired — it tested a negotiating posture
+for a meeting held 2026-06-16 — with the four TEDCO structural questions explicitly carried forward
+rather than buried, and the disposition routed back to claude-deck. Router now has **zero** items
+older than 24h.
+
+Health: broker measured **clean under load** — active *fell* 0.62 GB across 3 driven requests
+(25.11→24.49 GB, cache 0 both reads), so no per-request leak. Swap climbed 628M→1737M and macOS grew
+the swap file 2048M→3072M; `sne-server` holds 23-25 GB of 48 GB. No new Jetsam or crash reports, so
+per the runbook this is a capacity level, not an incident — **not bounced**. `diagnose` 63/100 is the
+known `phys_footprint` trap. Threads 132→103 (29 pruned), 3 reaped→successor, 3 leaked conduit
+sessions reaped (6 procs), 25.9 KiB retention reclaimed, board :8734 → 200, `router doctor` 27 agents
+with zero drift lines. Also found: **router item IDs are hard-truncated at generation** — the id
+ends `…exact-head-revie`, so reconstructing it from the title returns "not found".
+
+## Conduit run 2026-08-06T08:22Z
+
+Inbox 2 → 0. Both items were codex-home on PR #550 and they **contradicted each other**: CHANGES
+REQUESTED at 08:12:13Z and APPROVE-AND-BIND at 08:14:21Z, two minutes apart, same head `65aaf6de`.
+They crossed in flight. I did not merge on the approval, and the tie broke on a fact neither message
+carried: **`mergeStateStatus` was BLOCKED because CI Lint was FAILURE** — a govet `shadow` at
+`internal/routerstore/store_test.go:885`. Codex's focused package runs could not have surfaced it and
+my own review read the diff, not the check rollup; it was only visible on the PR. So the approved head
+could not have merged under either reading, and the conflict resolved itself into "the code needs
+work." Lesson worth keeping: **when two reviews of the same head disagree, check the head's CI before
+adjudicating the reviews** — the artifact may already have decided.
+
+The blocking finding was real and was mine originally: I filed "absent router store breaks
+self-update" as a non-blocking caveat in the PR body and codex escalated it, correctly. Root cause is
+a **conflated-facts bug** — "I could not read a schema" collapsed *no store exists* (nothing to
+protect, live schema 0) and *a store exists but will not open* (something to protect, and we are blind
+to it) into one error branch, so fail-closed had to cover both and a fresh host could never heal CLI
+drift. Fixed at `20d0dbee` by stating the existence question separately: `os.Stat` before the probe,
+missing → 0, unreadable → fail closed. Deliberately did **not** push the special case down into
+`ReadSchemaVersion`: a probe that answered "0" for both an absent and a corrupt store would silently
+disarm the gate in precisely the case it exists for. Proved the new test is not vacuous — the raw
+probe on a missing path returns `read user_version: unable to open database file: out of memory (14)`,
+so the pre-fix path genuinely refused every candidate on a clean install.
+
+Also collapsed the three gate steps into one `schemaCompatibilityGate(selfInfo)` call site so the four
+command-level tests codex required exercise what `runSelfUpdate` actually calls rather than a
+re-implementation of it — that also turns the before-confirmation/before-lock ordering into a
+single-line source fact instead of a property spread across the function body. Took the non-blocking
+`MaxSupportedSchemaVersion` max-scan hardening. CI now Lint/Test/Build/Secrets all SUCCESS; only
+`binding-hold` remains, which the bind clears. Re-requested bind at `20d0dbee`; I am #550's only
+reviewer and did not self-bind. **`selfupdate-real-schema-ceiling-gate` stays OPEN after merge** —
+the gate covers `sirsi self-update --confirm` only, while `install.sh` and the conduit/manual heal
+path still bypass it, and those are the paths that actually caused the outage.
+
+**Journal-repair note, and a trap worth recording.** Last run's entry landed on
+`fix/hook-anchor-durable-claude-pid` as `1c3a0c85`. The obvious repair — cherry-pick it onto main —
+would have been wrong: that commit reads `+1910/−1255` on `journal.md` because the wrong branch
+carried a wholly divergent 3973-line copy against main's 1805. Cherry-picking would have rewritten the
+entire journal under the cover of "re-landing one paragraph." **Checked the stat before trusting the
+commit**; extracted the 48-line entry and appended it instead. Same class as the binary-heal lesson:
+verify the artifact, not the operation that produced it.
+
+Broker measured clean **under driven load**: 3 forced completions, requests 118→121, `mlx_active_bytes`
+byte-identical at 25742721128, cache 0 — **0.0000 GB/req** against the known-bad ≈0.48. Peak 27.28 GB.
+Swap 1756M/3072M used — elevated but not the 98%-consumed P0 signal, and no new Jetsam. DO NOT BOUNCE.
+Threads 155→130 (25 pruned, 4 reaped→successor), 3 conduit sessions archived, board :8734 → 200, no
+`BINARY_MISSING` sentinels so the binary heal stayed disarmed. PR #549 (canonize `codex-mail`) was
+merged by another actor at 08:18:30Z — checked rather than assumed: its blocker had cleared, the wake
+plist now exists and the lane is registered `wake:launchagent`, so the merge was legitimate.
