@@ -26,6 +26,21 @@ const taskLeaseFence = ` AND lease_token=? AND lease_expires>? AND status='in-pr
 // ClaimNextTask atomically reclaims expired claims and leases the oldest
 // actionable task. Blocked and done tasks never enter the claim path.
 func (s *Store) ClaimNextTask(agent, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
+	return s.claimTask(agent, "", worker, threadID, ttl)
+}
+
+// ClaimTask atomically leases one exact actionable task. It applies the same
+// expiry reconciliation, dependency, retry, contention, and TTL fences as
+// ClaimNextTask; taskID changes selection only, never eligibility.
+func (s *Store) ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, fmt.Errorf("routerstore: exact task claim requires task id")
+	}
+	return s.claimTask(agent, taskID, worker, threadID, ttl)
+}
+
+func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
 	agent = strings.TrimSpace(agent)
 	worker = strings.TrimSpace(worker)
 	threadID = strings.TrimSpace(threadID)
@@ -60,9 +75,16 @@ func (s *Store) ClaimNextTask(agent, worker, threadID string, ttl time.Duration)
 	}
 
 	var taskID string
-	err = tx.QueryRow(`SELECT t.task_id FROM tasks t
-		WHERE t.agent=? AND t.status IN ('pending','in-progress') AND `+actionableTaskDependency("t")+`
-		AND t.lease_token='' AND t.attempts<? ORDER BY t.created,t.task_id LIMIT 1;`, agent, MaxRetriesPerItem).Scan(&taskID)
+	selectQuery := `SELECT t.task_id FROM tasks t
+		WHERE t.agent=? AND t.status IN ('pending','in-progress') AND ` + actionableTaskDependency("t") + `
+		AND t.lease_token='' AND t.attempts<?`
+	selectArgs := []any{agent, MaxRetriesPerItem}
+	if exactTaskID != "" {
+		selectQuery += ` AND t.task_id=?`
+		selectArgs = append(selectArgs, exactTaskID)
+	}
+	selectQuery += ` ORDER BY t.created,t.task_id LIMIT 1;`
+	err = tx.QueryRow(selectQuery, selectArgs...).Scan(&taskID)
 	if errors.Is(err, sql.ErrNoRows) {
 		if commitErr := tx.Commit(); commitErr != nil {
 			return nil, fmt.Errorf("routerstore: commit task expiry reconciliation: %w", commitErr)
