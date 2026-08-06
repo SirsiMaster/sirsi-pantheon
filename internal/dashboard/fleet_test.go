@@ -24,7 +24,7 @@ func task(id, status string) routerstore.Task {
 // replay the whole ledger as a burst of fake transitions — 231 "changes" that
 // never happened.
 func TestFleetTracker_FirstPollSeedsAndEmitsNothing(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	got := ft.Observe(snapOf("claude-home", task("a", "pending"), task("b", "done")), time.Now())
 
 	if len(got.Activity) != 0 {
@@ -36,7 +36,7 @@ func TestFleetTracker_FirstPollSeedsAndEmitsNothing(t *testing.T) {
 }
 
 func TestFleetTracker_RealTransitionEmitsOneEvent(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	now := time.Now()
 	ft.Observe(snapOf("claude-home", task("a", "pending")), now)
 
@@ -55,7 +55,7 @@ func TestFleetTracker_RealTransitionEmitsOneEvent(t *testing.T) {
 // polled. Silence here is honest; a heartbeat-shaped feed would drown the real
 // movement it exists to show.
 func TestFleetTracker_UnchangedTaskIsSilentAcrossManyPolls(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	now := time.Now()
 	for i := 0; i < 25; i++ {
 		got := ft.Observe(snapOf("claude-home", task("a", "in-progress")), now)
@@ -66,7 +66,7 @@ func TestFleetTracker_UnchangedTaskIsSilentAcrossManyPolls(t *testing.T) {
 }
 
 func TestFleetTracker_ActivityIsNewestFirst(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	now := time.Now()
 	ft.Observe(snapOf("a", task("t", "pending")), now)
 	ft.Observe(snapOf("a", task("t", "in-progress")), now)
@@ -82,7 +82,7 @@ func TestFleetTracker_ActivityIsNewestFirst(t *testing.T) {
 
 // Unbounded growth on a long-lived server is a slow leak.
 func TestFleetTracker_ActivityRingIsBounded(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	now := time.Now()
 	ft.Observe(snapOf("a", task("t", "pending")), now)
 	for i := 0; i < maxFleetEvents+50; i++ {
@@ -103,7 +103,7 @@ func TestFleetTracker_ActivityRingIsBounded(t *testing.T) {
 // a recreated id must RE-SEED rather than report a transition out of a status
 // nothing currently holds.
 func TestFleetTracker_VanishedTaskIsForgottenAndRecreatedOneReseeds(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	now := time.Now()
 	ft.Observe(snapOf("a", task("t", "in-progress")), now)
 	ft.Observe(snapOf("a"), now) // t is gone
@@ -122,7 +122,7 @@ func TestFleetTracker_VanishedTaskIsForgottenAndRecreatedOneReseeds(t *testing.T
 }
 
 func TestFleetTracker_LaneStates(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	now := time.Now()
 	snap := ledger.Snapshot{Agents: []ledger.Agent{
 		{AgentID: "works", Tasks: []routerstore.Task{task("1", "in-progress"), task("2", "pending")}},
@@ -145,7 +145,7 @@ func TestFleetTracker_LaneStates(t *testing.T) {
 // Active lanes must sort above finished ones, or the rows needing attention
 // end up below a wall of completed lanes.
 func TestFleetTracker_WorkingLanesSortFirst(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	snap := ledger.Snapshot{Agents: []ledger.Agent{
 		{AgentID: "zzz-done", Tasks: []routerstore.Task{task("1", "done")}},
 		{AgentID: "aaa-working", Tasks: []routerstore.Task{task("2", "in-progress")}},
@@ -159,7 +159,7 @@ func TestFleetTracker_WorkingLanesSortFirst(t *testing.T) {
 
 // Empty must serialize as [], not null — a client doing .length on null throws.
 func TestFleetSnapshot_EmptyCollectionsMarshalAsArrays(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	bs, err := json.Marshal(ft.Observe(ledger.Snapshot{}, time.Now()))
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestFleetSnapshot_EmptyCollectionsMarshalAsArrays(t *testing.T) {
 
 // Concurrency (Rule A21): handlers read while polls write.
 func TestFleetTracker_ConcurrentObserveIsRaceFree(t *testing.T) {
-	ft := NewFleetTracker()
+	ft := NewFleetTracker(nil)
 	done := make(chan struct{})
 	for i := 0; i < 8; i++ {
 		go func(i int) {

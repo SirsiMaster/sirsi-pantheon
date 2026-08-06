@@ -70,7 +70,11 @@ needs a long-lived process to hold the baseline. Use the Horus board for that.`,
 		if err != nil {
 			return fmt.Errorf("build ledger: %w", err)
 		}
-		out := dashboard.NewFleetTracker().Observe(snap, time.Now())
+		un, unErr := unroutableAgents(repoRoot)
+		if unErr != nil {
+			return fmt.Errorf("fleet: %w — routability is unknown; refusing to render lanes as routable", unErr)
+		}
+		out := dashboard.NewFleetTracker(un).Observe(snap, time.Now())
 
 		if JsonOutput {
 			enc := json.NewEncoder(os.Stdout)

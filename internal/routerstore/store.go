@@ -508,6 +508,24 @@ BEGIN
  WHERE agent=NEW.agent AND status='leased' AND ((source_kind='ledger_task' AND source_id=NEW.task_id) OR (source_kind='requirement' AND NEW.task_id='requirement/'||source_id) OR source_kind='lane');
 END;
 `},
+	// v15 — a ledger task completing UNBLOCKS its dependents, and that must emit
+	// a wake in the SAME transaction as the status change. A dependent whose
+	// blocker just closed is runnable RIGHT THEN; leaving the wake to a later
+	// sweep is how a lane sits idle holding work that is no longer blocked.
+	//
+	// Recovered from the live store: this trigger was applied to production by a
+	// build that never pushed its source, so the schema existed while no commit
+	// defined it and every peer binary fail-closed at v15. Extracted verbatim
+	// from sqlite_master and committed here so the schema has a definition again.
+	{15, `
+CREATE TRIGGER wake_task_dependency_done AFTER UPDATE OF status ON tasks
+WHEN NEW.status='done'
+BEGIN
+  INSERT OR IGNORE INTO wake_events(event_id,event_key,agent,source_kind,source_id,reason,created,updated)
+  SELECT lower(hex(randomblob(16))),'task:dependency-done:'||d.agent||':'||d.task_id||':'||NEW.task_id,d.agent,'ledger_task',d.task_id,'ledger task dependency completed successfully',strftime('%Y-%m-%dT%H:%M:%SZ','now'),strftime('%Y-%m-%dT%H:%M:%SZ','now')
+  FROM tasks d WHERE d.agent=NEW.agent AND d.status IN ('pending','in-progress') AND d.blocked_by=NEW.task_id;
+END
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
@@ -548,7 +566,7 @@ func (s *Store) migrate() error {
 		}
 		maxVersion := migrations[len(migrations)-1].version
 		if version > maxVersion {
-			return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, maxVersion)
+			return tooNewError(version, maxVersion, readMigrationProvenance(ctx, conn))
 		}
 		if version == maxVersion {
 			return nil // up to date
@@ -581,6 +599,13 @@ func (s *Store) migrate() error {
 			}
 			continue
 		}
+		// The gate: refuse a one-way write to shared state from source nobody
+		// else can rebuild. Checked under the write lock so the version pair
+		// reported is the one actually about to be applied.
+		if gateErr := checkMigrationAllowed(version, next.version); gateErr != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return gateErr
+		}
 		if _, err := conn.ExecContext(ctx, next.sql); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
@@ -589,6 +614,7 @@ func (s *Store) migrate() error {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: set user_version: %w", next.version, err)
 		}
+		recordMigrationProvenance(ctx, conn, next.version)
 		if _, err := conn.ExecContext(ctx, `COMMIT;`); err != nil {
 			return fmt.Errorf("routerstore: migrate to v%d: commit: %w", next.version, err)
 		}

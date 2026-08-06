@@ -48,6 +48,10 @@ import (
 type Facade struct {
 	store *routerstore.Store
 	root  string // <repo>/.agents/idea-router
+	// schemaGap is non-zero when the store is newer than this binary and the
+	// facade fell back to the read-only subset. Surfaces MUST render its banner
+	// rather than presenting a partial view as complete.
+	schemaGap routerstore.SchemaGap
 }
 
 // Store exposes the shared durable store to sibling read models. Facade.Close
@@ -78,10 +82,21 @@ func Open(repoRoot string) (*Facade, error) {
 	}
 	store, err := routerstore.Open(dbPath)
 	if err != nil {
+		// FAIL CLOSED. An earlier version fell back to a read-only handle here so
+		// surfaces could keep rendering through a schema gap. That was wrong at
+		// this layer: this facade is the WRITE path, and a read-only store made
+		// close/send "succeed" in the file mirror while silently failing in the
+		// store — a split brain, which is strictly worse than the blackout it was
+		// meant to prevent. Read-only belongs to READ surfaces only, which call
+		// routerstore.OpenReadOnly directly and render the gap banner.
 		return nil, err
 	}
 	return New(filepath.Join(repoRoot, ".agents", "idea-router"), store), nil
 }
+
+// SchemaGap reports whether this facade is reading a store newer than the
+// binary, and how to say so. Zero value means fully compatible.
+func (f *Facade) SchemaGap() routerstore.SchemaGap { return f.schemaGap }
 
 // OpenRoot is Open for callers that already hold the router root
 // (<repo>/.agents/idea-router) rather than the repo root. Same store

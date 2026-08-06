@@ -45,6 +45,21 @@ type Config struct {
 	// returns 503 (graceful degrade) rather than an empty board, which would
 	// read as "the fleet has no work".
 	FleetFn FleetProducer
+	// Unroutable is the set of agent ids with no automated wake path, read from
+	// the registry by the caller (which owns registry access; the dashboard
+	// deliberately does not import it). Empty or nil means every lane is
+	// treated as routable — honest only when routability is genuinely unknown.
+	Unroutable map[string]bool
+	// AltPorts are ADDITIONAL ports served by the SAME process and the SAME
+	// handler. Not a second dashboard: a second door onto one producer.
+	//
+	// 8734 is here because it was a separate Python board computing its own
+	// lane states, and on 2026-08-05 it reported nine lanes WORKING while every
+	// one of them had zero live processes. Two producers cannot agree by
+	// discipline — only by being one producer. Retiring the port would have
+	// broken the owner's habit; sharing the handler keeps the address and makes
+	// the disagreement structurally impossible.
+	AltPorts []int
 }
 
 // FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
@@ -54,6 +69,8 @@ type FleetProducer func() (ledger.Snapshot, error)
 // Server is the Pantheon local dashboard HTTP server.
 type Server struct {
 	cfg     Config
+	handler http.Handler
+	alt     []*http.Server
 	srv     *http.Server
 	unlock  func()
 	mu      sync.RWMutex
@@ -69,7 +86,7 @@ func New(cfg Config) *Server {
 		cfg.Port = DashboardPort
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker()}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable)}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
@@ -118,6 +135,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
 
+	s.handler = mux
 	s.srv = &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.Port),
 		Handler:      mux,
@@ -151,6 +169,26 @@ func (s *Server) Start() error {
 		}
 	}()
 
+	// Additional doors onto the same handler. A failure here is reported, never
+	// fatal: losing the alias port must not take down the primary board.
+	for _, p := range s.cfg.AltPorts {
+		if p == 0 || p == s.cfg.Port {
+			continue
+		}
+		alt := &http.Server{
+			Addr:         fmt.Sprintf("127.0.0.1:%d", p),
+			Handler:      s.handler,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 0,
+		}
+		s.alt = append(s.alt, alt)
+		go func(a *http.Server) {
+			if err := a.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fmt.Printf("dashboard: alt listener %s: %v\n", a.Addr, err)
+			}
+		}(alt)
+	}
+
 	s.running = true
 	return nil
 }
@@ -167,6 +205,10 @@ func (s *Server) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	for _, a := range s.alt {
+		_ = a.Shutdown(ctx)
+	}
+	s.alt = nil
 	err := s.srv.Shutdown(ctx)
 	if s.unlock != nil {
 		s.unlock()
