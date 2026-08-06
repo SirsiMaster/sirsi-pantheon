@@ -116,7 +116,11 @@ func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
 type WakeConfig struct {
-	Mechanism   string            `json:"mechanism,omitempty"`
+	Mechanism string `json:"mechanism,omitempty"`
+	// SessionMode describes delivery capability, not model vendor. `headless`
+	// permits process wake; `interactive` requires an existing-session adapter
+	// and must never be blind-spawned.
+	SessionMode string            `json:"session_mode,omitempty"`
 	Endpoint    string            `json:"endpoint,omitempty"`
 	Auth        string            `json:"auth,omitempty"`
 	MCPServer   string            `json:"mcp_server,omitempty"`
@@ -260,6 +264,9 @@ func (cfg *AgentConfig) Validate() error {
 	}
 	if cfg.Type == "" {
 		return fmt.Errorf("agent %q: type is required", cfg.ID)
+	}
+	if cfg.Wake.SessionMode != "" && cfg.Wake.SessionMode != "headless" && cfg.Wake.SessionMode != "interactive" {
+		return fmt.Errorf("agent %q: wake.session_mode must be headless or interactive", cfg.ID)
 	}
 	switch cfg.WakeMechanism() {
 	case "", "cli-spawn", WakeLaunchAgent:

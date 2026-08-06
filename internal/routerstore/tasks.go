@@ -236,6 +236,11 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	if u.Status != "" && u.Status != t.Status {
+		if u.Status == "done" || u.Status == "in-progress" || t.Status == "in-progress" {
+			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
+		}
+	}
 	oldStage, oldSubject, oldCharter := t.Stage, t.Subject, t.Charter
 	if u.Subject != "" {
 		t.Subject = u.Subject

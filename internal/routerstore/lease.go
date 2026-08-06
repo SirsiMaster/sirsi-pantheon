@@ -46,7 +46,21 @@ var (
 	MaxRetriesPerItem = 3
 	// MaxTotalActive caps items in claimed/working across the whole store.
 	MaxTotalActive = 200
+	// MaxLeaseTTL is the hard ceiling for every item/task claim and renewal.
+	// Legitimate long work renews periodically; no caller may suppress recovery
+	// for an arbitrary duration by minting a year-long lease.
+	MaxLeaseTTL = 30 * time.Minute
 )
+
+func boundedLeaseTTL(ttl time.Duration) (time.Duration, error) {
+	if ttl <= 0 {
+		return 10 * time.Minute, nil
+	}
+	if ttl > MaxLeaseTTL {
+		return 0, fmt.Errorf("routerstore: lease ttl %s exceeds maximum %s; renew bounded leases for long work", ttl, MaxLeaseTTL)
+	}
+	return ttl, nil
+}
 
 // Lifecycle errors.
 var (
@@ -107,8 +121,10 @@ func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: ClaimNext: agent is required")
 	}
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return nil, err
 	}
 	token, err := newToken()
 	if err != nil {
@@ -146,7 +162,8 @@ func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 	}
 
 	var id string
-	err = tx.QueryRow(`SELECT id FROM items WHERE status = 'open' AND to_agent = ? ORDER BY id ASC LIMIT 1;`, agent).Scan(&id)
+	err = tx.QueryRow(`SELECT i.id FROM items i WHERE i.status = 'open' AND i.to_agent = ? AND `+
+		actionableItemDependency("i")+` ORDER BY i.id ASC LIMIT 1;`, agent).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoWork
 	}
@@ -156,8 +173,8 @@ func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 
 	expires := now.Add(ttl)
 	res, err := tx.Exec(
-		`UPDATE items SET status='claimed', claimed_by=?, lease_token=?, lease_expires=? WHERE id=? AND status='open';`,
-		agent, token, expires.Format(time.RFC3339), id,
+		`UPDATE items AS i SET status='claimed', claimed_by=?, lease_token=?, lease_expires=?, lease_updated=? WHERE id=? AND status='open' AND `+actionableItemDependency("i")+`;`,
+		agent, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ClaimNext: claim: %w", err)
@@ -207,13 +224,15 @@ const leaseFence = ` AND lease_token = ? AND lease_expires > ? AND status IN ('c
 
 // RenewLease extends a live lease's expiry (token-fenced).
 func (s *Store) RenewLease(id, token string, ttl time.Duration) error {
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return err
 	}
 	now := s.clock()
 	return s.fencedUpdate(id, token, now,
-		`UPDATE items SET lease_expires = ? WHERE id = ?`+leaseFence+`;`,
-		now.Add(ttl).Format(time.RFC3339), id, token, now.Format(time.RFC3339))
+		`UPDATE items SET lease_expires = ?, lease_updated = ? WHERE id = ?`+leaseFence+`;`,
+		now.Add(ttl).Format(time.RFC3339), now.Format(time.RFC3339), id, token, now.Format(time.RFC3339))
 }
 
 // StartWork transitions claimed→working (token-fenced). Idempotent for an
@@ -221,8 +240,8 @@ func (s *Store) RenewLease(id, token string, ttl time.Duration) error {
 func (s *Store) StartWork(id, token string) error {
 	now := s.clock()
 	return s.fencedUpdate(id, token, now,
-		`UPDATE items SET status = 'working' WHERE id = ?`+leaseFence+`;`,
-		id, token, now.Format(time.RFC3339))
+		`UPDATE items SET status = 'working', lease_updated = ? WHERE id = ?`+leaseFence+`;`,
+		now.Format(time.RFC3339), id, token, now.Format(time.RFC3339))
 }
 
 // Complete terminally finishes an item under a live lease (token-fenced) —
@@ -398,10 +417,19 @@ func (s *Store) fencedUpdate(id, token string, now time.Time, q string, args ...
 // "restart mid-lease" survivable without stranding work. Counted so the next
 // incident is one red number (§2b axiom 9).
 func (s *Store) reclaimExpiredTx(tx *sql.Tx, now time.Time) error {
+	return s.reclaimExpiredForTx(tx, now, "")
+}
+
+func (s *Store) reclaimExpiredForTx(tx *sql.Tx, now time.Time, agent string) error {
+	filter := ""
+	args := []any{now.Format(time.RFC3339)}
+	if agent != "" {
+		filter = " AND to_agent = ?"
+		args = append(args, agent)
+	}
 	rows, err := tx.Query(
 		`SELECT id, attempts, from_agent, to_agent, failure_class FROM items
-		 WHERE status IN ('claimed','working') AND lease_expires <> '' AND lease_expires <= ?;`,
-		now.Format(time.RFC3339))
+		 WHERE status IN ('claimed','working') AND lease_expires <> '' AND lease_expires <= ?`+filter+`;`, args...)
 	if err != nil {
 		return fmt.Errorf("routerstore: reclaim: select: %w", err)
 	}

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -38,6 +40,37 @@ func writeSupervisorRegistry(t *testing.T, routerRoot, goodCwd string) {
 	if err := os.WriteFile(filepath.Join(routerRoot, "agents.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestSuperviseOnceIncludesUnregisteredDurableWorkOwner(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot)
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addErr := f.Store().AddTask(routerstore.Task{Agent: "future-llm", TaskID: "work", Subject: "must not disappear"}); addErr != nil {
+		t.Fatal(addErr)
+	}
+	_ = f.Close()
+
+	report, err := SuperviseOnce(SuperviseOptions{RepoRoot: repoRoot, AgentID: "horus-supervisor-test", PID: os.Getpid(), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lane := range report.Agents {
+		if lane.AgentID == "future-llm" {
+			if lane.Operational.Classification != routerstore.LaneUnroutable {
+				t.Fatalf("unregistered work owner=%+v, want UNROUTABLE", lane)
+			}
+			return
+		}
+	}
+	t.Fatal("unregistered durable work owner was omitted from supervision")
 }
 
 func TestSuperviseOnceRegistersThreadAndClassifiesSurfaces(t *testing.T) {
@@ -77,14 +110,20 @@ func TestSuperviseOnceRegistersThreadAndClassifiesSurfaces(t *testing.T) {
 	for _, agent := range report.Agents {
 		byAgent[agent.AgentID] = agent
 	}
-	if got := byAgent["claude-pantheon"].Status; got != SupervisorStatusWakeable {
-		t.Fatalf("claude status = %s, want wakeable", got)
+	if got := byAgent["claude-pantheon"].Status; got != SupervisorStatusBlocked {
+		t.Fatalf("claude status = %s, want blocked because operational state is UNROUTABLE", got)
 	}
 	if got := byAgent["codex-pantheon"].Status; got != SupervisorStatusBlocked {
 		t.Fatalf("codex status = %s, want blocked for pending work with missing command", got)
 	}
 	if got := byAgent["manual-pantheon"].Status; got != SupervisorStatusBlocked {
 		t.Fatalf("manual status = %s, want blocked for pending work with missing cwd/wake", got)
+	}
+	if got := byAgent["codex-pantheon"].Operational.Classification; got != routerstore.LaneUnroutable {
+		t.Fatalf("codex operational state = %s, want UNROUTABLE", got)
+	}
+	if got := byAgent["claude-pantheon"].Operational.Classification; got != routerstore.LaneUnroutable {
+		t.Fatalf("claude operational state = %s, want UNROUTABLE without an explicit wake adapter", got)
 	}
 
 	threads, err := LoadThreadRegistry(routerRoot)
@@ -246,8 +285,8 @@ func TestSuperviseOnceMarksStaleAgentThread(t *testing.T) {
 		if agent.AgentID != "claude-pantheon" {
 			continue
 		}
-		if agent.Status != SupervisorStatusStale {
-			t.Fatalf("claude status = %s, want stale", agent.Status)
+		if agent.Status != SupervisorStatusBlocked {
+			t.Fatalf("claude status = %s, want blocked because runnable work is UNROUTABLE", agent.Status)
 		}
 		if len(agent.StaleThreads) != 1 || agent.StaleThreads[0] != "thr-stale-agent" {
 			t.Fatalf("stale threads = %#v", agent.StaleThreads)

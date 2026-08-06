@@ -1,5 +1,7 @@
 # ADR-037: Daemon-Owned Fabric — the Ship-Complete Control Plane
 
+> **Implementation status (ADR-061 amendment):** this document states the target architecture and completion law. Universal transition emission, fresh-install provisioning, adapter conformance, installed-runtime verification, and cross-surface production acceptance are not current facts until the ADR-061 evidence gate records them.
+
 ## Status
 **Accepted** — 2026-07-10 · claude-pantheon. Custodian: 𓁢 the Router. Extends ADR-035 (runaway-proof execution) and ADR-036 (Router v2 durable dispatch); governs PANTHEON_RULES A26/A27 and the Orchestration Brain PRD (`docs/prd/ORCHESTRATION_BRAIN.md`, Tier-0 invariant). Answers the owner's question (2026-07-10): "what is the final architecture, and how do we ship it so the user never has to converse with the app to fix it?"
 
@@ -21,6 +23,23 @@ A public Pantheon must run the fabric out of the box, at Level 0 (deterministic,
 - The daemon owns the **wake FIFO** (<250ms, PRD /goal #1), heartbeat, liveness, and reaping — all deterministic, no LLM. "The eternal loop is a daemon; models are invoked, not resident loops" (Orchestration Brain PRD).
 - It ships as a launchd LaunchAgent (RunAtLoad + KeepAlive), installed by `sirsi setup` at first-run — **never armed by a conversation.**
 
+The resident Go runtime is also the sole authority for deciding whether an
+agent lane may park. It evaluates the canonical three-source predicate defined
+by ADR-061: an actionable router item, an actionable ledger task, or an unmet
+traced canon requirement makes the lane runnable. Process existence, a thread
+heartbeat, a prompt instruction, and a model's statement that it is finished
+are not inputs to that predicate. A lane may park only after the store proves
+all three sources audited empty.
+
+Workers execute through fenced store transitions:
+
+`pull -> lease -> bind thread/task -> execute -> record evidence -> close -> pull again`.
+
+The daemon leases wake delivery and executable work independently, expires
+orphaned leases, retries delivery within a bounded policy, and accepts a wake
+acknowledgment only when the worker performs a real source-store action. Merely
+starting a process or refreshing a session heartbeat never acknowledges work.
+
 ### 2. Adapters are thin — MCP, CLI, and hooks are I/O onto the one facade
 Not "fully MCP" and not "fully hooked." Both are *adapters*, holding no state or logic:
 - **MCP** (`router_*`) — the adapter for LLM agents that speak the tool protocol.
@@ -29,6 +48,13 @@ Not "fully MCP" and not "fully hooked." Both are *adapters*, holding no state or
 
 All three call `internal/dispatch` (the one facade). Surfaces (menubar / TUI / Nexus) **read** daemon state; their buttons call the same verbs. No surface holds logic.
 
+LLM vendors and user interfaces are adapter details. Claude, Codex, Gemini,
+OpenAI-compatible APIs, local model runners, and future providers participate
+through capability-declared wake and consumer adapters. Provider names must not
+appear in the control-plane state machine. An adapter is conformant only when it
+can prove delivery, claim acknowledgment, lease renewal, reconstitution, and
+truthful completion through the shared store contract.
+
 ### 3. The cutover this ADR completes
 Wake moves off the `items/` directory-watch onto the store (`sirsi router wait`); `Send` stops writing the `items/<id>.md` audit view; `Show/Pull/Status/Close` read/close from the store when no file exists. Gated behind `SIRSI_ROUTER_STORE_WAKE` (default off) so a binary ships identical-to-before until the flag is flipped **after** the wake verb is in the running binary and live watchers are re-armed (ADR-036: an owner-visible step). The files, once demoted, are an optional, gitignored, non-authoritative audit view.
 
@@ -36,6 +62,11 @@ Wake moves off the `items/` directory-watch onto the store (`sirsi router wait`)
 - **First-run install provisions everything** — `sirsi setup` creates the store, installs the daemon, sets Brain Level 0, and handles all FDA/TCC at install (not mid-use). A fresh download dispatches/routes/heartbeats/wakes with zero AI configured.
 - **Self-healing replaces conversation** — `sirsi doctor` / `sirsi brain doctor` diagnoses a dead daemon, missing model, bad auth, or a stranded item in plain English and offers the one-click remediation lever (monitor→identify→**FIX**, ADR-033). The user clicks a lever or the daemon self-heals; they never converse to fix.
 - **The completion-proof (the law that keeps us honest):** *any capability exercised in a design conversation must become a shipped, deterministic, test-enforced lever before it counts as done.* If something only works because a conversation did it, it is a product bug — it must become a `sirsi` verb + a menubar button + a doctor check. Enforced by CI + the Ma'at gate + a first-run E2E test (fresh install → dispatch works at Level 0). This is the Commercialization Gate applied to the fabric: green tests are necessary, not sufficient; product/technical/operational closure is.
+- **Continuous-execution proof:** fresh-install and failure-injection tests must
+  create work in each authoritative source, exercise every supported adapter,
+  terminate or stall the worker, and observe lease expiry, re-wake, a real claim,
+  continued work mutation, and evidence-backed completion without an owner nudge.
+  A source-only test or a live-process screenshot is not operational proof.
 
 ## Alternatives Considered
 1. **Fully-MCP fabric (every agent + the loop over MCP).** Rejected: MCP is a participation protocol for LLM tool-callers, not a control plane; it can't be the authority for headless consumers or the deterministic daemon, and a shipped app can't require a model to run its loop.

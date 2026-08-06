@@ -22,6 +22,8 @@ var (
 	taskUpdateCharter, taskUpdateOutline, taskUpdateTimeline, taskUpdateTestState, taskUpdateStage   string
 	taskUpdateLinks                                                                                  []string
 	taskUpdateAddTokens, taskUpdateAddSeconds                                                        int64
+	taskLeaseWorker, taskLeaseThread, taskLeaseToken, taskLeaseResult, taskLeaseReason               string
+	taskLeaseTTL                                                                                     time.Duration
 )
 
 var routerLedgerCmd = &cobra.Command{
@@ -102,11 +104,88 @@ func renderLedger(s ledger.Snapshot) {
 
 var routerTaskCmd = &cobra.Command{Use: "task", Short: "Manage the durable per-agent task registry"}
 
+var routerTaskClaimCmd = &cobra.Command{
+	Use: "claim <agent>", Args: cobra.ExactArgs(1), Short: "Atomically lease the next actionable task",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(taskLeaseWorker) == "" || strings.TrimSpace(taskLeaseThread) == "" {
+			return fmt.Errorf("--worker and --thread are required")
+		}
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		lease, err := f.Store().ClaimNextTask(args[0], taskLeaseWorker, taskLeaseThread, taskLeaseTTL)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(lease)
+	},
+}
+
+var routerTaskClaimIDCmd = &cobra.Command{
+	Use: "claim-id <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Atomically lease one exact actionable task",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(taskLeaseWorker) == "" || strings.TrimSpace(taskLeaseThread) == "" {
+			return fmt.Errorf("--worker and --thread are required")
+		}
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		lease, err := f.Store().ClaimTask(args[0], args[1], taskLeaseWorker, taskLeaseThread, taskLeaseTTL)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(lease)
+	},
+}
+
+var routerTaskRenewCmd = &cobra.Command{
+	Use: "renew <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Renew a fenced task lease",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return f.Store().RenewTaskLease(args[0], args[1], taskLeaseToken, taskLeaseTTL)
+	},
+}
+
+var routerTaskCompleteCmd = &cobra.Command{
+	Use: "complete <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Complete a fenced task with evidence",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return f.Store().CompleteTaskLease(args[0], args[1], taskLeaseToken, taskLeaseResult)
+	},
+}
+
+var routerTaskReleaseCmd = &cobra.Command{
+	Use: "release <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Release a fenced task after a recoverable failure",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return f.Store().ReleaseTaskLease(args[0], args[1], taskLeaseToken, taskLeaseReason)
+	},
+}
+
 var routerTaskAddCmd = &cobra.Command{
 	Use: "add <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Add a task",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(taskAddSubject) == "" {
 			return fmt.Errorf("--subject is required")
+		}
+		if taskAddStatus == "in-progress" || taskAddStatus == "done" {
+			return fmt.Errorf("new executable tasks must start pending or blocked; use task claim and task complete for fenced execution")
 		}
 		f, err := openTaskFacade()
 		if err != nil {
@@ -256,6 +335,18 @@ func init() {
 	routerTaskUpdateCmd.Flags().Int64Var(&taskUpdateAddTokens, "add-tokens", 0, "Add output tokens to the task cost center")
 	routerTaskUpdateCmd.Flags().Int64Var(&taskUpdateAddSeconds, "add-seconds", 0, "Add active-work seconds to the task cost center")
 	routerTaskListCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
-	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd)
+	routerTaskClaimCmd.Flags().StringVar(&taskLeaseWorker, "worker", "", "Concrete worker identity (required)")
+	routerTaskClaimCmd.Flags().StringVar(&taskLeaseThread, "thread", "", "Durable thread/task identity (required)")
+	routerTaskClaimCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
+	routerTaskClaimIDCmd.Flags().StringVar(&taskLeaseWorker, "worker", "", "Concrete worker identity (required)")
+	routerTaskClaimIDCmd.Flags().StringVar(&taskLeaseThread, "thread", "", "Durable thread/task identity (required)")
+	routerTaskClaimIDCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
+	for _, c := range []*cobra.Command{routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd} {
+		c.Flags().StringVar(&taskLeaseToken, "lease", "", "Fenced task lease token (required)")
+	}
+	routerTaskRenewCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
+	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "result-ref", "", "Evidence/proof reference (required)")
+	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
+	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }

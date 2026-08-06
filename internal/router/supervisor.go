@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
@@ -101,6 +104,12 @@ type AgentSurfaceStatus struct {
 	OldestPendingAgeSeconds float64  `json:"oldest_pending_age_seconds"`
 	LiveThreads             []string `json:"live_threads,omitempty"`
 	StaleThreads            []string `json:"stale_threads,omitempty"`
+	// Operational is the ADR-061 authority. Legacy Status remains additive for
+	// tolerant clients during the contract transition, but it may not be used to
+	// infer work from process/thread liveness.
+	Operational     routerstore.LaneOperationalState `json:"operational"`
+	WakeEventID     string                           `json:"wake_event_id,omitempty"`
+	WakeEventStatus string                           `json:"wake_event_status,omitempty"`
 }
 
 // PendingItem is the drillable projection of one open inbox item: everything a
@@ -141,16 +150,45 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		return nil, fmt.Errorf("load agents: %w", err)
 	}
 
-	agentIDs := make([]string, 0, len(reg.Agents))
+	agentSet := make(map[string]struct{}, len(reg.Agents))
 	for id := range reg.Agents {
-		agentIDs = append(agentIDs, id)
+		agentSet[id] = struct{}{}
 	}
-	sort.Strings(agentIDs)
 
 	threadReg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, fmt.Errorf("load threads: %w", err)
 	}
+	for _, thread := range threadReg.SortedThreads() {
+		if !thread.Status.IsTerminal() && thread.AgentID != "" {
+			agentSet[thread.AgentID] = struct{}{}
+		}
+	}
+
+	// One durable store for the pass. Migrate is idempotent and keeps the
+	// pre-cutover file corpus represented in the same authority the runnable
+	// predicate reads; otherwise an open legacy item could disappear from the
+	// operational classification while still appearing in the old board.
+	durable, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("open operational store: %w", err)
+	}
+	defer durable.Close()
+	if _, migrateErr := durable.Migrate(); migrateErr != nil {
+		return nil, fmt.Errorf("migrate operational sources: %w", migrateErr)
+	}
+	durableAgents, err := durable.Store().OperationalAgents()
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range durableAgents {
+		agentSet[id] = struct{}{}
+	}
+	agentIDs := make([]string, 0, len(agentSet))
+	for id := range agentSet {
+		agentIDs = append(agentIDs, id)
+	}
+	sort.Strings(agentIDs)
 
 	now := opts.Now
 	if now.IsZero() {
@@ -159,6 +197,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 
 	agents := make([]AgentSurfaceStatus, 0, len(agentIDs))
 	pendingTotal := 0
+	runnableTotal := 0
 	// ONE store open for the whole pass, not one per agent — see inboxUnionAll.
 	inboxes, ierr := inboxUnionAll(routerRoot, agentIDs)
 	if ierr != nil {
@@ -197,7 +236,40 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 
 		ready, detail := agentWakeReady(cfg)
 		status.Detail = detail
+		wakeHealth := ProbeWakeReadiness(cfg)
+		reconcile, reconcileErr := durable.Store().ReconcileOperationalState(id, wakeHealth.Ready)
+		if reconcileErr != nil {
+			return nil, fmt.Errorf("reconcile operational state for %s: %w", id, reconcileErr)
+		}
+		status.Operational = reconcile.State
+		if status.Operational.Runnable.Runnable {
+			runnableTotal++
+		}
+		if status.Operational.Classification == routerstore.LaneIdleWithWork && wakeHealth.Ready {
+			event, claimErr := durable.Store().ClaimWakeEventFor(id, DefaultWakeRetryAfter)
+			switch {
+			case claimErr == nil:
+				status.WakeEventID = event.EventID
+				if invokeErr := getWakeInvoke()(cfg, wakeHealth.Adapter); invokeErr != nil {
+					status.WakeEventStatus = "failed"
+					if failErr := durable.Store().FailWakeEvent(event.EventID, event.LeaseToken, invokeErr.Error()); failErr != nil {
+						return nil, fmt.Errorf("record wake failure for %s: %w", id, failErr)
+					}
+				} else {
+					// Invocation is not acknowledgment. The event stays leased until
+					// an item/task claim trigger records the real store action.
+					status.WakeEventStatus = "awaiting_store_ack"
+				}
+			case errors.Is(claimErr, routerstore.ErrNoWork):
+				// Runnable work can predate event migration; the next reconciler
+				// pass creates audit events and source triggers cover new work.
+			default:
+				return nil, fmt.Errorf("claim wake event for %s: %w", id, claimErr)
+			}
+		}
 		switch {
+		case status.Operational.Classification == routerstore.LaneUnroutable:
+			status.Status = SupervisorStatusBlocked
 		case len(status.LiveThreads) > 0:
 			// A live session/thread is already consuming this agent's inbox, so it
 			// is NOT blocked even without an armed background wake path (the
@@ -241,7 +313,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		return nil, fmt.Errorf("register supervisor thread: %w", err)
 	}
 	status := ThreadStatusIdle
-	if pendingTotal > 0 {
+	if pendingTotal > 0 || runnableTotal > 0 {
 		status = ThreadStatusActive
 	}
 	thread, err = Heartbeat(routerRoot, thread.ThreadID, HeartbeatUpdate{Status: status})

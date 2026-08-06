@@ -146,6 +146,21 @@ func TestWakePassReadyAdapterInvokedOnce(t *testing.T) {
 	}
 }
 
+func TestWakeReadinessUsesCapabilityNotModelVendor(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	interactiveCodex := AgentConfig{ID: "codex-ui", Type: "codex", Cwd: t.TempDir(), Command: []string{exe}, Wake: WakeConfig{Mechanism: WakeCLISpawn, SessionMode: "interactive"}}
+	if got := ProbeWakeReadiness(interactiveCodex); got.Ready {
+		t.Fatalf("interactive Codex surface was blind-spawnable: %+v", got)
+	}
+	headlessClaude := AgentConfig{ID: "claude-worker", Type: "claude", Cwd: t.TempDir(), Command: []string{exe}, Wake: WakeConfig{Mechanism: WakeCLISpawn, SessionMode: "headless"}}
+	if got := ProbeWakeReadiness(headlessClaude); !got.Ready {
+		t.Fatalf("headless Claude worker was rejected by vendor name: %+v", got)
+	}
+}
+
 // One wake per AGENT per pass, not one per item. The adapter nudges an agent and
 // its pull-loop then drains the whole inbox, so N stranded items for one agent
 // must still cost exactly one adapter call — with a blocking launchctl, invoking

@@ -140,12 +140,18 @@ func ExplicitWakeMechanism(cfg AgentConfig) string {
 	return strings.TrimSpace(cfg.Wake.Mechanism)
 }
 
-// isInteractiveSpawnType reports whether spawning the agent's launch command
-// would start an INTERACTIVE REPL session rather than a headless worker. cli-spawn
-// is never an honest wake for these (constraint 3): a fresh `claude` process is a
-// new conversation, not a nudge to the running one.
-func isInteractiveSpawnType(agentType string) bool {
-	return strings.EqualFold(strings.TrimSpace(agentType), "claude")
+// isInteractiveSpawn reports a delivery capability, not a model vendor. New
+// registrations declare wake.session_mode. The Claude fallback preserves the
+// fail-closed behavior of legacy records until they are migrated.
+func isInteractiveSpawn(cfg AgentConfig) bool {
+	switch strings.TrimSpace(cfg.Wake.SessionMode) {
+	case "interactive":
+		return true
+	case "headless":
+		return false
+	default:
+		return strings.EqualFold(strings.TrimSpace(cfg.Type), "claude")
+	}
 }
 
 // ProbeWakeReadiness probes whether cfg can be woken right now without
@@ -162,7 +168,7 @@ func ProbeWakeReadiness(cfg AgentConfig) AgentWakeHealth {
 		h.Detail = "wake disabled (mechanism: none)"
 	case WakeCLISpawn:
 		switch {
-		case isInteractiveSpawnType(cfg.Type):
+		case isInteractiveSpawn(cfg):
 			h.Detail = fmt.Sprintf("interactive %s agent — not blind-spawned; arm its /loop or route via claude-home conduit", cfg.Type)
 		case len(cfg.Command) == 0:
 			h.Detail = "cli-spawn configured but command array is empty"
@@ -730,16 +736,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// stale data — a surface reporting on a source nothing writes any more.
 		// This was a call site #315 missed while claiming every observer had been
 		// routed through the cutover-aware entry point.
-		status := ThreadStatusIdle
-		depth := 0
 		items, lerr := OpenItems(routerRoot, agentID)
+		status, depth, lastError := wakeLoopInboxState(len(items), lerr)
 		if lerr != nil {
-			// Fail loud in the log rather than silently reporting idle: an unreadable
-			// inbox is not an empty one, and this loop is the only liveness signal
-			// the fabric has for this agent.
+			// An unreadable inbox is a technical blocker, not an empty inbox. Publish
+			// that truth into the durable thread record: logs alone are not supervision
+			// evidence and depth zero would create the exact false-green ADR-061 forbids.
 			log.Printf("wake-loop %s: inbox read FAILED: %v", agentID, lerr)
-		} else if depth = len(items); depth > 0 {
-			status = ThreadStatusActive
 		}
 
 		// Log on CHANGE, and periodically regardless.
@@ -807,7 +810,12 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		}
 
-		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: status})
+		// Always write last_error, including the empty value after a successful
+		// read, so a recovered loop cannot remain falsely blocked by stale evidence.
+		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
+			Status:    status,
+			LastError: &lastError,
+		})
 
 		select {
 		case <-ctx.Done():
@@ -815,6 +823,19 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		case <-tick.C:
 		}
 	}
+}
+
+// wakeLoopInboxState converts an inbox observation into durable supervisory
+// state. Read failures deliberately use unknown depth (-1): zero means a proven
+// empty inbox and must never be inferred from an unavailable source.
+func wakeLoopInboxState(depth int, readErr error) (ThreadStatus, int, string) {
+	if readErr != nil {
+		return ThreadStatusBlocked, -1, fmt.Sprintf("wake-loop inbox read failed: %v", readErr)
+	}
+	if depth > 0 {
+		return ThreadStatusActive, depth, ""
+	}
+	return ThreadStatusIdle, 0, ""
 }
 
 // adoptWorkerThread resolves the keyed-singleton worker thread for an agent on
