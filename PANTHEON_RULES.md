@@ -146,7 +146,7 @@ Scans 12+ macOS subsystem directories for Parallels remnants:
 Application Scripts, Group Containers, keychains, HTTPStorages,
 package receipts, ghost apps in Launch Services.
 
-Refs: ANUBIS_RULES.md, ARCHITECTURE_DESIGN.md, ADR-001
+Refs: PANTHEON_RULES.md, ARCHITECTURE_DESIGN.md, ADR-001
 Changelog: v0.1.0 — Parallels scan rule
 ```
 
@@ -204,7 +204,7 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 *   **Do No Harm**: You **MUST NOT** break any working scan rule, CLI command, or module. Before touching any file, verify what currently works and ensure it still works after.
 *   **Additive-Only Changes**: Do not refactor working scan rules, restructure working module interfaces, or rewrite working logic unless explicitly directed.
-*   **Mandatory Canon Review**: Before writing code, re-read `ANUBIS_RULES.md`, relevant ADRs, `SAFETY_DESIGN.md`, and the files you intend to modify.
+*   **Mandatory Canon Review**: Before writing code, re-read `PANTHEON_RULES.md`, relevant ADRs, `SAFETY_DESIGN.md`, and the files you intend to modify.
 *   **Sprint Planning is Mandatory**: Present a detailed sprint plan before ANY code change. No code without USER approval.
 *   **Living Canon**: Codify new rules immediately — never defer.
 
@@ -477,7 +477,16 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 ---
 
-### 2.26 Scope The Check To The Claim (Rule A29)
+### 2.33 Scope The Check To The Claim (Rule A35)
+> **Renumbered 2026-08-05.** This rule shipped as §2.26 / Rule A29 — numbers
+> already held by §2.26 Orchestration Brain (Rule A29). Two different rules
+> answered to the same citation, so an agent resolving "A29" got whichever it
+> happened to find first. That is the Rule 14/17 collision again (see PR #491,
+> where every Ra-deployed agent was told to override "Do No Harm" because a
+> list ordinal was written as a rule tag). Orchestration Brain keeps A29 — it is
+> older and carries ~32 references against this rule's ~9. **Older citations of
+> "A29" that mean scope-the-check refer to THIS rule; both numbers are load-
+> bearing in the archive, so neither is silently rewritten.**
 > Established July 27, 2026, after a single day in which five independent defects — three found by codex, two by claude-home — turned out to be the same shape.
 
 **Rule**: A check, guard, cap, probe or status MUST be scoped to the full extent of the claim it makes. If it cannot cover the claim, it MUST narrow the claim instead. A check narrower than its claim is worse than no check: it converts an unknown risk into a false assurance, and nobody re-examines a thing that reads fine.
@@ -536,26 +545,35 @@ Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 ac
 
 These documents are the source of truth for this repo:
 
+> **Status marker.** A path below marked **(NOT YET WRITTEN)** does not exist in
+> this repo. It is listed because canon says it *should* exist, not because it
+> does. Rule 16 (Mandatory Canon Review) requires re-reading the relevant
+> canonical documents before writing code — a list naming files that were never
+> created makes that rule literally unfollowable, and silently teaches every
+> agent to cite a document nobody can open. Create the file or delete the line;
+> do not leave it ambiguous.
+
+
 ### 🏛 Governance (3)
-1.  `ANUBIS_RULES.md` (this file — canonical; synced to `GEMINI.md` and `CLAUDE.md`)
-2.  `docs/PROJECT_SCOPE.md`
+1.  `PANTHEON_RULES.md` (this file — canonical; synced to `GEMINI.md` and `CLAUDE.md`)
+2.  `docs/PROJECT_SCOPE.md` **(NOT YET WRITTEN)**
 3.  `CONTRIBUTING.md`
 
 ### 🏗 Architecture & Design (4)
 4.  `docs/ARCHITECTURE_DESIGN.md`
-5.  `docs/TECHNICAL_DESIGN.md`
+5.  `docs/TECHNICAL_DESIGN.md` **(NOT YET WRITTEN)**
 6.  `docs/SAFETY_DESIGN.md`
 7.  `docs/SCAN_RULE_GUIDE.md`
 
 ### ⚖️ Compliance & Security (3)
 8.  `SECURITY.md`
-9.  `docs/SECURITY_COMPLIANCE.md`
-10. `docs/RISK_MANAGEMENT.md`
+9.  `docs/SECURITY_COMPLIANCE.md` **(NOT YET WRITTEN)**
+10. `docs/RISK_MANAGEMENT.md` **(NOT YET WRITTEN)**
 
 ### 🚀 Operations (3)
-11. `docs/DEPLOYMENT_GUIDE.md`
+11. `docs/DEPLOYMENT_GUIDE.md` **(NOT YET WRITTEN)**
 12. `docs/QA_PLAN.md`
-13. `docs/VERSIONING_STANDARD.md`
+13. `docs/VERSIONING_STANDARD.md` **(NOT YET WRITTEN)**
 
 ### 🧠 Knowledge & Decisions (4)
 14. `docs/ADR-INDEX.md`
@@ -569,8 +587,8 @@ These documents are the source of truth for this repo:
 
 ### 📦 Configuration (3)
 20. `configs/default_rules.yaml`
-21. `configs/default_policies.yaml`
-22. `configs/network_example.yaml`
+21. `configs/example_policy.yaml`
+22. `configs/network_example.yaml` **(NOT YET WRITTEN)**
 
 ---
 
