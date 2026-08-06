@@ -152,6 +152,49 @@ broker by **27 GB** and has already produced a false "host healthy" verdict.
 **Acceptance:** with the fabric at full width, load average stays below core
 count; a single documented command stops dispatch and it *stays* stopped.
 
+### R9 — Stall baseline *(gates every throughput claim)* — **Phase 0**
+
+The thesis in §5a of the map — *observed decode is stall-bound, not
+bandwidth-bound* — is stated but **not yet measured**. Until it is, no throughput
+claim from R3/R4/R5/R10 means anything.
+
+Capture, on a sustained decode run, before any routing change:
+
+- GPU occupancy and stall accounting (`xctrace`, Metal System Trace)
+- `pageins` / `pageouts` / `swapins` / `swapouts` (`vm_stat 1`)
+- `mlx_active_bytes` trajectory, swap usage, load average
+
+**Acceptance:** a committed baseline with a repro script. Every later claim reports
+**absolute before/after plus the regime**, never a bare ratio (A14). A "2× faster"
+without its baseline is refused at review.
+
+### R10 — Multi-node fabric: measured link first *(exploratory)*
+
+The fabric thesis is that eliminating paging and queueing across nodes raises
+delivered throughput without raising bandwidth. The arithmetic constrains the
+design absolutely:
+
+| Link | Throughput | vs local unified memory |
+|---|---|---|
+| Local unified memory | ~546 GB/s **[spec]** | 1× |
+| Thunderbolt 5 | 10 GB/s (15 boost) **[spec]** | **~2%** |
+
+**Design rule, non-negotiable: transport activations, never weights.** Weights are
+GB and static; activations, logits, embeddings and KV deltas are KB–MB and
+per-request. A design that ships weights over a 10 GB/s link is slower than one
+node and must be rejected at review.
+
+The fabric therefore wins by **residency** — every node's working set fits its own
+memory, so paging goes to zero — not by transport speed.
+
+**First deliverable is a measurement, not an architecture:** point-to-point
+latency and throughput between two Macs over TB5, plus whether RDMA semantics are
+actually available on macOS (unverified — `[spec]`). If the link test disappoints,
+R10 is abandoned without touching R1–R5.
+
+**Acceptance:** measured link characteristics committed; the activations-only rule
+encoded as a review check.
+
 ### R8 — Index hygiene *(G7)*
 
 Spotlight must not index machine state agents rewrite continuously. Measured
@@ -169,11 +212,12 @@ Ordered by **value ÷ cost**, not by architectural tidiness.
 
 | Phase | Work | Cost | Why here |
 |---|---|---|---|
-| **0** | R6 guards read truth · R8 index hygiene · R7 caps | hours | stops active harm; R8 already measured |
+| **0** | R6 guards read truth · R8 index hygiene · R7 caps · **R9 stall baseline** | hours | stops active harm; R9 is the number every later claim is measured against |
 | **1** | R1 external cap · R2 KV envelope | days | removes the cratering class outright |
 | **2** | R4 SME2 ranking | hours–days | cheapest real distribution; linker flag |
 | **3** | R3 embeddings → ANE | week+ | the headline win; unblocks the premise |
 | **4** | R5 Metal 4 prefill | days–weeks | benefit must be benchmarked first |
+| **5** | R10 TB5 fabric — **link test only** | days | a measured link, not a design doc |
 
 Phase 0 and 1 are host-stability work and should not wait on the compute work.
 **A 5-bit model swap already took peak 36.33 → 10.36 GB** (measured, live) — that
@@ -192,9 +236,15 @@ is a Phase-0-grade mitigation available immediately and already applied.
   never an MLX flag.
 - **Per-core Neural Accelerator counts are not locally queryable.** R5's benefit
   is a hypothesis until benchmarked. It ships with numbers or it does not ship.
-- **Decode will not get faster from any of this.** It is bandwidth-bound. The win
-  is *contention removal* and *host usability*, not tokens/sec. Claiming otherwise
-  would repeat the inflated-benchmark pattern A14 exists to prevent.
+- **Decode throughput is stall-bound, not bandwidth-bound, in the regime we
+  actually run in.** An earlier draft asserted "decode will not get faster." That
+  was an A35 error — the claim was scoped to peak decode on a clean machine and
+  stated as a universal. On this machine (97% of GPU working set, swap 628 MB →
+  3.04 GB, load 36 on 18 cores) decode is nowhere near the bandwidth ceiling; it is
+  stalling. Removing stalls raises delivered throughput. **What remains true:** the
+  bandwidth *ceiling* does not move, so any speed claim must state which regime it
+  was measured in, with absolute numbers alongside any ratio (A14). See
+  `APPLE_SILICON_COMPUTE_MAP.md` §5a.
 
 ---
 

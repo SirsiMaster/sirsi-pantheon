@@ -178,6 +178,105 @@ further MLX tuning, because it removes contention rather than redistributing it.
 
 ---
 
+## 5a. Why decode *does* get faster — the queueing correction
+
+An earlier draft of this map stated flatly that **"decode will not get faster."**
+That claim was wrong as written, and it is wrong in the way this repo has a rule
+about (A35): it was scoped to *peak decode on an unloaded, non-paging machine* but
+stated as a universal.
+
+**The corrected thesis.** Decode throughput on a real machine is not set by peak
+memory bandwidth. It is set by **how much of the time the compute unit is actually
+computing** versus stalled. The stall budget is real and measurable:
+
+| Stall source | Present on this machine | Evidence |
+|---|---|---|
+| Paging / swap writes | yes | swap grew 628 MB → 3.04 GB under load |
+| GPU working-set pressure | yes | 36.33 GB peak vs 37.4 GB recommended = 97% |
+| Contention from co-resident work | yes | embeddings + ranking + decode all on GPU |
+| Queueing behind unrelated batches | yes | `admission_queue: 32`, `continuous_batch_max: 4` |
+| Host oversubscription | yes | load average 36 on 18 cores |
+
+A unit at 97% of its working set with swap growing is **not bandwidth-limited — it
+is stall-limited.** Bandwidth is the ceiling you hit *after* you stop stalling; we
+are nowhere near it. So the correct statement is:
+
+> **Peak** decode is bandwidth-bound. **Observed** decode is stall-bound.
+> Eliminating stalls raises observed throughput toward the bandwidth ceiling — and
+> that headroom is the win.
+
+This reframes every routing decision in §5. Moving embeddings to the ANE is not
+merely "polite to the GPU" — it removes a queueing source, and **a completed
+operation delivered on time is worth more than a faster operation delivered
+late.** Saturating each unit with the work it is good at, continuously, is how
+utilization converts into delivered throughput.
+
+**What is still true:** none of this raises the *bandwidth ceiling*. Anyone
+claiming "N× faster decode" must state which regime they measured — a stall-bound
+machine or a clean one — or the number means nothing (A14).
+
+**How to measure it, before claiming it.** The stall fraction is the number that
+settles this, and we do not have it yet:
+
+```bash
+# occupancy + stall accounting during a sustained decode run
+xcrun xctrace record --template 'Metal System Trace' --launch -- <decode-bench>
+# swap + page-in pressure across the same window
+vm_stat 1 | awk '{print $1,$2}'     # pageins / pageouts / swapins / swapouts
+sysctl -n vm.swapusage
+```
+
+Baseline first, then the routing changes, then the same run again. The delta is
+the claim.
+
+---
+
+## 5b. Multi-node fabric — RDMA over Thunderbolt 5
+
+The same stall logic extends across machines, but **only if the transport is used
+for the right thing.** The bandwidth arithmetic is unforgiving:
+
+| Link | Throughput | Ratio to local unified memory |
+|---|---|---|
+| Local unified memory | ~546 GB/s **[spec]** | 1× |
+| Thunderbolt 5 | 80 Gb/s = **10 GB/s** (120 Gb/s boost = 15 GB/s) **[spec]** | **~2%** |
+
+**Therefore a TB5 fabric cannot extend memory bandwidth, and any design that moves
+weights across it will be slower than a single node.** That is the trap to name
+explicitly before anyone builds it.
+
+**What it *can* do is remove the stalls, which is the actual goal.** The design
+rule follows directly from the ratio above:
+
+> **Transport activations, never weights.**
+> Weights are GB and static. Activations, logits, embeddings, and KV deltas are
+> KB–MB and per-request. The first is catastrophic over a 10 GB/s link; the second
+> is free.
+
+Under that rule the fabric wins by **residency**, not by bandwidth:
+
+1. **Every node's working set fits its own memory** → paging and SSD swap writes go
+   to zero, which is the largest stall source measured above.
+2. **Each unit stays saturated with work it is good at** — one node's ANE serving
+   embeddings, another's GPU serving decode — rather than three workloads
+   time-slicing one GPU.
+3. **Results are published once and consumed immediately** by any node that needs
+   them, instead of being recomputed behind a queue.
+
+Effective throughput can therefore rise substantially *without any increase in
+bandwidth* — the gain comes from reclaiming the stall budget. Whether that
+approaches "double" is an empirical question, and it is answerable: measure the
+stall fraction (§5a) on one node, then again with the workload split. **Publish
+the ratio only alongside the absolute numbers and the regime** — a ratio without
+the baseline is exactly the claim A14 exists to prevent.
+
+**Open risk:** RDMA semantics over Thunderbolt/USB4 networking on macOS are not
+verified here. `[spec]` throughout this section. Before any fabric work, the
+first deliverable is a measured point-to-point latency and throughput test
+between two Macs — not a design document.
+
+---
+
 ## 6. Allocation governance — the missing layer
 
 Today each consumer allocates against the shared pool with no arbiter. Required:
