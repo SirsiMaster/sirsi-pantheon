@@ -128,7 +128,8 @@ func (s *Store) clock() time.Time {
 }
 
 // migrations is the ordered, append-only list of schema migrations.
-// migrations[i] moves a database from user_version i to user_version i+1.
+// Each entry advances to its explicit version. Gaps are reserved schema
+// versions owned by companion lineages and are never filled with fake no-ops.
 // NEVER edit an entry once it has shipped — append a new migration instead
 // (e.g. `ALTER TABLE items ADD COLUMN ...`), so future column adds work
 // against existing databases without wiping them.
@@ -138,10 +139,15 @@ func (s *Store) clock() time.Time {
 // has an unknown shape — failing loudly beats silently stamping it v1. No such
 // database can exist outside tests (the store has never been wired to
 // anything), so nothing shipped is stranded by this choice.
-var migrations = []string{
+type schemaMigration struct {
+	version int
+	sql     string
+}
+
+var migrations = []schemaMigration{
 	// v1 — initial schema. items mirrors internal/work.Item field-for-field
 	// (incl. the wake_* delivery-truth columns; see Item).
-	`
+	{1, `
 CREATE TABLE items (
     id                TEXT PRIMARY KEY,
     from_agent        TEXT NOT NULL,
@@ -171,14 +177,14 @@ CREATE TABLE state (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
 );
-`,
+`},
 
 	// v2 — Phase 2 Dispatch Contract (PRD §2b, codex-SME APPROVED 2026-07-04;
 	// ADR-035). Fenced-lease lifecycle columns, idempotency + singleton keys
 	// (enforced as DATABASE invariants via partial unique indexes — the
 	// property whose absence produced the 11,564-item flood), send quotas,
 	// circuit breakers, and dispatch counters.
-	`
+	{2, `
 ALTER TABLE items ADD COLUMN lease_token   TEXT    NOT NULL DEFAULT '';
 ALTER TABLE items ADD COLUMN lease_expires TEXT    NOT NULL DEFAULT '';
 ALTER TABLE items ADD COLUMN claimed_by    TEXT    NOT NULL DEFAULT '';
@@ -213,11 +219,11 @@ CREATE TABLE counters (
     name  TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
 );
-	`,
+	`},
 
 	// v3 — Universal Task Ledger. Items gain an optional dependency edge and
 	// agents gain a durable task registry distinct from routed messages.
-	`
+	{3, `
 ALTER TABLE items ADD COLUMN blocked_by TEXT NOT NULL DEFAULT '';
 CREATE INDEX idx_items_blocked_by ON items(blocked_by) WHERE blocked_by <> '';
 
@@ -233,11 +239,29 @@ CREATE TABLE tasks (
     PRIMARY KEY (agent, task_id)
 );
 CREATE INDEX idx_tasks_agent_status ON tasks(agent, status);
-`,
+`},
 
 	// v4 — Phase grouping for the Ledger Board (ADR-050 cross-surface spec).
 	// Phase clusters tasks into plain-English groups for owner-facing rendering.
-	`ALTER TABLE tasks ADD COLUMN phase TEXT NOT NULL DEFAULT '';`,
+	{4, `ALTER TABLE tasks ADD COLUMN phase TEXT NOT NULL DEFAULT '';`},
+
+	// v7 — Ledger Board drill-down contract (ADR-054 Part B). Versions 5 and
+	// 6 belong to the ADR-051 conduit lineage; this migration intentionally
+	// advances directly from any v4-v6 database to v7 in one additive step.
+	{7, `
+ALTER TABLE tasks ADD COLUMN charter TEXT;
+ALTER TABLE tasks ADD COLUMN commissioned_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN commissioned_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN outline TEXT;
+ALTER TABLE tasks ADD COLUMN timeline TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tasks ADD COLUMN links TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tasks ADD COLUMN test_state TEXT NOT NULL DEFAULT 'untested';
+ALTER TABLE tasks ADD COLUMN stage TEXT NOT NULL DEFAULT 'spec';
+ALTER TABLE tasks ADD COLUMN tokens_consumed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0;
+UPDATE tasks SET commissioned_at = created WHERE commissioned_at = '';
+UPDATE tasks SET commissioned_by = agent WHERE commissioned_by = '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
@@ -276,44 +300,51 @@ func (s *Store) migrate() error {
 		if err := conn.QueryRowContext(ctx, `PRAGMA user_version;`).Scan(&version); err != nil {
 			return fmt.Errorf("routerstore: migrate: read user_version: %w", err)
 		}
-		if version > len(migrations) {
-			return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, len(migrations))
+		maxVersion := migrations[len(migrations)-1].version
+		if version > maxVersion {
+			return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, maxVersion)
 		}
-		if version == len(migrations) {
+		if version == maxVersion {
 			return nil // up to date
 		}
-		i := version
+		var next schemaMigration
+		for _, candidate := range migrations {
+			if candidate.version > version {
+				next = candidate
+				break
+			}
+		}
 
 		// BEGIN IMMEDIATE acquires the write lock now (waiting up to busy_timeout
 		// for a peer mid-migration) so the version re-check below is authoritative.
 		// A fresh-init race can still surface SQLITE_BUSY before the lock is
 		// grantable; retry with a bounded backoff rather than failing the Open.
 		if err := beginImmediateWithRetry(ctx, conn); err != nil {
-			return fmt.Errorf("routerstore: migrate to v%d: begin immediate: %w", i+1, err)
+			return fmt.Errorf("routerstore: migrate to v%d: begin immediate: %w", next.version, err)
 		}
 		var locked int
 		if err := conn.QueryRowContext(ctx, `PRAGMA user_version;`).Scan(&locked); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
-			return fmt.Errorf("routerstore: migrate to v%d: re-read user_version: %w", i+1, err)
+			return fmt.Errorf("routerstore: migrate to v%d: re-read user_version: %w", next.version, err)
 		}
-		if locked != i {
+		if locked != version {
 			// A concurrent opener already advanced past i under the lock. Bail out
 			// of this attempt and re-evaluate from the top — no double-apply.
 			if _, err := conn.ExecContext(ctx, `ROLLBACK;`); err != nil {
-				return fmt.Errorf("routerstore: migrate to v%d: rollback stale: %w", i+1, err)
+				return fmt.Errorf("routerstore: migrate to v%d: rollback stale: %w", next.version, err)
 			}
 			continue
 		}
-		if _, err := conn.ExecContext(ctx, migrations[i]); err != nil {
+		if _, err := conn.ExecContext(ctx, next.sql); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
-			return fmt.Errorf("routerstore: migrate to v%d: %w", i+1, err)
+			return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
 		}
-		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d;", i+1)); err != nil {
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d;", next.version)); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
-			return fmt.Errorf("routerstore: migrate to v%d: set user_version: %w", i+1, err)
+			return fmt.Errorf("routerstore: migrate to v%d: set user_version: %w", next.version, err)
 		}
 		if _, err := conn.ExecContext(ctx, `COMMIT;`); err != nil {
-			return fmt.Errorf("routerstore: migrate to v%d: commit: %w", i+1, err)
+			return fmt.Errorf("routerstore: migrate to v%d: commit: %w", next.version, err)
 		}
 	}
 }

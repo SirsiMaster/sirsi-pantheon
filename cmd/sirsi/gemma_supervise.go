@@ -21,14 +21,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // gemmaWorkerPidPath is the pid of the process actually SERVING.
@@ -133,71 +129,4 @@ func trimSpaceBytes(b []byte) []byte {
 		j--
 	}
 	return b[i:j]
-}
-
-// gemmaSuperviseWorker runs the MLX worker as a child and stays resident as the
-// launchd-supervised parent (ADR-046 S2).
-//
-// Contract, stated because ADR-045's equivalent was implicit and broke a reader:
-//   - gemma-server.pid        = THIS process, the supervisor.
-//   - gemma-broker-worker.pid = the child, the process actually serving.
-//     (NOT gemma-worker.pid — that name is owned by the ai.sirsi.gemma-worker
-//     launchd job; see gemmaWorkerPidPath above.)
-//   - --stop kills the process group, so it still stops the whole tree.
-//
-// The supervisor must die WITH its child, never before it. ADR-046 named this
-// explicitly: if the supervisor exits and leaves an orphan worker holding the
-// model and the port, we have traded one failure mode for a worse one — an
-// unsupervised 12 GB process nothing knows how to stop. So every exit path here
-// terminates the group.
-func gemmaSuperviseWorker(home, pyBin string, args []string) error {
-	logf, err := os.Create(gemmaServerLogPath(home))
-	if err != nil {
-		return fmt.Errorf("opening server log: %w", err)
-	}
-	defer logf.Close()
-
-	c := exec.Command(pyBin, args...)
-	c.Stdout = logf
-	c.Stderr = logf
-	// Own process group: one signal reaches supervisor and worker together.
-	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if startErr := c.Start(); startErr != nil {
-		return fmt.Errorf("starting mlx worker: %w", startErr)
-	}
-
-	supPid, workerPid := os.Getpid(), c.Process.Pid
-	_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(supPid)), 0o644)
-	if pidErr := gemmaWritePidExclusive(gemmaWorkerPidPath(home), workerPid); pidErr != nil {
-		_ = syscall.Kill(-workerPid, syscall.SIGKILL) // do not leave an unrecorded worker
-		return pidErr
-	}
-	_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
-
-	// Hapi governs the WORKER — it is the process that can balloon toward Jetsam,
-	// and killing the supervisor would leave the ballooning process running.
-	_ = guard.HapiRegisterGoverned(workerPid, "gemma-broker")
-
-	// Forward termination to the whole group so launchd's stop is not merely a
-	// stop of the supervisor.
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		s := <-sigs
-		_ = syscall.Kill(-workerPid, s.(syscall.Signal))
-	}()
-
-	err = c.Wait()
-	_ = os.Remove(gemmaWorkerPidPath(home))
-
-	// Reap anything the worker left in the group before we exit, so launchd's
-	// restart never races an orphan still holding the port or the model.
-	_ = syscall.Kill(-workerPid, syscall.SIGKILL)
-
-	if err != nil {
-		// Surface the worker's own failure rather than masking it as a supervisor
-		// error: an MLX stack overflow must read as an MLX stack overflow.
-		return fmt.Errorf("mlx worker exited: %w", err)
-	}
-	return nil
 }

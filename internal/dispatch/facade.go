@@ -105,6 +105,46 @@ func New(root string, store *routerstore.Store) *Facade {
 // Close releases the store handle.
 func (f *Facade) Close() error { return f.store.Close() }
 
+// AddTask validates both the owning identity and the normalized responsible
+// party before the store can mutate. "self" is syntax, never an identity.
+func (f *Facade) AddTask(t routerstore.Task) error {
+	if err := f.ValidateAgent("task owner", t.Agent); err != nil {
+		return err
+	}
+	if strings.TrimSpace(t.ResponsibleParty) == "" || t.ResponsibleParty == "self" {
+		t.ResponsibleParty = t.Agent
+	}
+	if err := f.ValidateAgent("responsible party", t.ResponsibleParty); err != nil {
+		return err
+	}
+	return f.store.AddTask(t)
+}
+
+// UpdateTask validates the final task state before mutation, including an
+// unchanged legacy responsible party. This makes remediation explicit rather
+// than silently carrying an undeclared identity into a new write.
+func (f *Facade) UpdateTask(agent, taskID string, u routerstore.TaskUpdate) (routerstore.Task, error) {
+	if err := f.ValidateAgent("task owner", agent); err != nil {
+		return routerstore.Task{}, err
+	}
+	current, err := f.store.GetTask(agent, taskID)
+	if err != nil {
+		return routerstore.Task{}, err
+	}
+	responsible := current.ResponsibleParty
+	if u.ResponsibleParty != "" {
+		responsible = u.ResponsibleParty
+	}
+	if responsible == "self" {
+		responsible = agent
+		u.ResponsibleParty = agent
+	}
+	if err := f.ValidateAgent("responsible party", responsible); err != nil {
+		return routerstore.Task{}, err
+	}
+	return f.store.UpdateTask(agent, taskID, u)
+}
+
 // SendResult reports one guarded dispatch.
 type SendResult struct {
 	ID        string
@@ -121,7 +161,10 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	if err := work.EnsureRoot(f.root); err != nil {
 		return SendResult{}, fmt.Errorf("dispatch: ensure root: %w", err)
 	}
-	if err := validateRecipient(f.root, to); err != nil {
+	if err := f.ValidateAgent("sender", from); err != nil {
+		return SendResult{}, err
+	}
+	if err := f.ValidateAgent("recipient", to); err != nil {
 		return SendResult{}, err
 	}
 	id, deduped, err := f.store.SendGuarded(routerstore.SendReq{
@@ -146,27 +189,57 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	return SendResult{ID: id, Deduped: deduped, AuditPath: path}, nil
 }
 
-func validateRecipient(root, to string) error {
-	if to == "" {
-		return fmt.Errorf("dispatch: recipient is required")
+// ValidateAgent enforces ADR-054 declared identity at the shared facade
+// boundary. Eligibility is registry declaration, never live-thread state.
+func (f *Facade) ValidateAgent(party, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("dispatch: %s is required", party)
 	}
-	if work.IsOwnerRecipient(to) {
-		return nil
+	registryPath := filepath.Join(f.root, "agents.json")
+	if id == "user" {
+		return fmt.Errorf("dispatch: invalid %s %q: user is a legacy alias; use declared identity %q for new writes", party, id, "owner")
 	}
-	data, err := os.ReadFile(filepath.Join(root, "agents.json"))
+	data, err := os.ReadFile(registryPath)
 	if err != nil {
-		return fmt.Errorf("dispatch: validate recipient: read agents.json: %w", err)
+		return fmt.Errorf("dispatch: validate %s: read agents.json: %w", party, err)
 	}
 	var reg struct {
-		Agents map[string]json.RawMessage `json:"agents"`
+		Agents map[string]struct {
+			ID         string `json:"id"`
+			Type       string `json:"type"`
+			Repo       string `json:"repo"`
+			Cwd        string `json:"cwd"`
+			Workstream string `json:"workstream"`
+			Wake       struct {
+				Mechanism string `json:"mechanism"`
+			} `json:"wake"`
+		} `json:"agents"`
 	}
 	if err := json.Unmarshal(data, &reg); err != nil {
-		return fmt.Errorf("dispatch: validate recipient: parse agents.json: %w", err)
+		return fmt.Errorf("dispatch: validate %s: parse agents.json: %w", party, err)
 	}
-	if _, ok := reg.Agents[to]; !ok {
-		return fmt.Errorf("dispatch: invalid recipient: agent %q not registered — add to .agents/idea-router/agents.json", to)
+	cfg, ok := reg.Agents[id]
+	if !ok {
+		return undeclaredAgentError(party, id, registryPath)
+	}
+	// Existing registry rows call the repo root `cwd`; accept that established
+	// spelling while new registrations migrate to the explicit `repo` field.
+	if strings.TrimSpace(cfg.ID) == "" || strings.TrimSpace(cfg.Type) == "" ||
+		(strings.TrimSpace(cfg.Repo) == "" && strings.TrimSpace(cfg.Cwd) == "") ||
+		strings.TrimSpace(cfg.Workstream) == "" || strings.TrimSpace(cfg.Wake.Mechanism) == "" {
+		return undeclaredAgentError(party, id, registryPath)
+	}
+	switch strings.TrimSpace(cfg.Wake.Mechanism) {
+	case "launchagent", "session-message", "routine", "none", "owner-surface":
+	default:
+		return fmt.Errorf("dispatch: invalid %s %q in %s: wake.mechanism %q is outside the ADR-054 wake matrix (launchagent, session-message, routine, none, owner-surface)", party, id, registryPath, cfg.Wake.Mechanism)
 	}
 	return nil
+}
+
+func undeclaredAgentError(party, id, registryPath string) error {
+	return fmt.Errorf("dispatch: invalid %s %q: identity is not fully declared in %s; required fields: id, type, repo (legacy cwd accepted), workstream, wake.mechanism", party, id, registryPath)
 }
 
 // Inbox lists open items addressed to agent. Post-cutover it is the store's
@@ -176,6 +249,11 @@ func validateRecipient(root, to string) error {
 // never invisible (§2b axiom 8: a stale or missing file cannot change
 // lifecycle).
 func (f *Facade) Inbox(agent string) ([]work.Item, error) {
+	if strings.TrimSpace(agent) != "" {
+		if err := f.ValidateAgent("acting agent", agent); err != nil {
+			return nil, err
+		}
+	}
 	// Post-cutover the store is the SOLE authority and the file leg is a frozen
 	// legacy copy: `close` writes the store only, so an items/<id>.md left at
 	// `status: open` outlives its own closure and resurrects as a phantom on

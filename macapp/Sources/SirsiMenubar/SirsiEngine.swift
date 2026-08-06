@@ -1102,10 +1102,11 @@ final class SirsiEngine: ObservableObject {
 
     // ── Local-LLM query (on-device, NEVER cloud) ─────────────────────────────
     // Owner directive 20260709-182003: NL questions about system state route to
-    // local Gemma every time (127.0.0.1:11434 warm MLX server via ~/.local/bin/gemma),
-    // never a cloud model. Cloud is only ever reached on an explicit escalate.
+    // local inference every time, never a cloud model. The native app calls the
+    // Go `sirsi gemma` client directly; the retired ~/.local/bin/gemma Python
+    // helper is not part of the application or inference path.
     nonisolated static func gemmaBinary() -> String {
-        NSHomeDirectory() + "/.local/bin/gemma"
+        sirsiBinary()
     }
     nonisolated static func runGemma(prompt: String, system: String) async -> String {
         await withCheckedContinuation { cont in
@@ -1118,7 +1119,7 @@ final class SirsiEngine: ObservableObject {
                 let p = Process()
                 p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
                 p.executableURL = URL(fileURLWithPath: bin)
-                p.arguments = ["-s", system, prompt]
+                p.arguments = ["gemma", "--max-tokens", "2048", system + "\n\n" + prompt]
                 let outPipe = Pipe(); let errPipe = Pipe()
                 p.standardOutput = outPipe
                 p.standardError = errPipe   // captured as a fallback so refusals

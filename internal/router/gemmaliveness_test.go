@@ -2,12 +2,21 @@ package router
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 )
+
+func writeGemmaRouteRegistry(t *testing.T, root string) {
+	t.Helper()
+	body := `{"agents":{"horus":{"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},"owner":{"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}}}}`
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // zeroRestoreWait stubs the post-restore sleep to nothing so tests don't block.
 func zeroRestoreWait(t *testing.T) {
@@ -121,6 +130,7 @@ func TestGemmaLiveness_TransientWedgeResets(t *testing.T) {
 func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	zeroRestoreWait(t)
 	root := t.TempDir()
+	writeGemmaRouteRegistry(t, root)
 	// Isolate from the live store so test sends never reach the user's DB.
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
@@ -147,7 +157,7 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	items, listErr := f.Inbox("user")
+	items, listErr := f.Inbox("owner")
 	if listErr != nil {
 		t.Fatalf("read user inbox: %v", listErr)
 	}
@@ -167,7 +177,7 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 
 	// Second call: item already exists — must not duplicate.
 	_ = RunGemmaLivenessDuty(root, "")
-	items2, _ := f.Inbox("user")
+	items2, _ := f.Inbox("owner")
 	if len(items2) != len(items) {
 		t.Errorf("second call wrote a duplicate item (got %d items, want %d)", len(items2), len(items))
 	}
@@ -178,6 +188,7 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 	zeroRestoreWait(t)
 	root := t.TempDir()
+	writeGemmaRouteRegistry(t, root)
 	// Isolate from the live store so test sends never reach the user's DB.
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
@@ -220,7 +231,7 @@ func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	items, _ := f.Inbox("user")
+	items, _ := f.Inbox("owner")
 	found := false
 	for _, it := range items {
 		if it.Title == restoreFailTitle {

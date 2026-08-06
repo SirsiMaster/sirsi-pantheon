@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.sirsi.hypergraph.digest</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>~/.local/bin/sirsi-hypergraph-digest.sh</string>
+  </array>
+  <!-- Local-only by default. Egress is opt-in and owner-enabled via
+       SIRSI_HYPERGRAPH_DIGEST_EGRESS=1 (H8 amendment); deliberately NOT set
+       here, so installing this job never silently starts shipping data.
+       The script itself fails closed on any field not declared EGRESS_SAFE
+       or LOCAL_ONLY (Rule A11 firewall — counts/hashes only, never content). -->
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>~/.sirsi/logs/hypergraph-digest.launchd.log</string>
+  <key>StandardErrorPath</key><string>~/.sirsi/logs/hypergraph-digest.launchd.log</string>
+</dict>
+</plist>

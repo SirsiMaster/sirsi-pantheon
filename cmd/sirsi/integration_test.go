@@ -163,7 +163,9 @@ func writeRouterTestAgents(t *testing.T, repoRoot string, agents ...string) {
 		if i > 0 {
 			b.WriteString(",")
 		}
-		fmt.Fprintf(&b, "%q:{%q:%q,%q:[%q],%q:%q}", agent, "type", "test", "command", "true", "cwd", "/tmp")
+		fmt.Fprintf(&b, "%q:{%q:%q,%q:%q,%q:[%q],%q:%q,%q:%q,%q:{%q:%q}}",
+			agent, "id", agent, "type", "test", "command", "true", "cwd", "/tmp",
+			"workstream", "test", "wake", "mechanism", "none")
 	}
 	b.WriteString(`}}`)
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(b.String()), 0o644); err != nil {
