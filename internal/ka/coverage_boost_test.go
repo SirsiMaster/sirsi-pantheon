@@ -268,6 +268,9 @@ func TestUninstall_DryRun_AppPath(t *testing.T) {
 }
 
 func TestUninstall_DryRun_Complete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping uninstall scan in short mode (globs macOS subsystem dirs)")
+	}
 	t.Parallel()
 	tmp := t.TempDir()
 

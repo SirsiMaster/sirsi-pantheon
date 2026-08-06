@@ -126,11 +126,25 @@ func installCLIRelease(rel *updater.Release) error {
 		return err
 	}
 
+	// Install lock — serializes the schema-check + replace so no concurrent
+	// install.sh or sirsi update --cli can race SafeReplace on the same target.
+	// The lock uses the same ~/.sirsi/binary-install.lock path as install.sh;
+	// the two primitives interlock via EISDIR (shell holds a directory, Go opens
+	// a file at the same path — one blocks the other in both directions).
+	lock, lockErr := selfupdate.AcquireInstallLock()
+	if lockErr != nil {
+		return fmt.Errorf("install lock: %w", lockErr)
+	}
+	if lock != nil {
+		defer lock.Close()
+	}
+
 	// Schema ceiling gate: the candidate must be able to open the live router
 	// store. This is the path that caused the 2026-08-06 fleet lockout — a binary
 	// whose migration ceiling was below the live schema replaced the running one
 	// and fail-closed every agent on next launch. Probe the new binary directly;
-	// its router_schema_max is the authoritative ceiling claim.
+	// its router_schema_max is the authoritative ceiling claim. Runs inside the
+	// lock so the check and the replace are atomic against concurrent migrations.
 	newInfo, probeErr := selfupdate.CheckVersionProbe(bin)
 	if probeErr != nil {
 		return fmt.Errorf("schema-ceiling gate: version probe: %w", probeErr)

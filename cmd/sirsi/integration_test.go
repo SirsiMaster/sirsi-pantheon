@@ -513,6 +513,9 @@ func TestSebaHardware(t *testing.T) {
 }
 
 func TestHorusStats(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping horus scan in short mode (may take several seconds)")
+	}
 	t.Parallel()
 
 	stdout, stderr, err := runSirsi(t, 30*time.Second, "horus", "scan", ".")
@@ -680,6 +683,8 @@ func TestDeityCommands(t *testing.T) {
 			timeout:        30 * time.Second,
 			wantExit0:      true,
 			outputContains: []string{"Files"},
+			skipShort:      true,
+			skipReason:     "horus scan may take several seconds",
 		},
 		{
 			name:           "scan_json",
