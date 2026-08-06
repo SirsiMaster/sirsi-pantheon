@@ -11,6 +11,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -282,6 +283,48 @@ func loadLegacyThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	return &reg, nil
 }
 
+// ErrLostLifecycleFence reports that a compare-and-swap write found the row
+// changed since the load baseline — a concurrent writer (a wake loop, a
+// watcher, a sibling sweep) legitimately touched it in between. The fence did
+// its job; this is a RECOVERABLE contention signal, not corruption, and the
+// correct response for a re-derivable mutation is reload-and-redo.
+var ErrLostLifecycleFence = errors.New("lost lifecycle fence")
+
+// fenceRetryBackoff is the pause between reload-and-redo attempts. Contention
+// here is brief (a competing writer finishing its own save), so a short fixed
+// pause clears it without making a caller wait on a genuinely wedged store.
+const fenceRetryBackoff = 50 * time.Millisecond
+
+// retryOnLostFence re-runs a load-mutate-save pass that lost its CAS fence.
+//
+// Only safe for passes that RE-DERIVE their mutation from current state rather
+// than accumulating it: ReapDeadThreads and ReapStrayThreads both recompute
+// from OS truth plus the freshly-loaded registry, so a redo against the
+// concurrent writer's result is the correct answer, not a clobber. Do not wrap
+// a pass that applies a delta.
+//
+// Without this, a lost fence surfaces to callers as "OS-truth sweep
+// incomplete" — and a failed sweep is byte-identical to "nothing to reap", so
+// dead threads keep presenting 🟢 active until the next scheduled pass happens
+// to win the race.
+func retryOnLostFence(pass func() ([]ReapedThread, error)) ([]ReapedThread, error) {
+	const attempts = 3
+	var (
+		out []ReapedThread
+		err error
+	)
+	for i := 0; i < attempts; i++ {
+		out, err = pass()
+		if !errors.Is(err, ErrLostLifecycleFence) {
+			return out, err
+		}
+		if i < attempts-1 {
+			time.Sleep(fenceRetryBackoff)
+		}
+	}
+	return out, err
+}
+
 // SaveThreadRegistry writes threads.json atomically.
 func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
@@ -310,7 +353,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 				return err
 			}
 			if !applied {
-				return fmt.Errorf("thread %q mutation lost lifecycle fence", record.ThreadID)
+				return fmt.Errorf("thread %q mutation %w", record.ThreadID, ErrLostLifecycleFence)
 			}
 		}
 		for id, old := range reg.baseline {
@@ -320,7 +363,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 					return err
 				}
 				if !deleted {
-					return fmt.Errorf("thread %q prune lost lifecycle fence", id)
+					return fmt.Errorf("thread %q prune %w", id, ErrLostLifecycleFence)
 				}
 			}
 		}
@@ -965,6 +1008,12 @@ type ReapedThread struct {
 // Returns the reaped records (empty if none). The registry is saved only when
 // at least one thread was reaped.
 func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
+	return retryOnLostFence(func() ([]ReapedThread, error) {
+		return reapDeadThreadsOnce(routerRoot)
+	})
+}
+
+func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
@@ -1083,6 +1132,12 @@ func isLiveWatcher(t *Thread) bool {
 // Returns the retired records (empty if none). The registry is saved only when at
 // least one record was retired.
 func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
+	return retryOnLostFence(func() ([]ReapedThread, error) {
+		return reapStrayThreadsOnce(routerRoot)
+	})
+}
+
+func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
