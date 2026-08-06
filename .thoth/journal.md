@@ -1734,20 +1734,35 @@ deliberately removed from its reap half after it stranded an inbox for 1d16h. **
 correction for #508) merged `27798525` — docs-only, all green; it replaces a false "stale PID"
 rationale with the real defect, four sessions anchoring liveness to one shared ChatGPT app-host.
 
-**Store integrity — `readonly (8)` means stale WAL, not permissions.** Every `SendGuarded` failed
-with `attempt to write a readonly database (8)` while reads stayed perfectly healthy: `router
-status`, `show`, and `pull` all returned clean data throughout, and both `sirsi-respond.sh` and a
-bare `router send` failed identically and reproducibly. Every obvious diagnosis was a dead end —
-disk 1.2Ti free, mode 644 owned by us, no immutable flag, no ACL, only a benign provenance xattr,
-`PRAGMA quick_check ok`, `user_version 14` matching the binary ceiling, no readonly open path
-anywhere in `internal/routerstore`, and `sqlite3` could take a write lock and insert into
-`send_quota` on the same file from the same shell. Root cause was an orphaned `router.db-wal` /
-`router.db-shm` pair; once the last connection drained and they were checkpointed away, sends
-resumed with no other intervention. **The heal is to let connections drain, never to chmod or
-rebuild.** This is a green-surface-over-dead-thing instance in its purest form: the store reads
-100% healthy while every write is silently impossible, so a worker that leases and executes but
-cannot commit evidence looks alive on every read-based signal while acknowledging nothing.
-Routed to codex-home as directly relevant to the ADR-057 worker lifecycle.
+**Store integrity — `readonly (8)` is a property of the BINARY, not the WAL. (Corrected in place;
+my first root cause here was wrong.)** Every `SendGuarded` failed with `attempt to write a readonly
+database (8)` while reads stayed perfectly healthy: `router status`, `show`, and `pull` all returned
+clean data throughout, and both `sirsi-respond.sh` and a bare `router send` failed identically and
+reproducibly. Every obvious diagnosis was a dead end — disk 1.2Ti free, mode 644 owned by us, no
+immutable flag, no ACL, only a benign provenance xattr, `PRAGMA quick_check ok`, no readonly open
+path anywhere in `internal/routerstore`, and `sqlite3` could take a write lock and insert into
+`send_quota` on the same file from the same shell.
+
+**I first concluded the cause was an orphaned `router.db-wal` / `router.db-shm` pair, because sends
+resumed shortly after those files were checkpointed away. That was a false correlation off two
+samples, and it is retracted.** codex-home's independent report (`20260806-051441`) carried the
+better evidence: a *replacement* `~/.local/bin/sirsi` artifact exhibits readonly `SendGuarded` while
+the accepted artifact writes to the same store. So it tracks the binary, not the file state. WAL and
+SHM files appear and vanish constantly under checkpointing, which is exactly what made them a
+tempting and meaningless correlate. The observation that should have decided it was already in my
+own notes and pointed the other way the whole time: **`sqlite3` could write the file that `sirsi`
+could not.** That is close to a proof that the file was writable and the binary was the variable; I
+recorded it as a puzzle instead of reading it as the answer. Anyone acting on the retracted version
+would drain connections and wait out a fault that is actually a bad build.
+
+The night's binary churn is the real context: three distinct SHAs on `~/.local/bin/sirsi` inside
+twenty minutes, one of them a v14-ceiling build against a v15 store, which locked out the entire
+fleet until the accepted artifact was restored.
+
+The green-surface observation stands on its own and is the durable lesson: the store read 100%
+healthy while every write was silently impossible, so a worker that leases and executes but cannot
+commit evidence looks alive on every read-based signal while acknowledging nothing. Routed to
+codex-home as directly relevant to the ADR-057 worker lifecycle.
 
 **Broker measurement retracted — my own, not someone else's.** codex-inference ACCEPTED "the leak
 is flat" reasoning correctly from a sample I routed them that was **5 requests wide** (8→13) —
