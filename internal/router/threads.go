@@ -21,6 +21,8 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
@@ -200,7 +202,8 @@ type SuspendPayload struct {
 
 // ThreadRegistry is the on-disk record of live threads.
 type ThreadRegistry struct {
-	Threads map[string]*Thread `json:"threads"`
+	Threads  map[string]*Thread `json:"threads"`
+	baseline map[string]routerstore.ThreadRecord
 }
 
 const threadsFilename = "threads.json"
@@ -211,6 +214,49 @@ func threadsPath(routerRoot string) string {
 
 // LoadThreadRegistry reads threads.json. Missing file → empty registry.
 func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
+	if routercfg.StoreWake() {
+		store, err := openThreadStore()
+		if err != nil {
+			return nil, err
+		}
+		defer store.Close()
+		records, err := store.ListThreads()
+		if err != nil {
+			return nil, err
+		}
+		if len(records) == 0 {
+			if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
+				seed, seedErr := threadRecords(legacy)
+				if seedErr != nil {
+					return nil, seedErr
+				}
+				if err := store.ImportThreadsIfEmpty(seed); err != nil {
+					return nil, err
+				}
+				records, err = store.ListThreads()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		reg := &ThreadRegistry{Threads: make(map[string]*Thread, len(records)), baseline: make(map[string]routerstore.ThreadRecord, len(records))}
+		for _, record := range records {
+			var thread Thread
+			if err := json.Unmarshal(record.Payload, &thread); err != nil {
+				return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
+			}
+			if thread.ThreadID == "" {
+				thread.ThreadID = record.ThreadID
+			}
+			reg.Threads[record.ThreadID] = &thread
+			reg.baseline[record.ThreadID] = record
+		}
+		return reg, nil
+	}
+	return loadLegacyThreadRegistry(routerRoot)
+}
+
+func loadLegacyThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	data, err := os.ReadFile(threadsPath(routerRoot))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -241,6 +287,28 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
 		reg.Threads = map[string]*Thread{}
 	}
+	if routercfg.StoreWake() {
+		store, err := openThreadStore()
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		records, err := threadRecords(reg)
+		if err != nil {
+			return err
+		}
+		if err := store.UpsertThreads(records); err != nil {
+			return err
+		}
+		for id, old := range reg.baseline {
+			if _, ok := reg.Threads[id]; !ok {
+				if err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal threads.json: %w", err)
@@ -266,6 +334,40 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		return fmt.Errorf("replace threads.json: %w", err)
 	}
 	return nil
+}
+
+func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
+	records := make([]routerstore.ThreadRecord, 0, len(reg.Threads))
+	for id, thread := range reg.Threads {
+		if thread == nil {
+			continue
+		}
+		payload, err := json.Marshal(thread)
+		if err != nil {
+			return nil, fmt.Errorf("marshal store thread %q: %w", id, err)
+		}
+		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format(time.RFC3339Nano), Payload: payload})
+	}
+	return records, nil
+}
+
+func openThreadStore() (*routerstore.Store, error) {
+	path := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB"))
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolve thread store home: %w", err)
+		}
+		path = filepath.Join(home, ".sirsi", "router.db")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create thread store directory: %w", err)
+	}
+	store, err := routerstore.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open thread store: %w", err)
+	}
+	return store, nil
 }
 
 // NewThreadID returns a short opaque thread identifier.
