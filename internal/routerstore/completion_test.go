@@ -8,11 +8,11 @@ import (
 
 func TestCompletionRequiresAuditedEmptyThreeSources(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.VerifyCompletion("codex-home"); !errors.Is(err, ErrNotComplete) {
-		t.Fatalf("unaudited empty store claimed complete: %v", err)
+	if _, ifErr1 := s.VerifyCompletion("codex-home"); !errors.Is(ifErr1, ErrNotComplete) {
+		t.Fatalf("unaudited empty store claimed complete: %v", ifErr1)
 	}
-	if err := s.MarkRequirementAudit("codex-home", "audit://all-canon"); err != nil {
-		t.Fatal(err)
+	if ifErr2 := s.MarkRequirementAudit("codex-home", "audit://all-canon"); ifErr2 != nil {
+		t.Fatal(ifErr2)
 	}
 	report, err := s.VerifyCompletion("codex-home")
 	if err != nil || !report.Complete {
@@ -22,8 +22,8 @@ func TestCompletionRequiresAuditedEmptyThreeSources(t *testing.T) {
 
 func TestCompletionRejectsSatisfiedRequirementWithMissingEvidence(t *testing.T) {
 	s := newTestStore(t)
-	if err := s.MarkRequirementAudit("codex-home", "audit://all-canon"); err != nil {
-		t.Fatal(err)
+	if ifErr3 := s.MarkRequirementAudit("codex-home", "audit://all-canon"); ifErr3 != nil {
+		t.Fatal(ifErr3)
 	}
 	req, err := s.AddRequirement("gap", "ADR-057", "R6", "codex-home")
 	if err != nil {
@@ -31,8 +31,8 @@ func TestCompletionRejectsSatisfiedRequirementWithMissingEvidence(t *testing.T) 
 	}
 	// Simulate a buggy/bypassing writer; the final gate must independently
 	// revalidate evidence rather than trusting the status label.
-	if _, err := s.db.Exec(`UPDATE requirements SET status='satisfied' WHERE req_id=?;`, req.ID); err != nil {
-		t.Fatal(err)
+	if _, ifErr4 := s.db.Exec(`UPDATE requirements SET status='satisfied' WHERE req_id=?;`, req.ID); ifErr4 != nil {
+		t.Fatal(ifErr4)
 	}
 	report, err := s.VerifyCompletion("codex-home")
 	if !errors.Is(err, ErrNotComplete) || report.InvalidSatisfiedRequirements != 1 {
@@ -44,25 +44,25 @@ func TestCompletionRejectsTerminalWakeFailure(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	s.now = func() time.Time { return now }
-	if err := s.MarkRequirementAudit("codex-home", "audit://all-canon"); err != nil {
-		t.Fatal(err)
+	if ifErr5 := s.MarkRequirementAudit("codex-home", "audit://all-canon"); ifErr5 != nil {
+		t.Fatal(ifErr5)
 	}
-	if _, err := s.Send("owner", "codex-home", "work", "review", "x"); err != nil {
-		t.Fatal(err)
+	if _, ifErr6 := s.Send("owner", "codex-home", "work", "review", "x"); ifErr6 != nil {
+		t.Fatal(ifErr6)
 	}
 	for i := 0; i < MaxWakeAttempts; i++ {
 		e, err := s.ClaimWakeEvent(time.Minute)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.FailWakeEvent(e.EventID, e.LeaseToken, "no route"); err != nil {
-			t.Fatal(err)
+		if ifErr7 := s.FailWakeEvent(e.EventID, e.LeaseToken, "no route"); ifErr7 != nil {
+			t.Fatal(ifErr7)
 		}
 		now = now.Add(time.Duration(1<<uint(i))*time.Minute + time.Second)
 	}
 	items, _ := s.Inbox("codex-home")
-	if err := s.CloseItem(items[0].ID, "removed only to isolate wake failure"); err != nil {
-		t.Fatal(err)
+	if ifErr8 := s.CloseItem(items[0].ID, "removed only to isolate wake failure"); ifErr8 != nil {
+		t.Fatal(ifErr8)
 	}
 	report, err := s.VerifyCompletion("codex-home")
 	if !errors.Is(err, ErrNotComplete) || report.TerminalWakeFailures != 1 {

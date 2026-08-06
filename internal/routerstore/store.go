@@ -679,7 +679,7 @@ func isSharedProductionStore(path string) bool {
 		if err != nil {
 			return "", err
 		}
-		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
 			return resolved, nil
 		}
 		parent, base := filepath.Dir(abs), filepath.Base(abs)
