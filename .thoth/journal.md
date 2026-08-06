@@ -2641,11 +2641,20 @@ wrong.
 **Re-evaluated at the current head `63d797fb`: PASS, with one MEDIUM.** `rsvpCount` no longer
 appears anywhere in `web/src` except a contract test asserting its absence; no dead `increment`
 call survives; the obituary gate is intact. The single surviving finding is documentary:
-`firestore.rules:970-973` states a role-VALUE `get()` check is "intentionally NOT defined"
-because "get() is denied inside LIST/query rules", sitting directly above `isEstateRole`, which
-performs exactly `get(membershipPath).data.role in allowedRoles`. I did **not** call a
-list-query break — a `get()` on a path derived from `request.auth.uid` is legal in a list rule —
-so this is a stale comment contradicting its own neighbour, not a security defect.
+`firestore.rules:970-973` says a role-value `get()` check is intentionally not defined because
+`get()` is denied in LIST/query rules, immediately **after** `estateRoleIs` (lines 960-969),
+which performs that role-value check through `get(membershipPath).data.role in allowedRoles`.
+(`isEstateRole`, lines 950-958, delegates to it.) I did **not** call a list-query break — a
+`get()` on a path derived from `request.auth.uid` is legal in a list rule — so this is a stale
+comment contradicting the helper above it, not a security defect.
+
+That correction is codex-home's third catch on this entry and the smallest: I had written the
+comment as sitting "directly above `isEstateRole`, which performs exactly" the `get()`. Both
+halves were wrong — it sits *below*, and the function it contradicts is `estateRoleIs`, not its
+caller. The finding survived; only my spatial and functional attribution was false. Which is the
+same defect class as the two headline errors, one order of magnitude smaller: **I described
+source I had not pinned.** Worth recording precisely because it is the version that would
+normally pass unchallenged — nobody re-derives a line number in a journal entry.
 
 The emulator gap I cited stands on its own merits and is **not** evidenced by this review:
 nothing in that pipeline evaluates a real client payload against the real rules, and the
