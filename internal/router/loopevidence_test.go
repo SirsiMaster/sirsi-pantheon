@@ -20,7 +20,7 @@ func TestEffectiveStale_LoopEvidence(t *testing.T) {
 
 	// PID state always unknown in baseline tests so only watcher matters.
 	pidStateOfThreadFn = func(*Thread) PIDState { return PIDUnknown }
-	// Agent-id probe returns nothing in baseline (isolate thread-id behaviour).
+	// Agent-id probe returns nothing in baseline (isolate thread-id behavior).
 	setWatcherAliveByAgentFn(func(string) bool { return false })
 
 	// Watcher alive for thr-stale only.
