@@ -61,6 +61,39 @@ install_executable() {
     mv -f "$tmp" "$dest"
 }
 
+# Binary-install mutex — one accepted install pass wins; others wait or bail.
+# mkdir is atomic on POSIX local FS; PID file enables stale-lock reaping so a
+# killed install never permanently blocks future runs.
+LOCK_DIR="$HOME/.sirsi/binary-install.lock"
+mkdir -p "$HOME/.sirsi"
+
+acquire_lock() {
+    local waited=0
+    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        local pid
+        pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+        if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+            # Stale lock from a dead process — reclaim it.
+            rm -rf "$LOCK_DIR"
+            continue
+        fi
+        if [ $waited -eq 0 ]; then
+            echo -e "${DIM}  Another install is in progress (pid ${pid:-?}); waiting up to 120s...${NC}"
+        fi
+        waited=$((waited + 5))
+        if [ $waited -ge 120 ]; then
+            echo -e "${RED}  Install lock timeout after 120s.${NC}"
+            echo -e "${DIM}  Remove ${LOCK_DIR} if no install is actually running.${NC}"
+            exit 1
+        fi
+        sleep 5
+    done
+    echo $$ > "$LOCK_DIR/pid"
+}
+
+acquire_lock
+trap "rm -rf $LOCK_DIR" EXIT  # overwritten with TMPDIR included once mktemp runs
+
 # 2. Determine install directory
 INSTALL_DIR="${SIRSI_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$INSTALL_DIR"
@@ -97,7 +130,7 @@ TARBALL="sirsi-pantheon_${LATEST#v}_${OS}_${ARCH}.${EXT}"
 URL="https://github.com/${REPO}/releases/download/${LATEST}/${TARBALL}"
 
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+trap "rm -rf $TMPDIR; rm -rf $LOCK_DIR" EXIT
 
 echo -e "${DIM}  Downloading ${TARBALL}...${NC}"
 if command -v curl &>/dev/null; then
