@@ -50,6 +50,25 @@ const (
 	consumerHealthCheckTimeout = 5 * time.Second
 )
 
+// DeclaresResidentConsumer reports whether cfg's declared consumer is a
+// RESIDENT one — an external worker that is health-checked rather than spawned.
+//
+// This is the authorization boundary for publishing consumer capability from
+// outside the wake loop (`thread register --consumer-capable`). It reads the
+// DECLARATION only: unlike ResolveConsumer it does not run the health check,
+// because the caller publishing the capability IS the live worker and its own
+// heartbeat is stronger evidence than a health probe (A33/PR #389).
+//
+// It exists so "resident" has exactly one definition. Re-deriving it in the CLI
+// would be a second answer to the same question, which is how the two drift.
+func (cfg AgentConfig) DeclaresResidentConsumer() bool {
+	switch strings.TrimSpace(cfg.Consumer.Mode) {
+	case ConsumerModeResident, "external/resident":
+		return true
+	}
+	return false
+}
+
 // ConsumerConfig declares how an agent's router inbox is actually DRAINED.
 //
 // This is deliberately separate from AgentConfig.Command. Command is the

@@ -487,6 +487,16 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			if t.Repo != "" {
 				existing.Repo = t.Repo
 			}
+			// RAISE-only (never clear). A resident consumer publishes its own
+			// capability by re-registering (A27/A33 follow-up to PR #389), and
+			// that must land on the record the reuse path returns — otherwise
+			// the flag is silently dropped for exactly the long-lived workers
+			// it exists for. Clearing is NOT the inverse: credit lapses by
+			// going stale in the armed predicate, so a bare heartbeat-style
+			// re-register must not wipe a capability already proven.
+			if t.ConsumerCapable {
+				existing.ConsumerCapable = true
+			}
 			if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 				return nil, err
 			}
@@ -540,6 +550,15 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				}
 				if t.Repo != "" {
 					existing.Repo = t.Repo
+				}
+				// RAISE-only — see the session-keyed branch above. A resident
+				// worker is PID-backed, so this is the path its re-register
+				// actually takes. This matters on PROMOTION: the first record
+				// for a PID may have been minted without the capability (a
+				// plain register, or a restart that raced the declaration), and
+				// without this the worker could never publish it afterwards.
+				if t.ConsumerCapable {
+					existing.ConsumerCapable = true
 				}
 				if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 					return nil, err
