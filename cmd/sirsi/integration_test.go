@@ -76,6 +76,18 @@ func sirsiTestEnv(dir string, extra ...string) []string {
 		if strings.HasPrefix(kv, "GIT_") {
 			continue
 		}
+		// Identity inputs must come from the test, never the host. resolveCurrentAgent
+		// consults $SIRSI_AGENT_ID and then the session marker at
+		// ~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID. Inheriting either
+		// makes identity tests environment-dependent: they pass in CI (no session)
+		// and fail on any developer machine running inside a CCD session, which is
+		// exactly how TestRouterRespondStoreOnlyItem broke. Worse, `thread register`
+		// WRITES that marker, so tests inheriting a real session id overwrite the
+		// live operator's identity — 99 markers on this host had been rewritten to
+		// "test-adr024-idem", including the running conduit's own.
+		if strings.HasPrefix(kv, "SIRSI_AGENT_ID=") || strings.HasPrefix(kv, "CLAUDE_CODE_SESSION_ID=") {
+			continue
+		}
 		if dir != "" && strings.HasPrefix(kv, "PWD=") {
 			continue
 		}

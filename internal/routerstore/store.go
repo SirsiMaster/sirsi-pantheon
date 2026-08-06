@@ -262,6 +262,56 @@ ALTER TABLE tasks ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0;
 UPDATE tasks SET commissioned_at = created WHERE commissioned_at = '';
 UPDATE tasks SET commissioned_by = agent WHERE commissioned_by = '';
 `},
+
+	// v8 — ADR-057 step 1: canonical requirement registry, plus the durable
+	// identifier allocator that makes cross-claimed document numbers structurally
+	// impossible.
+	//
+	// Why the allocator exists: ADR numbers were picked by agents reading the
+	// filesystem and counting. That races by construction — two agents branching
+	// from the same main both see the same highest number and both claim it.
+	// origin/main carries TWO distinct ADR-054 documents today, and four open PRs
+	// claim 051/054/055/056 between them. A CI uniqueness gate detects the
+	// collision after the fact; PRIMARY KEY (namespace, number) prevents it,
+	// because allocation goes through the same serialized store that already
+	// prevents duplicate router items.
+	//
+	// Withdrawn allocations are RETAINED, never deleted: MAX(number) must keep
+	// advancing or a withdrawn number gets handed out again and every existing
+	// citation of it silently retargets.
+	{8, `
+CREATE TABLE identifiers (
+    namespace  TEXT NOT NULL,
+    number     INTEGER NOT NULL,
+    slug       TEXT NOT NULL DEFAULT '',
+    title      TEXT NOT NULL,
+    owner      TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'claimed',
+    claimed_at TEXT NOT NULL,
+    PRIMARY KEY (namespace, number)
+);
+CREATE INDEX idx_identifiers_owner ON identifiers(namespace, owner);
+
+CREATE TABLE requirements (
+    req_id         TEXT PRIMARY KEY,
+    title          TEXT NOT NULL,
+    source         TEXT NOT NULL,
+    source_ref     TEXT NOT NULL DEFAULT '',
+    owner          TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'open',
+    commit_ref     TEXT NOT NULL DEFAULT '',
+    tests_ref      TEXT NOT NULL DEFAULT '',
+    security_ref   TEXT NOT NULL DEFAULT '',
+    design_ref     TEXT NOT NULL DEFAULT '',
+    deployment_ref TEXT NOT NULL DEFAULT '',
+    production_ref TEXT NOT NULL DEFAULT '',
+    waiver_reason  TEXT NOT NULL DEFAULT '',
+    created        TEXT NOT NULL,
+    updated        TEXT NOT NULL
+);
+CREATE INDEX idx_requirements_status ON requirements(status);
+CREATE INDEX idx_requirements_owner ON requirements(owner, status);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
