@@ -10,17 +10,33 @@
 
 The owner's goal: **"models in effort at all times except when there is an honest user gate."** A continuous surface where compute always flows at the cheapest competent tier, and the *only* thing that stops it is a decision that genuinely needs the owner.
 
-Every prior attempt at continuity failed the same way: it welded continuity to a **resident daemon** — one long-lived process that had to stay alive to keep work moving. Those die silently (exit-78 config errors, OOM/Jetsam, leak-guard removals, launchd throttle) and when the single process dies, everything it fed goes dark and inboxes strand. A single point of failure cannot be a continuous surface. CTR (A31) already inverted the *wake* primitive from "resident daemon" to "on-demand tick"; this ADR extends that inversion to the whole **work** loop.
+Earlier continuity attempts confused the availability of one resident process with the durability of work. A process can die silently, but replacing it with timers does not remove the failure: a timer can fire while no worker claims anything. ADR-057 supersedes that false binary. Durable store state is authority; a restartable supervisor—resident or invoked on demand—reconciles it, and process/session liveness never proves execution.
 
 ## Decision
 
-Continuity comes from a **redundant, self-healing mesh of triggers**, each firing a tick, not from any resident process. Every tick both *does work* and *maintains the mesh that fires the next tick*. The loop runs full-auto (owner directive), and stops only per-item at a **deterministic honest gate**.
+Continuity comes from the **durable Go supervision state machine and its
+authoritative store**. Store transitions create durable wake events; the
+resident supervisor delivers them through capability-declared adapters,
+requires acknowledgment through a real work claim, and reconciles missed
+events and expired leases. Hooks, filesystem notifications, session events,
+git hooks, and timers may accelerate or recover delivery, but none is an
+authority and no LLM is responsible for re-arming the system. This paragraph
+supersedes the original trigger-mesh-as-authority decision in this ADR and is
+binding through ADR-057.
 
 ### Three layers
 
-1. **Warm Tier-0 (always in effort).** A resident on-device model broker (`sirsi gemma serve`). Every tick triages the *whole* open queue at zero API token and does what Tier-0 can (ack, route, close, draft). This is the literal "models in effort at all times" — Tier-0 is never idle while work exists.
-2. **The work loop (per tick).** `reconcile → classify-gate → act-at-tier → escalate`. Non-gated work is executed at the cheapest competent tier (Tier-0/1 inline; Tier-2 dispatches a real agent). Gated work parks in the owner-queue. The residue after a tick is *exactly* the owner-gated items — a non-gated item sitting still is a loop bug the tick surfaces (CTR's "stranded but workable" signal).
-3. **The trigger mesh (never dies).** Redundant independent triggers, each firing a tick: fsnotify on `items/`, SessionStart / UserPromptSubmit hooks, a git post-commit hook, a launchd heartbeat, and **self-perpetuation** (a tick with remaining non-gated work guarantees the next tick). Each tick re-arms any dead trigger it finds. Any one trigger reviving the loop is sufficient, so no single death strands work.
+1. **Deterministic authority (always resident).** The Go supervisor owns the
+   three-source runnable predicate, leases, wake events, reconciliation, and
+   lane classification. It runs without any model provider.
+2. **Provider-neutral work loop.** `reconcile -> gate -> lease -> wake adapter ->
+   claim acknowledgment -> execute -> evidence -> close -> pull again`.
+   Competency and policy may select a local or remote model, but selection does
+   not change work truth or lifecycle semantics.
+3. **Trigger mesh (advisory edges).** fsnotify, hooks, git, timers, and session
+   events may notify the Go supervisor. The durable event remains pending when
+   every edge fails, and reconciliation repairs it. No edge may declare work
+   delivered, complete, or safe to park.
 
 ### The honest gate (the only stop)
 
@@ -43,7 +59,10 @@ Rides #203's `brain.AutonomousMode()` (single source of truth, default OFF):
 - **ON (full-auto):** the loop executes *all* non-gated work end-to-end; only the gate taxonomy stops (per-item). Owner's choice for the continuous surface.
 - **OFF:** the loop still triages continuously (Tier-0 always in effort) but every action becomes a proposal — i.e. everything is a gate. Safe default; still "always thinking."
 
-The honest idle: when *every* remaining item is owner-gated, the loop legitimately quiesces — but stays **armed** (mesh live), so the instant the owner acts, it resumes. That is the only legitimate stop.
+Owner-gated work is a truthful **BLOCKED** state, not completion. The affected
+item may wait for its recorded decision, while the supervisor continues every
+independent runnable item. A lane may park as COMPLETE only when the shared
+three-source predicate is false after a recorded canon audit.
 
 ---
 
@@ -53,19 +72,21 @@ The honest idle: when *every* remaining item is owner-gated, the loop legitimate
 
 ```mermaid
 flowchart TD
-  T[Trigger mesh: fsnotify · hooks · git · launchd · self-reschedule] -->|fires| K[ctr tick]
-  K --> R[Tier-0 reconcile — warm local model triages whole queue]
+  S[Authoritative stores: inbox · ledger · requirements] --> E[Durable wake event]
+  T[Advisory edges: fsnotify · hooks · git · timer] -.notify.-> H[Resident Go supervisor]
+  E --> H
+  H --> R[Reconcile · classify · expire orphan leases]
   R --> G{ClassifyGate per item}
   G -->|gated| Q[Owner-queue — visible, one place, waits]
   G -->|not gated| X{cheapest competent tier}
   X -->|T0/T1| A[act inline: ack · route · close · draft · dep-fix]
   X -->|T2| D[dispatch a real agent: code · review · bind]
-  A --> H[heal mesh + reschedule if work remains]
-  D --> H
-  Q --> H
-  H -->|non-gated work remains| T
-  H -->|all remaining gated| I[honest idle — armed, waiting on owner]
-  I -.owner acts.-> T
+  A --> C[Evidence · close · pull again]
+  D --> C
+  Q --> B[Persist BLOCKED decision request]
+  B -.owner decision creates durable event.-> S
+  C --> S
+  R -->|all three sources audited empty| I[COMPLETE / may park]
 ```
 
 ### 2. Recommended Implementation Order
@@ -81,15 +102,15 @@ flowchart TD
 
 | Question | Options | Decision |
 |---|---|---|
-| Continuity mechanism | resident daemon / trigger mesh / both | **Trigger mesh + self-reschedule** (daemons proven to die silently) |
+| Continuity mechanism | resident Go supervisor / trigger mesh / both | **Resident Go supervisor is authority; trigger mesh is advisory and recovery-only** |
 | Gate authority | model-decided / hardcoded table / hybrid | **Hardcoded conservative table**; model may only *add* gates (safety posture — a model can be talked out of a gate) |
 | Autonomy boldness | propose-only / graduated / full-auto | **Full-auto** (owner, 2026-07-14): execute all non-gated work; gate taxonomy stops per-item |
 | Gate taxonomy | tighter / as-proposed / looser | **As proposed** (owner): safety · founder · irreversible · escalate |
-| Idle definition | time-based / queue-empty / all-gated | **All-remaining-gated** = honest idle; anything else idle is a loop bug |
+| Idle definition | time-based / queue-empty / all-gated / three-source audited empty | **Only three-source audited empty permits park; gated work is BLOCKED, not COMPLETE** |
 
 ---
 
 ## Consequences
 
-- **Positive:** no single point of failure; compute always flowing at the cheapest tier; the owner sees exactly one queue of things that need them and nothing else stalls silently; every dangerous action is deterministically gated regardless of model behavior.
+- **Positive requirement (not yet production-accepted):** durable work survives process failure and a restartable supervisor detects idle-with-work; the owner sees one evidence-backed queue. This is not a claim that process availability is infallible or that every adapter is already conformant; those remain explicit ADR-057 acceptance gates.
 - **Negative / risks:** a conservative gate table over-gates (owner reviews some benign items) — accepted, the cost asymmetry favors it. Full-auto raises the blast radius of a bug in the tiered executor → mitigated by P6 (Ma'at test-enforced no-act-on-gated) and by the gate being deterministic. Trigger-mesh density must respect the Spotlight write-amplification + fork-storm lessons (drain-before-rearm, bounded cadence).

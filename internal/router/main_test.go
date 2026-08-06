@@ -29,7 +29,12 @@ func TestMain(m *testing.M) {
 	// pointed at a scratch path in case any test flips wake on without setting
 	// its own db. Tests that exercise the store path opt in via t.Setenv.
 	os.Setenv(routercfg.StoreWakeEnv, "0")
-	os.Setenv("SIRSI_ROUTER_DB", filepath.Join(os.TempDir(), "sirsi-router-hermetic-test.db"))
+	dbDir, err := os.MkdirTemp("", "sirsi-router-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dbDir)
+	os.Setenv("SIRSI_ROUTER_DB", filepath.Join(dbDir, "router.db"))
 
 	os.Exit(m.Run())
 }

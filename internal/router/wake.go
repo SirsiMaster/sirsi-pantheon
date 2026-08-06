@@ -140,12 +140,18 @@ func ExplicitWakeMechanism(cfg AgentConfig) string {
 	return strings.TrimSpace(cfg.Wake.Mechanism)
 }
 
-// isInteractiveSpawnType reports whether spawning the agent's launch command
-// would start an INTERACTIVE REPL session rather than a headless worker. cli-spawn
-// is never an honest wake for these (constraint 3): a fresh `claude` process is a
-// new conversation, not a nudge to the running one.
-func isInteractiveSpawnType(agentType string) bool {
-	return strings.EqualFold(strings.TrimSpace(agentType), "claude")
+// isInteractiveSpawn reports a delivery capability, not a model vendor. New
+// registrations declare wake.session_mode. The Claude fallback preserves the
+// fail-closed behavior of legacy records until they are migrated.
+func isInteractiveSpawn(cfg AgentConfig) bool {
+	switch strings.TrimSpace(cfg.Wake.SessionMode) {
+	case "interactive":
+		return true
+	case "headless":
+		return false
+	default:
+		return strings.EqualFold(strings.TrimSpace(cfg.Type), "claude")
+	}
 }
 
 // ProbeWakeReadiness probes whether cfg can be woken right now without
@@ -162,7 +168,7 @@ func ProbeWakeReadiness(cfg AgentConfig) AgentWakeHealth {
 		h.Detail = "wake disabled (mechanism: none)"
 	case WakeCLISpawn:
 		switch {
-		case isInteractiveSpawnType(cfg.Type):
+		case isInteractiveSpawn(cfg):
 			h.Detail = fmt.Sprintf("interactive %s agent — not blind-spawned; arm its /loop or route via claude-home conduit", cfg.Type)
 		case len(cfg.Command) == 0:
 			h.Detail = "cli-spawn configured but command array is empty"

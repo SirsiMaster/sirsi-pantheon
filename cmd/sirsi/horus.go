@@ -14,6 +14,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
 )
 
@@ -334,10 +335,10 @@ func printSuperviseReport(report *router.SuperviseReport) error {
 		report.StaleThreadCount,
 	)
 	for _, agent := range report.Agents {
-		if agent.PendingCount == 0 && agent.Status == router.SupervisorStatusWakeable {
+		if agent.PendingCount == 0 && agent.Operational.Classification == routerstore.LaneComplete {
 			continue
 		}
-		fmt.Printf("  • %-24s %-8s pending=%d", agent.AgentID, agent.Status, agent.PendingCount)
+		fmt.Printf("  • %-24s %-14s pending=%d leases=%d", agent.AgentID, agent.Operational.Classification, agent.PendingCount, agent.Operational.LiveLeases)
 		if len(agent.StaleThreads) > 0 {
 			fmt.Printf(" stale=%v", agent.StaleThreads)
 		}
@@ -346,6 +347,9 @@ func printSuperviseReport(report *router.SuperviseReport) error {
 		}
 		if agent.OldestPendingAgeSeconds > 0 {
 			fmt.Printf(" oldest=%s", humanizeAge(agent.OldestPendingAgeSeconds))
+		}
+		if agent.Operational.BlockedWork > 0 {
+			fmt.Printf(" blocked=%d", agent.Operational.BlockedWork)
 		}
 		fmt.Println()
 		for _, item := range agent.PendingItems {

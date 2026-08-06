@@ -19,16 +19,36 @@ func TestTaskLifecycle(t *testing.T) {
 	if err := s.AddTask(Task{Agent: "claude-nexus", TaskID: "sne-01", Subject: "duplicate"}); !errors.Is(err, ErrTaskExists) {
 		t.Fatalf("duplicate = %v, want ErrTaskExists", err)
 	}
-	task, err := s.UpdateTask("claude-nexus", "sne-01", TaskUpdate{Status: "in-progress", ResponsibleParty: "codex", BlockedBy: "sne-00", BlockedBySet: true})
+	task, err := s.UpdateTask("claude-nexus", "sne-01", TaskUpdate{ResponsibleParty: "codex", BlockedBy: "sne-00", BlockedBySet: true})
 	if err != nil {
 		t.Fatalf("UpdateTask: %v", err)
 	}
-	if task.Status != "in-progress" || task.ResponsibleParty != "codex" || task.BlockedBy != "sne-00" {
+	if task.Status != "pending" || task.ResponsibleParty != "codex" || task.BlockedBy != "sne-00" {
 		t.Fatalf("updated task = %+v", task)
 	}
 	listed, err := s.ListTasks("claude-nexus")
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("ListTasks = %+v, %v", listed, err)
+	}
+}
+
+func TestTaskExecutionTransitionsRequireLease(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "R1", Subject: "enforce work"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateTask("codex-home", "R1", TaskUpdate{Status: "in-progress"}); err == nil {
+		t.Fatal("unfenced transition to in-progress was accepted")
+	}
+	if _, err := s.UpdateTask("codex-home", "R1", TaskUpdate{Status: "done"}); err == nil {
+		t.Fatal("unfenced transition to done was accepted")
+	}
+	lease, err := s.ClaimNextTask("codex-home", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteTaskLease("codex-home", "R1", lease.Token, "proof://R1"); err != nil {
+		t.Fatal(err)
 	}
 }
 

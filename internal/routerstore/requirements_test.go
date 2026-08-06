@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fullEvidence() Evidence {
@@ -17,6 +18,27 @@ func fullEvidence() Evidence {
 	}
 }
 
+func TestRequirementMutationsUseInjectedClock(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	req, err := s.AddRequirement("clock", "ADR-057", "R1", "codex-home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Created != now.Format(time.RFC3339) || req.Updated != now.Format(time.RFC3339) {
+		t.Fatalf("creation ignored injected clock: %+v", req)
+	}
+	now = now.Add(time.Hour)
+	if err := s.RecordEvidence(req.ID, Evidence{Commit: "PR"}); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := s.ListRequirements("codex-home")
+	if all[0].Updated != now.Format(time.RFC3339) {
+		t.Fatalf("mutation ignored injected clock: %+v", all[0])
+	}
+}
+
 // The completion gate. ADR-057 §6: `done` requires seven evidence references,
 // and a green build is only one of them. This test exists because "tests pass,
 // therefore done" is the exact claim the gate is built to refuse.
@@ -27,14 +49,14 @@ func TestSatisfyRefusesIncompleteEvidence(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 
-	if satErr := s.Satisfy(req.ID); !errors.Is(satErr, ErrIncompleteEvidence) {
-		t.Fatalf("bare requirement must not satisfy, got %v", satErr)
+	if err := s.Satisfy(req.ID); !errors.Is(err, ErrIncompleteEvidence) {
+		t.Fatalf("bare requirement must not satisfy, got %v", err)
 	}
 
 	// A merged PR and passing tests — the two things agents most often treat as
 	// completion — must still be refused.
-	if recErr := s.RecordEvidence(req.ID, Evidence{Commit: "PR #517", Tests: "CI 123"}); recErr != nil {
-		t.Fatalf("record: %v", recErr)
+	if err := s.RecordEvidence(req.ID, Evidence{Commit: "PR #517", Tests: "CI 123"}); err != nil {
+		t.Fatalf("record: %v", err)
 	}
 	err = s.Satisfy(req.ID)
 	if !errors.Is(err, ErrIncompleteEvidence) {
@@ -102,15 +124,19 @@ func TestUnmetRequirementsDrivesRunnablePredicate(t *testing.T) {
 		t.Fatalf("want 2 unmet for claude-home (owner-scoped), got %d", len(unmet))
 	}
 
-	if recErr := s.RecordEvidence(a.ID, fullEvidence()); recErr != nil {
-		t.Fatalf("evidence: %v", recErr)
+	if err := s.RecordEvidence(a.ID, fullEvidence()); err != nil {
+		t.Fatalf("evidence: %v", err)
 	}
-	if satErr := s.Satisfy(a.ID); satErr != nil {
-		t.Fatalf("satisfy: %v", satErr)
+	if err := s.Satisfy(a.ID); err != nil {
+		t.Fatalf("satisfy: %v", err)
 	}
 	// Waived counts as met — an explicit decision, not outstanding work.
-	if waiveErr := s.Waive(b.ID, "superseded by ADR-058"); waiveErr != nil {
-		t.Fatalf("waive: %v", waiveErr)
+	decision, _ := s.Send("owner", "claude-home", "waive", "decision", "supersede")
+	if err := s.CloseItem(decision, "owner approved supersession"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Waive(b.ID, "superseded by ADR-058", decision); err != nil {
+		t.Fatalf("waive: %v", err)
 	}
 
 	unmet, err = s.UnmetRequirements("claude-home")
@@ -125,7 +151,7 @@ func TestUnmetRequirementsDrivesRunnablePredicate(t *testing.T) {
 func TestWaiverRequiresReason(t *testing.T) {
 	s := newTestStore(t)
 	req, _ := s.AddRequirement("thing", "ADR-057", "", "claude-home")
-	if err := s.Waive(req.ID, "   "); err == nil {
+	if err := s.Waive(req.ID, "   ", "missing"); err == nil {
 		t.Fatal("an unexplained waiver is a dropped requirement wearing a terminal status — must be refused")
 	}
 }

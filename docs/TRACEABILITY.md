@@ -166,3 +166,23 @@ Today's biggest gaps:
   becomes after absorption.
 
 When a feature ships, add its row here **first**; the surfaces follow from it.
+
+---
+
+## ADR-057 continuous-execution invariant
+
+| Requirement | Authoritative implementation | Required proof / current disposition |
+|---|---|---|
+| Three-source runnable predicate | `internal/routerstore/runnable.go` | Router item, ledger task, and canon-gap fixtures; unaudited canon fails closed |
+| Transactional work ownership | router item leases; `internal/routerstore/tasklease.go` | Fenced claim, expiry, attempt, thread binding, idempotency, evidence close |
+| Durable event-driven wake | schema v10 triggers; `internal/routerstore/wakeevents.go` | Every actionable transition produces one durable event; invocation is not acknowledgment |
+| Honest operational state | `internal/routerstore/lanestate.go` | WORKING, ASSIGNED, IDLE_WITH_WORK, BLOCKED, UNROUTABLE, COMPLETE derive from store mutation and leases, not process liveness |
+| Mechanical repair | `internal/routerstore/reconcile.go`; `internal/router/supervisor.go` | Partial: expired leases and requirement tasks are repaired; stale binding repair, universal event synthesis, and installed-runtime proof remain acceptance gaps |
+| Evidence-backed completion | `internal/routerstore/requirements.go`; `internal/routerstore/completion.go` | Requirement ID, commit/PR, tests, security, design, deployment, and production verification resolve before COMPLETE |
+| Provider-neutral participation | `internal/router/registry.go`; `internal/router/wake.go` | Partial: registry is extensible, but every declared adapter still requires a conformance test and provider-specific lifecycle branches must be removed |
+| Operational installation | `cmd/sirsi/setup.go`; Horus LaunchAgent | Gap: fresh install plus crash/stall/restart E2E must prove autonomous recovery without a prompt or owner nudge |
+| One engine, every surface | Horus structured report and `board.json` | CLI, MCP, TUI, menubar, native app, and dashboard render the same classifications and evidence |
+
+The feature is not complete until the installed-runtime proof covers every
+supported adapter and all rows above have evidence. A heartbeat, running PID,
+source-only test, or agent assertion is not completion evidence.
