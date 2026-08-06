@@ -503,28 +503,46 @@ func resolveModel(home string) string {
 // its name pattern — enough to classify "fits" vs "too large" without any
 // network or disk I/O beyond the conf file. Returns 0 for unknown names so
 // callers can skip advice rather than guess.
+//
+// Two-phase parse: (1) parameter-count bucket sets the 4-bit base; (2) the
+// quantizer suffix scales it. Arms are checked largest-first — "2b" also
+// matches "12b" and "32b", so ordering is load-bearing; do not reorder.
 func approximateModelGB(modelID string) float64 {
 	id := strings.ToLower(modelID)
+	var base float64
 	switch {
 	case strings.Contains(id, "27b"):
-		return 14.0 // gemma-2-27b bf16-4bit: ~14 GB
+		base = 14.0 // ~14 GB at 4bit
 	case strings.Contains(id, "12b"):
-		return 7.0 // gemma-2-12b 4bit: ~7 GB
+		base = 7.0 // ~7 GB at 4bit
 	case strings.Contains(id, "9b"):
-		return 5.0 // gemma-2-9b 4bit: ~5 GB
+		base = 5.0 // ~5 GB at 4bit
 	case strings.Contains(id, "2b"):
-		return 1.5 // gemma-2-2b 4bit: ~1.5 GB
+		base = 1.5 // ~1.5 GB at 4bit
 	default:
 		return 0
+	}
+	// Scale by quantizer. "4bit" (explicit or implied) → ×1; "8bit" → ×2;
+	// "bf16"/"fp16"/"16bit" without a "4bit" suffix → ×4.
+	// "bf16-4bit" contains "4bit" so the first branch wins (×1, correct).
+	switch {
+	case strings.Contains(id, "4bit"):
+		return base
+	case strings.Contains(id, "8bit"):
+		return base * 2
+	case strings.Contains(id, "bf16"), strings.Contains(id, "fp16"), strings.Contains(id, "16bit"):
+		return base * 4
+	default:
+		return base // unspecified → assume 4bit
 	}
 }
 
 // rightSizeAdvice returns a runnable command string when the current broker
 // model is clearly too large for availableGB of RAM; empty string otherwise.
 // Prefers the actual broker RSS (already-measured, no sysctl) over name-derived
-// estimates — name patterns miss quantizer suffixes and multimodal overheads
-// (e.g. gemma-4-12B-it-8bit measures ~35 GB but the "12b" pattern returns 7 GB).
-// Falls back to approximateModelGB only when the broker is not running.
+// estimates — name patterns miss quantizer suffixes and multimodal overheads.
+// Falls back to approximateModelGB (quantizer-aware since 2026-08-06) when
+// the broker is not running.
 func rightSizeAdvice(home string, availableGB float64) string {
 	model := resolveModel(home)
 	modelGB := approximateModelGB(model)
@@ -541,14 +559,25 @@ func rightSizeAdvice(home string, availableGB float64) string {
 	if i := strings.LastIndex(model, "/"); i >= 0 {
 		label = model[i+1:]
 	}
-	tiers := []struct {
+	// Candidate smaller tiers. Only offer a model-switch to a tier of the same
+	// generation — switching a gemma-4 node to a gemma-2 tier silently downgrades
+	// a generation as a side-effect of a RAM decision. If no same-gen tier fits,
+	// fall through to stop-only advice.
+	allTiers := []struct {
 		id string
 		gb float64
 	}{
 		{"mlx-community/gemma-2-9b-it-4bit", 5.0},
 		{"mlx-community/gemma-2-2b-it-4bit", 1.5},
 	}
-	for _, t := range tiers {
+	modelLower := strings.ToLower(model)
+	for _, t := range allTiers {
+		tierLower := strings.ToLower(t.id)
+		// Skip tiers from a different model generation.
+		modelGen := extractModelGen(modelLower)
+		if modelGen != "" && !strings.Contains(tierLower, modelGen) {
+			continue
+		}
 		if 2*t.gb+4 <= availableGB {
 			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
 				"available — switch to the %s tier: "+
@@ -556,10 +585,25 @@ func rightSizeAdvice(home string, availableGB float64) string {
 				label, modelGB, availableGB, t.id, t.id, confPath)
 		}
 	}
-	// Nothing fits — just stop the broker to recover RAM.
+	// Nothing fits or no same-generation tier — stop the broker to recover RAM.
 	return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) cannot fit in %.1f GB available — "+
 		"stop the broker to recover RAM: `sirsi gemma serve --stop`",
 		label, modelGB, availableGB)
+}
+
+// extractModelGen returns the "gemma-N" generation prefix from a lowercased
+// model id (e.g. "gemma-2", "gemma-4"), or "" if the pattern is not found.
+func extractModelGen(idLower string) string {
+	const prefix = "gemma-"
+	i := strings.Index(idLower, prefix)
+	if i < 0 || i+len(prefix) >= len(idLower) {
+		return ""
+	}
+	c := idLower[i+len(prefix)]
+	if c < '1' || c > '9' {
+		return ""
+	}
+	return idLower[i : i+len(prefix)+1]
 }
 
 // sessionLeakThreshold is how many leaked claude-desktop sessions must
@@ -641,7 +685,7 @@ func probeMenubar() Finding {
 // current fixable condition exists). When dying, it appends a runnable
 // right-size command so the alert is actionable, not just descriptive.
 func probeMemoryDeath() Finding {
-	home, _ := os.UserHomeDir()
+	home, homeErr := os.UserHomeDir()
 	md := guard.SampleMemoryDeath()
 	body := fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
 		"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
@@ -649,7 +693,7 @@ func probeMemoryDeath() Finding {
 		"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
 		"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
 		md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)
-	if md.Dying {
+	if md.Dying && homeErr == nil {
 		if advice := rightSizeAdvice(home, md.AvailableGB); advice != "" {
 			body += " " + advice
 		}

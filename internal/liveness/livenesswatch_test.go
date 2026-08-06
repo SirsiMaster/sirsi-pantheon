@@ -428,10 +428,17 @@ func TestApproximateModelGB(t *testing.T) {
 		id   string
 		want float64
 	}{
-		{"mlx-community/gemma-2-27b-it-bf16-4bit", 14.0},
+		// 4bit (explicit) — no multiplier
+		{"mlx-community/gemma-2-27b-it-bf16-4bit", 14.0}, // "bf16-4bit": 4bit wins, ×1
 		{"mlx-community/gemma-2-9b-it-4bit", 5.0},
 		{"mlx-community/gemma-2-2b-it-4bit", 1.5},
 		{"mlx-community/gemma-2-12b-it-4bit", 7.0},
+		// 8bit — ×2 the 4-bit base
+		{"mlx-community/gemma-4-12B-it-8bit", 14.0}, // 7.0 × 2 = 14.0
+		{"mlx-community/gemma-2-9b-it-8bit", 10.0},  // 5.0 × 2 = 10.0
+		// bf16 (no 4bit suffix) — ×4 the 4-bit base
+		{"mlx-community/gemma-2-27b-it-bf16", 56.0}, // 14.0 × 4 = 56.0
+		// unknown
 		{"mlx-community/some-unknown-model", 0},
 	} {
 		if got := approximateModelGB(tc.id); got != tc.want {
@@ -501,13 +508,57 @@ func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
 	}
 }
 
+// TestApproximateModelGB_Gemma4_8bit pins the machine's live conf to ~14 GB.
+// gemma-4-12B-it-8bit: 12b bucket = 7 GB at 4bit; 8bit quantizer → ×2 = 14 GB.
+// Before the quantizer fix this returned 7 GB, causing rightSizeAdvice to print
+// "~7 GB" and, at 18–32 GB available, to emit empty advice (false safe).
+func TestApproximateModelGB_Gemma4_8bit(t *testing.T) {
+	got := approximateModelGB("mlx-community/gemma-4-12B-it-8bit")
+	if got != 14.0 {
+		t.Errorf("approximateModelGB(gemma-4-12B-it-8bit) = %v, want 14.0", got)
+	}
+}
+
+// TestRightSizeAdvice_Gemma4_NoGenDowngrade verifies that a gemma-4 node does
+// not receive an echo-to-conf command pointing at a gemma-2 tier. When no
+// same-generation tier is available, advice must be stop-only.
+func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "gemma-model.conf"),
+		[]byte("mlx-community/gemma-4-12B-it-8bit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GEMMA_MODEL", "")
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+	// Simulate broker not running so advice falls back to approximateModelGB (14 GB).
+	setBrokerRSSFn(func(_ string) int64 { return 0 })
+
+	// 18 GB available: 2×14+4=32 > 18 → advice must fire.
+	// Before quant fix: 2×7+4=18 ≤ 18 → false-safe, empty advice.
+	got := rightSizeAdvice(home, 18.0)
+	if got == "" {
+		t.Fatal("expected non-empty advice: gemma-4-12B-it-8bit (~14 GB) does not fit in 18 GB (2×14+4=32)")
+	}
+	// Must not suggest a gemma-2 tier — that would silently downgrade the node.
+	if strings.Contains(got, "gemma-2") {
+		t.Errorf("advice must not offer a gemma-2 tier to a gemma-4 node (generation downgrade): %q", got)
+	}
+	if !strings.Contains(got, "serve --stop") {
+		t.Errorf("expected stop command, got: %q", got)
+	}
+}
+
 // TestRightSizeAdvice_BrokerRSSOverridesNameEstimate verifies that the actual
 // broker RSS takes priority over approximateModelGB. The 2026-08-06 incident:
-// gemma-4-12B-it-8bit has "12b" in its name → 7 GB name estimate, but actual
-// RSS measured 34.9 GB. Without this fix: 2×7+4=18 ≤ 20 GB available → the
-// "fits already" guard returns empty — a false-safe verdict that leaves a
-// dangerously oversized model running. With the fix: 2×34.9+4=73.8 > 20 →
-// advice fires and tells the operator to right-size.
+// gemma-4-12B-it-8bit has "12b" in its name → 7 GB name estimate (pre-fix),
+// but actual RSS measured 34.9 GB. Without this fix: 2×7+4=18 ≤ 20 GB
+// available → the "fits already" guard returns empty — a false-safe verdict
+// that leaves a dangerously oversized model running. With the fix: 2×34.9+4=73.8
+// > 20 → advice fires and tells the operator to right-size.
 func TestRightSizeAdvice_BrokerRSSOverridesNameEstimate(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
