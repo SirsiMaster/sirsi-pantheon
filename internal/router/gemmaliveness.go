@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -126,11 +127,60 @@ const restoreFailTitle = "gemma-liveness: broker restore failed — free memory"
 // from restoreFailTitle so the two conditions have independent dedup tracks.
 const weightsAbsentTitle = "gemma-liveness: model weights absent — re-download required"
 
+// QuarantineMarkerPath is the file whose presence tells every gemma-liveness
+// restorer to STAND DOWN. Its absence has always meant "restore me"; there was
+// no way to say "I stopped this on purpose."
+//
+// Live incident, 2026-08-06: the operator stopped the broker deliberately and
+// moved its LaunchAgent plists to ~/.sirsi/quarantined-wake-plists/ — which
+// defeats ai.sirsi.liveness-watch and sirsi-fabric-watchdog.sh (both
+// launchd-based, both need a loaded label to act on). It did NOT defeat THIS
+// duty, because RunGemmaLivenessDuty is a Go tick inside the resident router
+// process, not a launchd consumer — plist quarantine is invisible to it by
+// construction. It restarted the broker within one 2-minute tick, twice,
+// silently overriding an explicit operator instruction each time.
+//
+// So there were three independent restorers, and moving plists only silenced
+// two of them. The fix is a signal all three can observe without launchd: a
+// plain marker file, checked first, before any probe result is acted on.
+// `sirsi gemma quarantine` / `sirsi gemma unquarantine` are the sanctioned way
+// to set or clear it — never hand-edit the file.
+func QuarantineMarkerPath(home string) string {
+	return filepath.Join(home, ".sirsi", "gemma-quarantine")
+}
+
+// isQuarantinedFn is the injected existence check (A16/A21) — a plain os.Stat
+// by default, swappable in tests without touching the real filesystem.
+var isQuarantinedFn = func(home string) bool {
+	_, err := os.Stat(QuarantineMarkerPath(home))
+	return err == nil
+}
+
+func setIsQuarantinedFn(fn func(home string) bool) {
+	gemmaLifeMu.Lock()
+	defer gemmaLifeMu.Unlock()
+	isQuarantinedFn = fn
+}
+
+func getIsQuarantinedFn() func(home string) bool {
+	gemmaLifeMu.RLock()
+	defer gemmaLifeMu.RUnlock()
+	return isQuarantinedFn
+}
+
 // RunGemmaLivenessDuty is the supervisor duty: probe the broker and restore it.
 // Signature matches the SupervisorDuty GoRun contract (routerRoot, repoRoot).
 // routerRoot is used to route an owner alert when a restore does not stick.
 func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	home, _ := os.UserHomeDir()
+	// Checked BEFORE the probe result is acted on — deliberately before the
+	// switch below, so a quarantined broker being GONE (the intended state)
+	// never reaches the GemmaDown branch that would restart it. Strikes reset
+	// so a later un-quarantine starts the wedge-confirmation counter clean.
+	if getIsQuarantinedFn()(home) {
+		gemmaWedgeStrikes = 0
+		return nil
+	}
 	status, detail := getGemmaProbeFn()(home)
 	switch status {
 	case liveness.GemmaHealthy, liveness.GemmaBusy:
