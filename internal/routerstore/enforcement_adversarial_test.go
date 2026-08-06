@@ -182,7 +182,7 @@ func TestLaneWakeAcknowledgedOnlyBySameLaneRealClaim(t *testing.T) {
 
 func TestWaiverRequiresDurableOwnerDecision(t *testing.T) {
 	s := newTestStore(t)
-	r, _ := s.AddRequirement("x", "ADR-057", "", "codex-home")
+	r, _ := s.AddRequirement("x", "ADR-061", "", "codex-home")
 	if ifErr21 := s.Waive(r.ID, "skip", "fabricated"); ifErr21 == nil {
 		t.Fatal("fabricated authority accepted")
 	}

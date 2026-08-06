@@ -18,7 +18,7 @@ func TestRunnableForThreeSourcesAndAuditedEmpty(t *testing.T) {
 	if !state.Runnable || !state.RequirementAuditNeeded {
 		t.Fatalf("unaudited empty registry must remain runnable: %+v", state)
 	}
-	if ifErr1 := s.MarkRequirementAudit(agent, "audit://ADR-057/REQ-map"); ifErr1 != nil {
+	if ifErr1 := s.MarkRequirementAudit(agent, "audit://ADR-061/REQ-map"); ifErr1 != nil {
 		t.Fatal(ifErr1)
 	}
 	state, _ = s.RunnableFor(agent)
@@ -64,7 +64,7 @@ func TestRunnableForThreeSourcesAndAuditedEmpty(t *testing.T) {
 		t.Fatal(ifErr4)
 	}
 
-	req, err := s.AddRequirement("runtime invariant", "ADR-057", "step 3", agent)
+	req, err := s.AddRequirement("runtime invariant", "ADR-061", "step 3", agent)
 	if err != nil {
 		t.Fatal(err)
 	}

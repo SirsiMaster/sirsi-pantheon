@@ -271,7 +271,7 @@ UPDATE tasks SET commissioned_at = created WHERE commissioned_at = '';
 UPDATE tasks SET commissioned_by = agent WHERE commissioned_by = '';
 `},
 
-	// v8 — ADR-057 step 1: canonical requirement registry, plus the durable
+	// v8 — ADR-061 step 1: canonical requirement registry, plus the durable
 	// identifier allocator that makes cross-claimed document numbers structurally
 	// impossible.
 	//
@@ -321,7 +321,7 @@ CREATE INDEX idx_requirements_status ON requirements(status);
 CREATE INDEX idx_requirements_owner ON requirements(owner, status);
 `},
 
-	// v9 — ADR-057 step 2: task-ledger claims are durable, thread-bound, and
+	// v9 — ADR-061 step 2: task-ledger claims are durable, thread-bound, and
 	// fenced exactly like router-item claims. A task cannot look "in progress"
 	// merely because a worker process exists; executable ownership is represented
 	// by a live lease row mutation.
@@ -338,7 +338,7 @@ CREATE UNIQUE INDEX idx_tasks_idempotency ON tasks(idempotency_key) WHERE idempo
 CREATE INDEX idx_tasks_lease ON tasks(status, lease_expires);
 `},
 
-	// v10 — ADR-057 step 3: source-store transitions create durable wake events
+	// v10 — ADR-061 step 3: source-store transitions create durable wake events
 	// in the SAME SQLite transaction. Triggers prevent a new writer from
 	// forgetting to call an emitter and silently stranding work.
 	{10, `
@@ -525,7 +525,7 @@ END;
 	// build that never pushed its source, so the schema existed while no commit
 	// defined it and every peer binary fail-closed at v15. Extracted verbatim
 	// from sqlite_master and committed here so the schema has a definition again.
-	// ADR-057 also restores the continuation trigger from the same canonical
+	// ADR-061 also restores the continuation trigger from the same canonical
 	// runnable predicate so newly released work is dispatched transactionally.
 	{15, `
 DROP TRIGGER IF EXISTS wake_task_dependency_done;

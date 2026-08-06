@@ -22,7 +22,7 @@ func TestRequirementMutationsUseInjectedClock(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	s.now = func() time.Time { return now }
-	req, err := s.AddRequirement("clock", "ADR-057", "R1", "codex-home")
+	req, err := s.AddRequirement("clock", "ADR-061", "R1", "codex-home")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +39,12 @@ func TestRequirementMutationsUseInjectedClock(t *testing.T) {
 	}
 }
 
-// The completion gate. ADR-057 §6: `done` requires seven evidence references,
+// The completion gate. ADR-061 §6: `done` requires seven evidence references,
 // and a green build is only one of them. This test exists because "tests pass,
 // therefore done" is the exact claim the gate is built to refuse.
 func TestSatisfyRefusesIncompleteEvidence(t *testing.T) {
 	s := newTestStore(t)
-	req, err := s.AddRequirement("runnable predicate", "ADR-057", "step 3", "claude-home")
+	req, err := s.AddRequirement("runnable predicate", "ADR-061", "step 3", "claude-home")
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestSatisfyRefusesIncompleteEvidence(t *testing.T) {
 
 func TestRecordEvidenceIsAdditiveAndMovesStatus(t *testing.T) {
 	s := newTestStore(t)
-	req, _ := s.AddRequirement("leases", "ADR-057", "step 2", "claude-home")
+	req, _ := s.AddRequirement("leases", "ADR-061", "step 2", "claude-home")
 
 	if ifErr6 := s.RecordEvidence(req.ID, Evidence{Commit: "PR #1"}); ifErr6 != nil {
 		t.Fatalf("record: %v", ifErr6)
@@ -110,9 +110,9 @@ func TestRecordEvidenceIsAdditiveAndMovesStatus(t *testing.T) {
 func TestUnmetRequirementsDrivesRunnablePredicate(t *testing.T) {
 	s := newTestStore(t)
 
-	a, _ := s.AddRequirement("registry", "ADR-057", "step 1", "claude-home")
-	b, _ := s.AddRequirement("horus surface", "ADR-057", "step 7", "claude-home")
-	if _, ifErr8 := s.AddRequirement("someone elses", "ADR-057", "x", "claude-pantheon"); ifErr8 != nil {
+	a, _ := s.AddRequirement("registry", "ADR-061", "step 1", "claude-home")
+	b, _ := s.AddRequirement("horus surface", "ADR-061", "step 7", "claude-home")
+	if _, ifErr8 := s.AddRequirement("someone elses", "ADR-061", "x", "claude-pantheon"); ifErr8 != nil {
 		t.Fatalf("add other: %v", ifErr8)
 	}
 
@@ -150,7 +150,7 @@ func TestUnmetRequirementsDrivesRunnablePredicate(t *testing.T) {
 
 func TestWaiverRequiresReason(t *testing.T) {
 	s := newTestStore(t)
-	req, _ := s.AddRequirement("thing", "ADR-057", "", "claude-home")
+	req, _ := s.AddRequirement("thing", "ADR-061", "", "claude-home")
 	if ifErr13 := s.Waive(req.ID, "   ", "missing"); ifErr13 == nil {
 		t.Fatal("an unexplained waiver is a dropped requirement wearing a terminal status — must be refused")
 	}
@@ -165,11 +165,11 @@ func TestRequirementRequiresSourceForTraceability(t *testing.T) {
 
 func TestRequirementIDsAreAllocatedNotGuessed(t *testing.T) {
 	s := newTestStore(t)
-	a, err := s.AddRequirement("first", "ADR-057", "", "claude-home")
+	a, err := s.AddRequirement("first", "ADR-061", "", "claude-home")
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	b, err := s.AddRequirement("second", "ADR-057", "", "claude-pantheon")
+	b, err := s.AddRequirement("second", "ADR-061", "", "claude-pantheon")
 	if err != nil {
 		t.Fatalf("add 2: %v", err)
 	}

@@ -741,7 +741,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		if lerr != nil {
 			// An unreadable inbox is a technical blocker, not an empty inbox. Publish
 			// that truth into the durable thread record: logs alone are not supervision
-			// evidence and depth zero would create the exact false-green ADR-057 forbids.
+			// evidence and depth zero would create the exact false-green ADR-061 forbids.
 			log.Printf("wake-loop %s: inbox read FAILED: %v", agentID, lerr)
 		}
 

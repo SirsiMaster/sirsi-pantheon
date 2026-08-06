@@ -9,7 +9,7 @@ func TestReconcileCreatesTaskForRequirementAndRejectsFalseDone(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
 	s.now = func() time.Time { return now }
-	req, err := s.AddRequirement("event supervisor", "ADR-057", "R4", "codex-home")
+	req, err := s.AddRequirement("event supervisor", "ADR-061", "R4", "codex-home")
 	if err != nil {
 		t.Fatal(err)
 	}

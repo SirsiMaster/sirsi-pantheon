@@ -1,6 +1,6 @@
 # ADR-037: Daemon-Owned Fabric — the Ship-Complete Control Plane
 
-> **Implementation status (ADR-057 amendment):** this document states the target architecture and completion law. Universal transition emission, fresh-install provisioning, adapter conformance, installed-runtime verification, and cross-surface production acceptance are not current facts until the ADR-057 evidence gate records them.
+> **Implementation status (ADR-061 amendment):** this document states the target architecture and completion law. Universal transition emission, fresh-install provisioning, adapter conformance, installed-runtime verification, and cross-surface production acceptance are not current facts until the ADR-061 evidence gate records them.
 
 ## Status
 **Accepted** — 2026-07-10 · claude-pantheon. Custodian: 𓁢 the Router. Extends ADR-035 (runaway-proof execution) and ADR-036 (Router v2 durable dispatch); governs PANTHEON_RULES A26/A27 and the Orchestration Brain PRD (`docs/prd/ORCHESTRATION_BRAIN.md`, Tier-0 invariant). Answers the owner's question (2026-07-10): "what is the final architecture, and how do we ship it so the user never has to converse with the app to fix it?"
@@ -25,7 +25,7 @@ A public Pantheon must run the fabric out of the box, at Level 0 (deterministic,
 
 The resident Go runtime is also the sole authority for deciding whether an
 agent lane may park. It evaluates the canonical three-source predicate defined
-by ADR-057: an actionable router item, an actionable ledger task, or an unmet
+by ADR-061: an actionable router item, an actionable ledger task, or an unmet
 traced canon requirement makes the lane runnable. Process existence, a thread
 heartbeat, a prompt instruction, and a model's statement that it is finished
 are not inputs to that predicate. A lane may park only after the store proves

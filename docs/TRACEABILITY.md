@@ -169,7 +169,7 @@ When a feature ships, add its row here **first**; the surfaces follow from it.
 
 ---
 
-## ADR-057 continuous-execution invariant
+## ADR-061 continuous-execution invariant
 
 | Requirement | Authoritative implementation | Required proof / current disposition |
 |---|---|---|

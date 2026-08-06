@@ -1,11 +1,11 @@
 package main
 
-// `sirsi req` — the canonical requirement registry (ADR-057 step 1).
+// `sirsi req` — the canonical requirement registry (ADR-061 step 1).
 //
 // This is the referent for the third term of the runnable predicate ("unmet
 // traced canon requirement") and the thing the completion gate traces to.
 //
-//	sirsi req add --title "..." --source ADR-057 --agent claude-home
+//	sirsi req add --title "..." --source ADR-061 --agent claude-home
 //	sirsi req evidence REQ-001 --tests "CI 123" --production "verified ..."
 //	sirsi req satisfy REQ-001        # refuses without all six references
 //	sirsi req list --agent claude-home [--unmet]
@@ -21,9 +21,9 @@ import (
 func newReqCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "req",
-		Short: "Canonical requirement registry (ADR-057)",
+		Short: "Canonical requirement registry (ADR-061)",
 		Long: "Requirements are the referent for \"unmet traced canon requirement\" in the\n" +
-			"runnable predicate. `satisfy` refuses unless every ADR-057 §6 evidence\n" +
+			"runnable predicate. `satisfy` refuses unless every ADR-061 §6 evidence\n" +
 			"reference is present — a green build is one of six, never the whole.",
 	}
 	cmd.AddCommand(newReqAddCmd(), newReqEvidenceCmd(), newReqSatisfyCmd(), newReqWaiveCmd(), newReqAuditCmd(), newReqListCmd())
@@ -50,7 +50,7 @@ func newReqAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "what the requirement demands (required)")
-	cmd.Flags().StringVar(&source, "source", "", "canon source, e.g. ADR-057 or PRD (required)")
+	cmd.Flags().StringVar(&source, "source", "", "canon source, e.g. ADR-061 or PRD (required)")
 	cmd.Flags().StringVar(&sourceRef, "ref", "", "section within the source, e.g. 'step 1'")
 	cmd.Flags().StringVar(&agent, "agent", "", "owning agent id (required)")
 	_ = cmd.MarkFlagRequired("title")

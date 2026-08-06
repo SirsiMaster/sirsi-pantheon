@@ -1,6 +1,6 @@
 package routerstore
 
-// Authoritative three-source work predicate — ADR-057 step 3.
+// Authoritative three-source work predicate — ADR-061 step 3.
 //
 // A lane may park only when this result is false. Session/process liveness is
 // deliberately absent: a heartbeat says that a worker exists, never that work
@@ -125,7 +125,7 @@ func requirementAuditExistsTx(tx *sql.Tx, agent string) (bool, error) {
 // RunnableFor evaluates router inbox, task ledger, and canonical requirement
 // registry in one serialized read transaction. Callers MUST consume this API;
 // duplicating any subset of its SQL would recreate the contradictory surfaces
-// ADR-057 exists to eliminate.
+// ADR-061 exists to eliminate.
 func (s *Store) RunnableFor(agent string) (RunnableState, error) {
 	agent = strings.TrimSpace(agent)
 	if agent == "" {

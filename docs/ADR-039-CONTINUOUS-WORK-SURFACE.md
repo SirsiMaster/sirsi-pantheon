@@ -10,7 +10,7 @@
 
 The owner's goal: **"models in effort at all times except when there is an honest user gate."** A continuous surface where compute always flows at the cheapest competent tier, and the *only* thing that stops it is a decision that genuinely needs the owner.
 
-Earlier continuity attempts confused the availability of one resident process with the durability of work. A process can die silently, but replacing it with timers does not remove the failure: a timer can fire while no worker claims anything. ADR-057 supersedes that false binary. Durable store state is authority; a restartable supervisor—resident or invoked on demand—reconciles it, and process/session liveness never proves execution.
+Earlier continuity attempts confused the availability of one resident process with the durability of work. A process can die silently, but replacing it with timers does not remove the failure: a timer can fire while no worker claims anything. ADR-061 supersedes that false binary. Durable store state is authority; a restartable supervisor—resident or invoked on demand—reconciles it, and process/session liveness never proves execution.
 
 ## Decision
 
@@ -22,7 +22,7 @@ events and expired leases. Hooks, filesystem notifications, session events,
 git hooks, and timers may accelerate or recover delivery, but none is an
 authority and no LLM is responsible for re-arming the system. This paragraph
 supersedes the original trigger-mesh-as-authority decision in this ADR and is
-binding through ADR-057.
+binding through ADR-061.
 
 ### Three layers
 
@@ -112,5 +112,5 @@ flowchart TD
 
 ## Consequences
 
-- **Positive requirement (not yet production-accepted):** durable work survives process failure and a restartable supervisor detects idle-with-work; the owner sees one evidence-backed queue. This is not a claim that process availability is infallible or that every adapter is already conformant; those remain explicit ADR-057 acceptance gates.
+- **Positive requirement (not yet production-accepted):** durable work survives process failure and a restartable supervisor detects idle-with-work; the owner sees one evidence-backed queue. This is not a claim that process availability is infallible or that every adapter is already conformant; those remain explicit ADR-061 acceptance gates.
 - **Negative / risks:** a conservative gate table over-gates (owner reviews some benign items) — accepted, the cost asymmetry favors it. Full-auto raises the blast radius of a bug in the tiered executor → mitigated by P6 (Ma'at test-enforced no-act-on-gated) and by the gate being deterministic. Trigger-mesh density must respect the Spotlight write-amplification + fork-storm lessons (drain-before-rearm, bounded cadence).

@@ -54,7 +54,7 @@ func TestSourceTransitionsEmitDurableWakeEvents(t *testing.T) {
 	if ifErr4 := s.AddTask(Task{Agent: "codex-home", TaskID: "T", Subject: "task"}); ifErr4 != nil {
 		t.Fatal(ifErr4)
 	}
-	if _, ifErr5 := s.AddRequirement("gap", "ADR-057", "R3", "codex-home"); ifErr5 != nil {
+	if _, ifErr5 := s.AddRequirement("gap", "ADR-061", "R3", "codex-home"); ifErr5 != nil {
 		t.Fatal(ifErr5)
 	}
 	events, err := s.ListWakeEvents("codex-home")
