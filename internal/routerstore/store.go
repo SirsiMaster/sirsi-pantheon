@@ -594,6 +594,19 @@ BEGIN
   VALUES(lower(hex(randomblob(16))),'continue:task:'||NEW.agent||':'||NEW.task_id,NEW.agent,'lane',NEW.agent,'worker completed task while more work exists',strftime('%Y-%m-%dT%H:%M:%SZ','now'),strftime('%Y-%m-%dT%H:%M:%SZ','now'));
 END;
 `},
+	// v16 — ADR-057 thread lifecycle authority. The complete thread payload is
+	// retained as JSON so model growth does not require a migration per field.
+	{16, `
+CREATE TABLE IF NOT EXISTS threads (
+    thread_id    TEXT PRIMARY KEY,
+    agent        TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    payload      BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_threads_agent_status ON threads(agent,status);
+CREATE INDEX IF NOT EXISTS idx_threads_last_seen ON threads(last_seen_at);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
