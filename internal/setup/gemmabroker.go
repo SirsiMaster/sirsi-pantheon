@@ -20,6 +20,50 @@ import (
 // GemmaBrokerLabel is the LaunchAgent label for the reboot-durable broker.
 const GemmaBrokerLabel = "ai.sirsi.gemma-broker"
 
+// GemmaBrokerPlistPath is the canonical launchd definition. The quarantine
+// path deliberately does not end in .plist, so Pantheon's dead-label healer
+// will not bootstrap it while an operator is holding a broken broker offline.
+func GemmaBrokerPlistPath() string { return launchAgentPath(GemmaBrokerLabel) }
+
+func GemmaBrokerQuarantinePath() string { return GemmaBrokerPlistPath() + ".quarantined" }
+
+// GemmaBrokerQuarantined reports durable operator intent, not process state.
+func GemmaBrokerQuarantined() bool { return fileExists(GemmaBrokerQuarantinePath()) }
+
+// QuarantineGemmaBrokerPlist removes the broker from every automatic
+// bootstrap path without deleting its launchd definition. It is idempotent.
+func QuarantineGemmaBrokerPlist() error {
+	canonical, quarantined := GemmaBrokerPlistPath(), GemmaBrokerQuarantinePath()
+	canonicalExists, quarantinedExists := fileExists(canonical), fileExists(quarantined)
+	if canonicalExists && quarantinedExists {
+		return fmt.Errorf("conflicting broker definitions at %s and %s", canonical, quarantined)
+	}
+	if quarantinedExists {
+		return nil
+	}
+	if !canonicalExists {
+		return fmt.Errorf("broker plist not found at %s", canonical)
+	}
+	return os.Rename(canonical, quarantined)
+}
+
+// RestoreGemmaBrokerPlist reverses quarantine without starting the service.
+// The caller must explicitly enable/bootstrap and verify the accepted binary.
+func RestoreGemmaBrokerPlist() error {
+	canonical, quarantined := GemmaBrokerPlistPath(), GemmaBrokerQuarantinePath()
+	canonicalExists, quarantinedExists := fileExists(canonical), fileExists(quarantined)
+	if canonicalExists && quarantinedExists {
+		return fmt.Errorf("conflicting broker definitions at %s and %s", canonical, quarantined)
+	}
+	if canonicalExists {
+		return nil
+	}
+	if !quarantinedExists {
+		return fmt.Errorf("quarantined broker plist not found at %s", quarantined)
+	}
+	return os.Rename(quarantined, canonical)
+}
+
 // legacyGemmaLauncherLabel is the retired one-shot launcher (KeepAlive=false —
 // boot-only, nothing revived a dead broker; ADR-031-C provenance).
 const legacyGemmaLauncherLabel = "ai.sirsi.gemma"
@@ -67,7 +111,7 @@ func gemmaBrokerPlistContent(_ string, home string) string {
 // GemmaBrokerInstalled reports whether the reboot-durable broker LaunchAgent
 // is in place. macOS only.
 func GemmaBrokerInstalled() bool {
-	return runtime.GOOS == "darwin" && fileExists(launchAgentPath(GemmaBrokerLabel))
+	return runtime.GOOS == "darwin" && fileExists(GemmaBrokerPlistPath())
 }
 
 // InstallGemmaBroker writes the reboot-durable broker LaunchAgent, retires the
@@ -78,6 +122,10 @@ func InstallGemmaBroker() InstallResult {
 	res := InstallResult{Surface: SurfaceGemmaBroker}
 	if runtime.GOOS != "darwin" {
 		res.Status, res.Message = StatusSkipped, "local model broker is macOS only"
+		return res
+	}
+	if GemmaBrokerQuarantined() {
+		res.Status, res.Message = StatusSkipped, "local model broker is intentionally quarantined; setup will not recreate or start it"
 		return res
 	}
 	home, _ := os.UserHomeDir()

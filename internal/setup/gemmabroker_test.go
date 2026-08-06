@@ -60,6 +60,48 @@ func TestInstallGemmaBroker_SkipsWithoutSNE(t *testing.T) {
 	}
 }
 
+func TestInstallGemmaBroker_HonorsQuarantine(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeSNERuntime(t, home)
+	if err := os.MkdirAll(filepath.Dir(GemmaBrokerQuarantinePath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(GemmaBrokerQuarantinePath(), []byte("<plist/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := InstallGemmaBroker()
+	if res.Status != StatusSkipped || !strings.Contains(res.Message, "quarantined") {
+		t.Fatalf("want quarantine-preserving skip, got %v %q", res.Status, res.Message)
+	}
+	if fileExists(GemmaBrokerPlistPath()) {
+		t.Fatal("setup recreated the canonical broker plist during quarantine")
+	}
+}
+
+func TestGemmaBrokerQuarantineRejectsConflictingDefinitions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Dir(GemmaBrokerPlistPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{GemmaBrokerPlistPath(), GemmaBrokerQuarantinePath()} {
+		if err := os.WriteFile(path, []byte("<plist/>\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := QuarantineGemmaBrokerPlist(); err == nil || !strings.Contains(err.Error(), "conflicting") {
+		t.Fatalf("quarantine error = %v, want conflicting definitions", err)
+	}
+	if err := RestoreGemmaBrokerPlist(); err == nil || !strings.Contains(err.Error(), "conflicting") {
+		t.Fatalf("restore error = %v, want conflicting definitions", err)
+	}
+}
+
 func TestInstallGemmaBroker_InstallsAndRetiresLegacy(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")
