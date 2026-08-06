@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 58 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-061**
+**Total ADRs: 59 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-061**
 
 ---
 
@@ -55,6 +55,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-053](ADR-053-HORUS-NODE-CONDUIT.md) | Horus as Per-Node Conduit — router items + observability = one unified flow through Horus; one Horus per physical/virtual node (keyed on hostname); Anubis = SNE + local Horus; Ra = aggregator of Horus ConduitReports; `NodeConduit`/`ConduitReport` in `internal/horus/conduit.go` | **Accepted** | 2026-08-03 |
 | [ADR-054](ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md) | One Horus — unified agent fabric: identity & lifecycle (wake matrix with evidence ids, retry/backoff, acknowledgment, terminal failure), messages plane (ADR-052/053 conduit), work plane (task ledger v7), models plane (model router on SNE); enforced declared-identity admission | **Accepted** | 2026-08-06 |
 | [ADR-055](ADR-055-SNE-LICENSING-ANUBIS-RA-SEAM.md) | SNE Licensing, Anubis/Ra Product Seam, and Disclosure Posture — SNE permanently closed; Anubis open/free, Ra commercial; `--profile interactive\|fleet` is the license seam; engine-swappability (OpenAI-compatible contract) keeps open-source claim honest; A33 governs all outward claims; cross-repo binding of sirsi-inference ADR-002 | **Proposed (owner-gated)** | 2026-08-03 |
+| [ADR-057](ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md) | Operational enforcement lives in Pantheon's Go runtime, not in prompts — Rule A36 is intent, this is the mechanism: one runtime-computed three-source `runnable` predicate (open item OR actionable task OR unmet traced canon requirement), transactional work claims with lease ID/expiry/heartbeat/attempt count/idempotency key, event-driven wake acknowledged by a real store mutation, six honest Horus lane states, mechanical reconciliation, and an evidence-backed completion gate. Process existence and heartbeat prove session liveness only — never work | **Accepted** | 2026-08-06 |
 | [ADR-058](ADR-058-THOTH-FOLD.md) | Fold sirsi-thoth into sirsi-pantheon (renumbered from a draft that collided with ADR-013 Tiled Context Rendering) | Draft | 2026-08-06 |
 | [ADR-059](ADR-059-THOTH-EXTRACTION.md) | Extract Thoth as a Standalone Package (renumbered from a draft that collided with ADR-016 TUI Primary Interface) | Draft | 2026-08-06 |
 | [ADR-060](ADR-060-GO-OWNS-THE-SERVING-PATH.md) | Go owns the serving path; Python becomes a called extension (renumbered from a draft that collided with ADR-046 Local Sovereignty) | Draft | 2026-08-06 |
@@ -161,6 +162,8 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-053 | **Accepted** — Horus as Per-Node Conduit. Owner-canon directive: router items + observability = one flow through Horus; one Horus per node; Anubis = SNE + local Horus; Ra = aggregator of Horus ConduitReports. `internal/horus/conduit.go` implements `NodeConduit` + `ConduitReport`. |
 | ADR-055 | **Proposed (owner-gated)** — SNE Licensing, Anubis/Ra Product Seam, and Disclosure Posture. SNE permanently closed; Anubis open/free, Ra commercial; `--profile interactive\|fleet` is the license seam; A33 governs all outward claims; cross-repo binding of sirsi-inference ADR-002. Content requires owner blessing before merge. |
 | ADR-054 | **Draft** — One Horus: the unified agent fabric. Companion contracts (identity enforcement + ledger schema v7) share the 054 number by design, not by collision. |
+| ADR-056 | **UNALLOCATED — number consumed, no document.** Recorded 2026-08-06: no file on `main`, no open PR claims it, no history for it. Left explicitly empty rather than silently reused; whoever consumed the number should reclaim or release it. |
+| ADR-057 | **Accepted** — Operational enforcement in the Go runtime, not prompts. The mechanism A36 is cited for but does not itself provide; `runnable` predicate, durable leases, event-driven wake with store-mutation acknowledgment, six lane states, evidence-backed completion gate. |
 | ADR-058 | **Draft** — Fold sirsi-thoth into sirsi-pantheon. Renumbered 2026-08-06 off a collision with ADR-013. |
 | ADR-059 | **Draft** — Extract Thoth as a standalone package. Renumbered 2026-08-06 off a collision with ADR-016. |
 | ADR-060 | **Draft** — Go owns the serving path. Renumbered 2026-08-06 off a collision with ADR-046. |
