@@ -139,7 +139,9 @@ func TestWatcherAliveByAgent_EmptyAgentID(t *testing.T) {
 // TestEffectiveStale_ReRegistrationCase is the regression fixture for the P1
 // re-registration false loop-dead. After a thread re-registers with a new id the
 // existing watcher script carries the OLD id in argv: WatcherAlive(new-id) returns
-// false. WatcherAliveByAgent must rescue the lane via the stable script-name probe.
+// false. WatcherAliveByAgent must rescue the lane via the stable script-name probe
+// — but ONLY when the thread is the newest non-terminal record for its agent (A35).
+// Call sites that know this use EffectiveStaleForNewest(..., true).
 func TestEffectiveStale_ReRegistrationCase(t *testing.T) {
 	now := time.Now().UTC()
 	window := 5 * time.Minute
@@ -165,14 +167,78 @@ func TestEffectiveStale_ReRegistrationCase(t *testing.T) {
 	// Agent-id probe finds the script (claude-home-watcher.sh is alive).
 	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-home" })
 
-	if EffectiveStale(thr, now, window) {
-		t.Error("re-registered thread with live agent-id watcher must NOT be stale (re-registration P1 fix)")
+	// isNewestOfAgent=true: this is the newest thread for the agent — agent-keyed
+	// evidence is valid evidence for it.
+	if EffectiveStaleForNewest(thr, now, window, true) {
+		t.Error("newest re-registered thread with live agent-id watcher must NOT be stale (re-registration P1 fix)")
+	}
+	// isNewestOfAgent=false: bare EffectiveStale (no agent-keyed probe).
+	// An older thread of the same agent must NOT be rescued by the agent probe —
+	// that would be false-not-stale for 70 threads while one watcher is alive.
+	if !EffectiveStaleForNewest(thr, now, window, false) {
+		t.Error("older thread of same agent must remain stale even when agent-id watcher is alive (A35 scope)")
 	}
 
-	// Once the watcher script also dies, the thread is genuinely stale.
+	// Once the watcher script also dies, even the newest thread is genuinely stale.
 	setWatcherAliveByAgentFn(func(string) bool { return false })
-	if !EffectiveStale(thr, now, window) {
+	if !EffectiveStaleForNewest(thr, now, window, true) {
 		t.Error("re-registered thread with no watcher at all must be stale")
+	}
+}
+
+// TestEffectiveStale_TwoThreadsOneAgent is the negative-control test that
+// TestEffectiveStale_ReRegistrationCase cannot catch: one agent, two threads.
+// The older thread must stay stale; only the newest is rescued by the agent-keyed
+// probe. This test fails red with the pre-fix (unscoped) implementation and passes
+// green with the scoped one (A35 — claude-home review of PR #614, 2026-08-06).
+func TestEffectiveStale_TwoThreadsOneAgent(t *testing.T) {
+	now := time.Now().UTC()
+	window := 5 * time.Minute
+	oldPID := pidStateOfThreadFn
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+		pidStateOfThreadFn = oldPID
+	})
+
+	pidStateOfThreadFn = func(*Thread) PIDState { return PIDUnknown }
+	setWatcherAliveFn(func(string) bool { return false })
+	// Agent watcher is alive — one PID 961 vouches for the agent.
+	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-home" })
+
+	base := now.Add(-24 * time.Hour) // 24h ago — clearly before StartedAt
+	older := &Thread{
+		ThreadID:   "thr-old-111",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		StartedAt:  base,
+		LastSeenAt: now.Add(-2 * time.Hour), // stale heartbeat
+	}
+	newer := &Thread{
+		ThreadID:   "thr-new-222",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		StartedAt:  base.Add(time.Hour),     // registered 1h after older
+		LastSeenAt: now.Add(-2 * time.Hour), // stale heartbeat
+	}
+
+	threads := []*Thread{older, newer}
+	newestByAgent := NewestNonTerminalByAgent(threads)
+	// "newer" must be identified as the newest.
+	if newestByAgent["claude-home"] != "thr-new-222" {
+		t.Fatalf("NewestNonTerminalByAgent: want thr-new-222, got %q", newestByAgent["claude-home"])
+	}
+
+	// Older thread: isNewest=false → agent-keyed probe NOT credited → stale.
+	olderIsNewest := newestByAgent[older.AgentID] == older.ThreadID
+	if !EffectiveStaleForNewest(older, now, window, olderIsNewest) {
+		t.Error("older thread must remain stale even when agent-id watcher is alive (A35 scope)")
+	}
+
+	// Newer thread: isNewest=true → agent-keyed probe credited → NOT stale.
+	newerIsNewest := newestByAgent[newer.AgentID] == newer.ThreadID
+	if EffectiveStaleForNewest(newer, now, window, newerIsNewest) {
+		t.Error("newest thread with live agent-id watcher must NOT be stale (re-registration P1)")
 	}
 }
 

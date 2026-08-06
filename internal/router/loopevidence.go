@@ -147,13 +147,29 @@ func WatcherAliveByAgent(agentID string) bool {
 //  1. Its heartbeat is fresh (IsStale = false).
 //  2. Its recorded PID is a confirmed live agent surface (PIDAlive): the session
 //     is running under a harness-gated heartbeat, not truly abandoned.
-//  3. A live watcher loop process exists for its thread_id (pgrep -f thr-<id>)
-//     OR for its agent_id (pgrep -f <agentID>-watcher): the thread-id probe covers
-//     steady-state; the agent-id probe covers re-registration (watcher script carries
-//     a stale thread id in argv but the script name is unchanged).
+//  3. A live watcher loop process exists for its thread_id (pgrep -f thr-<id>):
+//     thread-keyed probe covers steady-state liveness.
+//
+// For the re-registration case (watcher script carries a stale thread id in argv),
+// use EffectiveStaleForNewest at call sites that know which thread is newest for
+// its agent — it adds the agent-keyed probe scoped to that one thread (A35).
 //
 // All checks are read-time and write-free.
 func EffectiveStale(t *Thread, now time.Time, window time.Duration) bool {
+	return EffectiveStaleForNewest(t, now, window, false)
+}
+
+// EffectiveStaleForNewest is EffectiveStale extended with an agent-keyed watcher
+// probe that is credited ONLY when isNewestOfAgent=true (A35: scope the check to
+// its claim). Re-registration produces exactly one successor per agent; agent-keyed
+// evidence (WatcherAliveByAgent) is only valid for that one newest thread — crediting
+// it for every non-terminal thread of the agent produces a blanket false-not-stale:
+// one live PID 961 vouching for 71 claude-home threads, 70 of which it has no
+// evidence about (claude-home review of PR #614, 2026-08-06).
+//
+// Callers with full registry context compute isNewestOfAgent via
+// NewestNonTerminalByAgent. Callers without registry context call EffectiveStale.
+func EffectiveStaleForNewest(t *Thread, now time.Time, window time.Duration, isNewestOfAgent bool) bool {
 	if t == nil {
 		return false
 	}
@@ -167,5 +183,31 @@ func EffectiveStale(t *Thread, now time.Time, window time.Duration) bool {
 	if t.PID >= minAgentPID && pidStateOfThreadFn(t) == PIDAlive {
 		return false
 	}
-	return !WatcherAlive(t.ThreadID) && !WatcherAliveByAgent(t.AgentID)
+	if WatcherAlive(t.ThreadID) {
+		return false
+	}
+	if isNewestOfAgent && WatcherAliveByAgent(t.AgentID) {
+		return false
+	}
+	return true
+}
+
+// NewestNonTerminalByAgent returns a map from agentID → threadID for the newest
+// (by StartedAt) non-terminal thread of each agent. Use this at call sites that
+// iterate the full registry to compute the isNewestOfAgent argument for
+// EffectiveStaleForNewest: only the newest thread is a plausible beneficiary of
+// the agent-keyed watcher probe (A35 — scope the check to the claim).
+func NewestNonTerminalByAgent(threads []*Thread) map[string]string {
+	newest := make(map[string]string)
+	newestAt := make(map[string]time.Time)
+	for _, t := range threads {
+		if t == nil || t.Status.IsTerminal() {
+			continue
+		}
+		if prev, exists := newestAt[t.AgentID]; !exists || t.StartedAt.After(prev) {
+			newest[t.AgentID] = t.ThreadID
+			newestAt[t.AgentID] = t.StartedAt
+		}
+	}
+	return newest
 }
