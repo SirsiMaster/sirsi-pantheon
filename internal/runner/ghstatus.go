@@ -3,17 +3,17 @@ package runner
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
 
 const (
 	ghStatusURL   = "https://www.githubstatus.com/api/v2/summary.json"
-	ghActionsName = "GitHub Actions"
+	ghActionsName = "Actions" // live API component name, not "GitHub Actions"
 )
 
-// ghStatusClient is the HTTP client for the status preflight check.
-// Replaced in tests via ghStatusFetch.
+// ghStatusFetch is the injectable HTTP fetch for tests.
 var ghStatusFetch = func(url string) ([]byte, error) {
 	c := &http.Client{Timeout: 5 * time.Second}
 	resp, err := c.Get(url) //nolint:noctx
@@ -24,9 +24,7 @@ var ghStatusFetch = func(url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("githubstatus.com returned %d", resp.StatusCode)
 	}
-	var buf [64 * 1024]byte
-	n, _ := resp.Body.Read(buf[:])
-	return buf[:n], nil
+	return io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 }
 
 type ghStatusSummary struct {
