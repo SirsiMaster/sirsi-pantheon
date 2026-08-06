@@ -131,7 +131,10 @@ func TestFleetTracker_LaneStates(t *testing.T) {
 	}}
 	got := ft.Observe(snap, now)
 
-	want := map[string]string{"works": LaneWorking, "blocked": LaneBlocked, "stopped": LaneStopped}
+	// "stopped" now classifies as COMPLETE — all three sources drained — and a
+	// lane with open work but no recent mutation is IDLE_WITH_WORK, which the
+	// old three-state model could not express at all.
+	want := map[string]string{"works": LaneIdleWithWork, "blocked": LaneBlocked, "stopped": LaneComplete}
 	for _, l := range got.Lanes {
 		if want[l.Agent] != l.State {
 			t.Errorf("lane %s = %q, want %q", l.Agent, l.State, want[l.Agent])
@@ -150,7 +153,7 @@ func TestFleetTracker_WorkingLanesSortFirst(t *testing.T) {
 	got := ft.Observe(snap, time.Now())
 
 	if got.Lanes[0].Agent != "aaa-working" {
-		t.Errorf("lanes[0] = %q; a working lane must outrank a finished one regardless of name", got.Lanes[0].Agent)
+		t.Errorf("lanes[0] = %q; a lane with open work must outrank a finished one regardless of name", got.Lanes[0].Agent)
 	}
 }
 

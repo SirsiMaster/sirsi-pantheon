@@ -393,10 +393,17 @@ function viewFleet(){
    const row=document.createElement('div');row.className='t-line t-row';
    const ag=document.createElement('span');ag.className='t-col';ag.style.width='210px';ag.style.whiteSpace='nowrap';ag.textContent=l.agent;
    const st=document.createElement('span');st.className='t-col';st.style.width='200px';st.style.whiteSpace='nowrap';
-   st.style.color=(l.state==='working')?'var(--ok)':(l.state==='blocked')?'var(--warn)':'var(--dim)';
-   st.textContent=(l.state==='working')?'WORKING':(l.state==='blocked')?'blocked':'stopped — no open work';
+   // Every state maps explicitly. A benign default turned a lane with 24 open
+   // items into "stopped — no open work" the moment the vocabulary grew.
+   const LBL={WORKING:'WORKING',ASSIGNED:'assigned — claimed',IDLE_WITH_WORK:'IDLE — work waiting',
+              BLOCKED:'blocked',UNROUTABLE:'UNROUTABLE',COMPLETE:'complete — no open work'};
+   const CLR={WORKING:'var(--ok)',ASSIGNED:'var(--ok)',IDLE_WITH_WORK:'var(--warn)',
+              BLOCKED:'var(--warn)',UNROUTABLE:'var(--err)',COMPLETE:'var(--dim)'};
+   st.style.color=CLR[l.state]||'var(--err)';
+   st.textContent=LBL[l.state]||('unknown state: '+l.state);
    const cts=document.createElement('span');cts.className='t-col';cts.style.flex='1';cts.style.color='var(--dim)';
    let parts=[l.open+' open'];
+   if(l.inbox)parts.push(l.inbox+' inbox');
    if(l.active)parts.push(l.active+' active');
    if(l.stalled)parts.push(l.stalled+' stalled');
    if(l.blocked)parts.push(l.blocked+' blocked');

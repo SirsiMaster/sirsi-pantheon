@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/supervision"
 )
 
 // Fleet board — the A32 owner-reporting surface.
@@ -34,23 +35,37 @@ type FleetEvent struct {
 	To      string `json:"to"`
 }
 
-// Lane states. A lane is WORKING when something is actually moving, blocked
-// when it has open work but nothing it may proceed with, and stopped when it
-// has no open work at all. "stopped" is not a failure — it means done.
+// Lane states come from internal/supervision — the authoritative
+// classification, not a second one defined here.
+//
+// The three-state model this replaces (working/blocked/stopped) had no way to
+// say IDLE_WITH_WORK: a lane with a full inbox and nothing moving rendered
+// identically to one actively shipping, because "working" was inferred from
+// having open work rather than from evidence of mutation. That is the exact
+// conflation the owner's supervision directive forbids — process existence and
+// heartbeat prove session liveness, never work.
 const (
-	LaneWorking = "working"
-	LaneBlocked = "blocked"
-	LaneStopped = "stopped"
+	LaneWorking      = string(supervision.StateWorking)
+	LaneAssigned     = string(supervision.StateAssigned)
+	LaneIdleWithWork = string(supervision.StateIdleWithWork)
+	LaneBlocked      = string(supervision.StateBlocked)
+	LaneUnroutable   = string(supervision.StateUnroutable)
+	LaneComplete     = string(supervision.StateComplete)
 )
 
 // FleetLane is one agent's row.
 type FleetLane struct {
-	Agent      string `json:"agent"`
-	State      string `json:"state"`
-	Open       int    `json:"open"`
-	Active     int    `json:"active"`
-	Stalled    int    `json:"stalled"`
-	Blocked    int    `json:"blocked"`
+	Agent   string `json:"agent"`
+	State   string `json:"state"`
+	Open    int    `json:"open"`
+	Active  int    `json:"active"`
+	Stalled int    `json:"stalled"`
+	Blocked int    `json:"blocked"`
+	// Inbox is open ROUTER items — a separate source from tasks. The
+	// classification counts it, so the row must show it: a lane read
+	// "0 open · IDLE — work waiting", which is only explicable once you can
+	// see the inbox work driving it.
+	Inbox      int    `json:"inbox"`
 	TouchedAgo string `json:"touched_ago,omitempty"`
 	touchedAt  time.Time
 }
@@ -174,16 +189,25 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 			}
 		}
 
-		switch {
-		case lane.Active > 0:
-			lane.State = LaneWorking
-		case lane.Open == 0:
-			lane.State = LaneStopped
-		case lane.Blocked == lane.Open:
-			lane.State = LaneBlocked
-		default:
-			lane.State = LaneBlocked
-		}
+		// Classification is delegated, and "working" now REQUIRES evidence of a
+		// recent task-record mutation rather than merely having active work.
+		//
+		// UnmetRequirements is 0 until the canonical requirement registry lands
+		// (supervision step 1/7). That is an honest under-count, not a
+		// placeholder pretending to be complete: a lane can therefore read
+		// COMPLETE while carrying unmet canon requirements, and it must not be
+		// treated as a completion claim until the registry feeds this field.
+		lane.Inbox = len(ag.Items)
+		lane.State = string(supervision.Classify(supervision.LaneInput{
+			Agent: ag.AgentID,
+			Sources: supervision.Sources{
+				OpenItems:       len(ag.Items),
+				ActionableTasks: lane.Active + lane.Stalled,
+				BlockedTasks:    lane.Blocked,
+			},
+			LastTaskMutation: lane.touchedAt,
+			Routable:         true,
+		}, now, supervision.DefaultWorkWindow))
 		if !lane.touchedAt.IsZero() {
 			lane.TouchedAgo = ledger.FormatAge(now.Sub(lane.touchedAt).Seconds())
 		}
@@ -218,12 +242,30 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 		}
 	}
 
-	// Active lanes first, then most-recently-touched, then name — so the rows
-	// that need attention are never below the finished ones.
+	// Ordered by ATTENTION, not by activity. IDLE_WITH_WORK and UNROUTABLE come
+	// first because they are the states that need somebody to act; WORKING and
+	// ASSIGNED are already moving. Sorting "working first" would bury exactly
+	// the lanes this classification exists to surface.
+	rank := func(st string) int {
+		switch st {
+		case LaneUnroutable:
+			return 0
+		case LaneIdleWithWork:
+			return 1
+		case LaneBlocked:
+			return 2
+		case LaneAssigned:
+			return 3
+		case LaneWorking:
+			return 4
+		default: // COMPLETE
+			return 5
+		}
+	}
 	sort.SliceStable(out.Lanes, func(i, j int) bool {
 		a, b := out.Lanes[i], out.Lanes[j]
-		if (a.State == LaneWorking) != (b.State == LaneWorking) {
-			return a.State == LaneWorking
+		if rank(a.State) != rank(b.State) {
+			return rank(a.State) < rank(b.State)
 		}
 		if a.Open != b.Open {
 			return a.Open > b.Open
