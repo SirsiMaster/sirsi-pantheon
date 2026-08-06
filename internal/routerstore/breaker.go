@@ -110,7 +110,7 @@ func (s *Store) ResetBreaker(domain string) error {
 	if strings.TrimSpace(domain) == "" {
 		return fmt.Errorf("routerstore: ResetBreaker: domain is required")
 	}
-	res, err := s.db.Exec(`UPDATE breakers SET failures = 0, tripped_at = '', operator_item = '' WHERE domain = ?;`, domain)
+	res, err := s.exec(`UPDATE breakers SET failures = 0, tripped_at = '', operator_item = '' WHERE domain = ?;`, domain)
 	if err != nil {
 		return fmt.Errorf("routerstore: ResetBreaker %s: %w", domain, err)
 	}

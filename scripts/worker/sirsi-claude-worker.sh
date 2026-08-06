@@ -41,6 +41,34 @@ mkdir -p "$(dirname "$LOG")"
 
 log(){ echo "[$(date -u +%FT%TZ)] $*" >> "$LOG"; }
 
+# attended_session_live: is an interactive claude/codex session actually
+# consuming this agent's inbox right now?
+#
+# The MIN_AGE deferral exists so this worker never races an attended session
+# that is already handling a fresh item. It was unconditional, so with NO
+# attended session the item still waited the full window while a healthy,
+# polling worker declined it every pass — the mechanical shape of "the agent
+# stopped and nothing noticed" (A36). Every surface reads green throughout.
+#
+# The predicate lives in the Go CLI, not in jq over `thread list --json`: a
+# second definition of "alive" written in shell is how the two drift apart.
+# `thread attended` is narrower than "armed" on purpose — a headless worker
+# loop IS armed and consumer-capable, so an armed-based check would count THIS
+# process as the session it is backing up and defer to itself forever.
+attended_session_live(){ (cd "$REPO" && "$SIRSI" thread attended "$AGENT_ID" --quiet >/dev/null 2>&1); }
+
+# should_defer decides whether to leave a fresh item for somebody else. It is a
+# named function purely so it can be tested: it gates whether an agentic build
+# session gets spent, and an inline compound condition in the middle of the poll
+# loop cannot be exercised without running the whole worker.
+should_defer(){ [ "$1" -lt "$MIN_AGE" ] && attended_session_live; }
+
+# Sourcing guard for the test harness: load the functions, start no loop, and
+# require no auth. Placed BEFORE the token preconditions below — those exit 1
+# when unset, which would make the file impossible to source on any machine
+# without a live worker token (i.e. CI).
+[ -n "${SIRSI_WORKER_LIB_ONLY:-}" ] && return 0
+
 # Auth: the long-lived headless token MUST be present (launchd setenv or env).
 # The token lives in the secrets file (mode 600), NEVER in the plist: the plist
 # copy leaked into transcripts and was scrubbed 2026-07-23. Sourcing here
@@ -151,7 +179,13 @@ while true; do
         log "SKIP $id — unparseable opened='$opened'; refusing to guess age (no attempt counted)"; continue
       fi
       age=$(( $(date +%s) - ots ))
-      if [ "$age" -lt "$MIN_AGE" ]; then continue; fi
+      # Defer a fresh item ONLY while there is somebody to defer TO. With no
+      # attended session live, MIN_AGE collapses to 0 and this backstop becomes
+      # an actual failover instead of a fixed 30-minute idle window.
+      # Short-circuit order matters: the age test runs first, so the CLI is
+      # invoked only for items young enough for the answer to change anything —
+      # not once per already-old item on every poll.
+      if should_defer "$age"; then continue; fi
       # RAM guardrail (Horus): defer BEFORE spending an attempt. This ran inside
       # process_item after the counter rose, so a low-RAM box permanently
       # abandoned items it had never actually tried to build.
@@ -175,7 +209,7 @@ while true; do
         continue
       fi
       case "$id" in *sweep-probe*|*arm-proof*|*-${AGENT_ID}-${AGENT_ID}-*)
-        (cd "$REPO" && "$SIRSI" router close "$id" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
+        (cd "$REPO" && "$SIRSI" router close "$id" --agent "$AGENT_ID" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
         log "SKIP+CLOSE self-probe $id"; continue;; esac
       # Bounded retries — the structural loop-proof (2026-07-03). Count attempts
       # per item id; after MAX_ATTEMPTS, abandon + surface to the owner and never

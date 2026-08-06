@@ -79,7 +79,7 @@ What stays sealed:
 Every number or capability claim on Pantheon surfaces (website, README,
 release notes, deck) must follow the A33 voice: "potential defects" /
 "potential improvements"; numbers scoped to the measurement environment;
-reproduction pack linked. See docs/CLAIMS-TABLE-DRAFT-A33.md for the
+reproduction pack linked. See docs/CLAIMS-TABLE-A33.md for the
 owner-blessed claims table — that table is the only authorised source for
 outward numbers. Prior claims-package language is superseded.
 
@@ -91,7 +91,7 @@ outward numbers. Prior claims-package language is superseded.
   contract spec, public releases shell repo (EULA + notarised binaries only),
   the two license grants. Routes to claude-pantheon when the fleet resumes.
 - **Deck lane**: use only the A33-voice blessed claims table
-  (docs/CLAIMS-TABLE-DRAFT-A33.md); nothing else ships on outward surfaces.
+  (docs/CLAIMS-TABLE-A33.md); nothing else ships on outward surfaces.
 - **Distribution**: open Anubis is the free distribution channel — gets the
   engine in front of every Apple silicon enthusiast; Ra adds fleet management
   on top.
@@ -110,5 +110,5 @@ outward numbers. Prior claims-package language is superseded.
 Refs: ANUBIS_RULES.md §2.2 (Rule A1 — safety, no engine source crosses),
 ANUBIS_RULES.md (Rule A33 — humble claims law);
 sirsi-inference/docs/adr/ADR-002-sne-licensing-disclosure-posture.md;
-docs/CLAIMS-TABLE-DRAFT-A33.md; docs/REPRODUCTION.md
+docs/CLAIMS-TABLE-A33.md; docs/REPRODUCTION.md
 Changelog: v0.9.1 — ADR-055 SNE licensing and Anubis/Ra seam canon landed (renumbered from ADR-051; collision with #449)

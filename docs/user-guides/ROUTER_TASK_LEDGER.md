@@ -1,5 +1,14 @@
 # Router Task Ledger
 
+Router lifecycle mutations use declared acting identity. `sirsi router close`
+and `sirsi router respond` accept `--agent <registered-id>`; when omitted, the
+CLI resolves the current session identity from `SIRSI_AGENT_ID`, the session
+marker, or one unambiguous live thread. The acting identity must be the item's
+addressed recipient unless its registry entry carries the explicit `close:any`
+supervisory capability. Delegated closes record both actor and recipient in the
+durable Result. Ambiguous, undeclared, or unauthorized actors fail before the
+item or response queue is mutated.
+
 The task ledger answers two different questions together: “what messages are
 open?” and “what work has each agent committed to?” It also shows age,
 heartbeat staleness, dependency chains, and whether a live thread explicitly

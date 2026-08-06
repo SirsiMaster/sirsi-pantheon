@@ -2,12 +2,28 @@
 
 Everything we report is a measurement someone else should be able to make.
 This page is the complete environment and parameter record for every number
-we publish, with one-command scripts. If your results differ, we want to
-know — file an issue with your environment block and we will look together.
+we publish. If your results differ, we want to know — file an issue with
+your environment block and we will look together.
 
-Canonical source: sirsi-inference @ 823d1dc. Scripts and evidence live in
-the sirsi-inference repo (private engine repo); the client-side harness
-that measures any OpenAI-compatible server ships with Anubis.
+Canonical source: sirsi-inference @ 823d1dc.
+
+> **What you can actually run today, and what you cannot.**
+>
+> The `scripts/…` paths named in the table below are **internal to the
+> private `sirsi-inference` engine repo**. They are recorded here so the
+> exact procedure behind each number is inspectable — **they are not
+> publicly runnable, and no such files exist in this repository.** Do not
+> read them as commands you can execute.
+>
+> What a third party CAN run today is the **client-side harness**, which
+> ships with Anubis, measures any OpenAI-compatible server, and contains no
+> engine code. Point it at the sealed signed binary or hosted endpoint we
+> provide (see *What ships publicly vs what stays sealed*, below).
+>
+> A scrubbed public harness covering the remaining measurements is not
+> published yet. Until it is, the numbers on this page are **independently
+> checkable against our endpoint, but not independently re-derivable from
+> our source** — stated plainly rather than implied, per Rule A33.
 
 ## Environment (as measured)
 
@@ -22,9 +38,13 @@ that measures any OpenAI-compatible server ships with Anubis.
 | Comparator inventory | `docs/evidence/contribution-adjusted/mlxlm-localmods.txt` (exact local state of the comparator install) |
 | Machine state | quiet: no other GPU workloads; warm-up before every measurement |
 
-## The measurements and their scripts
+## The measurements and their procedures
 
-| Reported finding | Regime | Script |
+Every `Script` cell below names a file in the **private** `sirsi-inference`
+repo. It documents how the number was produced; it is **not** a command a
+reader can run. See the note at the top of this page.
+
+| Reported finding | Regime | Script (private repo — not publicly runnable) |
 |---|---|---|
 | Single-stream vs stock toolchain (+4.02% mean, 32/33 rounds) | one request at a time, deployed-stock comparator | `scripts/prove-exceed.sh` |
 | Contribution-adjusted comparison (parity with the repair shared) | same, comparators patched with our proposed fix (`docs/evidence/contribution-adjusted/patch-qmv.py`) | `scripts/prove-contribution.sh` |
@@ -55,4 +75,4 @@ upstream-filing decision). The engine repo is private; a provisional
 patent disclosure on the deterministic-serving method precedes any
 public artifact that reveals its mechanics.
 
-Refs: ADR-051, docs/CLAIMS-TABLE-DRAFT-A33.md, ANUBIS_RULES.md § Rule A33
+Refs: ADR-051, docs/CLAIMS-TABLE-A33.md, ANUBIS_RULES.md § Rule A33

@@ -250,7 +250,7 @@ Receives reports from all Horus instances. Orchestrates across all endpoints.
 11. **Do No Harm (Rule 14)**: You MUST NOT break any working process. A regression is worse than a missing feature.
 12. **Additive-Only Changes (Rule 15)**: You may ADD or IMPROVE functionality, but MUST NOT recode any module in a way that disrupts the current working state.
 13. **Mandatory Canon Review (Rule 16)**: Before writing code, re-read this file, relevant ADRs, and the files you intend to modify.
-14. **Sprint Planning is Mandatory (Rule 17)**: Before ANY code change, present a detailed sprint plan. No code is written until the USER approves.
+14. **Sprint Planning is Mandatory (Rule 17)**: Before ANY code change, present a detailed sprint plan. No code is written until the USER approves. **Overridden by Rule A24 (Ra scope autonomy) and by Rule A36 (Permanent Execution Loop) — see §2.32.** Under A36 the only owner gates are security and privacy; work already on the ledger, in the inbox, or traced to an unmet canon requirement is pre-approved and proceeds without a fresh approval round.
 15. **Living Canon (Rule 18)**: These canonical documents are living documents. When new rules emerge, they MUST be codified immediately.
 16. **Identity Integrity (Rule 19)**: All GitHub identities MUST use the `SirsiMaster` account exclusively.
 
@@ -558,6 +558,106 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Why**: Without a live loop, items addressed to a registered thread sit unread until a human types `ctr`. Codex already approximates this via its heartbeat automation (`ctr-thread-wake`); this rule gives every Claude thread the same parity so the multi-agent relay (A26) actually completes without manual nudging.
 *   **Resident UI surfaces are nodes too** (added 2026-06-01): An interactive surface that can initiate work or take operator interaction — **menubar, TUI, IDE plugin, SwiftUI/macapp** — is a router-registered thread, not merely a renderer. It registers bound to its **own process PID** and heartbeats from its **native runloop on a bounded interval (≥60s)** — never on a frequent render/stats tick, which floods the registry and feeds Spotlight `mds_stores` (the 2026-06-01 lockup). The heartbeat proves liveness to Horus/Ra; a surface that does not act on inbox items need not run the full watcher loop. Close on graceful shutdown (SIGTERM/quit); hard kill falls back to OS-truth reaping (ADR-022). Registration MUST be idempotent on `(agent_id, pid)` so surface restarts never accumulate duplicate active records. Surface ids: `menubar`, `tui`, `vscode`/`jetbrains`/`cursor`, `macapp`.
 *   **Reference**: `.agents/idea-router/README.md` § "Heartbeat Loop (mandatory from register → close)".
+*   ⚠ **Extended by Rule A36 (§2.32): the loop is a work driver, not only a watcher.** The "Loop scope" bullet above — "the heartbeat loop is a *watcher*, not a work driver" — is correct about the loop's *mechanism* and, read alone, licenses the precise failure A36 forbids: a lane that pulls, heartbeats, and sleeps beside an inbox it never drains is fully compliant with this section while doing no work. **Where A27 and A36 meet, A36 governs.** A heartbeat is necessary and never sufficient; it proves the session exists, and only a durable store mutation proves work happened.
+
+---
+
+### 2.25 Ma'at Gate & CI Protection Mandate (Rule A28)
+> Established June 5, 2026. Ratified by claude-pantheon + codex-pantheon (router `20260605-231444`). Operationalizes A6 (CI QA Gate) + A17/A25 (Ma'at is the sole QA Sovereign): the gate must EXIST **and be ARMED** everywhere — shipping a disarmed gate is not compliance.
+
+*   **Rule**: Every Sirsi repo MUST (1) **auto-arm its local 𓆄 Ma'at pre-push gate during setup/install** — `gofmt`/fmt + `vet` + `golangci-lint` (matching CI) + diff tests, attributed to Ma'at per A25 — and (2) **protect `main` with branch protection** requiring all CI status checks to pass, strict up-to-date branches, blocked force-pushes, and blocked deletions.
+*   **Armed, not just shipped**: a gate at `.githooks/pre-push` is inert until `git config core.hooksPath .githooks`; a fresh clone defaults to `.git/hooks` (empty) and ships **DISARMED**. The repo's installer/setup MUST arm it so contributors are never silently ungated. Evidence: a `govet` shadow slipped Pantheon's CI because the shipped gate was never armed (2026-06-05).
+*   **Auto-merge is OPTIONAL** (codex-pantheon guardrail): repos MAY enable GitHub auto-merge where maturity and owner policy allow, but it is NOT mandatory canon — some repos require manual release gates, regulated review, or staged deploy timing.
+*   **Admin override**: branch protection runs with `enforce_admins=true` — admins (including the founder) go through the same CI + bind gates (verified live 2026-07-16; canon previously claimed `false`). The founder override (A23 — sole arbiter) is the documented, deliberate toggle (`gh api -X DELETE .../branches/main/protection/enforce_admins`), exercised per-decision and re-armed after — never a standing bypass. Because all agents authenticate as the founder's account, a standing `enforce_admins=false` would let `gh pr merge --admin` skip **all** required checks — how #213–#216 self-merged.
+*   **Bind is identity-enforced on authority-model paths (ADR-041, owner decision 2026-07-15)**: a PR touching `.github/`, `scripts/bind/`, `cmd/sirsi/`, `internal/router/`, `PANTHEON_RULES.md`, or `docs/ADR-*` MUST carry an **APPROVED review from a login other than its author, on the current head SHA**, before merge. Every agent is one account (`SirsiMaster`), so any *label* an agent can apply the author can apply — a marker is not a gate. GitHub's ban on self-approval is the only unforgeable primitive available, so bind is pinned to it, recorded by the second identity `sirsi-bind` (`scripts/bind/sirsi-bind.sh`; key local-only, never in Secrets). **Ordinary product PRs are unaffected and stay autonomous** — the scope is deliberate. Honest limit: this proves an independent *identity* approved, not that a *human* reviewed.
+*   **Reference**: sirsi-pantheon `internal/setup.ArmMaatGate()` + `.githooks/pre-push` + `gh api -X PUT repos/SirsiMaster/<repo>/branches/main/protection`. Custodian: 𓆄 Ma'at (A17). Portfolio-standard candidate — mirror into the Universal Rules (§1) once each repo confirms adoption.
+
+### 2.26 Orchestration Brain: Tiered & Pluggable (Rule A29)
+> Established July 2, 2026. Co-authored claude-home ↔ claude-pantheon (router bind `20260630-190342`, all 6 amendments + the 7th Registry/Wake invariant). Custodian: 𓁟 the Brain (control plane) + 𓁢 the Router (Tier-0 substrate). Full design: `docs/prd/ORCHESTRATION_BRAIN.md`; decision: ADR-034.
+
+*   **Rule**: Pantheon's orchestration intelligence is a **tiered, pluggable, user-navigable brain**, not a single always-on model. It has three tiers — **Tier-0 Dispatch** (watch/route/heartbeat/ack), **Tier-1 Triage** (classify ambiguous items), **Tier-2 Execution** (agentic build/review/bind) — over an LLM spectrum **Level 0–3** (0 Deterministic → 1 +local triage → 2 +agentic execution → 3 +hosted). The Level is **derived** from per-role provider config, never separately stored.
+*   **The deterministic floor (mandatory)**: **Tier-0 dispatch MUST run with zero LLM** and ships **ON at Level 0** on a fresh public install — dispatch/route/heartbeat/ack all work with no AI, no keys, no cost. The model is *invoked by* the loop, never *is* the loop. The config layer and `sirsi brain doctor` both **reject a model plugged into dispatch**.
+*   **Per-role pluggable**: each role independently selects a provider — `none` (floor) · `local:<model-id>` (zero-token) · `hosted:<provider-id>` (opt-in, the only per-token path). Config lives in **`~/.sirsi/brain.yaml`** (structured YAML via the repo's yaml.v3 standard — not a bespoke `.conf`, not a new viper dependency; Rule 0). Swaps take effect on **next read — no restart**.
+*   **Tier-0 Registry/Wake invariant (7th amendment — ENFORCE, don't rebuild)**: "the router can always see and wake every registered thread." Registration binds a **persistent wake-channel**; a registered thread with no live channel is a broken contract (the zombie state). This invariant is **already implemented** in `internal/router` (`WakePass`, `ProbeWakeReadiness`, `InstallWakeLaunchAgent`, `RunWakeLoop`, `wakemechanism.go`; `sirsi router doctor --fix` runs the wake pass). A29 **codifies that existing system** — it MUST NOT be reimplemented (Rule 0). The brain's control plane **surfaces + enforces** it: `sirsi brain status`/`doctor` read the existing wake API to flag every registered-but-unwakeable agent and every stranded inbox, and point the fix at the **existing** verbs (`sirsi router wake-install`, `sirsi router doctor --fix`). Waking + repair stay the router's job; the brain observes. Honest boundary preserved: a fully-closed interactive Claude process cannot be resurrected locally → **"needs-owner"**, stated not faked. This makes A27 (Heartbeat Loop Mandate) *enforced*, not advisory.
+*   **Resource-broker consumer (RAM gate)**: before loading a local model the brain consults `guard.NodeCapacity.Fits()`; `doctor` reports "**won't fit — N GB short**" instead of letting it OOM (defense-in-depth with ADR-031-A/B).
+*   **Hosted-key handling (A11 + safety)**: Level-3 keys live in the OS keychain or `~/.sirsi/` 0600 — **never in brain.yaml, never logged**, transmitted only to the chosen provider. `doctor` reports "auth present" without printing the key.
+*   **Visible + modifiable + troubleshootable**: the active tier + per-role model MUST be visible and swappable in the **CLI** (`sirsi brain {status,use,levels,doctor,test}`) and the **menubar**, and visible in **SirsiNexus** (`--json` read-model). "No black box" — brain decisions append to the Activity/stele provenance ledger.
+*   **Decoupled from Router v2**: the brain is built against a `Dispatcher` interface over the **current** router; Router v2 swaps in underneath the same interface later (Amendment 1) — the brain never blocks on that rewrite.
+*   **Reference**: `internal/brain/{config.go,controlplane.go}` + `cmd/sirsi/braincmd.go` (P1b control plane, shipped); ADR-034; PRD `docs/prd/ORCHESTRATION_BRAIN.md`. Custodian: 𓁟 the Brain.
+
+### 2.27 Model Tiering Doctrine — Compute Economy Law (Rule A30)
+> Established July 13, 2026 by owner directive. **Permanent, universal across every repo, thread, agent, and model family — present and future.** Canonical source text: `~/Development/AGENTS.md` § "Model Tiering Doctrine (Compute Economy Law)". This rule codifies that law into Pantheon canon (Living Canon, Rule 18) and is the routing **policy** that A29's Orchestration Brain **enforces**. Ma'at treats violations as governance failures.
+
+*   **The law in one line**: **generation is cheap to get wrong; judgment is expensive to get wrong — push generation down-tier, keep judgment up-tier.** Independence in review comes from a fresh context with no stake in the code, **not** from a different brand of model. What is tiered is *cognitive difficulty*, not vendor.
+*   **The three tiers** (map onto A29's Tier-0/1/2 and the Level 0–3 spectrum):
+    *   **Tier 0 — local, on-device model (zero API tokens)**: high-volume, low-stakes screening + drafting — queue triage, first-draft code for well-specified decomposed tasks, summarization, log-reading, boilerplate, NL queries over local state. **A Tier-0 output is a SCREEN or a DRAFT, never a verdict.**
+    *   **Tier 1 — cloud model, standard effort**: routine agentic work — routing, nudging, ACK-closes, board publishing, grinding decomposed task lists (dep bumps, doc updates, test fixes). Most scheduled/loop runs are Tier 1; an empty run needs almost nothing.
+    *   **Tier 2 — frontier model, high effort**: reserved for exceptional thinking — **binding verdicts (source-deep review before merge — ALWAYS Tier 2)**, architecture decisions, security review, ESCALATE-classed ambiguity, debugging that resisted a first pass.
+*   **Operating rules**: (1) **builders decompose; the cheapest competent tier types** — a thread's job on well-specified work is spec → hand to Tier 0 → review, not typing code at frontier prices; (2) **the bind is always frontier** — a slightly-off draft is caught at bind, a slightly-off bind ships a bug to main, so spend where failure is irreversible; (3) **screens never become verdicts** — no Tier-0 classification stands as a binding security/review/architecture decision; (4) **read only what escalates** — cloud models don't read whole queues/logs/repos when a Tier-0 screen can classify first (the 2M-token incident is the cautionary tale); (5) **route by difficulty, not habit** — if a tier is unclear, start one lower and escalate on failure (escalation is cheap, standing overspend is not); (6) **enforced by the system, not discipline** — the Orchestration Brain (A29; `docs/prd/ORCHESTRATION_BRAIN.md`) is the reference implementation, and every repo's automation should route through it or mirror its policy.
+*   **Brand invariant** (with A25/Brand-Over-Model-Name): user-facing surfaces never expose model identity ("Ask Sirsi", never a vendor/model name); the on-device privacy promise stands independent of which local model serves Tier 0.
+*   **Reference**: canonical law `~/Development/AGENTS.md`; enforced by A29 (Orchestration Brain) + `docs/prd/ORCHESTRATION_BRAIN.md` default routing table. Custodian: 𓁟 the Brain (routing) + 𓆄 Ma'at (governance).
+
+### 2.28 CTR — Check The Router, the universal wake primitive (Rule A31)
+> Established July 13, 2026 by owner directive, after background wake (monitors, arming, watchers, launchd daemons) repeatedly failed to keep threads consuming their inboxes — a level-triggered daemon that dies silently strands every item addressed to it. Custodian: 𓁢 the Router.
+
+*   **Rule**: `ctr` ("Check The Router") is the canonical **on-demand** wake primitive. It is ONE synchronous router pass — surface every open inbox item, then wake the agents that have work waiting but no live watcher — with **no daemon to keep alive**. The trigger moves to events that already happen (a human typing, a hook, a git commit, a cron, another agent), which is why it works where resident processes have not.
+*   **One primitive, three call sites** (all thin adapters over the same Go verb, so they can never diverge): **`ctr`** (a PATH shim, any shell / IDE terminal, mac/linux/windows, headless or resident) · **`/ctr`** (a Claude Code skill, known to every session in every repo) · **`sirsi ctr`** (the cross-platform source of truth). Both a human and a process may call it; `sirsi ctr --json` is the machine contract.
+*   **Wrap, don't rebuild (Rule 0)**: `sirsi ctr` orchestrates the EXISTING substrate — `router.CollectNodeStatus` (pending + stranded truth) and `router.WakePass` (wake-or-declare-unavailable). It MUST NOT reimplement wake logic. Honest boundary (A29): a fully-closed interactive session cannot be resurrected locally → reported **"needs-owner"**, stated not faked; heartbeat-fresh ≠ consuming, and CTR says so.
+*   **Local model first (A30 Tier-0)**: `ctr --reconcile` hands the open items to the on-device model to RECEIVE and RECONCILE (triage into TIER0/1/2) BEFORE anything escalates to a cloud thread — threads work through the local model first. The reconciliation is a Tier-0 **screen, never a binding verdict**; it runs warm-broker-only (never cold-loads a multi-GB model) and is time-bounded so a plain `ctr` stays a fast wake primitive. User-facing name is **"Ask Sirsi"**, never the model id (A25 brand-over-model-name).
+*   **Ubiquity is mandatory**: `sirsi setup` wires the shim + skill on every machine (present and future). `sirsi ctr --install` re-wires idempotently. The user-global skill (`~/.claude/skills/ctr`) makes `/ctr` known to every agent/thread; canon here + `~/Development/AGENTS.md` make it known to every repo. Like `/thoth`, it is a first-class shippable Pantheon command.
+*   **Reference**: `cmd/sirsi/ctr.go` + `cmd/sirsi/ctrinstall.go`; skill `.claude/skills/ctr/SKILL.md`; substrate `internal/router/{wake.go,strand.go,nodestatus.go}`. Custodian: 𓁢 the Router.
+
+### 2.29 Do No Harm To The Running Host — Load-Bearing Recognition (Rule A32)
+> Established July 14, 2026 by owner directive, after an agent nearly killed the process holding 25.8 GB to "reclaim RAM" — which was the local-model **broker itself** (`sirsi gemma serve`, running as `Python`). Resized instead of killed, but it exposed that Pantheon's own governor treated the Tier-0 substrate as expendable. Custodian: 𓁢 the Broker (Hapi 🌊). Decision: ADR-040. Extends A1 (Safety First) + A5 (VRAM/GPU Safety) to the host Pantheon runs ON.
+
+*   **Rule**: While the system is working, an agent — or the continuous loop, or any Pantheon governor — MUST NOT kill or starve **load-bearing Pantheon infrastructure**. The canonical load-bearing service is the local-model broker (the Tier-0 substrate the router, the reconcile, and gemma-the-builder all depend on); more may be added. Breaking the host to do the work is a governance failure.
+*   **Recognition by pidfile, not name**: `internal/guard.LoadBearingPIDs()` / `IsLoadBearing(pid)` reads the infra pidfiles (`~/.sirsi/gemma-server.pid`, `gemma-worker.pid`), excludes dead PIDs (a stale pidfile never protects a reused PID — the PID-alive lesson), and is the single authority every kill/suspend path consults. The broker runs as `Python`, so name-based protection (A24 ProtectGlyph, `isProtectedReniceTarget`) misses it — recognition MUST be by PID. `FindRunaway` never selects a load-bearing PID even as top RSS.
+*   **Right-size over kill**: the correct response to an oversized Tier-0 model (a 25 GB 12B where a 2 GB 3B belongs) is to **right-size** it (`~/.sirsi/gemma-model.conf` → a smaller model; `sirsi gemma serve --stop && sirsi gemma serve`), reclaiming the RAM while keeping the builder. Killing the broker is an absolute last resort at true emergency (imminent Jetsam) — never a routine reclaim, and **never something an agent does mid-work**. Verify the full argv before signalling any hog (`ps -p <pid>`); "biggest RSS" is not "kill me".
+*   **Gemma-the-builder is bound the same**: when the local model does build/triage work, its instructions carry this constraint — do not kill or starve Pantheon infrastructure; resize/reconfigure, never SIGKILL a serving process. Gemma must not break Pantheon while working.
+*   **Fix-don't-narrate corollary** (from the same incident): a blocker an agent has DIAGNOSED and CAN fix within remit gets FIXED on sight, never narrated back to the owner as a standing constraint (a RAM starvation reported three times but never fixed is the anti-pattern).
+*   **Reference**: `internal/guard/loadbearing.go` (+ `hapi.go` FindRunaway); ADR-040. Custodian: 𓁢 Hapi.
+
+
+### 2.30 Universal Thread Census & Work Board Overseer (Rule A33)
+> Established July 17, 2026 by owner directive, after the on-device model broker — a GPU process holding ~30 GB of wired Metal memory — drove two system-wide jetsam incidents while registered in NO registry: no board, reaper, or overseer could see, govern, or resize it. Co-implemented claude-pantheon (census primitive) ↔ claude-home (overseer duties). Custodian: 𓂀 Horus (visibility) + 𓁢 the Router (registry).
+
+*   **The invariant**: **every non-system agent-class process on every surface — CPU and GPU — exists as a registered thread, with no misses, current and future.** A process the registry cannot see is a process nothing can govern. This completes A27 (registration means alive-and-watching) and A29's Registry/Wake invariant (see-and-wake every thread) with the missing third leg: *discover-and-register every process*.
+*   **Two complementary reconcilers, one contract**: `sirsi thread discover` maps INTERACTIVE sessions (claude/codex/… by repo cwd, never guessing); the **Universal Thread Census** (`sirsi thread census`; `internal/router/census.go`) maps INFRASTRUCTURE processes with no repo binding — model brokers/servers (surface `gpu-server`), workers, supervisors — via the `censusMatchers` table. The census runs as a supervisor duty (10-min cadence), so any future process is caught within one cadence of first launch. It REGISTERS, never kills — governance stays with the reaper (ADR-022) and the resource broker (ADR-031).
+*   **Extensibility = no misses for FUTURE threads**: every new agent-class service MUST ship its `censusMatchers` row in the same change that introduces the process. A service reachable only by `ps` archaeology is a governance failure under Ma'at.
+*   **The Work Board** (`sirsi router workboard [--json]`, `internal/router/workboard.go`): every agent's work packages (title/sender/age), peers (live agents + surfaces — idle live agents included), and pace (closed today/7d, avg open→close turnaround, per agent + fabric-wide). Computed on read from the items corpus + thread registry; stored nowhere.
+*   **Overseer role — claude-home/Horus**: the router conduit (claude-home) is the Work Board OVERSEER: its scheduled sweeps read the board, verify the census invariant (zero unregistered agent-class processes), escalate misses as router items, and publish board state to the ambient surfaces. Pantheon owns the primitives; the overseer owns the watching. An overseer sweep that cannot run leaves the supervisor duty as the machine-local backstop — two independent legs, no single point of blindness.
+*   **Reference**: `internal/router/census.go` + `workboard.go`; `sirsi thread census`, `sirsi router workboard`; supervisor duties `thread-census` + the board consumers. Refs: A27, A29, ADR-022, ADR-031.
+
+### 2.31 Bind Directives Cannot Supersede a Live Rejection (Rule A34)
+> Established August 3, 2026. Ratified by claude-home on the recommendation of codex-pantheon (router `20260803-170255`). Root cause: PR #416 merged after a head-pinned `CHANGES_REQUESTED` review was dismissed and replaced by an approval under a standing bind directive; the rejected defect was real and reached `main` (repaired by PR #431).
+
+*   **Rule**: A standing bind directive may **automate an already-positive independent verdict** — turning an existing `APPROVE` on the current head into a merge without re-asking. It MUST NEVER dismiss, override, or supersede a `CHANGES_REQUESTED` review. Blanket authorization to bind is structurally equivalent to hardcoding `event=APPROVE`: a machine-readable approval that can contradict the reviewer's actual verdict is not a verdict, it is a forgery of one.
+*   **Clearing a rejection requires ONE of:**
+    *   **(a) a new head** (new commits) **plus a new independent review** on that head that explicitly resolves the rejected finding; or
+    *   **(b) an explicit owner override** that names the specific PR **and** the specific rejected finding it clears.
+    *   A directive that predates the rejection satisfies neither — it cannot "resolve" a finding it never saw.
+*   **The binder MUST fail closed**: if any review on the current head is `CHANGES_REQUESTED` and neither (a) nor (b) is present, the bind is **refused** and the item **escalates to the owner** (per the conduct runbook — ESCALATE, never act). Absence of evidence that a rejection was cleared is treated as an un-cleared rejection.
+*   **Why this is Scope-The-Check-shaped** (Rule "Scope The Check To The Claim"): "the directive authorizes this bind" *claims* the reviewer approved; its actual *scope* is "the owner once said auto-bind low-risk PRs." Those two differ exactly at a live rejection — the false-assurance gap that rule forbids. A bind is a check on the reviewer's verdict; scoped to its claim, it must read the *current* verdict, not a standing intent.
+*   **Mechanical enforcement**: `scripts/bind/sirsi-bind.sh` and `scripts/router/sirsi-claude-worker.sh`'s bind path query `gh pr view <pr> --json reviews` for the current head SHA before binding. Any `CHANGES_REQUESTED` review on that exact head blocks the bind (`--request-changes`-style refusal) unless a later review on the same head is `APPROVED`, or the caller passes an explicit `--override-pr <n> --override-finding "<text>"` naming both. Fails closed on an API error (treat as unknown = uncleared, never as cleared).
+*   **Custodian**: 𓆄 Ma'at (A17). Refs: A23 (owner is the sole arbiter of overrides), A26 (router handoff), A28 (CI/branch protection is the other half — a bind never merges past a red gate either).
+
+---
+
+### 2.32 Permanent Execution Loop (Rule A36)
+> Owner directive, August 5, 2026, binding on every agent (`claude-*`, `codex-*`, `gemma`, and all future agents). Codified August 6, 2026 because the rule was binding and cited by number — including by ADR-057 — while appearing **nowhere in this repository**, so no agent could look it up, quote it, or check its precedence against the rules it contradicts.
+>
+> ⚠ The section number jumps 2.24 → 2.32 because this synced copy is **missing §2.25–§2.31 (Rules A28–A34)**, which exist in `PANTHEON_RULES.md`. That divergence is a separate known defect; the numbering here is kept aligned with `PANTHEON_RULES.md` so a citation resolves identically in both files.
+
+*   **Rule**: An agent is never idle and never "done". Work effort is tied permanently to three sources: **(1)** open router items addressed to it, **(2)** actionable tasks on its ledger, **(3)** canon completeness — any canonical requirement (PRD, ADR, these rules, development plan, user stories, architecture, security controls, designs, legal commitments) not yet verified as implemented. Source (3) is standing work whether or not anyone routed a message about it.
+*   **Knowledge of work becomes a task, not a note.** When work appears from any source — a router message, a ledger posting, a plan step, an instruction to create tasks — the agent **registers it on the ledger, assigns it to its workstream, and works it.** Reporting it and stopping is a failure to execute.
+*   **Stopping condition**: an agent may stop only when it can state that **all three sources are simultaneously empty.** Finishing a turn is not a stopping condition — on turn completion, request the next tasking from the reviewer or pull from the development plan. **Reactivation by the owner is a failure, not a hand-off.**
+*   **Owner gates**: there are **no owner gates except security and privacy.** Merges, rebases, renumbering, reassignment, and publication decisions already ruled on proceed without waiting. A genuine security or privacy decision surfaces as a decision card and **other work continues meanwhile** — it never parks the lane.
+*   **Precedence — this rule overrides Rule 17 (Sprint Planning is Mandatory).** Rule 17 requires USER approval before any code change. That gate does not apply to work already registered on the ledger, present in the inbox, or traced to an unmet canon requirement: A36 makes those pre-approved by standing directive. Rule 17 continues to govern *new scope* the agent proposes on its own initiative. A24 (Ra scope autonomy) is the other named override.
+*   **Precedence — this rule extends Rule A27 (Heartbeat Loop Mandate, §2.24).** See the amendment bullet at the end of §2.24.
+*   **Completion claims require traceability, not a green build.** A whole-application "done" is valid only after a requirement-by-requirement traceability audit across the PRD, development plan, user stories, architecture, security controls, designs, legal commitments, and observed production behavior. A passing test suite, a merged PR, or a rendering screen is evidence of a step, never of completion. Anything less is a progress report.
+*   **Operating sequence**: assess → audit → plan → implement to completion.
+*   ⚠ **A36 is intent, NOT enforcement — cite ADR-057 for the mechanism.** This rule is text an agent chooses to honor. Nothing in it detects a lane that stopped early, distinguishes a worker holding real work from one that merely looks alive, or blocks a `done` that no evidence supports. Operational enforcement lives in the Go runtime (ADR-057): a runtime-computed three-source `runnable` predicate, transactional leases with expiry and idempotency keys, event-driven wake acknowledged by a real store mutation, six honest lane states, and an evidence-backed completion gate. **Process existence and heartbeat prove session liveness only — never work.** Do not cite A36 as the mechanism.
+*   **Refs**: ADR-057 (enforcement); A27 §2.24 (heartbeat loop, extended here); Rule 17 (overridden here); A24 (the other Rule 17 override); A32 (owner reporting standard).
 
 ---
 
@@ -585,6 +685,84 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 These documents are the source of truth for this repo:
 
+
+---
+
+### 2.33 Scope The Check To The Claim (Rule A35)
+> **Renumbered 2026-08-05.** This rule shipped as §2.26 / Rule A29 — numbers
+> already held by §2.26 Orchestration Brain (Rule A29). Two different rules
+> answered to the same citation, so an agent resolving "A29" got whichever it
+> happened to find first. That is the Rule 14/17 collision again (see PR #491,
+> where every Ra-deployed agent was told to override "Do No Harm" because a
+> list ordinal was written as a rule tag). Orchestration Brain keeps A29 — it is
+> older and carries ~32 references against this rule's ~9. **Older citations of
+> "A29" that mean scope-the-check refer to THIS rule; both numbers are load-
+> bearing in the archive, so neither is silently rewritten.**
+> Established July 27, 2026, after a single day in which five independent defects — three found by codex, two by claude-home — turned out to be the same shape.
+
+**Rule**: A check, guard, cap, probe or status MUST be scoped to the full extent of the claim it makes. If it cannot cover the claim, it MUST narrow the claim instead. A check narrower than its claim is worse than no check: it converts an unknown risk into a false assurance, and nobody re-examines a thing that reads fine.
+
+**The five instances, all 2026-07-27, all in merged or deployed code:**
+
+| the claim | the actual scope | what it cost |
+|---|---|---|
+| "all 210 font sites scale, 0 unscaled" | one file (`Views.swift`) | 16 live bypasses; the owner's menubar stayed broken after the "fix" |
+| "the wake loop now logs" | one condition (depth *change*) | a wedged loop and a healthy loop leave identical records |
+| "the broker is capped at 20.8 GiB" | one allocator (MLX's) | 43.94 GB footprint; three OOM kills in 24h |
+| "Phase 4 — all four deliverables shipped" | graded by its own author | a required `DEPRECATED` warning was never shipped and was marked complete |
+| "the fork storm is *the* cause of the OOM" | one window (before 22:17Z) | a third Jetsam fired 21 min later from a different consumer |
+
+Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 across 16 signals** while macOS displayed *out of application memory* (none of the 16 measured swap headroom or process growth); and `isCapacityCappedGemmaBroker`, which **exempted Sirsi's own broker** from the memory-hog check on the premise that two other checks would catch it — both of which also sampled the wrong metric.
+
+**How to apply — four questions before a check ships:**
+
+1. **What exactly does this assert?** Write the sentence. "All fonts on the surface scale" is a different claim from "all fonts in this file scale."
+2. **What does it actually read?** One file, one metric, one process, one window, one allocator. Name it.
+3. **Where do 1 and 2 differ?** That gap is the false assurance. Close it, or rewrite the claim to match the scope.
+4. **Can it fail?** A guard that has never been shown red is an untested guard. Verify BOTH directions — clean passes, and a deliberate regression fails and names itself. Prefer a regression fixture that exercises the *widest* part of the claim (a second file, a second process, a second window), because the collapse-back-to-one is the failure mode.
+
+**Corollaries:**
+
+*   **A self-graded phase is not closed.** Marking your own work complete requires independent review; "I am grading my own work" in a review request does not excuse the grade.
+*   **A cap enforced inside the thing it caps is not a cap.** Enforcement belongs outside the governed process, reading what the kernel judges by.
+*   **Exempting your own component is the strongest smell in this list.** Sirsi's local model is the most likely offender on a developer's machine and must be the first thing named, never the one thing skipped.
+*   **A cause established in one window is *a* cause.** Check whether the symptom recurred after the fix.
+
+**Enforcement**: Ma'at and review treat an unscoped claim as a defect even when the code is correct, because the record is the thing later work depends on. Where a scope gap cannot be closed now, the claim MUST be narrowed in the same change, with the residual named.
+
+## 3. Technology Stack
+
+> **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
+
+| Layer | Technology | Decision |
+| :--- | :--- | :--- |
+| **Language** | **Go 1.22+** | Single static binary; cross-compile *capable* but **Mac-targeted today** (ADR-032), contributor-friendly |
+| **CLI Framework** | **cobra** | Subcommands, auto-complete, help generation |
+| **Terminal UI** | **lipgloss + table** (charmbracelet) | Styled CLI output (tables, headers, progress) for v0.23. New Mole-grade TUI follows under ADR-020 / Hybrid C. |
+| **Interactive Surface** | **Mac-first surface ladder (ADR-032): CLI → Menubar → TUI → Mac desktop GUI** (built FROM the menubar); native macOS SwiftUI is the GUI path | v0.22 BubbleTea TUI removed in v0.23 per ADR-018; surface direction closed as Hybrid C per ADR-020 (2026-05-29). Mac-only build targets per ADR-032 (Windows/Linux TUI deferred). No `internal/tui/` code lands before `docs/TUI_DESIGN_PROOF.md` clears codex review. |
+| **Agent Protocol** | **gRPC** (fallback: SSH+JSON) | Streaming results, bidirectional |
+| **Config** | **yaml.v3** (structured YAML) | User-defined rules, profiles, budgets. (viper was listed aspirationally but never adopted — every config consumer uses gopkg.in/yaml.v3; ADR-034 Alt 5) |
+| **Network Discovery** | **nmap** wrapper + native ARP/mDNS | Subnet/VLAN host discovery |
+| **Docker** | **docker/client** SDK | Native Docker API |
+| **Kubernetes** | **client-go** | Native K8s API |
+| **SSH** | **golang.org/x/crypto/ssh** | Native Go SSH client |
+| **Build** | **goreleaser** | Mac binary releases today (darwin arm64/amd64); multi-platform deferred per ADR-032 |
+| **CI/CD** | **GitHub Actions** | Build, test, release |
+| **Distribution** | **Homebrew tap** + GitHub Releases | `brew install sirsi-pantheon` |
+
+---
+
+## 4. Canonical Documents (sirsi-pantheon)
+
+These documents are the source of truth for this repo:
+
+> **Status marker.** A path below marked **(NOT YET WRITTEN)** does not exist in
+> this repo. It is listed because canon says it *should* exist, not because it
+> does. Rule 16 (Mandatory Canon Review) requires re-reading the relevant
+> canonical documents before writing code — a list naming files that were never
+> created makes that rule literally unfollowable, and silently teaches every
+> agent to cite a document nobody can open. Create the file or delete the line;
+> do not leave it ambiguous.
 ### 🏛 Governance (3)
 1.  `ANUBIS_RULES.md` (this file — canonical; synced to `GEMINI.md` and `AGENTS.md`)
 2.  `docs/PROJECT_SCOPE.md`

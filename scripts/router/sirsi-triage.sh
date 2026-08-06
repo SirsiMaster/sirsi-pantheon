@@ -102,7 +102,7 @@ cycle() {
       ROUTINE)
         routine=$((routine+1))
         if [ "$AUTO_RESOLVE" = "1" ] && [ "$DRY_RUN" != "1" ]; then
-          if (cd "$REPO" && "$SIRSI" router close "$id" --result "Tier-1 triage: routine FYI/completion notice with no explicit required-action section, no open action (auto-resolved by sirsi-triage)." >/dev/null 2>&1); then
+          if (cd "$REPO" && "$SIRSI" router close "$id" --agent horus --result "Tier-1 triage: routine FYI/completion notice with no explicit required-action section, no open action (auto-resolved by sirsi-triage)." >/dev/null 2>&1); then
             closed=$((closed+1)); log "CLOSED routine $id (to=$to from=$frm)"
           else log "close FAILED $id"; fi
         else

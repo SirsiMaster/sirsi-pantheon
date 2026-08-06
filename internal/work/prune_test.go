@@ -3,6 +3,7 @@ package work
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,11 @@ func writeItem(t *testing.T, root, id, status, closed string) {
 	if closed != "" {
 		closedLine = "closed: " + closed + "\n"
 	}
-	content := "---\nfrom: a\nto: b\ntitle: t\nstatus: " + status + "\nopened: 2026-01-01T00:00:00Z\n" + closedLine + "---\n\n## Instructions\n\nbody\n"
+	body := "body\n"
+	if id == "20260101-old-closed" {
+		body = strings.Repeat("payload line with enough retained context to compact\n", 64)
+	}
+	content := "---\nfrom: a\nto: b\ntitle: t\nstatus: " + status + "\nopened: 2026-01-01T00:00:00Z\n" + closedLine + "---\n\n## Instructions\n\n" + body
 	if err := os.WriteFile(filepath.Join(itemsDir(root), id+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +55,7 @@ func TestPruneItems(t *testing.T) {
 		t.Fatalf("dry-run should report byte size")
 	}
 
-	// Real run deletes exactly the old closed item.
+	// Real run tombstones exactly the old closed item.
 	got, err := PruneItems(root, cutoff, false)
 	if err != nil {
 		t.Fatal(err)
@@ -58,13 +63,41 @@ func TestPruneItems(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want 1 pruned, got %d", len(got))
 	}
-	if _, err := os.Stat(filepath.Join(itemsDir(root), "20260101-old-closed.md")); !os.IsNotExist(err) {
-		t.Fatalf("old closed item should be deleted")
+	if got[0].After <= 0 || got[0].After >= got[0].Bytes {
+		t.Fatalf("tombstone should reclaim bytes, got before=%d after=%d", got[0].Bytes, got[0].After)
+	}
+	tombstone, err := os.ReadFile(filepath.Join(itemsDir(root), "20260101-old-closed.md"))
+	if err != nil {
+		t.Fatalf("old closed item id/file must be retained: %v", err)
+	}
+	text := string(tombstone)
+	for _, want := range []string{
+		"tombstoned: true",
+		"content_hash_sha256:",
+		"status: closed",
+		"from: a",
+		"to: b",
+		"Payload compacted by router retention",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("tombstone missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "\nbody\n") {
+		t.Fatalf("payload body should be compacted, got:\n%s", text)
 	}
 	for _, keep := range []string{"20260601-recent-closed", "20260101-open-old", "20260101-closed-nodate"} {
-		if _, err := os.Stat(filepath.Join(itemsDir(root), keep+".md")); err != nil {
-			t.Fatalf("%s must be kept: %v", keep, err)
+		if _, statErr := os.Stat(filepath.Join(itemsDir(root), keep+".md")); statErr != nil {
+			t.Fatalf("%s must be kept: %v", keep, statErr)
 		}
+	}
+
+	again, err := PruneItems(root, cutoff, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("already-tombstoned item must not be compacted again: %+v", again)
 	}
 }
 

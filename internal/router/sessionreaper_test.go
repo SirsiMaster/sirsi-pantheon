@@ -107,6 +107,42 @@ func TestReapOrphanedWatcherAndLegacySidecar(t *testing.T) {
 	}
 }
 
+// TestReapNeverTouchesDeepAncestry: the old shallow selfPID/selfParent check
+// only protected 2 PIDs. This test places the "own" session as a grandparent
+// (launchd→claude-app→live-session→sirsi) and verifies that the full ancestry
+// walk (reaper.AncestrySet) prevents it from being reaped, even when it appears
+// as the "older" group for the same uuid.
+func TestReapNeverTouchesDeepAncestry(t *testing.T) {
+	base := time.Date(2026, 7, 8, 6, 0, 0, 0, time.UTC)
+	uuid := "deeptest-1111-2222-3333-444444444444"
+	lines := []string{
+		// PID 100: launchd (root)
+		psLine(100, 0, base, "/sbin/launchd"),
+		// PID 200: the owner's live claude session (grandparent of sirsi)
+		psLine(200, 100, base, cliPath+" --resume "+uuid),
+		// PID 300: sirsi itself — child of the live session
+		psLine(300, 200, base, "sirsi ccd reap"),
+		// PID 400: newer group for the same uuid — spawned 1h later
+		psLine(400, 100, base.Add(time.Hour), cliPath+" --resume "+uuid),
+	}
+	var killed []int
+	// selfPID=300, selfParent=200; the old shallow check would only exempt 300
+	// and 200. The grandparent chain here is 300→200, and 200 IS the "older"
+	// group root — so the old code would have reaped it.
+	_, err := ReapSupersededSessionsWith(300, 200, strings.Join(lines, "\n"), func(pid int) error {
+		killed = append(killed, pid)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pid := range killed {
+		if pid == 200 || pid == 300 {
+			t.Fatalf("ancestry pid %d must never be reaped, kills: %v", pid, killed)
+		}
+	}
+}
+
 // TestGoDutyRegisteredWithCadence: the duty is in the registry as native Go
 // on a bounded cadence — a script-missing skip must not apply to it.
 func TestGoDutyRegisteredWithCadence(t *testing.T) {

@@ -76,7 +76,36 @@ func sirsiTestEnv(dir string, extra ...string) []string {
 		if strings.HasPrefix(kv, "GIT_") {
 			continue
 		}
+		// Identity inputs must come from the test, never the host. resolveCurrentAgent
+		// consults $SIRSI_AGENT_ID and then the session marker at
+		// ~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID. Inheriting either
+		// makes identity tests environment-dependent: they pass in CI (no session)
+		// and fail on any developer machine running inside a CCD session, which is
+		// exactly how TestRouterRespondStoreOnlyItem broke. Worse, `thread register`
+		// WRITES that marker, so tests inheriting a real session id overwrite the
+		// live operator's identity — 99 markers on this host had been rewritten to
+		// "test-adr024-idem", including the running conduit's own.
+		if strings.HasPrefix(kv, "SIRSI_AGENT_ID=") || strings.HasPrefix(kv, "CLAUDE_CODE_SESSION_ID=") {
+			continue
+		}
 		if dir != "" && strings.HasPrefix(kv, "PWD=") {
+			continue
+		}
+		// Strip the ambient acting-identity sources. resolveCurrentAgent
+		// resolves --agent → $SIRSI_AGENT_ID → session marker → sole live
+		// thread. Rungs 1/2/4 are already hermetic here (the flag is explicit,
+		// the thread registry is read from the test's own routerRoot), but the
+		// session marker is an ABSOLUTE host path keyed on an INHERITED env
+		// var: ~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID. A
+		// subprocess launched from a registered agent's session therefore
+		// resolves that agent's id, and a test asserting "identity is
+		// ambiguous, fail closed" cannot construct ambiguity at all. That is
+		// green on CI (no session id in the env) and red on any agent's
+		// machine — TestRouterRespondStoreOnlyItem resolved a live `claude-home`
+		// and completed a respond the test required to fail. The subprocess
+		// cannot use router.sessionMarkerDirOverride (in-process only), so the
+		// env is the seam.
+		if strings.HasPrefix(kv, "CLAUDE_CODE_SESSION_ID=") || strings.HasPrefix(kv, "SIRSI_AGENT_ID=") {
 			continue
 		}
 		out = append(out, kv)
@@ -233,7 +262,7 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	}
 
 	stdoutClose, _, err := runSirsiInDir(t, tmp, 10*time.Second,
-		"router", "close", id, "--result", "did the thing")
+		"router", "close", id, "--agent", "claude-b", "--result", "did the thing")
 	if err != nil {
 		t.Fatalf("close failed: %v", err)
 	}
@@ -252,7 +281,7 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	// Double-close is idempotent: the file is already closed and the store
 	// mirror heals (phantom-open fix) — store-only items always behaved this
 	// way, so file-backed items now match.
-	if _, stderrDC, dcErr := runSirsiInDir(t, tmp, 10*time.Second, "router", "close", id); dcErr != nil {
+	if _, stderrDC, dcErr := runSirsiInDir(t, tmp, 10*time.Second, "router", "close", id, "--agent", "claude-b"); dcErr != nil {
 		t.Errorf("expected double-close to succeed idempotently, got: %v (%s)", dcErr, stderrDC)
 	}
 }
@@ -1045,6 +1074,14 @@ func TestRouterRespondStoreOnlyItem(t *testing.T) {
 	}
 
 	out, errOut, err = run("router", "respond", id, "--result", "merged at abc123")
+	if err == nil || !strings.Contains(errOut, "could not resolve the current agent") {
+		t.Fatalf("ambiguous respond must fail closed: err=%v\n%s\n%s", err, out, errOut)
+	}
+	out, errOut, err = run("router", "respond", id, "--agent", "ghost", "--result", "merged at abc123")
+	if err == nil || !strings.Contains(errOut, `acting agent "ghost"`) {
+		t.Fatalf("undeclared actor must fail closed: err=%v\n%s\n%s", err, out, errOut)
+	}
+	out, errOut, err = run("router", "respond", id, "--agent", "claude-home", "--result", "merged at abc123")
 	if err != nil {
 		t.Fatalf("respond failed: %v\n%s\n%s", err, out, errOut)
 	}

@@ -41,6 +41,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/reaper"
 )
 
 // ReapedLeak records one process this duty terminated and why.
@@ -159,10 +161,19 @@ func ReapSupersededSessionsWith(selfPID, selfParent int, psOut string, kill func
 		}
 	}
 
+	// Build the ancestry-protected set using the tested reaper contract rather
+	// than a shallow selfPID/selfParent check — guards the full caller chain
+	// (e.g. claude window → CLI → sirsi) not just the immediate parent.
+	reaperProcs := make([]reaper.Proc, len(procs))
+	for i, p := range procs {
+		reaperProcs[i] = reaper.Proc{PID: p.pid, PPID: p.ppid}
+	}
+	protected := reaper.AncestrySet(selfPID, reaperProcs)
+
 	report := &SessionReapReport{KeptNewest: map[string]int{}}
 	containsSelf := func(g group) bool {
 		for _, pid := range g.pids {
-			if pid == selfPID || pid == selfParent {
+			if protected[pid] {
 				return true
 			}
 		}
@@ -204,7 +215,7 @@ func ReapSupersededSessionsWith(selfPID, selfParent int, psOut string, kill func
 		if !strings.Contains(p.args, "thread watch-router") {
 			continue
 		}
-		if p.pid == selfPID || p.pid == selfParent {
+		if protected[p.pid] {
 			continue
 		}
 		parent, ok := byPID[p.ppid]
@@ -219,7 +230,7 @@ func ReapSupersededSessionsWith(selfPID, selfParent int, psOut string, kill func
 	// Legacy sidecar watchers (pre-2026-07-08 hand-rolled bash loops):
 	// superseded by in-band heartbeats, safe to reap by the RCA directive.
 	for _, p := range procs {
-		if p.pid == selfPID || p.pid == selfParent {
+		if protected[p.pid] {
 			continue
 		}
 		if strings.Contains(p.args, "/tmp/watcher-thr-") {

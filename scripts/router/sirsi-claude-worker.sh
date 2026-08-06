@@ -164,7 +164,7 @@ while true; do
       # pings, not build tasks — the triage tier closes them. A build worker
       # agentic-building a heartbeat is the 2026-07-03 waste bug.
       case "$id" in *sweep-probe*|*arm-proof*|*-${AGENT_ID}-${AGENT_ID}-*)
-        (cd "$REPO" && "$SIRSI" router close "$id" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
+        (cd "$REPO" && "$SIRSI" router close "$id" --agent "$AGENT_ID" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
         log "SKIP+CLOSE self-probe $id"; continue;; esac
       # Skip non-build item types: decision + review items have no build artifact
       # by construction — a build worker can only spin for 2400s then time out.

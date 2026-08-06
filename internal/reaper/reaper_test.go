@@ -28,7 +28,7 @@ func procTable() []Proc {
 // chain — must NEVER be selected, no matter how old or large.
 func TestSafetyContract_NeverReapsCallerAncestry(t *testing.T) {
 	procs := procTable()
-	protected := ancestrySet(500, procs)
+	protected := AncestrySet(500, procs)
 
 	// The owner's live session and every ancestor must be protected.
 	for _, pid := range []int{500, 400, 300} {

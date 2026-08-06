@@ -77,6 +77,29 @@ func (s ThreadStatus) IsTerminal() bool {
 	return s == ThreadStatusClosed || s == ThreadStatusReaped
 }
 
+// StaleActiveSupervisors returns supervisory registrations that still claim
+// active after missing the heartbeat contract. These records must never be
+// treated as healthy merely because a shared host PID is alive: automation and
+// resident loops own their own renewal duty. Interactive Codex/Claude sessions
+// are intentionally excluded because their task/session lease is a different
+// liveness contract.
+func StaleActiveSupervisors(reg *ThreadRegistry, now time.Time, window time.Duration) []*Thread {
+	if reg == nil {
+		return nil
+	}
+	var out []*Thread
+	for _, thread := range reg.SortedThreads() {
+		if thread.Status != ThreadStatusActive || !thread.IsStale(now, window) {
+			continue
+		}
+		if thread.Surface != "automation" && thread.WakeMechanism != "resident-loop" {
+			continue
+		}
+		out = append(out, thread)
+	}
+	return out
+}
+
 // Thread is one live registration of an agent session.
 type Thread struct {
 	ThreadID      string       `json:"thread_id"`
@@ -1043,8 +1066,18 @@ func (r *ThreadRegistry) SortedThreads() []*Thread {
 		}
 		out = append(out, t)
 	}
+	// Tiebreak on ThreadID. Ordering by LastSeenAt alone is NOT a total order:
+	// sort.Slice is unstable, so any two threads sharing a timestamp come back in
+	// arbitrary order that varies run to run. Shared timestamps are routine —
+	// heartbeats land in the same second, and a fixed test clock makes every
+	// record identical — so this randomly reordered the fleet board between
+	// refreshes and randomly reddened CI for every PR in the repo via
+	// TestStaleActiveSupervisors.
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].LastSeenAt.After(out[j].LastSeenAt)
+		if !out[i].LastSeenAt.Equal(out[j].LastSeenAt) {
+			return out[i].LastSeenAt.After(out[j].LastSeenAt)
+		}
+		return out[i].ThreadID < out[j].ThreadID
 	})
 	return out
 }

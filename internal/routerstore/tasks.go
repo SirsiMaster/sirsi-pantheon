@@ -181,7 +181,7 @@ func (s *Store) AddTask(t Task) error {
 	if err != nil {
 		return fmt.Errorf("routerstore: encode links: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO tasks(agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+	_, err = s.exec(`INSERT INTO tasks(agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
 		t.Agent, t.TaskID, strings.TrimSpace(t.Subject), t.Status, strings.TrimSpace(t.Phase), t.ResponsibleParty, strings.TrimSpace(t.BlockedBy), t.Created, t.Updated, t.Charter, t.CommissionedAt, t.CommissionedBy, t.Outline, string(timeline), string(links), t.TestState, t.Stage, t.TokensConsumed, t.DurationSeconds)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
@@ -295,7 +295,7 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: encode links: %w", err)
 	}
-	_, err = s.db.Exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+? WHERE agent=? AND task_id=?;`,
+	_, err = s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+? WHERE agent=? AND task_id=?;`,
 		t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID)
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w", agent, taskID, err)

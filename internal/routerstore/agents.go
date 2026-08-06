@@ -33,7 +33,7 @@ VALUES (?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     last_seen=excluded.last_seen,
     pid=excluded.pid;`
-	if _, err := s.db.Exec(q, id, now, now, pid); err != nil {
+	if _, err := s.exec(q, id, now, now, pid); err != nil {
 		return fmt.Errorf("routerstore: RegisterAgent %q: %w", id, err)
 	}
 	return nil
@@ -44,7 +44,7 @@ ON CONFLICT(id) DO UPDATE SET
 // registration, not a way to create one.
 func (s *Store) Heartbeat(id string) error {
 	now := s.clock().Format(time.RFC3339)
-	res, err := s.db.Exec(`UPDATE agents SET last_seen=? WHERE id=?;`, now, id)
+	res, err := s.exec(`UPDATE agents SET last_seen=? WHERE id=?;`, now, id)
 	if err != nil {
 		return fmt.Errorf("routerstore: Heartbeat %q: %w", id, err)
 	}
@@ -98,7 +98,7 @@ func (s *Store) SetState(key, value string) error {
 	}
 	const q = `INSERT INTO state (key, value) VALUES (?, ?)
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
-	if _, err := s.db.Exec(q, key, value); err != nil {
+	if _, err := s.exec(q, key, value); err != nil {
 		return fmt.Errorf("routerstore: SetState %q: %w", key, err)
 	}
 	return nil

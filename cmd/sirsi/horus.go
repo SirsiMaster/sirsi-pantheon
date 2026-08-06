@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
@@ -254,6 +255,13 @@ func runHorusSupervise(cmd *cobra.Command, _ []string) error {
 	if horusSuperviseInterval <= 0 {
 		return fmt.Errorf("--interval must be positive")
 	}
+	// Resident supervisor: launchd runs it without -v, so the default Warn level
+	// would drop every log.Printf its duties emit. Its stderr is a dedicated log
+	// file, so Info is the correct floor. Honors --quiet. Set after the flag
+	// check so `--interval 0` still fails as a plain CLI error.
+	if !horusSuperviseOnce {
+		logging.EnableDaemonLogging()
+	}
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
 		return fmt.Errorf("no idea-router found: %w", err)
@@ -271,6 +279,7 @@ func runHorusSupervise(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
+		reportLaneEscalations(repoRoot)
 		return printSuperviseReport(report)
 	}
 
@@ -298,6 +307,7 @@ func runHorusSupervise(cmd *cobra.Command, _ []string) error {
 				return err
 			}
 		}
+		reportLaneEscalations(repoRoot)
 		select {
 		case <-cmd.Context().Done():
 			return cmd.Context().Err()

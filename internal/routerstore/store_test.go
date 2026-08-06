@@ -614,7 +614,12 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 	// lifecycle (§2b axiom 8). Every column outside this documented set stays
 	// under the strict no-invented-columns law.
 	dispatchContractCols := map[string]bool{
-		"lease_token": true, "lease_expires": true, "claimed_by": true,
+		// lease_updated joins the lease trio (token/expires/claimed_by) added by
+		// migration 9: it timestamps the last lease mutation so an expired or
+		// renewed claim is auditable. Same class — store-only lifecycle state,
+		// never mirrored into the markdown item, so a mutated file cannot forge
+		// lease history (§2b axiom 8).
+		"lease_token": true, "lease_expires": true, "claimed_by": true, "lease_updated": true,
 		"attempts": true, "idem_key": true, "source_item": true,
 		"failure_class": true, "occurrences": true, "first_seen": true, "last_seen": true,
 	}

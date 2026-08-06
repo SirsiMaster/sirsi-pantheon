@@ -33,6 +33,9 @@ jobs:
       - name: golangci-lint
         run: golangci-lint run --timeout=5m
 
+      - name: ADR number uniqueness
+        run: bash scripts/check-adr-numbers.sh
+
       # Structural invariant, not a style check: every user-visible font on the
       # menubar surface must route through the width-derived type scale. It runs
       # on the HOSTED runner because it needs no Xcode — a guard that only runs
@@ -102,6 +105,20 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+      # ADR-057: ADR numbers are allocated through the router store, not by
+      # counting files. Two documents claiming one number makes every citation
+      # of it ambiguous. --allow is the pre-existing debt list (013/016/046/054
+      # each have two documents today); NEW collisions fail the build, known
+      # ones are reported. Only ever REMOVE numbers from that list.
+      # SIRSI_ROUTER_DB points at a scratch store so CI never touches the live one.
+      - name: ADR number collisions
+        shell: bash
+        env:
+          SIRSI_ROUTER_DB: ${{ runner.temp }}/adr-audit/router.db
+        run: |
+          go build -o sirsi ./cmd/sirsi/
+          ./sirsi adr audit --docs docs --allow 13,16,46,54
 
       - name: Ma'at Pulse — Dynamic Metrics
         shell: bash

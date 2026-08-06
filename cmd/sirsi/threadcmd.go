@@ -251,6 +251,62 @@ var threadRegisterCmd = &cobra.Command{
 	},
 }
 
+// threadAttendedCmd exists for the headless build worker, which is bash and
+// must not re-derive liveness with jq over `thread list --json`. A second
+// definition of "alive" in shell is how the two drift apart.
+//
+// Exit status IS the answer so the caller is one `if` with no parsing:
+// 0 = an attended session is live, 1 = none. Any real failure returns an error
+// (exit 1 as well, with a message on stderr) — and 1 is the safe direction for
+// this caller, which reads it as "nobody is attending, take the item".
+var threadAttendedCmd = &cobra.Command{
+	Use:   "attended <agent-id>",
+	Short: "Exit 0 if the agent has a live ATTENDED session (claude/codex) consuming its inbox",
+	Long: `Reports whether an agent has a live attended session — an interactive
+claude/codex session actually consuming its inbox, proven by loop evidence for
+claude and heartbeat freshness for codex.
+
+Deliberately narrower than "armed": a headless worker loop is armed and
+consumer-capable but is NOT an attended session, so it never counts as somebody
+to defer to. The backstop worker uses this to decide whether deferring a fresh
+item has anyone to defer TO.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no idea-router found: %w", err)
+		}
+		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+		live := router.AttendedSessionLive(routerRoot, args[0])
+		if JsonOutput {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(map[string]any{"agent_id": args[0], "attended": live}); err != nil {
+				return err
+			}
+		} else if !quietMode {
+			if live {
+				fmt.Printf("attended session live for %s\n", args[0])
+			} else {
+				fmt.Printf("no attended session for %s\n", args[0])
+			}
+		}
+		if !live {
+			// SilenceUsage/SilenceErrors: a false answer is a normal result,
+			// not a usage error — printing the whole help text here would bury
+			// it in the worker's log every poll.
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return errNoAttendedSession
+		}
+		return nil
+	},
+}
+
+// errNoAttendedSession carries the nonzero exit for the false answer without
+// printing a second error line over the message already written above.
+var errNoAttendedSession = errors.New("")
+
 var threadHeartbeatCmd = &cobra.Command{
 	Use:   "heartbeat",
 	Short: "Send a heartbeat for a registered thread",
@@ -895,5 +951,5 @@ func init() {
 	threadWatchCmd.Flags().BoolVar(&threadWatchUninstall, "uninstall", false, "Remove the durable wake LaunchAgent for the current thread's agent")
 	threadWatchCmd.Flags().StringVar(&threadWatchAgent, "agent", "", "Agent id override (defaults to the current thread's agent)")
 
-	threadCmd.AddCommand(threadRegisterCmd, threadHeartbeatCmd, threadCloseCmd, threadListCmd, threadPruneCmd, threadWatchRouterCmd, threadWatchCmd)
+	threadCmd.AddCommand(threadRegisterCmd, threadHeartbeatCmd, threadCloseCmd, threadListCmd, threadPruneCmd, threadWatchRouterCmd, threadWatchCmd, threadAttendedCmd)
 }
