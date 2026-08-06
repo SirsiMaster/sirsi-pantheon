@@ -97,6 +97,32 @@ func TestSharedProductionIdentityGuardRejectsPathAliases(t *testing.T) {
 	}
 }
 
+func TestFreshSharedStoreInitializesWithoutDeploymentOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "")
+	path := filepath.Join(home, ".sirsi", "router.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("fresh host must initialize version zero store: %v", err)
+	}
+	defer s.Close()
+}
+
+func TestTaskContinuationTriggerMatchesAuthoritativeDependencyExpression(t *testing.T) {
+	s := newTestStore(t)
+	var triggerSQL string
+	if err := s.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='wake_continue_after_task'`).Scan(&triggerSQL); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(triggerSQL, actionableTaskDependency("t")) {
+		t.Fatalf("task continuation trigger drifted from authoritative predicate:\n%s", triggerSQL)
+	}
+}
+
 func TestSparseDeployedMigrationPathsReachCurrentSchema(t *testing.T) {
 	for _, from := range []int{8, 9, 11, 12} {
 		t.Run(fmt.Sprintf("v%d", from), func(t *testing.T) {
