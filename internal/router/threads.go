@@ -999,26 +999,31 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 			// nil for active threads). ReapedFrom on the Thread struct is the
 			// idempotency key: hasSuccessorFor checks it so a second reconcile pass
 			// does not mint a duplicate.
+			//
+			// ConsumerCapable is carried from the predecessor: it is earned at
+			// runtime (set by setThreadConsumerCapable after the wake loop resolves
+			// a consumer) and not derivable from Surface alone for all agents. A
+			// successor minted without it silently un-earns consumer credit for
+			// lanes that earned it explicitly (non-claude/codex surfaces), leaving
+			// WakePass to skip the lane and repeat the false lane-needs-you loop
+			// for exactly that subset.
+			//
+			// MachineID is carried (added in PR #596) to preserve the reaper's
+			// OS-truth scope: without it the reaper's PID liveness check runs
+			// against the wrong machine's process table.
 			succ := &Thread{
-				ThreadID:   NewThreadID(),
-				AgentID:    t.AgentID,
-				Surface:    t.Surface,
-				Repo:       t.Repo,
-				Workstream: t.Workstream,
-				Host:       t.Host,
-				MachineID:  t.MachineID,
-				StartedAt:  now,
-				LastSeenAt: now,
-				Status:     ThreadStatusActive,
-				ReapedFrom: t.ThreadID,
-				// Carried from the predecessor: for claude/codex surfaces this is
-				// invisible (IsInboxConsumer grants credit via a surface allow-list),
-				// but a lane that earned consumer credit explicitly via
-				// setThreadConsumerCapable would otherwise be minted active-but-not-a-
-				// consumer, so WakePass.armed skips it and the false lane-needs-you
-				// escalation PR #596 fixed survives for that subset.
+				ThreadID:        NewThreadID(),
+				AgentID:         t.AgentID,
+				Surface:         t.Surface,
+				Repo:            t.Repo,
+				Workstream:      t.Workstream,
+				Host:            t.Host,
+				MachineID:       t.MachineID,
 				ConsumerCapable: t.ConsumerCapable,
-			}
+				StartedAt:       now,
+				LastSeenAt:      now,
+				Status:          ThreadStatusActive,
+				ReapedFrom:      t.ThreadID}
 			reg.Threads[succ.ThreadID] = succ
 			outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileMintedSuccessor, SuccessorID: succ.ThreadID})
 
