@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
@@ -76,25 +75,12 @@ func supervisorPlistContent(sirsiBinPath, workDir string) string {
 // minimal default environment. It leads with the sirsi binary's own directory
 // (agent CLIs are typically installed alongside it), then ~/.local/bin, common
 // package-manager prefixes, and the system dirs, de-duplicated in order.
+// It delegates to router.LaunchAgentPATH so the supervisor plist and the
+// per-agent wake plists cannot drift apart. They already had: this list lived
+// only here, so the wake loops kept launchd's minimal PATH and silently
+// resolved every out-of-PATH agent CLI to "no consumer".
 func supervisorPath(sirsiBinPath string) string {
-	dirs := []string{filepath.Dir(sirsiBinPath)}
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".local", "bin"))
-	}
-	dirs = append(dirs,
-		"/opt/homebrew/bin", "/usr/local/bin",
-		"/usr/bin", "/bin", "/usr/sbin", "/sbin",
-	)
-	seen := make(map[string]bool, len(dirs))
-	uniq := make([]string, 0, len(dirs))
-	for _, d := range dirs {
-		if d == "" || d == "." || seen[d] {
-			continue
-		}
-		seen[d] = true
-		uniq = append(uniq, d)
-	}
-	return strings.Join(uniq, ":")
+	return router.LaunchAgentPATH(sirsiBinPath)
 }
 
 // supervisorPlistPath is where the LaunchAgent is written.

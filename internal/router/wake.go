@@ -933,6 +933,16 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
 	//   - ThrottleInterval 60: a crashing loop respawns once a minute, not
 	//     at launchd's default burn rate.
 	//   - The binary path is absolute (InstallWakeLaunchAgent enforces it).
+	//   - EnvironmentVariables/PATH: launchd hands a job the minimal
+	//     /usr/bin:/bin:/usr/sbin:/sbin. The loop resolves its DECLARED consumer
+	//     with exec.LookPath, so without this every agent whose CLI lives
+	//     outside those four dirs resolves to "no consumer" and the loop
+	//     degrades to WATCH-ONLY — it heartbeats forever and never dispatches.
+	//     That is not a theoretical gap: it is why all 11 codex lanes sat at
+	//     wake.mechanism "none" while `codex` (a symlink in ~/.local/bin) was
+	//     installed and working. Measured 2026-08-06, codex-pantheon:
+	//     `WATCH-ONLY — this lane has NO consumer: consumer command "codex"
+	//     not found in PATH`, with 11 items open on the lane.
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".sirsi", "logs", "wake-"+slugifyLabelPart(cfg.ID)+".log")
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -941,6 +951,11 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
 <dict>
   <key>Label</key>
   <string>%s</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>%s</string>
+  </dict>
   <key>ProgramArguments</key>
   <array>
     <string>%s</string>
@@ -962,7 +977,42 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
   <string>%s</string>
 </dict>
 </plist>
-`, escapeXML(label), escapeXML(sirsiBin), escapeXML(cfg.ID), escapeXML(logPath), escapeXML(logPath))
+`, escapeXML(label), escapeXML(LaunchAgentPATH(sirsiBin)), escapeXML(sirsiBin),
+		escapeXML(cfg.ID), escapeXML(logPath), escapeXML(logPath))
+}
+
+// LaunchAgentPATH builds the PATH a Sirsi LaunchAgent must export so that
+// exec.LookPath can resolve agent CLIs under launchd's minimal default
+// environment (/usr/bin:/bin:/usr/sbin:/sbin).
+//
+// It leads with the sirsi binary's own directory — agent CLIs are typically
+// installed alongside it (`codex` is a symlink in ~/.local/bin next to `sirsi`)
+// — then ~/.local/bin, common package-manager prefixes, and the system dirs,
+// de-duplicated in order.
+//
+// This is the single definition; internal/setup's supervisor plist delegates
+// here. Two copies of this list is how one surface gets the fix and the other
+// keeps the bug, which is exactly what happened: the supervisor plist learned
+// the minimal-PATH lesson in its own file and the wake plist never did.
+func LaunchAgentPATH(binPath string) string {
+	dirs := []string{filepath.Dir(binPath)}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".local", "bin"))
+	}
+	dirs = append(dirs,
+		"/opt/homebrew/bin", "/usr/local/bin",
+		"/usr/bin", "/bin", "/usr/sbin", "/sbin",
+	)
+	seen := make(map[string]bool, len(dirs))
+	uniq := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		if d == "" || d == "." || seen[d] {
+			continue
+		}
+		seen[d] = true
+		uniq = append(uniq, d)
+	}
+	return strings.Join(uniq, ":")
 }
 
 // slugifyLabelPart mirrors WakeLaunchAgentLabel's id sanitization for log
