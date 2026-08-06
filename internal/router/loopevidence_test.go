@@ -122,6 +122,43 @@ func TestWatcherAlive_EmptyThreadID(t *testing.T) {
 	}
 }
 
+// TestWatcherAliveForThread_PostReconcileSuccessorChain is the regression fixture
+// for the P1 watcher-identity bug: thread reconcile reaps a record and mints a
+// successor with a new id, but the watcher process retains the OLD id in argv.
+// WatcherAliveForThread must credit the predecessor's watcher, not declare loop-dead.
+func TestWatcherAliveForThread_PostReconcileSuccessorChain(t *testing.T) {
+	t.Cleanup(func() { setWatcherAliveFn(nil) })
+
+	const oldID = "thr-5750144f2a638970"
+	const newID = "thr-e42521d7db4f6450"
+
+	// Watcher process has OLD id in argv — as it would be after reconcile.
+	setWatcherAliveFn(func(id string) bool { return id == oldID })
+
+	// Freshly-registered thread with no predecessor: must not inherit anything.
+	fresh := &Thread{ThreadID: newID}
+	if WatcherAliveForThread(fresh) {
+		t.Error("a successor with no ReapedFrom must not inherit watcher evidence")
+	}
+
+	// Successor with ReapedFrom set — the post-reconcile case.
+	successor := &Thread{
+		ThreadID: newID,
+		SuspendPayload: &SuspendPayload{
+			ReapedFrom: oldID,
+		},
+	}
+	if !WatcherAliveForThread(successor) {
+		t.Error("successor must report watcher alive via predecessor id in argv (post-reconcile case)")
+	}
+
+	// Sanity: once the old watcher dies, the successor is correctly unarmed.
+	setWatcherAliveFn(func(string) bool { return false })
+	if WatcherAliveForThread(successor) {
+		t.Error("successor with a dead predecessor watcher must not report alive")
+	}
+}
+
 // Rule A21 falsification. WatcherAlive is reached from goroutine-capable
 // consumers while tests install stubs, so the injectable prober must be
 // mutex-guarded rather than assigned bare. This test drives a reader and a

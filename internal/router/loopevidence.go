@@ -82,6 +82,25 @@ func WatcherAlive(threadID string) bool {
 	return getWatcherAliveFn()(threadID)
 }
 
+// WatcherAliveForThread is WatcherAlive with successor-chain awareness.
+// When thread reconcile reaps a record and mints a successor with a new id, the
+// existing watcher process retains the OLD id in its argv — so pgrep on the new
+// id always returns empty, falsely declaring the lane loop-dead. This function
+// also probes the predecessor id (SuspendPayload.ReapedFrom) so a healthy watcher
+// born under the reaped record is not mis-classified as absent.
+func WatcherAliveForThread(t *Thread) bool {
+	if t == nil {
+		return false
+	}
+	if WatcherAlive(t.ThreadID) {
+		return true
+	}
+	if t.SuspendPayload != nil && t.SuspendPayload.ReapedFrom != "" {
+		return WatcherAlive(t.SuspendPayload.ReapedFrom)
+	}
+	return false
+}
+
 // EffectiveStale is the loop-evidence-aware staleness used for the police-trusted
 // `.stale` field. A thread is NOT stale when any of these hold:
 //  1. Its heartbeat is fresh (IsStale = false).
