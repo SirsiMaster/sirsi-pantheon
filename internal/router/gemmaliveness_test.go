@@ -35,6 +35,7 @@ func installGemmaFakes(t *testing.T, status liveness.GemmaStatus) *[]string {
 	zeroRestoreWait(t)
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
+	oldQuarantined := getIsQuarantinedFn()
 	var calls []string
 	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) { return status, "test" })
 	setGemmaServeFn(func(restart bool) error {
@@ -45,10 +46,16 @@ func installGemmaFakes(t *testing.T, status liveness.GemmaStatus) *[]string {
 		}
 		return nil
 	})
+	// Force NOT-quarantined regardless of the real filesystem. Without this,
+	// a genuinely quarantined dev machine (the marker is a real file at
+	// ~/.sirsi/gemma-quarantine, checked via os.UserHomeDir()) makes every
+	// caller of this helper fail, because home is never injected here.
+	setIsQuarantinedFn(func(string) bool { return false })
 	gemmaWedgeStrikes = 0
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
 	return &calls
@@ -136,11 +143,14 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
+	oldQuarantined := getIsQuarantinedFn()
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
+	setIsQuarantinedFn(func(string) bool { return false })
 	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) { return liveness.GemmaDown, "no port" })
 	setGemmaServeFn(func(bool) error { return errors.New("RAM won't fit — 14 GB model > 8 GB free") })
 	gemmaWedgeStrikes = 0
@@ -201,10 +211,13 @@ func TestGemmaLiveness_WeightsAbsentSkipsRestartRoutesToOwner(t *testing.T) {
 		return liveness.GemmaWedged, weightsDetail
 	})
 	setGemmaServeFn(func(bool) error { serveCalls = append(serveCalls, "serve"); return nil })
+	oldQuarantined := getIsQuarantinedFn()
+	setIsQuarantinedFn(func(string) bool { return false })
 	gemmaWedgeStrikes = 0
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
 
@@ -258,11 +271,14 @@ func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
+	oldQuarantined := getIsQuarantinedFn()
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
+	setIsQuarantinedFn(func(string) bool { return false })
 
 	var calls []string
 	// Probe always returns wedged (so post-restore re-probe also returns wedged).
