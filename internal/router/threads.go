@@ -156,6 +156,11 @@ type Thread struct {
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`
+	// ReapedFrom is the ThreadID of the reaped predecessor this thread was
+	// minted to continue. Set on active successors minted by ReconcileExits.
+	// This is the idempotency key: hasSuccessorFor checks this field so a
+	// second reconcile pass does not mint a duplicate successor.
+	ReapedFrom string `json:"reaped_from,omitempty"`
 }
 
 // IsInboxConsumer reports whether this thread can actually drain its agent's
@@ -838,8 +843,10 @@ const (
 	// ReconcileSuspendedStale: a stale active record (the /clear / soft-exit case)
 	// was healed in place — retro-synced then transitioned active→suspended.
 	ReconcileSuspendedStale ReconcileAction = "suspended-stale"
-	// ReconcileMintedSuccessor: a reaped (terminal) record got a NEW suspended
-	// successor carrying reaped_from; the reaped record stays reaped (ADR-022).
+	// ReconcileMintedSuccessor: a reaped (terminal) record got a NEW active
+	// successor with ReapedFrom set; the reaped record stays reaped (ADR-022).
+	// The successor is active so the session can heartbeat into it immediately
+	// without requiring a `sirsi thread resume` first.
 	ReconcileMintedSuccessor ReconcileAction = "minted-successor"
 	// ReconcileUnrecoverable: a reaped record had no recoverable transcript, so no
 	// successor could be minted. The caller MUST surface this visibly — memory was
@@ -852,18 +859,25 @@ type ReconcileOutcome struct {
 	ThreadID    string          `json:"thread_id"`              // the dirty record acted on
 	AgentID     string          `json:"agent_id"`               // its agent
 	Action      ReconcileAction `json:"action"`                 // what healing happened
-	SuccessorID string          `json:"successor_id,omitempty"` // minted suspended thread (minted-successor only)
+	SuccessorID string          `json:"successor_id,omitempty"` // minted active thread (minted-successor only)
 }
 
-// hasSuccessorFor reports whether a suspended successor already exists for the
-// given reaped thread id — the idempotency guard that stops every SessionStart
-// from minting a fresh successor for the same reaped record.
+// hasSuccessorFor reports whether a successor already exists for the given
+// reaped thread id — the idempotency guard that stops every SessionStart from
+// minting a fresh successor for the same reaped record.
+//
+// Checks both the top-level Thread.ReapedFrom (active successors, current
+// shape) and the legacy SuspendPayload.ReapedFrom (suspended successors minted
+// before this field moved to the top level).
 func (r *ThreadRegistry) hasSuccessorFor(reapedID string) bool {
 	for _, t := range r.Threads {
-		if t == nil || t.SuspendPayload == nil {
+		if t == nil {
 			continue
 		}
-		if t.SuspendPayload.ReapedFrom == reapedID {
+		if t.ReapedFrom == reapedID {
+			return true
+		}
+		if t.SuspendPayload != nil && t.SuspendPayload.ReapedFrom == reapedID {
 			return true
 		}
 	}
@@ -879,7 +893,8 @@ func (r *ThreadRegistry) hasSuccessorFor(reapedID string) bool {
 //     to suspended after a retro sync. It was never terminal, so this is legal —
 //     ADR-022's terminal invariant is untouched.
 //   - Reaped record (terminal, hard-kill case): NEVER revived. If the transcript
-//     is recoverable, a new suspended SUCCESSOR is minted carrying reaped_from;
+//     is recoverable, a new ACTIVE successor is minted with Thread.ReapedFrom set
+//     so the session can heartbeat immediately without `thread resume`;
 //     otherwise an unrecoverable warning is recorded for the caller to surface.
 //     Idempotent via hasSuccessorFor + a recency lookback.
 //
@@ -921,29 +936,33 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 			if now.Sub(t.LastSeenAt) > ReconcileReapedLookback || reg.hasSuccessorFor(t.ThreadID) {
 				continue // too old, or already healed — idempotent
 			}
-			payload, ok := retro(t)
+			_, ok := retro(t)
 			if !ok {
 				outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileUnrecoverable})
 				continue
 			}
-			if payload == nil {
-				payload = &SuspendPayload{}
-			}
-			if payload.SuspendedAt.IsZero() {
-				payload.SuspendedAt = now
-			}
-			payload.ReapedFrom = t.ThreadID
+			// Mint an ACTIVE successor so the session can heartbeat into it
+			// immediately without needing `sirsi thread resume`. A suspended
+			// successor was the root cause of the "lane-needs-you" false escalation
+			// loop: heartbeat refused the suspended record, WakePass saw no armed
+			// thread, and horus escalated to owner on every conduit pass.
+			//
+			// The successor carries no SuspendPayload (per ADR-025, that field is
+			// nil for active threads). ReapedFrom on the Thread struct is the
+			// idempotency key: hasSuccessorFor checks it so a second reconcile pass
+			// does not mint a duplicate.
 			succ := &Thread{
-				ThreadID:       NewThreadID(),
-				AgentID:        t.AgentID,
-				Surface:        t.Surface,
-				Repo:           t.Repo,
-				Workstream:     t.Workstream,
-				Host:           t.Host,
-				StartedAt:      now,
-				LastSeenAt:     now,
-				Status:         ThreadStatusSuspended,
-				SuspendPayload: payload,
+				ThreadID:   NewThreadID(),
+				AgentID:    t.AgentID,
+				Surface:    t.Surface,
+				Repo:       t.Repo,
+				Workstream: t.Workstream,
+				Host:       t.Host,
+				MachineID:  t.MachineID,
+				StartedAt:  now,
+				LastSeenAt: now,
+				Status:     ThreadStatusActive,
+				ReapedFrom: t.ThreadID,
 			}
 			reg.Threads[succ.ThreadID] = succ
 			outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileMintedSuccessor, SuccessorID: succ.ThreadID})
