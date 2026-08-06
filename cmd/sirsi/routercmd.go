@@ -484,11 +484,13 @@ var (
 	closeProof   string
 	closeBlocked bool
 	closeAck     bool
+	closeAgent   string
 )
 
 var (
 	respondResult string
 	respondTitle  string
+	respondAgent  string
 )
 
 // routerRespondCmd is the atomic request→response primitive (owner rule
@@ -528,11 +530,13 @@ var routerRespondCmd = &cobra.Command{
 		if item.From == "" {
 			return fmt.Errorf("item %s has no from: — cannot notify the requester", args[0])
 		}
-		me := item.To
+		me, reason := resolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), respondAgent)
 		if me == "" {
-			me = "claude-home"
+			return fmt.Errorf("resolve acting agent: %s", reason)
 		}
-
+		if actorErr := f.ValidateAgent("acting agent", me); actorErr != nil {
+			return actorErr
+		}
 		// NOTIFY FIRST, then close. There is no cross-row transaction here (the
 		// file era has no transaction at all), so one of the two orders has to
 		// be the survivable one — and only this order is. Closing first can
@@ -566,7 +570,7 @@ var routerRespondCmd = &cobra.Command{
 		// Close with the Result (audit trail). A respond close is by definition
 		// an acknowledgement — the notification above IS the response — so it
 		// carries --ack semantics past the ADR-037 proof gate.
-		if cerr := f.CloseItem(args[0], result); cerr != nil {
+		if cerr := f.CloseItem(me, args[0], result); cerr != nil {
 			return fmt.Errorf("%s notified via %s but closing %s FAILED — rerun respond, the resend dedupes: %w",
 				item.From, res.ID, args[0], cerr)
 		}
@@ -602,7 +606,11 @@ var routerCloseCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		if err := f.CloseItem(args[0], result); err != nil {
+		actor, reason := resolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), closeAgent)
+		if actor == "" {
+			return fmt.Errorf("resolve acting agent: %s", reason)
+		}
+		if err := f.CloseItem(actor, args[0], result); err != nil {
 			return err
 		}
 		fmt.Printf("  Closed %s\n", args[0])
@@ -1294,8 +1302,10 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendType, "type", "", "Message type: proposal|review|decision (ADR-024 §5 — one inbox, no reviews/ or decisions/ dirs)")
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
+	routerCloseCmd.Flags().StringVar(&closeAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerRespondCmd.Flags().StringVar(&respondResult, "result", "", "Response body routed back to the requester (literal text, or @file)")
 	routerRespondCmd.Flags().StringVar(&respondTitle, "title", "", "Title for the response inbound (default: RESPONSE: <request title>)")
+	routerRespondCmd.Flags().StringVar(&respondAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerCloseCmd.Flags().StringVar(&closeProof, "proof", "", "Completion proof JSON path, relative to repo root or absolute (ADR-037)")
 	routerCloseCmd.Flags().BoolVar(&closeBlocked, "blocked", false, "Close as explicitly blocked; requires --result and skips proof validation")
 	routerCloseCmd.Flags().BoolVar(&closeAck, "ack", false, "Close as coordination/ack only; requires --result and skips proof validation")

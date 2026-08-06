@@ -233,7 +233,7 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	}
 
 	stdoutClose, _, err := runSirsiInDir(t, tmp, 10*time.Second,
-		"router", "close", id, "--result", "did the thing")
+		"router", "close", id, "--agent", "claude-b", "--result", "did the thing")
 	if err != nil {
 		t.Fatalf("close failed: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	// Double-close is idempotent: the file is already closed and the store
 	// mirror heals (phantom-open fix) — store-only items always behaved this
 	// way, so file-backed items now match.
-	if _, stderrDC, dcErr := runSirsiInDir(t, tmp, 10*time.Second, "router", "close", id); dcErr != nil {
+	if _, stderrDC, dcErr := runSirsiInDir(t, tmp, 10*time.Second, "router", "close", id, "--agent", "claude-b"); dcErr != nil {
 		t.Errorf("expected double-close to succeed idempotently, got: %v (%s)", dcErr, stderrDC)
 	}
 }
@@ -1045,6 +1045,14 @@ func TestRouterRespondStoreOnlyItem(t *testing.T) {
 	}
 
 	out, errOut, err = run("router", "respond", id, "--result", "merged at abc123")
+	if err == nil || !strings.Contains(errOut, "could not resolve the current agent") {
+		t.Fatalf("ambiguous respond must fail closed: err=%v\n%s\n%s", err, out, errOut)
+	}
+	out, errOut, err = run("router", "respond", id, "--agent", "ghost", "--result", "merged at abc123")
+	if err == nil || !strings.Contains(errOut, `acting agent "ghost"`) {
+		t.Fatalf("undeclared actor must fail closed: err=%v\n%s\n%s", err, out, errOut)
+	}
+	out, errOut, err = run("router", "respond", id, "--agent", "claude-home", "--result", "merged at abc123")
 	if err != nil {
 		t.Fatalf("respond failed: %v\n%s\n%s", err, out, errOut)
 	}

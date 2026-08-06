@@ -364,6 +364,7 @@ EOF
 
   # Close the original with a short pointer (full deliverable lives in the routed reply).
   (cd "$REPO" && "$SIRSI" router close "$id" \
+    --agent gemma-pantheon \
     --result "Completed by gemma; full deliverable routed back to ${from} as a review item. (Model: ${model##*/}, task=${task:-general}, flagged=${flag_for_review:-no})" >/dev/null 2>&1) \
     && log "closed $id" || log "close FAILED $id"
   rm -f "$result_file" "$f"

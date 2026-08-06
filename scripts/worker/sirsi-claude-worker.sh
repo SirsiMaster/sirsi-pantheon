@@ -175,7 +175,7 @@ while true; do
         continue
       fi
       case "$id" in *sweep-probe*|*arm-proof*|*-${AGENT_ID}-${AGENT_ID}-*)
-        (cd "$REPO" && "$SIRSI" router close "$id" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
+        (cd "$REPO" && "$SIRSI" router close "$id" --agent "$AGENT_ID" --result "self-probe — closed by build worker (no build task); fabric alive" >/dev/null 2>&1)
         log "SKIP+CLOSE self-probe $id"; continue;; esac
       # Bounded retries — the structural loop-proof (2026-07-03). Count attempts
       # per item id; after MAX_ATTEMPTS, abandon + surface to the owner and never
