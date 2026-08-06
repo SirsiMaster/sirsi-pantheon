@@ -85,6 +85,7 @@ acquire_lock() {
             fi
             if [ -z "$pid" ]; then
                 sleep 1
+                waited=$((waited + 1))
                 pid=$(cat "$LOCK_DIR" 2>/dev/null || true)
                 if [ -z "$pid" ]; then
                     rm -f "$LOCK_DIR"
