@@ -68,8 +68,13 @@ func TestTaskV4V5V6MigrateDirectlyToV7(t *testing.T) {
 			if err = s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if version != 7 {
-				t.Fatalf("version=%d", version)
+			// Assert the CURRENT max, not a literal: this test is about v4-v6
+			// databases migrating forward with the v7 task columns populated,
+			// not about 7 being the newest schema. Hardcoding 7 made every
+			// future migration break an unrelated test (v8 did exactly that).
+			wantVersion := migrations[len(migrations)-1].version
+			if version != wantVersion {
+				t.Fatalf("version=%d, want %d (current max)", version, wantVersion)
 			}
 			got, err := s.GetTask("a", "old")
 			if err != nil {
