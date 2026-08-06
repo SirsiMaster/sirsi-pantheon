@@ -1048,9 +1048,9 @@ func TestRouterRespondStoreOnlyItem(t *testing.T) {
 	if err == nil || !strings.Contains(errOut, "could not resolve the current agent") {
 		t.Fatalf("ambiguous respond must fail closed: err=%v\n%s\n%s", err, out, errOut)
 	}
-	out, errOut, err = run("router", "respond", id, "--agent", "claude-fw", "--result", "merged at abc123")
-	if err == nil || !strings.Contains(errOut, `addressed to "claude-home"`) {
-		t.Fatalf("wrong declared actor must fail closed: err=%v\n%s\n%s", err, out, errOut)
+	out, errOut, err = run("router", "respond", id, "--agent", "ghost", "--result", "merged at abc123")
+	if err == nil || !strings.Contains(errOut, `acting agent "ghost"`) {
+		t.Fatalf("undeclared actor must fail closed: err=%v\n%s\n%s", err, out, errOut)
 	}
 	out, errOut, err = run("router", "respond", id, "--agent", "claude-home", "--result", "merged at abc123")
 	if err != nil {

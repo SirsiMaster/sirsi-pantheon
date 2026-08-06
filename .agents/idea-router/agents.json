@@ -669,6 +669,8 @@
     "horus": {
       "id": "horus",
       "type": "service",
+	  "description": "Actor-only local supervision identity; never route inbox work here and do not add a wake mechanism.",
+	  "capabilities": ["close:any"],
       "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "workstream": "pantheon",

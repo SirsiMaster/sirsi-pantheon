@@ -537,10 +537,6 @@ var routerRespondCmd = &cobra.Command{
 		if actorErr := f.ValidateAgent("acting agent", me); actorErr != nil {
 			return actorErr
 		}
-		if item.To != me {
-			return fmt.Errorf("acting agent %q cannot respond to item %s addressed to %q", me, args[0], item.To)
-		}
-
 		// NOTIFY FIRST, then close. There is no cross-row transaction here (the
 		// file era has no transaction at all), so one of the two orders has to
 		// be the survivable one — and only this order is. Closing first can

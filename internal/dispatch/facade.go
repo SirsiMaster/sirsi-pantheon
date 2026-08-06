@@ -206,12 +206,13 @@ func (f *Facade) ValidateAgent(party, id string) error {
 	}
 	var reg struct {
 		Agents map[string]struct {
-			ID         string `json:"id"`
-			Type       string `json:"type"`
-			Repo       string `json:"repo"`
-			Cwd        string `json:"cwd"`
-			Workstream string `json:"workstream"`
-			Wake       struct {
+			ID           string   `json:"id"`
+			Type         string   `json:"type"`
+			Repo         string   `json:"repo"`
+			Cwd          string   `json:"cwd"`
+			Workstream   string   `json:"workstream"`
+			Capabilities []string `json:"capabilities"`
+			Wake         struct {
 				Mechanism string `json:"mechanism"`
 			} `json:"wake"`
 		} `json:"agents"`
@@ -231,11 +232,32 @@ func (f *Facade) ValidateAgent(party, id string) error {
 		return undeclaredAgentError(party, id, registryPath)
 	}
 	switch strings.TrimSpace(cfg.Wake.Mechanism) {
-	case "launchagent", "session-message", "routine", "none", "owner-surface":
+	case "launchagent", "session-message", "routine", "cli-spawn", "none", "owner-surface":
 	default:
-		return fmt.Errorf("dispatch: invalid %s %q in %s: wake.mechanism %q is outside the ADR-054 wake matrix (launchagent, session-message, routine, none, owner-surface)", party, id, registryPath, cfg.Wake.Mechanism)
+		return fmt.Errorf("dispatch: invalid %s %q in %s: wake.mechanism %q is outside the ADR-054 wake matrix (launchagent, session-message, routine, cli-spawn, none, owner-surface)", party, id, registryPath, cfg.Wake.Mechanism)
 	}
 	return nil
+}
+
+func (f *Facade) agentHasCapability(id, wanted string) (bool, error) {
+	data, err := os.ReadFile(filepath.Join(f.root, "agents.json"))
+	if err != nil {
+		return false, err
+	}
+	var reg struct {
+		Agents map[string]struct {
+			Capabilities []string `json:"capabilities"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return false, err
+	}
+	for _, capability := range reg.Agents[id].Capabilities {
+		if capability == wanted {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func undeclaredAgentError(party, id, registryPath string) error {
@@ -478,7 +500,14 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 		return err
 	}
 	if item.To != actor {
-		return fmt.Errorf("dispatch: acting agent %q cannot close item %s addressed to %q", actor, id, item.To)
+		allowed, capabilityErr := f.agentHasCapability(actor, "close:any")
+		if capabilityErr != nil {
+			return fmt.Errorf("dispatch: verify delegated-close authority: %w", capabilityErr)
+		}
+		if !allowed {
+			return fmt.Errorf("dispatch: acting agent %q cannot close item %s addressed to %q without capability close:any", actor, id, item.To)
+		}
+		result = fmt.Sprintf("Closed by declared actor %s on behalf of recipient %s.\n\n%s", actor, item.To, result)
 	}
 	fileExists := false
 	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {

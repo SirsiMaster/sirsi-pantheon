@@ -36,6 +36,8 @@ func writeTestRegistry(t *testing.T, root string) {
 		"agents": {
 			"a": {"id":"a","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
 			"b": {"id":"b","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
+			"supervisor": {"id":"supervisor","type":"service","cwd":"/tmp","workstream":"test","capabilities":["close:any"],"wake":{"mechanism":"none"}},
+			"spawnable": {"id":"spawnable","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"cli-spawn"}},
 			"flooder": {"id":"flooder","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
 			"victim": {"id":"victim","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
 			"claude-finalwishes": {"id":"claude-finalwishes","type":"claude","cwd":"/tmp","workstream":"finalwishes","wake":{"mechanism":"none"}},
@@ -122,23 +124,37 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	}
 }
 
-func TestCloseItemEnforcesActingRecipient(t *testing.T) {
+func TestCloseItemEnforcesDeclaredActorAndAuditsDelegation(t *testing.T) {
 	f := testFacade(t)
 	res, err := f.Send("a", "b", "close authority", "review", "body")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.CloseItem("ghost", res.ID, "spoof"); err == nil || !strings.Contains(err.Error(), `acting agent "ghost"`) {
-		t.Fatalf("undeclared actor error = %v", err)
+	if closeErr := f.CloseItem("ghost", res.ID, "spoof"); closeErr == nil || !strings.Contains(closeErr.Error(), `acting agent "ghost"`) {
+		t.Fatalf("undeclared actor error = %v", closeErr)
 	}
-	if err := f.CloseItem("a", res.ID, "wrong recipient"); err == nil || !strings.Contains(err.Error(), `addressed to "b"`) {
-		t.Fatalf("wrong declared actor error = %v", err)
+	if closeErr := f.CloseItem("a", res.ID, "unauthorized delegation"); closeErr == nil || !strings.Contains(closeErr.Error(), "without capability close:any") {
+		t.Fatalf("ordinary non-recipient close error = %v", closeErr)
 	}
-	if inbox, err := f.Inbox("b"); err != nil || len(inbox) != 1 {
-		t.Fatalf("rejected actors mutated item: inbox=%+v err=%v", inbox, err)
+	if inbox, inboxErr := f.Inbox("b"); inboxErr != nil || len(inbox) != 1 {
+		t.Fatalf("rejected actors mutated item: inbox=%+v err=%v", inbox, inboxErr)
 	}
-	if err := f.CloseItem("b", res.ID, "authorized"); err != nil {
-		t.Fatalf("recipient close failed: %v", err)
+	if closeErr := f.CloseItem("supervisor", res.ID, "supervised close"); closeErr != nil {
+		t.Fatalf("declared delegated actor close failed: %v", closeErr)
+	}
+	closed, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(closed.Result, "Closed by declared actor supervisor on behalf of recipient b.") || !strings.Contains(closed.Result, "supervised close") {
+		t.Fatalf("delegated close lacks acting-identity audit: %q", closed.Result)
+	}
+}
+
+func TestValidateAgentAcceptsExplicitCLISpawn(t *testing.T) {
+	f := testFacade(t)
+	if err := f.ValidateAgent("recipient", "spawnable"); err != nil {
+		t.Fatalf("explicit cli-spawn must remain routable: %v", err)
 	}
 }
 
