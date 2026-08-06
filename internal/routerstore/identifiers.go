@@ -63,15 +63,21 @@ func (i Identifier) Name() string { return fmt.Sprintf("%s-%03d", i.Namespace, i
 // property the allocator needs: the MAX(number) read and the INSERT cannot be
 // interleaved by another allocator.
 func (s *Store) withTx(fn func(*sql.Tx) error) error {
-	tx, err := s.beginImmediate()
-	if err != nil {
-		return fmt.Errorf("routerstore: identifiers: begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := fn(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+	// The whole transaction retries under READONLY contention, not just the
+	// begin: SQLite frequently surfaces the lock failure at Commit. Nothing is
+	// committed on the failing path, so re-running fn observes no partial work.
+	// See writeretry.go for why contention arrives as READONLY and not BUSY.
+	return s.retryWrite(func() error {
+		tx, err := s.beginImmediate()
+		if err != nil {
+			return fmt.Errorf("routerstore: identifiers: begin: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := fn(tx); err != nil {
+			return err
+		}
+		return tx.Commit()
+	})
 }
 
 var namespacePattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,15}$`)
