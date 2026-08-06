@@ -82,22 +82,14 @@ func Open(repoRoot string) (*Facade, error) {
 	}
 	store, err := routerstore.Open(dbPath)
 	if err != nil {
-		// A store NEWER than this binary is not a reason to go blind. The write
-		// guard is correct — this binary must not migrate or mutate a schema it
-		// does not define — but refusing to READ turned a coordination problem
-		// into a fleet-wide blackout on 2026-08-05: every board, the CLI, and the
-		// menubar all went dark against a store that was otherwise healthy.
-		//
-		// Fall back to the read-only subset and CARRY THE GAP, so every surface
-		// can say out loud that it is showing a partial view. Silent degradation
-		// here would be the false green this whole path exists to remove.
-		ro, gap, roErr := routerstore.OpenReadOnly(dbPath)
-		if roErr != nil || !gap.Degraded() {
-			return nil, err // not a version gap, or read-only cannot help: original error
-		}
-		f := New(filepath.Join(repoRoot, ".agents", "idea-router"), ro)
-		f.schemaGap = gap
-		return f, nil
+		// FAIL CLOSED. An earlier version fell back to a read-only handle here so
+		// surfaces could keep rendering through a schema gap. That was wrong at
+		// this layer: this facade is the WRITE path, and a read-only store made
+		// close/send "succeed" in the file mirror while silently failing in the
+		// store — a split brain, which is strictly worse than the blackout it was
+		// meant to prevent. Read-only belongs to READ surfaces only, which call
+		// routerstore.OpenReadOnly directly and render the gap banner.
+		return nil, err
 	}
 	return New(filepath.Join(repoRoot, ".agents", "idea-router"), store), nil
 }
