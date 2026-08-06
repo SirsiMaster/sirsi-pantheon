@@ -1102,18 +1102,19 @@ var (
 	pruneNoHome    bool
 )
 
-// routerPruneCmd applies the router fabric's retention policy: closed items,
-// dated incident dumps, append-only logs, and terminal work records past the
-// retention window are removed (age cap), and oversized-but-recent logs are
-// tail-capped (size cap). Owner directive 2026-07-10: at most a 90-day log
-// period; logging beyond that is wasteful. Dry-run first (Rule A1).
+// routerPruneCmd applies the router fabric's retention policy: closed item
+// payloads, dated incident dumps, append-only logs, and terminal work records
+// past the retention window are compacted/removed (age cap), and
+// oversized-but-recent logs are tail-capped (size cap). Owner directive
+// 2026-07-10: at most a 90-day log period; logging beyond that is wasteful.
+// Dry-run first (Rule A1).
 var routerPruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Apply the router retention policy (default: 90-day cap; --dry-run to preview)",
 	Long: `Reclaim router byproduct storage under the retention window (default 90 days).
 
-Removed when older than the window:
-  • closed items (open items are NEVER touched, regardless of age)
+Compacted or removed when older than the window:
+  • closed item payloads (item ids become tombstones; open items are NEVER touched)
   • dated quarantine/incident dumps (quarantine-YYYYMMDD-*)
   • stale logs, and terminal (completed/failed/blocked) work-queue records
 
@@ -1142,7 +1143,7 @@ Also sweeps ~/.sirsi runtime logs unless --no-home is set. Always run with
 			}
 			rep := router.PruneReport{Cutoff: cutoff, DryRun: pruneDryRun}
 			for _, it := range items {
-				rep.Actions = append(rep.Actions, router.PruneAction{Path: "items/" + it.ID + ".md", Kind: "item", Before: it.Bytes})
+				rep.Actions = append(rep.Actions, router.PruneAction{Path: "items/" + it.ID + ".md", Kind: "item", Before: it.Bytes, After: it.After})
 			}
 			reports = append(reports, rep)
 		case pruneLogsOnly:

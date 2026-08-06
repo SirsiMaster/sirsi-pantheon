@@ -6,14 +6,15 @@
 // without bound (a 54 MB triage log, a 17 MB wake log, a 45 MB one-time
 // quarantine dump). Prune applies two orthogonal caps:
 //
-//   - Age cap: anything older than the cutoff (default 90 days) is removed.
+//   - Age cap: anything older than the cutoff (default 90 days) is removed,
+//     except closed router items, whose payloads are compacted into tombstones.
 //   - Size cap: active append-only logs are tail-capped so a single recent
 //     file cannot balloon indefinitely.
 //
 // Every destructive action is gated behind a dry-run that reports the exact
 // bytes it would reclaim (PANTHEON_RULES Rule A1 — no deletion without a
-// dry-run path). Open work items are never candidates — that is enforced one
-// layer down in work.PruneItems.
+// dry-run path). Open work items are never candidates, and closed work item IDs
+// are never removed — that is enforced one layer down in work.PruneItems.
 package router
 
 import (
@@ -71,14 +72,14 @@ func (r PruneReport) Reclaimed() int64 {
 // add appends an action to the report.
 func (r *PruneReport) add(a PruneAction) { r.Actions = append(r.Actions, a) }
 
-// PruneArtifacts sweeps the router root: closed items, dated quarantine dumps,
-// logs (age-delete + size tail-cap), the work queue's terminal records, and the
-// oversized process snapshot. cutoff is the retention boundary; dryRun reports
-// without mutating.
+// PruneArtifacts sweeps the router root: closed item payloads, dated quarantine
+// dumps, logs (age-delete + size tail-cap), the work queue's terminal records,
+// and the oversized process snapshot. cutoff is the retention boundary; dryRun
+// reports without mutating.
 func PruneArtifacts(routerRoot string, cutoff time.Time, dryRun bool) (PruneReport, error) {
 	rep := PruneReport{Cutoff: cutoff, DryRun: dryRun}
 
-	// 1. Closed items past the cutoff (open items are never touched).
+	// 1. Closed items past the cutoff are tombstoned; open items are never touched.
 	items, err := work.PruneItems(routerRoot, cutoff, dryRun)
 	if err != nil {
 		return rep, err
@@ -88,6 +89,7 @@ func PruneArtifacts(routerRoot string, cutoff time.Time, dryRun bool) (PruneRepo
 			Path:   filepath.Join("items", it.ID+".md"),
 			Kind:   "item",
 			Before: it.Bytes,
+			After:  it.After,
 		})
 	}
 
