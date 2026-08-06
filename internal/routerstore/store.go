@@ -49,8 +49,19 @@ var ErrAlreadyClosed = errors.New("routerstore: item already closed")
 // MaxSupportedSchemaVersion is the newest router-store schema this binary can
 // safely open. It is exported into `sirsi version --json` so installers can
 // reject an older candidate before replacing a live binary.
+//
+// This scans for the maximum rather than indexing the last element: the safety
+// claim then holds structurally, not by the convention that migrations stay
+// sorted. An empty slice reports 0, which CheckSchemaCeiling treats as
+// "cannot prove compatibility" and fails closed.
 func MaxSupportedSchemaVersion() int {
-	return migrations[len(migrations)-1].version
+	max := 0
+	for _, m := range migrations {
+		if m.version > max {
+			max = m.version
+		}
+	}
+	return max
 }
 
 // ReadSchemaVersion reads PRAGMA user_version without opening Store or running

@@ -882,8 +882,8 @@ func TestReadSchemaVersionAndMaxSupported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := s.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	got, err := ReadSchemaVersion(path)
 	if err != nil {
