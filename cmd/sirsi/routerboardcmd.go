@@ -60,8 +60,8 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 	if dir == "" {
 		dir = filepath.Join(home, ".sirsi", "ledger-dashboard")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
-		return fmt.Errorf("board UI not found at %s/index.html: %w", dir, err)
+	if _, statErr := os.Stat(filepath.Join(dir, "index.html")); statErr != nil {
+		return fmt.Errorf("board UI not found at %s/index.html: %w", dir, statErr)
 	}
 
 	// Absolute path to the binary: under launchd, PATH lacks ~/.local/bin, and

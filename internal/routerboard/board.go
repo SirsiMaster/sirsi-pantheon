@@ -1,7 +1,7 @@
 // Package routerboard is the Go port of the out-of-repo Python router board
 // that served 127.0.0.1:8734.
 //
-// The Python original earned its behaviour the hard way — nearly every rule
+// The Python original earned its behavior the hard way — nearly every rule
 // below exists because a specific lie reached the owner. They are ported
 // deliberately, not incidentally:
 //
@@ -48,7 +48,7 @@ type Board struct {
 	agentsJSON string
 
 	mu       sync.RWMutex
-	payload  []byte // marshalled Payload
+	payload  []byte // marshaled Payload
 	version  uint64 // bumped only when the payload actually CHANGES
 	buildID  string
 	prev     map[string]string // agent\x00task_id -> last seen status
@@ -203,7 +203,7 @@ type TaskDetail struct {
 }
 
 // rawTask keeps the ledger's task object intact so unknown/new fields survive
-// the round trip. Re-marshalling a struct would silently drop any v7 field this
+// the round trip. Re-marshaling a struct would silently drop any v7 field this
 // build does not know about, which is how a board starts under-reporting.
 type rawTask map[string]interface{}
 
@@ -294,7 +294,7 @@ func (b *Board) Version() uint64 {
 	return b.version
 }
 
-// Snapshot returns the marshalled payload and its version. version 0 means no
+// Snapshot returns the marshaled payload and its version. version 0 means no
 // successful poll has completed — callers must 503 rather than serve zeros.
 func (b *Board) Snapshot() ([]byte, uint64) {
 	b.mu.RLock()

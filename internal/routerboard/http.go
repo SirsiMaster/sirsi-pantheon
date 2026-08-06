@@ -159,7 +159,7 @@ func (h *Handler) arm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Run polls until the context is cancelled.
+// Run polls until the context is canceled.
 func (b *Board) Run(ctx context.Context, every time.Duration) {
 	b.Poll(ctx)
 	t := time.NewTicker(every)

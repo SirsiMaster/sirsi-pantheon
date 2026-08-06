@@ -72,7 +72,7 @@ func OpenReadOnly(path string) (*Store, SchemaGap, error) {
 	// file: URI form. Without the scheme the driver silently ignores the mode
 	// parameter and hands back a writable handle: the first version of this
 	// function did exactly that, and its own test caught a successful INSERT
-	// through what was labelled read-only. A guarantee the driver does not
+	// through what was labeled read-only. A guarantee the driver does not
 	// enforce is a comment.
 	dsn := "file:" + path + "?mode=ro&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
