@@ -49,14 +49,24 @@ func (s *Store) UpsertThreads(records []ThreadRecord) error {
 	}
 	defer tx.Rollback()
 	for _, r := range records {
-		if _, err := tx.Exec(`
+		result, err := tx.Exec(`
 INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload
 WHERE threads.status NOT IN ('closed','reaped','suspended')
-   AND excluded.last_seen_at > threads.last_seen_at
-   OR excluded.status IN ('closed','reaped','suspended') AND excluded.last_seen_at > threads.last_seen_at`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload); err != nil {
+  AND (excluded.last_seen_at > threads.last_seen_at
+       OR excluded.last_seen_at = threads.last_seen_at
+          AND (excluded.status IN ('closed','reaped','suspended')
+               OR excluded.status = threads.status AND excluded.payload > threads.payload))`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload)
+		if err != nil {
 			return fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("routerstore: count upsert thread %q: %w", r.ThreadID, err)
+		}
+		if affected != 1 {
+			return fmt.Errorf("routerstore: thread %q mutation rejected by lifecycle fence", r.ThreadID)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -89,12 +99,16 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
 // DeleteThreadCAS removes only the exact row observed by the pruning read.
 // A concurrent heartbeat/status transition changes last_seen/status and makes
 // this a safe no-op rather than deleting live truth.
-func (s *Store) DeleteThreadCAS(threadID, status, lastSeenAt string) error {
-	_, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=?`, threadID, status, lastSeenAt)
+func (s *Store) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error) {
+	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=?`, threadID, status, lastSeenAt)
 	if err != nil {
-		return fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
+		return false, fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
 	}
-	return nil
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("routerstore: count deleted thread %q: %w", threadID, err)
+	}
+	return affected == 1, nil
 }
 
 // ListThreads returns every durable thread payload.

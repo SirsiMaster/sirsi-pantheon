@@ -7,7 +7,43 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
+
+func TestThreadTimestampKeyAdvancesAcrossZeroNanoseconds(t *testing.T) {
+	store, err := routerstore.Open(filepath.Join(t.TempDir(), "router.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	base := time.Date(2026, 8, 6, 9, 31, 0, 0, time.UTC)
+	makeRecord := func(seen time.Time, item string) routerstore.ThreadRecord {
+		thread := &Thread{ThreadID: "thr", AgentID: "codex-pantheon", Status: ThreadStatusActive, LastSeenAt: seen, CurrentItem: item}
+		records, recordErr := threadRecords(&ThreadRegistry{Threads: map[string]*Thread{"thr": thread}})
+		if recordErr != nil {
+			t.Fatal(recordErr)
+		}
+		return records[0]
+	}
+	first := makeRecord(base, "old")
+	later := makeRecord(base.Add(500*time.Millisecond), "new")
+	if !(later.LastSeenAt > first.LastSeenAt) {
+		t.Fatalf("fixed-width timestamp lost ordering: %q <= %q", later.LastSeenAt, first.LastSeenAt)
+	}
+	if err := store.UpsertThreads([]routerstore.ThreadRecord{first}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertThreads([]routerstore.ThreadRecord{later}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.ListThreads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].LastSeenAt != later.LastSeenAt {
+		t.Fatalf("later sub-second heartbeat was not applied: %#v", rows)
+	}
+}
 
 func TestStoreOnlyThreadLifecycleDoesNotWriteRegistryFile(t *testing.T) {
 	home := t.TempDir()
