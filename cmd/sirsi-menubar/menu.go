@@ -387,16 +387,3 @@ func slugify(s string) string {
 	}
 	return out
 }
-
-// ledgerProgressBar renders a compact ASCII bar like "[████████░░░░]" for the
-// menubar Ledger section. width is the number of fill characters.
-func ledgerProgressBar(pct, width int) string {
-	filled := pct * width / 100
-	if filled < 0 {
-		filled = 0
-	}
-	if filled > width {
-		filled = width
-	}
-	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-}
