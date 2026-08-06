@@ -32,8 +32,10 @@ func (s *Store) ClaimNextTask(agent, worker, threadID string, ttl time.Duration)
 	if agent == "" || worker == "" || threadID == "" {
 		return nil, fmt.Errorf("routerstore: task claim requires agent, worker, and thread id")
 	}
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return nil, err
 	}
 	token, err := newToken()
 	if err != nil {
@@ -106,8 +108,10 @@ func (s *Store) taskLeaseUpdate(agent, taskID, token string, query string, args 
 // RenewTaskLease heartbeats executable ownership. It is a store mutation, so
 // supervisors can distinguish work acknowledgment from session liveness.
 func (s *Store) RenewTaskLease(agent, taskID, token string, ttl time.Duration) error {
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return err
 	}
 	now := s.clock().UTC()
 	return s.taskLeaseUpdate(agent, taskID, token,
