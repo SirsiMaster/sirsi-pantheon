@@ -27,6 +27,10 @@ type AgentConfig struct {
 	// Cwd is the working directory for the agent.
 	Cwd string `json:"cwd"`
 
+	// Repo is the declared repository boundary. Cwd remains the process launch
+	// directory; new registrations write both explicitly (ADR-054).
+	Repo string `json:"repo,omitempty"`
+
 	// Env is optional environment variable overrides.
 	Env map[string]string `json:"env,omitempty"`
 
@@ -37,10 +41,18 @@ type AgentConfig struct {
 	// Missing wake metadata defaults to cli-spawn for existing agents.
 	Wake WakeConfig `json:"wake,omitempty"`
 
-	// extra preserves JSON fields not known to this version of AgentConfig
-	// (e.g. "consumer") so a LoadRegistry→SaveRegistry round-trip never
-	// silently erases metadata the struct does not model. Adding a typed field
-	// later is additive and safe — the extra copy is just dropped on load.
+	// Consumer declares the invocation that actually DRAINS this agent's inbox.
+	// Distinct from Command on purpose: Command is a launch command whose work
+	// prompt is appended by an executor, so spawning it bare consumes nothing.
+	// Absent = this lane has no consumer, and every surface must say so rather
+	// than infer one from the shape of Command (see consumer.go).
+	Consumer ConsumerConfig `json:"consumer,omitempty"`
+
+	// extra preserves JSON fields not known to this version of AgentConfig so a
+	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the
+	// struct does not model. "consumer" was the original motivating example and
+	// is now typed above — exactly the additive evolution this was built for:
+	// the extra copy is simply dropped on load once a real field claims the key.
 	extra map[string]json.RawMessage
 }
 
@@ -99,6 +111,7 @@ func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
 		}
 	}
 	return json.Marshal(m)
+
 }
 
 // WakeConfig defines the pluggable wake adapter for a registered agent.
@@ -269,7 +282,7 @@ func (cfg *AgentConfig) Validate() error {
 		if cfg.Wake.MCPServer == "" {
 			return fmt.Errorf("agent %q: wake.mcp_server is required for mcp-notification", cfg.ID)
 		}
-	case WakeNone:
+	case WakeNone, WakeSessionMessage, WakeRoutine, WakeOwnerSurface:
 		// explicit opt-out: agent cannot be auto-woken, operator must start it manually
 	default:
 		return fmt.Errorf("agent %q: unsupported wake mechanism %q", cfg.ID, cfg.Wake.Mechanism)

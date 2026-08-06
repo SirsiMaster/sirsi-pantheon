@@ -280,7 +280,6 @@ func Summarize(s Snapshot) BoardSummary {
 				bs.DoneTasks++
 			case "blocked":
 				bs.BlockedTasks++
-				bs.ActiveTasks++
 			default:
 				bs.ActiveTasks++
 			}
@@ -301,7 +300,6 @@ func Summarize(s Snapshot) BoardSummary {
 				pg.Done++
 			case "blocked":
 				pg.Blocked++
-				pg.Active++
 			default:
 				pg.Active++
 			}

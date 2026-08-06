@@ -66,6 +66,58 @@ func TestSummarizePhaseGroups(t *testing.T) {
 	}
 }
 
+func TestSummarizeSemantics(t *testing.T) {
+	tests := []struct {
+		name        string
+		tasks       []routerstore.Task
+		wantTotal   int
+		wantDone    int
+		wantActive  int
+		wantBlocked int
+		wantPct     int
+	}{
+		{name: "zero tasks"},
+		{
+			name: "all done",
+			tasks: []routerstore.Task{
+				{Agent: "a", TaskID: "1", Status: "done", ResponsibleParty: "self"},
+				{Agent: "a", TaskID: "2", Status: "done", ResponsibleParty: "self"},
+			},
+			wantTotal: 2, wantDone: 2, wantPct: 100,
+		},
+		{
+			name: "blocked not in active",
+			tasks: []routerstore.Task{
+				{Agent: "a", TaskID: "1", Status: "done", ResponsibleParty: "self"},
+				{Agent: "a", TaskID: "2", Status: "in-progress", ResponsibleParty: "self"},
+				{Agent: "a", TaskID: "3", Status: "blocked", ResponsibleParty: "self"},
+			},
+			wantTotal: 3, wantDone: 1, wantActive: 1, wantBlocked: 1, wantPct: 33,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := BuildFrom(nil, tc.tasks, nil, "", time.Now().UTC(), time.Hour)
+			bs := Summarize(s)
+			if bs.TotalTasks != tc.wantTotal {
+				t.Errorf("TotalTasks = %d, want %d", bs.TotalTasks, tc.wantTotal)
+			}
+			if bs.DoneTasks != tc.wantDone {
+				t.Errorf("DoneTasks = %d, want %d", bs.DoneTasks, tc.wantDone)
+			}
+			if bs.ActiveTasks != tc.wantActive {
+				t.Errorf("ActiveTasks = %d, want %d", bs.ActiveTasks, tc.wantActive)
+			}
+			if bs.BlockedTasks != tc.wantBlocked {
+				t.Errorf("BlockedTasks = %d, want %d", bs.BlockedTasks, tc.wantBlocked)
+			}
+			if bs.PctDone != tc.wantPct {
+				t.Errorf("PctDone = %d, want %d", bs.PctDone, tc.wantPct)
+			}
+		})
+	}
+}
+
 func TestDependencyCycleAndMissingFailClosed(t *testing.T) {
 	byID := map[string]work.Item{
 		"a": {ID: "a", Status: "open", BlockedBy: "b"},
