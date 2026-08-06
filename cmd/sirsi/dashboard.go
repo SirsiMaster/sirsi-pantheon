@@ -62,7 +62,6 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		NodeStatusFn: collectDashboardNodeStatus,
 		LedgerFn:     collectDashboardLedger,
 		FleetFn:      collectDashboardFleet,
-		AltPorts:     []int{8734},
 		Unroutable:   dashboardUnroutable(),
 	})
 

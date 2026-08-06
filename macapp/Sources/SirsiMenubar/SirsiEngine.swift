@@ -623,7 +623,16 @@ final class SirsiEngine: ObservableObject {
     func loadFleetBoard() async {
         fleetLoading = true
         defer { fleetLoading = false }
-        let out = await Self.runJSON(args: ["router", "fleet", "--json"])
+        // Read the ROUTER BOARD's own output, not a parallel aggregation.
+        //
+        // This used to call `router fleet --json`, whose summary counts
+        // differently from the board's BoardSummary (the board treats blocked as
+        // a SUBSET of active; fleet reports them as separate tallies). Two
+        // careful aggregations still disagree, and on 2026-08-05 the owner was
+        // shown three surfaces reporting three different numbers under
+        // interchangeable labels. `board-serve --once` runs the SAME code the
+        // served board runs, so parity is structural rather than maintained.
+        let out = await Self.runJSON(args: ["board-serve", "--once", "--shape", "fleet"])
         if let board = try? JSONDecoder().decode(FleetBoard.self, from: out) {
             fleetBoard = board
             fleetError = nil
