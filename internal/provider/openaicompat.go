@@ -29,6 +29,11 @@ type OpenAICompat struct {
 	// no-op was the model declining to act.
 	SupportsTools bool
 	ContextTokens int
+	// UseRealCompletionProbe changes Available() from a /v1/models check to a
+	// real 1-token completion. Required for the SNE local lane per
+	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
+	// /v1/models proves the process is bound, not that inference works.
+	UseRealCompletionProbe bool
 }
 
 func (o *OpenAICompat) Name() string { return o.ProviderName }
@@ -53,12 +58,16 @@ func (o *OpenAICompat) client() *http.Client {
 	return &http.Client{Timeout: 180 * time.Second}
 }
 
-// Available probes /v1/models. Deliberately a real request, not a TCP dial: a
-// listening socket proves a process is bound, not that a model is loaded and
-// serving. That distinction is the difference between "up" and "usable".
+// Available probes liveness. When UseRealCompletionProbe is set (SNE local lane),
+// it sends a 1-token real completion — a serving process that cannot complete
+// is DOWN per MODEL-ROUTER-DESIGN.md. Otherwise it probes /v1/models, which
+// proves a model is loaded but not that inference works.
 func (o *OpenAICompat) Available(ctx context.Context) bool {
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return false
+	}
+	if o.UseRealCompletionProbe {
+		return o.probeCompletion(ctx)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -72,6 +81,43 @@ func (o *OpenAICompat) Available(ctx context.Context) bool {
 		return false
 	}
 	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode == http.StatusOK
+}
+
+// probeCompletion sends a 1-token chat completion to verify the engine can
+// actually infer, not just bind a port. The SNE design specifies this over
+// /health because two incidents proved a wedged model passes /health while
+// returning 500s on real prompts.
+func (o *OpenAICompat) probeCompletion(ctx context.Context) bool {
+	// 30s timeout: a cold model load can be slow but >30s means it is wedged.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	model, err := o.ProbeServedModel(ctx)
+	if err != nil {
+		return false
+	}
+
+	body, err := json.Marshal(ccRequest{
+		Model:     model,
+		Messages:  []ccMessage{{Role: "user", Content: "1"}},
+		MaxTokens: 1,
+	})
+	if err != nil {
+		return false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(o.Endpoint, "/")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	o.auth(req)
+	resp, err := o.client().Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// 200 means the engine completed. Any 5xx means it is serving but broken.
 	return resp.StatusCode == http.StatusOK
 }
 

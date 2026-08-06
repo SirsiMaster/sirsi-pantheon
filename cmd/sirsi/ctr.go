@@ -88,6 +88,7 @@ func init() {
 type ctrResult struct {
 	Repo          string                 `json:"repo"`
 	Scope         string                 `json:"scope,omitempty"` // agent id when scoped
+	GeneratedAt   string                 `json:"generated_at"`    // RFC3339 UTC; stamps the serialization boundary
 	PendingTotal  int                    `json:"pending_total"`
 	AgentsPending int                    `json:"agents_pending"`
 	LiveThreads   int                    `json:"live_threads"`
@@ -145,6 +146,12 @@ func runCtr(_ *cobra.Command, args []string) error {
 	if ctrQuiet {
 		fmt.Printf("ctr: %d pending across %d agent(s) · woke %d · watching %d · needs-owner %d\n",
 			res.PendingTotal, res.AgentsPending, len(res.Woke), len(res.AlreadyLive), len(res.NeedsOwner))
+		// D-CTR-1: LedgerError must reach every renderer, including --quiet,
+		// because hooks and shell prompts consume quiet output and an unknown
+		// ledger state should not vanish on the path a machine reads.
+		if res.LedgerError != "" {
+			fmt.Printf("ctr: ledger-error: %s\n", res.LedgerError)
+		}
 		return nil
 	}
 	renderCtr(res)
@@ -234,6 +241,7 @@ func buildCtrResult(repoRoot, scope string, ns *router.NodeStatus, wp router.Wak
 	res := ctrResult{
 		Repo:         filepath.Base(repoRoot),
 		Scope:        scope,
+		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
 		LiveThreads:  ns.LiveThreadCount,
 		StaleThreads: len(ns.StaleThreads),
 	}

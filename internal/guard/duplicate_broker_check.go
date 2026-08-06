@@ -155,7 +155,7 @@ const brokerFootprintFloor = int64(1) << 30
 // here, so the duplicate-broker check reported a clean machine while an unmanaged
 // model server ate the swap. An enumeration of names is the weakest part of this
 // file; anything that serves a model locally belongs in it.
-var brokerCommand = regexp.MustCompile(`(?i)(gemma-capped-server|gemma\s+serve|omlx[-_]?server|mlx[-_]?server|mlx_lm\.server|llama[-_]server|ollama\s+serve|vllm\.entrypoints|text-generation-launcher)`)
+var brokerCommand = regexp.MustCompile(`(?i)(sirsi-infer(?:ence)?\s+serve|gemma-capped-server|gemma\s+serve|omlx[-_]?server|mlx[-_]?server|mlx_lm\.server|llama[-_]server|ollama\s+serve|vllm\.entrypoints|text-generation-launcher)`)
 
 // capNote marks a broker that carries no memory ceiling — the more dangerous of
 // a duplicated pair, because nothing bounds it.

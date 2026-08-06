@@ -50,7 +50,7 @@ The seven A2A properties this layer provides:
 
 | Property | Pantheon implementation |
 |----------|------------------------|
-| Durable item authority | Router SQLite store (ADR-036/037); `items/*.md` are the item record |
+| Durable item authority | Router SQLite store (ADR-036/037) is the sole authority; `items/*.md` is a frozen legacy audit view, never read for lifecycle |
 | Transactional task-transition events | `sirsi router task update --status` (ADR-050 migration v3) |
 | Edge-triggered marker | Router wait + SSE events; `items/` file monitor for pull-model threads |
 | Fenced spawn lease | Thread register + current_item pickup (ADR-022/024/025) |

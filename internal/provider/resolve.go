@@ -114,12 +114,13 @@ func Local(home string, conf Conf) *OpenAICompat {
 		model = conf.Model
 	}
 	return &OpenAICompat{
-		ProviderName:  "local",
-		Endpoint:      ep,
-		Model:         model,
-		TierValue:     TierLocal,
-		SupportsTools: false, // mlx_lm.server has no tool-calling
-		ContextTokens: 8192,
+		ProviderName:           "local",
+		Endpoint:               ep,
+		Model:                  model,
+		TierValue:              TierLocal,
+		SupportsTools:          false, // mlx_lm.server has no tool-calling
+		ContextTokens:          8192,
+		UseRealCompletionProbe: true, // MODEL-ROUTER-DESIGN.md: liveness = real completion, not /health
 	}
 }
 

@@ -83,6 +83,21 @@ func menubarNodeStatus() (*router.NodeStatus, error) {
 	return router.CollectNodeStatus(repoRoot, nil)
 }
 
+// menubarLedger produces the compact ledger.BoardSummary for GET /api/ledger
+// (A26 Nexus seam). Mirrors the root-resolution pattern from menubarNodeStatus.
+func menubarLedger() (ledger.BoardSummary, error) {
+	routerRoot, ok := resolveRouterRoot()
+	if !ok {
+		return ledger.BoardSummary{}, fmt.Errorf("router root not resolvable from menubar context")
+	}
+	repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // strip /.agents/idea-router
+	snap, err := ledger.Build(repoRoot, "", time.Now().UTC(), 0)
+	if err != nil {
+		return ledger.BoardSummary{}, fmt.Errorf("ledger build: %w", err)
+	}
+	return ledger.Summarize(snap), nil
+}
+
 // applyFDAState renders the disk-access item to the current all/some/none tier:
 // hidden at full visibility, a partial-access nudge when only some folders are
 // granted, a blunt no-access warning when blind. Re-evaluated each refresh so it
@@ -152,6 +167,8 @@ func onReady() {
 		// ADR-026 step 4: serve the Horus ops read-model from the in-process
 		// dashboard. Unresolved root → error → 503 (designed degrade).
 		NodeStatusFn: menubarNodeStatus,
+		// A26 Nexus seam: serve the compact ledger board summary.
+		LedgerFn: menubarLedger,
 	})
 	if err := dashSrv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)

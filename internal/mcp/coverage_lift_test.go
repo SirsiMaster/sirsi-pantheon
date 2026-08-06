@@ -89,9 +89,9 @@ func setupRouterRepoRoot(t *testing.T) string {
 	}
 	if err := os.WriteFile(filepath.Join(rdir, "agents.json"), []byte(`{
 		"agents": {
-			"claude-home": {"type": "claude", "command": ["true"], "cwd": "/tmp"},
-			"claude-pantheon": {"type": "claude", "command": ["true"], "cwd": "/tmp"},
-			"codex-pantheon": {"type": "codex", "command": ["true"], "cwd": "/tmp"}
+			"claude-home": {"id":"claude-home","type":"claude","repo":"/tmp","workstream":"home","wake":{"mechanism":"none"}},
+			"claude-pantheon": {"id":"claude-pantheon","type":"claude","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},
+			"codex-pantheon": {"id":"codex-pantheon","type":"codex","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}}
 		}
 	}`), 0o644); err != nil {
 		t.Fatalf("write agents.json: %v", err)
@@ -150,7 +150,7 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 	// Addressed submit lands in the target's items/ inbox via the facade.
 	res, err = handleRouterSubmit(map[string]interface{}{
 		"type":         "review",
-		"author":       "claude",
+		"author":       "claude-pantheon",
 		"title":        "Addressed Review Beta",
 		"content":      "# Addressed Review Beta\nreviewer: claude\n\nPlease read.",
 		"addressed_to": "codex-pantheon",
@@ -232,9 +232,8 @@ func TestRouterHandlers_SubmitPollAckListGet(t *testing.T) {
 func TestHandleRouterSubmit_InvalidAuthorAndType(t *testing.T) {
 	setupRouterRepoRoot(t)
 
-	// Phase 3: the legacy two-agent author whitelist is gone — the items
-	// model carries the full multi-agent id space (claude-pantheon, gemma,
-	// registry-police, …), exactly like `sirsi router send --from`.
+	// ADR-054: arbitrary authors are rejected at the same facade boundary as
+	// CLI sends; declaration, not MCP reachability, grants identity.
 	res, err := handleRouterSubmit(map[string]interface{}{
 		"type":         "proposal",
 		"author":       "mallory",
@@ -245,14 +244,14 @@ func TestHandleRouterSubmit_InvalidAuthorAndType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
 	}
-	if res.IsError {
-		t.Errorf("arbitrary agent ids are valid senders in the items model, got: %s", resultText(t, res))
+	if !res.IsError || !strings.Contains(resultText(t, res), "invalid sender \"mallory\"") {
+		t.Errorf("undeclared MCP author must be rejected, got: %s", resultText(t, res))
 	}
 
 	// The ADR-024 §5 type vocabulary is still enforced (by the store facade).
 	res, _ = handleRouterSubmit(map[string]interface{}{
 		"type":         "junk-type",
-		"author":       "claude",
+		"author":       "claude-pantheon",
 		"title":        "Bad Type",
 		"content":      "x",
 		"addressed_to": "codex-pantheon",
@@ -267,7 +266,7 @@ func TestHandleRouterWait_PendingItemsReturnImmediately(t *testing.T) {
 
 	res, err := handleRouterSubmit(map[string]interface{}{
 		"type":         "proposal",
-		"author":       "claude",
+		"author":       "claude-pantheon",
 		"title":        "Wake Up Codex",
 		"content":      "# Wake Up Codex\nauthor: claude\n\nWork arrived.",
 		"addressed_to": "codex-pantheon",
@@ -304,7 +303,7 @@ func TestHandleRouterWait_EmptyInboxReturnsClearNote(t *testing.T) {
 	// timeout_s = 0.5 truncates to 0 → single poll, immediate return.
 	start := time.Now()
 	res, err := handleRouterWait(map[string]interface{}{
-		"agent":     "claude",
+		"agent":     "claude-home",
 		"timeout_s": float64(0.5),
 	})
 	if err != nil {
@@ -313,7 +312,7 @@ func TestHandleRouterWait_EmptyInboxReturnsClearNote(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("router_wait blocked %v on an empty inbox with expired deadline", elapsed)
 	}
-	if res.IsError || !strings.Contains(resultText(t, res), "no inbox items for claude") {
+	if res.IsError || !strings.Contains(resultText(t, res), "no inbox items for claude-home") {
 		t.Errorf("expected clear-inbox note, got: %s", resultText(t, res))
 	}
 }
@@ -334,7 +333,7 @@ func TestRouterHandlers_NoRouterFound(t *testing.T) {
 		"router_poll": {},
 		"router_list": {},
 		"router_get":  {"id": "anything"},
-		"router_wait": {"agent": "claude", "timeout_s": float64(1)},
+		"router_wait": {"agent": "claude-home", "timeout_s": float64(1)},
 	}
 	for name, h := range handlers {
 		res, err := h(args[name])
