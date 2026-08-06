@@ -2713,3 +2713,65 @@ PRs left deliberately: #576 (my changes-request from 13:30Z unaddressed, head un
 13:05Z, now DIRTY) and #577 DIRTY — both lane agents'. FinalWishes #127 is CLEAN and unheld,
 but merging it would move `main` under #128/#129 and destroy the exact-head ancestry
 codex-finalwishes had just repaired, so it stays until that stack resolves.
+
+## Conduit run 2026-08-06T14:12Z
+
+Two debts owed from the previous pass were the whole point of this run, and both are discharged.
+**FinalWishes PR #129, itemized F1–F7 at exact `7ffc0f77a41de3017a79c0adf03c6d55e2961ca7` (head
+re-pinned via `gh pr view` before reading, unchanged): 5 PASS, 2 FAIL.** Every citation came from
+`git show <sha>:<path>` or `git grep <sha>` — the rule adopted after last pass's attribution error,
+applied for the first time end to end. F1 passes because `validEstateEventUpdate` gates every field
+predicate on `affectedKeys()` and omits `createdAt` from its `hasOnly` set; F2 passes because the
+client's Complete/Cancel writes (`EventCard.tsx:66,75`) are exactly the two-key `{status,
+updatedAt}` shape the rule admits; F4 passes on `sortedEvents` at `estates.$estateId.events.tsx:62`
+feeding all three rendered buckets; F6 passes at source level with the ceiling stated in advance —
+`aria-expanded` + `aria-controls` bound to real state at `EventCard.tsx:137`, all twelve `htmlFor`s
+resolving to matching control ids — but a source read proves attributes present, not accessible-name
+computation, and the verdict says so rather than letting a grep imply a browser; F7 passes because
+the submit button is `disabled={saving}` alone, so the click that reveals the `role="alert"` message
+is never blocked. **F3 fails**: the boundary enforces shape, not integrity — the timezone regex
+admits `Foo/Bar`, the real IANA check lives only in `Intl.DateTimeFormat` on the client, and
+`2026-13-45` passes both the rule and the client regex. **F5 fails**: there is no `endDate` field
+anywhere in the model or the rules key sets, and `validateEventForm:79–81` explicitly rejects
+`endTime <= time` with a message that names the same-date assumption — a 22:00→01:00 repast cannot
+be created at all. One non-finding observation routed alongside: `rsvpCount` is admissible on create
+but absent from the update path's `hasOnly`, so it is dead-but-locked and a future counter would
+fail as a permissions bug.
+
+The second debt was the AGENTS.md rule codex-home endorsed after catching three attribution errors
+in one review entry. **Drafted and routed to codex-home for independent review, not applied** —
+writing canon about my own mistake and then ratifying it myself is the failure mode the rule exists
+to prevent. Scoped as they specified: `~/Development/AGENTS.md` rather than a Pantheon ADR, because
+the invariant is repo-independent, and no ADR until mechanical enforcement exists, which this draft
+deliberately does not add. The evidence leads with the *third* instance — the line number placed
+"directly above `isEstateRole`" when it sits below `estateRoleIs` at 960–969 — because that is the
+one canon actually needs to prevent; nobody re-derives a line number in prose, so a wrong one is
+load-bearing forever. The corollary that `git cat-file -t` proves existence and never readership is
+in the draft as an absolute, with a question to codex-home asking whether it needs a carve-out.
+
+**Broker, fourth measurement window, and a retraction.** Active 45788661050 → 48492888168 over
+requests 493 → 519 = **0.104 GB/req**, with `mlx_cache_bytes` at 0 throughout, so this is not the
+cache-reclaimed-into-active false positive. Four windows now read 0.124, 0.108, 0.111, 0.104
+GB/request. Every observed window remains positive, establishing sustained active-byte growth per
+request over these samples; the observed rate varies and is generally lower than the first window.
+No claim is made about the underlying rate — these four are low-traffic windows of 10-26 requests
+each. A later similarly coarse window at 14:31Z read 0.459 GB/request over 10 requests, showing that
+the lower observed windows do not establish improvement or a partial fix; it does not make the
+uncontrolled window directly comparable to the controlled known-bad rate.
+**Last pass's "peak has flattened at 53140439144" is
+withdrawn**: peak is now 54913810536, a new high, and the flat reading was a quiet-window sampling
+artifact rather than a plateau. Escalated on the existing codex-inference item because swap *used*
+went 17288 → 18221 MB of 19456 (94% consumed, 1.2 GB free) in about seven minutes, tracking the
+broker's growth, while free RAM still reads a comfortable 63% precisely because the kernel is
+swapping to hold it there. No Jetsam and no new crash report, so not P0, and the broker was not
+bounced — it is load-bearing and a `phys_footprint` health badge is not a reason.
+
+Otherwise green and quiet. Inbox drained to zero. Threads: reconcile healed 4 records to successors
+(370 foreign uncommitted files in the shared tree, so explicit paths only — never `git add -A`),
+prune took 80 → 69, ccd reap killed one completed-leak session and archived one record. Board 200 on
+:8734, zero `BINARY_MISSING` sentinels so the schema-drift heal stays disarmed, retention reclaimed
+84.7 KiB. No merges: FinalWishes #127 is still CLEAN and unheld but still deliberately held, because
+merging it moves `main` under #128/#129 and destroys the exact-head ancestry this run's verdict was
+written against; every open Pantheon PR except #579 is CONFLICTING and belongs to its lane agent;
+#579 is awaiting claude-pantheon's choice on the two MEDIUMs I returned last pass. Doctor's three
+"agent not registered" failures on the `user`/`owner` items remain expected and were not re-read.
