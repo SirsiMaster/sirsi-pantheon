@@ -1668,6 +1668,21 @@ and left unmerged — never the child first.
 
 # Pre-July Session Decisions (hook payloads + duplicate router snapshots stripped):
 
+# 2026-08-06: ADR-057 durable continuous-execution enforcement
+#   Implemented the provider-neutral three-source runnable predicate (router
+#   items, ledger tasks, unmet requirements), fenced item/task leases, exact-ID
+#   task claims, durable wake events with acknowledgment/retry/escalation,
+#   honest lane states, reconciliation, and evidence-backed completion gates.
+#   Migrated the live router store from v14 to v15 with a retained backup and
+#   proved close→continuation wake behavior in production. Rebased onto the
+#   accepted ADR-054 unified-fabric work plus the dashboard's canonical-store
+#   visibility repair; preserved the recovered v15 provenance diagnostics and
+#   continuation trigger semantics. Full Go suite, routerstore race tests, vet,
+#   Ma'at lint, and diff checks passed. The incident also exposed 41 unpicked
+#   codex-home items while Horus reported “No blockers”; ADR-057 classifies that
+#   state as IDLE WITH WORK rather than healthy and makes it mechanically
+#   actionable.
+
 # 2026-08-05: SNE-52 Universal Task Ledger schema v7 implementation
 #   Implemented the ADR-054 Part B contract on codex/router-unification-store-v7:
 #   one additive v4→v7 migration with explicit migration targets (v5/v6 stay
