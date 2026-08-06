@@ -262,3 +262,62 @@ func TestRunStaleThreadReconcileDuty_DutyRegistered(t *testing.T) {
 		t.Error("stale-thread-reconcile duty not registered in supervisorDuties()")
 	}
 }
+
+func TestRunStaleThreadReconcileDuty_HealsRecordWrittenUnderAPriorHostname(t *testing.T) {
+	// REGRESSION (PR #528 finding F2). The duty used to pass os.Hostname() as the
+	// ReconcileExits host filter, which skips any record whose Host is a DIFFERENT
+	// non-empty string:
+	//
+	//     if host != "" && t.Host != "" && t.Host != host { continue }
+	//
+	// A hostname is mutable across networks, so this machine's own older records —
+	// written under a prior name — were treated as a foreign host and never healed.
+	// That is the same bug class ReapDeadThreads was deliberately migrated off (it
+	// scopes by MachineID, not Host), and it caused a 1d16h stranded inbox. The
+	// reaping half ignored hostname while the reconcile half honored it, so the
+	// duty healed only half the records it should.
+	//
+	// This record is stale, has no live PID, and carries a prior hostname. It MUST
+	// be suspended. Against the pre-fix code it stays active and this test fails.
+	routerRoot := newTestRouterRoot(t)
+	now := time.Now().UTC()
+
+	priorHost := &Thread{
+		ThreadID:  "thr-prior-hostname-001",
+		AgentID:   "claude-test",
+		Surface:   "worker",
+		Host:      "macbook-pro-under-its-old-name.local",
+		MachineID: "machine-id-from-a-prior-identity",
+		// PID > 0 with a non-matching MachineID: ReapDeadThreads skips it (it will
+		// not probe another machine's process table), and ReconcileExits' live-session
+		// guard (PID>0 && SameMachine && PIDAlive) also does not fire. So reconcile is
+		// the ONLY thing that can heal this record — which is exactly why a hostname
+		// filter stranding it goes unnoticed.
+		PID:        1,
+		Status:     ThreadStatusActive,
+		StartedAt:  now.Add(-48 * time.Hour),
+		LastSeenAt: now.Add(-2 * DefaultThreadStaleAfter), // unambiguously stale
+	}
+	reg := &ThreadRegistry{Threads: map[string]*Thread{priorHost.ThreadID: priorHost}}
+	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RunStaleThreadReconcileDuty(routerRoot, t.TempDir()); err != nil {
+		t.Fatalf("duty returned error: %v", err)
+	}
+
+	reg2, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reg2.Threads[priorHost.ThreadID]
+	if got == nil {
+		t.Fatal("record written under a prior hostname was removed entirely")
+	}
+	if got.Status != ThreadStatusSuspended {
+		t.Errorf("stale record with a prior hostname has status %s, want %s — "+
+			"a hostname filter is skipping this machine's own older records",
+			got.Status, ThreadStatusSuspended)
+	}
+}
