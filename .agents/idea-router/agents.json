@@ -563,11 +563,8 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "workstream": "pantheon",
       "wake": {
-        "mechanism": "cli-spawn",
-        "health_check": [
-          "/Users/thekryptodragon/.local/bin/sirsi-gemma-worker.sh",
-          "--version"
-        ]
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.gemma-worker"
       },
       "consumer": {
         "mode": "resident",
@@ -669,8 +666,10 @@
     "horus": {
       "id": "horus",
       "type": "service",
-	  "description": "Actor-only local supervision identity; never route inbox work here and do not add a wake mechanism.",
-	  "capabilities": ["close:any"],
+      "description": "Actor-only local supervision identity; never route inbox work here and do not add a wake mechanism.",
+      "capabilities": [
+        "close:any"
+      ],
       "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "workstream": "pantheon",
