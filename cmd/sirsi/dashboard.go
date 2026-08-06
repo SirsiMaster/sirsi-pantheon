@@ -62,6 +62,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		NodeStatusFn: collectDashboardNodeStatus,
 		LedgerFn:     collectDashboardLedger,
 		FleetFn:      collectDashboardFleet,
+		Unroutable:   dashboardUnroutable(),
 	})
 
 	if err := srv.Start(); err != nil {

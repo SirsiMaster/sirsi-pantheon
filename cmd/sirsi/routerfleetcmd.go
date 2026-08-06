@@ -70,7 +70,7 @@ needs a long-lived process to hold the baseline. Use the Horus board for that.`,
 		if err != nil {
 			return fmt.Errorf("build ledger: %w", err)
 		}
-		out := dashboard.NewFleetTracker().Observe(snap, time.Now())
+		out := dashboard.NewFleetTracker(unroutableAgents(repoRoot)).Observe(snap, time.Now())
 
 		if JsonOutput {
 			enc := json.NewEncoder(os.Stdout)

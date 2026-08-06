@@ -262,23 +262,6 @@ ALTER TABLE tasks ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0;
 UPDATE tasks SET commissioned_at = created WHERE commissioned_at = '';
 UPDATE tasks SET commissioned_by = agent WHERE commissioned_by = '';
 `},
-
-	// v8 — ADR-057 step 1: canonical requirement registry, plus the durable
-	// identifier allocator that makes cross-claimed document numbers structurally
-	// impossible.
-	//
-	// Why the allocator exists: ADR numbers were picked by agents reading the
-	// filesystem and counting. That races by construction — two agents branching
-	// from the same main both see the same highest number and both claim it.
-	// origin/main carries TWO distinct ADR-054 documents today, and four open PRs
-	// claim 051/054/055/056 between them. A CI uniqueness gate detects the
-	// collision after the fact; PRIMARY KEY (namespace, number) prevents it,
-	// because allocation goes through the same serialized store that already
-	// prevents duplicate router items.
-	//
-	// Withdrawn allocations are RETAINED, never deleted: MAX(number) must keep
-	// advancing or a withdrawn number gets handed out again and every existing
-	// citation of it silently retargets.
 	{8, `
 CREATE TABLE identifiers (
     namespace  TEXT NOT NULL,
@@ -548,7 +531,7 @@ func (s *Store) migrate() error {
 		}
 		maxVersion := migrations[len(migrations)-1].version
 		if version > maxVersion {
-			return fmt.Errorf("routerstore: migrate: database is at schema version %d, newer than this binary understands (max %d) — refusing to touch it", version, maxVersion)
+			return tooNewError(version, maxVersion, readMigrationProvenance(ctx, conn))
 		}
 		if version == maxVersion {
 			return nil // up to date
@@ -581,6 +564,13 @@ func (s *Store) migrate() error {
 			}
 			continue
 		}
+		// The gate: refuse a one-way write to shared state from source nobody
+		// else can rebuild. Checked under the write lock so the version pair
+		// reported is the one actually about to be applied.
+		if gateErr := checkMigrationAllowed(version, next.version); gateErr != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return gateErr
+		}
 		if _, err := conn.ExecContext(ctx, next.sql); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
@@ -589,6 +579,7 @@ func (s *Store) migrate() error {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: set user_version: %w", next.version, err)
 		}
+		recordMigrationProvenance(ctx, conn, next.version)
 		if _, err := conn.ExecContext(ctx, `COMMIT;`); err != nil {
 			return fmt.Errorf("routerstore: migrate to v%d: commit: %w", next.version, err)
 		}
