@@ -1066,8 +1066,18 @@ func (r *ThreadRegistry) SortedThreads() []*Thread {
 		}
 		out = append(out, t)
 	}
+	// Tiebreak on ThreadID. Ordering by LastSeenAt alone is NOT a total order:
+	// sort.Slice is unstable, so any two threads sharing a timestamp come back in
+	// arbitrary order that varies run to run. Shared timestamps are routine —
+	// heartbeats land in the same second, and a fixed test clock makes every
+	// record identical — so this randomly reordered the fleet board between
+	// refreshes and randomly reddened CI for every PR in the repo via
+	// TestStaleActiveSupervisors.
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].LastSeenAt.After(out[j].LastSeenAt)
+		if !out[i].LastSeenAt.Equal(out[j].LastSeenAt) {
+			return out[i].LastSeenAt.After(out[j].LastSeenAt)
+		}
+		return out[i].ThreadID < out[j].ThreadID
 	})
 	return out
 }
