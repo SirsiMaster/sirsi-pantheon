@@ -69,7 +69,10 @@ type FleetLane struct {
 	// Routable reports whether any automated wake path reaches this lane. A
 	// false value is why a lane can read UNROUTABLE: work exists and no sweep,
 	// retry, or nudge will ever deliver it.
-	Routable   bool   `json:"routable"`
+	Routable bool `json:"routable"`
+	// TouchedAgo is the age of the lane's LAST LEDGER UPDATE, not a heartbeat.
+	// See internal/routerboard: work that is not recorded is invisible here by
+	// design, so this figure must never be labelled as liveness.
 	TouchedAgo string `json:"touched_ago,omitempty"`
 	touchedAt  time.Time
 }

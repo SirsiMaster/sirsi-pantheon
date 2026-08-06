@@ -34,13 +34,18 @@ type FleetShapeSummary struct {
 }
 
 type FleetShapeLane struct {
-	Agent      string `json:"agent"`
-	State      string `json:"state"`
-	Open       int    `json:"open"`
-	Active     int    `json:"active"`
-	Stalled    int    `json:"stalled"`
-	Blocked    int    `json:"blocked"`
-	Inbox      int    `json:"inbox"`
+	Agent   string `json:"agent"`
+	State   string `json:"state"`
+	Open    int    `json:"open"`
+	Active  int    `json:"active"`
+	Stalled int    `json:"stalled"`
+	Blocked int    `json:"blocked"`
+	Inbox   int    `json:"inbox"`
+	// TouchedAgo is the age of the lane's LAST LEDGER UPDATE — the last time it
+	// mutated a task record. It is bookkeeping, not liveness: a lane doing real
+	// work without recording it reads as stale here, correctly. Surfaces label it
+	// "last ledger update" rather than "touched", which invited reading a
+	// recordkeeping figure as a heartbeat.
 	TouchedAgo string `json:"touched_ago,omitempty"`
 }
 
