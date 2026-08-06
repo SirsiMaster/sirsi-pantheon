@@ -9,11 +9,11 @@
     "docs/ARCHITECTURE*.md",
     "CLAUDE.md"
   ],
-  "note": "Seeded 2026-08-05 from verified state, not memory: every 'done' below names the merge commit on origin/main, and every non-done names its blocker. claude-home had NO PRD until now — the lane was invisible to `sirsi prd sync` while shipping, which is the same defect class as an empty `router task list` (a consolidated surface reading absence as nothing-happening). Status: open|done|owner-gated|blocked.",
+  "note": "Seeded 2026-08-05 from verified state, not memory: every 'done' below names the merge commit on origin/main, and every non-done names its blocker. claude-home had NO PRD until now \u2014 the lane was invisible to `sirsi prd sync` while shipping, which is the same defect class as an empty `router task list` (a consolidated surface reading absence as nothing-happening). Status: open|done|owner-gated|blocked.",
   "tasks": [
     {
       "id": "H1",
-      "desc": "A1 live SNE model substrate protection — Jackal must never report or delete the model a running engine holds open",
+      "desc": "A1 live SNE model substrate protection \u2014 Jackal must never report or delete the model a running engine holds open",
       "acceptance": "argv-derived from the LOADED launchd job, fails CLOSED on discovery failure, build-tagged so non-darwin cannot enter launchd semantics; codex bind",
       "status": "done",
       "ref": "PR #493 / e821363c",
@@ -21,7 +21,7 @@
     },
     {
       "id": "H2",
-      "desc": "Horus web board — Guard discarded all 16 diagnostics; home screen afforded nothing; no natural-language answer",
+      "desc": "Horus web board \u2014 Guard discarded all 16 diagnostics; home screen afforded nothing; no natural-language answer",
       "acceptance": "Guard reads its own API's json keys, home commands dispatch through one exec(), /api/ask answers from the LOCAL engine only with server-rendered findings; codex bind",
       "status": "done",
       "ref": "PR #494 / ee5c40a9",
@@ -37,7 +37,7 @@
     },
     {
       "id": "H4",
-      "desc": "Router registry drift — live arming never committed, and one agent had silently lost its wake mechanism",
+      "desc": "Router registry drift \u2014 live arming never committed, and one agent had silently lost its wake mechanism",
       "acceptance": "sirsi router doctor reports NO DRIFT; no agent lost in either direction; codex bind",
       "status": "done",
       "ref": "PR #498 / 01eada22",
@@ -47,9 +47,9 @@
       "id": "H5",
       "desc": "Wake loop must CONSUME its inbox, not merely watch it",
       "acceptance": "consumer dispatch is edge-triggered on consumer liveness; surface allow-list; unusable cwd refused; resident lanes watch-only; permanent-loop prompt contract; codex bind",
-      "status": "open",
-      "ref": "PR #389 / aecf143c",
-      "note": "In codex review round 3. A watcher that heartbeats beside an inbox without draining it marked its own lane armed and suppressed the rescue that would have escalated it."
+      "status": "done",
+      "ref": "PR #389 / b70d9249",
+      "note": "MERGED. 10 codex findings across 5 rounds. Final shape: consumer dispatch is edge-triggered on the consumer's own liveness; surfaces are an ALLOW-list; an unusable cwd is refused at resolve time; resident lanes are watch-only."
     },
     {
       "id": "H6",
@@ -57,11 +57,11 @@
       "acceptance": "the wake watcher never borrows resident capability; a resident that stops publishing stops being credited",
       "status": "open",
       "ref": "follow-up to PR #389",
-      "note": "codex-pantheon's ruling, adopted. gemma-pantheon's health check is `sirsi-gemma-worker.sh --version` — it proves a binary can print a string, not that a consumer is alive. Changes the thread model, so it ships separately."
+      "note": "codex-pantheon's ruling, adopted. gemma-pantheon's health check is `sirsi-gemma-worker.sh --version` \u2014 it proves a binary can print a string, not that a consumer is alive. Changes the thread model, so it ships separately."
     },
     {
       "id": "H7",
-      "desc": "Repo cruft and drift audit — 11 decisions filed for the owner",
+      "desc": "Repo cruft and drift audit \u2014 11 decisions filed for the owner",
       "acceptance": "owner rules on each; safe ones applied",
       "status": "owner-gated",
       "ref": "router item 20260805-093308",
@@ -69,11 +69,11 @@
     },
     {
       "id": "H8",
-      "desc": "Binding infrastructure — no PR authored on this host can be bound on this host",
-      "acceptance": "an independent identity can approve; #389/#453/#496 stop being blocked on identity rather than merit",
-      "status": "blocked",
-      "ref": "ADR-041",
-      "note": "PROVEN, not assumed: `gh pr review --approve` returns \"Can not approve your own pull request\" because every commit here is the SirsiMaster identity, and scripts/bind/sirsi-bind.sh cannot mint an independent one — there is no App key at ~/.sirsi/sirsi-bind*.pem. Owner action; blocker named."
+      "desc": "Binding infrastructure \u2014 I reported it broken; it was not",
+      "acceptance": "the false finding is retracted everywhere it was sent",
+      "status": "done",
+      "ref": "CORRECTED 2026-08-05",
+      "note": "MY FINDING WAS WRONG. I globbed ~/.sirsi/sirsi-bind*.pem, got no match, and reported to the owner, claude-nexus and codex-pantheon that no PR authored on this host could be bound. The key is ~/.sirsi/bind-app.pem, present since 2026-07-21, and sirsi-bind.sh names it on line 28. I asserted absence from a pattern that never matched \u2014 a check narrower than its claim, which is the exact defect class I spent the session finding elsewhere. claude-pantheon binding #495 via sirsi-bind[bot] is what exposed it. Retracted to all three."
     },
     {
       "id": "H9",
