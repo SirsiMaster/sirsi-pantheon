@@ -26,12 +26,12 @@ package router
 import (
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
-// watcherAliveFn probes for a live watcher loop process. Injectable (Rule A16)
-// so EffectiveStale is testable without spawning pgrep.
-var watcherAliveFn = func(threadID string) bool {
+// defaultWatcherAlive probes for a live watcher loop process.
+func defaultWatcherAlive(threadID string) bool {
 	// Keyed on `pgrep -f thr-<id>` — the SAME (agent_id, pid) watcher identity
 	// ADR-024 §3 arms on, and ADR-022 reaps on. Each thread_id is unique, so this
 	// matches only that thread's watcher, never another agent's shared loop body.
@@ -40,6 +40,31 @@ var watcherAliveFn = func(threadID string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(out)) != ""
+}
+
+// watcherAliveFn is the injectable watcher prober (Rule A16). Guarded by a
+// RWMutex (Rule A21) so tests can install stubs without racing any concurrent
+// reader — EffectiveStale is reached from goroutine-capable consumers, so a
+// bare package-level assignment is a data race, not merely untidy.
+var (
+	watcherAliveMu sync.RWMutex
+	watcherAliveFn = defaultWatcherAlive
+)
+
+func getWatcherAliveFn() func(string) bool {
+	watcherAliveMu.RLock()
+	defer watcherAliveMu.RUnlock()
+	return watcherAliveFn
+}
+
+// setWatcherAliveFn installs a prober (nil restores the real pgrep probe).
+func setWatcherAliveFn(fn func(string) bool) {
+	watcherAliveMu.Lock()
+	defer watcherAliveMu.Unlock()
+	if fn == nil {
+		fn = defaultWatcherAlive
+	}
+	watcherAliveFn = fn
 }
 
 // pidStateOfThreadFn delegates to PIDStateOfThread (injectable for tests,
@@ -54,7 +79,7 @@ func WatcherAlive(threadID string) bool {
 	if threadID == "" {
 		return false
 	}
-	return watcherAliveFn(threadID)
+	return getWatcherAliveFn()(threadID)
 }
 
 // EffectiveStale is the loop-evidence-aware staleness used for the police-trusted

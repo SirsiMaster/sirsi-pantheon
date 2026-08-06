@@ -319,11 +319,7 @@
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing",
       "workstream": "deck",
       "wake": {
-        "mechanism": "cli-spawn",
-        "health_check": [
-          "codex",
-          "--version"
-        ]
+        "mechanism": "none"
       },
       "consumer": {
         "command": [
@@ -612,11 +608,7 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
       "workstream": "inference",
       "wake": {
-        "mechanism": "cli-spawn",
-        "health_check": [
-          "codex",
-          "--version"
-        ]
+        "mechanism": "none"
       },
       "consumer": {
         "command": [
@@ -642,11 +634,7 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-io",
       "workstream": "io",
       "wake": {
-        "mechanism": "cli-spawn",
-        "health_check": [
-          "codex",
-          "--version"
-        ]
+        "mechanism": "none"
       },
       "consumer": {
         "command": [

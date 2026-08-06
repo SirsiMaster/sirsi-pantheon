@@ -1,6 +1,7 @@
 package router
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -10,11 +11,9 @@ func TestEffectiveStale_LoopEvidence(t *testing.T) {
 	window := 5 * time.Minute
 	freshThr := &Thread{ThreadID: "thr-fresh", LastSeenAt: now.Add(-10 * time.Second)}
 	staleThr := &Thread{ThreadID: "thr-stale", LastSeenAt: now.Add(-2 * time.Hour)}
-
-	oldWatcher := watcherAliveFn
 	oldPID := pidStateOfThreadFn
 	defer func() {
-		watcherAliveFn = oldWatcher
+		setWatcherAliveFn(nil)
 		pidStateOfThreadFn = oldPID
 	}()
 
@@ -22,8 +21,7 @@ func TestEffectiveStale_LoopEvidence(t *testing.T) {
 	pidStateOfThreadFn = func(*Thread) PIDState { return PIDUnknown }
 
 	// Watcher alive for thr-stale only.
-	watcherAliveFn = func(id string) bool { return id == "thr-stale" }
-
+	setWatcherAliveFn(func(id string) bool { return id == "thr-stale" })
 	// Fresh heartbeat → never stale, regardless of watcher.
 	if EffectiveStale(freshThr, now, window) {
 		t.Error("a freshly-heartbeating thread must not be stale")
@@ -33,7 +31,7 @@ func TestEffectiveStale_LoopEvidence(t *testing.T) {
 		t.Error("a thread with a live watcher loop must not be reported stale (the false-positive fix)")
 	}
 	// Heartbeat aged out AND no watcher → genuinely stale.
-	watcherAliveFn = func(string) bool { return false }
+	setWatcherAliveFn(func(string) bool { return false })
 	if !EffectiveStale(staleThr, now, window) {
 		t.Error("heartbeat-stale with no watcher must be stale")
 	}
@@ -56,17 +54,14 @@ func TestEffectiveStale_PIDAlivePreventsStale(t *testing.T) {
 		PID:        12345,
 		LastSeenAt: now.Add(-30 * time.Minute), // well past stale window
 	}
-
-	oldWatcher := watcherAliveFn
 	oldPID := pidStateOfThreadFn
 	defer func() {
-		watcherAliveFn = oldWatcher
+		setWatcherAliveFn(nil)
 		pidStateOfThreadFn = oldPID
 	}()
 
 	// No watch-router watcher present (pgrep would find nothing).
-	watcherAliveFn = func(string) bool { return false }
-
+	setWatcherAliveFn(func(string) bool { return false })
 	// PID alive → NOT stale even though heartbeat is old and no watcher.
 	pidStateOfThreadFn = func(*Thread) PIDState { return PIDAlive }
 	if EffectiveStale(thr, now, window) {
@@ -104,11 +99,9 @@ func TestEffectiveStale_ZeroPIDSkipsPIDCheck(t *testing.T) {
 		PID:        0,
 		LastSeenAt: now.Add(-30 * time.Minute),
 	}
-
-	oldWatcher := watcherAliveFn
 	oldPID := pidStateOfThreadFn
 	defer func() {
-		watcherAliveFn = oldWatcher
+		setWatcherAliveFn(nil)
 		pidStateOfThreadFn = oldPID
 	}()
 
@@ -117,7 +110,7 @@ func TestEffectiveStale_ZeroPIDSkipsPIDCheck(t *testing.T) {
 		t.Error("pidStateOfThreadFn must not be called for PID=0")
 		return PIDAlive
 	}
-	watcherAliveFn = func(string) bool { return false }
+	setWatcherAliveFn(func(string) bool { return false })
 	if !EffectiveStale(thr, now, window) {
 		t.Error("PID=0 with no watcher must be stale")
 	}
@@ -127,4 +120,42 @@ func TestWatcherAlive_EmptyThreadID(t *testing.T) {
 	if WatcherAlive("") {
 		t.Error("empty thread id has no watcher")
 	}
+}
+
+// Rule A21 falsification. WatcherAlive is reached from goroutine-capable
+// consumers while tests install stubs, so the injectable prober must be
+// mutex-guarded rather than assigned bare. This test drives a reader and a
+// writer concurrently: under the previous `watcherAliveFn = fn` assignment it
+// fails immediately with a DATA RACE under -race. It passes only because the
+// accessors hold watcherAliveMu.
+func TestWatcherAliveFn_ConcurrentAccessIsRaceFree(t *testing.T) {
+	t.Cleanup(func() { setWatcherAliveFn(nil) })
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	wg.Add(1)
+	go func() { // reader
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = WatcherAlive("thr-concurrent")
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() { // writer
+		defer wg.Done()
+		for i := 0; i < 500; i++ {
+			alive := i%2 == 0
+			setWatcherAliveFn(func(string) bool { return alive })
+		}
+		close(stop)
+	}()
+
+	wg.Wait()
 }

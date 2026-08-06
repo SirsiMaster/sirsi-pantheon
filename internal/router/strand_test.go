@@ -25,9 +25,8 @@ func TestComputeStranded_FlagsUnarmedBacklog(t *testing.T) {
 	}
 
 	// Only claude-armed has a live loop.
-	old := watcherAliveFn
-	watcherAliveFn = func(id string) bool { return id == armed.ThreadID }
-	defer func() { watcherAliveFn = old }()
+	setWatcherAliveFn(func(id string) bool { return id == armed.ThreadID })
+	defer func() { setWatcherAliveFn(nil) }()
 
 	pending := map[string][]string{
 		"claude-armed": {"i1"},       // loop-alive → not stranded
