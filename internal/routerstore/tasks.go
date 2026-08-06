@@ -115,9 +115,33 @@ func validateTask(t Task) error {
 		hasEvidence = hasEvidence || link.Kind == "evidence"
 	}
 	if t.TestState == "passed" && !hasEvidence {
-		return fmt.Errorf("routerstore: test-state passed requires an evidence link")
+		// Name the required KIND, not just "an evidence link". Callers who have
+		// already attached a pr:/repo:/canon: link read the old wording as "the
+		// gate is broken" — two agents independently recorded it as unsatisfiable
+		// and adopted "close without test-state" as the workaround, which discards
+		// the completion signal this gate exists to preserve.
+		return fmt.Errorf("routerstore: test-state passed requires a link of kind %q, but none of the %d attached link(s) has that kind (kinds present: %s); attach one with --link 'evidence:<label>:<url>'",
+			"evidence", len(t.Links), linkKindsPresent(t.Links))
 	}
 	return nil
+}
+
+// linkKindsPresent renders the distinct kinds already attached to a task, so a
+// rejected evidence gate can show the caller what they actually have rather
+// than only what they lack. Returns "none" for a task with no links.
+func linkKindsPresent(links []TaskLink) string {
+	if len(links) == 0 {
+		return "none"
+	}
+	seen := make(map[string]bool, len(links))
+	kinds := make([]string, 0, len(links))
+	for _, l := range links {
+		if !seen[l.Kind] {
+			seen[l.Kind] = true
+			kinds = append(kinds, l.Kind)
+		}
+	}
+	return strings.Join(kinds, ", ")
 }
 
 func deriveTaskLiveness(t Task, now time.Time) string {
