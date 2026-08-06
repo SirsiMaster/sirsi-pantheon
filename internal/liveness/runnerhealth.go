@@ -122,27 +122,18 @@ func setDiscoverRunnersFn(fn func() map[string]int) {
 	discoverRunnersFn = fn
 }
 
-// defaultDiscoverRunners calls `launchctl list` and returns label → PID for
-// every service label matching runnerLaunchdPrefix whose .plist exists on disk.
-// PID 0 means the service is loaded but not running. Returns nil on non-macOS or exec error.
-func defaultDiscoverRunners() map[string]int {
-	if runtime.GOOS != "darwin" {
-		return nil
-	}
-	// `launchctl list` (no label arg) outputs: PID \t LastExitStatus \t Label
-	// "-" in the PID column means the service has no running process.
-	out, err := exec.Command("launchctl", "list").Output()
-	if err != nil {
-		return nil
-	}
-	home, _ := os.UserHomeDir()
-	agentDir := ""
-	if home != "" {
-		agentDir = home + "/Library/LaunchAgents/"
-	}
-
+// parseLaunchctlList parses the tab-separated output of `launchctl list` (no
+// label arg) and returns label → PID for every runner label matching
+// runnerLaunchdPrefix. agentDir, when non-empty, is the LaunchAgents directory;
+// labels whose .plist does not exist there are skipped (retired services).
+// PID 0 means the service is loaded but has no running process ("-" in output).
+//
+// Extracted from defaultDiscoverRunners so the test can call the real parse
+// logic directly — the test used to duplicate this loop, which meant the
+// production parser could drift without breaking the test.
+func parseLaunchctlList(out, agentDir string) map[string]int {
 	result := map[string]int{}
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue
@@ -169,6 +160,27 @@ func defaultDiscoverRunners() map[string]int {
 		return nil
 	}
 	return result
+}
+
+// defaultDiscoverRunners calls `launchctl list` and returns label → PID for
+// every service label matching runnerLaunchdPrefix whose .plist exists on disk.
+// PID 0 means the service is loaded but not running. Returns nil on non-macOS or exec error.
+func defaultDiscoverRunners() map[string]int {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	// `launchctl list` (no label arg) outputs: PID \t LastExitStatus \t Label
+	// "-" in the PID column means the service has no running process.
+	out, err := exec.Command("launchctl", "list").Output()
+	if err != nil {
+		return nil
+	}
+	home, _ := os.UserHomeDir()
+	agentDir := ""
+	if home != "" {
+		agentDir = home + "/Library/LaunchAgents/"
+	}
+	return parseLaunchctlList(string(out), agentDir)
 }
 
 // CheckRunnerHealth returns one RunnerHealth per self-hosted runner found on

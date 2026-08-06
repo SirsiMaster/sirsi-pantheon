@@ -2,7 +2,6 @@ package liveness
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -17,40 +16,16 @@ const goldenLaunchctlList = `PID	Status	Label
 -	0	com.example.other
 `
 
-// parseDiscoverRunnersFromOutput exercises the tab-separated parse logic of
-// defaultDiscoverRunners using a supplied string, bypassing the exec and
-// plist-exists filter. Mirrors the production parse exactly.
-func parseDiscoverRunnersFromOutput(output string) map[string]int {
-	result := map[string]int{}
-	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		label := fields[2]
-		if !strings.HasPrefix(label, runnerLaunchdPrefix) {
-			continue
-		}
-		pid := 0
-		if fields[0] != "-" {
-			if n, err := strconv.Atoi(fields[0]); err == nil && n > 0 {
-				pid = n
-			}
-		}
-		result[label] = pid
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
 // TestDefaultDiscoverRunnersParse covers the real tab-separated parse format of
 // `launchctl list` (no label arg). This is the format that was broken in PR #586:
 // the per-label form returns a plist dict (first line "{"), making fields[0] always
 // "{" and strconv.Atoi always fail. The fix uses only the bare `launchctl list` format.
+//
+// Calls parseLaunchctlList directly (the extracted production function) with an empty
+// agentDir so the plist-exists filter is skipped — same result as the old copy, but
+// now the test is load-bearing: production parser drift breaks this test.
 func TestDefaultDiscoverRunnersParse(t *testing.T) {
-	got := parseDiscoverRunnersFromOutput(goldenLaunchctlList)
+	got := parseLaunchctlList(goldenLaunchctlList, "")
 
 	wantRunning := "actions.runner.SirsiMaster-sirsi-pantheon.m5-sirsi"
 	wantStopped := "actions.runner.SirsiMaster-sirsi-pantheon.m5-sirsi-2"
