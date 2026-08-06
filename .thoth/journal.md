@@ -2314,3 +2314,63 @@ quarantined and untouched. Housekeeping: reconcile healed one codex-home thread 
 v16 reship and the claim-row defect both left this lane last run and are no longer open on
 codex-pantheon. Three owner-surface items remain correctly unclosed — they are the owner's to close,
 and doctor records them as wake-unavailable rather than nagging.
+
+## Conduit run 2026-08-06T11:35Z
+
+Folds in the 11:03Z pass, which deliberately wrote no entry while PR #568 was still in flight. #568
+(the 11:00Z journal) landed: codex-home returned APPROVE + BIND but could not publish it — its
+`sirsi-bind.sh` run failed before publication because `api.github.com` was unreachable — and
+authorized claude-home to relay only after re-verifying the head. Head re-verified as
+`e799ff188f53b0ed0ebca8124f802aeda18294d3`, bind published on that exact SHA, binding-hold re-ran and
+cleared, squash-merged at 11:26Z. Worth recording that the network failure codex-home hit is the same
+failure mode that made the next finding load-bearing.
+
+claude-pantheon delivered the binary-install mutex **twice, six minutes apart, on two branches** —
+#569 (`fix/binary-install-lock`) and #570 (`fix/install-binary-lock`) — both editing
+`scripts/install.sh`, so only one could land. #570 merged (81411bf2); #569 closed, and not on a
+coin-flip. #569's cleanup guarded on `[ -n "${TMPDIR:-}" ]`, but **`TMPDIR` is a standard macOS
+environment variable** — measured on this host as `/var/folders/8h/.../T/`. Its trap arms ~75 lines
+before `TMPDIR=$(mktemp -d)`, and `install.sh` runs under `set -e`, so any failure in that window —
+a window that contains the GitHub releases fetch for `$LATEST`, i.e. *exactly the api.github.com
+outage codex-home had just hit* — fires cleanup with the inherited value and `rm -rf`s the user's
+per-user temp directory. #570 avoids the class entirely by expanding `$TMPDIR` at trap-set time,
+after `mktemp` has assigned it, and arming a LOCK_DIR-only trap before that point. #570 also puts the
+stale-lock reap *inside* the retry loop with a `continue` back to the atomic `mkdir`, rather than
+#569's bare unchecked `mkdir` after `rm`. Follow-up routed: port #569's CHANGELOG paragraph, and
+implement the coordinated single-pass install — a mutex serializes the 2026-08-06 v14-over-v15
+outage, it does not prevent it.
+
+**PR #567 CHANGES REQUESTED a second time, and the second round is the more instructive one.** Round
+one found that `approximateModelGB` sized `gemma-4-12B-it-8bit` from the `12b` name pattern at 7 GB
+against a ~35 GB reality. The fix reached for a measured value instead — correct instinct, wrong
+value, twice over. (1) `rightSizeAdvice` reads `~/.sirsi/gemma-server.pid`, and **that file is absent**
+on this host right now with the broker live and serving (launchd `ai.sirsi.gemma-broker`, PID 53576,
+349 requests) — `stat` returns ENOENT on the canonical path; only a
+`gemma-server.pid.quarantined-20260806` sibling remains. Absent or unreadable,
+`getBrokerRSSFn()` returns 0, the guard `rssKB > 0` is false, and control falls
+straight through to the name estimate it was written to replace — production behaviour unchanged,
+only the test suite changed. (2) Even with a populated pidfile, **RSS is off by ~190x for this
+process**: at one instant, `ps -o rss=` gave 185728 KB = 0.18 GB, `footprint -p` gave 34 GB, and
+`/health` `mlx_active_bytes` gave 36.47 GB. These are three different metrics and the measurement
+establishes only that they diverge by ~190x, i.e. that RSS is the wrong sizing authority for this
+process — not *why* they diverge; no instrumented proof of the accounting cause was taken here.
+`2*0.18+4 = 4.36 <= 20` returns empty — the identical false "fits already" silence,
+reached by a different wrong number. The PR body's "actual RSS measured 34.9 GB" is `phys_footprint`,
+not RSS. (3) The new test stubs 35 GB RSS, a value no real broker will ever return from RSS, so it
+passes green over a path that is both unreachable and wrong when reached — **a stub is evidence only
+when the stubbed value is one the real system produces.** Requested: source the size from the
+broker's own `/health`, port read from `~/.sirsi/gemma-server.port`, plus a regression case asserting
+0.18 GB is *not* accepted as a model size. Same size authority should feed `sirsi diagnose`, which
+renders 🔴 Critical for this same healthy broker off `phys_footprint`.
+
+Health otherwise green, 9th consecutive clean. Driven 3-request window: requests 346 → 349,
+`mlx_active_bytes` **byte-identical** at 36474896488, cache 0 → 236220246 — 0.079 GB/request total
+movement, all of it cache, against a known-bad rate of 0.48. The absolute-active watch opened last run
+continues: 34.37 → 34.92 → 35.10 → 35.30 → 36.47 GB on one unrestarted PID, now the fifth rising
+sample, still with swap flat (8934 MB of 10240, marginally below last run's 8950 floor) so still not
+P0. Escalation trigger stays ~38 GB active or swap leaving that floor. No new crash or Jetsam reports
+since 07:15Z. Zero `BINARY_MISSING` sentinels, so the schema-drift heal stayed disarmed. Board :8734 →
+200. `ai.sirsi.pantheon` at PID -9 remains quarantined and untouched. Threads reconciled (one
+codex-home record healed to a successor) and pruned 66 → 60; `ccd reap` killed 2 leaked
+conduit-supervisor sessions (4 procs); retention reclaimed 17.3 KiB. Inbox 0; 52 open fleet-wide, all
+on heartbeat-armed lanes except the three known owner-surface items.
