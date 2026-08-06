@@ -1584,7 +1584,7 @@ struct FleetView: View {
         if l.active > 0 { parts.append("\(l.active) active") }
         if l.stalled > 0 { parts.append("\(l.stalled) stalled") }
         if l.blocked > 0 { parts.append("\(l.blocked) blocked") }
-        if let t = l.touchedAgo, !t.isEmpty { parts.append("touched " + t) }
+        if let t = l.touchedAgo, !t.isEmpty { parts.append("last ledger update " + t) }
         return parts.joined(separator: " · ")
     }
 }
