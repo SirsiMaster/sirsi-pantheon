@@ -36,7 +36,16 @@ fresh inode, codesign it, atomic rename over the old one).
 
 SAFETY: writes ONLY to the known CLI bin dirs (~/.local/bin, ~/go/bin,
 /opt/homebrew/bin, /usr/local/bin) and NEVER inside a .app bundle (Rule A19).
-The rewrite is destructive and always confirmed — there is no auto-apply flag.`,
+The rewrite is destructive and always confirmed — there is no auto-apply flag.
+
+PROVENANCE GATE: the running binary must be a clean, stamped release build.
+Dirty builds (uncommitted changes) and unstamped builds (plain ` + "`go build`" + `
+without -ldflags) are rejected. Recovery must be explicit: install a proper
+release build first, then re-run self-update.
+
+CONCURRENCY GATE: concurrent --confirm runs are serialized via an exclusive
+advisory lock at ~/.sirsi/binary-install.lock. If another update is already
+running, a loud error names the holder PID and exits immediately.`,
 	RunE: runSelfUpdate,
 }
 
@@ -87,11 +96,33 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	// Provenance gate: the running binary must be a clean, stamped release.
+	// This runs before the interactive prompt so the user gets a fast-fail
+	// rather than wasting a [y/N] keystroke on a build that will be rejected.
+	selfInfo, schemaErr := selfupdate.CheckSchema(self)
+	if schemaErr != nil {
+		return fmt.Errorf("provenance gate: %w", schemaErr)
+	}
+	if provErr := selfupdate.CheckProvenance(selfInfo); provErr != nil {
+		return fmt.Errorf("provenance gate: %w\n  (install a proper release build via goreleaser or Homebrew, then re-run self-update)", provErr)
+	}
+
 	// Apply — explicit --confirm plus an interactive [y/N]. A binary rewrite is
 	// destructive; there is deliberately no --yes auto-confirm for it (gate #2).
 	if !confirmFix(fmt.Sprintf("Replace %d stale CLI copy(ies) with the running binary?", len(targets))) {
 		output.Dim("     → aborted; no changes made")
 		return nil
+	}
+
+	// Serialization gate: acquire the install lock before any write.
+	// Nonblocking — if another sirsi self-update is already running, a loud
+	// error names the holder PID and exits immediately rather than queuing.
+	lock, lockErr := selfupdate.AcquireInstallLock()
+	if lockErr != nil {
+		return fmt.Errorf("serialization gate: %w", lockErr)
+	}
+	if lock != nil {
+		defer lock.Close()
 	}
 
 	healed, failed := 0, 0
