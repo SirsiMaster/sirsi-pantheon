@@ -68,8 +68,8 @@ func TestWithdrawnNumberIsNeverReissued(t *testing.T) {
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
 	}
-	if err = s.WithdrawIdentifier("ADR", first.Number); err != nil {
-		t.Fatalf("withdraw: %v", err)
+	if ifErr1 := s.WithdrawIdentifier("ADR", first.Number); ifErr1 != nil {
+		t.Fatalf("withdraw: %v", ifErr1)
 	}
 	next, err2 := s.AllocateIdentifier("ADR", "successor", "claude-home")
 	err = err2
@@ -84,8 +84,8 @@ func TestWithdrawnNumberIsNeverReissued(t *testing.T) {
 func TestClaimSpecificNumberRefusesAnotherOwner(t *testing.T) {
 	s := newTestStore(t)
 
-	if _, err := s.ClaimIdentifierNumber("ADR", 54, "contracts and identity", "docs/ADR-054-CONTRACTS.md", "claude-pantheon"); err != nil {
-		t.Fatalf("first claim: %v", err)
+	if _, ifErr2 := s.ClaimIdentifierNumber("ADR", 54, "contracts and identity", "docs/ADR-054-CONTRACTS.md", "claude-pantheon"); ifErr2 != nil {
+		t.Fatalf("first claim: %v", ifErr2)
 	}
 	// Second agent tries to take the same number — the live bug, replayed.
 	_, err := s.ClaimIdentifierNumber("ADR", 54, "one horus", "docs/ADR-054-ONE-HORUS.md", "claude-home")
@@ -97,20 +97,20 @@ func TestClaimSpecificNumberRefusesAnotherOwner(t *testing.T) {
 	}
 
 	// Idempotent for the SAME owner, so backfill can be re-run.
-	if _, err := s.ClaimIdentifierNumber("ADR", 54, "contracts and identity", "docs/ADR-054-CONTRACTS.md", "claude-pantheon"); err != nil {
-		t.Fatalf("re-claim by same owner must be idempotent, got: %v", err)
+	if _, ifErr3 := s.ClaimIdentifierNumber("ADR", 54, "contracts and identity", "docs/ADR-054-CONTRACTS.md", "claude-pantheon"); ifErr3 != nil {
+		t.Fatalf("re-claim by same owner must be idempotent, got: %v", ifErr3)
 	}
 }
 
 func TestAllocateRequiresOwnerAndTitle(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.AllocateIdentifier("ADR", "titled", ""); err == nil {
+	if _, ifErr4 := s.AllocateIdentifier("ADR", "titled", ""); ifErr4 == nil {
 		t.Fatal("want error for empty owner")
 	}
-	if _, err := s.AllocateIdentifier("ADR", "", "claude-home"); err == nil {
+	if _, ifErr5 := s.AllocateIdentifier("ADR", "", "claude-home"); ifErr5 == nil {
 		t.Fatal("want error for empty title")
 	}
-	if _, err := s.AllocateIdentifier("not-a-namespace", "t", "o"); err == nil {
+	if _, ifErr6 := s.AllocateIdentifier("not-a-namespace", "t", "o"); ifErr6 == nil {
 		t.Fatal("want error for invalid namespace")
 	}
 }
@@ -140,13 +140,13 @@ func TestBackfillDetectsRealCollisionShape(t *testing.T) {
 	dir := t.TempDir()
 	// Two files, same number — the exact shape on origin/main today.
 	for _, name := range []string{"ADR-054-CONTRACTS-IDENTITY.md", "ADR-054-ONE-HORUS.md"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
+		if ifErr7 := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); ifErr7 != nil {
+			t.Fatal(ifErr7)
 		}
 	}
 	var failures int
 	for _, name := range []string{"ADR-054-CONTRACTS-IDENTITY.md", "ADR-054-ONE-HORUS.md"} {
-		if _, err := s.ClaimIdentifierNumber("ADR", 54, name, name, "owner-of-"+name); err != nil {
+		if _, ifErr8 := s.ClaimIdentifierNumber("ADR", 54, name, name, "owner-of-"+name); ifErr8 != nil {
 			failures++
 		}
 	}

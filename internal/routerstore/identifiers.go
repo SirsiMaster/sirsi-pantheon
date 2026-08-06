@@ -115,18 +115,18 @@ func (s *Store) AllocateIdentifier(namespace, title, owner string) (Identifier, 
 		var next int
 		// COALESCE over the whole namespace INCLUDING withdrawn rows, so a
 		// retired number is never handed out a second time.
-		if qErr := tx.QueryRow(
+		if scanErr := tx.QueryRow(
 			`SELECT COALESCE(MAX(number), 0) + 1 FROM identifiers WHERE namespace = ?;`, ns,
-		).Scan(&next); qErr != nil {
-			return fmt.Errorf("routerstore: allocate %s: read high-water: %w", ns, qErr)
+		).Scan(&next); scanErr != nil {
+			return fmt.Errorf("routerstore: allocate %s: read high-water: %w", ns, scanErr)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		if _, insErr := tx.Exec(
+		if _, execErr := tx.Exec(
 			`INSERT INTO identifiers (namespace, number, title, owner, status, claimed_at)
 			 VALUES (?, ?, ?, ?, ?, ?);`,
 			ns, next, title, owner, IdentifierClaimed, now,
-		); insErr != nil {
-			return fmt.Errorf("routerstore: allocate %s-%03d: %w", ns, next, insErr)
+		); execErr != nil {
+			return fmt.Errorf("routerstore: allocate %s-%03d: %w", ns, next, execErr)
 		}
 		out = Identifier{Namespace: ns, Number: next, Title: title, Owner: owner, Status: IdentifierClaimed, ClaimedAt: now}
 		return nil
@@ -169,12 +169,12 @@ func (s *Store) ClaimIdentifierNumber(namespace string, number int, title, slug,
 			return nil
 		case errors.Is(scanErr, sql.ErrNoRows):
 			now := time.Now().UTC().Format(time.RFC3339)
-			if _, insErr := tx.Exec(
+			if _, execErr := tx.Exec(
 				`INSERT INTO identifiers (namespace, number, slug, title, owner, status, claimed_at)
 				 VALUES (?, ?, ?, ?, ?, ?, ?);`,
 				ns, number, slug, title, owner, IdentifierPublished, now,
-			); insErr != nil {
-				return fmt.Errorf("routerstore: claim %s-%03d: %w", ns, number, insErr)
+			); execErr != nil {
+				return fmt.Errorf("routerstore: claim %s-%03d: %w", ns, number, execErr)
 			}
 			out = Identifier{Namespace: ns, Number: number, Slug: slug, Title: title, Owner: owner, Status: IdentifierPublished, ClaimedAt: now}
 			return nil
