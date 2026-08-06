@@ -601,15 +601,13 @@ func extractModelGen(idLower string) string {
 //  2. approximateModelGB — name-based fallback for when the broker is not
 //     running or /health is unreachable (e.g. during a memory death spiral).
 //
-// Headroom formula differs by source:
-//   - measured (mlx_active_bytes): modelGB+4 — KV cache already counted in active.
-//   - estimated (weights-only name heuristic): 2×modelGB+4 — double reserves for KV.
-//
-// RSS is never used here.
+// Headroom: modelGB+4 in both cases. mlx_active_bytes already includes KV cache;
+// approximateModelGB already scales for the quantizer suffix (8bit→×2), so
+// a second ×2 would double-count (12b-8bit: base 7×2=14 GB, 2×14+4=32 vs
+// actual ~11.5 GB peak). RSS is never used here.
 func rightSizeAdvice(home string, availableGB float64) string {
 	model := resolveModel(home)
 	var modelGB float64
-	var measured bool
 
 	// Prefer /health mlx_active_bytes (reads port from gemma-server.port).
 	portRaw, err := os.ReadFile(filepath.Join(home, ".sirsi/gemma-server.port"))
@@ -617,7 +615,6 @@ func rightSizeAdvice(home string, availableGB float64) string {
 		if port, pErr := strconv.Atoi(strings.TrimSpace(string(portRaw))); pErr == nil && port > 0 {
 			if activeBytes, hErr := getBrokerMLXActive()(port); hErr == nil && activeBytes > 0 {
 				modelGB = float64(activeBytes) / (1 << 30)
-				measured = true
 			}
 		}
 	}
@@ -627,16 +624,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 		modelGB = approximateModelGB(model)
 	}
 
-	// headroom returns the minimum GB needed to run modelGB worth of model.
-	// Measured: active already includes KV cache, so add only 4 GB OS headroom.
-	// Estimated: weights-only, so double to reserve for KV cache then add 4 GB.
-	headroom := func(gb float64) float64 {
-		if measured {
-			return gb + 4
-		}
-		return 2*gb + 4
-	}
-	if modelGB == 0 || headroom(modelGB) <= availableGB {
+	if modelGB == 0 || modelGB+4 <= availableGB {
 		return "" // unknown size or fits
 	}
 
@@ -661,7 +649,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 				continue // skip cross-generation downgrade
 			}
 		}
-		if 2*t.gb+4 <= availableGB {
+		if t.gb+4 <= availableGB {
 			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
 				"available — switch to the %s tier: "+
 				"`echo '%s' > %s && sirsi gemma serve --stop && sirsi gemma serve`",
