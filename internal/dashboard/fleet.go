@@ -72,7 +72,7 @@ type FleetLane struct {
 	Routable bool `json:"routable"`
 	// TouchedAgo is the age of the lane's LAST LEDGER UPDATE, not a heartbeat.
 	// See internal/routerboard: work that is not recorded is invisible here by
-	// design, so this figure must never be labelled as liveness.
+	// design, so this figure must never be labeled as liveness.
 	TouchedAgo string `json:"touched_ago,omitempty"`
 	touchedAt  time.Time
 }
