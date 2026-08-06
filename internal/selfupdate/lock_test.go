@@ -85,8 +85,8 @@ func TestAcquireInstallLock_pidTruncatedAfterClose(t *testing.T) {
 		t.Fatalf("acquire: %v", err)
 	}
 	path := filepath.Join(home, ".sirsi", lockFile)
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("lock file must exist before close: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("lock file must exist before close: %v", statErr)
 	}
 	lock.Close()
 	// File stays (not unlinked) but content must be empty so shell reap handles it.
