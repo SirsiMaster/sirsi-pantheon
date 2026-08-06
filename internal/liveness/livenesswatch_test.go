@@ -571,7 +571,7 @@ func stubMLX(t *testing.T, activeBytes int64) {
 }
 
 func TestRightSizeAdvice_FitsAlready(t *testing.T) {
-	// 2b model: 1.5+4=5.5 ≤ 20 → no advice regardless of source.
+	// 2b model: estimated path 1.4×1.5+4=6.1 ≤ 20 → no advice regardless of source.
 	home := homeWithModel(t, "mlx-community/gemma-2-2b-it-4bit")
 	t.Setenv("GEMMA_MODEL", "")
 	stubMLX(t, 0) // broker not running
@@ -614,7 +614,7 @@ func TestRightSizeAdvice_HealthEndpointUsed(t *testing.T) {
 // advice. The operator received silence while the machine was dying.
 //
 // This test proves the fix: with /health unavailable and no pidfile, we get
-// approximateModelGB("gemma-4-12B-it-8bit") = 14 GB → 14+4=18 > 9.68 → advice fires.
+// approximateModelGB("gemma-4-12B-it-8bit") = 14 GB → 1.4×14+4=23.6 > 9.68 → advice fires.
 func TestRightSizeAdvice_HealthUnavailableFallsBackToName(t *testing.T) {
 	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
 	t.Setenv("GEMMA_MODEL", "")
@@ -623,29 +623,30 @@ func TestRightSizeAdvice_HealthUnavailableFallsBackToName(t *testing.T) {
 
 	got := rightSizeAdvice(home, 9.68)
 	if got == "" {
-		t.Fatal("expected advice: approximateModelGB(gemma-4-12B-it-8bit)=14 GB, threshold 14+4=18 > 9.68; " +
+		t.Fatal("expected advice: approximateModelGB(gemma-4-12B-it-8bit)=14 GB, threshold 1.4×14+4=23.6 > 9.68; " +
 			"a 0.18 GB reading (ps RSS) must not suppress this")
 	}
 }
 
 func TestRightSizeAdvice_27bReturnsSmaller(t *testing.T) {
-	// 27b model (~14 GB at 4bit): threshold 14+4=18 > 9.68 → advice.
-	// 9b-4bit: 5+4=9 ≤ 9.68 → first-fit tier offered (was 2×5+4=14 > 9.68 pre-fix).
+	// 27b model ("bf16-4bit" → ×1 quantizer → 14 GB): 1.4×14+4=23.6 > 12 → advice.
+	// 9b-4bit tier: 1.4×5+4=11 ≤ 12 → first-fit tier offered.
+	// (At ≤10 GB the 9b tier also exceeds threshold and the 2b tier would be offered instead.)
 	home := homeWithModel(t, "mlx-community/gemma-2-27b-it-bf16-4bit")
 	t.Setenv("GEMMA_MODEL", "")
 	stubMLX(t, 0) // broker not running, fall through to approximateModelGB
 
-	got := rightSizeAdvice(home, 9.68)
+	got := rightSizeAdvice(home, 12.0)
 	if got == "" {
 		t.Fatal("expected non-empty advice for oversized 27b model")
 	}
 	if !strings.Contains(got, "gemma-2-9b-it-4bit") {
-		t.Errorf("expected advice to suggest 9b tier (first-fit at 9.68 GB available), got: %q", got)
+		t.Errorf("expected advice to suggest 9b tier (first-fit at 12 GB available, 1.4×5+4=11 ≤ 12), got: %q", got)
 	}
 }
 
 func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
-	// 9b model: 5+4=9 > 0.5; 2b: 1.5+4=5.5 > 0.5 — nothing fits.
+	// 9b model: 1.4×5+4=11 > 0.5; 2b tier: 1.4×1.5+4=6.1 > 0.5 — nothing fits.
 	home := homeWithModel(t, "mlx-community/gemma-2-9b-it-4bit")
 	t.Setenv("GEMMA_MODEL", "")
 	stubMLX(t, 0)
@@ -669,12 +670,12 @@ func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
 	t.Setenv("GEMMA_MODEL", "")
 	stubMLX(t, 0) // broker not running
 
-	// 13 GB available: approximateModelGB=14 GB → threshold 14+4=18 > 13 → advice fires.
-	// Cross-gen guard skips all gemma-2 tiers even though 9b-4bit (9 GB) would fit;
+	// 13 GB available: approximateModelGB=14 GB → threshold 1.4×14+4=23.6 > 13 → advice fires.
+	// Cross-gen guard skips all gemma-2 tiers even though 9b-4bit (1.4×5+4=11 ≤ 13) would fit;
 	// falls through to stop-only.
 	got := rightSizeAdvice(home, 13.0)
 	if got == "" {
-		t.Fatal("expected advice: gemma-4-12B-it-8bit (~14 GB) does not fit in 13 GB (14+4=18)")
+		t.Fatal("expected advice: gemma-4-12B-it-8bit (~14 GB) does not fit in 13 GB (1.4×14+4=23.6)")
 	}
 	if strings.Contains(got, "gemma-2") {
 		t.Errorf("advice must not offer a gemma-2 tier to a gemma-4 node: %q", got)
@@ -684,30 +685,52 @@ func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
 	}
 }
 
-// TestRightSizeAdvice_EstimatedPathNoDoubling pins the headroom formula for the
-// estimated (approximateModelGB) path: modelGB+4, NOT 2×modelGB+4.
-// approximateModelGB already scales for the quantizer, so a second ×2 would
-// double-count: 8bit 12b → base 7×2=14 GB, 2×14+4=32 vs actual ~11.5 GB peak.
+// TestRightSizeAdvice_EstimatedPath_NoQuantizerDoubleCount verifies that the
+// 8bit quantizer scale inside approximateModelGB (×2 on 4-bit base) is NOT
+// double-counted by the kvScale factor in rightSizeAdvice.
 //
-// Scenario: gemma-4-12B-it-8bit, broker unreachable (estimated path), 20 GB available.
+// approximateModelGB("gemma-4-12B-it-8bit") = 7×2 = 14 GB (weights).
+// kvScale on the estimated path is 1.4 (KV reserve, separate from quantizer).
+// Threshold: 1.4×14+4 = 23.6 GB.
 //
-//	Old formula (wrong): 2×14+4=32 > 20 → advice fires (false alarm on a 24 GB node).
-//	New formula (correct): 14+4=18 ≤ 20 → no advice (model fits).
-func TestRightSizeAdvice_EstimatedPathNoDoubling(t *testing.T) {
+//	Scenario: 25 GB available → 23.6 ≤ 25 → no advice (model fits).
+//	If the quantizer scale were double-counted (2×1.4=2.8): 2.8×14+4=43.2 > 25
+//	→ advice would fire, a false alarm on a well-provisioned 25 GB node.
+func TestRightSizeAdvice_EstimatedPath_NoQuantizerDoubleCount(t *testing.T) {
 	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
 	t.Setenv("GEMMA_MODEL", "")
 	stubMLX(t, 0) // no /health → estimated path
 
-	if got := rightSizeAdvice(home, 20.0); got != "" {
-		t.Errorf("estimated path must use modelGB+4 (14+4=18 ≤ 20): got advice %q", got)
+	if got := rightSizeAdvice(home, 25.0); got != "" {
+		t.Errorf("estimated path must not double-count quantizer scale (1.4×14+4=23.6 ≤ 25): got advice %q", got)
+	}
+}
+
+// TestRightSizeAdvice_EstimatedPath_FalseFitsAt18GB is the regression guard for
+// the death-spiral false-fits. With /health unreachable and ~18.5 GB available,
+// a node running gemma-4-12B-it-8bit should receive advice — the allocator pool
+// is ~20 GB (KV-inclusive) and will OOM before the next context window.
+//
+//	approximateModelGB = 14 GB (weights only); KV reserve: 1.4×14+4 = 23.6 GB.
+//	18.5 < 23.6 → advice fires (correct — model does not fit with KV overhead).
+//	Old formula (gb+4 = 18): 18.5 ≥ 18 → no advice (false-fits; silent OOM risk).
+func TestRightSizeAdvice_EstimatedPath_FalseFitsAt18GB(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	stubMLX(t, 0) // no /health → estimated path
+
+	got := rightSizeAdvice(home, 18.5)
+	if got == "" {
+		t.Fatal("expected advice at 18.5 GB available: estimated threshold 1.4×14+4=23.6 > 18.5; " +
+			"gb+4=18 would silently pass (false-fits)")
 	}
 }
 
 // TestRightSizeAdvice_MeasuredPathNoDoubling pins the headroom formula for the
 // measured (/health) path: modelGB+4. mlx_active_bytes already includes KV cache
-// pages; both measured and estimated paths now use the same gb+4 formula.
+// pages, so the measured path uses modelGB+4 (OS headroom only — no ×1.4 factor).
 //
-// Scenario: 14 GB measured active, 20 GB available.
+// Scenario: 14 GB measured active (mlx_active_bytes, KV-inclusive), 20 GB available.
 //
 //	Threshold: 14+4=18 ≤ 20 → no advice (model fits with 2 GB to spare).
 func TestRightSizeAdvice_MeasuredPathNoDoubling(t *testing.T) {
