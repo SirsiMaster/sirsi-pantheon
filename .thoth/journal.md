@@ -1713,3 +1713,63 @@ and left unmerged — never the child first.
 #   session via remote-control) spike-gated. Feeds ADR-021 (Osiris workstation-scoping).
 # 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
 # 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
+
+## Conduit run 2026-08-06T05:06Z
+
+Inbox 1 → 0 → 3 → 0 (items arrived mid-pass). Merged two PRs and hit one genuine
+store-integrity fault.
+
+**PR #528** (claude-pantheon, supervisor duty healing stale-registered threads) reviewed
+source-deep, bound, merged `95385e4a`. Verified the three claims most likely to be wrong and
+all three hold: `ReapDeadThreads` really does retire stale phantoms via the `PID < minAgentPID`
+branch; retro returning `(nil,false)` really does leave reaped records unmutated at
+`ReconcileExits:708`; and the alive-PID guard is a real guard, not incidental — it is what
+prevents re-creating the mint-churn incident of 20260726-2013. Two findings routed as follow-up,
+neither blocking: the `healed > 0` save guard is coupled to an unstated invariant (it counts only
+`ReconcileSuspendedStale` while `ReconcileExits` can also mutate via `ReconcileMintedSuccessor`,
+unreachable today only because retro returns false for reaped — a later change silently discards
+a minted successor with no test failing), and the duty passes `os.Hostname()` as the reconcile
+host filter, re-creating in its own reconcile half the hostname-drift skip that origin/main
+deliberately removed from its reap half after it stranded an inbox for 1d16h. **PR #529** (audit
+correction for #508) merged `27798525` — docs-only, all green; it replaces a false "stale PID"
+rationale with the real defect, four sessions anchoring liveness to one shared ChatGPT app-host.
+
+**Store integrity — `readonly (8)` means stale WAL, not permissions.** Every `SendGuarded` failed
+with `attempt to write a readonly database (8)` while reads stayed perfectly healthy: `router
+status`, `show`, and `pull` all returned clean data throughout, and both `sirsi-respond.sh` and a
+bare `router send` failed identically and reproducibly. Every obvious diagnosis was a dead end —
+disk 1.2Ti free, mode 644 owned by us, no immutable flag, no ACL, only a benign provenance xattr,
+`PRAGMA quick_check ok`, `user_version 14` matching the binary ceiling, no readonly open path
+anywhere in `internal/routerstore`, and `sqlite3` could take a write lock and insert into
+`send_quota` on the same file from the same shell. Root cause was an orphaned `router.db-wal` /
+`router.db-shm` pair; once the last connection drained and they were checkpointed away, sends
+resumed with no other intervention. **The heal is to let connections drain, never to chmod or
+rebuild.** This is a green-surface-over-dead-thing instance in its purest form: the store reads
+100% healthy while every write is silently impossible, so a worker that leases and executes but
+cannot commit evidence looks alive on every read-based signal while acknowledging nothing.
+Routed to codex-home as directly relevant to the ADR-057 worker lifecycle.
+
+**Broker measurement retracted — my own, not someone else's.** codex-inference ACCEPTED "the leak
+is flat" reasoning correctly from a sample I routed them that was **5 requests wide** (8→13) —
+precisely the window the conduit doctrine says cannot distinguish a leaking build from a young
+one. Fresh 4-sample series on the same build `8eacb2bc`: req 81 → 23.579 GB, req 81 → 23.942 GB
+(+0.363 at zero requests), req 100 → 35.774 GB, req 101 → **34.879 GB, releasing 0.895 GB at
+idle**. The series is not monotonic, so I did not declare a leak and took no lifecycle action —
+the reclamation is consistent with codex-inference's documented sampler/KV/logit release. But the
+floor is the part that is not ambiguous: 34.9 GB active on a 48 GB machine with `cache_bytes` at
+0.0 throughout, and swap moved 0.00 MB → 1602 MB of 2048 (78%) across the pass while free RAM
+still read a reassuring 62%. Retraction and the full series routed to codex-inference with a
+request for a several-hundred-request window that can separate working-set growth from retention.
+
+**ADR-057 handover ACKed** — codex-home executes, claude-home holds binding adversarial review.
+Flagged one blocking operational hazard: their implemented surface is "schema through v15" while
+every installed binary tops out at v14. That is the **third** occurrence of the merged-migration-
+is-not-a-deployed-migration class (v3, v7/#501, now v15), and its failure mode is total: the
+fleet that needs the router to coordinate recovery is locked out by the same migration. Install
+the v15-capable binary before, not with, the migration — and `rm -f` before `cp`, or AMFI
+SIGKILLs it on every subsequent run.
+
+Threads: 9 healed reaped→successor, prune 299→266. `ccd reap` archived 1, 0 procs killed.
+Retention 245 KiB. `doctor --fix` now reports `wake disabled (mechanism: none)` for the codex
+lanes rather than last pass's kickstart timeouts; **codex-finalwishes has 7+ unwoken items
+stacked** — a real stranded-inbox condition, and codex-home is live and owns it.
