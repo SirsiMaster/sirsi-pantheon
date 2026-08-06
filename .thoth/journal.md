@@ -2850,3 +2850,39 @@ to successors, prune 70→67, ccd reap one kill plus two archives, retention rec
 Router holds 58 open items, all on live lanes, with claude-home at zero. The registry
 `wake.mechanism` drift across ten lanes persists and was left alone — it is already routed to
 claude-nexus as `20260806-142144` and re-routing it would only duplicate their work.
+
+## Conduit run 2026-08-06T15:30Z
+
+ADR-057 went from merged to actually deployed. PR #565 had landed the v16 SQLite thread-lifecycle
+authority on main hours earlier, but the installed binary was still v15/`bc34fbb8`, so the merge
+proved nothing operationally. This run built `main` (HEAD `069050c0`, `router_schema_max: 16`,
+`dirty=false`) from a pristine clone, backed the store up to `router.db.bak-v15-20260806T152727Z`,
+installed with `rm` before `cp` to dodge the AMFI in-place-replace SIGKILL, and migrated the live
+store v15→v16 inside one locked boundary with `SIRSI_ALLOW_SCHEMA_MIGRATE=1`. The store now reads
+`user_version 16`, the new binary serves `router status` without the migrate flag, and the preserved
+`sirsi-v15-adr057-39673f28` artifact correctly refuses the v16 store — which also means it is no
+longer a valid recovery binary. Thread ops now agree with the store: prune reported 148→139 records
+and `select count(*) from threads` returns 139, so `.threads.json` is no longer authority.
+
+The install exposed a defect worth more than the deployment. The canonical serialized-install snippet
+guards with `flock -n 9`, and **`flock` does not exist on macOS** — it aborts with "command not
+found", the `||` branch fires, and the lock is never held. Every lane running that snippet has either
+skipped silently or, where it was written `|| true`, installed completely unguarded. That is the
+actual mechanism behind three distinct SHAs landing on `~/.local/bin/sirsi` inside twenty minutes on
+2026-08-06; the lock we believed was serializing those lanes had never once been acquired. Replaced
+with `/usr/bin/shlock -f … -p $$`, which is macOS-native and PID-aware so a dead owner's lock clears
+itself, plus an EXIT trap to release. The schema heal, disarmed while origin/main built v14 beneath a
+v15 store, is re-armed now that both sides read 16.
+
+Two core daemons were found unloaded rather than merely dead — `ai.sirsi.horus.agent-router` and
+`ai.sirsi.triage` were absent from `launchctl print` in both domains while their plists existed, and
+both read `false` in the override plist, so neither was a quarantine. Bootstrapped both, then
+restarted them along with `ai.sirsi.router-board` after the install, since long-lived Go processes
+hold their image in memory and would have failed closed invisibly against the migrated store; the
+board still answers 200 on :8734. PR #582 merged on codex-home's exact-head approval `1707e2b8`
+after re-verifying the head had not moved. The broker stayed flat for a fourth consecutive window,
+`active+cache` 21469750678@req70 → 21469297454@req73, about −0.15 MB across three organic requests,
+so it was left alone. One thing was deliberately not touched: the shared checkout carries an
+uncommitted `.thoth/journal.md` delta of +59/−1137 that deletes journal history rather than adding
+an entry. It is a destructive working-tree truncation, not authored work, so this entry was written
+on a clean branch off origin/main instead of adopting it.
