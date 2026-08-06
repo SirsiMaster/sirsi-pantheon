@@ -55,13 +55,33 @@ ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload
 WHERE threads.status NOT IN ('closed','reaped','suspended')
    AND excluded.last_seen_at > threads.last_seen_at
-   OR excluded.status IN ('closed','reaped','suspended') AND excluded.last_seen_at > threads.last_seen_at
-   OR threads.status='suspended' AND excluded.status='active' AND excluded.last_seen_at > threads.last_seen_at`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload); err != nil {
+   OR excluded.status IN ('closed','reaped','suspended') AND excluded.last_seen_at > threads.last_seen_at`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload); err != nil {
 			return fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("routerstore: commit thread upsert: %w", err)
+	}
+	return nil
+}
+
+// ResumeThreadCAS is the sole suspended-to-active transition. Requiring the
+// exact suspended row observed by the caller prevents a heartbeat that loaded
+// before a concurrent suspend from implicitly resuming the thread.
+func (s *Store) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
+	result, err := s.db.Exec(`UPDATE threads
+SET agent=?,status=?,last_seen_at=?,payload=?
+WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
+		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.ThreadID, suspendedAt)
+	if err != nil {
+		return fmt.Errorf("routerstore: resume thread %q: %w", record.ThreadID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("routerstore: count resumed thread %q: %w", record.ThreadID, err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("routerstore: resume thread %q lost suspended-state fence", record.ThreadID)
 	}
 	return nil
 }

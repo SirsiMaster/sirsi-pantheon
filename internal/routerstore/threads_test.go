@@ -109,6 +109,48 @@ func TestConcurrentThreadUpsertsPreserveDistinctRowsAndTerminalState(t *testing.
 	}
 }
 
+func TestHeartbeatCannotImplicitlyResumeConcurrentSuspend(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	record := ThreadRecord{ThreadID: "thr", Agent: "a", Status: "active", LastSeenAt: "2026-08-06T09:00:00Z", Payload: []byte(`{"status":"active"}`)}
+	if err := s.UpsertThreads([]ThreadRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	suspendedAt := "2026-08-06T09:01:00Z"
+	suspended := record
+	suspended.Status = "suspended"
+	suspended.LastSeenAt = suspendedAt
+	suspended.Payload = []byte(`{"status":"suspended"}`)
+	if err := s.UpsertThreads([]ThreadRecord{suspended}); err != nil {
+		t.Fatal(err)
+	}
+	lateHeartbeat := record
+	lateHeartbeat.LastSeenAt = "2026-08-06T09:02:00Z"
+	if err := s.UpsertThreads([]ThreadRecord{lateHeartbeat}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.ListThreads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Status != "suspended" {
+		t.Fatalf("late heartbeat implicitly resumed suspended thread: %#v", rows)
+	}
+	if err := s.ResumeThreadCAS(lateHeartbeat, suspendedAt); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = s.ListThreads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Status != "active" {
+		t.Fatalf("explicit resume did not persist: %#v", rows)
+	}
+}
+
 func TestStaleCrossRowSnapshotCannotOverwriteNewerHeartbeat(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
