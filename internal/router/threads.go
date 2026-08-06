@@ -1011,6 +1011,13 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 				LastSeenAt: now,
 				Status:     ThreadStatusActive,
 				ReapedFrom: t.ThreadID,
+				// Carried from the predecessor: for claude/codex surfaces this is
+				// invisible (IsInboxConsumer grants credit via a surface allow-list),
+				// but a lane that earned consumer credit explicitly via
+				// setThreadConsumerCapable would otherwise be minted active-but-not-a-
+				// consumer, so WakePass.armed skips it and the false lane-needs-you
+				// escalation PR #596 fixed survives for that subset.
+				ConsumerCapable: t.ConsumerCapable,
 			}
 			reg.Threads[succ.ThreadID] = succ
 			outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileMintedSuccessor, SuccessorID: succ.ThreadID})

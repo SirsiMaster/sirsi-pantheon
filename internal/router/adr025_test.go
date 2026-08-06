@@ -263,8 +263,7 @@ func TestReconcileExits_SuccessorIsDirectlyHeartbeatable(t *testing.T) {
 	}
 	reg.Threads[thr.ThreadID].Status = ThreadStatusReaped
 	reg.Threads[thr.ThreadID].LastSeenAt = now.Add(-1 * time.Minute)
-	err = SaveThreadRegistry(routerRoot, reg)
-	if err != nil {
+	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 		t.Fatalf("SaveThreadRegistry: %v", err)
 	}
 
@@ -278,15 +277,13 @@ func TestReconcileExits_SuccessorIsDirectlyHeartbeatable(t *testing.T) {
 	if len(outcomes) != 1 || outcomes[0].Action != ReconcileMintedSuccessor {
 		t.Fatalf("outcomes = %+v, want one minted-successor", outcomes)
 	}
-	err = SaveThreadRegistry(routerRoot, reg2)
-	if err != nil {
+	if err := SaveThreadRegistry(routerRoot, reg2); err != nil {
 		t.Fatalf("SaveThreadRegistry: %v", err)
 	}
 
 	// Heartbeat the successor directly — must NOT error with "suspended and cannot heartbeat".
 	succID := outcomes[0].SuccessorID
-	_, err = Heartbeat(routerRoot, succID, HeartbeatUpdate{Status: ThreadStatusActive})
-	if err != nil {
+	if _, err := Heartbeat(routerRoot, succID, HeartbeatUpdate{Status: ThreadStatusActive}); err != nil {
 		t.Errorf("Heartbeat on active successor failed: %v — want direct heartbeat without thread resume", err)
 	}
 }
@@ -407,5 +404,50 @@ func TestReconcileExits_LivePIDNotSuspendedOnIdleAlone(t *testing.T) {
 	}
 	if got := reg.Threads["thr-idle"].Status; got != ThreadStatusSuspended {
 		t.Errorf("status = %q, want suspended (dead anchor)", got)
+	}
+}
+func TestReconcileExits_SuccessorCarriesConsumerCapable(t *testing.T) {
+	routerRoot := t.TempDir()
+	now := time.Now().UTC()
+
+	// Register a worker-surface thread that earned ConsumerCapable explicitly.
+	// A worker surface is not on the claude/codex allow-list in IsInboxConsumer,
+	// so its successor must carry the field or it loses consumer credit.
+	thr, err := RegisterThread(routerRoot, &Thread{
+		AgentID: "some-worker", Surface: "worker", ConsumerCapable: true, PID: 0,
+	})
+	if err != nil {
+		t.Fatalf("RegisterThread: %v", err)
+	}
+
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		t.Fatalf("LoadThreadRegistry: %v", err)
+	}
+	reg.Threads[thr.ThreadID].Status = ThreadStatusReaped
+	reg.Threads[thr.ThreadID].LastSeenAt = now.Add(-1 * time.Minute)
+	if err = SaveThreadRegistry(routerRoot, reg); err != nil {
+		t.Fatalf("SaveThreadRegistry: %v", err)
+	}
+
+	reg2, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		t.Fatalf("LoadThreadRegistry: %v", err)
+	}
+	withTranscript := func(_ *Thread) (*SuspendPayload, bool) { return &SuspendPayload{}, true }
+	outcomes := ReconcileExits(reg2, "" /* all hosts */, "", now, DefaultThreadStaleAfter, withTranscript)
+	if len(outcomes) != 1 || outcomes[0].Action != ReconcileMintedSuccessor {
+		t.Fatalf("outcomes = %+v, want one minted-successor", outcomes)
+	}
+
+	succ := reg2.Threads[outcomes[0].SuccessorID]
+	if succ == nil {
+		t.Fatal("successor thread not found in registry")
+	}
+	if !succ.ConsumerCapable {
+		t.Error("successor.ConsumerCapable = false; want true — predecessor's earned consumer credit must carry through mint")
+	}
+	if !succ.IsInboxConsumer() {
+		t.Error("successor.IsInboxConsumer() = false; WakePass would skip this lane and repeat the false escalation loop")
 	}
 }
