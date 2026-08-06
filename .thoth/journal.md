@@ -2249,3 +2249,68 @@ Swap grew 4096 → 7168 MB and sits at 6513 used, but the cause is two concurren
 not a leak, watch only. Threads 107 → 75, two sessions archived, 10.1 KiB retention reclaimed, board
 :8734 → 200, zero `BINARY_MISSING` so the schema-drift heal stayed disarmed. `ai.sirsi.pantheon` at
 PID -9 remains quarantined and untouched.
+
+## Conduit run 2026-08-06T11:00Z
+
+Inbox reached zero on three items and PR #563 finally landed. codex-home returned **APPROVE + BIND**
+on exact head `a85a01e8081a3d61d8319990f7d8691a1d170513` — the same head their previous pass had sent
+back CHANGES REQUESTED, after this lane corrected the one factual claim they caught. That correction
+is worth recording on its own, since the prior run deliberately left it unjournalled to avoid amending
+a head under review: the earlier text asserted that merging #564 and #565 together "would have applied
+the v16 migration twice." It would not have. **The versioned migration runner reads the durable
+store's stored ceiling and skips any version already applied**, so double execution was never the
+hazard. The real hazard was competing *publication* of a single schema transition — two branches each
+claiming to be the one that moves the store to v16. The distinction matters because the false version
+makes the runner sound unsafe when the runner is in fact the component behaving correctly; the danger
+lives in the coordination around it, not in the code. The clause was replaced and the whole journal
+grepped for other instances of the claim — none.
+
+codex-home could not publish their own bind: `sirsi-bind.sh` failed at the GitHub App installation
+lookup because `api.github.com` was unreachable from their node, and they correctly claimed no remote
+state, explicitly authorising a relay only after head re-verification. This node re-verified the head
+byte-identical, `MERGEABLE`/`CLEAN`, and zero existing reviews (so no conflicting review could be
+overwritten), then published the bind — `sirsi-bind[bot] @ a85a01e8` — which re-ran the `binding-hold`
+gate (run `31093842884`); it re-read the bind and cleared. Squash-merged as `da7f7fe8`. **A bind that
+fails on network reachability is not a failed review, and treating it as one would have stalled a PR
+whose verdict was already decided** — the reviewer's job finished at the verdict; only publication was
+blocked, and publication is relayable when the head is proven unchanged.
+
+PR #567 (claude-pantheon, actionable right-size advice on the memory death spiral) got a source-deep
+review and came back **CHANGES REQUESTED** on one narrow but disqualifying finding.
+`approximateModelGB()` classifies a model by name substring — `27b`→14 GB, `12b`→7 GB, `9b`→5 GB,
+`2b`→1.5 GB — and every one of those figures is annotated `4bit` in its own comment. But the function
+is handed the *full* model id, quantizer included, and discards that half. This node's live
+`~/.sirsi/gemma-model.conf` reads `mlx-community/gemma-4-12B-it-8bit`: it hits the `12b` arm, returns
+7 GB, and the broker's `/health` reports `mlx_active_bytes` at 34.9 GB. **A five-fold understatement
+of the only model actually configured on the machine.** The consequence is not a wrong number but a
+silence: with `availableGB` anywhere from 18 to 32 GB the budget check `2×7+4 ≤ available` passes,
+`rightSizeAdvice` returns empty, and the operator receives exactly the generic "right-size the broker"
+directive the PR exists to replace. Below 18 GB the advice does fire, but opens by printing
+`current model gemma-4-12B-it-8bit (~7 GB)` into an emergency alert. The fix keeps the shape and adds
+no I/O: read the quantizer off the same string (`8bit` ×2, `bf16`/`fp16` ×4, default ×1). Three
+non-blocking notes went with it — the `tiers` table offers only gemma-2 ids so following the advice
+silently downgrades a gemma-4 node a model generation; `home, _ := os.UserHomeDir()` discards its
+error, and on failure `resolveModel("")` returns the hardcoded 27b fallback so the alert would name a
+model that is not running; and `strings.Contains(id, "2b")` would also match a `-2bit` quantizer
+suffix, harmless only because the `27b`/`12b`/`9b` arms are checked first — load-bearing ordering that
+deserves a comment before someone tidies it into a bug. GitHub refused the `--request-changes` review
+("cannot request changes on your own pull request" — every agent pushes as `SirsiMaster`), so the
+verdict was posted as a PR comment and routed back through the router, which is where the binding
+record lives anyway.
+
+Health green, with the broker's cleanest reading yet. Driven three-request window: `mlx_active_bytes`
+**byte-identical** at 34923004008 before and after, cache 0 → 0.236 GB, so
+Δ(active+cache)/Δreq = 0.079 GB/req — and all of it cache, none of it active. Seventh consecutive
+clean measurement against the known-bad 0.48 GB/req. The prior run's inconclusive inter-run drift
+resolved exactly as suspected: it ended with cache non-zero, this run began at cache 0, confirming
+cache→active reclamation rather than a leak. Absolute active continues its slow climb (34.37 → 34.92 GB)
+and stays on the watch-list. Swap 8950/10240 used, essentially unmoved from 8966 — a stable floor, not
+a spiral. `sirsi diagnose` reads 🔴 69/100 naming the broker a 32.7 GB "memory hog"; that is the
+`phys_footprint` trap counting file-backed mmapped weights, and it was ignored rather than acted on.
+No new crash or Jetsam reports for any sirsi/gemma/Python process. Zero `BINARY_MISSING` sentinels, so
+the schema-drift heal stayed disarmed. Board `:8734` → 200. `ai.sirsi.pantheon` at PID −9 remains
+quarantined and untouched. Housekeeping: reconcile healed one codex-home thread to a successor, prune
+66 → 63, two leaked conduit-supervisor sessions reaped (4 procs), retention reclaimed 17.3 KiB. The
+v16 reship and the claim-row defect both left this lane last run and are no longer open on
+codex-pantheon. Three owner-surface items remain correctly unclosed — they are the owner's to close,
+and doctor records them as wake-unavailable rather than nagging.
