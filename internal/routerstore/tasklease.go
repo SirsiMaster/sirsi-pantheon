@@ -76,8 +76,7 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 
 	var taskID string
 	selectQuery := `SELECT t.task_id FROM tasks t
-		WHERE t.agent=? AND t.status IN ('pending','in-progress') AND ` + actionableTaskDependency("t") + `
-		AND t.lease_token='' AND t.attempts<?`
+		WHERE t.agent=? AND ` + claimableTaskPredicate("t") + ` AND t.attempts<?`
 	selectArgs := []any{agent, MaxRetriesPerItem}
 	if exactTaskID != "" {
 		selectQuery += ` AND t.task_id=?`
@@ -96,7 +95,7 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 	}
 	expires := now.Add(ttl)
 	res, err := tx.Exec(`UPDATE tasks AS t SET status='in-progress',claimed_by=?,thread_id=?,lease_token=?,lease_expires=?,attempts=attempts+1,updated=?
-		WHERE agent=? AND task_id=? AND status IN ('pending','in-progress') AND `+actionableTaskDependency("t")+` AND lease_token='';`,
+		WHERE agent=? AND task_id=? AND `+claimableTaskPredicate("t")+`;`,
 		worker, threadID, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), agent, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: claim task: %w", err)

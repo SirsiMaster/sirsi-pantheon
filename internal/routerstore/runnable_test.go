@@ -49,6 +49,17 @@ func TestRunnableForThreeSourcesAndAuditedEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state, _ = s.RunnableFor(agent)
+	if !state.Runnable || state.ActionableLedgerTasks != 1 || state.ClaimableLedgerTasks != 0 || state.LeasedLedgerTasks != 1 {
+		t.Fatalf("leased work must remain runnable but not claimable: %+v", state)
+	}
+	reconcile, err := s.ReconcileOperationalState(agent, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconcile.WakeEventsCreated != 0 {
+		t.Fatalf("leased task caused duplicate wake backfill: %+v", reconcile)
+	}
 	if ifErr4 := s.CompleteTaskLease(agent, "T1", lease.Token, "proof://T1"); ifErr4 != nil {
 		t.Fatal(ifErr4)
 	}

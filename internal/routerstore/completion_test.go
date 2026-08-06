@@ -20,6 +20,36 @@ func TestCompletionRequiresAuditedEmptyThreeSources(t *testing.T) {
 	}
 }
 
+func TestEmptyOperationalCutoverDoesNotRetroactivelyRejectHistory(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.db.Exec(`UPDATE state SET value='' WHERE key='operational_enforcement_since'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkRequirementAudit("codex-home", "proof://historical-audit"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "historical", Subject: "old done task"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE tasks SET status='done',updated='2020-01-01T00:00:00Z',result_ref='' WHERE agent='codex-home' AND task_id='historical'`); err != nil {
+		t.Fatal(err)
+	}
+	reconcile, err := s.ReconcileOperationalState("codex-home", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconcile.FalseDoneRejected != 0 {
+		t.Fatalf("empty cutover retroactively rejected history: %+v", reconcile)
+	}
+	completion, err := s.VerifyCompletion("codex-home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completion.PostCutoverDoneWithoutProof != 0 {
+		t.Fatalf("empty cutover classified history as post-cutover: %+v", completion)
+	}
+}
+
 func TestCompletionRejectsSatisfiedRequirementWithMissingEvidence(t *testing.T) {
 	s := newTestStore(t)
 	if ifErr3 := s.MarkRequirementAudit("codex-home", "audit://all-canon"); ifErr3 != nil {

@@ -88,7 +88,7 @@ func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (Reco
 		SELECT lower(hex(randomblob(16))),'reconcile:runnable:'||?||':'||?,?,'lane',?,'runnable lane lacks a live wake delivery',?,?
 		WHERE (
 			EXISTS (SELECT 1 FROM items i WHERE i.to_agent=? AND i.status='open' AND `+actionableItemDependency("i")+`) OR
-			EXISTS (SELECT 1 FROM tasks t WHERE t.agent=? AND t.status IN ('pending','in-progress') AND `+actionableTaskDependency("t")+` AND t.lease_token='') OR
+			EXISTS (SELECT 1 FROM tasks t WHERE t.agent=? AND `+claimableTaskPredicate("t")+`) OR
 			EXISTS (SELECT 1 FROM requirements r WHERE r.owner=? AND r.status NOT IN ('satisfied','waived')) OR ?=0
 		) AND NOT EXISTS (SELECT 1 FROM wake_events w WHERE w.agent=? AND w.status IN ('pending','leased','terminal_failed'));`,
 		agent, now.Format(time.RFC3339Nano), agent, agent, now.Format(time.RFC3339), now.Format(time.RFC3339),
@@ -101,7 +101,7 @@ func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (Reco
 	// Reject post-cutover done claims that bypassed the evidence-backed leased
 	// completion path, and requirement tasks whose requirement remains unmet.
 	res, err = tx.Exec(`UPDATE tasks SET status='in-progress',stage=CASE WHEN stage='shipped' THEN 'verify' ELSE stage END,
-		blocked_by='',updated=? WHERE agent=? AND status='done' AND updated>=(SELECT value FROM state WHERE key='operational_enforcement_since')
+		blocked_by='',updated=? WHERE agent=? AND status='done' AND `+postEnforcementTaskPredicate("tasks")+`
 		AND (result_ref='' OR (task_id LIKE 'requirement/REQ-%' AND EXISTS (
 			SELECT 1 FROM requirements r WHERE 'requirement/'||r.req_id=tasks.task_id AND r.status NOT IN ('satisfied','waived')
 		)));`, now.Format(time.RFC3339), agent)
