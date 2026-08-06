@@ -48,6 +48,10 @@ import (
 type Facade struct {
 	store *routerstore.Store
 	root  string // <repo>/.agents/idea-router
+	// schemaGap is non-zero when the store is newer than this binary and the
+	// facade fell back to the read-only subset. Surfaces MUST render its banner
+	// rather than presenting a partial view as complete.
+	schemaGap routerstore.SchemaGap
 }
 
 // Store exposes the shared durable store to sibling read models. Facade.Close
@@ -78,10 +82,29 @@ func Open(repoRoot string) (*Facade, error) {
 	}
 	store, err := routerstore.Open(dbPath)
 	if err != nil {
-		return nil, err
+		// A store NEWER than this binary is not a reason to go blind. The write
+		// guard is correct — this binary must not migrate or mutate a schema it
+		// does not define — but refusing to READ turned a coordination problem
+		// into a fleet-wide blackout on 2026-08-05: every board, the CLI, and the
+		// menubar all went dark against a store that was otherwise healthy.
+		//
+		// Fall back to the read-only subset and CARRY THE GAP, so every surface
+		// can say out loud that it is showing a partial view. Silent degradation
+		// here would be the false green this whole path exists to remove.
+		ro, gap, roErr := routerstore.OpenReadOnly(dbPath)
+		if roErr != nil || !gap.Degraded() {
+			return nil, err // not a version gap, or read-only cannot help: original error
+		}
+		f := New(filepath.Join(repoRoot, ".agents", "idea-router"), ro)
+		f.schemaGap = gap
+		return f, nil
 	}
 	return New(filepath.Join(repoRoot, ".agents", "idea-router"), store), nil
 }
+
+// SchemaGap reports whether this facade is reading a store newer than the
+// binary, and how to say so. Zero value means fully compatible.
+func (f *Facade) SchemaGap() routerstore.SchemaGap { return f.schemaGap }
 
 // OpenRoot is Open for callers that already hold the router root
 // (<repo>/.agents/idea-router) rather than the repo root. Same store
