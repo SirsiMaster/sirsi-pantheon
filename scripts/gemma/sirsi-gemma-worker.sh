@@ -36,7 +36,6 @@
 # the ai.sirsi.gemma-worker LaunchAgent). Do NOT hand-edit the ~/.local/bin copy.
 
 set -u
-MLX=$HOME/.venvs/mlx/bin/mlx_lm.generate
 # Model is resolved by sirsi-gemma-model-resolver.sh (largest/most-advanced/most-
 # recent that fits the RAM budget) and written to gemma-model.conf. Env override
 # wins; conf is next; proven fallback last.
@@ -70,7 +69,6 @@ GEN_STDERR=$(mktemp -t gemma-gen-stderr) || GEN_STDERR=/tmp/gemma-gen-stderr.$$
 trap 'rm -f "$GEN_STDERR"' EXIT
 
 mkdir -p "$(dirname "$LOG")"
-[ -x "$MLX" ] || { echo "[$(date -u +%FT%TZ)] ERROR: MLX runtime missing at $MLX" >> "$LOG"; exit 1; }
 
 log(){ echo "[$(date -u +%FT%TZ)] $*" >> "$LOG"; }
 
