@@ -172,10 +172,26 @@ func SafeReplace(src, dst string) (err error) {
 		}
 	}
 
+	// Hash the exact staged artifact that will go live. On macOS, codesign
+	// mutates Mach-O content, so comparing the installed file to the unsigned
+	// source hash produces a false failure even when the atomic replacement is
+	// correct. Convergence is between the signed staged inode and dst.
+	stagedHash, hashErr := FileHash(staged)
+	if hashErr != nil {
+		return fmt.Errorf("hash staged binary %s: %w", staged, hashErr)
+	}
+
 	// Atomic swap: rename(2) over the target on the same filesystem. If this
 	// fails, the old binary is untouched — never a gap (guardrail #2).
 	if renameErr := os.Rename(staged, dst); renameErr != nil {
 		return fmt.Errorf("rename %s -> %s: %w", staged, dst, renameErr)
+	}
+	installedHash, hashErr := FileHash(dst)
+	if hashErr != nil {
+		return fmt.Errorf("verify installed binary %s: %w", dst, hashErr)
+	}
+	if installedHash != stagedHash {
+		return fmt.Errorf("verify installed binary %s: hash %s does not match signed staged hash %s", dst, installedHash, stagedHash)
 	}
 	return nil
 }

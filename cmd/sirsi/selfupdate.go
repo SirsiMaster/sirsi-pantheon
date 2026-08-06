@@ -132,14 +132,9 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 			failed++
 			continue
 		}
-		// Verify-after-convergence — re-hash and prove it matches; don't trust
-		// the write (gate #3).
-		post, herr := selfupdate.FileHash(t.Path)
-		if herr != nil || post != selfHash {
-			output.Error("     %s: replaced but did not converge (present %s, want %s)", t.Path, shortHash(post), shortHash(selfHash))
-			failed++
-			continue
-		}
+		// SafeReplace verifies convergence against the exact post-codesign staged
+		// artifact. The unsigned source hash is not a valid comparator on macOS
+		// because codesign mutates Mach-O content.
 		output.Success("     healed %s (re-signed, converged)", t.Path)
 		healed++
 	}
