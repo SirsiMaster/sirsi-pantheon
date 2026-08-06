@@ -465,7 +465,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				switch {
 				case thr.ThreadID == "":
 					sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
-				case WatcherAlive(thr.ThreadID):
+				case WatcherAlive(thr.ThreadID) || WatcherAliveByAgent(thr.AgentID):
 					sum.LoopState, sum.Armed, sum.ArmedReason = "alive", true, "loop-alive"
 				default:
 					sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"

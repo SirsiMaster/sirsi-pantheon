@@ -24,9 +24,13 @@ func TestComputeStranded_FlagsUnarmedBacklog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Only claude-armed has a live loop.
+	// Only claude-armed has a live loop (stub both probes — tests must not pgrep the real host).
 	setWatcherAliveFn(func(id string) bool { return id == armed.ThreadID })
-	defer func() { setWatcherAliveFn(nil) }()
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+	defer func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	}()
 
 	pending := map[string][]string{
 		"claude-armed": {"i1"},       // loop-alive → not stranded
