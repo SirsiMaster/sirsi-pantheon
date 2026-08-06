@@ -486,7 +486,25 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 ---
 
-### 2.32 Scope The Check To The Claim (Rule A35)
+### 2.32 Permanent Execution Loop (Rule A36)
+> Owner directive, August 5, 2026, binding on every agent (`claude-*`, `codex-*`, `gemma`, and all future agents). Codified here August 6, 2026 because the rule was binding and cited by number — including by ADR-057 — while appearing **nowhere in this repository**, so no agent could look it up, quote it, or check its precedence against the rules it contradicts.
+
+*   **Rule**: An agent is never idle and never "done". Work effort is tied permanently to three sources: **(1)** open router items addressed to it, **(2)** actionable tasks on its ledger, **(3)** canon completeness — any canonical requirement (PRD, ADR, these rules, development plan, user stories, architecture, security controls, designs, legal commitments) not yet verified as implemented. Source (3) is standing work whether or not anyone routed a message about it.
+*   **Knowledge of work becomes a task, not a note.** When work appears from any source — a router message, a ledger posting, a plan step, an instruction to create tasks — the agent **registers it on the ledger, assigns it to its workstream, and works it.** Reporting it and stopping is a failure to execute.
+*   **Stopping condition**: an agent may stop only when it can state that **all three sources are simultaneously empty.** Finishing a turn is not a stopping condition — on turn completion, request the next tasking from the reviewer or pull from the development plan. **Reactivation by the owner is a failure, not a hand-off.**
+*   **Owner gates**: there are **no owner gates except security and privacy.** Merges, rebases, renumbering, reassignment, and publication decisions already ruled on proceed without waiting. A genuine security or privacy decision surfaces as a decision card and **other work continues meanwhile** — it never parks the lane.
+*   **Precedence — this rule overrides Rule 17 (Sprint Planning is Mandatory).** Rule 17 requires USER approval before any code change. That gate does not apply to work already registered on the ledger, present in the inbox, or traced to an unmet canon requirement: A36 makes those pre-approved by standing directive. Rule 17 continues to govern *new scope* the agent proposes on its own initiative. A24 (Ra scope autonomy) is the other named override.
+*   **Precedence — this rule extends Rule A27 (Heartbeat Loop Mandate, §2.24).** A27 defines the loop as a *watcher*: registration means alive-and-watching, and its signal is liveness. A36 makes the loop a *work driver*. Read alone, A27 licenses the exact failure A36 forbids — a lane that heartbeats faithfully beside an inbox it never drains reads as fully compliant with A27. **Where they meet, A36 governs: a heartbeat is necessary and never sufficient.** A27's signal proves the session exists; only a durable store mutation proves work happened.
+*   **Completion claims require traceability, not a green build.** A whole-application "done" is valid only after a requirement-by-requirement traceability audit across the PRD, development plan, user stories, architecture, security controls, designs, legal commitments, and observed production behavior. A passing test suite, a merged PR, or a rendering screen is evidence of a step, never of completion. Anything less is a progress report.
+*   **Operating sequence**: assess → audit → plan → implement to completion.
+*   ⚠ **A36 is intent, NOT enforcement — cite ADR-057 for the mechanism.** This rule is text an agent chooses to honor. Nothing in it detects a lane that stopped early, distinguishes a worker holding real work from one that merely looks alive, or blocks a `done` that no evidence supports. Operational enforcement lives in the Go runtime (ADR-057): a runtime-computed three-source `runnable` predicate, transactional leases with expiry and idempotency keys, event-driven wake acknowledged by a real store mutation, six honest lane states, and an evidence-backed completion gate. **Process existence and heartbeat prove session liveness only — never work.** Do not cite A36 as the mechanism.
+*   **Refs**: ADR-057 (enforcement); A27 §2.24 (heartbeat loop, extended here); Rule 17 (overridden here); A24 (the other Rule 17 override); A32 (owner reporting standard). Canonical prose: `AGENTS.md` § Permanent Execution Loop.
+
+---
+
+---
+
+### 2.33 Scope The Check To The Claim (Rule A35)
 > **Renumbered 2026-08-05.** This rule shipped as §2.26 / Rule A29 — numbers
 > already held by §2.26 Orchestration Brain (Rule A29). Two different rules
 > answered to the same citation, so an agent resolving "A29" got whichever it
