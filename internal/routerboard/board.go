@@ -81,13 +81,21 @@ type Event struct {
 // renamed key is an empty cell, and an empty cell reads as "no data" rather
 // than as a bug.
 type Payload struct {
-	Build            string       `json:"build"`
-	DataErrors       []string     `json:"data_errors"`
-	GeneratedAt      string       `json:"generated_at"`
-	Counters         Counters     `json:"counters"`
-	Activity         []Event      `json:"activity"`
-	Fleet            []Lane       `json:"fleet"`
-	Board            BoardSummary `json:"board"`
+	Build       string       `json:"build"`
+	DataErrors  []string     `json:"data_errors"`
+	GeneratedAt string       `json:"generated_at"`
+	Counters    Counters     `json:"counters"`
+	Activity    []Event      `json:"activity"`
+	Fleet       []Lane       `json:"fleet"`
+	Board       BoardSummary `json:"board"`
+	// Ledger is the SAME BoardSummary under the key index.html actually reads.
+	// The UI renders d.ledger; the payload carried only d.board, so every tile
+	// bound to it read undefined and the page displayed nonsense while the API
+	// endpoints returned correct numbers — the board was "broken" and the CLI
+	// was right at the same moment. Emitting both keeps the page working without
+	// editing it: index.html is the surface the owner reads, and renaming its
+	// field to match mine would have risked the very thing being repaired.
+	Ledger           BoardSummary `json:"ledger"`
 	Threads          []Thread     `json:"threads"`
 	RegistrationGaps []string     `json:"registration_gaps"`
 	Tasks            []TaskDetail `json:"tasks"`

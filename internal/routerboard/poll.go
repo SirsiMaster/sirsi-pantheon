@@ -220,6 +220,7 @@ func (b *Board) Poll(ctx context.Context) {
 		Build: b.buildID, DataErrors: errs, GeneratedAt: ledger.GeneratedAt,
 		Counters: c, Activity: act, Fleet: fleet,
 		Board:   summarize(fleet),
+		Ledger:  summarize(fleet),
 		Threads: threads, RegistrationGaps: gaps, Tasks: taskDetails(fleet),
 	}
 	body, err := json.Marshal(p)
