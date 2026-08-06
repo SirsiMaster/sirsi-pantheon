@@ -6,7 +6,7 @@ import (
 )
 
 // TestEvidenceGateMessage_NamesKindAndShowsWhatYouHave guards the wording of the
-// test-state gate, not its behaviour (behaviour is covered in store_test.go).
+// test-state gate, not its behavior (behavior is covered in store_test.go).
 //
 // The original message — "test-state passed requires an evidence link" — was
 // read by callers who HAD just attached a link as "the gate is broken". Two
