@@ -131,3 +131,55 @@ codex-pantheon also holds `pantheon-adr054-owner-gate`, blocked on **PR #465**
 content approval and rebase. Structural checks passed. It is correctly
 owner-gated and is being surfaced on the owner's decision board rather than
 resolved by any agent.
+
+
+---
+
+## Part C — one registration, every surface (owner directive 2026-08-05)
+
+Owner: *"one registration should carry across all surfaces like OAuth."*
+
+Registering an agent is ONE act with fan-out, not four chores an agent can
+half-complete. Today's audit found **15 of 23 agents** present in the router
+but missing a thread record, a task ledger, or both — each a lane the boards
+cannot see.
+
+### C1. `sirsi agent register <id>` is the single entry point
+
+One command, transactional, creating all of it or none of it:
+
+1. **router identity** — `agents.json` entry with id, type, repo,
+   workstream, and a `wake` block naming a mechanism from the ADR-054 wake
+   matrix.
+2. **thread record** — registered and heartbeat-capable immediately.
+3. **task ledger** — the agent's registry exists (possibly empty, but
+   PRESENT: "empty" and "absent" must be distinguishable, because empty
+   means *nothing to do* while absent means *invisible*).
+4. **board presence** — derived, no separate step: every surface reads the
+   three above, so nothing can be registered in one place and missing in
+   another.
+
+Partial registration is the failure this replaces. If any step fails the
+whole registration fails loudly, naming the step.
+
+### C2. The token analogy, stated precisely
+
+Like OAuth, the agent presents ONE identity and every surface honours it —
+no per-surface enrolment. Unlike OAuth, there is no bearer secret and no
+expiry: the store is local and the identity is a declaration, not a
+credential. Do not build token issuance, refresh, or scopes into this; the
+security boundary is the machine, and inventing a credential system here
+would add attack surface for zero benefit.
+
+### C3. Demit is equally single-act
+
+`sirsi agent demit <id>`: wake set to `none`, threads archived, open tasks
+reassigned or closed, ledger history retained. A lane leaves cleanly and
+completely, or it stays — never a phantom half-present in one surface.
+
+### C4. Enforcement makes this self-correcting
+
+With sne-51's store-boundary rejection live, an unregistered identity
+cannot send, pull, or touch tasks at all. Registration stops being a thing
+agents remember and becomes the price of participating — which is the only
+version that survives contact with a fleet that has already drifted once.
