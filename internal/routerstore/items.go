@@ -65,7 +65,7 @@ ON CONFLICT(id) DO UPDATE SET
     wake_adapter=excluded.wake_adapter,
     wake_error=excluded.wake_error,
     blocked_by=excluded.blocked_by;`
-	_, err := s.db.Exec(q,
+	_, err := s.exec(q,
 		it.ID, it.From, it.To, it.Title, it.Type, it.Status, it.Opened, it.Closed,
 		it.Instructions, it.Result,
 		it.WakeStatus, it.WakeAttemptedAt, it.WakeAdapter, it.WakeError, it.BlockedBy,
@@ -78,7 +78,7 @@ ON CONFLICT(id) DO UPDATE SET
 
 // SetBlockedBy replaces an item's optional dependency edge.
 func (s *Store) SetBlockedBy(id, blockedBy string) error {
-	res, err := s.db.Exec(`UPDATE items SET blocked_by=? WHERE id=?;`, strings.TrimSpace(blockedBy), id)
+	res, err := s.exec(`UPDATE items SET blocked_by=? WHERE id=?;`, strings.TrimSpace(blockedBy), id)
 	if err != nil {
 		return fmt.Errorf("routerstore: SetBlockedBy %q: %w", id, err)
 	}
@@ -169,7 +169,7 @@ func (s *Store) ListAll() ([]Item, error) {
 // a single UPDATE keyed on id; unknown ids return ErrNotFound so the caller can
 // fall back to the file path. Empty-string fields clear their column.
 func (s *Store) SetWake(id, status, attemptedAt, adapter, wakeErr string) error {
-	res, err := s.db.Exec(
+	res, err := s.exec(
 		`UPDATE items SET wake_status=?, wake_attempted_at=?, wake_adapter=?, wake_error=? WHERE id=?;`,
 		status, attemptedAt, adapter, wakeErr, id,
 	)
@@ -197,7 +197,7 @@ func (s *Store) CloseItem(id, result string) error {
 		body = "(closed without result)"
 	}
 	const q = `UPDATE items SET status='closed', closed=?, result=? WHERE id=? AND status='open';`
-	res, err := s.db.Exec(q, closedAt, body, id)
+	res, err := s.exec(q, closedAt, body, id)
 	if err != nil {
 		return fmt.Errorf("routerstore: Close %q: %w", id, err)
 	}

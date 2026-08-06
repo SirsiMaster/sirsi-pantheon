@@ -227,14 +227,14 @@ func (s *Store) Counters() (DispatchCounters, error) {
 func (s *Store) GC(keep time.Duration) (int64, error) {
 	now := s.clock()
 	cutoff := now.Add(-keep).Format(time.RFC3339)
-	res, err := s.db.Exec(
+	res, err := s.exec(
 		`DELETE FROM items WHERE status IN ('completed','dead_letter','closed') AND closed <> '' AND closed <= ?;`, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("routerstore: GC items: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	oldBucket := now.Add(-2 * SendWindow).Truncate(SendWindow).Format("2006-01-02T15")
-	if _, err := s.db.Exec(`DELETE FROM send_quota WHERE bucket < ?;`, oldBucket); err != nil {
+	if _, err := s.exec(`DELETE FROM send_quota WHERE bucket < ?;`, oldBucket); err != nil {
 		return n, fmt.Errorf("routerstore: GC quota: %w", err)
 	}
 	return n, nil
