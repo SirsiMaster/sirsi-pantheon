@@ -297,13 +297,24 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		if err != nil {
 			return err
 		}
-		if err := store.UpsertThreads(records); err != nil {
+		dirty := records[:0]
+		for _, record := range records {
+			old, exists := reg.baseline[record.ThreadID]
+			if !exists || string(old.Payload) != string(record.Payload) {
+				dirty = append(dirty, record)
+			}
+		}
+		if err := store.UpsertThreads(dirty); err != nil {
 			return err
 		}
 		for id, old := range reg.baseline {
 			if _, ok := reg.Threads[id]; !ok {
-				if err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt); err != nil {
+				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt)
+				if err != nil {
 					return err
+				}
+				if !deleted {
+					return fmt.Errorf("thread %q prune lost lifecycle fence", id)
 				}
 			}
 		}
@@ -346,22 +357,20 @@ func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 		if err != nil {
 			return nil, fmt.Errorf("marshal store thread %q: %w", id, err)
 		}
-		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format(time.RFC3339Nano), Payload: payload})
+		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload})
 	}
 	return records, nil
 }
 
 func openThreadStore() (*routerstore.Store, error) {
-	path := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB"))
-	if path == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("resolve thread store home: %w", err)
-		}
-		path = filepath.Join(home, ".sirsi", "router.db")
+	path, err := routerstore.DefaultStorePath()
+	if err != nil {
+		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("create thread store directory: %w", err)
+	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, fmt.Errorf("create thread store directory: %w", err)
+		}
 	}
 	store, err := routerstore.Open(path)
 	if err != nil {
