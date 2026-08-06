@@ -55,7 +55,7 @@ func TestCompletionRejectsSatisfiedRequirementWithMissingEvidence(t *testing.T) 
 	if ifErr3 := s.MarkRequirementAudit("codex-home", "audit://all-canon"); ifErr3 != nil {
 		t.Fatal(ifErr3)
 	}
-	req, err := s.AddRequirement("gap", "ADR-057", "R6", "codex-home")
+	req, err := s.AddRequirement("gap", "ADR-061", "R6", "codex-home")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -104,7 +104,7 @@ type AgentSurfaceStatus struct {
 	OldestPendingAgeSeconds float64  `json:"oldest_pending_age_seconds"`
 	LiveThreads             []string `json:"live_threads,omitempty"`
 	StaleThreads            []string `json:"stale_threads,omitempty"`
-	// Operational is the ADR-057 authority. Legacy Status remains additive for
+	// Operational is the ADR-061 authority. Legacy Status remains additive for
 	// tolerant clients during the contract transition, but it may not be used to
 	// infer work from process/thread liveness.
 	Operational     routerstore.LaneOperationalState `json:"operational"`

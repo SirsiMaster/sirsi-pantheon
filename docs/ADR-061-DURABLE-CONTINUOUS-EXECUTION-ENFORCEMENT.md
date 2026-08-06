@@ -1,4 +1,4 @@
-# ADR-057: Durable Continuous-Execution Enforcement
+# ADR-061: Durable Continuous-Execution Enforcement
 
 ## Status
 

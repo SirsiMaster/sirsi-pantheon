@@ -4,7 +4,7 @@
 sne-50). Reviewed by codex-home across four rounds; the eight binding
 findings from head `b01b3f1` are resolved in this revision (see
 "Findings resolved" below). The continuous-execution mechanism is amended
-and mechanically enforced by ADR-057.
+and mechanically enforced by ADR-061.
 
 **Supersedes nothing; composes:** **ADR-052** (A2A/Router-Conduit Operating
 Rules — Pantheon's adoption of the cross-portfolio conduit standard) and
@@ -194,7 +194,7 @@ win and supervision records why it yielded.
   period.
 - Delivery is bounded and retried durably. Retry exhaustion becomes a terminal
   wake failure and an explicit escalation; it never disappears into a log.
-- The dashboard read model can render IDLE WITH WORK in red; installed-runtime and cross-surface acceptance remain open under ADR-057.
+- The dashboard read model can render IDLE WITH WORK in red; installed-runtime and cross-surface acceptance remain open under ADR-061.
   the portal board inherits it.
 - The resident Go Horus supervisor is the enforcement authority. Session loops,
   prompts, heartbeats, and manual `ctr` invocations are observations or recovery

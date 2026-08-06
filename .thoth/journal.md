@@ -1668,7 +1668,7 @@ and left unmerged — never the child first.
 
 # Pre-July Session Decisions (hook payloads + duplicate router snapshots stripped):
 
-# 2026-08-06: ADR-057 durable continuous-execution enforcement
+# 2026-08-06: ADR-061 durable continuous-execution enforcement
 #   Implemented the provider-neutral three-source runnable predicate (router
 #   items, ledger tasks, unmet requirements), fenced item/task leases, exact-ID
 #   task claims, durable wake events with acknowledgment/retry/escalation,
@@ -1679,7 +1679,7 @@ and left unmerged — never the child first.
 #   visibility repair; preserved the recovered v15 provenance diagnostics and
 #   continuation trigger semantics. Full Go suite, routerstore race tests, vet,
 #   Ma'at lint, and diff checks passed. The incident also exposed 41 unpicked
-#   codex-home items while Horus reported “No blockers”; ADR-057 classifies that
+#   codex-home items while Horus reported “No blockers”; ADR-061 classifies that
 #   state as IDLE WITH WORK rather than healthy and makes it mechanically
 #   actionable.
 
@@ -1777,7 +1777,7 @@ fleet until the accepted artifact was restored.
 The green-surface observation stands on its own and is the durable lesson: the store read 100%
 healthy while every write was silently impossible, so a worker that leases and executes but cannot
 commit evidence looks alive on every read-based signal while acknowledging nothing. Routed to
-codex-home as directly relevant to the ADR-057 worker lifecycle.
+codex-home as directly relevant to the ADR-061 worker lifecycle.
 
 **Broker measurement retracted — my own, not someone else's.** codex-inference ACCEPTED "the leak
 is flat" reasoning correctly from a sample I routed them that was **5 requests wide** (8→13) —
@@ -1791,7 +1791,7 @@ floor is the part that is not ambiguous: 34.9 GB active on a 48 GB machine with 
 still read a reassuring 62%. Retraction and the full series routed to codex-inference with a
 request for a several-hundred-request window that can separate working-set growth from retention.
 
-**ADR-057 handover ACKed** — codex-home executes, claude-home holds binding adversarial review.
+**ADR-061 handover ACKed** — codex-home executes, claude-home holds binding adversarial review.
 Flagged one blocking operational hazard: their implemented surface is "schema through v15" while
 every installed binary tops out at v14. That is the **third** occurrence of the merged-migration-
 is-not-a-deployed-migration class (v3, v7/#501, now v15), and its failure mode is total: the

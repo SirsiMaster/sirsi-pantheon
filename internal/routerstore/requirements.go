@@ -1,6 +1,6 @@
 package routerstore
 
-// Canonical requirement registry — ADR-057 step 1.
+// Canonical requirement registry — ADR-061 step 1.
 //
 // This is the referent for the third term of the runnable predicate ("unmet
 // traced canon requirement") and the thing the completion gate traces to.
@@ -10,7 +10,7 @@ package routerstore
 //
 // The registry deliberately stores EVIDENCE REFERENCES rather than booleans.
 // A boolean `tests_pass` records that someone once believed the tests passed;
-// a `tests_ref` records which run, so a reviewer can go look. ADR-057 §6
+// a `tests_ref` records which run, so a reviewer can go look. ADR-061 §6
 // requires seven references before a requirement may be called satisfied, and
 // Satisfy() refuses without them — the gate is code, not a checklist an agent
 // is trusted to have followed.
@@ -33,7 +33,7 @@ const (
 	ReqWaived     = "waived"
 )
 
-// Evidence carries the seven references ADR-057 §6 demands before a
+// Evidence carries the seven references ADR-061 §6 demands before a
 // requirement may reach a terminal verified disposition.
 type Evidence struct {
 	Commit     string `json:"commit_ref,omitempty"`
@@ -45,7 +45,7 @@ type Evidence struct {
 }
 
 // Missing lists the evidence fields that are still empty, in the order
-// ADR-057 §6 states them. The requirement ID itself is the seventh reference
+// ADR-061 §6 states them. The requirement ID itself is the seventh reference
 // and is structural — a Requirement cannot exist without one.
 func (e Evidence) Missing() []string {
 	var missing []string
@@ -177,7 +177,7 @@ func firstNonEmpty(a, b string) string {
 var ErrIncompleteEvidence = errors.New("routerstore: incomplete evidence")
 
 // Satisfy moves a requirement to its terminal verified disposition. It REFUSES
-// unless every ADR-057 §6 evidence reference is present.
+// unless every ADR-061 §6 evidence reference is present.
 //
 // This is the completion gate. It is deliberately impossible to satisfy a
 // requirement by asserting that it is done: the store checks the references
@@ -277,7 +277,7 @@ func (s *Store) ListRequirements(owner string) ([]Requirement, error) {
 }
 
 // UnmetRequirements returns the outstanding requirements for owner — the third
-// term of the ADR-057 runnable predicate. An empty result is what lets a lane
+// term of the ADR-061 runnable predicate. An empty result is what lets a lane
 // legitimately park; it is NOT the same as an absent registry, which is why
 // callers must distinguish "zero unmet" from "no registry".
 func (s *Store) UnmetRequirements(owner string) ([]Requirement, error) {

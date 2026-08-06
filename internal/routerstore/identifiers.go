@@ -1,6 +1,6 @@
 package routerstore
 
-// Durable identifier allocation — ADR-057 step 1 support.
+// Durable identifier allocation — ADR-061 step 1 support.
 //
 // Document numbers (ADR-NNN, REQ-NNN) were allocated by agents reading the
 // filesystem and counting: "highest ADR on main is 054, so mine is 055". That
@@ -55,7 +55,7 @@ type Identifier struct {
 	ClaimedAt string `json:"claimed_at"`
 }
 
-// Name renders the canonical citation form, e.g. "ADR-057".
+// Name renders the canonical citation form, e.g. "ADR-061".
 func (i Identifier) Name() string { return fmt.Sprintf("%s-%03d", i.Namespace, i.Number) }
 
 // withTx runs fn inside a serialized write transaction. beginImmediate relies
