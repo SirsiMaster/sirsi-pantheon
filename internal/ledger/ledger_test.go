@@ -39,6 +39,85 @@ func TestBuildFromClassifiesDependenciesStalenessAndPickup(t *testing.T) {
 	}
 }
 
+func TestSummarizePhaseGroups(t *testing.T) {
+	tasks := []routerstore.Task{
+		{Agent: "a", TaskID: "1", Subject: "s1", Status: "done", Phase: "Infra", ResponsibleParty: "self"},
+		{Agent: "a", TaskID: "2", Subject: "s2", Status: "in-progress", Phase: "Infra", ResponsibleParty: "self"},
+		{Agent: "a", TaskID: "3", Subject: "s3", Status: "blocked", Phase: "Cross-Repo", ResponsibleParty: "self"},
+		{Agent: "a", TaskID: "4", Subject: "s4", Status: "pending", Phase: "", ResponsibleParty: "self"},
+	}
+	s := BuildFrom(nil, tasks, nil, "", time.Now().UTC(), time.Hour)
+	bs := Summarize(s)
+
+	if bs.TotalTasks != 4 || bs.DoneTasks != 1 || bs.BlockedTasks != 1 {
+		t.Fatalf("counts wrong: %+v", bs)
+	}
+	if len(bs.Phases) != 3 {
+		t.Fatalf("expected 3 phases (Infra, Cross-Repo, General), got %d: %v", len(bs.Phases), bs.Phases)
+	}
+	if bs.Phases[0].Name != "Infra" || bs.Phases[0].Total != 2 || bs.Phases[0].Done != 1 || bs.Phases[0].PctDone != 50 {
+		t.Fatalf("Infra phase wrong: %+v", bs.Phases[0])
+	}
+	if bs.Phases[1].Name != "Cross-Repo" || bs.Phases[1].Blocked != 1 {
+		t.Fatalf("Cross-Repo phase wrong: %+v", bs.Phases[1])
+	}
+	if bs.Phases[2].Name != "General" {
+		t.Fatalf("General phase wrong: %+v", bs.Phases[2])
+	}
+}
+
+func TestSummarizeSemantics(t *testing.T) {
+	tests := []struct {
+		name        string
+		tasks       []routerstore.Task
+		wantTotal   int
+		wantDone    int
+		wantActive  int
+		wantBlocked int
+		wantPct     int
+	}{
+		{name: "zero tasks"},
+		{
+			name: "all done",
+			tasks: []routerstore.Task{
+				{Agent: "a", TaskID: "1", Status: "done", ResponsibleParty: "self"},
+				{Agent: "a", TaskID: "2", Status: "done", ResponsibleParty: "self"},
+			},
+			wantTotal: 2, wantDone: 2, wantPct: 100,
+		},
+		{
+			name: "blocked not in active",
+			tasks: []routerstore.Task{
+				{Agent: "a", TaskID: "1", Status: "done", ResponsibleParty: "self"},
+				{Agent: "a", TaskID: "2", Status: "in-progress", ResponsibleParty: "self"},
+				{Agent: "a", TaskID: "3", Status: "blocked", ResponsibleParty: "self"},
+			},
+			wantTotal: 3, wantDone: 1, wantActive: 1, wantBlocked: 1, wantPct: 33,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := BuildFrom(nil, tc.tasks, nil, "", time.Now().UTC(), time.Hour)
+			bs := Summarize(s)
+			if bs.TotalTasks != tc.wantTotal {
+				t.Errorf("TotalTasks = %d, want %d", bs.TotalTasks, tc.wantTotal)
+			}
+			if bs.DoneTasks != tc.wantDone {
+				t.Errorf("DoneTasks = %d, want %d", bs.DoneTasks, tc.wantDone)
+			}
+			if bs.ActiveTasks != tc.wantActive {
+				t.Errorf("ActiveTasks = %d, want %d", bs.ActiveTasks, tc.wantActive)
+			}
+			if bs.BlockedTasks != tc.wantBlocked {
+				t.Errorf("BlockedTasks = %d, want %d", bs.BlockedTasks, tc.wantBlocked)
+			}
+			if bs.PctDone != tc.wantPct {
+				t.Errorf("PctDone = %d, want %d", bs.PctDone, tc.wantPct)
+			}
+		})
+	}
+}
+
 func TestDependencyCycleAndMissingFailClosed(t *testing.T) {
 	byID := map[string]work.Item{
 		"a": {ID: "a", Status: "open", BlockedBy: "b"},

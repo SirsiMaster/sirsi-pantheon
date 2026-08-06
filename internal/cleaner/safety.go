@@ -101,6 +101,30 @@ func ValidatePath(path string) error {
 // single absolute path. ValidatePath applies it to both the lexical path and the
 // symlink-resolved real target.
 func checkProtected(absPath string) error {
+	// Tree roots. Checked first and unconditionally: every other rule below
+	// keys off a prefix, a basename, or a $HOME-relative path, and none of
+	// them is satisfied by "/" itself — so the deepest-reaching delete this
+	// package can perform was the one it did not check for.
+	if isCatastrophicRoot(absPath) {
+		return fmt.Errorf("BLOCKED: %q is a tree root — deleting it is never a cleanup", absPath)
+	}
+
+	// Discovery failed for a loaded engine job. Something IS serving and we
+	// cannot say what it holds open, so nothing is safe to delete. Fail
+	// CLOSED: at a deletion boundary, unknown authority is not the same as no
+	// live substrate, and a broken probe must never read as permission.
+	if unknown := UnknownSubstrate(); len(unknown) > 0 {
+		return fmt.Errorf("BLOCKED: cannot determine the live model substrate (%s) — refusing all deletion until the engine's arguments can be read", strings.Join(unknown, "; "))
+	}
+
+	// Live model substrate — a running SNE service has this directory open.
+	// Checked here rather than in each caller because ValidatePath is the one
+	// gate every delete path (DeleteFile, DeleteFileReversible, CleanFile)
+	// already funnels through.
+	if live, hit := ConflictsWithLiveModel(absPath); hit {
+		return fmt.Errorf("BLOCKED: %q holds the live model substrate %q used by a running Sirsi engine", absPath, live)
+	}
+
 	// Check platform-specific protected prefixes
 	for _, prefix := range platform.Current().ProtectedPrefixes() {
 		if strings.HasPrefix(absPath, prefix) {

@@ -49,6 +49,58 @@ const StartInterval = 900
 // (not const) so tests can shrink it to exercise the timeout/retry path fast.
 var probeTimeout = 30 * time.Second
 
+// minWeightedRSSKB is the RSS floor (in KB) below which a running broker is
+// treated as weightless — no model loaded onto the GPU. Any serious gemma model
+// (even the smallest 2B variant) maps several GB of weights; a process under
+// this floor cannot be serving real inference regardless of what /health says.
+// Set to 1 GB (1,048,576 KB) — conservative, never false-positive on a loaded
+// model, catches the "broker up, weights deleted" class that a generation probe
+// alone cannot distinguish from "broker wedged for another reason."
+const minWeightedRSSKB = 1 * 1024 * 1024 // 1 GB in KB
+
+// brokerRSSFn reads the RSS (in KB) of the gemma broker process. Returns 0 if
+// the PID file is absent or the process cannot be queried. Injectable (A16/A21)
+// so tests can stub it without a live process.
+var (
+	brokerRSSMu sync.RWMutex
+	brokerRSSFn = defaultBrokerRSS
+)
+
+func getBrokerRSSFn() func(pidFile string) int64 {
+	brokerRSSMu.RLock()
+	defer brokerRSSMu.RUnlock()
+	return brokerRSSFn
+}
+
+func setBrokerRSSFn(fn func(pidFile string) int64) {
+	brokerRSSMu.Lock()
+	defer brokerRSSMu.Unlock()
+	brokerRSSFn = fn
+}
+
+// defaultBrokerRSS reads the PID from pidFile and returns the process RSS in KB
+// via `ps -o rss=`. Returns 0 on any error — fail-open (never falsely reap a
+// live broker because the PID file is missing or ps is unavailable).
+func defaultBrokerRSS(pidFile string) int64 {
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		return 0
+	}
+	pid := strings.TrimSpace(string(raw))
+	if pid == "" {
+		return 0
+	}
+	out, err := exec.Command("ps", "-o", "rss=", "-p", pid).Output()
+	if err != nil {
+		return 0
+	}
+	rss, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return rss
+}
+
 // PlistPath is where the LaunchAgent is written (per-user).
 func PlistPath() string {
 	home, _ := os.UserHomeDir()
@@ -146,7 +198,7 @@ type Finding struct {
 	Body    string // routed instructions when !OK && Fixable
 }
 
-// Run performs the liveness checks and routes ONE non-duplicate item to `user`
+// Run performs the liveness checks and routes ONE non-duplicate item to owner
 // for the worst current owner-fixable blocker. routerRoot is the idea-router
 // root (…/.agents/idea-router). Read-and-route only — never kills a process.
 func Run(routerRoot string, w io.Writer) error {
@@ -155,6 +207,7 @@ func Run(routerRoot string, w io.Writer) error {
 	// swap-kills the broker; a leaked-session pileup is the precursor that CAUSES
 	// that spiral; a dead menubar only loses the operator surface.
 	findings := []Finding{
+		probeLaunchdDisabled(),
 		probeGemma(home),
 		probeMemoryDeath(),
 		probeSessionLeak(),
@@ -201,7 +254,7 @@ func Run(routerRoot string, w io.Writer) error {
 		fmt.Fprintf(w, "route          skip    already open: %q\n", worst.Title)
 		return nil
 	}
-	res, err := f.Send("liveness-watch", recipient, worst.Title, "decision", worst.Body)
+	res, err := f.Send("horus", recipient, worst.Title, "decision", worst.Body)
 	if err != nil {
 		return fmt.Errorf("route blocker: %w", err)
 	}
@@ -215,10 +268,10 @@ func Run(routerRoot string, w io.Writer) error {
 // condition still reaches the owner rather than being silently misrouted.
 func recipientFor(check string) string {
 	switch check {
-	case "gemma-broker", "memory-death", "session-leak", "menubar":
+	case "gemma-broker", "memory-death", "session-leak", "menubar", "launchd-disabled":
 		return "claude-pantheon"
 	default:
-		return "user"
+		return "owner"
 	}
 }
 
@@ -317,6 +370,22 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	if err != nil || port == 0 {
 		return GemmaDown, "port file unreadable"
 	}
+
+	// RSS floor: a broker whose resident set is below 1 GB cannot have model
+	// weights loaded — any serious gemma model maps several GB onto the GPU.
+	// This catches the "weightless broker" class (RSS ~99 MB, /health ok, zero
+	// generation capacity) that a restart cannot fix when the HF cache is absent.
+	// Fail-open: if the PID file is missing or ps fails, rss==0 and we skip the
+	// floor check rather than falsely classifying a healthy broker as weightless.
+	pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
+	if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
+		return GemmaWedged, fmt.Sprintf(
+			"broker RSS %d MB is below the %d MB weight floor — model weights likely absent; "+
+				"a restart will not fix this (check HF model cache and re-download weights)",
+			rss/1024, minWeightedRSSKB/1024,
+		)
+	}
+
 	model := resolveModel(home)
 	status, detail, timedOut := probeGemmaAttempt(port, model)
 	if timedOut {
@@ -403,9 +472,12 @@ func probeGemmaAttempt(port int, model string) (GemmaStatus, string, bool) {
 func probeGemma(home string) Finding {
 	f := Finding{Check: "gemma-broker", Fixable: true,
 		Title: "liveness-watch: gemma broker wedged",
-		Body: "The launchd liveness watch generated against the warm gemma broker and it did not answer " +
-			"(no port, connection error, non-200, zero tokens produced, or >30s). The broker is the Tier-0 substrate " +
-			"the router/reconcile/gemma-builder depend on. The router's gemma-liveness duty auto-restores it " +
+		Body: "The launchd liveness watch found the warm gemma broker unresponsive " +
+			"(no port, connection error, non-200, zero tokens produced, >30s, or RSS below the 1 GB weight floor). " +
+			"The broker is the Tier-0 substrate the router/reconcile/gemma-builder depend on. " +
+			"If the detail says 'weights likely absent': the HF model cache was deleted — a restart will NOT fix this; " +
+			"re-download the model weights first (`huggingface-cli download <model>`). " +
+			"Otherwise the router's gemma-liveness duty auto-restores it " +
 			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
 			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
 	status, detail := ProbeGemmaState(home)
@@ -524,5 +596,65 @@ func probeMemoryDeath() Finding {
 	}
 	f.OK = true
 	f.Detail = fmt.Sprintf("swap %.0f%% / available %.2f GB / load %.1f/%d", md.SwapPct, md.AvailableGB, md.Load1, md.Cores)
+	return f
+}
+
+// probeLaunchdDisabled checks for ai.sirsi.* or actions.runner.* labels that
+// are marked disabled in launchd's override DB. A disabled-but-running label
+// is the "latency fuse" class: every current-state probe sees green, but after
+// the next reboot launchd will refuse to restart it. This probe surfaces the
+// flag BEFORE the reboot so the supervisor can re-enable them on its next pass.
+// macOS only; fail-open on any exec error.
+func probeLaunchdDisabled() Finding {
+	f := Finding{
+		Check:   "launchd-disabled",
+		Fixable: true,
+		Title:   "liveness-watch: ai.sirsi/runner labels disabled in launchd override DB",
+		Body: "The launchd liveness watch found Sirsi or self-hosted-runner labels marked " +
+			"disabled in launchd's override DB (launchctl print-disabled). These labels are " +
+			"currently running IF launched before the disable swept them — but launchd will " +
+			"NOT restart them after the next reboot. This is the 2026-07-31 fabric-loss class. " +
+			"The supervisor duty (KickstartDeadLabels) now calls `launchctl enable` before " +
+			"`bootstrap` to clear this flag automatically on its next pass. Alternatively fix " +
+			"manually: launchctl enable gui/<uid>/<label> && launchctl bootstrap gui/<uid> " +
+			"~/Library/LaunchAgents/<label>.plist — repeat per disabled label.",
+	}
+	if runtime.GOOS != "darwin" {
+		f.OK, f.Fixable, f.Detail = true, false, "not macOS"
+		return f
+	}
+	uid := os.Getuid()
+	out, err := exec.Command("launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid)).Output()
+	if err != nil {
+		// print-disabled may be unavailable (older macOS, restricted sandbox). Fail-open.
+		f.OK, f.Fixable, f.Detail = true, false, "launchctl print-disabled unavailable"
+		return f
+	}
+	var disabled []string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasSuffix(line, "=> disabled") {
+			continue
+		}
+		start := strings.Index(line, `"`)
+		end := strings.LastIndex(line, `"`)
+		if start < 0 || end <= start {
+			continue
+		}
+		label := line[start+1 : end]
+		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
+			disabled = append(disabled, label)
+		}
+	}
+	if len(disabled) == 0 {
+		f.OK = true
+		f.Detail = "no Sirsi/runner labels disabled"
+		return f
+	}
+	f.Detail = fmt.Sprintf("%d label(s) disabled (will not start after reboot): %s",
+		len(disabled), strings.Join(disabled, ", "))
+	f.Body += "\nDisabled now: " + strings.Join(disabled, ", ")
+	// Append uid into the body for the repair command.
+	f.Body = strings.ReplaceAll(f.Body, "<uid>", strconv.Itoa(uid))
 	return f
 }

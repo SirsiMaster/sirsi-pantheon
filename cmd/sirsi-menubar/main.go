@@ -21,6 +21,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -80,6 +81,21 @@ func menubarNodeStatus() (*router.NodeStatus, error) {
 	}
 	repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // strip /.agents/idea-router
 	return router.CollectNodeStatus(repoRoot, nil)
+}
+
+// menubarLedger produces the compact ledger.BoardSummary for GET /api/ledger
+// (A26 Nexus seam). Mirrors the root-resolution pattern from menubarNodeStatus.
+func menubarLedger() (ledger.BoardSummary, error) {
+	routerRoot, ok := resolveRouterRoot()
+	if !ok {
+		return ledger.BoardSummary{}, fmt.Errorf("router root not resolvable from menubar context")
+	}
+	repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // strip /.agents/idea-router
+	snap, err := ledger.Build(repoRoot, "", time.Now().UTC(), 0)
+	if err != nil {
+		return ledger.BoardSummary{}, fmt.Errorf("ledger build: %w", err)
+	}
+	return ledger.Summarize(snap), nil
 }
 
 // applyFDAState renders the disk-access item to the current all/some/none tier:
@@ -151,6 +167,8 @@ func onReady() {
 		// ADR-026 step 4: serve the Horus ops read-model from the in-process
 		// dashboard. Unresolved root → error → 503 (designed degrade).
 		NodeStatusFn: menubarNodeStatus,
+		// A26 Nexus seam: serve the compact ledger board summary.
+		LedgerFn: menubarLedger,
 	})
 	if err := dashSrv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
@@ -269,6 +287,22 @@ func onReady() {
 	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
 	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
 
+	// ── 📋 Ledger — universal task board (ADR-050/051) ──────────────────────────
+	// Same board the owner sees in CLI (`sirsi router ledger`) and MCP
+	// (`router_ledger`). Completion %, done/review/queued/blocked counts,
+	// and blocked items waiting on owner.
+	const ledgerRowCount = 5
+	mLedger := systray.AddMenuItem("📋 Ledger — loading…", "Universal task ledger board: completion %, done/queued/blocked")
+	mLedgerProgress := mLedger.AddSubMenuItem("  Progress: loading…", "Overall completion %")
+	mLedgerProgress.Disable()
+	ledgerRows := make([]*systray.MenuItem, ledgerRowCount)
+	for i := range ledgerRows {
+		ledgerRows[i] = mLedger.AddSubMenuItem("  —", "")
+		ledgerRows[i].Disable()
+	}
+	mLedgerOpen := mLedger.AddSubMenuItem("View full ledger…", "Run sirsi router ledger in Terminal")
+	wire(mLedgerOpen, func() { runService(mLedgerOpen, "Ledger", sirsiBin, "router ledger", nStore, nil) })
+
 	// ── 🐺 Anubis — Cleanup (secondary: storage upkeep lives BELOW the live view) ─
 	// Memory is the pre-eminent view; disk cleanup is demoted here, plain-English.
 	mAnubis := systray.AddMenuItem("🐺 Anubis — Cleanup", "Find and clear files you don't need")
@@ -280,12 +314,20 @@ func onReady() {
 	mCleanConfirm.Hide()
 	mKa := mAnubis.AddSubMenuItem("Find leftover app files", "Find bits left behind by apps you deleted")
 	mGuard := mAnubis.AddSubMenuItem("Watch for problems…", "Keep an eye on apps using too much")
+	// Permanent delete — owner request 2026-08-03. Two-click: preview arms the
+	// confirm item (auto-disarms after 30s); confirm executes. Rule A1 compliant.
+	mAnubis.AddSubMenuItem("──────────", "").Disable()
+	mPermDelete := mAnubis.AddSubMenuItem("🗑 Permanently Delete Trash…", "Check what's in Trash, then permanently delete it")
+	mPermDeleteConfirm := mAnubis.AddSubMenuItem("  ⚠ Confirm: permanently delete", "This cannot be undone — files are gone forever")
+	mPermDeleteConfirm.Hide()
 	wire(mScan, func() { runService(mScan, "Find stuff to clear", sirsiBin, "scan", nStore, rrAnubis) })
 	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clear stuff…", sirsiBin, nStore, rrAnubis) })
 	wire(mReview, func() { reviewCleanList() })
 	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
 	wire(mKa, func() { runService(mKa, "Find leftover app files", sirsiBin, "ghosts", nStore, rrAnubis) })
 	wire(mGuard, func() { spawnTUIWithCommand("guard") })
+	wire(mPermDelete, func() { runPermanentDelete(mPermDelete, mPermDeleteConfirm, nStore) })
+	wire(mPermDeleteConfirm, func() { runPermanentDeleteApply(mPermDeleteConfirm, nStore) })
 
 	systray.AddSeparator()
 
@@ -345,6 +387,44 @@ func onReady() {
 					} else {
 						item.SetTitle("  —")
 						item.Disable()
+					}
+				}
+			}
+
+			// Ledger board: global view, best-effort (no root = silent skip).
+			if repoRoot, rerr := router.FindRepoRoot(); rerr == nil {
+				if snap, serr := ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter); serr == nil {
+					bs := ledger.Summarize(snap)
+					pct := fmt.Sprintf("  Tasks  [%s]  %d%%", ledgerProgressBar(bs.PctDone, 12), bs.PctDone)
+					mLedgerProgress.SetTitle(pct)
+					mLedgerProgress.Enable()
+					rows := []string{
+						fmt.Sprintf("  ✅ Done: %d   🔄 Active: %d   🚫 Blocked: %d   📬 Open: %d",
+							bs.DoneTasks, bs.ActiveTasks, bs.BlockedTasks, bs.OpenItems),
+					}
+					for _, bl := range bs.Blockers {
+						rows = append(rows, fmt.Sprintf("  ⚠ %s ← %s (%s)", truncate(bl.Title, 36), bl.Agent, bl.Age))
+					}
+					// ledgerRowCount slots; if blockers overflow the remaining slots,
+					// replace the last slot with a "+N more…" tail so nothing drops silently.
+					if len(rows) > ledgerRowCount {
+						dropped := len(rows) - (ledgerRowCount - 1)
+						rows = rows[:ledgerRowCount-1]
+						rows = append(rows, fmt.Sprintf("  + %d more blocker(s)…", dropped))
+					}
+					title := "📋 Ledger"
+					if bs.TotalTasks > 0 {
+						title = fmt.Sprintf("📋 Ledger — %d%% done", bs.PctDone)
+					}
+					mLedger.SetTitle(title)
+					for i, item := range ledgerRows {
+						if i < len(rows) {
+							item.SetTitle(rows[i])
+							item.Enable()
+						} else {
+							item.SetTitle("  —")
+							item.Disable()
+						}
 					}
 				}
 			}

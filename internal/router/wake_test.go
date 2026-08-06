@@ -45,14 +45,24 @@ func sendItem(t *testing.T, root, to, title string) string {
 }
 
 // armAgent registers a fresh, non-terminal thread so the agent reads as armed.
+//
+// ConsumerCapable is what makes a worker-surface thread count as armed. Being
+// non-terminal and heartbeat-fresh used to be enough, which is precisely the
+// defect the consumer capability fixed: a watch-only loop heartbeats identically
+// to one that drains the queue, so it credited its own lane as armed and this
+// pass skipped it. A helper whose whole job is "make this agent read as armed"
+// must therefore build a thread that can actually consume. The inverse — a
+// watch-only loop that must NOT read as armed — is asserted in
+// wake_loop_dispatch_test.go.
 func armAgent(t *testing.T, root, agentID string) {
 	t.Helper()
 	if _, err := RegisterThread(root, &Thread{
-		ThreadID: "thr-" + agentID + "-test",
-		AgentID:  agentID,
-		Surface:  "worker",
-		Status:   ThreadStatusActive,
-		PID:      os.Getpid(),
+		ThreadID:        "thr-" + agentID + "-test",
+		AgentID:         agentID,
+		Surface:         "worker",
+		Status:          ThreadStatusActive,
+		PID:             os.Getpid(),
+		ConsumerCapable: true,
 	}); err != nil {
 		t.Fatalf("register thread: %v", err)
 	}

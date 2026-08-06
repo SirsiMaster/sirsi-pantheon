@@ -273,8 +273,16 @@ func TestWeaveScope_StaticScope(t *testing.T) {
 	if !strings.Contains(prompt, "Ra Autonomy Directive") {
 		t.Error("prompt missing Ra Autonomy Directive")
 	}
-	if !strings.Contains(prompt, "Override Rule 14") {
-		t.Error("prompt missing Rule 14 override")
+	// Rule 17 is Sprint Planning; Rule 14 is Do No Harm. The §1 list ordinal for
+	// Sprint Planning happens to BE 14, which is how the wrong number got written
+	// here and into four canon files. Assert the correct rule AND that the old
+	// wrong one never comes back — a Ra agent told to "Override Rule 14" is being
+	// told it may break working processes.
+	if !strings.Contains(prompt, "Override Rule 17 (Sprint Planning is Mandatory)") {
+		t.Error("prompt missing Rule 17 (Sprint Planning) override")
+	}
+	if strings.Contains(prompt, "Override Rule 14") {
+		t.Error("prompt overrides Rule 14 (Do No Harm) — must be Rule 17 (Sprint Planning)")
 	}
 
 	// Verify scope of work is present

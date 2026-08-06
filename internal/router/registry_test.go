@@ -279,32 +279,71 @@ func TestSaveRegistry_PreservesUnknownKeys(t *testing.T) {
 	}
 }
 
-func TestDeepMergeJSON_PreservesUnknown(t *testing.T) {
-	dst := json.RawMessage(`{"known":"old","unknown":"keep","nested":{"a":1,"extra":"yes"}}`)
-	src := json.RawMessage(`{"known":"new","nested":{"a":2}}`)
-	got, err := deepMergeJSON(dst, src)
-	if err != nil {
+// TestSaveRegistry_ClearedKnownKeyAbsent is the regression guard for D1:
+// a known Go struct field that is cleared to its zero value must be ABSENT
+// from the output, not restored from the stale disk value (deepMergeJSON bug).
+func TestSaveRegistry_ClearedKnownKeyAbsent(t *testing.T) {
+	tmp := t.TempDir()
+	seed := `{
+  "agents": {
+    "test-agent": {
+      "id": "test-agent",
+      "type": "claude",
+      "command": ["claude"],
+      "cwd": "/tmp",
+      "wake": {
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.old.stale.label"
+      }
+    }
+  }
+}`
+	path := filepath.Join(tmp, "agents.json")
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(got, &m); err != nil {
+
+	reg, loadErr := LoadRegistry(tmp)
+	if loadErr != nil {
+		t.Fatalf("LoadRegistry: %v", loadErr)
+	}
+	// Simulate moving to mechanism:none — clears LaunchAgentLabel.
+	agent := reg.Agents["test-agent"]
+	agent.Wake = WakeConfig{Mechanism: WakeNone}
+	reg.Agents["test-agent"] = agent
+
+	if saveErr := SaveRegistry(tmp, reg); saveErr != nil {
+		t.Fatalf("SaveRegistry: %v", saveErr)
+	}
+
+	saved, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	s := string(saved)
+	if strings.Contains(s, "launch_agent_label") {
+		t.Errorf("cleared launch_agent_label still present — stale disk value not erased:\n%s", s)
+	}
+	if strings.Contains(s, "stale.label") {
+		t.Errorf("stale label value still present in output:\n%s", s)
+	}
+}
+
+// TestSaveRegistry_CorruptExistingReturnsError is the regression guard for D2:
+// a non-empty but unparseable existing file must return an error, not silently
+// fall back to a fresh map and drop all unknown keys.
+func TestSaveRegistry_CorruptExistingReturnsError(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "agents.json")
+	if err := os.WriteFile(path, []byte(`{invalid json`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if string(m["known"]) != `"new"` {
-		t.Errorf("known key not updated: %s", m["known"])
-	}
-	if string(m["unknown"]) != `"keep"` {
-		t.Errorf("unknown key was dropped: %s", m["unknown"])
-	}
-	var nested map[string]json.RawMessage
-	if err := json.Unmarshal(m["nested"], &nested); err != nil {
-		t.Fatal(err)
-	}
-	if string(nested["a"]) != "2" {
-		t.Errorf("nested known key not updated: %s", nested["a"])
-	}
-	if string(nested["extra"]) != `"yes"` {
-		t.Errorf("nested unknown key was dropped: %s", nested["extra"])
+
+	reg := &Registry{Agents: map[string]AgentConfig{
+		"test-agent": {ID: "test-agent", Type: "claude", Command: []string{"claude"}, Cwd: "/tmp"},
+	}}
+	if err := SaveRegistry(tmp, reg); err == nil {
+		t.Error("expected error for corrupted agents.json, got nil — silent data loss possible")
 	}
 }
 
@@ -315,5 +354,38 @@ func TestValidate_NoneWake(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("WakeNone must be valid (explicit opt-out), got: %v", err)
+	}
+}
+
+// TestMarshalJSON_ExtraDoesNotShadowTypedField is the regression test for the
+// latent defect in MarshalJSON: a typed field with omitempty present-but-empty
+// on disk ("workstream":"") is absent from the instance-based knownJSON
+// discovery, so it lands in extra. Without the "!ok" guard, the extra copy
+// unconditionally overwrites the typed map entry — silently reverting any
+// programmatic write to that field on every save.
+func TestMarshalJSON_ExtraDoesNotShadowTypedField(t *testing.T) {
+	// Simulate a hand-edited agents.json with an empty workstream field.
+	// encoding/json with omitempty omits this field when marshaling, so the
+	// discovery loop files it as "extra" rather than a known key.
+	const raw = `{"id":"a","type":"claude","command":["x"],"cwd":"/tmp","workstream":""}`
+	var cfg AgentConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	// Programmatic write to the typed field — this must survive marshal.
+	cfg.Workstream = "deck"
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	got := strings.Trim(string(m["workstream"]), `"`)
+	if got != "deck" {
+		t.Errorf("workstream = %q after programmatic write; want %q — extra shadowed typed field", got, "deck")
 	}
 }

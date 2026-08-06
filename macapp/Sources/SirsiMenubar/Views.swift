@@ -254,6 +254,21 @@ struct MaybeList<Content: View>: View {
     }
 }
 
+// ScrollView has the same ImageRenderer limitation as List: its hosted content
+// is blank in snapshot mode. This wrapper keeps the live app scrollable while
+// rendering the identical stack directly for visual regression proof.
+struct MaybeScroll<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    @ViewBuilder let content: Content
+    var body: some View {
+        if snapshotMode {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView { content }
+        }
+    }
+}
+
 struct NavLink<Label: View, Destination: View>: View {
     @EnvironmentObject private var nav: Nav
     private let destination: () -> Destination
@@ -1014,6 +1029,35 @@ struct FDAGuideView: View {
 struct HorusView: View {
     @ObservedObject var engine: SirsiEngine
 
+    private static let memoryChecks: Set<String> = [
+        "RAM Pressure", "Memory Death Spiral", "Swap", "Top Memory Consumers",
+        "Process Footprint", "Duplicate Model Brokers",
+    ]
+
+    private var memoryFindings: [DiagFinding] {
+        engine.health.filter { Self.memoryChecks.contains($0.check) }
+    }
+    private var memoryIssues: [DiagFinding] { memoryFindings.filter { $0.severity >= 2 } }
+    private var otherIssues: [DiagFinding] {
+        engine.health.filter { $0.severity >= 2 && !Self.memoryChecks.contains($0.check) }
+    }
+    private var quietFindings: [DiagFinding] { engine.health.filter { $0.severity < 2 } }
+
+    private var statusTitle: String {
+        switch engine.healthStatus {
+        case "red": return "System needs attention"
+        case "amber": return "Worth a look"
+        default: return "Your Mac looks good"
+        }
+    }
+
+    private var statusDetail: String {
+        let n = engine.healthIssueCount
+        if n == 0 { return "No active issues. Horus is watching quietly." }
+        let count = "\(n) check\(n == 1 ? "" : "s") need attention."
+        return memoryIssues.count > 1 ? count + " Related signals are grouped into one clear story." : count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Horus — Ops")
@@ -1024,22 +1068,52 @@ struct HorusView: View {
                         .sirsiFont(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                MaybeList {
-                    Section {
-                        ForEach(engine.health) { f in
-                            HealthRow(engine: engine, finding: f)
+                MaybeScroll {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HorusStatusCard(status: engine.healthStatus, title: statusTitle,
+                                        detail: statusDetail, issueCount: engine.healthIssueCount)
+
+                        if !memoryIssues.isEmpty {
+                            SectionLabel("WHAT'S HAPPENING")
+                            HorusMemoryStory(engine: engine, findings: memoryFindings,
+                                             issueCount: memoryIssues.count)
                         }
-                    } header: {
-                        // Canonical green/amber/red roll-up — NOT raw worst-severity
-                        // (which read CRITICAL on historical 7-day trends).
-                        let n = engine.healthIssueCount
-                        Text(engine.healthStatus == "green" ? "ALL SYSTEMS HEALTHY"
-                             : (engine.healthStatus == "amber" ? "ATTENTION — \(n) item(s)"
-                                : "CRITICAL — \(n) item(s)"))
-                            .foregroundStyle(statusColor(engine.healthStatus))
+
+                        if !otherIssues.isEmpty {
+                            SectionLabel(memoryIssues.isEmpty ? "WHAT'S HAPPENING" : "ALSO NEEDS ATTENTION")
+                            VStack(spacing: 0) {
+                                ForEach(Array(otherIssues.enumerated()), id: \.element.id) { index, finding in
+                                    HealthRow(engine: engine, finding: finding)
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                    if index != otherIssues.count - 1 { Divider().padding(.leading, 26) }
+                                }
+                            }
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.045)))
+                        }
+
+                        if !quietFindings.isEmpty {
+                            DisclosureGroup {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(quietFindings.enumerated()), id: \.element.id) { index, finding in
+                                        HealthRow(engine: engine, finding: finding)
+                                            .padding(.horizontal, 8).padding(.vertical, 4)
+                                        if index != quietFindings.count - 1 { Divider().padding(.leading, 24) }
+                                    }
+                                }.padding(.top, 6)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    Text("Healthy checks").sirsiFont(12, weight: .semibold)
+                                    Spacer()
+                                    Text("\(quietFindings.count)").sirsiFont(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.035)))
+                        }
                     }
+                    .padding(14)
                 }
-                .listStyle(.inset)
             }
             Divider()
             HStack {
@@ -1052,6 +1126,120 @@ struct HorusView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .navigationTitle("Horus — Ops")
+    }
+}
+
+// The calm overview keeps the canonical roll-up exactly as reported by Go, but
+// expresses it in human language. Colour is a compact accent, never a wall of
+// alarm text; the explanation carries the meaning for accessibility.
+private struct HorusStatusCard: View {
+    let status: String
+    let title: String
+    let detail: String
+    let issueCount: Int
+
+    private var label: String {
+        switch status { case "red": return "Critical"; case "amber": return "Attention"; default: return "Healthy" }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle().fill(statusColor(status).opacity(0.16)).frame(width: 38, height: 38)
+                Image(systemName: status == "green" ? "checkmark" : "waveform.path.ecg")
+                    .sirsiFont(15, weight: .semibold).foregroundStyle(statusColor(status))
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title).sirsiFont(16, weight: .semibold)
+                    Spacer(minLength: 8)
+                    Text(label.uppercased()).sirsiFont(.caption2, weight: .bold)
+                        .foregroundStyle(statusColor(status))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(statusColor(status).opacity(0.12)))
+                }
+                Text(detail).sirsiFont(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.055)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.07)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(issueCount == 0 ? "\(label). \(detail)" : "\(label). \(issueCount) checks need attention. \(detail)")
+    }
+}
+
+// Memory findings are intentionally different measurements (live usage, peak
+// footprint, system pressure, broker count). Presenting each as a peer row made
+// one process look like several unrelated emergencies. This card preserves all
+// measurements while telling one story and offering one path to the strongest
+// actionable finding.
+private struct HorusMemoryStory: View {
+    @ObservedObject var engine: SirsiEngine
+    let findings: [DiagFinding]
+    let issueCount: Int
+
+    private var actionable: DiagFinding {
+        findings.sorted {
+            if $0.severity != $1.severity { return $0.severity > $1.severity }
+            return !($0.fix ?? "").isEmpty && ($1.fix ?? "").isEmpty
+        }.first!
+    }
+    private var current: DiagFinding? { findings.first { $0.check == "Top Memory Consumers" } }
+    private var peak: DiagFinding? { findings.first { $0.check == "Process Footprint" } }
+    private var pressure: DiagFinding? {
+        findings.first { $0.check == "RAM Pressure" || $0.check == "Memory Death Spiral" || $0.check == "Swap" }
+    }
+    private var broker: DiagFinding? { findings.first { $0.check == "Duplicate Model Brokers" } }
+
+    var body: some View {
+        NavLink { FindingView(engine: engine, finding: actionable) } label: {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 9) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8).fill(findingColor(actionable).opacity(0.15))
+                        Image(systemName: "memorychip").foregroundStyle(findingColor(actionable))
+                    }.frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Memory load").sirsiFont(14, weight: .semibold)
+                        Text("\(issueCount) related check\(issueCount == 1 ? "" : "s") · one system story")
+                            .sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").sirsiFont(.caption).foregroundStyle(.tertiary)
+                }
+
+                if let current { HorusEvidence(label: "NOW", text: current.message) }
+                if let peak { HorusEvidence(label: "PEAK", text: peak.message) }
+                if current == nil, let pressure { HorusEvidence(label: "NOW", text: pressure.message) }
+
+                if let broker, broker.severity < 2 {
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(broker.message).sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.055)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(findingColor(actionable).opacity(0.24)))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
+
+private struct HorusEvidence: View {
+    let label: String
+    let text: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Text(label).sirsiFont(.caption2, weight: .bold).foregroundStyle(.secondary)
+                .sirsiFrame(width: 34)
+                .frame(alignment: .leading)
+            Text(text).sirsiFont(.callout).foregroundStyle(.primary.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

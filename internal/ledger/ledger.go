@@ -222,3 +222,157 @@ func FormatAge(seconds float64) string {
 	}
 	return fmt.Sprintf("%dm", minutes)
 }
+
+// PhaseGroup clusters tasks under a plain-English label for owner-facing rendering.
+type PhaseGroup struct {
+	Name    string `json:"name"` // plain-English label (e.g. "Infrastructure")
+	Total   int    `json:"total"`
+	Done    int    `json:"done"`
+	Active  int    `json:"active"`
+	Blocked int    `json:"blocked"`
+	PctDone int    `json:"pct_done"` // Done*100/Total (0 if 0)
+}
+
+// BoardSummary is the compact owner-facing view used by the menubar, TUI, and
+// MCP router_ledger tool. Derived from a Snapshot so every surface shows
+// identical numbers.
+type BoardSummary struct {
+	// Task registry counts (durable tasks registered with `sirsi router task add`).
+	TotalTasks   int `json:"total_tasks"`
+	DoneTasks    int `json:"done_tasks"`
+	ActiveTasks  int `json:"active_tasks"`
+	BlockedTasks int `json:"blocked_tasks"`
+	PctDone      int `json:"pct_done"` // DoneTasks*100/TotalTasks (0 if 0)
+
+	// Phase groups — tasks clustered by plain-English phase for owner rendering.
+	// Empty when no tasks carry a non-empty Phase field.
+	Phases []PhaseGroup `json:"phases,omitempty"`
+
+	// Open inbox items.
+	OpenItems    int `json:"open_items"`
+	BlockedItems int `json:"blocked_items"` // items with Blocked==true
+
+	// Blockers — items waiting on owner/user or an explicit dep.
+	Blockers []BoardBlocker `json:"blockers,omitempty"`
+
+	GeneratedAt string `json:"generated_at"`
+}
+
+// BoardBlocker is one line on the blockers table.
+type BoardBlocker struct {
+	Agent  string `json:"agent"`
+	ItemID string `json:"item_id"`
+	Title  string `json:"title"`
+	Age    string `json:"age"`
+}
+
+// Summarize distills a Snapshot into a BoardSummary for compact surface rendering.
+func Summarize(s Snapshot) BoardSummary {
+	bs := BoardSummary{GeneratedAt: s.GeneratedAt}
+	// phaseOrder tracks insertion order so the board is stable.
+	phaseOrder := []string{}
+	phases := map[string]*PhaseGroup{}
+	for _, a := range s.Agents {
+		for _, t := range a.Tasks {
+			bs.TotalTasks++
+			switch t.Status {
+			case "done":
+				bs.DoneTasks++
+			case "blocked":
+				bs.BlockedTasks++
+			default:
+				bs.ActiveTasks++
+			}
+			// Phase grouping: tasks with a non-empty Phase field are clustered.
+			label := t.Phase
+			if label == "" {
+				label = "General"
+			}
+			pg := phases[label]
+			if pg == nil {
+				pg = &PhaseGroup{Name: label}
+				phases[label] = pg
+				phaseOrder = append(phaseOrder, label)
+			}
+			pg.Total++
+			switch t.Status {
+			case "done":
+				pg.Done++
+			case "blocked":
+				pg.Blocked++
+			default:
+				pg.Active++
+			}
+		}
+		for _, it := range a.Items {
+			bs.OpenItems++
+			if it.Blocked {
+				bs.BlockedItems++
+				bs.Blockers = append(bs.Blockers, BoardBlocker{
+					Agent:  a.AgentID,
+					ItemID: it.ID,
+					Title:  it.Title,
+					Age:    FormatAge(it.AgeSeconds),
+				})
+			}
+		}
+	}
+	if bs.TotalTasks > 0 {
+		bs.PctDone = bs.DoneTasks * 100 / bs.TotalTasks
+	}
+	for _, name := range phaseOrder {
+		pg := phases[name]
+		if pg.Total > 0 {
+			pg.PctDone = pg.Done * 100 / pg.Total
+		}
+		bs.Phases = append(bs.Phases, *pg)
+	}
+	return bs
+}
+
+// TextBoard renders a compact multi-line ASCII board for CLI/MCP text output.
+func (bs BoardSummary) TextBoard() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "\n  ── Ledger Board ──\n")
+	if bs.TotalTasks > 0 {
+		bar := progressBar(bs.PctDone, 20)
+		fmt.Fprintf(&sb, "  Tasks     %s  %d%%\n", bar, bs.PctDone)
+		fmt.Fprintf(&sb, "  Done %-4d  Active %-4d  Blocked  %d\n", bs.DoneTasks, bs.ActiveTasks, bs.BlockedTasks)
+		if len(bs.Phases) > 1 {
+			fmt.Fprintf(&sb, "\n  By phase:\n")
+			for _, pg := range bs.Phases {
+				bar := progressBar(pg.PctDone, 12)
+				fmt.Fprintf(&sb, "    %-18s %s  %d/%d\n",
+					truncateLedger(pg.Name, 18), bar, pg.Done, pg.Total)
+			}
+		}
+	}
+	fmt.Fprintf(&sb, "  Open items %-4d  Blocked items  %d\n", bs.OpenItems, bs.BlockedItems)
+	if len(bs.Blockers) > 0 {
+		fmt.Fprintf(&sb, "\n  Blocked items (name the gate):\n")
+		for _, bl := range bs.Blockers {
+			fmt.Fprintf(&sb, "    • [%s] %s  ← %s  (%s)\n",
+				bl.Age, truncateLedger(bl.Title, 48), bl.Agent, bl.ItemID)
+		}
+	}
+	fmt.Fprintln(&sb)
+	return sb.String()
+}
+
+func progressBar(pct, width int) string {
+	filled := pct * width / 100
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > width {
+		filled = width
+	}
+	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
+}
+
+func truncateLedger(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
+}

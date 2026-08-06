@@ -1,0 +1,87 @@
+{
+  "agent": "claude-home",
+  "app": "Sirsi Pantheon",
+  "done_when": "all tasks done, owner-gated, or blocked with a named blocker",
+  "canon_refs": [
+    "PANTHEON_RULES.md",
+    "PANTHEON_ROADMAP.md",
+    "docs/ADR-INDEX.md",
+    "docs/ARCHITECTURE*.md",
+    "CLAUDE.md"
+  ],
+  "note": "Seeded 2026-08-05 from verified state, not memory: every 'done' below names the merge commit on origin/main, and every non-done names its blocker. claude-home had NO PRD until now \u2014 the lane was invisible to `sirsi prd sync` while shipping, which is the same defect class as an empty `router task list` (a consolidated surface reading absence as nothing-happening). Status: open|done|owner-gated|blocked.",
+  "tasks": [
+    {
+      "id": "H1",
+      "desc": "A1 live SNE model substrate protection \u2014 Jackal must never report or delete the model a running engine holds open",
+      "acceptance": "argv-derived from the LOADED launchd job, fails CLOSED on discovery failure, build-tagged so non-darwin cannot enter launchd semantics; codex bind",
+      "status": "done",
+      "ref": "PR #493 / e821363c",
+      "note": "6 codex findings over 4 rounds. Final shape: authority is `launchctl print` argv, not the mutable plist; UnknownSubstrate() refuses all deletion while an SNE label is loaded-but-unreadable; ValidatePath now rejects tree roots (it returned nil for \"/\" with a test pinning that)."
+    },
+    {
+      "id": "H2",
+      "desc": "Horus web board \u2014 Guard discarded all 16 diagnostics; home screen afforded nothing; no natural-language answer",
+      "acceptance": "Guard reads its own API's json keys, home commands dispatch through one exec(), /api/ask answers from the LOCAL engine only with server-rendered findings; codex bind",
+      "status": "done",
+      "ref": "PR #494 / ee5c40a9",
+      "note": "Guard read Go field names off a lowercase-json API: undefined/100 and zero findings on a screen whose job is to report problems. /api/ask: the model SELECTS indices, the server RENDERS text, and any factual token absent from the grounding withholds the summary entirely."
+    },
+    {
+      "id": "H3",
+      "desc": "Root-cause the 4 dead self-hosted CI runners and stop the cause recurring",
+      "acceptance": "runners online to GitHub, Agent Pause Ledger check fires on an abandoned quiet.sh pause, disabled-label finding stops guessing at load state; codex bind",
+      "status": "done",
+      "ref": "PR #497 / 063a9c55",
+      "note": "quiet.sh pause ran 2026-07-31 23:31 and resume never did. Pantheon's own heal duty re-enabled 30 of 34 labels piecemeal, which MASKED the cause; the 4 lanes with no agent driving them stayed dead 5 days."
+    },
+    {
+      "id": "H4",
+      "desc": "Router registry drift \u2014 live arming never committed, and one agent had silently lost its wake mechanism",
+      "acceptance": "sirsi router doctor reports NO DRIFT; no agent lost in either direction; codex bind",
+      "status": "done",
+      "ref": "PR #498 / 01eada22",
+      "note": "Two-directional, which is why a file copy either way destroyed real state. codex-inference had lost cli-spawn and was unwakeable with items waiting."
+    },
+    {
+      "id": "H5",
+      "desc": "Wake loop must CONSUME its inbox, not merely watch it",
+      "acceptance": "consumer dispatch is edge-triggered on consumer liveness; surface allow-list; unusable cwd refused; resident lanes watch-only; permanent-loop prompt contract; codex bind",
+      "status": "done",
+      "ref": "PR #389 / b70d9249",
+      "note": "MERGED. 10 codex findings across 5 rounds. Final shape: consumer dispatch is edge-triggered on the consumer's own liveness; surfaces are an ALLOW-list; an unusable cwd is refused at resolve time; resident lanes are watch-only."
+    },
+    {
+      "id": "H6",
+      "desc": "Resident consumers publish and heartbeat their OWN consumer-capable thread",
+      "acceptance": "the wake watcher never borrows resident capability; a resident that stops publishing stops being credited",
+      "status": "open",
+      "ref": "follow-up to PR #389",
+      "note": "codex-pantheon's ruling, adopted. gemma-pantheon's health check is `sirsi-gemma-worker.sh --version` \u2014 it proves a binary can print a string, not that a consumer is alive. Changes the thread model, so it ships separately."
+    },
+    {
+      "id": "H7",
+      "desc": "Repo cruft and drift audit \u2014 11 decisions filed for the owner",
+      "acceptance": "owner rules on each; safe ones applied",
+      "status": "owner-gated",
+      "ref": "router item 20260805-093308",
+      "note": "Duplicate A29 rule number, two ADR-016 files, ~7,000 orphaned LOC, script deploy drift where repo and machine disagree. Two pure factual corrections were already shipped as #491/#492."
+    },
+    {
+      "id": "H8",
+      "desc": "Binding infrastructure \u2014 I reported it broken; it was not",
+      "acceptance": "the false finding is retracted everywhere it was sent",
+      "status": "done",
+      "ref": "CORRECTED 2026-08-05",
+      "note": "MY FINDING WAS WRONG. I globbed ~/.sirsi/sirsi-bind*.pem, got no match, and reported to the owner, claude-nexus and codex-pantheon that no PR authored on this host could be bound. The key is ~/.sirsi/bind-app.pem, present since 2026-07-21, and sirsi-bind.sh names it on line 28. I asserted absence from a pattern that never matched \u2014 a check narrower than its claim, which is the exact defect class I spent the session finding elsewhere. claude-pantheon binding #495 via sirsi-bind[bot] is what exposed it. Retracted to all three."
+    },
+    {
+      "id": "H9",
+      "desc": "SNE-55 quiet-host window for codex-inference",
+      "acceptance": "broker paused, host proven quiet, evidence sent, broker resumed and verified with a real /v1/chat/completions 200, ledger cleaned up",
+      "status": "owner-gated",
+      "ref": "router item 20260805-231014",
+      "note": "Read-only evidence already sent and it changed the picture: the host is NOT quiet and the dominant noise was my own Go test binaries at ~290% CPU, so a measurement taken then would have profiled my build rather than the engine."
+    }
+  ]
+}

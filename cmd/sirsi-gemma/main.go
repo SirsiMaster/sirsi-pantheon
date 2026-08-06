@@ -59,13 +59,18 @@ func main() {
 // serverVersion is advertised in the MCP initialize handshake.
 const serverVersion = "0.1.0"
 
-// selectRunner builds the production MLX runner and probes it. On probe
-// failure we substitute a disabledRunner so the MCP handshake still works
-// and every tool call returns an actionable error. This means an operator
-// who hasn't run chip A's install yet can still wire sirsi-gemma into
-// ~/.claude/mcp.json and see exactly what's wrong.
+// selectRunner builds the runner and probes it. When sne_url is set in config
+// it uses SNERunner (HTTP → SNE's OpenAI-compatible API, ADR-003 seam);
+// otherwise it falls back to MLXRunner (mlx_lm subprocess). On probe failure
+// a disabledRunner is returned so the MCP handshake still works.
 func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
-	r := NewMLXRunner(cfg)
+	var r Runner
+	if cfg.SNEURL != "" {
+		logger.Printf("runner: SNE seam active — %s (model %s)", cfg.SNEURL, cfg.SNEModel)
+		r = NewSNERunner(cfg.SNEURL, cfg.SNEModel)
+	} else {
+		r = NewMLXRunner(cfg)
+	}
 	if skipHealth {
 		logger.Println("health: skipped via --skip-health")
 		return r
@@ -76,7 +81,11 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 		logger.Printf("health: probe failed — tools will report disabled: %v", err)
 		return &disabledRunner{reason: err.Error()}
 	}
-	logger.Println("health: MLX-Gemma alive")
+	if cfg.SNEURL != "" {
+		logger.Println("health: SNE endpoint alive")
+	} else {
+		logger.Println("health: MLX-Gemma alive")
+	}
 	return r
 }
 

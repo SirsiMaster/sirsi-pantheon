@@ -34,10 +34,16 @@ func writeTestRegistry(t *testing.T, root string) {
 	}
 	registry := `{
 		"agents": {
-			"b": {"type": "test", "command": ["true"], "cwd": "/tmp"},
-			"victim": {"type": "test", "command": ["true"], "cwd": "/tmp"},
-			"codex-pantheon": {"type": "codex", "command": ["codex"], "cwd": "/tmp"},
-			"claude-home": {"type": "claude", "command": ["claude"], "cwd": "/tmp"}
+			"a": {"id":"a","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
+			"b": {"id":"b","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
+			"flooder": {"id":"flooder","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
+			"victim": {"id":"victim","type":"test","cwd":"/tmp","workstream":"test","wake":{"mechanism":"none"}},
+			"claude-finalwishes": {"id":"claude-finalwishes","type":"claude","cwd":"/tmp","workstream":"finalwishes","wake":{"mechanism":"none"}},
+			"codex-pantheon": {"id":"codex-pantheon","type":"codex","cwd":"/tmp","workstream":"pantheon","wake":{"mechanism":"launchagent"}},
+			"claude-pantheon": {"id":"claude-pantheon","type":"claude","cwd":"/tmp","workstream":"pantheon","wake":{"mechanism":"launchagent"}},
+			"claude-home": {"id":"claude-home","type":"claude","cwd":"/tmp","workstream":"home","wake":{"mechanism":"launchagent"}},
+			"owner": {"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}},
+			"user": {"id":"user","type":"human","repo":"/tmp","workstream":"alias","wake":{"mechanism":"owner-surface"}}
 		}
 	}`
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
@@ -78,10 +84,11 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	f := testFacade(t)
 
-	for _, recipient := range work.OwnerRecipients() {
-		if _, err := f.Send("claude-pantheon", recipient, "owner decision", "decision", "choose one"); err != nil {
-			t.Fatalf("Send to owner escalation inbox %q must succeed: %v", recipient, err)
-		}
+	if _, err := f.Send("claude-pantheon", "owner", "owner decision", "decision", "choose one"); err != nil {
+		t.Fatalf("Send to declared owner escalation inbox must succeed: %v", err)
+	}
+	if _, err := f.Send("claude-pantheon", "user", "legacy alias", "decision", "choose one"); err == nil || !strings.Contains(err.Error(), "use declared identity \"owner\"") {
+		t.Fatalf("new send to user must direct caller to owner: %v", err)
 	}
 
 	for _, recipient := range []string{"claude-deck", "codex"} {
@@ -89,14 +96,14 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 		if err == nil {
 			t.Fatalf("Send to unregistered recipient %q must fail", recipient)
 		}
-		if !strings.Contains(err.Error(), fmt.Sprintf(`agent %q not registered`, recipient)) {
+		if !strings.Contains(err.Error(), fmt.Sprintf(`%q`, recipient)) || !strings.Contains(err.Error(), "required fields") {
 			t.Fatalf("unexpected error for %q: %v", recipient, err)
 		}
 	}
 
 	inbox, inboxErr := f.Inbox("claude-deck")
-	if inboxErr != nil {
-		t.Fatal(inboxErr)
+	if inboxErr == nil || !strings.Contains(inboxErr.Error(), "acting agent") {
+		t.Fatalf("undeclared pull must fail at actor boundary: %v", inboxErr)
 	}
 	if len(inbox) != 0 {
 		t.Fatalf("unregistered recipient send wrote work: %+v", inbox)
@@ -105,13 +112,44 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	if allErr != nil {
 		t.Fatal(allErr)
 	}
-	if len(all) != len(work.OwnerRecipients()) {
-		t.Fatalf("rejected sends must create no item beyond owner escalation controls, got %+v", all)
+	if len(all) != 1 || all[0].To != "owner" {
+		t.Fatalf("rejected sends must create no item beyond the declared owner send, got %+v", all)
 	}
 	for _, item := range all {
 		if !work.IsOwnerRecipient(item.To) {
 			t.Fatalf("unexpected non-owner item after rejected sends: %+v", item)
 		}
+	}
+}
+
+func TestIdentityAdmissionRejectsSenderAndTaskPartiesBeforeWrite(t *testing.T) {
+	f := testFacade(t)
+
+	if _, err := f.Send("ghost", "b", "spoof", "review", "body"); err == nil || !strings.Contains(err.Error(), "sender \"ghost\"") {
+		t.Fatalf("undeclared sender error = %v", err)
+	}
+	all, err := f.ListAll()
+	if err != nil || len(all) != 0 {
+		t.Fatalf("rejected sender mutated items: items=%+v err=%v", all, err)
+	}
+
+	err = f.AddTask(routerstore.Task{Agent: "ghost", TaskID: "t1", Subject: "bad owner", ResponsibleParty: "b"})
+	if err == nil || !strings.Contains(err.Error(), "task owner \"ghost\"") {
+		t.Fatalf("undeclared task owner error = %v", err)
+	}
+	err = f.AddTask(routerstore.Task{Agent: "b", TaskID: "t2", Subject: "bad responsible", ResponsibleParty: "ghost"})
+	if err == nil || !strings.Contains(err.Error(), "responsible party \"ghost\"") {
+		t.Fatalf("undeclared responsible party error = %v", err)
+	}
+	if err = f.AddTask(routerstore.Task{Agent: "b", TaskID: "t3", Subject: "self resolves", ResponsibleParty: "self"}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := f.Store().GetTask("b", "t3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.ResponsibleParty != "b" {
+		t.Fatalf("responsible party = %q, want normalized owner b", task.ResponsibleParty)
 	}
 }
 
