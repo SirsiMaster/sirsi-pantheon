@@ -32,7 +32,7 @@ func TestTaskLifecycle(t *testing.T) {
 	}
 }
 
-func TestTaskV4V5V6MigrateDirectlyToV7(t *testing.T) {
+func TestTaskV4V5V6MigratesThroughCurrentSchema(t *testing.T) {
 	for _, startingVersion := range []int{4, 5, 6} {
 		t.Run(fmt.Sprintf("v%d", startingVersion), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "router.db")
@@ -68,7 +68,7 @@ func TestTaskV4V5V6MigrateDirectlyToV7(t *testing.T) {
 			if err = s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if version != 7 {
+			if version != migrations[len(migrations)-1].version {
 				t.Fatalf("version=%d", version)
 			}
 			got, err := s.GetTask("a", "old")

@@ -262,6 +262,25 @@ ALTER TABLE tasks ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0;
 UPDATE tasks SET commissioned_at = created WHERE commissioned_at = '';
 UPDATE tasks SET commissioned_by = agent WHERE commissioned_by = '';
 `},
+
+	// v8 — Permanent Execution R1/R6 canonical requirement registry. Canon
+	// completeness becomes durable/queryable instead of a prompt assertion.
+	{8, `
+CREATE TABLE requirements (
+    requirement_id TEXT PRIMARY KEY,
+    agent          TEXT NOT NULL,
+    source_path    TEXT NOT NULL,
+    source_anchor  TEXT NOT NULL DEFAULT '',
+    statement      TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'unmet',
+    task_id        TEXT NOT NULL DEFAULT '',
+    evidence       TEXT NOT NULL DEFAULT '[]',
+    created        TEXT NOT NULL,
+    updated        TEXT NOT NULL
+);
+CREATE INDEX idx_requirements_agent_status ON requirements(agent, status);
+CREATE INDEX idx_requirements_task ON requirements(agent, task_id) WHERE task_id <> '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
