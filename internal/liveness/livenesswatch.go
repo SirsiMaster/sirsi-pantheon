@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -65,6 +66,12 @@ var (
 	brokerRSSMu sync.RWMutex
 	brokerRSSFn = defaultBrokerRSS
 )
+
+// quantRe extracts the numeric bit-width from a model name (e.g. "5bit" → 5).
+// Used by approximateModelGB so that 5bit, 6bit, 3bit etc. are sized correctly
+// instead of falling through to the 4bit default. bf16/fp16 carry no Nbit token
+// and are handled by a separate arm. "bf16-4bit" → matches "4bit" (not "16").
+var quantRe = regexp.MustCompile(`([0-9]+)bit`)
 
 func getBrokerRSSFn() func(pidFile string) int64 {
 	brokerRSSMu.RLock()
@@ -521,15 +528,17 @@ func approximateModelGB(modelID string) float64 {
 	default:
 		return 0
 	}
-	// Scale by quantizer. "4bit" (explicit or implied) → ×1; "8bit" → ×2;
-	// "bf16"/"fp16"/"16bit" without a "4bit" suffix → ×4.
-	// "bf16-4bit" contains "4bit" so the first branch wins (×1, correct).
+	// Scale by quantizer. Parse "Nbit" numerically so 5bit, 6bit, 3bit etc. are
+	// sized correctly (scale = bits/4 relative to the 4-bit base). "bf16-4bit"
+	// contains "4bit" so the regex finds 4 first (correct, ×1). bf16/fp16 carry
+	// no Nbit token and land in the explicit arm below.
+	if m := quantRe.FindStringSubmatch(id); m != nil {
+		if bits, err := strconv.Atoi(m[1]); err == nil && bits > 0 {
+			return base * float64(bits) / 4
+		}
+	}
 	switch {
-	case strings.Contains(id, "4bit"):
-		return base
-	case strings.Contains(id, "8bit"):
-		return base * 2
-	case strings.Contains(id, "bf16"), strings.Contains(id, "fp16"), strings.Contains(id, "16bit"):
+	case strings.Contains(id, "bf16"), strings.Contains(id, "fp16"):
 		return base * 4
 	default:
 		return base // unspecified → assume 4bit

@@ -438,6 +438,12 @@ func TestApproximateModelGB(t *testing.T) {
 		{"mlx-community/gemma-2-9b-it-8bit", 10.0},  // 5.0 × 2 = 10.0
 		// bf16 (no 4bit suffix) — ×4 the 4-bit base
 		{"mlx-community/gemma-2-27b-it-bf16", 56.0}, // 14.0 × 4 = 56.0
+		// 5bit and 6bit — previously fell through to 4bit default (under-estimate)
+		{"mlx-community/gemma-4-12B-it-5bit", 8.75}, // 7.0 × 5/4 = 8.75
+		{"mlx-community/gemma-4-12B-it-6bit", 10.5}, // 7.0 × 6/4 = 10.5
+		{"mlx-community/gemma-2-9b-it-5bit", 6.25},  // 5.0 × 5/4 = 6.25
+		// 3bit — over-estimates vs 4bit default (safe direction)
+		{"mlx-community/gemma-4-12B-it-3bit", 5.25}, // 7.0 × 3/4 = 5.25
 		// unknown
 		{"mlx-community/some-unknown-model", 0},
 	} {
