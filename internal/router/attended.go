@@ -47,16 +47,27 @@ func IsAttendedSurface(surface string) bool {
 // never becomes a second, drifting definition of "alive". The only thing added
 // is the surface narrowing.
 //
-// Fail direction: an unreadable registry reads as ATTENDED (true). Unknown
-// authority must not make spending an agentic build MORE likely; degrading to
-// the previous unconditional wait is the conservative outcome, never a worse
-// one. This is the opposite direction from AgentArmed, which fails closed to
-// surface a possible strand — there, the cost of being wrong is a spurious
-// alarm; here, it is a burned build session racing a live operator.
+// Fail direction: an unreadable registry reads as NOT ATTENDED (false), so the
+// worker takes the item.
+//
+// The earlier reasoning here was that returning true is "conservative" because
+// it degrades to the previous unconditional wait. That is exactly backwards
+// under A36/ADR-057. Returning true fabricates an attended consumer out of an
+// authority failure: the registry is the only thing that can say whether a
+// human-attended session exists, and when it cannot answer, inventing a "yes"
+// re-creates the fixed idle window this function exists to remove — the item
+// sits unclaimed while every surface reports that someone is handling it.
+// Silently waiting is not the safe default; it is the failure mode.
+//
+// Taking the item is the recoverable direction. Its cost is a build session
+// that may duplicate an operator's work, which is visible and bounded. The
+// cost of the other direction is work that is never picked up at all and no
+// signal that anything is wrong. This is now the same fail-closed direction as
+// AgentArmed: an unreadable authority must surface as absence, never presence.
 func AttendedSessionLive(routerRoot, agentID string) bool {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
-		return true
+		return false
 	}
 	now := time.Now().UTC()
 	for _, t := range reg.Threads {

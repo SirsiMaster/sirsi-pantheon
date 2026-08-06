@@ -56,9 +56,8 @@ func TestAttendedSessionLive_WorkerDoesNotCountAsItsOwnAttendedSession(t *testin
 // host — the answer would depend on whichever agents happen to be running.
 func stubWatcher(t *testing.T, alive bool) {
 	t.Helper()
-	old := watcherAliveFn
-	watcherAliveFn = func(string) bool { return alive }
-	t.Cleanup(func() { watcherAliveFn = old })
+	setWatcherAliveFn(func(string) bool { return alive })
+	t.Cleanup(func() { setWatcherAliveFn(nil) })
 }
 
 func TestAttendedSessionLive_LiveClaudeSessionCounts(t *testing.T) {
@@ -146,16 +145,28 @@ func TestAttendedSessionLive_NoThreadsAtAllMeansNobodyIsAttending(t *testing.T) 
 	}
 }
 
-// Fail direction. An unreadable registry degrades to the PREVIOUS behavior
-// (keep waiting), never to a more aggressive one: unknown authority must not
-// make spending an agentic build more likely.
-func TestAttendedSessionLive_UnreadableRegistryDegradesToWaiting(t *testing.T) {
+// Fail direction (A36/ADR-057). An unreadable registry must report NOT
+// attended, so the worker takes the item.
+//
+// This test previously asserted the opposite, on the reasoning that returning
+// true "degrades to the previous behavior" of waiting. That was backwards. The
+// registry is the only authority that can say whether an attended session
+// exists; when it cannot answer, returning true fabricates an attended consumer
+// out of an authority failure and re-creates the fixed idle window this whole
+// function exists to remove. The item then sits unclaimed while every surface
+// reports someone is handling it — the silent-strand failure mode, not a safe
+// default.
+//
+// Taking the item is the recoverable direction: worst case an operator sees
+// duplicated work, which is visible and bounded. The other direction produces
+// work nobody picks up and no signal that anything is wrong.
+func TestAttendedSessionLive_UnreadableRegistryReportsNotAttended(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "threads.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if !AttendedSessionLive(root, "claude-home") {
-		t.Error("an unreadable registry reported NOT attended — the worker would become maximally eager on a broken read")
+	if AttendedSessionLive(root, "claude-home") {
+		t.Error("an unreadable registry reported ATTENDED — an authority failure must surface as absence, never as a fabricated live consumer")
 	}
 }
