@@ -736,16 +736,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// stale data — a surface reporting on a source nothing writes any more.
 		// This was a call site #315 missed while claiming every observer had been
 		// routed through the cutover-aware entry point.
-		status := ThreadStatusIdle
-		depth := 0
 		items, lerr := OpenItems(routerRoot, agentID)
+		status, depth, lastError := wakeLoopInboxState(len(items), lerr)
 		if lerr != nil {
-			// Fail loud in the log rather than silently reporting idle: an unreadable
-			// inbox is not an empty one, and this loop is the only liveness signal
-			// the fabric has for this agent.
+			// An unreadable inbox is a technical blocker, not an empty inbox. Publish
+			// that truth into the durable thread record: logs alone are not supervision
+			// evidence and depth zero would create the exact false-green ADR-057 forbids.
 			log.Printf("wake-loop %s: inbox read FAILED: %v", agentID, lerr)
-		} else if depth = len(items); depth > 0 {
-			status = ThreadStatusActive
 		}
 
 		// Log on CHANGE, and periodically regardless.
@@ -813,7 +810,12 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		}
 
-		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: status})
+		// Always write last_error, including the empty value after a successful
+		// read, so a recovered loop cannot remain falsely blocked by stale evidence.
+		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
+			Status:    status,
+			LastError: &lastError,
+		})
 
 		select {
 		case <-ctx.Done():
@@ -821,6 +823,19 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		case <-tick.C:
 		}
 	}
+}
+
+// wakeLoopInboxState converts an inbox observation into durable supervisory
+// state. Read failures deliberately use unknown depth (-1): zero means a proven
+// empty inbox and must never be inferred from an unavailable source.
+func wakeLoopInboxState(depth int, readErr error) (ThreadStatus, int, string) {
+	if readErr != nil {
+		return ThreadStatusBlocked, -1, fmt.Sprintf("wake-loop inbox read failed: %v", readErr)
+	}
+	if depth > 0 {
+		return ThreadStatusActive, depth, ""
+	}
+	return ThreadStatusIdle, 0, ""
 }
 
 // adoptWorkerThread resolves the keyed-singleton worker thread for an agent on

@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,37 @@ func TestWakeLoopReadsThroughCutoverEntryPoint(t *testing.T) {
 	}
 	if !strings.Contains(fn, "OpenItems(") {
 		t.Error("RunWakeLoop no longer reads the inbox through OpenItems")
+	}
+}
+
+// An inbox read failure must never be published as idle/empty. That false-green
+// let Horus report a healthy fabric while codex-home had dozens of open items:
+// the wake loop logged the error, discarded it, and heartbeated idle at depth 0.
+// The durable thread record is the supervisory source of truth, so it must carry
+// both a blocked status and the concrete read failure until a successful read
+// clears it.
+func TestWakeLoopReadFailurePublishesDurableBlocker(t *testing.T) {
+	status, depth, lastError := wakeLoopInboxState(0, errors.New("store unavailable"))
+	if status != ThreadStatusBlocked {
+		t.Fatalf("status = %q, want blocked", status)
+	}
+	if depth != -1 {
+		t.Errorf("depth = %d, want -1 (unknown, not falsely empty)", depth)
+	}
+	if !strings.Contains(lastError, "store unavailable") {
+		t.Errorf("last_error = %q, want concrete read failure", lastError)
+	}
+
+	status, depth, lastError = wakeLoopInboxState(0, nil)
+	if status != ThreadStatusIdle || depth != 0 || lastError != "" {
+		t.Errorf("successful empty read = (%q, %d, %q), want (idle, 0, empty error)",
+			status, depth, lastError)
+	}
+
+	status, depth, lastError = wakeLoopInboxState(41, nil)
+	if status != ThreadStatusActive || depth != 41 || lastError != "" {
+		t.Errorf("successful nonempty read = (%q, %d, %q), want (active, 41, empty error)",
+			status, depth, lastError)
 	}
 }
 
