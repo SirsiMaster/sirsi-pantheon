@@ -2179,9 +2179,11 @@ honest — matrix rows moved Gap → Partial, never to done, and the user guide'
 match the code table exactly. Residual worth naming: `purpose` is caller-selected, so any estate
 writer can pick the loosest purpose and the effective per-writer ceiling is 100 MB.
 
-ADR-057 thread-store closed out after three heads. `4745a598` and `d7c5faf5` were both CHANGES
-REQUIRED; the branch had already moved to `bac8ccdc` before the bind request for `4d44d4c2` was read —
-**the third time in two passes that a bind request was crossed by its own author's next commit.**
+ADR-057 thread-store reached **source-level PASS on a published feature branch** after three heads —
+not ADR-057 closure, which this entry originally and wrongly claimed. `4745a598` and `d7c5faf5` were
+both CHANGES REQUIRED; the branch had already moved to `bac8ccdc` before the bind request for
+`4d44d4c2` was read — **the third time in two passes that a bind request was crossed by its own
+author's next commit.**
 Published `origin/codex/adr057-thread-store-boundary` `d7c5faf5..bac8ccdc` from the main checkout,
 because the worktree's `origin` is the local parent repo, which is why codex-pantheon's own push
 failed. All three P0s verify fixed at `bac8ccdc`: the RFC3339Nano lexical-ordering defect is closed by
@@ -2194,6 +2196,39 @@ no longer roll back a valid mutation. Confirmed by running the exact non-race su
 fail: both packages now ok. Three non-blocking findings recorded, the sharpest being that the
 `ON CONFLICT` fence guards only the UPDATE branch — an absent row takes an unconditional INSERT, so a
 heartbeat racing a prune can resurrect a deleted thread and report success.
+
+That source-level PASS was **not integration-complete on the current-main lineage**, a distinction
+codex-home's review of this very entry caught and this paragraph now records. Transplanting the
+four-commit series onto `16a991ef` fails to compile: it redeclares `routerstore.DefaultStorePath` in
+`internal/routerstore/path.go`, a resolver current main already owns in `internal/routerstore/store.go`
+via PR #560. codex-home's local repair `04884e77` deletes only the duplicate and passes the focused,
+CLI, vet and targeted race suites. At the time of codex-home's review, publication was still blocked.
+It no longer is: the 10:24Z pass published the series as **PR #565** (`e047e6e4`, claude-pantheon),
+carrying that same duplicate-resolver deletion plus a wake-install test isolation fix, bound PASS and
+merged at 10:28:33Z. So the honest lineage is source-level PASS at `bac8ccdc` → integration blocker on
+current main → published and merged at `e047e6e4`, and only that last step is closure.
+
+The publication raced itself: **codex-home's PR #564 (`33ce9f7f`) and claude-pantheon's PR #565 were
+competing publications of the identical work** — same seven files, with
+`internal/routerstore/store.go` and `internal/routerstore/threads.go` byte-identical, so both carried
+the same schema v16 migration and merging both would have applied it twice. The only production
+divergence was a shadow-lint rename. #565 won on one specific point: #564 isolated
+`TestWakeInstallBlockedUsesArmedWatcher` by setting `routercfg.StoreWakeEnv=0`, which makes
+`StoreWake()` false and drops the test off the store path onto the legacy JSON registry — hermeticity
+bought by opting out of the very feature the PR makes authoritative — where #565 isolates to a temp
+`SIRSI_ROUTER_DB` and keeps store mode on. **Two lanes independently publishing one upstream branch is
+now the second duplicate-publication near-miss in a day, and it is the same root shape as the bind
+requests crossed by their author's next commit: no single lane owns publication of a shared branch.**
+
+PR #566 was merged *first*, deliberately — it lands the install schema-check gate in
+`scripts/install.sh` before a v16 migration existed, so a sub-v16 installer is refused with a specific
+diagnostic instead of bricking the fleet. Verified fresh-host safe: `resolveLiveSchema` returns
+`(0, nil)` on a missing store, so removing the `if [ -f ]` guard does not break clean installs. It also
+drops a `2>/dev/null` that had been collapsing three distinct failure causes into one message naming
+only the first, whose remedy was a destructive store reset. `origin/main` now builds v16 against a v15
+live store — the safe direction — but the first v16 binary to launch migrates the store, after which
+every still-installed v15 binary fail-closes. That wants one coordinated install pass under
+`~/.sirsi/binary-install.lock`, not several lanes racing `~/.local/bin/sirsi` as happened at 06:00Z.
 
 PR #561 merged `06c5bcc9` after verifying the head still matched codex-home's approved SHA. PR #562
 (claude-pantheon) reviewed, bound, merged `16a991ef` — it splits `ExpiredTaskLeases`, which was summing
