@@ -11,8 +11,10 @@
 // holder PID. This is visible to the shell-side acquire_lock() in install.sh,
 // which detects a file-shaped lock (vs. its own mkdir-directory shape) and
 // reads the PID from the file content rather than from $LOCK_DIR/pid.
-// InstallLock.Close() removes the file so a released Go lock does not persist
-// as a stale file that would cause shell to time out awaiting a dead holder.
+// InstallLock.Close() truncates the PID to empty (rather than unlinking the
+// file) so that concurrent openers always see the same inode and flock(2)
+// arbitration remains coherent. Shell's acquire_lock() treats an empty PID as
+// stale and removes the file itself, so the file does not accumulate.
 package selfupdate
 
 import (
@@ -36,8 +38,7 @@ func installLockPath() (string, error) {
 
 // AcquireInstallLock tries to take an exclusive flock on
 // ~/.sirsi/binary-install.lock without blocking. On success it returns an
-// InstallLock; the caller must Close() it to release the flock and remove
-// the file.
+// InstallLock; the caller must Close() it to release the flock.
 //
 // On failure it returns a loud error. If the lock file contains a PID, the
 // error reports that it is recorded without presenting unverified kill advice.
@@ -73,9 +74,13 @@ func acquireInstallLockWith(recordPID func(*os.File) error) (*InstallLock, error
 		return nil, fmt.Errorf("install lock: record holder PID: %w", recordErr)
 	}
 	return &InstallLock{closer: func() error {
-		err := f.Close() // releases the kernel flock
-		_ = os.Remove(path)
-		return err
+		// Truncate PID to empty rather than unlinking: keeps the inode live in the
+		// directory so any concurrent opener that already has a descriptor on this
+		// inode will flock the same inode (not a newly-created one), preserving the
+		// kernel's arbitration guarantee. Shell's acquire_lock() empty-PID reap branch
+		// removes the file on the next acquire.
+		_ = f.Truncate(0)
+		return f.Close() // releases the kernel flock
 	}}, nil
 }
 

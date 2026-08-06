@@ -588,3 +588,28 @@ func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
 		t.Errorf("expected stop command (no same-gen tier fits), got: %q", got)
 	}
 }
+
+// TestRightSizeAdvice_MeasuredPathNoDoubling pins the headroom formula for the
+// measured (/health) path: modelGB+4, NOT 2×modelGB+4. mlx_active_bytes already
+// includes KV cache pages, so doubling would double-count them.
+//
+// Scenario: 14 GB measured active, 20 GB available.
+//
+//	Old formula (wrong): 2×14+4=32 > 20 → advice fires (false alarm).
+//	New formula (correct): 14+4=18 ≤ 20 → no advice (model fits with 2 GB to spare).
+func TestRightSizeAdvice_MeasuredPathNoDoubling(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-server.port"), []byte("8477"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Stub returns 14 GB — same as approximateModelGB for this model, so the
+	// formula difference is the only variable.
+	const fourteenGB = int64(14) * 1024 * 1024 * 1024
+	stubMLX(t, fourteenGB)
+
+	// 20 GB available: measured 14+4=18 ≤ 20 → model fits, no advice.
+	if got := rightSizeAdvice(home, 20.0); got != "" {
+		t.Errorf("measured path must use modelGB+4 (18 ≤ 20): got advice %q", got)
+	}
+}

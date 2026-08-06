@@ -4,8 +4,8 @@
 package selfupdate
 
 // InstallLock is the token returned by AcquireInstallLock. Close releases the
-// underlying primitive and, on Unix, removes the lock file so a subsequent
-// shell-side acquire_lock() does not find a stale file-shaped lock and wedge.
+// underlying primitive and, on Unix, truncates the PID so shell's acquire_lock()
+// empty-PID reap branch cleans up the file on the next acquire.
 type InstallLock struct {
 	closer func() error
 }

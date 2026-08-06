@@ -70,10 +70,13 @@ func TestAcquireInstallLock_writesPID(t *testing.T) {
 	}
 }
 
-// TestAcquireInstallLock_fileRemovedAfterClose verifies that Close() removes the
-// lock file, preventing a stale file-shaped lock from wedging install.sh's
-// shell acquire_lock() which reads the PID from $LOCK_DIR/pid (ENOTDIR on a file).
-func TestAcquireInstallLock_fileRemovedAfterClose(t *testing.T) {
+// TestAcquireInstallLock_pidTruncatedAfterClose verifies that Close() truncates
+// the PID to empty rather than removing the file. Truncating keeps the inode
+// live so any concurrent opener that already has a descriptor on the same inode
+// will flock the same inode — not a freshly-created one — preserving kernel
+// arbitration. Shell's acquire_lock() empty-PID reap branch removes the file
+// on the next acquire.
+func TestAcquireInstallLock_pidTruncatedAfterClose(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
 
@@ -86,8 +89,13 @@ func TestAcquireInstallLock_fileRemovedAfterClose(t *testing.T) {
 		t.Fatalf("lock file must exist before close: %v", err)
 	}
 	lock.Close()
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("lock file must be removed after close; stat returned: %v", err)
+	// File stays (not unlinked) but content must be empty so shell reap handles it.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("lock file must still exist after close (truncate, not unlink): %v", err)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("lock file must be empty after close; got %q", string(raw))
 	}
 }
 

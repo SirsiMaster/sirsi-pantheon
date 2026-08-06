@@ -597,14 +597,19 @@ func extractModelGen(idLower string) string {
 //  1. /health mlx_active_bytes — allocator-truthful; model weights are
 //     mmap'd file-backed and excluded from ps RSS, so RSS is ~185 MB while
 //     the real footprint is 37 GB. mlx_active_bytes counts the actual
-//     allocator pages (36–39 GB on the live gemma-4 node).
+//     allocator pages (already including KV cache and transient pages).
 //  2. approximateModelGB — name-based fallback for when the broker is not
 //     running or /health is unreachable (e.g. during a memory death spiral).
+//
+// Headroom formula differs by source:
+//   - measured (mlx_active_bytes): modelGB+4 — KV cache already counted in active.
+//   - estimated (weights-only name heuristic): 2×modelGB+4 — double reserves for KV.
 //
 // RSS is never used here.
 func rightSizeAdvice(home string, availableGB float64) string {
 	model := resolveModel(home)
 	var modelGB float64
+	var measured bool
 
 	// Prefer /health mlx_active_bytes (reads port from gemma-server.port).
 	portRaw, err := os.ReadFile(filepath.Join(home, ".sirsi/gemma-server.port"))
@@ -612,6 +617,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 		if port, pErr := strconv.Atoi(strings.TrimSpace(string(portRaw))); pErr == nil && port > 0 {
 			if activeBytes, hErr := getBrokerMLXActive()(port); hErr == nil && activeBytes > 0 {
 				modelGB = float64(activeBytes) / (1 << 30)
+				measured = true
 			}
 		}
 	}
@@ -620,7 +626,17 @@ func rightSizeAdvice(home string, availableGB float64) string {
 	if modelGB == 0 {
 		modelGB = approximateModelGB(model)
 	}
-	if modelGB == 0 || 2*modelGB+4 <= availableGB {
+
+	// headroom returns the minimum GB needed to run modelGB worth of model.
+	// Measured: active already includes KV cache, so add only 4 GB OS headroom.
+	// Estimated: weights-only, so double to reserve for KV cache then add 4 GB.
+	headroom := func(gb float64) float64 {
+		if measured {
+			return gb + 4
+		}
+		return 2*gb + 4
+	}
+	if modelGB == 0 || headroom(modelGB) <= availableGB {
 		return "" // unknown size or fits
 	}
 
