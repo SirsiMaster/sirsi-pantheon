@@ -95,8 +95,8 @@ func TestConcurrentThreadUpsertsPreserveDistinctRowsAndTerminalState(t *testing.
 	}
 	staleHeartbeat := active("thr-a")
 	staleHeartbeat.LastSeenAt = "2026-08-06T09:01:00Z"
-	if err := b.UpsertThreads([]ThreadRecord{staleHeartbeat}); err == nil {
-		t.Fatal("late heartbeat reported success after terminal transition")
+	if err := b.UpsertThreads([]ThreadRecord{staleHeartbeat}); err != nil {
+		t.Fatal(err)
 	}
 	rows, err = a.ListThreads()
 	if err != nil {
@@ -129,8 +129,8 @@ func TestHeartbeatCannotImplicitlyResumeConcurrentSuspend(t *testing.T) {
 	}
 	lateHeartbeat := record
 	lateHeartbeat.LastSeenAt = "2026-08-06T09:02:00Z"
-	if err := s.UpsertThreads([]ThreadRecord{lateHeartbeat}); err == nil {
-		t.Fatal("late heartbeat reported success after suspend")
+	if err := s.UpsertThreads([]ThreadRecord{lateHeartbeat}); err != nil {
+		t.Fatal(err)
 	}
 	rows, err := s.ListThreads()
 	if err != nil {
@@ -166,14 +166,17 @@ func TestStaleCrossRowSnapshotCannotOverwriteNewerHeartbeat(t *testing.T) {
 	if err := s.UpsertThreads([]ThreadRecord{rec("b", "2026-08-06T09:02:00Z", "new-b")}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpsertThreads([]ThreadRecord{rec("a", "2026-08-06T09:01:00Z", "new-a"), rec("b", "2026-08-06T09:00:00Z", "old-b")}); err == nil {
-		t.Fatal("stale cross-row mutation reported success")
+	if err := s.UpsertThreads([]ThreadRecord{rec("a", "2026-08-06T09:01:00Z", "new-a"), rec("b", "2026-08-06T09:00:00Z", "old-b")}); err != nil {
+		t.Fatal(err)
 	}
 	rows, err := s.ListThreads()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range rows {
+		if row.ThreadID == "a" && string(row.Payload) != `{"current_item":"new-a"}` {
+			t.Fatalf("valid target update rolled back: %s", row.Payload)
+		}
 		if row.ThreadID == "b" && string(row.Payload) != `{"current_item":"new-b"}` {
 			t.Fatalf("stale cross-row overwrite: %s", row.Payload)
 		}
