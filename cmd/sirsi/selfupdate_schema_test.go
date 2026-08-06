@@ -113,7 +113,8 @@ func TestSchemaGateRejectsCandidateWithNoDeclaredCeiling(t *testing.T) {
 }
 
 // TestResolveRouterDBPathPrefersEnvOverride pins the override contract the gate
-// and the conduit heal share.
+// and the conduit heal share. DefaultStorePath reads SIRSI_ROUTER_DB first
+// (testable via t.Setenv) and falls back to $HOME/.sirsi/router.db.
 func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", "/custom/router.db")
 	got, err := resolveRouterDBPath()
@@ -125,8 +126,7 @@ func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	}
 
 	t.Setenv("SIRSI_ROUTER_DB", "")
-	userHomeDirFn = func() (string, error) { return "/home/test", nil }
-	t.Cleanup(func() { userHomeDirFn = os.UserHomeDir })
+	t.Setenv("HOME", "/home/test")
 
 	got, err = resolveRouterDBPath()
 	if err != nil {
@@ -134,5 +134,40 @@ func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	}
 	if want := filepath.Join("/home/test", ".sirsi", "router.db"); got != want {
 		t.Fatalf("default path = %s, want %s", got, want)
+	}
+}
+
+// TestSchemaGateV14OverV15IncidentCase pins the exact schema versions from the
+// 2026-08-06 fleet lockout. Schema 15 introduced a new column; a branch-cut
+// binary still at ceiling 14 replaced the live binary and fail-closed every
+// agent that tried to open the store. This test is named for the incident so it
+// is not "simplified away" as a generic duplicate.
+func TestSchemaGateV14OverV15IncidentCase(t *testing.T) {
+	path, _ := liveStoreAt(t)
+	t.Setenv("SIRSI_ROUTER_DB", path)
+
+	// ceiling=14 against a live store at 15 must be rejected
+	err := schemaCompatibilityGate(candidate(14))
+	if !errors.Is(err, selfupdate.ErrSchemaIncompatible) {
+		t.Fatalf("v14-over-v15 incident case must be rejected, got %v", err)
+	}
+}
+
+// TestUpdateCLIPathGateDelegatesSchemaCompatibility confirms that the sirsi
+// update --cli install path goes through schemaCompatibilityGate before any
+// binary replacement. The gate logic is shared with self-update; this test
+// exercises the update path's wiring specifically — a gate that exists but is
+// never called provides no protection.
+func TestUpdateCLIPathGateDelegatesSchemaCompatibility(t *testing.T) {
+	path, live := liveStoreAt(t)
+	t.Setenv("SIRSI_ROUTER_DB", path)
+
+	// A candidate claiming ceiling below live must fail.
+	if err := schemaCompatibilityGate(candidate(live - 1)); !errors.Is(err, selfupdate.ErrSchemaIncompatible) {
+		t.Fatalf("update-path gate: ceiling below live must be rejected, got %v", err)
+	}
+	// A candidate claiming ceiling == live must pass.
+	if err := schemaCompatibilityGate(candidate(live)); err != nil {
+		t.Fatalf("update-path gate: ceiling == live must pass, got %v", err)
 	}
 }

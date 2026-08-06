@@ -18,21 +18,14 @@ import (
 var (
 	selfUpdateConfirm bool
 	selfUpdateJSON    bool
-	userHomeDirFn     = os.UserHomeDir
 	readSchemaFn      = routerstore.ReadSchemaVersion
 )
 
-// resolveRouterDBPath reports where the live router store would be, whether or
-// not one exists there yet. SIRSI_ROUTER_DB is the canonical override.
+// resolveRouterDBPath delegates to routerstore.DefaultStorePath, the single
+// authoritative resolver shared across self-update, sirsi update --cli, and
+// the install.sh schema-check gate.
 func resolveRouterDBPath() (string, error) {
-	if dbPath := os.Getenv("SIRSI_ROUTER_DB"); dbPath != "" {
-		return dbPath, nil
-	}
-	home, err := userHomeDirFn()
-	if err != nil {
-		return "", fmt.Errorf("resolve home: %w", err)
-	}
-	return filepath.Join(home, ".sirsi", "router.db"), nil
+	return routerstore.DefaultStorePath()
 }
 
 // resolveLiveSchema reports the live schema version a replacement candidate

@@ -93,6 +93,24 @@ func ReadSchemaVersion(path string) (int, error) {
 	return version, nil
 }
 
+// DefaultStorePath returns the canonical filesystem path for the router store on
+// this host. SIRSI_ROUTER_DB overrides it; otherwise ~/.sirsi/router.db.
+//
+// This is the single authoritative resolver — callers (self-update, install.sh
+// schema-check, conduit heal) all route through here so the path logic does not
+// drift apart across vectors. Tests should prefer t.Setenv("SIRSI_ROUTER_DB", ...)
+// over patching os.UserHomeDir.
+func DefaultStorePath() (string, error) {
+	if p := os.Getenv("SIRSI_ROUTER_DB"); p != "" {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("routerstore: resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".sirsi", "router.db"), nil
+}
+
 // Item is the durable projection of one work item. Fields mirror
 // internal/work.Item exactly — field-for-field, same names, same semantics —
 // so a markdown item round-trips with zero loss (PRD /goal #4). The parity is
