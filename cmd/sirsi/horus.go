@@ -271,6 +271,7 @@ func runHorusSupervise(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
+		reportLaneEscalations(repoRoot)
 		return printSuperviseReport(report)
 	}
 
@@ -298,6 +299,7 @@ func runHorusSupervise(cmd *cobra.Command, _ []string) error {
 				return err
 			}
 		}
+		reportLaneEscalations(repoRoot)
 		select {
 		case <-cmd.Context().Done():
 			return cmd.Context().Err()

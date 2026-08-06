@@ -65,7 +65,11 @@ type FleetLane struct {
 	// classification counts it, so the row must show it: a lane read
 	// "0 open · IDLE — work waiting", which is only explicable once you can
 	// see the inbox work driving it.
-	Inbox      int    `json:"inbox"`
+	Inbox int `json:"inbox"`
+	// Routable reports whether any automated wake path reaches this lane. A
+	// false value is why a lane can read UNROUTABLE: work exists and no sweep,
+	// retry, or nudge will ever deliver it.
+	Routable   bool   `json:"routable"`
 	TouchedAgo string `json:"touched_ago,omitempty"`
 	touchedAt  time.Time
 }
@@ -117,10 +121,19 @@ type FleetTracker struct {
 	prev   map[string]string // agent\x00task_id -> last observed status
 	events []FleetEvent      // newest first
 	seeded bool
+	// unroutable is the set of agents with no automated wake path, from the
+	// registry. A REQUIRED constructor argument rather than a settable field:
+	// as optional state it defaults to empty, every lane silently reads
+	// routable, and the bug this replaces returns wearing a different shape.
+	// Pass nil only when routability genuinely cannot be determined.
+	unroutable map[string]bool
 }
 
-func NewFleetTracker() *FleetTracker {
-	return &FleetTracker{prev: map[string]string{}}
+func NewFleetTracker(unroutable map[string]bool) *FleetTracker {
+	if unroutable == nil {
+		unroutable = map[string]bool{}
+	}
+	return &FleetTracker{prev: map[string]string{}, unroutable: unroutable}
 }
 
 func trackKey(agent, taskID string) string { return agent + "\x00" + taskID }
@@ -198,6 +211,12 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 		// COMPLETE while carrying unmet canon requirements, and it must not be
 		// treated as a completion claim until the registry feeds this field.
 		lane.Inbox = len(ag.Items)
+		// Routability is READ, not assumed. This was hardcoded true, which made
+		// StateUnroutable unreachable: the classifier could produce it, the only
+		// caller forbade it, and seven lanes declaring wake.mechanism=none while
+		// holding 18 open items between them all rendered as merely idle. A state
+		// that no caller can produce is not a state, it is a comment.
+		lane.Routable = !ft.unroutable[ag.AgentID]
 		lane.State = string(supervision.Classify(supervision.LaneInput{
 			Agent: ag.AgentID,
 			Sources: supervision.Sources{
@@ -206,7 +225,7 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 				BlockedTasks:    lane.Blocked,
 			},
 			LastTaskMutation: lane.touchedAt,
-			Routable:         true,
+			Routable:         lane.Routable,
 		}, now, supervision.DefaultWorkWindow))
 		if !lane.touchedAt.IsZero() {
 			lane.TouchedAgo = ledger.FormatAge(now.Sub(lane.touchedAt).Seconds())

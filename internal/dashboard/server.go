@@ -45,6 +45,11 @@ type Config struct {
 	// returns 503 (graceful degrade) rather than an empty board, which would
 	// read as "the fleet has no work".
 	FleetFn FleetProducer
+	// Unroutable is the set of agent ids with no automated wake path, read from
+	// the registry by the caller (which owns registry access; the dashboard
+	// deliberately does not import it). Empty or nil means every lane is
+	// treated as routable — honest only when routability is genuinely unknown.
+	Unroutable map[string]bool
 }
 
 // FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
@@ -69,7 +74,7 @@ func New(cfg Config) *Server {
 		cfg.Port = DashboardPort
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker()}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable)}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
