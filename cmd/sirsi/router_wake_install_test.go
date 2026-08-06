@@ -1,12 +1,15 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 func TestWakeInstallBlockedUsesArmedWatcher(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
 	root := t.TempDir()
 
 	if _, err := router.RegisterThread(root, &router.Thread{AgentID: "claude-home", Surface: "claude", PID: 6001, StartTime: "loop-dead"}); err != nil {
