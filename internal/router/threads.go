@@ -712,10 +712,24 @@ func ResumeThread(routerRoot, threadID string) (*Thread, error) {
 		return nil, fmt.Errorf("thread %q is %s, not suspended; nothing to resume", threadID, t.Status)
 	}
 	payload := t.SuspendPayload
+	suspendedAt := reg.baseline[threadID].LastSeenAt
 	t.Status = ThreadStatusActive
 	t.LastSeenAt = time.Now().UTC()
 	t.SuspendPayload = nil
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+	if routercfg.StoreWake() {
+		store, err := openThreadStore()
+		if err != nil {
+			return nil, err
+		}
+		defer store.Close()
+		records, err := threadRecords(&ThreadRegistry{Threads: map[string]*Thread{threadID: t}})
+		if err != nil {
+			return nil, err
+		}
+		if err := store.ResumeThreadCAS(records[0], suspendedAt); err != nil {
+			return nil, err
+		}
+	} else if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 		return nil, err
 	}
 	t.SuspendPayload = payload // re-attach for the caller (not persisted)
