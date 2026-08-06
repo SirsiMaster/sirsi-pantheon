@@ -39,6 +39,10 @@ var (
 	// to `version --json` with a parseable version.Info payload. This is a
 	// version-protocol liveness check, not a store schema compatibility check.
 	ErrVersionProbeFailed = errors.New("version probe failed: `version --json` did not return a valid payload")
+
+	// ErrSchemaIncompatible is returned before replacement when the live
+	// router database is newer than the candidate binary can understand.
+	ErrSchemaIncompatible = errors.New("router schema incompatible: candidate ceiling is below live schema")
 )
 
 // CheckProvenance verifies that info represents a clean, stamped release
@@ -57,6 +61,19 @@ func CheckProvenance(info version.Info) error {
 	}
 	if info.Commit == "" || info.Commit == "none" {
 		return fmt.Errorf("%w (commit=%q)", ErrUnstampedBuild, info.Commit)
+	}
+	return nil
+}
+
+// CheckSchemaCeiling rejects candidates that cannot open the live router
+// store. A missing/zero ceiling also fails closed because pre-contract binaries
+// cannot prove compatibility with a versioned production store.
+func CheckSchemaCeiling(info version.Info, liveSchema int) error {
+	if liveSchema < 0 {
+		return fmt.Errorf("%w: invalid live schema %d", ErrSchemaIncompatible, liveSchema)
+	}
+	if info.RouterSchemaMax <= 0 || info.RouterSchemaMax < liveSchema {
+		return fmt.Errorf("%w (live=%d candidate_max=%d)", ErrSchemaIncompatible, liveSchema, info.RouterSchemaMax)
 	}
 	return nil
 }

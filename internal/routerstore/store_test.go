@@ -875,3 +875,21 @@ func TestMigrateVersioning(t *testing.T) {
 		t.Fatal("Open of a future-versioned db should refuse, got nil error")
 	}
 }
+
+func TestReadSchemaVersionAndMaxSupported(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr := s.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	got, err := ReadSchemaVersion(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != MaxSupportedSchemaVersion() {
+		t.Fatalf("live schema=%d, max supported=%d", got, MaxSupportedSchemaVersion())
+	}
+}

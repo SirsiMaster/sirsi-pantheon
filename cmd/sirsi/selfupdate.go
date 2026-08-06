@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
@@ -15,7 +18,61 @@ import (
 var (
 	selfUpdateConfirm bool
 	selfUpdateJSON    bool
+	userHomeDirFn     = os.UserHomeDir
+	readSchemaFn      = routerstore.ReadSchemaVersion
 )
+
+// resolveRouterDBPath reports where the live router store would be, whether or
+// not one exists there yet. SIRSI_ROUTER_DB is the canonical override.
+func resolveRouterDBPath() (string, error) {
+	if dbPath := os.Getenv("SIRSI_ROUTER_DB"); dbPath != "" {
+		return dbPath, nil
+	}
+	home, err := userHomeDirFn()
+	if err != nil {
+		return "", fmt.Errorf("resolve home: %w", err)
+	}
+	return filepath.Join(home, ".sirsi", "router.db"), nil
+}
+
+// resolveLiveSchema reports the live schema version a replacement candidate
+// must be able to understand.
+//
+// Absence and unreadability are different facts and must not collapse into one
+// branch. A host that has never initialized Pantheon routing has no live schema
+// to protect — its effective live schema is 0, and it must still be able to heal
+// CLI drift, or a fresh install can never self-update at all. A store that does
+// exist but cannot be read is the opposite case: there is something to protect
+// and we are blind to it, so it stays fail-closed.
+//
+// The existence question is answered here, at the policy layer, rather than by
+// teaching ReadSchemaVersion to swallow open/query errors — a probe that reports
+// "0" for both an absent store and a corrupt one would silently disarm the gate.
+func resolveLiveSchema(dbPath string) (int, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("stat router store: %w", err)
+	}
+	return readSchemaFn(dbPath)
+}
+
+// schemaCompatibilityGate refuses a replacement candidate that could not open
+// the live router store. It is observational and side-effect free: it runs
+// before the interactive confirmation and before the install lock, so a
+// rejected candidate never reaches a write.
+func schemaCompatibilityGate(selfInfo modversion.Info) error {
+	dbPath, pathErr := resolveRouterDBPath()
+	if pathErr != nil {
+		return pathErr
+	}
+	liveSchema, schemaErr := resolveLiveSchema(dbPath)
+	if schemaErr != nil {
+		return schemaErr
+	}
+	return selfupdate.CheckSchemaCeiling(selfInfo, liveSchema)
+}
 
 var selfUpdateCmd = &cobra.Command{
 	Use:   "self-update",
@@ -105,6 +162,9 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 	}
 	if provErr := selfupdate.CheckProvenance(selfInfo); provErr != nil {
 		return fmt.Errorf("provenance gate: %w\n  (install a proper release build via goreleaser or Homebrew, then re-run self-update)", provErr)
+	}
+	if gateErr := schemaCompatibilityGate(selfInfo); gateErr != nil {
+		return fmt.Errorf("schema-compatibility gate: %w", gateErr)
 	}
 
 	// Apply — explicit --confirm plus an interactive [y/N]. A binary rewrite is

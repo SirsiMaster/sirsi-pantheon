@@ -62,6 +62,33 @@ func TestCheckProvenance(t *testing.T) {
 	}
 }
 
+func TestCheckSchemaCeiling(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		max  int
+		live int
+		want bool
+	}{
+		{name: "equal", max: 15, live: 15},
+		{name: "candidate newer", max: 16, live: 15},
+		{name: "candidate older", max: 14, live: 15, want: true},
+		{name: "missing ceiling fails closed", max: 0, live: 15, want: true},
+		{name: "invalid live version", max: 15, live: -1, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckSchemaCeiling(version.Info{RouterSchemaMax: tt.max}, tt.live)
+			if (err != nil) != tt.want {
+				t.Fatalf("CheckSchemaCeiling(max=%d, live=%d) error=%v, wantError=%v", tt.max, tt.live, err, tt.want)
+			}
+			if tt.want && !errors.Is(err, ErrSchemaIncompatible) {
+				t.Fatalf("error %v does not wrap ErrSchemaIncompatible", err)
+			}
+		})
+	}
+}
+
 func TestCheckVersionProbe_missingBinary(t *testing.T) {
 	_, err := CheckVersionProbe("/nonexistent/path/to/sirsi")
 	if !errors.Is(err, ErrVersionProbeFailed) {
