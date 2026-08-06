@@ -124,6 +124,72 @@ func TestCheckVersionProbe_valid(t *testing.T) {
 	}
 }
 
+func TestCheckSchemaCeiling(t *testing.T) {
+	cases := []struct {
+		name      string
+		schemaMax int
+		live      int
+		wantErr   error
+	}{
+		{
+			name:      "absent store (live=0) always passes",
+			schemaMax: 0,
+			live:      0,
+			wantErr:   nil,
+		},
+		{
+			name:      "candidate ceiling >= live passes",
+			schemaMax: 8,
+			live:      8,
+			wantErr:   nil,
+		},
+		{
+			name:      "candidate ceiling > live passes",
+			schemaMax: 15,
+			live:      8,
+			wantErr:   nil,
+		},
+		{
+			name:      "pre-contract binary (schemaMax=0) rejected when live>0",
+			schemaMax: 0,
+			live:      8,
+			wantErr:   ErrSchemaIncompatible,
+		},
+		{
+			name:      "candidate ceiling < live rejected",
+			schemaMax: 7,
+			live:      8,
+			wantErr:   ErrSchemaIncompatible,
+		},
+		{
+			name:      "v14 binary over v15 store rejected (P0 incident class)",
+			schemaMax: 14,
+			live:      15,
+			wantErr:   ErrSchemaIncompatible,
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			info := version.Info{
+				Binary:          "sirsi",
+				Version:         "v0.22.0",
+				Commit:          "abc1234",
+				RouterSchemaMax: tt.schemaMax,
+			}
+			err := CheckSchemaCeiling(info, tt.live)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("got %v, want errors.Is %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // setProbeForTest swaps probeFn and returns the old value.
 func setProbeForTest(t *testing.T, fn func(string) (version.Info, error)) func(string) (version.Info, error) {
 	t.Helper()

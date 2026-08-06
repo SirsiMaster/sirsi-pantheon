@@ -31,13 +31,14 @@ var (
 // (via `<binary> version --json`). It is the unit of comparison for binary
 // drift detection in internal/selfupdate.
 type Info struct {
-	Binary  string `json:"binary"`
-	Version string `json:"version"`
-	Commit  string `json:"commit"`
-	Date    string `json:"date"`
-	Path    string `json:"path"`
-	GoVer   string `json:"go"`
-	Dirty   bool   `json:"dirty"`
+	Binary          string `json:"binary"`
+	Version         string `json:"version"`
+	Commit          string `json:"commit"`
+	Date            string `json:"date"`
+	Path            string `json:"path"`
+	GoVer           string `json:"go"`
+	Dirty           bool   `json:"dirty"`
+	RouterSchemaMax int    `json:"router_schema_max,omitempty"`
 }
 
 // Current returns the running binary's build identity. binary is the logical

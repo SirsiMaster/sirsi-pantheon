@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
@@ -96,15 +97,26 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Version-probe gate: confirm the running binary answers `version --json`.
-	// This is a liveness check on the version protocol, not a store schema gate.
-	// Runs before the interactive prompt for a fast-fail.
+	// Version-probe gate: confirm the running binary answers `version --json`
+	// and reports RouterSchemaMax. Runs before the interactive prompt — fast fail.
 	selfInfo, probeErr := selfupdate.CheckVersionProbe(self)
 	if probeErr != nil {
 		return fmt.Errorf("version-probe gate: %w", probeErr)
 	}
 	if provErr := selfupdate.CheckProvenance(selfInfo); provErr != nil {
 		return fmt.Errorf("provenance gate: %w\n  (install a proper release build via goreleaser or Homebrew, then re-run self-update)", provErr)
+	}
+
+	// Schema ceiling gate: the running binary's router schema ceiling must be
+	// >= the live store's current schema version. A downgrade that would make
+	// the store unreadable is refused here, before any write (the 2026-08-06
+	// P0 class: v14 binary over v15 store stopped every agent on the host).
+	liveSchema, schemaErr := routerstore.ReadLiveSchemaVersion(routerstore.DefaultStorePath())
+	if schemaErr != nil {
+		return fmt.Errorf("schema ceiling gate: read live schema: %w", schemaErr)
+	}
+	if ceilErr := selfupdate.CheckSchemaCeiling(selfInfo, liveSchema); ceilErr != nil {
+		return fmt.Errorf("schema ceiling gate: %w\n  (live store v%d, candidate ceiling v%d — install a newer release)", ceilErr, liveSchema, selfInfo.RouterSchemaMax)
 	}
 
 	// Apply — explicit --confirm plus an interactive [y/N]. A binary rewrite is

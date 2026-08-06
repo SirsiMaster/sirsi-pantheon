@@ -1,7 +1,7 @@
 // Package selfupdate — provenance.go
 //
 // Candidate provenance and version-probe gates for the serialized self-update
-// flow. Both gates are HARD failures by default — no silent advisory downgrade.
+// flow. All gates fail closed — no silent advisory downgrade.
 //
 // Provenance: the source binary must be a clean, fully-stamped release build.
 // A dirty build (uncommitted changes) or an unstamped build (plain `go build`
@@ -10,10 +10,12 @@
 //
 // Version probe: the source binary must answer `<binary> version --json` with a
 // parseable version.Info payload. This is a liveness check — it proves the
-// binary speaks the version protocol. It does NOT check store schema
-// compatibility; the real schema ceiling gate (PRAGMA user_version vs highest
-// migration entry) is tracked separately as ledger task
-// `selfupdate-real-schema-ceiling-gate`.
+// binary speaks the version protocol.
+//
+// Schema ceiling: the live router store's PRAGMA user_version must not exceed
+// the candidate binary's RouterSchemaMax. This is the P0 gate that prevents a
+// downgrade from installing a binary that cannot open the already-migrated store
+// (the 2026-08-06 incident: a v14 binary over a v15 store stopped every agent).
 package selfupdate
 
 import (
@@ -25,7 +27,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
-// Sentinel errors for provenance failures. Callers use errors.Is.
+// Sentinel errors for gate failures. Callers use errors.Is.
 var (
 	// ErrDirtyBuild is returned when the source binary was built from a
 	// working tree with uncommitted changes. Its hash is not reproducible.
@@ -39,6 +41,11 @@ var (
 	// to `version --json` with a parseable version.Info payload. This is a
 	// version-protocol liveness check, not a store schema compatibility check.
 	ErrVersionProbeFailed = errors.New("version probe failed: `version --json` did not return a valid payload")
+
+	// ErrSchemaIncompatible is returned when the live router store is at a schema
+	// version the candidate binary cannot open. Installing such a binary would
+	// stop every agent that tries to open the store (2026-08-06 P0 incident class).
+	ErrSchemaIncompatible = errors.New("schema incompatible: candidate ceiling is below live store schema")
 )
 
 // CheckProvenance verifies that info represents a clean, stamped release
@@ -65,10 +72,10 @@ func CheckProvenance(info version.Info) error {
 // its Info on success. If the binary is absent, does not respond, or returns
 // an unparseable payload, the error wraps ErrVersionProbeFailed.
 //
-// This is a version-protocol liveness check, not a store schema compatibility
-// gate. It proves the binary speaks the version protocol. The real schema
-// ceiling gate (PRAGMA user_version vs highest migration entry) requires a new
-// field on the probe payload and is tracked as `selfupdate-real-schema-ceiling-gate`.
+// RouterSchemaMax in the returned Info is the candidate's schema ceiling.
+// A zero value means the binary predates the ceiling contract and must be
+// treated as ceiling=0 (i.e. it fails CheckSchemaCeiling if the live store
+// is already at any version > 0).
 func CheckVersionProbe(path string) (version.Info, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -85,4 +92,27 @@ func CheckVersionProbe(path string) (version.Info, error) {
 		return version.Info{}, fmt.Errorf("%w: probe %s returned empty version field", ErrVersionProbeFailed, abs)
 	}
 	return info, nil
+}
+
+// CheckSchemaCeiling rejects a candidate binary whose schema ceiling is below
+// the live store's current schema version. Failing closed means: if the
+// candidate does not declare RouterSchemaMax (zero — a pre-contract binary),
+// it is rejected whenever the live store is already at any versioned schema.
+//
+// liveSchema is the live store's PRAGMA user_version; use ReadLiveSchemaVersion
+// (routerstore package) to obtain it. A liveSchema of 0 (absent/fresh store)
+// always passes — any binary can bootstrap an empty store.
+func CheckSchemaCeiling(info version.Info, liveSchema int) error {
+	if liveSchema <= 0 {
+		return nil // fresh/absent store — any binary wins
+	}
+	if info.RouterSchemaMax <= 0 {
+		return fmt.Errorf("%w (live=%d candidate_max=0: pre-contract binary)",
+			ErrSchemaIncompatible, liveSchema)
+	}
+	if info.RouterSchemaMax < liveSchema {
+		return fmt.Errorf("%w (live=%d candidate_max=%d)",
+			ErrSchemaIncompatible, liveSchema, info.RouterSchemaMax)
+	}
+	return nil
 }
