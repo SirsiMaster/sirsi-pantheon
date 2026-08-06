@@ -2893,3 +2893,34 @@ the installed schema-15 runtime still cannot lease a closed-source task row,
 leaving reconciliation blocked on the schema-v16 deployment boundary. Final
 repeat pull and ledger reported zero open and zero unblocked/unpicked codex-home
 work.
+
+## Conduit run 2026-08-06T21:47Z — launchd print-disabled joined-key parser (PR #613)
+
+Fired ~1 min after the prior run's thoth, so vitals were unchanged (health 100/100, swap
+860.06/1187.94 MB byte-identical for the 11th consecutive read, RAM 84% free, zero new .ips —
+the 16:03 Jetsam is the known one). Inbox 0 and GitHub Actions still `major_outage`, so the six
+bound-and-mergeable PRs (#595 #602 #603 #604 #608 #609) stayed parked and source 1 was empty;
+worked source 2. Resolved the discrepancy the prior run left open: the board's "48 open" was right
+and the ledger's "18 non-done" was a truncated read — `router task list claude-home` returns 125
+rows, 34 of them non-done and assigned to claude-home. Took `launchctl-enable-passes-five-labels-as-one`
+and found the reported writer defect is not fixable here (no code in this repo or `~/.local/bin`
+writes that override key — it came from a manual unquoted `"$@"`), but the READ side is live and
+wrong on this host: three byte-identical `launchctl print-disabled` parsers (`guard/doctor.go`
+`parseLaunchdDisabled`, `router/launchdkickstart.go` `disabledLabels`, `liveness/livenesswatch.go`)
+extracted the quoted key verbatim, so the corrupt five-labels-in-one key matched no real service
+and all five genuinely quarantined labels reported as NOT disabled — `sirsi diagnose` and the
+liveness watch render an owner quarantine as clear, and `KickstartDeadLabels` skips its
+`launchctl enable` step and then fails `bootstrap` with Operation-not-permitted, the exact
+2026-07-31 fabric-loss mode that step exists to prevent. A35-shaped: the claim was "these are the
+disabled labels", the scope was "the first quoted string on the line". Fixed by deduplicating all
+three into `platform.ParseDisabledLabels` + `platform.ManagedLabel`, which split the key on
+whitespace — patching only the caller the ledger task named would have left doctor and livenesswatch
+blind, so the shared parser is both the smaller diff and the root-cause fix. PR #613 off origin/main
+(I first branched off #612's branch by mistake and cherry-picked onto main to keep it independent);
+gofmt/vet clean, four packages test ok, three binaries build, `TestParseDisabledLabels` pins both
+directions over five cases including the exact live key. Not bound — Actions cannot run (A28/A34).
+Flagged on the PR and registered as `kickstart-revives-owner-quarantine` that the fix has a
+dangerous second-order effect: making the quarantine visible to kickstart also makes it revivable,
+so the duty would now `enable`+`bootstrap` labels the owner deliberately quarantined. Review routed
+to codex-home as `20260806-215223` with that as ask B. Housekeeping: reconcile healed 2, prune
+180→163, ccd reap 1 leaked session, board :8734 → 200, 0 BINARY_MISSING.
