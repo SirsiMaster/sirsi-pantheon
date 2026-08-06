@@ -69,6 +69,7 @@ mkdir -p "$HOME/.sirsi"
 
 acquire_lock() {
     local waited=0
+    local announced=0
     while ! mkdir "$LOCK_DIR" 2>/dev/null; do
         local pid
         if [ -f "$LOCK_DIR" ]; then
@@ -102,8 +103,9 @@ acquire_lock() {
                 continue
             fi
         fi
-        if [ $waited -eq 0 ]; then
+        if [ $announced -eq 0 ]; then
             echo -e "${DIM}  Another install is in progress (pid ${pid:-?}); waiting up to 120s...${NC}"
+            announced=1
         fi
         waited=$((waited + 5))
         if [ $waited -ge 120 ]; then
