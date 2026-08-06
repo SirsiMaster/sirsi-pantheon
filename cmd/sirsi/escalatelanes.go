@@ -12,6 +12,28 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/supervision"
 )
 
+// activeThreadCountByAgent returns a map of agent-id → count of non-terminal,
+// non-suspended thread records. A positive count means the lane has at least
+// one registered session or worker that is not confirmed dead — the lane may be
+// running even when it has no automatic wake mechanism. Errors are silenced and
+// return an empty map (fail-open: we escalate rather than suppress if we cannot
+// read thread state, which is the safe direction for an alerting function).
+func activeThreadCountByAgent(repoRoot string) map[string]int {
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	treg, err := router.LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return map[string]int{}
+	}
+	counts := make(map[string]int)
+	for _, thr := range treg.SortedThreads() {
+		if thr.Status.IsTerminal() || thr.Status == router.ThreadStatusSuspended {
+			continue
+		}
+		counts[thr.AgentID]++
+	}
+	return counts
+}
+
 // dashboardUnroutable resolves the registry for the dashboard's fleet board.
 // Separate from unroutableAgents only because the dashboard command finds its
 // repo root independently; both fail toward "routable" for the same reason.
@@ -53,6 +75,7 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 		return nil, fmt.Errorf("escalate lanes: %w — refusing to escalate on unknown routability", err)
 	}
 	board := dashboard.NewFleetTracker(unroutable).Observe(snap, now)
+	threadCounts := activeThreadCountByAgent(repoRoot)
 
 	lanes := make([]supervision.LaneInput, 0, len(board.Lanes))
 	states := make(map[string]supervision.LaneState, len(board.Lanes))
@@ -64,7 +87,8 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 				ActionableTasks: l.Active + l.Stalled,
 				BlockedTasks:    l.Blocked,
 			},
-			Routable: l.Routable,
+			Routable:      l.Routable,
+			ActiveThreads: threadCounts[l.Agent],
 		})
 		states[l.Agent] = supervision.LaneState(l.State)
 	}
