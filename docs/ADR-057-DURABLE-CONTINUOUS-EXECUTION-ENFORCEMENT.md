@@ -97,6 +97,9 @@ task wake adapter proves store acknowledgment.
    binaries fail closed. Schema advancement itself requires the same reviewed
    commit, deployment-version, rollback-backup, and production-verification
    evidence as any other completion claim.
+   Initial creation at schema version zero is not an advancement event and
+   remains automatic so a clean machine is installable; the explicit gate
+   begins once a deployed store has a non-zero schema version.
 2. Adversarial tests prove heartbeat-only activity cannot yield `WORKING`, an
    arbitrary acknowledgment cannot consume a wake, expired leases recover, and
    proofless completion is rejected.
