@@ -91,6 +91,23 @@ func sirsiTestEnv(dir string, extra ...string) []string {
 		if dir != "" && strings.HasPrefix(kv, "PWD=") {
 			continue
 		}
+		// Strip the ambient acting-identity sources. resolveCurrentAgent
+		// resolves --agent → $SIRSI_AGENT_ID → session marker → sole live
+		// thread. Rungs 1/2/4 are already hermetic here (the flag is explicit,
+		// the thread registry is read from the test's own routerRoot), but the
+		// session marker is an ABSOLUTE host path keyed on an INHERITED env
+		// var: ~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID. A
+		// subprocess launched from a registered agent's session therefore
+		// resolves that agent's id, and a test asserting "identity is
+		// ambiguous, fail closed" cannot construct ambiguity at all. That is
+		// green on CI (no session id in the env) and red on any agent's
+		// machine — TestRouterRespondStoreOnlyItem resolved a live `claude-home`
+		// and completed a respond the test required to fail. The subprocess
+		// cannot use router.sessionMarkerDirOverride (in-process only), so the
+		// env is the seam.
+		if strings.HasPrefix(kv, "CLAUDE_CODE_SESSION_ID=") || strings.HasPrefix(kv, "SIRSI_AGENT_ID=") {
+			continue
+		}
 		out = append(out, kv)
 	}
 	if dir != "" {
