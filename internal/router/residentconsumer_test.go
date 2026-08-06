@@ -110,3 +110,62 @@ func TestDeclaresResidentConsumer(t *testing.T) {
 		})
 	}
 }
+
+// The SESSION-KEYED reuse branch raises capability too — and until this test
+// existed, it did not have to.
+//
+// #598's changelog claimed the regression test "fails red and names itself when
+// EITHER raise is removed". Verified by deleting each raise independently:
+// removing the pid-keyed raise (~560) failed TestResidentConsumerPublishesOwnCapability
+// correctly, but removing the session-keyed raise (~497) left the package GREEN.
+// One of the two sites was uncovered, so the claim's scope was one raise while
+// its wording was both (A35, in a change whose own changelog cites A35).
+//
+// A resident on an app-hosted surface registers with a SessionID and no
+// ThreadID, so it lands here and never touches the pid-keyed branch — exactly
+// the long-lived worker the raise exists for.
+func TestResidentConsumerCapabilityRaisedOnSessionKeyedReuse(t *testing.T) {
+	root := t.TempDir()
+	const sid = "session-resident-1"
+
+	// First register: plain, no capability — the ordering the promotion exists for.
+	first, err := RegisterThread(root, &Thread{
+		AgentID: "gemma-pantheon", Surface: "worker", SessionID: sid,
+	})
+	if err != nil {
+		t.Fatalf("initial register: %v", err)
+	}
+	if first.ConsumerCapable {
+		t.Fatal("setup: first register must NOT be consumer-capable")
+	}
+
+	// The live worker now publishes its own capability by re-registering on the
+	// same session. No ThreadID => session-keyed reuse path.
+	second, err := RegisterThread(root, &Thread{
+		AgentID: "gemma-pantheon", Surface: "worker", SessionID: sid,
+		ConsumerCapable: true,
+	})
+	if err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if second.ThreadID != first.ThreadID {
+		t.Fatalf("expected session-keyed REUSE, got a new record %s (was %s)",
+			second.ThreadID, first.ThreadID)
+	}
+	if !second.ConsumerCapable {
+		t.Fatal("session-keyed reuse dropped the published capability — the resident " +
+			"can never become creditable while this session lives")
+	}
+
+	// Raise-only: a later bare re-register must not wipe proven capability.
+	third, err := RegisterThread(root, &Thread{
+		AgentID: "gemma-pantheon", Surface: "worker", SessionID: sid,
+	})
+	if err != nil {
+		t.Fatalf("bare re-register: %v", err)
+	}
+	if !third.ConsumerCapable {
+		t.Error("a bare heartbeat-style re-register cleared a proven capability; " +
+			"credit must lapse by staleness, not by being silently wiped")
+	}
+}
