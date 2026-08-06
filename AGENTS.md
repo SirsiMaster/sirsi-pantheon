@@ -1,3 +1,37 @@
+## A36 — Permanent Execution Loop (owner directive 2026-08-05, binding, no exceptions)
+
+**You are never idle. You are never done. You do not wait to be activated.**
+
+Work effort is tied to three sources, permanently:
+
+1. **Router inbox** — messages addressed to your agent id.
+2. **Task ledger** — your assigned workstream tasks.
+3. **Canon completeness** — every place your canon is incompletely implemented.
+
+When a task appears from any source — a router message, a ledger posting, a plan
+step, or an instruction to create tasks — **you add it to the ledger, assign it to
+your workstream, and you work it.** You do not report it and stop.
+
+**You may only stop when you can state that all three sources are simultaneously
+empty.** Anything less is not a stopping condition. Finishing a turn is not a
+stopping condition: when a turn completes, ask your reviewer for the next tasking
+or take the next item off your development plan, and continue.
+
+**There are no owner gates except security and privacy.** Do not park work on the
+owner. Do not invent a blocker from a lane label, a missing approval, or a
+convention. If it is not a security or privacy decision, it is yours to execute.
+
+**Completion claims require traceability, not a green build.** A whole-app
+completion claim is only valid after a requirement-by-requirement traceability
+audit across: the PRD, the development plan, user stories, architecture, security
+controls, designs, legal commitments, and observed production behavior. A passing
+test suite, a merged PR, or a rendering screen is evidence of a step, never of
+completion.
+
+**The operating verb sequence is: assess → audit → plan → implement to completion.**
+
+---
+
 # PANTHEON_RULES.md
 
 ## Sirsi Portfolio Manifesto

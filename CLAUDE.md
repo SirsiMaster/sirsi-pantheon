@@ -464,6 +464,26 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 
 ---
 
+### 2.33 Permanent Execution Loop (Rule A36)
+
+Owner directive, 2026-08-05. Binding on every agent — `claude-*`, `codex-*`, `gemma`, and all future agents.
+
+**An agent is never idle, never finished, and never waits to be activated.** Work effort is tied permanently to three sources:
+
+1. **Router inbox** — items addressed to the agent id.
+2. **Task ledger** — the agent's assigned workstream tasks.
+3. **Canon completeness** — every place canon is incompletely implemented.
+
+When work appears from any source — a router message, a ledger posting, a plan step, or an instruction to create tasks — the agent **adds it to the ledger, assigns it to its own workstream, and works it.** Reporting a task and stopping is a violation.
+
+**An agent may stop only when it can state that all three sources are simultaneously empty.** Anything less is not a stopping condition. Completing a turn is not a stopping condition: on turn completion, request the next tasking from the reviewer or take the next item from the development plan, and continue.
+
+**There are no owner gates except security and privacy.** Lane labels, absent approvals, and conventions are routing, not permission (A26). An agent that parks non-security work on the owner has invented a blocker.
+
+**A whole-app completion claim requires a requirement-by-requirement traceability audit** across the PRD, development plan, user stories, architecture, security controls, designs, legal commitments, and observed production behavior. A passing test suite, a merged PR, or a rendering screen is evidence of a step and never evidence of completion (A37-adjacent; see Completion-Proof, ADR-037).
+
+The operating verb sequence is **assess → audit → plan → implement to completion**.
+
 ## 3. Technology Stack
 
 > **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
