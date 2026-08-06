@@ -151,13 +151,17 @@ func (s *Store) escalateTx(tx *sql.Tx, now time.Time, sourceItem, failureClass, 
 		return fmt.Errorf("routerstore: escalate: source_item and failure_class are required")
 	}
 	id := fmt.Sprintf("%s-escalation-%s-%s", now.Format("20060102-150405"), slugify(sourceItem), slugify(failureClass))
+	recipient := strings.TrimSpace(s.escalationAgent)
+	if recipient == "" {
+		recipient = "owner"
+	}
 	_, err := tx.Exec(
 		`INSERT INTO items (id, from_agent, to_agent, title, type, status, opened, instructions, source_item, failure_class, first_seen, last_seen)
-		 VALUES (?, 'routerstore', 'claude-home', ?, '', 'open', ?, ?, ?, ?, ?, ?)
+		 VALUES (?, 'routerstore', ?, ?, '', 'open', ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(source_item, failure_class) WHERE source_item <> '' AND failure_class <> '' DO UPDATE SET
 		     occurrences = occurrences + 1,
 		     last_seen   = excluded.last_seen;`,
-		id, title, now.Format(time.RFC3339), strings.TrimSpace(body),
+		id, recipient, title, now.Format(time.RFC3339), strings.TrimSpace(body),
 		sourceItem, failureClass, now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {

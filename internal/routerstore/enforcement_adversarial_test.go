@@ -197,3 +197,69 @@ func TestWaiverRequiresDurableOwnerDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAllLeaseEntryPointsRejectUnboundedTTL(t *testing.T) {
+	s := newTestStore(t)
+	_, _ = s.Send("owner", "codex-home", "item", "review", "x")
+	if _, err := s.ClaimNext("codex-home", MaxLeaseTTL+time.Second); err == nil {
+		t.Fatal("item claim accepted unbounded ttl")
+	}
+	itemLease, err := s.ClaimNext("codex-home", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenewLease(itemLease.ItemID, itemLease.Token, MaxLeaseTTL+time.Second); err == nil {
+		t.Fatal("item renewal accepted unbounded ttl")
+	}
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "ttl", Subject: "ttl"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimNextTask("codex-home", "worker", "thread", MaxLeaseTTL+time.Second); err == nil {
+		t.Fatal("task claim accepted unbounded ttl")
+	}
+	taskLease, err := s.ClaimNextTask("codex-home", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenewTaskLease(taskLease.Agent, taskLease.TaskID, taskLease.Token, MaxLeaseTTL+time.Second); err == nil {
+		t.Fatal("task renewal accepted unbounded ttl")
+	}
+}
+
+func TestEscalationDefaultsToOwnerAndIsConfigurable(t *testing.T) {
+	s := newTestStore(t)
+	tx, err := s.beginImmediate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.escalateTx(tx, s.clock(), "source", "failure", "title", "body"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var recipient string
+	if err := s.db.QueryRow(`SELECT to_agent FROM items WHERE source_item='source'`).Scan(&recipient); err != nil {
+		t.Fatal(err)
+	}
+	if recipient != "owner" {
+		t.Fatalf("default escalation recipient=%q", recipient)
+	}
+	s.escalationAgent = "review-board"
+	tx, err = s.beginImmediate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.escalateTx(tx, s.clock(), "source-2", "failure", "title", "body"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT to_agent FROM items WHERE source_item='source-2'`).Scan(&recipient); err != nil {
+		t.Fatal(err)
+	}
+	if recipient != "review-board" {
+		t.Fatalf("configured escalation recipient=%q", recipient)
+	}
+}

@@ -77,9 +77,10 @@ type Item struct {
 // Store is a durable index over the work queue backed by SQLite.
 // A Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	db   *sql.DB
-	path string
-	now  func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
+	db              *sql.DB
+	path            string
+	escalationAgent string
+	now             func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
 
 	// Event-driven dispatch (Phase 2): in-process waiters per agent, woken by
 	// SendGuarded/NotifyAgent. Guarded by waitMu per Rule A21.
@@ -106,7 +107,11 @@ func Open(path string) (*Store, error) {
 	// SQLite is single-writer; serializing to one connection avoids
 	// "database is locked" under concurrent writes (Rule A21 intent).
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, path: path}
+	escalationAgent := strings.TrimSpace(os.Getenv("SIRSI_ESCALATION_AGENT"))
+	if escalationAgent == "" {
+		escalationAgent = "owner"
+	}
+	s := &Store{db: db, path: path, escalationAgent: escalationAgent}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err

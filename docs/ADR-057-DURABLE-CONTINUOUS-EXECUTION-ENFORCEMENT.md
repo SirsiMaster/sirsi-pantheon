@@ -40,6 +40,10 @@ Workers follow `pull -> lease -> bind thread/task -> execute -> record evidence
 -> close -> pull again`. Router and task claims carry a lease token, expiry,
 attempt count, worker identity, thread identity, and idempotent source identity.
 Expired claims are reclaimed. Completion without an evidence reference fails.
+All item and task claims and renewals share a 30-minute maximum TTL. Longer
+execution renews a bounded lease; callers cannot suppress reconciliation with
+an arbitrarily long lease. Escalations route to `owner` by default or the
+provider-neutral `SIRSI_ESCALATION_AGENT`, never to a compiled vendor lane.
 
 ### 3. Durable event wake
 
