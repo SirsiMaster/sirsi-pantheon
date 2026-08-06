@@ -122,6 +122,26 @@ func TestSendRejectsUnregisteredRecipientBeforeDispatch(t *testing.T) {
 	}
 }
 
+func TestCloseItemEnforcesActingRecipient(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "close authority", "review", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.CloseItem("ghost", res.ID, "spoof"); err == nil || !strings.Contains(err.Error(), `acting agent "ghost"`) {
+		t.Fatalf("undeclared actor error = %v", err)
+	}
+	if err := f.CloseItem("a", res.ID, "wrong recipient"); err == nil || !strings.Contains(err.Error(), `addressed to "b"`) {
+		t.Fatalf("wrong declared actor error = %v", err)
+	}
+	if inbox, err := f.Inbox("b"); err != nil || len(inbox) != 1 {
+		t.Fatalf("rejected actors mutated item: inbox=%+v err=%v", inbox, err)
+	}
+	if err := f.CloseItem("b", res.ID, "authorized"); err != nil {
+		t.Fatalf("recipient close failed: %v", err)
+	}
+}
+
 func TestIdentityAdmissionRejectsSenderAndTaskPartiesBeforeWrite(t *testing.T) {
 	f := testFacade(t)
 
@@ -191,14 +211,14 @@ func TestStoreWakeCutover(t *testing.T) {
 		}
 	}
 	// Close lands in the store even with no file.
-	if err := f.CloseItem(res.ID, "done"); err != nil {
+	if err := f.CloseItem("b", res.ID, "done"); err != nil {
 		t.Fatalf("CloseItem store-only: %v", err)
 	}
 	if remaining, _ := f.Inbox("b"); len(remaining) != 0 {
 		t.Fatalf("after close, inbox = %d, want 0", len(remaining))
 	}
 	// Closing a genuinely unknown id still errors (exists nowhere).
-	if err := f.CloseItem("20260101-000000-x-y-nope", "x"); err == nil {
+	if err := f.CloseItem("b", "20260101-000000-x-y-nope", "x"); err == nil {
 		t.Fatal("CloseItem(unknown) should error, got nil")
 	}
 }
@@ -331,7 +351,7 @@ func TestCloseMirrorsToStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = f.CloseItem(res.ID, "done"); err != nil {
+	if err = f.CloseItem("b", res.ID, "done"); err != nil {
 		t.Fatal(err)
 	}
 	items, _ := f.Inbox("b")
@@ -359,7 +379,7 @@ func TestClosePreFacadeItemStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.CloseItem(id, "handled"); err != nil {
+	if err := f.CloseItem("b", id, "handled"); err != nil {
 		t.Fatalf("closing a pre-store item must succeed: %v", err)
 	}
 }
@@ -403,7 +423,7 @@ func TestPhantomOpenStoreRowHiddenAndHealable(t *testing.T) {
 		t.Fatalf("phantom-open store row resurfaced a closed item: %+v", items)
 	}
 	// Re-close through the facade: must heal the store, not error.
-	if err = f.CloseItem(res.ID, "heal"); err != nil {
+	if err = f.CloseItem("b", res.ID, "heal"); err != nil {
 		t.Fatalf("CloseItem on already-closed file must heal the store: %v", err)
 	}
 	rows, err := f.store.Inbox("b")
@@ -466,8 +486,16 @@ func TestStoreWakeIgnoresFrozenOpenFile(t *testing.T) {
 	// its own root and updates the store alone. The original file is never
 	// touched and stays frozen at `status: open`.
 	t.Setenv(routercfg.StoreWakeEnv, "1")
-	other := New(t.TempDir(), f.store)
-	if closeErr := other.CloseItem(res.ID, "done"); closeErr != nil {
+	otherRoot := t.TempDir()
+	agents, readErr := os.ReadFile(filepath.Join(f.root, "agents.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(otherRoot, "agents.json"), agents, 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	other := New(otherRoot, f.store)
+	if closeErr := other.CloseItem("b", res.ID, "done"); closeErr != nil {
 		t.Fatalf("CloseItem from another root: %v", closeErr)
 	}
 	raw, err := os.ReadFile(filePath)
@@ -507,7 +535,15 @@ func TestStoreWakeIgnoresFrozenOpenFile(t *testing.T) {
 func TestCutoverReadsAreExactlyTheStore(t *testing.T) {
 	t.Setenv(routercfg.StoreWakeEnv, "0") // seed pre-cutover so audit files exist
 	f := testFacade(t)
-	other := New(t.TempDir(), f.store) // closes store-side only (the worktree split)
+	otherRoot := t.TempDir()
+	agents, readErr := os.ReadFile(filepath.Join(f.root, "agents.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(otherRoot, "agents.json"), agents, 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	other := New(otherRoot, f.store) // closes store-side only (the worktree split)
 
 	// (a) store-closed / file-open — the phantom that started this.
 	phantom, err := f.Send("a", "b", "phantom", "review", "x")
@@ -527,7 +563,7 @@ func TestCutoverReadsAreExactlyTheStore(t *testing.T) {
 		t.Fatal(werr)
 	}
 
-	if cerr := other.CloseItem(phantom.ID, "done"); cerr != nil { // store only
+	if cerr := other.CloseItem("b", phantom.ID, "done"); cerr != nil { // store only
 		t.Fatal(cerr)
 	}
 	if cerr := work.Close(f.root, inverse.ID, "done"); cerr != nil { // file only

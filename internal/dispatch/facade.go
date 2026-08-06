@@ -469,7 +469,17 @@ func (f *Facade) getFromStore(id string) (work.Item, error) {
 // close lands in the store alone; pre-facade items may have a file but no store
 // row. The only true error is an id that exists in NEITHER place (or a real
 // store failure) — an already-closed row is idempotent success.
-func (f *Facade) CloseItem(id, result string) error {
+func (f *Facade) CloseItem(actor, id, result string) error {
+	if err := f.ValidateAgent("acting agent", actor); err != nil {
+		return err
+	}
+	item, err := f.Get(id)
+	if err != nil {
+		return err
+	}
+	if item.To != actor {
+		return fmt.Errorf("dispatch: acting agent %q cannot close item %s addressed to %q", actor, id, item.To)
+	}
 	fileExists := false
 	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {
 		fileExists = true

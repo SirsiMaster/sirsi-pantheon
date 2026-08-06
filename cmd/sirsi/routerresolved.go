@@ -201,7 +201,7 @@ func runRouterCloseResolved(_ *cobra.Command, _ []string) error {
 		if ferr != nil {
 			return fmt.Errorf("open router store: %w", ferr)
 		}
-		cerr := f.CloseItem(c.item.ID, result)
+		cerr := f.CloseItem(c.item.To, c.item.ID, result)
 		_ = f.Close()
 		if cerr != nil {
 			fmt.Printf("    ✘ %v\n", cerr)
