@@ -522,7 +522,12 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	}
 
 	// --- Agent CLI health ---
-	probe := DefaultAuthProbe
+	// DefaultAuthProbe is wrapped in the TTL cache (authprobecache.go) so a
+	// status read does not pay an 11s LLM round-trip on every call. Callers
+	// that inject their own probe (tests) get it verbatim, uncached — a test
+	// asserting the probe ran exactly once must not have that assertion
+	// silently defeated by a cache hit from an earlier case.
+	probe := CachedAuthProbe(DefaultAuthProbe)
 	if len(authProbe) > 0 && authProbe[0] != nil {
 		probe = authProbe[0]
 	}
