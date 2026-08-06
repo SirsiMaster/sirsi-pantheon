@@ -62,3 +62,32 @@ func TestReconcileExpiresOrphanTaskAndWakeLeases(t *testing.T) {
 		t.Fatalf("orphan leases not expired: %+v", report)
 	}
 }
+
+func TestReconcileRepairsLeaseOnNonActiveTask(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 6, 8, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	if err := s.MarkRequirementAudit("codex-home", "audit://empty"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "poisoned", Subject: "repair", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	// Inject impossible ownership directly — simulates an older binary that
+	// left ownership on a pending row after transitioning from in-progress.
+	if _, err := s.db.Exec(`UPDATE tasks SET lease_token='stale-token',lease_expires=?,claimed_by='old-worker',thread_id='old-thread' WHERE agent='codex-home' AND task_id='poisoned';`, now.Add(-time.Minute).Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.ReconcileOperationalState("codex-home", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ExpiredTaskLeases != 1 {
+		t.Fatalf("doctor reconciliation did not report poison repair: %+v", report)
+	}
+	// After reconciliation the row must be exactly claimable without operator
+	// touching SQLite directly.
+	if _, err := s.ClaimTask("codex-home", "poisoned", "new-worker", "new-thread", time.Minute); err != nil {
+		t.Fatalf("reconciled task is not exactly claimable: %v", err)
+	}
+}

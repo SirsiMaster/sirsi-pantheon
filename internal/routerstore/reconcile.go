@@ -37,7 +37,20 @@ func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (Reco
 	}
 	report.ExpiredItemLeases = before
 
+	// Ownership on a non-active task is impossible. Repair it regardless of
+	// expiry so doctor --fix can recover rows poisoned by older binaries without
+	// requiring direct SQLite edits.
 	res, err := tx.Exec(`UPDATE tasks SET
+		lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
+		WHERE agent=? AND status<>'in-progress' AND
+		(lease_token<>'' OR lease_expires<>'' OR claimed_by<>'' OR thread_id<>'');`,
+		now.Format(time.RFC3339), agent)
+	if err != nil {
+		return report, err
+	}
+	repairedNonActive, _ := rowsAffectedInt(res)
+
+	res, err = tx.Exec(`UPDATE tasks SET
 		status=CASE WHEN attempts>=? THEN 'blocked' ELSE status END,
 		failure_reason=CASE WHEN attempts>=? THEN 'task lease attempts exhausted after expiry without completion' ELSE failure_reason END,
 		lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
@@ -47,6 +60,7 @@ func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (Reco
 		return report, err
 	}
 	report.ExpiredTaskLeases, _ = rowsAffectedInt(res)
+	report.ExpiredTaskLeases += repairedNonActive
 
 	res, err = expireWakeLeasesTx(tx, now, agent)
 	if err != nil {
