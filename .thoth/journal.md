@@ -1948,3 +1948,60 @@ Health: broker measured **0.0000 GB/req across 3 driven requests** and active la
 GB across 13 more — no leak, not bounced. Swap rose to 2445M/3072M, but this pass ran `-race` and the
 full `./cmd/sirsi` suite; the linker was visible in top-RSS, so it is largely self-inflicted. No new
 Jetsam. Threads 155→130, board 200, no `BINARY_MISSING` sentinels so the binary heal stayed disarmed.
+
+---
+
+## Conduit run 2026-08-06T09:00Z — the ledger was lying, and that made A36 unfalsifiable
+
+Inbox was zero and the ledger header read "0 open", so by the usual reading this was an
+all-green tick. It was not. The task registry held **76 non-done rows, of which 51 (67%)
+were terminal in fact but stale in status** — bodies reading DONE, MERGED, RESOLVED,
+TOMBSTONE, CONSOLIDATED, RETRACTED, PREMISE DISSOLVED, while `status` sat at `in-progress`
+or `pending`. A36 says a lane may stop only when inbox, ledger and canon are simultaneously
+empty; a ledger whose statuses disagree with its own evidence cannot answer that question at
+all. The rule was not being violated so much as rendered untestable.
+
+Reconciled the 51 against evidence rather than against their own prose — the distinction that
+separates a close from a wipe. Every cited PR was verified with `gh pr view` before anything
+was closed: 22 distinct PRs confirmed MERGED with commit SHAs (#506 89a849a8, #515 5aac0506,
+#517 4a10b838, #530 3aa653a6, #531 4321b93d, #533 a9c8d29f, #534 2bcce61b, #535 748d64e7,
+#536 b6839e36, #537 e1b0656a, #539 10ad097f, #540 a01e0353, #541 a7a01058, #542 9bf946fb,
+#543 72264fb0, #544 6741a199, #546 839b715e, #547 fdfc3925, #464 e84dfcfb, #465 a53f3232,
+#513 8aef028f, #545 db19e8d7), and #499 and #524 confirmed CLOSED-not-merged, which is what
+their rows already claimed. One row was actively wrong in the safe direction:
+`tasklink-gate-unsatisfiable` recorded "#546 open" — #546 had merged at 839b715e. Rows whose
+evidence was a measurement rather than a PR were re-measured live this pass, not taken on
+faith: the broker leak watch, the :8734 board, the BINARY_MISSING sentinel count, the
+claude-inference lane, and the gemma-pantheon consumer all re-verified before closing.
+Seven `sup*` rows were closed as self-declared duplicate registrations of the adr057-* chain,
+which stays open under codex-home — the duplicate registration went, the work did not.
+Result: 76 non-done → 25, and all 25 survive scrutiny as genuinely open.
+
+The root cause is already registered as `ledger-staleness-check` (E-2) and stays open, now
+carrying this pass's numbers as its evidence. A hand reconciliation does not scale and will
+re-rot within days; what is needed is a doctor check that flags an in-progress row whose cited
+PR is MERGED, whose body asserts a terminal verdict, or which has gone untouched for N days.
+
+**The journal itself was the second finding, and the more dangerous one.** The shared repo root
+sits on another lane's branch `fix/hook-anchor-durable-claude-pid`, and `.thoth/journal.md`
+there is a divergent lineage mid-edit: origin/main carries 1950 lines, that branch's HEAD
+carries 3973, and its working tree carries 2852 — an uncommitted cut of 1121 lines. Appending
+this entry there and letting anyone commit it would have destroyed a thousand lines of journal
+history under cover of a routine append, which is precisely the failure the previous run
+avoided by extracting rather than cherry-picking commit 1c3a0c85. The lesson generalises past
+this file: in a shared worktree, `git status` showing a file as merely "M" says nothing about
+whether the modification is an addition or an amputation. Check the diff hunk header — a
+`@@ -5,1143 +5,6 @@` is a deletion of the repository's memory, and it looks identical to an
+edit until you read the numbers. This entry was written from a clean worktree off origin/main
+for that reason.
+
+Health green and boring by comparison. Broker measured **0.0000 GB/req across 3 driven
+requests** (146→149, `mlx_active_bytes` byte-identical at 27807891560, cache 0) — the leak is
+not present in build 8eacb2bc, and `sirsi diagnose` rendering it 🔴 Critical remains the
+`phys_footprint` trap, not a reason to bounce a load-bearing server. Swap 2381M of 3072M, flat
+against the prior run's 2390M. No new Jetsam or crash reports. Threads 214→186 with 4 healed to
+successors, one leaked conduit session reaped, retention reclaimed 21.7 KiB, board :8734 → 200,
+zero BINARY_MISSING sentinels so the binary heal stayed disarmed. Three owner-surface items
+remain open and untouched, as they must be; the newest, `20260806-085045`, records codex-home
+exceeding 30 sends in the 08:00 window, which means review traffic from my own reviewer was
+dropped rather than never sent — a missing verdict next pass is a throttle artifact, not silence.
