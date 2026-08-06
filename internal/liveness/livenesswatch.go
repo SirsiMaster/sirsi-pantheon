@@ -637,10 +637,16 @@ func rightSizeAdvice(home string, availableGB float64) string {
 	// weights-only); measured path already includes KV in mlx_active_bytes.
 	// ponytail: 1.4 is calibrated to observed 12b-8bit allocator pool (~20 GB);
 	// revisit if a measured-peak survey shows consistent divergence above 25%.
+	// Observed: conduit 07:35Z 20.95 GB active vs 14 GB estimated (×1.50); peak
+	// 23.76 GB (×1.70). Net threshold 1.4×14+4=23.6 ≈ peak — margin from +4, not 1.4.
 	kvScale := 1.0
 	if !measured {
 		kvScale = 1.4
 	}
+	// tierKVScale is unconditional: tier table values are weights-only estimates
+	// regardless of whether the current model was measured. Using kvScale here
+	// would inherit 1.0 on the measured path and false-fit a tier that doesn't fit.
+	const tierKVScale = 1.4
 
 	if modelGB == 0 || kvScale*modelGB+4 <= availableGB {
 		return "" // unknown size or fits
@@ -667,7 +673,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 				continue // skip cross-generation downgrade
 			}
 		}
-		if kvScale*t.gb+4 <= availableGB {
+		if tierKVScale*t.gb+4 <= availableGB {
 			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
 				"available — switch to the %s tier: "+
 				"`echo '%s' > %s && sirsi gemma serve --stop && sirsi gemma serve`",

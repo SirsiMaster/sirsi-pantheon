@@ -654,3 +654,24 @@ func TestRightSizeAdvice_MeasuredPathNoDoubling(t *testing.T) {
 		t.Errorf("measured path must use modelGB+4 (18 ≤ 20): got advice %q", got)
 	}
 }
+
+// TestRightSizeAdvice_MeasuredPath_TierUsesKVScale pins that the tier loop
+// always applies the 1.4 KV scale, even on the measured path where kvScale=1.0.
+// 27b (measured 14 GB) does not fit in 10 GB; 9b (5 GB estimate) needs
+// 1.4*5+4=11 GB — also does not fit. Without tierKVScale the tier check would
+// use 1.0*5+4=9 ≤ 10 and recommend a model that would OOM.
+func TestRightSizeAdvice_MeasuredPath_TierUsesKVScale(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-2-27b-it-4bit")
+	t.Setenv("GEMMA_MODEL", "")
+	if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-server.port"), []byte("8477"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const fourteenGB = int64(14) * 1024 * 1024 * 1024
+	stubMLX(t, fourteenGB)
+
+	// 10 GB available: current 14+4=18 > 10 → advice fires. 9b tier: 1.4*5+4=11 > 10 → must NOT be offered.
+	got := rightSizeAdvice(home, 10.0)
+	if strings.Contains(got, "gemma-2-9b") {
+		t.Errorf("tier loop must not offer 9b (1.4×5+4=11 > 10 GB) on measured path, got: %s", got)
+	}
+}
