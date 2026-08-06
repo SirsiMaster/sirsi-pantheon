@@ -21,6 +21,8 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
 
@@ -200,7 +202,8 @@ type SuspendPayload struct {
 
 // ThreadRegistry is the on-disk record of live threads.
 type ThreadRegistry struct {
-	Threads map[string]*Thread `json:"threads"`
+	Threads  map[string]*Thread `json:"threads"`
+	baseline map[string]routerstore.ThreadRecord
 }
 
 const threadsFilename = "threads.json"
@@ -211,6 +214,49 @@ func threadsPath(routerRoot string) string {
 
 // LoadThreadRegistry reads threads.json. Missing file → empty registry.
 func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
+	if routercfg.StoreWake() {
+		store, err := openThreadStore()
+		if err != nil {
+			return nil, err
+		}
+		defer store.Close()
+		records, err := store.ListThreads()
+		if err != nil {
+			return nil, err
+		}
+		if len(records) == 0 {
+			if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
+				seed, seedErr := threadRecords(legacy)
+				if seedErr != nil {
+					return nil, seedErr
+				}
+				if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
+					return nil, importErr
+				}
+				records, err = store.ListThreads()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		reg := &ThreadRegistry{Threads: make(map[string]*Thread, len(records)), baseline: make(map[string]routerstore.ThreadRecord, len(records))}
+		for _, record := range records {
+			var thread Thread
+			if err := json.Unmarshal(record.Payload, &thread); err != nil {
+				return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
+			}
+			if thread.ThreadID == "" {
+				thread.ThreadID = record.ThreadID
+			}
+			reg.Threads[record.ThreadID] = &thread
+			reg.baseline[record.ThreadID] = record
+		}
+		return reg, nil
+	}
+	return loadLegacyThreadRegistry(routerRoot)
+}
+
+func loadLegacyThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	data, err := os.ReadFile(threadsPath(routerRoot))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -241,6 +287,45 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
 		reg.Threads = map[string]*Thread{}
 	}
+	if routercfg.StoreWake() {
+		store, err := openThreadStore()
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		records, err := threadRecords(reg)
+		if err != nil {
+			return err
+		}
+		dirty := records[:0]
+		for _, record := range records {
+			old, exists := reg.baseline[record.ThreadID]
+			if !exists || string(old.Payload) != string(record.Payload) {
+				dirty = append(dirty, record)
+			}
+		}
+		for _, record := range dirty {
+			applied, err := store.UpsertThreadCAS(record)
+			if err != nil {
+				return err
+			}
+			if !applied {
+				return fmt.Errorf("thread %q mutation lost lifecycle fence", record.ThreadID)
+			}
+		}
+		for id, old := range reg.baseline {
+			if _, ok := reg.Threads[id]; !ok {
+				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt)
+				if err != nil {
+					return err
+				}
+				if !deleted {
+					return fmt.Errorf("thread %q prune lost lifecycle fence", id)
+				}
+			}
+		}
+		return nil
+	}
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal threads.json: %w", err)
@@ -266,6 +351,38 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		return fmt.Errorf("replace threads.json: %w", err)
 	}
 	return nil
+}
+
+func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
+	records := make([]routerstore.ThreadRecord, 0, len(reg.Threads))
+	for id, thread := range reg.Threads {
+		if thread == nil {
+			continue
+		}
+		payload, err := json.Marshal(thread)
+		if err != nil {
+			return nil, fmt.Errorf("marshal store thread %q: %w", id, err)
+		}
+		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload})
+	}
+	return records, nil
+}
+
+func openThreadStore() (*routerstore.Store, error) {
+	path, err := routerstore.DefaultStorePath()
+	if err != nil {
+		return nil, err
+	}
+	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr != nil {
+			return nil, fmt.Errorf("create thread store directory: %w", mkErr)
+		}
+	}
+	store, err := routerstore.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open thread store: %w", err)
+	}
+	return store, nil
 }
 
 // NewThreadID returns a short opaque thread identifier.
@@ -610,10 +727,24 @@ func ResumeThread(routerRoot, threadID string) (*Thread, error) {
 		return nil, fmt.Errorf("thread %q is %s, not suspended; nothing to resume", threadID, t.Status)
 	}
 	payload := t.SuspendPayload
+	suspendedAt := reg.baseline[threadID].LastSeenAt
 	t.Status = ThreadStatusActive
 	t.LastSeenAt = time.Now().UTC()
 	t.SuspendPayload = nil
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+	if routercfg.StoreWake() {
+		store, err := openThreadStore()
+		if err != nil {
+			return nil, err
+		}
+		defer store.Close()
+		records, err := threadRecords(&ThreadRegistry{Threads: map[string]*Thread{threadID: t}})
+		if err != nil {
+			return nil, err
+		}
+		if err := store.ResumeThreadCAS(records[0], suspendedAt); err != nil {
+			return nil, err
+		}
+	} else if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 		return nil, err
 	}
 	t.SuspendPayload = payload // re-attach for the caller (not persisted)
