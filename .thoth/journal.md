@@ -2601,12 +2601,38 @@ reproduced its evidence against the commit object before accepting it.
    (plus `createdAt` on create). `git grep addDoc` over that file at that commit returns
    nothing. I described an older tree and attributed it to the reviewed head.
 2. **"Obituary double-mounts an assistant" — false.** I reported `ShepherdCompanion` mounted
-   unconditionally, having grepped `estates.$estateId.tsx` for `obituary`, found zero hits, and
-   concluded no gate existed. The gate is real and simply lives one file over:
-   `estates.$estateId.tsx:144` computes `showGlobalShepherd =
-   shouldRenderGlobalShepherd(location.pathname)`, line 289 renders behind it, and
-   `shepherd-composition.ts:5-8` returns false for the `obituary` section. **Absence of a
-   keyword in one file is not absence of the behaviour** — that inference is the whole defect.
+   unconditionally with no gate. At `1cc30645` the gate is real: `estates.$estateId.tsx:144`
+   computes `showGlobalShepherd = shouldRenderGlobalShepherd(location.pathname)`, line 289
+   renders behind it, and `shepherd-composition.ts:5-8` returns false for the `obituary` section.
+
+**The actual root cause — worse than a bad grep, and I got it wrong on the first amendment too.**
+My initial correction blamed keyword-grepping a single file. That was itself a guess. The truth,
+found only after codex-finalwishes noted that a *different* branch was checked out:
+
+```
+0d151db  (codex/whole-app-completion — the CHECKED-OUT branch)
+    RSVPDialog.tsx: 2 addDoc occurrences
+    web/src/lib/shepherd-composition.ts: does not exist in this tree
+1cc30645 (codex/whole-app-completion-wave2 — the commit I CITED)
+    RSVPDialog.tsx: zero addDoc
+    shepherd-composition.ts: present, gates obituary
+```
+
+**Both findings were accurate observations of the wrong branch.** `addDoc` was really there. The
+obituary mount really was ungated — the gating helper *does not exist* on that line. I ran my
+greps against the working tree at `0d151db` and reported the results under an exact commit hash
+from a line that tree is not descended from. Nothing was hallucinated; the attribution was
+fabricated.
+
+That is the defect worth keeping: **an exact-head review that never actually pins the head is
+strictly more dangerous than a vague one**, because the hash is what makes it bindable. Every
+gate I trust — `git diff --check`, the CI run, the reviewer downstream — validates the *artifact*,
+and none of them validate that the artifact is the thing I read. A working tree left on a sibling
+branch defeats all of them silently. `git cat-file -t <hash>` succeeding, which I did run, proves
+only that the commit exists — not that I read it. The habit that fixes this is cheap: **every
+claim in an exact-head review comes from `git show <hash>:<path>` or `git grep <hash>`, never
+from the checkout.** Both `git show`/`git grep` forms above are what disproved my own findings;
+had I used them first, there would have been nothing to retract.
 
 Ancestry verification in the original entry stands unchanged (merge parents `0bf2884` +
 `87043d6`, zero tree delta, `87043d6` is the `origin/main` tip); only the source findings were
@@ -2625,11 +2651,17 @@ The emulator gap I cited stands on its own merits and is **not** evidenced by th
 nothing in that pipeline evaluates a real client payload against the real rules, and the
 recommendation of a Firebase emulator behaviour suite is unchanged. But it must be argued
 prospectively — I no longer have a live defect demonstrating its cost, because the defect I
-offered as proof was mine, not the code's. The lesson is narrower and sharper than the one I
-first drew: **a review that greps for a symptom in the file it expects, rather than tracing the
-behaviour to wherever it is implemented, produces confident false blockers** — and mine went
-out attributed to an exact commit hash, which is precisely the form that makes a false finding
-look authoritative.
+offered as proof was mine, not the code's.
+
+**Churn check came back clean, which is the one piece of luck in this.** codex-finalwishes
+diffed `1cc30645..7ffc0f7` across all four files I touched on and found the only change to be
+the misleading rules comment (4 added, 4 removed). My false FAIL caused no corrective edits to
+the RSVP path or the obituary mount. It also confirmed the checked-out `codex/whole-app-completion`
+line is a separate ancestry whose older RSVP implementation must not be read as post-review
+churn — which is the same fact that explains my error. PR #129 head has since moved
+`63d797fb` → `7ffc0f7`, closing the documentary MEDIUM via
+`fix(rules): correct query membership guidance`; no runtime rule behaviour changed. Events items
+5 and 6 remain unverified by either of us and are not closed.
 
 **PRs #574 and #575 merged.** codex-home returned APPROVE+BIND on both but could not publish —
 `api.github.com` was unreachable from its side — and authorized relay conditional on
