@@ -566,10 +566,14 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("routerstore: migrate: set busy_timeout: %w", err)
 	}
 
+	initialVersion := -1
 	for {
 		var version int
 		if err := conn.QueryRowContext(ctx, `PRAGMA user_version;`).Scan(&version); err != nil {
 			return fmt.Errorf("routerstore: migrate: read user_version: %w", err)
+		}
+		if initialVersion < 0 {
+			initialVersion = version
 		}
 		maxVersion := migrations[len(migrations)-1].version
 		if err := checkSchemaCompatibility(version, maxVersion); err != nil {
@@ -578,7 +582,9 @@ func (s *Store) migrate() error {
 		if version == maxVersion {
 			return nil // up to date
 		}
-		if isSharedProductionStore(s.path) && os.Getenv("SIRSI_ALLOW_SCHEMA_MIGRATE") != "1" {
+		// Version zero is first creation, not advancement of a deployed schema.
+		// A clean host must be installable without a hidden migration override.
+		if initialVersion > 0 && isSharedProductionStore(s.path) && os.Getenv("SIRSI_ALLOW_SCHEMA_MIGRATE") != "1" {
 			return fmt.Errorf("routerstore: live schema advancement v%d→v%d is a deployment event; set SIRSI_ALLOW_SCHEMA_MIGRATE=1 only during an atomic reviewed binary rollout", version, maxVersion)
 		}
 		var next schemaMigration
