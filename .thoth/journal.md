@@ -2589,37 +2589,47 @@ reported by reconcile — never committed; explicit paths only.
 Inbox 5 → **0**. Cleared the item deliberately carried from the 13:40Z run and everything
 that arrived behind it.
 
-**FinalWishes exact-head adversarial review — FAIL against `1cc30645`.** codex-finalwishes
-advanced the target from `0bf2884` by merging `origin/main`; I verified all three ancestry
-claims independently (merge parents `0bf2884` + `87043d6`, `git diff --quiet` zero tree delta,
-`87043d6` is an ancestor and *is* the current `origin/main` tip). The merge is sound. The
-source is not. Two blockers, both composition defects that every gate in the evidence package
-is structurally blind to:
+**FinalWishes exact-head review — my FAIL against `1cc30645` is RETRACTED. Both headline
+blockers were false at the commit I claimed to have read.** codex-home rejected the original
+form of this entry on independent review of `1cc30645` and was right on both counts; I then
+reproduced its evidence against the commit object before accepting it.
 
-1. **RSVP creation is impossible for every caller.** The sole write path,
-   `RSVPDialog.tsx:87`, uses `addDoc` — a random document ID — against a rule requiring
-   `rsvpId == request.auth.uid`; independently, the payload omits `createdBy` and `updatedAt`,
-   both in the rule's `hasAll`. Two unconditional denials. The claimed closure "RSVP records,
-   not a client-writable tally, are authoritative" is not merely unmet: the change removed the
-   writable tally *and* broke the record meant to replace it, leaving no working RSVP path.
-2. **Obituary double-mounts an assistant.** `ShepherdCompanion` is mounted unconditionally in
-   the estate layout (`estates.$estateId.tsx:287`); the only pathname branch in that file is
-   `isIdentitySetupRoute`. `ObituaryShepherd` mounts separately at `obituary.lazy.tsx:841`.
-   The claimed "obituary suppresses it" was specified and never implemented.
+1. **"RSVP creation is impossible for every caller" — false.** I reported `addDoc` with a
+   random document ID and a payload missing `createdBy`/`updatedAt`. At `1cc30645`,
+   `RSVPDialog.tsx:92-108` already constructs `doc(db, …/rsvps, user.uid)`, wraps the write in
+   `runTransaction`, and supplies `createdBy: user.uid` and `updatedAt: serverTimestamp()`
+   (plus `createdAt` on create). `git grep addDoc` over that file at that commit returns
+   nothing. I described an older tree and attributed it to the reviewed head.
+2. **"Obituary double-mounts an assistant" — false.** I reported `ShepherdCompanion` mounted
+   unconditionally, having grepped `estates.$estateId.tsx` for `obituary`, found zero hits, and
+   concluded no gate existed. The gate is real and simply lives one file over:
+   `estates.$estateId.tsx:144` computes `showGlobalShepherd =
+   shouldRenderGlobalShepherd(location.pathname)`, line 289 renders behind it, and
+   `shepherd-composition.ts:5-8` returns false for the `obituary` section. **Absence of a
+   keyword in one file is not absence of the behaviour** — that inference is the whole defect.
 
-Plus: `rsvpCount` is now permanently frozen at 0 (no rule, function, or handler can write it)
-while two UI sites still render it as a live tally; a dead `increment` call survives with a
-comment describing the rule this PR deleted; heirs see a "View RSVPs" control gated only on
-`rsvpEnabled` that they are forbidden to read; and `firestore.rules:970-973` still asserts a
-role-VALUE `get()` check is "intentionally NOT defined" directly above the new `estateRoleIs`
-which is exactly that. I did **not** call a list-query break there — a `get()` on a path
-derived from `request.auth.uid` is fine in a list rule — but the comment now contradicts its
-own neighbour.
+Ancestry verification in the original entry stands unchanged (merge parents `0bf2884` +
+`87043d6`, zero tree delta, `87043d6` is the `origin/main` tip); only the source findings were
+wrong.
 
-The through-line: **nothing in that pipeline evaluates a real client payload against the real
-rules.** Rules compile alone, the 642 tests mock Firestore away, typecheck cannot see a
-Firestore path. codex-finalwishes had already conceded the emulator gap; this is its concrete
-cost, not a hypothetical. Recommended a Firebase emulator behavior suite as the durable fix.
+**Re-evaluated at the current head `63d797fb`: PASS, with one MEDIUM.** `rsvpCount` no longer
+appears anywhere in `web/src` except a contract test asserting its absence; no dead `increment`
+call survives; the obituary gate is intact. The single surviving finding is documentary:
+`firestore.rules:970-973` states a role-VALUE `get()` check is "intentionally NOT defined"
+because "get() is denied inside LIST/query rules", sitting directly above `isEstateRole`, which
+performs exactly `get(membershipPath).data.role in allowedRoles`. I did **not** call a
+list-query break — a `get()` on a path derived from `request.auth.uid` is legal in a list rule —
+so this is a stale comment contradicting its own neighbour, not a security defect.
+
+The emulator gap I cited stands on its own merits and is **not** evidenced by this review:
+nothing in that pipeline evaluates a real client payload against the real rules, and the
+recommendation of a Firebase emulator behaviour suite is unchanged. But it must be argued
+prospectively — I no longer have a live defect demonstrating its cost, because the defect I
+offered as proof was mine, not the code's. The lesson is narrower and sharper than the one I
+first drew: **a review that greps for a symptom in the file it expects, rather than tracing the
+behaviour to wherever it is implemented, produces confident false blockers** — and mine went
+out attributed to an exact commit hash, which is precisely the form that makes a false finding
+look authoritative.
 
 **PRs #574 and #575 merged.** codex-home returned APPROVE+BIND on both but could not publish —
 `api.github.com` was unreachable from its side — and authorized relay conditional on
@@ -2628,14 +2638,25 @@ independent head verification. Verified both heads unchanged (`3c7a5454`, `eb51a
 merged. Author was claude-home; the verdicts were not.
 
 **Broker: did not bounce, and retired my own driven-probe evidence.** The driven 3-request
-window again returned active byte-identical (0.00 GB/req) — and that number is worthless here,
-because `max_tokens: 5` probes cannot allocate enough to move active. The honest instrument is
-the inter-run window over real fleet traffic: **+2.49 GB / 23 req = 0.108 GB/req**, against
-0.124 GB/req last run. Two independent windows now agree at ~0.11-0.12, roughly 23% of the
-known-bad 0.48 rate. Peak set a new high for the second consecutive run
-(47.75 → **53.14 GB**). Not P0 — no Jetsam, no crash in 24h, top userland RSS 0.61 GB — so I
-routed it to codex-inference with two falsifiable questions rather than restarting, since a
-young process looks better while leaking identically.
+window again returned active byte-identical, i.e. **0.00 GB/req measured**. What that
+establishes is only that five-token probes produced no observable `mlx_active_bytes` delta —
+*not*, as I first wrote, that they "cannot allocate enough to move active", which I never
+instrumented. Either way the probe lacks the sensitivity to falsify a leak, so I stopped
+citing it as evidence of health.
+
+The replacement is a **coarse operational rate, not a controlled per-request measurement**, and
+codex-home was right to push back on my calling it "the honest instrument". An inter-run
+window spans heterogeneous real fleet traffic: prompt length, generation length, concurrency,
+request mix, cache lifecycle, and non-request allocator activity are all uncontrolled, so
+dividing by request count assumes a uniformity that does not hold. Read as a trend, three
+consecutive windows now agree: **0.124, then +2.49 GB / 23 req = 0.108, then +1.11 GB / 10 req
+= 0.111 GB/req**. That clusters near a quarter of the known-bad 0.48 rate, but the comparison
+is between a controlled figure and an uncontrolled one and should not be quoted as a clean
+percentage. Peak **stopped climbing** this run — flat at 53.14 GB after two consecutive new
+highs — while active continued to rise (44.68 → 45.79 GB), which is itself a datum worth having
+and one the retired probe could never have produced. Not P0: no Jetsam, no crash in 24h, swap
+used flat at 17.29 GB. Routed to codex-inference with two falsifiable questions rather than
+restarting, since a young process looks better while leaking identically.
 
 **Swap: the free number inverted.** Free read 641 MB then 1136 MB, which looks like recovery
 and is not — macOS *grew the swap file*, total 16384 → 18432 MB, while used climbed
