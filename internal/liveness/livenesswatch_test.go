@@ -385,3 +385,40 @@ func storeOpenCount(t *testing.T, root, agent string) int {
 	}
 	return len(items)
 }
+
+// TestLaunchAgentPlistPresent_IgnoresRetired guards the retired-label filter in
+// probeLaunchdDisabled. Retiring a service renames its plist rather than
+// deleting it, and launchd parks the orphaned label as "disabled" forever. If
+// this predicate ever matched a retired suffix, the probe would keep
+// prescribing `launchctl bootstrap …/<label>.plist` against a file that does
+// not exist — an instruction that cannot succeed.
+func TestLaunchAgentPlistPresent_IgnoresRetired(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	write := func(name string) {
+		if err := os.WriteFile(filepath.Join(agents, name), []byte("<plist/>"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	write("ai.sirsi.live.plist")
+	write("ai.sirsi.retired.plist.retired-dupe-of-menubar-20260806")
+	write("ai.sirsi.superseded.plist.superseded-by-go-20260806")
+
+	for _, tc := range []struct {
+		label string
+		want  bool
+	}{
+		{"ai.sirsi.live", true},
+		{"ai.sirsi.retired", false},
+		{"ai.sirsi.superseded", false},
+		{"ai.sirsi.never-existed", false},
+	} {
+		if got := launchAgentPlistPresent(tc.label); got != tc.want {
+			t.Errorf("launchAgentPlistPresent(%q) = %v, want %v", tc.label, got, tc.want)
+		}
+	}
+}
