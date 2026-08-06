@@ -288,7 +288,8 @@
       "cwd": "/Users/thekryptodragon/Development/assiduous",
       "workstream": "assiduous-v110-completion",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-assiduous"
       },
       "consumer": {
         "command": [
@@ -319,7 +320,8 @@
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing",
       "workstream": "deck",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-deck"
       },
       "consumer": {
         "command": [
@@ -350,7 +352,8 @@
       "cwd": "/Users/thekryptodragon/Development/FinalWishes",
       "workstream": "finalwishes",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-finalwishes"
       },
       "consumer": {
         "command": [
@@ -381,7 +384,8 @@
       "cwd": "/Users/thekryptodragon/Development/FinalWishes/web",
       "workstream": "finalwishes-web",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-finalwishes-web"
       },
       "consumer": {
         "command": [
@@ -407,7 +411,8 @@
       "cwd": "/Users/thekryptodragon",
       "workstream": "home",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-home"
       },
       "consumer": {
         "command": [
@@ -439,7 +444,8 @@
       "cwd": "/Users/thekryptodragon/Development/homebrew-tools",
       "workstream": "homebrew",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-homebrew"
       },
       "consumer": {
         "command": [
@@ -470,7 +476,8 @@
       "cwd": "/Users/thekryptodragon/Development/SirsiNexusApp",
       "workstream": "nexus",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-nexus"
       },
       "consumer": {
         "command": [
@@ -533,7 +540,8 @@
       "cwd": "/Users/thekryptodragon/Development/porch-and-alley",
       "workstream": "porch-and-alley",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-porch-and-alley"
       },
       "consumer": {
         "command": [
@@ -608,7 +616,8 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
       "workstream": "inference",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-inference"
       },
       "consumer": {
         "command": [
@@ -634,7 +643,8 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-io",
       "workstream": "io",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent",
+        "launch_agent_label": "ai.sirsi.router.wake.codex-io"
       },
       "consumer": {
         "command": [
