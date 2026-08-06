@@ -206,7 +206,7 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 	defer func() { _ = f.Close() }()
 
 	// Dedup: skip if the owner already has an open item with this title.
-	if items, listErr := f.Inbox("user"); listErr == nil {
+	if items, listErr := f.Inbox("owner"); listErr == nil {
 		for _, it := range items {
 			if it.Title == restoreFailTitle {
 				fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open, skipping route\n")
@@ -221,7 +221,7 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 		"Fix: free memory (run `sirsi reap-sessions --apply` to reclaim leaked sessions, " +
 		"or right-size the model in ~/.sirsi/gemma-model.conf to a smaller variant), " +
 		"then run `sirsi gemma serve` to restart manually."
-	if _, sendErr := f.Send("gemma-liveness", "user", restoreFailTitle, "decision", body); sendErr != nil {
+	if _, sendErr := f.Send("horus", "owner", restoreFailTitle, "decision", body); sendErr != nil {
 		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", sendErr)
 	}
 }

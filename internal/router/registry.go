@@ -27,6 +27,10 @@ type AgentConfig struct {
 	// Cwd is the working directory for the agent.
 	Cwd string `json:"cwd"`
 
+	// Repo is the declared repository boundary. Cwd remains the process launch
+	// directory; new registrations write both explicitly (ADR-054).
+	Repo string `json:"repo,omitempty"`
+
 	// Env is optional environment variable overrides.
 	Env map[string]string `json:"env,omitempty"`
 
@@ -278,7 +282,7 @@ func (cfg *AgentConfig) Validate() error {
 		if cfg.Wake.MCPServer == "" {
 			return fmt.Errorf("agent %q: wake.mcp_server is required for mcp-notification", cfg.ID)
 		}
-	case WakeNone:
+	case WakeNone, WakeSessionMessage, WakeRoutine, WakeOwnerSurface:
 		// explicit opt-out: agent cannot be auto-woken, operator must start it manually
 	default:
 		return fmt.Errorf("agent %q: unsupported wake mechanism %q", cfg.ID, cfg.Wake.Mechanism)

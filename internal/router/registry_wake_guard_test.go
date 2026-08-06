@@ -91,6 +91,15 @@ func TestRegistryConsumerCoverage(t *testing.T) {
 	var missing []string
 	var invalid []string
 	for id, cfg := range reg.Agents {
+		// Only EXECUTABLE agents can declare a consumer. `owner` and `user` are
+		// type=human and `horus` is type=service — they are message RECIPIENTS
+		// with no command, so demanding a spawn invocation from them would be
+		// demanding the impossible, and the only way to satisfy it would be to
+		// write a fake one. A registry entry that cannot run anything cannot
+		// drain an inbox by spawning, and must not be credited as if it could.
+		if len(cfg.Command) == 0 {
+			continue
+		}
 		switch cfg.Consumer.Mode {
 		case "", ConsumerModeCommand:
 			if len(cfg.Consumer.Command) == 0 {
