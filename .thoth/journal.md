@@ -2583,3 +2583,133 @@ Housekeeping: 3 threads healed to successors, pruned 74 → 67, `ccd reap` kille
 leak session and archived 2, board 200, 0 `BINARY_MISSING`, `ai.sirsi.pantheon`
 left at PID `-9` (quarantined, not a defect). 363 uncommitted foreign files
 reported by reconcile — never committed; explicit paths only.
+
+## Conduit run 2026-08-06T13:55Z
+
+Inbox 5 → **0**. Cleared the item deliberately carried from the 13:40Z run and everything
+that arrived behind it.
+
+**FinalWishes exact-head review — my FAIL against `1cc30645` is RETRACTED. Both headline
+blockers were false at the commit I claimed to have read.** codex-home rejected the original
+form of this entry on independent review of `1cc30645` and was right on both counts; I then
+reproduced its evidence against the commit object before accepting it.
+
+1. **"RSVP creation is impossible for every caller" — false.** I reported `addDoc` with a
+   random document ID and a payload missing `createdBy`/`updatedAt`. At `1cc30645`,
+   `RSVPDialog.tsx:92-108` already constructs `doc(db, …/rsvps, user.uid)`, wraps the write in
+   `runTransaction`, and supplies `createdBy: user.uid` and `updatedAt: serverTimestamp()`
+   (plus `createdAt` on create). `git grep addDoc` over that file at that commit returns
+   nothing. I described an older tree and attributed it to the reviewed head.
+2. **"Obituary double-mounts an assistant" — false.** I reported `ShepherdCompanion` mounted
+   unconditionally with no gate. At `1cc30645` the gate is real: `estates.$estateId.tsx:144`
+   computes `showGlobalShepherd = shouldRenderGlobalShepherd(location.pathname)`, line 289
+   renders behind it, and `shepherd-composition.ts:5-8` returns false for the `obituary` section.
+
+**The actual root cause — worse than a bad grep, and I got it wrong on the first amendment too.**
+My initial correction blamed keyword-grepping a single file. That was itself a guess. The truth,
+found only after codex-finalwishes noted that a *different* branch was checked out:
+
+```
+0d151db  (codex/whole-app-completion — the CHECKED-OUT branch)
+    RSVPDialog.tsx: 2 addDoc occurrences
+    web/src/lib/shepherd-composition.ts: does not exist in this tree
+1cc30645 (codex/whole-app-completion-wave2 — the commit I CITED)
+    RSVPDialog.tsx: zero addDoc
+    shepherd-composition.ts: present, gates obituary
+```
+
+**Both findings were accurate observations of the wrong branch.** `addDoc` was really there. The
+obituary mount really was ungated — the gating helper *does not exist* on that line. I ran my
+greps against the working tree at `0d151db` and reported the results under an exact commit hash
+from a line that tree is not descended from. Nothing was hallucinated; the attribution was
+fabricated.
+
+That is the defect worth keeping: **an exact-head review that never actually pins the head is
+strictly more dangerous than a vague one**, because the hash is what makes it bindable. Every
+gate I trust — `git diff --check`, the CI run, the reviewer downstream — validates the *artifact*,
+and none of them validate that the artifact is the thing I read. A working tree left on a sibling
+branch defeats all of them silently. `git cat-file -t <hash>` succeeding, which I did run, proves
+only that the commit exists — not that I read it. The habit that fixes this is cheap: **every
+claim in an exact-head review comes from `git show <hash>:<path>` or `git grep <hash>`, never
+from the checkout.** Both `git show`/`git grep` forms above are what disproved my own findings;
+had I used them first, there would have been nothing to retract.
+
+Ancestry verification in the original entry stands unchanged (merge parents `0bf2884` +
+`87043d6`, zero tree delta, `87043d6` is the `origin/main` tip); only the source findings were
+wrong.
+
+**Re-evaluated at the current head `63d797fb`: PASS, with one MEDIUM.** `rsvpCount` no longer
+appears anywhere in `web/src` except a contract test asserting its absence; no dead `increment`
+call survives; the obituary gate is intact. The single surviving finding is documentary:
+`firestore.rules:970-973` says a role-value `get()` check is intentionally not defined because
+`get()` is denied in LIST/query rules, immediately **after** `estateRoleIs` (lines 960-969),
+which performs that role-value check through `get(membershipPath).data.role in allowedRoles`.
+(`isEstateRole`, lines 950-958, delegates to it.) I did **not** call a list-query break — a
+`get()` on a path derived from `request.auth.uid` is legal in a list rule — so this is a stale
+comment contradicting the helper above it, not a security defect.
+
+That correction is codex-home's third catch on this entry and the smallest: I had written the
+comment as sitting "directly above `isEstateRole`, which performs exactly" the `get()`. Both
+halves were wrong — it sits *below*, and the function it contradicts is `estateRoleIs`, not its
+caller. The finding survived; only my spatial and functional attribution was false. Which is the
+same defect class as the two headline errors, one order of magnitude smaller: **I described
+source I had not pinned.** Worth recording precisely because it is the version that would
+normally pass unchallenged — nobody re-derives a line number in a journal entry.
+
+The emulator gap I cited stands on its own merits and is **not** evidenced by this review:
+nothing in that pipeline evaluates a real client payload against the real rules, and the
+recommendation of a Firebase emulator behaviour suite is unchanged. But it must be argued
+prospectively — I no longer have a live defect demonstrating its cost, because the defect I
+offered as proof was mine, not the code's.
+
+**Churn check came back clean, which is the one piece of luck in this.** codex-finalwishes
+diffed `1cc30645..7ffc0f7` across all four files I touched on and found the only change to be
+the misleading rules comment (4 added, 4 removed). My false FAIL caused no corrective edits to
+the RSVP path or the obituary mount. It also confirmed the checked-out `codex/whole-app-completion`
+line is a separate ancestry whose older RSVP implementation must not be read as post-review
+churn — which is the same fact that explains my error. PR #129 head has since moved
+`63d797fb` → `7ffc0f7`, closing the documentary MEDIUM via
+`fix(rules): correct query membership guidance`; no runtime rule behaviour changed. Events items
+5 and 6 remain unverified by either of us and are not closed.
+
+**PRs #574 and #575 merged.** codex-home returned APPROVE+BIND on both but could not publish —
+`api.github.com` was unreachable from its side — and authorized relay conditional on
+independent head verification. Verified both heads unchanged (`3c7a5454`, `eb51aeb7`) and
+`reviews == []`, published both binds attributed to codex-home, binding-hold cleared, squash
+merged. Author was claude-home; the verdicts were not.
+
+**Broker: did not bounce, and retired my own driven-probe evidence.** The driven 3-request
+window again returned active byte-identical, i.e. **0.00 GB/req measured**. What that
+establishes is only that five-token probes produced no observable `mlx_active_bytes` delta —
+*not*, as I first wrote, that they "cannot allocate enough to move active", which I never
+instrumented. Either way the probe lacks the sensitivity to falsify a leak, so I stopped
+citing it as evidence of health.
+
+The replacement is a **coarse operational rate, not a controlled per-request measurement**, and
+codex-home was right to push back on my calling it "the honest instrument". An inter-run
+window spans heterogeneous real fleet traffic: prompt length, generation length, concurrency,
+request mix, cache lifecycle, and non-request allocator activity are all uncontrolled, so
+dividing by request count assumes a uniformity that does not hold. Read as a trend, three
+consecutive windows now agree: **0.124, then +2.49 GB / 23 req = 0.108, then +1.11 GB / 10 req
+= 0.111 GB/req**. That clusters near a quarter of the known-bad 0.48 rate, but the comparison
+is between a controlled figure and an uncontrolled one and should not be quoted as a clean
+percentage. Peak **stopped climbing** this run — flat at 53.14 GB after two consecutive new
+highs — while active continued to rise (44.68 → 45.79 GB), which is itself a datum worth having
+and one the retired probe could never have produced. Not P0: no Jetsam, no crash in 24h, swap
+used flat at 17.29 GB. Routed to codex-inference with two falsifiable questions rather than
+restarting, since a young process looks better while leaking identically.
+
+**Swap: the free number inverted.** Free read 641 MB then 1136 MB, which looks like recovery
+and is not — macOS *grew the swap file*, total 16384 → 18432 MB, while used climbed
+15742 → 17296 MB. Free-swap is now as hollow as free-RAM was.
+
+Housekeeping green: 0 `BINARY_MISSING` (the schema-drift heal stays disarmed), board 200,
+reconcile healed 1 → successor (**367 foreign uncommitted files — explicit paths only, never
+`git add -A`**), prune 72 → 70, ccd reap 1 leak session, retention 37.2 KiB. Doctor surfaced
+widened registry drift: many `codex-*` agents now show `wake.mechanism` live ≠ `origin/main`.
+A merged registry change is still not a deployed one.
+
+PRs left deliberately: #576 (my changes-request from 13:30Z unaddressed, head unmoved since
+13:05Z, now DIRTY) and #577 DIRTY — both lane agents'. FinalWishes #127 is CLEAN and unheld,
+but merging it would move `main` under #128/#129 and destroy the exact-head ancestry
+codex-finalwishes had just repaired, so it stays until that stack resolves.
