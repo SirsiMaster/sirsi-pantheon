@@ -23,11 +23,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // PIDs recycle) to decide seniority; falls back to "any other instance" when
     // a launchDate is unreadable. terminate() is the polite AppKit path (runs the
     // peer's teardown); forceTerminate only if the peer ignores it for 3s.
-    private func retireOlderInstances() {
-        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+    // peerInstances finds the OTHER live copies of this surface. Bundle identity
+    // alone is not enough: the normal dev path runs the raw binary
+    // (.build/release/SirsiMenubar), which has NO bundle identifier at all — so
+    // the old `guard let bundleID = … else { return }` read as "no peers found"
+    // when it actually meant "cannot tell", and two panels coexisted with
+    // neither able to retire the other. Executable NAME is matched alongside the
+    // bundle id specifically so a bundled .app and a raw-binary run can see each
+    // other; keying on the full path would let those two coexist again, because
+    // Contents/MacOS/SirsiMenubar and .build/release/SirsiMenubar are genuinely
+    // different files. Anything running our executable name IS us.
+    private func peerInstances() -> [NSRunningApplication] {
         let me = NSRunningApplication.current
-        let peers = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-            .filter { $0.processIdentifier != me.processIdentifier }
+        let myName = me.executableURL?.lastPathComponent
+        let bundleID = Bundle.main.bundleIdentifier
+        return NSWorkspace.shared.runningApplications.filter { peer in
+            guard peer.processIdentifier != me.processIdentifier else { return false }
+            if let bundleID, peer.bundleIdentifier == bundleID { return true }
+            if let myName, peer.executableURL?.lastPathComponent == myName { return true }
+            return false
+        }
+    }
+
+    private func retireOlderInstances() {
+        let me = NSRunningApplication.current
+        let peers = peerInstances()
         guard !peers.isEmpty else { return }
         let myLaunch = me.launchDate ?? Date()
         for peer in peers {
