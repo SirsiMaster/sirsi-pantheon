@@ -119,6 +119,13 @@ type LaneInput struct {
 	// Routable reports whether a valid wake path to this lane exists. False
 	// means no amount of waking will reach it.
 	Routable bool
+	// ActiveThreads is the count of non-terminal, non-suspended thread records
+	// for this agent. Zero means no registered session or worker is present
+	// according to the thread registry. Positive means at least one live or
+	// recently-stale thread exists — the lane may be running even if it has no
+	// automatic wake mechanism. Startability (Routable) and liveness
+	// (ActiveThreads) are different properties and must not be conflated.
+	ActiveThreads int
 }
 
 // DefaultWorkWindow is how recently a lane must have mutated a task record to
