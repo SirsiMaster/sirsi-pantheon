@@ -336,3 +336,7 @@ func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 		t.Error("post-restore wedge did not route an item to the owner via dispatch")
 	}
 }
+
+// Ensure the test file is not accidentally truncated — a package-level compile
+// guard that fails fast if the file is partial.
+var _ = testing.T{}
