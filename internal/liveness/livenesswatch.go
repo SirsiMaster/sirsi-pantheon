@@ -49,56 +49,49 @@ const StartInterval = 900
 // (not const) so tests can shrink it to exercise the timeout/retry path fast.
 var probeTimeout = 30 * time.Second
 
-// minWeightedRSSKB is the RSS floor (in KB) below which a running broker is
-// treated as weightless — no model loaded onto the GPU. Any serious gemma model
-// (even the smallest 2B variant) maps several GB of weights; a process under
-// this floor cannot be serving real inference regardless of what /health says.
-// Set to 1 GB (1,048,576 KB) — conservative, never false-positive on a loaded
-// model, catches the "broker up, weights deleted" class that a generation probe
-// alone cannot distinguish from "broker wedged for another reason."
-const minWeightedRSSKB = 1 * 1024 * 1024 // 1 GB in KB
+// minWeightedMLXBytes is the mlx_active_bytes floor: below this the broker has
+// no model weights mapped onto the GPU. Any serious model (even the 2B variant)
+// allocates several GB; a broker under this floor cannot serve inference.
+// RSS is NOT the right metric for sne-server-macos-arm64 — it mmaps its weights
+// so RSS reads in the low hundreds of MB even when fully loaded (conduit runbook:
+// "RSS lies for this process"). mlx_active_bytes from /health is authoritative.
+// Fail-open: 0 from /health → skip, never falsely classify a healthy broker.
+const minWeightedMLXBytes int64 = 1 * 1024 * 1024 * 1024 // 1 GB in bytes
 
-// brokerRSSFn reads the RSS (in KB) of the gemma broker process. Returns 0 if
-// the PID file is absent or the process cannot be queried. Injectable (A16/A21)
-// so tests can stub it without a live process.
+// mlxActiveFn reads mlx_active_bytes from the broker's /health endpoint.
+// Returns 0 on any error — fail-open: never falsely classify a healthy broker.
+// Injectable (A16/A21) so tests can stub it without a live broker.
 var (
-	brokerRSSMu sync.RWMutex
-	brokerRSSFn = defaultBrokerRSS
+	mlxActiveMu sync.RWMutex
+	mlxActiveFn = defaultMLXActiveBytes
 )
 
-func getBrokerRSSFn() func(pidFile string) int64 {
-	brokerRSSMu.RLock()
-	defer brokerRSSMu.RUnlock()
-	return brokerRSSFn
+func getMLXActiveFn() func(port int) int64 {
+	mlxActiveMu.RLock()
+	defer mlxActiveMu.RUnlock()
+	return mlxActiveFn
 }
 
-func setBrokerRSSFn(fn func(pidFile string) int64) {
-	brokerRSSMu.Lock()
-	defer brokerRSSMu.Unlock()
-	brokerRSSFn = fn
+func setMLXActiveFn(fn func(port int) int64) {
+	mlxActiveMu.Lock()
+	defer mlxActiveMu.Unlock()
+	mlxActiveFn = fn
 }
 
-// defaultBrokerRSS reads the PID from pidFile and returns the process RSS in KB
-// via `ps -o rss=`. Returns 0 on any error — fail-open (never falsely reap a
-// live broker because the PID file is missing or ps is unavailable).
-func defaultBrokerRSS(pidFile string) int64 {
-	raw, err := os.ReadFile(pidFile)
+func defaultMLXActiveBytes(port int) int64 {
+	cl := &http.Client{Timeout: 3 * time.Second}
+	resp, err := cl.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
 	if err != nil {
 		return 0
 	}
-	pid := strings.TrimSpace(string(raw))
-	if pid == "" {
+	defer resp.Body.Close()
+	var h struct {
+		MLXActiveBytes int64 `json:"mlx_active_bytes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
 		return 0
 	}
-	out, err := exec.Command("ps", "-o", "rss=", "-p", pid).Output()
-	if err != nil {
-		return 0
-	}
-	rss, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return rss
+	return h.MLXActiveBytes
 }
 
 // PlistPath is where the LaunchAgent is written (per-user).
@@ -371,18 +364,17 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 		return GemmaDown, "port file unreadable"
 	}
 
-	// RSS floor: a broker whose resident set is below 1 GB cannot have model
-	// weights loaded — any serious gemma model maps several GB onto the GPU.
-	// This catches the "weightless broker" class (RSS ~99 MB, /health ok, zero
-	// generation capacity) that a restart cannot fix when the HF cache is absent.
-	// Fail-open: if the PID file is missing or ps fails, rss==0 and we skip the
-	// floor check rather than falsely classifying a healthy broker as weightless.
-	pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
-	if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
+	// MLX active-bytes floor: a broker whose mlx_active_bytes (/health) is
+	// below 1 GB cannot have model weights mapped onto the GPU. RSS lies for
+	// sne-server-macos-arm64 (it mmaps weights — RSS stays in the low hundreds
+	// of MB even when fully loaded), so mlx_active_bytes is the correct signal.
+	// Fail-open: 0 from /health (missing field, error, or broker still starting)
+	// → skip the check rather than falsely classifying a healthy broker.
+	if active := getMLXActiveFn()(port); active > 0 && active < minWeightedMLXBytes {
 		return GemmaWedged, fmt.Sprintf(
-			"broker RSS %d MB is below the %d MB weight floor — model weights likely absent; "+
+			"mlx_active_bytes %d MB is below the %d MB weight floor — model weights likely absent; "+
 				"a restart will not fix this (check HF model cache and re-download weights)",
-			rss/1024, minWeightedRSSKB/1024,
+			active/(1024*1024), minWeightedMLXBytes/(1024*1024),
 		)
 	}
 
@@ -473,7 +465,7 @@ func probeGemma(home string) Finding {
 	f := Finding{Check: "gemma-broker", Fixable: true,
 		Title: "liveness-watch: gemma broker wedged",
 		Body: "The launchd liveness watch found the warm gemma broker unresponsive " +
-			"(no port, connection error, non-200, zero tokens produced, >30s, or RSS below the 1 GB weight floor). " +
+			"(no port, connection error, non-200, zero tokens produced, >30s, or mlx_active_bytes below the 1 GB weight floor). " +
 			"The broker is the Tier-0 substrate the router/reconcile/gemma-builder depend on. " +
 			"If the detail says 'weights likely absent': the HF model cache was deleted — a restart will NOT fix this; " +
 			"re-download the model weights first (`huggingface-cli download <model>`). " +

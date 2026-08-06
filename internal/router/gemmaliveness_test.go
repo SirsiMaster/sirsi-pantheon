@@ -18,12 +18,19 @@ func writeGemmaRouteRegistry(t *testing.T, root string) {
 	}
 }
 
-// zeroRestoreWait stubs the post-restore sleep to nothing so tests don't block.
+// zeroRestoreWait stubs the post-restore poll sleep to nothing and sets the
+// deadline to zero so the first failed post-restore probe routes immediately,
+// keeping tests fast without changing the observable routing outcome.
 func zeroRestoreWait(t *testing.T) {
 	t.Helper()
-	old := getRestoreWait()
+	oldFn := getRestoreWait()
+	oldDur := getRestoreDeadline()
 	setRestoreWaitFn(func() {})
-	t.Cleanup(func() { setRestoreWaitFn(old) })
+	setRestoreDeadlineDur(0)
+	t.Cleanup(func() {
+		setRestoreWaitFn(oldFn)
+		setRestoreDeadlineDur(oldDur)
+	})
 }
 
 // installGemmaFakes swaps the probe + serve seams and returns a pointer to the

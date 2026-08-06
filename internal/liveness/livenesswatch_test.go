@@ -257,21 +257,22 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 	}
 }
 
-// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard.
-// A broker with RSS below 1 GB cannot have model weights loaded — this is the
-// class that /health passes but generation probes see as wedged, and that a
-// restart cannot fix when the HF model cache is absent (2026-08-05 incident).
-// The RSS floor must fire BEFORE the generation probe so the detail message
-// clearly says "weights likely absent" instead of "restore — free memory."
-func TestProbeGemmaState_RSSFloor(t *testing.T) {
-	old := getBrokerRSSFn()
-	t.Cleanup(func() { setBrokerRSSFn(old) })
+// TestProbeGemmaState_MLXFloor is the weightless-broker regression guard.
+// sne-server-macos-arm64 mmaps its weights — RSS stays in the low hundreds of
+// MB even with the model fully loaded ("RSS lies for this process", conduit
+// runbook). The floor must read mlx_active_bytes from /health instead.
+// A broker with mlx_active_bytes below 1 GB has no model mapped; the detail
+// must say "weights likely absent" and "restart will not fix this" so the owner
+// knows to re-download rather than bounce the broker.
+// The generation endpoint must NOT be reached — the floor fires first.
+func TestProbeGemmaState_MLXFloor(t *testing.T) {
+	old := getMLXActiveFn()
+	t.Cleanup(func() { setMLXActiveFn(old) })
 
-	// Stub a tiny RSS (100 MB — well below the 1 GB floor).
-	const tinyRSSKB = 100 * 1024 // 100 MB
-	setBrokerRSSFn(func(_ string) int64 { return tinyRSSKB })
+	const tinyMLXBytes int64 = 100 * 1024 * 1024 // 100 MB — well below 1 GB floor
+	setMLXActiveFn(func(_ int) int64 { return tinyMLXBytes })
 
-	// The test server should never be reached — the RSS floor fires first.
+	// Generation endpoint: must NOT be reached when MLX floor fires first.
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -282,7 +283,7 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 
 	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
 	if got != GemmaWedged {
-		t.Errorf("low RSS = %v (%s), want GemmaWedged", got, detail)
+		t.Errorf("low mlx_active_bytes = %v (%s), want GemmaWedged", got, detail)
 	}
 	if !strings.Contains(detail, "weight floor") {
 		t.Errorf("detail should mention weight floor, got: %s", detail)
@@ -291,18 +292,18 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 		t.Errorf("detail should say restart will not fix, got: %s", detail)
 	}
 	if called {
-		t.Error("generation probe should not be called when RSS is below the floor")
+		t.Error("generation probe should not be called when mlx_active_bytes is below the floor")
 	}
 }
 
-// TestProbeGemmaState_RSSFloor_ZeroSkips verifies that a zero RSS (PID file
-// absent or ps unavailable) does not falsely classify a healthy broker as
-// weightless — fail-open is required (never falsely reap a live broker).
-func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
-	old := getBrokerRSSFn()
-	t.Cleanup(func() { setBrokerRSSFn(old) })
+// TestProbeGemmaState_MLXFloor_ZeroSkips verifies that mlx_active_bytes==0
+// (missing field, /health unavailable, or broker still starting) does not
+// falsely classify a healthy broker as weightless — fail-open is required.
+func TestProbeGemmaState_MLXFloor_ZeroSkips(t *testing.T) {
+	old := getMLXActiveFn()
+	t.Cleanup(func() { setMLXActiveFn(old) })
 
-	setBrokerRSSFn(func(_ string) int64 { return 0 }) // pid file absent
+	setMLXActiveFn(func(_ int) int64 { return 0 }) // /health absent or field missing
 
 	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -313,7 +314,7 @@ func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
 
 	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
 	if got != GemmaHealthy {
-		t.Errorf("zero RSS (pid absent) with healthy server = %v (%s), want GemmaHealthy (fail-open)", got, detail)
+		t.Errorf("zero mlx_active_bytes with healthy server = %v (%s), want GemmaHealthy (fail-open)", got, detail)
 	}
 }
 

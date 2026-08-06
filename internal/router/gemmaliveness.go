@@ -111,10 +111,16 @@ func defaultGemmaServe(restart bool) error {
 	return exec.Command(exe, "gemma", "serve").Run()
 }
 
-// restoreWait is the pause after `sirsi gemma serve` before the post-restore
-// re-probe: long enough for the broker to bind its port, short enough not to
-// block the supervisor tick. Var (not const) so tests can zero it out.
-var restoreWait = 5 * time.Second
+// restorePollInterval is the sleep between successive post-restore re-probes.
+// A large model (gemma-4-12B) can take 60-120s to mmap weights onto the GPU;
+// a 5s flat sleep fires before the broker is ready and reports false failure.
+// var so tests can zero it for instant termination.
+var restorePollInterval = 10 * time.Second
+
+// restoreDeadlineDur is the maximum wall time to poll for the broker to recover
+// before routing a failure. Only route when this expires — never on the first
+// post-restart probe. var so tests can set to 0 (first failed probe routes).
+var restoreDeadlineDur = 2 * time.Minute
 
 // restoreFailTitle is the router item title deduped against the open user inbox
 // so a persistent RAM gap does not flood every 2-minute duty tick.
@@ -155,14 +161,25 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 			gemmaRouteRestoreFail(routerRoot, err.Error())
 			return err
 		}
-		// Post-restore re-probe: wait briefly for the port to bind, then verify.
-		// If the broker is still wedged (e.g. RAM won't fit) the restart silently
-		// failed — route once so the owner sees "restore did not stick."
-		getRestoreWait()()
-		if postStatus, postDetail := getGemmaProbeFn()(home); postStatus == liveness.GemmaWedged || postStatus == liveness.GemmaDown {
-			statusStr := map[liveness.GemmaStatus]string{liveness.GemmaWedged: "wedged", liveness.GemmaDown: "down"}[postStatus]
-			gemmaRouteRestoreFail(routerRoot, "broker still "+statusStr+" after graceful restart — "+postDetail)
-			return nil
+		// Post-restore: poll until healthy or deadline expires. A large model
+		// takes 60-120s to mmap weights; a single short probe almost always
+		// fires during that window and reports a false failure. Poll every
+		// restorePollInterval up to restoreDeadlineDur; only route failure
+		// when the deadline expires so a genuine success is never mislabelled.
+		// ponytail: global deadline, per-model tuning if load times diverge.
+		deadline := getRestoreDeadline()
+		restoreStart := time.Now()
+		for {
+			getRestoreWait()()
+			postStatus, postDetail := getGemmaProbeFn()(home)
+			if postStatus == liveness.GemmaHealthy || postStatus == liveness.GemmaBusy {
+				break
+			}
+			if time.Since(restoreStart) >= deadline {
+				statusStr := map[liveness.GemmaStatus]string{liveness.GemmaWedged: "wedged", liveness.GemmaDown: "down"}[postStatus]
+				gemmaRouteRestoreFail(routerRoot, "broker still "+statusStr+" after "+deadline.Round(time.Second).String()+" — "+postDetail)
+				return nil
+			}
 		}
 		RecordHeal("local AI stopped answering — gracefully restarted (bounded)")
 		return nil
@@ -170,10 +187,11 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	return nil
 }
 
-// restoreWaitFn is the injectable sleep before the post-restore re-probe (A16/A21).
+// restoreWaitFn is the injectable per-iteration sleep inside the post-restore
+// poll loop (A16/A21). Tests set this to a no-op for instant termination.
 var (
 	restoreWaitMu sync.RWMutex
-	restoreWaitFn = func() { time.Sleep(restoreWait) }
+	restoreWaitFn = func() { time.Sleep(restorePollInterval) }
 )
 
 func getRestoreWait() func() {
@@ -186,6 +204,18 @@ func setRestoreWaitFn(fn func()) {
 	restoreWaitMu.Lock()
 	defer restoreWaitMu.Unlock()
 	restoreWaitFn = fn
+}
+
+func getRestoreDeadline() time.Duration {
+	restoreWaitMu.RLock()
+	defer restoreWaitMu.RUnlock()
+	return restoreDeadlineDur
+}
+
+func setRestoreDeadlineDur(d time.Duration) {
+	restoreWaitMu.Lock()
+	defer restoreWaitMu.Unlock()
+	restoreDeadlineDur = d
 }
 
 // gemmaRouteRestoreFail sends ONE non-duplicate "restore did not stick" item
@@ -205,12 +235,17 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Dedup: skip if the owner already has an open item with this title.
-	if items, listErr := f.Inbox("owner"); listErr == nil {
-		for _, it := range items {
-			if it.Title == restoreFailTitle {
-				fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open, skipping route\n")
-				return
+	// Dedup across both owner-surface recipients: the earlier 20260806-005954
+	// alert was addressed to "user" (from the liveness-watch path) while this
+	// path sends to "owner" — each inbox-scoped check missed the other, letting
+	// the same alarm appear twice. Check both to honor the ONE-open guarantee.
+	for _, rcpt := range []string{"owner", "user"} {
+		if items, listErr := f.Inbox(rcpt); listErr == nil {
+			for _, it := range items {
+				if it.Title == restoreFailTitle {
+					fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open in %s inbox, skipping route\n", rcpt)
+					return
+				}
 			}
 		}
 	}
