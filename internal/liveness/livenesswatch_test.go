@@ -500,3 +500,36 @@ func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
 		t.Errorf("expected stop command in fallback advice, got: %q", got)
 	}
 }
+
+// TestRightSizeAdvice_BrokerRSSOverridesNameEstimate verifies that the actual
+// broker RSS takes priority over approximateModelGB. The 2026-08-06 incident:
+// gemma-4-12B-it-8bit has "12b" in its name → 7 GB name estimate, but actual
+// RSS measured 34.9 GB. Without this fix: 2×7+4=18 ≤ 20 GB available → the
+// "fits already" guard returns empty — a false-safe verdict that leaves a
+// dangerously oversized model running. With the fix: 2×34.9+4=73.8 > 20 →
+// advice fires and tells the operator to right-size.
+func TestRightSizeAdvice_BrokerRSSOverridesNameEstimate(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// gemma-4-12B-it-8bit: "12b" → approximateModelGB returns 7 GB, but actual is ~35 GB.
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "gemma-model.conf"),
+		[]byte("mlx-community/gemma-4-12B-it-8bit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+	// ~35 GB in KB (approximating the 34.9 GB measured on 2026-08-06).
+	setBrokerRSSFn(func(_ string) int64 { return 35 * 1024 * 1024 }) // ~35 GB in KB
+
+	// 20 GB available: name estimate (7 GB) says "fits" — advice would be empty.
+	// Actual RSS (34.9 GB): 2×34.9+4=73.8 > 20 — advice must fire.
+	got := rightSizeAdvice(home, 20.0)
+	if got == "" {
+		t.Fatal("expected non-empty advice: actual 34.9 GB model cannot fit in 20 GB; name-only estimate gave a false safe verdict")
+	}
+	if !strings.Contains(got, "serve --stop") {
+		t.Errorf("expected stop command in advice, got: %q", got)
+	}
+}
