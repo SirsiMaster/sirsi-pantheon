@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.sirsi.triage</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>~/.local/bin/sirsi-triage.sh</string>
+    <string>loop</string>
+  </array>
+  <!-- AUTORESOLVE + DRY_RUN=0 give this loop real WRITE authority over the
+       router queue: it closes/resolves items autonomously. Flipping DRY_RUN
+       to 1 makes every pass observe-only — the safe default when auditing
+       what it would have done. USE_MODEL gates the Tier-1 local-model path
+       (A30); with it 0 the loop is rules-only. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SIRSI_TRIAGE_POLL</key><string>90</string>
+    <key>SIRSI_TRIAGE_AUTORESOLVE</key><string>1</string>
+    <key>SIRSI_TRIAGE_USE_MODEL</key><string>1</string>
+    <key>DRY_RUN</key><string>0</string>
+    <key>PATH</key><string>~/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>~/.sirsi/triage.out.log</string>
+  <key>StandardErrorPath</key><string>~/.sirsi/triage.err.log</string>
+</dict>
+</plist>

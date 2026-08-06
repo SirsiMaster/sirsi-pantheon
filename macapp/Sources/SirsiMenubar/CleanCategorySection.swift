@@ -17,10 +17,10 @@ struct CleanCategorySection: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .sirsiFont(12, weight: .semibold)
                 Spacer()
                 Text(totalText)
-                    .font(.caption.monospaced())
+                    .sirsiFont(.caption, design: .monospaced)
                     .foregroundStyle(.secondary)
                 Toggle("", isOn: $selectAll)
                     .labelsHidden()

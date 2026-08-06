@@ -7,29 +7,37 @@ import "github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 // ═══════════════════════════════════════════
 //
 // Every AI cache rule is wrapped in envGuardedRule (where a runtime env var
-// pins the cache) and carries minAgeDays=30. Together they ensure the scan
-// never reports an actively-used model cache as waste: env-var awareness
-// covers the "the user told their runtime to pin this path" case; mtime age
-// covers "the user touched it recently." A path that fails neither check IS
+// pins the cache) and carries minAgeDays=30. The HuggingFace rule additionally
+// reads ~/.sirsi/gemma-model.conf to protect the configured Sirsi inference
+// substrate even when its cache mtime is cold. A path that passes all guards IS
 // cold cache and is correctly classified safe-to-delete.
 
 const aiCacheMinAgeDays = 30
 
 // NewHuggingFaceCacheRule scans for HuggingFace downloaded models.
-// Excluded from results when HF_HOME / HUGGINGFACE_HUB_CACHE / TRANSFORMERS_CACHE
-// pin the path, or when its mtime is within the last 30 days.
+// Excluded from results when:
+//   - HF_HOME / HUGGINGFACE_HUB_CACHE / TRANSFORMERS_CACHE pin the path, OR
+//   - the directory mtime is within the last 30 days, OR
+//   - the model ID appears in ~/.sirsi/gemma-model.conf or gemma-model-max.conf
+//     (the Sirsi inference substrate — never reclaimable, even if cold).
 func NewHuggingFaceCacheRule() jackal.ScanRule {
 	return &envGuardedRule{
 		baseScanRule: &baseScanRule{
 			name:        "huggingface_cache",
 			displayName: "HuggingFace Models",
 			category:    jackal.CategoryAI,
-			description: "Cold HuggingFace Hub model weights (unused 30+ days, no runtime pin)",
+			description: "Cold HuggingFace Hub model weights (unused 30+ days, no runtime pin, not the configured Sirsi model)",
 			platforms:   []string{"darwin", "linux"},
-			paths:       []string{"~/.cache/huggingface/hub"},
-			minAgeDays:  aiCacheMinAgeDays,
+			// One finding per model repo, not one for the whole hub. The hub
+			// directory is an ancestor of every snapshot a local engine serves
+			// from, so at hub granularity a single live model suppresses the
+			// entire rule — per-repo findings keep the cold models reportable
+			// while only the served one drops out.
+			paths:      []string{"~/.cache/huggingface/hub/models--*"},
+			minAgeDays: aiCacheMinAgeDays,
 		},
-		envVars: []string{"HF_HOME", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"},
+		envVars:     []string{"HF_HOME", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"},
+		livePathFns: []func(string) []string{sirsiGemmaLivePaths},
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -222,6 +223,191 @@ func reviewCleanList() {
 		fmt.Fprintf(&b, "  %10s   %s\n", jackal.FormatSize(f.SizeBytes), f.Path)
 	}
 	openDetail("What Clean Waste will do", b.String())
+}
+
+// runPermanentDelete permanently removes all files in the system Trash after
+// showing a confirmation dialog listing what's there. Two-step: preview then
+// confirm — Rule A1: destructive ops require explicit confirmation.
+func runPermanentDelete(preview, confirm *systray.MenuItem, store *notify.Store) {
+	if preview == nil || confirm == nil {
+		return
+	}
+	preview.SetTitle("⏳ Checking Trash…")
+	preview.Disable()
+	go func() {
+		defer func() {
+			preview.SetTitle("🗑 Permanently Delete Trash…")
+			preview.Enable()
+		}()
+
+		n, sz, trashErr := trashInfo()
+		if trashErr != nil {
+			recordNotify(store, "Permanent Delete", "check", notify.SeverityError, "cannot read Trash", trashErr.Error())
+			confirm.Hide()
+			return
+		}
+		if n == 0 {
+			recordNotify(store, "Permanent Delete", "check", notify.SeverityInfo, "Trash is empty — nothing to delete", "")
+			confirm.Hide()
+			return
+		}
+
+		// Build tooltip from first 20 entry names for the confirm item.
+		home, _ := os.UserHomeDir()
+		entries, _ := os.ReadDir(filepath.Join(home, ".Trash"))
+		var names []string
+		for i, e := range entries {
+			if i >= 20 {
+				break
+			}
+			if e.Name() == ".DS_Store" {
+				continue
+			}
+			names = append(names, e.Name())
+		}
+
+		label := fmt.Sprintf("%d item(s) · %s", n, formatTrashSize(sz))
+		confirm.SetTitle(fmt.Sprintf("  ⚠ Confirm: permanently delete %s", label))
+		confirm.SetTooltip(strings.Join(names, "\n"))
+		confirm.Show()
+		// Auto-disarm after 30s — permanent delete should not linger as a one-click.
+		time.AfterFunc(30*time.Second, func() { confirm.Hide() })
+	}()
+}
+
+// runPermanentDeleteApply empties the macOS Trash permanently. Irreversible —
+// only called after the owner explicitly confirms the armed item.
+func runPermanentDeleteApply(confirm *systray.MenuItem, store *notify.Store) {
+	if confirm == nil {
+		return
+	}
+	confirm.SetTitle("  ⏳ Deleting…")
+	confirm.Disable()
+	go func() {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			confirm.Enable()
+			confirm.Hide()
+			recordNotify(store, "Permanent Delete", "apply", notify.SeverityError, "cannot locate home dir", err.Error())
+			return
+		}
+		trashDir := filepath.Join(home, ".Trash")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		// osascript is the safest cross-version way to empty the Trash on macOS
+		// (honors locked files, volumes, etc.). Falls back to per-item rm if unavailable.
+		_, err = exec.CommandContext(ctx, "osascript", "-e", `tell application "Finder" to empty the trash`).CombinedOutput()
+		if err != nil {
+			// Finder may not be running (headless); fall back to per-item removal.
+			entries, rdErr := os.ReadDir(trashDir)
+			if rdErr != nil {
+				confirm.Enable()
+				confirm.Hide()
+				recordNotify(store, "Permanent Delete", "apply", notify.SeverityError,
+					"cannot read Trash directory", rdErr.Error())
+				return
+			}
+			var freed int64
+			var errs []string
+			for _, e := range entries {
+				if e.Name() == ".DS_Store" {
+					continue
+				}
+				p := filepath.Join(trashDir, e.Name())
+				info, _ := e.Info()
+				var itemSize int64
+				if info != nil {
+					if info.IsDir() {
+						itemSize = dirSize(trashDir, e.Name())
+					} else {
+						itemSize = info.Size()
+					}
+				}
+				var rmErr error
+				if info != nil && info.IsDir() {
+					rmErr = os.RemoveAll(p)
+				} else {
+					rmErr = os.Remove(p)
+				}
+				if rmErr != nil {
+					errs = append(errs, e.Name()+": "+rmErr.Error())
+				} else {
+					freed += itemSize
+				}
+			}
+			sev, summary := notify.SeveritySuccess, "Trash permanently emptied — "+formatTrashSize(freed)+" deleted"
+			if len(errs) > 0 {
+				sev = notify.SeverityError
+				summary = fmt.Sprintf("%d error(s): %s", len(errs), strings.Join(errs[:min(3, len(errs))], "; "))
+			}
+			recordNotify(store, "Permanent Delete", "apply", sev, summary, strings.Join(errs, "\n"))
+			confirm.Enable()
+			confirm.Hide()
+			return
+		}
+		recordNotify(store, "Permanent Delete", "apply", notify.SeveritySuccess, "Trash permanently emptied", "")
+		confirm.Enable()
+		confirm.Hide()
+	}()
+}
+
+// trashInfo returns the item count and total byte size of ~/.Trash, skipping
+// .DS_Store. Returns a non-nil error if the directory cannot be read (distinct
+// from an empty Trash, which returns 0, 0, nil).
+func trashInfo() (items int, size int64, err error) {
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		err = homeErr
+		return
+	}
+	trashDir := filepath.Join(home, ".Trash")
+	entries, rdErr := os.ReadDir(trashDir)
+	if rdErr != nil {
+		err = rdErr
+		return
+	}
+	for _, e := range entries {
+		if e.Name() == ".DS_Store" {
+			continue
+		}
+		items++
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			size += dirSize(trashDir, e.Name())
+		} else {
+			size += info.Size()
+		}
+	}
+	return
+}
+
+// dirSize returns the recursive byte count of dir/name, ignoring errors.
+func dirSize(parent, name string) int64 {
+	var total int64
+	_ = filepath.Walk(filepath.Join(parent, name), func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// formatTrashSize formats bytes as a human-readable string.
+func formatTrashSize(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%d KB", b>>10)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // recordNotify writes a result to the notify store (→ Recent Activity), if any.

@@ -33,6 +33,24 @@ jobs:
       - name: golangci-lint
         run: golangci-lint run --timeout=5m
 
+      # Structural invariant, not a style check: every user-visible font on the
+      # menubar surface must route through the width-derived type scale. It runs
+      # on the HOSTED runner because it needs no Xcode — a guard that only runs
+      # manually does not prevent recurrence, and the self-hosted runners are
+      # currently contended.
+      - name: menubar font scaling (structural guard)
+        run: ./macapp/check-font-scaling.sh
+
+      # Gemma resolver guards run on the HOSTED runner (bash + python3 only, no
+      # Xcode/MLX): they EXTRACT the real ranking + conf-write blocks from the
+      # versioned resolver and assert against synthetic payloads, so a live
+      # resolver change that breaks the empty-cache WEDGE or the candidate
+      # ranking reddens CI here. On all PRs, unlike the self-hosted test job.
+      - name: gemma resolver guards
+        run: |
+          bash scripts/gemma/model-resolver-ranking.test.sh
+          bash scripts/gemma/model-resolver-cache.test.sh
+
   test:
     name: Test
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)

@@ -37,6 +37,13 @@ type Mock struct {
 
 	// ReadDir simulation: dirname -> entries
 	DirEntries map[string][]os.DirEntry
+	// Trash test seams — permanent delete must be exercisable without a real
+	// trash, and its failure branch must be reachable deterministically.
+	TrashEntries    []TrashEntry
+	TrashListErr    error
+	EmptiedTrash    []string
+	EmptyTrashFreed int64
+	EmptyTrashErr   error
 }
 
 func (m *Mock) ReadDir(dirname string) ([]os.DirEntry, error) {
@@ -117,4 +124,17 @@ func (m *Mock) OpenBrowser(url string) error {
 func (m *Mock) Kill(pid int) error {
 	m.KillCalls = append(m.KillCalls, pid)
 	return m.KillErr
+}
+
+// TrashContents returns the mock's configured trash listing (nil by default).
+func (m *Mock) TrashContents() ([]TrashEntry, error) { return m.TrashEntries, m.TrashListErr }
+
+// EmptyTrash records the request and returns the mock's configured outcome, so
+// a test can exercise the permanent-delete path without touching a real trash.
+func (m *Mock) EmptyTrash(paths []string) ([]string, int64, error) {
+	m.EmptiedTrash = append(m.EmptiedTrash, paths...)
+	if m.EmptyTrashErr != nil {
+		return nil, 0, m.EmptyTrashErr
+	}
+	return paths, m.EmptyTrashFreed, nil
 }

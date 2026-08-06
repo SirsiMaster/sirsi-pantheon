@@ -158,7 +158,7 @@ print(f'{i}\t{size}')
 ")
   [ -z "$CHOSEN" ] && { log "no fitting candidate — keeping fallback"; return 1; }
   MODEL=$(echo "$CHOSEN" | cut -f1); SIZE=$(echo "$CHOSEN" | cut -f2)
-  log "selected: $MODEL (~${SIZE}GB on disk)"
+  log "selected: $MODEL (~${SIZE}GB est)"
   echo "$MODEL"
 }
 
@@ -175,13 +175,25 @@ fi
 # a perfectly good cached model (live gap 2026-07-17: conf named an uncached
 # 12B-mxfp8; the broker restore fell back to serving the 31B instead).
 is_cached() { [ -d "$HF_CACHE/models--$(echo "$1" | sed 's/\//--/')" ]; }
-if ! is_cached "$MODEL" && is_cached "$FALLBACK"; then
+WEDGE=0
+if is_cached "$MODEL"; then
+  echo "$MODEL" > "$CONF"; log "conf -> $MODEL"
+elif is_cached "$FALLBACK"; then
   log "chosen $MODEL not cached yet — conf serves cached $FALLBACK until the prefetch completes"
-  echo "$FALLBACK" > "$CONF"
+  echo "$FALLBACK" > "$CONF"; log "conf -> $FALLBACK"
 else
-  echo "$MODEL" > "$CONF"
+  # WEDGE: neither chosen nor fallback has weights on disk. Writing conf as
+  # though a load will succeed produces a clean-looking log over a dead substrate
+  # (observed live 2026-08-03T19:31Z: logged "~12.0GB on disk" with empty HF_CACHE).
+  WEDGE=1
+  log "WEDGE: neither $MODEL nor $FALLBACK found in $HF_CACHE — weights absent; conf NOT updated; prefetch must complete before broker can serve"
+  if [ ! -f "$CONF" ]; then
+    echo "$FALLBACK" > "$CONF"
+    log "conf (wedge sentinel) -> $FALLBACK (weights absent)"
+  else
+    log "conf preserved at $(cat "$CONF") (wedge — weights absent)"
+  fi
 fi
-log "conf -> $(cat "$CONF")"
 
 # INVARIANT: from here on MODEL is whatever conf actually serves. Without this the
 # probe measured the CHOSEN model while clients used the cached fallback — so a
@@ -191,11 +203,17 @@ log "conf -> $(cat "$CONF")"
 # free RAM fell 82% -> 28% (~23GB wired) inside one conduit pass.
 MODEL=$(cat "$CONF")
 
-# Warm/download via huggingface-cli if available (background-safe; mlx will also
-# fetch on first use, but pre-warming avoids a cold first request).
-if command -v huggingface-cli >/dev/null 2>&1; then
+# Warm/download via hf/huggingface-cli (background-safe; mlx will also fetch on
+# first use, but pre-warming avoids a cold first request). Resolve from the venv —
+# huggingface-cli is NOT on bare PATH; PATH-only `command -v` silently skipped
+# every prior run (grep -c 'pre-fetching' log historically returns 0).
+HF_BIN=${HF:-$HOME/.venvs/mlx/bin/hf}
+[ -x "$HF_BIN" ] || HF_BIN=$HOME/.venvs/mlx/bin/huggingface-cli
+if [ -x "$HF_BIN" ]; then
   log "pre-fetching $MODEL (background)"
-  huggingface-cli download "$MODEL" >/dev/null 2>&1 &
+  "$HF_BIN" download "$MODEL" >/dev/null 2>&1 &
+else
+  log "WARN prefetch skipped: hf/huggingface-cli not executable at $HOME/.venvs/mlx/bin — install into the venv or set HF= to the binary path"
 fi
 
 # ── EMPIRICAL fit test (router item 20260715-175752) ─────────────────────────

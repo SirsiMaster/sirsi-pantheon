@@ -127,3 +127,12 @@ func (p *Android) getprop(args ...string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("getprop %v not available in sandbox", args)
 }
+
+// TrashContents: android has no trash Sirsi manages.
+func (p *Android) TrashContents() ([]TrashEntry, error) { return nil, nil }
+
+// EmptyTrash: refused rather than silently no-op — a permanent-delete caller
+// must never be told "done" by a platform that cannot do it.
+func (p *Android) EmptyTrash([]string) ([]string, int64, error) {
+	return nil, 0, errTrashUnsupported
+}

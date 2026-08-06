@@ -54,7 +54,9 @@ left for the operator to disambiguate in agents.json.
 			return err
 		}
 		// Reap dead-PID threads first so "already registered" reflects reality.
-		reapDeadPIDThreads(routerRoot)
+		if _, reapErr := reapDeadPIDThreads(routerRoot); reapErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: OS-truth sweep incomplete (discover may show stale actives): %v\n", reapErr)
+		}
 		threads, err := router.LoadThreadRegistry(routerRoot)
 		if err != nil {
 			return err
@@ -63,7 +65,10 @@ left for the operator to disambiguate in agents.json.
 
 		var procs []router.DiscoveredProc
 		if threadDiscoverSelf {
-			procs = selfProc()
+			procs, err = selfProc()
+			if err != nil {
+				return err
+			}
 		} else {
 			procs = enumerateAgentProcs(localSurfaces(reg))
 		}
@@ -97,10 +102,25 @@ left for the operator to disambiguate in agents.json.
 			}
 			registered++
 			actions[i].Reason = "registered " + out.ThreadID
-			// Anchor the watcher to the live session PID, not to sirsi.
-			if werr := spawnRouterWatcher(out.ThreadID, out.AgentID, routerRoot, a.Proc.PID); werr != nil {
-				actions[i].Reason += fmt.Sprintf(" (watcher warning: %v)", werr)
-			}
+
+			// ADR-024: discover REGISTERS, it does not arm. It used to fork a
+			// `watch-router` bridge here, and that fork is a self-feeding storm:
+			// watch-router runs the agent's spawn command, which starts a NEW
+			// agent process; that process is unregistered, so the next discover
+			// pass finds it, registers it, and forks another watcher — which
+			// starts another agent. On the supervisor's cadence the population
+			// multiplies every pass. Observed 2026-07-27: 358 `claude` processes
+			// and 267 zombies, load average 436, swap 48.5 GB of 49 GB, the
+			// machine reporting "system has run out of application memory".
+			//
+			// This is the same fix ADR-024 already applied to `register` ("a pure
+			// handshake — it no longer auto-spawns an fs-watcher; it RETURNS the
+			// canonical watcher the surface must arm"). discover was the caller
+			// that kept the old behavior. The surface arms its own watcher; a
+			// discovered process is ALREADY RUNNING and needs watching, never
+			// launching.
+			actions[i].Reason += " (watcher: " +
+				router.WatcherFor(out.Surface, out.AgentID, out.ThreadID).Type + " — arm at the surface)"
 		}
 
 		return renderDiscover(host, actions, registered)
@@ -154,7 +174,7 @@ func enumerateAgentProcs(surfaces []string) []router.DiscoveredProc {
 // the SessionStart hook (`discover --self`). The session process is sirsi's
 // grandparent (the agent binary); the project dir comes from the runtime env
 // when set, falling back to the current working directory.
-func selfProc() []router.DiscoveredProc {
+func selfProc() ([]router.DiscoveredProc, error) {
 	cwd := os.Getenv("CLAUDE_PROJECT_DIR")
 	if cwd == "" {
 		cwd, _ = os.Getwd()
@@ -163,7 +183,11 @@ func selfProc() []router.DiscoveredProc {
 	if surface == "" {
 		surface = "claude"
 	}
-	return []router.DiscoveredProc{{PID: resolveAnchorPID(), Surface: surface, Cwd: cwd}}
+	anchor, err := resolveAnchorPID(surface)
+	if err != nil {
+		return nil, fmt.Errorf("discover current %s session: %w", surface, err)
+	}
+	return []router.DiscoveredProc{{PID: anchor, Surface: surface, Cwd: cwd}}, nil
 }
 
 // resolveProcCwd returns a process's working directory via lsof, or "" if it

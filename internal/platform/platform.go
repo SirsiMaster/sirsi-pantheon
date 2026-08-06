@@ -28,6 +28,13 @@ type Platform interface {
 
 	// SupportsTrash returns true if the platform supports reversible trash.
 	SupportsTrash() bool
+	// TrashContents lists what is in the trash (read-only). Platforms without
+	// a trash return nil.
+	TrashContents() ([]TrashEntry, error)
+	// EmptyTrash PERMANENTLY deletes the named trash entries. The only
+	// operation with no undo, so implementations must enforce containment
+	// themselves rather than trusting the caller.
+	EmptyTrash(paths []string) (deleted []string, freed int64, err error)
 
 	// MoveToTrash moves a file to the OS trash or recycling bin.
 	MoveToTrash(path string) error

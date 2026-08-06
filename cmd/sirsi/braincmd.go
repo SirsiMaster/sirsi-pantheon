@@ -14,8 +14,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 	"github.com/spf13/cobra"
 )
 
@@ -98,6 +100,74 @@ var brainLevelsCmd = &cobra.Command{
 		fmt.Fprintln(w, "\nSwap a role with `sirsi brain use <role> <provider>`; `sirsi brain use <role> none` reverts to deterministic.")
 		return nil
 	},
+}
+
+var brainRouteCmd = &cobra.Command{
+	Use:   "route <role>",
+	Short: "Show which provider the Local LLM router would use for a role",
+	Long: `Show the Local LLM route for a role without loading a model or mutating
+the router. This is the LLM router, not the idea/thread router: it decides which
+model backend occupies Sirsi's Local LLM slot, then applies Sirsi identity above
+that backend.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		role := brain.Role(args[0])
+		known := false
+		for _, r := range brain.Roles() {
+			if r == role {
+				known = true
+			}
+		}
+		if !known {
+			return fmt.Errorf("unknown role %q (want dispatch|triage|execution)", role)
+		}
+		cfg, err := brain.LoadConfig()
+		if err != nil {
+			return err
+		}
+		route := localrouter.Resolve(cfg, role)
+		if brainStatusJSON {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(route)
+		}
+		writeRouteHuman(cmd.OutOrStdout(), route)
+		return nil
+	},
+}
+
+// writeRouteHuman renders one resolved route for a person.
+//
+// IO7 (sirsi-io ADR-002): a substituted default is never rendered as a
+// configuration. Route.Defaulted already recorded that Resolve() PICKED the
+// provider rather than READ it, and --json already emitted it — but this render
+// printed only the provider name, so an operator could not tell a role
+// configured for local:gemma from an unconfigured role that had local:gemma
+// chosen for it. The contract was honest and the surface was not.
+//
+// Extracted from the command body so the disclosure is assertable by test
+// rather than by reading; see brainroute_io7_test.go.
+func writeRouteHuman(w io.Writer, route localrouter.Route) {
+	fmt.Fprintf(w, "𓁟 Local LLM Router\n\n")
+	fmt.Fprintf(w, "Role:     %s\n", route.Role)
+	if route.Defaulted {
+		// State the EFFECT, never a cause. brain.Config.Provider returns
+		// ProviderNone for three distinct states — role absent, role explicitly
+		// "none", role malformed — and Resolve collapses all three into
+		// Defaulted. An earlier draft said "is not configured", which is false
+		// for the explicit-none case: DefaultConfig() sets every role to none on
+		// purpose, and Config.Level() calls that "Level 0 — all roles
+		// deterministic (no LLM)". So a stock install told an operator who had
+		// deliberately chosen Level 0 that their config was missing, and invited
+		// them to undo it — on every role. "Has no provider selected" is true in
+		// all three states and asserts nothing about why.
+		// (claude-home review, router 20260729-224214.)
+		fmt.Fprintf(w, "Provider: %s  ⚠ DEFAULT — role %q has no provider selected\n", route.Provider.String(), route.Role)
+		fmt.Fprintf(w, "          Sirsi chose this so the call is not a naked model call.\n")
+		fmt.Fprintf(w, "          To select one: sirsi brain use %s %s\n", route.Role, route.Provider.String())
+	} else {
+		fmt.Fprintf(w, "Provider: %s  (configured)\n", route.Provider.String())
+	}
+	fmt.Fprintf(w, "Identity: Ask Sirsi internal system manager\n")
+	fmt.Fprintf(w, "\nThis route can point at Gemma, Qwen, Ollama, Core ML, or another local backend; Sirsi identity stays above the model.\n")
 }
 
 var brainUseCmd = &cobra.Command{
@@ -209,5 +279,6 @@ model. A safe way to preview a ` + "`brain use`" + ` change (A29 §test/no-side-
 func init() {
 	brainStatusCmd.Flags().BoolVar(&brainStatusJSON, "json", false, "emit the status read-model as JSON (for menubar/Nexus surfaces)")
 	brainDoctorCmd.Flags().BoolVar(&brainDoctorJSON, "json", false, "emit the diagnoses as JSON")
-	brainCmd.AddCommand(brainStatusCmd, brainLevelsCmd, brainUseCmd, brainDoctorCmd, brainTestCmd)
+	brainRouteCmd.Flags().BoolVar(&brainStatusJSON, "json", false, "emit the resolved Local LLM route as JSON")
+	brainCmd.AddCommand(brainStatusCmd, brainLevelsCmd, brainRouteCmd, brainUseCmd, brainDoctorCmd, brainTestCmd)
 }

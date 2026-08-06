@@ -208,6 +208,17 @@ The autorouter daemon detects state.json changes via fsnotify and dispatches wit
 
 See: [case-studies/ra-horus-ctr-hypervisor.md](case-studies/ra-horus-ctr-hypervisor.md)
 
+---
+
+## Case Study: LOCAL MODELS THROUGH PANTHEON (2026-06)
+**Status:** Canonized | **ADR:** ADR-031 | **Impact:** Zero-token local inference without memory death
+
+Pantheon owns the local model broker so Sirsi products consume Gemma/MLX through
+one resolver, one RAM gate, one capability boundary, and one Ask Sirsi identity
+surface instead of each app bundling its own local runtime.
+
+See: [case-studies/2026-06-14-local-models-through-pantheon.md](case-studies/2026-06-14-local-models-through-pantheon.md)
+
 ## Case Study: ROUTER V3 — MULTI-AGENT WORK QUEUE (2026-05)
 **Status:** Shipped | **Module:** Ra (Router) | **Agents Registered:** 17
 

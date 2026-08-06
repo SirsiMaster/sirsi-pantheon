@@ -112,7 +112,7 @@ private struct ScaledFont: ViewModifier {
     let weight: Font.Weight
     let design: Font.Design
     func body(content: Content) -> some View {
-        content.font(.system(size: size * scale, weight: weight, design: design))
+        content.font(.system(size: size * scale, weight: weight, design: design)) // sirsi:scaling-primitive
     }
 }
 
@@ -179,9 +179,9 @@ private struct ScaledSemanticFont: ViewModifier {
 
     @ViewBuilder func body(content: Content) -> some View {
         if scale == 1 && weight == nil && design == .default {
-            content.font(style.native)
+            content.font(style.native) // sirsi:scaling-primitive
         } else {
-            content.font(.system(size: style.base * scale,
+            content.font(.system(size: style.base * scale, // sirsi:scaling-primitive
                                  weight: weight ?? style.defaultWeight,
                                  design: design))
         }
@@ -250,6 +250,21 @@ struct MaybeList<Content: View>: View {
                 .padding(12)
         } else {
             List { content }
+        }
+    }
+}
+
+// ScrollView has the same ImageRenderer limitation as List: its hosted content
+// is blank in snapshot mode. This wrapper keeps the live app scrollable while
+// rendering the identical stack directly for visual regression proof.
+struct MaybeScroll<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    @ViewBuilder let content: Content
+    var body: some View {
+        if snapshotMode {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView { content }
         }
     }
 }
@@ -331,96 +346,12 @@ struct HomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("𓁢 Sirsi Pantheon")
-                    .sirsiFont(17, weight: .bold)
-                    .foregroundStyle(gold)
-                Spacer()
-            }
-            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
-
-            // MEMORY-FIRST lead card (canon: RAM is the pre-eminent view, not
-            // storage). Free RAM is the headline number with a pressure light;
-            // swap + the biggest process are the evidence lines; safe-to-reclaim
-            // storage drops to a secondary line beneath. Falls back to the
-            // storage lead only until vitals load, so Home is never blank.
-            VStack(spacing: 4) {
-                if let v = engine.vitals {
-                    let (light, word): (Color, String) = {
-                        switch v.pressure {
-                        case "critical": return (.red, "under heavy memory pressure")
-                        case "warn":     return (.orange, "memory getting tight")
-                        default:         return (.green, "memory healthy")
-                        }
-                    }()
-                    HStack(spacing: 8) {
-                        Circle().fill(light).frame(width: 10, height: 10)
-                        Text(SirsiEngine.human(v.freeBytes) + " free")
-                            .sirsiFont(30, weight: .bold)
-                            .foregroundStyle(light)
-                    }
-                    Text("\(word) · of \(SirsiEngine.human(v.totalBytes)) · swap \(SirsiEngine.human(v.swapUsedBytes))")
-                        .sirsiFont(14, weight: .medium).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    if let top = v.top?.first {
-                        Text("biggest: \(top.name) \(SirsiEngine.human(top.rssBytes))")
-                            .sirsiFont(13, weight: .medium).foregroundStyle(.secondary)
-                    }
-                    if engine.safeBytes >= SirsiEngine.wasteThreshold {
-                        Text("storage: \(SirsiEngine.human(engine.safeBytes)) safe to reclaim")
-                            .sirsiFont(13, weight: .semibold).foregroundStyle(gold)
-                    }
-                } else {
-                    // Pre-vitals fallback: the prior storage lead.
-                    let hasWaste = engine.safeBytes >= SirsiEngine.wasteThreshold
-                    Text(hasWaste ? SirsiEngine.human(engine.safeBytes) : "Clean")
-                        .sirsiFont(30, weight: .bold)
-                        .foregroundStyle(hasWaste ? gold : .green)
-                    Text(hasWaste ? "safe to reclaim" : "reading memory…")
-                        .sirsiFont(14, weight: .medium).foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
-            .task { await engine.fetchVitals() }
-
-            // Autonomous — the master action switch (plain English, one toggle):
-            // ON = Pantheon fixes issues itself (the auto-heal loop, ADR-039);
-            // OFF = it only reports and proposes. Reads/writes the same
-            // ~/.sirsi/brain.yaml truth as `sirsi autonomous on|off`.
-            HStack(spacing: 8) {
-                Text(engine.autonomousOn ? "🛠" : "👁")
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Fix issues automatically").sirsiFont(15, weight: .semibold)
-                    Text(engine.autonomousOn ? "On — health fixes apply; storage stays review-first"
-                                             : "Off — Pantheon only reports and suggests")
-                        .sirsiFont(13, weight: .medium).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { engine.autonomousOn },
-                    set: { on in Task { await engine.setAutonomous(on) } }
-                ))
-                .labelsHidden().toggleStyle(.switch).controlSize(.small)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 6)
-            .task { await engine.fetchAutonomous() }
-
-            // Last check — the owner-facing run report (what the fabric DID:
-            // heals, escalations, cloud reachability). Quiet green/secondary
-            // when all is well; amber only for a current unfixed condition
-            // (surfaces are current + actionable, never decorative alarm).
-            if let sentence = engine.lastRunSentence {
-                HStack(spacing: 6) {
-                    Text("Last check:").sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
-                    Text(sentence)
-                        .sirsiFont(12, weight: .medium)
-                        .foregroundStyle(engine.lastRun?.outcome == "degraded" ? Color.orange : Color.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                }
-                .padding(.horizontal, 16).padding(.bottom, 4)
-            }
+            CommandDeckView(engine: engine)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .task { await engine.fetchVitals() }
+                .task { await engine.fetchAutonomous() }
 
             Divider().padding(.horizontal, 12)
 
@@ -577,6 +508,352 @@ struct HomeView: View {
     }
 }
 
+// CommandDeckView is the first screen: the operator should know, at a glance,
+// whether local AI, compute, router, context, and risk are ready before opening
+// a drill-down. It uses existing live engine state only; no decorative claims.
+struct CommandDeckSignal {
+    let title: String
+    let detail: String
+    let tint: Color
+    var evidence: [String] = []
+}
+
+struct CommandDeckView: View {
+    @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var panelFill: Color {
+        snapshotMode && colorScheme == .dark ? Color(red: 0.105, green: 0.105, blue: 0.105) : Color.primary.opacity(0.04)
+    }
+
+    private var tileFill: Color {
+        snapshotMode && colorScheme == .dark ? Color(red: 0.145, green: 0.145, blue: 0.145) : Color.primary.opacity(0.035)
+    }
+
+    private var aiState: CommandDeckSignal {
+        guard let llm = engine.localLLM else {
+            return CommandDeckSignal(title: "Local AI", detail: "checking conduit", tint: .yellow)
+        }
+        if llm.healthy == true {
+            let model = llm.model?.isEmpty == false ? llm.model! : "local model"
+            let memory = llm.rssMB.map { " · \($0) MB" } ?? ""
+            return CommandDeckSignal(title: "Local AI", detail: "\(model)\(memory)", tint: .green)
+        }
+        return CommandDeckSignal(title: "Local AI", detail: "offline or misregistered", tint: .red)
+    }
+
+    private var aiStatusLabel: String {
+        guard let llm = engine.localLLM else { return "CHECK" }
+        return llm.healthy == true ? "ONLINE" : "OFFLINE"
+    }
+
+    private var computeState: CommandDeckSignal {
+        guard let v = engine.vitals else {
+            return CommandDeckSignal(title: "Compute", detail: "reading pressure", tint: .yellow)
+        }
+        let evidence = [
+            "swap \(SirsiEngine.human(v.swapUsedBytes))",
+            v.top?.first.map { "top \($0.name) \(SirsiEngine.human($0.rssBytes))" },
+        ].compactMap { $0 }
+        switch v.pressure {
+        case "critical":
+            return CommandDeckSignal(title: "Compute", detail: "\(SirsiEngine.human(v.freeBytes)) free · critical", tint: .red, evidence: evidence)
+        case "warn":
+            return CommandDeckSignal(title: "Compute", detail: "\(SirsiEngine.human(v.freeBytes)) free · tight", tint: .orange, evidence: evidence)
+        default:
+            return CommandDeckSignal(title: "Compute", detail: "\(SirsiEngine.human(v.freeBytes)) free", tint: .green, evidence: evidence)
+        }
+    }
+
+    private var routerState: CommandDeckSignal {
+        CommandDeckSignal(title: "Router", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
+    }
+
+    private var contextState: CommandDeckSignal {
+        let owner = engine.ownerGatedItems.count
+        if owner > 0 {
+            return CommandDeckSignal(title: "Context", detail: "\(owner) owner decision\(owner == 1 ? "" : "s")", tint: .yellow)
+        }
+        if engine.threadsTotal > 0 {
+            return CommandDeckSignal(title: "Context", detail: "\(engine.threadsTotal) live threads", tint: .green)
+        }
+        return CommandDeckSignal(title: "Context", detail: "wake digest ready", tint: .secondary)
+    }
+
+    private var riskState: CommandDeckSignal {
+        if engine.healthStatus != "green" {
+            return CommandDeckSignal(title: "Risk", detail: engine.healthSummary, tint: statusColor(engine.healthStatus))
+        }
+        if engine.safeBytes >= SirsiEngine.wasteThreshold {
+            return CommandDeckSignal(title: "Risk", detail: "\(SirsiEngine.human(engine.safeBytes)) reclaimable", tint: .yellow)
+        }
+        return CommandDeckSignal(title: "Risk", detail: "clean checkpoint", tint: .green)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sirsi Command Deck")
+                        .sirsiFont(18, weight: .bold)
+                        .foregroundStyle(.primary)
+                    Text("Local intelligence control plane")
+                        .sirsiFont(12, weight: .semibold)
+                        .foregroundStyle(gold)
+                }
+                Spacer()
+                // The status capsule annotates the local AI — so it opens it.
+                NavLink { AskSirsiView(engine: engine) } label: {
+                    HStack(spacing: 6) {
+                        Circle().fill(aiState.tint).frame(width: 8, height: 8)
+                        Text(aiStatusLabel)
+                            .sirsiFont(10, weight: .bold)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(tileFill))
+                    .contentShape(Capsule())
+                }
+                .accessibilityLabel("\(aiStatusLabel) — open Ask Sirsi")
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                // The hero annotates the local AI; tapping it opens Ask Sirsi.
+                NavLink { AskSirsiView(engine: engine) } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(aiState.tint)
+                            .frame(width: 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(aiState.title)
+                                .sirsiFont(24, weight: .bold)
+                                .foregroundStyle(.primary)
+                            Text(aiState.detail)
+                                .sirsiFont(13, weight: .medium)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .sirsiFont(11, weight: .semibold)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 6)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("\(aiState.title) — open Ask Sirsi")
+
+                // Every chip is a drill-down into the surface it annotates (owner
+                // gate): a chip that names a number the user cannot open teaches
+                // them the panel is a poster, not an instrument. Context and Risk
+                // pick their destination from the SAME condition that picked their
+                // text, so the tap always lands on the thing the words describe.
+                // Text and destination are derived ATOMICALLY: the route enum is
+                // computed in the same body pass as the chip text and captured BY
+                // VALUE in the destination closure. Re-reading engine state at tap
+                // time could show "owner decisions" and open Threads if the engine
+                // updated between render and tap (codex post-merge finding 3).
+                let ctxRoute: DeckRoute = engine.ownerGatedItems.count > 0 ? .ownerActions : .threads
+                let riskRoute: DeckRoute = engine.healthStatus != "green" ? .horus
+                    : (engine.safeBytes >= SirsiEngine.wasteThreshold ? .anubis : .osiris)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
+                    CommandDeckMetric(state: computeState, fill: tileFill, destinationName: DeckRoute.horus.surfaceName) { HorusView(engine: engine) }
+                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RouterView(engine: engine) }
+                    CommandDeckMetric(state: contextState, fill: tileFill, destinationName: ctxRoute.surfaceName) {
+                        DeckRouteView(route: ctxRoute, engine: engine)
+                    }
+                    CommandDeckMetric(state: riskState, fill: tileFill, destinationName: riskRoute.surfaceName) {
+                        DeckRouteView(route: riskRoute, engine: engine)
+                    }
+                }
+
+                if let sentence = engine.lastRunSentence {
+                    NavLink { ActivityView(engine: engine) } label: {
+                        HStack(spacing: 4) {
+                            Text(sentence)
+                                .sirsiFont(12, weight: .medium)
+                                .foregroundStyle(engine.lastRun?.outcome == "degraded" ? Color.orange : Color.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Image(systemName: "chevron.right")
+                                .sirsiFont(9, weight: .semibold)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Last run — open Activity")
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(panelFill)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(gold.opacity(0.34), lineWidth: 1))
+            )
+
+            HStack(spacing: 8) {
+                CommandDeckNav(title: "Ask", symbol: "sparkles", fill: panelFill) {
+                    AskSirsiView(engine: engine)
+                }
+                CommandDeckNav(title: "Router", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
+                    RouterView(engine: engine)
+                }
+                CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg", fill: panelFill) {
+                    HorusView(engine: engine)
+                }
+                CommandDeckNav(title: "Insight", symbol: "scope", fill: panelFill) {
+                    InsightView(engine: engine)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: engine.autonomousOn ? "bolt.shield.fill" : "eye")
+                    .foregroundStyle(engine.autonomousOn ? gold : Color.secondary)
+                    .sirsiFrame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Autonomous fixes")
+                        .sirsiFont(13, weight: .semibold)
+                    Text(engine.autonomousOn ? "enabled for safe health work" : "review-first mode")
+                        .sirsiFont(11, weight: .medium)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { engine.autonomousOn },
+                    set: { on in Task { await engine.setAutonomous(on) } }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 7).fill(panelFill))
+        }
+    }
+}
+
+// DeckRoute is a VALUE captured at render time, so the surface a tap opens is
+// the one the chip's text described — text and destination cannot diverge.
+enum DeckRoute {
+    case horus, routerFabric, ownerActions, threads, anubis, osiris
+
+    var surfaceName: String {
+        switch self {
+        case .horus: return "Horus — Ops"
+        case .routerFabric: return "Router — Fabric"
+        case .ownerActions: return "Owner Actions"
+        case .threads: return "Threads"
+        case .anubis: return "Anubis — Hygiene"
+        case .osiris: return "Osiris — Checkpoints"
+        }
+    }
+}
+
+struct DeckRouteView: View {
+    let route: DeckRoute
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        switch route {
+        case .horus: HorusView(engine: engine)
+        case .routerFabric: RouterView(engine: engine)
+        case .ownerActions: OwnerActionsListView(engine: engine)
+        case .threads: ThreadsView(engine: engine)
+        case .anubis: AnubisView(engine: engine)
+        case .osiris: RiskView(engine: engine)
+        }
+    }
+}
+
+// CommandDeckMetric is a DRILL-DOWN, not a poster (owner gate 2026-07-30):
+// every chip on the deck opens the surface whose state it annotates. The
+// chevron and hover ring exist so it also LOOKS openable — an affordance the
+// user cannot see is one they will never try.
+struct CommandDeckMetric<Destination: View>: View {
+    let state: CommandDeckSignal
+    let fill: Color
+    // Named so the accessibility label can say where the tap actually lands —
+    // "open Context" names the chip, not the surface (codex post-merge finding 4).
+    let destinationName: String
+    @ViewBuilder let destination: () -> Destination
+    @State private var hovering = false
+
+    var body: some View {
+        NavLink { destination() } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle().fill(state.tint).frame(width: 7, height: 7)
+                    Text(state.title.uppercased())
+                        .sirsiFont(9, weight: .bold)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
+                    Image(systemName: "chevron.right")
+                        .sirsiFont(8, weight: .semibold)
+                        .foregroundStyle(hovering ? .secondary : .tertiary)
+                }
+                Text(state.detail)
+                    .sirsiFont(12, weight: .semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(state.evidence, id: \.self) { line in
+                    Text(line)
+                        .sirsiFont(10, weight: .medium)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: state.evidence.isEmpty ? 46 : 70, alignment: .topLeading)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(fill)
+                    .overlay(RoundedRectangle(cornerRadius: 7)
+                        .stroke(hovering ? Color.secondary.opacity(0.35) : .clear, lineWidth: 1))
+            )
+            .contentShape(Rectangle())
+        }
+        .onHover { hovering = $0 }
+        .accessibilityLabel("\(state.title): \(state.detail) — open \(destinationName)")
+    }
+}
+
+struct CommandDeckNav<Destination: View>: View {
+    let title: String
+    let symbol: String
+    let fill: Color
+    private let destination: () -> Destination
+
+    init(title: String, symbol: String, fill: Color, @ViewBuilder destination: @escaping () -> Destination) {
+        self.title = title
+        self.symbol = symbol
+        self.fill = fill
+        self.destination = destination
+    }
+
+    var body: some View {
+        NavLink { destination() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).sirsiFont(11, weight: .semibold)
+                Text(title).sirsiFont(12, weight: .semibold).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(fill)
+                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(gold.opacity(0.42), lineWidth: 1))
+            )
+            .foregroundStyle(gold)
+        }
+    }
+}
+
 // statusColor maps the canonical green/amber/red roll-up to a dot/label colour.
 func statusColor(_ status: String) -> Color {
     switch status {
@@ -616,6 +893,11 @@ struct DeityRow: View {
     let glyph: String; let title: String
     var detail: String? = nil
     var dot: Color? = nil
+    @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.colorScheme) private var colorScheme
+    private var panelFill: Color {
+        snapshotMode && colorScheme == .dark ? Color(red: 0.105, green: 0.105, blue: 0.105) : Color.primary.opacity(0.04)
+    }
     var body: some View {
         HStack(spacing: 10) {
             Text(glyph).sirsiFont(20).sirsiFrame(width: 28)
@@ -629,7 +911,7 @@ struct DeityRow: View {
         }
         .padding(.vertical, 8).padding(.horizontal, 10)
         .contentShape(Rectangle())
-        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: 7).fill(panelFill))
     }
 }
 
@@ -747,6 +1029,35 @@ struct FDAGuideView: View {
 struct HorusView: View {
     @ObservedObject var engine: SirsiEngine
 
+    private static let memoryChecks: Set<String> = [
+        "RAM Pressure", "Memory Death Spiral", "Swap", "Top Memory Consumers",
+        "Process Footprint", "Duplicate Model Brokers",
+    ]
+
+    private var memoryFindings: [DiagFinding] {
+        engine.health.filter { Self.memoryChecks.contains($0.check) }
+    }
+    private var memoryIssues: [DiagFinding] { memoryFindings.filter { $0.severity >= 2 } }
+    private var otherIssues: [DiagFinding] {
+        engine.health.filter { $0.severity >= 2 && !Self.memoryChecks.contains($0.check) }
+    }
+    private var quietFindings: [DiagFinding] { engine.health.filter { $0.severity < 2 } }
+
+    private var statusTitle: String {
+        switch engine.healthStatus {
+        case "red": return "System needs attention"
+        case "amber": return "Worth a look"
+        default: return "Your Mac looks good"
+        }
+    }
+
+    private var statusDetail: String {
+        let n = engine.healthIssueCount
+        if n == 0 { return "No active issues. Horus is watching quietly." }
+        let count = "\(n) check\(n == 1 ? "" : "s") need attention."
+        return memoryIssues.count > 1 ? count + " Related signals are grouped into one clear story." : count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Horus — Ops")
@@ -757,22 +1068,52 @@ struct HorusView: View {
                         .sirsiFont(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                MaybeList {
-                    Section {
-                        ForEach(engine.health) { f in
-                            HealthRow(engine: engine, finding: f)
+                MaybeScroll {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HorusStatusCard(status: engine.healthStatus, title: statusTitle,
+                                        detail: statusDetail, issueCount: engine.healthIssueCount)
+
+                        if !memoryIssues.isEmpty {
+                            SectionLabel("WHAT'S HAPPENING")
+                            HorusMemoryStory(engine: engine, findings: memoryFindings,
+                                             issueCount: memoryIssues.count)
                         }
-                    } header: {
-                        // Canonical green/amber/red roll-up — NOT raw worst-severity
-                        // (which read CRITICAL on historical 7-day trends).
-                        let n = engine.healthIssueCount
-                        Text(engine.healthStatus == "green" ? "ALL SYSTEMS HEALTHY"
-                             : (engine.healthStatus == "amber" ? "ATTENTION — \(n) item(s)"
-                                : "CRITICAL — \(n) item(s)"))
-                            .foregroundStyle(statusColor(engine.healthStatus))
+
+                        if !otherIssues.isEmpty {
+                            SectionLabel(memoryIssues.isEmpty ? "WHAT'S HAPPENING" : "ALSO NEEDS ATTENTION")
+                            VStack(spacing: 0) {
+                                ForEach(Array(otherIssues.enumerated()), id: \.element.id) { index, finding in
+                                    HealthRow(engine: engine, finding: finding)
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                    if index != otherIssues.count - 1 { Divider().padding(.leading, 26) }
+                                }
+                            }
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.045)))
+                        }
+
+                        if !quietFindings.isEmpty {
+                            DisclosureGroup {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(quietFindings.enumerated()), id: \.element.id) { index, finding in
+                                        HealthRow(engine: engine, finding: finding)
+                                            .padding(.horizontal, 8).padding(.vertical, 4)
+                                        if index != quietFindings.count - 1 { Divider().padding(.leading, 24) }
+                                    }
+                                }.padding(.top, 6)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    Text("Healthy checks").sirsiFont(12, weight: .semibold)
+                                    Spacer()
+                                    Text("\(quietFindings.count)").sirsiFont(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.035)))
+                        }
                     }
+                    .padding(14)
                 }
-                .listStyle(.inset)
             }
             Divider()
             HStack {
@@ -785,6 +1126,120 @@ struct HorusView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .navigationTitle("Horus — Ops")
+    }
+}
+
+// The calm overview keeps the canonical roll-up exactly as reported by Go, but
+// expresses it in human language. Colour is a compact accent, never a wall of
+// alarm text; the explanation carries the meaning for accessibility.
+private struct HorusStatusCard: View {
+    let status: String
+    let title: String
+    let detail: String
+    let issueCount: Int
+
+    private var label: String {
+        switch status { case "red": return "Critical"; case "amber": return "Attention"; default: return "Healthy" }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle().fill(statusColor(status).opacity(0.16)).frame(width: 38, height: 38)
+                Image(systemName: status == "green" ? "checkmark" : "waveform.path.ecg")
+                    .sirsiFont(15, weight: .semibold).foregroundStyle(statusColor(status))
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title).sirsiFont(16, weight: .semibold)
+                    Spacer(minLength: 8)
+                    Text(label.uppercased()).sirsiFont(.caption2, weight: .bold)
+                        .foregroundStyle(statusColor(status))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(statusColor(status).opacity(0.12)))
+                }
+                Text(detail).sirsiFont(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.055)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.07)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(issueCount == 0 ? "\(label). \(detail)" : "\(label). \(issueCount) checks need attention. \(detail)")
+    }
+}
+
+// Memory findings are intentionally different measurements (live usage, peak
+// footprint, system pressure, broker count). Presenting each as a peer row made
+// one process look like several unrelated emergencies. This card preserves all
+// measurements while telling one story and offering one path to the strongest
+// actionable finding.
+private struct HorusMemoryStory: View {
+    @ObservedObject var engine: SirsiEngine
+    let findings: [DiagFinding]
+    let issueCount: Int
+
+    private var actionable: DiagFinding {
+        findings.sorted {
+            if $0.severity != $1.severity { return $0.severity > $1.severity }
+            return !($0.fix ?? "").isEmpty && ($1.fix ?? "").isEmpty
+        }.first!
+    }
+    private var current: DiagFinding? { findings.first { $0.check == "Top Memory Consumers" } }
+    private var peak: DiagFinding? { findings.first { $0.check == "Process Footprint" } }
+    private var pressure: DiagFinding? {
+        findings.first { $0.check == "RAM Pressure" || $0.check == "Memory Death Spiral" || $0.check == "Swap" }
+    }
+    private var broker: DiagFinding? { findings.first { $0.check == "Duplicate Model Brokers" } }
+
+    var body: some View {
+        NavLink { FindingView(engine: engine, finding: actionable) } label: {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 9) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8).fill(findingColor(actionable).opacity(0.15))
+                        Image(systemName: "memorychip").foregroundStyle(findingColor(actionable))
+                    }.frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Memory load").sirsiFont(14, weight: .semibold)
+                        Text("\(issueCount) related check\(issueCount == 1 ? "" : "s") · one system story")
+                            .sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").sirsiFont(.caption).foregroundStyle(.tertiary)
+                }
+
+                if let current { HorusEvidence(label: "NOW", text: current.message) }
+                if let peak { HorusEvidence(label: "PEAK", text: peak.message) }
+                if current == nil, let pressure { HorusEvidence(label: "NOW", text: pressure.message) }
+
+                if let broker, broker.severity < 2 {
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(broker.message).sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.055)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(findingColor(actionable).opacity(0.24)))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
+
+private struct HorusEvidence: View {
+    let label: String
+    let text: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Text(label).sirsiFont(.caption2, weight: .bold).foregroundStyle(.secondary)
+                .sirsiFrame(width: 34)
+                .frame(alignment: .leading)
+            Text(text).sirsiFont(.callout).foregroundStyle(.primary.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -1402,6 +1857,15 @@ struct AnubisView: View {
                                    sub: "Remnants of apps you've uninstalled (Ka)")
                     }.buttonStyle(.plain)
 
+                    // The Trash is where every OTHER clean path leaves things —
+                    // recoverable by design. This is the one screen that can make
+                    // that permanent, so it is its own drill-down with its own
+                    // confirmation, never folded into the one-click clean.
+                    NavLink { EmptyTrashView(engine: engine) } label: {
+                        ActionCard(glyph: "🗑", title: "Empty Trash",
+                                   sub: "Permanently delete what Sirsi (and you) moved to Trash — no undo")
+                    }.buttonStyle(.plain)
+
                     // Legible, plain-English note about what's held back (was tiny).
                     if engine.cautionBytes > 0 {
                         ExclusionNote(bytes: engine.cautionBytes, count: engine.caution.count)
@@ -1411,6 +1875,104 @@ struct AnubisView: View {
             }
         }
         .navigationTitle("Anubis")
+    }
+}
+
+// EmptyTrashView — the only surface in Sirsi that destroys something
+// permanently. Everything else is trash-first and recoverable, so this screen
+// is deliberately shaped against the rest of the app:
+//
+//   - it SHOWS the contents before offering the action (you cannot permanently
+//     delete a list you have not seen);
+//   - the destructive button is disabled until that list has loaded, so it can
+//     never fire against unknown contents;
+//   - it takes TWO taps, and the second one is the one that says "permanently";
+//   - the result line reports what was actually freed, read back from the CLI,
+//     not an optimistic "done".
+struct EmptyTrashView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var count = 0
+    @State private var sizeText = ""
+    @State private var items: [String] = []
+    @State private var loading = true
+    @State private var arming = false
+    @State private var result: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Empty Trash")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if loading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Reading Trash…").sirsiFont(12).foregroundStyle(.secondary)
+                        }
+                    } else if let r = result {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                            Text(r).sirsiFont(13, weight: .semibold)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else if count == 0 {
+                        Text("Trash is empty — nothing to delete.")
+                            .sirsiFont(13).foregroundStyle(.secondary)
+                    } else {
+                        Text("\(count) item\(count == 1 ? "" : "s") · \(sizeText)")
+                            .sirsiFont(17, weight: .bold).foregroundStyle(gold)
+                        Text("These are already in the Trash. Emptying it removes them for good — Sirsi cannot restore them, and neither can Finder.")
+                            .sirsiFont(12).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(items.prefix(12), id: \.self) { line in
+                                Text("· " + line).sirsiFont(11).foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            if items.count > 12 {
+                                Text("… and \(items.count - 12) more")
+                                    .sirsiFont(11).foregroundStyle(.tertiary)
+                            }
+                        }
+
+                        if arming {
+                            Button(role: .destructive) {
+                                Task {
+                                    let out = await engine.emptyTrash()
+                                    result = out
+                                    arming = false
+                                }
+                            } label: {
+                                Text("Permanently delete \(count) item\(count == 1 ? "" : "s")")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .disabled(engine.busy)
+                            Button("Cancel") { arming = false }
+                                .buttonStyle(.plain)
+                                .sirsiFont(12)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                arming = true
+                            } label: {
+                                Text("Empty Trash…").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(loading || count == 0)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .task {
+            let r = await engine.trashList()
+            count = r.count; sizeText = r.size; items = r.lines
+            loading = false
+        }
+        .navigationTitle("Empty Trash")
     }
 }
 
@@ -2569,6 +3131,43 @@ struct AskSirsiView: View {
     private var panelFill: Color {
         snapshotMode ? Color(red: 0.13, green: 0.13, blue: 0.13) : Color.primary.opacity(0.04)
     }
+    private var deepPanelFill: Color {
+        snapshotMode ? Color(red: 0.095, green: 0.095, blue: 0.10) : Color.primary.opacity(0.065)
+    }
+    private var online: Bool { engine.localLLM?.healthy == true }
+    private var liveStatus: String {
+        if let llm = engine.localLLM {
+            let memory = llm.rssMB.map { " · \(SirsiEngine.human(Int64($0) * 1_048_576))" } ?? ""
+            let uptime = llm.uptime.map { " · up \($0)" } ?? ""
+            return online ? "ONLINE ON THIS MAC\(memory)\(uptime)" : "OFFLINE - supervised restart path armed"
+        }
+        return "READING LOCAL CONDUIT"
+    }
+    private var managerTiles: [ManagerTileSpec] {
+        let canon = engine.askSirsiCanonGroundingStatus()
+        return [
+            ManagerTileSpec(symbol: "point.3.connected.trianglepath.dotted",
+                            title: "Router Fabric",
+                            value: "\(engine.threadsTotal) live threads",
+                            detail: engine.routerSummary,
+                            tint: statusColor(engine.routerStatus)),
+            ManagerTileSpec(symbol: "cpu",
+                            title: "Compute",
+                            value: engine.vitals.map { SirsiEngine.human($0.freeBytes) + " free" } ?? "sampling node",
+                            detail: engine.vitals.map { "pressure \($0.pressure)" } ?? "ANE/MLX/Metal/CPU lanes",
+                            tint: engine.vitals?.pressure == "critical" ? .red : (engine.vitals?.pressure == "warn" ? .orange : .green)),
+            ManagerTileSpec(symbol: "books.vertical",
+                            title: "Knowledge",
+                            value: canon.value,
+                            detail: canon.detail,
+                            tint: canon.healthy ? .green : .orange),
+            ManagerTileSpec(symbol: "lock.shield",
+                            title: "Authority",
+                            value: engine.ownerGatedItems.isEmpty ? "action-gated" : "\(engine.ownerGatedItems.count) owner items",
+                            detail: "explains, routes, and keeps destructive work governed",
+                            tint: engine.ownerGatedItems.isEmpty ? .green : .yellow),
+        ]
+    }
 
     init(engine: SirsiEngine, preloadedAnswer: String? = nil) {
         self.engine = engine
@@ -2577,118 +3176,14 @@ struct AskSirsiView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BackBar(title: "Ask Sirsi — Local AI")
+            BackBar(title: "Ask Sirsi")
 
-            // ── State card ────────────────────────────────────────────────
-            VStack(alignment: .leading, spacing: 6) {
-                if let llm = engine.localLLM {
-                    let online = llm.healthy == true
-                    HStack(spacing: 8) {
-                        Circle().fill(online ? .green : .red).frame(width: 9, height: 9)
-                        Text(online ? "Online — answering on this Mac" : "Offline")
-                            .sirsiFont(15, weight: .semibold)
-                    }
-                    if online {
-                        if let rss = llm.rssMB {
-                            Text("using \(SirsiEngine.human(Int64(rss) * 1_048_576)) of memory" +
-                                 (llm.uptime.map { " · up \($0)" } ?? ""))
-                                .sirsiFont(13).foregroundStyle(.secondary)
-                        }
-                        if let cap = llm.kvCacheCapBytes {
-                            Text("answer cache capped at \(SirsiEngine.human(cap))")
-                                .sirsiFont(13).foregroundStyle(.secondary)
-                        }
-                        // No model-identifier line: brand-over-model-name is owner
-                        // canon — the GUI says "Local AI", the model id stays in
-                        // the CLI/board. (The task note about showing the board's
-                        // model name targeted the response's "default_model"
-                        // quirk; the fix is to show NO id, not the raw one.)
-                    } else {
-                        Text("Sirsi restores it automatically each cycle — no action needed.")
-                            .sirsiFont(13).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                } else {
-                    Text("Reading Local AI state…").sirsiFont(13).foregroundStyle(.secondary)
-                }
+            if snapshotMode {
+                managerContent
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                ScrollView { managerContent }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-            .padding(.horizontal, 12).padding(.top, 8)
-
-            // ── Query box ─────────────────────────────────────────────────
-            VStack(alignment: .leading, spacing: 6) {
-                if snapshotMode {
-                    HStack(spacing: 6) {
-                        Text("Ask anything — answered on this Mac, never cloud")
-                            .sirsiFont(13)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(gold)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                } else {
-                    HStack(spacing: 6) {
-                        TextField("Ask anything — answered on this Mac, never cloud", text: $question)
-                            .textFieldStyle(.plain).sirsiFont(13)
-                            .onSubmit { ask() }
-                        if asking {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
-                                .buttonStyle(.plain).foregroundStyle(gold)
-                                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty
-                                          || engine.localLLM?.healthy != true)
-                        }
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                }
-                if asking {
-                    Text("thinking on-device…").sirsiFont(.caption2).foregroundStyle(.tertiary)
-                }
-                if snapshotMode {
-                    Label("Report what Sirsi taught you", systemImage: "book.closed")
-                        .frame(maxWidth: .infinity)
-                        .sirsiFont(12, weight: .semibold)
-                        .foregroundStyle(gold)
-                        .padding(.vertical, 7)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                } else {
-                    Button {
-                        askKnowledgeReport()
-                    } label: {
-                        Label("Report what Sirsi taught you", systemImage: "book.closed")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderless)
-                    .sirsiFont(12, weight: .semibold)
-                    .foregroundStyle(gold)
-                    .disabled(asking || engine.localLLM?.healthy != true)
-                }
-                if let answer {
-                    if snapshotMode {
-                        Text(answer).sirsiFont(13)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                    } else {
-                        ScrollView {
-                            Text(answer).sirsiFont(13)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                        .frame(maxHeight: 260)
-                    }
-                    Text("answered on-device by Sirsi — no cloud").sirsiFont(.caption2).foregroundStyle(.tertiary)
-                }
-            }
-            .padding(.horizontal, 12).padding(.top, 10)
 
             Spacer(minLength: 8)
         }
@@ -2713,6 +3208,200 @@ struct AskSirsiView: View {
             answer = await engine.askLocalAIKnowledgeReport()
             asking = false
         }
+    }
+
+    private var managerContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(gold.opacity(0.18))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "terminal.fill")
+                            .sirsiFont(20, weight: .bold)
+                            .foregroundStyle(gold)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Internal System Manager")
+                            .sirsiFont(17, weight: .bold)
+                            .foregroundStyle(.primary)
+                        Text("Ask Sirsi knows Pantheon, the router, Hypergraph, Sirsi IO, portfolio apps, and this Mac's local operating state.")
+                            .sirsiFont(11, weight: .medium)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                }
+
+                HStack(spacing: 7) {
+                    ManagerPill(text: liveStatus, tint: online ? .green : .yellow)
+                    ManagerPill(text: "LOCAL ONLY", tint: gold)
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(deepPanelFill)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(gold.opacity(0.38), lineWidth: 1))
+            )
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 152), spacing: 8)], spacing: 8) {
+                ForEach(managerTiles) { tile in
+                    ManagerTile(tile: tile, fill: panelFill)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").foregroundStyle(gold)
+                    Text("Operator Query")
+                        .sirsiFont(12, weight: .bold)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if asking { ProgressView().controlSize(.small) }
+                }
+
+                if snapshotMode {
+                    HStack(spacing: 6) {
+                        Text("Ask Sirsi about router work, local health, or what changed.")
+                            .sirsiFont(13)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(gold)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                } else {
+                    HStack(spacing: 8) {
+                        TextField("Ask about Sirsi, Pantheon, router work, local health, or what changed.", text: $question)
+                            .textFieldStyle(.plain)
+                            .sirsiFont(13)
+                            .onSubmit { ask() }
+                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill").sirsiFont(20) }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(gold)
+                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || !online || asking)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                }
+
+                if snapshotMode {
+                    Label("Report what Sirsi taught you", systemImage: "book.closed")
+                        .frame(maxWidth: .infinity)
+                        .sirsiFont(12, weight: .semibold)
+                        .foregroundStyle(gold)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                } else {
+                    Button { askKnowledgeReport() } label: {
+                        Label("Report what Sirsi taught you", systemImage: "book.closed")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderless)
+                    .sirsiFont(12, weight: .semibold)
+                    .foregroundStyle(gold)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                    .disabled(asking || !online)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(deepPanelFill))
+
+            if let answer {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Sirsi Response")
+                        .sirsiFont(12, weight: .bold)
+                        .foregroundStyle(.secondary)
+                    Text(answer)
+                        .sirsiFont(13)
+                        .lineLimit(snapshotMode ? 7 : nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                    Text("answered on-device by Sirsi - no cloud")
+                        .sirsiFont(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+    }
+}
+
+struct ManagerTileSpec: Identifiable {
+    var id: String { title }
+    let symbol: String
+    let title: String
+    let value: String
+    let detail: String
+    let tint: Color
+}
+
+struct ManagerPill: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(tint).frame(width: 6, height: 6)
+            Text(text)
+                .sirsiFont(9, weight: .bold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(tint.opacity(0.12))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(tint.opacity(0.35), lineWidth: 1))
+        )
+    }
+}
+
+struct ManagerTile: View {
+    let tile: ManagerTileSpec
+    let fill: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Image(systemName: tile.symbol)
+                    .sirsiFont(13, weight: .bold)
+                    .foregroundStyle(tile.tint)
+                    .sirsiFrame(width: 18)
+                Text(tile.title.uppercased())
+                    .sirsiFont(9, weight: .bold)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+            }
+            Text(tile.value)
+                .sirsiFont(13, weight: .bold)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(tile.detail)
+                .sirsiFont(11, weight: .medium)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .topLeading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(fill)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(tile.tint.opacity(0.26), lineWidth: 1))
+        )
     }
 }
 

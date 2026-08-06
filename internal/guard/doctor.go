@@ -154,6 +154,18 @@ func remediationCommand(f DiagnosticFinding) string {
 		if warn {
 			return "sirsi relieve"
 		}
+	case "Duplicate Model Brokers":
+		// Two brokers means two copies of a multi-GB model resident at once, and
+		// the extra one serves nothing — nothing routes to it, so its pages get
+		// swapped out and eat the swap file while it sits idle. `relieve --memory`
+		// flushes caches and would not touch it; the only real remedy is to stop
+		// the broker that is not the canonical one. `gemma serve --stop` targets
+		// the pidfile's broker, so this points at the sweep that reaps orphans by
+		// discovery instead. ADR-033: an alarming check ships a lever that acts on
+		// the thing it alarmed about.
+		if warn {
+			return "sirsi gemma reap-orphans"
+		}
 	case "Process Footprint":
 		// One process holding a third-to-half of RAM. `relieve --memory` flushes
 		// inactive caches, which does NOT touch a single process's footprint —
@@ -339,6 +351,7 @@ var doctorChecks = []doctorCheck{
 	{"Memory Processes", []string{"Top Memory Consumers"}, checkTopMemoryProcesses},
 	{"Spotlight Storm", []string{"Spotlight Storm"}, checkSpotlightStorm},
 	{"Process Footprint", []string{"Process Footprint"}, checkProcessFootprint},
+	{"Duplicate Model Brokers", []string{"Duplicate Model Brokers"}, checkDuplicateModelBrokers},
 	{"Crash Logs", []string{"Kernel Panics (7d)", "Jetsam Events (7d)"},
 		func(_ platform.Platform, r *DoctorReport) { checkRecentCrashLogs(r) }},
 	{"App Crashes", []string{"App Crashes (7d)"},
@@ -351,6 +364,8 @@ var doctorChecks = []doctorCheck{
 	{"Runaway Executor", []string{"Runaway Executor"}, checkRunawayExecutor},
 	{"Local Snapshots", []string{"Local Snapshots"},
 		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
+	{"launchd Disabled", []string{"launchd Disabled Override"}, checkLaunchdDisabled},
+	{"Pause Ledger", []string{"Agent Pause Ledger"}, checkPauseLedger},
 }
 
 // externalFindingChecks are finding Check names appended to the report OUTSIDE
@@ -636,7 +651,7 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 		if i >= 5 {
 			break
 		}
-		top = append(top, fmt.Sprintf("%s (%s)", proc.Name, FormatBytes(memSize(proc))))
+		top = append(top, fmt.Sprintf("%s (%s)", processDisplayName(p, proc), FormatBytes(memSize(proc))))
 	}
 
 	// Check for any single process using > 4GB
@@ -676,7 +691,11 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 				continue
 			}
 		}
-		hogs = append(hogs, fmt.Sprintf("%s at %s", proc.Name, FormatBytes(size)))
+		// "(live)" disambiguates this from the Process Footprint check, which
+		// alarms on max(live, peak) and can legitimately show a HIGHER number
+		// for the same process — without the label the two rows read as
+		// contradicting each other over the same PID (owner report, 2026-08-05).
+		hogs = append(hogs, fmt.Sprintf("%s at %s (live)", processDisplayName(p, proc), FormatBytes(size)))
 	}
 
 	finding := DiagnosticFinding{
@@ -1435,4 +1454,199 @@ func calculateScore(findings []DiagnosticFinding) int {
 		score = 0
 	}
 	return score
+}
+
+// RemediationFor exposes a finding's fix command to callers outside this
+// package. `sirsi ask` needs it so the heuristic rung can answer with an ACTION
+// and not just a diagnosis — a measured problem with no offered remedy is half
+// an answer (ADR-033).
+func RemediationFor(f DiagnosticFinding) string { return remediationCommand(f) }
+
+// checkLaunchdDisabled reads launchctl print-disabled and reports any
+// ai.sirsi.* or actions.runner.* label marked disabled in the override DB.
+//
+// A disabled label keeps running until the next reboot — after which launchd
+// will not restart it. This is the "green surface over a dead thing with a
+// latency fuse" class: every current-state probe (ps, launchctl list, /health)
+// sees healthy; only the override DB reveals the post-reboot fate.
+// macOS (darwin) only.
+func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
+	if p.Name() != "darwin" && p.Name() != "mock" {
+		return
+	}
+	uid := os.Getuid()
+	out, err := p.Command("launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid))
+	if err != nil || len(out) == 0 {
+		// print-disabled is macOS 10.11+. Fail-open: don't penalize hosts that
+		// can't run it (CI, Linux, older macOS in tests).
+		return
+	}
+	disabled := parseLaunchdDisabled(string(out))
+	if len(disabled) == 0 {
+		report.Findings = append(report.Findings, DiagnosticFinding{
+			Check:    "launchd Disabled Override",
+			Severity: SeverityOK,
+			Message:  "No Sirsi/runner labels disabled in launchd override DB",
+		})
+		return
+	}
+	// Say whether each disabled label is ALSO unloaded. The old wording —
+	// "currently running (if launched before the disable)" — reads as "works
+	// now, breaks at reboot", and hedges the one fact the operator needs. On
+	// 2026-08-05 four self-hosted runners were disabled AND unloaded: dead for
+	// five days while the finding described a future risk.
+	var down []string
+	for _, label := range disabled {
+		if _, err := p.Command("launchctl", "print", fmt.Sprintf("gui/%d/%s", uid, label)); err != nil {
+			down = append(down, label)
+		}
+	}
+	headline := fmt.Sprintf("%d Sirsi/runner label(s) disabled in launchd override DB — will NOT start after next reboot", len(disabled))
+	if len(down) > 0 {
+		headline = fmt.Sprintf("%d Sirsi/runner label(s) disabled in launchd override DB — %d of them are ALREADY DOWN, not merely at risk at reboot", len(disabled), len(down))
+	}
+	downLine := ""
+	if len(down) > 0 {
+		downLine = fmt.Sprintf("Already unloaded (not running now): %s\n", strings.Join(down, ", "))
+	}
+	report.Findings = append(report.Findings, DiagnosticFinding{
+		Check:    "launchd Disabled Override",
+		Severity: SeverityCritical,
+		Message:  headline,
+		Detail: fmt.Sprintf(
+			"Disabled: %s\n"+
+				"%s"+
+				"Fix (per label): launchctl enable gui/%d/<label> && launchctl bootstrap gui/%d ~/Library/LaunchAgents/<label>.plist\n"+
+				"Or run: sirsi liveness-watch run (the supervisor duty re-enables+bootstraps on its next pass)",
+			strings.Join(disabled, ", "), downLine, uid, uid,
+		),
+	})
+}
+
+// pauseLedgerPath is where scripts/quiet.sh (sirsi-inference) records the
+// agents it booted out and disabled, so `resume` can put them back.
+const pauseLedgerPath = "Library/LaunchAgents/.sirsi-paused"
+
+// staleLedgerAfter is how long a pause may plausibly last. A benchmark run is
+// minutes; a ledger older than this means a resume was never run.
+const staleLedgerAfter = 6 * time.Hour
+
+// checkPausePledger detects a pause ledger that was never resumed.
+//
+// WHY THIS EXISTS. `quiet.sh pause` boots out AND disables every ai.sirsi.* and
+// actions.runner.* agent so a benchmark measures the engine instead of the
+// machine, recording them in a ledger that `resume` consumes and deletes. On
+// 2026-07-31 a pause ran and resume never did. Over the next five days
+// Pantheon's own heal duty re-enabled 30 of the 34 labels piecemeal — which is
+// exactly what made this invisible: the fleet looked healthy while four
+// self-hosted CI runners stayed dead, and the surviving ledger meant the next
+// pause would MERGE into it and re-disable everything again.
+//
+// A leftover ledger is the durable signal. The disabled-label check sees only
+// whatever has not yet been healed; this sees the cause.
+func checkPauseLedger(p platform.Platform, report *DoctorReport) {
+	if p.Name() != "darwin" && p.Name() != "mock" {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return
+	}
+	path := filepath.Join(home, pauseLedgerPath)
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			report.Findings = append(report.Findings, DiagnosticFinding{
+				Check:    "Agent Pause Ledger",
+				Severity: SeverityOK,
+				Message:  "No leftover agent pause ledger — nothing is recorded as paused",
+			})
+			return
+		}
+		// Permission denial or I/O failure is UNKNOWN EVIDENCE, not absence.
+		// Reporting green here would be the same defect this check exists to
+		// catch, one level up: a surface claiming health it could not measure.
+		report.Findings = append(report.Findings, DiagnosticFinding{
+			Check:    "Agent Pause Ledger",
+			Severity: SeverityWarn,
+			Message:  "Cannot determine whether agents are paused — the ledger could not be inspected",
+			Detail: fmt.Sprintf("Ledger: %s\ninspect failed: %v\n"+
+				"This is not the same as 'no ledger'. Until it can be read, treat pause state as unknown:\n"+
+				"  ls -l %s", path, err, path),
+		})
+		return
+	}
+
+	age := time.Since(info.ModTime())
+	// A read failure must not become a measured zero. "0 agent(s) recorded as
+	// paused" for a ledger that exists but cannot be read is a fabricated
+	// number, and the operator would read it as harmless.
+	labels := -1
+	if data, readErr := os.ReadFile(path); readErr == nil { //nolint:gosec // fixed path under $HOME
+		labels = 0
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.TrimSpace(line) != "" {
+				labels++
+			}
+		}
+	}
+	countPhrase := fmt.Sprintf("%d agent(s)", labels)
+	if labels < 0 {
+		countPhrase = "An unknown number of agents (ledger exists but is unreadable)"
+	}
+
+	sev := SeverityWarn
+	if age > staleLedgerAfter {
+		sev = SeverityCritical
+	}
+	report.Findings = append(report.Findings, DiagnosticFinding{
+		Check:    "Agent Pause Ledger",
+		Severity: sev,
+		Message: fmt.Sprintf("%s recorded as paused %s ago and never resumed",
+			countPhrase, formatAge(age)),
+		Detail: fmt.Sprintf(
+			"Ledger: %s (written %s)\n"+
+				"`quiet.sh pause` boots out AND disables every agent it records here; `resume` is what removes this file.\n"+
+				"While it exists, the next `pause` MERGES into it — so a stale ledger re-disables everything it ever listed.\n"+
+				"Fix: run `scripts/quiet.sh resume` from sirsi-inference, or if the fleet is already healthy, archive the file.",
+			path, info.ModTime().Format(time.RFC3339)),
+	})
+}
+
+// formatAge renders a duration the way an operator reads it.
+func formatAge(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+// parseLaunchdDisabled extracts ai.sirsi.* and actions.runner.* labels from
+// `launchctl print-disabled gui/<uid>` output that are marked disabled.
+// Output format (one label per line):
+//
+//	"label.name" => disabled
+//	"label.name2" => enabled
+func parseLaunchdDisabled(output string) []string {
+	var found []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasSuffix(line, "=> disabled") {
+			continue
+		}
+		start := strings.Index(line, `"`)
+		end := strings.LastIndex(line, `"`)
+		if start < 0 || end <= start {
+			continue
+		}
+		label := line[start+1 : end]
+		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
+			found = append(found, label)
+		}
+	}
+	return found
 }

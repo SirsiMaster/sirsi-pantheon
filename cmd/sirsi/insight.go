@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/SirsiMaster/sirsi-pantheon/internal/gemma"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/insight"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -35,16 +32,15 @@ its absence changes nothing. Use --no-ai to force the deterministic-only view.`,
 		repoRoot := resolveRepoRoot()
 		p := insight.Build(repoRoot)
 
-		// OPTIONAL AI enrichment — gated by Available(); failure is non-fatal and
-		// the deterministic result still stands.
+		// OPTIONAL AI enrichment uses the same native SNE service as every other
+		// Pantheon surface. Failure is non-fatal; the deterministic result stands.
 		if !insightNoAI {
-			cfg := gemma.Load()
-			if cfg.Available() {
-				ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-				defer cancel()
-				if narr, err := cfg.Generate(ctx, gemmaPrompt(p)); err == nil && strings.TrimSpace(narr) != "" {
+			home, _ := os.UserHomeDir()
+			if base := gemmaServerBase(home); base != "" {
+				model := gemmaResolveModel(home)
+				if narr, err := gemmaWarmComplete(base, model, gemmaPrompt(p), 256); err == nil && strings.TrimSpace(narr) != "" {
 					p.Narrative = strings.TrimSpace(narr)
-					p.Source = "rules+gemma"
+					p.Source = "rules+sne"
 				}
 			}
 		}

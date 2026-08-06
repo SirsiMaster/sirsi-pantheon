@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,7 +37,15 @@ type QuarantineResult struct {
 type LaunchctlRunner func(args ...string) (string, error)
 
 func defaultLaunchctlRunner(args ...string) (string, error) {
-	out, err := exec.Command("launchctl", args...).CombinedOutput()
+	// Bounded for the same reason as runLaunchctl: a kill switch that blocks on
+	// launchd is not a kill switch.
+	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "launchctl", args...).CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(out), fmt.Errorf("launchctl %s: no response in %s",
+			strings.Join(args, " "), launchctlTimeout)
+	}
 	return string(out), err
 }
 

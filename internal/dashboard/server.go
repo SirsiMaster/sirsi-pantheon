@@ -35,6 +35,10 @@ type Config struct {
 	// If nil, /api/node-status returns 503 (graceful degrade — same pattern as
 	// StatsFn / NotifyDB).
 	NodeStatusFn NodeStatusCollector
+	// LedgerFn is the producer for GET /api/ledger (A26 Nexus seam).
+	// Typically wired to a closure over ledger.Build + ledger.Summarize.
+	// If nil, /api/ledger returns 503 (graceful degrade).
+	LedgerFn LedgerSummarizer
 }
 
 // Server is the Pantheon local dashboard HTTP server.
@@ -87,6 +91,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/ghosts", s.apiGhosts)
 	mux.HandleFunc("/api/ghosts/clean", s.apiGhostClean)
 	mux.HandleFunc("/api/doctor", s.apiDoctor)
+	mux.HandleFunc("/api/ask", s.apiAsk)
 	mux.HandleFunc("/api/slay", s.apiSlay)
 	mux.HandleFunc("/api/guard/stats", s.apiGuardStats)
 	mux.HandleFunc("/api/guard/renice", s.apiRenice)
@@ -99,6 +104,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/ra/status", s.apiRaStatus)
 	mux.HandleFunc("/api/ra/scopes", s.apiRaScopes)
 	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
+	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
 
 	s.srv = &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.Port),

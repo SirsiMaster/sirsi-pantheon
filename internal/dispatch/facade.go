@@ -27,11 +27,15 @@ package dispatch
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
@@ -45,6 +49,10 @@ type Facade struct {
 	store *routerstore.Store
 	root  string // <repo>/.agents/idea-router
 }
+
+// Store exposes the shared durable store to sibling read models. Facade.Close
+// remains the owner of the handle; callers must not close it directly.
+func (f *Facade) Store() *routerstore.Store { return f.store }
 
 // Open resolves the repo's router root and the durable store
 // (~/.sirsi/router.db — outside any git tree, PRD /goal #2).
@@ -97,6 +105,46 @@ func New(root string, store *routerstore.Store) *Facade {
 // Close releases the store handle.
 func (f *Facade) Close() error { return f.store.Close() }
 
+// AddTask validates both the owning identity and the normalized responsible
+// party before the store can mutate. "self" is syntax, never an identity.
+func (f *Facade) AddTask(t routerstore.Task) error {
+	if err := f.ValidateAgent("task owner", t.Agent); err != nil {
+		return err
+	}
+	if strings.TrimSpace(t.ResponsibleParty) == "" || t.ResponsibleParty == "self" {
+		t.ResponsibleParty = t.Agent
+	}
+	if err := f.ValidateAgent("responsible party", t.ResponsibleParty); err != nil {
+		return err
+	}
+	return f.store.AddTask(t)
+}
+
+// UpdateTask validates the final task state before mutation, including an
+// unchanged legacy responsible party. This makes remediation explicit rather
+// than silently carrying an undeclared identity into a new write.
+func (f *Facade) UpdateTask(agent, taskID string, u routerstore.TaskUpdate) (routerstore.Task, error) {
+	if err := f.ValidateAgent("task owner", agent); err != nil {
+		return routerstore.Task{}, err
+	}
+	current, err := f.store.GetTask(agent, taskID)
+	if err != nil {
+		return routerstore.Task{}, err
+	}
+	responsible := current.ResponsibleParty
+	if u.ResponsibleParty != "" {
+		responsible = u.ResponsibleParty
+	}
+	if responsible == "self" {
+		responsible = agent
+		u.ResponsibleParty = agent
+	}
+	if err := f.ValidateAgent("responsible party", responsible); err != nil {
+		return routerstore.Task{}, err
+	}
+	return f.store.UpdateTask(agent, taskID, u)
+}
+
 // SendResult reports one guarded dispatch.
 type SendResult struct {
 	ID        string
@@ -112,6 +160,12 @@ type SendResult struct {
 func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult, error) {
 	if err := work.EnsureRoot(f.root); err != nil {
 		return SendResult{}, fmt.Errorf("dispatch: ensure root: %w", err)
+	}
+	if err := f.ValidateAgent("sender", from); err != nil {
+		return SendResult{}, err
+	}
+	if err := f.ValidateAgent("recipient", to); err != nil {
+		return SendResult{}, err
 	}
 	id, deduped, err := f.store.SendGuarded(routerstore.SendReq{
 		From: from, To: to, Title: title, Type: msgType, Instructions: instructions,
@@ -135,6 +189,59 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	return SendResult{ID: id, Deduped: deduped, AuditPath: path}, nil
 }
 
+// ValidateAgent enforces ADR-054 declared identity at the shared facade
+// boundary. Eligibility is registry declaration, never live-thread state.
+func (f *Facade) ValidateAgent(party, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("dispatch: %s is required", party)
+	}
+	registryPath := filepath.Join(f.root, "agents.json")
+	if id == "user" {
+		return fmt.Errorf("dispatch: invalid %s %q: user is a legacy alias; use declared identity %q for new writes", party, id, "owner")
+	}
+	data, err := os.ReadFile(registryPath)
+	if err != nil {
+		return fmt.Errorf("dispatch: validate %s: read agents.json: %w", party, err)
+	}
+	var reg struct {
+		Agents map[string]struct {
+			ID         string `json:"id"`
+			Type       string `json:"type"`
+			Repo       string `json:"repo"`
+			Cwd        string `json:"cwd"`
+			Workstream string `json:"workstream"`
+			Wake       struct {
+				Mechanism string `json:"mechanism"`
+			} `json:"wake"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return fmt.Errorf("dispatch: validate %s: parse agents.json: %w", party, err)
+	}
+	cfg, ok := reg.Agents[id]
+	if !ok {
+		return undeclaredAgentError(party, id, registryPath)
+	}
+	// Existing registry rows call the repo root `cwd`; accept that established
+	// spelling while new registrations migrate to the explicit `repo` field.
+	if strings.TrimSpace(cfg.ID) == "" || strings.TrimSpace(cfg.Type) == "" ||
+		(strings.TrimSpace(cfg.Repo) == "" && strings.TrimSpace(cfg.Cwd) == "") ||
+		strings.TrimSpace(cfg.Workstream) == "" || strings.TrimSpace(cfg.Wake.Mechanism) == "" {
+		return undeclaredAgentError(party, id, registryPath)
+	}
+	switch strings.TrimSpace(cfg.Wake.Mechanism) {
+	case "launchagent", "session-message", "routine", "none", "owner-surface":
+	default:
+		return fmt.Errorf("dispatch: invalid %s %q in %s: wake.mechanism %q is outside the ADR-054 wake matrix (launchagent, session-message, routine, none, owner-surface)", party, id, registryPath, cfg.Wake.Mechanism)
+	}
+	return nil
+}
+
+func undeclaredAgentError(party, id, registryPath string) error {
+	return fmt.Errorf("dispatch: invalid %s %q: identity is not fully declared in %s; required fields: id, type, repo (legacy cwd accepted), workstream, wake.mechanism", party, id, registryPath)
+}
+
 // Inbox lists open items addressed to agent. Post-cutover it is the store's
 // open rows, full stop. Pre-cutover it is the Phase-4 dual-read window: the
 // canonical files (which legacy writers still produce) merged with the store's
@@ -142,6 +249,11 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 // never invisible (§2b axiom 8: a stale or missing file cannot change
 // lifecycle).
 func (f *Facade) Inbox(agent string) ([]work.Item, error) {
+	if strings.TrimSpace(agent) != "" {
+		if err := f.ValidateAgent("acting agent", agent); err != nil {
+			return nil, err
+		}
+	}
 	// Post-cutover the store is the SOLE authority and the file leg is a frozen
 	// legacy copy: `close` writes the store only, so an items/<id>.md left at
 	// `status: open` outlives its own closure and resurrects as a phantom on
@@ -256,6 +368,21 @@ func (f *Facade) SetWake(id string, ann work.WakeAnnotation) error {
 	return f.store.SetWake(id, ann.Status, ann.AttemptedAt, ann.Adapter, ann.Error)
 }
 
+// SetBlockedBy replaces one item's dependency edge on the authoritative store,
+// with the legacy file kept in sync during the pre-cutover dual-write window.
+func (f *Facade) SetBlockedBy(id, blockedBy string) error {
+	if routercfg.StoreWake() {
+		return f.store.SetBlockedBy(id, blockedBy)
+	}
+	if err := work.SetBlockedBy(f.root, id, blockedBy); err == nil {
+		_ = f.store.SetBlockedBy(id, blockedBy)
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("dispatch: set blocked_by on canonical item %s: %w", id, err)
+	}
+	return f.store.SetBlockedBy(id, blockedBy)
+}
+
 // itemFromRow adapts a store row into the file router's work.Item shape — the
 // one conversion every read path shares, so a new column can never be wired
 // into some reads and forgotten in others.
@@ -265,7 +392,7 @@ func itemFromRow(r routerstore.Item) work.Item {
 		Status: r.Status, Opened: r.Opened, Closed: r.Closed,
 		Instructions: r.Instructions, Result: r.Result,
 		WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
-		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError,
+		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError, BlockedBy: r.BlockedBy,
 	}
 }
 
@@ -385,6 +512,34 @@ func (f *Facade) CloseItem(id, result string) error {
 // waiter even when no items/<id>.md exists. Using Inbox here is what lets a
 // `/loop` watcher move off the items/ directory-watch onto the store event
 // wake without stranding at cutover.
+// waitRedeliverAfter bounds the edge-trigger's other direction: a consumer that
+// crashed after delivery (cursor written, items never closed) gets the same
+// inbox REDELIVERED once the cursor is this old, so edge semantics can never
+// strand work forever. One hour keeps redelivery rare without hiding a wedge.
+const waitRedeliverAfter = time.Hour
+
+// Wait blocks until the agent's inbox CHANGES, and delivers each inbox state
+// exactly once.
+//
+// It used to be LEVEL-triggered: any non-empty inbox returned instantly. The
+// documented /loop arming instruction — injected into every session — calls
+// wait in a shell loop, so ONE stuck-open item (owner-gated, tracked, or simply
+// unclosed) turned the loop into a full-speed spin: wait returned the same
+// unchanged inbox thousands of times. Reported independently twice (router
+// items 20260729-225311 and 20260731-182937), and it is the recorded
+// fork-storm class (a `router wait` in `while true` while items are open).
+//
+// Edge semantics via a durable per-agent cursor (a hash of the sorted open item
+// ids, stored under the router root):
+//   - inbox differs from the cursor → deliver it and advance the cursor;
+//     a first-ever wait (no cursor) always delivers, so a consumer arriving to
+//     existing work still sees it — the anti-stranding property that made
+//     level-triggering tempting in the first place;
+//   - inbox unchanged → park on the store FIFO until it changes or the timeout
+//     lapses (returning empty), so a stuck item costs ONE wake per timeout
+//     period instead of a spin;
+//   - cursor older than waitRedeliverAfter → redeliver, so a consumer that
+//     died after delivery cannot strand the inbox on its stale cursor.
 func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) ([]work.Item, error) {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -392,7 +547,8 @@ func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) 
 		if err != nil {
 			return nil, err
 		}
-		if len(items) > 0 {
+		if len(items) > 0 && f.waitCursorDiffers(agent, items) {
+			f.writeWaitCursor(agent, items)
 			return items, nil
 		}
 		remaining := time.Until(deadline)
@@ -407,4 +563,55 @@ func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) 
 			return nil, err
 		}
 	}
+}
+
+func (f *Facade) waitCursorPath(agent string) string {
+	return filepath.Join(f.root, ".wait-cursor-"+sanitizeAgentFile(agent))
+}
+
+// sanitizeAgentFile keeps the cursor filename safe for any agent id.
+func sanitizeAgentFile(agent string) string {
+	var b strings.Builder
+	for _, r := range agent {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
+func inboxHash(items []work.Item) string {
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	sort.Strings(ids)
+	sum := sha256.Sum256([]byte(strings.Join(ids, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+// waitCursorDiffers reports whether this inbox state is NEW relative to the last
+// delivery. Missing/unreadable cursor and stale cursor both answer true — every
+// failure mode falls toward delivery, never toward stranding.
+func (f *Facade) waitCursorDiffers(agent string, items []work.Item) bool {
+	st, err := os.Stat(f.waitCursorPath(agent))
+	if err != nil {
+		return true
+	}
+	if time.Since(st.ModTime()) > waitRedeliverAfter {
+		return true
+	}
+	prev, err := os.ReadFile(f.waitCursorPath(agent))
+	if err != nil {
+		return true
+	}
+	return strings.TrimSpace(string(prev)) != inboxHash(items)
+}
+
+func (f *Facade) writeWaitCursor(agent string, items []work.Item) {
+	// Best-effort: a failed cursor write degrades to level-triggered delivery
+	// (the old behavior), never to stranding.
+	_ = os.WriteFile(f.waitCursorPath(agent), []byte(inboxHash(items)+"\n"), 0o644)
 }

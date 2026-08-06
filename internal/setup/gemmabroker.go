@@ -14,13 +14,8 @@ import (
 // (`ai.sirsi.gemma`, KeepAlive=false, one-shot `sirsi gemma serve`) started the
 // broker at boot and forgot it; a nohup-started broker died with the terminal.
 //
-// The durable shape: launchd owns the broker process directly. The LaunchAgent
-// runs `sirsi gemma serve --foreground`, which applies the full ADR-031 bounds
-// (RAM refuse-gate, node-derived concurrency, memory-cap wrapper,
-// --prompt-cache-bytes) and then execs the capped server IN PLACE — so the pid
-// launchd supervises IS the serving process, and KeepAlive revives it after any
-// crash and at every boot. Kill-tested live 2026-07-23 (pid 36715 SIGKILLed,
-// launchd revived as 36848 within seconds).
+// The durable shape: launchd owns SNE directly. SNE is the native Go inference
+// server; no Python runtime exists in the request or supervision path.
 
 // GemmaBrokerLabel is the LaunchAgent label for the reboot-durable broker.
 const GemmaBrokerLabel = "ai.sirsi.gemma-broker"
@@ -33,8 +28,10 @@ const legacyGemmaLauncherLabel = "ai.sirsi.gemma"
 // keeps model load off the network (boot may run before the network is up; the
 // model is always served from the local cache). Output goes to the broker's
 // own log so `sirsi gemma serve` (background path) never truncates it.
-func gemmaBrokerPlistContent(sirsiBin, home string) string {
-	logPath := filepath.Join(home, ".sirsi", "gemma-server.log")
+func gemmaBrokerPlistContent(_ string, home string) string {
+	logPath := filepath.Join(home, ".sirsi", "sne-server.log")
+	sneBin := filepath.Join(home, ".local", "bin", "sirsi-inference")
+	modelDir := filepath.Join(home, ".cache", "huggingface", "hub", "models--mlx-community--gemma-4-12B-it-8bit", "snapshots", "200bb6db075e137a4deb08838865ac4ddb86292e")
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -44,15 +41,12 @@ func gemmaBrokerPlistContent(sirsiBin, home string) string {
 	<key>ProgramArguments</key>
 	<array>
 		<string>%s</string>
-		<string>gemma</string>
 		<string>serve</string>
-		<string>--foreground</string>
+		<string>%s</string>
+		<string>--profile</string>
+		<string>interactive</string>
+		<string>127.0.0.1:8477</string>
 	</array>
-	<key>EnvironmentVariables</key>
-	<dict>
-		<key>HF_HUB_OFFLINE</key>
-		<string>1</string>
-	</dict>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
@@ -67,7 +61,7 @@ func gemmaBrokerPlistContent(sirsiBin, home string) string {
 	<string>%s</string>
 </dict>
 </plist>
-`, GemmaBrokerLabel, sirsiBin, logPath, logPath)
+`, GemmaBrokerLabel, sneBin, modelDir, logPath, logPath)
 }
 
 // GemmaBrokerInstalled reports whether the reboot-durable broker LaunchAgent
@@ -87,8 +81,13 @@ func InstallGemmaBroker() InstallResult {
 		return res
 	}
 	home, _ := os.UserHomeDir()
-	if !fileExists(filepath.Join(home, ".venvs/mlx/bin/mlx_lm.server")) {
-		res.Status, res.Message = StatusSkipped, "skipped — MLX runtime not installed (no local model to serve)"
+	if !fileExists(filepath.Join(home, ".local", "bin", "sirsi-inference")) {
+		res.Status, res.Message = StatusSkipped, "skipped — native SNE binary not installed"
+		return res
+	}
+	modelDir := filepath.Join(home, ".cache", "huggingface", "hub", "models--mlx-community--gemma-4-12B-it-8bit", "snapshots", "200bb6db075e137a4deb08838865ac4ddb86292e")
+	if !fileExists(filepath.Join(modelDir, "model.safetensors.index.json")) {
+		res.Status, res.Message = StatusSkipped, "skipped — SNE model snapshot not installed"
 		return res
 	}
 	bin := BinaryPath()
@@ -124,6 +123,8 @@ func InstallGemmaBroker() InstallResult {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
+	_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
+	_ = os.WriteFile(filepath.Join(home, ".sirsi", "gemma-server.port"), []byte("8477\n"), 0o644)
 	_ = runLaunchctl("unload", path) // fails when not loaded — fine
 	if err := runLaunchctl("load", path); err != nil {
 		res.Status, res.Message = StatusFailed, "wrote LaunchAgent but launchctl load failed: "+err.Error()

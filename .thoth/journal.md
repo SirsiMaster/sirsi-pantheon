@@ -5,6 +5,87 @@
 
 ---
 
+## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
+
+CTR's original registration heuristic assumed a stable process-tree depth: the
+agent runtime would be the caller's parent or grandparent. That assumption made
+live tasks disappear because desktop applications insert a changing number of
+per-turn shells and helpers. Replacing the fixed depth with a simple ancestry
+walk was necessary but still insufficient.
+
+The live Codex proof exposed why. Codex Desktop runs tool commands beneath an
+application-wide `codex` broker (PID 37423), while this task's durable lifetime
+belongs to `codex-code-mode-host` (PID 40821), which is another child of the
+broker. The correct task host is therefore a sibling of the command process,
+not an ancestor. No amount of walking upward can find it. Worse, treating every
+`codex-*` or `claude-*` executable as durable allows wrappers and helpers to
+masquerade as sessions.
+
+Commit `728fefcd` makes one resolver authoritative for registration,
+self-discovery, and self-suspend. It walks past transient processes using exact
+known runtime identities. Under Codex Desktop it recognizes the generic broker,
+selects exactly one `codex-code-mode-host` child, and fails closed when zero or
+multiple hosts make task ownership ambiguous. Other unknown resident surfaces
+must provide `--anchor-pid`; the router no longer converts uncertainty into a
+false liveness claim.
+
+The targeted resolver/thread tests and broader `cmd/sirsi` plus
+`internal/router` suites passed. The candidate binary and the atomically
+installed `~/.local/bin/sirsi` each repeated the decisive live test without an
+explicit anchor and selected PID 40821. The owner-requested quiet-machine rule
+remained intact: the repair and proofs were CPU/process-metadata work only.
+
+## Entry 026 — 2026-08-02 — "A Router Count Is Not a Work Ledger"
+
+The owner identified the operating failure precisely: no single agent memory can
+be trusted to hold the whole portfolio story, while CTR's counts did not explain
+age, dependency, pickup, or responsibility. Under the two-agent quiet regime,
+codex-inference built the Universal Task Ledger without waking the fleet or
+touching GPU work.
+
+The structural decision is separation with one join. Router items remain
+messages and evidence. The durable store now holds explicit task commitments.
+Thread records remain heartbeat and `current_item` truth. `internal/ledger`
+joins those authorities once, and both `router ledger` and CTR project it. A
+fresh heartbeat is deliberately not pickup; an exact current item is. Missing
+and cyclic dependencies deliberately fail closed.
+
+Implementation head `303b404b` (code commit `50838f87`) adds SQLite migration
+v3, lossless `blocked_by`, task add/update/list, item dependency mutation, a
+typed JSON/text ledger, CTR summaries, ADR-050, and three-home human access.
+The complete Go suite, e2e suite, and isolated CLI replay pass. Remote push was
+blocked by the execution environment's export-safety gate, so Claude Nexus is
+reviewing the exact shared local commit rather than a claimed PR. Repository,
+Desktop Reading Room, and a verified native Google Doc all carry the artifact;
+the repository remains canonical.
+
+Claude Nexus subsequently approved exact head `b08bac6d`. Its first live
+integration reconciled the apparent 32-versus-35 discrepancy: 32 was the SNE
+engineering snapshot, while 35 is the current whole-agent registry after three
+later router-grounded obligations. Independent live-store inspection confirmed
+the row totals, responsible parties, and every populated dependency target.
+The integration row is now done; closeout state is 24 done, one in progress,
+seven pending, and three blocked.
+
+First contact also exposed a P1 rollout-order defect. A v3-capable shadow binary
+migrated the shared live database while the canonical installed binary still
+understood only v2. The older binary's refusal was the correct fail-closed
+behavior, but the host router was unavailable until an approved v3 build was
+validated under a new inode and atomically moved into the canonical path. The
+permanent rule is now explicit: install the canonical forward-compatible binary
+before the first live-store open that can migrate schema, and verify every host
+router surface after migration. Code correctness and migration correctness are
+not deployment completeness by themselves.
+
+The owner and integration router items are closed with evidence. Claude
+Pantheon ratification remains intentionally deferred until the owner lifts the
+quiet regime. Remote export remains policy-blocked, so the branch is local and
+no PR is claimed. The other seven inference mailbox items were retired with
+evidence, including source approval of PR #389 exact head `30511038` while
+correctly leaving CI/bind independent.
+
+---
+
 ## Entry 025 — 2026-03-27 12:15 — "The Race Condition That Wouldn't Die"
 
 **Context**: Session 29. P0 was CI green. Lint was the easy part — 22 errors across 10 files, all mechanical fixes. The real boss fight was a data race in the Guard module that survived 4 consecutive fix attempts.
@@ -994,3 +1075,641 @@ behind #339. Both were routed to claude-pantheon as requests rather than left im
 a memory file, and the identity item names the likely source — a branch-creation path
 committing with an unset git identity, four PRs in one night being a pattern rather than
 an accident.
+
+## Conduit run 2026-07-29T03:00Z
+
+Cleared the entire in-flight ledger the previous run handed over, then found the thing that matters most this window. **Merged three: #362, #350, #346.** #350 and #346 arrived CONFLICTING on CHANGELOG.md — the union merge driver is local and GitHub cannot apply it — so both were rebased in throwaway worktrees, pushed from the main checkout, and re-bound, because a force-push invalidates the bind SHA even though it does not invalidate the reasoning. Merged one at a time for the same reason. All three under the owner's 20260729-023759 dual-binding decision (codex OR claude-home). #362 is ADR-046, which pins the MLX boundary on measurement rather than preference: claude-nexus measured that `runtime.LockOSThread` does **not** buy a bigger cgo stack — 8.0 MB on the main goroutine, on spawned goroutines, and under LockOSThread alike — which does not merely disfavour the in-process cgo option, it closes it, since the obvious mitigation everyone will propose does not exist. I reconciled that in the bind against #351, merged hours earlier: the Python `threading.stack_size(512 MB)` is the *same* pthread attribute Go cannot reach ergonomically, so the two are containment at two radii, not contradictions. Neither is a crash fix; `compile_dfs` still recurses unbounded through C++. claude-nexus is unblocked and S2 starts.
+
+**The finding: the menubar redesign is pointed at a binary the owner does not run.** codex asked for a binding/design verdict on PR #363, a Command Deck for `cmd/sirsi-menubar`. The launchd plist for `ai.sirsi.pantheon` execs `~/Applications/Sirsi Menubar.app/Contents/MacOS/SirsiMenubar`, and that binary links 17 Swift runtime libraries with no fyne or systray strings anywhere in it. It is the SwiftUI app. Every check #363 passes — `go test ./cmd/sirsi-menubar`, the build, the fast gate — is green about the wrong artifact, which is the stale-green class wearing a new costume and precisely why "verify the artifact, not the command" is standing law. Verdict: do not merge as "the first cockpit step"; either retarget the state model onto the SwiftUI app or land it narrowly and label it. The Gemma tri-state in #363 (`gemma-pantheon` live = online, bare `gemma` = misregistered/admin-held, no signal = offline) is the portable, valuable part and should survive either path. Separately re-verified that the SIGKILL root cause is untouched by any of it: three bundles still read back an identical `ai.sirsi.pantheon`, and `/tmp/sirsi-menubar.log` is still 0 bytes — the process was diagnostically blind through all eight Launch Constraint Violation kills. Owner-gated, surfaced on the board, not nagged.
+
+Declined a router recommendation rather than following it. codex's CTR pass reported four claude-home threads as loop-dead with zero armed watchers and recommended arming a watcher; claude-home is in fact armed (`sirsi router wake-loop claude-home` pid 64331 under launchd, plus a thread-watcher at pid 1656), and following the recommendation would have given one agent two independent wake paths — the level-triggered fork-storm class. The four threads had no on-disk directory at all, including `thr-806e2b562ca249b0`, the very thread pid 1656's watcher is named for and actively watching. So: two stacked accounting defects — watcher liveness computed per-thread without unioning the launchd `ai.sirsi.router.wake.<agent>` labels, and thread records outliving their directories instead of reconciling to stale. Routed to claude-pantheon (20260729-030030) alongside the sibling bare-`gemma` registration defect, since one reconcile predicate likely fixes all of it. `doctor --fix` reproduced the same false alarm on two fresh thread ids afterwards, which is the confirmation.
+
+Adopted a conduit practice correction from claude-deck, who was right: closing stranded items with "forwarded to X" records **routing, not disposition**, and reads as done to an auditor when the instructions were never executed — the stale-green class applied to the router itself. Forwarding is no longer completion; such items stay open under the new owner or close with a result naming the outcome. Router 16 → 12 open, claude-home 10 → 1. Vitals green throughout: diagnose 94/100 (the lone Warn is the load-bearing Colima VM, correctly labelled), 76% RAM free, broker pid 33719 with the `--prompt-cache-bytes` cap intact and prompt cache flat at 2.81 GB, no new `.ips`. `thread prune` collapsed 1048 records to 162; `ccd reap` archived 43.
+
+## Conduit run 2026-07-29T03:10Z
+
+Cleared the in-flight ledger and landed the fork-storm fix. **#364** (journal) merged on arrival;
+**#333** — `thread discover` no longer forks a `watch-router` bridge — reviewed source-deep, rebased
+onto main in a detached worktree, re-bound and merged. It is the right shape: `spawnRouterWatcher`
+is DELETED rather than left unused, so re-wiring it is a compile error, and `killRouterWatcher`
+correctly stays because surface-armed watchers still need stopping. Verified locally at the rebased
+SHA before merging — `go build ./cmd/sirsi` clean, `TestDiscoverNeverForksAWatcher` ok. The instant
+#364 landed, all six unreviewed siblings (#333 #343 #345 #348 #356 #358) flipped CONFLICTING on
+CHANGELOG — the carried gotcha, now observed a third time; they must be taken one at a time.
+
+**Two silent-evidence-loss findings, both caught only by reading the artifact back.** First:
+`sirsi-bind.sh --body @file` does NOT expand the `@file` form. The bind on #333 reported success and
+`binding-hold` went green while the recorded APPROVED review body was the literal string
+`@bind333.md`. The gate opened on a verdict that is a filename. This is a real trap because the
+router verbs require the opposite convention — `router close/send` MUST use `@file` bodies, since
+inline bodies are shell-evaluated — so an operator who has internalised "always @file the body"
+silently produces empty binds. Routed to claude-pantheon (`20260729-030814`) asking for expansion
+or a fail-closed refusal, explicitly not a documentation fix, and explicitly not guarded by a
+blocklist on `@`. Real verdict re-posted to #333 via `gh pr comment --body-file`.
+
+Second, and worse if it had shipped: claude-nexus held **#366** because its new supervisor/child
+split repoints `gemma-server.pid` at the supervisor, and asked whether to hold or have the conduit
+read `gemma-worker.pid`. Both options were unsafe — **`~/.sirsi/gemma-worker.pid` is already taken**,
+naming pid 1644, `sirsi-gemma-worker.sh` under launchd `ai.sirsi.gemma-worker`, an unrelated
+load-bearing subsystem. Reading it would have found a bash script with no `--prompt-cache-bytes`,
+concluded the broker was unbounded, and bounced a healthy broker every 15 minutes; writing it would
+have handed the router worker's stop/liveness paths a pointer to the MLX worker. Answer delivered:
+prior claim on the name wins, rename the MLX worker's pidfile before merge, then sequence normally.
+The conduit's own check is migrated off pidfile NAMES onto process IDENTITY (scan `gemma-*.pid` for
+the process that actually is the capped server, then assert the cap on it) and verified live.
+
+Housekeeping: router 11 → 18 open (2342 closed; the growth is new inbound, not backlog), four
+claude-home items closed to empty, retention prune reclaimed **19.5 MiB**. Vitals green —
+diagnose **100/100** (the Colima warn cleared on its own), RAM 72% free, broker pid 33719 unchanged
+with the cap argv intact, prompt cache 2.80 GB flat, no new `.ips`, all daemons live. `thread
+reconcile` healed four claude-home records to successors; `ccd reap` archived one. Two conduit runs
+overlapped this window and independently reached the same `gemma-worker.pid` collision — the
+duplicate category-language transfer to claude-deck was closed in favour of the sibling's better
+argued item, and the response dedup prevented a double reply. claude-deck is **not registered** in
+the wake registry, so items routed there are wake-unavailable and wait for its next pull.
+
+## Conduit run 2026-07-29T03:35Z
+
+Merged three: **#367** (prior run's journal, carried in-flight and cleared), **#363** (SwiftUI menubar
+Command Deck) after verifying codex-pantheon's two binding blockers were genuinely fixed at `ed2979e1`
+— `panelFill`/`tileFill` now gate the hardcoded near-black behind `snapshotMode && colorScheme ==
+.dark` and fall through to `Color.primary.opacity(0.0x)` live, and the memory-first evidence lines
+(swap + top-process RSS) are restored as `computeState.evidence`; codex additionally taught the
+snapshot harness `--appearance light|dark`, which closes the class rather than the instance, since
+`Snapshot.swift`'s forced `.colorScheme(.dark)` is exactly why a Light regression could never fail a
+check — and **#343** (long inline router bodies refused), which is correct specifically because it
+gates on length, a property of the class, instead of enumerating backticks and `$(...)`.
+
+The run's real finding was a self-inflicted one. `claude-io` reported its `agents.json` wake block
+empty; I checked `origin/main`, found #346 had already populated it, and closed the item as stale —
+then `router doctor` immediately recorded `wake_error: no explicit wake mechanism` against the very
+response I had just routed there. **The router reads the working tree, not `origin/main`**, and the
+repo root sits on a squat branch that never rebased, so #346 merged and never deployed. Commit
+`57f027eb` (2026-07-26) had defused this identical landmine; merging #346 to main re-armed it, and a
+one-agent regression is worse than the original sixteen because eleven stranded agents get noticed
+and one does not. Healed at `865dbf88` by restoring the path from `origin/main` (byte-identical,
+committing only that path, leaving the 102 foreign uncommitted files untouched); verified by artifact
+— wake pass went `0 woken · 2 wake-unavailable` → `1 woken · 1 wake-unavailable`, the remainder being
+`claude-deck`, genuinely unregistered. Corrections routed to `claude-io`, and to `claude-pantheon` as
+a request for a drift check (`git show origin/main:<path>` vs the live file, diffing the whole file
+rather than hunting empty wake blocks) rather than a rearchitecture. Also closed `claude-io`'s ADR-005
+response with the one condition that decides whether its 60–120 s middle band holds: the age stamp
+must be `now − payload.generated_at`, never `now − last_successful_read`, or a dead producer renders
+as "14 s ago" forever and the clause written to withdraw the assertion manufactures it instead.
+
+Vitals green: diagnose 94/100 (the sole priority is a 4.4 GB Virtualization VM, load-bearing), RAM 75%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash reports, all daemons live. `ccd reap` killed 10 leaked sessions; retention prune reclaimed only
+5.9 KiB.
+
+## Conduit run 2026-07-29T03:38Z
+
+Cleared the in-flight ledger and took one PR off the conflicting pile. **PR #368** (the prior run's
+journal) was CLEAN on arrival and merged at `03:35:44Z`. **PR #365** — canon A29, *Scope The Check To
+The Claim*, +34/-0 docs — was the cheapest of the five CHANGELOG-conflicting PRs and is now **merged at
+`03:38:39Z`**. The rebase onto `origin/main` in a detached worktree resolved with **no manual conflict
+work at all**: the CHANGELOG union merge-driver lives in `.git/config`, which every worktree shares, so
+it applied automatically and preserved all sibling entries — verified by reading the diff back
+(CHANGELOG +1 line, PANTHEON_RULES.md +33), not by trusting the clean exit. Two process notes worth
+carrying. First, `--force-with-lease` rejected the initial push as "stale info" because the lease SHA
+was wrong, not because the remote had moved — `git ls-remote` settled it in one call, and the lesson is
+that a lease failure is a claim about the *remote* that deserves an artifact check before anyone starts
+re-fetching. Second, the Ma'at pre-push gate printed **"Tag push — fast pass"** for a SHA→branch
+refspec on the first attempt and then ran the full pipeline on the identical refspec on the second;
+the push that landed was fully gated, so nothing shipped unchecked, but a gate whose depth heuristic
+can misread a branch push as a tag is exactly the A29 shape the merged PR canonizes — a check narrower
+than its claim. Logged for claude-pantheon, not routed as a defect on this evidence alone.
+
+Router quiet: 17 open, one of them claude-home's — codex-pantheon's terminal ACK on the already-merged
+#363 — closed informational, re-affirming that the install/bundle-identity work stays owner-gated on
+the board rather than re-routed. Oldest open item is 3h29m, so nothing crossed the 24h staleness line.
+`doctor --fix`: 0 woken, 15 already-armed, 1 wake-unavailable (`claude-deck`, still unregistered and
+expected). The `865dbf88` registry heal **holds** — `agents.json` re-verified byte-clean against
+`origin/main` both before and after the merge, since merging to main is what re-arms that landmine.
+Vitals green: diagnose 94/100 with the same load-bearing Virtualization VM as sole priority, RAM 80%
+free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
+crash `.ips`, all daemons live. `reconcile` healed 6 threads to successors, `prune` 0, `ccd reap`
+archived 2 session records, retention prune 3.1 KiB.
+
+## Conduit run 2026-07-29T04:00Z
+
+Cleared the in-flight ledger and took three PRs off the board. **#369** (the prior run's journal)
+merged first, as its state file instructed. **#356** turned out to have fallen off the CHANGELOG
+conflict pile on its own — MERGEABLE, docs-only, `binding-hold` already SUCCESS, blocked solely on a
+Lint still in flight — so it merged as soon as that went green: the ADR-031 case study, whose six
+findings (transient MLX peak sizing, biggest-model traps, the operational objective function, runtime
+currency lag, fix-the-machine-first, Gemma as producer rather than refuser) match what this host has
+independently re-learned. **#345** was the one conflict-pile PR for this run, chosen because #347 was
+stacked on it. The union merge-driver in the shared `.git/config` again did the whole job — rebase onto
+main in a `--detach` worktree, zero manual conflict work, and the artifact read back as +120/-0 with a
+one-line CHANGELOG addition and all 163 sibling entries intact.
+
+**Two mechanical traps, both new.** First, zsh applied `:r` as a history modifier to `"$NEW:refs/heads/…"`
+*inside double quotes*, silently mangling the refspec into `…efs/heads/…`; `${NEW}:refs/…` is the fix,
+and quoting alone is not protection. Second, `gh pr merge --delete-branch` on a PR that another PR is
+stacked on **auto-closes the child**: deleting #345's branch closed #347, and #347 then could not be
+reopened at all, because GitHub refuses to reopen a PR whose base ref no longer exists. Recovering it
+took restoring the base branch via `gh api …/git/refs` — which also skips the local Ma'at pre-push gate
+— then reopen, then retarget to `main`. #347 is OPEN again on base `main`, now CONFLICTING, and is the
+natural next rebase target. The restored `codex/router-send-registered-recipient` ref is now unreferenced
+and can be deleted once #347 lands.
+
+**The merge that mattered most is the one that turned out to be half-wrong.** #345 adds
+`validateRecipient` to `internal/dispatch/facade.go`, and it passed a source-deep read on its merits:
+allowlist-by-discovery over `agents.json`, fails closed on an unreadable registry, refuses before
+`SendGuarded` can create a row. What neither the review nor the PR's own regression test caught is the
+bypass list — `if to == "codex" || to == "claude"` — which enumerates the legacy inboxes and stops
+there. `user` is a first-class router recipient that is deliberately not an agent: it is the
+owner-escalation lane the conduit protocol runs on, it is absent from `agents.json` (19 agents), and it
+is special-cased nowhere in `internal/dispatch` or `routercmd.go`. Verified rather than reasoned about:
+built `cmd/sirsi` from `origin/main`, ran it against a copy of the live registry, and
+`--to user` is refused while a registered control passes the guard and only trips the later ADR-024 type
+check. The breakage is latent — the installed binary predates the merge — but it arms itself at the next
+rebuild, *including the binary-drift heal path this very task runs unattended*, so it would most likely
+have first surfaced as the conduit silently losing the ability to escalate to the owner. This is
+precisely enforcement sharing the bug's shape: the defect was "sends reach lanes that cannot receive",
+and the remedy answers it with a hand-typed exception list, so every legitimate non-agent recipient
+nobody remembered is now refused. Routed to codex-pantheon as `20260729-040039` with the reproduction,
+the suggested fix (source the pseudo-recipients from one place, or let the registry carry non-agent
+recipients), and the note that the regression test must pin `--to user` as accepted — pinning one
+specific rejected name is what let this through. `claude-deck` is the same problem's second face:
+unregistered, and holding one real open item (`20260729-030646`) that nothing will be able to reach once
+the guard is live. Flagged, not unilaterally decided.
+
+Everything else green. Diagnose 94/100 on the known load-bearing `com.apple.Virtualization.VirtualMachine`
+priority; RAM 78% free; broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at
+2.73 GB; registry `agents.json` byte-clean against `origin/main` both before and after merging; all
+daemons live; no new crash `.ips` — the new `/Library` `.diag` files are Microstackshots CPU samples
+(`bsdtar`, `node`), not crashes or Jetsams. `reconcile` healed 1 thread, `prune` 0, `ccd reap` killed 2
+leaked sessions of this task, retention prune reclaimed 6.0 KiB. Router 17 open, oldest 3h52m, nothing
+stale; claude-home's own inbox empty.
+
+## Conduit run 2026-07-29T04:06Z
+
+Closed the owner-escalation P0 that the previous run had opened and correctly refused to merge
+into. Merged the in-flight journal PR #370 (CLEAN, all five checks green), then re-reviewed
+codex's #371 at `ee1dbd64` rather than trusting its two RESPONSE items at face value. My prior
+run had blocked #371 because it deleted the `codex`/`claude` bypass while leaving `--to user`
+unreachable; the revised head adds an explicit owner-inbox lane to `validateRecipient`, so I
+lifted the hold, bound it, and squash-merged it at 04:08:39Z — verifying the artifact on
+`origin/main` afterwards rather than trusting the merge exit code. The judgement call worth
+recording: `main` rejected **all five** owner aliases, #371 fixes the one that is load-bearing,
+so holding out for the perfect fix would have kept the worse state live. Merging a strict
+improvement beats blocking on a complete one.
+
+The residual is a genuine two-copies bug and is routed, not forgotten (`20260729-040924`):
+`internal/router/gate.go` `ClassifyGate` treats five recipients as owner escalation
+(`user`/`owner`/`cylton`/`sirsimaster`/`cylton-collymore`) while `internal/dispatch/facade.go`
+now admits only `user`. The copy was **forced, not careless** — `internal/router/wake.go`
+imports `internal/dispatch`, so reaching the gate predicate from dispatch would be a compile-time
+cycle. The cycle-free fix is to push one exported predicate down into `internal/work`, which is
+pure-stdlib and already imported by both. This is the A29 "enforcement must not share the bug's
+shape" pattern again: a hand-copied allowlist drifts from the predicate it mirrors, so the
+regression test must drive both call sites from one shared slice and never re-enumerate it.
+
+New trap found: **PR #372 was opened 38 seconds before #371 merged** and is now DIRTY against it.
+Four of its five files are already on main, but its `facade.go` deletes the bypass with *no*
+replacement lane — rebasing it and resolving the conflict toward its side would silently re-arm
+the exact `--to user` break just closed. Its one unique contribution is two `internal/mcp/tools.go`
+schema descriptions. Left the PR to its lane agent per orchestrate-don't-absorb, with the hazard
+documented on the PR and routed as `20260729-041054`, recommending it be closed in favour of a
+two-line tools.go PR rather than rebased.
+
+Escalated one owner decision (`20260729-041151`, the only open `to: user` item): `claude-deck` is
+absent from `agents.json` yet holds a real open item, and now that the dispatch guard is on main,
+that lane becomes unroutable at the next binary rebuild. Recommended retiring the lane and
+rerouting its item over inventing a registry entry. Not rebuilding the binary meanwhile.
+
+Vitals green throughout: diagnose 94/100 with the known load-bearing
+`com.apple.Virtualization.VirtualMachine` as sole priority, 79% RAM free, broker pid 33719 with
+`--prompt-cache-bytes 4294967296` intact and prompt cache flat at 2.73 GB, all daemons live, no
+new crash or Jetsam `.ips` since the last run. `thread reconcile` healed one reaped→successor
+record, `prune` 0, `ccd reap` archived one completed run of this task, retention prune reclaimed
+4.3 KiB. claude-home inbox closed to 0.
+
+## Conduit run 2026-07-29T04:30Z
+
+Merged **#373** (the prior run's journal, docs-only, all five checks green) at 04:24:56Z. The
+substantive work was **#374**, codex-pantheon's implementation of the follow-up I routed as
+`20260729-040924`: the five reserved owner-recipient aliases single-sourced into
+`internal/work` as `OwnerRecipients()`/`IsOwnerRecipient()` — pure stdlib, zero internal
+imports, so the `dispatch`→`router` cycle that forced the original copy stays broken — and
+consumed by both `facade.go:validateRecipient` and `gate.go:ClassifyGate`. Both regression
+tests now drive from the shared slice rather than a hand-copied list, which is what makes it
+A29-clean instead of the same divergence bug wearing a test costume. I bound it on `f546e80`
+at 04:25Z.
+
+Thirty seconds later a force-push moved the head to `990c5e29`, dropping the bind by design —
+and the amended head is **not the change I reviewed**. Its delta reaches into
+`cmd/sirsi/routercmd.go` and `internal/router/strand.go` and inverts the `wake-install` leak
+guard from `AgentHasLiveThread` to `AgentArmed`, relaxing the owner's 2026-07-10 finding
+(`reference_schedulewakeup_process_leak`). That may be the right call under "the durable unit
+is the worker loop, not the session" — but it is an authority-model decision about when a
+background LaunchAgent may be armed on top of a live session, and it rode in on a PR titled
+"single-source owner recipient aliases", *after* an independent bind. Worse, it is untested in
+the direction that now matters: after the diff `AgentHasLiveThread` has **zero production
+callers** and is exercised only by its own surviving test, while the predicate that actually
+gates arming has none. A suite that pins the retired check and ignores the live one is A29
+exactly. **Bind withheld**; verdict posted on the PR and routed back as `20260729-042822`,
+asking for #374 to be reset to the `f546e80` content (I re-bind on sight) and the guard change
+to be opened separately with a test that drives the new guard and a disposition for the
+callerless predicate.
+
+Also caught **#375** — a duplicate of #374 opened one minute apart, same fix under
+`internal/work/recipient.go` instead of `owner.go`, guaranteed to conflict. #374 is the keeper:
+it carries the CHANGELOG entry and the stronger `facade_test` assertion (#375 drops the
+per-item `IsOwnerRecipient` check on survivors). #375's only unique content is the two
+`internal/mcp/tools.go` schema-description lines — which are also the only unique content in
+the DIRTY #372. Recommended closing both and reopening those two lines as one small PR off
+main; #372 must never be rebase-merged, since its `facade.go` side deletes the bypass with no
+reserved lane and re-arms the `--to user` P0.
+
+Housekeeping: two codex responses ACK-closed as superseded by action already taken, leaving
+claude-home at zero open. `reconcile` healed one reaped→successor thread; `ccd reap` killed six
+leaked completed-run sessions; retention reclaimed 5.9 KiB. Vitals green — diagnose 94/100 with
+the load-bearing VM as sole priority, 77% RAM free, broker pid 33719 still capped at 4 GiB with
+the prompt cache flat at 2.74 GB, no new crash or Jetsam reports. The only open `to: user` item
+remains last run's `claude-deck` lane decision; `doctor` reports it as wake-unavailable by
+design, and it is not being nagged.
+
+## Conduit run 2026-07-29T04:42Z
+
+Three PRs merged and the router's owner-recipient work closed out. **#376** (last run's journal)
+merged first as the standing next-run pattern. **#374** landed the `internal/work.OwnerRecipients()`
+/`IsOwnerRecipient()` single authority after codex narrowed its head to `042434de` — the
+wake-install guard inversion I had blocked on was gone, leaving exactly the content bound at
+`f546e80`, so the bind was re-placed and the PR merged. The guard itself came back correctly as
+its own PR **#377**, which is the shape the earlier verdict asked for: `wakeInstallBlocked` is now
+one named authority consumed by both `router wake-install` and the cutover re-arm loop, and
+`TestWakeInstallBlockedUsesArmedWatcher` pins all three states of the predicate that actually gates
+arming (loop-dead live session does not block, armed watcher does, `--force` bypasses). With
+`AgentArmed` already covered directly on main, the A29 objection — a new guard gating arming with
+no test of its own — is discharged, and the now-callerless `AgentHasLiveThread` was deleted rather
+than left reading like a live check. The relaxation is right on the merits: the 2026-07-10 leak was
+duplicate pull-loops, so blocking on any live thread refused to arm exactly the loop-dead sessions
+that most needed it.
+
+**#347** was pulled out of the conflict pile and resolved. It turned out to be the PR that
+originally introduced `dispatch.validateRecipient`, carrying a bare `codex`/`claude` bypass — the
+same bug #371 fixed and #374 superseded — so merging it unresolved would have regressed both.
+Main won every overlapping line; the one trap was that the second `facade_test.go` conflict had
+entangled main's assertion block with #347's genuinely-new
+`TestInboxFailsClosedWhenStoreErrorsAndNoFileItems`, which a careless "take theirs" would have
+deleted silently. What survives is the PR's real contribution and the reason it is worth landing:
+`Facade.Inbox` now fails closed when the store read errors and no file items corroborate an empty
+result, instead of rendering "No open items" during a store outage — the stale-green class, a blind
+fabric reporting a clean inbox. Net delta collapsed to 3 files, +30/-2, verified locally (no
+markers, gofmt/vet clean, build and the dispatch/router/work tests green) and pushed from the main
+checkout so the Ma'at gate ran. Because that resolution materially rewrote a PR I did not author,
+it was routed to codex-pantheon for independent review rather than self-bound.
+
+Vitals green: diagnose 94/100 with the load-bearing VM as sole priority, 80% RAM free, broker
+healthy on pid 2154 with the `4294967296` cap intact and the prompt cache flat, all daemons live,
+no new crash or Jetsam reports. `reconcile` healed 5 reaped→successor threads, prune 0, `ccd reap`
+archived 3 completed conduit-run sessions, retention reclaimed 2.0 KiB. `router doctor --fix` was
+still running after eight minutes and is recorded as inconclusive, not green.
+
+## Conduit run 2026-07-29T04:52Z
+
+Merged the in-flight journal PR #378, then closed out the two arcs the previous run left dangling —
+both by reading main rather than trusting the ledger. **PR #347 turned out CLOSED-unmerged**, not
+merged as the routed bind implied, but that is correct and needs no rework: `origin/main`'s
+`Facade.Inbox` already fails closed on a store error in the cutover path (`store inbox unavailable
+(store is the cutover authority)`), which is strictly stronger than what #347 proposed, and the
+pre-cutover path deliberately keeps the store additive so a broken store cannot strand the canonical
+file leg. The contribution is superseded, not lost. **PR #375 got a real verdict instead of another
+deferral.** Diffing its head `e053d7c0` against main file-by-file showed it is not merely stale: its
+`internal/work/recipient.go` duplicates the `internal/work/owner.go` authority #374 already merged,
+and its `strand.go` hunk **re-adds `AgentHasLiveThread`, the predicate #377 deliberately deleted as
+production-callerless**. Merging or rebasing #375 would revert merged work and re-arm the A29
+objection I had withdrawn — the load-bearing reason it must be closed rather than fixed up. Its only
+surviving unique content was two `internal/mcp/tools.go` description strings still reading `"Your
+agent name (codex or claude)"`, i.e. exactly the bare agent-type form `validateRecipient` has REFUSED
+since #371: the MCP schema was instructing every client to identify itself in the form the dispatch
+guard rejects. Those two lines are salvaged as **PR #379** (docs-only, green) so closing #375 loses
+nothing. Routed both the close recommendation and the standing `codex-pantheon` wake-registry gap to
+claude-pantheon — that agent has a LIVE `ai.sirsi.router.wake.codex-pantheon` LaunchAgent (pid 99109)
+and answers items within a minute, yet carries no `wake.mechanism` in the registry, so doctor
+under-reports it as wake-unavailable; the fix is either the `claude-io` registry treatment or, if
+withholding wake from codex lanes is deliberate policy, correcting doctor to say "deliberately
+withheld" rather than "unavailable", since those two states need different operator responses.
+Vitals green throughout: diagnose 94/100 on the load-bearing Virtualization VM only, RAM 78% free,
+broker pid 2154 still identity-verified as the capped server with `--prompt-cache-bytes 4294967296`
+and cache flat at 0.07 GB, all core daemons live, no new crash or Jetsam `.ips`. `ccd reap` killed
+two leaked sessions from this task's own earlier runs; reconcile and thread prune were both no-ops;
+retention reclaimed 7.8 KiB. #340 re-verified as based on `feat/provider-abstraction` (#339's branch)
+and left unmerged — never the child first.
+
+## Archive: relocated from memory.yaml (2026-07-30, claude-home, owner-directed compression)
+# March 2026 session histories (were misfiled inside "## Known Limitations"):
+
+# 2026-03-28: Session 35 — Isis (The Healer) Phase 1 + Thoth CLI + Distribution
+#   THOTH CLI: `sirsi thoth sync` wired (cmd/sirsi/thoth.go). Two-phase auto-sync:
+#     Phase 1: memory.yaml identity fields from source analysis.
+#     Phase 2: journal.md entries from git commits (--since, --dry-run).
+#     findRepoRoot() walks up from cwd to find .thoth/.
+#   ISIS: Full remediation engine (internal/isis/, 6 files, 24 tests):
+#     isis.go: Healer struct, Strategy interface, Heal() orchestrator, Report formatter.
+#     lint.go: LintStrategy — goimports + gofmt (injectable RunCmd per Rule A21).
+#     vet.go: VetStrategy — go vet parse + report (structural, no auto-fix).
+#     coverage.go: CoverageStrategy — AST-based export/test gap detection.
+#     canon.go: CanonStrategy — triggers thoth sync on drift detection.
+#     bridge.go: FromMaatReport() converts Ma'at assessments to Isis findings.
+#   CLI: `sirsi isis heal` (dry-run default, --fix to apply, --full-weigh for go test).
+#     Fast mode: reads Ma'at coverage cache (~3ms) instead of running go test (~5min).
+#     Strategy filters: --lint-only, --vet-only, --coverage-only, --canon-only.
+#   DISTRIBUTION: thoth-init README.md for npm publish. Local test verified.
+#   DOGFOODING: `sirsi thoth sync` used to update its own memory.yaml. Self-referential.
+#   Next: npm publish thoth-init, brew tap marketing, Isis Phase 2 (deeper remediation).
+
+# 2026-03-28: Session 34 — Grand Unification + Seba's Sovereignty
+#   Objective: Unify all workstreams into a single canonical prompt and canonize Seba's role.
+#   Sekhmet: 100% of infrastructure deities (Anubis, Horus, Ka, Sekhmet, Hapi, Scarab, Seba) hardened.
+#   SESHAT: Extension published to OpenVSX (@0.1.0). VSCode sidebar live.
+#   NEITH: ARCHITECTURE_DESIGN.md v2.0.0 (Data Flow, Gantt, Matrix) — Rule A22 enforced.
+#   SEBA: Promoted to Architectural Mapping sovereignty — owns Mermaid, Gantt, and Matrix mappings.
+#   Unified CONTINUATION-PROMPT.md (Session 34) created and pushed.
+#   Next: 𓁐 Isis (The Healer) Phase — Transition from "Observation" to "Remediation".
+
+# 2026-03-27: Session 33 — Deity Coverage Hardening (95% Sprint)
+#   Objective: Achieve 95%+ coverage across ka, scarab, and scales.
+#   P0: Optimized test performance (76s → ~15s) by fixing lsregister mock hang in mock_test.go.
+#   P0: Achieved 95%+ coverage for ka (94.4% statement, 95%+ branch), scarab (94.8%), scales (94.6%).
+#   Rule A21 (Concurrency-Safe Injectable Mocks) applied to Exported Hooks (DirReader, ExecCommand, ReadBundleIDFn).
+#   Fixed AuditContainers (scarab) error path via platform.Mock.
+#   Fixed ka extractBundleID logic to handle br, au, and edu prefixes.
+# 2026-03-27: Session 29 — CI Green Sprint + Thoth Journal Sync + Rule A21
+#   P0: Fixed 22 lint errors (errcheck, shadow, unusedwrite, goimports, unused).
+#   Windows: shell: bash fixes PowerShell -coverprofile splitting.
+#   DATA RACE FIX: sampleTopCPUFn protected by sync.RWMutex via getSampleFn()/setSampleFn().
+#   Root cause: defer restore races with watchdog goroutines on LockOSThread. 4 fix attempts.
+#   Rule A21 canonized: Concurrency-Safe Injectable Mocks. Ma'at governs (QA Sovereign).
+#   P1: internal/thoth/journal.go (230 lines) — auto-generates journal entries from git log.
+#     thoth sync runs Phase 1 (memory.yaml) + Phase 2 (journal.md). --since, --dry-run flags.
+#   P2: Firebase deployed (17 files → sirsi.ai/pantheon).
+#   P3: gh CLI 2.87.3 → 2.89.0.
+# 2026-03-27: Session 28 — Ghost Transcripts Recovery + CI Remediation
+#   CRITICAL FINDING: Antigravity IDE never writes overview.txt — 90+ conversations, zero transcripts.
+#   Recovered 3 lost sessions (25-27) using git forensics, Thoth memory, CHANGELOG, case studies.
+#   Reconstructed journal entries 022-024. Case Study 014 published.
+#   Fixed CI: Windows CGO_ENABLED (env block), -short flag (skip live syscall tests), 20+ lint errors.
+#   Removed tracked thoth binary from git. Added to .gitignore.
+#   Recovery deities: Git (100% code), Thoth (summaries), Ma'at (changelog), Horus (build log).
+# 2026-03-27: Session 27 — Singleton Architecture Finalization
+#   Verified all 3 entry points (menubar, guard, mcp) have platform.TryLock + correct imports.
+#   Hardened LaunchAgent plist: KeepAlive changed from `true` to `SuccessfulExit: false`.
+#   This prevents respawn loops when TryLock causes a clean exit(0), only restarts on crash.
+#   Confirmed AntiGravity (1.5GB) is integrated in watchdog.go at line 155-157.
+#   Full build passes clean (`go build ./...` — zero errors).
+# 2026-03-27: Session 26 — Pantheon Ecosystem Singleton Hardening (Sekhmet Phase)
+#   Implemented platform.TryLock across Menubar, Guard, and MCP entry points.
+#   Created Hapi-Brain bridge (internal/brain/hapi_bridge.go) for hardware-aware inference.
+#   Hardened Sekhmet watchdog with 1.5GB memory governance threshold.
+#   Standardized MCP server startup and integrated detect_hardware tool.
+#   Verified LaunchAgent configuration and solved Triple Ankh redundancy.
+# 2026-03-27: Session 25 — Sekhmet Phase II (ANE Tokenization)
+#   Implemented native Go tokenization service (Sekhmet).
+#   extended HAPI Accelerator interface with Tokenize(text string).
+#   Implemented backends: AppleANE, Metal, CUDA, ROCm, CPU (FastTokenize).
+#   Created FastTokenize (byte-pair-inspired native Go BPE fallback).
+#   Integrated `sirsi sekhmet --tokenize` command.
+#   Centralized CLI flags in cmd/pantheon/globals.go (JsonOutput, quietMode, etc).
+#   Performance: 10-15ms overhead per tokenization chunk on ANE/Metal.
+# 2026-03-26: Session 23 — Crash Forensics + Crashpad Monitor
+#   Full IDE crash forensics: 34 Crashpad dumps, V8 OOM → Jetsam cascade.
+#   Root cause: Session 22 manifest patches created un-realizable Extension Host state.
+#   Rule A19 hardened to ABSOLUTE PROHIBITION. Case Study 011 published.
+#   Built Crashpad Monitor (crashpadMonitor.ts, 370+ lines):
+#     Auto-detects crash dir for 4 IDEs. 5-minute polling. 3-reading trend window.
+#     Reads first 8KB of recent dumps → detects Extension Host crashes.
+#     Status bar: hidden/warning/critical. Webview report. Dump cleanup.
+#     No other VS Code extension monitors Crashpad — genuinely novel feature.
+#   New command: pantheon.crashpadReport (10 total, 7 modules).
+#   Case Study 012: why the Crashpad Monitor exists.
+#   Version bumped to 0.7.0-alpha.
+# 2026-03-26: Session 22 — Thoth Accountability Engine + Extension Triage
+#   Built ThothAccountabilityEngine (extensions/vscode/src/thothAccountability.ts, 645 lines).
+#   Cold-start benchmark: ~371K tokens saved per session (1.5M source vs 19K memory.yaml).
+#   Dollar savings: ~$1.11/session at Sonnet pricing ($0.18 Haiku, $5.57 Opus).
+#   Freshness meter: detects memory.yaml drift vs source file edits.
+#   Coverage check: modules on disk vs modules documented in memory.yaml.
+#   Context budget: memory.yaml as % of 200K token window.
+#   Lifetime counter: persists across sessions in VS Code globalStorage.
+#   Premium webview report: gold/lapis/obsidian Royal Neo-Deco dashboard.
+#   Status bar: $(bookmark) with live savings display.
+#   New command: pantheon.thothAccountability (8 total commands, 6 modules).
+#   New config: pantheon.thoth.accountability, pantheon.thoth.pricingModel.
+#   Extension Triage — fixed 4 simultaneous extension issues:
+#     1. AG Monitor Pro (1988ms profile): disabled — js-tiktoken heavy init.
+#     2. Pantheon 0.5.0 cascade unresponsive: sideloaded v0.6.0.
+#     3. Git extension missing title properties: patched 2 Antigravity-added commands.
+#     4. Antigravity extension missing command declarations: patched 3 undeclared commands.
+#   Gatekeeper violation: modifying .app bundle broke code signature.
+#     Fix: xattr -cr + codesign --force --deep --sign - (ad-hoc re-sign).
+#   Rule A19 Lesson: modification is possible but requires re-signing.
+#   Version bumped to 0.6.0-alpha. Extension VSIX: 49.47 KB (13 files).
+# 2026-03-26: Session 21 — Extension Live Testing + Memory GC
+#   Guardian rewrite: native renice(1) + taskpolicy(1), no CLI dependency.
+#   Memory pressure GC: tracks per-process RSS, restarts bloated LSPs.
+#   Codicon status bar: $(eye) PANTHEON replaces invisible hieroglyph.
+#   Warning threshold: >1 GB third-party LSPs (host LSP excluded).
+#   CLI fix: commands use correct flags (weigh --dev --json, guard --json).
+#   Live tested: all 3 LSPs reniced to nice 10 after 30s. Extension Host ~199 MB.
+#   Sideloaded in both Antigravity and VS Code.
+# 2026-03-25: Session 20 — The Deployment Sprint
+#   Deployed Deity Registry to Firebase Hosting (sirsi.ai/pantheon).
+#   Wired custom domain sirsi.ai/pantheon via Firebase API + GoDaddy CNAME.
+#   Rebuilt index with flip cards (front=user, back=developer info).
+#   Fixed all deity page nav links and URL displays for Firebase.
+#   VERSION bumped to 0.5.0-alpha. Extension icon created.
+#   Canon cleanup: CHANGELOG, Thoth, continuation prompt updated.
+# 2026-03-25: Session 19 — Pantheon VS Code Extension (OpenVSX)
+#   Full TypeScript extension replacing JS scaffold (ADR-012).
+#   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.
+#   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns sirsi guard --renice lsp.
+#   statusBar.ts: Ankh (𓃣) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
+#   commands.ts: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
+#   thothProvider.ts: Context compression from .thoth/memory.yaml with file watching.
+#   ADR-012 accepted. ADR Index: 12 ADRs (001-012).
+#   Status: Extension compiles (0 TS errors), Go builds, 819+ tests passing.
+# 2026-03-25: Session 18c — Deity Alignment, Guard Renice, IDE Optimization
+#   ADR-011: Deity Alignment — canonical scopes for all 10 deities.
+#   Thoth = context compressor, Horus = publisher + lazy FS index, Guard = process control.
+#   Horus Phase 3: Scoped indexing (14 roots → 8 targeted, 856K → ~50K files).
+#   Guard renice: `sirsi guard --renice lsp` — deprioritizes LSPs to Background QoS.
+#   Live result: language_server_macos_arm (2.7 GB) + 2× gopls (422 MB) → Background QoS.
+#   CRITICAL: language_server_macos_arm added to PROTECTED process list after slay crashed IDE.
+#   IDE Settings: Shell Integration disabled, gopls directory filters, file watcher exclusions.
+#   CI Fix: Removed tracked `sirsi-menubar` binary causing Windows test failures.
+#   Platform compute.go: Restored M4 family bandwidth values corrupted by sed rename.
+#   Case Study 010: The Hot-Swap Catastrophe (P0 incident post-mortem).
+#   Rule A18 (Incremental Commits) + Rule A19 (No App Bundle Mutations) codified.
+# 2026-03-25: Session 18 — Menu Bar App + Horus Publish + Osiris Guardian
+#   macOS Menu Bar Application (ADR-010): Phase 1 complete.
+#   - cmd/pantheon-menubar/: stats.go, handlers.go, icon.go, main.go
+#   - Headless mode: real-time RAM/Git/accelerator/deity stats (105ms collection)
+#   - Pantheon.app bundle: make bundle → installable .app with Info.plist
+#   - LaunchAgent: make install-launchagent → auto-start at login
+#   Horus Auto-Publish (internal/horus/publish.go):
+#   - Reads Thoth journal + case study markdown → generates styled HTML
+#   - build-log.html + case-studies.html with Pantheon gold/lapis theme
+#   - 92.8% coverage, 16 tests
+#   Osiris Checkpoint Guardian (internal/osiris/):
+#   - Detects uncommitted work, assesses risk (none/low/moderate/high/critical)
+#   - Time-based escalation: 2+ hours since commit → critical
+#   - FormatReport, Summary, StatusIcon for menu bar integration
+#   - 92.8% coverage, 15 tests
+#   Module count: 22 → 24 (osiris, horus/publish)
+#   Binary count: 7 → 8 (sirsi-menubar)
+#   Test count: 768 → 819+ (51 new tests, all passing)
+#   Makefile: 6 new targets (build-menubar, bundle, publish, install/uninstall-launchagent)
+# 2026-03-24: Session 16b — The Coverage Sprint & Antigravity Bridge (90.1% Hit)
+#   Coverage breakthrough: 87.2% → 90.1% (Rule A16 established).
+#   Injectable Providers: standard interface injection for signals and exec.Command (ADR-009).
+#   Guard (89→91%), Ma'at (80→88%), Sight (78→93%), Profile (84→85%).
+#   Antigravity CLI: `sirsi guard --watch` now starts the full bridge + AlertRing.
+#   Note: Platform coverage is structurally maxed at 73.4% on macOS.
+#   Canon update: ANUBIS_RULES.md → PANTHEON_RULES.md (v2.0.0). ADR-009 added.
+# 2026-03-23: Session 14 — Brain Coverage + Homebrew Verification
+#   Brain coverage sprint: 40.4% → 55.9% (exceeds 50% Ma'at threshold).
+#   New tests: downloadFile (httptest), selectPlatformModel, classifyByHeuristic
+#   (all branches), manifest JSON round-trips, containsSegment edge cases.
+#   Found: splitPath infinite loop on relative '.' paths (documented, not fixed).
+#   Homebrew verified end-to-end: brew tap SirsiMaster/tools && brew install sirsi-pantheon ✅
+#   Both binaries (sirsi + sirsi-agent) installed to /opt/homebrew/bin/.
+#   Case study updated: Ka 8.5s → 1.08s benchmarks added (Sessions 12–13).
+#   Build log updated: Ka benchmark bar, pre-push gate 5s → 2s, Horus recursive win.
+#   Note: update checker shows false upgrade (0.4.0 → 0.2.0) — version compare bug.
+# 2026-03-23: Session 12 — Launch Execution + Performance Optimization (v0.4.0-alpha)
+#   Homebrew PAT setup: HOMEBREW_TAP_TOKEN secret set in sirsi-pantheon repo.
+#   homebrew-tools repo initialized with README.md + Formula/ directory.
+#   GoReleaser brews section enabled (.goreleaser.yaml) — was commented out.
+#   v0.4.0-alpha released with 6 platform binaries.
+#   ADR-007 Unified Findings Portal + Horus designation added.
+#   ADR-006 Self-Aware Resource Governance + yield module added.
+#   ADR-008 Shared Filesystem Index accepted (Horus architecture).
+#   .gitignore collision fix: unanchored 'pantheon' → '/pantheon'.
+#   PERFORMANCE (dogfooding-driven):
+#     Ma'at diff-based coverage: 55s → 12ms (4,583× speedup)
+#     Horus shared filesystem index: walk once, all deities query
+#     Horus Phase 2: pre-aggregated dirs + gob encoding (110MB → 31MB, 936ms → 2ms)
+#     Horus Phase 2.5: FindDirsNamed eliminates dev walk
+#     Weigh (Jackal) optimized: 15.6s → 833ms (18.7× speedup)
+#     Quality verified: identical results (341 findings, 65.6 GB, 58 rules)
+#     Pre-push gate: 65s → 5s (13× faster)
+#     Feather Weight: 69/100 → 81/100
+#     Canon linkage: 60% → 100% (10/10 commits)
+#   DOGFOODING DISCOVERY:
+#     Docker Desktop ghost: 64 GB unused VM images + cached layers
+#     Investigation: zero Docker references in build/CI/deploy pipeline
+#     Cleanup: Docker Desktop fully uninstalled, 65.6 GB → 1.6 GB total findings
+#     Product thesis validated: founder didn't know until Pantheon told him
+# 2026-03-23: Session 11 — Full Pantheon Audit + Modular Deities (v2.1.0)
+#   Walkthrough of every conversation since genesis (completion audit).
+#   Fixed phantom domain sirsinexus.dev → sirsi.ai in SirsiNexusApp.
+#   Wired structured logging (slog) into ka and cleaner cores.
+#   Updated ADR-005: Ra as Hypervisor, Seba as Mapping Focus.
+#   Portfolio Standard v2.1.0: added modular deployment + referral rules.
+#   Canon sync: SECURITY, CONTRIBUTING, CHANGELOG, VERSION in all 5 repos.
+#   Ka coverage sprint: 41.9% → 65.3% (exceeding 60% goal).
+#   Pre-push hook updated: added Ma'at diagnostics + Agent health checks.
+#   MCP version fix: v0.2.0-alpha → v0.3.0-alpha in code.
+# 2026-03-23: Session 10 — Ma'at built + Pantheon unification
+#   Built Ma'at QA/QC governance agent (internal/maat/): 4 source files, 57 tests
+#   Core types: Verdict, Assessment, CanonLink, Report, Assessor, Weigh()
+#   Three domains: coverage (go test -cover), canon (git log), pipeline (gh CLI)
+#   CLI: anubis maat [--pipeline] [--coverage] [--canon] [--json]
+#   ADR-004: Ma'at QA/QC Governance canonized
+#   ADR-005: Pantheon Unification canonized — all deities as sub-systems
+#   Portfolio Standard v2.0.0: 26 universal rules, 3 canon tiers, Pantheon reqs
+#   Deployed Pantheon governance to all 5 repos: real Thoth memories,
+#     GEMINI.md + CLAUDE.md, Portfolio Standard, session workflows
+#   Pantheon coverage: ~20% → ~75% across portfolio
+#   All 5 repos pushed and clean
+# 2026-03-23: Session 8 — platform wiring + CI lint fix + pre-push gate
+#   Wired Platform interface into cleaner (3 runtime.GOOS → platform.Current())
+#   Wired Platform interface into mirror (OpenBrowser + PickFolder)
+#   Removed duplicated moveToTrash(), protectedPrefixes from cleaner
+#   Tests use platform.Set(&Mock{}) for cross-platform testing
+#   Fixed 8 golangci-lint errors (gofmt, govet/unusedwrite, misspell) across 5 files
+#   CI green after 5 consecutive failures
+#   Pre-push hook: .githooks/pre-push (gofmt + go vet + golangci-lint + go build)
+#   Proposed: anubis maat — pipeline purifier (CI monitoring + auto-remediation)
+# 2026-03-22: Session 7 — statistics audit + production polish
+#   Structured logging: internal/logging/ (slog, --verbose, --quiet, --json)
+#   Platform abstraction: internal/platform/ (Darwin, Linux, Mock)
+#   3 case studies: Thoth, Mirror, Ka (all verified data per Rule A14)
+#   CI fixes: 4 platform skip guards, homebrew tap disabled
+#   v0.3.0-alpha released on GitHub (6 binaries + checksums)
+# 2026-03-22: Statistics audit — corrected all inflated claims across 12 files
+#   Scan rules: 64→58 (verified). Tests: ~395→453 (verified).
+#   Removed fabricated cross-repo savings. Removed "3M tokens in 11 sessions."
+#   Canonized Rule A14 (Statistics Integrity) and Rule A15 (Session Definition).
+#   ROI script fixed: naive commits/5 → gap-based heuristic + methodology note.
+# 2026-03-22: Case study system — dogfooding narratives + ROI tracking
+#   Created: docs/case-studies/, scripts/thoth-roi.sh, pitch deck stub
+# 2026-03-22: Safety-critical coverage sprint — cleaner 49%→77%, ka 19.5%→42.7%
+#   Added: 30 cleaner tests (DecisionLog, DeleteFile, CleanFile, DirSize, constants)
+#   Added: 28 ka tests (isInstalled, countFiles, mergeOrphans, Clean, constants)
+# 2026-03-22: Launch prep — goreleaser verified (12 binaries), launch copy + demo updated
+# 2026-03-22: Test coverage sprint — 303→~395 tests, 15/17 modules tested
+# 2026-03-22: Thoth unified as canonical session manager (memory + context monitoring)
+# 2026-03-22: Build-in-public HTML page (Swiss Neo-Deco, Cinzel+Inter, emerald+gold)
+# 2026-03-22: Cross-linked Anubis ↔ SirsiNexus Portal (Anubis→Ra messaging)
+# 2026-03-22: BUILD_LOG.md sprint chronicle + CHANGELOG v0.3.0 expansion
+# 2026-03-22: README badges (303 tests, building in public)
+# 2026-03-22: Codebase safety audit — 6 bugs fixed (filepath.Abs, moveToTrash)
+# 2026-03-22: thoth-init standalone CLI (npx thoth-init, non-interactive mode)
+# 2026-03-21: Thoth knowledge system canonized — memory, journal, skill, MCP tool
+# 2026-03-21: Graceful shutdown (SIGINT handler) + drag-and-drop UX fix
+# 2026-03-21: GoReleaser CI fix (stale config, brews vs homebrew_casks)
+# 2026-03-21: Three-phase partial hashing (27.3x speedup)
+
+
+# Pre-July Session Decisions (hook payloads + duplicate router snapshots stripped):
+
+# 2026-08-05: SNE-52 Universal Task Ledger schema v7 implementation
+#   Implemented the ADR-054 Part B contract on codex/router-unification-store-v7:
+#   one additive v4→v7 migration with explicit migration targets (v5/v6 stay
+#   reserved), legacy commissioning backfill, all drill-down fields, a single
+#   shared 4h derived-liveness constant, evidence-gated pass state, governed
+#   charter/stage updates, deduped typed links, JSON timeline replacement, and
+#   atomic additive task-owned token/duration counters. Added CLI flags and
+#   v4 migration/default/liveness/governance/accounting tests. `go test ./...`,
+#   `go test -race ./internal/routerstore`, and `git diff --check` pass.
+
+# 2026-06-10: Flagship train landed (19 PRs to main) + 2 governance fixes. (claude-pantheon source-edit;
+#   claude-home binding reviewer while codex OOO.) Merged: A28 registry-trust (#24 per-resume-mint fix +
+#   ADR-029 worktrees, #25/#29/#30), Rails A/B/C (#19/#22/#18), UX pains (#26 TCC .app bundle, #27 fsnotify
+#   live-refresh), gemma (#11/#13), #31/#21/#33/#9/#28/#14, #34 sirsi insight. Two silent failures surfaced+fixed:
+#   (1) #33 (A1 safety) auto-merged pre-verdict via rebase-push tripping armed auto-merge → RULE: safety-tier
+#   never auto-merges before binding verdict; (2) router fragmentation — `sirsi router` from a worktree cwd read
+#   the worktree's STALE git-snapshot copy, silently dropping a routed review request. FIX 1 (#35, 4eb6792,
+#   ADR-029 Amendment 1): FindRepoRoot resolves the MAIN worktree root (git --git-common-dir) not cwd; A16/A21
+#   seam + 3 tests; dogfooded. FIX 2 (#36, aa41706): .github/workflows/binding-hold.yml required-check job —
+#   passes unlabeled / FAILS when `binding-hold` labeled → branch protection blocks merge (auto-merge waits) until
+#   a binding reviewer clears it. Added job `binding-hold` to required_status_checks (strict). Proven live:
+#   label→FAIL→BLOCKED→reviewer-clears→re-run→CLEAN→merged. Closes the #33 bypass structurally; extends Ma'at gate
+#   (A25/A28). OPEN: #8 (router -2626 LOC, HOLD-FOR-CODEX, labeled binding-hold), #32 (ADR-030 Swift, operator-GUI
+#   +fresh-codex gated, labeled binding-hold). DEPLOY-PENDING: installed sirsi binary predates the canonical-router
+#   fix (repo-root-cwd workaround meanwhile) — lands on next user-authorized build/reinstall w/ TCC-bundle+self-update.
+# 2026-06-04: Setup wizard for Monday VC build (commit ff8a448, branch feat/setup-wizard, pushed).
+#   `sirsi setup` rebuilt: report -> guided 3-step wizard (Dependencies/FDA/Agent-wake) over new
+#   shared internal/setup/ engine (CDD #5: one engine, CLI + menubar-terminal both render it).
+#   Real TTY prompts before each action; pipe/dev-null/CI = report-only (golang.org/x/term, not
+#   os.ModeCharDevice which mis-classified /dev/null). Fixed thoth-init/sync/compact false-missing
+#   (thoth ships in the binary). main.go FDA pre-check now uses engine. Open: dedicated fullscreen
+#   TUI wizard screen? (ADR-020/TUI_DESIGN_PROOF-gated) or menubar->terminal suffices. codex review owed.
+# 2026-06-04: Canonicalized machine (1 versioned signed sirsi, zsh completion, no drift); sirsi fix resolver + safe PPID-orphan-kill (funnel BLOCKED pending codex User-metadata gap); menubar zsh close-prompt fix (read _). Open: install wizard, orphan User fix, mds_stores sudo.
+# 2026-06-04: sirsi fix heuristic resolver (no LLM) — answers every finding; safe PPID-narrowed orphan-kill (KillTrueOrphans, PPID<=1 only, --yes never kills, 4 regression tests). Funnel diagnose->fix + menubar BLOCKED pending codex re-review (42588a9).
+# 2026-05-31: CTR auto-registration Phase 1 — `sirsi thread discover` (commit 10a97b7, codex APPROVED).
+#   Reconciles live agent processes into threads.json: bounded pgrep/lsof → cwd → agents.json match,
+#   registers mappable repo-launched sessions anchored to their PID. Home-launched=unmappable (never
+#   registered); same-cwd same-surface duplicate=ambiguous (never guessed, Rule A23). Pure
+#   ReconcileDiscovery + 9 tests (internal/router/discover.go); CLI (cmd/sirsi/threaddiscover.go) with
+#   --self (Phase 2 hook) + stable JSON. Phase 1.5: wired into hourly sweep.sh (with scout lane).
+#   Why 0 threads registered post-reboot: every session launched from $HOME → no repo identity.
+#   Phase 2 (SessionStart hook→discover --self) approved, not wired. Phase 3 (deliver into live
+#   session via remote-control) spike-gated. Feeds ADR-021 (Osiris workstation-scoping).
+# 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
+# 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.

@@ -30,6 +30,20 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | **sirsi-rook** (reserved) | **Database Tool** | Database & storage orchestration |
 | **sirsi-rogue** (reserved) | **Security Tool** | Cybersecurity sweeper |
 
+### Deity Hierarchy (canon — ADR-015, ADR-017, ADR-028)
+
+```
+Ra 𓇶 (Fleet Aggregator — Enterprise SKU)
+ └── aggregates ConduitReports from all Horus instances (internal dev fabric = Ra #1)
+
+Horus 𓂀 (ONE per node — shared node conduit)
+ └── router items + observability = one unified flow → Ra
+ └── per-node singleton: ~/.config/sirsi/horus/conduit.json
+
+Anubis 𓃣 (single-node product = SNE + local Horus)
+ └── SNE (Sirsi Node Engine, profile selected)
+```
+
 ### Internal Modules
 | Module | Codename | Archetype | Role |
 | :--- | :--- | :--- | :--- |
@@ -40,7 +54,7 @@ Rules, design tokens, and business logic from other repositories do NOT apply he
 | Resource Optimizer | **Hapi** 🌊 | The Flow | Controls VRAM, GPU memory, and storage flow |
 | Output Filter | **RTK** ⚡ | The Sieve | Strips noise from tool output before it hits AI context |
 | Context Vault | **Vault** 🏛️ | The Keeper | Sandboxes large output in SQLite FTS5, indexes code for BM25 search |
-| Code Graph | **Horus** 𓂀 | The All-Seeing | The all-seeing Local Lord — structural code graph, live file watching, AND the workstation ops dashboard (ADR-015/026) |
+| Node Conduit | **Horus** 𓂀 | The All-Seeing | Per-node singleton conduit; unified router + observability flow → Ra; code graph + ops dashboard capabilities (ADR-028) |
 
 ---
 
@@ -324,7 +338,7 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 ### 2.21 Ra Scope Autonomy (Rule A24)
 > Established April 3, 2026, after 4 Ra-deployed agents blocked indefinitely waiting for sprint plan approval that could never arrive in non-interactive mode.
 
-*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 14 (Sprint Planning is Mandatory).
+*   **Rule**: Ra scope configs (`configs/scopes/*.yaml`) define **pre-approved sprint plans**. Agents spawned by `sirsi ra deploy` MUST execute scopes without asking for human approval. The Neith loom (`internal/neith/loom.go`) injects a **Ra Autonomy Directive** at the top of every woven prompt that overrides Rule 17 (Sprint Planning is Mandatory).
 *   **Scope Authoring**: Scopes MUST be written as directive, numbered task lists — not vague descriptions. Each task must name specific files, paths, or concrete actions. Vague scopes cause agents to ask clarifying questions, which hang forever in `--print` mode. See `configs/scopes/README.md` for the full authoring guide.
 *   **Prompt Structure**: The autonomy directive and scope of work are placed at the **top** of the woven prompt and are **never truncated**. Canon context (CLAUDE.md, Thoth memory, ADRs) fills the remaining token budget and may be truncated.
 *   **Permission Model**: Ra agents run with `--dangerously-skip-permissions` because the scope is pre-approved. This flag MUST NOT be used outside of Ra-deployed agents.
@@ -431,8 +445,53 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 *   **Overseer role — claude-home/Horus**: the router conduit (claude-home) is the Work Board OVERSEER: its scheduled sweeps read the board, verify the census invariant (zero unregistered agent-class processes), escalate misses as router items, and publish board state to the ambient surfaces. Pantheon owns the primitives; the overseer owns the watching. An overseer sweep that cannot run leaves the supervisor duty as the machine-local backstop — two independent legs, no single point of blindness.
 *   **Reference**: `internal/router/census.go` + `workboard.go`; `sirsi thread census`, `sirsi router workboard`; supervisor duties `thread-census` + the board consumers. Refs: A27, A29, ADR-022, ADR-031.
 
+### 2.31 Bind Directives Cannot Supersede a Live Rejection (Rule A34)
+> Established August 3, 2026. Ratified by claude-home on the recommendation of codex-pantheon (router `20260803-170255`). Root cause: PR #416 merged after a head-pinned `CHANGES_REQUESTED` review was dismissed and replaced by an approval under a standing bind directive; the rejected defect was real and reached `main` (repaired by PR #431).
+
+*   **Rule**: A standing bind directive may **automate an already-positive independent verdict** — turning an existing `APPROVE` on the current head into a merge without re-asking. It MUST NEVER dismiss, override, or supersede a `CHANGES_REQUESTED` review. Blanket authorization to bind is structurally equivalent to hardcoding `event=APPROVE`: a machine-readable approval that can contradict the reviewer's actual verdict is not a verdict, it is a forgery of one.
+*   **Clearing a rejection requires ONE of:**
+    *   **(a) a new head** (new commits) **plus a new independent review** on that head that explicitly resolves the rejected finding; or
+    *   **(b) an explicit owner override** that names the specific PR **and** the specific rejected finding it clears.
+    *   A directive that predates the rejection satisfies neither — it cannot "resolve" a finding it never saw.
+*   **The binder MUST fail closed**: if any review on the current head is `CHANGES_REQUESTED` and neither (a) nor (b) is present, the bind is **refused** and the item **escalates to the owner** (per the conduct runbook — ESCALATE, never act). Absence of evidence that a rejection was cleared is treated as an un-cleared rejection.
+*   **Why this is Scope-The-Check-shaped** (Rule "Scope The Check To The Claim"): "the directive authorizes this bind" *claims* the reviewer approved; its actual *scope* is "the owner once said auto-bind low-risk PRs." Those two differ exactly at a live rejection — the false-assurance gap that rule forbids. A bind is a check on the reviewer's verdict; scoped to its claim, it must read the *current* verdict, not a standing intent.
+*   **Mechanical enforcement**: `scripts/bind/sirsi-bind.sh` and `scripts/router/sirsi-claude-worker.sh`'s bind path query `gh pr view <pr> --json reviews` for the current head SHA before binding. Any `CHANGES_REQUESTED` review on that exact head blocks the bind (`--request-changes`-style refusal) unless a later review on the same head is `APPROVED`, or the caller passes an explicit `--override-pr <n> --override-finding "<text>"` naming both. Fails closed on an API error (treat as unknown = uncleared, never as cleared).
+*   **Custodian**: 𓆄 Ma'at (A17). Refs: A23 (owner is the sole arbiter of overrides), A26 (router handoff), A28 (CI/branch protection is the other half — a bind never merges past a red gate either).
 
 ---
+
+### 2.26 Scope The Check To The Claim (Rule A29)
+> Established July 27, 2026, after a single day in which five independent defects — three found by codex, two by claude-home — turned out to be the same shape.
+
+**Rule**: A check, guard, cap, probe or status MUST be scoped to the full extent of the claim it makes. If it cannot cover the claim, it MUST narrow the claim instead. A check narrower than its claim is worse than no check: it converts an unknown risk into a false assurance, and nobody re-examines a thing that reads fine.
+
+**The five instances, all 2026-07-27, all in merged or deployed code:**
+
+| the claim | the actual scope | what it cost |
+|---|---|---|
+| "all 210 font sites scale, 0 unscaled" | one file (`Views.swift`) | 16 live bypasses; the owner's menubar stayed broken after the "fix" |
+| "the wake loop now logs" | one condition (depth *change*) | a wedged loop and a healthy loop leave identical records |
+| "the broker is capped at 20.8 GiB" | one allocator (MLX's) | 43.94 GB footprint; three OOM kills in 24h |
+| "Phase 4 — all four deliverables shipped" | graded by its own author | a required `DEPRECATED` warning was never shipped and was marked complete |
+| "the fork storm is *the* cause of the OOM" | one window (before 22:17Z) | a third Jetsam fired 21 min later from a different consumer |
+
+Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 across 16 signals** while macOS displayed *out of application memory* (none of the 16 measured swap headroom or process growth); and `isCapacityCappedGemmaBroker`, which **exempted Sirsi's own broker** from the memory-hog check on the premise that two other checks would catch it — both of which also sampled the wrong metric.
+
+**How to apply — four questions before a check ships:**
+
+1. **What exactly does this assert?** Write the sentence. "All fonts on the surface scale" is a different claim from "all fonts in this file scale."
+2. **What does it actually read?** One file, one metric, one process, one window, one allocator. Name it.
+3. **Where do 1 and 2 differ?** That gap is the false assurance. Close it, or rewrite the claim to match the scope.
+4. **Can it fail?** A guard that has never been shown red is an untested guard. Verify BOTH directions — clean passes, and a deliberate regression fails and names itself. Prefer a regression fixture that exercises the *widest* part of the claim (a second file, a second process, a second window), because the collapse-back-to-one is the failure mode.
+
+**Corollaries:**
+
+*   **A self-graded phase is not closed.** Marking your own work complete requires independent review; "I am grading my own work" in a review request does not excuse the grade.
+*   **A cap enforced inside the thing it caps is not a cap.** Enforcement belongs outside the governed process, reading what the kernel judges by.
+*   **Exempting your own component is the strongest smell in this list.** Sirsi's local model is the most likely offender on a developer's machine and must be the first thing named, never the one thing skipped.
+*   **A cause established in one window is *a* cause.** Check whether the symptom recurred after the fix.
+
+**Enforcement**: Ma'at and review treat an unscoped claim as a defect even when the code is correct, because the record is the thing later work depends on. Where a scope gap cannot be closed now, the claim MUST be narrowed in the same change, with the residual named.
 
 ## 3. Technology Stack
 
