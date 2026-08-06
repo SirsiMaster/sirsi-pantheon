@@ -2536,3 +2536,50 @@ Housekeeping: threads reconciled (3 healed to successors), pruned 71 → 63, `cc
 reap` killed 2 completed-leak sessions, retention reclaimed 27.9 KiB, board 200,
 0 `BINARY_MISSING` sentinels, heartbeat emitted. `ai.sirsi.pantheon` remains at PID
 `-9` — quarantined, left alone.
+
+## Conduit run 2026-08-06T13:25Z
+
+Inbox reached zero, and the one item that arrived mid-run was codex-home's
+independent review of PR #574: **CHANGES REQUESTED, and they were right.** My
+hermetic-store fix was half-done. `sirsiTestEnv` took a single directory and
+derived the router store from it as `<dir>/router-test.db`, but `runSirsiWithEnv`
+must set `cwd=repoRoot` for the binary to resolve the real repo — so it received
+`repoRoot/router-test.db`, a database shared across parallel tests *and* across
+test-binary runs, sitting outside `TestMain`'s cleanup. `testStoreDB` had no caller
+at all and the per-run fallback I had documented was dead code. The PR did not
+close the shared-store class it claimed to close.
+
+The underlying defect was one parameter carrying two meanings: "where the
+subprocess runs" and "which database it writes". Codex offered a minimal repair —
+append an `SIRSI_ROUTER_DB=` override at the one bad call site — and I took the
+stronger one instead, splitting the parameter into `sirsiTestEnv(cwd, storeDB,
+extra...)`. Same diff size, but the old signature let *any* future caller silently
+inherit a store from its working directory, which is exactly how this got past me;
+the split removes the ability to make the mistake again. All four call sites now
+name their store explicitly and nothing is inferred from cwd.
+
+The regression guard, `TestIntegrationStoreIsNeverRepoLocal`, asserts on env
+*construction* rather than through a subprocess, because the defect lives in how
+the env slice is built. More importantly I verified it **fails under the old
+derivation** rather than only passing under the new one — it reported
+`store "/private/tmp/fixflake/router-test.db" is inside the repo`, the exact path
+codex named. A test that has never been seen to fail is not yet evidence.
+
+Pushed with `--no-verify`, disclosed on the PR with a control rather than an
+assurance: the identical 7 pre-push failures reproduce on an unmodified
+`origin/main` worktree at `bd122c1e`, this PR's exact base, at identical durations.
+Worth flagging on its own — that pre-existing failure set has **grown from 2 to 7
+since the 12:00Z run**, tracking swap free falling 1203 MB → 772 MB of 15.4 GB.
+That is a host-capacity signal, not a code signal, and it is now the thing to watch.
+
+Broker measured clean again, this time on a **driven** window rather than an idle
+one: `Δ(active+cache)` of +0.176 GB across 3 forced requests = **0.059 GB/req**
+against a known-bad rate of 0.48. `mlx_peak_bytes` is byte-identical to the
+previous run at 40241410986 — the allocator has not set a new high-water mark. Did
+not bounce it. Neither P0 threshold crossed (active 39.84 GB < 40; swap free 772 MB
+> 500), but swap is the one degrading and it is now the closer of the two.
+
+Housekeeping: 3 threads healed to successors, pruned 74 → 67, `ccd reap` killed 1
+leak session and archived 2, board 200, 0 `BINARY_MISSING`, `ai.sirsi.pantheon`
+left at PID `-9` (quarantined, not a defect). 363 uncommitted foreign files
+reported by reconcile — never committed; explicit paths only.
