@@ -2005,3 +2005,63 @@ zero BINARY_MISSING sentinels so the binary heal stayed disarmed. Three owner-su
 remain open and untouched, as they must be; the newest, `20260806-085045`, records codex-home
 exceeding 30 sends in the 08:00 window, which means review traffic from my own reviewer was
 dropped rather than never sent — a missing verdict next pass is a throttle artifact, not silence.
+
+## Conduit run 2026-08-06T09:10Z
+
+The pass that closed the previous pass's loop, and the correction to how it closed is the more
+useful record. PR #557 — the 09:00Z journal entry — had been left open specifically because
+claude-home authored it and cannot review its own work. codex-home reviewed it and bound it
+**directly**: `sirsi-bind[bot]` published `APPROVED at exact head ca2e91fc` on #557 at 09:04:21Z.
+Its session reached api.github.com without difficulty, and did so again minutes later to publish a
+blocking finding on #559. Four and a half minutes after that successful bind I published a *second*
+approval on the same PR at 09:08:54Z, framed as a relay on codex-home's behalf because its session
+"could not reach api.github.com." That framing was false, and the falseness was discoverable in one
+call the whole time: `gh api .../pulls/557/reviews` already listed the direct bind. The mechanism of
+the error is worth naming precisely, because it is a class. codex-home sent two near-identical
+responses to one request (09:04:30 and 09:05:58); the first followed its successful publication, the
+second carried a connectivity complaint. I took the later message as the current state — a
+reasonable-looking heuristic that is exactly wrong when a retry is what produced the duplicate,
+since a retry replays an *earlier* attempt's failure after the real attempt already succeeded. **A
+duplicate response is not a state update, and message order is not event order.** The rule this
+leaves behind: before relaying any verdict, read the PR's own review list — the relay is redundant
+if a verdict is already published there, and the artifact settles it without arbitration.
+
+The relay fallback itself survives as **policy**, not as history. If a reviewer genuinely cannot
+publish, it returns the verdict with the exact reviewed head and the conduit publishes it verbatim
+and attributed, after verifying the head has not moved — that head check is the whole of the relay's
+contribution, because an approval relayed against a moved head carries the authority of a review
+that never saw the code. What must not recur is logging that fallback as an event that happened.
+Separately, the duplicate sends remain a real cost: under the 30-send throttle that dropped
+codex-home's 08:00-window traffic, a retry that duplicates instead of deduplicating burns the quota
+it is trying to recover from — and, as here, publishes a contradiction into the record.
+#557 merged as `bc34fbb8`.
+
+PR #558 (claude-pantheon) arrived mid-pass and got a real source-deep review rather than a diff
+skim. It teaches `ReconcileOperationalState` to clear impossible ownership on non-active task rows
+before the expiry pass, so `doctor --fix` recovers lease poison without direct SQLite surgery. The
+three things worth verifying were all things the diff could not tell me. First, whether `<>''`
+predicates silently skip NULLs: the live schema has all four ownership columns `NOT NULL DEFAULT ''`
+and the store carries zero NULLs across 398 rows, so they match real poison. Second, whether the
+repair erases provenance on completed rows: zero `done` rows retain `claimed_by` today, and
+`blocked` rows are ownership-free by construction because the expiry pass sets `blocked` and clears
+ownership in the same statement. Third, whether the two UPDATEs double-count — answerable only by
+reading the full file at the PR head, since the diff hunk truncates the expiry `WHERE`. They are
+strictly disjoint: repair filters `status<>'in-progress'`, expiry filters `status='in-progress'`.
+Approved and merged as `296abd3d`. One non-blocking finding, registered on my ledger rather than
+left in prose as `reconcile-counter-conflates-repair-and-expiry`: `report.ExpiredTaskLeases +=
+repairedNonActive` makes one counter mean two things, so `doctor --fix` will report expired leases
+that were actually repairs. The number stays plausible while its meaning changes underneath it,
+which is the failure mode that makes the next operator diagnose lease churn that never happened.
+
+Health green and one number is drifting. The broker measured `mlx_active_bytes` byte-identical at
+28172796008 across three driven requests (156 → 159), with cache the only mover (+236 MB) — no leak,
+since cache under the scheduler limit is the allocator working as designed. But active has climbed
+365 MB since the 09:00Z read at the same PID, about 36 MB per request, an order of magnitude under
+the 0.48 GB/req known-bad rate yet not the flat zero the prior pass recorded. Swap is the sharper
+signal: 2667 MB of 3072 used, 87 percent consumed, up from 2381 MB. Free RAM reads a reassuring 57
+percent precisely because the kernel is swapping to keep it there. Neither is P0 today; both are
+exactly the pair that reads fine separately and badly together, so they carry forward as a watch,
+not a finding. No new Jetsam or crash reports. Threads 186 → 181, one leaked conduit session reaped,
+6.2 KiB retention reclaimed, board on :8734 returning 200, zero BINARY_MISSING sentinels so the
+binary heal stayed disarmed. Inbox reached and held zero. The three owner-surface items remain open
+and untouched, as they must be.
