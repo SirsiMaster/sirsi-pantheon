@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
@@ -15,6 +16,8 @@ import (
 var (
 	selfUpdateConfirm bool
 	selfUpdateJSON    bool
+	userHomeDirFn     = os.UserHomeDir
+	readSchemaFn      = routerstore.ReadSchemaVersion
 )
 
 var selfUpdateCmd = &cobra.Command{
@@ -105,6 +108,21 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 	}
 	if provErr := selfupdate.CheckProvenance(selfInfo); provErr != nil {
 		return fmt.Errorf("provenance gate: %w\n  (install a proper release build via goreleaser or Homebrew, then re-run self-update)", provErr)
+	}
+	dbPath := os.Getenv("SIRSI_ROUTER_DB")
+	if dbPath == "" {
+		home, homeErr := userHomeDirFn()
+		if homeErr != nil {
+			return fmt.Errorf("schema-compatibility gate: resolve home: %w", homeErr)
+		}
+		dbPath = filepath.Join(home, ".sirsi", "router.db")
+	}
+	liveSchema, schemaErr := readSchemaFn(dbPath)
+	if schemaErr != nil {
+		return fmt.Errorf("schema-compatibility gate: %w", schemaErr)
+	}
+	if schemaErr := selfupdate.CheckSchemaCeiling(selfInfo, liveSchema); schemaErr != nil {
+		return fmt.Errorf("schema-compatibility gate: %w", schemaErr)
 	}
 
 	// Apply — explicit --confirm plus an interactive [y/N]. A binary rewrite is

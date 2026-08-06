@@ -46,6 +46,30 @@ var ErrNotFound = errors.New("routerstore: item not found")
 // mirroring internal/work.Close semantics.
 var ErrAlreadyClosed = errors.New("routerstore: item already closed")
 
+// MaxSupportedSchemaVersion is the newest router-store schema this binary can
+// safely open. It is exported into `sirsi version --json` so installers can
+// reject an older candidate before replacing a live binary.
+func MaxSupportedSchemaVersion() int {
+	return migrations[len(migrations)-1].version
+}
+
+// ReadSchemaVersion reads PRAGMA user_version without opening Store or running
+// migrations. Installer compatibility checks must be observational: probing a
+// candidate must never mutate the live database it is deciding whether it can
+// understand.
+func ReadSchemaVersion(path string) (int, error) {
+	db, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		return 0, fmt.Errorf("routerstore: open schema probe: %w", err)
+	}
+	defer db.Close()
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version;`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("routerstore: read user_version: %w", err)
+	}
+	return version, nil
+}
+
 // Item is the durable projection of one work item. Fields mirror
 // internal/work.Item exactly — field-for-field, same names, same semantics —
 // so a markdown item round-trips with zero loss (PRD /goal #4). The parity is

@@ -15,6 +15,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/tui"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
@@ -51,16 +52,18 @@ var versionCmd = &cobra.Command{
 				modules[e.key] = modversion.Get(e.key)
 			}
 			info := modversion.Current("sirsi")
+			info.RouterSchemaMax = routerstore.MaxSupportedSchemaVersion()
 			result := map[string]interface{}{
-				"binary":  info.Binary,
-				"version": info.Version,
-				"commit":  info.Commit,
-				"date":    info.Date,
-				"path":    info.Path,
-				"go":      info.GoVer,
-				"dirty":   info.Dirty,
-				"product": "Sirsi Pantheon",
-				"modules": modules,
+				"binary":            info.Binary,
+				"version":           info.Version,
+				"commit":            info.Commit,
+				"date":              info.Date,
+				"path":              info.Path,
+				"go":                info.GoVer,
+				"dirty":             info.Dirty,
+				"router_schema_max": info.RouterSchemaMax,
+				"product":           "Sirsi Pantheon",
+				"modules":           modules,
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
