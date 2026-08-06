@@ -499,6 +499,64 @@ func resolveModel(home string) string {
 	return "mlx-community/gemma-2-27b-it-bf16-4bit"
 }
 
+// approximateModelGB returns a rough RAM estimate for a Gemma model based on
+// its name pattern — enough to classify "fits" vs "too large" without any
+// network or disk I/O beyond the conf file. Returns 0 for unknown names so
+// callers can skip advice rather than guess.
+func approximateModelGB(modelID string) float64 {
+	id := strings.ToLower(modelID)
+	switch {
+	case strings.Contains(id, "27b"):
+		return 14.0 // gemma-2-27b bf16-4bit: ~14 GB
+	case strings.Contains(id, "12b"):
+		return 7.0 // gemma-2-12b 4bit: ~7 GB
+	case strings.Contains(id, "9b"):
+		return 5.0 // gemma-2-9b 4bit: ~5 GB
+	case strings.Contains(id, "2b"):
+		return 1.5 // gemma-2-2b 4bit: ~1.5 GB
+	default:
+		return 0
+	}
+}
+
+// rightSizeAdvice returns a runnable command string when the current broker
+// model is clearly too large for availableGB of RAM; empty string otherwise.
+// Uses a simplified budget (2×model + 4 GB reserve) rather than calling
+// SampleNodeCapacity to avoid a sysctl barrage during an already-saturated
+// spiral. Picks the largest model that fits; falls back to stop-only when
+// nothing fits.
+func rightSizeAdvice(home string, availableGB float64) string {
+	model := resolveModel(home)
+	modelGB := approximateModelGB(model)
+	if modelGB == 0 || 2*modelGB+4 <= availableGB {
+		return "" // unknown size or already fits
+	}
+	confPath := filepath.Join(home, ".sirsi", "gemma-model.conf")
+	label := model
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		label = model[i+1:]
+	}
+	tiers := []struct {
+		id string
+		gb float64
+	}{
+		{"mlx-community/gemma-2-9b-it-4bit", 5.0},
+		{"mlx-community/gemma-2-2b-it-4bit", 1.5},
+	}
+	for _, t := range tiers {
+		if 2*t.gb+4 <= availableGB {
+			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
+				"available — switch to the %s tier: "+
+				"`echo '%s' > %s && sirsi gemma serve --stop && sirsi gemma serve`",
+				label, modelGB, availableGB, t.id, t.id, confPath)
+		}
+	}
+	// Nothing fits — just stop the broker to recover RAM.
+	return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) cannot fit in %.1f GB available — "+
+		"stop the broker to recover RAM: `sirsi gemma serve --stop`",
+		label, modelGB, availableGB)
+}
+
 // sessionLeakThreshold is how many leaked claude-desktop sessions must
 // accumulate before the watch proactively alerts. Matches the `sirsi diagnose`
 // leaked-sessions lever so the two surfaces agree.
@@ -575,17 +633,25 @@ func probeMenubar() Finding {
 // probeMemoryDeath reads the swap/free-RAM spiral signals via guard (one shared
 // definition of "dying"). It routes only the live-critical spiral; ordinary
 // pressure is not a currently-owner-fixable emergency (A32: alarm only when a
-// current fixable condition exists).
+// current fixable condition exists). When dying, it appends a runnable
+// right-size command so the alert is actionable, not just descriptive.
 func probeMemoryDeath() Finding {
+	home, _ := os.UserHomeDir()
 	md := guard.SampleMemoryDeath()
+	body := fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
+		"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
+		"gemma broker (2026-07-17). Fix: close/restart the heaviest leaked sessions (leaked claude-desktop "+
+		"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
+		"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
+		md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)
+	if md.Dying {
+		if advice := rightSizeAdvice(home, md.AvailableGB); advice != "" {
+			body += " " + advice
+		}
+	}
 	f := Finding{Check: "memory-death", Fixable: true,
 		Title: "liveness-watch: memory death spiral",
-		Body: fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
-			"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
-			"gemma broker (2026-07-17). Fix: close/restart the heaviest leaked sessions (leaked claude-desktop "+
-			"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
-			"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
-			md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)}
+		Body:  body}
 	if !md.Readable {
 		f.OK, f.Fixable, f.Detail = true, false, "no signal readable"
 		return f

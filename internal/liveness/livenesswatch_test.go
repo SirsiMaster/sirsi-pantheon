@@ -422,3 +422,81 @@ func TestLaunchAgentPlistPresent_IgnoresRetired(t *testing.T) {
 		}
 	}
 }
+
+func TestApproximateModelGB(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		want float64
+	}{
+		{"mlx-community/gemma-2-27b-it-bf16-4bit", 14.0},
+		{"mlx-community/gemma-2-9b-it-4bit", 5.0},
+		{"mlx-community/gemma-2-2b-it-4bit", 1.5},
+		{"mlx-community/gemma-2-12b-it-4bit", 7.0},
+		{"mlx-community/some-unknown-model", 0},
+	} {
+		if got := approximateModelGB(tc.id); got != tc.want {
+			t.Errorf("approximateModelGB(%q) = %v, want %v", tc.id, got, tc.want)
+		}
+	}
+}
+
+func TestRightSizeAdvice_FitsAlready(t *testing.T) {
+	home := t.TempDir()
+	// 2b model (~1.5 GB): 2×1.5+4 = 7 ≤ 20 → already fits, no advice
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "gemma-model.conf"),
+		[]byte("mlx-community/gemma-2-2b-it-4bit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("GEMMA_MODEL", "") // clear env override
+	if got := rightSizeAdvice(home, 20.0); got != "" {
+		t.Errorf("expected empty advice when model fits, got %q", got)
+	}
+}
+
+func TestRightSizeAdvice_27bReturnsSmaller(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "gemma-model.conf"),
+		[]byte("mlx-community/gemma-2-27b-it-bf16-4bit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 9.68 GB available (the real spiral measurement): 27b needs 2×14+4=32 GB
+	got := rightSizeAdvice(home, 9.68)
+	if got == "" {
+		t.Fatal("expected non-empty advice for oversized 27b model")
+	}
+	if !strings.Contains(got, "gemma-2-2b-it-4bit") {
+		t.Errorf("expected advice to suggest 2b tier (the only one that fits in 9.68 GB), got: %q", got)
+	}
+	if !strings.Contains(got, "sirsi gemma serve --stop") {
+		t.Errorf("expected advice to contain stop command, got: %q", got)
+	}
+}
+
+func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "gemma-model.conf"),
+		[]byte("mlx-community/gemma-2-9b-it-4bit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Only 0.5 GB available — nothing fits, even 2b needs 2×1.5+4=7 GB
+	got := rightSizeAdvice(home, 0.5)
+	if got == "" {
+		t.Fatal("expected non-empty advice when nothing fits")
+	}
+	if strings.Contains(got, "echo '") {
+		t.Errorf("expected stop-only advice (no model switch), got: %q", got)
+	}
+	if !strings.Contains(got, "serve --stop") {
+		t.Errorf("expected stop command in fallback advice, got: %q", got)
+	}
+}
