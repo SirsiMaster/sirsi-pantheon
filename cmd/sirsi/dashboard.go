@@ -61,6 +61,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		},
 		NodeStatusFn: collectDashboardNodeStatus,
 		LedgerFn:     collectDashboardLedger,
+		FleetFn:      collectDashboardFleet,
 	})
 
 	if err := srv.Start(); err != nil {
@@ -105,6 +106,23 @@ func collectDashboardLedger() (ledger.BoardSummary, error) {
 		return ledger.BoardSummary{}, fmt.Errorf("build ledger: %w", err)
 	}
 	return ledger.Summarize(snap), nil
+}
+
+// collectDashboardFleet wires GET /api/fleet (A32 owner-reporting board) to
+// the SAME ledger.Build the CLI uses — one read model. The retired Python
+// board learned this the hard way: it iterated agents.json and made a task
+// call per agent, so any agent present in the store but absent from that file
+// was invisible. It read 196 tasks while the router read 205. The snapshot
+// already embeds every agent's tasks; use it and nothing else.
+//
+// Returns the RAW snapshot, not a summary: the fleet board diffs consecutive
+// snapshots to derive the activity feed, so it needs per-task status.
+func collectDashboardFleet() (ledger.Snapshot, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return ledger.Snapshot{}, fmt.Errorf("locate repo root: %w", err)
+	}
+	return ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter)
 }
 
 // collectDashboardNodeStatus wires GET /api/node-status (ADR-026) to the

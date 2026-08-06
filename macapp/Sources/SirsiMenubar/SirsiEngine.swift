@@ -234,6 +234,51 @@ struct OwnerGated: Decodable, Identifiable {
     }
 }
 
+
+// MARK: - Fleet board (shared producer)
+//
+// Decoded verbatim from `sirsi router fleet --json` — the SAME computation
+// Horus serves at /api/fleet. The menubar used to render its own fabric view
+// from `router node-status` while Horus rendered from ledger.Build, so the two
+// disagreed by construction: different read models cannot produce the same
+// numbers, and no fix to either surface makes them agree. There is now one
+// producer and the surfaces are consumers of it.
+struct FleetLane: Decodable, Identifiable {
+    let agent: String
+    let state: String
+    let open: Int
+    let active: Int
+    let stalled: Int
+    let blocked: Int
+    let touchedAgo: String?
+    var id: String { agent }
+
+    enum CodingKeys: String, CodingKey {
+        case agent, state, open, active, stalled, blocked
+        case touchedAgo = "touched_ago"
+    }
+}
+
+struct FleetSummary: Decodable {
+    let total: Int, done: Int, inFlight: Int, active: Int
+    let assigned: Int, stalled: Int, blocked: Int
+    let idleLanes: Int, pctDone: Int, lanesTotal: Int, lanesWorking: Int
+
+    enum CodingKeys: String, CodingKey {
+        case total, done, active, assigned, stalled, blocked
+        case inFlight = "in_flight"
+        case idleLanes = "idle_lanes"
+        case pctDone = "pct_done"
+        case lanesTotal = "lanes_total"
+        case lanesWorking = "lanes_working"
+    }
+}
+
+struct FleetBoard: Decodable {
+    let summary: FleetSummary
+    let lanes: [FleetLane]
+}
+
 struct RouterBoard: Decodable {
     let schemaVersion: String?
     let totalPending: Int?
@@ -425,6 +470,11 @@ final class SirsiEngine: ObservableObject {
     // ── Router board (fabric liveness) ───────────────────────────────────────
     @Published var routerBoard: RouterBoard?
     @Published var routerLoading = false
+    @Published var fleetBoard: FleetBoard?
+    @Published var fleetLoading = false
+    // Non-nil when the fleet read itself failed. Rendering an empty board on a
+    // failed read would say "no work" when the truth is "we could not look".
+    @Published var fleetError: String?
     private let routerBoardPath = (("~/.sirsi/router-board.json") as NSString).expandingTildeInPath
 
     // ── Owner-facing run report (local sovereignty, owner directive
@@ -567,6 +617,23 @@ final class SirsiEngine: ObservableObject {
 
     // loadRouterBoard reads ~/.sirsi/router-board.json; if absent, shells
     // `sirsi router node-status --json` (same contract). Never blocks the UI.
+
+    // loadFleetBoard reads the shared producer. No local aggregation: the whole
+    // point is that this surface renders what Horus renders.
+    func loadFleetBoard() async {
+        fleetLoading = true
+        defer { fleetLoading = false }
+        let out = await Self.runJSON(args: ["router", "fleet", "--json"])
+        if let board = try? JSONDecoder().decode(FleetBoard.self, from: out) {
+            fleetBoard = board
+            fleetError = nil
+        } else {
+            // Keep the last good board on screen and say the refresh failed,
+            // rather than blanking to something that reads as an empty fleet.
+            fleetError = out.isEmpty ? "fleet read returned nothing" : "could not decode fleet board"
+        }
+    }
+
     func loadRouterBoard() async {
         routerLoading = true
         defer { routerLoading = false }
