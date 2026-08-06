@@ -73,6 +73,71 @@ func TestSuperviseOnceIncludesUnregisteredDurableWorkOwner(t *testing.T) {
 	t.Fatal("unregistered durable work owner was omitted from supervision")
 }
 
+// The supervisor reconciles every lane on every pass, but for a long time it
+// read only reconcile.State and dropped the counters — so a repair and a no-op
+// left identical records. Scope of this test (A35): a real repair reaches the
+// report with the right count, AND the whole counter set survives serialization.
+// It does NOT re-prove that any individual counter increments correctly; that
+// is routerstore's reconcile_test.
+func TestSuperviseOnceSurfacesReconcileCounters(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot)
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Store().AddRequirement("counters reach a surface", "ADR-057", "R6", "claude-pantheon"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	lane := func(report *SuperviseReport) AgentSurfaceStatus {
+		t.Helper()
+		for _, a := range report.Agents {
+			if a.AgentID == "claude-pantheon" {
+				return a
+			}
+		}
+		t.Fatal("claude-pantheon absent from supervision")
+		return AgentSurfaceStatus{}
+	}
+
+	now := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	report, err := SuperviseOnce(SuperviseOptions{RepoRoot: repoRoot, AgentID: "horus-supervisor-test", PID: os.Getpid(), Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lane(report).Reconcile.RequirementTasksCreated; got != 1 {
+		t.Fatalf("RequirementTasksCreated=%d, want 1 — repair happened but never reached the report", got)
+	}
+
+	// FalseDoneRejected is the counter that motivated this, but a false `done`
+	// cannot be forged through the store API — the gate rejects it, which is the
+	// point — and routerstore's own TestReconcileCreatesTaskForRequirementAnd
+	// RejectsFalseDone already proves it increments. What is NOT proven there,
+	// and is proven here, is that it survives onto the wire: the counters are a
+	// serialized contract, not just a Go field a renderer could reach.
+	encoded, err := json.Marshal(lane(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Reconcile map[string]json.RawMessage `json:"reconcile"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"false_done_rejected", "requirement_tasks_created", "repaired_non_active_leases"} {
+		if _, ok := decoded.Reconcile[key]; !ok {
+			t.Fatalf("%q absent from the lane contract: %s", key, encoded)
+		}
+	}
+}
+
 func TestSuperviseOnceRegistersThreadAndClassifiesSurfaces(t *testing.T) {
 	repoRoot := t.TempDir()
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
