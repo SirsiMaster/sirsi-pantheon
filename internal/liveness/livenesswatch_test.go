@@ -290,6 +290,9 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	if !strings.Contains(detail, "restart will not fix") {
 		t.Errorf("detail should say restart will not fix, got: %s", detail)
 	}
+	if !strings.Contains(detail, WeightsAbsentSentinel) {
+		t.Errorf("detail must contain WeightsAbsentSentinel %q (the duty's short-circuit key), got: %s", WeightsAbsentSentinel, detail)
+	}
 	if called {
 		t.Error("generation probe should not be called when RSS is below the floor")
 	}

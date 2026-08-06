@@ -387,7 +387,7 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 	pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
 	if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
 		return GemmaWedged, fmt.Sprintf(
-			"broker RSS %d MB is below the %d MB weight floor — model weights likely absent; "+
+			"broker RSS %d MB is below the %d MB weight floor — model "+WeightsAbsentSentinel+"; "+
 				"a restart will not fix this (check HF model cache and re-download weights)",
 			rss/1024, minWeightedRSSKB/1024,
 		)
