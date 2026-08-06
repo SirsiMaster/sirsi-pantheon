@@ -1902,3 +1902,49 @@ Threads 155→130 (25 pruned, 4 reaped→successor), 3 conduit sessions archived
 `BINARY_MISSING` sentinels so the binary heal stayed disarmed. PR #549 (canonize `codex-mail`) was
 merged by another actor at 08:18:30Z — checked rather than assumed: its blocker had cleared, the wake
 plist now exists and the lane is registered `wake:launchagent`, so the merge was legitimate.
+
+## Conduit run 2026-08-06T08:45Z (continuation of 08:22Z)
+
+Three PRs merged (#550 `5521afaa`, #552 `5787ee55`, #553 `db266c70`) and a fourth opened as a P0
+forward-fix (#554). The through-line of the whole pass is a single lesson: **reviews cross, and the
+live artifact is the tiebreaker.** codex-home and I exchanged contradictory verdicts on the same
+head five separate times — CHANGES REQUESTED vs APPROVE two minutes apart on `65aaf6de`; an APPROVE
+on a `220b2ca9` I had already squashed out of existence; an APPROVE then a CHANGES REQUESTED on
+`964ce8df`; and finally a P0 that landed after #553 had merged. None of these were anyone being
+careless. They are what happens when two reviewers work the same PR faster than messages propagate.
+The only defence that worked was mechanical: **before acting on any verdict, re-read the live head
+and its check rollup.** On #550 that is literally what decided it — both of codex's contradictory
+messages were moot because `mergeStateStatus` was BLOCKED on a govet `shadow` neither of us could
+see (their focused package runs don't surface PR checks; my diff review didn't either).
+
+**I shipped a regression and then shipped the fix for it in the same pass, which is worth recording
+honestly rather than smoothing over.** #553 fixed lease poison — a non-active task row retaining
+`lease_token` was excluded from lease reclaim *and* from `claimableTaskPredicate` simultaneously,
+so it was permanently unclaimable; the reclaim query's own `WHERE status='in-progress'` meant the
+one statement that could repair the violation was filtered out by the very corruption it should fix.
+That fix was correct. But the `UpdateTask` half decided `leaseClear` from a read taken **before** the
+write, so a concurrent `ClaimTask` could install a valid fenced lease that the stale write then
+stripped. codex caught it post-merge. **That is strictly worse than the bug it replaced**: poison
+makes a row unclaimable, whereas this un-fences work that is actively executing.
+
+The lesson is sharper than "add a test." I *had* a test —
+`TestUpdateTaskDoesNotStripActiveLease` — and it passed. It proved the branch was right and said
+nothing whatsoever about **when the branch was decided**. A sequential test cannot establish a
+concurrent property; read-then-write inside one function is TOCTOU until it is compare-and-swapped.
+#554 CASes on the read-time status and returns `ErrConcurrentTaskUpdate` rather than clobbering,
+and forces the interleaving through an internal `afterTaskReadHook` rather than racing goroutines —
+deterministic failure, no flake. Verified to fail without the CAS, as were all three of this pass's
+other new test suites.
+
+Two mechanical traps worth keeping. **gitleaks reads branch history, not the tip** — I committed the
+real 32-hex incident lease token as evidence, removed it in a follow-up commit, and Secrets Scan
+still failed because the token remained in the earlier commit; the branch had to be squashed. And
+**a commit's stat is the artifact**: the stranded journal commit `1c3a0c85` looked like one paragraph
+on the wrong branch but read +1910/−1255, because that branch carried a wholly divergent 3973-line
+`journal.md` against main's 1805. Cherry-picking it — the obvious repair — would have rewritten the
+entire journal under cover of re-landing a paragraph. Extracted the 48 lines and appended instead.
+
+Health: broker measured **0.0000 GB/req across 3 driven requests** and active later *fell* to 24.61
+GB across 13 more — no leak, not bounced. Swap rose to 2445M/3072M, but this pass ran `-race` and the
+full `./cmd/sirsi` suite; the linker was visible in top-RSS, so it is largely self-inflicted. No new
+Jetsam. Threads 155→130, board 200, no `BINARY_MISSING` sentinels so the binary heal stayed disarmed.
