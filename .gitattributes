@@ -1,11 +1,12 @@
-# Kill the CHANGELOG merge treadmill (claude-home tip, router item 152531).
+# CHANGELOG.md is now ASSEMBLED from changelog.d/, not hand-edited — see
+# changelog.d/README.md. Add entries as new files there.
 #
-# Every PR prepends its entry to `## [Unreleased]`, so the moment one merges it
-# moves `main` and re-conflicts every sibling PR on the SAME lines — a
-# rebase-per-merge tax the whole stack pays. `merge=union` is git's built-in
-# driver (no `git config` merge.union.driver setup needed): on a conflict it
-# keeps BOTH sides' added lines instead of stopping. For an append-only,
-# newest-first changelog that is exactly the right resolution — the two entries
-# both survive, order is fixed up by whoever curates the release, and no human
-# has to hand-resolve a non-overlapping "conflict" that was never semantic.
+# The union driver below is retained for the release-assembly commit and for
+# any straggler branch that still edits CHANGELOG.md directly. Do NOT rely on
+# it to keep a PR mergeable: `merge=union` is honored by local git (a
+# `git merge-tree` against main resolves clean) but is NOT honored by GitHub's
+# server-side merge. Measured 2026-08-06 — merge-tree said CLEAN while the API
+# reported mergeable=CONFLICTING/DIRTY on the same four PRs. A mitigation that
+# passes on every machine where it is verified and fails in the only place that
+# decides is worse than none: it reads as "already fixed".
 CHANGELOG.md merge=union
