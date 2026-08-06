@@ -31,8 +31,8 @@ func TestExactTaskClaimAcknowledgesOnlyItsSourceWake(t *testing.T) {
 			t.Fatalf("exact claim B acknowledged source A: %+v", event)
 		}
 	}
-	if err := s.ReleaseTaskLease(b.Agent, b.TaskID, b.Token, "yield"); err != nil {
-		t.Fatal(err)
+	if releaseErr := s.ReleaseTaskLease(b.Agent, b.TaskID, b.Token, "yield"); releaseErr != nil {
+		t.Fatal(releaseErr)
 	}
 	a, err := s.ClaimTask("codex-home", "A", "worker-a", "thread-a", time.Minute)
 	if err != nil {
