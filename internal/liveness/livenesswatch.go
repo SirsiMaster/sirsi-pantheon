@@ -599,6 +599,23 @@ func probeMemoryDeath() Finding {
 	return f
 }
 
+// launchAgentPlistPresent reports whether a loadable .plist still exists for
+// label. Retiring a service renames its plist (….plist.retired-*, …
+// .plist.superseded-*) rather than deleting it, and launchd's own cleanup then
+// parks the orphaned label as "disabled" in the override DB. Such a label is
+// intentionally dead: there is nothing to re-enable and nothing to bootstrap,
+// so the repair this probe prescribes cannot succeed. Only the exact
+// "<label>.plist" counts — a retired suffix must not match.
+func launchAgentPlistPresent(label string) bool {
+	if home, err := os.UserHomeDir(); err == nil {
+		if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", label+".plist")); err == nil {
+			return true
+		}
+	}
+	_, err := os.Stat(filepath.Join("/Library/LaunchAgents", label+".plist"))
+	return err == nil
+}
+
 // probeLaunchdDisabled checks for ai.sirsi.* or actions.runner.* labels that
 // are marked disabled in launchd's override DB. A disabled-but-running label
 // is the "latency fuse" class: every current-state probe sees green, but after
@@ -630,7 +647,7 @@ func probeLaunchdDisabled() Finding {
 		f.OK, f.Fixable, f.Detail = true, false, "launchctl print-disabled unavailable"
 		return f
 	}
-	var disabled []string
+	var disabled, retired []string
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasSuffix(line, "=> disabled") {
@@ -643,16 +660,26 @@ func probeLaunchdDisabled() Finding {
 		}
 		label := line[start+1 : end]
 		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
+			if !launchAgentPlistPresent(label) {
+				retired = append(retired, label)
+				continue
+			}
 			disabled = append(disabled, label)
 		}
 	}
+	// Report what was filtered — a silently dropped label reads as "all clear".
+	retiredNote := ""
+	if len(retired) > 0 {
+		retiredNote = fmt.Sprintf(" (%d retired label(s) ignored, no live plist to bootstrap: %s)",
+			len(retired), strings.Join(retired, ", "))
+	}
 	if len(disabled) == 0 {
 		f.OK = true
-		f.Detail = "no Sirsi/runner labels disabled"
+		f.Detail = "no Sirsi/runner labels disabled" + retiredNote
 		return f
 	}
 	f.Detail = fmt.Sprintf("%d label(s) disabled (will not start after reboot): %s",
-		len(disabled), strings.Join(disabled, ", "))
+		len(disabled), strings.Join(disabled, ", ")) + retiredNote
 	f.Body += "\nDisabled now: " + strings.Join(disabled, ", ")
 	// Append uid into the body for the repair command.
 	f.Body = strings.ReplaceAll(f.Body, "<uid>", strconv.Itoa(uid))
