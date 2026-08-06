@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -14,25 +15,31 @@ import (
 // command layer already owns registry access. The dashboard receives the answer,
 // not the ability to compute it.
 //
-// On any registry read failure it returns an EMPTY set, so every lane is treated
-// as routable. That is the honest failure direction: claiming a lane is
-// unroutable because the registry could not be read would escalate a supervisor
-// bug to the owner as a lane problem, which is exactly the misattribution the
-// supervision contract exists to prevent. Under-reporting is recoverable on the
-// next pass; a false escalation trains the owner to ignore the channel.
-func unroutableAgents(repoRoot string) map[string]bool {
-	out := map[string]bool{}
+// A registry read failure returns an ERROR, never an empty set.
+//
+// The first version of this returned empty on failure and called it "the honest
+// failure direction". codex-pantheon's review caught that it is the opposite:
+// an empty set makes every lane read routable, which is precisely the
+// false-green this function exists to remove — a surface reporting health it
+// never established. Unknown routability must be visible as unknown and must
+// block escalation claims, because "we could not read the registry" and "every
+// lane is reachable" are different facts and only one of them is true.
+func unroutableAgents(repoRoot string) (map[string]bool, error) {
 	if repoRoot == "" {
-		return out
+		return nil, fmt.Errorf("unroutable: no repo root — routability is unknown, not healthy")
 	}
 	reg, err := router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
-	if err != nil || reg == nil {
-		return out
+	if err != nil {
+		return nil, fmt.Errorf("unroutable: load registry: %w", err)
 	}
+	if reg == nil {
+		return nil, fmt.Errorf("unroutable: registry loaded as nil — routability is unknown")
+	}
+	out := map[string]bool{}
 	for id, cfg := range reg.Agents {
 		if cfg.WakeMechanism() == router.WakeNone {
 			out[id] = true
 		}
 	}
-	return out
+	return out, nil
 }
