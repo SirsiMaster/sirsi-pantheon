@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
@@ -187,6 +188,91 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	items2, _ := f.Inbox("owner")
 	if len(items2) != len(items) {
 		t.Errorf("second call wrote a duplicate item (got %d items, want %d)", len(items2), len(items))
+	}
+}
+
+// TestGemmaLiveness_PostRestorePollingSucceeds is the regression test for the
+// 2026-07-17T17:09Z false alarm: a broker that is still mmap'ing weights on the
+// first post-restore probe (GemmaWedged) must NOT route a failure alert. The poll
+// loop must iterate and only succeed once the broker reports GemmaHealthy. This
+// is the behavior that justifies the poll loop's existence. With deadline=0 every
+// other test collapses the loop to a single shot (time.Since(start)>=0 is always
+// true) and cannot detect a regression where the loop is deleted or reverted to a
+// flat sleep — this test catches exactly that.
+func TestGemmaLiveness_PostRestorePollingSucceeds(t *testing.T) {
+	// No-op wait but a positive deadline so the loop can iterate past the first
+	// failed probe without sleeping. deadline=0 would route on iter 1.
+	oldWait := getRestoreWait()
+	oldDur := getRestoreDeadline()
+	setRestoreWaitFn(func() {})
+	setRestoreDeadlineDur(5 * time.Second)
+	t.Cleanup(func() {
+		setRestoreWaitFn(oldWait)
+		setRestoreDeadlineDur(oldDur)
+	})
+
+	oldProbe := getGemmaProbeFn()
+	oldServe := getGemmaServeFn()
+	t.Cleanup(func() {
+		setGemmaProbeFn(oldProbe)
+		setGemmaServeFn(oldServe)
+		gemmaWedgeStrikes = 0
+	})
+
+	// Probe sequence (indexed by call count):
+	//   call 0 — tick 1 initial probe: Wedged → strike 1, no restart
+	//   call 1 — tick 2 initial probe: Wedged → strike 2 → graceful restart
+	//   call 2 — post-restore poll iter 1: Wedged → still loading, loop again
+	//   call 3 — post-restore poll iter 2: Healthy → break → RecordHeal
+	seq := []liveness.GemmaStatus{
+		liveness.GemmaWedged,
+		liveness.GemmaWedged,
+		liveness.GemmaWedged,
+		liveness.GemmaHealthy,
+	}
+	callCount := 0
+	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) {
+		s := seq[callCount]
+		callCount++
+		return s, "test"
+	})
+
+	var serveCalls []string
+	setGemmaServeFn(func(restart bool) error {
+		if restart {
+			serveCalls = append(serveCalls, "restart")
+		} else {
+			serveCalls = append(serveCalls, "start")
+		}
+		return nil
+	})
+	gemmaWedgeStrikes = 0
+	_ = drainHeals() // clear any stale heals from prior tests
+
+	// Tick 1: strike 1, no action yet.
+	if err := RunGemmaLivenessDuty("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(serveCalls) != 0 {
+		t.Fatalf("tick 1 must not serve; got %v", serveCalls)
+	}
+
+	// Tick 2: strike 2 → graceful restart → poll loop exits on Healthy → RecordHeal.
+	if err := RunGemmaLivenessDuty("", ""); err != nil {
+		t.Fatalf("poll-then-recover path must not error: %v", err)
+	}
+	if len(serveCalls) != 1 || serveCalls[0] != "restart" {
+		t.Errorf("serve calls %v, want [restart]", serveCalls)
+	}
+	// RecordHeal is the primary assertion: if the poll loop were deleted and
+	// replaced with a flat sleep, the probe sequence would never reach Healthy
+	// and RecordHeal would not fire, failing this test.
+	if heals := drainHeals(); len(heals) == 0 {
+		t.Error("RecordHeal not called — poll loop did not reach GemmaHealthy; " +
+			"a reverted flat-sleep would pass all other tests but break this one")
+	}
+	if callCount != 4 {
+		t.Errorf("probe called %d times, want 4 (2 initial + 2 poll iterations)", callCount)
 	}
 }
 
