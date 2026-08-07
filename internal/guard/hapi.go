@@ -216,9 +216,9 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 		return nil, err
 	}
 	var procs []MemProc
-	// Read once for the whole sample, not once per process — see the matching
-	// comment in audit.go's getProcessListWith.
-	loadBearing := LoadBearingPIDs()
+	// Read broker PID once for the whole sample — see the matching comment in
+	// audit.go's getProcessListWith. BrokerPID() not LoadBearingPIDs() (A35).
+	brokerPID := BrokerPID()
 	sc := bufio.NewScanner(strings.NewReader(string(out)))
 	first := true
 	for sc.Scan() {
@@ -240,7 +240,7 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 		if fp, fpErr := getHapiFootprintFn()(pid); fpErr == nil {
 			proc.Footprint = int64(fp)
 		}
-		proc.Footprint, _ = applyBrokerTruth(loadBearing, pid, proc.Footprint, 0)
+		proc.Footprint, _ = applyBrokerTruth(brokerPID, pid, proc.Footprint, 0)
 		procs = append(procs, proc)
 	}
 	sort.Slice(procs, func(i, j int) bool { return procs[i].memorySize() > procs[j].memorySize() })

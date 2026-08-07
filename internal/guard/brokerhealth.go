@@ -108,13 +108,14 @@ func BrokerMLXActiveBytes() (int64, bool) {
 	return h.MLXActiveBytes, true
 }
 
-// applyBrokerTruth overrides footprint/peak for a load-bearing broker PID with
-// the real Metal allocation read from /health, when reachable. loadBearing is
-// passed in (rather than recomputed) so a per-process census loop reads the
-// pidfiles once, not once per process. Every non-broker PID passes through
-// unchanged.
-func applyBrokerTruth(loadBearing map[int]bool, pid int, footprint, peak int64) (int64, int64) {
-	if !loadBearing[pid] {
+// applyBrokerTruth overrides footprint/peak for the broker PID with the real
+// Metal allocation read from /health, when reachable. brokerPID is passed in
+// (rather than recomputed) so a per-process census loop calls BrokerPID() once,
+// not once per process. Every non-broker PID passes through unchanged.
+// Use BrokerPID() — not LoadBearingPIDs() — at the call site: the worker PID
+// is also load-bearing, but the /health endpoint is the BROKER's metric only.
+func applyBrokerTruth(brokerPID int, pid int, footprint, peak int64) (int64, int64) {
+	if brokerPID == 0 || pid != brokerPID {
 		return footprint, peak
 	}
 	h, err := getFetchBrokerHealthFn()()
