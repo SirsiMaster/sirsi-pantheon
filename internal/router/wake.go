@@ -690,6 +690,42 @@ func fabricDispatchOverloaded(agentID string, depth int) bool {
 	return true
 }
 
+// loginShellArgv wraps argv so the consumer runs through the operator's login
+// shell instead of being exec'd directly.
+//
+// launchd execs a program with ONLY the plist's EnvironmentVariables and no
+// shell at all, so none of the shell startup files run. The consumer CLIs take
+// their credentials from what those files export (~/.zshenv), so a directly
+// exec'd consumer reported "Not logged in - Please run /login" and exited 1 on
+// every single dispatch: 3907 of 4161 across eight lanes, while the very same
+// command run by a human in a terminal succeeded every time. The login state
+// was never broken; the environment carrying it simply never reached the child.
+//
+// argv is passed as POSITIONAL PARAMETERS and never interpolated into the
+// script text. That is load-bearing, not stylistic: the consumer prompt
+// contains backticks and $(...) that a naive `-lc "<command>"` would execute at
+// dispatch. `exec` then replaces the shell, so the pid the caller tracks is
+// still the consumer itself and the setsid detach is unchanged.
+//
+// Fails OPEN — an unset or unusable SHELL dispatches exactly as before, the
+// same stance as an unreadable load average.
+func loginShellArgv(argv []string) []string {
+	if len(argv) == 0 {
+		return argv
+	}
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		return argv
+	}
+	// Executable bit included deliberately: exec.Command on a non-executable
+	// SHELL fails the dispatch outright, which would be failing CLOSED — the
+	// opposite of the stance this function documents.
+	if info, err := os.Stat(shell); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		return argv
+	}
+	return append([]string{shell, "-lc", `exec "$@"`, shell}, argv...)
+}
+
 // dispatchConsumer starts a resolved consumer and returns a handle that
 // completes when the process exits.
 //
@@ -701,7 +737,8 @@ func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
 	if rc.Resident {
 		return nil, fmt.Errorf("resident consumer is external and must not be spawned")
 	}
-	cmd := exec.Command(rc.Argv[0], rc.Argv[1:]...)
+	spawn := loginShellArgv(rc.Argv)
+	cmd := exec.Command(spawn[0], spawn[1:]...)
 	cmd.Dir = rc.Cwd
 	cmd.Env = rc.Env
 	cmd.SysProcAttr = detachedSysProcAttr()
