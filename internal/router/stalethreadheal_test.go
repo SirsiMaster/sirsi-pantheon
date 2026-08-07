@@ -61,7 +61,8 @@ func TestRunStaleThreadReconcileDuty_ReapsPhantomPID(t *testing.T) {
 		if id == thr.ThreadID {
 			continue
 		}
-		if other.SuspendPayload != nil && other.SuspendPayload.ReapedFrom == thr.ThreadID {
+		if other.ReapedFrom == thr.ThreadID ||
+			(other.SuspendPayload != nil && other.SuspendPayload.ReapedFrom == thr.ThreadID) {
 			t.Errorf("unexpected successor %s minted for phantom reap — supervisor duty must not mint successors", id)
 		}
 	}
@@ -159,7 +160,8 @@ func TestRunStaleThreadReconcileDuty_SkipsReaped(t *testing.T) {
 		if id == reaped.ThreadID {
 			continue
 		}
-		if other.SuspendPayload != nil && other.SuspendPayload.ReapedFrom == reaped.ThreadID {
+		if other.ReapedFrom == reaped.ThreadID ||
+			(other.SuspendPayload != nil && other.SuspendPayload.ReapedFrom == reaped.ThreadID) {
 			t.Errorf("successor %s was minted for reaped thread — supervisor context must not mint successors (no transcript)", id)
 		}
 	}
