@@ -118,6 +118,37 @@ func (s *Store) beginImmediate() (*sql.Tx, error) {
 //  3. Budgets — per-target concurrent claims and total active work.
 //  4. Claim: status open→claimed with a fresh token, guarded in the UPDATE.
 func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
+	// Retry the WHOLE transaction under READONLY contention. ClaimNext is the only
+	// transition into executable ownership, so a lane that loses this race does not
+	// merely retry later — it silently fails to pick up work at all.
+	//
+	// Contention arrives as SQLITE_READONLY(8), never SQLITE_BUSY(5), so the DSN's
+	// busy_timeout never engages (see writeretry.go). The transaction body must
+	// re-run rather than a single statement: SQLite frequently surfaces the lock
+	// failure at Commit, and nothing is committed on the failing path, so a re-run
+	// observes no partial work. A fresh token is minted per attempt because
+	// claimNextOnce generates it inside the body.
+	//
+	// Budget and breaker errors are not contention, so retryWrite returns them
+	// immediately rather than burning the budget on a decision that will not change.
+	var out *Lease
+	err := s.retryWrite(func() error {
+		l, err := s.claimNextOnce(agent, ttl)
+		if err != nil {
+			return err
+		}
+		out = l
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// claimNextOnce is one attempt of ClaimNext. Never call it directly — callers
+// must go through ClaimNext so contention is retried.
+func (s *Store) claimNextOnce(agent string, ttl time.Duration) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: ClaimNext: agent is required")
 	}
