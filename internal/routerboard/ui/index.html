@@ -1,0 +1,1611 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sirsi fleet — live</title>
+    <style>
+      /* Swiss Neo-Deco — Sirsi Technologies' canonical brand identity, applied
+     here as a standalone HTML tool (not a React/TS port target — this app's
+     real eventual home is a native Swift/C surface over MLX/MPS/BNNS/SME/
+     AMX/SNE, per owner direction 2026-08-07). Colors and type are pulled
+     directly from SirsiNexusApp/packages/sirsi-ui/styles/swiss-neo-deco.css
+     — Emerald leads (identity/healthy/interactive), Gold is the second
+     accent (brand mark, section accents, hover emphasis) — never the other
+     way around. Typography Weight Canon (that stylesheet's Rule 21): bold
+     is reserved for headings, buttons, and table column headers. Everything
+     else here that reads as a short UI label/badge (agent names, pills,
+     nav) is treated as a label, not body prose, and keeps its weight for
+     scan-speed in a data-dense ops view — true paragraph/description text
+     (task subjects, message titles) stays at medium weight or lighter. */
+      @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap");
+      :root {
+        --bg: #022c22;
+        --bg-grad: radial-gradient(
+          circle at top right,
+          #022c22 0%,
+          #000000 100%
+        );
+        --panel: rgba(2, 44, 34, 0.55);
+        --panel2: rgba(255, 255, 255, 0.04);
+        --border: rgba(255, 255, 255, 0.1);
+        --text: #ffffff;
+        --muted: rgba(255, 255, 255, 0.62);
+        --gold: #c8a951;
+        --gold-bright: #e2c76b;
+        --gold-bg: rgba(200, 169, 81, 0.12);
+        --green: #10b981;
+        --green-bg: rgba(16, 185, 129, 0.12);
+        --amber: #f59e0b;
+        --amber-bg: rgba(245, 158, 11, 0.12);
+        --red: #dc2626;
+        --red-bg: rgba(220, 38, 38, 0.12);
+        --gray: #8a95a1;
+        --font-head: "Cinzel", serif;
+        --font-body: "Inter", -apple-system, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 1.5rem 1.75rem 3rem;
+        background: var(--bg-grad) fixed;
+        color: var(--text);
+        font: 400 15.5px/1.6 var(--font-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1160px;
+        margin: 0 auto;
+      }
+      .hdr {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 4px;
+      }
+      .pagenav {
+        display: flex;
+        gap: 4px;
+        margin: 10px 0 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .pagenav a {
+        font-family: var(--font-head);
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        text-decoration: none;
+        padding: 10px 16px 13px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        border-radius: 6px 6px 0 0;
+        transition:
+          background 0.12s ease,
+          color 0.12s ease;
+      }
+      .pagenav a.active {
+        color: var(--gold-bright);
+        border-bottom-color: var(--gold);
+        background: var(--panel2);
+      }
+      .pagenav a:hover {
+        color: var(--text);
+        background: var(--panel2);
+      }
+      .pagenav .n {
+        color: var(--amber);
+        font-weight: 700;
+      }
+      .pagenav {
+        position: sticky;
+        top: 0;
+        background: #03110d;
+        z-index: 5;
+        padding-top: 4px;
+        backdrop-filter: blur(10px);
+      }
+      .msg-group {
+        margin-bottom: 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 16px;
+      }
+      .msg-agent {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 0 0 8px;
+        font-size: 12.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 4px;
+      }
+      .msg-agent .who {
+        color: var(--text);
+        font-size: 15px;
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 700;
+      }
+      .msg-row {
+        display: grid;
+        grid-template-columns: 150px 1fr 130px 68px;
+        gap: 12px;
+        padding: 7px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        font-size: 14.5px;
+        align-items: baseline;
+      }
+      .msg-row:last-child {
+        border-bottom: none;
+      }
+      .msg-row .from {
+        color: var(--muted);
+        font-size: 12.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .msg-row .title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .msg-row .tag {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .msg-row .age {
+        color: var(--muted);
+        font-size: 12.5px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .msg-row.is-stale .age {
+        color: var(--red);
+        font-weight: 700;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        margin-left: 6px;
+      }
+      .pill.blocked {
+        color: var(--amber);
+        border-color: var(--amber);
+        background: var(--amber-bg);
+      }
+      .pill.picked {
+        color: var(--green);
+        border-color: var(--green);
+        background: var(--green-bg);
+      }
+      .armbtn {
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 11px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--muted);
+      }
+      .armbtn:hover {
+        color: var(--text);
+        border-color: var(--green);
+      }
+      .armbtn[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .toggle {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 13px;
+        padding: 4px 0;
+        display: inline-block;
+      }
+      .toggle:hover {
+        color: var(--text);
+      }
+      #activity {
+        max-height: 340px;
+        overflow-y: auto;
+      }
+      h1 {
+        font-family: var(--font-head);
+        font-size: 19px;
+        font-weight: 600;
+        color: var(--text);
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+      }
+      .dot.live {
+        background: var(--green);
+        box-shadow: 0 0 0 4px var(--green-bg);
+      }
+      .dot.down {
+        background: var(--red);
+        box-shadow: 0 0 0 4px var(--red-bg);
+      }
+      .conn {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .updated {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 0.6rem;
+      }
+      #err {
+        color: var(--red);
+        font-size: 13px;
+      }
+
+      .counters {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 22px;
+        flex-wrap: wrap;
+      }
+      .breakdown {
+        display: flex;
+        gap: 14px;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 0.9rem;
+        flex-wrap: wrap;
+      }
+      .breakdown b {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      .counter {
+        flex: 1;
+        min-width: 200px;
+        background: var(--panel);
+        backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid var(--border);
+        border-top: 3px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 18px 16px;
+        transition:
+          border-color 0.2s ease,
+          transform 0.2s ease;
+      }
+      .counter:hover {
+        border-color: var(--gold);
+        transform: translateY(-1px);
+      }
+      .counter.done {
+        border-top-color: var(--green);
+      }
+      .counter.assigned {
+        border-top-color: var(--amber);
+      }
+      .counter.stuck {
+        border-top-color: var(--red);
+      }
+      .counter .label {
+        font-family: var(--font-head);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      /* KPI hero values: semibold 600, never 700 — size carries the emphasis,
+         not weight (Swiss Neo-Deco Typography Weight Canon). */
+      .counter .value {
+        font-size: 36px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        margin-top: 4px;
+        letter-spacing: -0.02em;
+      }
+      .counter.done .value {
+        color: var(--green);
+      }
+      .counter.stuck .value {
+        color: var(--red);
+      }
+      .counter.assigned .value {
+        color: var(--amber);
+      }
+      .counter .since {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .flash {
+        animation: flash 1.2s ease-out;
+      }
+      @keyframes flash {
+        0% {
+          background: rgba(34, 181, 135, 0.35);
+        }
+        100% {
+          background: transparent;
+        }
+      }
+
+      section {
+        margin-bottom: 26px;
+        background: var(--panel);
+        backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 20px 18px;
+      }
+      section h2 {
+        font-family: var(--font-head);
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--gold-bright);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid var(--border);
+        padding: 0 0 10px 12px;
+        margin: -2px 0 12px;
+        position: relative;
+      }
+      section h2::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 1px;
+        bottom: 10px;
+        width: 3px;
+        background: var(--gold);
+        border-radius: 2px;
+      }
+
+      .activity-row {
+        display: grid;
+        grid-template-columns: 72px 100px 1fr 150px;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        font-size: 14.5px;
+        align-items: baseline;
+      }
+      .activity-row:last-child {
+        border-bottom: none;
+      }
+      .activity-row .time {
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+      }
+      .activity-row .agent {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .arrow {
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .to-done {
+        color: var(--green);
+      }
+      .to-inprog {
+        color: var(--amber);
+      }
+      .to-blocked {
+        color: var(--red);
+      }
+      .to-pending {
+        color: var(--gray);
+      }
+      .empty {
+        color: var(--muted);
+        font-size: 14.5px;
+        padding: 10px 0;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 0;
+      }
+      th {
+        text-align: left;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        font-weight: 700;
+        padding: 6px 10px;
+        border-bottom: 2px solid var(--border);
+      }
+      td {
+        padding: 8px 10px;
+        font-size: 14.5px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+      tr:hover td {
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .agent-type {
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .stale {
+        color: var(--red);
+        font-weight: 700;
+      }
+      .armed {
+        color: var(--green);
+      }
+      .disarmed {
+        color: var(--muted);
+      }
+      .na {
+        color: var(--muted);
+      }
+      .last-touch {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .act {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .act-now {
+        color: var(--green);
+      }
+      .act-recent {
+        color: var(--amber);
+      }
+      .act-quiet {
+        color: var(--muted);
+      }
+
+      /* Status-differentiated rows — a colored left rail + tinted background,
+     not text color alone, so state reads at a glance (owner: "differentiate
+     more easily", 2026-08-07). */
+      .lane-row {
+        display: grid;
+        grid-template-columns: 190px 170px 1fr;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        margin-bottom: 4px;
+        border-radius: 7px;
+        border-left: 4px solid var(--border);
+      }
+      .lane-row.st-good {
+        border-left-color: var(--green);
+        background: var(--green-bg);
+      }
+      .lane-row.st-bad {
+        border-left-color: var(--red);
+        background: var(--red-bg);
+      }
+      .lane-row.st-warn {
+        border-left-color: var(--amber);
+        background: var(--amber-bg);
+      }
+      .lane-row.st-off {
+        border-left-color: var(--border);
+      }
+      .lane-row .lname {
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .lane-row .lstate {
+        font-size: 13.5px;
+        font-weight: 700;
+      }
+      .lane-row .ldetail {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .phaserow {
+        display: grid;
+        grid-template-columns: 240px 1fr 100px 110px;
+        gap: 12px;
+        align-items: center;
+        padding: 9px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+      .archive-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-family: var(--font-body);
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+      }
+      .archive-btn:hover {
+        color: var(--gold-bright);
+        border-color: var(--gold);
+        background: var(--gold-bg);
+      }
+      .phaserow:last-child {
+        border-bottom: none;
+      }
+      .phaserow .pname {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .phaserow .pcount {
+        font-size: 13px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        font-weight: 600;
+      }
+      .barbg {
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        height: 11px;
+        overflow: hidden;
+      }
+      .barfill {
+        background: var(--green);
+        height: 100%;
+        transition: width 0.4s ease;
+      }
+      .barfill.hasblocked {
+        background: var(--amber);
+      }
+      .steps {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-top: 5px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .steps .barbg {
+        width: 110px;
+        height: 7px;
+        display: inline-block;
+      }
+      .steps .barfill {
+        background: var(--green);
+      }
+
+      .agent-block {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 16px;
+        margin-bottom: 10px;
+        background: var(--panel2);
+      }
+      .agent-summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        padding: 4px 0;
+      }
+      .agent-summary::-webkit-details-marker {
+        display: none;
+      }
+      .agent-summary::before {
+        content: "▸";
+        color: var(--muted);
+        margin-right: 8px;
+        font-size: 12px;
+        transition: transform 0.15s ease;
+      }
+      .agent-block[open] > .agent-summary::before {
+        transform: rotate(90deg);
+      }
+      .agent-summary .lname {
+        flex: 0 0 200px;
+      }
+      .agent-summary .pcount {
+        margin-left: auto;
+      }
+      .phase-tasks {
+        margin: 0 0 8px;
+      }
+      .bd-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: -2px 0 14px;
+      }
+      #bd-search {
+        flex: 1;
+        max-width: 320px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 14px;
+        padding: 8px 12px;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      #bd-search::placeholder {
+        color: var(--muted);
+      }
+      #bd-search:focus {
+        border-color: var(--gold);
+      }
+      .bd-sort-label {
+        font-family: var(--font-head);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--muted);
+        margin-left: 8px;
+      }
+      .bd-sort-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-family: var(--font-body);
+        font-size: 12.5px;
+        font-weight: 600;
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .bd-sort-btn:hover {
+        color: var(--text);
+        border-color: var(--muted);
+      }
+      .bd-sort-btn.active {
+        color: var(--gold-bright);
+        border-color: var(--gold);
+        background: var(--gold-bg);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="hdr">
+        <span class="dot down" id="dot"></span>
+        <h1>Sirsi fleet — live</h1>
+      </div>
+      <p class="updated">
+        <span class="conn" id="conn">connecting…</span>
+        <span id="build" style="opacity: 0.5"></span>
+      </p>
+      <div id="err"></div>
+      <nav class="pagenav">
+        <a id="nav-dashboard" class="active" onclick="showPage('dashboard')"
+          >Dashboard</a
+        >
+        <a id="nav-burndown" onclick="showPage('burndown')">Burndown</a>
+        <a id="nav-tasks" onclick="showPage('tasks')">Tasks</a>
+        <a id="nav-router" onclick="showPage('router')"
+          >Messages <span class="n" id="nav-router-n"></span
+        ></a>
+      </nav>
+
+      <!-- DASHBOARD — the one tab that must answer "is anything on fire" at a
+       glance. Counters + lane-level good/bad status + registration health +
+       thread liveness. Deliberately excludes the long lists (open tasks,
+       activity log, full messages) — those are one click away, not zero,
+       because scrolling past them to reach a health check was the
+       complaint this tab structure exists to fix (owner, 2026-08-07). -->
+      <div id="page-dashboard">
+        <div class="counters">
+          <div class="counter done" id="c1">
+            <div class="label">Completed / in flight</div>
+            <div class="value" id="c1-v">0 / 0</div>
+            <div class="since" id="c1-s"></div>
+          </div>
+          <div class="counter assigned" id="c2">
+            <div class="label">In progress / assigned</div>
+            <div class="value" id="c2-v">0 / 0</div>
+            <div class="since" id="c2-s"></div>
+          </div>
+          <div class="counter stuck" id="c3">
+            <div class="label">Stalled / blocked / idle</div>
+            <div class="value" id="c3-v">0</div>
+            <div class="since" id="c3-s"></div>
+          </div>
+        </div>
+
+        <section>
+          <h2>Applications — good and bad status, every lane, active first</h2>
+          <div id="apps"></div>
+        </section>
+
+        <section>
+          <h2>
+            Registration — one registration must carry across every surface
+          </h2>
+          <div id="registration"></div>
+        </section>
+
+        <section>
+          <h2>Active threads</h2>
+          <div id="threads"></div>
+        </section>
+      </div>
+      <!-- /page-dashboard -->
+
+      <div id="page-burndown" style="display: none">
+        <section>
+          <h2>Phase burndown — every phase, live, no need to ask</h2>
+          <div class="bd-controls">
+            <input id="bd-search" type="text" placeholder="Find an agent…" oninput="renderPhaseBurndown(lastBurndownPayload)" />
+            <span class="bd-sort-label">Sort</span>
+            <button id="bd-sort-count" class="bd-sort-btn active" onclick="setBurndownSort('count')">Most tasks</button>
+            <button id="bd-sort-name" class="bd-sort-btn" onclick="setBurndownSort('name')">A–Z</button>
+          </div>
+          <div id="phaseburndown"></div>
+        </section>
+
+        <section>
+          <details>
+            <summary class="agent-summary" style="cursor: pointer">
+              <h2 style="display: inline; border: none; padding: 0; margin: 0">Archive <span id="bd-archive-count" style="color: var(--muted); font-weight: 400"></span></h2>
+            </summary>
+            <div id="bd-archive" style="margin-top: 12px"></div>
+          </details>
+        </section>
+      </div>
+      <!-- /page-burndown -->
+
+      <div id="page-tasks" style="display: none">
+        <section>
+          <h2>
+            Open tasks — the actual list, every task not done, with per-task
+            step progress
+          </h2>
+          <div id="opentasks"></div>
+        </section>
+
+        <section>
+          <h2>Activity — real status changes, in order, as they happen</h2>
+          <div id="activity"></div>
+        </section>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Type</th>
+              <th>Activity</th>
+              <th>Inbox (oldest msg)</th>
+              <th>Done / Total</th>
+              <th>Last task touch</th>
+            </tr>
+          </thead>
+          <tbody id="fleet"></tbody>
+        </table>
+        <p style="font-size: 11.5px; color: var(--muted); margin-top: -1rem">
+          "Activity" is the agent's OWN liveness (thread heartbeat or a recent
+          task update) — it is NOT the same signal as an old unanswered inbox
+          message. An agent can be actively working while old mail sits unread.
+        </p>
+      </div>
+      <!-- /page-tasks -->
+
+      <div id="page-router" style="display: none">
+        <p class="updated">
+          Open router messages, fleet-wide — laid out the same way as the board:
+          summary first, then the full list.
+        </p>
+
+        <div class="counters">
+          <div class="counter stuck" id="r1">
+            <div class="label">Open messages</div>
+            <div class="value" id="r1-v">0</div>
+            <div class="since">across every lane with unread mail</div>
+          </div>
+          <div class="counter stuck" id="r2">
+            <div class="label">Lanes with no watcher</div>
+            <div class="value" id="r2-v">0</div>
+            <div class="since">unread mail, nothing consuming it</div>
+          </div>
+          <div class="counter done" id="r3">
+            <div class="label">Lanes watched</div>
+            <div class="value" id="r3-v">0</div>
+            <div class="since">a live thread is on it</div>
+          </div>
+        </div>
+
+        <section>
+          <h2>By lane — every lane with open mail, unwatched first</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Watcher</th>
+                <th>Messages</th>
+                <th>Stale</th>
+                <th>Oldest</th>
+                <th>From</th>
+                <th>Fix</th>
+              </tr>
+            </thead>
+            <tbody id="router-rows"></tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>The messages — every open router item, oldest first</h2>
+          <div id="router-messages"></div>
+        </section>
+      </div>
+      <!-- /page-router -->
+    </div>
+
+    <script>
+      const PAGES = ["dashboard", "burndown", "tasks", "router"];
+      function showPage(name) {
+        PAGES.forEach((p) => {
+          document.getElementById("page-" + p).style.display =
+            p === name ? "" : "none";
+          document
+            .getElementById("nav-" + p)
+            .classList.toggle("active", p === name);
+        });
+      }
+
+      // Router Items page render — a SEPARATE view, not a sub-tab inside
+      // Applications. It reads the SAME fleet payload the board already has (one
+      // read model, no extra fetch), because f.open_items was already being
+      // fetched and simply never rendered — four lanes holding 30+ unread
+      // messages read as finished on the board for exactly that reason.
+      // Arm a stranded lane. Runs `sirsi router wake-install <agent>` server-side —
+      // the SAME command the menubar's "Arm wake channel" uses, so the two surfaces
+      // cannot disagree about what arming means. Reports the real outcome: a failure
+      // says so on the button rather than silently looking done.
+      function armLane(agent, btn) {
+        btn.disabled = true;
+        btn.textContent = "arming…";
+        fetch("/api/arm?agent=" + encodeURIComponent(agent))
+          .then((r) => r.json().then((j) => ({ ok: r.ok && j.ok, j })))
+          .then(({ ok, j }) => {
+            btn.textContent = ok ? "armed ✓" : "failed";
+            btn.style.color = ok ? "var(--green)" : "var(--red)";
+            if (!ok && j.detail) btn.title = j.detail;
+          })
+          .catch((e) => {
+            btn.textContent = "failed";
+            btn.style.color = "var(--red)";
+            btn.title = String(e);
+          });
+      }
+
+      function fmtAge(secs) {
+        if (secs == null) return "";
+        const m = Math.floor(secs / 60);
+        if (m < 60) return m + "m";
+        const h = Math.floor(m / 60);
+        if (h < 24) return h + "h" + String(m % 60).padStart(2, "0");
+        return Math.floor(h / 24) + "d" + (h % 24) + "h";
+      }
+
+      // Router Items page — a SEPARATE view, reading the SAME fleet payload the
+      // board already fetches (one read model, no extra request). f.open_items was
+      // always being fetched and simply never rendered, which is why lanes holding
+      // unread mail read as finished on the board.
+      function renderRouterPage(d) {
+        const fleet = d.fleet || [];
+        const withMail = fleet.filter((f) => (f.open_items || 0) > 0);
+        const totalMsgs = withMail.reduce((n, f) => n + f.open_items, 0);
+
+        const rows = withMail
+          .map((f) => {
+            const c = f.consumer;
+            let watcher = "watched",
+              wcol = "var(--green)",
+              r = 3;
+            if (!c) {
+              watcher = "no thread record";
+              wcol = "var(--amber)";
+              r = 2;
+            } else if (!c.armed) {
+              watcher = "NO WATCHER";
+              wcol = "var(--red)";
+              r = 0;
+            } else if (c.loop === "dead") {
+              watcher = "loop DEAD";
+              wcol = "var(--red)";
+              r = 1;
+            }
+            const its = f.items || [];
+            const froms = [...new Set(its.map((i) => i.from).filter(Boolean))];
+            const stale = its.filter((i) => i.stale).length;
+            const oldest = its.reduce(
+              (mx, i) => Math.max(mx, i.age_seconds || 0),
+              0,
+            );
+            return {
+              agent: f.agent,
+              watcher,
+              wcol,
+              r,
+              n: f.open_items,
+              stale,
+              froms,
+              oldest,
+              items: its,
+            };
+          })
+          .sort((a, b) => a.r - b.r || b.n - a.n);
+
+        document.getElementById("r1-v").textContent = totalMsgs;
+        document.getElementById("r2-v").textContent = rows.filter(
+          (r) => r.watcher === "NO WATCHER",
+        ).length;
+        document.getElementById("r3-v").textContent = rows.filter(
+          (r) => r.watcher === "watched",
+        ).length;
+        document.getElementById("nav-router-n").textContent = totalMsgs
+          ? "(" + totalMsgs + ")"
+          : "";
+
+        document.getElementById("router-rows").innerHTML =
+          rows.length === 0
+            ? '<tr><td colspan="7" style="color:var(--muted)">No open router messages across the fleet.</td></tr>'
+            : rows
+                .map(
+                  (r) => `<tr>
+        <td>${esc(r.agent)}</td>
+        <td style="color:${r.wcol}">${esc(r.watcher)}</td>
+        <td>${r.n}</td>
+        <td${r.stale ? ' style="color:var(--red)"' : ""}>${r.stale || ""}</td>
+        <td style="color:var(--muted)">${esc(fmtAge(r.oldest))}</td>
+        <td style="color:var(--muted)">${esc(r.froms.slice(0, 3).join(", "))}${r.froms.length > 3 ? "…" : ""}</td>
+        <td>${
+          r.watcher === "watched"
+            ? ""
+            : `<button class="armbtn" onclick="armLane('${esc(r.agent)}', this)">arm</button>`
+        }</td>
+      </tr>`,
+                )
+                .join("");
+
+        // The messages themselves. This is the point of the page — a count tells you
+        // something is waiting, the title tells you whether it matters.
+        document.getElementById("router-messages").innerHTML =
+          rows.length === 0
+            ? '<div class="empty">Nothing waiting.</div>'
+            : rows
+                .map((r) => {
+                  const its = r.items
+                    .slice()
+                    .sort(
+                      (a, b) => (b.age_seconds || 0) - (a.age_seconds || 0),
+                    );
+                  return `<div class="msg-group">
+          <div class="msg-agent">
+            <span class="who">${esc(r.agent)}</span>
+            <span>${r.n} open</span>
+            <span style="color:${r.wcol}">· ${esc(r.watcher)}</span>
+          </div>
+          ${its
+            .map(
+              (i) => `<div class="msg-row${i.stale ? " is-stale" : ""}">
+            <span class="from">${esc(i.from || "—")}</span>
+            <span class="title" title="${esc(i.title || i.id)}">${esc(i.title || i.id)}${
+              i.blocked ? '<span class="pill blocked">blocked</span>' : ""
+            }${i.picked ? '<span class="pill picked">picked</span>' : ""}</span>
+            <span class="tag">${esc(i.type || "")}</span>
+            <span class="age">${esc(fmtAge(i.age_seconds))}</span>
+          </div>`,
+            )
+            .join("")}
+        </div>`;
+                })
+                .join("");
+      }
+
+      // Burndown rubric (owner, 2026-08-07): AGENT first, then the PHASES within
+      // that agent, then the TASKS within each phase. Not a flat fleet-wide phase
+      // list — that collapsed ~150 distinct one-off phase labels from 20+ agents
+      // into one indistinguishable pile. Built from d.tasks directly (each task
+      // now carries .phase, added alongside .outline) rather than the old
+      // d.board.phases global rollup, so this is agent-scoped by construction.
+      // Persists across every SSE re-render (module scope, not re-created per
+      // call) so a manual expand/collapse survives the next live push instead
+      // of snapping back — that snapping was the reported bug ("carats
+      // automatically just open"). Seeded once on first render only.
+      const burndownOpen = new Set();
+      let burndownSeeded = false;
+      let burndownSort = "count"; // 'count' | 'name'
+      let lastBurndownPayload = null;
+      function onAgentToggle(agent, isOpen) {
+        if (isOpen) burndownOpen.add(agent);
+        else burndownOpen.delete(agent);
+      }
+      function setBurndownSort(mode) {
+        burndownSort = mode;
+        document.getElementById("bd-sort-count").classList.toggle("active", mode === "count");
+        document.getElementById("bd-sort-name").classList.toggle("active", mode === "name");
+        if (lastBurndownPayload) renderPhaseBurndown(lastBurndownPayload);
+      }
+
+      // Archive — owner (2026-08-07): a closed task or a fully-closed phase
+      // should be a CHOICE (keep visible or archive), never an automatic
+      // disappearance, so the burndown stays a running history instead of
+      // silently losing what happened. Stored in localStorage — this is a
+      // per-viewer "what am I looking at" preference, not a change to the
+      // underlying task, so it deliberately does NOT touch the router store.
+      const ARCHIVE_KEY = "sirsi-burndown-archive-v1";
+      function loadArchive() {
+        try {
+          const raw = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "{}");
+          return { tasks: new Set(raw.tasks || []), phases: new Set(raw.phases || []) };
+        } catch {
+          return { tasks: new Set(), phases: new Set() };
+        }
+      }
+      function saveArchive() {
+        localStorage.setItem(ARCHIVE_KEY, JSON.stringify({
+          tasks: [...archive.tasks], phases: [...archive.phases],
+        }));
+      }
+      const archive = loadArchive();
+      function archiveTask(agent, taskId) {
+        archive.tasks.add(agent + "::" + taskId);
+        saveArchive();
+        if (lastBurndownPayload) renderPhaseBurndown(lastBurndownPayload);
+      }
+      function unarchiveTask(agent, taskId) {
+        archive.tasks.delete(agent + "::" + taskId);
+        saveArchive();
+        if (lastBurndownPayload) renderPhaseBurndown(lastBurndownPayload);
+      }
+      function archivePhase(agent, phase) {
+        archive.phases.add(agent + "::" + phase);
+        saveArchive();
+        if (lastBurndownPayload) renderPhaseBurndown(lastBurndownPayload);
+      }
+      function unarchivePhase(agent, phase) {
+        archive.phases.delete(agent + "::" + phase);
+        saveArchive();
+        if (lastBurndownPayload) renderPhaseBurndown(lastBurndownPayload);
+      }
+
+      function renderPhaseBurndown(d) {
+        lastBurndownPayload = d;
+        const tasks = d.tasks || [];
+        const byAgent = {};
+        const archivedPhaseRows = []; // for the Archive box: {agent, phase, done, total}
+        const archivedTaskRows = []; // for the Archive box: {agent, task}
+        tasks.forEach((t) => {
+          if (!t.phase) return; // unphased tasks live on the Tasks tab, not here
+          const phaseKey = t.agent + "::" + t.phase;
+          const taskKey = t.agent + "::" + t.task_id;
+          if (archive.phases.has(phaseKey) || archive.tasks.has(taskKey)) return;
+          const ag =
+            byAgent[t.agent] ||
+            (byAgent[t.agent] = { total: 0, done: 0, phases: {} });
+          ag.total++;
+          if (t.status === "done") ag.done++;
+          const ph =
+            ag.phases[t.phase] ||
+            (ag.phases[t.phase] = { total: 0, done: 0, tasks: [] });
+          ph.total++;
+          if (t.status === "done") ph.done++;
+          ph.tasks.push(t);
+        });
+        // Build the archive box's contents from the FULL task list (archived
+        // items are excluded above, so this second pass is what surfaces them).
+        const seenArchivedPhases = new Set();
+        tasks.forEach((t) => {
+          if (!t.phase) return;
+          const phaseKey = t.agent + "::" + t.phase;
+          const taskKey = t.agent + "::" + t.task_id;
+          if (archive.phases.has(phaseKey) && !seenArchivedPhases.has(phaseKey)) {
+            seenArchivedPhases.add(phaseKey);
+            const all = tasks.filter((x) => x.agent === t.agent && x.phase === t.phase);
+            archivedPhaseRows.push({ agent: t.agent, phase: t.phase, done: all.filter((x) => x.status === "done").length, total: all.length });
+          } else if (!archive.phases.has(phaseKey) && archive.tasks.has(taskKey)) {
+            archivedTaskRows.push({ agent: t.agent, task: t });
+          }
+        });
+
+        let agents = Object.keys(byAgent);
+        if (!burndownSeeded) {
+          agents
+            .sort((a, b) => byAgent[b].total - byAgent[a].total)
+            .slice(0, 3)
+            .forEach((a) => burndownOpen.add(a));
+          burndownSeeded = true;
+        }
+        agents = burndownSort === "name"
+          ? agents.sort((a, b) => a.localeCompare(b))
+          : agents.sort((a, b) => byAgent[b].total - byAgent[a].total);
+
+        const q = (document.getElementById("bd-search")?.value || "").trim().toLowerCase();
+        if (q) agents = agents.filter((ag) => ag.toLowerCase().includes(q));
+
+        const lvColor = {
+          active: "var(--green)",
+          stalled: "var(--red)",
+          blocked: "var(--amber)",
+          unknown: "var(--muted)",
+        };
+
+        document.getElementById("phaseburndown").innerHTML = agents.length
+          ? agents
+              .map((ag) => {
+                const a = byAgent[ag];
+                const pct = a.total ? Math.round((a.done / a.total) * 100) : 0;
+                const phaseNames = Object.keys(a.phases).sort();
+                const isOpen = burndownOpen.has(ag);
+                return `<details class="agent-block"${isOpen ? " open" : ""} ontoggle="onAgentToggle('${esc(ag)}', this.open)">
+      <summary class="agent-summary">
+        <span class="lname">${esc(ag)}</span>
+        <span class="barbg" style="width:140px;display:inline-block;margin:0 10px"><span class="barfill" style="width:${pct}%"></span></span>
+        <span class="pcount">${a.done}/${a.total} phased</span>
+      </summary>
+      ${phaseNames
+        .map((pn) => {
+          const ph = a.phases[pn];
+          const ppct = ph.total ? Math.round((ph.done / ph.total) * 100) : 0;
+          const phaseDone = ph.total > 0 && ph.done === ph.total;
+          return `<div class="phaserow">
+          <span class="pname">${esc(pn)}</span>
+          <span class="barbg"><span class="barfill" style="width:${ppct}%"></span></span>
+          <span class="pcount">${ph.done}/${ph.total}</span>
+          ${phaseDone ? `<button class="archive-btn" onclick="archivePhase('${esc(ag)}','${esc(pn)}')" title="Move this closed phase to the Archive">Archive phase</button>` : "<span></span>"}
+        </div>
+        <div class="phase-tasks">
+          ${ph.tasks
+            .map(
+              (t) => `
+            <div style="display:grid;grid-template-columns:170px 1fr 90px 70px 100px;gap:10px;padding:5px 0 5px 20px;font-size:13px;align-items:baseline;border-bottom:1px solid rgba(255,255,255,.03)">
+              <span style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)">${esc(t.task_id)}</span>
+              <span>${esc((t.subject || "").slice(0, 90))}${(t.subject || "").length > 90 ? "…" : ""}</span>
+              <span style="color:${t.status === "done" ? "var(--green)" : lvColor[t.liveness] || "var(--muted)"};font-weight:700">${esc(t.status === "done" ? "done" : t.liveness)}</span>
+              <span style="color:var(--muted)">${esc(t.age || "")}</span>
+              ${t.status === "done" ? `<button class="archive-btn" onclick="archiveTask('${esc(ag)}','${esc(t.task_id)}')" title="Move this closed task to the Archive">Archive</button>` : ""}
+            </div>
+            ${t.status !== "done" ? `<div style="padding-left:20px">${stepBar(t.outline)}</div>` : ""}
+          `,
+            )
+            .join("")}
+        </div>`;
+        })
+        .join("")}
+    </details>`;
+              })
+              .join("")
+          : q
+            ? `<div class="empty">No agent matches "${esc(q)}".</div>`
+            : '<div class="empty">No phased tasks yet — tasks need a --phase to show up here.</div>';
+
+        renderBurndownArchive(archivedPhaseRows, archivedTaskRows);
+      }
+
+      function renderBurndownArchive(phaseRows, taskRows) {
+        const box = document.getElementById("bd-archive");
+        const n = phaseRows.length + taskRows.length;
+        document.getElementById("bd-archive-count").textContent = n ? `(${n})` : "";
+        if (!n) {
+          box.innerHTML = '<div class="empty">Nothing archived yet — closed phases and tasks get an Archive button once they\'re done.</div>';
+          return;
+        }
+        box.innerHTML =
+          phaseRows
+            .map(
+              (r) => `<div class="phaserow">
+          <span class="pname">${esc(r.agent)} — ${esc(r.phase)}</span>
+          <span class="barbg"><span class="barfill" style="width:100%"></span></span>
+          <span class="pcount">${r.done}/${r.total}</span>
+          <button class="archive-btn" onclick="unarchivePhase('${esc(r.agent)}','${esc(r.phase)}')" title="Bring this phase back to the live view">Unarchive</button>
+        </div>`,
+            )
+            .join("") +
+          taskRows
+            .map(
+              (r) => `<div style="display:grid;grid-template-columns:170px 1fr 90px 100px;gap:10px;padding:6px 0;font-size:13px;align-items:baseline;border-bottom:1px solid rgba(255,255,255,.03)">
+          <span style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)">${esc(r.task.task_id)}</span>
+          <span>${esc(r.agent)} — ${esc((r.task.subject || "").slice(0, 70))}</span>
+          <span style="color:var(--green);font-weight:700">done</span>
+          <button class="archive-btn" onclick="unarchiveTask('${esc(r.agent)}','${esc(r.task.task_id)}')" title="Bring this task back to the live view">Unarchive</button>
+        </div>`,
+            )
+            .join("");
+      }
+
+      // Per-task step burndown. Convention (documented in
+      // internal/routerboard/board.go and PANTHEON_RULES.md A32): a task's
+      // --outline is a JSON array of {"id":"<stable-slug>","step":"<text>","done":
+      // true|false} (NOT --timeline — that field is a real, already-validated
+      // day/owner/hours accounting log server-side; reusing it for steps was tried
+      // first and correctly rejected by routerstore's own validation). `id` is
+      // REQUIRED, not cosmetic — it's what lets one specific step be flipped to
+      // done later without a text match that breaks the moment the wording
+      // changes. Steps done/total is DERIVED from the array — no new schema field,
+      // reuses the existing free-text outline column every task already has. A
+      // task with no outline (or one that isn't this shape) just shows no step
+      // bar — that is a silent "not adopted yet", not an error.
+      function stepBar(outlineRaw) {
+        if (typeof outlineRaw !== "string" || !outlineRaw.trim()) return "";
+        let steps;
+        try {
+          steps = JSON.parse(outlineRaw);
+        } catch {
+          return "";
+        }
+        if (!Array.isArray(steps) || steps.length === 0) return "";
+        steps = steps.filter((s) => s && typeof s === "object" && "done" in s);
+        if (steps.length === 0) return "";
+        const done = steps.filter((s) => s.done).length;
+        const pct = Math.round((done / steps.length) * 100);
+        const cur = steps.find((s) => !s.done);
+        return `<div class="steps">
+    <span class="barbg"><span class="barfill" style="width:${pct}%"></span></span>
+    <span>${done}/${steps.length} steps</span>
+    ${cur ? `<span style="opacity:.8">— next: <span style="font-family:ui-monospace,monospace">${esc(cur.id || "?")}</span> ${esc(String(cur.step || "").slice(0, 50))}</span>` : ""}
+  </div>`;
+      }
+
+      function esc(s) {
+        return (s || "").replace(
+          /[&<>]/g,
+          (c) => ({ "&": "&lt;", "<": "&lt;", ">": "&gt;" })[c] || c,
+        );
+      }
+      function toClass(s) {
+        return s === "done"
+          ? "to-done"
+          : s === "in-progress"
+            ? "to-inprog"
+            : s === "blocked"
+              ? "to-blocked"
+              : "to-pending";
+      }
+      function bump(id) {
+        const el = document.getElementById(id);
+        el.classList.remove("flash");
+        void el.offsetWidth;
+        el.classList.add("flash");
+      }
+
+      let lastCounters = { done: 0, open: 0, stuck: 0 };
+
+      const es = new EventSource("/api/stream");
+      es.onopen = () => {
+        document.getElementById("dot").className = "dot live";
+        document.getElementById("conn").textContent =
+          "live — pushed on real change, no refresh";
+      };
+      es.onerror = () => {
+        document.getElementById("dot").className = "dot down";
+        document.getElementById("conn").textContent = "reconnecting…";
+      };
+      es.onmessage = (e) => {
+        try {
+          render(JSON.parse(e.data));
+        } catch (err) {
+          document.getElementById("err").textContent =
+            "render error: " + err.message;
+        }
+      };
+
+      let BUILD = null;
+      function render(d) {
+        if (d.build && BUILD && d.build !== BUILD) {
+          location.reload();
+          return;
+        }
+        if (d.build) {
+          BUILD = d.build;
+          document.getElementById("build").textContent = "· ui " + d.build;
+        }
+        // Router Items is a separate page, not a sub-view of Applications, so it
+        // renders unconditionally here — it stays live whichever page is showing.
+        renderRouterPage(d);
+        renderPhaseBurndown(d);
+        const errEl = document.getElementById("err");
+        if (d.data_errors && d.data_errors.length) {
+          errEl.innerHTML =
+            '<div style="background:rgba(216,90,48,.12);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin-bottom:1rem;color:var(--red);font-size:13px;"><b>DATA SOURCE FAILING — the numbers below are NOT trustworthy.</b><br>' +
+            d.data_errors.map(esc).join("<br>") +
+            "</div>";
+        } else {
+          errEl.textContent = "";
+        }
+
+        const openTasks = (d.tasks || []).filter((t) => t.status !== "done");
+        const openCount = openTasks.length;
+        const inProg = openTasks.filter(
+          (t) => t.status === "in-progress",
+        ).length;
+        const stalled = openTasks.filter(
+          (t) => t.liveness === "stalled",
+        ).length;
+        const blocked = openTasks.filter(
+          (t) => t.liveness === "blocked",
+        ).length;
+        const idleLanes = (d.fleet || []).filter(
+          (f) => f.idle_with_work,
+        ).length;
+
+        // Box 1 — completed out of everything in flight this cycle.
+        document.getElementById("c1-v").textContent =
+          d.counters.done + " / " + (d.counters.done + openCount);
+        document.getElementById("c1-s").textContent =
+          `${openCount} still in flight`;
+        // Box 2 — actively worked out of everything assigned and still open.
+        document.getElementById("c2-v").textContent =
+          inProg + " / " + openCount;
+        document.getElementById("c2-s").textContent =
+          `${openCount - inProg} assigned but not started`;
+        // Box 3 — everything not moving, and how many whole lanes are idle.
+        document.getElementById("c3-v").textContent = stalled + blocked;
+        document.getElementById("c3-s").textContent =
+          `${stalled} stalled · ${blocked} blocked · ${idleLanes} idle lane${idleLanes === 1 ? "" : "s"}`;
+        if (openCount !== lastCounters.open) bump("c2");
+        if (d.counters.done !== lastCounters.done) bump("c1");
+        if (stalled + blocked !== lastCounters.stuck) bump("c3");
+        lastCounters = {
+          done: d.counters.done,
+          open: openCount,
+          stuck: stalled + blocked,
+        };
+
+        document.getElementById("activity").innerHTML = d.activity.length
+          ? d.activity
+              .map(
+                (a) => `
+    <div class="activity-row">
+      <span class="time">${esc(a.at)}</span>
+      <span class="agent">${esc(a.agent)}</span>
+      <span>${esc(a.task_id)} — ${esc(a.subject)}</span>
+      <span class="arrow ${toClass(a.to)}">${esc(a.from)} &rarr; ${esc(a.to)}</span>
+    </div>`,
+              )
+              .join("")
+          : '<div class="empty">No status changes seen yet this session — this feed only fires on a REAL transition, not a refresh.</div>';
+
+        const lanes = d.fleet.map((f) => {
+          const mine = openTasks.filter((t) => t.agent === f.agent);
+          const st = mine.filter((t) => t.liveness === "stalled").length;
+          const bl = mine.filter((t) => t.liveness === "blocked").length;
+          const act = mine.filter((t) => t.liveness === "active").length;
+          const touch = mine.length ? mine.map((t) => t.age).sort()[0] : "";
+          // Precedence matters: a lane with FIVE active tasks and one stalled one
+          // is working, not stalled. Active work outranks a stale straggler
+          // (owner correction 2026-08-05 — codex-inference read 'stalled' while
+          // visibly shipping).
+          let state = "WORKING",
+            col = "var(--green)";
+          // `registered.ledger` is bool(tasks) — it measures whether the lane has a
+          // TASK LEDGER, not whether it is registered. Every lane rendering this way
+          // is present in agents.json (verified 2026-08-06: claude-kfca, claude-io,
+          // owner, horus, user, gemma-pantheon, all the codex-* lanes). Calling them
+          // "not registered" was a false alarm on 17 rows — it reads as a broken
+          // fabric when the truth is "registered, no tasks assigned".
+          if (!f.registered.ledger) {
+            state = "no tasks assigned";
+            col = "var(--muted)";
+          } else if (mine.length === 0) {
+            state = "stopped — no open work";
+            col = "var(--muted)";
+          } else if (act > 0) {
+            state = "WORKING";
+            col = "var(--green)";
+          } else if (f.idle_with_work) {
+            state = "IDLE with work";
+            col = "var(--red)";
+          } else if (bl && bl === mine.length) {
+            state = "fully blocked";
+            col = "var(--amber)";
+          } else if (st) {
+            state = "stalled";
+            col = "var(--red)";
+          } else if (bl) {
+            state = "partly blocked";
+            col = "var(--amber)";
+          }
+          return { ...f, state, col, open: mine.length, st, bl, act, touch };
+        });
+        // ACTIVE FIRST — the owner wants to SEE work happening, not only what is
+        // broken. A dashboard that renders only failures makes a busy fleet look
+        // dead (owner correction 2026-08-05).
+        const arank = {
+          WORKING: 0,
+          "IDLE with work": 1,
+          stalled: 2,
+          "fully blocked": 3,
+          "partly blocked": 4,
+          "stopped — no open work": 5,
+          "no tasks assigned": 6,
+        };
+        const nActive = lanes.filter((l) => l.state === "WORKING").length;
+        // Status bucket drives the differentiation (left rail + tinted background),
+        // not text color alone — the point of the 2026-08-07 restyle.
+        const laneBucket = (s) =>
+          s === "WORKING"
+            ? "st-good"
+            : s === "IDLE with work" || s === "stalled"
+              ? "st-bad"
+              : s === "fully blocked" || s === "partly blocked"
+                ? "st-warn"
+                : "st-off";
+        document.getElementById("apps").innerHTML =
+          `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">${nActive} of ${lanes.length} lanes actively working</div>` +
+          lanes
+            .sort(
+              (a, b) =>
+                (arank[a.state] ?? 9) - (arank[b.state] ?? 9) ||
+                b.open - a.open,
+            )
+            .map(
+              (l) => `<div class="lane-row ${laneBucket(l.state)}">
+        <span class="lname" style="${l.state === "WORKING" ? "" : "color:var(--muted)"}">${esc(l.agent)}</span>
+        <span class="lstate" style="color:${l.col}">${esc(l.state)}</span>
+        <span class="ldetail">${l.open} open tasks${l.act ? ` · ${l.act} active` : ""}${l.st ? ` · ${l.st} stalled` : ""}${l.bl ? ` · ${l.bl} blocked` : ""}${l.touch ? ` · last ledger update ${esc(l.touch)}` : ""}</span>
+      </div>`,
+            )
+            .join("");
+
+        const gaps = d.registration_gaps || [];
+        document.getElementById("registration").innerHTML = gaps.length
+          ? `<div style="font-size:14.5px;color:var(--red);font-weight:600;margin-bottom:10px"><b>${gaps.length} of ${d.fleet.length} agents are NOT fully registered</b> — present in the router but missing a thread record or a task ledger. A gap means the agent is invisible to the boards.</div>` +
+            d.fleet
+              .filter((f) => gaps.includes(f.agent))
+              .map(
+                (f) => `
+        <div class="lane-row st-bad" style="grid-template-columns:190px 1fr">
+          <span class="lname">${esc(f.agent)}</span>
+          <span style="font-size:13.5px">
+            <span style="color:var(--green);font-weight:600">router ✓</span>
+            <span style="color:${f.registered.thread ? "var(--green)" : "var(--red)"};font-weight:600;margin-left:12px">thread ${f.registered.thread ? "✓" : "✗"}</span>
+            <span style="color:${f.registered.ledger ? "var(--green)" : "var(--red)"};font-weight:600;margin-left:12px">ledger ${f.registered.ledger ? "✓" : "✗"}</span>
+          </span>
+        </div>`,
+              )
+              .join("")
+          : '<div class="empty" style="color:var(--green);font-weight:600">All agents fully registered across router, thread and ledger.</div>';
+
+        // ONE row per agent — its freshest thread — not every historical record.
+        // The raw feed (sirsi thread list) keeps every thread ever registered,
+        // including suspended sessions from a day ago; rendering all of them
+        // (150+ rows observed 2026-08-07) buried the handful that actually matter
+        // and made "is anything live right now" impossible to answer at a glance
+        // (owner: "fix no waiting"). Older threads for the same agent still count,
+        // shown as a suffix, never silently dropped.
+        const thr = d.threads || [];
+        const freshestByAgent = {};
+        const countByAgent = {};
+        thr.forEach((t) => {
+          const ag = t.agent || "—";
+          countByAgent[ag] = (countByAgent[ag] || 0) + 1;
+          const cur = freshestByAgent[ag];
+          if (!cur || (t.idle_seconds ?? 1e9) < (cur.idle_seconds ?? 1e9))
+            freshestByAgent[ag] = t;
+        });
+        const rows = Object.keys(freshestByAgent).sort(
+          (a, b) =>
+            (freshestByAgent[a].idle_seconds ?? 1e9) -
+            (freshestByAgent[b].idle_seconds ?? 1e9),
+        );
+
+        document.getElementById("threads").innerHTML = rows.length
+          ? rows
+              .map((ag) => {
+                const t = freshestByAgent[ag];
+                const idle =
+                  t.idle_seconds == null
+                    ? "?"
+                    : t.idle_seconds < 60
+                      ? t.idle_seconds + "s"
+                      : Math.round(t.idle_seconds / 60) + "m";
+                const fresh = t.idle_seconds != null && t.idle_seconds < 600;
+                const bucket = t.stale
+                  ? "st-bad"
+                  : fresh
+                    ? "st-good"
+                    : "st-off";
+                const col = t.stale
+                  ? "var(--red)"
+                  : fresh
+                    ? "var(--green)"
+                    : "var(--muted)";
+                const older = countByAgent[ag] - 1;
+                return `<div class="lane-row ${bucket}" style="grid-template-columns:190px 1fr 90px 100px">
+      <span class="lname">${esc(ag)}</span>
+      <span style="color:var(--muted);font-size:13.5px">${esc(t.workstream || "")}</span>
+      <span style="color:${col};font-size:13.5px;font-weight:700">${t.stale ? "stale" : fresh ? "live" : "idle"}</span>
+      <span style="color:var(--muted);font-size:13.5px">idle ${idle}${older ? ` · +${older} older` : ""}</span>
+    </div>`;
+              })
+              .join("")
+          : '<div class="empty">No thread records.</div>';
+
+        const open = (d.tasks || []).filter((t) => t.status !== "done");
+        const lvColor = {
+          active: "var(--green)",
+          stalled: "var(--red)",
+          blocked: "var(--amber)",
+          unknown: "var(--muted)",
+        };
+        const byAgent = {};
+        open.forEach((t) => {
+          (byAgent[t.agent] = byAgent[t.agent] || []).push(t);
+        });
+        document.getElementById("opentasks").innerHTML = open.length
+          ? Object.keys(byAgent)
+              .sort()
+              .map(
+                (ag) => `
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em;padding:4px 0 8px;border-bottom:1px solid var(--border);margin-bottom:4px">${esc(ag)} — ${byAgent[ag].length} open</div>
+      ${byAgent[ag]
+        .map(
+          (t) => `
+        <div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+          <div style="display:grid;grid-template-columns:170px 1fr 100px 80px;gap:12px;font-size:14.5px;align-items:baseline">
+            <span style="font-family:ui-monospace,monospace;font-size:12px;color:var(--muted)">${esc(t.task_id)}</span>
+            <span>${esc(t.subject.slice(0, 95))}${t.subject.length > 95 ? "…" : ""}</span>
+            <span style="color:${lvColor[t.liveness] || "var(--muted)"};font-size:13px;font-weight:700">${esc(t.liveness)}</span>
+            <span style="color:var(--muted);font-size:13px">${esc(t.age)}</span>
+          </div>
+          ${stepBar(t.outline)}
+        </div>`,
+        )
+        .join("")}
+    </div>`,
+              )
+              .join("")
+          : '<div class="empty">No open tasks fleet-wide.</div>';
+
+        const actClass = (a) =>
+          a === "active now"
+            ? "act-now"
+            : a === "recently active"
+              ? "act-recent"
+              : "act-quiet";
+        document.getElementById("fleet").innerHTML = d.fleet
+          .map(
+            (a) => `
+    <tr>
+      <td><strong>${esc(a.agent)}</strong></td>
+      <td class="agent-type">${esc(a.type)}</td>
+      <td class="act ${actClass(a.activity)}">${a.idle_with_work ? '<span style="color:var(--red);font-weight:600">IDLE WITH WORK (' + a.unblocked_open + " open)</span>" : esc(a.activity)}</td>
+      <td>${a.open_items}${a.oldest_msg_stale ? ' <span class="stale">(oldest msg stale)</span>' : ""}</td>
+      <td>${a.counts.done} / ${a.tasks_total}</td>
+      <td class="last-touch">${a.last_touch ? new Date(a.last_touch).toLocaleString() : "—"}</td>
+    </tr>`,
+          )
+          .join("");
+      }
+    </script>
+  </body>
+</html>
