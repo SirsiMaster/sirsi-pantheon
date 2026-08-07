@@ -589,6 +589,168 @@ func resolveModel(home string) string {
 	return "mlx-community/gemma-2-27b-it-bf16-4bit"
 }
 
+// approximateModelGB returns a rough RAM estimate for a Gemma model based on
+// its name — enough to classify "fits" vs "too large" without any network or
+// disk I/O beyond the conf file. Returns 0 for unknown names.
+//
+// Two-phase parse: (1) parameter-count bucket sets the 4-bit base; (2) the
+// quantizer suffix scales it. Arms are checked largest-first — "2b" also
+// matches "12b" and "32b", so ordering is load-bearing; do not reorder.
+func approximateModelGB(modelID string) float64 {
+	id := strings.ToLower(modelID)
+	var base float64
+	switch {
+	case strings.Contains(id, "27b"):
+		base = 14.0 // ~14 GB at 4bit
+	case strings.Contains(id, "12b"):
+		base = 7.0 // ~7 GB at 4bit
+	case strings.Contains(id, "9b"):
+		base = 5.0 // ~5 GB at 4bit
+	case strings.Contains(id, "2b"):
+		base = 1.5 // ~1.5 GB at 4bit
+	default:
+		return 0
+	}
+	// Scale by quantizer. "4bit" (explicit or implied) → ×1; "8bit" → ×2;
+	// "bf16"/"fp16"/"16bit" without a "4bit" suffix → ×4.
+	// "bf16-4bit" contains "4bit" so the first branch wins (×1, correct).
+	switch {
+	case strings.Contains(id, "4bit"):
+		return base
+	case strings.Contains(id, "8bit"):
+		return base * 2
+	case strings.Contains(id, "bf16"), strings.Contains(id, "fp16"), strings.Contains(id, "16bit"):
+		return base * 4
+	default:
+		return base // unspecified → assume 4bit
+	}
+}
+
+// brokerMLXActiveFn reads mlx_active_bytes from the broker's /health endpoint.
+// Returns (0, nil) when the endpoint is absent or field is missing; returns
+// error only for a 200 with an unparseable body. Injectable (A16/A21).
+var (
+	brokerMLXActiveMu sync.RWMutex
+	brokerMLXActive   = defaultBrokerMLXActive
+)
+
+func getBrokerMLXActive() func(port int) (int64, error) {
+	brokerMLXActiveMu.RLock()
+	defer brokerMLXActiveMu.RUnlock()
+	return brokerMLXActive
+}
+
+func setBrokerMLXActive(fn func(port int) (int64, error)) {
+	brokerMLXActiveMu.Lock()
+	defer brokerMLXActiveMu.Unlock()
+	brokerMLXActive = fn
+}
+
+func defaultBrokerMLXActive(port int) (int64, error) {
+	cl := &http.Client{Timeout: 2 * time.Second}
+	resp, err := cl.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
+	if err != nil {
+		return 0, nil // broker not running or not answering
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, nil
+	}
+	var h struct {
+		MLXActiveBytes int64 `json:"mlx_active_bytes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&h); err != nil {
+		return 0, fmt.Errorf("parse /health: %w", err)
+	}
+	return h.MLXActiveBytes, nil
+}
+
+// extractModelGen returns the "gemma-N" generation prefix from a lowercased
+// model id (e.g. "gemma-2", "gemma-4"), or "" if the pattern is not found.
+func extractModelGen(idLower string) string {
+	const prefix = "gemma-"
+	i := strings.Index(idLower, prefix)
+	if i < 0 || i+len(prefix) >= len(idLower) {
+		return ""
+	}
+	c := idLower[i+len(prefix)]
+	if c < '1' || c > '9' {
+		return ""
+	}
+	return idLower[i : i+len(prefix)+1]
+}
+
+// rightSizeAdvice returns a runnable command string when the active broker
+// model is clearly too large for availableGB of RAM; empty string otherwise.
+//
+// Size authority (in order):
+//  1. /health mlx_active_bytes — allocator-truthful; model weights are
+//     mmap'd file-backed and excluded from ps RSS, so RSS is ~185 MB while
+//     the real footprint is 37 GB. mlx_active_bytes counts the actual
+//     allocator pages (already including KV cache and transient pages).
+//  2. approximateModelGB — name-based fallback for when the broker is not
+//     running or /health is unreachable (e.g. during a memory death spiral).
+//
+// Headroom: modelGB+4 in both cases. mlx_active_bytes already includes KV cache;
+// approximateModelGB already scales for the quantizer suffix (8bit→×2), so
+// a second ×2 would double-count (12b-8bit: base 7×2=14 GB, 2×14+4=32 vs
+// actual ~11.5 GB peak). RSS is never used here.
+func rightSizeAdvice(home string, availableGB float64) string {
+	model := resolveModel(home)
+	var modelGB float64
+
+	// Prefer /health mlx_active_bytes (reads port from gemma-server.port).
+	portRaw, err := os.ReadFile(filepath.Join(home, ".sirsi/gemma-server.port"))
+	if err == nil {
+		if port, pErr := strconv.Atoi(strings.TrimSpace(string(portRaw))); pErr == nil && port > 0 {
+			if activeBytes, hErr := getBrokerMLXActive()(port); hErr == nil && activeBytes > 0 {
+				modelGB = float64(activeBytes) / (1 << 30)
+			}
+		}
+	}
+
+	// Fall back to name-based estimate when broker is unreachable.
+	if modelGB == 0 {
+		modelGB = approximateModelGB(model)
+	}
+
+	if modelGB == 0 || modelGB+4 <= availableGB {
+		return "" // unknown size or fits
+	}
+
+	label := model
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		label = model[i+1:]
+	}
+	confPath := filepath.Join(home, ".sirsi", "gemma-model.conf")
+
+	// Offer a smaller same-generation tier if one fits.
+	allTiers := []struct {
+		id string
+		gb float64
+	}{
+		{"mlx-community/gemma-2-9b-it-4bit", 5.0},
+		{"mlx-community/gemma-2-2b-it-4bit", 1.5},
+	}
+	modelLower := strings.ToLower(model)
+	for _, t := range allTiers {
+		if modelGen := extractModelGen(modelLower); modelGen != "" {
+			if !strings.Contains(strings.ToLower(t.id), modelGen) {
+				continue // skip cross-generation downgrade
+			}
+		}
+		if t.gb+4 <= availableGB {
+			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
+				"available — switch to the %s tier: "+
+				"`echo '%s' > %s && sirsi gemma serve --stop && sirsi gemma serve`",
+				label, modelGB, availableGB, t.id, t.id, confPath)
+		}
+	}
+	return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) cannot fit in %.1f GB available — "+
+		"stop the broker to recover RAM: `sirsi gemma serve --stop`",
+		label, modelGB, availableGB)
+}
+
 // sessionLeakThreshold is how many leaked claude-desktop sessions must
 // accumulate before the watch proactively alerts. Matches the `sirsi diagnose`
 // leaked-sessions lever so the two surfaces agree.
@@ -665,17 +827,25 @@ func probeMenubar() Finding {
 // probeMemoryDeath reads the swap/free-RAM spiral signals via guard (one shared
 // definition of "dying"). It routes only the live-critical spiral; ordinary
 // pressure is not a currently-owner-fixable emergency (A32: alarm only when a
-// current fixable condition exists).
+// current fixable condition exists). When dying, it appends a runnable
+// right-size command so the alert is actionable, not just descriptive.
 func probeMemoryDeath() Finding {
+	home, homeErr := os.UserHomeDir()
 	md := guard.SampleMemoryDeath()
+	body := fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
+		"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
+		"gemma broker (2026-07-17). Fix: close/restart the heaviest leaked sessions (leaked claude-desktop "+
+		"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
+		"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
+		md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)
+	if md.Dying && homeErr == nil {
+		if advice := rightSizeAdvice(home, md.AvailableGB); advice != "" {
+			body += " " + advice
+		}
+	}
 	f := Finding{Check: "memory-death", Fixable: true,
 		Title: "liveness-watch: memory death spiral",
-		Body: fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
-			"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
-			"gemma broker (2026-07-17). Fix: close/restart the heaviest leaked sessions (leaked claude-desktop "+
-			"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
-			"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
-			md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)}
+		Body:  body}
 	if !md.Readable {
 		f.OK, f.Fixable, f.Detail = true, false, "no signal readable"
 		return f
