@@ -107,9 +107,16 @@ type AgentSurfaceStatus struct {
 	// Operational is the ADR-061 authority. Legacy Status remains additive for
 	// tolerant clients during the contract transition, but it may not be used to
 	// infer work from process/thread liveness.
-	Operational     routerstore.LaneOperationalState `json:"operational"`
-	WakeEventID     string                           `json:"wake_event_id,omitempty"`
-	WakeEventStatus string                           `json:"wake_event_status,omitempty"`
+	Operational routerstore.LaneOperationalState `json:"operational"`
+	// Reconcile is what this pass's reconcile MUTATED for the lane. Every
+	// supervisor tick computes these and, before this field existed, discarded
+	// all of them — including FalseDoneRejected, which is ADR-057's completion
+	// gate rejecting an unevidenced `done`. Silent repair is indistinguishable
+	// from no repair, so the counters ride the same contract as the state they
+	// were derived from.
+	Reconcile       routerstore.ReconcileCounters `json:"reconcile"`
+	WakeEventID     string                        `json:"wake_event_id,omitempty"`
+	WakeEventStatus string                        `json:"wake_event_status,omitempty"`
 }
 
 // PendingItem is the drillable projection of one open inbox item: everything a
@@ -242,6 +249,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 			return nil, fmt.Errorf("reconcile operational state for %s: %w", id, reconcileErr)
 		}
 		status.Operational = reconcile.State
+		status.Reconcile = reconcile.ReconcileCounters
 		if status.Operational.Runnable.Runnable {
 			runnableTotal++
 		}

@@ -43,9 +43,9 @@ func IsAttendedSurface(surface string) bool {
 // AttendedSessionLive reports whether agentID has a live attended session that
 // can be expected to claim fresh inbox items.
 //
-// Liveness itself is threadArmed — the same proof AgentArmed uses — so this
-// never becomes a second, drifting definition of "alive". The only thing added
-// is the surface narrowing.
+// Liveness itself is threadArmedForNewest — the same proof AgentArmed uses —
+// so this never becomes a second, drifting definition of "alive". The only
+// thing added is the surface narrowing.
 //
 // Fail direction: an unreadable registry reads as NOT ATTENDED (false), so the
 // worker takes the item.
@@ -70,7 +70,9 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 		return false
 	}
 	now := time.Now().UTC()
-	for _, t := range reg.Threads {
+	threads := reg.SortedThreads()
+	newestByAgent := NewestActiveByAgent(threads)
+	for _, t := range threads {
 		if t == nil || t.AgentID != agentID {
 			continue
 		}
@@ -80,7 +82,7 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 		if !IsAttendedSurface(t.Surface) {
 			continue
 		}
-		if threadArmed(t, now) {
+		if threadArmedForNewest(t, now, newestByAgent[agentID] == t.ThreadID) {
 			return true
 		}
 	}

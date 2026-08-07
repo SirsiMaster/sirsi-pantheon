@@ -49,14 +49,33 @@ const StartInterval = 900
 // (not const) so tests can shrink it to exercise the timeout/retry path fast.
 var probeTimeout = 30 * time.Second
 
-// minWeightedRSSKB is the RSS floor (in KB) below which a running broker is
-// treated as weightless — no model loaded onto the GPU. Any serious gemma model
-// (even the smallest 2B variant) maps several GB of weights; a process under
-// this floor cannot be serving real inference regardless of what /health says.
-// Set to 1 GB (1,048,576 KB) — conservative, never false-positive on a loaded
-// model, catches the "broker up, weights deleted" class that a generation probe
-// alone cannot distinguish from "broker wedged for another reason."
+// minWeightedBytes is the Metal-allocation floor below which a running broker
+// is treated as weightless — no model loaded onto the GPU. Any serious gemma
+// model (even the smallest 2B variant) allocates several GB via MLX; an
+// allocation under this floor cannot be serving real inference regardless of
+// what a bare /health 200 implies. Read from mlx_active_bytes — the number MLX
+// itself reports as currently allocated, not inferred from a proxy metric.
+//
+// Superseded 2026-08-06 (PRD R6, sirsi-pantheon-fabric
+// docs/prd/SNE_HETEROGENEOUS_COMPUTE.md): this used to be an RSS floor
+// (minWeightedRSSKB) whose comment claimed it "can never false-positive on a
+// loaded model." That claim was false — measured the same day, broker RSS was
+// 4.2 GB while mlx_active_bytes was 24.9-31.4 GB, a 27 GB gap RSS cannot see in
+// either direction. minWeightedRSSKB is retained ONLY as the fallback for when
+// /health itself is unreachable (see brokerMLXBytesFn below).
+const minWeightedBytes = 1 * 1024 * 1024 * 1024 // 1 GB
+
+// minWeightedRSSKB is the fallback RSS floor (in KB), used only when the
+// broker's /health endpoint cannot be reached (port file present but the
+// process is not actually answering). See minWeightedBytes.
 const minWeightedRSSKB = 1 * 1024 * 1024 // 1 GB in KB
+
+// WeightsAbsentSentinel is the canonical marker embedded in ProbeGemmaState's
+// GemmaWedged detail string when the broker process is running but has no model
+// weights loaded (RSS below the weight floor). Exported so the self-healing
+// duty in internal/router/gemmaliveness.go can match it without duplicating the
+// string — a restart cannot fix this class of wedge.
+const WeightsAbsentSentinel = "weights likely absent"
 
 // brokerRSSFn reads the RSS (in KB) of the gemma broker process. Returns 0 if
 // the PID file is absent or the process cannot be queried. Injectable (A16/A21)
@@ -76,6 +95,28 @@ func setBrokerRSSFn(fn func(pidFile string) int64) {
 	brokerRSSMu.Lock()
 	defer brokerRSSMu.Unlock()
 	brokerRSSFn = fn
+}
+
+// brokerMLXBytesFn reads the broker's true current Metal allocation from its
+// own /health endpoint (guard.BrokerMLXActiveBytes — mlx_active_bytes).
+// Returns ok=false when the broker is unreachable, in which case the caller
+// falls back to brokerRSSFn. Injectable (A16/A21) so tests can stub it
+// without a live broker.
+var (
+	brokerMLXMu      sync.RWMutex
+	brokerMLXBytesFn = guard.BrokerMLXActiveBytes
+)
+
+func getBrokerMLXBytesFn() func() (int64, bool) {
+	brokerMLXMu.RLock()
+	defer brokerMLXMu.RUnlock()
+	return brokerMLXBytesFn
+}
+
+func setBrokerMLXBytesFn(fn func() (int64, bool)) {
+	brokerMLXMu.Lock()
+	defer brokerMLXMu.Unlock()
+	brokerMLXBytesFn = fn
 }
 
 // defaultBrokerRSS reads the PID from pidFile and returns the process RSS in KB
@@ -371,19 +412,36 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 		return GemmaDown, "port file unreadable"
 	}
 
-	// RSS floor: a broker whose resident set is below 1 GB cannot have model
-	// weights loaded — any serious gemma model maps several GB onto the GPU.
-	// This catches the "weightless broker" class (RSS ~99 MB, /health ok, zero
-	// generation capacity) that a restart cannot fix when the HF cache is absent.
-	// Fail-open: if the PID file is missing or ps fails, rss==0 and we skip the
-	// floor check rather than falsely classifying a healthy broker as weightless.
-	pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
-	if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
-		return GemmaWedged, fmt.Sprintf(
-			"broker RSS %d MB is below the %d MB weight floor — model weights likely absent; "+
-				"a restart will not fix this (check HF model cache and re-download weights)",
-			rss/1024, minWeightedRSSKB/1024,
-		)
+	// Weight floor: a broker with no model weights loaded onto the GPU cannot
+	// serve real inference regardless of what a bare /health 200 implies. This
+	// catches the "weightless broker" class (mlx_active_bytes ~0, /health ok,
+	// zero generation capacity) that a restart cannot fix when the HF cache is
+	// absent. Primary signal is mlx_active_bytes (ground truth, read from the
+	// broker's own /health) — RSS is understated by up to 27 GB (measured
+	// 2026-08-06, PRD R6) and can swing either side of any floor. RSS is used
+	// ONLY when /health itself is unreachable, so the check still fails safe
+	// instead of skipping entirely.
+	if bytes, ok := getBrokerMLXBytesFn()(); ok {
+		if bytes < minWeightedBytes {
+			return GemmaWedged, fmt.Sprintf(
+				"broker mlx_active_bytes=%d MB is below the %d MB weight floor — model "+WeightsAbsentSentinel+"; "+
+					"a restart will not fix this (check HF model cache and re-download weights)",
+				bytes/(1024*1024), minWeightedBytes/(1024*1024),
+			)
+		}
+	} else {
+		// /health unreachable even though the port file exists — fall back to
+		// the RSS floor. Fail-open: if the PID file is missing or ps fails,
+		// rss==0 and we skip the floor check rather than falsely classifying a
+		// healthy broker as weightless.
+		pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
+		if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
+			return GemmaWedged, fmt.Sprintf(
+				"broker RSS %d MB is below the %d MB weight floor (fallback: /health unreachable) — model "+WeightsAbsentSentinel+"; "+
+					"a restart will not fix this (check HF model cache and re-download weights)",
+				rss/1024, minWeightedRSSKB/1024,
+			)
+		}
 	}
 
 	model := resolveModel(home)
@@ -481,9 +539,41 @@ func probeGemma(home string) Finding {
 			"(load-bearing-safe, A32/ADR-040: right-size, never SIGKILL — `sirsi gemma serve --stop && sirsi gemma serve`); " +
 			"this alert fires when a restore did not stick (e.g. RAM won't fit the model — free memory)."}
 	status, detail := ProbeGemmaState(home)
+	if suppressGemmaDown(status, launchAgentPlistPresent(BrokerLabel)) {
+		f.OK = true
+		f.Fixable = false
+		f.Detail = detail + " — broker not installed (no " + BrokerLabel +
+			".plist in LaunchAgents): deliberately absent, nothing to restore"
+		return f
+	}
 	f.OK = status == GemmaHealthy || status == GemmaBusy
 	f.Detail = detail
 	return f
+}
+
+// BrokerLabel is the LaunchAgent label for the warm gemma broker. The label
+// says "gemma" but the process it starts is sne-server, not python — probing
+// by process name finds the wrong thing.
+const BrokerLabel = "ai.sirsi.gemma-broker"
+
+// suppressGemmaDown reports whether a GemmaDown result describes a DELIBERATE
+// absence rather than a failure, and so must not raise a finding.
+//
+// A35 (scope the check to the claim): probeGemma claims "the gemma broker is
+// wedged" and prescribes a restore. Its actual scope is "nothing answered on
+// the port" — which is equally what a broker that was never started looks
+// like. Retiring or quarantining a service moves its plist out of
+// LaunchAgents, so there is nothing to bootstrap and the prescribed restore
+// cannot succeed; firing anyway pages the owner every StartInterval about an
+// intended state, with a guessed cause ("RAM won't fit the model") that was
+// never measured. Observed 2026-08-06: 23 plists parked in
+// ~/.sirsi/quarantined-wake-plists/ produced a standing alarm loop on the
+// owner board while the binary and model were both present on disk.
+//
+// Only GemmaDown collapses this way. A wedged or busy broker is a running
+// process, so whether its plist is installed says nothing about its health.
+func suppressGemmaDown(status GemmaStatus, plistPresent bool) bool {
+	return status == GemmaDown && !plistPresent
 }
 
 // resolveModel mirrors the worker/CLI: env > ~/.sirsi/gemma-model.conf > fallback.

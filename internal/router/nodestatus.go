@@ -425,7 +425,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	_, _ = ReapStrayThreads(routerRoot)
 	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		now := time.Now().UTC()
-		for _, thr := range treg.SortedThreads() {
+		sortedThrs := treg.SortedThreads()
+		newestByAgent := NewestActiveByAgent(sortedThrs)
+		for _, thr := range sortedThrs {
 			if thr.Status.IsTerminal() {
 				continue
 			}
@@ -465,7 +467,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				switch {
 				case thr.ThreadID == "":
 					sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
-				case WatcherAlive(thr.ThreadID):
+				case WatcherAliveForThread(thr, newestByAgent[thr.AgentID] == thr.ThreadID):
 					sum.LoopState, sum.Armed, sum.ArmedReason = "alive", true, "loop-alive"
 				default:
 					sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"

@@ -81,6 +81,9 @@ var (
 	threadRegWake       string
 	threadRegID         string
 	threadRegAnchorPID  int
+	// threadRegConsumerCapable is claimed by a RESIDENT worker publishing its own
+	// inbox-consumer capability (guarded in RunE — see the resident check there).
+	threadRegConsumerCapable bool
 
 	threadHbID      string
 	threadHbStatus  string
@@ -160,17 +163,47 @@ var threadRegisterCmd = &cobra.Command{
 			return nil
 		}
 
+		// A36/A27 follow-up to PR #389: a RESIDENT consumer publishes and
+		// heartbeats its OWN consumer-capable thread. The wake watcher refuses to
+		// borrow that capability (`capable := consumer != nil && !consumer.Resident`
+		// in RunWakeLoop) because a startup health check proves a binary can print
+		// a string, not that a consumer is alive — gemma-pantheon's is literally
+		// `sirsi-gemma-worker.sh --version`. Liveness you did not observe is not
+		// liveness you can borrow. This flag is the publish side of that inversion.
+		//
+		// Guarded, because self-asserted capability is the same false-green class:
+		// an armed lane suppresses its own rescue in WakePass, so only an agent
+		// whose registry entry DECLARES a resident consumer may claim it. A
+		// watch-only loop cannot arm itself by passing a flag.
+		if threadRegConsumerCapable {
+			reg, regErr := router.LoadRegistry(routerRoot)
+			if regErr != nil {
+				return fmt.Errorf("--consumer-capable requires the agent registry, which is unreadable: %w", regErr)
+			}
+			cfg, ok := reg.Agents[threadRegAgent]
+			if !ok {
+				return fmt.Errorf("--consumer-capable: agent %q is not registered — only a registered agent declaring consumer.mode=resident may publish consumer capability", threadRegAgent)
+			}
+			if !cfg.DeclaresResidentConsumer() {
+				return fmt.Errorf("--consumer-capable: agent %q does not declare consumer.mode=resident — capability is published by the resident worker itself, and a lane whose inbox is drained by a spawned consumer.command must not claim it", threadRegAgent)
+			}
+		}
+
 		host, _ := os.Hostname()
 		thr := &router.Thread{
-			ThreadID:      threadRegID,
-			AgentID:       threadRegAgent,
-			Surface:       threadRegSurface,
-			Repo:          repo,
-			Workstream:    threadRegWorkstream,
-			Watches:       threadRegWatches,
-			WakeMechanism: threadRegWake,
-			PID:           anchor,
-			Host:          host,
+			ThreadID: threadRegID,
+			AgentID:  threadRegAgent,
+			Surface:  threadRegSurface,
+			// Only ever RAISED here; credit LAPSES by going stale in WakePass's
+			// armed predicate, which is the acceptance clause "a resident that
+			// stops publishing stops being credited". Nothing needs to clear it.
+			ConsumerCapable: threadRegConsumerCapable,
+			Repo:            repo,
+			Workstream:      threadRegWorkstream,
+			Watches:         threadRegWatches,
+			WakeMechanism:   threadRegWake,
+			PID:             anchor,
+			Host:            host,
 			// Session-keyed lease: capture the stable app-hosted session identity
 			// so re-registrations from subsequent hook fires renew the same record
 			// instead of minting fresh ones (claude-home mint-churn fix). No-op
@@ -831,6 +864,11 @@ var threadListCmd = &cobra.Command{
 			thr   *router.Thread
 			stale bool
 		}
+		// A35 scoping: WatcherAliveByAgent is valid evidence only for the newest
+		// non-terminal thread of each agent (the re-registration successor). Crediting
+		// it for every thread lets one live PID vouch for 71 stale records — the
+		// unscoped false-not-stale class the reviewer blocked PR #614 on (2026-08-06).
+		newestByAgent := router.NewestActiveByAgent(reg.SortedThreads())
 		var rows []row
 		for _, t := range reg.SortedThreads() {
 			if t.Status.IsTerminal() && !threadListAll {
@@ -839,7 +877,8 @@ var threadListCmd = &cobra.Command{
 			// Loop-evidence-aware (A28): a thread with a live watcher loop is NOT
 			// stale even if its heartbeat aged out (harness-gated surfaces). This
 			// is the `.stale` field the registry-police trusts. Write-free.
-			rows = append(rows, row{thr: t, stale: router.EffectiveStale(t, now, stale)})
+			isNewest := newestByAgent[t.AgentID] == t.ThreadID
+			rows = append(rows, row{thr: t, stale: router.EffectiveStaleForNewest(t, now, stale, isNewest)})
 		}
 
 		if JsonOutput {
@@ -928,6 +967,7 @@ func init() {
 	threadRegisterCmd.Flags().StringVar(&threadRegWake, "wake", "", "Wake mechanism (defaults to agent registry entry)")
 	threadRegisterCmd.Flags().StringVar(&threadRegID, "thread", "", "Reuse a known thread_id instead of generating a new one")
 	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor thread lifetime to (default: verified durable runtime ancestor for known interactive surfaces)")
+	threadRegisterCmd.Flags().BoolVar(&threadRegConsumerCapable, "consumer-capable", false, "This thread DRAINS the agent's inbox (resident consumers only — the worker publishes its own capability instead of the wake watcher borrowing it)")
 
 	threadHeartbeatCmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required)")
 	threadHeartbeatCmd.Flags().StringVar(&threadHbStatus, "status", "", "Set status: active|idle|blocked")

@@ -47,13 +47,23 @@ func NeedsOwner(st LaneState) bool { return Escalates(st) }
 // with an empty inbox is a correctly parked lane, not an incident —
 // internal/router/strand.go made exactly this call for the stranded report, and
 // reversing it here would resurrect the noise that reasoning killed. What is
-// escalated is the narrow, real case: work exists, and no automated path can
-// deliver it to anyone.
+// escalated is the narrow, real case: work exists, no automated path can deliver
+// it to anyone, AND there is no registered live thread — i.e. the lane is
+// genuinely stopped. A lane with active threads may be executing right now; the
+// claim "cannot be reached automatically" is false for a lane that is running.
 func Escalations(lanes []LaneInput, states map[string]LaneState) []Escalation {
 	var out []Escalation
 	for _, l := range lanes {
 		st, ok := states[l.Agent]
 		if !ok || !NeedsOwner(st) || l.OpenItems == 0 {
+			continue
+		}
+		// Suppress if the lane has live thread records: startability (no wake
+		// mechanism) and liveness (thread registry) are different properties.
+		// A lane with wake:none can be perfectly alive — it was started by the
+		// owner, not by horus. Escalating "nothing can start this lane" about a
+		// lane that is currently executing is a false positive.
+		if l.ActiveThreads > 0 {
 			continue
 		}
 		out = append(out, Escalation{
@@ -78,7 +88,8 @@ func whyUnroutable(l LaneInput) string {
 	if l.OpenItems != 1 {
 		b.WriteString("s")
 	}
-	b.WriteString(" and declares no wake mechanism, so nothing can start it automatically. ")
+	b.WriteString(", declares no automatic wake mechanism, and has no registered thread in the")
+	b.WriteString(" thread registry — the lane appears stopped. ")
 	if l.ActionableTasks > 0 {
 		fmt.Fprintf(&b, "It also carries %d actionable ledger task(s). ", l.ActionableTasks)
 	}

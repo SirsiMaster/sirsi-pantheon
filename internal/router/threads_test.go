@@ -880,3 +880,116 @@ func TestRegisterThread_SessionKeyed_RenewsLastSeen(t *testing.T) {
 		t.Errorf("lease renewal must advance LastSeenAt; first=%s second=%s", first.LastSeenAt, second.LastSeenAt)
 	}
 }
+
+// captureSalvageInscriptions swaps the Stele side effect for a recorder and
+// restores it on cleanup (Rule A21 accessor pattern — never assign directly).
+func captureSalvageInscriptions(t *testing.T) *[]map[string]string {
+	t.Helper()
+	var got []map[string]string
+	old := getInscribeSalvageFn()
+	setInscribeSalvageFn(func(_ string, data map[string]string) {
+		got = append(got, data)
+	})
+	t.Cleanup(func() { setInscribeSalvageFn(old) })
+	return &got
+}
+
+// A stray that is NOT retired must NOT be inscribed as salvaged. The inscription
+// used to fire inside the sweep loop, before SaveThreadRegistry decided whether the
+// reap happened at all — so a failed save left the Stele claiming a reap that never
+// occurred, and a retry of the pass (PR #619) re-inscribed every unpersisted stray.
+// codex-home requested proof of this ordering before binding #619.
+func TestReapStrayThreads_SaveFailInscribesNothing(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can write to read-only dirs")
+	}
+	got := captureSalvageInscriptions(t)
+	tmp := t.TempDir()
+	defer perPIDProbe(t, 9002)()
+	anchor, err := RegisterThread(tmp, &Thread{AgentID: "claude-test", Surface: "claude", PID: 9002, StartTime: "sig"})
+	if err != nil {
+		t.Fatalf("register anchor: %v", err)
+	}
+	// The stray carries salvageable state, so it WOULD inscribe if the pass got
+	// that far — without this the test would pass vacuously on an empty tombstone.
+	stray := &Thread{
+		ThreadID:    "thr-stray-noinscribe",
+		AgentID:     "claude-test",
+		Surface:     "claude",
+		Status:      ThreadStatusActive,
+		PID:         9003,
+		MachineID:   anchor.MachineID,
+		CurrentItem: "item-in-flight",
+		LastSeenAt:  anchor.LastSeenAt.Add(-time.Minute),
+		StartedAt:   anchor.StartedAt.Add(-time.Minute),
+	}
+	if _, ok := straySalvage(stray, "thr-anchor"); !ok {
+		t.Fatal("fixture must be salvageable, else this test proves nothing")
+	}
+	reg, _ := LoadThreadRegistry(tmp)
+	reg.Threads[stray.ThreadID] = stray
+	if err := SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveThreadRegistry (setup): %v", err)
+	}
+
+	if err := os.Chmod(tmp, 0o555); err != nil { // force the save inside Reap to fail
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(tmp, 0o755) //nolint:errcheck
+
+	if _, err := ReapStrayThreads(tmp); err == nil {
+		t.Fatal("expected save error on read-only dir, got nil")
+	}
+	if len(*got) != 0 {
+		t.Errorf("save failed, so nothing was retired — want 0 inscriptions, got %d: %v", len(*got), *got)
+	}
+}
+
+// The other direction: a stray that IS retired must still be inscribed. Deferring
+// the side effect must not quietly drop the "nothing lost" guarantee (owner
+// directive 2026-07-22) — a fix that inscribes nothing would pass the test above.
+func TestReapStrayThreads_SuccessStillInscribes(t *testing.T) {
+	got := captureSalvageInscriptions(t)
+	tmp := t.TempDir()
+	defer perPIDProbe(t, 9002)()
+	anchor, err := RegisterThread(tmp, &Thread{AgentID: "claude-test", Surface: "claude", PID: 9002, StartTime: "sig"})
+	if err != nil {
+		t.Fatalf("register anchor: %v", err)
+	}
+	stray := &Thread{
+		ThreadID:    "thr-stray-inscribed",
+		AgentID:     "claude-test",
+		Surface:     "claude",
+		Status:      ThreadStatusActive,
+		PID:         9003,
+		MachineID:   anchor.MachineID,
+		CurrentItem: "item-in-flight",
+		LastSeenAt:  anchor.LastSeenAt.Add(-time.Minute),
+		StartedAt:   anchor.StartedAt.Add(-time.Minute),
+	}
+	reg, _ := LoadThreadRegistry(tmp)
+	reg.Threads[stray.ThreadID] = stray
+	if err = SaveThreadRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveThreadRegistry (setup): %v", err)
+	}
+
+	retired, err := ReapStrayThreads(tmp)
+	if err != nil {
+		t.Fatalf("ReapStrayThreads: %v", err)
+	}
+	if len(retired) != 1 {
+		t.Fatalf("want the stray retired, got %d", len(retired))
+	}
+	if len(*got) != 1 {
+		t.Fatalf("a retired salvageable stray must inscribe exactly once, got %d", len(*got))
+	}
+	if (*got)[0]["thread_id"] != stray.ThreadID {
+		t.Errorf("inscribed the wrong thread: %v", (*got)[0])
+	}
+	// prior_status must be the PRE-mutation status: the payload is computed in the
+	// sweep loop, and deferring only the write is what keeps this honest.
+	if (*got)[0]["prior_status"] != string(ThreadStatusActive) {
+		t.Errorf("prior_status = %q, want %q — payload was computed after mutation",
+			(*got)[0]["prior_status"], ThreadStatusActive)
+	}
+}

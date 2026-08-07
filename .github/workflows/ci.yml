@@ -120,6 +120,21 @@ jobs:
           go build -o sirsi ./cmd/sirsi/
           ./sirsi adr audit --docs docs --allow 13,16,46,54
 
+      # BEHAVIORAL guard — it BUILDS and RUNS the menubar binary, so unlike its
+      # structural sibling (check-font-scaling.sh, hosted runner) it needs the
+      # Swift toolchain and must live on this macOS job. The invariant is "a
+      # command-line question gets a command-line answer": the process must
+      # EXIT. app.run() blocks forever, so a launch and a correct exit are only
+      # distinguishable by running it and watching whether it terminates.
+      #
+      # This runner is the owner's own machine. The guard copies the binary to a
+      # non-matching name before running it, so a REGRESSED case (which does
+      # launch) cannot retire the operator's live menubar by executable-name
+      # match. A regression still costs a stray accessory process for up to 5s
+      # before the timeout reaps it; that is the honest price of testing this.
+      - name: menubar CLI flags (behavioral guard)
+        run: ./macapp/check-cli-flags.sh
+
       - name: Ma'at Pulse — Dynamic Metrics
         shell: bash
         run: |

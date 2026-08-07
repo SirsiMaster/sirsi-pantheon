@@ -46,9 +46,13 @@ func TestPlistContent_LeverShape(t *testing.T) {
 func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	root := t.TempDir()
 	writeLivenessTestAgents(t, root)
-	// Ensure the gemma probe reads "down": point HOME at an empty dir with no
-	// gemma-server.port, so probeGemma returns wedged deterministically.
-	t.Setenv("HOME", t.TempDir())
+	// Ensure the gemma probe reads "down": point HOME at a dir with no
+	// gemma-server.port, so probeGemma returns down deterministically.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// A down broker only alarms when it is INSTALLED — an absent plist is a
+	// deliberate retirement/quarantine and is suppressed (suppressGemmaDown).
+	installFakeBrokerPlist(t, home)
 	// Own store per test: Run dispatches through the router store now, and the
 	// package-level db would let a sibling test's alert dedupe this one away.
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
@@ -257,15 +261,21 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 	}
 }
 
-// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard.
+// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard for
+// the FALLBACK path: /health is unreachable, so the check falls back to RSS.
 // A broker with RSS below 1 GB cannot have model weights loaded — this is the
 // class that /health passes but generation probes see as wedged, and that a
 // restart cannot fix when the HF model cache is absent (2026-08-05 incident).
-// The RSS floor must fire BEFORE the generation probe so the detail message
+// The floor must fire BEFORE the generation probe so the detail message
 // clearly says "weights likely absent" instead of "restore — free memory."
 func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	old := getBrokerRSSFn()
 	t.Cleanup(func() { setBrokerRSSFn(old) })
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+
+	// /health unreachable — forces the RSS fallback path.
+	setBrokerMLXBytesFn(func() (int64, bool) { return 0, false })
 
 	// Stub a tiny RSS (100 MB — well below the 1 GB floor).
 	const tinyRSSKB = 100 * 1024 // 100 MB
@@ -290,6 +300,14 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	if !strings.Contains(detail, "restart will not fix") {
 		t.Errorf("detail should say restart will not fix, got: %s", detail)
 	}
+	// The bind that makes the const load-bearing: the self-healing duty in
+	// internal/router/gemmaliveness.go short-circuits on WeightsAbsentSentinel.
+	// Without this assertion, rewording the detail above leaves every test green
+	// while the production short-circuit silently stops firing (A35).
+	if !strings.Contains(detail, WeightsAbsentSentinel) {
+		t.Errorf("detail must embed WeightsAbsentSentinel (%q) or the router short-circuit breaks, got: %s",
+			WeightsAbsentSentinel, detail)
+	}
 	if called {
 		t.Error("generation probe should not be called when RSS is below the floor")
 	}
@@ -301,8 +319,11 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
 	old := getBrokerRSSFn()
 	t.Cleanup(func() { setBrokerRSSFn(old) })
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
 
-	setBrokerRSSFn(func(_ string) int64 { return 0 }) // pid file absent
+	setBrokerMLXBytesFn(func() (int64, bool) { return 0, false }) // /health unreachable too
+	setBrokerRSSFn(func(_ string) int64 { return 0 })             // pid file absent
 
 	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -314,6 +335,77 @@ func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
 	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
 	if got != GemmaHealthy {
 		t.Errorf("zero RSS (pid absent) with healthy server = %v (%s), want GemmaHealthy (fail-open)", got, detail)
+	}
+}
+
+// TestProbeGemmaState_MLXFloor_RecognizesLargeAllocation is the R6 regression
+// guard (PRD SNE_HETEROGENEOUS_COMPUTE.md, sirsi-pantheon-fabric): a 30 GB+
+// Metal allocation, reported via mlx_active_bytes, MUST be recognized as a
+// loaded model — even though RSS for the same broker was measured at 4.2 GB
+// (a 27 GB gap). Before this fix, a check that floored on RSS could not tell
+// this state apart from "weights absent" at all; this proves the mlx_active_bytes
+// signal is read and is authoritative over the (here, misleadingly tiny) RSS.
+func TestProbeGemmaState_MLXFloor_RecognizesLargeAllocation(t *testing.T) {
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+
+	// Measured 2026-08-06: mlx_active_bytes 24.9-31.4 GB. Use a value on the
+	// high end of that range, in bytes.
+	const measuredMLXBytes = int64(31_400_000_000) // ~31.4 GB
+	setBrokerMLXBytesFn(func() (int64, bool) { return measuredMLXBytes, true })
+	// RSS for the SAME broker, measured the same day: 4.2 GB. If the check were
+	// still RSS-floored this would be misread as comfortably "loaded" only by
+	// accident (4.2 GB > 1 GB floor) — the point of this test is that the
+	// mlx_active_bytes path is what's actually consulted, never RSS, when
+	// /health is reachable.
+	const measuredRSSKB = int64(4_200_000) // ~4.2 GB in KB
+	setBrokerRSSFn(func(_ string) int64 { return measuredRSSKB })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaHealthy {
+		t.Errorf("30GB+ mlx_active_bytes = %v (%s), want GemmaHealthy — a large Metal allocation must not read as weights-absent", got, detail)
+	}
+	if strings.Contains(detail, "weight floor") {
+		t.Errorf("detail should not mention the weight floor for a 30GB+ allocation, got: %s", detail)
+	}
+}
+
+// TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation mirrors
+// TestProbeGemmaState_RSSFloor but for the PRIMARY path: /health IS reachable
+// and reports a small mlx_active_bytes — the weight-floor check must fire from
+// that number, not from RSS.
+func TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation(t *testing.T) {
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+
+	const tinyMLXBytes = int64(50 * 1024 * 1024) // 50 MB — well below the 1 GB floor
+	setBrokerMLXBytesFn(func() (int64, bool) { return tinyMLXBytes, true })
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaWedged {
+		t.Errorf("tiny mlx_active_bytes = %v (%s), want GemmaWedged", got, detail)
+	}
+	if !strings.Contains(detail, "mlx_active_bytes") {
+		t.Errorf("detail should cite mlx_active_bytes, got: %s", detail)
+	}
+	if called {
+		t.Error("generation probe should not be called when mlx_active_bytes is below the floor")
 	}
 }
 
@@ -341,8 +433,9 @@ func TestRecipientFor(t *testing.T) {
 func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	root := t.TempDir()
 	writeLivenessTestAgents(t, root)
-	home := t.TempDir() // no gemma-server.port → probeGemma reads wedged
+	home := t.TempDir() // no gemma-server.port → probeGemma reads down
 	t.Setenv("HOME", home)
+	installFakeBrokerPlist(t, home) // installed, so the down broker alarms
 	t.Setenv(routercfg.StoreWakeEnv, "1")
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
@@ -629,5 +722,48 @@ func TestRightSizeAdvice_MeasuredPathNoDoubling(t *testing.T) {
 	// 20 GB available: 14+4=18 ≤ 20 → model fits, no advice.
 	if got := rightSizeAdvice(home, 20.0); got != "" {
 		t.Errorf("measured path must use modelGB+4 (18 ≤ 20): got advice %q", got)
+	}
+}
+
+// TestSuppressGemmaDown pins A35 scoping: a GemmaDown probe raises a finding
+// only when the broker is actually installed. Both directions are exercised —
+// the suppression AND the regression where a real outage still alarms.
+func TestSuppressGemmaDown(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       GemmaStatus
+		plistPresent bool
+		want         bool
+	}{
+		{"down and uninstalled — deliberate, suppress", GemmaDown, false, true},
+		{"down but installed — real outage, must alarm", GemmaDown, true, false},
+		{"wedged and uninstalled — process runs, must alarm", GemmaWedged, false, false},
+		{"wedged and installed — must alarm", GemmaWedged, true, false},
+		{"healthy and uninstalled — never a finding either way", GemmaHealthy, false, false},
+		{"busy and uninstalled — never a finding either way", GemmaBusy, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := suppressGemmaDown(tc.status, tc.plistPresent); got != tc.want {
+				t.Errorf("suppressGemmaDown(%v, plist=%v) = %v, want %v",
+					tc.status, tc.plistPresent, got, tc.want)
+			}
+		})
+	}
+}
+
+// installFakeBrokerPlist puts a gemma-broker LaunchAgent plist under home so
+// probeGemma treats a down broker as a real outage. Without it the probe reads
+// the absence as a deliberate retirement and suppresses the finding, which is
+// the correct production behavior but makes an outage test vacuous.
+func installFakeBrokerPlist(t *testing.T, home string) {
+	t.Helper()
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir LaunchAgents: %v", err)
+	}
+	p := filepath.Join(dir, BrokerLabel+".plist")
+	if err := os.WriteFile(p, []byte("<plist/>"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", p, err)
 	}
 }

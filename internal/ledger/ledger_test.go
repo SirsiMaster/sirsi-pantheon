@@ -118,6 +118,39 @@ func TestSummarizeSemantics(t *testing.T) {
 	}
 }
 
+func TestFabricFromKeepsWorkMessagesAndRegistrationDistinct(t *testing.T) {
+	s := Snapshot{GeneratedAt: "2026-08-05T12:00:00Z", Agents: []Agent{
+		{AgentID: "agent-a", Items: []Item{{ID: "msg", AgeSeconds: 90}}, Tasks: []routerstore.Task{
+			{TaskID: "active", Status: "in-progress", Updated: "2026-08-05T11:59:00Z"},
+			{TaskID: "done", Status: "done"},
+		}},
+		{AgentID: "agent-b", Tasks: []routerstore.Task{{TaskID: "stalled", Status: "pending", Liveness: "stalled"}}},
+	}}
+	ns := &router.NodeStatus{
+		RegisteredAgents: []string{"agent-a", "agent-b"},
+		LiveThreads:      []router.ThreadSummary{{ThreadID: "thread-a", AgentID: "agent-a"}},
+		StaleThreads:     []router.ThreadSummary{{ThreadID: "thread-b", AgentID: "agent-b"}},
+		StrandedInbox:    []router.StrandedAgent{{AgentID: "agent-b", OpenItems: 2}},
+	}
+
+	b := FabricFrom(s, ns, "v1")
+	if b.Work.Total != 3 || b.Work.Done != 1 || b.Work.Open != 2 || b.Work.InProgress != 1 || b.Work.Stalled != 1 {
+		t.Fatalf("work = %+v", b.Work)
+	}
+	if b.Messages.Open != 1 || b.Messages.OldestAgeSeconds != 90 || b.Messages.Stranded != 2 {
+		t.Fatalf("messages = %+v", b.Messages)
+	}
+	if len(b.Lanes) != 2 || b.Lanes[0].State != "WORKING" || b.Lanes[1].State != "IDLE with work" {
+		t.Fatalf("lanes = %+v", b.Lanes)
+	}
+	if !b.Lanes[0].Registered.Router || !b.Lanes[0].Registered.Thread || !b.Lanes[0].Registered.Ledger {
+		t.Fatalf("registration = %+v", b.Lanes[0].Registered)
+	}
+	if b.Health.RAMPct != nil || b.Health.Swap != nil || b.Health.GitDirty != nil || len(b.Health.Issues) != 1 {
+		t.Fatalf("health must preserve unknown values and stale issue: %+v", b.Health)
+	}
+}
+
 func TestDependencyCycleAndMissingFailClosed(t *testing.T) {
 	byID := map[string]work.Item{
 		"a": {ID: "a", Status: "open", BlockedBy: "b"},

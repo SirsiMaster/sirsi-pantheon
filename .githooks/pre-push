@@ -225,6 +225,19 @@ if ! go build ./... 2>/dev/null; then
 fi
 
 # ── 5. Tests — diff-based or full depending on depth ────────────────
+# Tests run against the WORKING TREE, not the sha being pushed. An uncommitted
+# file marks the Go VCS stamp DIRTY, which makes routerstore refuse its v0→v1
+# test migration — surfacing as ~6 unrelated cmd/sirsi failures that have
+# nothing to do with the pushed commit. Name the cause before it costs an hour.
+DIRTY_TREE="$(git status --porcelain)"
+if [ -n "$DIRTY_TREE" ]; then
+    echo "  ⚠️  Working tree is DIRTY — tests below run on THIS tree, not the pushed sha."
+    echo "     A dirty tree stamps the build DIRTY; routerstore then refuses its test"
+    echo "     migration and cmd/sirsi tests fail for reasons unrelated to your commit."
+    echo "     Commit or stash before reading any failure below as a real regression:"
+    echo "$DIRTY_TREE" | sed 's/^/       /'
+fi
+
 if [ "$DEPTH" = "deep" ]; then
     # Deep: full test suite (same as CI)
     echo "  🧪 Running full test suite..."

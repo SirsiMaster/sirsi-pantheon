@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -44,11 +45,61 @@ const (
 	EnvConsumerRoot  = "SIRSI_ROUTER_ROOT"
 )
 
+// EnvGOMAXPROCS is the standard Go env var consumer.go caps by default on
+// every SPAWNED (command-mode) consumer — see consumerGOMAXPROCS.
+const EnvGOMAXPROCS = "GOMAXPROCS"
+
+// consumerGOMAXPROCS is the default GOMAXPROCS cap applied to a spawned
+// consumer's environment (R7/G6). Measured 2026-08-06: two workers each
+// fanning `go test`/`go build` out to GOMAXPROCS=NCPU on an 18-core host
+// produced 10 concurrent compile/test procs and load average 36 — 2x
+// oversubscription from just THREE live lanes. `go build`/`go test` both
+// default their own `-p` parallelism to GOMAXPROCS, so setting it here alone
+// bounds compiler/test fan-out without every consumer hand-writing `-p 2
+// -parallel 2`. Configurable via SetConsumerGOMAXPROCS.
+var consumerGOMAXPROCS = 4
+
+// SetConsumerGOMAXPROCS overrides the default GOMAXPROCS cap for spawned
+// consumers. n <= 0 is ignored (keeps the previous value).
+func SetConsumerGOMAXPROCS(n int) {
+	if n > 0 {
+		consumerGOMAXPROCS = n
+	}
+}
+
+// capGOMAXPROCS appends the GOMAXPROCS cap to env unless the operator's own
+// cfg.Env already declares it — an explicit override is respected, not raced.
+func capGOMAXPROCS(env []string, cfgEnv map[string]string) []string {
+	if _, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
+		return env
+	}
+	return append(env, EnvGOMAXPROCS+"="+strconv.Itoa(consumerGOMAXPROCS))
+}
+
 const (
 	ConsumerModeCommand        = "command"
 	ConsumerModeResident       = "resident"
 	consumerHealthCheckTimeout = 5 * time.Second
 )
+
+// DeclaresResidentConsumer reports whether cfg's declared consumer is a
+// RESIDENT one — an external worker that is health-checked rather than spawned.
+//
+// This is the authorization boundary for publishing consumer capability from
+// outside the wake loop (`thread register --consumer-capable`). It reads the
+// DECLARATION only: unlike ResolveConsumer it does not run the health check,
+// because the caller publishing the capability IS the live worker and its own
+// heartbeat is stronger evidence than a health probe (A33/PR #389).
+//
+// It exists so "resident" has exactly one definition. Re-deriving it in the CLI
+// would be a second answer to the same question, which is how the two drift.
+func (cfg AgentConfig) DeclaresResidentConsumer() bool {
+	switch strings.TrimSpace(cfg.Consumer.Mode) {
+	case ConsumerModeResident, "external/resident":
+		return true
+	}
+	return false
+}
 
 // ConsumerConfig declares how an agent's router inbox is actually DRAINED.
 //
@@ -155,6 +206,7 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 	for k, v := range cfg.Env {
 		env = append(env, k+"="+v)
 	}
+	env = capGOMAXPROCS(env, cfg.Env)
 
 	// A declared cwd that does not exist is WORSE than no consumer at all.
 	// RunWakeLoop would persist ConsumerCapable=true, every cmd.Start would fail
@@ -175,17 +227,78 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 	return &ResolvedConsumer{Argv: argv, Env: env, Cwd: cfg.Cwd}, ""
 }
 
+// residentConsumerThreadFn resolves whether the resident agent has PUBLISHED a
+// live, consumer-capable thread of its own. Indirected for tests.
+var residentConsumerThreadFn = residentConsumerThread
+
+// residentConsumerThread reports whether agentID owns a thread that is active,
+// heartbeat-fresh, and self-declared ConsumerCapable — i.e. the resident is
+// publishing its own capability rather than having it inferred on its behalf.
+func residentConsumerThread(routerRoot, agentID string, now time.Time) (bool, string) {
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil || reg == nil {
+		// Fail CLOSED. An unreadable registry is not evidence of a live
+		// consumer, and crediting the lane here would recreate exactly the
+		// false-green this function exists to remove.
+		return false, "thread registry unreadable — cannot confirm a published consumer"
+	}
+	sawThread := false
+	for _, t := range reg.Threads {
+		if t == nil || t.AgentID != agentID {
+			continue
+		}
+		sawThread = true
+		if t.Status != ThreadStatusActive {
+			continue
+		}
+		if !t.ConsumerCapable {
+			continue
+		}
+		if now.Sub(t.LastSeenAt) > DefaultThreadStaleAfter {
+			continue
+		}
+		return true, ""
+	}
+	if !sawThread {
+		return false, "resident published no thread — it must register a consumer-capable thread and heartbeat it"
+	}
+	return false, "resident's thread is not an active, heartbeat-fresh, consumer-capable record — it stopped publishing, so it is no longer credited"
+}
+
+// resolveResidentConsumer credits a resident lane ONLY on evidence the resident
+// itself published (H6, follow-up to PR #389).
+//
+// What this replaces: the resolver used to run `consumer.health_check` and treat
+// a zero exit as proof of a live consumer. gemma-pantheon's declared check was
+// `sirsi-gemma-worker.sh --version` — that proves a binary can print a string.
+// It passes identically whether the worker is draining an inbox or was stopped
+// an hour ago, so the wake watcher was BORROWING capability on the resident's
+// behalf and could never withdraw the credit. A probe that cannot go stale is
+// not liveness (A35: the check's scope was "a file exists and exits 0"; its
+// claim was "a consumer is alive").
+//
+// What replaces it: the resident must publish its OWN thread — active,
+// heartbeat-fresh, ConsumerCapable — exactly as every other consumer surface
+// does. Capability now decays on its own: a resident that stops heartbeating
+// stops being credited within DefaultThreadStaleAfter, with no probe to fool.
+//
+// health_check is retained as an OPTIONAL, secondary signal only. It may
+// disqualify (a declared check that fails is still a real negative), but it can
+// never by itself qualify a lane.
 func resolveResidentConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, string) {
 	c := cfg.Consumer
 	if len(c.Command) > 0 {
-		return nil, "consumer.mode resident must not declare consumer.command — resident workers are health-checked, not spawned"
+		return nil, "consumer.mode resident must not declare consumer.command — a resident publishes its own thread, it is not spawned"
 	}
 	if c.Interactive {
 		return nil, "consumer.interactive is set — a REPL is a session, not an inbox consumer"
 	}
-	if len(c.HealthCheck) == 0 {
-		return nil, "consumer.mode resident requires consumer.health_check to prove the external worker is alive"
+
+	// The published thread is the ONLY thing that can qualify a resident.
+	if ok, why := residentConsumerThreadFn(routerRoot, cfg.ID, time.Now()); !ok {
+		return nil, "resident consumer not credited: " + why
 	}
+
 	subst := func(s string) string {
 		s = strings.ReplaceAll(s, consumerAgentPlaceholder, cfg.ID)
 		return strings.ReplaceAll(s, consumerRootPlaceholder, routerRoot)
@@ -194,12 +307,18 @@ func resolveResidentConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsu
 	for _, a := range c.HealthCheck {
 		health = append(health, subst(a))
 	}
-	if _, err := exec.LookPath(health[0]); err != nil {
-		return nil, fmt.Sprintf("resident consumer health_check command %q not found in PATH", health[0])
+	// Optional and disqualifying-only: if a check is declared and fails, that is
+	// a real negative worth honoring. Its ABSENCE is no longer a refusal, and
+	// its SUCCESS is no longer a qualification.
+	if len(health) > 0 {
+		if _, err := exec.LookPath(health[0]); err != nil {
+			return nil, fmt.Sprintf("resident consumer health_check command %q not found in PATH", health[0])
+		}
+		if err := runConsumerHealthCheck(health); err != nil {
+			return nil, fmt.Sprintf("resident consumer health_check failed: %v", err)
+		}
 	}
-	if err := runConsumerHealthCheck(health); err != nil {
-		return nil, fmt.Sprintf("resident consumer health_check failed: %v", err)
-	}
+
 	env := append(os.Environ(),
 		EnvConsumerAgent+"="+cfg.ID,
 		EnvConsumerRoot+"="+routerRoot,

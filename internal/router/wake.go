@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -604,6 +605,44 @@ type consumerRun struct {
 	pid  int
 	done chan struct{}
 	err  error
+	tail *ringTail
+}
+
+// consumerTailBytes bounds what a failing consumer can put in the log. The
+// blackhole this replaces produced a 1.4 MB log carrying only "exit status 1";
+// wiring the raw transcript through would trade no information for too much, so
+// the last few KB — where the fatal line lives — is what gets kept.
+const consumerTailBytes = 4096
+
+// ringTail keeps only the last max bytes written to it.
+type ringTail struct {
+	mu  sync.Mutex
+	buf []byte
+	max int
+}
+
+func (t *ringTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = t.buf[len(t.buf)-t.max:]
+	}
+	return len(p), nil
+}
+
+// String returns the captured tail, or a marker when nothing was captured —
+// silence is itself a finding and must not read as "no output field".
+func (t *ringTail) String() string {
+	if t == nil {
+		return "(not captured)"
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if s := strings.TrimSpace(string(t.buf)); s != "" {
+		return s
+	}
+	return "(no output)"
 }
 
 // running reports whether the dispatched consumer is still alive.
@@ -619,6 +658,74 @@ func (r *consumerRun) running() bool {
 	}
 }
 
+// fabricDispatchQuarantined reports (and records, R7/G6) whether the operator
+// has stood the whole fabric down via `sirsi router quarantine`. Checked right
+// before every consumer dispatch so the marker holds against the loop's own
+// restart, not just against the launchd-level revivers (fabricquarantine.go).
+func fabricDispatchQuarantined(agentID string, depth int) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false // cannot resolve home — fail open, same stance as an unreadable load average
+	}
+	if !IsFabricQuarantined(home) {
+		return false
+	}
+	log.Printf("wake-loop %s: dispatch held — fabric quarantined (inbox depth %d)", agentID, depth)
+	return true
+}
+
+// fabricDispatchOverloaded reports (and records, R7/G6) whether load average
+// is at or above the core count, in which case dispatch defers this pass and
+// retries next tick rather than piling another lane on an already-saturated
+// host (incident 2026-08-06: load average 36 on 18 cores from just 3 lanes).
+func fabricDispatchOverloaded(agentID string, depth int) bool {
+	hold, load, cores := shouldDeferDispatch()
+	if !hold {
+		return false
+	}
+	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — load average %.2f >= %d cores (inbox depth %d)",
+		agentID, load, cores, depth)
+	log.Print(msg)
+	RecordHeal(msg)
+	return true
+}
+
+// loginShellArgv wraps argv so the consumer runs through the operator's login
+// shell instead of being exec'd directly.
+//
+// launchd execs a program with ONLY the plist's EnvironmentVariables and no
+// shell at all, so none of the shell startup files run. The consumer CLIs take
+// their credentials from what those files export (~/.zshenv), so a directly
+// exec'd consumer reported "Not logged in - Please run /login" and exited 1 on
+// every single dispatch: 3907 of 4161 across eight lanes, while the very same
+// command run by a human in a terminal succeeded every time. The login state
+// was never broken; the environment carrying it simply never reached the child.
+//
+// argv is passed as POSITIONAL PARAMETERS and never interpolated into the
+// script text. That is load-bearing, not stylistic: the consumer prompt
+// contains backticks and $(...) that a naive `-lc "<command>"` would execute at
+// dispatch. `exec` then replaces the shell, so the pid the caller tracks is
+// still the consumer itself and the setsid detach is unchanged.
+//
+// Fails OPEN — an unset or unusable SHELL dispatches exactly as before, the
+// same stance as an unreadable load average.
+func loginShellArgv(argv []string) []string {
+	if len(argv) == 0 {
+		return argv
+	}
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		return argv
+	}
+	// Executable bit included deliberately: exec.Command on a non-executable
+	// SHELL fails the dispatch outright, which would be failing CLOSED — the
+	// opposite of the stance this function documents.
+	if info, err := os.Stat(shell); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		return argv
+	}
+	return append([]string{shell, "-lc", `exec "$@"`, shell}, argv...)
+}
+
 // dispatchConsumer starts a resolved consumer and returns a handle that
 // completes when the process exits.
 //
@@ -630,14 +737,41 @@ func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
 	if rc.Resident {
 		return nil, fmt.Errorf("resident consumer is external and must not be spawned")
 	}
-	cmd := exec.Command(rc.Argv[0], rc.Argv[1:]...)
+	spawn := loginShellArgv(rc.Argv)
+	cmd := exec.Command(spawn[0], spawn[1:]...)
 	cmd.Dir = rc.Cwd
 	cmd.Env = rc.Env
 	cmd.SysProcAttr = detachedSysProcAttr()
+
+	// Capture a bounded tail of the child's output. Leaving Stdout/Stderr nil
+	// makes exec.Cmd wire both to /dev/null, which destroyed the cause of 94% of
+	// fleet-wide dispatch failures at the source (3843/4082 exits with nothing
+	// but "exit status 1").
+	//
+	// An *os.File is handed to the child DIRECTLY — exec starts no copier
+	// goroutine for it and cmd.Wait does not block on one. That matters here: the
+	// consumer is setsid-detached and may leave grandchildren holding the fd, and
+	// with an io.Writer sink Wait would hang until the LAST holder closed it,
+	// pinning running() true forever and silently killing re-dispatch.
+	pr, pw, perr := os.Pipe()
+	if perr != nil {
+		return nil, perr
+	}
+	cmd.Stdout = pw
+	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
+		pw.Close()
+		pr.Close()
 		return nil, err
 	}
-	run := &consumerRun{pid: cmd.Process.Pid, done: make(chan struct{})}
+	pw.Close() // the child holds the only write end now; the reader sees EOF when it goes
+	tail := &ringTail{max: consumerTailBytes}
+	go func() {
+		defer pr.Close()
+		_, _ = io.Copy(tail, pr)
+	}()
+
+	run := &consumerRun{pid: cmd.Process.Pid, done: make(chan struct{}), tail: tail}
 	go func() {
 		run.err = cmd.Wait()
 		close(run.done)
@@ -783,12 +917,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		//
 		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
 		// would treat an unreadable inbox as an empty one.
-		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() {
+		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) {
 			// Report the previous run's exit before starting another, so a consumer
 			// that is failing fast leaves a trail rather than looking like progress.
 			if run != nil && run.err != nil {
-				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v",
-					agentID, run.pid, run.err)
+				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v — last output: %s",
+					agentID, run.pid, run.err, run.tail)
 			}
 			next, derr := dispatchConsumer(consumer)
 			if derr != nil {

@@ -1293,35 +1293,33 @@ func checkAppCrashes(report *DoctorReport) {
 }
 
 // checkSirsiProcesses checks for running Sirsi daemons and their health.
+//
+// Sized by memSize() (physical footprint, broker-truth-corrected for the
+// load-bearing local-model broker — see brokerhealth.go), not raw RSS. This
+// check used to parse `ps -axo pid,rss,comm` directly, which is exactly the
+// class R6 (PRD SNE_HETEROGENEOUS_COMPUTE.md) forbids: the broker binary is
+// `sirsi-inference`, so its name matches "sirsi" here, and a raw-RSS total
+// would have understated it by up to the measured 27 GB.
 func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
-	out, err := p.Command("ps", "-axo", "pid,rss,comm")
+	procs, err := getProcessListWith(p)
 	if err != nil {
 		return
 	}
 
 	pantheonProcs := map[string]struct {
-		pid int
-		rss int64
+		pid  int
+		size int64
 	}{}
 
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for _, pr := range procs {
+		if !strings.Contains(strings.ToLower(pr.Command), "sirsi") {
 			continue
 		}
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "sirsi") {
-			fields := strings.Fields(line)
-			if len(fields) >= 3 {
-				pid, _ := strconv.Atoi(fields[0])
-				rss, _ := strconv.ParseInt(fields[1], 10, 64)
-				name := filepath.Base(strings.Join(fields[2:], " "))
-				pantheonProcs[name] = struct {
-					pid int
-					rss int64
-				}{pid: pid, rss: rss * 1024}
-			}
-		}
+		name := filepath.Base(pr.Command)
+		pantheonProcs[name] = struct {
+			pid  int
+			size int64
+		}{pid: pr.PID, size: memSize(pr)}
 	}
 
 	finding := DiagnosticFinding{
@@ -1333,19 +1331,19 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 		finding.Message = "No Sirsi background processes running"
 	} else {
 		var details []string
-		var totalRSS int64
+		var totalSize int64
 		for name, info := range pantheonProcs {
-			details = append(details, fmt.Sprintf("%s (PID %d, %s)", name, info.pid, FormatBytes(info.rss)))
-			totalRSS += info.rss
+			details = append(details, fmt.Sprintf("%s (PID %d, %s)", name, info.pid, FormatBytes(info.size)))
+			totalSize += info.size
 		}
 		finding.Detail = strings.Join(details, " | ")
 
-		if totalRSS > 500*1024*1024 {
+		if totalSize > 500*1024*1024 {
 			finding.Severity = SeverityWarn
-			finding.Message = fmt.Sprintf("%d Sirsi process(es) using %s total", len(pantheonProcs), FormatBytes(totalRSS))
+			finding.Message = fmt.Sprintf("%d Sirsi process(es) using %s total", len(pantheonProcs), FormatBytes(totalSize))
 		} else {
 			finding.Severity = SeverityOK
-			finding.Message = fmt.Sprintf("%d Sirsi process(es) healthy (%s total)", len(pantheonProcs), FormatBytes(totalRSS))
+			finding.Message = fmt.Sprintf("%d Sirsi process(es) healthy (%s total)", len(pantheonProcs), FormatBytes(totalSize))
 		}
 	}
 

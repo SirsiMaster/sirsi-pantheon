@@ -139,6 +139,28 @@ func LoadBearingPIDs() map[int]bool {
 // Every kill/suspend path MUST consult this before acting on a PID.
 func IsLoadBearing(pid int) bool { return LoadBearingPIDs()[pid] }
 
+// BrokerPID returns the live PID of the local-model broker (gemma-server.pid)
+// only, or 0 if the pidfile is absent or the process is not alive. Use this
+// instead of LoadBearingPIDs() when the operation is specific to the BROKER
+// (e.g. reading mlx_active_bytes from /health) — LoadBearingPIDs() includes
+// the worker PID too, and scoping a broker-only check to the full kill-
+// protection set overstates the worker's footprint by ~27 GB (Rule A35).
+func BrokerPID() int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-server.pid"))
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 || !pidAlive(pid) {
+		return 0
+	}
+	return pid
+}
+
 // pidAlive reports whether pid exists (signal 0 probes without delivering).
 func pidAlive(pid int) bool {
 	if pid <= 0 {
