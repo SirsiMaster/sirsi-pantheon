@@ -182,6 +182,52 @@ func TestCloseItemRefusesOwnerRecipient(t *testing.T) {
 	}
 }
 
+// TestDismissOwnerItem covers the follow-up claude-home raised against
+// TestCloseItemRefusesOwnerRecipient: with CloseItem's owner guard
+// unconditional and the owner alias absent from agents.json (so
+// ValidateAgent rejects it as an actor), nothing could close an
+// owner-addressed item at all. DismissOwnerItem is the narrow exemption —
+// scoped to require BOTH the actor and the item's recipient to resolve to an
+// owner alias, so it cannot become a general close:any bypass.
+func TestDismissOwnerItem(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "owner", "pick a reviewer", "decision", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A non-owner actor is refused even though it would pass CloseItem's
+	// close:any check — dismiss is not a relabeled CloseItem.
+	if err := f.DismissOwnerItem("supervisor", res.ID, "no"); err == nil ||
+		!strings.Contains(err.Error(), "requires an owner alias") {
+		t.Fatalf("non-owner actor error = %v, want owner-alias requirement", err)
+	}
+	// An owner alias may not use dismiss to close a non-owner item — that
+	// would make it a backdoor around CloseItem's actor/capability rules.
+	other, err := f.Send("a", "b", "ordinary item", "review", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.DismissOwnerItem("owner", other.ID, "no"); err == nil ||
+		!strings.Contains(err.Error(), "not the owner") {
+		t.Fatalf("owner-actor-on-non-owner-item error = %v, want recipient guard", err)
+	}
+	// The legacy "user" alias works too — IsOwnerRecipient covers it.
+	if err := f.DismissOwnerItem("user", res.ID, "reviewed, no action needed"); err != nil {
+		t.Fatalf("owner dismiss of their own item failed: %v", err)
+	}
+	inbox, err := f.Inbox("owner")
+	if err != nil || len(inbox) != 0 {
+		t.Fatalf("owner item should be closed after dismiss: inbox=%+v err=%v", inbox, err)
+	}
+	closed, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Result != "reviewed, no action needed" {
+		t.Fatalf("dismiss result = %q, want the literal result (no delegated-actor wrapping)", closed.Result)
+	}
+}
+
 func TestValidateAgentAcceptsExplicitCLISpawn(t *testing.T) {
 	f := testFacade(t)
 	if err := f.ValidateAgent("recipient", "spawnable"); err != nil {
