@@ -5,16 +5,28 @@ import (
 	"time"
 )
 
+// ReconcileCounters is what one reconcile pass actually MUTATED. It is split
+// out of ReconcileReport so a surface can carry the repairs without also
+// duplicating State (which every consumer already reads separately). Embedded
+// below, so both field access (report.FalseDoneRejected) and the report's JSON
+// shape are unchanged.
+type ReconcileCounters struct {
+	ExpiredItemLeases       int `json:"expired_item_leases"`
+	ExpiredTaskLeases       int `json:"expired_task_leases"`
+	RepairedNonActiveLeases int `json:"repaired_non_active_leases"`
+	ExpiredWakeLeases       int `json:"expired_wake_leases"`
+	RequirementTasksCreated int `json:"requirement_tasks_created"`
+	WakeEventsCreated       int `json:"wake_events_created"`
+	// FalseDoneRejected counts lanes whose `done` was reverted for carrying no
+	// evidence — ADR-057's evidence-backed completion gate FIRING. A gate nobody
+	// can observe firing cannot be shown to work, so this must reach a surface.
+	FalseDoneRejected int `json:"false_done_rejected"`
+}
+
 type ReconcileReport struct {
-	Agent                   string               `json:"agent"`
-	ExpiredItemLeases       int                  `json:"expired_item_leases"`
-	ExpiredTaskLeases       int                  `json:"expired_task_leases"`
-	RepairedNonActiveLeases int                  `json:"repaired_non_active_leases"`
-	ExpiredWakeLeases       int                  `json:"expired_wake_leases"`
-	RequirementTasksCreated int                  `json:"requirement_tasks_created"`
-	WakeEventsCreated       int                  `json:"wake_events_created"`
-	FalseDoneRejected       int                  `json:"false_done_rejected"`
-	State                   LaneOperationalState `json:"state"`
+	Agent string `json:"agent"`
+	ReconcileCounters
+	State LaneOperationalState `json:"state"`
 }
 
 // ReconcileOperationalState mechanically repairs the SQLite half of the
