@@ -67,22 +67,37 @@ func SetConsumerGOMAXPROCS(n int) {
 	}
 }
 
-// capGOMAXPROCS strips any inherited GOMAXPROCS from env, then appends the
-// authoritative value: the operator's explicit override if present, otherwise
-// the default cap. Stripping first prevents os.Environ() from racing the
-// operator value when both land in the same slice.
+// capGOMAXPROCS appends the GOMAXPROCS cap to env unless the operator's own
+// cfg.Env already declares it — an explicit override is respected, not raced.
 func capGOMAXPROCS(env []string, cfgEnv map[string]string) []string {
-	prefix := EnvGOMAXPROCS + "="
+	if _, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
+		return env
+	}
+	return setEnv(env, EnvGOMAXPROCS, strconv.Itoa(consumerGOMAXPROCS))
+}
+
+// setEnv sets key=value in env, replacing any existing entry for key rather
+// than appending a duplicate.
+//
+// os.Environ() (the base of ResolveConsumer's env) already carries whatever
+// this process inherited from its own environment — on this fleet that
+// includes GOMAXPROCS=4, exported host-wide by the fork-storm fix
+// (backpressure.go). A bare append put the operator's cfg.Env override AFTER
+// that inherited entry, so the envp array a spawned consumer received carried
+// GOMAXPROCS twice — and getenv() on Linux/glibc returns the FIRST match, so
+// the inherited "4" silently won every time, regardless of what the operator
+// declared. capGOMAXPROCS's own "explicit override is respected" comment was
+// the claim; this dedup is what makes the scope actually match it.
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
 	out := make([]string, 0, len(env)+1)
 	for _, e := range env {
-		if !strings.HasPrefix(e, prefix) {
-			out = append(out, e)
+		if strings.HasPrefix(e, prefix) {
+			continue
 		}
+		out = append(out, e)
 	}
-	if v, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
-		return append(out, EnvGOMAXPROCS+"="+v)
-	}
-	return append(out, EnvGOMAXPROCS+"="+strconv.Itoa(consumerGOMAXPROCS))
+	return append(out, key+"="+value)
 }
 
 const (
@@ -213,7 +228,7 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 		EnvConsumerRoot+"="+routerRoot,
 	)
 	for k, v := range cfg.Env {
-		env = append(env, k+"="+v)
+		env = setEnv(env, k, v)
 	}
 	env = capGOMAXPROCS(env, cfg.Env)
 

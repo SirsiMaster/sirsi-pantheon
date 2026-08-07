@@ -239,6 +239,71 @@ func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
 	}
 }
 
+// A launchctl kickstart -k (or a KeepAlive crash-restart) replaces the
+// wake-loop PROCESS, but Setsid-without-Release means the dispatched consumer
+// is a detached child of the OS, not of that process — it keeps running. The
+// in-memory `run` variable that tracked it dies with the old process, so a
+// naive restart starts fresh with run == nil and, seeing depth > 0, dispatches
+// a duplicate on top of the one still working. Observed in production
+// 2026-08-07: two live claude-finalwishes sessions 65s apart, ~480MB each.
+//
+// A restarted loop must instead recognize the still-running consumer via the
+// durable marker file and hold the slot, exactly as the non-restarted case
+// (TestNoSecondConsumerWhileFirstIsStillRunning) already does in-process.
+func TestRestartDoesNotDuplicateAStillRunningConsumer(t *testing.T) {
+	// Deterministic regardless of the host's ambient load — this test asserts
+	// dispatch-adoption behavior, not backpressure (backpressure_test.go covers
+	// that separately).
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	// Sleeps well past this test's lifetime: still working at every tick.
+	script := recordingConsumer(t, log, 5*time.Second)
+
+	root := wakeTestRoot(t, AgentConfig{
+		ID:       "restart-agent",
+		Type:     "worker",
+		Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}},
+	})
+	sendItem(t, root, "restart-agent", "work that outlives the loop restart")
+
+	// First loop: dispatches, then gets canceled — simulating the process being
+	// replaced — WITHOUT its child dying (a real detached process wouldn't).
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	done1 := make(chan error, 1)
+	go func() { done1 <- RunWakeLoop(ctx1, root, "restart-agent", 40*time.Millisecond) }()
+	awaitConsumerLines(t, log, 1) // first dispatch has provably landed
+	cancel1()
+	if err := <-done1; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("first RunWakeLoop: %v", err)
+	}
+
+	if _, err := os.Stat(consumerPIDFilePath(root, "restart-agent")); err != nil {
+		t.Fatalf("durable marker missing after dispatch: %v", err)
+	}
+
+	// Second loop: a fresh process (fresh `run == nil`) over the SAME root and
+	// agent id, exactly like a restart. The consumer from the first loop is
+	// still sleeping.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	done2 := make(chan error, 1)
+	go func() { done2 <- RunWakeLoop(ctx2, root, "restart-agent", 40*time.Millisecond) }()
+
+	time.Sleep(400 * time.Millisecond)
+	n := len(consumerLines(t, log))
+	cancel2()
+	if err := <-done2; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("second RunWakeLoop: %v", err)
+	}
+
+	if n != 1 {
+		t.Errorf("restart dispatched %d consumers total — want exactly 1 "+
+			"(the restarted loop must adopt the still-running consumer, not duplicate it)", n)
+	}
+}
+
 // Consumption is DECLARED, never inferred. Each refusal below was a way the
 // flag-heuristic version wrongly said yes.
 func TestResolveConsumerRefusesWhatIsNotAConsumer(t *testing.T) {

@@ -22,6 +22,32 @@
 //
 // Ported to Go on owner directive 2026-08-06: everything on this machine is Go
 // unless Python is required or genuinely better. Nothing here required Python.
+//
+// Live step burndown (owner directive 2026-08-07): "phase 0 task 1 xxx, yyy,
+// zzz, 0/100 steps complete" — the owner needs to SEE task progress land in
+// real time, not ask an agent for a status report. Two pieces, both already
+// present in the schema, neither requiring a migration:
+//
+//   - Phase-level burndown was ALREADY COMPUTED here (Phase.Total/Done/Active/
+//     Blocked/PctDone) and simply never rendered. index.html now has a
+//     "Phase burndown" section reading Payload.Board.Phases directly.
+//   - Task-level step burndown reuses the existing free-text Outline field —
+//     NOT Timeline, which is a real, already-validated day/owner/hours
+//     accounting log (routerstore rejects anything else written there; this
+//     was tried first and correctly bounced). An agent working a multi-step
+//     task writes `--outline @steps.json`, a JSON array of
+//     `{"id":"<stable-slug>","step":"<text>","done":true|false}`. `id` is
+//     required, not cosmetic: it's the stable handle a later
+//     `--outline @file` rewrite uses to flip one specific step, since text
+//     matching breaks the moment the wording changes. Steps done/total is
+//     DERIVED by the frontend from the array length, never a separate field.
+//   - This is a convention every actor (claude-*, codex-*, gemma) is expected
+//     to follow on multi-step work, not just claude-nexus — see the owner
+//     reporting standard in ~/.claude/CLAUDE.md (chart-first, ELI5 second).
+//     Deliberately NOT cited as "A32" here: this repo's own A32 is Load-
+//     Bearing Recognition (§2.29) — a different rule, same letter, in a
+//     different canon file. Citing it unqualified is exactly the collision
+//     class Rule A35 exists to prevent.
 package routerboard
 
 import (
@@ -193,6 +219,7 @@ type TaskDetail struct {
 	Agent            string        `json:"agent"`
 	Subject          string        `json:"subject"`
 	Status           string        `json:"status"`
+	Phase            string        `json:"phase"`
 	BlockedBy        *string       `json:"blocked_by"`
 	ResponsibleParty interface{}   `json:"responsible_party"`
 	Updated          string        `json:"updated"`
