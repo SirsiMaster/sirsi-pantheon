@@ -377,11 +377,33 @@ log "gemma-worker started (poll=${POLL}s, model=$DEFAULT_MODEL)"
 MYPID=$$
 PIDFILE="$HOME/.sirsi/gemma-worker.pid"
 echo "$MYPID" > "$PIDFILE"
-# ONE EXIT trap (bash keeps only the last per signal): clean the gen-stderr temp
-# AND reclaim the pidfile, but only if WE still own it — never clobber a newer
-# worker's token. (Folds in the earlier GEN_STDERR trap, which this line used to
-# silently overwrite.)
-trap 'rm -f "$GEN_STDERR"; [ "$(cat "$PIDFILE" 2>/dev/null)" = "$MYPID" ] && rm -f "$PIDFILE"' EXIT
+
+# CTR thread registration (A27 Heartbeat Loop Mandate): self-register so the
+# thread registry always reflects this worker, and heartbeat each loop tick.
+# Self-registration is authoritative over discover's adoption (ADR-024 §6): the
+# CLI register command kills any discover-spawned watch-router subprocess via
+# killRouterWatcher, so the registry-police never sees a stale bridge watcher
+# counting as loop evidence while the worker itself has stopped polling.
+# --anchor-pid $$ binds the thread to THIS worker's PID so the OS-truth reaper
+# (ADR-022) retires it correctly if we exit without calling `thread close`.
+THREAD_ID=""
+THREAD_ID=$(cd "$REPO" && "$SIRSI" thread register \
+  --agent gemma --surface worker --anchor-pid "$MYPID" --json 2>/dev/null \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('thread_id',''))" 2>/dev/null) || THREAD_ID=""
+if [ -n "$THREAD_ID" ]; then
+  log "registered thread $THREAD_ID"
+else
+  log "thread register skipped or failed — continuing without CTR thread"
+fi
+
+# ONE EXIT trap (bash keeps only the last per signal): clean the gen-stderr temp,
+# reclaim the pidfile (only if WE still own it — never clobber a newer worker's
+# token), and close our CTR thread so `sirsi thread list` shows it as closed
+# rather than waiting for the OS-truth reaper to retire it. (Folds in the earlier
+# GEN_STDERR trap, which this line used to silently overwrite.)
+trap 'rm -f "$GEN_STDERR"
+      [ "$(cat "$PIDFILE" 2>/dev/null)" = "$MYPID" ] && rm -f "$PIDFILE"
+      [ -n "$THREAD_ID" ] && (cd "$REPO" && "$SIRSI" thread close --thread "$THREAD_ID" >/dev/null 2>&1)' EXIT
 status_write "idle" "-"
 
 while true; do
@@ -393,6 +415,12 @@ while true; do
     log "superseded by worker $owner — stepping down (singleton)"
     exit 0
   fi
+  # Heartbeat: advance last_seen_at so `sirsi thread list` shows ⚠️ (stale-but-alive)
+  # only when this loop has actually gone quiet, not merely because heartbeat was
+  # never called. The OS-truth reaper keeps the 🟢↔️💀 correctness; this keeps the
+  # 🟢↔️⚠️ correctness. A29 WatcherSpec.HeartbeatIntervalS=60s; POLL=30s so every
+  # two ticks is within the heartbeat interval.
+  [ -n "$THREAD_ID" ] && (cd "$REPO" && "$SIRSI" thread heartbeat --thread "$THREAD_ID" >/dev/null 2>&1)
   # Pull open gemma items through the router FACADE (`router pull`), never by
   # globbing items/*.md: dispatch/facade.go stops writing item files when
   # StoreWake flips (SIRSI_ROUTER_STORE_WAKE) — a file-globbing worker would go
