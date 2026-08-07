@@ -73,7 +73,31 @@ func capGOMAXPROCS(env []string, cfgEnv map[string]string) []string {
 	if _, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
 		return env
 	}
-	return append(env, EnvGOMAXPROCS+"="+strconv.Itoa(consumerGOMAXPROCS))
+	return setEnv(env, EnvGOMAXPROCS, strconv.Itoa(consumerGOMAXPROCS))
+}
+
+// setEnv sets key=value in env, replacing any existing entry for key rather
+// than appending a duplicate.
+//
+// os.Environ() (the base of ResolveConsumer's env) already carries whatever
+// this process inherited from its own environment — on this fleet that
+// includes GOMAXPROCS=4, exported host-wide by the fork-storm fix
+// (backpressure.go). A bare append put the operator's cfg.Env override AFTER
+// that inherited entry, so the envp array a spawned consumer received carried
+// GOMAXPROCS twice — and getenv() on Linux/glibc returns the FIRST match, so
+// the inherited "4" silently won every time, regardless of what the operator
+// declared. capGOMAXPROCS's own "explicit override is respected" comment was
+// the claim; this dedup is what makes the scope actually match it.
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return append(out, key+"="+value)
 }
 
 const (
@@ -204,7 +228,7 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 		EnvConsumerRoot+"="+routerRoot,
 	)
 	for k, v := range cfg.Env {
-		env = append(env, k+"="+v)
+		env = setEnv(env, k, v)
 	}
 	env = capGOMAXPROCS(env, cfg.Env)
 

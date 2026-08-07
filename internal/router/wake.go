@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -612,6 +613,12 @@ type consumerRun struct {
 	// -1 means unknown and is scored as progress — an unreadable inbox must never
 	// quarantine a healthy lane. See madeProgress in dispatchgate.go.
 	depthAtDispatch int
+
+	// startedAt is set only on a run ADOPTED from the durable marker file
+	// (done == nil — this process never forked the child, so it cannot Wait
+	// on it). running() polls OS-truth liveness instead, recycle-guarded by
+	// this start signature.
+	startedAt string
 }
 
 // consumerTailBytes bounds what a failing consumer can put in the log. The
@@ -655,6 +662,9 @@ func (t *ringTail) String() string {
 func (r *consumerRun) running() bool {
 	if r == nil {
 		return false
+	}
+	if r.done == nil {
+		return PIDStateOf(r.pid, r.startedAt) == PIDAlive
 	}
 	select {
 	case <-r.done:
@@ -785,6 +795,63 @@ func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
 	return run, nil
 }
 
+// consumerPIDFilePath is the durable marker for the consumer this wake-loop
+// last dispatched for agentID (design constraint 7: "pidfile" idempotency,
+// stated at the top of this file but never implemented until this fix).
+//
+// dispatchConsumer's child is Setsid-detached without Release specifically so
+// it survives THIS PROCESS restarting — but a launchctl kickstart -k (or a
+// KeepAlive crash-restart) replaces the process outright, and the in-memory
+// `run` variable that tracked the dispatch dies with it. The new process
+// starts with run == nil and, on its first tick with depth > 0, dispatches a
+// SECOND consumer on top of the still-running first one. Observed 2026-08-07:
+// two live claude-finalwishes sessions, 480MB each, spawned 65s apart. This
+// marker is what lets a restarted loop recognize "already running" instead of
+// re-dispatching.
+func consumerPIDFilePath(routerRoot, agentID string) string {
+	return filepath.Join(routerRoot, "wake-consumer-"+agentID+".pid")
+}
+
+// writeConsumerPIDFile records the just-dispatched consumer's (pid, startedAt)
+// so a restarted loop can find it. Best-effort: a write failure only costs the
+// restart-survives-dispatch guarantee, never the dispatch itself.
+func writeConsumerPIDFile(routerRoot, agentID string, pid int, startedAt string) {
+	path := consumerPIDFilePath(routerRoot, agentID)
+	_ = os.WriteFile(path, []byte(strconv.Itoa(pid)+"\n"+startedAt+"\n"), 0o644)
+}
+
+// clearConsumerPIDFile removes the marker once the dispatching process has
+// confirmed (via Wait) that the consumer exited.
+func clearConsumerPIDFile(routerRoot, agentID string) {
+	_ = os.Remove(consumerPIDFilePath(routerRoot, agentID))
+}
+
+// adoptRunningConsumer reads the durable marker and, if the recorded PID is
+// still OS-truth alive (recycle-guarded by its start signature), returns a
+// consumerRun this loop can poll instead of blind-dispatching a duplicate. A
+// stale marker (process gone) is cleaned up so it never misreports again.
+func adoptRunningConsumer(routerRoot, agentID string) *consumerRun {
+	data, err := os.ReadFile(consumerPIDFilePath(routerRoot, agentID))
+	if err != nil {
+		return nil
+	}
+	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
+	pid, perr := strconv.Atoi(strings.TrimSpace(lines[0]))
+	if perr != nil || pid <= 0 {
+		clearConsumerPIDFile(routerRoot, agentID)
+		return nil
+	}
+	startedAt := ""
+	if len(lines) > 1 {
+		startedAt = strings.TrimSpace(lines[1])
+	}
+	if PIDStateOf(pid, startedAt) != PIDAlive {
+		clearConsumerPIDFile(routerRoot, agentID)
+		return nil
+	}
+	return &consumerRun{pid: pid, startedAt: startedAt}
+}
+
 func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.Duration) error {
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
@@ -866,6 +933,11 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	lastBeat := time.Now()
 	// The in-flight consumer, or nil. Completion — not elapsed time — is what
 	// authorizes the next dispatch.
+	//
+	// Checked against the durable marker BEFORE the first tick: this process
+	// may be a restart (kickstart -k, KeepAlive) of a loop whose own dispatch
+	// is still running as a detached, now-unparented child. Adopting it here
+	// is what stops the restart from immediately duplicating it.
 	var run *consumerRun
 	// #636 C1 progress-gate state. `scored` ensures a finished consumer is judged
 	// exactly once; without it every subsequent tick would re-count the same exit
@@ -875,6 +947,18 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	var nextDispatchAllowed time.Time
 	quarantineLogged := false
 	ceilingLogged := false
+	if consumer != nil && !consumer.Resident {
+		if adopted := adoptRunningConsumer(routerRoot, agentID); adopted != nil {
+			run = adopted
+			// #642 x #636 C1: a previous process dispatched this run, so its
+			// depth-at-dispatch is unrecoverable. -1 (unknown) is required — the
+			// zero value would make madeProgress(0, depth) false and march a
+			// healthy lane toward quarantine after ten restarts.
+			run.depthAtDispatch = -1
+			log.Printf("wake-loop %s: adopted already-running consumer pid %d from durable marker (loop restarted)",
+				agentID, adopted.pid)
+		}
+	}
 	for {
 		// Surface the inbox depth into the heartbeat status; the worker surface's
 		// own logic processes the items — this loop only proves liveness + watches.
@@ -998,6 +1082,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 					run = next
 					run.depthAtDispatch = depth
 					scored = false
+					// #642: durable marker so a restarted loop adopts this child
+					// instead of duplicating it.
+					writeConsumerPIDFile(routerRoot, agentID, run.pid, getPIDStartFn()(run.pid))
+					go func(r *consumerRun) {
+						<-r.done
+						clearConsumerPIDFile(routerRoot, agentID)
+					}(run)
 					if err := recordDispatch(agentID, time.Now()); err != nil {
 						// Forfeiting rate protection silently is how a ceiling becomes
 						// decorative — say so.

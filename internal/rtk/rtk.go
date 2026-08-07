@@ -37,13 +37,21 @@ type Filter struct {
 }
 
 // DefaultConfig returns a sensible default for AI context optimization.
+// DefaultMaxBytes caps tool output sent to the AI context at 128 KB.
+// Raw transcript writes are not intercepted by RTK (that is the Claude Code
+// binary's responsibility), but every call through RTK.Apply respects this
+// limit so the AI context never receives multi-megabyte tool outputs.
+// R11: transcript-file growth requires Claude Code changes; this gates the
+// AI-context surface that RTK owns.
+const DefaultMaxBytes = 128 << 10 // 128 KB
+
 func DefaultConfig() FilterConfig {
 	return FilterConfig{
 		StripANSI:     true,
 		Dedup:         true,
 		DedupWindow:   32,
 		MaxLines:      0,
-		MaxBytes:      0,
+		MaxBytes:      DefaultMaxBytes,
 		TailLines:     20,
 		CollapseBlank: true,
 	}
