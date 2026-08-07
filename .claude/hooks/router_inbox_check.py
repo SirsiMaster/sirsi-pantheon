@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -156,38 +157,41 @@ def pending_items(state: dict, agent_id: str) -> list[str]:
     return items
 
 
-def pull_model_open_items(router_root: Path, agent_id: str) -> list[str]:
-    """Count open items addressed to agent_id under items/ — the one inbox
-    (ADR-024 §5). reviews/ and decisions/ are NOT polled."""
-    items_dir = router_root / "items"
-    if not items_dir.is_dir():
+def pull_model_open_items(agent_id: str) -> list[str]:
+    """Open items addressed to agent_id, read from the AUTHORITATIVE store.
+
+    This used to scan `.agents/idea-router/items/*.md` frontmatter. After the
+    store cutover that directory is no longer written, so its `status:` field
+    froze at whatever it was on cutover day — and an item closed since then
+    stays "open" there forever. Measured 2026-08-06: claude-home's store inbox
+    was empty (`router pull claude-home` → none, `router status` → 0 open) while
+    two June items (20260617-192121, 20260618-144311) still read `status: open`
+    on disk, so EVERY claude-home session opened with a false "2 pending inbox
+    items — check the router immediately".
+
+    That is worse than no signal. A wake signal that cries wolf on every single
+    session trains the agent to ignore it, and this hook's own arm_instruction
+    already tells the agent "do NOT watch the items/ directory — after the store
+    cutover it is not written". The counter was doing exactly what the
+    instruction it prints forbids. Cutover means total authority: ask the store,
+    never the facade.
+    """
+    db = Path(os.environ.get("SIRSI_ROUTER_DB")
+              or Path("~/.sirsi/router.db").expanduser())
+    if not db.is_file():  # plain connect() would CREATE an empty db
         return []
-    matches: list[str] = []
-    for path in items_dir.glob("*.md"):
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2.0)
         try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if not text.startswith("---\n"):
-            continue
-        end = text.find("\n---\n", 4)
-        if end < 0:
-            continue
-        frontmatter = text[4:end]
-        to_val = status_val = ""
-        for line in frontmatter.splitlines():
-            key, sep, value = line.partition(":")
-            if not sep:
-                continue
-            key = key.strip()
-            value = value.strip().strip('"')
-            if key == "to":
-                to_val = value
-            elif key == "status":
-                status_val = value
-        if status_val == "open" and to_val == agent_id:
-            matches.append(path.stem)
-    return matches
+            rows = con.execute(
+                "select id from items where to_agent = ? and status = 'open'",
+                (agent_id,),
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []  # a store hiccup must never break the hook
+    return [r[0] for r in rows]
 
 
 # Bound on the ancestry walk. Deep enough for any real hook chain, shallow
@@ -454,7 +458,7 @@ def main() -> int:
         print(f"router-supervisor:{agent_id} arm your watcher (thread {thread_id}): {arm_instruction}")
 
     legacy = pending_items(state, agent_id)
-    pull = pull_model_open_items(router_root, agent_id)
+    pull = pull_model_open_items(agent_id)
     total = len(legacy) + len(pull)
     if total == 0:
         return 0
