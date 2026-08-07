@@ -310,12 +310,39 @@ func TestEffectiveStale_TwoThreadsOneAgent(t *testing.T) {
 	}
 }
 
-// TestThreadArmed_ReRegistrationCase verifies that threadArmedForNewest credits
-// the agent-id probe ONLY when isNewest=true (A35 scope fix). threadArmed
-// itself does NOT credit the agent-keyed probe (delegates with isNewest=false)
-// — call sites that own the registry use threadArmedForNewest with the computed
-// isNewest flag.
-func TestThreadArmed_ReRegistrationCase(t *testing.T) {
+// TestNewestNonTerminalByAgent_SkipsSuspended pins the residual from PR #622:
+// SUSPENDED records must not win the "newest" slot because AgentArmed skips them
+// in its eval loop. If a suspended record became "newest", newestByAgent[agent]
+// would never match any evaluated thread, denying the agent-keyed rescue credit
+// to the next-newest active thread.
+func TestNewestNonTerminalByAgent_SkipsSuspended(t *testing.T) {
+	now := time.Now().UTC()
+	active := &Thread{
+		ThreadID:  "thr-active",
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		Status:    ThreadStatusActive,
+		StartedAt: now.Add(-10 * time.Minute),
+	}
+	suspended := &Thread{
+		ThreadID:  "thr-suspended",
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		Status:    ThreadStatusSuspended,
+		StartedAt: now.Add(-1 * time.Minute), // newer than active
+	}
+	got := NewestNonTerminalByAgent([]*Thread{active, suspended})
+	// suspended must not win even though it is newer — AgentArmed skips it.
+	if got["claude-home"] != "thr-active" {
+		t.Errorf("NewestNonTerminalByAgent with suspended-newest: want thr-active, got %q", got["claude-home"])
+	}
+}
+
+// TestThreadArmedForNewest_IsNewestFalseIgnoresAgentProbe verifies that
+// threadArmedForNewest credits the agent-id probe ONLY when isNewest=true (A35
+// scope fix). isNewest=false must not credit the agent-keyed probe — the
+// unscoped path that would vouch for stale older threads.
+func TestThreadArmedForNewest_IsNewestFalseIgnoresAgentProbe(t *testing.T) {
 	now := time.Now().UTC()
 	t.Cleanup(func() {
 		setWatcherAliveFn(nil)
@@ -333,10 +360,9 @@ func TestThreadArmed_ReRegistrationCase(t *testing.T) {
 	// Agent-id probe finds the script.
 	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-pantheon" })
 
-	// threadArmed (isNewest=false) must NOT credit agent-keyed probe — A35
-	// scoping: the unscoped call would vouch for stale older threads too.
-	if threadArmed(thr, now) {
-		t.Error("threadArmed must not credit agent-keyed probe (isNewest=false path); use threadArmedForNewest with isNewest=true at call sites that own the registry")
+	// isNewest=false must NOT credit agent-keyed probe — A35 scoping.
+	if threadArmedForNewest(thr, now, false) {
+		t.Error("threadArmedForNewest(isNewest=false) must not credit agent-keyed probe; use isNewest=true only for the newest non-terminal, non-suspended thread")
 	}
 
 	// threadArmedForNewest(isNewest=true) IS armed — re-registration successor.
