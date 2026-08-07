@@ -69,8 +69,8 @@ func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	now := time.Now()
 
 	first := runSupervisorDuties(routerRoot, repoRoot, now)
-	if len(first) != 9 {
-		t.Fatalf("first pass duties = %d, want 9 (3 scripts + native auto-heal + census + gemma-liveness + session-reaper + launchd-kickstart + stale-thread-reconcile)", len(first))
+	if len(first) != 10 {
+		t.Fatalf("first pass duties = %d, want 10 (3 scripts + native auto-heal + census + gemma-liveness + session-reaper + launchd-kickstart + stale-thread-reconcile + spotlight-markers)", len(first))
 	}
 	for _, d := range first {
 		if !d.Ran || d.Skipped != "" || d.Error != "" {
@@ -161,7 +161,7 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 		t.Fatalf("no script should run when none exist: %v", *calls)
 	}
 	for _, d := range results {
-		if d.Name == "session-reaper" || d.Name == "auto-heal" || d.Name == "thread-census" || d.Name == "gemma-liveness" || d.Name == "launchd-kickstart" || d.Name == "stale-thread-reconcile" {
+		if d.Name == "session-reaper" || d.Name == "auto-heal" || d.Name == "thread-census" || d.Name == "gemma-liveness" || d.Name == "launchd-kickstart" || d.Name == "stale-thread-reconcile" || d.Name == "spotlight-markers" {
 			// Native duties: no script to be missing — they run (auto-heal is an
 			// inert no-op until cmd/sirsi injects the real pass).
 			if !d.Ran || d.Skipped != "" {
@@ -199,8 +199,8 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Duties) != 9 {
-		t.Fatalf("report.Duties = %d, want 9: %+v", len(report.Duties), report.Duties)
+	if len(report.Duties) != 10 {
+		t.Fatalf("report.Duties = %d, want 10: %+v", len(report.Duties), report.Duties)
 	}
 	if len(*calls) != 3 {
 		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)

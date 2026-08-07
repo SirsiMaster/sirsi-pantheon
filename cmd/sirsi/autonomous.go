@@ -9,6 +9,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/autoheal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
@@ -212,4 +213,11 @@ func init() {
 	// `sirsi report` and the menubar "Last check" line. Inert in library/test
 	// context; only the real CLI writes the real file.
 	router.SetRunReportFn(router.WriteSupervisorRun)
+	// Wire the Spotlight index-marker duty (2026-08-07 reopened directive):
+	// keeps the unprivileged `.metadata_never_index` exclusion current against
+	// ~/Development on the resident supervisor's cadence, rather than only ever
+	// running when a human remembers to type the CLI command by hand.
+	router.SetSpotlightMarkersFn(func(_, _ string) error {
+		return guard.RunMarkerDuty()
+	})
 }
