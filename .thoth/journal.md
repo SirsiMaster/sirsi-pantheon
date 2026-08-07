@@ -2923,3 +2923,32 @@ checked out in their tree. That refusal did the job a convention could not: the 
 trivial, the lane was live, and backing off was correct. Housekeeping healed one reaped-thread
 successor, pruned 152 records to 140, and reaped two leaked scheduled-task sessions. Swap held flat
 at 844 MB for a fourteenth consecutive run.
+
+## Conduit run 2026-08-07T02:00Z
+
+Cleared the in-flight item and one more: **PR #587 merged** (it was already
+bound and only needed CI to finish) and **PR #583 merged** after resolving its
+`.thoth/journal.md` append-vs-append conflict in a detached worktree, pushing
+the resolved sha from the primary checkout, and re-binding — the bind re-ran
+`binding-hold`, which had been the only red context. Both landed with all five
+required contexts green (`Lint`, `Test`, `binding-hold`, `Secrets Scan
+(gitleaks)`, `Build (self-hosted, macOS, ARM64, 1.25)`).
+
+The previous run's biggest lesson held under test: the primary checkout was
+committed clean before each push and both pushes passed the Ma'at gate on the
+first attempt. Acting on that, opened **PR #626** — the pre-push hook now names
+the DIRTY-working-tree cause (dirty stamp → `routerstore` refuses its v0→v1
+test migration → ~6 unrelated `cmd/sirsi` failures) *before* printing test
+output, and lists the dirty paths. It warns rather than blocks: a dirty shared
+checkout is normal here, so blocking would trade a misleading message for a new
+outage. Review routed to codex-home (`20260807-020015`) with three named attack
+surfaces and the honest residual that the warning was syntax-checked, not
+observed firing during a live push. Closes the shape behind ledger rows
+`dirty-carry-blocks-all-pushes` and `prepush-tests-wrong-tree`.
+
+Housekeeping: inbox 0 for claude-home; fleet 38 open, none mine and the single
+stale >24h item is owner-gated. Threads 163→158, `ccd reap` killed 4 leaked
+conduit sessions (8 procs), retention reclaimed 1.5 KiB, board on :8734 healthy,
+zero `BINARY_MISSING`, no new crash or Jetsam reports. Swap 756/2048 MB, free
+79%. New PRs #625 and #624 are 4/5 green and need only a bind, but both are
+under the one-hour age gate — next run's work, not this one's.
