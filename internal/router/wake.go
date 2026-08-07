@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -604,6 +605,44 @@ type consumerRun struct {
 	pid  int
 	done chan struct{}
 	err  error
+	tail *ringTail
+}
+
+// consumerTailBytes bounds what a failing consumer can put in the log. The
+// blackhole this replaces produced a 1.4 MB log carrying only "exit status 1";
+// wiring the raw transcript through would trade no information for too much, so
+// the last few KB — where the fatal line lives — is what gets kept.
+const consumerTailBytes = 4096
+
+// ringTail keeps only the last max bytes written to it.
+type ringTail struct {
+	mu  sync.Mutex
+	buf []byte
+	max int
+}
+
+func (t *ringTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = t.buf[len(t.buf)-t.max:]
+	}
+	return len(p), nil
+}
+
+// String returns the captured tail, or a marker when nothing was captured —
+// silence is itself a finding and must not read as "no output field".
+func (t *ringTail) String() string {
+	if t == nil {
+		return "(not captured)"
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if s := strings.TrimSpace(string(t.buf)); s != "" {
+		return s
+	}
+	return "(no output)"
 }
 
 // running reports whether the dispatched consumer is still alive.
@@ -666,10 +705,36 @@ func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
 	cmd.Dir = rc.Cwd
 	cmd.Env = rc.Env
 	cmd.SysProcAttr = detachedSysProcAttr()
+
+	// Capture a bounded tail of the child's output. Leaving Stdout/Stderr nil
+	// makes exec.Cmd wire both to /dev/null, which destroyed the cause of 94% of
+	// fleet-wide dispatch failures at the source (3843/4082 exits with nothing
+	// but "exit status 1").
+	//
+	// An *os.File is handed to the child DIRECTLY — exec starts no copier
+	// goroutine for it and cmd.Wait does not block on one. That matters here: the
+	// consumer is setsid-detached and may leave grandchildren holding the fd, and
+	// with an io.Writer sink Wait would hang until the LAST holder closed it,
+	// pinning running() true forever and silently killing re-dispatch.
+	pr, pw, perr := os.Pipe()
+	if perr != nil {
+		return nil, perr
+	}
+	cmd.Stdout = pw
+	cmd.Stderr = pw
 	if err := cmd.Start(); err != nil {
+		pw.Close()
+		pr.Close()
 		return nil, err
 	}
-	run := &consumerRun{pid: cmd.Process.Pid, done: make(chan struct{})}
+	pw.Close() // the child holds the only write end now; the reader sees EOF when it goes
+	tail := &ringTail{max: consumerTailBytes}
+	go func() {
+		defer pr.Close()
+		_, _ = io.Copy(tail, pr)
+	}()
+
+	run := &consumerRun{pid: cmd.Process.Pid, done: make(chan struct{}), tail: tail}
 	go func() {
 		run.err = cmd.Wait()
 		close(run.done)
@@ -820,8 +885,8 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			// Report the previous run's exit before starting another, so a consumer
 			// that is failing fast leaves a trail rather than looking like progress.
 			if run != nil && run.err != nil {
-				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v",
-					agentID, run.pid, run.err)
+				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v — last output: %s",
+					agentID, run.pid, run.err, run.tail)
 			}
 			next, derr := dispatchConsumer(consumer)
 			if derr != nil {
