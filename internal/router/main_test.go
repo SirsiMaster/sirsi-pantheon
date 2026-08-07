@@ -36,5 +36,32 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(dbDir)
 	os.Setenv("SIRSI_ROUTER_DB", filepath.Join(dbDir, "router.db"))
 
+	// Same class, third instance — the spawn-ceiling ledger (#639 C3). It
+	// resolves to ~/.sirsi/dispatch/<agent>.log, so every dispatch test was
+	// appending REAL entries under its fake agent ids. Two consequences, both
+	// measured 2026-08-07 within an hour of #639 merging:
+	//
+	//   1. After 12 runs in an hour the tests tripped the very ceiling they
+	//      exist to test. TestConsumerExitFreesTheDispatchSlot failed on
+	//      pristine main in a clean clone at load 7.62 — the ledger lives in
+	//      $HOME, so a fresh checkout does not escape a poisoned counter. That
+	//      reddens main for anyone whose change touches internal/router,
+	//      because the Ma'at pre-push gate tests changed packages.
+	//   2. `ls ~/.sirsi/dispatch/` on this host showed flaky-agent.log,
+	//      worker-agent.log, slow-agent.log and restart-agent.log sitting
+	//      beside the real codex-home.log, each at exactly 12 entries. A test
+	//      that used a REAL agent id would have injected fake dispatches into
+	//      the live ceiling and silently rate-limited a production lane.
+	//
+	// Package-wide rather than per-test on purpose: the invariant is "no test
+	// in this package writes production rate-limit state", which a future test
+	// must inherit by construction rather than remember to opt into.
+	dispatchDirTmp, err := os.MkdirTemp("", "sirsi-router-dispatch-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dispatchDirTmp)
+	SetDispatchDir(dispatchDirTmp)
+
 	os.Exit(m.Run())
 }

@@ -90,10 +90,25 @@ func awaitConsumerLines(t *testing.T, log string, n int) []string {
 // never handed its agent id cannot consume the queue whose depth triggered it,
 // which is the difference between "spawned something headless" and "consumed
 // this inbox".
+// hermeticDispatchDir isolates ONE test's spawn ledger.
+//
+// TestMain pins the dir package-wide, which stops these tests writing the
+// operator's real ~/.sirsi/dispatch — the serious defect. It is not sufficient
+// on its own: TestMain runs once per BINARY, so under -count=N every iteration
+// shares that one dir, the dispatch tests re-accumulate entries, and run 2
+// trips the hourly ceiling. `go test` was green and `go test -count=3` was red
+// until each dispatching test got its own dir. Two layers, two jobs: TestMain
+// protects production, this protects repeat runs.
+func hermeticDispatchDir(t *testing.T) {
+	t.Helper()
+	SetDispatchDir(t.TempDir())
+}
+
 func TestDispatchedConsumerReceivesRouterContract(t *testing.T) {
 	// Stub low load so backpressure never blocks dispatch regardless of host load.
 	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
 	defer SetLoadAvgFn(nil)
+	hermeticDispatchDir(t)
 
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0)
@@ -189,6 +204,7 @@ func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
 	// same log dispatched fine at the same instant, because it stubs load.
 	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
 	defer SetLoadAvgFn(nil)
+	hermeticDispatchDir(t)
 
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	// Sleeps well past the loop's lifetime: it is still working at every tick.
@@ -237,6 +253,7 @@ func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
 	// Stub low load so backpressure never blocks dispatch regardless of host load.
 	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
 	defer SetLoadAvgFn(nil)
+	hermeticDispatchDir(t)
 
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0) // exits at once, never drains
@@ -288,6 +305,7 @@ func TestRestartDoesNotDuplicateAStillRunningConsumer(t *testing.T) {
 	// that separately).
 	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
 	defer SetLoadAvgFn(nil)
+	hermeticDispatchDir(t)
 
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	// Sleeps well past this test's lifetime: still working at every tick.
