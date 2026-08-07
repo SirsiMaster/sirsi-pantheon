@@ -118,6 +118,13 @@ var routerDoctorCmd = &cobra.Command{
 			fmt.Printf("⚠ %d stale thread record(s) — heartbeat aged out (OS-dead ones are reapable).\n\n", len(ns.StaleThreads))
 		}
 
+		// LEDGER ROT — the thread checks above cover only one of A36's three
+		// work sources. A lane whose watcher is armed and whose inbox is empty
+		// still reads healthy while its task ledger rots, so the doctor checks
+		// the ledger too. Report-only by design: --fix never rewrites a status,
+		// because a body that says DONE is a signal, not a verdict.
+		issues += checkLedgerRot()
+
 		// REGISTRY DRIFT — the router reads the WORKING TREE, so a registry fix
 		// that merged to main has not necessarily reached the live registry. That
 		// landmine armed three times in six days and every remedy was a copy;

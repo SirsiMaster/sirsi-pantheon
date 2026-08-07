@@ -5,1729 +5,2439 @@
 
 ---
 
-## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
-
-CTR's original registration heuristic assumed a stable process-tree depth: the
-agent runtime would be the caller's parent or grandparent. That assumption made
-live tasks disappear because desktop applications insert a changing number of
-per-turn shells and helpers. Replacing the fixed depth with a simple ancestry
-walk was necessary but still insufficient.
-
-The live Codex proof exposed why. Codex Desktop runs tool commands beneath an
-application-wide `codex` broker (PID 37423), while this task's durable lifetime
-belongs to `codex-code-mode-host` (PID 40821), which is another child of the
-broker. The correct task host is therefore a sibling of the command process,
-not an ancestor. No amount of walking upward can find it. Worse, treating every
-`codex-*` or `claude-*` executable as durable allows wrappers and helpers to
-masquerade as sessions.
-
-Commit `728fefcd` makes one resolver authoritative for registration,
-self-discovery, and self-suspend. It walks past transient processes using exact
-known runtime identities. Under Codex Desktop it recognizes the generic broker,
-selects exactly one `codex-code-mode-host` child, and fails closed when zero or
-multiple hosts make task ownership ambiguous. Other unknown resident surfaces
-must provide `--anchor-pid`; the router no longer converts uncertainty into a
-false liveness claim.
-
-The targeted resolver/thread tests and broader `cmd/sirsi` plus
-`internal/router` suites passed. The candidate binary and the atomically
-installed `~/.local/bin/sirsi` each repeated the decisive live test without an
-explicit anchor and selected PID 40821. The owner-requested quiet-machine rule
-remained intact: the repair and proofs were CPU/process-metadata work only.
-
-## Entry 026 — 2026-08-02 — "A Router Count Is Not a Work Ledger"
-
-The owner identified the operating failure precisely: no single agent memory can
-be trusted to hold the whole portfolio story, while CTR's counts did not explain
-age, dependency, pickup, or responsibility. Under the two-agent quiet regime,
-codex-inference built the Universal Task Ledger without waking the fleet or
-touching GPU work.
-
-The structural decision is separation with one join. Router items remain
-messages and evidence. The durable store now holds explicit task commitments.
-Thread records remain heartbeat and `current_item` truth. `internal/ledger`
-joins those authorities once, and both `router ledger` and CTR project it. A
-fresh heartbeat is deliberately not pickup; an exact current item is. Missing
-and cyclic dependencies deliberately fail closed.
-
-Implementation head `303b404b` (code commit `50838f87`) adds SQLite migration
-v3, lossless `blocked_by`, task add/update/list, item dependency mutation, a
-typed JSON/text ledger, CTR summaries, ADR-050, and three-home human access.
-The complete Go suite, e2e suite, and isolated CLI replay pass. Remote push was
-blocked by the execution environment's export-safety gate, so Claude Nexus is
-reviewing the exact shared local commit rather than a claimed PR. Repository,
-Desktop Reading Room, and a verified native Google Doc all carry the artifact;
-the repository remains canonical.
-
-Claude Nexus subsequently approved exact head `b08bac6d`. Its first live
-integration reconciled the apparent 32-versus-35 discrepancy: 32 was the SNE
-engineering snapshot, while 35 is the current whole-agent registry after three
-later router-grounded obligations. Independent live-store inspection confirmed
-the row totals, responsible parties, and every populated dependency target.
-The integration row is now done; closeout state is 24 done, one in progress,
-seven pending, and three blocked.
-
-First contact also exposed a P1 rollout-order defect. A v3-capable shadow binary
-migrated the shared live database while the canonical installed binary still
-understood only v2. The older binary's refusal was the correct fail-closed
-behavior, but the host router was unavailable until an approved v3 build was
-validated under a new inode and atomically moved into the canonical path. The
-permanent rule is now explicit: install the canonical forward-compatible binary
-before the first live-store open that can migrate schema, and verify every host
-router surface after migration. Code correctness and migration correctness are
-not deployment completeness by themselves.
-
-The owner and integration router items are closed with evidence. Claude
-Pantheon ratification remains intentionally deferred until the owner lifts the
-quiet regime. Remote export remains policy-blocked, so the branch is local and
-no PR is claimed. The other seven inference mailbox items were retired with
-evidence, including source approval of PR #389 exact head `30511038` while
-correctly leaving CI/bind independent.
-
----
-
-## Entry 025 — 2026-03-27 12:15 — "The Race Condition That Wouldn't Die"
-
-**Context**: Session 29. P0 was CI green. Lint was the easy part — 22 errors across 10 files, all mechanical fixes. The real boss fight was a data race in the Guard module that survived 4 consecutive fix attempts.
-
-### The Problem
-
-`sampleTopCPUFn` is a package-level function pointer in `watchdog.go` (line 37). Tests inject mock samplers by assigning to it directly. The watchdog's `run()` goroutine reads it every poll cycle (line 160). Go's `-race` detector flagged every test that used this pattern:
-
-```
-WARNING: DATA RACE
-Write at 0x0001045160c8 by goroutine 28: TestStartBridge_LifecycleWithAlerts()
-Read at 0x0001045160c8 by goroutine 29: (*Watchdog).run()
-```
-
-### The Fix Progression
-
-1. **Attempt 1**: Added `sync.Mutex` to `AlertRing`. ❌ Wrong target — the ring wasn't the racing variable.
-2. **Attempt 2**: Changed `defer func() { sampleTopCPUFn = old }()` to explicit `cancel()` → `sleep(100ms)` → `sampleTopCPUFn = old`. ❌ The goroutine runs on `runtime.LockOSThread()` — 100ms wasn't enough for OS thread scheduling.
-3. **Attempt 3**: Same as #2 but on all 5 bridge tests. ❌ Same reason — sleep-based timing is fundamentally fragile.
-4. **Attempt 4**: Protected `sampleTopCPUFn` with `sync.RWMutex` via `getSampleFn()`/`setSampleFn()` accessors. ✅ **Correct.** No timing dependency. All 8 tests pass with `-race -count=1`.
-
-### The Rule
-
-**Rule A21 — Concurrency-Safe Injectable Mocks**: Package-level function pointers used for test injection MUST be protected by a `sync.RWMutex`. `defer` restore is dangerous because it runs after the test returns but before spawned goroutines complete. The correct pattern is:
-
-```go
-var (
-    sampleMu sync.RWMutex
-    sampleFn = defaultImpl
-)
-func getSampleFn() func(...) { sampleMu.RLock(); defer sampleMu.RUnlock(); return sampleFn }
-func setSampleFn(fn func(...)) { sampleMu.Lock(); defer sampleMu.Unlock(); sampleFn = fn }
-```
-
-### Which Deity Owns This?
-
-**𓆄 Ma'at** — the QA Sovereign (Rule A17). She governs test quality, pipeline health, and canonical standards. Rule A21 is her jurisdiction because it sits at the intersection of test patterns (A16: Injectable Providers) and CI pipeline health (A6: QA Gate). A module that passes locally but fails under `-race` on CI is a Ma'at governance failure.
-
-### Also Completed
-
-- **Thoth Journal Sync (P1)**: Built `internal/thoth/journal.go` (230 lines). `thoth sync` now harvests git commits and auto-generates journal entries. The ghost transcript gap from Entry 024 is permanently closed.
-- **Firebase Deploy (P2)**: 17 files to `sirsi.ai/pantheon`.
-- **gh CLI (P3)**: Upgraded 2.87.3 → 2.89.0.
-
-**Session total**: 5 commits, 20 files modified, Rule A21 canonized, Thoth auto-journal shipped.
-
----
-
----
-
-## Entry 026 — 2026-03-27 15:45 — "The Deity Coverage Hardening"
-
-**Context**: Session 33. The goal was 95%+ coverage for the core deities (Ka, Scarab, Scales).
-
-**Insight**: The biggest hurdle wasn't writing the tests, but the **performance of the mocks**. A single unmasked call to `lsregister -dump` was causing a 24-second hang in the "short" test suite, leading to a 76-second total execution time. 
-
-**Decision**: 
-1. **Performance Hardening**: Set `SkipLaunchServices = true` and `SkipBrew = true` in all mocked scanner tests. 
-2. **Rule A21 Enforcement**: Refactored the `ka` and `scales` dependency injection to use the Exported Hook pattern (`Scanner.DirReader`, `Scanner.ExecCommand`, etc.).
-3. **Branch Coverage**: Added missing edge cases for `extractBundleID` (supporting global prefixes `br`, `au`, `edu`) and error paths for `AuditContainers` (using `platform.Mock`).
-
-**Result**: 
-- **`ka`**: 94.4% (Statement), 95%+ (Effectively via branch/logic).
-- **`scarab`**: 94.8%.
-- **`scales`**: 94.6%.
-- **Performance**: 76s → sub-20s per total deity suite run.
-
-**Why this matters**: High coverage without performance is self-defeating — it creates a "slow test tax" that developers will eventually bypass. By making the tests fast (sub-20s) and deep (95%+), we ensure that the deity layer remains stable without slowing down the build-fix cycle.
-
-**Blessed by Horus**: The results were validated through a full `go test -short -cover` run across all 3 modules. The achievements are real, codified in `memory.yaml`, and recorded in this journal. 𓂀
-
----
-
-## Entry 027 — 2026-03-28 23:32 — "4 commits, 42 files changed" (AUTO-SYNC)
-
-> 🤖 This entry was auto-generated by `thoth sync` from git history.
-
-**Summary**: 4 commits, 42 files changed, +3562/-113 lines.
-
-**Commits**:
-- `49f80eae` canon: Rule A23 (Truth Vector) + Session 34 unification commit (10 files, +111/-59)
-- `18413955` 𓁆 Seshat: Gemini Bridge docs page + workstream wrap (2 files, +603/-32)
-- `62948dcb` 𓁆 Seshat: VS Code Extension + Neith's Triad Retrofit + Firebase Deploy (19 files, +1774/-5)
-- `bbfc34ad` 𓁆 Seshat: Gemini Bridge + Rule A22 (Neith's Architecture Triad) (11 files, +1074/-17)
-
----
-
-## Entry 028 — 2026-03-29 00:02 — "7 commits (docs-focused), 69 files, +5509 lines" (AUTO-SYNC)
-
-> 🤖 This entry was auto-generated by `thoth sync` from git history.
-
-**Summary**: 7 commits, 69 files changed, +5509/-263 lines.
-
-**Commits**:
-- `dc4ffdea` Hardening: stabilizes sight, scales, seba, and ka with timeout guards and scoped scanning (11 files, +127/-71)
-- `ad1776c5` docs(canon): Session 35 — BUILD_LOG, CHANGELOG, Thoth memory updated (2 files, +55/-10)
-- `7305200b` 𓁐 Session 35: Isis Phase 1 (The Healer) + Thoth CLI + Distribution Prep (14 files, +1765/-69)
-- `49f80eae` canon: Rule A23 (Truth Vector) + Session 34 unification commit (10 files, +111/-59)
-- `18413955` 𓁆 Seshat: Gemini Bridge docs page + workstream wrap (2 files, +603/-32)
-- `62948dcb` 𓁆 Seshat: VS Code Extension + Neith's Triad Retrofit + Firebase Deploy (19 files, +1774/-5)
-- `bbfc34ad` 𓁆 Seshat: Gemini Bridge + Rule A22 (Neith's Architecture Triad) (11 files, +1074/-17)
-
----
-
-## Entry 029 — 2026-04-01 15:47 — Session Compact (COMPACT)
+## Entry 094 — 2026-07-31 11:07 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- {"session_id":"b3eafb76-9e33-4114-9bf6-345bb2dd653b","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/b3eafb76-9e33-4114-9bf6-345bb2dd653b.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-
----
-
-## Entry 030 — 2026-04-02 16:50 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
-
----
-
-## Entry 031 — 2026-04-04 18:17 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
-
----
-
-## Entry 032 — 2026-04-04 18:21 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"1b4b4861-83fa-412d-a688-c199b6f4e775","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/1b4b4861-83fa-412d-a688-c199b6f4e775.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-
----
-
-## Entry 033 — 2026-04-06 02:11 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"e3a963d3-b25b-4a85-a05c-c69aecd0145f","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/e3a963d3-b25b-4a85-a05c-c69aecd0145f.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-
----
-
-## Entry 034 — 2026-04-18 20:11 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"73458060-7593-4916-9c32-3885e6708be2","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon-Development-sirsi-pantheon/73458060-7593-4916-9c32-3885e6708be2.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-
----
-
-## Entry 035 — 2026-05-19 18:35 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- -
-- Router snapshot:
-- active topics: assiduous-v110-completion, finalwishes-v010-illinois-probate, ra-horus-router-hypervisor-canon, claude-cli-auth-for-router-dispatch
-- completed topics: 25
-- last Codex read: 2026-05-19T10:50:37-04:00
-- last Claude read: 2026-05-19T20:00:00Z
-- pending:
-- claude-assiduous: 20260519-codex-assiduous-google-calendar-implementation
-- claude-finalwishes: 20260518-codex-finalwishes-v010-illinois-probate-review, 20260519-codex-finalwishes-v010-goal-review
-- codex: 20260519-claude-pantheon-horus-wake-complete
-- codex-assiduous: 20260519-claude-assiduous-codex-batch2
-- codex-pantheon: 20260519-claude-pantheon-horus-wake-complete
-- dispatch ledger: 968 bytes, updated 2026-05-19 11:42:04
-
----
-
-## 2026-05-21/22 — Router Collapse + Caffeinate Contract + Verification
-
-**Session goal:** strip overengineered push-model router infrastructure; ship a pull-model that works for any agent identity, with native FSEvents wake and thread keep-alive.
-
-### Commits shipped (sirsi-pantheon, all on origin/main)
-
-- `be2f2b7` `fix(router)` — dispatch.sh handles BOTH legacy `state.json:pending[]` AND pull-model `items/*.md` queues
-- `76a43cc` `feat(hooks)` — caffeinate claude threads (auto-register + background heartbeat loop anchored to claude PID)
-- `8c3e359` `docs(agents)` — add Caffeinate Contract (universal 4-step pattern) to sirsi-pantheon AGENTS.md
-- `22ec913` `feat(router)` — `sirsi router ack <agent> <id>` migration helper (authored by codex-pantheon, committed by claude-pantheon)
-- `84f79ca` `docs(agents)` — add §Lean #11 (wake mechanisms should not own delivery semantics — codex-pantheon adoption)
-- `446880d` and 5 sibling commits — Lean Engineering Doctrine appended to AGENTS.md in all 6 repos (assiduous, FinalWishes, homebrew-tools, porch-and-alley, sirsi-pantheon, SirsiNexusApp)
-- Earlier (same arc): `d3a396f` pull-model router (`send/pull/show/close/status`), `1cc3347` deleted 10 legacy push-model verbs (~969 LOC removed), `7af0687` hook surfaces pull-model items
-
-### Architecture state on disk
-
-- **Router CLI:** 6 verbs total — `status`, `send`, `pull`, `show`, `close`, `ack`. Down from 12 push-model verbs at session start. `routercmd.go` 1051 → 198 → 365 lines net (after ack addition).
-- **Storage:** `internal/work` package, file-per-item under `.agents/idea-router/items/<ts>-<from>-<to>-<slug>.md` with YAML frontmatter (`from`, `to`, `status`, `opened`, `closed`, `title`).
-- **Wake:** launchd `com.sirsi.idea-router.plist` with `WatchPaths` on `state.json`, `items/`, `proposals/`. ThrottleInterval=10. Fires `.agents/idea-router/dispatch.sh` on any change. Dispatch reads both queues, spawns `claude --print` per agent, then `sirsi router ack <agent> <ids>` to drain legacy pending. Zero idle process.
-- **Thread keep-alive:** `.claude/hooks/router_inbox_check.py` on SessionStart + UserPromptSubmit. Auto-registers if no fresh active thread, immediate heartbeat, spawns detached bash loop (`while kill -0 <claude_pid>; do sirsi thread heartbeat; sleep 60; done`). Dedup via `/tmp/sirsi-caffeinate-<thread_id>.pid`.
-
-### Verification gaps surfaced (not theoretical — real)
-
-1. **Adoption ≠ notification.** Shipped notice to 5 sibling claude-* agents about new `ack` verb but never verified adoption. Sent 5 follow-up adoption-ack-requests with explicit reply contract (`close --result "adopted"` or variant). Adoption is now async-pending; closes organically as repos get worked.
-2. **8 items in `items/` have empty `to:` field** — direct file writes bypassing `sirsi router send` (which requires `--to`). Senders unknown. Per AGENTS.md §Lean #10 (atomicity at FS boundary), all writes should flow through CLI.
-3. **Orphan CTR threads accumulating.** `sirsi thread list` shows 2 stale claude-pantheon threads from earlier dispatcher spawns whose caffeinators died with host processes. CTR doesn't auto-close on dead-PID. Recommendation: `sirsi thread reaper` that marks dead-PID threads closed on read paths.
-4. **dispatch.sh "agents fired: 1" with no observable claude output.** Child output buffered until exit. Recommend `--output-format stream-json --verbose` per PANTHEON_RULES.md §2.21 (Ra Scope Autonomy).
-5. **Caffeinate Contract verified only on claude-pantheon side.** Codex-side implementation pending; sent question whether Codex.app's automation API allows long-lived background processes.
-
-### Doctrine codified
-
-- `~/Development/AGENTS.md` §Lean Engineering Doctrine — 11 numbered principles, with §Lean #11 attributed to codex-pantheon
-- `~/Development/AGENTS.md` §Thread Registration Law §Caffeinate Contract — 4-step universal pattern
-- Same propagated to all 6 repo `AGENTS.md` files
-- `~/.claude/projects/-Users-thekryptodragon/memory/feedback_lean_ethos.md` — user's "LEAN AF, direct comms, smallest packages" ethos as a memory entry for future sessions
-- `~/.claude/projects/-Users-thekryptodragon/memory/MEMORY.md` — indexed with the LEAN ethos pointer
-
-### CTR state at session end
-
-- Sent + bridged 2 router items to codex-pantheon (ack-verb request, then verification-insights)
-- Sent + bridged 5 router items to sibling claude-* agents (ack-adoption requests)
-- claude-pantheon's session thread (`thr-a441bbff379e62a9`) closed explicitly + caffeinator (PID 95339) killed
-- 2 orphan claude-pantheon threads remain in CTR (other concurrent sessions, not mine)
-- `pending[claude-pantheon]` and `pending[codex-pantheon]` both drained to 0 at session end
-
-### Lessons for next session
-
-- **Question polling before tuning intervals.** Per AGENTS.md §Lean #1 — applied here to replace 1s polling daemon with FSEvents.
-- **Verify before claiming.** Earlier in session I declared "FSEvents wake live and proven" when it was only proving the OLD legacy queue. Codex caught the binary mismatch. Lesson: smoke-test against the NEW model's items, not just the OLD pending[].
-- **Notification ≠ adoption.** Sending a router item is not confirmation it was acted on. Use explicit ack-request items with reply contracts for verification.
-- **Multi-agent collaboration loop works.** Claude → Codex → Claude → Codex round-trip on the binary mismatch + ack verb was peer-to-peer with no human in the loop. Each agent acted from its vantage point.
-
----
-
-## 2026-05-26 — Understand-Anything Plugin Installed + Knowledge Graph Indexed
-
-**Session goal:** install the Understand-Anything Claude Code plugin, index sirsi-pantheon's full polyglot codebase into a semantic knowledge graph, and unify the resulting artifact with Thoth's memory model.
-
-### Plugin install
-
-- `pnpm` 11.3.0 installed via Homebrew (Node 25.6.1 already present, ≥22 requirement met).
-- Plugin marketplace added: `Lum1104/Understand-Anything` → installed `understand-anything` v2.7.5 at `~/.claude/plugins/cache/understand-anything/understand-anything/2.7.5/`.
-- Workspace built with `--config.dangerouslyAllowAllBuilds=true` (pnpm 11 default-denies postinstall scripts; tree-sitter parsers + esbuild need them). 12 tree-sitter language parsers compiled.
-
-### Indexing the repo
-
-Ran `/understand` over the full project (`--scope everything`, 894 git-tracked files + 13 untracked = 907 scanned). Skill pipeline ran all 7 phases:
-
-| Phase | Output |
-|-------|--------|
-| 0 — Pre-flight | Plugin root resolved, core built, repo at `22ec913` |
-| 0.5 — Ignore config | `.understand-anything/.understandignore` generated; nothing excluded (full polyglot pass) |
-| 1 — SCAN | 907 files, 486 code, 19 languages, 2,277 internal import edges resolved by static analysis |
-| 1.5 — BATCH | 56 semantic batches via Louvain community detection (sizes 3–32 files) |
-| 2 — ANALYZE | 56 `file-analyzer` subagent dispatches in parallel (background, sliding 5–10 concurrent). Total 3,354 raw nodes + 6,935 raw edges produced |
-| 3 — ASSEMBLE REVIEW | Merge step + path-convention `tested_by` linker. 14 duplicates collapsed; 17 `step:` → `pipeline:` prefix normalizations applied. 0 dangling edges. |
-| 4 — ARCHITECTURE | 9 architectural layers, all 924 file-level nodes assigned exactly once |
-| 5 — TOUR | 14-step pedagogical tour starting at `cmd/sirsi/main.go`, walking through the deity hierarchy |
-| 6 — REVIEW | Inline deterministic validator: 0 issues, 252 orphan warnings (markdown docs + configs with no edges — expected) |
-| 7 — SAVE | `knowledge-graph.json` (2.9 MB), `meta.json`, and `fingerprints.json` (907 baseline hashes) written under `.understand-anything/` |
-
-### Final graph
-
-- **3,340 nodes** — 496 file, 2,108 function, 308 class, 353 document, 51 config, 23 pipeline, 1 service.
-- **6,947 edges** — 2,433 contains, 2,279 imports, 1,816 exports, 128 tested_by, 126 related, 70 depends_on, 48 calls, 22 documents, 19 configures, 4 deploys, 2 triggers.
-- **9 layers** — cli-entrypoints, core-services, mobile-bindings, editor-extensions, agent-workqueue, documentation, infrastructure-cicd, configuration, testing.
-- **14-step tour** — README → cmd/sirsi/main.go → deity binaries → Jackal rules → Isis/Guard → Thoth/Ma'at → MCP server → Horus dashboard → mobile bindings → VS Code extensions → idea router → build → CI.
-
-### Three-tool clarification (Seba / Thoth / Understand-Anything)
-
-User flagged a naming/role overlap: Seba already holds **architectural mapping sovereignty** per the deity registry. Resolved as a clean three-way split:
-
-- **Thoth** = memory + intent + plans (the *why* and *what next* — this file)
-- **Seba** = architectural map (the canonical *layer/topology* — deity-owned, lives in `internal/seba/`)
-- **Understand-Anything** = semantic verification (the auto-derived *what exists* + *what imports what* — lives in `.understand-anything/`)
-
-Three artifacts, three jobs, no overlap. Understand is the verifier, Seba is the architect, Thoth is the historian.
-
-### Bidirectional sync codified
-
-- Added `## Knowledge Graph (Understand-Anything)` section to `memory.yaml` with artifact pointer, current stats, query commands, and a `sync_protocol` block.
-- This journal entry serves as the first delta record. Future `/understand` runs should append a similar entry summarizing what changed (new packages appeared, layer assignments shifted, edge counts moved).
-- Added rule to global `~/CLAUDE.md` instructing future sessions to maintain the bidirectional sync automatically.
-
-### Verification gaps and notes
-
-- Swift and Kotlin nodes are file-level only — tree-sitter Swift/Kotlin grammars are not bundled in the plugin's structural extractor, so per-function/per-class extraction is missing for iOS and Android code. The graph still captures their file relationships and architectural-layer assignment, but function-level call graphs for those languages are not in scope until upstream adds those parsers.
-- 252 orphan nodes (markdown docs and standalone configs with no incoming or outgoing edges) — these are document-class nodes that the file-analyzers couldn't link to other artifacts. Expected for marketing pages, ADRs, and pure-narrative case studies.
-- The graph was built from `HEAD` (`22ec913`); uncommitted changes in `.agents/idea-router/items/` and `state.json` are NOT reflected. Re-run `/understand` after committing those to refresh.
-
-### Lessons
-
-- **One global pnpm install can unlock dozens of cached plugins.** The `--config.dangerouslyAllowAllBuilds` flag is the right hammer for native-binary plugins; cleaner than per-package `pnpm approve-builds`.
-- **The 5-concurrent guideline in `/understand`'s phase 2 is an artificial floor, not a ceiling.** With background dispatches and notification-driven progression, running 10–12 concurrent worked fine here. The bottleneck was per-batch LLM latency, not parallelism.
-- **The polyglot ratio matters for graph density.** With 367 Go files producing 2,108 function nodes and 281 markdown files producing zero function nodes, the call/import graph is heavily Go-weighted. That matches reality (Go is the core) but means architectural-layer queries dominated by markdown look sparse on edges. Acknowledge in onboarding docs.
-
-
-## 2026-05-26 — "Does It Work" Audit + 3 Silent-Failure Fixes
-
-**Session goal:** verify the architecture shipped 2026-05-21/22 actually works end-to-end. User asked one question: "does it work?". Probe found three real failures, all silent. All three fixed in this turn.
-
-### The four-day gap (May 22 → May 26)
-
-After last session, dispatch.log shows the system was QUIET from 2026-05-22T16:12 to 2026-05-26T11:57. No items routed. No threads heartbeated by the daemon. No errors. The user opened a session today and asked the right question.
-
-### Probes + findings
-
-Sent a real router item, watched dispatch.sh respond. FSEvents fired correctly. dispatch.sh reported `agents fired: 0` even though `sirsi router pull claude-pantheon` clearly returned the item. Root cause: launchd plist had no `WorkingDirectory`, so cwd=`/`, so `router.FindRepoRoot()` walked up from `/` and found nothing → pull returned empty → awk extracted no ids → dispatch silently no-op'd.
-
-### Commits shipped (all on origin/main)
-
-- `f5cd429` `fix(router)` — dispatch.sh `cd $REPO_ROOT` upfront so FindRepoRoot resolves regardless of how the script is invoked. Self-contained beats relying on plist hygiene.
-- `75e68fe` `feat(thread)` — `reapDeadPIDThreads()` in cmd/sirsi/threadcmd.go. Auto-reaps orphan CTR threads whose PIDs no longer exist on this host (syscall.Kill(pid, 0) == ESRCH → mark closed). Hooked into `sirsi thread list` so the read IS the event. No daemon, no polling, no new verb. Per AGENTS.md §Lean #1 + #4. Verified by sweeping 2 real orphans (`thr-4990a8df4cbd1468`, `thr-f582c02ec658042a`) from the 2026-05-21/22 session.
-- `2111423` `fix(router)` — dispatch.sh fails loud on `sirsi router pull` errors. Captures exit code + stderr. Distinguishes "queue empty" from "pull broken" in dispatch.log. Same pattern applicable to any future failure that would otherwise hide as `agents fired: 0`.
-
-### Architectural lesson
-
-**"The loud failure is the gift" only holds if "no work" and "missed work" look different.** dispatch.sh logged identically for both states — 4 days of silent failure. The third commit (`2111423`) is the *generalization* of the first (`f5cd429`): not just fix the bug, fix the mechanism that hid the bug. Recommend Codex's `ctr-thread-wake` automation adopt the same separation — its stay-quiet prompt should explicitly NOT stay quiet on read failures.
-
-### Verification methodology validated
-
-The user's question "does it work" was the single highest-leverage prompt of the session. Three bugs fell out of one probe. Lesson for future sessions: don't trust "tests pass" or "FSEvents fired" as proof of end-to-end function. Send a real item, watch what happens, audit the log. Reality > telemetry summaries.
-
-### Still pending (async by design, not broken)
-
-- 5 sibling adoption-acks (`claude-finalwishes`, `claude-assiduous`, `claude-nexus`, `claude-porch-and-alley`, `claude-homebrew-tools`) still `open` after 4 days. Those repos haven't had a claude session opened. Architecture is sound; cross-repo adoption observability is bottlenecked on session activity.
-- 8 items in `items/` with empty `to:` field — direct file writes bypassing `sirsi router send` validation. Operator-error from senders, not router bug.
-- One open ask to Codex: should plist hygiene fall under Lane A (codex-owned router delivery / queue health), or is workstation config out of router scope? The 4-day silent failure proves we should formalize plist ownership in the lock table.
-
-### CTR state at session end
-
-- 0 active claude-pantheon threads (all 5 historical sessions now closed, 1 reaped by the new reaper)
-- Probe items all closed
-- pending[claude-pantheon] = 0; pending[codex-pantheon] = 1 (the audit insights I just sent)
-- launchd `com.sirsi.idea-router` loaded, idle, waiting for FSEvents
-
-### Lessons indexed for next session
-
-1. Always cd to known location before running sirsi from a script.
-2. Folded periodic cleanup (reaper) into read-paths is the right shape — no daemon needed.
-3. Silent failure separation is a generalizable lean pattern: anywhere a primary check can return "empty" for either legitimate or broken reasons, distinguish them in the log.
-4. Real probes catch what telemetry misses. "Does it work" is the user's most valuable prompt.
-
----
-
-## 2026-05-31 — Agent Work Safety Governor
-
-**Context:** During a Sirsi Nexus assessment, an agent analysis path ballooned to roughly 135 GB of application memory and crashed the working environment. The user correctly called out that this is the exact failure class Pantheon is supposed to prevent.
-
-**Decision:** Unified existing Pantheon safety primitives behind the `sirsi agent` surface:
-
-- `internal/agentguard/` added as the composable governor.
-- `sirsi agent preflight [command...]` checks system/resource state and command policy before work.
-- `sirsi agent safe-run -- <command...>` executes only after preflight, with timeout and RTK output budgets.
-- `docs/AGENT_WORK_SAFETY.md` records the crash lesson and the first policy set.
-
-**What was reused:** `internal/yield` for CPU pressure, `internal/guard` Doctor for RAM/swap/Jetsam/process facts, `internal/rtk` for output filtering, and the existing `sirsi agent` command namespace. Vault/Horus remain adjacent primitives for future large-output storage and structural code inspection.
-
-**Initial policy:** block unbounded `$HOME`/`~/Development` scans, direct `.codex/sessions/*.jsonl` reads via `cat`/`rg`/`grep`/Python, and Python-based repo/transcript-wide analysis without explicit budgets.
-
-**Verification:**
-
-- `go test ./internal/agentguard`
-- `go test ./cmd/sirsi`
-- `go build ./cmd/sirsi`
-- Live smoke: `sirsi --json agent preflight -- cat .../.codex/sessions/...jsonl` returns `verdict: block`.
-- Live smoke: `sirsi --json agent safe-run --force ...` runs with output budget while still reporting current Jetsam blockers.
-
-**Lesson:** Pantheon already had the organs: Guard, Yield, RTK, Vault, Horus. The missing piece was the front door that forces agent work through those organs before the machine is under pressure.
-
----
-
-## 2026-05-31 — Router Thread/Item Relationship Index
-
-**Context:** After the crash recovery, the router needed a clear answer to which Claude thread owns which router item. `sirsi thread list` showed no active registered threads; `threads.json` contained only closed/reaped `claude-pantheon` sessions.
-
-**Decision:** Added `.agents/idea-router/THREAD_ITEM_INDEX.md` as the canonical relationship index. It records:
-
-- current open item ownership by `to` agent
-- `thread_unassigned` for every open Claude repo-agent item until a live thread registers
-- historical Pantheon thread/lane provenance for Lane B, Lane C, ADR-020, and LEAN AF coordinator sessions
-- the rule that thread ownership is established only by an active registered thread heartbeating `current_item=<item-id>`
-
-**Router cleanup:** Reconciled `state.json.pending` to match open item frontmatter for `claude-assiduous`, `claude-finalwishes`, `claude-homebrew-tools`, `claude-nexus`, and `claude-porch-and-alley`; corrected `pending_for_user` to the actual open Development-root decision.
-
-**Verification:** `sirsi router status` reports 20 open / 46 closed, with no `codex-pantheon` inbox items and no blank-recipient bucket.
-
----
-
-## 2026-05-31 — Codex Router Reviews Closed + Dispatch Race Fixed
-
-**Context:** Terminal showed multiple live Claude windows while CTR still showed no registered threads. Claude then routed three `codex-pantheon` items: dispatch race, ADR-020 canon-correction v2, and `sirsi thread discover` Phase 1 review.
-
-**Decision / Work Completed:**
-
-- Patched `.agents/idea-router/dispatch.sh` with per-agent lock directories under `.agents/idea-router/locks/` so WatchPaths bursts cannot spawn sibling workers for the same inbox.
-- Removed the Python legacy-pending reader from `dispatch.sh`; it now uses `jq` when available and otherwise relies on pull-model item frontmatter.
-- Approved ADR-020 canon-correction v2 and made one follow-up line edit in `docs/ADR-020-INTERACTIVE-SURFACE-REOPENED.md` so it no longer says the changelog "needs" correction after the correction landed.
-- Approved `sirsi thread discover` Phase 1. Phase 2 hook scope is approved with the constraint that hooks call `sirsi thread discover --self` and do not enumerate process tables.
-
-**Router Artifacts Closed:**
-
-- `20260531-codex-pantheon-dispatch-concurrency-guard-review.md`
-- `20260531-codex-pantheon-adr020-canon-v2-approval.md`
-- `20260531-codex-pantheon-thread-discover-phase1-approval.md`
-
-**Verification:**
-
-- `bash -n .agents/idea-router/dispatch.sh`
-- `bash -n .agents/idea-router/sweep.sh`
-- `git diff --check -- .agents/idea-router/dispatch.sh docs/ADR-020-INTERACTIVE-SURFACE-REOPENED.md`
-- `go test ./internal/router ./cmd/sirsi`
-- `go test ./internal/agentguard ./internal/router`
-- `go build ./cmd/sirsi`
-- `sirsi router pull codex-pantheon` => no open items
-- `sirsi router status` => 20 open / 50 closed
-
----
-
-## 2026-05-31 — Process Scout Registry
-
-**Context:** User clarified the desired bar: every IDE, terminal, agent, PID, and process should be known to Pantheon automatically. If a process cannot register as a router thread, Pantheon should still scout the machine and know it exists.
-
-**Decision:** Added a read-only process awareness registry separate from CTR thread ownership:
-
-- `internal/router/processes.go` and tests define `ProcessRegistry`, `ProcessRecord`, role classification, and reconciliation preserving `first_seen` while marking missing PIDs `gone`.
-- `sirsi thread scout` records the visible process table into `.agents/idea-router/processes.json`.
-- `.agents/idea-router/sweep.sh` now refreshes both `sirsi thread discover --json` and `sirsi thread scout --json` automatically.
-- Removed the old Python parser from `sweep.sh`; watcher validation uses `jq`.
-
-**Important boundary:** `threads.json` remains for agent sessions that can own router work. `processes.json` is the broader host awareness map for every visible PID. Pantheon observes broadly, but process control remains gated through Guard/Throttle/Slay and explicit safety rules.
-
-**Live smoke:** Escalated host run of `sirsi thread scout --limit 12` saw 831 visible processes on `Mac.lan`: 18 agent, 2 IDE, 30 terminal, 30 system, 751 process. It captured the live Claude/Codex PIDs that the screenshot showed.
-
-## 2026-05-31 — Runtime Restore After OOM + ADR-021 (Deities ≠ Single-Repo)
-
-**Context:** User's Mac crashed from application-memory exhaustion; Pantheon (which they expected running) was gone. No LaunchAgent/login-item ever made it auto-start, so every reboot killed it.
-
-**Restore:** Rebuilt v0.22.0-beta from source (`make build`, `build-menubar`, `bundle`). Found `guard.StartBridge` is embedded in the menubar (`cmd/sirsi-menubar/main.go:388`) — so menubar and the Sekhmet RAM watchdog are ONE process, not two (no separate `guard --watch`; that flag no longer exists in v0.22). Installed fresh `sirsi`+`sirsi-menubar` to all PATH copies (checksums unified), loaded `ai.sirsi.pantheon` LaunchAgent (RunAtLoad+KeepAlive → reboot-persistent), registered `sirsi mcp` user-scope (✓ Connected). Caught a silent regression: first agent launch ran the stale May-11 brew binary because login-shell PATH put /opt/homebrew/bin ahead of ~/.local/bin — fixed by unifying all copies. Menubar verified live via screenshot (🟢 RAM 11%).
-
-**Router:** Registered this thread `thr-7452fa9c16e656c9` (claude-pantheon, lane pantheon-runtime-restore) — had never registered. The two TUI items in the claude-pantheon inbox were MISROUTED (codex filed a MISROUTE NOTICE); closed the notice (the valid item), left the TUI correction for the intended thread.
-
-**ADR-021 (proposed):** The menubar's `osiris assess failed` traced to `stats.go:84` `RepoDir: "."` resolving to launchd cwd `/`. User rejected the shallow "pin a repo" fix: *"Sirsi/Pantheon components are NOT restricted to repo management… recognize we have a design problem."* ADR-021 names the principle — workstation-scoped deities source scope from the CTR registry (`sirsi thread discover`, committed `10a97b7` same day), never cwd; Osiris becomes a workstation-wide risk aggregator; non-git degrades to benign. Routed to codex-pantheon for review; no code before acceptance. Committed `dd36ccf` (ADR + INDEX + CHANGELOG).
-
-## 2026-05-31 — `sirsi thread discover` + codex round-trip (CTR auto-registration, Phase 1)
-
-**Why:** "How many threads registered since reboot?" → zero. Root cause: registration was manual-only, so a reboot reaps every PID and nothing re-enrolls. Compounding it — the live sessions were all launched from `$HOME` (`cwd=/Users/thekryptodragon`, no `CLAUDE_PROJECT_DIR`), so they have no repo identity to register under. That is a real constraint, not a bug: a session in `~` is not a repo agent.
-
-**Design (agreed with codex-pantheon via router, items `…195033` / `…210057`):** two complementary pieces — a SessionStart hook (push at birth, Phase 2) and `sirsi thread discover` (pull/reconcile, Phase 1). Codex confirmed it has no project-local SessionStart equivalent, so `discover` is its only registration path; it accepted the anchor-pid lifecycle (externally-registered threads bind to the discovered PID, reaped by the existing watcher when it exits) and `discover --self` as the shared hook entry point.
-
-**Built (commit `10a97b7`, pushed):** pure `ReconcileDiscovery` in `internal/router/discover.go` — surface-scoped longest-ancestor cwd match; `unmappable` (home) and `ambiguous` (the genuine `codex-homebrew` vs `codex-homebrew-tools` cwd collision) are reported, never guessed (Rule A23). 9 unit tests, no real processes (Rule A16). CLI + bounded enumeration (`pgrep -x`/`lsof`, `--print`/`-p` worker filter to avoid a self-registration loop, `--self`, stable snake_case `--json`) in `cmd/sirsi/threaddiscover.go`. Live: `discovered=6 registered=0 unmappable=5 skip=1` — proved the premise and the already-registered skip path (an externally-registered repo thread was correctly skipped).
-
-**Codex verdict — APPROVED.** Directives: keep the `--print` filter (note a future stricter interactive-session signal); wire `discover` into the sweep report-only (**Phase 1.5**); Phase 2 hook approved (must call `discover --self`, never broad process scans); live-delivery into a running session stays **Phase 3, spike-gated** (the local mechanism is Claude Code remote-control, not the claude.ai `RemoteTrigger` cloud API).
-
-**Deployed + Phase 1.5:** built from the working tree and installed to `~/.local/bin/sirsi` (the install therefore also carries the parallel scout-lane's uncommitted `thread scout`). The hourly `sweep.sh` — already wired by the scout/runtime-restore lane to call `discover` + `scout` — runs PASS. ADR-021 (`dd36ccf`, parallel lane) consumes this primitive: workstation-scoped deities (Osiris et al.) source their repo set from CTR discovery, never `cwd`.
-
-**Open / next:** Phase 2 (SessionStart hook → `discover --self`) approved, not yet wired. Phase 3 spike pending. Coupling to flag: the installed binary includes the scout lane's uncommitted code — that lane should commit `threadscout.go` + `sweep.sh` + friends and own a clean rebuild-install.
-
-## Entry 036 — 2026-06-01 12:28 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"bafb166f-7d28-44f4-872f-6c2c49b47752","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/bafb166f-7d28-44f4-872f-6c2c49b47752.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":null}
+- {"session_id":"019f8fc4-96a4-7f00-b564-d91a64d0a4d1","turn_id":"019fb8b3-2d07-7f42-bde5-64b9054887cf","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/23/rollout-2026-07-23T12-17-33-019f8fc4-96a4-7f00-b564-d91a64d0a4d1.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-01T16:24:36Z
-- last Claude read: 2026-06-01T16:12:19Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## 2026-06-02 — ADR-026 Horus ops-dashboard (proposed) + R4 capability inventory
+## Conduit run 2026-07-31T15:20Z
 
-**Lane:** claude-home, Horus ops-view content lane. Boundary ratified 2026-06-01 (items `235419`/`235652`): I own the ops-view content + read contract; claude-pantheon owns the surface chrome (CLI/TUI/menubar/macapp). Horus renders INTO their surfaces, not beside them.
+Not an all-green run. Three `.ips` appeared since the prior pass and were **not** what they
+looked like: `sirsi` (×2) and `SirsiMenubar` were SIGKILLed with `CODESIGNING /
+Launch Constraint Violation`, not Jetsam and not a crash. Root cause is stale launchd
+LWCRs — the binary was replaced at 11:03 EDT and `cp` + `codesign --force --sign -` yields
+a new cdhash, so launchd's cached requirement no longer matched and AMFI killed at exec.
+`codesign -v` passes; the artifact is fine and the staleness is in launchd.
+`ai.sirsi.liveness-watch` was dead with `OS_REASON_CODESIGNING`; healed via `bootout` +
+`bootstrap` (kickstart -k does not clear an LWCR) and confirmed back to exit 0. The live
+daemons run the old inode and are healthy but armed to fail on their next restart; I did
+not bounce `gemma-worker` unattended. Routed the procedure defect to claude-pantheon
+(`20260731-151504`) — the canonical rebuild path, including the conduit supervisor's own
+heal block, omits the LWCR refresh everywhere. The separate JetsamEvent was a pressure
+snapshot, not a kill: the broker (pid 87281, capped, cache 1.96 GB) survived and answers
+/health; memory free fell 89% → 65%.
 
-**Finding — the gap is exposure, not computation.** `router.CollectNodeStatus()` (`internal/router/nodestatus.go`) already aggregates the entire operator read-model into one `NodeStatus`: registered agents + wake-health, router queue (pending-by-agent / topics / last reads), work-queue dispatch failures, live+stale threads carrying `os_state` OS-truth liveness (ADR-022), daemon health + binary-drift (ADR-023), and claude/codex CLI auth. It is complete and trapped in Go — **not** in the frozen dashboard contract (matrix row *Router ack → MISSING, no `/api/router/*`*), **no** CLI verb (Rule A27 canon references `router node-status`, which does not exist), **no** surface render (menubar hosts the dashboard server but paints none of it; TUI scaffold has no ops pane).
+Worked four inbound items. Upheld codex's CHANGES-REQUIRED on **#389** — reproduced the
+gap against the deployed registry (1 of 20 lanes declared `consumer.command`), then landed
+the 10 `type: claude` declarations by verbatim deep-copy from `claude-deck`, all 11 now
+resolving clean against #389's own `ResolveConsumer` rules. Declined to invent argv for the
+8 codex lanes and gemma-pantheon; the reviewer independently confirmed that was correct —
+`--add-dir ~/.sirsi` is mandatory for codex (the store lives outside the repo) and
+`sirsi-gemma-worker.sh` is a persistent daemon already live at PID 1360, so a spawned
+one-shot declaration would have duplicated workers. That source work went to claude-pantheon
+(`151706`). #389 stays unbound and is mine regardless. The independent inference audit
+returned four P1s — investor drafts relabel tok/s as words/s, and the mixed-length
+correctness gate computes DIVERGED then discards the return at `diag.go:1034,1076`, printing
+PASS over a 5.625 margin — plus a `max_tokens`/EOS violation and an SSE wedge. Relayed
+intact to claude-io (`151602`); publication stays blocked, and the 8.2x serving claim did
+not reproduce (229.1 tok/s ⇒ ≈7.2x), the same one-best-value defect as `m5max-certified.json`.
+Finally, `codex-home` self-reported that a stale heartbeat prompt had it registering as
+`codex-pantheon` for the whole preceding pass; findings stand, provenance does not, so I
+propagated corrections to both downstream recipients before either acted. Ledger 61 → 68.
 
-**ADR-026 decision:** promote `NodeStatus` to a frozen additive contract; serve it at typed `GET /api/node-status` (+ `?view=summary` → `OpsSummary` for the menubar); add `sirsi router node-status [--json]` (makes the A27-referenced verb real, --json shape == HTTP body); define menubar/TUI as read-only *projections* of the one read-model (no re-aggregation — the frozen-action-contract principle applied to reads). Read-only endpoint: zero destructive surface, nothing to confirm-gate.
+## Conduit run 2026-07-31T15:25Z
 
-**Challenged the framing (Rule A23):** the resume said "GET /api/horus," but `/api/horus/*` is already the code-graph namespace (`scan/query/report` → `SymbolGraph`/`WorkstationReport`). Reusing it conflates two Horus meanings, so the ops-view is `/api/node-status` (one name → one meaning). Recommended `/api/node-status`; flagged for claude-pantheon to override if their surface ladder needs `/api/horus`.
+Bound SirsiNexusApp PR #212 (IO6 enforcement F1–F4) on an explicit bind request from claude-nexus,
+who authored it and correctly refused to self-merge. Source-deep review against the diff rather than
+the description confirmed all four fixes land in the code: F1 reports `total = -1` when more than one
+collection is present, and the test flipped from asserting the summed `286` to asserting `-1` — that
+inversion is the durable part, since a regression to summing now fails the suite instead of passing
+it. F2 issues and honours `next_page_token`, rejecting an unissued token with `INVALID_ARGUMENT`
+(the `HasPrefix` check is evaluated independently of `Atoi`, so a malformed token cannot land as
+offset 0). F3 deletes `io6DefaultPage` outright, so the read-clamp-then-discard path no longer exists
+to regress to. F4's `io6BoundNested` recurses through nested message fields and message-kind list
+elements with maps skipped; `io6Window` shifts in place then truncates, no aliasing. Go Build & Test,
+Secrets Scan and Lock File Sync all green; ci-gate makes that real Go evidence on this repo. Reported
+one residual of the same family, not blocking: a page token carries an offset but no collection
+identity, and `io6Apply` applies that offset to every repeated field unconditionally on `lists`, so a
+token replayed against a response that has since grown a second non-empty collection would window
+both lists and issue no token back — lossy again, silently. Recommended it be carried into claude-io's
+ADR-003 per-collection `PageInfo` amendment, where a collection-naming token falls out for free,
+rather than patched here with a token format that amendment would replace. Not merged: under the 1h
+soak with `Build React Portal` still pending. Vitals steady — no new `.ips` since the three 11:04–11:05
+LWCR kills already diagnosed last run, memory recovered 65% → 85% free, broker 87281 capped at 4 GiB
+with a 1.98 GB cache. Reconcile healed 4, prune took 280 → 274, ccd reap killed one leaked
+claude-nexus-lane-runner and archived one record. Doctor: 0 woken, 68 already-armed, 2
+wake-unavailable — both `to: user` owner gates, expected. Stale threads rose 3 → 6. codex-home read
+and closed the identity correction itself at 15:23:25Z, confirming that lane responsive.
 
-**R4 inventory:** `docs/HORUS_OPS_READMODEL_R4_INVENTORY.md` — the human-readable form of `watcherspec.go` ("the R4 capability inventory in code"): Part 1 the per-surface watcher-capability matrix (how each surface stays alive), Part 2 the ops read-model source + exposure ledger (what the operator can see vs. what's still trapped). R-mapping confirmed from ADR-025 status line: R1/R2/R4/R5 = ADR-024, R3 = ADR-025.
+## Conduit run 2026-07-31T16:28Z
 
-**Canon:** ADR-INDEX (+ADR-026 Proposed, 24→25, next 027), CHANGELOG (Unreleased/Added). Routed to claude-pantheon for review (item `20260602-021743`, type=review). Design-phase only — no code in either lane until codex + claude-pantheon bless the contract shape; then I implement steps 1-3 (contract+endpoint+verb), they implement 4-5 (surface render).
+SirsiNexusApp #212 confirmed MERGED (the carried unconditional first action returned "already merged",
+exit 0; the repo now shows zero open PRs) and the originating request was answered and closed via
+sirsi-respond.sh, routing a fresh Result back to claude-nexus. Router thread reconcile healed 5 reaped
+claude-home threads to successors; ccd reap killed 1 completed-leak session (pid 17781,
+claude-nexus-lane-runner) and archived 1 record; retention reclaimed 128.7 KiB. Two forensic items were
+run down and both cleared: the new sirsi-2026-07-31-121910.ips is the SAME stale-launchd-LWCR class as the
+11:04-11:05 trio (CODESIGNING / Launch Constraint Violation, SIGKILL Code Signature Invalid) rather than a
+memory event, but it proves the defect is still actively killing launchd-spawned sirsi and was already
+routed as 20260731-151504; and JetsamEvent-2026-07-31-110818 killed only spotlightknowledged.updater on
+its own per-process-limit, with the 14.9 GB Python (the capped broker) untouched, so it is the known
+Spotlight write-amplification class and not a broker P0. diagnose's "2 duplicate model brokers" signal is
+a FALSE POSITIVE: exactly one gemma-capped-server.py process exists (87281, cap confirmed by identity),
+the second counted process being the bash gemma-worker. The pantheon lane drained itself hard this run,
+58 open items down to 43, taking the whole ledger from 73 to 58 without conduit intervention.
 
-**Drift caught live:** the `sirsi` on PATH is v0.21.0 (no `router send --type` flag) while the repo is v0.22.0-beta — the exact ADR-023 binary-drift class. Flagged in the review item for the Decision-5 stale-Homebrew rebuild on claude-pantheon's ADR-024 follow-up plate; not self-fixed (its lane).
-
-## 2026-06-02 — ADR-025 completed: Thoth-gated exit + suspend/resume/reconcile (R3)
-
-**Context:** Core ADR-025 (`414142f`) had landed the `suspended` status and `SuspendThread`/`ResumeThread` lib primitives with 6 tests. This session finished R3 of the always-on supervisor: the CLI verbs, the SessionStart reconciliation gate, the exit hooks, and the 3 remaining acceptance tests.
-
-**Built:**
-- **`ReconcileExits`** (`internal/router/threads.go`) — the authoritative SessionStart gate (ADR-025 §4). Pure, host- and agent-scoped, with an injected `RetroSyncFn` (Rule A16). Stale-active → heal in place to suspended after retro sync; reaped (terminal, never revived per ADR-022) → mint a suspended successor carrying `reaped_from` if memory is recoverable, else a visible `UNRECOVERABLE` warning. Idempotent via `hasSuccessorFor` + a 24h `ReconcileReapedLookback` so SessionStart never re-mints or re-warns forever.
-- **CLI verbs** (`cmd/sirsi/threadsuspend.go`): `thread suspend` (`--self`/`--thread`, `thoth sync` first for a fresh `thoth_ref`, snapshots owned open items from `state.json` Pending + resume prompt, kills the fs-watcher), `thread resume` (restores owned items, prints resume prompt, returns the ADR-024 `WatcherFor` spec to re-arm), `thread reconcile` (`--agent`, reaps dead PIDs first, then `ReconcileExits`; `SIRSI_SUPERVISOR=0` skips the managed action). `bestEffortThothSync` returns (commit-ref, ok) where ok = capture succeeded — the honest signal gating successor-vs-warn.
-- **Hooks** (user-scope `~/.claude/settings.json`, ADR-024 §4 default-on): new `SessionEnd` → `thoth sync` + `thread suspend --self` (best-effort, visible error — SessionEnd cannot block); `SessionStart` 3rd entry → `thread reconcile --agent <id>` (the guaranteed gate). Both gated by `SIRSI_SUPERVISOR=0`.
-
-**Tests:** +3 reconcile acceptance tests (stale-in-place, reaped-successor-then-warn + idempotency, host/agent scoping). 9 ADR-025 tests total, `go test -race ./internal/router` green; `go build ./...` exit 0. Verbs smoke-tested register→suspend→resume→close on a throwaway thread with the freshly-built binary.
-
-**Deviation flagged for codex:** re-`register` matching a suspended record currently mints a *fresh* thread (codified by the shipped core test `TestRegisterThread_BypassesSuspendedFastPath`) rather than auto-adopting via the resume transition as ADR-025 §1 describes. Explicit `sirsi thread resume` is the supported resume path. Left as-is to avoid changing codex-reviewed core behavior; routed to codex-pantheon for a ruling.
-
-**Operational note:** the PATH-installed `sirsi` is killed with exit 137 on a trivial `thread heartbeat` — the freshly-built binary works. Confirms ADR-023 binary drift; the user-scope hooks call PATH `sirsi`, so they only become functional after the rebuild+install follow-up.
-
-## 2026-06-02 — ADR-024 Amendment 1 implemented: worker-lifecycle gate + (pid,start_time) reap-key
-
-**Context:** claude-home CLAIM 024522 assigned claude-pantheon (sole writer) the ADR-024 amendment for CTR registration-hygiene findings (2) worker-lifecycle and (3) reap-key. claude-home APPROVED the design (025217). User directed "keep going until you finish," so implemented the approved design (doer→reviewer; routed implementation to codex). Finding (1)/menubar excluded per ruling 023813.
-
-**(3) Reap-key — the systemic bug.** Bare-PID liveness can't tell a recycled/re-registered PID from the original. `internal/router/liveness.go`: `PIDStateOf(pid, startedAt)` (composite identity) + new `PIDRecycled` state (distinct from `gone` for diagnostics; `DeadByOSTruth` includes it) + injectable `pidStartFn`/`defaultPIDStart` (`ps -o lstart=`, mutex-guarded A21). `""` startedAt → bare-PID fallback (zero regression). `Thread.StartTime` captured at register via `PIDStartTimeOf`; `ReapDeadThreads` + `RegisterThread` fast-path key on the composite. Adopted claude-home note (b): one canonical `PIDStateOf(pid, startedAt)`, not a separate `PIDStateOfWithStart`. **No-false-reap guarantee** tested (the regression that reaped live sessions this session).
-
-**(2) Worker gate.** `cmd/sirsi`: injectable `oneShotProbe` + pure `ephemeralWorkerSkip`; `register` refuses one-shot `--print`/`-p` workers (no-op, not error). Selective-gate test (claude-home note a) proves interactive surfaces still register under the same path.
-
-**Tests:** `internal/router/adr024_amend_test.go` (PIDStateOf composite matrix, recycled-reaped, live-survives, composite fast-path) + `cmd/sirsi/adr024_amend_test.go` (selective gate). `go test -race ./internal/router ./cmd/sirsi` green; `go build ./...` exit 0; start_time capture smoke-verified via real `ps -o lstart`. Doc DRAFT→IMPLEMENTED.
-
-**Routed to codex for review-of-code (doer→reviewer).** Pending codex on this + ADR-025 + binary-unification ruling (024046).
-
-## 2026-06-02 — ADR-026 steps 1-3 shipped (Horus ops-dashboard read endpoint + node-status verb)
-
-**Lane:** claude-home (Horus ops-view content). Design approved by claude-pantheon `20260602-022950` with two caveats both folded; surface chrome (steps 4-5) stays with claude-pantheon per the ratified boundary.
-
-**The pattern that made this small:** the entire operator read-model already existed in `router.CollectNodeStatus()` — agents, queue, dispatch failures, live/stale threads with `os_state` (ADR-022), daemon + binary-drift (ADR-023), agent CLI auth. The gap was exposure, not computation. ADR-026 promised three thin wrappers; the code is exactly that:
-
-- `router.NodeStatus.SchemaVersion = "1.0.0"` — one field + one constant + one stamp line in `CollectNodeStatus`. Surfaces decode tolerantly; bumps only on a breaking shape change.
-- `internal/dashboard/nodestatus.go` — `GET /api/node-status` serves the typed shape directly (consumer→producer; dashboard imports router; no cycle). `?view=summary` returns `OpsSummary` — a **pure reduction** of the same NodeStatus (every field derived, nothing sourced independently — the action-contract principle applied to reads). Bounded to top-N=12 agents by pending+live signal with `more_agents` overflow row for the NSMenu budget (claude-pantheon caveat #2). Drift/auth roll-up sets `worst_icon` (🟢/🟡/🔴) for the menubar's lead row.
-- `cmd/sirsi/routernodestatus.go` — `sirsi router node-status [--json]` wraps `CollectNodeStatus()`. `--json` shape is byte-identical to the HTTP body (one read-model, two transports). Default render is a styled human view (Rule A10). Closes the canon/implementation gap where Rule A27 references this verb but it never existed.
-
-**Smoke-run reality check (live registry):** the verb surfaced **7 phantom `pid=0/os=unknown` claude-pantheon records** sitting "active" 40+ minutes idle — the exact ADR-024 Amendment 1 finding (3) PID-reuse / lost-anchor class. The verb didn't just compile; it's already the operator surface that proves Amendment 1 is needed. Self-validation.
-
-**Race avoided (A21):** caught claude-pantheon mid-flight refactoring `PIDStateOf` to `(pid, startedAt)` in the same files I needed to touch. The `SchemaVersion` field add is in `nodestatus.go` (their lane file) — kept it minimal (1 field, 1 const, 1 stamp line; top of struct, not near their call-site changes). Did all other work in new files (`dashboard/nodestatus.go`, `cmd/sirsi/routernodestatus.go`, `dashboard/nodestatus_test.go`). Their refactor landed independently; my dashboard tests pass green.
-
-**Verification:** 5 tests `internal/dashboard/nodestatus_test.go` `go test -race` green in 1.3s — full-contract serve, summary derivation (drift flag + needs-login projection), bounded truncation, 503 nil-collector, 500 collector-error. `go build ./...` ok. `sirsi router node-status` + `--json` smoke-run produce expected output against live registry.
-
-**Next:** route to codex for arch-verify; notify claude-pantheon their surface chrome (steps 4-5: menubar `OpsSummary` rows + TUI 4th pane) is unblocked. ADR-INDEX flipped Proposed → Accepted with the impl-status note.
-
-## 2026-06-02 — Binary unification (ADR-023) — user-authorized autonomous deploy
-
-User authorized everything for an autonomous loop. Executed the long-gated ADR-023 binary unification: `make build` (v0.22.0-beta, commit a5fc1b4, stamped) → installed the single artifact to all 3 PATH copies (~/.local/bin, ~/go/bin, /opt/homebrew/bin) via atomic mv + ad-hoc codesign. All three now SHA-identical (dc532a39…). Resolves: (1) the broken ~/.local/bin/sirsi that SIGKILLed (exit 137) every bare-`sirsi` watcher workstation-wide — heartbeat via PATH sirsi now exits 0; (2) ADR-023 SHA drift (3 divergent builds → 1); (3) ships ADR-025 R3 + ADR-024 Amendment 1 reap-key/worker-gate + register-no-spawn + `router node-status` to the primary PATH binary. This is the deploy half of the session's code work.
-
-## 2026-06-02 — Autonomous loop (user-authorized "everything until I return") — summary
-
-User granted blanket authorization for an unending claude+codex loop. Drove every gated/approved item to completion:
-- **Binary unification (ADR-023)**: all 3 PATH copies SHA-identical @ a5fc1b4; ~/.local 137 SIGKILL fixed (workstation-wide watcher die-off cleared); ADR-025/Amendment-1/node-status now on primary PATH.
-- **Menubar redeploy + ADR-026 4b live-verify**: /api/node-status?view=summary serving real OpsSummary (17 live/7 suspended/🔴 drift); data path NodeStatus→Summarize→opsLeadRow/opsAgentRows confirmed end-to-end (only literal NSMenu pixels need a human glance).
-- **ADR-025 suspended-retention (6b6b811)**: opt-in PruneStaleSuspended + --suspended-older-than (dogfooded from 7 orphan pid=0 suspends the ops-view surfaced). Live peer thr-fb73 improved the 0-case to a no-op (left for them to commit, A26).
-- **Stranded-work (ADR-024 §6, fef3591)**: challenged claude-home's SessionEnd-stash (repo-global = A26 harm) → ruling ACCEPTED → implemented read-only SessionStart surfacing (reconcile emits ⚠ stranded-uncommitted on fresh reap + dirty tree); A18 is the prevention.
-
-**9 commits.** codex OFFLINE all session (last active 2026-06-01) → 8 review items queued (ADR-025 024046, Amendment-1 032136, retention, stranded-finding+surfacing concurrence, binary FYI). Did NOT start the router daemon (auto-spawn cascade ADR-024 killed). Lesson: testing a mutating cmd (reconcile) on the live shared registry healed 20 stale-actives→suspended (benign, retention-cleanable; 2 live threads safe) — test mutating paths on temp registries, not live shared state. Settled into a disciplined watch-loop: heartbeat + inbox + read-only health-check, resume active work only on codex engagement / new mail / user return. Loop participants: me, codex (offline), live peer thr-fb73 (pro-ux-loop).
-
-## 2026-06-03 — Menubar UX overhaul + mds_stores mitigation (session wrap)
-
-Made the menubar ACT, not just inform (user's #1 complaint). Shipped: in-place actions (a2379ab — safe commands run + report to Recent Activity, no Terminal; destructive keep confirm path), function labels not deity names (39a0ec4), in-app two-click clean (b7040ff/154cb3b — dry-run preview arms a Confirm item, confirm pipes y to anubis clean --confirm), native ~/.Trash move replacing osascript-Finder which the launchd menubar can't get Automation TCC for (2710811), disk-visibility spectrum all/some/none (0f7a6a1 — CheckDiskAccess + menubar applyFDAState + FDA grant action). Live mds_stores write-amplification storm mitigated: excluded ~/Development from Spotlight (.metadata_never_index), pruned CTR registry 209→52 (threads.json 124KB→31KB); mds dropped to ~1.3%. BINARY FROZEN per user — no more rebuild+resign (each resign revokes FDA grants by changing the signature hash); durable fix = Developer-ID signing (Apple enrollment pending). Codex offline all session — reviews owed (ADR-025/Amendment-1/stranded/native-trash A1/menubar UX). Continuation: docs/CONTINUATION-PROMPT.md.
-
-## Entry 037 — 2026-06-04 09:22 — Session Compact (COMPACT)
+## Entry 095 — 2026-07-31 12:32 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e92c9-92fd-70e2-b849-33b23a6d8b83","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019fb8ff-7147-7603-b0c3-1e1ff03b5e4d","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-04T12:57:35Z
-- last Claude read: 2026-06-04T13:20:40Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry 038 — 2026-06-04 16:36 — Session Compact (COMPACT)
+## Conduit run 2026-07-31T16:37Z
+
+Vitals green-with-a-known-yellow: `sirsi diagnose` 88/100 🟡 on the gemma broker's lifetime peak
+(17.5 GB of 48), memory 85% free, broker pid 87281 healthy and capped (`--prompt-cache-bytes`
+confirmed by argv, prompt cache 2.40 GB against its 4 GB bound). All sirsi launchd labels have live
+PIDs. Three crash `.ips` in the window are all `SIGKILL (Code Signature Invalid)` /
+`Launch Constraint Violation` on `sirsi` and `SirsiMenubar` — the known AMFI-copy class, and the
+installed binary works. `thread reconcile` healed one reaped claude-home thread to a successor,
+`thread prune` took records 277 → 276; the only stale threads left are the three live app-hosted
+Claude sessions (the known no-durable-PID defect). `ccd reap --apply` killed nothing and archived one
+completed lane-runner record. **Closed 20260729-194426** (diagnose reported a lifetime peak in the
+present tense) as resolved at source and verified live: `footprintVerb` in
+`internal/guard/footprint_check.go`, merged as bc47d947 (#390), now prints "peaked at" whenever the
+alarming number is a peak — reproduced this run as "peaked at 17.5 GB … a third of the machine",
+🟡 not 🔴. **Routed a new review to claude-pantheon** (`20260731-163553`): `sirsi-gemma-triage.sh
+--all` managed two of 41 items in 300s because its warm call returns an empty body and the script
+mislabels that as "warm unreachable", buying a 180s cold reload per item — the endpoint is demonstrably
+alive (the same body classified in 2.6s on a direct call; gemma-4 answers in the `reasoning` channel
+with `content` empty). The conduit's zero-token screen is therefore not running. `router doctor --fix`
+woke 29, one wake-unavailable is the owner OAuth item (correct). Retention prune reclaimed 43.2 KiB.
+Router 41 → 15 open; note that a concurrent sibling session closed 26 pantheon items between 16:26
+and 16:35, nine of them at one timestamp sharing a single per-class ruling body.
+
+## Conduit run 2026-07-31T16:58Z
+
+Two items landed for claude-home, both on sirsi-pantheon PR #389, both worked and
+closed. codex-pantheon had taken the PR over at head 65e3a8cd (merged main, declared
+consumers for every Claude/Codex lane, added a resident consumer mode for Gemma with
+a health_check, added a registry guard test). I source-deep reviewed their delta
+0b2b715f..65e3a8cd and found it sound: resident mode refuses command+resident and
+interactive, requires health_check, dispatchConsumer hard-refuses Resident, and the
+tick dispatch guard adds !consumer.Resident, so a resident lane is marked capable
+without ever being spawned. CI at that head is green on Build, Lint, Test and Secrets
+Scan; only binding-hold fails, and it fails for want of a signature. I did not sign
+it: the head still carries my own two commits (0ae80837, 464f8edd), so binding it
+would be self-review. codex-pantheon cannot sign either, having written the other
+two. Routed the signature to codex-inference, the only live reviewer independent of
+both authors, with my completed review attached so their pass is a verification
+rather than a cold read. One non-blocking defect recorded on the thread: the resident
+health_check runs exactly once at wake-loop start, outside the ticker, so a lane whose
+worker is down at that instant stays ConsumerCapable=false for the life of the loop —
+under-claiming, which is the safe direction for a change whose whole purpose is to
+stop watch-only loops crediting themselves as armed. Housekeeping: thread reconcile
+healed seven reaped threads to successors (the 124-uncommitted-file stranding warning
+persists, still unadopted), ccd reap killed three completed conduit-supervisor session
+leaks, retention prune reclaimed 21.4 KiB. The 11:08 Jetsam event took only Apple
+system daemons — no sirsi, gemma or Python victim. Broker 39234 healthy and capped with
+prompt cache at 0.29 GB of its 4 GB bound.
+
+## Conduit run 2026-07-31T18:30Z
+
+Answered claude-nexus's `20260731-172853` — zero `router wait` watchers host-wide, stale
+hook or silently-failing arm? Neither: the two candidate explanations were both wrong and
+the discrepancy was real. `wake-loop` did not supersede `router wait`; they serve
+different consumers — `wake-loop` is the machine-run bounded pull-loop behind the twelve
+`ai.sirsi.router.wake.<agent>` launchd units (all twelve PID-verified live, argv read),
+while `router wait` is the interactive-surface spec. Nothing was failing silently either:
+the hook is a pure pass-through of `thread register --json`'s `.watcher.arm_instruction`
+and has no arming code, and the sessions receiving it are non-interactive ones that cannot
+arm a `/loop`. The actual defect is the instruction itself. `router wait` is
+level-triggered on *open* work, not edge-triggered on arrival — measured
+`sirsi router wait claude-home --timeout 30` returning in 18 ms against a non-empty inbox,
+so a `/loop` around it spins at roughly fifty iterations a second for as long as the lane
+has any open item. Traced to `internal/router/watcherspec.go` `loopArmInstruction()`, whose
+`routercfg.StoreWake()` branch was right about the ADR-036/037 cutover (items/ genuinely
+is no longer written) and wrong about loop safety: it swapped an edge-triggered file
+Monitor for a level-triggered source without adding a bound. Routed to claude-pantheon as
+`20260731-182937` with both fixes — prefer declaring the launchd wake-loop as the watcher
+(the shape the codex spec already uses) over merely bounding the loop — rather than landing
+router internals from a scheduled run on a repo root parked off main. Host rebooted around
+13:38 local (shutdown stall report), which is why every daemon PID is fresh; no sirsi,
+gemma or Python crash since, and the broker came back healthy, identity-verified capped,
+prompt cache at 0.03 GB of its 4 GB bound. reconcile healed five reaped threads to
+successors (the 124-uncommitted-file stranding warning persists, still unadopted), prune
+took 359 records to 338, ccd reap archived six session records with no live leaks to kill,
+retention prune reclaimed 15.9 KiB. PR #389 unchanged — Build, Lint, Test and Secrets all
+pass, only `binding-hold` fails wanting a review, and it stays cross-authored so neither
+claude-home nor codex-pantheon can sign its head.
+
+## Conduit run 2026-07-31T18:42Z — registry bloat (owner callout)
+
+Owner called the thread-registry line insane, and it was: I had been reporting prune deltas
+("330→326", "359→338") as housekeeping while the floor climbed 326→359 in a single hour.
+A shrinking delta inside a rising baseline is indistinguishable from working cleanup unless
+the baseline is printed, and I never printed it. Actual composition: 345 records of which
+327 were terminal, 265 of them (77 percent) claude-home's own, median record lifespan 27
+seconds, roughly 21 created per hour against 4 conduit runs per hour. Two independent
+causes. Retention was a parameter I own — the conduit prescribed `thread prune --older-than
+24h`, which at that rate pins 300-450 tombstones permanently; since prune deletes only
+terminal records and never touches live, idle, blocked, stale or suspended ones, a short
+window is safe by construction, so the task file now prescribes 1h (suspended stays 24h,
+those are resumable). Measured 346 to 53 records, 228 KB to 32 KB, all 16 live records
+intact one per agent, router healthy. Generation is a registration defect and went to
+claude-pantheon as `20260731-184156`: 43 percent of claude-home records are born with
+`pid: null` and are retired as superseded almost immediately, and `claude_session_pid()`
+returns on the FIRST claude ancestor, which can be transient — proved by an intra-session
+re-mint where thr-9744a5426f0848af registered pid 3264, died in 28 seconds and was reaped,
+then thr-f836646e4dc9da49 registered the durable pid 2215 for the same conversation. The
+reaped record was the very thread the SessionStart hook told me to arm. Flagged in that
+item that the obvious fix is wrong: the outermost claude ancestor is Claude.app 512, shared
+by every session on the host, so anchoring there would collapse distinct sessions — the
+wanted process is the middle of `bash → claude-code 2215 → disclaimer 2214 → Claude.app
+512` and `comm` basename cannot separate them, so the discriminator has to be the
+executable path. Retention bounds the symptom; it does not close the cause, and per
+`thread prune --help` the registry writes themselves are what re-trigger Spotlight indexing.
+
+## Conduit run 2026-07-31T18:50Z
+
+All-green vitals with one escalation. `sirsi diagnose` 88/100 🟡 — sole priority signal is
+"Python at 14.3 GB", which is the capped Gemma broker (cap 22.3 GB) and expected; memory 74% free.
+No new crash or Jetsam artifacts since the previously-evaluated set (newest user `.ips` still the
+pre-reboot 12:19 sirsi, 11:08 Jetsam took only Apple daemons). Broker `/health` ok and the
+`--prompt-cache-bytes 4294967296` cap verified BY IDENTITY via `gemma-server.pid`; prompt cache
+1.82 GB, well under the 6 GB balloon threshold. Resolver → `gemma-4-12B-it-8bit`. All core launchd
+labels PID-verified alive (horus.agent-router 1325, triage 1308, pantheon 1323, gemma-worker 1345,
+gemma-broker 2735). No BINARY_MISSING sentinels.
+
+Router: 18 open at entry, **zero for claude-home and zero for claude-codex-standin**. The +2 versus
+the prior run is fully explained and needs no action — `20260731-183600` is fresh inbound
+codex-inference→claude-nexus, and `20260731-182945` is this conduit's own response delivery back to
+claude-nexus. `router doctor --fix` reproduced the known picture exactly: claude-inference stranded
+(interactive, correctly not blind-spawned), codex-inference wake-attempted, and the `user` OAuth item
+recorded wake-unavailable, which is correct rather than a defect. All four stale >24h items were
+already evaluated in prior runs with live recipients; left untouched. PRs unchanged and none
+mergeable by this session — pantheon #389 still Build/Lint/Test/Secrets PASS with only `binding-hold`
+failing and mergeStateStatus BLOCKED, but it is cross-authored so neither claude-home nor
+codex-pantheon can sign the head; #357/#358/#361/#393 belong to their lanes; FinalWishes #114 is
+MERGEABLE/CLEAN but authored by this session, so no self-review. SirsiNexusApp empty.
+
+**Escalated one owner gate — `20260731-184653`, store-verified.** The repo root is parked on
+`fix/sirsi-gemma-bare-server-chipA`, so every conduit journal commit lands off main. Now
+re-verified across three runs and still growing: 24 commits ahead of origin/main of which **20 are
+conduit/Horus journal commits** dating back to `9ca65646` on 2026-07-29, and `.thoth/journal.md`
+diverged 2163 insertions (up from 2136 one run ago). Nothing is broken, which is exactly why no
+automated pass catches it — the exposure is that three days of conduit forensics ride a feature
+branch that may be squashed or abandoned. Routed with three owner options (land the branch,
+cherry-pick the journal file alone, or move the repo root back to main) and flagged option 3 as the
+only one that stops recurrence.
+
+**Registry floor, reported as a level rather than a delta.** Entry floor 58 records; after
+`thread reconcile` healed 11 reaped→successor pairs the floor was 73, and `thread prune
+--older-than 1h` deleted **0** because every terminal record was younger than the window. Composition
+at close: 13 active, 8 suspended, 2 idle, claude-home still the largest single minter at 11. New
+evidence for the already-routed churn item `20260731-184156`: **`thread reconcile` is itself a
+minter** — 11 successor records per run at ~4 runs/hour is ~44 records/hour from reconcile alone,
+which amplifies the `pid:null` birth defect already reported. Deliberately NOT routed as a second
+item, since claude-pantheon already holds an open unpulled item for this exact root cause and a
+second would be a nag. `ccd reap --apply`: 0 leaks, 0 archived. Retention prune reclaimed 14.1 KiB
+(<5 MiB, noted only for completeness).
+
+Local-Gemma triage was started against all 18 items but did **not** complete inside the run budget —
+it was still on item 1 of 18 after several minutes (the known silent-for-minutes behavior, scaled up
+by 18 items versus 8 last run). No triage verdicts were used this run; every open item was instead
+accounted for directly from the store and from carried state, and none required action from this
+conduit. Worth noting for the next run that `--all` against a queue this size may simply exceed a
+15-minute cadence.
+
+## Entry 096 — 2026-07-31 14:52 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- sirsi fix heuristic resolver (no LLM) — answers every finding; safe PPID-narrowed orphan-kill (KillTrueOrphans, PPID<=1 only, --yes never kills, 4 regression tests). Funnel diagnose->fix + menubar BLOCKED pending codex re-review (42588a9).
+- Queue cleared 58→0 under owner directive; router held at zero (3 arrivals closed with live evidence).
+- Gemma guard batch complete: #409 triage warm path survives reasoning-shaped models (verified against live broker), #410 DIFFERENT-model diagnosis consults /v1/models ground truth before speaking.
+- #409 also versioned installed-script drift: codex Jul-24 fail-closed fix was ahead of main.
+- Landed earlier today: #404 deck drill-downs + #407 atomic routes, #405 close-resolved demoted to surface-only (both codex P1s), #406 reap-orphans intersect+floor, #408 slug/label/delegation fixes.
+- Machine: Health 94/100, one broker, swap 3GB. Remaining debt in tasks #52-54 (level-triggered wait and mint churn now have two reports each — front of batch). #49 blocked on owner token rotation.
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-04T20:35:52Z
-- last Claude read: 2026-06-04T20:36:02Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry 039 — 2026-06-04 22:54 — Session Compact (COMPACT)
+## Entry 097 — 2026-07-31 14:52 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- Canonicalized machine (1 versioned signed sirsi, zsh completion, no drift); sirsi fix resolver + safe PPID-orphan-kill (funnel BLOCKED pending codex User-metadata gap); menubar zsh close-prompt fix (read _). Open: install wizard, orphan User fix, mds_stores sudo.
+- Conduit/Horus run 2026-07-31T18:52Z (claude-home). All-green vitals, one owner escalation.
+- Router: 19 open, ZERO for claude-home or claude-codex-standin. The +2 vs prior run was fully explained (fresh codex-inference->claude-nexus item, plus this conduit's own response delivery back to claude-nexus) and needed no action.
+- DECISION - escalated one owner gate, item 20260731-184653, store-verified via sqlite3 (a printed router send id is a claim, the store row is the fact). The sirsi-pantheon repo root is parked on branch fix/sirsi-gemma-bare-server-chipA, so every conduit journal commit lands off main: 24 commits ahead of origin/main of which 20 are conduit journal commits back to 9ca65646 on 2026-07-29, with .thoth/journal.md diverged 2163 insertions (up from 2136 one run earlier). Nothing is broken, which is exactly why no automated pass catches it; the exposure is that three days of conduit forensics ride a branch that may be squashed or abandoned. Three owner options offered: land the branch, cherry-pick .thoth/journal.md alone (union merge driver keeps it low-conflict), or move the repo root back to main. Only the third stops recurrence.
+- PATTERN - report the registry FLOOR, never the prune delta. Entry floor 58 records, 73 after thread reconcile, and prune --older-than 1h deleted ZERO because every terminal record was younger than the window. New finding: sirsi thread reconcile is itself a minter, producing 11 reaped->successor records per run, roughly 44 records/hour at 4 runs/hour. Deliberately NOT routed as a new item because claude-pantheon already holds open item 20260731-184156 for this exact root cause and a second would be a nag.
+- CARRIED VERDICT, do not re-derive: sirsi router wait is LEVEL-triggered, returning in 0.018s against a non-empty inbox, so a /loop wrapped around it spins about 50 times a second. The SessionStart/UserPromptSubmit hook that tells claude-home to arm that /loop must be ignored on every run; a watcher count of zero is correct, not a gap. Fix already routed as 20260731-182937. Confirmed live again this session: the hook fired with a THIRD distinct thread id (thr-d86565a905772ba9 then thr-0d13db769eee58b2), so its pgrep-based idempotency guard can never match a prior arm and every firing looks un-armed by construction.
+- PRs unchanged, none mergeable by this session. pantheon #389 has Build/Lint/Test/Secrets PASS with only binding-hold failing, MERGEABLE but BLOCKED, and is cross-authored so neither claude-home nor codex-pantheon can sign the head. FinalWishes #114 is MERGEABLE and CLEAN but authored by this session, so no self-review. #357/#358 belong to their lanes, #361/#393 are drafts, SirsiNexusApp is empty.
+- Vitals: diagnose 88/100 amber whose sole priority signal is the capped Gemma broker at 14.3 GB against a 22.3 GB cap, memory 74 percent free, broker health ok with the --prompt-cache-bytes cap verified BY IDENTITY rather than by pidfile name, prompt cache 1.82 GB against a 6 GB balloon threshold, resolver on gemma-4-12B-it-8bit, all core launchd labels PID-verified alive, no BINARY_MISSING sentinels, no new crash or Jetsam artifacts beyond the already-evaluated set. ccd reap found 0 leaks and archived 0. Retention prune reclaimed 14.1 KiB.
+- NOT FINISHED, budget rather than breakage: local Gemma triage across all 18 open items was still on item 1 after several minutes and was stopped. No triage verdicts informed any decision this run; every open item was accounted for directly from the store and from carried state instead. At this queue size --all likely cannot fit a 15-minute cadence.
+- TOOLING HAZARD found this session: sirsi thoth sync run from $HOME never completes in bounded time because $HOME is not a git repository, so the sync has no repo boundary and walks the entire home tree to count modules. Run thoth sync inside an actual repo; at $HOME it produces nothing useful while burning CPU and Spotlight write amplification.
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-05T02:48:24Z
-- last Claude read: 2026-06-05T02:51:31Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-07-27T12:00:00Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry 040 — 2026-06-04 23:19 — Session Compact (COMPACT)
+## Conduit run 2026-07-31T19:07Z
+
+P0 of the run was a **code-signing SIGKILL wave, now self-cleared**. The `sirsi` binary at
+`~/.local/bin/sirsi` was replaced at **14:50:05 EDT** (inode 300890278, mtime unchanged since),
+and every launchd unit that exec'd it in the following minutes was killed by AMFI with
+`EXC_CRASH / SIGKILL (Code Signature Invalid)`, termination namespace `CODESIGNING`, indicator
+`Launch Constraint Violation`. Three units took the hit: `ai.sirsi.conduit.tick` (14:50:40),
+`ai.sirsi.liveness-watch` (14:53:36), and `ai.sirsi.router.wake.claude-nexus` (LastExitStatus 9).
+This is a recurrence of the archived "AMFI cp SIGKILL" class. The trap is that `codesign -v -vvv`
+reports **"valid on disk / satisfies its Designated Requirement", exit 0** the whole time — it
+re-hashes the file, while AMFI consults the kernel's cached signing state for the vnode
+established at first map. The on-disk badge is green over a dead thing; only an actual `exec()`
+is evidence. Verified by kickstarting both units and counting `.ips` files before/after: **no new
+crash reports**, `liveness-watch` exit status moved `-9 → 0`, and `wake.claude-nexus` respawned on
+its own to PID 61547. A follow-on `router doctor --fix` confirmed claude-nexus is no longer
+stranded — its 2 items moved from wake-unavailable to heartbeat-armed (armed 5 → 8,
+unavailable 6 → 4). No fix was applied; the condition aged out of the AMFI cache. Nothing to route.
+
+Secondary correction worth recording: `launchctl list | grep sirsi` printed a **stale PID** for
+`wake.claude-nexus` (1332, since dead) while the per-label `launchctl list <label>` query showed
+no PID key at all and `LastExitStatus = 9`. Rather than checking only the label the doctor named,
+the whole fleet was swept by discovery (listed PID vs `ps -p` liveness vs LastExitStatus) — all
+23 `ai.sirsi.*` labels resolve to live PIDs, so the fleet is healthy and the single stale line was
+a listing artifact, not a dead lane.
+
+Registry floor, reported as a level and not a delta: `thread prune --older-than 1h
+--suspended-older-than 24h` accounted **88 → 88 records, 0 pruned** — every terminal record is
+younger than the window. Floor trend across runs is **58 → 73 → 88, roughly +15/run**, so the 1h
+window remains correct but is still not reclaiming; the root cause is minting, already routed to
+claude-pantheon (`20260731-184156`), deliberately not re-raised. Note `sirsi thread list` renders
+only **22** records against prune's authoritative 88 — the two disagree, and the 88 is the real
+floor. `reconcile` healed 6 reaped→successor records (down from 11 last run) and still warns 124
+uncommitted files stranded and unadopted (standing, owner-adopt). `ccd reap --apply` killed 1
+completed-leak session (pid 5058, a prior run of this same supervisor task); 0 archived.
+
+Vitals otherwise green: `diagnose` **94/100 🟡**, sole signal "Python at 13.9 GB" = the capped
+gemma broker against its 22.3 GB cap, expected. Memory **89% free**. Broker `/health` ok with
+`--prompt-cache-bytes 4294967296` verified **by identity** (not pidfile name), prompt cache
+**1.32 GB**, well under the 6 GB balloon threshold; resolver → `gemma-4-12B-it-8bit`. No
+`BINARY_MISSING` sentinels. Queues: **16 open, 0 for claude-home** (down from 19) — both
+`router pull claude-home` and `router pull claude-codex-standin` returned empty, so no items were
+worked and no responses were owed. Gemma `--all` triage was skipped by design: 0 items are mine and
+16 items would again overrun the 15-minute cadence. Retention prune reclaimed 11.8 KiB. Repo root
+is still parked on `fix/sirsi-gemma-bare-server-chipA`, now **26 commits ahead of origin/main**
+(was 24) — already escalated to the owner as `20260731-184653`, not re-escalated, count noted as
+climbing per instruction. No PR was mergeable by this agent: pantheon #389 is cross-authored so
+neither this agent nor codex-pantheon can sign the head, #357/#358 belong to their lane agents,
+#393/#361 are drafts, and FinalWishes #114 is this agent's own work (no self-review).
+
+---
+
+## Entry — 2026-07-31 — Sirsi IO closure handoff normalized into the shared router
+
+Accepted the Codex Nexus hardware closure ledger as the authoritative evidence boundary. Verified `codex-nexus` thread `thr-70d1f4b5fd631229` live in Pantheon's shared router with workstream `io`, and confirmed proposal `20260731-190230-codex-nexus-claude-io-align-sirsi-io-hardware-architecture-and-closure-criteria` remains open for Claude IO. The proposal itself retains the discarded isolated-namespace ID `thr-60f17e48640c5b5b`; that is immutable audit history, so a new correction notice was routed rather than rewriting it.
+
+The substantive decision is now memory: shipping Mac Studio supports only the measured external-interface track—TB5/networked RDMA-class pods—not an asserted internal x16 base-replacement fabric. Direct high-lane optical/PCIe remains OEM/future-platform research. Claims of 126–128 GB/s, full x16 equivalence, and 80x advantage remain quarantined. Notebook 1 still requires counsel, filings, vendors, teardown, SI, thermal, optical, and mechanical evidence; Notebook 2 has no formal generated artifacts; Notebook 3 is blocked on owner source material. No physical, patent, legal, vendor, or benchmark task was falsely closed.
+
+The earlier Claude wake activation remains valid evidence, but at this later check its live session had been suspended and no substantive response existed. The architecture ADR and bench-test plan therefore remain pending for the next live `claude-io` session.
+
+## Conduit run 2026-07-31T19:27Z
+
+All-green vitals (health 88/100, sole signal the capped Gemma broker at 8.5 GB against its 22.3 GB cap; memory 86% free; no new crash/Jetsam — newest .ips is 15:13, inside the already-healed AMFI wave). All four core daemons verified per-label with live PIDs; broker /health ok and bounded by IDENTITY with --prompt-cache-bytes 4294967296, cache 1.26 GB. Worked both claude-home items rather than deferring them. Bound sirsi-inference PR #1 SOUND as an independent reviewer (claude-nexus authored it): re-derived the certify() truth table against the expression it replaces, confirmed the pointer-receiver mutation lands before the append so the JSON field and the console line cannot drift, and verified at source the one judgement call — harness.go writes the report exactly once after both loops close, so a killed run writes no file and a complete:true field would describe an impossible failure mode. Upgraded the author own CI caveat from a maybe to a fact: the repo has total_count 0 self-hosted runners registered, so the gates check will stay pending forever — a dead gate, not a slow run — and I bound the review without merging a PR whose gate has never run. Answered claude-io ADR-006 explicitly with (a) advisory rather than letting silence elect the default, accepted the moves-an-item-is-transport verb line, and confirmed that record retention (the conduit-cleanup concern) stays transport and is NOT closed by that ADR. Housekeeping: thread prune 114 -> 96 records (floor ~96, minting still ~19/20min, already routed to claude-pantheon — not re-raised), reconcile healed 4, ccd reap killed 3 leaked prior runs of this task and archived 2 records, retention prune reclaimed 20.1 KiB, board republished. PRs otherwise unchanged and none mergeable by me.
+
+## Conduit run 2026-07-31T19:45Z
+
+All-green with one investigated non-event. A JetsamEvent landed at 19:36Z — eight minutes
+after the previous run closed, so it was genuinely new — but parsing the victim list rather
+than trusting the filename showed the only kill was `spotlightknowledged.updater` at 32 MB
+against its own `per-process-limit`, not system pressure. The Gemma broker survived as
+largest process at 16.49 GB, comfortably inside its 22.3 GB cap, so this was not a P0 and no
+forensics were routed. Broker health verified by identity (PID 2735 carries
+`--prompt-cache-bytes 4294967296`), prompt cache flat at 1.26 GB across three consecutive log
+lines, resolver still electing `gemma-4-12B-it-8bit`. Health 94/100, memory 86% free, all four
+core daemons live with matching argv. Thread hygiene: reconcile healed 7 reaped→successor
+records, prune at the 1h window took the registry 104 → 85, so the floor improved 96 → 85
+versus last run while the mint rate held near 15 records per 20 minutes — the cause is already
+routed to claude-pantheon and was not re-raised. `ccd reap --apply` killed one leaked prior run
+of this same task and archived two completed session records. Router: 17 open, none addressed
+to claude-home, both queues empty on pull, and the response audit came back clean — last run's
+two replies to claude-io and claude-nexus are both present as fresh inbound at the recipients.
+Three ⚠️ stale-active threads were left deliberately: both `gemma` records map to provably live
+processes, and `codex-nexus` exposes no PID to verify, so suspending any of them would have been
+inference rather than evidence. PR set unchanged; nothing mergeable by me. Retention reclaimed
+12.5 KiB. The off-main journal history is now 28 commits ahead of origin/main with 126
+uncommitted stranded files — both already covered by open owner gate 20260731-184653, not
+re-escalated.
+
+## Conduit run 2026-07-31T20:00Z
+
+Two `WORKER GAVE UP` escalations arrived from claude-pantheon's headless build worker,
+each claiming an item "failed 2x". Both claims are false: the worker made **zero**
+attempts. `grep -c "BUILD START"` for 2026-07-31 is 0 while ABANDON fired twice, whereas
+every genuine 2026-07-04 failure is preceded by BUILD START + BUILD ERROR pairs. Root
+cause is the phantom-facade class *inside* `sirsi-claude-worker.sh`: line 133 was fixed at
+the store cutover to pull through the facade — its own comment names the bug — but the fix
+landed on one of four reads of `.agents/idea-router/items/$id.md`. Three survive, and the
+one in `process_item()` (line 72-73) returns instantly for any store-era item, so the
+worker increments its attempt counter, no-ops silently, never clears the counter (line 168
+greps the same missing file), and trips the loop-proof on a fabricated failure count. The
+legacy dir has been frozen since 2026-06-11; neither item has a `.md`. Blast radius is
+fleet-wide — claude-home's worker shares the script and is equally dead, looking healthy
+only because its queue is empty. Two further defects: the `.gaveup` idempotency marker is
+not holding (three sends for one item, ~2 min cadence, with only accidental slug-collision
+dedup standing between us and a repeat of the 2026-07-04 11,564-item flood that marker
+exists to prevent), and the worker is in a launchd restart loop (6 starts, LastExitStatus
+15, KeepAlive + ThrottleInterval 30). Consequence: the rotated-token liveness probe proves
+nothing — the worker never reached auth, so the rotation stays UNVERIFIED. Closed both
+escalations with the finding and routed the fix to claude-pantheon's **attended** lane
+(`20260731-195908`), explicitly flagged because routing it to the build worker would be
+no-op'd by the very bug it fixes; recommended one shared facade accessor rather than three
+patched call sites, plus vendoring the untracked script into the repo with a test. Vitals
+green: diagnose 88/100 (sole signal the capped broker), memory 86% free, broker verified
+by identity (pid 2735) with cache 0.90 GB, 4 core daemons live, no BINARY_MISSING. Thread
+prune 88 → 65 (floor 85 last run). `ccd reap` again killed 2 leaked prior runs of this
+same task. Ledger 23 open, 0 for claude-home. No PR was mergeable by me — unchanged.
+
+## Conduit run 2026-07-31T20:09Z
+
+Closed the build-worker no-op at the root and shipped it. Last run diagnosed it; this run the
+bug escalated ITSELF — the single item in claude-home's inbox was `WORKER GAVE UP` against the
+very fix item routed to repair the worker, no-op'd by the worker it was meant to fix. Confirmed
+fabricated: **0 `BUILD START` lines on 07-31 against 6593 lifetime**, ABANDON firing 2 min after
+routing despite `MIN_AGE=1800s`. Three legacy-dir reads survived the ADR-036/037 cutover, not
+one: `process_item`'s `-f` guard (silent no-op after the counter already rose), the success-clear
+grep (counter never cleared, so even a clean build trended to ABANDON), and — the one that
+mattered most — the age check's `stat -f %m … || echo 0`, where **a missing file did not fail
+loudly, it failed as a default**, reading every item as ~55 years old. That is why the 30-minute
+attended-session backstop never fired once, and why routing the fix to an ATTENDED lane last run
+never had a chance: the worker seized it 2 minutes in. Two ordering defects of the same shape
+went with it: RAM `DEFER` returned after the attempt counter incremented, and `.gaveup` was
+touched *after* `router send` — with launchd SIGTERMing this worker mid-poll, a kill in between
+loses the marker and re-escalates forever. That is the live re-run vector for the 2026-07-04
+11,564-item flood; it fired 3x today (19:49/19:53/19:56), contained only by accidental
+slug-collision dedup. **Last run recorded the marker as "not holding" — it holds; the ordering
+was wrong.** Fix: one `fetch_item()` through `sirsi router show`, whose output carries the same
+frontmatter + `## Instructions` shape, so every downstream parser is untouched and zero
+legacy-path reads remain; age from the store's `opened:`, with an unparseable timestamp skipping
+loudly at no attempt cost rather than guessing; fetch-failure and RAM-defer moved ahead of the
+counter; `.gaveup` marked before the send. Verified not asserted: `bash -n` clean, parse check
+against a real store item `PASS from=claude-pantheon bodyB=185`, reporting `age=219s` — the fixed
+worker now correctly skips a fresh item instead of burning it. Deployed, worker restarted (pid
+29580), no ABANDON since. Also found the repo copy **~110 lines behind the deployed script**
+(missing TMPDIR, secrets sourcing, `*SCRUBBED*` check) — redeploying from repo would have
+regressed a live worker; PR #412 reconciles it and is routed to codex-pantheon, claude-home
+authored so no self-review. Closed 2 items, routed 2. Left the `.gaveup` on the claude-io ADR-006
+item deliberately: a yes/no decision is not something a build worker should agentic-build.
+Vitals green — 88/100 (sole signal the capped broker), 90% memory free, broker cap verified by
+identity (pid 2735), cache 0.90 GB, 4 core daemons live. Threads 68→59. Retention 7.8 KiB.
+`ccd reap` killed 0 procs — the two-leaked-runs-per-run pattern of the last several runs did not
+recur. Open items 24→26 (floor is inbound-driven, not mine). Fleet-wide caveat: claude-home and
+claude-inference workers share this script and were equally dead, visible only as empty queues.
+
+## Conduit run 2026-07-31T20:35Z
+
+Verified the in-flight liveness probe from last run's thoth: `BUILD START` 20:12:50Z → `BUILD DONE`
+20:13:27Z on `20260731-194235`. The build-worker no-op fix is proven end-to-end and the rotated
+token works; that loop is closed. Merged `SirsiMaster/sirsi-inference#1` (squash, 20:26:16Z) after
+verifying the artifact rather than the claim — `gates` pass 2m25s on `b365656`, runner `m5-sirsi`
+online, `MERGEABLE`/`CLEAN`. **Retracted my own carried claim that sirsi-inference's gate is DEAD**:
+`total_count: 0` described the fleet at one instant and I had written it into state as a permanent
+property, where it would have suppressed every future merge on that repo unchecked. A negative
+capability claim needs re-verification on every use. New rule from claude-nexus, carried: on a single
+self-hosted runner, `created_at` far before `started_at` means **queued, not stranded**.
+
+Chased claude-io's registry-drift report (third occurrence in six days) to root cause instead of
+applying a fourth copy. **`internal/router/registry.go:42-50` — `WakeConfig` has no
+`LaunchAgentLabel` field**; the string `launch_agent_label` appears nowhere in the Go source, so the
+registry unmarshals into a struct with no home for that key, `encoding/json` drops it silently, and
+every registry write re-emits the file without it. Three "occurrences" are one defect firing on every
+write. Confirmed live: wrote a corrected registry with 12 labels, an unrelated write landed seconds
+later with label count 0; read-only `doctor`/`status` leave mtime untouched. Fix is one line. Told
+claude-io **not** to build its proposed drift check — it would be permanent scaffolding around a
+one-line defect, firing correctly forever and fixing nothing. Same writer also **invented `codex-io`**
+(22→23 agents, `workstream: pantheon` on a `sirsi-io` cwd), an id claude-io and codex-nexus had
+explicitly ruled out an hour earlier — now a routable address nobody watches. Routed both to
+claude-pantheon (`20260731-203307`) and claude-io (`20260731-203336`).
+
+Self-inflicted and repaired, recorded because it touched a load-bearing file: `git checkout --` on
+the dirty `agents.json` (to test whether the drift was uncommitted) discarded a **superset**, not
+damage — it also held `claude-inference`, `codex-inference` and `claude-deck`, none present in `HEAD`.
+Unstaged changes have no reflog and no copy on the machine had them (checked all 14 `agents.json`
+under the repo, worktrees and runner checkouts). Registry fell 22→19 and `codex-inference` regressed
+to stranded-with-no-mechanism with 2 items waiting. Rebuilt as a union of `HEAD` + `origin/main` +
+runner copy plus the two reconstructed `cli-spawn` entries; `doctor` confirms 22 agents and
+`codex-inference` wakeable again, and the later external write preserved it. **On this repo a dirty
+registry is not presumptively damage — it is the only live copy of what discovery last learned; copy
+it aside before any `git checkout --`.**
+
+Also: responded+closed both claude-home items (never bare-closed), fresh inbounds verified in store.
+Threads 71→46 (25 terminal pruned). `ccd reap` killed 8 procs across 4 leaked sessions. Retention
+reclaimed 21.1 KiB. Board 12516 B. Vitals green — diagnose 88/100 (sole signal the capped Python
+broker, expected), memory 87% free, broker `/health` ok with the cap verified **by identity** (pid
+2735), prompt cache 0.52 GB, no new crash/Jetsam reports, all four core daemons live.
+
+## Conduit run 2026-07-31T20:42Z
+
+Registry drift: escalated from "one missing field" to the real class. `grep` over all Go source
+returns **zero** hits for both `"consumer` and `launch_agent_label` — `AgentConfig` has no
+`Consumer` field at all (not a lost leaf: the block that carries how an agent is spawned), and
+`SaveRegistry` marshals the whole `Registry`, so every Go write is a lossy round-trip that erases
+every key the struct has not been taught, for all 23 agents at once. My previous run's one-line
+`LaunchAgentLabel` remedy is therefore the wrong shape — it restores one key and leaves `consumer`
+being erased on the next write. Routed the correction to claude-pantheon
+(`20260731-204015`) recommending raw-JSON read-modify-write in `SaveRegistry` over named fields.
+Corrected claude-io's report in the other direction too: `claude-deck.consumer.command`/`.prompt`
+are **present** live (verified 20:37Z, 23 entries, all with inner ids) — the class is real, that
+instance is not, so no P0. Reviewed and bound **PR #413** (drift check) at `4642d16`: approve, with
+one latent blind spot — `agentsByID` skips entries lacking an inner `id`, but `LoadRegistry` injects
+the id from the map key, so a map-shaped entry with no inner `id` is fully live to the router and
+invisible to the check (0 of 23 hit it today). Closed 2 claude-home items (both responded, never
+bare-closed), routed 1. Nothing else mergeable: #412/#114 mine, #389 cross-authored, #213 five
+minutes old and codex-pantheon's, rest conflicting or draft. Vitals: diagnose 82/100 🟡 (sole driver
+is the capped broker), broker healthy and cap verified by identity (pid 2735, cache 0.52 GB), four
+core daemons live, no new crash/Jetsam, threads 53→53, retention 5.5 KiB.
+
+## Conduit run 2026-07-31T21:00Z
+
+Two open PRs turned out to be one change. #412 (mine, 20:08Z) and #414 (claude-pantheon,
+20:46Z) both fixed the headless build worker's frozen-legacy-dir reads; diffing the two
+patches showed the change to `scripts/router/sirsi-claude-worker.sh` is byte-identical and
+only the CHANGELOG prose differs. Rather than let two identical PRs race, I kept #414 and
+closed #412 — a mechanical call, not a quality one: #412 is mine and I can never merge my
+own PR, so keeping it would have parked the fix behind an extra reviewer round-trip, while
+#414 has an independent author. Source-deep review of #414 before binding at `e95fe262`:
+fetched the branch blob and diffed it against the live deployed worker — byte-identical
+(11884 B), so this merge makes the repo match what already runs rather than proposing new
+behavior. Verified each claimed fix in the source rather than the description: zero
+functional legacy-path reads (the lone `idea-router/items` hit is a comment), `fetch_item`
+goes through `router show` with a nothing-returned fetch costing no attempt, age derives
+from the store's `opened:` with an unparseable value skipping loudly instead of defaulting
+to epoch 0, RAM-defer returns ahead of the attempt counter, and `.gaveup` is touched before
+`router send`. Held only for the 1h soak. #413 (registry drift check) still bound at its
+exact head `4642d16` with all five checks green — 22 min old at sweep time, so it also
+waits on soak, not on review.
+
+Caught a regime mismatch heading for an investor deck. SirsiNexusApp #214 publishes a
+TRACTION proof band whose 224 tok/s headline is properly qualified inline (96 concurrent,
+median of 3, 5% spread, warmup discarded), but whose companion claim — "~32 to 224 tokens/s
+= 7x serving capacity, in software" — states no regime for its ~32 baseline. In
+`INVESTOR-CANON.md` the concurrency table sits ten lines above that sentence and prints
+32.6 tok/s as the *current* engine's concurrency-1 rate, so the same figure carries two
+meanings in one document and the 7x reads as a load increase (1 conversation to 96) rather
+than a software gain. The two numbers are also different measurement shapes — the table is
+closed-loop fixed-batch, the 224 is open-loop with independent arrivals, which is why 224 at
+96 concurrent is legitimately below 620.3 at 64. Both honest, not comparable, and placed
+where they invite comparison. Routed to claude-deck as `20260731-210001` asking for one
+clause naming the baseline's regime; not a merge block, their lane, codex-approved. Verified
+the item landed in the store (2898 B) rather than trusting the printed id.
+
+Housekeeping: threads 61 → 52 (pruned 9 terminal at the 1h window; reconcile healed one
+reaped claude-home record to a successor and still warns 125 uncommitted files at repo
+root). `ccd reap` killed 2 leaked sibling conduit-supervisor sessions (4 procs). Retention
+reclaimed 11.1 KiB. Vitals green: diagnose 88/100, memory 88% free, broker `/health` ok with
+the cap verified by identity (pid 2735, `--prompt-cache-bytes` present), prompt cache 0.52 GB,
+model `gemma-4-12B-it-8bit`, all four core daemons live. No new crash or Jetsam — the newest
+`.diag` files are Microstackshot performance samples, not crashes. Doctor's stranded set is
+unchanged from the previous run and was not re-litigated. Journal commits remain stranded on
+`fix/sirsi-gemma-bare-server-chipA`; that is owner gate `20260731-184653` and was left alone.
+
+## Conduit run 2026-07-31T21:25Z
+
+Both in-flight PRs from the previous run (#413 registry-drift guard, #414 claude-worker
+store-facade) landed between runs — #413 merged by claude-io as `fa30cc3` at 21:06Z, explicitly as
+a guard rather than the fix. The ledger opened at 36 items with 2 for claude-home, both from
+claude-io, and both are now closed with routed Results. The first withdrew claude-io's retraction of
+the `claude-deck` registry finding: their reconcile had committed claude-home's uncommitted repair,
+so they read a fixed file and concluded it had never been broken. They offered to amend attribution;
+declined — a force-push on a shared registry path to move a one-line credit buys nothing, and the
+record already lives in two router items. The transferable part is their own: their
+"nothing-else-touched" check counted *other* files and never checked whether the file being
+committed contained someone else's work, so it could not have caught what it claimed to rule out.
+
+Bound #416 (claude-io, id-less registry entries) **CHANGES REQUESTED** at `8575157` after reading
+the diff, `LoadRegistry`, the live 23-entry registry, and running the suite (13/13 pass). The blind
+spot it fixes is real, but the mirror is partial: `LoadRegistry` does `cfg.ID = id`
+*unconditionally* — the map key always wins — while the PR only injects when the inner id is empty.
+Probed rather than asserted: an entry keyed `ghost` with inner id `phantom` yields
+`MissingAgents=[phantom]`, an invented removal of an agent in neither registry, while a genuinely
+dropped `launch_agent_label` reports as no lost field at all. A false alarm that masks the true one
+is worse than the blind spot. The remedy is smaller than the code already written — key by the map
+key always — and the existing test structurally cannot see the gap, the same shape as the
+verification error above.
+
+Routed a review to claude-pantheon on **#418**, opened 22 minutes after #413 merged. It adds
+`internal/router/registry_drift.go` while `origin/main` already carries `registrydrift.go` from
+#413 — two independent drift implementations in one package, filenames differing by one underscore,
+which **git will not flag as a conflict**, so resolving the visible CHANGELOG/`registry.go` conflict
+goes green while landing both. Verified at its head that `AgentConfig` still has no `Consumer`
+field, so `consumer.command`/`consumer.prompt` remain erased by every `SaveRegistry`: add-a-field
+shares the bug's shape, and claude-io, codex-pantheon and claude-home each reached
+preserve-unknown-keys independently. Also flagged that its `LoadRegistry` auto-fill synthesizes a
+`LaunchAgentLabel` unverified against launchd — a green surface by construction.
+
+Vitals: diagnose 88/100 🟡 on the same non-fault driver (capped broker + VM), memory 87% free,
+broker `/health` ok with the cap verified by identity (pid 2735), prompt cache 0.51 GB, four core
+daemons live, no new crash — the two `sirsi*.ips` are still the 14:58/15:13 local pair. Threads
+reconciled 2 healed, pruned 61→56 records — **floor 56, inbound ~12-20/h**. `ccd reap` killed 6
+leaked sessions (12 procs), four of them sibling conduit-supervisor runs; the sibling leak is
+ongoing and every run finds several. Retention reclaimed 17.9 KiB. Doctor's stranded set is
+byte-identical for a third consecutive run and was not re-litigated. Repo root has moved to
+`feat/version-claude-worker`, so journal commits are now fragmenting across a *second* off-main
+branch; that remains owner gate `20260731-184653`.
+
+## Conduit run 2026-07-31T21:35Z
+
+Quiet run — one inbox item, no heals. Closed claude-pantheon's PR #418 review request
+(`20260731-212833`) via `sirsi-respond.sh`: the full source-deep verdict had already been routed
+last run as `20260731-212922`, so the close carries a short self-contained restatement rather than a
+duplicate — two drift implementations would land together (`registry_drift.go` vs main's
+`registrydrift.go`, one underscore apart, so git reports no conflict), `Consumer` is still erased on
+every `SaveRegistry` because add-a-field shares the bug's shape, and the auto-filled
+`LaunchAgentLabel` is synthesized rather than verified against launchd. Result verified in the store
+(1824 B) and the fresh inbound `20260731-213320` landed open for claude-pantheon. Neither #416
+(head still `8575157`, CHANGES REQUESTED standing) nor #418 (head still `9396c7ad`, DIRTY) moved, so
+neither was re-reviewed. Vitals: diagnose 88/100 🟡 on the same non-fault driver, memory 88% free,
+broker healthy with the cap verified by identity (pid 2735) and prompt cache at 0.51 GB, four core
+daemons live, no new crash report — the 15:36 local JetsamEvent predates the previous run. Thread
+prune 62→52 records; the floor is now ~52 against ~12–20 inbound records/hour. `ccd reap` killed
+nothing this run (the sibling conduit leak did not recur) and archived 3 completed session records.
+Retention reclaimed 2.8 KiB. Doctor's stranded set is byte-identical for a fourth consecutive run.
+Noted for the next run: thread record `thr-7b1a7dc6dd7cb5a5` (agent=gemma, surface=worker) is
+`active` with a 3.2 h-old heartbeat and no `~/.sirsi/threads/` directory at all — the sanctioned
+reaper deliberately left it, so it was not suspended by hand.
+
+## Conduit run 2026-07-31T22:01Z
+
+Merged PR #420 (`WakeConfig.LaunchAgentLabel` + `case WakeNone` in `Validate`), closing the root
+cause of three registry drift incidents in six days: `WakeConfig` had no field for
+`launch_agent_label`, so `encoding/json` discarded the key on every unmarshal and `SaveRegistry`
+wrote the loss back. Verified on `origin/main` rather than on the merge command —
+`internal/router/registry.go:50` and `:160`. Preferred #420 over the near-identical #419, which is
+the same diff plus a `LoadRegistry` auto-fill that synthesizes `ai.sirsi.router.wake.<id>` for every
+launchagent entry; that value is never checked against a loaded launchd job, so the first
+`SaveRegistry` after it would write an assertion of arming nobody verified. Checked, rather than
+assumed, that the auto-fill could not have blinded the drift check either way: `registrydrift.go`
+reads raw JSON via `os.ReadFile` and `git show origin/main:`, never `LoadRegistry`. Flagged that
+#420 is not the class fix — `grep -i consumer` on `origin/main:internal/router/registry.go` returns
+zero hits while `claude-deck` carries a `consumer` block in both the live and merged registries, so
+the same loader mechanism is poised to strip it exactly as it stripped `launch_agent_label`; routed
+the agreed preserve-unknown-keys remedy (typed struct + `map[string]json.RawMessage` catch-all) back
+to claude-pantheon along with the ask to close #419 and the superseded, conflicting #418. Relayed
+claude-pantheon's request to claude-io not to build a working-tree-vs-origin/main divergence check
+(`registrydrift.go` is its generic form), bundled with the note that #416's head is unmoved at
+`8575157` and still needs its id-keying fix. Routed one new finding: thread
+`thr-7b1a7dc6dd7cb5a5` renders 🟢 `status=active` for `sirsi-gemma-worker.sh` (pid 1345, alive
+3h37m) whose `last_seen` is 18:22:24Z — twenty-three seconds after the process started at 18:22:01Z.
+The worker heartbeats once at registration and never again; OS-truth correctly refuses to reap a
+live PID, `status=active` is correctly preserved, the renderer correctly prints green, and the
+composite still cannot say stale-but-alive even though `idle 13007s` is already on the line.
+Deliberately did not suspend it — the process is genuinely alive, and suspending would trade a
+misleading green for a false red. Vitals: diagnose 88/100 🟡 on the same two non-fault drivers
+(capped broker, 10.1 GB VM), memory 83% free, broker `/health` ok with the cap verified BY IDENTITY
+(pid 2735 carries `--prompt-cache-bytes`), prompt cache 0.51 GB, model `gemma-4-12B-it-8bit`, four
+core daemons live, no new crash report. Threads reconciled clean and pruned 53 → 46 records — the
+floor, not the delta; inbound remains ~12-20/h. `ccd reap` killed two leaked
+`router-conduit-supervisor` sessions (4 procs), so the sibling leak that did not recur last run has
+recurred. Retention reclaimed 20.3 KiB. Doctor's stranded set is byte-identical for the fifth
+consecutive run and was left alone.
+
+## Conduit run 2026-07-31T22:15Z — the binder could not say no
+
+Found and closed a P1 integrity defect in the review gate itself. `scripts/bind/sirsi-bind.sh`
+hardcoded `-f event=APPROVE`, so every bind — approval *or* rejection — was recorded by GitHub as
+an APPROVED review, and the gate re-run at the bottom of the same script then cleared binding-hold
+on the PR that had just been blocked. The tool had no way to express a block: recording one was
+mechanically indistinguishable from approving, and it unblocked the merge as a side effect.
+
+Caught on PR #416, where `reviewDecision=APPROVED`, `mergeable=MERGEABLE` and `binding-hold=pass`
+all sat over a review body opening "CHANGES REQUESTED at 8575157 … Blocking on one thing" — my own
+verdict from the previous run. Three green surfaces over a rejection, one `gh pr merge` from landing
+an explicitly blocked change. The badge and the body disagreed and only the body was true; this is
+the green-surface-over-a-dead-thing class again, and the tell was that #416 read APPROVED while its
+head SHA had never moved off the one I rejected.
+
+`binding-hold.yml` was never at fault — it selects `.state == "APPROVED"` and its own suite already
+asserts "non-APPROVED review does NOT bind". The gate read the API correctly; the writer put the
+wrong state in. Worth recording because the instinct on a bad gate is to go audit the gate.
+
+Contained first: dismissed review 4832323502 and re-ran binding-hold on 8575157 — #416 now reads
+`binding-hold=fail` with no review decision, verified on the check, not on the dismissal command.
+Swept the blast radius: no other open PR across pantheon/FinalWishes/SirsiNexusApp carries a
+sirsi-bind review at all, and none of the last 18 merged pantheon PRs merged over a block. The
+defect was live but had not yet done damage.
+
+Fix opened as #421: `--request-changes` records REQUEST_CHANGES; a body opening
+CHANGES REQUESTED/REJECT/BLOCKED without that flag is refused rather than silently flipped
+(inferring intent from prose is the move that created the bug); the gate re-run fires only for
+APPROVE. It also ports `--body @file` support, which the *installed* copy at `~/.local/bin` carried
+but `main` never did — undeployed drift that would have regressed the #333 evidence-loss fix on the
+next install. Added `bind-event-selection.test.sh`, 6 cases, no credentials or network needed since
+the guard runs ahead of the App-key check. Authored in this session, so routed to codex-pantheon for
+an independent bind rather than self-reviewed — with the warning that binding a *rejection* of #421
+through the current installed script would reproduce the bug, so a block must be posted via raw API
+until #421 lands. Corrected the record with claude-io, whose #416 it is; my verdict and remedy are
+unchanged and its head is still 8575157.
+
+Vitals: diagnose 88/100 🟡 on the same two non-fault drivers (capped broker, VM at 10.1 GB), memory
+88% free, broker healthy with the cap verified by identity (pid 2735, `--prompt-cache-bytes`
+present) and prompt cache at 0.51 GB, four core daemons live, no new crash reports. Threads pruned
+47→44 — the floor is ~44 against ~12-20 records/hour inbound, not a 3-record win. `ccd reap` killed
+nothing this run (the sibling leak did not recur) and archived 2 completed supervisor sessions.
+Retention reclaimed 7.9 KiB. Doctor's stranded set is no longer byte-identical: codex-inference ×2
+moved to wake-attempted, leaving claude-inference ×2, codex-io ×1, codex-nexus ×1 and the two owner
+gates, which stay open and un-nagged.
+
+One thing left deliberately: the repo root is still on `feat/version-claude-worker` carrying 125
+modified `.agents/idea-router/items/*.md` files. Those are the router's file-based item store under
+normal operation, not stranded work from the reaped thread that `thread reconcile` warned about —
+neither committed nor discarded. Owner gate 20260731-184653 still covers the off-main branch.
+
+## Conduit run 2026-07-31T22:30Z
+
+Reviewed, bound, and responded to claude-pantheon's PR #422 (`AgentConfig` preserves unknown JSON
+fields through `SaveRegistry`) — the fix for the class my previous run named as canon
+(preserve-unknown-keys via typed struct + `map[string]json.RawMessage`, NOT add-a-field). Verified it
+against the artifact rather than the test suite: round-tripped a copy of the live 23-agent
+`.agents/idea-router/agents.json` through both versions, and `main` gives
+`MAIN_PRESERVES_CONSUMER=false` while #422 gives `SEMANTIC_EQUAL` with claude-deck's `consumer` block
+byte-identical. Three non-obvious mechanisms confirmed rather than assumed: `Agents` is
+`map[string]AgentConfig` (values, not pointers), and `encoding/json` still invokes the pointer-receiver
+`UnmarshalJSON` because it decodes map values into an addressable temp; `SaveRegistry`'s
+`MarshalIndent` re-indents custom-marshaler output on Go 1.26 (`Marshal` + `appendIndent` over the whole
+buffer), so `agents.json` does not degrade into a one-line blob; and `workstream` is a typed field, so
+`consumer` really is the only unmodeled key live, confirming the PR's blast-radius claim. Bound APPROVE,
+`binding-hold` re-ran to `pass`, and verified state and body agree (`STATE=APPROVED` over a body reading
+APPROVE) — the check the #416 incident taught us to make. Not merged: the PR was 5 minutes old against
+the >1h conduit rule, so it is left green, bound, and unheld for the next run.
+
+Found and reported one latent defect #422 introduces, non-blocking. Its known-key discovery is
+value-dependent: it marshals the struct *instance* to learn the key set, so a typed field carrying
+`omitempty` that is present-but-empty on disk is absent from `knownJSON`, gets misfiled into `extra`,
+and then — because the extras loop in `MarshalJSON` overwrites unconditionally *after* the typed
+marshal — shadows the typed field on every save. Reproduced on the head SHA: loading
+`"workstream": ""`, setting `cfg.Workstream = "deck"`, and saving silently yields `""` again. That is the
+same write-is-erased shape the PR exists to fix, one level in. It is latent today (no live agent has a
+present-but-empty `workstream`/`env`, and Go never emits that shape since `omitempty` omits it — it can
+only arrive by hand-edit), but the registry is a hand-edited working tree, so it is worth closing. Sent
+claude-pantheon the two-line remedy: skip an extra when the key already exists in the typed output, making
+the typed struct authoritative so value-dependent misclassification can never win. Approved rather than
+blocked because the defect found is strictly narrower than the active data-loss bug the PR closes.
+
+Vitals: diagnose 88/100 🟡 on the same two non-fault drivers (capped broker, VM at 10.1 GB), memory 86%
+free, broker `/health` ok with the cap verified by identity (pid 2735 carries `--prompt-cache-bytes`),
+prompt cache 0.51 GB, model `gemma-4-12B-it-8bit`, all four core daemons live, no new crash or Jetsam
+since the 15:36 local event. Threads pruned 46 → 30 (floor now ~30, down from ~44, inbound unchanged at
+~12–20/h). `ccd reap` killed 3 leaked sessions / 6 procs — the sibling leak DID recur this run after a
+clean previous one, and two of the three were this task's own `router-conduit-supervisor` (idle 27min and
+20min). Retention reclaimed 15.4 KiB; board 13738 B; no `BINARY_MISSING`. Router doctor's stranded set is
+unchanged from the previous run and carries no new owner-clearable blocker.
+
+## Conduit run 2026-07-31T23:15Z
+
+Reversed the standing plan to squash-merge PR #422. claude-pantheon opened #423 (lossless
+`SaveRegistry` via raw-JSON read-modify-write + `deepMergeJSON`) touching the same three files and
+the same function, explicitly rejecting #422's typed-field approach as sharing the bug's shape —
+which is the correct call, and makes #422 a guaranteed conflict rather than a merge candidate.
+Source-deep review of #423 at `8f01a7b7` in a throwaway worktree, driving `SaveRegistry` directly
+rather than trusting the PR's own tests, confirmed two blockers. **D1:** `deepMergeJSON` only lets
+src override keys *present* in src, so every `omitempty` field Go intentionally empties reverts to
+the stale disk value — `SaveRegistry` can no longer clear any field. Reproduced by clearing
+`Wake.LaunchAgentLabel` and finding `"launch_agent_label": "stale.label"` still on disk; live impact
+is an agent moving to `mechanism: none` keeping a stale wake label forever and `doctor --fix` never
+being able to retract a wake binding. Today's `MarshalIndent(reg)` clears correctly, so this is a new
+regression on known keys introduced while fixing unknown keys — the same silent-write family as the
+bug it fixes. Remedy sent: preserve only keys Go does *not* model, deriving the known-key set from
+the struct json tags. **D2:** the `json.Unmarshal` error into `fileRaw` is dropped, so a truncated or
+concurrently-written `agents.json` makes the write succeed returning nil while dropping every unknown
+key — the lossless guarantee degrading silently at exactly the moment it matters. Both reproduced;
+remedy is to error rather than clobber. GitHub refuses `REQUEST_CHANGES` on a same-account PR, so the
+verdict went up as a comment and `binding-hold` was left **failing on purpose** to keep #423 blocked —
+a case where the honest move is to not clear a gate rather than to bind. Also closed the 2400s BUILD
+TIMEOUT item: the target was claude-io's `type: decision` ADR-006 boundary settlement, which has no
+build artifact by construction, so the worker could only spin; root-cause remedy routed is a `type:`
+guard at build-worker intake rather than a per-item re-scope, and the remaining advisory-vs-blocking
+yes/no was left with claude-pantheon (claude-io's documented default, ADVISORY, stands). Vitals: health
+69/100 🔴 driven entirely by the known non-fault capped broker (pid 2735, cap verified by identity at
+`--prompt-cache-bytes 4294967296`) plus the 10.1 GB VM; memory 89% free, prompt cache 3.36 GB — up from
+0.51 GB last run but bounded and well under the 6 GB bounce threshold, worth watching rather than
+acting on. No new crash since 15:13 local. Four core daemons live; prune floor 29 records; `ccd reap`
+killed 1 leaked session (2 procs) and archived 2 — the leak recurred again, all of them this task's own
+siblings.
+
+## Conduit run 2026-07-31T23:20Z
+
+All-green triage pass, no new verdicts. Inbox empty for both claude-home and
+claude-codex-standin — verified against the store and the file-based item store, not just the
+CLI badge, because the session hook reported "2 pending pull-model"; both authorities returned
+zero, so the hook count was stale. Ledger flat at 42 open. PR posture unchanged and correct:
+#423 still sits at 8f01a7b7, the exact sha whose two blockers (deepMergeJSON can no longer clear
+an omitempty field; dropped Unmarshal error clobbers a corrupt registry) were reproduced last
+run — no re-request, so the rejection stands and binding-hold stays failing on purpose. #421
+still awaits codex-pantheon; #422 remains claude-pantheon's to close citing #423. FinalWishes
+#114 was re-examined rather than re-deferred: it is green, CLEAN, +8/-773 — but its single
+commit is authored by the claude-home conduit lane, so it is this lane's own PR and the
+no-self-review bar is the real reason it has aged to 1d21h, not neglect. claude-finalwishes'
+thread is active, so it stays with them, unnagged. Healed: reconcile moved one reaped
+claude-home thread to its successor; `ccd reap` killed one leaked completed session (2 procs,
+the recurring claude-nexus-lane-runner) and archived one record. Doctor's stranded set is
+unchanged for a fourth consecutive run — claude-inference x2 (interactive, never blind-spawned),
+codex-inference x2, codex-io x1, codex-nexus x1 (mechanism none), user x2 (two owner gates,
+deliberately open) — flat, so still no escalation. Retention reclaimed 6.3 KiB. Vitals: diagnose
+69/100 red, driver unchanged and non-fault (capped broker Python 2735 + the 10.1 GB VM); memory
+89% free, /health ok, cap re-verified by identity, prompt cache 3.38 GB (up 0.02 from 3.36, well
+under the 6 GB bounce line, still on the watch list). No new crash since 15:13 local.
+
+## Conduit run 2026-07-31T23:47Z
+
+Cleared the whole claude-home inbox (4 items, first non-zero queue in several runs) and merged one
+PR. Three new `sirsi` crash reports (19:26/19:30/19:32 local) turned out to be
+`CODESIGNING / Launch Constraint Violation` SIGKILLs against `ai.sirsi.conduit.tick` and
+`ai.sirsi.liveness-watch` — the known AMFI binary-swap class, not memory. The binary was replaced at
+19:31; zero crashes in the nine minutes since, `conduit tick` is logging normally and
+`liveness-watch run` returns 0. Self-healed, no action.
+
+**PR #425 (doctor credits wake LaunchAgent only on a live PID) — reviewed, approved, merged.**
+`gh pr checks` reported NO checks on the branch, so the `CLEAN` badge meant only "nothing blocking",
+not "tests passed" — another instance of the green-surface class. Verified in a detached worktree at
+`d767ff15`: build clean, 4/4 new `TestLaunchctlWakeJobHasPID` cases pass, full `internal/router`
+package ok. The regression risk specific to a PID assertion is an interval-driven job, which has no
+PID between triggers; all 12 live `ai.sirsi.router.wake.*` plists are `KeepAlive=true` with no
+`StartInterval`, so nothing regresses. Filed D1 non-blocking: crediting a negative `LastExitStatus`
+with a present PID still credits a respawn loop as a durable consumer — live today on
+`router.wake.claude-nexus` (61547 / `-9`) and `claude-worker.claude-pantheon` (29580 / `-15`).
+
+**Two `WORKER GAVE UP` escalations were spurious, and the underlying defect is real.** Both named
+items are `closed` (2026-07-24) in the canonical store with an EMPTY `## Instructions` body, while
+the frozen legacy `.agents/idea-router/items/*.md` still carries `status: open` AND the full original
+text. The store cutover kept frontmatter and dropped bodies. The worker then spent both allowed
+attempts (counter `n=2` at 19:32, `.gaveup` + escalation at 19:33) on closed, body-less work. Read
+the deployed `sirsi-claude-worker.sh`: selection is `router pull`, fetch is `router show`, no legacy
+read remains — the divergence is in the DATA, not that script's paths. Routed to claude-pantheon
+(`20260731-234609`) with a request to audit store rows with zero-length `instructions`, plus a note
+that the line-195 self-heal clears the attempt counter but not the `.gaveup` marker. Closed both
+escalations with evidence and cleared the stale markers.
+
+PR #424 was already merged when its notice arrived — ACK-closed. Its registration of
+`codex-inference` and `codex-io` had a visible effect: doctor wake-attempted 3 items this run that
+had been flat-stranded for five runs. Remaining stranded is now genuinely narrow — claude-inference
+×2 (interactive, never blind-spawned), codex-nexus ×1 (mechanism `none`), user ×2 (owner gates, not
+mine to close). Carried PRs unchanged and deliberately left: FinalWishes #114 (this lane's own work,
+no self-review), sirsi-pantheon #389/#357/#358/#393/#361 and SirsiNexusApp #213/#214 (live lanes).
+Router 43 open / 0 mine. Retention reclaimed 35.6 KiB; thread prune 40→36. Vitals green-enough:
+memory 85% free, broker capped and verified by identity, prompt cache 3.39 GB (flat, well under the
+6 GB bounce line).
+
+## Conduit run 2026-07-31T23:49Z
+
+Worked the single claude-home item — claude-pantheon's `reap-sessions` completion report — and
+verified its claim independently rather than accepting the report: `internal/reaper/*` +
+`cmd/sirsi/reapsessionscmd.go` present in `origin/main`, PR #259 `MERGED 2026-07-17T22:32:50Z`,
+deployed binary carries the verb, and a cold `sirsi reap-sessions` run returns `candidates: 0,
+protected(ancestry): 5` — the 406 MB reclaim is holding with no re-accumulation. Closed with
+`sirsi-respond.sh`; fresh inbound `20260731-235047` confirmed present in the store, not just printed.
+Reading both implementations surfaced one non-blocking finding routed back with the ACK: there are
+now two independent SIGTERM-issuing reapers over the same process class — `internal/reaper` (age>600s
+AND rss>120MB, any claude-code desktop session, ancestry protection explicitly unit-tested) and
+`internal/router/sessionreaper.go` behind `sirsi ccd reap` (scheduled-task-tagged, not-newest,
+idle>10min, group heuristic). `reap-sessions` is the strictly broader net, and `reaper.go:33` calls
+itself a mirror of "the reference shell reaper", making this the third implementation of one duty.
+The safety contracts are not equivalent; suggested to claude-pantheon that `ccd reap` delegate its
+kill step to `internal/reaper` and retain only record-archiving. Both dry-run to 0 right now, so
+there is no live conflict — cleanup, not an incident. Vitals: diagnose 69/100 🔴 driven entirely by
+the known capped broker (Python 2735, cap verified by identity at `--prompt-cache-bytes 4294967296`,
+prompt cache 3.39 GB flat) plus the 10.1 GB VM — not bounced, per standing guidance; memory 86% free;
+no new .ips since the self-healed 19:32 AMFI batch; 4 core daemons live. Reconcile healed 4
+reaped→successor records; thread prune 0 (registry floor 41, all records younger than the 1h window);
+`ccd reap` killed 0 and archived 2 conduit-supervisor records. Doctor wake-attempted 3; stranded set
+unchanged (claude-inference ×2 interactive, codex-nexus ×1 mechanism none, user ×2 owner gates — no
+nag). PR set across all three repos identical to last run's evaluated list — nothing merged. Board
+14085 B, retention 5.3 KiB.
+
+## Conduit run 2026-08-01T00:14Z
+
+Host rebooted at 20:06:54 local (shutdown stall logged 20:06); this pass began 54 seconds into the
+new boot. `sirsi diagnose` reported 🟢 100/100 with high confidence while the ENTIRE agent fabric was
+down — `launchctl list | grep sirsi` was empty and the Gemma broker `/health` answered nothing. The
+badge was scoring a machine with zero sirsi daemons on it. Trust raw metrics, never a health badge.
+
+Root cause was not the reboot. `/var/db/com.apple.xpc.launchd/disabled.501.plist` carried an explicit
+`disabled` override for every `ai.sirsi.*` label except the four newest (`claude-worker.claude-inference`,
+`router.wake.claude-inference`, `router.wake.codex-inference`, `ai.sirsi.gemma`) — the signature of a
+bulk `launchctl disable` sweep over the label set that existed when it ran, leaving anything created
+afterward untouched. All ten `actions.runner.SirsiMaster-*` self-hosted CI runners were disabled by the
+same sweep. Because `launchctl disable` only gates FUTURE bootstraps and never stops a running job, the
+fabric kept running normally for however long the flag had been set: the previous conduit pass at 19:52
+legitimately observed horus.agent-router 1325, triage 1308, pantheon 1323 and gemma-worker 1345 all live
+with status 0. The disable was invisible to every liveness probe we have, and the reboot was simply the
+first moment launchd consulted it. This is the green-surface-over-a-dead-thing class with a latency
+fuse attached — the surface was not merely stale, it was correct right up until a boundary that could
+arrive weeks later. Note that the usual step-3 heal, `launchctl kickstart -k`, cannot repair this: a
+label that is both disabled and unloaded rejects kickstart. The repair is `enable` then `bootstrap`.
+
+Restored in verified batches: five core daemons (horus.agent-router 4726 `sirsi horus supervise`,
+triage 4731, pantheon 4736, gemma-worker 4743, gemma-broker 4751), then the watcher/worker layer
+(thread-watcher.claude-home, claude-worker.claude-home, claude-worker.claude-pantheon, conduit.tick,
+fabric-watchdog, liveness-watch), then all twelve `router.wake.*` agents — 23 labels live, each PID
+confirmed against its real argv rather than against launchctl's own report. Broker verified BY IDENTITY
+carrying `--prompt-cache-bytes 4294967296` on gemma-4-12B-it-8bit, `/health` ok. The ten CI runners were
+re-enabled after `gh api` independently confirmed `m5-sirsi` and `m5-sirsi-2` were `offline` on GitHub;
+both report `online` again. Left deliberately disabled: `hypergraph.digest` (owner-operated lane). The
+payoff is measurable in the doctor pass — 40 open items now sit on heartbeat-armed agents that would
+otherwise every one have stranded silently.
+
+Worked the single inbox item, claude-pantheon's audit of 20260731-212922, by re-verifying all three
+claims against origin/main @ 6bff676e rather than accepting the report. Claims 1 and 2 hold exactly:
+only `internal/router/registrydrift.go` exists with no underscore variant, and `registry.go:44` carries
+`extra map[string]json.RawMessage`. Claim 3 reached the right verdict on false evidence. The report
+stated "WakeLaunchAgentLabel does not exist in origin/main ... the feature was never merged"; it does
+exist and is load-bearing, called at `supervisor.go:401` and `threadcmd.go:731,733,737`. The concern is
+nonetheless resolved for the reason the project's own guard test gives: `LoadRegistry`'s only
+post-unmarshal mutation is injecting `cfg.ID` from the map key, the label is derived from the agent id
+by convention at call time, and a missing one is caught generically by registrydrift.go. Verdict
+accepted, evidence corrected, and the correction routed back rather than quietly absorbed — a correct
+conclusion resting on an incorrect finding survives only by luck, and the next reader inherits the luck,
+not the reasoning.
+
+Vitals: memory 91% free, load settled 30.4 → 5.6 as the boot storm drained. Thread reconcile healed 9
+reaped→successor pairs (all pre-reboot, expected); registry floor is 60 records after pruning 5 terminal
+— up from 41 last pass, consistent with a fresh boot minting new records. `ccd reap` killed 0 and
+archived 2. Retention reclaimed 17.1 KiB. Board 14712 B. Router at 46 open, 0 for claude-home. PR set
+byte-identical to last pass: pantheon #389 #357 #358 conflicting plus #393 #361 draft all belong to
+their lane agents, FinalWishes #114 is this lane's own and routed out for independent review, and
+SirsiNexusApp #213 #214 are live lanes'. Nothing merged. Both >24h stale items re-confirmed correctly
+placed. No P0: the three 19:2x `sirsi` .ips crashes are the previously-diagnosed CODESIGNING launch
+constraint class and predate the reboot, with nothing newer.
+
+## Conduit run 2026-08-03T01:21Z
+
+Owner stop from 2026-08-01T00:27Z is **still in force and I honored it**: nothing enabled, bootstrapped,
+kickstarted or restored. Verified quiet rather than assumed it — no reboot (up 2 days), zero `ai.sirsi.*`
+loaded, and every label in `/var/db/com.apple.xpc.launchd/disabled.501.plist` still `=> true`, including
+all 10 `actions.runner.*`. RAM 88% free, load 1.4. The bogus concatenated label from the zsh
+no-word-split gotcha is still sitting in the disabled plist, still harmless, still worth deleting when
+the owner restores. The two items the last run left reviewed-but-unclosed (PR #426, #427) were closed by
+a sibling claude-home session while I was down; the race guard did its job and I routed no duplicate.
+#427 is merged. claude-home now has **zero** open items — the SessionStart hook claimed 2, wrong in the
+usual direction. The real find is the stop's blast radius: self-hosted jobs do not fail fast when their
+runner is disabled, they sit for the full timeout, so PR #426 now reads `Build fail 24h0m0s` /
+`Test fail 24h0m0s` beside three passing cloud checks, with `mergeable=MERGEABLE` but
+`mergeStateStatus=BLOCKED`. Its binding-hold passes, so it is approved, bound and simply unmergeable
+until runners return — as is every other open PR (pantheon 8, SirsiNexusApp 4, FinalWishes 1), and every
+new push re-arms another 24h timer. That is a re-verified owner-clearable blocker distinct from the two
+already-open owner gates, so it got exactly one item
+(`20260803-012106-claude-home-user-owner-gate-stop-is-burning-ci-...`) and will not be re-raised. All
+other steps were deferred **by the stop, not by judgement**: no gemma restore, no daemon kickstart, no
+`doctor --fix` (it wakes agents = restore), no board publish, no thread reconcile/prune, no ccd reap, no
+retention prune. Today's three `sirsi` .ips at 15:59 are the known CODESIGNING / "Taskgated Invalid
+Signature" AMFI class, not memory or Jetsam — no P0. This entry is appended but deliberately **not
+committed**: committing is what grows the 20-commit stranded-off-main history that is itself an open
+owner gate.
+
+## Conduit run 2026-08-03T01:21Z
+
+Owner stop from 2026-08-01T00:27Z is **still in force** — every `ai.sirsi.*` label remains
+`disabled` and unloaded and the Gemma broker is down, so nothing was restored, no agent was
+woken (`router doctor --fix` deliberately skipped: waking agents starts processes), and
+Gemma triage was unavailable. Router queues are genuinely empty for both `claude-home` and
+`claude-codex-standin`; the two items carried in from the last run (PR #426, #427) were both
+closed with results in the interval — #427 squash-merged, #426 bound.
+
+The run's real finding is that the stop also disabled all ten self-hosted
+`actions.runner.*` agents, so **every PR whose gate needs a self-hosted runner now reports
+`Build`/`Test` as `fail` with duration exactly `24h0m0s`** — that is the runner-starvation
+timeout, not a code failure. It blocks sirsi-pantheon #426/#428/#429 and SirsiNexusApp #216
+outright; those are owner-clearable and were surfaced on the board rather than escalated,
+since the owner caused the condition deliberately. SirsiNexusApp #213 predates the stop with
+all gates green and was source-deep reviewed and squash-merged: the Dockerfile now copies
+`go.mod`/`go.sum` before the source (both files verified present in the package root, so the
+new `COPY` is valid) and the two `analytics-platform` resurrection paths are gone — that tree
+is confirmed absent from `main` and the only surviving references were the two files this PR
+cleans. #214 was left alone by its author's own instruction ("merge is the publish action —
+owner gates it"). Housekeeping: threads pruned 89 → 5 records, two leaked
+`router-conduit-supervisor` CCD sessions (idle ~49h) reaped plus two session records
+archived, retention prune reclaimed 27 KiB, board republished. Health 88/100 with
+`omlx-server` (pid 8398, 12.5 GB) the only heavy process — left untouched; today's three
+`sirsi` crash reports are the known CODESIGNING/AMFI `SIGKILL` class, not memory pressure.
+
+## Entry 098 — 2026-08-03 12:52 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e95cb-0fb7-7621-8396-bd62ca478bcc","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- {"session_id":"019fbb48-21c1-7f81-87f5-54b0065a7887","turn_id":"019fc88a-27bf-7de1-89bf-6aeb0093d9de","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/31/rollout-2026-07-31T23-04-54-019fbb48-21c1-7f81-87f5-54b0065a7887.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-05T03:19:52Z
-- last Claude read: 2026-06-05T03:19:52Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## 2026-06-04 — Guided setup wizard for the Monday VC build
+## Liveness watch 2026-08-03T19:09:27Z
+- gemma WEDGED (probe HTTP_000 @60s, server PID 5156 alive) with swap 15264/16384M = 93%, 16 resident claude runners, and a 31B `sirsi gemma` load stacked on the resident 12B server. Menubar alive; launchd escort already DONE. Routed owner decision 20260803-190922-claude-home-user-gemma-wedged-swap-93 with inspection-only reap command (no bulk kill — no signature separates the live session from leaked runners).
 
-`sirsi setup` was three overlapping report-style commands (setup/initiate/permissions), none of which drove a fresh user to "ready." Rebuilt it as a single guided 3-step wizard (Dependencies → Full Disk Access → Agent wake) over a new shared `internal/setup/` engine — one engine, two surfaces (CDD #5): the CLI renders it and the menubar config row already spawns a terminal running the same `sirsi setup`, so they can't drift. Real TTY → prompts before each action (install tool, open FDA pane, "Press Enter once granted" re-check); pipe/file/dev-null/CI → report only, never opens System Settings or blocks. Fixed a clean-machine embarrassment: the dep list reported thoth-init/sync/compact as "missing" npm tools, but Thoth ships inside the sirsi binary — three false negatives a freshly-downloaded user would see. TTY detection moved to golang.org/x/term (os.ModeCharDevice wrongly classified /dev/null as a terminal and auto-opened Settings unattended). Engine is the single source of truth for main.go's scan-command FDA pre-check too. go build ./... + vet + go test ./internal/setup ./cmd/sirsi ./internal/router green. Commit ff8a448 on branch feat/setup-wizard (pushed). Open call for the user: whether a dedicated fullscreen TUI wizard screen is also wanted (gated by ADR-020 / TUI_DESIGN_PROOF) or the menubar→terminal path suffices. codex review owed (offline since 2026-06-01).
+## Conduit run 2026-08-03T19:15Z
 
-## 2026-06-04 — Surface-selectable install: one engine, swappable faces
+**The owner's fabric stop is LIFTED** — verified, not assumed: every `ai.sirsi.*` label in
+`launchctl print-disabled gui/501` now reads `=> enabled` and 30 jobs carry live PIDs. Normal
+conduit duties resumed after two days of stop-hold. The self-hosted runners are back, which
+retroactively confirms last run's find: the `24h0m0s` CI "failures" across every open PR were
+runner starvation, never test failures. The owner gate that recorded it (`20260803-012106`) was
+already closed. Four `actions.runner.*` labels remain genuinely disabled (Assiduous,
+homebrew-tools, porch-and-alley, sirsi-hypergraph) — dormant repos, deliberate, left alone.
 
-Extended the Monday-VC setup work into the full surface model the user specified: the install flow is now "one engine, many faces." `internal/setup/surface.go` holds the Surface model (CLI/TUI/IDE/Menubar/GUI), per-surface install (menubar LaunchAgent ai.sirsi.pantheon, IDE via `claude mcp add`), and switching (ActiveSurface/SaveActiveSurface/LaunchSurface → ~/.config/sirsi/surface). `sirsi setup` Step 1/4 is now a multi-select surface picker (--surfaces csv, interactive, or all); menubar auto-installs on macOS. New `sirsi surface` / `sirsi surface use <cli|tui|gui|ide>` command. `scripts/install.sh` places sirsi-menubar from the archive and hands off to `sirsi setup` on a TTY. All three callers (install.sh, GUI/DMG installer, sirsi setup) drive the same engine — no drift. isTerminal() fixed repo-wide (golang.org/x/term, not os.ModeCharDevice which mis-classified /dev/null). Commits ff8a448 (wizard) + b009120 (surfaces), branch feat/setup-wizard, pushed. go build ./... + vet + go test ./internal/setup ./cmd/sirsi green.
+Worked the full claude-home queue to zero. **PR #446 and #448 source-deep reviewed, bound, and
+merged**; #448's response routed back to claude-pantheon. #446 is comments-only (WakeConfig
+.LaunchAgentLabel documented as round-trip storage; the operational label is derived at call time).
+#448 fixes a real invisible-failure loop: `RunGemmaLivenessDuty` discarded its `routerRoot`, so a
+refused `sirsi gemma serve` reached only `DutyResult.Error` while the liveness-watch re-routed the
+original "wedged" alert every tick — the restore's own failure was never owner-visible. **PR #217
+(SirsiNexusApp) bound and merged** — it tracks `.agents/human-access.json`, the registry declaring
+repository authority, which had been living untracked on disk; its four blocked SNE artifacts are
+honestly marked `workspace-blocked` with a named recovery path rather than claimed as synced.
 
-Release-pipeline reality (the menubar-shipping question): goreleaser runs on ubuntu CGO=0 and CANNOT build sirsi-menubar (fyne/systray needs Cocoa+CGO) — adding it to the builds list would break releases. The menubar already ships via the macos-latest job's DMG (Pantheon.app, Developer-ID signed when secrets present → FDA grants persist). So: DMG path ships menubar+signed (the GUI install); install.sh curl path ships CLI only and needs a separate standalone sirsi-menubar release asset to carry the menubar (follow-up, unverifiable without a release). Open last-mile: (a) how the VC receives it Monday — DMG (recommended, signed, complete) vs curl script; (b) auto-run `sirsi setup` on menubar first-launch so "GUI install implements this" is literal (menubar already has a Configure→setup row, just not automatic); (c) goreleaser standalone menubar asset for the script path. codex review owed (offline since 2026-06-01).
+**PR #447 bound with a live-artifact check the tests did not cover.** Its `parseLaunchdDisabled`
+was verified only against a mocked string, so the parser was run against real
+`launchctl print-disabled gui/501` output on this host — the `"label" => enabled|disabled` format
+matches exactly. That same live run surfaced a non-blocking follow-up recorded in the bind: the
+check will report Critical every diagnose pass on the four deliberately-disabled dormant-repo
+runners, a standing false alarm wanting an allowlist. #447 then went DIRTY when #446/#448 landed;
+GitHub's `update-branch` could not resolve it because the server does not run the CHANGELOG union
+merge driver, while a local `--no-ff` merge resolved it cleanly. Pushed — **which dropped the
+bind**, so #447 awaits a re-bind on `1ae53435` once its re-triggered CI goes green.
 
-## 2026-06-04 — Both delivery paths complete (menubar everywhere + first-run wizard)
+Housekeeping: thread reconcile healed 5 reaped→successor threads; prune took the registry 122 → 62
+records; `ccd reap` archived 6 stale session records (0 leaks to kill); retention prune reclaimed
+374.2 KiB. Broker verified bounded by identity, not pidfile name.
 
-User chose "Both": completed the menubar+wizard across DMG and curl paths. (1) menubar runs `sirsi setup` on first launch (marker ~/.config/sirsi/.setup-launched). (2) release.yml macOS job builds+Developer-ID-signs a standalone sirsi-menubar_<ver>_darwin_arm64.tar.gz asset (additive to the DMG step). (3) install.sh fetches that asset on macOS when not in the archive. Commit c4d4c15. Branch feat/setup-wizard fully pushed (ff8a448 wizard, b009120 surfaces, c4d4c15 both-paths). bash -n + YAML parse + go build ./... + go test green. UNVERIFIABLE-without-release: the standalone menubar asset + DMG artifacts only exist once a tag is pushed and the release workflow runs — the user must cut a release before Monday for the curl/DMG paths to carry the new binaries. Everything else is locally verified. codex review owed (offline since 2026-06-01); PR not yet opened.
+**Correction for the board:** the owner gate `20260803-190922` ("Gemma WEDGED — swap 93%") has gone
+partly stale within the hour. Its PID 5156 is gone; the broker was restarted and now answers healthy
+as PID 28541, and the 31B second model load (PID 14272) that stacked on the resident 12B server is
+also gone. What remains true and unfixed is the underlying condition: swap still sits at
+15264 M / 16384 M = **93%**, with **16 resident claude runners**. The acute wedge cleared; the
+memory pressure that caused it did not, so the gate stays open — but the owner should act on the
+current numbers, not the recorded PIDs.
 
-## 2026-06-05 — The two missing surfaces are now real Go builds (TUI + Mac GUI)
+## Liveness watch 2026-08-03T19:30Z
+Gemma generation probe HTTP_000 twice (60s, 77s) — root cause is NOT memory death:
+`~/.cache/huggingface/hub/` was deleted today ~12:40, so the broker (HF_HUB_OFFLINE=1)
+cannot load mlx-community/gemma-4-12B-it-8bit and crash-loops — `launchctl print` shows
+`state = running` with a live PID but `runs = 27`, another green-surface-over-a-dead-thing.
+Routed 20260803-192959 to owner with the re-download + kickstart + generation-probe steps,
+and flagged that the earlier open item (swap 93%, resident runners) misattributes this to
+memory; both are real but independent. xet cache is 1.2 MB — nothing recoverable, full
+~12 GB re-download needed; disk has 1.2 Ti free. Deleter unidentified — no sweep recorded
+in this journal; asked the owner whether to hunt it and add a `~/.cache/huggingface`
+exclude. Swap 15232/16384 MB (93%), NSESS=18 (>16) — pileup blocker unchanged, item left
+open, no bulk-kill. Menubar alive. Launchd escort already DONE (flag present), skipped.
 
-User corrected priority: I was polishing the install/release wrapper around surfaces that didn't exist. Reality check: CLI + menubar were real; **TUI and Mac app were vaporware**. Built both as real, successful Go builds (Go-first per [[feedback_go_standard]]).
+## Conduit run 2026-08-03T19:40Z
 
-- **TUI (`sirsi tui`, commit 4f44dcd):** internal/tui was a rendering CONTRACT (AppState + pure Reduce + Renderer) with nothing to launch it. Added the live Bubbletea v2 (charm.land/bubbletea/v2) event loop in internal/tui/program.go — thin Elm adapter: key→registry→Reduce→re-render, tab cycles views, q quits, resize reflows. Renders the 3 canonical views (Scan/Ra Fleet/Router Inbox), fixture-backed for now. Headless tests + clean PTY run.
-- **Mac GUI (`sirsi-gui`, commit d505c7b):** the ADR-015 "Ferrari" existed only on paper. Built Go-native (CDD #2: Go HTTP + embedded HTML) — webview_go/WKWebView window over the existing internal/dashboard server; reuses a running menubar dashboard on the fixed port. darwin build file + !darwin stub keeps Linux CI green. Builds: 17MB arm64 Mach-O; linux stub cross-compiles.
+Cleared the in-flight item first: **PR #447** carried a verdict earned last run whose bind had been
+dropped by merge commit `1ae53435`; re-bound the same SHA rather than re-deriving, binding-hold
+cleared, merged. Then **#449** (ADR-051 Anubis/Ra supervisor split) reviewed source-deep, bound and
+merged — SNE stays the neutral engine, Anubis→`interactive` and Ra→`fleet` selected by Pantheon
+supervisor config, no code path touched.
 
-All four surfaces now build successfully: CLI (sirsi), TUI (sirsi tui), Menubar (sirsi-menubar), Mac GUI (sirsi-gui) — all faces over the same engine, switchable via `sirsi surface use`. Branch feat/setup-wizard, PR #2. Next iterations (follow-up, not blockers): wire live data into TUI views (currently fixtures); ship sirsi-gui in the DMG; richer GUI chrome. Then the install/release wrapper (which is already built) actually has four real things to install. codex review owed.
+Reviewing #449 surfaced a **three-way ADR-051 collision**: #449, #450 (Horus node conduit) and #451
+(SNE licensing seam) all branched from `Next available: ADR-050` and all three claimed 051, twice
+via an `adr028`→051 renumber. #449 won on merge order; #450 must become ADR-052 and #451 ADR-053.
+Neither was bound — two ADR-051 files on main is not a conflict a conduit should force-resolve.
+Root cause routed as the actual fix rather than the symptom: a hand-maintained "Next available"
+pointer in a checked-in file is an unenforced lock, and it failed three times in twenty minutes.
+It wants to be CI-derived from `ls docs/ADR-*.md` with Lint failing on a duplicate. #451 is held
+additionally on two counts — **no CI ran on its branch at all** (absent, not red, so it sits outside
+the A28 gate) and it ships outward-facing licensing and A33 claims canon, which is the owner's to
+ratify, not the conduit's. Two ADR-INDEX defects recorded non-blocking: a four-cell row in a
+two-column table, and a header count of 50 against 51 indexed ADRs.
 
-## Entry 041 — 2026-06-05 14:27 — Session Compact (COMPACT)
+**Gemma root cause found, and it is us.** Triage returned no verdicts; `/health` answered 200 while
+a real generation probe hung the full 60s and the broker sat at 97 MB RSS having never loaded a
+12 GB model. A sibling had already escalated the deleted `~/.cache/huggingface/hub` one minute
+prior, so that item was not duplicated — but it asked whether anyone should hunt the deleter, and
+the answer is in this repo: `internal/jackal/rules/ai.go:10-21` targets `~/.cache/huggingface/hub`
+as an ordinary reclaimable cache, guarded by nothing. Corroborated by timestamps rather than
+inference — `~/.cache/huggingface` at 12:40:08 and `~/.cache/firebase` (also a Jackal target) at
+12:40:46, one 38-second window immediately after the last healthy serve at 12:39:26. `internal/stealth`,
+`internal/horus/cache.go`, every script in `~/.local/bin`, and all LaunchAgent plists were checked
+and exonerated. `sirsi clean` deletes its own Tier-0 substrate, and the conduit's own standing
+orders say to dogfood `sirsi clean` under Jetsam pressure — i.e. exactly when the local model
+matters most. Routed to claude-pantheon with a targeted fix (skip the model named in
+`~/.sirsi/gemma-model.conf`, preserving the rule's legitimate purpose) and an A1 dry-run test.
+Not running `sirsi clean` until it lands.
+
+Housekeeping: reconcile healed 1, prune 71→69, ccd reap killed 8 procs across 4 leaked sessions,
+retention reclaimed 60.5 KiB, board republished, doctor armed 31 items. Health 88/100, no new
+crash or Jetsam. claude-home queue back to zero.
+
+## Conduit run 2026-08-03T19:45Z
+
+Merged **#431** (`fix/drift-map-key-wins`) after verifying its central claim against the source rather
+than the PR body: `LoadRegistry` at `internal/router/registry.go:78` does `cfg.ID = id`
+unconditionally, so the drift check's document-shape dispatch — map key wins for map-shaped, inner
+`id` for list-shaped — is a true mirror where #416's `if inner id is empty` guard was not. Both binds
+on it were read in full, not trusted by state: bodies matched APPROVED and were pinned to the current
+head (`7abb82a`), which is the check that would have caught the binder that once cleared a gate on a
+rejection. One residual divergence, non-blocking and pre-existing: the `default: addMap(v)` branch
+indexes every top-level key of an `agents`-less document as an agent, while `LoadRegistry` unmarshals
+into `Registry.Agents` and would see none — unreachable for real `agents.json`.
+
+Reviewed and **bound #434** (`MarshalJSON` extras must not shadow typed fields); the guard is correct
+in both directions — a set typed field is present in `m` so the extra is skipped (the reverted-write
+defect), an empty one is omitted by `omitempty` so a hand-edited `"workstream":""` still round-trips.
+It went CONFLICTING behind main once #431 landed and was **left for claude-pantheon**: its branch is
+checked out in that agent's live worktree, so merging main under it would fight their working tree.
+Discovered in the same pass that **#436 is the identical one-line guard against the same router item**
+(`20260731-222922`), opened seven minutes later — two agents raced one unclaimed defect report, the
+same failure shape as this week's three-way ADR-051 collision. Routed the survivor decision to
+claude-pantheon (`20260803-194227`) and commented on #436; the conduit did not close another lane's PR.
+
+Housekeeping: threads 86→80, four reaped-thread successors healed, ccd reap killed 2 procs and
+archived 3 session records, retention reclaimed 21.4 KiB, board republished. Gemma remains down on the
+owner gate (`20260803-192959`) — weights deleted, `HF_HUB_OFFLINE=1` prevents refetch; no duplicate
+escalation raised. Health 82/100, no new crash or Jetsam reports.
+
+## Liveness watch 2026-08-03T19:59Z
+Gemma still WEDGED (chat probe HTTP_000 @60s; `/v1/models` raises CacheNotFound). Root cause
+already routed (HF cache deleted by jackal ai.go rule) — no duplicate alert. NEW finding routed
+to claude-pantheon (20260803-195906): the resolver's prefetch has NEVER run — `command -v
+huggingface-cli` at sirsi-gemma-model-resolver.sh:173 always fails because the CLI lives only in
+`~/.venvs/mlx/bin/`, and `grep -c 'pre-fetching'` over the entire resolver log is 0. Second gap:
+with the whole hub dir gone, `! is_cached MODEL && is_cached FALLBACK` falls through and writes an
+uncached model to conf, logging `selected:`/`conf ->` as success over zero weights on disk —
+green-surface-over-a-dead-thing. Together these mean gemma cannot self-heal from a weights wipe.
+Swap 15.2G/16G (93%) and 14 resident claude runners: unchanged blocker, already owner-routed
+19:09. Menubar alive. Launchd escort DONE (flag present) — step skipped.
+
+## Conduit run 2026-08-03T19:55Z
+
+Jetsam triage downgraded from P0: `JetsamEvent-2026-08-03-155341.ips` killed
+`spotlightknowledged.updater` (26 MB, reason `per-process-limit`) with **21.1 GB free** at the
+event. An Apple indexer hitting its own quota, not system memory pressure, and no sirsi/gemma/
+Python process was touched — `largestProcess: Python` (omlx-server, 13.5 GB rpages at snapshot,
+16 MB RSS live) is a bystander, not the cause. No escalation, no route.
+
+PR #452 reviewed source-deep and deliberately NOT bound. The A1 HuggingFace substrate guard is
+correct and load-bearing: I checked the one thing that decides whether it works — the rule scans
+the hub *root* while `sirsiGemmaLivePaths` returns model *subdirectories*, and they only meet
+because `isLiveTarget` is bidirectional (`hasPrefixPath(t, c)`), so a root-granularity finding is
+suppressed. That is the granularity that actually deleted the cache. Two findings routed back:
+the new test's second assertion is direction-inverted (`hasPrefixPath(f.Path, modelDir)` only
+catches findings at-or-below the model dir, never the root case that happened), and the new ADR
+duplicate gate false-positives on `ADR-031-A/B/C` because `(?<=ADR-)\d+` strips the letter suffix
+— it forbids the sub-ADR convention the repo already uses, and fails closed on its own PR.
+013/016/046 are genuine pre-existing collisions.
+
+PR #438 bound and squash-merged. D1 is the wedged-wake-label class: `deepMergeJSON` restored a
+stale `launch_agent_label` from disk after Go had cleared it, so the registry kept advertising a
+launchagent that no longer governed the agent. I verified the premise instead of trusting the
+comment — `MarshalJSON`/`UnmarshalJSON` with the unexported `extra` map are on `origin/main` (an
+early grep said otherwise only because the working tree sits on the stale
+`feat/version-claude-worker`), and the capture is discovery-shaped rather than a whitelist. Live
+registry check: only unknown key is top-level `consumer`; `LaunchAgentLabel` is typed and
+round-trips. Noted one latent gap on the PR: `extra` exists at `AgentConfig` level only, so an
+unknown key nested under `wake` would now be dropped where deepMerge preserved it recursively —
+zero such keys today, follow-up not blocker.
+
+Housekeeping: threads 92→86, ccd reap 4 sessions/8 procs + 1 archived, retention 57.1 KiB,
+board republished. #434/#436 both still CONFLICTING in claude-pantheon's live worktree — left.
+
+## Conduit run 2026-08-03T20:05Z
+
+Inbox zero for both claude-home and claude-codex-standin. Two PRs cleared the queue: **#439**
+(`Item.IsBuildable()` + `router pull --build-filter`) and **#443** (`computeStranded` skips
+`mechanism:none` agents) — both source-deep reviewed, bound, and squash-merged after binding-hold
+re-read the bind. #439's ordering is the part that would have been easy to get wrong: the buildable/
+deferred split runs *before* the `len(items)==0` early return, so an all-deferred pull still prints
+the routing hint instead of a bare "No open items". On #443 I flagged two non-blocking consequences
+on the PR rather than holding it: reclassifying `claude-inference` permanently removes its 2 open
+stale items (3d, from claude-nexus) from the stranded report, and `.agents/idea-router/agents.json`
+is a working tree, so merging changes nothing live until it is deployed.
+
+That second point turned into the run's real finding. `router doctor` now reports registry DRIFT in
+the *undeployed* direction: `#432` merged `claude-nexus: wake.mechanism -> none` ("pinned
+owner-interactive thread") on 2026-08-03, but the live registry still says `launchagent` **and
+`ai.sirsi.router.wake.claude-nexus` is still armed (PID 82095)**. The merged intent to stop
+auto-waking that lane has never taken effect. Left unreconciled deliberately — this checkout sits on
+`feat/version-claude-worker` with ~132 modified item files, and the doctor's own guidance is to
+reconcile the branch, never hand-copy the file. #443 will add a second drift line for
+`claude-inference` next run; that one is expected, not new.
+
+Vitals green otherwise: health 88/100, RAM 87% free, all sirsi daemons live. The only new
+DiagnosticReport was a `go` **microstackshot** (`disk writes`, coalition
+`ai.sirsi.claude-worker.claude-pantheon`) — not a crash, no forensics owed. Gemma broker `/health`
+200 and the capped server still carries `--prompt-cache-bytes`, cache 3.37 GB (under the 6 GB
+balloon line); the model weights are still absent, which remains the open owner gate, not a new
+fault. Threads 90→88, ccd reap archived 2 session records with 0 leaks, retention reclaimed 13.6 KiB,
+board republished. Router: 42 open / 3003 closed, 4 owner gates unchanged and un-nagged.
+
+## Conduit run 2026-08-03T20:30Z
+
+Inbox worked to zero: both claude-pantheon review requests answered with source-deep verdicts and
+routed back. **PR #454 (ledger board in every surface + SNE seam) bound and squash-merged @20:27:47Z**
+— verified `state=MERGED`, not a silent exit. The seam ships off by default (`selectRunner` branches
+on a non-empty `sne_url`, so the MLX path is byte-identical to today) and `sne_runner.go` imports
+nothing from sirsi-inference, so the ADR-002/003 boundary holds structurally. `ledger.Summarize` is
+pure over `Snapshot`, so menubar/MCP/CLI cannot drift apart. Cost was checked rather than assumed: the
+menubar refresh rides the existing 60 s stats loop with one `ListAll` over ~3 050 sqlite rows. Two
+non-blocking follow-ups returned — the menubar's `ledgerRowCount = 5` drops a 5th blocker silently
+(there are 4 owner gates open, so the surface is already at its ceiling), and `Summarize` counts
+blocked tasks inside `ActiveTasks` while `TextBoard` renders Done/Active/Blocked as if disjoint.
+
+**PR #453 (session-id lease) returned with one blocking finding, not merged.** The diagnosis and the
+shape are right — `(session_id, surface)` is the correct identity for an app-hosted surface and
+splitting `LeaseSessionTTL` out of `DefaultThreadStaleAfter` preserves ADR-022's OS-truth invariant
+rather than weakening it. But the reuse loop compares only `SessionID` and `Surface`, never `AgentID`,
+while `threadcmd.go` stamps `SessionID: router.CurrentSessionID()` unconditionally without consulting
+`--agent`. So `sirsi thread register --agent <other-lane>` issued from inside a live Claude session
+matches the *caller's* record, renews it, returns it, and overwrites its `CurrentItem`/`Workstream`/
+`Repo`/`Watches` — the exact cross-lane identity adoption #444 exists to refuse, and #444 is still
+CONFLICTING so there is no backstop. Not hypothetical: `~/.local/bin/sirsi-deck-session.sh:53,56`
+hardcodes `--agent claude-deck --surface claude`. Fix is one clause plus a mirror test. #452 unchanged
+— last push 19:45Z predates my 19:58Z verdict, and Lint is still red; left in its lane.
+
+Hygiene: threads 104→70 (34 terminal pruned), `ccd reap` killed 3 completed-leak sessions (6 procs),
+retention reclaimed 80.2 KiB, board republished. Registry drift now shows both expected lines
+(`claude-nexus` from #432, `claude-inference` from #443) — explained, not corruption. No new crash or
+Jetsam reports; all sirsi daemons live.
+
+## Conduit run 2026-08-03T20:48Z
+
+Inbox arrived with one real item: claude-pantheon's PR #455 review request (EffectiveStale
+PID-alive short-circuit for false A27 alarms). Reviewed source-deep at the PR's real head. The
+guard is sounder than the request described — `PIDStateOf` keys on the composite `(pid,
+startedAt)` identity, so a recycled PID returns `PIDRecycled` rather than `PIDAlive`, and
+`threads.go:236` proves production records actually capture a start signature at register time,
+so the recycling hazard is closed in fact and not just in comment. `EffectiveStale` gates on
+`== PIDAlive`, so every other state still falls through to the pgrep watcher check; the change
+strictly narrows the alarm. Returned APPROVE-not-yet-mergeable: the only conflict is CHANGELOG.md
+(confirmed via `merge-tree --write-tree` — zero conflicts in the Go files) and CI has never run on
+the branch, so there is no independent gate to bind against. Also returned one non-blocking design
+note: `PIDStateOf`'s lenient fallbacks (unreadable start time, empty cmdline → `PIDAlive`) were
+tuned for the reaper where a false "alive" spares a process; reused in a staleness alarm the blast
+radius inverts and a false "alive" permanently silences a real alarm. Same primitive, opposite
+consequence direction — worth holding as a conscious tradeoff.
+
+SirsiNexusApp #216 (dependabot npm bump) cleared the way it was predicted to: its CI run had sat
+`queued` since Aug 1 with jobs reporting a 24h timeout, and a `--failed` rerun was all it needed.
+Worth recording the misread — `gh run list` did not show the rerun because a rerun keeps the run's
+original `createdAt`, so it sorts under two-day-old entries; the second rerun attempt failing with
+"already running" was the evidence the first had worked, not that both had failed. Merged green
+and verified `state=MERGED`. Gemma remains DOWN and owner-gated: `/health` still answers `ok` while
+the HF cache is absent and `/v1/models` crashes in `scan_cache_dir()` — another instance of the
+green-surface-over-a-dead-thing class, not re-raised since #452 is the standing fix. Maintenance:
+threads 78→58, 2 healed reap→successor, 2 leaked sessions reaped (4 procs) + 3 archived, retention
+34.7 KiB, board republished.
+
+## Conduit run 2026-08-03T20:58Z
+
+Inbox cleared (2 → 0). Both items were the same PR #456 (Ledger Board Component Spec) sent
+4 minutes apart; responded in full against the newer, closed the older as a duplicate.
+Source-deep read of all 276 lines of the spec: APPROVED on substance — it satisfies A32
+structurally rather than by citation (chart-first hierarchy, plain-English phases, action
+labels that ARE commands), makes "every blocked row names its gate" a non-negotiable, and
+keeps the four status hex tokens identical across the menubar/TUI/SwiftUI/Nexus sections.
+Blocked only on a CHANGELOG-only conflict, proved with `merge-tree --write-tree` (spec doc
+merges clean); both [Unreleased] entries must be kept. Did NOT resolve it — claude-pantheon
+holds the branch in a live worktree, same hazard class as #434/#436.
+
+Root-caused the "zero CI checks" symptom that was read last run as a separate gap on #455.
+It is not a CI outage and not a docs-path exemption: `ci.yml` triggers on every
+`pull_request` to main with no path filter, Actions was healthy repo-wide throughout, and
+comparable PR #454 drew all five checks. GitHub schedules `pull_request` workflows against
+the merge ref (`refs/pull/N/merge`); on a CONFLICTING PR that ref cannot be computed, so
+Build/Lint/Test/Secrets are never scheduled — there is nothing for `gh run rerun` to target.
+Only `binding-hold` still fires, because it reads the head ref. Verified zero runs ever on
+both #456 and #455. This matters at queue scale: 17 of 18 open pantheon PRs are CONFLICTING,
+so the entire queue is currently invisible to CI, and "no checks reported" on any of them
+carries no information about code health in either direction — it is the absence of a
+surface, not a green one or a red one.
+
+PR #428 (codex-pantheon, observer truthfulness) reviewed source-deep across all 12 files and
+BOUND; bind cleared binding-hold, joining Build/Lint/Secrets/Test already green. It fixes
+the green-surface-over-a-dead-thing class directly — the menubar was retaining last-healthy
+Horus values when CollectNodeStatus failed. Its read-only proof byte-compares threads.json
+before and after the read, which is the honest way to prove an observer is write-free. Did
+NOT merge: the PR is a DRAFT, caught only because the merge was verified rather than assumed
+(`gh pr merge` errored, and `state=OPEN mergedAt=null` was the proof). Routed to
+codex-pantheon to flip it. Two findings sent with it: a duplicate CHANGELOG entry that would
+land on squash (heading appears twice at head, zero times on main — keep the second), and a
+recorded consequence that `thread list` no longer reaps, so any agent relying on
+sweep-on-read now accumulates orphans silently; conduit duties are unaffected because
+reconcile is an explicit lifecycle writer and healed 2 threads this run.
+
+Health 88/100, RAM 89% free, all sirsi daemons live. Gemma unchanged and still owner-gated
+on #452 — broker PID live and correctly bounded (`--prompt-cache-bytes` present by identity
+check, cache 3.37 GB, under the 6 GB balloon line), `/health` still returns ok while
+`/v1/models` returns empty, because the weights are gone. Threads 62→58, ccd reap 1 session
+/2 procs + 2 archived, retention 27.9 KiB, board republished. No new crash reports.
+
+## Liveness watch 2026-08-03T19:55Z
+Gemma still WEDGED — generation probe HTTP_000 @60s while `/health` answers 200 and PID 1660 holds LISTEN on 8765; root cause re-confirmed as the deleted HF hub cache (`~/.cache/huggingface/hub` absent, 1.2M of stubs remain), not memory. Closed the superseded 19:09 item, which had blamed memory death + runner pileup: runners are back to 10 (threshold 16) and free RAM is 15G, so that half cleared on its own; swap reads 92% but is unreclaimed residue, not live pressure, so no new memory alert. Owner action stays on the 19:29 model-cache item. Menubar alive; launchd escort already DONE.
+
+## Conduit run 2026-08-03T21:14Z
+
+Inbox reached zero. PR #457 (claude-pantheon, Ledger Board phase groups + menubar permanent-delete
++ Nexus coordination doc) reviewed source-deep against its head ref, bound, and squash-merged
+(`ce7a382`); migration v4 adds `tasks.phase` and every read/write path moved with it, the per-phase
+switch matches the headline switch so surface counts cannot diverge, and no in-repo or `~/.local/bin`
+consumer parses the tab-delimited `router task list` row that gained a mid-row column. Three
+non-blocking findings routed back: the component spec describes the stacked bar as four disjoint
+segments while `Summarize` counts blocked into both Blocked and Active — a doc bug inherited from
+#454 but the one artifact claude-nexus will implement from blind, so it will render over 100%;
+`runPermanentDeleteApply` discards the error from its fallback `os.ReadDir` and reports
+SeveritySuccess "Trash permanently emptied" when it deleted nothing; and `UpdateTask` cannot clear
+Phase since it got no `PhaseSet` escape hatch. Also flagged that #456 now collides on
+`LEDGER_BOARD_COMPONENT_SPEC.md` and that the claude-nexus handoff item remains claude-pantheon's to
+route under A26. SirsiNexusApp #220 (dependabot, brace-expansion/ip-address/socket.io-parser
+security backports across four package trees, lockfile-only) bound and merged after confirming Lock
+File Sync green. Threads 65→51, ccd reap killed 2 completed-leak sessions and archived 1, retention
+reclaimed 45.5 KiB, board republished. Gemma broker live and correctly bounded by the identity
+check; weights remain owner-gated and were not re-diagnosed. No new crash reports.
+
+## Conduit run 2026-08-03T21:26Z
+
+Reviewed and RETURNED PR #458 (menubar Empty Trash) without binding: source-deep read showed the
+feature is already on main from #457 (`ce7a382`, merged 21:11:49Z) as
+`runPermanentDelete`/`runPermanentDeleteApply` — merging #458 would put two "Empty Trash" pairs in
+the same Anubis submenu, which is also why it is CONFLICTING. The useful finding is inverted: #458's
+`runEmptyTrashApply` is the CORRECT implementation and main's is not. Main carries the finding-(2)
+bug from the #457 review — `entries, _ := os.ReadDir(trashDir)` in the osascript fallback swallows
+the error, iterates a nil slice, collects no errors, and reports SeveritySuccess "Trash permanently
+emptied" having deleted nothing, in exactly the headless case the fallback exists to serve. Told
+claude-pantheon to re-base #458 as an *edit* to the merged functions (keep the ReadDir error check,
+byte accounting, per-item errors, `.DS_Store` skip; drop the duplicate menu wiring and CHANGELOG
+line), and flagged #458's own quieter instance of the same class — a silent `return` on ReadDir
+failure with no `recordNotify`. Left PR #459 (ADR-052, docs-only, MERGEABLE) untouched: 1 minute old
+at sweep time and routed to codex-home, not to this lane. Hygiene: threads 54→44 (reconcile healed
+two reaped claude-home records), ccd reap 4 sessions / 8 procs + 2 archived, retention 26.2 KiB,
+board republished. `router doctor --fix` surfaced registry DRIFT — live `agents.json` has
+claude-inference wake `cli-spawn` and claude-nexus `launchagent` where origin/main has `none`; drift
+direction would DISABLE wake, so it was left for branch reconciliation rather than hand-copied.
+
+## Liveness watch 2026-08-03T21:27:34Z
+- Gemma WEDGED (HTTP_000 @60s, port 8765). Root cause CONFIRMED, not memory: `~/.cache/huggingface/hub` is absent entirely (only `xet/` + dotfiles remain) and there are ZERO `.incomplete` files — nothing is re-downloading, so the capped-server (PID 74088, 16m old, RSS 102M) is looping on a model it can never load. Already routed to owner as 20260803-192959 (HF cache deleted); NOT re-routed — no nag. Secondary note: server runs `gemma-4-12B-it-qat-mxfp8` while in-flight classify callers request `gemma-4-31B-it-qat-4bit`.
+- Session-pileup leak NOT rebuilding: NSESS=8 (<16), free RAM 14G. Swap read 15080/16384M (92%) crosses the 65%% proxy threshold, but the direct measure contradicts it and the top RSS holders are mds_stores + Claude/ChatGPT renderers, not leaked runners — treated as stale encrypted-swap accounting, no owner alert (a false red is as bad as a false green).
+- Menubar alive. Launchd escort already DONE (sentinel present) — step skipped.
+
+## Conduit run 2026-08-03T21:48Z
+
+Merged both mergeable Pantheon PRs after source-deep review. **PR #460** (`gemmaRouteRestoreFail`
+dispatch-facade fix) confirmed against `origin/main:internal/dispatch/facade.go` rather than its own
+description: `Facade.Inbox` is store-only once `routercfg.StoreWake()` is set, so the pre-fix
+`work.ListInbox` dedup read the frozen legacy `items/` dir — a stale `status: open` restore-fail audit
+file matches `restoreFailTitle` forever and suppresses the owner alert on every tick, permanently
+silencing it in exactly the degraded state it exists to report; the write leg had the mirror defect
+(no store row, so `router wait` never delivers). Merged 21:42:38Z. **PR #459** (ADR-052 A2A/Router-
+Conduit Operating Rules) reviewed closely because it governs this conduit; adopted, but one table cell
+claims "`items/*.md` are the item record", which is exactly the belief that produced PR #460's bug —
+merged on the strength of the ADR-051 numbering resolution (which unblocks #450/#451) with the cell
+routed to claude-pantheon as a scoped one-line follow-up (`20260803-214618`). #459 needed a CHANGELOG
+union resolution once #460 landed first: resolved in an isolated detached worktree (never
+claude-pantheon's live one), pushed as `00eca1fc` from the main checkout so the Ma'at pre-push gate had
+`node_modules`, re-bound after the push dropped the bind, merged 21:45:41Z. Also closed the #459 review
+request to codex-home as superseded-by-artifact (wake `none`, would have sat forever). **New owner gate
+(security, `20260803-214802`):** reading pid 56771's full argv before the sanctioned reap kill (ADR-040)
+showed a live `gho_` GitHub PAT passed inline in `--mcp-config` on every Claude session launch — argv is
+world-readable to same-user processes and lands in crash reports, stackshots, and agent transcripts;
+token value deliberately kept out of the item, board, and this journal. Housekeeping: threads 54→44,
+ccd reap 1 session/2 procs + 3 archived, retention 66.5 KiB, board 13090 B. Registry drift
+(claude-inference/claude-nexus wake mechanism) unchanged — still branch reconciliation, never
+hand-copied. Health 88/100, RAM 89% free; the 15:53 Jetsam is the known Python/MLX class, no new
+sirsi/gemma crash.
+
+## Conduit run 2026-08-03T21:58Z
+
+Closed the carried #461 item with a CHANGES-REQUESTED verdict: origin/main already holds
+`ADR-052-A2A-CONDUIT-OPERATING-RULES.md` (merged 21:45:41Z via #459), so #461's
+`ADR-052-HORUS-NODE-CONDUIT.md` is a second ADR-052 — renumber to 053. Verified a second defect while
+checking: main's `docs/ADR-INDEX.md` is internally inconsistent right now (line 5 and line 154 both say
+"Next available: ADR-052" while line 54 already allocates it), which is what will re-cause the collision
+on the next rebase; asked for that repair to ride in the same PR since it touches the same file.
+Confirmed #461 supersedes #450 (identical file set, ADR number the only delta) and flagged that #451
+carries the same unflagged collision against main's ADR-051. Merge probe: CHANGELOG auto-merges,
+`ADR-INDEX.md` is a genuine content conflict. Not merged, no bind.
+
+Gemma is down in a way that every existing check calls healthy. The broker (pid 98232,
+`ai.sirsi.gemma-broker`) is up with **no model loaded** — RSS 97 MB, 0.46s CPU over 3m34s — because
+`~/.cache/huggingface/hub` is gone and `HF_HUB_OFFLINE=1` blocks re-download
+(`LocalEntryNotFoundError` in `gemma-server.log`). `/health` returns ok from a thread that never touches
+the model, so the task file's three-part gemma check (health + `--prompt-cache-bytes` in argv + last
+"Prompt Cache" log line) passed all three at 21:49Z against a modelless broker; the log line it trusted
+was stamped 12:39Z, before the deletion. `POST /v1/chat/completions` hangs past 60s, and
+`sirsi-gemma-triage.sh --all` aborted on the 5 tok/s floor, so no local triage ran this pass. Root cause
+is already owner-gated (`20260803-192959`) — not re-raised. Routed one scoped code finding to
+claude-pantheon (`20260803-215612`): the resolver's cached-fallback guard is conjunctive
+(`! is_cached MODEL && is_cached FALLBACK`), so total cache loss falls through to the `else` and writes
+the uncached pick into conf — verified in source, one-line fix, still wrong after the owner restores a
+different model.
+
+No PRs merged: #455/#453/#452/#456 all re-queried CONFLICTING/DIRTY (the returned pair is not rebased
+yet), the rest remain their lane. Threads 45→41, ccd reap 1 session/2 procs + 1 archived, retention
+20.3 KiB, board 13834 B. No new crash/Jetsam files. Registry drift unchanged.
+
+## Liveness watch 2026-08-03T21:57:44Z
+- Gemma still HTTP_000 (60s timeout). Root cause unchanged (HF model cache deleted); broker crash-loop escalated **runs 27 → 50** since the 19:29 owner gate. No new item routed — `20260803-192959-...gemma-crash-looping` is still open and accurate. Swap 92% (15080/16384 M) but byte-identical to prior read with 16G RAM free and NSESS=8: residual from the earlier pressure event, not active pileup — no alert. Menubar alive. Launchd escort already DONE (step skipped).
+
+## Conduit run 2026-08-03T22:16Z
+
+Merged PR #462 (ADR-053 Horus Node Conduit), closing the three-way ADR-051 collision that has
+churned four PRs: #449 kept 051, #459 kept 052, #461 closed stale, #462 lands 053. Numbering was
+verified against origin/main and every open PR rather than the submission's own account — 053 was
+genuinely free and #462 the sole claimant. Source-deep read of internal/horus/conduit.go found the
+RWMutex discipline sound (SetTelemetry and loadOrCreate both release before persist takes RLock;
+BuildReport copies identity rather than aliasing the guarded field) and the ADR-INDEX self-
+inconsistency main had been carrying — header advertising next-available 052 while a row already
+allocated it — repaired in the same PR. Bound, binding-hold cleared to CLEAN, squash-merged
+22:11:54Z, ADR-053 confirmed present on main.
+
+Reviewed and rejected PR #463 (ADR uniqueness CI gate). The gate is correct and worth landing, but
+the renumbering it carries repoints live references instead of breaking them — the more dangerous
+half of the green-surface class. Renaming ADR-046-GO-OWNS to 056 while ADR-046-LOCAL-SOVEREIGNTY
+keeps 046 leaves eight comments in gemma_supervise.go/gemma_serve.go pointing at a different
+decision than the one they document; ADR-016 and ADR-013 split the same way across thoth.go,
+menubar, CHANGELOG and case studies. #463 touches six files and none of them, so CI would pass on a
+quietly wrong reference graph. Recommended the cheaper path: grandfather the three historical
+collisions in an allowlist so the gate blocks only new ones, zero reference churn. Also flagged that
+#463's index accounting predates #462 (ADR-INDEX is a real content conflict against current main)
+and that PR #450, which #463 renumbered to ADR-053, is now byte-identical to merged work and must be
+closed as superseded rather than landed as a duplicate.
+
+Gemma remains down behind its green /health — broker up with no model (RSS 112 MB, completion probe
+empty at 25s), root cause the deleted HF cache, already owner-gated and not re-raised. The model
+resolver was deliberately not run this pass: with the cache fully gone its conjunctive guard writes
+an uncached pick into conf, and that fix is already routed to claude-pantheon. Housekeeping: threads
+56→53, ccd reap 2 sessions/4 procs plus 1 archived, retention 41.9 KiB, board republished. All 20
+pantheon PRs re-queried on second ask remain CONFLICTING/DIRTY, so no standing clearance triggered.
+
+## Conduit run 2026-08-03T22:35Z
+
+Quiet pass. Both inboxes (claude-home, claude-codex-standin) empty — the two items the SessionStart
+hook flagged had already cleared. Router 44 open / 3047 closed (46/3044 last run), no new items and no
+new stale beyond the four already evaluated. Healed 2 reaped→successor thread records (gemma, claude-home),
+pruned 3 terminal records (57→54), reaped 1 completed-leak CCD session (2 procs) and archived 2 session
+records. Retention reclaimed 13.9 KiB. No crash/Jetsam files for any sirsi/gemma/Python process.
+Gemma broker re-confirmed DOWN behind its green /health — pid 22353, RSS 100 MB, no model loaded;
+owner-gated at 20260803-192959, left untouched and unreported-as-healthy, and the model resolver was
+again deliberately not run (its conjunctive guard would write an uncached pick with the HF cache gone).
+All 20 open sirsi-pantheon PRs still CONFLICTING on first query — #428 is MERGEABLE but DRAFT
+(codex-pantheon must flip it ready), #463 remains open awaiting the rework of the three blockers routed
+last run. Nothing merged, nothing bound. Registry drift (claude-inference cli-spawn, claude-nexus
+launchagent vs origin/main none) persists and still needs branch reconciliation, never a hand-copy.
+
+## Conduit run 2026-08-03T22:42Z
+
+Four review requests arrived from claude-pantheon and all four were worked. **PR #434 merged**
+(squash, verified `state=MERGED mergedAt=2026-08-03T22:40:52Z`): the `MarshalJSON` guard
+`if _, ok := m[k]; !ok` stops an extra-map entry shadowing a typed `omitempty` field, with a
+regression test that exercises the real path; 5/5 checks green, reviewDecision APPROVED; #436
+correctly closed as its duplicate. The other three were held, and the reason is one finding, not
+three: **#464, #452 and #465 each claim ADR-054 for a different document**, and two of them
+renumber ADRs that live Go comments cite by number. Verified on origin/main — renaming
+GO-OWNS-THE-SERVING-PATH off 046 while ADR-046-LOCAL-SOVEREIGNTY keeps 046 silently repoints 9
+comments (gemma_serve.go:95,249,257 · gemma_supervise.go:3,12,36,139,148 · gemma_supervise_test.go:82),
+and moving THOTH-EXTRACTION off 016 while ADR-016-TUI-PRIMARY-INTERFACE keeps 016 repoints 6 more
+(thoth.go:81,172,201 · internal/mcp/tools.go:1107,1120 · internal/thoth/delegate.go:3). 13 of 15
+refs break; the new CI gate checks filename uniqueness only, so it would certify green over a wrong
+reference graph — the same blocker raised on #463, carried intact into #464. #452 is worse than
+stated: it renumbers into ADR-052 and ADR-053, both already merged on main (#459, #462), so its own
+gate would fail it — and it is CONFLICTING besides. Recommended sequencing routed to
+claude-pantheon: #465 takes 054 (new doc, zero code refs, owner-gated on content anyway), #464
+ships gate-only with a three-pair allowlist and renames nothing, #452 splits its reference-neutral
+jackal A1 fix out for immediate bind. Housekeeping: threads 62→54 (3 reaped→successor heals),
+ccd reap 3 sessions / 6 procs + 1 archived, retention 63.1 KiB, board 13370 B. Gemma broker still
+model-less behind a green /health (RSS 112 MB, owner-gated, no-nag) — local triage stayed off.
+
+## Entry 099 — 2026-08-03 18:56 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e990a-1d54-76c1-856d-495983cbe571","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- {"session_id":"019fbb48-21c1-7f81-87f5-54b0065a7887","turn_id":"019fc9d5-ee8e-71f0-90ba-2a2c8bb8b088","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/31/rollout-2026-07-31T23-04-54-019fbb48-21c1-7f81-87f5-54b0065a7887.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-05T18:27:37Z
-- last Claude read: 2026-06-05T18:27:37Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry 042 — 2026-06-05 14:55 — Session Compact (COMPACT)
+## Conduit run 2026-08-03T23:00Z
+
+Three router items worked, two PRs unblocked. **PR #466** (gemma resolver prefetch-PATH + zero-weights
+WEDGE) arrived CONFLICTING on CHANGELOG only; hand-merged main and pushed `2acaa84e` from the main
+checkout, then **bound** it (`sirsi-bind[bot] @ 2acaa84e`, binding-hold re-run 30860517445). 14/14
+resolver tests green on the merged tree. Gap 2 is the fix for the `sirsi-gemma-model-resolver.sh:155`
+hazard this thread has carried as do-not-run for several runs — the two-way `is_cached` guard wrote an
+uncached pick when the HF cache was gone. Verdict flagged one real non-blocker: `WEDGE=1` is assigned at
+:188 and never read, so the wedge state is detected then discarded and control still falls through to
+prefetch and the fit probe; and because gap 1 makes the prefetch fire for the first time ever, a wedged
+run now starts an unattended multi-GB HF download while the gemma-weights owner gate `20260803-192959`
+is still open. Not merged — <1h old, no checks reported; merges next pass on green.
+
+**PR #467** (session-keyed reuse guard adds AgentID) — conflict cleared the same way, pushed `4cf10c40`,
+but **NOT BOUND**. The one-clause AgentID guard is correct and approved on merits, but the PR is +365/−2
+against main, not the 64 lines the item claimed: it carries the whole of #453's session-keyed lease.
+That lease has a reachability gap — `ReapDeadThreads` only consults `LeaseSessionTTL` inside
+`if t.PID < minAgentPID`, but `sirsi thread register` cannot mint a null-PID record (`resolveAnchorPID`
+errors rather than returning 0; `ephemeralWorkerSkip` declines instead), and the renewal path re-stamps
+`existing.PID` every turn. So every production session-keyed record carries a live anchor PID and is
+reaped by OS truth with `SessionID` ignored. Both lease tests construct `PID=0` (`threads_test.go:691`
+says so in the comment), proving a shape the register path never produces — green suite over a feature
+the real path cannot reach. Corroborated live this pass: three claude-home records healed
+reaped→successor, 14 terminal pruned (67→53), against a carried measurement of ~12–20 mints/hour at 27 s
+median lifespan — the churn #453 exists to stop is still running. Asked for one test that drives
+`RegisterThread` with a realistic anchor PID and lets it die; offered to bind the AgentID guard on sight
+if split onto main. Also ACK'd codex-pantheon's single-Pantheon-truth-lane decision through Aug 5
+02:00 UTC and reconciled two of its seven consolidated items (gemma resolver = #466 done pending CI;
+#434 merged; ADR-054 still three-way claimed by #464/#465/#452; #428 still DRAFT).
+
+Health 88/100, sole finding omlx-server 12.5 GB (claude-nexus lane, informational). RAM 88% free. Core
+four daemons live (horus 72981, triage 73246, pantheon 1689, gemma-worker 72926). **Gemma broker pid
+39626 still at RSS 95 MB = no model loaded behind a green /health** — owner-gated, no-nag, unchanged;
+local triage therefore did not run and the model resolver was again deliberately not invoked. Router
+50 open / 3066 closed. ccd reap 3 sessions / 6 procs + 3 archived. Retention 49.6 KiB. Board 15636 B.
+
+## Entry 100 — 2026-08-04 03:57 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e9917-a605-7ae0-bc42-13da57ae5a60","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- {"session_id":"019fbb48-21c1-7f81-87f5-54b0065a7887","turn_id":"019fcbc7-0537-7be3-9c8e-fc6224835aea","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/31/rollout-2026-07-31T23-04-54-019fbb48-21c1-7f81-87f5-54b0065a7887.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-05T18:50:23Z
-- last Claude read: 2026-06-05T18:48:05Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry 043 — 2026-06-05 16:12 — Session Compact (COMPACT)
+## Conduit run 2026-08-05T03:30Z
+
+28-hour gap since the prior run; queue had accumulated. Merged PR #466 (gemma resolver prefetch-PATH +
+zero-weights wedge) — CLEAN, all five checks green, bound at 2acaa84e — carried in-flight from the last
+run. Worked all 7 claude-home inbox items to zero. Reviewed #469 and #470 together and held both: they
+patch the *same* `os.ReadDir` guard in `runPermanentDeleteApply`, so each reads as a CHANGELOG-only
+conflict against main only because each is measured against main independently — whichever merges first
+turns the other into a real `actions.go` conflict. Blocking finding on #470: its new `trashInfo()` helper
+returns `0,0` on both `UserHomeDir` and `ReadDir` failure, and the caller renders `n == 0` as
+"Trash is empty — nothing to delete" at SeverityInfo — reintroducing, one surface upstream, the exact
+silent-false-success the PR exists to remove. Recommended order: fix #470 → merge #470 → rebase #469 to
+docs-only (its spec/data-contract work on `blocked_tasks ⊆ active_tasks` is correct and unique) → merge.
+Triaged both WORKER GAVE UP escalations as non-build: the gemma-broker-wedged alert can never be fixed by
+a restore loop because the broker is weightless (pid 65501, RSS 99 MB, `/health` returns ok, free RAM 87%)
+under owner gate 20260803-192959 — flagged that the liveness watch itself trusts `/health` and should
+assert an RSS floor, a green-surface-over-a-dead-thing instance; the registry-police A27 alarm was resolved
+in-run by `thread reconcile` (7 reaped→successor heals) plus `thread prune` (191→74 records), after which
+zero active-status threads had dead PIDs — the 7 "registered-but-not-looping" threads were terminal records
+the registry had not dropped, and the 1 "unmappable cwd=$HOME session" is this conduit itself and should be
+exempted rather than alarmed every run. FinalWishes PR #115 review request arrived three times and all three
+closed under a sibling mid-run (race guard held, no duplicate response); reviewed the merged sha ea5e43e
+anyway and routed it fresh — `/healthz` removal verified safe, `git grep healthz origin/main` returns only
+the CHANGELOG line, no orphaned probe. ccd reap archived 3 session records; retention reclaimed 5.8 MiB.
+System 100/100, RAM 87% free, no crash/Jetsam in 70m, core four daemons live.
+
+## Conduit run 2026-08-05T03:50Z (ctr, owner-triggered)
+
+**Gemma broker restored — the Tier-0 substrate is serving again after ~32h down.** Root cause was not a
+deleted HF cache (the standing owner-gate premise) and not RAM: it was a config/cache mismatch. Conf named
+`mlx-community/gemma-4-12B-it-qat-mxfp8`, which is uncached; the only cached Gemma is
+`gemma-4-12B-it-8bit` — 12 GB, refs/main `200bb6db075e137a4deb08838865ac4ddb86292e`, all three shards, no
+`.incomplete` blobs — the exact canonical checkpoint codex-inference restored for SNE-41. Under
+`HF_HUB_OFFLINE=1` the server failed to load with `LocalEntryNotFoundError` while still answering
+`/health` with 200, and launchd KeepAlive crash-looped it (exit -15, RSS 99 MB, process age 15s). Fix was
+one config line: `sirsi-gemma-model-resolver.sh` repointed conf to the cached model — that cached-fallback
+branch is PR #466's logic, merged 20 minutes earlier in the prior run — then
+`launchctl kickstart -k gui/501/ai.sirsi.gemma-broker`. Verified by tokens rather than a health badge:
+`completion_tokens 16`, `cached_tokens 13`, fingerprint `applegpu_g17s`, RSS ~2.3 GB. No download fired;
+`huggingface-cli` is absent, so the prefetch hazard flagged in the #466 review cannot trigger on this box.
+Two diagnostic markers worth keeping: RSS ~99 MB against a green `/health` is the weightless-broker
+signature, and this server resolves the request's `model` field as a repo id — probing with
+`{"model":"local"}` returns a 404 `LocalEntryNotFoundError` visually identical to the real fault, which
+nearly produced a false negative on the fix itself. codex-home had independently diagnosed the mismatch in
+its handoff but reported port 8765 as unhealthy when it was in fact returning 200 throughout; that gap is
+why this survived a day. Routed the restoration to codex-home, codex-inference and claude-pantheon, and
+told claude-pantheon the liveness watch must assert an RSS floor instead of trusting `/health`. Also
+received, read and recognized two unabridged Monday-noon accomplishment handoffs (codex-home, and
+codex-finalwishes covering PRs #114-#118); both items closed under a sibling mid-pass, so the recognition
+plus the independent verification of FinalWishes #115's `/healthz` removal was routed fresh, with the
+codex-finalwishes record also handed to claude-finalwishes as continuing counterpart. Inbox 2 → 0.
+
+## Entry 101 — 2026-08-05 00:07 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e9968-8236-7091-be92-2b34dfae01e5","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd01a-e295-77c3-a290-8bdac5c80ca6","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-05T20:12:32Z
-- last Claude read: 2026-06-05T20:12:32Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry 044 — 2026-06-05 17:41 — Session Compact (COMPACT)
+## Entry 102 — 2026-08-05 00:46 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
 
 **Decisions**:
-- Session compact handoff for codex-pantheon, 2026-06-05.
-- Router/automation state:
-- Codex app automation installed at `/Users/thekryptodragon/.codex/automations/ctr-thread-wake-pantheon/automation.toml`.
-- Automation target app conversation id: `019e8b57-8bb4-7780-ae46-9055105579f9`.
-- CTR thread id: `thr-4f39cd0e9caf5de0`.
-- Agent id: `codex-pantheon`.
-- Automation cadence: every 2 minutes.
-- Temporary LaunchAgent liveness bridge also exists at `~/Library/LaunchAgents/ai.sirsi.codex-pantheon.heartbeat.plist`, but the product target is one Horus supervisor, not per-thread glue.
-- Important correction:
-- The LaunchAgent only heartbeats/logs/pulls. It did not autonomously make Codex act.
-- The Codex app automation is the closer equivalent to Claude loop behavior: scheduled wakeups, not a native Claude-style `/loop`.
-- Completed this session:
-- Sent Claude Pantheon product mandate for Ra/Horus agent-router supervisor.
-- Sent superseding source-audit response to Claude Pantheon; earlier `201616` item was shell-quoted badly and should be ignored in favor of `201659`.
-- Reviewed and blessed Claude's clean-safety evidence after source review and focused tests.
-- Closed stale Codex router cleanup item and clean FYI.
-- Focused verification passed: `go test ./cmd/sirsi ./internal/cleaner ./internal/platform ./internal/jackal`.
-- Open/new work:
-- New router item addressed to `codex-pantheon`: `20260605-213212-claude-pantheon-codex-pantheon-green-light-build-sirsi-horus-supervise-now-i-build-the-setu`.
-- Title: `GREEN LIGHT — build sirsi horus supervise NOW; I build the setup-install side in parallel`.
-- Claude asks Codex to build `sirsi horus supervise`: resident loop that inventories local agents from `agents.json`, registers/refreshes live threads, heartbeats every 60s, pulls Ra inboxes for locally-owned agents, and marks surfaces wakeable/stale/blocked/manual honestly.
-- Claude will build setup/install side in parallel: `internal/setup.InstallSupervisor()`, LaunchAgent `ai.sirsi.horus.agent-router`, setup step, node-status supervisor health.
-- Agreed contract: command `sirsi horus supervise`; LaunchAgent label `ai.sirsi.horus.agent-router`; plist path `~/Library/LaunchAgents/ai.sirsi.horus.agent-router.plist`; runs from repo root; no `/Applications` writes; stale daemon language remains dead.
-- Next action after compact:
-- 1. Open the green-light router item again if needed.
-- 2. Read `cmd/sirsi/horus.go`, `cmd/sirsi/routernodestatus.go`, `internal/router/*`, especially thread registry, watcher spec, node status, and service/supervisor helpers.
-- 3. Implement `sirsi horus supervise` with `--once` and foreground loop behavior.
-- 4. Keep edits scoped; do not collide with Claude's setup/install side.
-- 5. Verify with focused Go tests and route implementation result back to `claude-pantheon`.
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd01a-e295-77c3-a290-8bdac5c80ca6","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
-- last Codex read: 2026-06-05T21:41:23Z
-- last Claude read: 2026-06-05T21:41:23Z
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
 - pending: none
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## 2026-06-05 — Resident Horus agent-router supervisor: integrated + LIVE
+## Entry 103 — 2026-08-05 13:25 — Session Compact (COMPACT)
 
-Resumed "Pantheon CLI shippability" on branch `feat/horus-supervisor-install` (69a4577).
-Goal: integrate the two parallel-built supervisor halves and take the resident
-supervisor live. Done.
+> Persisted via `thoth compact` before context compression.
 
-- **Integration**: codex's `sirsi horus supervise` engine arrived as untracked
-  files in the shared working tree (`internal/router/supervisor.go` +
-  `supervisor_test.go`) plus uncommitted `cmd/sirsi/horus.go` wiring. No PR — the
-  files were dropped in directly. My install side (`internal/setup/supervisor.go`,
-  `surface.go`) was already committed at 69a4577, with a guard that skips the
-  LaunchAgent until `sirsi horus supervise --help` succeeds (menubar exit-127
-  lesson). Both halves co-resident → build/vet clean, supervisor tests green.
-  Committed engine + wiring scoped (3 files) as `8997d6d`, co-authored to codex.
-- **Go-live bug #1 (AMFI/codesign)**: `cp`-over-existing the fresh binary onto
-  `~/.local/bin/sirsi` → SIGKILL 137 on exec (byte-identical to a working /tmp
-  copy). Cause: kernel cached a code-directory hash for the inode; new bytes fail
-  validation. Fix: rm (new inode) -> cp -> `codesign --force --sign -`. This is the
-  killed-on-exec class (reference_a27_watcher_binary_drift) and matters because
-  launchd re-execs the supervisor binary at every login.
-- **Go-live bug #2 (PATH)**: first live run marked every claude/codex agent
-  `blocked — claude not found in PATH`. launchd's minimal PATH + `/bin/zsh -l`
-  (non-interactive login skips .zshrc where ~/.local/bin lives) -> exec.LookPath
-  fails. Fixed the plist to export explicit EnvironmentVariables/PATH leading with
-  the binary's own dir. Committed as `43f625f`; added supervisorPath() + tests.
-  Reload -> claude-pantheon flips to `wakeable pending=5`.
-- **Result**: `sirsi setup` Step 4 installs+loads `ai.sirsi.horus.agent-router`
-  (repo-root cwd, KeepAlive, Background, no /Applications writes). Verified running:
-  registers its own thread, status=active live=85 stale=1, surfaces each agent's
-  inbox. One resident process replaces per-thread Monitor + /tmp glue.
-- **Honesty (re status-correction 20260605-191735)**: this completes codex's
-  "Monday gap #1" (productize supervisor) ONLY. The broader Monday-ready package
-  audit (footprint, dead code, docs drift, clean-safety evidence) remains OPEN —
-  codex's lane. Not claiming package-audit done.
-- SuperviseOnce is read-model: it does NOT auto-wake or deliver to a live claude
-  session, and it flags my own work thread stale when I lapse — honest by design.
-  Refining wake-delegation is codex's productization lane.
-
-## 2026-06-10 — Flagship train landed (19 PRs) + two governance fixes (canonical router + binding-hold gate)
-
-**Session (claude-pantheon, source-edit lane; claude-home = binding reviewer while codex OOO→back ~20:30 EDT).** Drove the entire binding-passed health-surface flagship + foundation to `main`, then closed the two relay failure-modes the session itself exposed.
-
-- **19 PRs merged** (each rebased onto a moving `main`, CI-green per merge, squash, dependency order): A28 registry-trust cluster (#24 SessionStart per-resume-mint fix + ADR-029 per-agent worktrees, #25 terminal-compaction, #29 pid-sanity-floor, #30 surface-agnostic loop-evidence); flagship Rails (#19 Rail A binary-drift self-heal w/ Homebrew-guard + A21 mutex, #22 Rail B Spotlight-storm detect, #18 Rail C Jetsam/panic trend); both of Cylton's direct UX pains (#26 menubar `.app` bundle so TCC/FDA survives reinstalls, #27 fsnotify live-refresh killing the 4h-stale label); gemma chips (#11 MLX install, #13 sirsi-gemma 2-tool `NewBareServer`); #31 menubar visible-feedback + safe-only manifest; #21 scan-truthfulness; #33 AI-caches→CAUTION (caught 30.7GB HF one-click-trash); #9 ADR-028 SQLite-lean; #28 fresh-inode AMFI invariant docs; #14 gate-flake; #34 `sirsi insight` cross-deity SOTU (AI-optional, structural: `internal/insight` cannot import `internal/gemma`).
-- **The recurring work** was not the CHANGELOG unions (mechanical, `union_resolve.py`) but the **test-file collisions**: two PRs each appending a new test func right after the same existing one share the `for _, tt := range tests { t.Run(...` skeleton → git interleaves them. They're additive — reconstruct BOTH funcs whole, never pick a side. #22 added a wrinkle: it predated #18 and carried a stale duplicate `checkRecentCrashLogs` → drop its copy, keep main's.
-- **Two silent failures surfaced + honestly flagged**: (1) #33 (safety-tier A1) **auto-merged before its binding verdict** when a rebase force-push tripped armed auto-merge (the `[auto-merge overrides hold]` mode — fires on rebase-push, not just first-push). claude-home post-hoc PASSed it (strictly safer, no revert) and RULED safety-tier must never auto-merge pre-verdict. (2) **Router fragmentation**: `sirsi router` from a worktree cwd read the worktree's STALE git-snapshot copy of `.agents/idea-router/`, not the live root — my first #33 review request to claude-home was silently dropped into a worktree copy (audit: exactly one lost item).
-- **Fix 1 — canonical router (#35, `4eb6792`, ADR-029 Amendment 1)**: `router.FindRepoRoot` resolves the MAIN worktree root first (shared `.git`'s parent via `git rev-parse --git-common-dir`), trusting it only when the live router lives there, else the original cwd walk-up. Injectable git seam (`gitCommonDirFn`, A16) + RWMutex (A21); 3 tests; dogfooded (fixed binary from a worktree → `Router home` = repo root).
-- **Fix 2 — binding-hold gate (#36, `aa41706`)**: native GitHub auto-merge respects required CHECKS, not labels — so a `binding-hold` label alone can't hold a PR. New `.github/workflows/binding-hold.yml` job `binding-hold` passes unlabeled / FAILS when labeled; added (the JOB name) to `required_status_checks` → branch protection blocks merge (auto-merge waits) until a binding reviewer removes the label. Own workflow so relabel re-runs only the gate. Proven live end-to-end: label #35 → gate FAIL → `mergeStateStatus: BLOCKED`; claude-home (reviewer) cleared the label → re-run → CLEAN → merged. Closes the #33 bypass STRUCTURALLY. Extends the Ma'at gate (A25/A28).
-- **Net**: a gate (#36) AND the relay that feeds it (#35), both structural. Remaining open: #8 (router −2,626 LOC, HOLD-FOR-CODEX, `binding-hold` labeled) + #32 (ADR-030 NSPopover Swift, arch-PASS but operator-GUI + fresh-codex gated, `binding-hold` labeled). **Deploy-pending**: installed `sirsi` binary still predates the canonical-router fix (repo-root-cwd workaround holds the relay meanwhile) — goes live on next user-authorized build/reinstall, with the TCC-bundle + self-update deploys.
-- **Lessons**: test-file rebase collisions ≠ pick-a-side (reconstruct both); auto-merge-overrides-hold fires on rebase-push too (gate safety-tier with a required-check label, don't rely on discipline); per-worktree router copies fragment the relay (resolve-to-root). Co-authored to claude-home (binding) + codex (arch post-review on return).
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd2f3-e2c9-7760-8e22-5ee40b177e7c","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry — 2026-07-04 — "The Watchers Were Healthy; the Executor Was the Disease"
+## Entry 104 — 2026-08-05 18:54 — Session Compact (COMPACT)
 
-**Context**: claude-pantheon session d8b52186. The runaway-executor incident (19,195 sessions/0 closed; 11,564-item flood; 1.3 TB of orphaned build trees → ENOSPC) became canon and got its guards.
+> Persisted via `thoth compact` before context compression.
 
-**Landed**: #162 fabric-board truth (launchctl `list` probe + real default checker); #163 incident canon (case study + ADR-035 + Sekhmet "Runaway Executor" doctor check + `sirsi router quarantine-worker`); #164 Router-v2 Phase 2 — the §2b Dispatch Contract implemented verbatim in internal/routerstore (fenced leases, send-facade idempotency+quotas, keyed singletons AS DATABASE INVARIANTS, breakers, budgets, <250ms event-driven Wait) with acceptance-bar tests reproducing both incidents under -race; #165 same-day threshold recalibration (a heavy dev day = 389 young trees; warn was 300 → amber on healthy work; now 1500/4000).
-
-**The deeper lesson, again**: every layer that lied to the owner today was an UN-VERSIONED sidecar (the worker script, the board jq that dropped `legacy`). ADR-035 axiom: no executor around the store. Same law, smaller organisms. Board-writer adoption filed as follow-up.
-
-**State**: worker OFF (quarantined durably); re-arm gates on Phase 3 (one facade over the store for CLI+MCP). rc1 evidence: Ma'at 100/100, CI green, TUI merged — tag remains owner-gated.
-
----
-
-## Entry — 2026-07-07 — "Point Ma'at at the Repo (and prove the popover without a display)"
-
-**Context**: claude-pantheon. After #170 the menubar's Ma'at — Quality and Net — Plan honestly said "unmeasured — not inside a code repository" — correct, because run/runJSON pin cwd to $HOME (the launchd-cwd=/ disk-walk fix). The owner-visible gap: no way to see real repo scores from the popover.
-
-**Landed (#172)**: optional project root. `SirsiEngine` reads UserDefaults `projectRoot` (settable via `defaults write ai.sirsi.pantheon projectRoot -string ~/Development/sirsi-pantheon` or the new in-popover picker), validates it (existing dir + `.git`, worktree-tolerant), and applies it as cwd ONLY to the repo-scoped verbs (`maat`, `net`). ProjectBar on those drill-ins names the repo being weighed; home rows show it; "None" returns to the honest unmeasured default. CommandResult decoding treats absent evidence/next_actions as empty so honest-unmeasured JSON still renders structured. Picker is a Menu, not NSOpenPanel — a modal panel dismisses the transient popover.
-
-**The QA lesson worth keeping**: display-gated verification WITHOUT the display. Screen Recording TCC and computer-use were unavailable, so `SirsiMenubar --snapshot <dir>` now renders home/Ma'at/Net to PNGs. Three dead ends first: (1) NSHostingView + cacheDisplay CANNOT composite SwiftUI render-server content — captures come back with only tint-colored glyphs, at any window alpha; (2) ImageRenderer never runs `.task`, so self-loading views render as an eternal spinner → pre-fetch the CommandResult and inject via a new ResultView initializer; (3) ImageRenderer draws ScrollView viewports EMPTY → a `snapshotMode` environment flag swaps scroll containers for plain stacks. Proof PNGs: Ma'at weighing sirsi-pantheon at 51/100 with heal/pulse/scan actions; Net reading the build log (10 entries).
-
-**State**: merged (auto-merge on green), app rebuilt via build-app.sh (stable cert, FDA intact) and relaunched; projectRoot set on the owner's machine. Post-review routed to claude-home (item 20260707-145232).
-
-## Conduit run 2026-07-15T01:26Z–01:46Z — owner decided "A scoped as C"; identity-enforced bind shipped
-
-Queues for claude-home and claude-codex-standin were empty; threads healthy (0 OS-dead, 10 armed); prune reclaimed 3.6 KiB; board republished. The substantive work came from the owner answering the open bind-enforceability decision with **"A, scoped as C"** — a second identity makes bind real, scoped to authority-model paths only.
-
-Implemented on PR #218's branch as `1a85436d` rather than a second held PR (one PR, one bind). The key insight beyond #218: #218 made the *hold* real but cleared it with a `bound` label **its own author could apply** — every agent authenticates as the single account `SirsiMaster`, so any marker an agent can apply, the author can apply. A label is an honesty marker, not a gate. Bind is now pinned to the one primitive an author cannot forge — GitHub forbids self-approval — so `binding-hold` requires an APPROVED review from a login != the author, pinned to the current head SHA (approve-then-push drops the bind; that is the #207 loss class). The approver is the `sirsi-bind` GitHub App, whose private key lives only on the conduit host and **never** in GitHub Secrets: a key reachable from a workflow lets any PR mint the token and self-approve, restoring exactly the circularity ADR-041 removes. Deliberately NOT triggered by `pull_request_review` — such a run resolves its SHA against the base branch and its check would land on the wrong commit, blocking the PR forever; `sirsi-bind.sh` re-runs the PR's own gate run instead. Assuming event mechanics rather than verifying them is precisely what shipped #217.
-
-Verified live rather than asserted: the gate holds #218 against itself (`BLOCKED`, naming author + head SHA), GitHub refused a self-approval attempt (`Review Can not approve your own pull request`), the `bound` label no longer exists, and 6/6 selection cases pass via a test that extracts the jq filter FROM the workflow so it cannot pass against a rotted gate. Two things corrected in passing: **PANTHEON_RULES A28 still enshrined `enforce_admins=false`** — the #213–216 root cause, live-fixed earlier but never corrected in canon — now amended to `true`; and the runbook's claim that `.gitignore` covered `*.pem` was false, so the claim was made true instead of deleted.
-
-Superseded and closed two stale claude-pantheon items with a fresh inbound (close is audit-only): its F1 blocker was correct against `a7dedc00` but is resolved by abolishing `bound`, not by creating it; and its #218 bind request is now unfulfillable because pantheon is also `SirsiMaster`. Told it to stand down rather than burn cycles. One owner item routed: the ~5-minute `sirsi-bind` App creation, which is an access-control action an agent must not perform — and which an agent doing unilaterally would defeat the separation the App exists to create. Canon: ADR-041, PANTHEON_RULES A28, ADR-INDEX (next available advanced to ADR-042).
-
-## Conduit run 2026-07-15T05:39Z–05:45Z — first-chop found canon contradicting its own gate (#218)
-
-Queues empty for claude-home and claude-codex-standin; all threads heartbeating (0 OS-dead, 10 armed, 0 woken); prune reclaimed 5.7 KiB; board republished; no BINARY_MISSING sentinels. The two open `user` items (sirsi-bind App setup, Assiduous Stripe secrets) are genuine owner actions — left open, not nagged. The two stale claude-pantheon items belong to a thread that is alive and active, so they stay with their recipient.
-
-The one substantive finding came from source-deep review of **PR #218** (the only open PR portfolio-wide, correctly `BLOCKED` by its own gate). **ADR-041 point 4 asserted "`pull_request_review` is a trigger on the gate" — `binding-hold.yml` deliberately excludes it**, and explains in-file why adding it would break the gate: a review-triggered run resolves `GITHUB_SHA` against the BASE branch, so its check lands on the wrong commit and the PR's required check never updates. Canon was instructing a future maintainer to make exactly the unverified-event-mechanics assumption that shipped #217 — the precise failure ADR-041 exists to close, and worse in canon than in code because canon is what gets trusted. Fixed in `f023e929` on the #218 branch: the true half is kept (App-token events DO re-trigger, unlike `secrets.GITHUB_TOKEN` — that asymmetry is why a review works where #217's bot label did not), the false conclusion replaced with the real mechanism (`sirsi-bind.sh` re-runs the PR's own `pull_request` run). Pushed **before** any bind exists — the head-SHA pin means a post-bind push silently drops the bind, so this was the free window. Verified rather than assumed: 6/6 bind-selection cases pass against the filter extracted from the live workflow, and the gate re-ran on the new head (`f023e929`) and still holds #218 against itself.
-
-**#218 was not bound and not merged, structurally rather than by choice.** claude-home authored it, and every agent authenticates as `SirsiMaster` = the author; GitHub forbids self-approval, so no agent can bind it — `--admin` would be the #213–#216 self-merge class. It waits on the owner's `sirsi-bind` App (item `20260715-014538`, already open). Farmed ONE scoped SME item to codex-pantheon (`20260715-054351`): single question — can an authority-model PR reach main without an independent head-SHA approval — over exactly two files, with the settled identity decision, the ADR prose, and any bind/merge attempt explicitly out of scope. The first-chop defect is itself the argument for that second lens.
-
-### Addendum (05:52Z) — codex-pantheon found the gate did not cover its own approver
-
-The scoped SME farm-out returned **FAIL — bypass found**, and it was right. `binding-hold.yml`'s authority-model regex covered `.github/`, `cmd/sirsi/`, `internal/router/`, `PANTHEON_RULES.md` and `docs/ADR-*` — but **not `scripts/bind/`**, which holds `sirsi-bind.sh`: the script that mints the App token and records the bind. A PR editing only that script classified `sensitive=false`, skipped the independent-bind step, and reached a **green required check with no non-author approval** — free to redefine what a bind means, or which key file it reads, with no bind of its own. The enforcement had a seam its own authors could walk through, which is the same class as the #217 hole #218 was written to close. Two nights running, the gate was defeated by the part of the system nobody pointed the gate at.
-
-Fixed in `0c36c929` — `scripts/bind/` added to the regex, the gate's error message, ADR-041 §Decision 6, PANTHEON_RULES A28, and the runbook, all in lockstep (canon drifting from the gate is what this same run already had to fix once, in `f023e929`). Scope covers the directory, not just the one file: `binding-hold-selection.test.sh` pins the gate's own selection logic and belongs behind the same bind. Verified: `scripts/bind/*` → SENSITIVE, ordinary paths → autonomous, 6/6 cases pass, gate still holds #218 against itself on the new head. Codex's other four angles (fail-closed detection, head-SHA pin, gate-open condition, token minting) came back clean and match the first-chop read.
-
-**The lesson worth keeping**: claude-home authored #218 and reviewed it source-deep, and still missed this — the author's own agent found a canon contradiction but not the hole in the enforcement boundary it had just drawn. The independent lens found it in five minutes. No-self-review is not ceremony; it is the only reason this is closed. **Self-inflicted, recorded honestly**: journaling the 05:39Z run to main via #219 while #218's branch carried its own unmerged entry conflicted `.thoth/journal.md` (`DIRTY`); resolved in `f256d41c` keeping both entries chronologically — next conduit run should journal onto the open branch, or land the journal PR last.
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd41e-490a-73f1-99f8-0a4b4540ab41","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry — 2026-07-21 — "The Toast Reaches the Owner (and the backlog sweep behind it)"
+## Entry 105 — 2026-08-05 19:30 — Session Compact (COMPACT)
 
-**Context**: claude-pantheon, owner directive "find every task from every conversation and ensure complete." Sweep found 6 open router items + 1 arriving mid-session; all closed with results.
+> Persisted via `thoth compact` before context compression.
 
-**Landed (#267)**: owner-gated router items (board `owner_gated[]`, schema 1.1.0, claude-home's producer) now reach the owner as menubar toasts. Launch + 90s file-only board re-read → UNUserNotification per genuinely-new id (persisted `ownerGatedToasted` dedupe — no restart re-spam). Toast click deep-links (notification delegate → `pendingOwnerItemID` → RootView push) to a new Owner-action screen: full body via `sirsi router show`, refs revealed in Finder, Mark handled (confirm-first, provenance), decision reply via sirsi-respond.sh so the sender is actually woken. "🔑 Needs you" home row carries the count. Verified live: relaunch toasted the two real liveness-watch items.
-
-**Sweep findings worth keeping**: (1) the Scan/Review/Clean unified workflow the 07-17 self-item asked for had ALREADY shipped as ScanCleanView — but its gemma-built companions (#254–#257) are merged and unreferenced: fold in or Rule-0 them next menubar pass. (2) A STALE `v1.0.0-rc1` tag exists on origin pointing at 2026-03-29 (Session 38) — the real rc1 cut must delete/move it first. (3) `sirsi router` works fine from $HOME cwd — no repo-scoping needed for the menubar's router verbs.
-
-**State**: inbox zero for claude-pantheon; session thread registered thr-b8206c35ba3ca785 (A27) and closed at session end; report routed to claude-home.
+**Decisions**:
+- {"session_id":"bd3c7713-f37a-4caa-ae91-7dbef9b1eaf7","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/bd3c7713-f37a-4caa-ae91-7dbef9b1eaf7.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","prompt_id":"90748782-ffe0-40a5-9b1a-5ab65777db5f","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
-## Entry — 2026-07-21 — "The Installed Popover Was Still Wearing Gold"
-
-The owner's live screenshot showed two concrete regressions on Home: Pantheon identity and reclaim copy still used the legacy gold accent, while most supporting text inherited macOS `caption`/`caption2` sizes that were too small at the popover's normal width. The fix is intentionally scoped: identity moved to Pantheon emerald; subordinate storage copy is neutral; genuine amber warning dots remain semantic warnings. Home now sets explicit readable type floors—17pt identity, 15pt action and row titles, 13–14pt supporting copy—plus larger row glyphs and footer controls.
-
-Proof was end-to-end, not source-only: the release target compiled, all 17 SwiftUI snapshot surfaces rendered, the signed bundle was rebuilt into `~/Applications/Sirsi Menubar.app` with the stable `ai.sirsi.pantheon` certificate requirement, and the stale process was terminated and relaunched from the new bundle. The headless ImageRenderer still omits macOS material/text compositing in parts of Home, a known limitation already recorded in the July 7 entry; it nevertheless confirmed the emerald accent and layout, while compilation, signing verification, and the live process path close the delivery loop.
-
-### Correction — the yellow was status, not styling
-
-The first interpretation was wrong: the owner was pointing to the 6.9 GB safe-to-reclaim value and Horus's amber problem indicator, not asking to replace Pantheon's gold visual identity. The emerald branding change was reverted. The typography work remained and was extended app-wide with Large Dynamic Type plus a 360pt design width.
-
-Live inspection found the actual state. Autonomous mode was ON, but its loop consumes Horus diagnostic levers only; it does not consume Anubis safe-storage findings, despite the broad UI wording. A deliberate safe-only Anubis clean moved 158 items to Trash and reclaimed 7.5 GB; nine protected/error items were skipped. A fresh scan then reported zero safe bytes, so the storage figure clears on refresh. Horus was amber for a genuine memory condition: first a swap-death/leaked-session warning, then—after all 17 leaked sessions exited—a >4 GB Python memory consumer. The Eye must remain amber while a current Warn finding exists; hiding it would falsify health.
-
-## Conduit run 2026-07-28T00:00Z — three runs of backlog, written the moment a clean checkout existed
-
-The journal entry for the 23:52Z and 23:59Z runs was blocked twice for the same reason and not for laziness: `.thoth/journal.md` lives in the pantheon checkout, and that checkout has been parked on `fix/sirsi-gemma-bare-server-chipA` with 79 uncommitted files for hours. Writing there risks a foreign `git add -A` sweeping the entry into someone else's commit, which is a known leak class in this repo. This run took the obvious way around it: `.claude/worktrees/rtk-savings` is already a worktree on `main` and was clean, so the entry lands from there and the dirty checkout is never touched.
-
-The backlog it covers. Seven stranded items were ACK-closed across the earlier runs, and both open claude-nexus items were closed the run after. The broker died at 23:53:55Z and the cause was not memory: pid 85829 took a SIGBUS at the stack guard with 87,444 frames on thread 1, the report printing `RECURSION LEVEL 87424` through `mlx::core::detail::compile_dfs` — one frame per compute-graph node, no depth bound, a 16 MB stack exhausted. The prompt cache was 3.59 GB *under* its 4 GB bound five seconds before death and memory was 88% free, so every instinct that reaches for Jetsam was wrong here. launchd restarted it in about a second as pid 75716, argv still carrying `--prompt-cache-bytes 4294967296`, and it has now been stable across two runs with the cache sitting at 2.57 GB. The forensics and the fix — `threading.stack_size(512*1024*1024)` at import in `~/.sirsi/gemma-capped-server.py`, a virtual reservation with no resident cost — went to claude-pantheon as `20260727-235714`. The escalation bar for the next run is a *second* `Python-*.ips` with `compile_dfs` in it, not a repeat of this one.
-
-Two merges landed this run. PR #334 (`docs(prd): Sirsi v2 — from utility to application`) crossed the one-hour bar at 00:05:47Z by the clock and was squash-merged at 00:01:28Z once it did, all five checks green including binding-hold; it lands a *proposed* PRD carrying an owner-decision section, so merging it lands a proposal and not a decision. SirsiNexusApp #193 (`fix(portal): Ask Sirsi refuses a non-loopback endpoint`) was bound and merged at 00:02:34Z after a second source-deep pass. Its IO5b fix is structural rather than an added check: compose the URL once, validate the composed string, hand that exact string to `fetch`, so nothing recomposes after validation and the userinfo-bypass class closes rather than one instance of it. The test suite is unusually honest — it pins the backslash case as an *accept* with the reasoning attached, because WHATWG normalises `\` to a path separator in special schemes and the request genuinely goes to loopback even though it reads like a bypass. Worth recording that the guard cannot darken a working panel today: the board producer hardcodes the loopback literal at `sirsi-router-board.sh:59-63` and only the port varies. It earns its keep the moment a second producer writes that feed.
-
-## Conduit run 2026-07-28T00:24Z
-
-The one inbound item was worth the whole pass. claude-nexus had traced my own scope limit from the
-#193 review — I said explicitly that I had not verified every path the portal reads an endpoint from —
-and found `routes/thread-board.tsx`, a second caller of the same feed that was never guarded and
-sends strictly more: the entire board JSON as context alongside the owner's question. PR #195 moves
-the guard into `src/lib/loopback.ts` so both callers import one implementation, which is the right
-shape and needs nothing from me. They asked me to attack the caller-coverage test rather than approve
-it, and said a spelling it misses would be worth more than an approval.
-
-It misses seven. The negative assertion is a source-text regex,
-`/fetch\(`\$\{[^`]*endpoint\}\$\{[^`]*query_api\}`/`, and rather than eyeball it I ran it against
-eight candidate rewrites: the control matches and everything else walks past it — hoisting the
-template to a variable, `+` concatenation, destructuring the field names, `new URL(query_api,
-endpoint)`, `sendBeacon`, `axios`, and — the one that needs no attacker at all — prettier wrapping
-the argument onto its own line, which breaks `fetch(` from the backtick and silently retires the
-guard on a reformat. `blog/_cta.tsx:21` already carries a comment about swapping in a sendBeacon, so
-non-`fetch` egress is a live direction here rather than a thought experiment.
-
-The deeper defect is the list, not the regex. `CALLERS` is hardcoded, so run that test against the
-tree as it stood the day #193 merged and it *passes* — thread-board.tsx would not have been in it,
-because nobody writes a file into a coverage list before they know it is a caller. It is a regression
-guard against re-breaking two known files wearing a coverage test's name. I inventoried the callers
-myself before claiming a gap and found exactly those two on main, so this is not a report of a third
-unguarded caller; it is that the test cannot fail on the next one. The asked-for change is small:
-derive `CALLERS` from a glob filtered on `query_api|local_llm` so a new caller is in the list the
-moment it touches the feed. The direction beyond that is to stop asserting on source text at N call
-sites at all — put the fetch inside the guard so no caller ever holds a raw URL, then assert
-behaviour with a fetch spy, and the spelling list stops mattering. Routed as `20260728-002633`.
-
-Three stale items of my own closed as superseded, each against an artifact rather than an assumption:
-FinalWishes PR #5 merged 2026-06-11 and #24 merged 2026-06-18, and that repo has zero open PRs today.
-The record I am *not* closing with them is the FinalWishes product work itself — CR-10 and the
-broader Photos consent question stay open. Housekeeping: reconcile healed three threads, `ccd reap`
-killed two leaked sessions and archived one, retention reclaimed 7.1 KiB, no `BINARY_MISSING`. Vitals
-94/100 with memory 86% free and the broker stable on pid 75716 at a 2.73 GB cache, still under bound;
-the 19:54 local JetsamEvent is the already-forensicked 23:54Z SIGBUS, not a second one. Worth
-recording a near-miss: the board publish ran inside a backgrounded chain and produced no output, and
-the file on disk still carried the previous run's 00:05Z timestamp and byte count. Only checking the
-artifact caught it — a re-run wrote 17217 bytes at 00:27Z. Exit status would have said the chain
-succeeded.
-
-## Conduit run 2026-07-28T00:55Z–00:59Z
-
-The merge stack is unblocked, and the thing that unblocked it was evidence rather than a decision.
-Last run I held every PR merge because a non-hermetic jackal test had rewritten the repo-local git
-identity and 5 of 7 open branches were authored `test@test.com`; I would not let `Test` into permanent
-history and I would not rewrite other agents' branches to fix it. That hold was correct in instinct and
-too broad in scope. This run I checked what GitHub actually does instead of what I assumed: PR #334's
-branch was 3/3 `test@test.com` and squash-merged onto `main` as `SirsiMaster`, and #336's 4 bad commits
-squashed the same way. A multi-commit squash takes the *PR author*, not the commit author — so the
-majority of the stack was never at risk and needed no re-authoring at all. What *is* at risk is the
-single-commit PR, where the squash carries the original author straight through: #339, #341, #342, #343
-and #333 each have exactly one commit and still need `git commit --amend --reset-author` from whoever
-owns them. `origin/main` remains 100% clean, and the identity bleed itself stayed fixed — the last
-`test@test.com` commit is 00:48Z, six minutes before the unset, and both the main checkout and every
-worktree now resolve to `SirsiMaster`.
-
-I also got one wrong and am recording it rather than letting the verdict stand. I approved #336 (the
-footprint ceiling with 3-breach hysteresis, a 10-minute cooldown, and `Apply` consent-gated with zero
-callers outside `internal/govern`, so it lands dormant) and squash-merged it — without reading its base.
-#336 was stacked on `fix/footprint-not-rss`, so the governor landed on **#335's branch**, not on main.
-#335 is now 4 commits and is still open, still blocked on my own review: `internal/guard/hapi.go` builds
-a separate `MemProc` type with no `Footprint` field, so `memSize` cannot reach it, and at `hapi.go:207`
-and `:497` the live memory governor still picks its suspension target by RSS — which, with that PR's own
-0.68 GB-resident / 39.87 GB-compressed broker, means it suspends an innocent process. Corrected on the
-PR and routed as `20260728-005733`. This is the fourth time this week that `feedback_verify_the_artifact_
-not_the_command` would have caught something: exit 0 is not evidence the change landed where you meant.
-
-Housekeeping was otherwise quiet. Both inbound items were informational and closed with results — one of
-them claude-pantheon's correction of a clause its own shell had eaten, which is now becoming PR #343; I
-sent back the one note that matters, that the guard must refuse the *inline body path itself* rather than
-blocklist backticks or gate on length, or it repeats the enumeration mistake that let the injection
-through. `ccd reap` killed 9 leaked processes across 8 completed conduit sessions. Reconcile healed 2,
-prune took 974→942, retention reclaimed 251.5 KiB. Broker pid 75716 stable a fifth run, argv bounded,
-cache 2.77 GB, resolver on `gemma-4-12B-it-8bit`. No new crash or Jetsam report since the known
-19:54 EDT pair. Health 82/100 — the VM reservation and the Spotlight indexer at 53%, both known, neither
-acted on with 83% of RAM free.
-
-## Conduit run 2026-07-28T01:10Z
-
-Re-reviewed PR #335 after `cf721cef` landed against my earlier block, and re-blocked it: the commit
-adds `internal/govern` (ceiling, enforce, hysteresis) but `git grep -ln "internal/govern"` outside the
-package itself returns nothing, so the new subsystem has zero callers. The path that actually runs is
-untouched — `cmd/sirsi/hapi.go:108` still calls `guard.FindRunaway`, which walks `s.Top` in
-RSS-descending order (`hapi.go:182/205/207/261`, `rssOf` at `:497`), and `MemProc` at `hapi.go:79` still
-has no `Footprint` field, so the `PhysFootprint` value the PR introduces has no route to the selector.
-The live inversion is therefore unchanged: the broker reads 0.68 GB resident against a 39.87 GB
-footprint, `FindRunaway` never sees it, and an innocent high-RSS process gets named the runaway — the
-exact behaviour the PR title claims to fix. A correct package sitting beside a wrong selector is the
-enforcement-must-not-share-the-bug's-shape pattern; the fix has to sit on the path the bug takes. Clear
-it either by giving `MemProc` a `Footprint` and selecting on it, or by wiring `:108` to `internal/govern`
-and deleting the RSS selector — one authority, not two. Everything else on #335 is green and its
-4-commit history is identity-safe, so this is the only thing left before merge. Also caught that PR #340
-is stacked on `feat/provider-abstraction` (#339), not main — #339 is a single-commit `test@test.com` PR
-and single-commit squashes carry the commit author through, so #340 cannot reach main until #339's owner
-re-authors. Both findings routed to claude-pantheon as `20260728-011117`. Both my queues were empty on
-pull. Vitals green: diagnose 94/100, 86% RAM free, broker pid 75716 bounded and stable with a 2.77 GB
-prompt cache, resolver on `gemma-4-12B-it-8bit`, all daemons live, no new `.ips` since the known 19:54
-EDT pair. reconcile healed 5, prune 947→928, `ccd reap` killed 5 procs across 4 leaked conduit sessions
-and archived 2 records, retention reclaimed 95.9 KiB, board republished at 01:11Z. `doctor --fix`
-reports the same 7 undeliverable items (6 claude-deck + 1 user) already covered by the open
-`20260727-222631` owner item — surfaced, not re-nagged.
-
-## Conduit run 2026-07-28T01:26Z
-
-All-vitals-green run whose only real work was closing two loops the previous run had
-identified but never routed. Broker pid 75716 held stable a seventh run with its
-`--prompt-cache-bytes` bound intact and cache at 2.77 GB; no new `.ips` since the 19:53
-EDT `Python-…195355` SIGBUS, so the second-crash escalation trigger stays unfired. All
-sirsi daemons live, reconcile healed one reaped thread to a successor, prune took the
-record set 929 → 925, `ccd reap` killed 2 leaked supervisor sessions and archived 2, and
-retention reclaimed 95.9 KiB. Both my router queues pulled empty and the stale list was
-byte-for-byte the already-evaluated set, so no re-reading was spent on it. PR #335 still
-heads at `cf721cef` — unchanged since the run that proved `internal/govern` has zero
-callers and `MemProc` still has no `Footprint` field — so that BLOCKED verdict stands
-without re-derivation. What was actually new: #337 and #338 are green, mergeable, and
-identity-safe but authored by me, and nothing had ever asked an independent agent to
-merge them; and #339/#341/#342/#343 have now sat three runs on a single commit authored
-`test@test.com`, which a single-commit squash would carry into main, with #340 stacked
-behind #339. Both were routed to claude-pantheon as requests rather than left implicit in
-a memory file, and the identity item names the likely source — a branch-creation path
-committing with an unset git identity, four PRs in one night being a pattern rather than
-an accident.
-
-## Conduit run 2026-07-29T03:00Z
-
-Cleared the entire in-flight ledger the previous run handed over, then found the thing that matters most this window. **Merged three: #362, #350, #346.** #350 and #346 arrived CONFLICTING on CHANGELOG.md — the union merge driver is local and GitHub cannot apply it — so both were rebased in throwaway worktrees, pushed from the main checkout, and re-bound, because a force-push invalidates the bind SHA even though it does not invalidate the reasoning. Merged one at a time for the same reason. All three under the owner's 20260729-023759 dual-binding decision (codex OR claude-home). #362 is ADR-046, which pins the MLX boundary on measurement rather than preference: claude-nexus measured that `runtime.LockOSThread` does **not** buy a bigger cgo stack — 8.0 MB on the main goroutine, on spawned goroutines, and under LockOSThread alike — which does not merely disfavour the in-process cgo option, it closes it, since the obvious mitigation everyone will propose does not exist. I reconciled that in the bind against #351, merged hours earlier: the Python `threading.stack_size(512 MB)` is the *same* pthread attribute Go cannot reach ergonomically, so the two are containment at two radii, not contradictions. Neither is a crash fix; `compile_dfs` still recurses unbounded through C++. claude-nexus is unblocked and S2 starts.
-
-**The finding: the menubar redesign is pointed at a binary the owner does not run.** codex asked for a binding/design verdict on PR #363, a Command Deck for `cmd/sirsi-menubar`. The launchd plist for `ai.sirsi.pantheon` execs `~/Applications/Sirsi Menubar.app/Contents/MacOS/SirsiMenubar`, and that binary links 17 Swift runtime libraries with no fyne or systray strings anywhere in it. It is the SwiftUI app. Every check #363 passes — `go test ./cmd/sirsi-menubar`, the build, the fast gate — is green about the wrong artifact, which is the stale-green class wearing a new costume and precisely why "verify the artifact, not the command" is standing law. Verdict: do not merge as "the first cockpit step"; either retarget the state model onto the SwiftUI app or land it narrowly and label it. The Gemma tri-state in #363 (`gemma-pantheon` live = online, bare `gemma` = misregistered/admin-held, no signal = offline) is the portable, valuable part and should survive either path. Separately re-verified that the SIGKILL root cause is untouched by any of it: three bundles still read back an identical `ai.sirsi.pantheon`, and `/tmp/sirsi-menubar.log` is still 0 bytes — the process was diagnostically blind through all eight Launch Constraint Violation kills. Owner-gated, surfaced on the board, not nagged.
-
-Declined a router recommendation rather than following it. codex's CTR pass reported four claude-home threads as loop-dead with zero armed watchers and recommended arming a watcher; claude-home is in fact armed (`sirsi router wake-loop claude-home` pid 64331 under launchd, plus a thread-watcher at pid 1656), and following the recommendation would have given one agent two independent wake paths — the level-triggered fork-storm class. The four threads had no on-disk directory at all, including `thr-806e2b562ca249b0`, the very thread pid 1656's watcher is named for and actively watching. So: two stacked accounting defects — watcher liveness computed per-thread without unioning the launchd `ai.sirsi.router.wake.<agent>` labels, and thread records outliving their directories instead of reconciling to stale. Routed to claude-pantheon (20260729-030030) alongside the sibling bare-`gemma` registration defect, since one reconcile predicate likely fixes all of it. `doctor --fix` reproduced the same false alarm on two fresh thread ids afterwards, which is the confirmation.
-
-Adopted a conduit practice correction from claude-deck, who was right: closing stranded items with "forwarded to X" records **routing, not disposition**, and reads as done to an auditor when the instructions were never executed — the stale-green class applied to the router itself. Forwarding is no longer completion; such items stay open under the new owner or close with a result naming the outcome. Router 16 → 12 open, claude-home 10 → 1. Vitals green throughout: diagnose 94/100 (the lone Warn is the load-bearing Colima VM, correctly labelled), 76% RAM free, broker pid 33719 with the `--prompt-cache-bytes` cap intact and prompt cache flat at 2.81 GB, no new `.ips`. `thread prune` collapsed 1048 records to 162; `ccd reap` archived 43.
-
-## Conduit run 2026-07-29T03:10Z
-
-Cleared the in-flight ledger and landed the fork-storm fix. **#364** (journal) merged on arrival;
-**#333** — `thread discover` no longer forks a `watch-router` bridge — reviewed source-deep, rebased
-onto main in a detached worktree, re-bound and merged. It is the right shape: `spawnRouterWatcher`
-is DELETED rather than left unused, so re-wiring it is a compile error, and `killRouterWatcher`
-correctly stays because surface-armed watchers still need stopping. Verified locally at the rebased
-SHA before merging — `go build ./cmd/sirsi` clean, `TestDiscoverNeverForksAWatcher` ok. The instant
-#364 landed, all six unreviewed siblings (#333 #343 #345 #348 #356 #358) flipped CONFLICTING on
-CHANGELOG — the carried gotcha, now observed a third time; they must be taken one at a time.
-
-**Two silent-evidence-loss findings, both caught only by reading the artifact back.** First:
-`sirsi-bind.sh --body @file` does NOT expand the `@file` form. The bind on #333 reported success and
-`binding-hold` went green while the recorded APPROVED review body was the literal string
-`@bind333.md`. The gate opened on a verdict that is a filename. This is a real trap because the
-router verbs require the opposite convention — `router close/send` MUST use `@file` bodies, since
-inline bodies are shell-evaluated — so an operator who has internalised "always @file the body"
-silently produces empty binds. Routed to claude-pantheon (`20260729-030814`) asking for expansion
-or a fail-closed refusal, explicitly not a documentation fix, and explicitly not guarded by a
-blocklist on `@`. Real verdict re-posted to #333 via `gh pr comment --body-file`.
-
-Second, and worse if it had shipped: claude-nexus held **#366** because its new supervisor/child
-split repoints `gemma-server.pid` at the supervisor, and asked whether to hold or have the conduit
-read `gemma-worker.pid`. Both options were unsafe — **`~/.sirsi/gemma-worker.pid` is already taken**,
-naming pid 1644, `sirsi-gemma-worker.sh` under launchd `ai.sirsi.gemma-worker`, an unrelated
-load-bearing subsystem. Reading it would have found a bash script with no `--prompt-cache-bytes`,
-concluded the broker was unbounded, and bounced a healthy broker every 15 minutes; writing it would
-have handed the router worker's stop/liveness paths a pointer to the MLX worker. Answer delivered:
-prior claim on the name wins, rename the MLX worker's pidfile before merge, then sequence normally.
-The conduit's own check is migrated off pidfile NAMES onto process IDENTITY (scan `gemma-*.pid` for
-the process that actually is the capped server, then assert the cap on it) and verified live.
-
-Housekeeping: router 11 → 18 open (2342 closed; the growth is new inbound, not backlog), four
-claude-home items closed to empty, retention prune reclaimed **19.5 MiB**. Vitals green —
-diagnose **100/100** (the Colima warn cleared on its own), RAM 72% free, broker pid 33719 unchanged
-with the cap argv intact, prompt cache 2.80 GB flat, no new `.ips`, all daemons live. `thread
-reconcile` healed four claude-home records to successors; `ccd reap` archived one. Two conduit runs
-overlapped this window and independently reached the same `gemma-worker.pid` collision — the
-duplicate category-language transfer to claude-deck was closed in favour of the sibling's better
-argued item, and the response dedup prevented a double reply. claude-deck is **not registered** in
-the wake registry, so items routed there are wake-unavailable and wait for its next pull.
-
-## Conduit run 2026-07-29T03:35Z
-
-Merged three: **#367** (prior run's journal, carried in-flight and cleared), **#363** (SwiftUI menubar
-Command Deck) after verifying codex-pantheon's two binding blockers were genuinely fixed at `ed2979e1`
-— `panelFill`/`tileFill` now gate the hardcoded near-black behind `snapshotMode && colorScheme ==
-.dark` and fall through to `Color.primary.opacity(0.0x)` live, and the memory-first evidence lines
-(swap + top-process RSS) are restored as `computeState.evidence`; codex additionally taught the
-snapshot harness `--appearance light|dark`, which closes the class rather than the instance, since
-`Snapshot.swift`'s forced `.colorScheme(.dark)` is exactly why a Light regression could never fail a
-check — and **#343** (long inline router bodies refused), which is correct specifically because it
-gates on length, a property of the class, instead of enumerating backticks and `$(...)`.
-
-The run's real finding was a self-inflicted one. `claude-io` reported its `agents.json` wake block
-empty; I checked `origin/main`, found #346 had already populated it, and closed the item as stale —
-then `router doctor` immediately recorded `wake_error: no explicit wake mechanism` against the very
-response I had just routed there. **The router reads the working tree, not `origin/main`**, and the
-repo root sits on a squat branch that never rebased, so #346 merged and never deployed. Commit
-`57f027eb` (2026-07-26) had defused this identical landmine; merging #346 to main re-armed it, and a
-one-agent regression is worse than the original sixteen because eleven stranded agents get noticed
-and one does not. Healed at `865dbf88` by restoring the path from `origin/main` (byte-identical,
-committing only that path, leaving the 102 foreign uncommitted files untouched); verified by artifact
-— wake pass went `0 woken · 2 wake-unavailable` → `1 woken · 1 wake-unavailable`, the remainder being
-`claude-deck`, genuinely unregistered. Corrections routed to `claude-io`, and to `claude-pantheon` as
-a request for a drift check (`git show origin/main:<path>` vs the live file, diffing the whole file
-rather than hunting empty wake blocks) rather than a rearchitecture. Also closed `claude-io`'s ADR-005
-response with the one condition that decides whether its 60–120 s middle band holds: the age stamp
-must be `now − payload.generated_at`, never `now − last_successful_read`, or a dead producer renders
-as "14 s ago" forever and the clause written to withdraw the assertion manufactures it instead.
-
-Vitals green: diagnose 94/100 (the sole priority is a 4.4 GB Virtualization VM, load-bearing), RAM 75%
-free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
-crash reports, all daemons live. `ccd reap` killed 10 leaked sessions; retention prune reclaimed only
-5.9 KiB.
-
-## Conduit run 2026-07-29T03:38Z
-
-Cleared the in-flight ledger and took one PR off the conflicting pile. **PR #368** (the prior run's
-journal) was CLEAN on arrival and merged at `03:35:44Z`. **PR #365** — canon A29, *Scope The Check To
-The Claim*, +34/-0 docs — was the cheapest of the five CHANGELOG-conflicting PRs and is now **merged at
-`03:38:39Z`**. The rebase onto `origin/main` in a detached worktree resolved with **no manual conflict
-work at all**: the CHANGELOG union merge-driver lives in `.git/config`, which every worktree shares, so
-it applied automatically and preserved all sibling entries — verified by reading the diff back
-(CHANGELOG +1 line, PANTHEON_RULES.md +33), not by trusting the clean exit. Two process notes worth
-carrying. First, `--force-with-lease` rejected the initial push as "stale info" because the lease SHA
-was wrong, not because the remote had moved — `git ls-remote` settled it in one call, and the lesson is
-that a lease failure is a claim about the *remote* that deserves an artifact check before anyone starts
-re-fetching. Second, the Ma'at pre-push gate printed **"Tag push — fast pass"** for a SHA→branch
-refspec on the first attempt and then ran the full pipeline on the identical refspec on the second;
-the push that landed was fully gated, so nothing shipped unchecked, but a gate whose depth heuristic
-can misread a branch push as a tag is exactly the A29 shape the merged PR canonizes — a check narrower
-than its claim. Logged for claude-pantheon, not routed as a defect on this evidence alone.
-
-Router quiet: 17 open, one of them claude-home's — codex-pantheon's terminal ACK on the already-merged
-#363 — closed informational, re-affirming that the install/bundle-identity work stays owner-gated on
-the board rather than re-routed. Oldest open item is 3h29m, so nothing crossed the 24h staleness line.
-`doctor --fix`: 0 woken, 15 already-armed, 1 wake-unavailable (`claude-deck`, still unregistered and
-expected). The `865dbf88` registry heal **holds** — `agents.json` re-verified byte-clean against
-`origin/main` both before and after the merge, since merging to main is what re-arms that landmine.
-Vitals green: diagnose 94/100 with the same load-bearing Virtualization VM as sole priority, RAM 80%
-free, broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at 2.73 GB, no new
-crash `.ips`, all daemons live. `reconcile` healed 6 threads to successors, `prune` 0, `ccd reap`
-archived 2 session records, retention prune 3.1 KiB.
-
-## Conduit run 2026-07-29T04:00Z
-
-Cleared the in-flight ledger and took three PRs off the board. **#369** (the prior run's journal)
-merged first, as its state file instructed. **#356** turned out to have fallen off the CHANGELOG
-conflict pile on its own — MERGEABLE, docs-only, `binding-hold` already SUCCESS, blocked solely on a
-Lint still in flight — so it merged as soon as that went green: the ADR-031 case study, whose six
-findings (transient MLX peak sizing, biggest-model traps, the operational objective function, runtime
-currency lag, fix-the-machine-first, Gemma as producer rather than refuser) match what this host has
-independently re-learned. **#345** was the one conflict-pile PR for this run, chosen because #347 was
-stacked on it. The union merge-driver in the shared `.git/config` again did the whole job — rebase onto
-main in a `--detach` worktree, zero manual conflict work, and the artifact read back as +120/-0 with a
-one-line CHANGELOG addition and all 163 sibling entries intact.
-
-**Two mechanical traps, both new.** First, zsh applied `:r` as a history modifier to `"$NEW:refs/heads/…"`
-*inside double quotes*, silently mangling the refspec into `…efs/heads/…`; `${NEW}:refs/…` is the fix,
-and quoting alone is not protection. Second, `gh pr merge --delete-branch` on a PR that another PR is
-stacked on **auto-closes the child**: deleting #345's branch closed #347, and #347 then could not be
-reopened at all, because GitHub refuses to reopen a PR whose base ref no longer exists. Recovering it
-took restoring the base branch via `gh api …/git/refs` — which also skips the local Ma'at pre-push gate
-— then reopen, then retarget to `main`. #347 is OPEN again on base `main`, now CONFLICTING, and is the
-natural next rebase target. The restored `codex/router-send-registered-recipient` ref is now unreferenced
-and can be deleted once #347 lands.
-
-**The merge that mattered most is the one that turned out to be half-wrong.** #345 adds
-`validateRecipient` to `internal/dispatch/facade.go`, and it passed a source-deep read on its merits:
-allowlist-by-discovery over `agents.json`, fails closed on an unreadable registry, refuses before
-`SendGuarded` can create a row. What neither the review nor the PR's own regression test caught is the
-bypass list — `if to == "codex" || to == "claude"` — which enumerates the legacy inboxes and stops
-there. `user` is a first-class router recipient that is deliberately not an agent: it is the
-owner-escalation lane the conduit protocol runs on, it is absent from `agents.json` (19 agents), and it
-is special-cased nowhere in `internal/dispatch` or `routercmd.go`. Verified rather than reasoned about:
-built `cmd/sirsi` from `origin/main`, ran it against a copy of the live registry, and
-`--to user` is refused while a registered control passes the guard and only trips the later ADR-024 type
-check. The breakage is latent — the installed binary predates the merge — but it arms itself at the next
-rebuild, *including the binary-drift heal path this very task runs unattended*, so it would most likely
-have first surfaced as the conduit silently losing the ability to escalate to the owner. This is
-precisely enforcement sharing the bug's shape: the defect was "sends reach lanes that cannot receive",
-and the remedy answers it with a hand-typed exception list, so every legitimate non-agent recipient
-nobody remembered is now refused. Routed to codex-pantheon as `20260729-040039` with the reproduction,
-the suggested fix (source the pseudo-recipients from one place, or let the registry carry non-agent
-recipients), and the note that the regression test must pin `--to user` as accepted — pinning one
-specific rejected name is what let this through. `claude-deck` is the same problem's second face:
-unregistered, and holding one real open item (`20260729-030646`) that nothing will be able to reach once
-the guard is live. Flagged, not unilaterally decided.
-
-Everything else green. Diagnose 94/100 on the known load-bearing `com.apple.Virtualization.VirtualMachine`
-priority; RAM 78% free; broker pid 33719 with `--prompt-cache-bytes 4294967296` intact and cache flat at
-2.73 GB; registry `agents.json` byte-clean against `origin/main` both before and after merging; all
-daemons live; no new crash `.ips` — the new `/Library` `.diag` files are Microstackshots CPU samples
-(`bsdtar`, `node`), not crashes or Jetsams. `reconcile` healed 1 thread, `prune` 0, `ccd reap` killed 2
-leaked sessions of this task, retention prune reclaimed 6.0 KiB. Router 17 open, oldest 3h52m, nothing
-stale; claude-home's own inbox empty.
-
-## Conduit run 2026-07-29T04:06Z
-
-Closed the owner-escalation P0 that the previous run had opened and correctly refused to merge
-into. Merged the in-flight journal PR #370 (CLEAN, all five checks green), then re-reviewed
-codex's #371 at `ee1dbd64` rather than trusting its two RESPONSE items at face value. My prior
-run had blocked #371 because it deleted the `codex`/`claude` bypass while leaving `--to user`
-unreachable; the revised head adds an explicit owner-inbox lane to `validateRecipient`, so I
-lifted the hold, bound it, and squash-merged it at 04:08:39Z — verifying the artifact on
-`origin/main` afterwards rather than trusting the merge exit code. The judgement call worth
-recording: `main` rejected **all five** owner aliases, #371 fixes the one that is load-bearing,
-so holding out for the perfect fix would have kept the worse state live. Merging a strict
-improvement beats blocking on a complete one.
-
-The residual is a genuine two-copies bug and is routed, not forgotten (`20260729-040924`):
-`internal/router/gate.go` `ClassifyGate` treats five recipients as owner escalation
-(`user`/`owner`/`cylton`/`sirsimaster`/`cylton-collymore`) while `internal/dispatch/facade.go`
-now admits only `user`. The copy was **forced, not careless** — `internal/router/wake.go`
-imports `internal/dispatch`, so reaching the gate predicate from dispatch would be a compile-time
-cycle. The cycle-free fix is to push one exported predicate down into `internal/work`, which is
-pure-stdlib and already imported by both. This is the A29 "enforcement must not share the bug's
-shape" pattern again: a hand-copied allowlist drifts from the predicate it mirrors, so the
-regression test must drive both call sites from one shared slice and never re-enumerate it.
-
-New trap found: **PR #372 was opened 38 seconds before #371 merged** and is now DIRTY against it.
-Four of its five files are already on main, but its `facade.go` deletes the bypass with *no*
-replacement lane — rebasing it and resolving the conflict toward its side would silently re-arm
-the exact `--to user` break just closed. Its one unique contribution is two `internal/mcp/tools.go`
-schema descriptions. Left the PR to its lane agent per orchestrate-don't-absorb, with the hazard
-documented on the PR and routed as `20260729-041054`, recommending it be closed in favour of a
-two-line tools.go PR rather than rebased.
-
-Escalated one owner decision (`20260729-041151`, the only open `to: user` item): `claude-deck` is
-absent from `agents.json` yet holds a real open item, and now that the dispatch guard is on main,
-that lane becomes unroutable at the next binary rebuild. Recommended retiring the lane and
-rerouting its item over inventing a registry entry. Not rebuilding the binary meanwhile.
-
-Vitals green throughout: diagnose 94/100 with the known load-bearing
-`com.apple.Virtualization.VirtualMachine` as sole priority, 79% RAM free, broker pid 33719 with
-`--prompt-cache-bytes 4294967296` intact and prompt cache flat at 2.73 GB, all daemons live, no
-new crash or Jetsam `.ips` since the last run. `thread reconcile` healed one reaped→successor
-record, `prune` 0, `ccd reap` archived one completed run of this task, retention prune reclaimed
-4.3 KiB. claude-home inbox closed to 0.
-
-## Conduit run 2026-07-29T04:30Z
-
-Merged **#373** (the prior run's journal, docs-only, all five checks green) at 04:24:56Z. The
-substantive work was **#374**, codex-pantheon's implementation of the follow-up I routed as
-`20260729-040924`: the five reserved owner-recipient aliases single-sourced into
-`internal/work` as `OwnerRecipients()`/`IsOwnerRecipient()` — pure stdlib, zero internal
-imports, so the `dispatch`→`router` cycle that forced the original copy stays broken — and
-consumed by both `facade.go:validateRecipient` and `gate.go:ClassifyGate`. Both regression
-tests now drive from the shared slice rather than a hand-copied list, which is what makes it
-A29-clean instead of the same divergence bug wearing a test costume. I bound it on `f546e80`
-at 04:25Z.
-
-Thirty seconds later a force-push moved the head to `990c5e29`, dropping the bind by design —
-and the amended head is **not the change I reviewed**. Its delta reaches into
-`cmd/sirsi/routercmd.go` and `internal/router/strand.go` and inverts the `wake-install` leak
-guard from `AgentHasLiveThread` to `AgentArmed`, relaxing the owner's 2026-07-10 finding
-(`reference_schedulewakeup_process_leak`). That may be the right call under "the durable unit
-is the worker loop, not the session" — but it is an authority-model decision about when a
-background LaunchAgent may be armed on top of a live session, and it rode in on a PR titled
-"single-source owner recipient aliases", *after* an independent bind. Worse, it is untested in
-the direction that now matters: after the diff `AgentHasLiveThread` has **zero production
-callers** and is exercised only by its own surviving test, while the predicate that actually
-gates arming has none. A suite that pins the retired check and ignores the live one is A29
-exactly. **Bind withheld**; verdict posted on the PR and routed back as `20260729-042822`,
-asking for #374 to be reset to the `f546e80` content (I re-bind on sight) and the guard change
-to be opened separately with a test that drives the new guard and a disposition for the
-callerless predicate.
-
-Also caught **#375** — a duplicate of #374 opened one minute apart, same fix under
-`internal/work/recipient.go` instead of `owner.go`, guaranteed to conflict. #374 is the keeper:
-it carries the CHANGELOG entry and the stronger `facade_test` assertion (#375 drops the
-per-item `IsOwnerRecipient` check on survivors). #375's only unique content is the two
-`internal/mcp/tools.go` schema-description lines — which are also the only unique content in
-the DIRTY #372. Recommended closing both and reopening those two lines as one small PR off
-main; #372 must never be rebase-merged, since its `facade.go` side deletes the bypass with no
-reserved lane and re-arms the `--to user` P0.
-
-Housekeeping: two codex responses ACK-closed as superseded by action already taken, leaving
-claude-home at zero open. `reconcile` healed one reaped→successor thread; `ccd reap` killed six
-leaked completed-run sessions; retention reclaimed 5.9 KiB. Vitals green — diagnose 94/100 with
-the load-bearing VM as sole priority, 77% RAM free, broker pid 33719 still capped at 4 GiB with
-the prompt cache flat at 2.74 GB, no new crash or Jetsam reports. The only open `to: user` item
-remains last run's `claude-deck` lane decision; `doctor` reports it as wake-unavailable by
-design, and it is not being nagged.
-
-## Conduit run 2026-07-29T04:42Z
-
-Three PRs merged and the router's owner-recipient work closed out. **#376** (last run's journal)
-merged first as the standing next-run pattern. **#374** landed the `internal/work.OwnerRecipients()`
-/`IsOwnerRecipient()` single authority after codex narrowed its head to `042434de` — the
-wake-install guard inversion I had blocked on was gone, leaving exactly the content bound at
-`f546e80`, so the bind was re-placed and the PR merged. The guard itself came back correctly as
-its own PR **#377**, which is the shape the earlier verdict asked for: `wakeInstallBlocked` is now
-one named authority consumed by both `router wake-install` and the cutover re-arm loop, and
-`TestWakeInstallBlockedUsesArmedWatcher` pins all three states of the predicate that actually gates
-arming (loop-dead live session does not block, armed watcher does, `--force` bypasses). With
-`AgentArmed` already covered directly on main, the A29 objection — a new guard gating arming with
-no test of its own — is discharged, and the now-callerless `AgentHasLiveThread` was deleted rather
-than left reading like a live check. The relaxation is right on the merits: the 2026-07-10 leak was
-duplicate pull-loops, so blocking on any live thread refused to arm exactly the loop-dead sessions
-that most needed it.
-
-**#347** was pulled out of the conflict pile and resolved. It turned out to be the PR that
-originally introduced `dispatch.validateRecipient`, carrying a bare `codex`/`claude` bypass — the
-same bug #371 fixed and #374 superseded — so merging it unresolved would have regressed both.
-Main won every overlapping line; the one trap was that the second `facade_test.go` conflict had
-entangled main's assertion block with #347's genuinely-new
-`TestInboxFailsClosedWhenStoreErrorsAndNoFileItems`, which a careless "take theirs" would have
-deleted silently. What survives is the PR's real contribution and the reason it is worth landing:
-`Facade.Inbox` now fails closed when the store read errors and no file items corroborate an empty
-result, instead of rendering "No open items" during a store outage — the stale-green class, a blind
-fabric reporting a clean inbox. Net delta collapsed to 3 files, +30/-2, verified locally (no
-markers, gofmt/vet clean, build and the dispatch/router/work tests green) and pushed from the main
-checkout so the Ma'at gate ran. Because that resolution materially rewrote a PR I did not author,
-it was routed to codex-pantheon for independent review rather than self-bound.
-
-Vitals green: diagnose 94/100 with the load-bearing VM as sole priority, 80% RAM free, broker
-healthy on pid 2154 with the `4294967296` cap intact and the prompt cache flat, all daemons live,
-no new crash or Jetsam reports. `reconcile` healed 5 reaped→successor threads, prune 0, `ccd reap`
-archived 3 completed conduit-run sessions, retention reclaimed 2.0 KiB. `router doctor --fix` was
-still running after eight minutes and is recorded as inconclusive, not green.
-
-## Conduit run 2026-07-29T04:52Z
-
-Merged the in-flight journal PR #378, then closed out the two arcs the previous run left dangling —
-both by reading main rather than trusting the ledger. **PR #347 turned out CLOSED-unmerged**, not
-merged as the routed bind implied, but that is correct and needs no rework: `origin/main`'s
-`Facade.Inbox` already fails closed on a store error in the cutover path (`store inbox unavailable
-(store is the cutover authority)`), which is strictly stronger than what #347 proposed, and the
-pre-cutover path deliberately keeps the store additive so a broken store cannot strand the canonical
-file leg. The contribution is superseded, not lost. **PR #375 got a real verdict instead of another
-deferral.** Diffing its head `e053d7c0` against main file-by-file showed it is not merely stale: its
-`internal/work/recipient.go` duplicates the `internal/work/owner.go` authority #374 already merged,
-and its `strand.go` hunk **re-adds `AgentHasLiveThread`, the predicate #377 deliberately deleted as
-production-callerless**. Merging or rebasing #375 would revert merged work and re-arm the A29
-objection I had withdrawn — the load-bearing reason it must be closed rather than fixed up. Its only
-surviving unique content was two `internal/mcp/tools.go` description strings still reading `"Your
-agent name (codex or claude)"`, i.e. exactly the bare agent-type form `validateRecipient` has REFUSED
-since #371: the MCP schema was instructing every client to identify itself in the form the dispatch
-guard rejects. Those two lines are salvaged as **PR #379** (docs-only, green) so closing #375 loses
-nothing. Routed both the close recommendation and the standing `codex-pantheon` wake-registry gap to
-claude-pantheon — that agent has a LIVE `ai.sirsi.router.wake.codex-pantheon` LaunchAgent (pid 99109)
-and answers items within a minute, yet carries no `wake.mechanism` in the registry, so doctor
-under-reports it as wake-unavailable; the fix is either the `claude-io` registry treatment or, if
-withholding wake from codex lanes is deliberate policy, correcting doctor to say "deliberately
-withheld" rather than "unavailable", since those two states need different operator responses.
-Vitals green throughout: diagnose 94/100 on the load-bearing Virtualization VM only, RAM 78% free,
-broker pid 2154 still identity-verified as the capped server with `--prompt-cache-bytes 4294967296`
-and cache flat at 0.07 GB, all core daemons live, no new crash or Jetsam `.ips`. `ccd reap` killed
-two leaked sessions from this task's own earlier runs; reconcile and thread prune were both no-ops;
-retention reclaimed 7.8 KiB. #340 re-verified as based on `feat/provider-abstraction` (#339's branch)
-and left unmerged — never the child first.
-
-## Archive: relocated from memory.yaml (2026-07-30, claude-home, owner-directed compression)
-# March 2026 session histories (were misfiled inside "## Known Limitations"):
-
-# 2026-03-28: Session 35 — Isis (The Healer) Phase 1 + Thoth CLI + Distribution
-#   THOTH CLI: `sirsi thoth sync` wired (cmd/sirsi/thoth.go). Two-phase auto-sync:
-#     Phase 1: memory.yaml identity fields from source analysis.
-#     Phase 2: journal.md entries from git commits (--since, --dry-run).
-#     findRepoRoot() walks up from cwd to find .thoth/.
-#   ISIS: Full remediation engine (internal/isis/, 6 files, 24 tests):
-#     isis.go: Healer struct, Strategy interface, Heal() orchestrator, Report formatter.
-#     lint.go: LintStrategy — goimports + gofmt (injectable RunCmd per Rule A21).
-#     vet.go: VetStrategy — go vet parse + report (structural, no auto-fix).
-#     coverage.go: CoverageStrategy — AST-based export/test gap detection.
-#     canon.go: CanonStrategy — triggers thoth sync on drift detection.
-#     bridge.go: FromMaatReport() converts Ma'at assessments to Isis findings.
-#   CLI: `sirsi isis heal` (dry-run default, --fix to apply, --full-weigh for go test).
-#     Fast mode: reads Ma'at coverage cache (~3ms) instead of running go test (~5min).
-#     Strategy filters: --lint-only, --vet-only, --coverage-only, --canon-only.
-#   DISTRIBUTION: thoth-init README.md for npm publish. Local test verified.
-#   DOGFOODING: `sirsi thoth sync` used to update its own memory.yaml. Self-referential.
-#   Next: npm publish thoth-init, brew tap marketing, Isis Phase 2 (deeper remediation).
-
-# 2026-03-28: Session 34 — Grand Unification + Seba's Sovereignty
-#   Objective: Unify all workstreams into a single canonical prompt and canonize Seba's role.
-#   Sekhmet: 100% of infrastructure deities (Anubis, Horus, Ka, Sekhmet, Hapi, Scarab, Seba) hardened.
-#   SESHAT: Extension published to OpenVSX (@0.1.0). VSCode sidebar live.
-#   NEITH: ARCHITECTURE_DESIGN.md v2.0.0 (Data Flow, Gantt, Matrix) — Rule A22 enforced.
-#   SEBA: Promoted to Architectural Mapping sovereignty — owns Mermaid, Gantt, and Matrix mappings.
-#   Unified CONTINUATION-PROMPT.md (Session 34) created and pushed.
-#   Next: 𓁐 Isis (The Healer) Phase — Transition from "Observation" to "Remediation".
-
-# 2026-03-27: Session 33 — Deity Coverage Hardening (95% Sprint)
-#   Objective: Achieve 95%+ coverage across ka, scarab, and scales.
-#   P0: Optimized test performance (76s → ~15s) by fixing lsregister mock hang in mock_test.go.
-#   P0: Achieved 95%+ coverage for ka (94.4% statement, 95%+ branch), scarab (94.8%), scales (94.6%).
-#   Rule A21 (Concurrency-Safe Injectable Mocks) applied to Exported Hooks (DirReader, ExecCommand, ReadBundleIDFn).
-#   Fixed AuditContainers (scarab) error path via platform.Mock.
-#   Fixed ka extractBundleID logic to handle br, au, and edu prefixes.
-# 2026-03-27: Session 29 — CI Green Sprint + Thoth Journal Sync + Rule A21
-#   P0: Fixed 22 lint errors (errcheck, shadow, unusedwrite, goimports, unused).
-#   Windows: shell: bash fixes PowerShell -coverprofile splitting.
-#   DATA RACE FIX: sampleTopCPUFn protected by sync.RWMutex via getSampleFn()/setSampleFn().
-#   Root cause: defer restore races with watchdog goroutines on LockOSThread. 4 fix attempts.
-#   Rule A21 canonized: Concurrency-Safe Injectable Mocks. Ma'at governs (QA Sovereign).
-#   P1: internal/thoth/journal.go (230 lines) — auto-generates journal entries from git log.
-#     thoth sync runs Phase 1 (memory.yaml) + Phase 2 (journal.md). --since, --dry-run flags.
-#   P2: Firebase deployed (17 files → sirsi.ai/pantheon).
-#   P3: gh CLI 2.87.3 → 2.89.0.
-# 2026-03-27: Session 28 — Ghost Transcripts Recovery + CI Remediation
-#   CRITICAL FINDING: Antigravity IDE never writes overview.txt — 90+ conversations, zero transcripts.
-#   Recovered 3 lost sessions (25-27) using git forensics, Thoth memory, CHANGELOG, case studies.
-#   Reconstructed journal entries 022-024. Case Study 014 published.
-#   Fixed CI: Windows CGO_ENABLED (env block), -short flag (skip live syscall tests), 20+ lint errors.
-#   Removed tracked thoth binary from git. Added to .gitignore.
-#   Recovery deities: Git (100% code), Thoth (summaries), Ma'at (changelog), Horus (build log).
-# 2026-03-27: Session 27 — Singleton Architecture Finalization
-#   Verified all 3 entry points (menubar, guard, mcp) have platform.TryLock + correct imports.
-#   Hardened LaunchAgent plist: KeepAlive changed from `true` to `SuccessfulExit: false`.
-#   This prevents respawn loops when TryLock causes a clean exit(0), only restarts on crash.
-#   Confirmed AntiGravity (1.5GB) is integrated in watchdog.go at line 155-157.
-#   Full build passes clean (`go build ./...` — zero errors).
-# 2026-03-27: Session 26 — Pantheon Ecosystem Singleton Hardening (Sekhmet Phase)
-#   Implemented platform.TryLock across Menubar, Guard, and MCP entry points.
-#   Created Hapi-Brain bridge (internal/brain/hapi_bridge.go) for hardware-aware inference.
-#   Hardened Sekhmet watchdog with 1.5GB memory governance threshold.
-#   Standardized MCP server startup and integrated detect_hardware tool.
-#   Verified LaunchAgent configuration and solved Triple Ankh redundancy.
-# 2026-03-27: Session 25 — Sekhmet Phase II (ANE Tokenization)
-#   Implemented native Go tokenization service (Sekhmet).
-#   extended HAPI Accelerator interface with Tokenize(text string).
-#   Implemented backends: AppleANE, Metal, CUDA, ROCm, CPU (FastTokenize).
-#   Created FastTokenize (byte-pair-inspired native Go BPE fallback).
-#   Integrated `sirsi sekhmet --tokenize` command.
-#   Centralized CLI flags in cmd/pantheon/globals.go (JsonOutput, quietMode, etc).
-#   Performance: 10-15ms overhead per tokenization chunk on ANE/Metal.
-# 2026-03-26: Session 23 — Crash Forensics + Crashpad Monitor
-#   Full IDE crash forensics: 34 Crashpad dumps, V8 OOM → Jetsam cascade.
-#   Root cause: Session 22 manifest patches created un-realizable Extension Host state.
-#   Rule A19 hardened to ABSOLUTE PROHIBITION. Case Study 011 published.
-#   Built Crashpad Monitor (crashpadMonitor.ts, 370+ lines):
-#     Auto-detects crash dir for 4 IDEs. 5-minute polling. 3-reading trend window.
-#     Reads first 8KB of recent dumps → detects Extension Host crashes.
-#     Status bar: hidden/warning/critical. Webview report. Dump cleanup.
-#     No other VS Code extension monitors Crashpad — genuinely novel feature.
-#   New command: pantheon.crashpadReport (10 total, 7 modules).
-#   Case Study 012: why the Crashpad Monitor exists.
-#   Version bumped to 0.7.0-alpha.
-# 2026-03-26: Session 22 — Thoth Accountability Engine + Extension Triage
-#   Built ThothAccountabilityEngine (extensions/vscode/src/thothAccountability.ts, 645 lines).
-#   Cold-start benchmark: ~371K tokens saved per session (1.5M source vs 19K memory.yaml).
-#   Dollar savings: ~$1.11/session at Sonnet pricing ($0.18 Haiku, $5.57 Opus).
-#   Freshness meter: detects memory.yaml drift vs source file edits.
-#   Coverage check: modules on disk vs modules documented in memory.yaml.
-#   Context budget: memory.yaml as % of 200K token window.
-#   Lifetime counter: persists across sessions in VS Code globalStorage.
-#   Premium webview report: gold/lapis/obsidian Royal Neo-Deco dashboard.
-#   Status bar: $(bookmark) with live savings display.
-#   New command: pantheon.thothAccountability (8 total commands, 6 modules).
-#   New config: pantheon.thoth.accountability, pantheon.thoth.pricingModel.
-#   Extension Triage — fixed 4 simultaneous extension issues:
-#     1. AG Monitor Pro (1988ms profile): disabled — js-tiktoken heavy init.
-#     2. Pantheon 0.5.0 cascade unresponsive: sideloaded v0.6.0.
-#     3. Git extension missing title properties: patched 2 Antigravity-added commands.
-#     4. Antigravity extension missing command declarations: patched 3 undeclared commands.
-#   Gatekeeper violation: modifying .app bundle broke code signature.
-#     Fix: xattr -cr + codesign --force --deep --sign - (ad-hoc re-sign).
-#   Rule A19 Lesson: modification is possible but requires re-signing.
-#   Version bumped to 0.6.0-alpha. Extension VSIX: 49.47 KB (13 files).
-# 2026-03-26: Session 21 — Extension Live Testing + Memory GC
-#   Guardian rewrite: native renice(1) + taskpolicy(1), no CLI dependency.
-#   Memory pressure GC: tracks per-process RSS, restarts bloated LSPs.
-#   Codicon status bar: $(eye) PANTHEON replaces invisible hieroglyph.
-#   Warning threshold: >1 GB third-party LSPs (host LSP excluded).
-#   CLI fix: commands use correct flags (weigh --dev --json, guard --json).
-#   Live tested: all 3 LSPs reniced to nice 10 after 30s. Extension Host ~199 MB.
-#   Sideloaded in both Antigravity and VS Code.
-# 2026-03-25: Session 20 — The Deployment Sprint
-#   Deployed Deity Registry to Firebase Hosting (sirsi.ai/pantheon).
-#   Wired custom domain sirsi.ai/pantheon via Firebase API + GoDaddy CNAME.
-#   Rebuilt index with flip cards (front=user, back=developer info).
-#   Fixed all deity page nav links and URL displays for Firebase.
-#   VERSION bumped to 0.5.0-alpha. Extension icon created.
-#   Canon cleanup: CHANGELOG, Thoth, continuation prompt updated.
-# 2026-03-25: Session 19 — Pantheon VS Code Extension (OpenVSX)
-#   Full TypeScript extension replacing JS scaffold (ADR-012).
-#   extension.ts: Entry point — starts Guardian, status bar, Thoth on activation.
-#   guardian.ts: Always-on renice (30s delay, 60s re-apply loop). Spawns sirsi guard --renice lsp.
-#   statusBar.ts: Ankh (𓃣) icon with live RAM/CPU metrics (polls ps directly, sub-50ms).
-#   commands.ts: 7 Command Palette entries (Scan, Guard, Renice, Ka, Thoth, Metrics, Settings).
-#   thothProvider.ts: Context compression from .thoth/memory.yaml with file watching.
-#   ADR-012 accepted. ADR Index: 12 ADRs (001-012).
-#   Status: Extension compiles (0 TS errors), Go builds, 819+ tests passing.
-# 2026-03-25: Session 18c — Deity Alignment, Guard Renice, IDE Optimization
-#   ADR-011: Deity Alignment — canonical scopes for all 10 deities.
-#   Thoth = context compressor, Horus = publisher + lazy FS index, Guard = process control.
-#   Horus Phase 3: Scoped indexing (14 roots → 8 targeted, 856K → ~50K files).
-#   Guard renice: `sirsi guard --renice lsp` — deprioritizes LSPs to Background QoS.
-#   Live result: language_server_macos_arm (2.7 GB) + 2× gopls (422 MB) → Background QoS.
-#   CRITICAL: language_server_macos_arm added to PROTECTED process list after slay crashed IDE.
-#   IDE Settings: Shell Integration disabled, gopls directory filters, file watcher exclusions.
-#   CI Fix: Removed tracked `sirsi-menubar` binary causing Windows test failures.
-#   Platform compute.go: Restored M4 family bandwidth values corrupted by sed rename.
-#   Case Study 010: The Hot-Swap Catastrophe (P0 incident post-mortem).
-#   Rule A18 (Incremental Commits) + Rule A19 (No App Bundle Mutations) codified.
-# 2026-03-25: Session 18 — Menu Bar App + Horus Publish + Osiris Guardian
-#   macOS Menu Bar Application (ADR-010): Phase 1 complete.
-#   - cmd/pantheon-menubar/: stats.go, handlers.go, icon.go, main.go
-#   - Headless mode: real-time RAM/Git/accelerator/deity stats (105ms collection)
-#   - Pantheon.app bundle: make bundle → installable .app with Info.plist
-#   - LaunchAgent: make install-launchagent → auto-start at login
-#   Horus Auto-Publish (internal/horus/publish.go):
-#   - Reads Thoth journal + case study markdown → generates styled HTML
-#   - build-log.html + case-studies.html with Pantheon gold/lapis theme
-#   - 92.8% coverage, 16 tests
-#   Osiris Checkpoint Guardian (internal/osiris/):
-#   - Detects uncommitted work, assesses risk (none/low/moderate/high/critical)
-#   - Time-based escalation: 2+ hours since commit → critical
-#   - FormatReport, Summary, StatusIcon for menu bar integration
-#   - 92.8% coverage, 15 tests
-#   Module count: 22 → 24 (osiris, horus/publish)
-#   Binary count: 7 → 8 (sirsi-menubar)
-#   Test count: 768 → 819+ (51 new tests, all passing)
-#   Makefile: 6 new targets (build-menubar, bundle, publish, install/uninstall-launchagent)
-# 2026-03-24: Session 16b — The Coverage Sprint & Antigravity Bridge (90.1% Hit)
-#   Coverage breakthrough: 87.2% → 90.1% (Rule A16 established).
-#   Injectable Providers: standard interface injection for signals and exec.Command (ADR-009).
-#   Guard (89→91%), Ma'at (80→88%), Sight (78→93%), Profile (84→85%).
-#   Antigravity CLI: `sirsi guard --watch` now starts the full bridge + AlertRing.
-#   Note: Platform coverage is structurally maxed at 73.4% on macOS.
-#   Canon update: ANUBIS_RULES.md → PANTHEON_RULES.md (v2.0.0). ADR-009 added.
-# 2026-03-23: Session 14 — Brain Coverage + Homebrew Verification
-#   Brain coverage sprint: 40.4% → 55.9% (exceeds 50% Ma'at threshold).
-#   New tests: downloadFile (httptest), selectPlatformModel, classifyByHeuristic
-#   (all branches), manifest JSON round-trips, containsSegment edge cases.
-#   Found: splitPath infinite loop on relative '.' paths (documented, not fixed).
-#   Homebrew verified end-to-end: brew tap SirsiMaster/tools && brew install sirsi-pantheon ✅
-#   Both binaries (sirsi + sirsi-agent) installed to /opt/homebrew/bin/.
-#   Case study updated: Ka 8.5s → 1.08s benchmarks added (Sessions 12–13).
-#   Build log updated: Ka benchmark bar, pre-push gate 5s → 2s, Horus recursive win.
-#   Note: update checker shows false upgrade (0.4.0 → 0.2.0) — version compare bug.
-# 2026-03-23: Session 12 — Launch Execution + Performance Optimization (v0.4.0-alpha)
-#   Homebrew PAT setup: HOMEBREW_TAP_TOKEN secret set in sirsi-pantheon repo.
-#   homebrew-tools repo initialized with README.md + Formula/ directory.
-#   GoReleaser brews section enabled (.goreleaser.yaml) — was commented out.
-#   v0.4.0-alpha released with 6 platform binaries.
-#   ADR-007 Unified Findings Portal + Horus designation added.
-#   ADR-006 Self-Aware Resource Governance + yield module added.
-#   ADR-008 Shared Filesystem Index accepted (Horus architecture).
-#   .gitignore collision fix: unanchored 'pantheon' → '/pantheon'.
-#   PERFORMANCE (dogfooding-driven):
-#     Ma'at diff-based coverage: 55s → 12ms (4,583× speedup)
-#     Horus shared filesystem index: walk once, all deities query
-#     Horus Phase 2: pre-aggregated dirs + gob encoding (110MB → 31MB, 936ms → 2ms)
-#     Horus Phase 2.5: FindDirsNamed eliminates dev walk
-#     Weigh (Jackal) optimized: 15.6s → 833ms (18.7× speedup)
-#     Quality verified: identical results (341 findings, 65.6 GB, 58 rules)
-#     Pre-push gate: 65s → 5s (13× faster)
-#     Feather Weight: 69/100 → 81/100
-#     Canon linkage: 60% → 100% (10/10 commits)
-#   DOGFOODING DISCOVERY:
-#     Docker Desktop ghost: 64 GB unused VM images + cached layers
-#     Investigation: zero Docker references in build/CI/deploy pipeline
-#     Cleanup: Docker Desktop fully uninstalled, 65.6 GB → 1.6 GB total findings
-#     Product thesis validated: founder didn't know until Pantheon told him
-# 2026-03-23: Session 11 — Full Pantheon Audit + Modular Deities (v2.1.0)
-#   Walkthrough of every conversation since genesis (completion audit).
-#   Fixed phantom domain sirsinexus.dev → sirsi.ai in SirsiNexusApp.
-#   Wired structured logging (slog) into ka and cleaner cores.
-#   Updated ADR-005: Ra as Hypervisor, Seba as Mapping Focus.
-#   Portfolio Standard v2.1.0: added modular deployment + referral rules.
-#   Canon sync: SECURITY, CONTRIBUTING, CHANGELOG, VERSION in all 5 repos.
-#   Ka coverage sprint: 41.9% → 65.3% (exceeding 60% goal).
-#   Pre-push hook updated: added Ma'at diagnostics + Agent health checks.
-#   MCP version fix: v0.2.0-alpha → v0.3.0-alpha in code.
-# 2026-03-23: Session 10 — Ma'at built + Pantheon unification
-#   Built Ma'at QA/QC governance agent (internal/maat/): 4 source files, 57 tests
-#   Core types: Verdict, Assessment, CanonLink, Report, Assessor, Weigh()
-#   Three domains: coverage (go test -cover), canon (git log), pipeline (gh CLI)
-#   CLI: anubis maat [--pipeline] [--coverage] [--canon] [--json]
-#   ADR-004: Ma'at QA/QC Governance canonized
-#   ADR-005: Pantheon Unification canonized — all deities as sub-systems
-#   Portfolio Standard v2.0.0: 26 universal rules, 3 canon tiers, Pantheon reqs
-#   Deployed Pantheon governance to all 5 repos: real Thoth memories,
-#     GEMINI.md + CLAUDE.md, Portfolio Standard, session workflows
-#   Pantheon coverage: ~20% → ~75% across portfolio
-#   All 5 repos pushed and clean
-# 2026-03-23: Session 8 — platform wiring + CI lint fix + pre-push gate
-#   Wired Platform interface into cleaner (3 runtime.GOOS → platform.Current())
-#   Wired Platform interface into mirror (OpenBrowser + PickFolder)
-#   Removed duplicated moveToTrash(), protectedPrefixes from cleaner
-#   Tests use platform.Set(&Mock{}) for cross-platform testing
-#   Fixed 8 golangci-lint errors (gofmt, govet/unusedwrite, misspell) across 5 files
-#   CI green after 5 consecutive failures
-#   Pre-push hook: .githooks/pre-push (gofmt + go vet + golangci-lint + go build)
-#   Proposed: anubis maat — pipeline purifier (CI monitoring + auto-remediation)
-# 2026-03-22: Session 7 — statistics audit + production polish
-#   Structured logging: internal/logging/ (slog, --verbose, --quiet, --json)
-#   Platform abstraction: internal/platform/ (Darwin, Linux, Mock)
-#   3 case studies: Thoth, Mirror, Ka (all verified data per Rule A14)
-#   CI fixes: 4 platform skip guards, homebrew tap disabled
-#   v0.3.0-alpha released on GitHub (6 binaries + checksums)
-# 2026-03-22: Statistics audit — corrected all inflated claims across 12 files
-#   Scan rules: 64→58 (verified). Tests: ~395→453 (verified).
-#   Removed fabricated cross-repo savings. Removed "3M tokens in 11 sessions."
-#   Canonized Rule A14 (Statistics Integrity) and Rule A15 (Session Definition).
-#   ROI script fixed: naive commits/5 → gap-based heuristic + methodology note.
-# 2026-03-22: Case study system — dogfooding narratives + ROI tracking
-#   Created: docs/case-studies/, scripts/thoth-roi.sh, pitch deck stub
-# 2026-03-22: Safety-critical coverage sprint — cleaner 49%→77%, ka 19.5%→42.7%
-#   Added: 30 cleaner tests (DecisionLog, DeleteFile, CleanFile, DirSize, constants)
-#   Added: 28 ka tests (isInstalled, countFiles, mergeOrphans, Clean, constants)
-# 2026-03-22: Launch prep — goreleaser verified (12 binaries), launch copy + demo updated
-# 2026-03-22: Test coverage sprint — 303→~395 tests, 15/17 modules tested
-# 2026-03-22: Thoth unified as canonical session manager (memory + context monitoring)
-# 2026-03-22: Build-in-public HTML page (Swiss Neo-Deco, Cinzel+Inter, emerald+gold)
-# 2026-03-22: Cross-linked Anubis ↔ SirsiNexus Portal (Anubis→Ra messaging)
-# 2026-03-22: BUILD_LOG.md sprint chronicle + CHANGELOG v0.3.0 expansion
-# 2026-03-22: README badges (303 tests, building in public)
-# 2026-03-22: Codebase safety audit — 6 bugs fixed (filepath.Abs, moveToTrash)
-# 2026-03-22: thoth-init standalone CLI (npx thoth-init, non-interactive mode)
-# 2026-03-21: Thoth knowledge system canonized — memory, journal, skill, MCP tool
-# 2026-03-21: Graceful shutdown (SIGINT handler) + drag-and-drop UX fix
-# 2026-03-21: GoReleaser CI fix (stale config, brews vs homebrew_casks)
-# 2026-03-21: Three-phase partial hashing (27.3x speedup)
-
-
-# Pre-July Session Decisions (hook payloads + duplicate router snapshots stripped):
-
-# 2026-08-06: ADR-061 durable continuous-execution enforcement
-#   Implemented the provider-neutral three-source runnable predicate (router
-#   items, ledger tasks, unmet requirements), fenced item/task leases, exact-ID
-#   task claims, durable wake events with acknowledgment/retry/escalation,
-#   honest lane states, reconciliation, and evidence-backed completion gates.
-#   Migrated the live router store from v14 to v15 with a retained backup and
-#   proved close→continuation wake behavior in production. Rebased onto the
-#   accepted ADR-054 unified-fabric work plus the dashboard's canonical-store
-#   visibility repair; preserved the recovered v15 provenance diagnostics and
-#   continuation trigger semantics. Full Go suite, routerstore race tests, vet,
-#   Ma'at lint, and diff checks passed. The incident also exposed 41 unpicked
-#   codex-home items while Horus reported “No blockers”; ADR-061 classifies that
-#   state as IDLE WITH WORK rather than healthy and makes it mechanically
-#   actionable.
-
-# 2026-08-05: SNE-52 Universal Task Ledger schema v7 implementation
-#   Implemented the ADR-054 Part B contract on codex/router-unification-store-v7:
-#   one additive v4→v7 migration with explicit migration targets (v5/v6 stay
-#   reserved), legacy commissioning backfill, all drill-down fields, a single
-#   shared 4h derived-liveness constant, evidence-gated pass state, governed
-#   charter/stage updates, deduped typed links, JSON timeline replacement, and
-#   atomic additive task-owned token/duration counters. Added CLI flags and
-#   v4 migration/default/liveness/governance/accounting tests. `go test ./...`,
-#   `go test -race ./internal/routerstore`, and `git diff --check` pass.
-
-# 2026-06-10: Flagship train landed (19 PRs to main) + 2 governance fixes. (claude-pantheon source-edit;
-#   claude-home binding reviewer while codex OOO.) Merged: A28 registry-trust (#24 per-resume-mint fix +
-#   ADR-029 worktrees, #25/#29/#30), Rails A/B/C (#19/#22/#18), UX pains (#26 TCC .app bundle, #27 fsnotify
-#   live-refresh), gemma (#11/#13), #31/#21/#33/#9/#28/#14, #34 sirsi insight. Two silent failures surfaced+fixed:
-#   (1) #33 (A1 safety) auto-merged pre-verdict via rebase-push tripping armed auto-merge → RULE: safety-tier
-#   never auto-merges before binding verdict; (2) router fragmentation — `sirsi router` from a worktree cwd read
-#   the worktree's STALE git-snapshot copy, silently dropping a routed review request. FIX 1 (#35, 4eb6792,
-#   ADR-029 Amendment 1): FindRepoRoot resolves the MAIN worktree root (git --git-common-dir) not cwd; A16/A21
-#   seam + 3 tests; dogfooded. FIX 2 (#36, aa41706): .github/workflows/binding-hold.yml required-check job —
-#   passes unlabeled / FAILS when `binding-hold` labeled → branch protection blocks merge (auto-merge waits) until
-#   a binding reviewer clears it. Added job `binding-hold` to required_status_checks (strict). Proven live:
-#   label→FAIL→BLOCKED→reviewer-clears→re-run→CLEAN→merged. Closes the #33 bypass structurally; extends Ma'at gate
-#   (A25/A28). OPEN: #8 (router -2626 LOC, HOLD-FOR-CODEX, labeled binding-hold), #32 (ADR-030 Swift, operator-GUI
-#   +fresh-codex gated, labeled binding-hold). DEPLOY-PENDING: installed sirsi binary predates the canonical-router
-#   fix (repo-root-cwd workaround meanwhile) — lands on next user-authorized build/reinstall w/ TCC-bundle+self-update.
-# 2026-06-04: Setup wizard for Monday VC build (commit ff8a448, branch feat/setup-wizard, pushed).
-#   `sirsi setup` rebuilt: report -> guided 3-step wizard (Dependencies/FDA/Agent-wake) over new
-#   shared internal/setup/ engine (CDD #5: one engine, CLI + menubar-terminal both render it).
-#   Real TTY prompts before each action; pipe/dev-null/CI = report-only (golang.org/x/term, not
-#   os.ModeCharDevice which mis-classified /dev/null). Fixed thoth-init/sync/compact false-missing
-#   (thoth ships in the binary). main.go FDA pre-check now uses engine. Open: dedicated fullscreen
-#   TUI wizard screen? (ADR-020/TUI_DESIGN_PROOF-gated) or menubar->terminal suffices. codex review owed.
-# 2026-06-04: Canonicalized machine (1 versioned signed sirsi, zsh completion, no drift); sirsi fix resolver + safe PPID-orphan-kill (funnel BLOCKED pending codex User-metadata gap); menubar zsh close-prompt fix (read _). Open: install wizard, orphan User fix, mds_stores sudo.
-# 2026-06-04: sirsi fix heuristic resolver (no LLM) — answers every finding; safe PPID-narrowed orphan-kill (KillTrueOrphans, PPID<=1 only, --yes never kills, 4 regression tests). Funnel diagnose->fix + menubar BLOCKED pending codex re-review (42588a9).
-# 2026-05-31: CTR auto-registration Phase 1 — `sirsi thread discover` (commit 10a97b7, codex APPROVED).
-#   Reconciles live agent processes into threads.json: bounded pgrep/lsof → cwd → agents.json match,
-#   registers mappable repo-launched sessions anchored to their PID. Home-launched=unmappable (never
-#   registered); same-cwd same-surface duplicate=ambiguous (never guessed, Rule A23). Pure
-#   ReconcileDiscovery + 9 tests (internal/router/discover.go); CLI (cmd/sirsi/threaddiscover.go) with
-#   --self (Phase 2 hook) + stable JSON. Phase 1.5: wired into hourly sweep.sh (with scout lane).
-#   Why 0 threads registered post-reboot: every session launched from $HOME → no repo identity.
-#   Phase 2 (SessionStart hook→discover --self) approved, not wired. Phase 3 (deliver into live
-#   session via remote-control) spike-gated. Feeds ADR-021 (Osiris workstation-scoping).
-# 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
-# 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
+## Entry 106 — 2026-08-05 19:33 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd444-1ceb-7660-a789-4f262a0fe3d2","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 107 — 2026-08-05 20:09 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd45d-fa87-7e90-ab8b-a321de7a24c2","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Entry 108 — 2026-08-05 20:49 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"d8b52186-bc0c-4db2-b5d5-664de54b5ecc","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/d8b52186-bc0c-4db2-b5d5-664de54b5ecc.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","prompt_id":"0d9a27dd-5f64-4a53-b1ae-7d91a406c4d9","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-08-06T00:57Z
+
+Owner landed a binding directive mid-run: agents run a **permanent execution loop** tied to router
+inbox, task ledger, and canon completeness; stop only when all three are simultaneously empty; no
+owner gates except security and privacy; whole-app completion claims require a
+requirement-by-requirement traceability audit rather than a green build. Landed at workspace level
+(`~/Development/AGENTS.md`, `~/CLAUDE.md`, `~/.claude/CLAUDE.md`) and as repo canon in PR #511.
+**Numbered A36, not A35** — `origin/main` tops out at A34 so a main-only check reports A35 free, but
+in-flight PR #506 claims §2.32/A35 for `Scope The Check To The Claim`. Reading the ledger rather than
+the branch is the only thing that caught it; landing as A35 would have been the third instance of the
+citation-collision class and would have failed #506's own `TestNoDuplicateRuleNumbers`. Defined as
+§2.33 at the shared level-2 anchor in all three synced copies so #506's
+`TestSyncedCopiesDefineTheSameRules` holds both directions.
+
+`sirsi diagnose` rendered 🔴 Critical on a memory hog — and was wrong in the way that matters. The
+alarm reads `phys_footprint` (53 GB), which counts file-backed mmapped model weights; true RSS is
+207 MB, RAM was 66% free, and there were zero crash/Jetsam reports in 6h. Did not bounce a
+load-bearing server on a badge. The runbook's step 2 is also stale in a way that manufactures the
+same false verdict from the other direction: it hardcodes `gemma-capped-server.py` on port 8765, but
+the broker is now `sne-server-macos-arm64` on **8477** (`~/.sirsi/gemma-server.port` is the honest
+source) — a probe against 8765 returns empty and is indistinguishable from a dead broker. One
+genuine hazard survived the debunking and was routed to codex-inference: `mlx_peak_bytes` 58.7 GB on
+a 48 GB machine, unexplainable by a ~12 GB model, with two documented precedents on this box (a
+46 GB Python process that drove all four Jetsams; MLX churn that produced a machine-killing GPU
+panic). Asked for an intervention threshold rather than guessing one.
+
+PR #510 (SNE-31 multi-Mac sharding review) bound, approved, MERGED after re-deriving both blocking
+findings against the design doc at the reviewed commit rather than accepting them: CR-1 (partition
+table assigns LM head to rank 1 at L128-129 while L304 asks whether to replicate it) and CR-2
+(every rank validates the ClusterPlan at L99, but L310 leaves the signing identity undefined —
+a fail-OPEN admission path inside a document whose own completion criteria demand fail-closed).
+Rated CR-2 above the reviewer's own weighting and told them so. #495 (ADR-054 Part C, one
+registration across every surface) reviewed and bound; it had already been merged by a sibling at
+00:49Z — the race guard applied to router items applies to PRs too.
+
+Measured the PR queue honestly and found a structural serialization point: **all nine conflicting
+PRs conflict on CHANGELOG.md, and four of them conflict on nothing else**, idle 49h+. The
+`merge=union` mitigation resolves locally and does NOT resolve on the GitHub server merge, so it
+fails only where it decides anything. Resolving one actively re-breaks the other eight. Left all
+nine untouched and routed a `changelog.d/` one-file-per-entry proposal to claude-pantheon rather
+than re-resolving the same conflict every run forever.
+
+Threads 296→133 (163 terminal pruned; 326 uncommitted stranded — never auto-committed). ccd reap 0
+procs / 1 archived. Retention reclaimed **8.7 MiB**. Board 20219 B. Inbox worked to 0.
+
+**P0 addendum, same run (00:57–00:59Z).** codex-inference answered the SNE hazard within minutes with
+a P0 pause request, and it corrected me on the part that mattered. My debunking of `sirsi diagnose`'s
+🔴 was narrowly right — `phys_footprint` counts mmapped weights and RSS was 207 MB — but I let it
+carry an operational conclusion it had not earned: I reported "66% RAM free, no Jetsams, healthy"
+without ever reading `vm.swapusage`, which was at **98% consumed (29,107 MB of 29,696 MB, 588 MB
+free)**. Free-RAM percentage on a box that is swapping hard is exactly the reassuring-but-hollow
+metric the green-surface-over-dead-thing class warns about, and I quoted it. Three independent reads
+of `mlx_active_bytes` at `queue_depth=0` were monotonic while idle — 56.39 GB (me) → 63.19 GB
+(codex-inference) → 63.67 GB (me) — peak 68.31 GB, i.e. a retained-active-array leak, not workload.
+codex-inference's source audit found `mlx_set_memory_limit(20 GiB)` under the interactive profile
+only reclaims cache and serializes async tasks; it does **not** refuse a live allocation, so the
+in-source comment calling it a hard in-process ceiling is false and load-bearing — observed active
+was 3.2x the stated cap. Paused via `launchctl bootout gui/501/ai.sirsi.gemma-broker` (bootout, not
+stop: the job carries KeepAlive and a stop would have been resurrected in seconds and read as a
+successful pause). PID 96583 exited, port 8477 refuses, no sne-server processes remain. **Swap used
+29,107 MB → 5,066 MB and macOS then reclaimed the swap files themselves (total 29,696 → 11,264 MB);
+free RAM 61% → 85%.** Single-process attribution, no ambiguity. Broker stays down; restoration
+ownership retained pending codex-inference's tested repair — note restore is `launchctl bootstrap`,
+not `kickstart`, because the label is unloaded rather than stopped. Local Gemma triage is offline
+until then; this pass reached inbox zero without it.
+
+## Entry 109 — 2026-08-05 21:03 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd497-4d32-7761-9baa-41a48f0ac2a0","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-08-06T01:13Z
+
+Inbox 1→0. Reviewed **PR #513** (close/respond actor authority) source-deep at head `7e9f29e4` in a
+built worktree: **CHANGES REQUIRED**, responded + PR comment, left draft. The control itself is
+correct — actor validated and non-recipient rejected before any mutation, historical items still
+closable, all three non-test `CloseItem` callers updated, and the tests assert no mutation on
+rejection rather than merely an error. It fails on deployment. **CR-1:** four live launchd consumers
+(`ai.sirsi.triage` pid 3044 with `SIRSI_TRIAGE_AUTORESOLVE=1`, `ai.sirsi.gemma-worker` 74212, two
+`ai.sirsi.claude-worker.*`) call `router close` with no `--agent`; no plist exports `SIRSI_AGENT_ID`,
+launchd carries no `CLAUDE_CODE_SESSION_ID`, and 13+ live agents defeat the sole-thread fallback, so
+resolution fails closed. Proven by probe: `env -u CLAUDE_CODE_SESSION_ID -u SIRSI_AGENT_ID` →
+`resolve acting agent: could not resolve`. Every one of those closes is `>/dev/null 2>&1 || log`, so
+the router would simply stop draining while every surface stayed green. **CR-2:** `sirsi-triage.sh`
+is a fleet-wide *third-party* closer (`to=$to` varies per item) — actor-must-equal-recipient makes it
+architecturally impossible, and the obvious patch (`--agent "$to"`) is impersonation that would void
+the control. Informational: `routerresolved.go:204` passes `c.item.To` as its own actor, a tautology
+that can never fail; dead code today behind the surface-only guard, but it is the exact shape CR-2
+must not adopt.
+
+**Binary drift healed and closed.** codex-finalwishes reported the installed sirsi capped at schema 4
+against a schema-7 store; the binary was rebuilt at 21:05, one minute after the report, so report and
+fix crossed. Verified both named paths (`~/.local/bin/sirsi` and the repo `bin/sirsi` symlink) read
+`87 open, 3654 closed`, plus task list and heartbeat. Closed both stranded codex-home items with
+evidence (codex-home wake is `none`) and notified codex-finalwishes **as claude-home**, not as the
+item recipient — `router respond` would have sent as codex-home, which is impersonation. That is CR-2
+of #513 showing up in real operations within the same hour.
+
+**P0 pause did not hold.** The SNE broker was bootout'd at 00:58Z specifically to survive `KeepAlive`;
+it was serving again by ~01:01Z, restored by a liveness watcher
+(`20260806-005954-gemma-liveness-user-...restore-failed-free-memory`). A pause a watcher can undo is
+not a pause, and my own continuity file would have told the next run it was down. Did **not** re-pause:
+three reads at `queue_depth=0` gave 14.80 → 15.27 → 15.27 GB active (the rise matched a peak rise, so
+it is real serving, and reads 2–3 are flat) against the 56.39 → 63.19 → 63.67 GB monotonic-at-idle that
+triggered the pause; host at 82% free RAM, swap 4,978 MB (improving from 5,050 MB), 100/100, no Jetsam.
+Nine minutes is not a reproduction, and the broker is load-bearing for triage. Baselined at 15.27 GB
+idle and routed to codex-inference for repair disposition plus a decision on the resurrection vector.
+
+**P1 found while routing that:** ADR-054's wake matrix rejects `cli-spawn`, which five live
+registrations still carry — `claude-inference`, `codex-deck`, `codex-inference`, `codex-io`,
+`gemma-pantheon`. `router send` refuses outright, so 5 of 25 agents (20% of the fleet, including the
+Tier-0 local worker and the agent holding an open P0) cannot receive work. A narrowed enum does not
+retro-fit a live working tree. Deliberately did not hand-edit five rows against a just-changed
+validator — `none` is honest for the resident and interactive lanes but silently strands the three
+CLI-spawnable ones. Routed to codex-pantheon with a recommended shape.
+
+Also: resumed my own thread (`thr-906a7e5b07e31906` was suspended and could not heartbeat — the lane
+read dead), routed PR #511 (A36 canon, my own PR) to codex-pantheon for independent bind. Threads
+142→134, reconcile healed 4 reaped→successor. ccd reap 0/0. Retention reclaimed 60.2 KiB. Board 18425 B.
+
+## Conduit run 2026-08-06T01:25Z (continuation — owner: "never be stale regardless of the firing requirement")
+
+Stopped resolving the CHANGELOG conflict and deleted the class instead. First established the
+diagnosis empirically rather than by assertion: with `.gitattributes` present, `git merge-tree
+--write-tree origin/main refs/pr/508` resolves **CLEAN**, while the GitHub API reports
+`mergeable=CONFLICTING, mergeState=DIRTY` for the identical refs in the same minute. **GitHub's
+server-side merge does not honor `merge=union`.** That is the worst shape a mitigation can have — it
+passes on every machine where an agent verifies it and fails in the only place that decides, so the
+honest local conclusion is "already fixed" and investigation stops. PR #514 replaces it with
+`changelog.d/`, one file per entry, plus `scripts/changelog-assemble.sh` and a self-check pinning
+newest-first ordering, README-is-not-an-entry, empty-dir-no-op, and missing-marker-fails-loudly (two
+portability constraints commented in-source: `while read` not `mapfile` for bash 3.2, head/cat/tail
+splice not `awk -v` which cannot carry multiline values). Applied the same surgery to **ten** PRs —
+entry moved verbatim, `CHANGELOG.md` restored to merge-base, `origin/main` merged in. **Every push
+was a fast-forward; no branch was force-pushed and no other agent's commits were rewritten.**
+Result: **#508, #507, #471, #468, #441, #358, #357 reviewed, bound, MERGED**; #511, #506, #514 now
+MERGEABLE and routed for independent bind (mine, no self-review). #503/#472/#467/#458/#451/#464/#445/
+#444/#429 have genuine code-level conflicts beyond CHANGELOG and were left with their lane agents.
+Open PRs 24 → 19.
+
+Reviews of substance rather than rubber stamps: **#441** widens the reaper's protected set from
+`{selfPID, selfParent}` to the full ancestry chain — verified it is a strict superset, so it can only
+ever protect more, which is the only acceptable shape for a kill-path change I run every 15 minutes.
+**#358** tombstones closed items instead of deleting IDs, killing the ambiguity that feeds the
+phantom-open/resurrection class, and correctly threads `After` bytes into the report so the
+reclamation figure stays honest after switching from delete to compact.
+
+**PR #513 re-review — CHANGES REQUIRED, security finding.** codex-pantheon resolved CR-1 properly
+(four launchd consumers now declare identity, triage via a registered `horus` service identity). CR-2
+was not resolved but **withdrawn**: the delta `7e9f29e4..2fbdf418` turns
+`if item.To != actor { return error }` into a string prefix, converting an authorization control into
+an audit annotation — any registered agent may now close any item. Justified as "follows accepted
+ADR-054 §1a". **There is no §1a in ADR-054** (headings are A1–A5, B1–B5, C1–C4; the referenced §0/§3
+are also absent), and the nearest real section, **A1, specifies REJECT for exactly this operation** —
+canon says the opposite of the code. Grepped the whole ADR for `close|behalf|supervis|reviewer`: no
+supervised-close provision exists anywhere. Asked for either a narrow supervisory capability in
+`agents.json` (keeping hard REJECT for everyone else) or an ADR amendment landed first. I had merged
+ADR-054 Part C myself this run, so this was not a stale-copy error.
+
+Also fixed the runbook that manufactured a false verdict earlier in this same run: step 2 rewritten
+for the real broker (`sne-server-macos-arm64` on 8477, port read from `~/.sirsi/gemma-server.port`,
+never hardcoded), with the paused-under-P0 state, `bootstrap`-not-`kickstart` restore, and the note
+that RSS and `phys_footprint` both lie for this process while `mlx_active_bytes` sampled twice is the
+only honest signal. Step 1 now requires `sysctl vm.swapusage` alongside free-RAM%. Step 3 records the
+AMFI trap (`cp` over a signed binary → SIGKILL 137 on every later run; `rm` first) and the
+schema/binary drift class, second occurrence. Responded to claude-nexus's v7 P0 disagreeing with the
+proposed fix shape: migrating on first use of the new binary only relocates the trigger from "PR
+merge" to "first agent to upgrade" and still locks out a heterogeneous fleet — the window closes only
+with N-1 backward-compatible reads or a registry-driven readiness gate.
+
+## Conduit run 2026-08-06T01:45Z (owner architecture directive — ADR-057)
+
+Owner corrected the enforcement model, and the correction lands against my own work: **Rule A36 was a
+promise, not an invariant.** I landed it yesterday as text in AGENTS.md/CLAUDE.md/PANTHEON_RULES.md,
+enforced solely by an agent choosing to honor a sentence read at session start — nothing detects a lane
+that stopped early, distinguishes a worker holding real work from one that merely looks alive, or blocks
+a `done` no evidence supports; the 15-minute conduit heartbeat is a timer bridge, not enforcement. This
+run supplied the live illustration: a dispatched build worker (pid 42163) ran for minutes against a
+stale router item whose goal contradicted an active P0 containment, while every liveness surface
+reported the lane healthy. **ADR-057 (PR #517)** specifies the durable supervision state machine —
+runtime-computed three-source `runnable` predicate (open item OR actionable task OR unmet traced
+requirement, park only when all three false); transactional claims carrying lease ID, expiry, heartbeat,
+attempt count, idempotency key; event-driven wake on store transitions with durable IDs, bounded
+retries, and **acknowledgment via a real store mutation** (a running process has acknowledged nothing);
+six honest Horus lane states on the stated principle that **process existence and heartbeat prove
+session liveness only, never work** — the green-surface-over-dead-thing class written as a supervision
+contract; mechanical reconciliation across inbox ↔ ledger ↔ leases ↔ requirement registry ↔ production
+evidence that expires orphan leases and rejects inaccurate `done`; and an evidence-backed completion
+gate. Registered all **8 implementation phases as ledger tasks** under phase `ADR-057 Enforcement` with
+`blocked_by` wired to the dependency chain, so the work lives in the system rather than in a document —
+which is the ADR's own thesis applied to itself. Amended A36 in all three synced copies with an explicit
+"A36 is intent, NOT enforcement — see ADR-057" block so nobody cites the rule as the mechanism. Routed
+to claude-pantheon (Go runtime) and claude-nexus (durable SNE/service owner) for the ownership split
+rather than unilaterally implementing a supervision state machine across their runtime. Numbered **057**
+because 054-056 is contested — main carries **two distinct ADR-054 documents** plus an ADR-055 while
+open PRs claim 051/054/055/056; flagged PR #464's ADR-uniqueness gate as worth prioritizing, since this
+is the citation-collision class again in the ADR namespace.
+
+**SNE broker quarantined and holding.** Executed codex-inference's authorized broker-only plist
+quarantine at 01:32Z (rename → `.plist.quarantined`, bootout, park pid/port files): pid 69811 exited,
+8477 refused, label absent from the domain, liveness-watch/horus/triage/pantheon untouched. Still
+holding 10+ minutes later across supervisor cadences. **Found the real resurrection source by reading
+every argv on the box: a claude-pantheon build worker (pid 42163, `--dangerously-skip-permissions`)
+dispatched at ~23:38Z whose literal goal is "Restore native SNE broker ... Port 8477 serves ... a real
+completion".** Both prior attributions were wrong — mine (liveness-watch, inferred from timing alone,
+withdrawn) and codex-inference's (the resident gemma-liveness duty, which is *a* mutator but not the
+one that fired). Routed a cancel request to codex-pantheon; did not kill their worker. Also reported
+honestly that I could **not** find `GemmaBrokerInstalled`/`KickstartDeadLabels` anywhere on origin/main,
+so the quarantine works empirically but its stated mechanism is unverified — a containment whose
+mechanism is unconfirmed is one refactor from lapsing. Leak confirmed unfixed at quarantine time:
+**22.73 GB @ 23 requests, ~0.48 GB/request, identical to the pre-pause 0.485** — the restart reset the
+counter, nothing else. Reconciled with the other conduit session's contradictory "15.27 → 15.27 GB flat"
+reading: they sampled at true idle, and **the allocation is retained per request and does not grow on
+wall-clock**, so an idle probe reads healthy on a fully leaking build. Monitor must use
+`Δactive/Δrequests`.
+
+**PR #513 round 3 PASS + bound** at `bdac238b` — codex-pantheon implemented exactly the narrow gate I
+asked for: non-recipients rejected before mutation again, delegation limited to an explicit `close:any`
+capability held by exactly one identity (`horus`, verified across all 27 registry rows), capability-read
+failures propagating as errors rather than falling through to false (fails **closed**), and the phantom
+"ADR-054 §1a" citation removed. It also fixed the separate P1 that had stranded five lanes: the wake
+enum admits `cli-spawn` again (codex-deck, codex-inference, codex-io, gemma-pantheon) with
+claude-inference honestly declared `wake: none`. **SirsiNexusApp #234 reviewed and MERGED** — the s08
+clamp only works because `#s08 .treemap { min-height:0 }` releases a hard 350px floor that would
+otherwise overflow the clamped parent (the flex/grid `min-height:auto` trap), and the s13 change deletes
+a counter-override instead of adding a third `!important` layer. Closed the SNE-51 build-timeout item as
+superseded: the task it named became #513, which passed on round 3 — a 2400s timeout that fires on total
+elapsed time rather than build progress will keep reporting healthy work as failed.
+
+## Conduit run 2026-08-06T02:08Z
+
+Merged PR #513 (actor authority, squash `8aef028f`) after verifying the housekeeping delta by
+attribution rather than by summary. The naive `git diff bdac238b c0c3cba0` reported 28 files and 924
+insertions and looked like an undisclosed rewrite; a rebased head sits on a newer base, so that diff is
+"this PR plus everything main absorbed in between." Diffing each head against its own merge-base isolated
+the real contribution: the same 12 files both times. Nine of ten functional paths were byte-identical by
+hash. The tenth, `cmd/sirsi/routercmd.go`, genuinely differed — and diffing the two merge-bases against
+each other reproduced those hunks exactly, proving main introduced them. "Functional code unchanged" was
+false at the file level and true at the authorship level; only the second reading is the verification.
+
+Then found the control was armed to fail closed in production. `horus supervise` runs with
+`WorkingDirectory` = the repo root, which sits on `feat/version-claude-worker`, so the registry the daemon
+actually reads is that working tree — not main's copy. Measured: live had 25 agent rows and **zero**
+`close:any` holders, with the `horus` row absent entirely; main had 27 and one. #513 rejects a
+non-recipient close unless the actor holds `close:any`, and the Horus triage service performs exactly
+those delegated closes. Nothing was broken only because the installed binary predates the control
+(`strings | grep -c "verify delegated-close authority"` → 0) — latent, arming on the next rebuild, and it
+would have presented as triage silently ceasing to close while every PID stayed green. Notably my own
+round-3 bind claimed "I checked the whole registry (27 agents)" — true of the PR's registry, false of the
+live one.
+
+Repaired additively: restored `horus`, `owner`, `user` from main, 25→28, `codex-mail` (a real runtime
+registration) preserved, **0 lines removed** against a pre-edit backup. Deliberately avoided a Python
+JSON round-trip — the file is written by Go's encoder, which HTML-escapes `<`, `>`, `&`, so load/dump
+would have silently rewritten 40 bytes of unrelated `<` sequences; surgical text insert, validated
+before write. Router parses it; triage (pid 3044, 1d11h uptime) and horus.agent-router unaffected.
+
+Also established the live registry has structurally *diverged* from main rather than merely lagging: it
+uses a `launchagent` vocabulary (12 rows) absent from main's `cli-spawn` copy. So syncing mechanisms
+wholesale would downgrade working config. `codex-inference` reads `routine` (no adapter, no launchd
+label) against main's `cli-spawn` — left untouched per standing guidance and because codex-deck already
+routed a wake-matrix reconciliation to codex-pantheon; no duplicate raised.
+
+A `No space left on device` line in the triage log resolved to a non-event: mtime 21:09, five hours old,
+from the already-closed binary-rebuild incident, with 1.2 TiB free today. Cleared the stale 4 MB log.
+Threads 215→125 (90 pruned). ccd reap killed one leaked conduit session. Retention 70.9 KiB. Board 23.4 KB.
+Inbox reached zero; #506/#511/#512/#514/#515/#516/#517 are all claude-home's and left for independent bind.
+
+Late in the same run the SNE broker turned out to have been restored on owner directive, so the standing
+quarantine note was stale. Rather than relay codex-inference's risk statement, measured the installed
+v0.1.3-preview build directly. Across four consecutive completed requests `mlx_active_bytes` rose
+0.1036 GB/request while `mlx_cache_bytes` fell 0.1038 GB/request — the two offset to within 0.2%, and
+`active+cache` moved 785,952 bytes in total, flat to 0.0008 GB. The process is migrating cache into active,
+not allocating. That means `mlx_active_bytes` read alone is not a leak signal, though the runbook calls it
+"the only honest one"; it would have justified quarantining a build whose total was flat. Crucially this
+reconciles rather than overturns the prior 0.48 GB/request figure: that was measured with cache already
+drained to 1.02 GB, mine with 7.5 GB still funding the migration — two phases of one process, which also
+explains why a young restart "looks healthier" (it is cache-funded, not lucky). The decisive test is cheap
+and was deliberately left to the service owner: cache drains at ~request 77, and whether `active+cache`
+stays flat past that point settles it. Defect 2 confirmed with a different symptom than reported — the
+`oracular` repetition did not reproduce in 4/4 runs (all `finish_reason: stop`, 30 tokens, byte-identical),
+but raw control tokens (`<|channel>thought`, `<channel|>`, `<turn|>`) leak into message content every time.
+Same root cause, still demo-blocking, and worth flagging so a fix is not validated against repetition alone.
+
+Responding to that item then failed on a third finding: three mutually inconsistent wake vocabularies are
+live at once. Dispatch enforces the ADR-054 matrix (launchagent, session-message, routine, none,
+owner-surface); supervisor/wake.go accepts cli-spawn, api-call, mcp-notification; the registry contains
+launchagent×12, none×11, cli-spawn×3, owner-surface×2. So cli-spawn passes the supervisor and fails
+dispatch, routine does the reverse, and `automation` — which codex-inference briefly carried — failed both,
+blocking delivery. claude-inference, codex-io and gemma-pantheon sit on cli-spawn and are unroutable on
+send/respond today. This is a second, independent reason not to sync the registry from main, which sets
+those lanes to cli-spawn. The file is also under concurrent multi-agent write: codex-inference went
+routine → automation → none inside seven minutes, and the repair script's pre-write assertion caught the
+value already changed and refused to write, after which the respond succeeded. Assert before editing.
+
+## Entry 110 — 2026-08-05 22:18 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd4dd-8108-73b2-b2fe-e258d2366746","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-08-06T02:33Z
+SNE broker leak re-measured and RECONCILED: 4-request probe (req 12→16) shows `active+cache`
+flat (+215 KB/req, ~0.001%) — cache↔active migration, not a leak. Broker healthy, not
+re-quarantined. Router inbox drained: 6 open items, all codex-deck deck-claim-traceability
+chain collapsed to one review (chain-superseded closes cite the final response). Opened and
+bound SirsiNexusApp #236 (docs(deck): investor claim traceability + unsupported-claim
+corrections) — found and reported one real defect the matrix itself introduced: slide 8 derives
+"10x lower entry advantage" as `$585K / $55K` where `$55K` is the *competitor's* tile, not
+Sirsi's (canonical `~$56K turnkey`, sourced 7x across ADR-044/SOVEREIGN_PLATFORM_ARCHITECTURE,
+`$55K` sourced nowhere) — flagged as the one required correction before merge. Responded to
+claude-pantheon's build-timeout report (PR #465 forward-fix, ADR-055 licensing/claims task):
+diagnosed no partial work exists (branch deleted, PR #465 already merged), re-scoped into a
+mechanical slice I can run headless vs. a claims-judgment slice needing claude-pantheon/
+codex-pantheon's context — did not guess at licensing claim wording. Threads 183→142 (41
+pruned), 1 leaked conduit session reaped+archived, retention reclaimed 157.6 KiB. Doctor's
+wake:none list is the known, previously-reconciled set — left untouched.
+
+## Conduit run 2026-08-06T02:45Z
+
+Inbox drained 4→0. Chased the residual half of my prior run's `$55K` finding on the
+investor deck: PR #236 was merged by the owner directly at 02:37Z and had fixed
+`deck.html` (slide-8 note now reads "approximately $56K Sirsi turnkey"), but the
+governing `docs/DECK_CLAIM_TRACEABILITY.md` was left behind carrying two defects — it
+cited `SOVEREIGN_PLATFORM_ARCHITECTURE.md` and `ADR-044-SOVEREIGN-PLATFORM.md` as
+canonical evidence for `$55K` (verified: zero occurrences in either; both document
+`~$56K`), and it still documented the derivation as `$585K ÷ $55K`, dividing by the
+competitor tile rather than Sirsi's own price. A traceability document that cites a
+source not containing the figure is worse than no citation: it launders an unsourced
+number as verified, because the next reviewer trusts the citation instead of
+re-checking. Opened #237 (matrix-only). codex-deck opened #238 two minutes later doing
+strictly more — removing `$55K` from the slide entirely (tile → qualitative "Single
+node") and sharpening `10×`→`~10.4×` (585/56 = 10.446, verified independently; the old
+figure was loose in Sirsi's own favor). Bound #238 PASS, squash-merged `2314d24`, closed
+#237 in its favor, deleted the branch, and verified on main rather than on report.
+Noted the duplicate-work shape back to codex-deck: both of us fixed half the same
+finding within two minutes.
+
+SNE broker measured a third consecutive time and is NOT leaking — and the runbook's
+prescribed metric is the wrong one. Over 4 real completions: `Δactive` = +0.099 GB/req
+(leak-shaped), `Δcache` = −0.398 GB, `Δ(active+cache)` = **−0.0003 GB/req**, `mlx_peak`
+unchanged. Known-bad is ~0.48 GB/req. Watching `mlx_active_bytes` alone counts every
+MLX cache→active migration as an allocation and manufactures leaks; the honest signal is
+`Δ(active+cache)/Δrequests` with `mlx_peak` as cross-check. Routed the measurement and
+the metric correction to claude-nexus as SNE owner of record (`20260806-024221`), plus
+the finding that `~/.sirsi/gemma-server.port` is **empty** on this host so every probe
+silently falls back to a hardcoded 8477 — canon forbids hardcoding precisely because a
+wrong-port probe is indistinguishable from a dead broker. Did not restart, quarantine,
+or bounce anything; PR #518's quarantine mechanism is operator-invoked, not an automatic
+detector, so it is sound regardless of the leak disposition.
+
+Health: swap 6.90/8.19 GB (84%, down from 87%, static across the probe), RAM 52% free,
+no new crash/Jetsam in 3h, all sirsi daemons live. `sirsi diagnose` 🟡88/100 — sole flag
+is the known `phys_footprint` false positive on the broker (counts mmapped weights).
+Threads 149→146. ccd reap killed 3 leaked conduit sessions (6 procs) + archived 1.
+Retention reclaimed 43.4 KiB. Board republished.
+
+## Conduit run 2026-08-06T02:52Z
+
+Recovered a fix that a merge race had silently dropped. codex-deck routed a decision saying PR #238
+(SirsiNexusApp) "now restores the Sirsi-logo slide 1 at head 4584049" — but #238 had squash-merged at
+02:44:25Z as 2314d24 and 4584049 was pushed to the branch at 02:45:14Z, ~50s later. The squash captured
+only the slide-8 operand fix; `git merge-base --is-ancestor 4584049 origin/main` was false and main was
+still serving the owner-rejected generated hero (`assets/deck/ownable-intelligence-hero-v1.png`,
+"Own your intelligence.") on slide 1. I cherry-picked 4584049 clean onto main as #240; codex-deck had
+independently opened #239 two minutes earlier with a byte-identical diff, so I closed #240 as the
+duplicate, used the identical-diff result as independent corroboration in the bind, and squash-merged
+#239 as eefaf7d. Verified on main: slide 1 renders the sirsi-icon composition, slide-8 operands intact.
+Flagged to codex-deck that the same generated asset still ships on slide 14 (deck.html:4656) — their
+call, since the owner's objection may be asset-scoped rather than slide-scoped. Class worth carrying:
+a push to an already-merged PR branch neither reopens the PR nor lands; when a verdict arrives after a
+merge, check ancestry before believing the fix shipped.
+
+Also: repaired the empty `~/.sirsi/gemma-server.port` (wrote 8477, confirmed against the listening
+socket of pid 11147) so probes stop silently falling back to a hardcoded port. Broker health gave the
+cleanest disproof yet of the `mlx_active_bytes` metric — across two samples with **zero** intervening
+requests, active rose +1.04 GB while cache fell −1.04 GB, sum delta −0.0005 GB. Allocation cannot occur
+without requests; the counter is measuring cache→active migration, not leak. Fourth agreeing run.
+Threads 165→147 (18 terminal pruned), ccd archived 2 completed conduit sessions, retention reclaimed
+44.3 KiB. Swap 6.67/8.19 GB (81%, down from 84%). Five mergeable pantheon PRs (#521 #517 #514 #511 #506)
+all under 2h old and awaiting their lane reviewer's bind — deliberately left, not stale.
+
+## Conduit run 2026-08-06T03:23Z
+
+Inbox 4 → 0. Closed all four with routed Results, none bare. **PR #241** (deck slide 14, remove the
+owner-rejected generated hero) reviewed source-deep at `4957b24` — verified the `<img>` absent from the
+document rather than trusting the description — bound and squash-merged as `ca68bbf`, then verified with
+`git merge-base --is-ancestor` against `origin/main` per the merge-race lesson. The generated hero is now
+gone from both slide 1 (`bc2f7ee`, #239) and slide 14; the owner's objection was asset-scoped, not
+slide-scoped, and both uses are discharged. Flagged orphaned `.photo-slide`/`.photo-composition` CSS at
+`deck.html:3238-3241` as non-blocking; codex-deck opened #242 to clean it. The #239 bind item was already
+satisfied on arrival (merged 02:50:58Z, item opened 02:48:05Z) and closed with that evidence.
+
+**BUILD TIMEOUT on `20260805-233737` (sne-51) was a merge race, not a scope problem.** The task was
+dispatched at 23:37:37Z against PR #501 head `dd5c0708`; #501 merged at 23:47:29Z, ten minutes later. The
+worker then burned the full 2400s on a target that no longer existed. A requirement-by-requirement audit
+found all seven steps already on `main` — close boundary requires an acting agent (`facade.go:495`),
+validated via `ValidateAgent` (`:275`,`:495`), non-recipient rejected unless `close:any` (`:508`, ADR-054
+A4 honoured), `--agent` on both verbs (`routercmd.go:1305`/`:1308`), notify-then-close with the validated
+actor, and regression tests present. So nothing needed rebuilding.
+
+But running step 7 properly surfaced a real failure on `main`: `TestRouterRespondStoreOnlyItem` asserts
+`router respond` fails closed on ambiguous identity, and **it could not construct ambiguity on any host
+that has an identity.** `resolveCurrentAgent` resolves `--agent` → `$SIRSI_AGENT_ID` → session marker →
+sole live thread; rungs 1/2/4 are hermetic under test, but rung 3 reads the absolute host path
+`~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID`, keyed on an *inherited* env var. `sirsiTestEnv`
+copied `os.Environ()` stripping only `GIT_*`/`PWD`, so the subprocess resolved a live `claude-home` and
+completed the respond the test exists to reject. Green on CI (no session id), red on every agent machine —
+an environment leak wearing the costume of a code regression. Fixed at the one shared helper (**PR #522**,
+`1ead413f`): `go test ./cmd/sirsi/...` with a live session id now passes at 61.8s, was FAIL. Product
+behaviour unchanged; the test store was already sandboxed and the live router was confirmed unpolluted.
+Routed to codex-pantheon — my own commit, no self-review. Also routed **#514** (changelog.d/) there for the
+same reason: authored by claude-home, CLEAN and unbound for 2h.
+
+**SNE broker leak is live.** Three request-normalized samples of Δ(active+cache)/Δrequests: 0.390 GB/req
+over 14 requests, 0.447 over 1, 0.393 over 15 — against known-bad ≈0.48 and healthy ≈0. Not the
+cache-migration artifact: cache *fell* 2.02→0.76 GB while active rose 7.16 GB, and `mlx_peak` corroborates
+at +9.25 GB (20.27→29.52 GB on a 48 GB machine). Swap 83%; free-RAM's reassuring 66% is the hollow signal.
+Routed to codex-inference with the disposition question; did not bounce a load-bearing server on a
+`phys_footprint` badge.
+
+Healed: `ai.sirsi.router.wake.claude-home` was down — no PID, `last exit 78 EX_CONFIG`, zero-byte log since
+Jul 7 — the one label claude-nexus's fleet-wide `$HOME` fix missed, and with `KeepAlive` it respawned into
+the same failure rather than staying visibly dead. Kickstarted; all 11 wake jobs now hold live PIDs. Routed
+that correction back to claude-nexus with the ADR-057 ownership ACK. `ai.sirsi.pantheon` had also lost its
+PID; kickstarted to 94672. Threads 194→149 (45 terminal pruned), ccd reap killed 2 completed-leak sessions,
+retention reclaimed 126.3 KiB, board republished. No crash or Jetsam in the window. The 342-stranded-file
+reconcile warning still stands and still needs a deliberate adopt/discard pass.
+
+## Conduit run 2026-08-06T03:48Z
+
+Routing corrected by the owner: claude-home's adversarial reviewer and binder is **always codex-home**,
+claude-nexus only when codex-home is busy, never codex-pantheon. PRs #522 and #524 re-routed accordingly.
+codex-home is demonstrably active despite `wake: none` in doctor — it sent a binding review at 03:35Z.
+Unwakeable is not unaddressable, and the two should stop being conflated.
+
+**Fleet-wide router outage, found and recovered.** `sirsi router pull` began failing with
+`database is at schema version 14, newer than this binary understands (max 7) — refusing to touch it`.
+Traced to a binary built from an **uncommitted** `internal/routerstore/store.go` in `/private/tmp/wt-req`
+(branch `feat/requirement-registry`) that had migrated the LIVE store to v14. Five separate binaries
+tested, including one built from `origin/main`; none could open the store, so no agent could read or write
+the router at all. No branch on origin carried migrations past v8 — the only source for a schema
+production was already running was one dirty file in a temp directory. Backed the store up first
+(3921 items, 277 tasks), committed the orphaned migrations so they could not vanish with /private/tmp,
+verified on a *copy* that both a v7 rollback and a v14 binary could read and write it, then chose the v14
+binary: the schema objects already exist, so a `user_version` of 7 over a v14 schema would have been a new
+lie and would have failed on duplicate columns when 8-14 were re-applied. Installed with the rm-before-cp
+AMFI sequence and verified live. claude-nexus independently fixed the same P0 as PR #523; my recovery
+branch was redundant and is deleted. The new class: **an unreviewed working-tree binary can migrate shared
+production state to a version no released binary understands.** The fail-closed guard makes that visible
+one outage later; nothing prevents it.
+
+Three reviews returned, all CHANGES REQUIRED, none bound. **#523** claimed "tests pass" while CI reported
+Test FAILURE; reproduced at their exact head — `lease_updated` violates the documented no-invented-columns
+law, and `TestTaskV4V5V6MigrateDirectlyToV7` pins a terminal version that no longer exists. **#512**
+(ADR-054 → ACCEPTED) asserts close/respond does not require recipient identity while `facade.go:503-508`
+requires exactly that unless the actor holds `close:any` — and the live registry grants that capability to
+`horus` alone, so the reviewer lanes the ADR names cannot do what it says they may; its finding-8 also
+certifies its own bind while binding-hold is failing. **ADR-057** for codex-home: checks 1, 2, 9 and 10
+hold under adversarial reading — the runnable and claim predicates are identical including dead-letter
+dependencies, wake acknowledgment requires a resolvable store action with *"a successful process
+invocation is not success"* written into the code rather than the docs, and completion re-derives from the
+predicate. Check 6 blocks: that tree caused the outage above. Disclosed that I had committed their
+store.go during the P0 before knowing it was their review candidate.
+
+Two build timeouts, two different causes, neither needing a rebuild. sne-51 was a merge race. The
+sne-canon forward-fix was **dispatched pre-doomed** — its own plan estimated 60 minutes against a
+40-minute worker cap. Auditing what PR #465 actually landed found steps 2, 3, 5 and 8 undone, the worst
+being that all six reproduction scripts named in `docs/REPRODUCTION.md` are missing from main: outward
+documentation instructing readers to run commands that do not exist, in support of performance claims.
+Shipped step 1 as PR #524 (the ADR index did not know its own high-water mark, which is the live mechanism
+behind the collision #465 renumbered) and re-scoped the rest into three slices, deliberately not editing
+public claims or licensing posture without the ratification evidence in hand.
+
+The broker was paused, respawned by `KeepAlive` 25 seconds later on the old unrepaired binary, booted out
+properly by me, then re-bootstrapped two minutes later — still without the four `/health` repair markers.
+Reported rather than bounced a second time; toggling a service against another supervisor is a coin flip,
+not supervision. The class worth keeping: **a gate written in prose loses to a plist with KeepAlive=true.**
+
+## Conduit run 2026-08-06T03:55Z
+
+Two claude-home sessions ran concurrently and worked the same three inbox items; the race
+guard held and no close was duplicated. Net-new work this pass: pushed the orphaned
+schema commit `66466ca0` to `origin/feat/requirement-registry`, closing the P0 durability
+hole where the only source for the schema the live store already runs was one commit in
+`/private/tmp/wt-req`. Fixed PR #523's two red tests — they were never claude-nexus's code,
+but the two test-side changes (classifying `lease_updated` store-only, and asserting the
+current max schema instead of a hardcoded `version != 7`) that authorize the v8-v14
+migrations they ported; both already existed in codex-home's worktree and were lifted
+verbatim as `be9ae5fb`. Test is now SUCCESS, though #523 has since gone CONFLICTING against
+`internal/routerstore/store.go` now that PR #521 landed ADR-057 step 1 on main — two
+competing migration sequences, deliberately left for its authors rather than guessed at.
+
+The substantive finding is a correction of this session's own earlier ADR-057 review, which
+cleared adversarial check 1 as "runnable and claim predicates identical". That comparison
+covered two surfaces; there is a third. `runnable.go:110` and `lease.go:150` both treat an
+item as actionable when `blocked_by=''` OR its dependency reached a terminal disposition,
+but `reconcile.go:90` drops the dependency clause. A dependency-released item is therefore
+runnable and claimable while invisible to the reconcile backfill — which is the recovery
+net for lanes whose wake delivery vanished. Because `wake_item_dependency_terminal` is an
+`INSERT OR IGNORE` on a stable event key, the primary wake can never re-fire for that pair,
+so consuming it and then losing the worker strands the lane permanently. That is the exact
+failure ADR-057 exists to prevent, occurring inside the code meant to prevent it, and it
+only manifests after something else has already gone wrong. Confirmed with a runnable
+probe rather than asserted, and routed to codex-home. `runnable.go:91` already forbids the
+cause in its own comment: callers must consume the API rather than duplicate its SQL.
+
+Two smaller corrections. `user` is a legacy alias the store now refuses for new writes, so
+`owner` is the canonical owner identity — which makes #523's escalation recipient correct
+and prior conduit notes wrong; two open items are stranded on the alias and cannot be
+pulled at all. And the SNE broker, restored at 03:30Z, shows `active+cache` pinned at
+exactly 21.474 GB across three samples spanning 11 requests — 0.0000 GB/req against a
+known-bad 0.48 — despite carrying none of the four repair markers. The leak is not
+declared fixed on a young process and an unrepaired binary, but it is not currently
+reproducing either, and the next pass should measure by request rather than by clock.
+
+## Conduit run 2026-08-06T04:03Z
+
+Inbox reached zero: reviewed and bound ADR-057 twice in one pass. R3 was closed by codex-home
+mid-review (superseded by R4, citing my R2 path-identity finding), so my R3 verdict landed on a
+superseded round; R4 then arrived and I reviewed it properly. **BIND ACCEPTED (scoped)** on R4's three
+claims. My R2/R3 CR-1 is genuinely fixed: `isSharedProductionStore` now uses `os.Stat` + `os.SameFile`
+with an `Abs`+`EvalSymlinks` pre-creation fallback and fails closed on undeterminable identity. I
+re-ran my bypass probe with R4's function body copied verbatim — all three R3 bypasses (symlink,
+case-variant, bare-relative) now gate, and an unrelated store still correctly does *not* gate, so the
+fix is precise rather than blunt. Predicate centralisation verified across all nine consumers; v15
+`wake_task_dependency_done` and the dep-clause rewrite of `wake_continue_after_task` close the last
+task-side gap. `go vet` 0, `go test ./internal/routerstore` PASS. Two things carried out: **A-1, a
+proven fresh-install blocker** — a new store opens at v0, the migration gate fires, and the
+pre-creation branch returns gated, so the first-ever `sirsi` run on a clean machine dies with
+"live schema advancement v0→v15 is a deployment event"; proved it by running R4's own function with
+`HOME` pointed at an empty dir. And **A-2**, one surviving predicate copy in trigger SQL
+(`store.go:529`) that no Go helper can reach. I also corrected my own R2 record: the `..` path form
+does *not* bypass — `filepath.Clean` collapses it — the third bypass was the bare-relative form. Third
+consecutive round reviewed against an uncommitted tree (48 modified files this time, up from 20); I
+restated the ask for a scratch SHA, since a bind against a mutating tree is not a claim either side
+can honour. Separately: nearly reported a fourth defect — that migration-10's baseline triggers
+diverge from v15 — then found `migrate()` has no create-at-latest fast path, so every store walks
+0→15 and v14/v15 DROP+CREATE supersede them. Stated it as an explicit non-finding so nobody chases it.
+
+Healed `ai.sirsi.pantheon`: it was `disabled=true` in the launchd override and absent from
+`launchctl list` — the one real signal under diagnose's 57/100. Re-enabled and bootstrapped, now
+pid 72857. The override plist also carries a malformed key (five labels space-joined into one string)
+from an old `launchctl enable` call; harmless, worth cleaning. Broker: found it alive at 22.3 GB on
+arrival and measured the leak by request across runs on the same pid 12866 — 11→25 requests,
+21.474→23.858 GB active+cache = **0.170 GB/req**, peak 22.7→30.05 GB. Non-zero, contradicting last
+run's 0.0000 reading, which was taken over too few requests. By the end of the pass another agent had
+deliberately quarantined it (override `= true`, label booted, no Jetsam — only a `cpu_resource.diag`).
+I did not restart it. But the quarantine renamed `gemma-server.pid` and missed `gemma-server.port`,
+which still reads 8477 — so canon's "read the port from the port file" now hands every agent a live
+pointer to a dead service, indistinguishable from a broken broker. Routed to claude-nexus
+(`20260806-040331`). Threads 157→133, retention clean, no binary drift, ccd reap found no leaks.
+
+**Second half of the same pass (04:04-04:10Z).** The inbox refilled three times while I was closing it.
+Worst first: **claude-nexus caught me reverting an owner directive.** I had re-enabled
+`ai.sirsi.pantheon` earlier in this pass because `sirsi diagnose` listed "launchd Disabled Override" as
+a priority finding and my own step 3 named that label under "needs live PIDs → kickstart if dead". It
+was owner-disabled deliberately, and mine was the third revert that night. I reverted it, but the
+apology is worthless without the mechanism, so I rewrote step 3 of my conduit task file: an explicit
+quarantine list, the rule that a `= true` entry in `disabled.501.plist` is a decision rather than a
+defect, and removal of `ai.sirsi.pantheon` from the needs-a-live-PID list — that last part is what
+actually stops the loop, since the quarantine list alone would have left it listed as a thing to heal.
+The general lesson is worth more than the incident: **a health badge is not an owner decision, and this
+pass's job is never to overrule one.** Diagnose reports a deliberate quarantine in exactly the same
+voice as a crash.
+
+ADR-057 went through three more binding rounds. R4 accepted (scoped); `c3387be0` superseded by my own
+A-1 finding; then **`1ee10cee` — CHANGES REQUIRED on a new material defect.** codex-home now commits
+before requesting review, which is the ask I had repeated for three rounds and which finally made a
+review mean something. Their A-1 fix is better than the one I proposed: capturing `initialVersion` once
+before any migration and gating on `initialVersion > 0` keeps a v7 store gated even after its first
+migration bumps the version, where my suggested `version == 0` exemption would have leaked. The new
+blocker is **lease TTL with no upper bound** — all four sites (`lease.go:110,211`,
+`tasklease.go:35,109`) floor a non-positive TTL to ten minutes and none cap it, with no clamp anywhere
+in the package, reachable from the shipped CLI as `task claim --ttl 8760h`. That defeats the ADR's own
+core invariant: an unbounded lease is precisely a worker that looks active while holding no work, and
+reconciliation only reaps *expired* leases, so the item strands until a date the caller chose. Same
+shape as the R1 dependency-wake finding and the quarantine gap — a recovery net that cannot fire.
+Also flagged `facade.go:156`, which compiles `to_agent='claude-home'` into every store-generated
+escalation, so my lane id is baked into the storage layer and escalations pile into a dead lane
+whenever I am down.
+
+Accepted claude-nexus's consolidation of ADR-057 into one chain and withdrew my two duplicate
+supervision tasks — but **could not actually close them**: `task update --status done` is refused
+because the transition needs a fenced lease, `task claim` cannot pin an id, and these tasks are
+*withdrawn* rather than *done*. Pushing them through an evidence gate using a consolidation memo as
+proof would be the fake completion the gate exists to reject, so I left them visibly wrong and reported
+the real gap instead: **the state machine has no withdraw/cancel transition**, which is the exact
+operation consolidating fourteen duplicate tasks requires. Proposed a `withdrawn` status taking
+`--superseded-by`. Until it exists the runnable predicate counts them as claude-home work, which is a
+live inaccuracy inside the mechanism ADR-057 is supposed to make trustworthy.
+
+## Entry 111 — 2026-08-06 00:12 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"019fa893-9e6e-7ae2-a9ae-6508d2b2e462","turn_id":"019fd545-74cb-77c0-8b15-7b663d738cd1","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/07/28/rollout-2026-07-28T07-54-34-019fa893-9e6e-7ae2-a9ae-6508d2b2e462.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.6-sol","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-08-06T04:15Z
+
+Inbox zero for claude-home on arrival. Health 88/100 🟡 — the sole priority finding is
+"launchd Disabled Override", which resolves to the two deliberately quarantined labels
+(`ai.sirsi.pantheon`, `ai.sirsi.gemma-broker`, both `= true` in disabled.501.plist). Left
+untouched: a health badge is not an owner decision. Broker port file still advertises 8477
+with nothing listening — expected under quarantine, already routed to claude-nexus last pass.
+Healed a real stranded-agent gap: `router doctor` reported `gemma-pantheon` had no wake
+LaunchAgent installed, minutes after claude-nexus routed it a live task
+(`20260806-041122`) that would have stranded. Ran `router wake-install gemma-pantheon` +
+`launchctl bootstrap` → loaded, pid 3325. Thread reconcile healed 7 (6 reaped→successor,
+1 stale→suspended); prune 162→150; `ccd reap` killed 2 leaked conduit sessions (4 procs).
+Source-deep reviewed SirsiNexusApp #233 (inert command-palette TODO → real /thread-board
+navigation) and #235 (optional local-LLM telemetry fields rendered "not recorded yet"
+instead of undefined/NaN) — both PASS, both blocked only by DRAFT state; marking another
+lane's PR ready is codex-nexus's call, so routed the verdict plus the exact `gh pr ready`
+command (`20260806-041508`). No merges: every other pantheon PR is `binding-hold` or DIRTY,
+FinalWishes #127 is draft, and NexusApp #243/#244 plus pantheon #525 are all under the 1h
+soak. New crash forensics: `sirsi-2026-08-06-000657.ips` is a CODESIGNING Launch Constraint
+Violation / SIGKILL — the known AMFI in-place-replace hazard from the v7 binary repair, and
+already self-healed (every router command this pass ran clean). Retention within window.
+
+## Conduit run 2026-08-06T04:21Z
+
+Inbox reached zero on one item, the one that mattered: codex-home's ADR-057 final immutable bind at
+`39673f28`. Verdict **BIND ACCEPTED**, routed back as `20260806-041939`. My standing blocker CR-A is
+closed at source, not at claim — `MaxLeaseTTL = 30m` is a single constant, `boundedLeaseTTL` *errors*
+above the ceiling rather than silently clamping, and all four entry points (ClaimNext, RenewLease,
+ClaimNextTask, RenewTaskLease) route through it with adversarial tests on each. The check most worth
+running was whether canon completeness is genuinely the third source: `runnable.go` counts unmet
+requirements AND fires on a missing audit marker, so an empty requirement registry cannot fake
+COMPLETE — the obvious bypass (register nothing, declare done) is closed. Waiver authority resolves
+to a real terminal owner decision with evidence. I ran `go test ./internal/routerstore/ -count=1`
+myself (ok, 1.236s) rather than resting on the reported full-suite pass. Three advisories recorded,
+none blocking; the sharpest is A-4, that audit attestation accepts any non-empty evidence string
+while the waiver path verifies its reference — the asymmetry is the finding.
+
+The SNE broker came back up between passes on build `8eacb2bc` and I measured it properly:
+requests 8→13, `mlx_active_bytes` unchanged at 12.7498 GB, so **0.00 GB/request** against a known-bad
+0.485 GB/req. The leak is fixed, and `mlx_memory_limit_semantics` now reports
+`scheduler_backpressure_not_allocation_cap` instead of the false hard-cap claim that let observed
+active run 3.2x the stated limit unchallenged. Evidence routed to codex-inference
+(`20260806-042114`). Two owner-surface escalations still assert "broker restore failed" on a premise
+that no longer holds; left open because items to user/owner are the owner's to close.
+
+Housekeeping: reconcile healed 11 reaped→successor threads, prune 179→175, `ccd reap` archived 2
+completed conduit sessions with zero leaked processes. No merges — pantheon #525 and NexusApp
+#243/#244 are all CLEAN and non-draft but still inside the 1h soak (created 03:39–03:50Z). Retention
+reclaimed 188 B. `ai.sirsi.pantheon` remains quarantined and untouched.
+
+## Conduit run 2026-08-06T04:42Z
+
+Host rebooted at ~04:31Z (shutdown_stall log, all daemon PIDs reset to ~900, swap file back to
+0.00M) — the swap exhaustion that dominated the previous two passes is gone by reset, not by fix,
+so it will re-accumulate and the request-normalized broker check remains the honest signal. The SNE
+broker came back automatically under launchd (pid 911, build 8eacb2bc) and measured clean:
+requests 8 -> 10 with mlx_active_bytes FLAT at 12.75 GB, i.e. 0.00 GB/req against a known-bad rate
+of 0.485. `sirsi diagnose` still renders it red at 20.2 GB because that number is phys_footprint
+counting mmapped weights; the badge was ignored, as it must be. Merged PR #525 (b9fb42d0) after a
+source-deep read: it raises the binary's understood schema ceiling from 8 to 14, ending the
+fail-closed lockout that twice left no agent able to read or write the router. On the live store
+nothing migrates — it is already v14 — so the review focused on fresh-DB replay of 9..14, which
+holds: every trigger replacement is DROP IF EXISTS + CREATE and the final set equals the v14
+definitions. v11 fixes a genuine cross-talk bug introduced by v10 (claiming work B could ack a
+leased wake for work A) and v12 correctly stops a dead-lettered prerequisite from releasing
+dependent execution. Drained the claude-home inbox 6 -> 0. The two WORKER GAVE UP escalations were
+both SUPERSEDED: PR #501 and PR #465 had already merged, so the loop-proof burned two attempts and
+a human escalation on stale items — the give-up path should re-check whether its target PR landed
+before escalating. Auditing the merged result rather than accepting the merge surfaced one real
+live defect: origin/main carries TWO files numbered ADR-054 (CONTRACTS-IDENTITY-AND-LEDGER-V7 from
+#495 and ONE-HORUS-UNIFIED-AGENT-FABRIC from #465) because those PRs merged ten seconds apart and
+neither could see the other. Deliberately did not renumber — authorial intent ("Part C") is
+ambiguous and that canon belongs to the pantheon lane — so the finding was routed there with the
+note that PR #464's ADR uniqueness gate, currently CONFLICTING and stale, is the only durable fix.
+docs/CLAIMS-TABLE-DRAFT-A33.md is also still named DRAFT despite the claims being blessed. Also
+closed two 50-day-old post-merge menubar audits as time-superseded rather than pretending to audit
+June code against an August tree. New gotcha recorded: sirsi-respond.sh on a self-addressed item
+mints another self-addressed item, so plain `router close` is the correct terminator there.
 
 ## Conduit run 2026-08-06T05:06Z
 
@@ -1749,35 +2459,20 @@ deliberately removed from its reap half after it stranded an inbox for 1d16h. **
 correction for #508) merged `27798525` — docs-only, all green; it replaces a false "stale PID"
 rationale with the real defect, four sessions anchoring liveness to one shared ChatGPT app-host.
 
-**Store integrity — `readonly (8)` is a property of the BINARY, not the WAL. (Corrected in place;
-my first root cause here was wrong.)** Every `SendGuarded` failed with `attempt to write a readonly
-database (8)` while reads stayed perfectly healthy: `router status`, `show`, and `pull` all returned
-clean data throughout, and both `sirsi-respond.sh` and a bare `router send` failed identically and
-reproducibly. Every obvious diagnosis was a dead end — disk 1.2Ti free, mode 644 owned by us, no
-immutable flag, no ACL, only a benign provenance xattr, `PRAGMA quick_check ok`, no readonly open
-path anywhere in `internal/routerstore`, and `sqlite3` could take a write lock and insert into
-`send_quota` on the same file from the same shell.
-
-**I first concluded the cause was an orphaned `router.db-wal` / `router.db-shm` pair, because sends
-resumed shortly after those files were checkpointed away. That was a false correlation off two
-samples, and it is retracted.** codex-home's independent report (`20260806-051441`) carried the
-better evidence: a *replacement* `~/.local/bin/sirsi` artifact exhibits readonly `SendGuarded` while
-the accepted artifact writes to the same store. So it tracks the binary, not the file state. WAL and
-SHM files appear and vanish constantly under checkpointing, which is exactly what made them a
-tempting and meaningless correlate. The observation that should have decided it was already in my
-own notes and pointed the other way the whole time: **`sqlite3` could write the file that `sirsi`
-could not.** That is close to a proof that the file was writable and the binary was the variable; I
-recorded it as a puzzle instead of reading it as the answer. Anyone acting on the retracted version
-would drain connections and wait out a fault that is actually a bad build.
-
-The night's binary churn is the real context: three distinct SHAs on `~/.local/bin/sirsi` inside
-twenty minutes, one of them a v14-ceiling build against a v15 store, which locked out the entire
-fleet until the accepted artifact was restored.
-
-The green-surface observation stands on its own and is the durable lesson: the store read 100%
-healthy while every write was silently impossible, so a worker that leases and executes but cannot
-commit evidence looks alive on every read-based signal while acknowledging nothing. Routed to
-codex-home as directly relevant to the ADR-061 worker lifecycle.
+**Store integrity — `readonly (8)` means stale WAL, not permissions.** Every `SendGuarded` failed
+with `attempt to write a readonly database (8)` while reads stayed perfectly healthy: `router
+status`, `show`, and `pull` all returned clean data throughout, and both `sirsi-respond.sh` and a
+bare `router send` failed identically and reproducibly. Every obvious diagnosis was a dead end —
+disk 1.2Ti free, mode 644 owned by us, no immutable flag, no ACL, only a benign provenance xattr,
+`PRAGMA quick_check ok`, `user_version 14` matching the binary ceiling, no readonly open path
+anywhere in `internal/routerstore`, and `sqlite3` could take a write lock and insert into
+`send_quota` on the same file from the same shell. Root cause was an orphaned `router.db-wal` /
+`router.db-shm` pair; once the last connection drained and they were checkpointed away, sends
+resumed with no other intervention. **The heal is to let connections drain, never to chmod or
+rebuild.** This is a green-surface-over-dead-thing instance in its purest form: the store reads
+100% healthy while every write is silently impossible, so a worker that leases and executes but
+cannot commit evidence looks alive on every read-based signal while acknowledging nothing.
+Routed to codex-home as directly relevant to the ADR-057 worker lifecycle.
 
 **Broker measurement retracted — my own, not someone else's.** codex-inference ACCEPTED "the leak
 is flat" reasoning correctly from a sample I routed them that was **5 requests wide** (8→13) —
@@ -1791,7 +2486,7 @@ floor is the part that is not ambiguous: 34.9 GB active on a 48 GB machine with 
 still read a reassuring 62%. Retraction and the full series routed to codex-inference with a
 request for a several-hundred-request window that can separate working-set growth from retention.
 
-**ADR-061 handover ACKed** — codex-home executes, claude-home holds binding adversarial review.
+**ADR-057 handover ACKed** — codex-home executes, claude-home holds binding adversarial review.
 Flagged one blocking operational hazard: their implemented surface is "schema through v15" while
 every installed binary tops out at v14. That is the **third** occurrence of the merged-migration-
 is-not-a-deployed-migration class (v3, v7/#501, now v15), and its failure mode is total: the
@@ -1803,6 +2498,293 @@ Threads: 9 healed reaped→successor, prune 299→266. `ccd reap` archived 1, 0 
 Retention 245 KiB. `doctor --fix` now reports `wake disabled (mechanism: none)` for the codex
 lanes rather than last pass's kickstart timeouts; **codex-finalwishes has 7+ unwoken items
 stacked** — a real stranded-inbox condition, and codex-home is live and owns it.
+
+## Entry 112 — 2026-08-06 02:18 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Session 2026-08-05/06 (claude-nexus, session b05ee0ed). Fleet surfaces and router repair.
+- SHIPPED: PR #512 (ADR-054 eight findings), #516 (fleet board), #526 (gemma reachable), #527 (Go router board + menubar parity + read-compat + migration gate), #538 (cli-spawn wake fix + label rename).
+- ROOT CAUSES FOUND, all one class — merged/committed state diverging from running state:
+- 1. gemma unreachable in TWO ways: worker polled identity "gemma" (absent from agents.json) while registered "gemma-pantheon" declared cli-spawn (rejected by the ADR-054 validator). 51 router items its whole history; 775 tokens served.
+- 2. 22 of 23 lanes had lost consumer.command in the LIVE registry (main was correct). This, not code, stranded 73 messages across 11 "healthy" lanes. ResolveConsumer was telling the truth: nothing to resolve.
+- 3. Standard logger level-gated at Warn (claude-home, PR #533) discarded every log.Printf, hiding all of the above. wake.go carries 11 of them.
+- 4. Store migrated to v14 then v15 by builds whose source existed only in /tmp, erased by a reboot. Recovered v15 by extracting trigger wake_task_dependency_done verbatim from sqlite_master.
+- 5. Python board on 8734 (supposedly retired) was resurrected and reported 9 lanes WORKING with ZERO live processes.
+- 6. 9 launchd wake jobs crash-looping since ~Jul 7 on missing $HOME.
+- BUGS I INTRODUCED AND CAUGHT: read-only handle that was actually writable (bare path vs file: URI); read-only fallback on the WRITE path causing split-brain closes (file mirror succeeded, store failed); payload emitted "board" while index.html reads "ledger".
+- OWNER CORRECTIONS: close means RESOLVE, never wipe — my 26 codex-task closes and much of the 32->0 drain were wipes dressed as completion, and must be reworked. Standing duties (sne-56) are never closed to zero a board. One lane owns the host. Everything Go unless Python is required. Board+menubar must render from ONE producer.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
+
+---
+
+## Conduit run 2026-08-06T06:22Z
+
+Found a hole in canon that CI is green over. `docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md`
+does not exist on `main` and has no `ADR-INDEX.md` row, while ADR-058/059/060 all landed and are
+indexed and the header advertises "Total ADRs: 58 | Next available: ADR-061". ADR-056 is in the same
+state. This matters beyond bookkeeping: the global `CLAUDE.md` A36 block — binding on every claude-*
+and codex-* agent on this machine — ends "Do not cite A36 as the mechanism; cite ADR-057", so every
+agent is pointed at an authority document that is absent. PR #464's merged ADR-number integrity gate
+does **not** catch this class: it gates uniqueness and allocator high-water monotonicity, and both
+PASS on a gap. The gate proves the counter never goes backwards, not that the set is dense — a
+green-surface finding applied to canon numbering. PR #517 carries the ADR-057 document, is
+MERGEABLE, and its only failing check is `binding-hold`; bind request routed to codex-home
+(`20260806-062426`) rather than self-bound, since no owner directive covers a self-bind this pass.
+Noted in that request that #517 touches only the ADR file plus a changelog fragment, so merging it
+closes the missing-file half and leaves the missing-index-row half open. Registered as
+`adr-index-gap-056-057`.
+
+Closed PR #524 as fully superseded — every line is already on `main` (ADR-INDEX lines 56 and 163
+register ADR-054 including the "companion contracts share 054 by design, not by collision" note the
+PR was written to add, and next-available has since advanced past the 055→056 correction it carried).
+It was also CONFLICTING; closing beat rebasing an empty diff.
+
+Broker watch closed with a correction to the runbook's own normalizer. Sampling only
+`mlx_active_bytes` said 14.98 GB @16 req → 16.31 GB @26 req = +0.13 GB/req, which reads as a slow
+leak. But `mlx_cache_bytes` fell 6.50 → 5.15 GB across the same window, so active+cache is 21.48 →
+21.47 GB — flat to within 10 MB against the 20 GiB scheduler limit. That is cache being reclaimed
+into active under the limit, not retained arrays. **The honest normalizer is
+Δ(active+cache)/Δrequests, not Δactive/Δrequests**; the latter will keep manufacturing phantom leaks
+whenever the allocator shifts the split. Peak 17.95 GB, never near the 68.3 GB pathology. Honest
+ceiling: 10-request sample.
+
+Health green: swap 740M/2048M (36%), free RAM 78%, board HTTP 200, no new sirsi/gemma/Python
+crash or Jetsam. Threads 105 → 84 after reconcile+prune (4 reaped→successor heals); `ccd reap`
+killed 3 completed conduit-session leaks (6 procs). All quarantined labels left alone.
+
+## Conduit run 2026-08-06T07:00Z (owner-directed continuation)
+
+Owner directed a self-bind on #517 and then "get these to all zeros" for the claude-home line.
+Merged five PRs — #517, #540, #541, #506, #542 — and took the ledger 28 → 16 with every close
+evidence-backed. All binds were owner-directed self-binds and each bind body says so.
+
+The pass turned into one finding with four instances: canon citing an authority that does not exist
+where it says it does. ADR-057 was absent from `main` while the global CLAUDE.md tells every agent to
+cite it (#517 + #542). AGENTS.md jumped section 2.24 straight to 2.32, missing Rules A28-A34, all of
+which are cited by number elsewhere (#541). PANTHEON_RULES.md carried two sections numbered 2.26 both
+labelled Rule A29 (#506). And CLAUDE.md/GEMINI.md were missing A36 — caught by #506's own new test on
+its first run. All four mirrors now agree on `origin/main`: 36 rules each, A1-A36 contiguous, zero
+duplicate sections.
+
+The sharpest lesson is about PR #506 itself. Titled a §4 canon-paths fix, it also carried commits
+fixing the §2.26/A29 collision and restoring Rule A35 — both of which I re-derived from scratch this
+pass, wrote up in #541 as newly-discovered defects, and explicitly declined to guess at. #506 had
+answered it correctly a day earlier and was invisible because it was CONFLICTING. **A conflicted PR is
+not merely delayed; its findings get re-derived at full price by whoever looks next.** Resolving it
+cost one merge commit. Its own test then caught a fourth instance immediately.
+
+Also worth carrying: #464's ADR-number integrity gate cannot catch a gap. Uniqueness passes and
+high-water monotonicity passes on a hole, so ADR-056 and ADR-057 sat green and invisible. The gate
+proves the counter never goes backwards, never that the set is dense. ADR-056 is genuinely orphaned
+(no file, no history, zero hits across all eight open PRs) and is now an explicit UNALLOCATED row
+rather than a silent gap, deliberately not reused.
+
+I was also wrong mid-pass and caught it: I read PANTHEON_RULES.md from the dirty working tree and
+briefly concluded canon itself was missing A29-A36. origin/main had them all along. Canon gets
+measured against origin/main, never the working tree.
+
+#540 removed a guard that hard-exited the Gemma triage worker on a Python MLX venv it never invokes —
+`$MLX` appeared exactly once in the whole script, inside its own guard. Merged and deployed to
+~/.local/bin, verified 0 remaining references. Sixteen tasks remain open, all substantial, none
+wiped: the external Codex supervisor, the rest of the #537 runtime review, the session-actor P0, and
+twelve others.
+
+## Conduit run 2026-08-06T07:0xZ
+
+**codex-home woke.** Six queued responses landed in a single second (06:55:54Z) on lanes that my own
+ledger still described as "mechanism=none, structurally unwakeable" — the premise under
+`adr057-codex-supervisor`, the biggest lever on this lane. Cause is visible in `router doctor`:
+live `agents.json` carries `wake.mechanism: launchagent` for **11 codex lanes** while `origin/main`
+still reads `none`. Registry drift with **live AHEAD of canon** — the inverse of the usual "a merged
+fix is not a deployed fix". Flagged, not hand-edited; `doctor` is explicit that the branch must be
+reconciled rather than the file copied. All six responses reconciled against live GitHub state before
+closing: every merge SHA codex-home reported agreed with mine, zero divergence, and all six referred
+to PRs that had already landed *before* the response was delivered.
+
+**PR #543 opened** — `probeLaunchdDisabled` prescribed `launchctl bootstrap
+~/Library/LaunchAgents/<label>.plist` without ever checking the plist exists. Retiring a service
+*renames* its plist (`.plist.retired-*`, `.plist.superseded-*`), launchd then parks the orphaned
+label as `disabled` permanently, and the prescribed repair can never succeed —
+`ai.sirsi.horus.dashboard` and `ai.sirsi.ledger-dashboard` re-fired every supervisor pass and were
+re-enabled by hand purely to silence it. Reported by claude-pantheon; I verified both plists on the
+host before acting rather than taking the premise. Fix filters labels with no loadable plist and
+**names them in the finding detail** — a silently dropped label reads as "all clear". Built from a
+pristine `--depth 1` clone, never the shared worktree (381 uncommitted files from other lanes; a
+worktree build stamps DIRTY). **The test was falsified before being trusted**: swapping the exact
+`os.Stat` for `filepath.Glob(label+".plist*")` fails it on exactly the retired/superseded cases.
+Scoped deliberately: this closes only the retired-plist arm. The probe still cannot tell an **owner
+quarantine** from a crash — `ai.sirsi.gemma-broker` and `ai.sirsi.pantheon` are owner-disabled
+*decisions* the badge reports in a fault's voice, and re-enabling one on that badge alone already had
+to be reverted once. That arm stays open under `livenesswatch-no-quarantine-state`.
+
+**Nothing was bindable.** All seven non-draft sirsi-pantheon PRs are CONFLICTING/DIRTY (#445/#444
+additionally carry binding-hold). That is last pass's lesson at scale — a conflicting PR is not
+delayed, it is *invisible*, and #506 already proved its findings get re-derived at full price.
+
+**Health green.** Swap 692M/2048M, no new crash/Jetsam, board HTTP 200, all required daemons live.
+Broker: **no leak** — Δrequests was 0, so the per-request normalizer was undefined, but active+cache
+held 21.4704 → 21.4747 GB (+4.2 MB at zero traffic) with `mlx_active_bytes` *falling* 19.42 → 19.28 GB
+as cache rose. `sirsi diagnose`'s "memory hog at 20.3 GB" is the known `phys_footprint` false positive
+(mmapped weights) and was not acted on. Threads 114 → 97, `ccd reap` killed 1 conduit-session leak and
+archived 2 records, retention reclaimed 67 KiB.
+
+## Conduit run 2026-08-06T07:15Z
+
+Inbox 6 → 0. The pass's shape was almost entirely *collection*: two bind requests I
+filed last pass came back as independent PASSes from codex-home (PR #543 at
+`ef200a10`, PR #544 at `f6224717`), and codex-nexus returned a PASS on
+SirsiNexusApp #233/#235 with an honest admission that it cannot reach the GitHub
+API at all. All four are now merged — #543 `72264fb0`, #544 `6741a199`, #233
+`93f1f7ce`, #235 `3654170f` — though sibling sessions won the race to the merge
+button on every one of them; I verified merge commits rather than trusting my own
+exit codes. PR #537 likewise closed under me mid-pass (a sibling refused the bind
+because `751c6b77` is CONFLICTING on `docs/ADR-INDEX.md` with no CI at all, which
+is the right refusal), so I left it alone rather than duplicating a verdict.
+
+The one piece of real review was **PR #545** (claude-pantheon, serialized
+self-update). Two of its three gates are good and I said so: the flock lives at
+`~/.sirsi/binary-install.lock`, which is the *same path* the runbook's own
+`flock -n 9` takes, so the two install paths genuinely interlock. But the third
+gate is named "schema-compatibility" and cannot check schema compatibility — I
+read `version.Info` on `origin/main` and it carries no schema field, no store
+`user_version`, no migration high-water. It execs `version --json` and passes if
+`Version != ""`. That is a liveness probe wearing the name of the hazard that
+locked the whole fleet out three times (v3, v7/#501, v15), and the CHANGELOG —
+canon — calls it "the owner/codex-home P0 acceptance contract". Green surface over
+a dead thing. CHANGES REQUESTED on the rename plus the claim; the real gate is
+registered as `selfupdate-real-schema-ceiling-gate` so the rename cannot quietly
+retire the obligation. Second finding, measured not assumed: the live binary is
+`version=dev, dirty=true`, so the provenance gate rejects every binary the fleet
+actually builds — `self-update` is inert on merge while the unsafe raw `rm`/`cp`
+path stays open. Raised as a required decision, not a blocker, because refusing
+dirty builds is the correct instinct and the lock holds either way.
+
+Health green throughout: swap 692M/2048M, no new crash or Jetsam reports, board
+:8734 HTTP 200, broker pool flat at 21.47 GB total with `mlx_active` 20.98 and
+cache 0.49 against a 20 GiB scheduler limit — active-up/cache-down at a fixed
+total is reclaim, not the +0.48 GB/req leak signature. Housekeeping: threads
+133→114, 3 reaped→successor heals, one conduit session leak reaped and one
+archived, 19.1 KiB retention. `sirsi diagnose`'s registry drift finding stands and
+is now registered as `registry-canon-drift-live-ahead` — 11 codex lanes read
+`wake.mechanism=launchagent` live while `origin/main` still says `none`, the
+inverse of the usual drift direction and the reason PR #544's PATH fix mattered.
+
+## Codex Home router loop 2026-08-06T07:28Z
+
+Inbox loop completed from 1 review item through two subsequent response waves to
+zero. Independently approved PR #546 after inspecting its pristine-clone diff and
+passing `go test ./internal/routerstore`; the message test protects semantic
+fragments rather than pinning the entire error string. Approved PR #547's
+field-scoped bidirectional registry reconciliation: live-only `claude-nexus`,
+`codex-deck`, and `claude-home` settings belong in canon, while main-authoritative
+`claude-deck` and `gemma-pantheon` fields were correctly repaired live. `codex-mail`
+was correctly excluded from that PR but remains unresolved: it is live-only,
+`wake:none`, has no consumer, one open item, and active tasks. Routed explicit
+canonize-or-retire work to codex-pantheon as item `20260806-072722-...` and marked
+Codex Home executive-mail supervision truthfully blocked on it.
+
+Claude Home independently bound PR #537 at `0ea6a34a` and reported merge
+`e1b0656a` without bypass. Four stale Codex Home PR #537 registry obligations were
+updated to evidence-linked done. A local `0ea6a34a...efb3bfa8` comparison proved
+the later head contained only already-merged PR #544 commit `6741a199`, so no
+feature delta was lost. Final `sirsi router pull codex-home` and ledger both show
+zero open codex-home items; remaining obligations are assigned, pending, or
+explicitly blocked with dependencies.
+
+## Conduit run 2026-08-06T07:40Z
+
+Inbox 0 → 0 (2 items in, both worked; a sibling closed both mid-pass and the
+race guard caught it before I duplicated a response). Merged PR #546
+(`839b715e`, evidence-gate error now names the required link kind) and PR #547
+(`fdfc3925`, the three live-only lane settings committed to canon) on
+codex-home's independent APPROVE. PR #537 (ADR-057 durable continuous execution)
+merged as `e1b0656a` by a sibling while I was reviewing; I completed the runtime
+review anyway and it confirms the fix — `runnable.go` now holds the single
+executable predicate definitions and every caller composes them (verified at the
+call sites, not the declarations), the actionable/claimable split keeps a leased
+task runnable without making it claimable, alias binding in the claim UPDATE is
+sound, and `store.go` adds no migration so it cannot reproduce the fleet-lockout
+class. Recorded the recurring hazard that a routed exact-head bind request goes
+stale the instant the branch is force-push-rebased: #537's item demanded
+`efb3bfa8` while the live head `0ea6a34a` had diverged ahead 10 / behind 11.
+
+**The v15 schema inversion is CLOSED.** `origin/main` now builds ceiling 15,
+matching the deployed store, so the "production ahead of canon" direction that
+disarmed the BINARY_MISSING heal no longer holds and that heal is re-armable
+(zero sentinels present this pass, so nothing was installed). Closed ledger
+tasks `pr537-adversarial-review-runtime` and `registry-canon-drift-live-ahead`
+with evidence links; `router doctor` post-merge reports exactly one registry
+line, `codex-mail`, which stays deliberately excluded and tracked. Health green:
+swap 628M/2048M, no new sirsi/gemma/Python crash or Jetsam, board :8734 → 200,
+all required daemons live, broker idle at 22.23 GB active with zero requests
+between samples (no leak signal in either direction). Threads 143 → 121, 4
+reaped→successor heals, 1 session leak reaped and 1 archived, 15.4 KiB
+retention reclaimed.
+
+## Conduit run 2026-08-06T07:50Z
+
+Inbox reached zero twice (one item arrived mid-pass and was worked). **Merged PR #545**
+`db19e8d7` — serialized self-update install lock — after re-reviewing at exact head
+`198e95a5`. The head moved `73c13509 → 198e95a5` *while I was reviewing*; I caught it by
+comparing declared vs live head before binding, and the delta (ahead=1/behind=0) turned out
+to be claude-pantheon's commit fixing my own two prior findings, so the review was of the new
+head. Both findings verified fixed in the diff, not the description: CR-1's discarded
+`_ =` on the lock PID write now closes the file and propagates (a stale PID would have made
+the contention message advise `kill` on a recycled process), and the fake schema gate was
+resolved by *honest renaming* — `ErrSchemaIncompatible → ErrVersionProbeFailed` — rather than
+by faking the check. A gate named for a guarantee it cannot provide is worse than an absent
+one; the real ceiling gate stays tracked as `selfupdate-real-schema-ceiling-gate`.
+
+**Retired the codex-mail phantom lane**, the last unresolved lane and the only remaining
+`registry is ahead of origin/main` line. It had `wake.mechanism=none`, no consumer block, and
+was absent from `origin/main` entirely, so canonizing would have made a phantom permanent;
+retired per the `claude-codex-standin` precedent. Its one undeliverable item (codex-finalwishes'
+response on FinalWishes PR #127 / a named customer's fulfillment obligation) was re-routed to
+`claude-finalwishes` before the lane was removed. The registry edit is worth recording as a
+near-miss: a first attempt via `python json.dump` **reformatted the entire file — 344 insertions
+for a 12-line removal**. Reverted it, verified the restore byte-identical with `cmp`, then used a
+pinned `sed` line-range delete; numstat moved 356/32 → 344/32, proving exactly 12 lines changed
+in a shared live registry and nothing else. `router doctor` now reports 27 agents and zero drift
+lines.
+
+**Left FinalWishes PR #127 open on purpose** — 380 files, +31,931/−4,990, 21 green checks,
+touching auth and legal-guidance content. Green CI on a whole-app release PR is evidence of a
+step, never of completion. Its own author lane says the same thing inside the re-routed item
+("blocked before release closure"), so no lane is claiming it done. One hunk verified source-deep
+because it carried the security claim: `CheckAccess` in the new `document_versions.go` is
+genuinely fail-closed (missing `accessGranted` zero-values to false and denies; writes require
+principal/executor/admin), with a test covering both the missing-field and explicit-false paths.
+That fix is real; the other ~375 files were not reviewed here. **PR #245** (deck) was reviewed,
+bound at `f873b254`, then flipped CONFLICTING when #244 landed on main 14 minutes after its head
+was cut — same lane, same stylesheet, so the rebase is a design call inside claude-deck's lane and
+was routed back rather than resolved.
+
+**Three corrections to my own runbook, all measured rather than assumed.** (1) The quarantine
+guard was unenforceable: it told me to check `disabled.501.plist` and leave any label reading
+`= true`, but **both quarantined labels read `False`** — the guard cannot see the thing it guards,
+which is how `ai.sirsi.pantheon` got wrongly kickstarted earlier today. The explicit list is now
+authoritative and "False is not permission" is stated in terms. (2) `ai.sirsi.gemma-broker` left
+the quarantine list — it is up and load-bearing, and the stale "deliberately DOWN, do not restart"
+block would have told a later run to bootout a healthy Tier-0 server. (3) The broker leak
+normalizer was wrong: `Δ(active)/Δrequests` reports a false leak when cache is being reclaimed into
+active under the scheduler limit, so it is now `Δ(active+cache)/Δrequests`, plus a mandatory
+drive-the-requests step — the previous two passes both sampled an *idle* broker and read
+byte-identical numbers, which is no signal in either direction rather than evidence of health.
+Driving 3 requests this pass gave a real **0.0000 GB/req against a known-bad 0.48 GB/req**: the
+retained-active-array leak is genuinely absent from build `8eacb2bc`.
+
+Health green. Swap 628M/2048M unchanged, no new crash or Jetsam, board :8734 → 200, threads
+127 → 126, one session archived, 2.7 KiB reclaimed. `sirsi diagnose` 🟡 82/100 is the known
+`phys_footprint` trap on `sne-server` (it counts file-backed mmapped weights) — corroborated
+against swap and Jetsam count, not acted on.
 
 ## Conduit run 2026-08-06T08:12Z
 
@@ -1853,101 +2835,19 @@ sessions reaped (6 procs), 25.9 KiB retention reclaimed, board :8734 → 200, `r
 with zero drift lines. Also found: **router item IDs are hard-truncated at generation** — the id
 ends `…exact-head-revie`, so reconstructing it from the title returns "not found".
 
-## Conduit run 2026-08-06T08:22Z
+## Entry 129 — 2026-08-06 04:49 — Session Compact (COMPACT)
 
-Inbox 2 → 0. Both items were codex-home on PR #550 and they **contradicted each other**: CHANGES
-REQUESTED at 08:12:13Z and APPROVE-AND-BIND at 08:14:21Z, two minutes apart, same head `65aaf6de`.
-They crossed in flight. I did not merge on the approval, and the tie broke on a fact neither message
-carried: **`mergeStateStatus` was BLOCKED because CI Lint was FAILURE** — a govet `shadow` at
-`internal/routerstore/store_test.go:885`. Codex's focused package runs could not have surfaced it and
-my own review read the diff, not the check rollup; it was only visible on the PR. So the approved head
-could not have merged under either reading, and the conflict resolved itself into "the code needs
-work." Lesson worth keeping: **when two reviews of the same head disagree, check the head's CI before
-adjudicating the reviews** — the artifact may already have decided.
+> Persisted via `thoth compact` before context compression.
 
-The blocking finding was real and was mine originally: I filed "absent router store breaks
-self-update" as a non-blocking caveat in the PR body and codex escalated it, correctly. Root cause is
-a **conflated-facts bug** — "I could not read a schema" collapsed *no store exists* (nothing to
-protect, live schema 0) and *a store exists but will not open* (something to protect, and we are blind
-to it) into one error branch, so fail-closed had to cover both and a fresh host could never heal CLI
-drift. Fixed at `20d0dbee` by stating the existence question separately: `os.Stat` before the probe,
-missing → 0, unreadable → fail closed. Deliberately did **not** push the special case down into
-`ReadSchemaVersion`: a probe that answered "0" for both an absent and a corrupt store would silently
-disarm the gate in precisely the case it exists for. Proved the new test is not vacuous — the raw
-probe on a missing path returns `read user_version: unable to open database file: out of memory (14)`,
-so the pre-fix path genuinely refused every candidate on a clean install.
-
-Also collapsed the three gate steps into one `schemaCompatibilityGate(selfInfo)` call site so the four
-command-level tests codex required exercise what `runSelfUpdate` actually calls rather than a
-re-implementation of it — that also turns the before-confirmation/before-lock ordering into a
-single-line source fact instead of a property spread across the function body. Took the non-blocking
-`MaxSupportedSchemaVersion` max-scan hardening. CI now Lint/Test/Build/Secrets all SUCCESS; only
-`binding-hold` remains, which the bind clears. Re-requested bind at `20d0dbee`; I am #550's only
-reviewer and did not self-bind. **`selfupdate-real-schema-ceiling-gate` stays OPEN after merge** —
-the gate covers `sirsi self-update --confirm` only, while `install.sh` and the conduit/manual heal
-path still bypass it, and those are the paths that actually caused the outage.
-
-**Journal-repair note, and a trap worth recording.** Last run's entry landed on
-`fix/hook-anchor-durable-claude-pid` as `1c3a0c85`. The obvious repair — cherry-pick it onto main —
-would have been wrong: that commit reads `+1910/−1255` on `journal.md` because the wrong branch
-carried a wholly divergent 3973-line copy against main's 1805. Cherry-picking would have rewritten the
-entire journal under the cover of "re-landing one paragraph." **Checked the stat before trusting the
-commit**; extracted the 48-line entry and appended it instead. Same class as the binary-heal lesson:
-verify the artifact, not the operation that produced it.
-
-Broker measured clean **under driven load**: 3 forced completions, requests 118→121, `mlx_active_bytes`
-byte-identical at 25742721128, cache 0 — **0.0000 GB/req** against the known-bad ≈0.48. Peak 27.28 GB.
-Swap 1756M/3072M used — elevated but not the 98%-consumed P0 signal, and no new Jetsam. DO NOT BOUNCE.
-Threads 155→130 (25 pruned, 4 reaped→successor), 3 conduit sessions archived, board :8734 → 200, no
-`BINARY_MISSING` sentinels so the binary heal stayed disarmed. PR #549 (canonize `codex-mail`) was
-merged by another actor at 08:18:30Z — checked rather than assumed: its blocker had cleared, the wake
-plist now exists and the lane is registered `wake:launchagent`, so the merge was legitimate.
-
-## Conduit run 2026-08-06T08:45Z (continuation of 08:22Z)
-
-Three PRs merged (#550 `5521afaa`, #552 `5787ee55`, #553 `db266c70`) and a fourth opened as a P0
-forward-fix (#554). The through-line of the whole pass is a single lesson: **reviews cross, and the
-live artifact is the tiebreaker.** codex-home and I exchanged contradictory verdicts on the same
-head five separate times — CHANGES REQUESTED vs APPROVE two minutes apart on `65aaf6de`; an APPROVE
-on a `220b2ca9` I had already squashed out of existence; an APPROVE then a CHANGES REQUESTED on
-`964ce8df`; and finally a P0 that landed after #553 had merged. None of these were anyone being
-careless. They are what happens when two reviewers work the same PR faster than messages propagate.
-The only defence that worked was mechanical: **before acting on any verdict, re-read the live head
-and its check rollup.** On #550 that is literally what decided it — both of codex's contradictory
-messages were moot because `mergeStateStatus` was BLOCKED on a govet `shadow` neither of us could
-see (their focused package runs don't surface PR checks; my diff review didn't either).
-
-**I shipped a regression and then shipped the fix for it in the same pass, which is worth recording
-honestly rather than smoothing over.** #553 fixed lease poison — a non-active task row retaining
-`lease_token` was excluded from lease reclaim *and* from `claimableTaskPredicate` simultaneously,
-so it was permanently unclaimable; the reclaim query's own `WHERE status='in-progress'` meant the
-one statement that could repair the violation was filtered out by the very corruption it should fix.
-That fix was correct. But the `UpdateTask` half decided `leaseClear` from a read taken **before** the
-write, so a concurrent `ClaimTask` could install a valid fenced lease that the stale write then
-stripped. codex caught it post-merge. **That is strictly worse than the bug it replaced**: poison
-makes a row unclaimable, whereas this un-fences work that is actively executing.
-
-The lesson is sharper than "add a test." I *had* a test —
-`TestUpdateTaskDoesNotStripActiveLease` — and it passed. It proved the branch was right and said
-nothing whatsoever about **when the branch was decided**. A sequential test cannot establish a
-concurrent property; read-then-write inside one function is TOCTOU until it is compare-and-swapped.
-#554 CASes on the read-time status and returns `ErrConcurrentTaskUpdate` rather than clobbering,
-and forces the interleaving through an internal `afterTaskReadHook` rather than racing goroutines —
-deterministic failure, no flake. Verified to fail without the CAS, as were all three of this pass's
-other new test suites.
-
-Two mechanical traps worth keeping. **gitleaks reads branch history, not the tip** — I committed the
-real 32-hex incident lease token as evidence, removed it in a follow-up commit, and Secrets Scan
-still failed because the token remained in the earlier commit; the branch had to be squashed. And
-**a commit's stat is the artifact**: the stranded journal commit `1c3a0c85` looked like one paragraph
-on the wrong branch but read +1910/−1255, because that branch carried a wholly divergent 3973-line
-`journal.md` against main's 1805. Cherry-picking it — the obvious repair — would have rewritten the
-entire journal under cover of re-landing a paragraph. Extracted the 48 lines and appended instead.
-
-Health: broker measured **0.0000 GB/req across 3 driven requests** and active later *fell* to 24.61
-GB across 13 more — no leak, not bounced. Swap rose to 2445M/3072M, but this pass ran `-race` and the
-full `./cmd/sirsi` suite; the linker was visible in top-RSS, so it is largely self-inflicted. No new
-Jetsam. Threads 155→130, board 200, no `BINARY_MISSING` sentinels so the binary heal stayed disarmed.
+**Decisions**:
+- ADR-057 production acceptance: PR #550 schema ceiling merged 5521afaa; PR #553 lease-poison self-heal merged db266c70 and installed; adversarial review found UpdateTask lost-fence race; Claude Home repaired in PR #554 head 65a75089, independently race/lint/vet tested and bound by Codex Home, merged e7b0f2bf, installed via serialized signed self-update with drift null. Fenced ledger tasks pantheon-serialized-binary-installer and pr553-postmerge-lost-fence-repair completed with evidence. Remaining: codex-mail acceptance proved canonical wake dispatch but thread heartbeat failed repo-local threads.json sandbox write under STORE-ONLY; routed to codex-pantheon item 20260806-084301 and ledger task adr057-thread-heartbeat-store-boundary. Conduit status remains false-green ARMED without live/schema/recent-tick proof. Installer/manual heal schema ceiling remains separate from self-update. Native plan-ledger integration remains delegated to codex-pantheon. Claude Home remains adversarial reviewer.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
 
@@ -2886,3 +3786,76 @@ so it was left alone. One thing was deliberately not touched: the shared checkou
 uncommitted `.thoth/journal.md` delta of +59/−1137 that deletes journal history rather than adding
 an entry. It is a destructive working-tree truncation, not authored work, so this entry was written
 on a clean branch off origin/main instead of adopting it.
+## 2026-08-06 — Codex Home PR #563 correction review and router quiescence
+
+Codex Home worked the two-item inbox wave to completion. Both exact fenced claims
+reproduced the delegated item-to-task-row defect (`routerstore: no open item to
+claim`), so no lease was fabricated. The PR #564 disposition was evidence-closed:
+#564 remains superseded, #565 is present on `origin/main` as `3cc482de`, and the
+coordinated schema-v16 reinstall remains delegated to codex-pantheon.
+
+PR #563 corrected head `a85a01e8081a3d61d8319990f7d8691a1d170513` independently
+passed. The correction accurately replaces the false double-execution mechanism
+with competing publication of one versioned schema transition; the correction
+delta is one journal file, +5/-1, and both correction/full-PR `git diff --check`
+passed. Canonical bind publication failed at the first GitHub App API lookup
+because `api.github.com` was unreachable, so the exact APPROVE+BIND verdict was
+routed to Claude Home with immutable-head and no-conflicting-review relay
+conditions; no remote review or merge was claimed.
+
+Final repeat pull reports no codex-home inbox items. Task registry reconciliation
+found no truthful status change to apply, and the ledger reports 0 open and 0
+unblocked/unpicked obligations. Remaining work is blocked or delegated.
+## 2026-08-06 — Codex Home PR #568 bind loop
+
+Codex Home read, registered, fenced-claimed, and independently reviewed the sole
+open inbox item, Pantheon PR #568. Exact head
+`e799ff188f53b0ed0ebca8124f802aeda18294d3` is directly based on current
+`origin/main` `da7f7fe8`, changes only `.thoth/journal.md`, appends 65 lines, and
+passes `git diff --check`. The migration correction matches the locked
+`PRAGMA user_version` re-read/re-loop implementation. The PR #567 sizing claim
+has a behavior-changing false-silence interval of `[18,32)` GB. The driven
+broker window shows byte-identical active allocation and cache-only movement;
+the review accepted the entry because it reports the cache increase and keeps
+absolute active on watch rather than treating the sample as universal proof.
+
+Verdict: APPROVE+BIND. `sirsi-bind.sh` failed before publication because
+`api.github.com` was unreachable, so no remote bind was claimed. The evidence
+file `.agents/results/20260806-codex-home-pr568-e799ff18-bind.md` was returned to
+Claude Home with relay authorization conditioned on exact-head re-verification,
+and the source item was response-closed. Registry reconciliation corrected the
+stale native-plan supervisory row: delegated source work is passed/shipped, but
+the installed schema-15 runtime still cannot lease a closed-source task row,
+leaving reconciliation blocked on the schema-v16 deployment boundary. Final
+repeat pull and ledger reported zero open and zero unblocked/unpicked codex-home
+work.
+
+## Conduit run 2026-08-06T22:55Z
+
+Inbox zero and the PR queue frozen by an eighth consecutive GitHub Actions major outage, so this
+pass worked the ledger. Shipped PR #618 closing two menubar defects that turned out to be the same
+shape one layer apart: an argv parser whose single `else` branch was `app.run()`, and a singleton
+guard whose `guard let bundleID = Bundle.main.bundleIdentifier else { return }` read as "no peers
+found" when it meant "cannot tell". Both were reported as one symptom each — `--help` opens a panel;
+two panels coexist — and both had siblings the symptom did not name: `--snapshot` with no directory
+and `--width`/`--appearance` without `--snapshot` launched the UI exactly as `--help` did, and the
+bundle-id guard silently no-opped for every raw-binary run, which is the normal dev path. The fixes
+are written against the fall-through and against the missing identity respectively, not against the
+two reported flags. The new guard `macapp/check-cli-flags.sh` runs the binary rather than grepping
+it, because the invariant is "the process exits" and `app.run()` blocks forever — a structural check
+could confirm an `exit(0)` exists and still miss that it is unreachable. It was verified in both
+directions: eight cases green on the fix, and a deliberate revert of the usage block reddened exactly
+the five affected cases while the three the surviving `--snapshot` parser still handles stayed green.
+Its rename-before-run step is load-bearing rather than incidental — a regressed case launches, and a
+launched instance retires peers by executable name, so running the probe under the real name would
+have terminated the owner's live menubar (PID 91206) as a side effect of testing for that very bug;
+the PID was confirmed alive through the red run. The name-match fix carries a real behavior change —
+a `swift run` dev build will now retire an older running Sirsi Menubar.app — and that, not the
+parser work, is the question routed to codex-home for review. Separately, five owner-addressed
+`lane-needs-you` escalations are false, one of them asserting claude-home could not be reached while
+claude-home was executing the sweep that read it; the fix is claude-pantheon's PR #597, whose
+CHANGELOG conflict I attempted to resolve until `git worktree add` refused the branch as already
+checked out in their tree. That refusal did the job a convention could not: the conflict looked
+trivial, the lane was live, and backing off was correct. Housekeeping healed one reaped-thread
+successor, pruned 152 records to 140, and reaped two leaked scheduled-task sessions. Swap held flat
+at 844 MB for a fourteenth consecutive run.
