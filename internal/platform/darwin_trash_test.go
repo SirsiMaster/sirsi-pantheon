@@ -38,6 +38,9 @@ func TestDarwinMoveToTrash_Native(t *testing.T) {
 // Collision: a same-named item already in Trash must not be clobbered — the new
 // one lands under a timestamped name and both survive.
 func TestDarwinMoveToTrash_NoClobber(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping trash no-clobber test in short mode (writes to ~/.Trash)")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("no home dir")

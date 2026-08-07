@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,6 +13,67 @@ import (
 )
 
 var routerDoctorFix bool
+
+// partitionWakeDrift classifies wake.mechanism ChangedFields by statting the
+// LaunchAgent plist on disk. Three outcomes:
+//
+//   - real:        plist present OR not a simple upstream=launchagent/live=none pair — reconcile.
+//   - aspirational: upstream="launchagent", live="none", plist absent — live is honest; main is stale.
+//   - broken:      live="launchagent", plist absent — the registry claims a wake that cannot work.
+//   - other:       any ChangedField whose path is not wake.mechanism — passed through unmodified.
+func partitionWakeDrift(fields []router.ChangedField) (real, aspirational, broken, other []router.ChangedField) {
+	for _, c := range fields {
+		if c.Path != "wake.mechanism" {
+			other = append(other, c)
+			continue
+		}
+		exists := wakeAgentPlistExists("ai.sirsi.router.wake." + c.AgentID)
+		switch {
+		case c.Upstream == "launchagent" && c.Live == "none" && !exists:
+			aspirational = append(aspirational, c)
+		case c.Live == "launchagent" && !exists:
+			broken = append(broken, c)
+		default:
+			real = append(real, c)
+		}
+	}
+	return
+}
+
+// partitionLostWake classifies wake.launch_agent_label LostFields: when the
+// upstream label names a plist that is absent on disk, the live registry
+// accurately has no label and the loss is not actionable (aspirational). All
+// other LostFields (including ones with other paths) are real.
+func partitionLostWake(fields []router.LostField) (real, aspirational []router.LostField) {
+	for _, f := range fields {
+		if f.Path == "wake.launch_agent_label" && f.Upstream != "" && !wakeAgentPlistExists(f.Upstream) {
+			aspirational = append(aspirational, f)
+		} else {
+			real = append(real, f)
+		}
+	}
+	return
+}
+
+// launchAgentsDir is the directory scanned for wake LaunchAgent plists.
+// Empty string means use ~/Library/LaunchAgents. Overridable in tests (A16).
+var launchAgentsDir = ""
+
+// wakeAgentPlistExists reports whether the LaunchAgent plist for the given
+// full label (e.g. "ai.sirsi.router.wake.claude-home") exists on disk.
+// Returns false on any stat error — absent = honest "none".
+func wakeAgentPlistExists(label string) bool {
+	dir := launchAgentsDir
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		dir = filepath.Join(home, "Library", "LaunchAgents")
+	}
+	_, err := os.Stat(filepath.Join(dir, label+".plist"))
+	return err == nil
+}
 
 // `sirsi router doctor` — the router's self-check (router hardening PR #3). It
 // aggregates the contract violations the honest-liveness work (#79/#80) and
@@ -133,31 +196,76 @@ var routerDoctorCmd = &cobra.Command{
 		// overwrite the working tree from origin, because the working tree is
 		// legitimately ahead sometimes and clobbering it would destroy
 		// unpushed registrations.
+		//
+		// Wake-mechanism drift is plist-gated (A35 scope-the-check):
+		//   upstream=launchagent, live=none, plist ABSENT → live is honest;
+		//     main is aspirational. NOT actionable drift.
+		//   upstream=launchagent, live=none, plist PRESENT → real drift; reconcile.
+		//   live=launchagent, plist ABSENT → broken claim; the wake attempt will fail.
 		if drift := router.CheckRegistryDrift(repoRoot); !drift.Checked {
 			// IO7a: unknown is NOT clean, and must not be rendered as clean.
 			issues++
 			fmt.Printf("⚠ registry drift UNKNOWN — could not compare the live registry against origin/main: %s\n", drift.Unknown)
 			fmt.Println("    → `git fetch origin main` and re-run; an unchecked registry is not a clean one.")
 			fmt.Println()
-		} else if drift.Drifted() {
-			issues++
-			fmt.Printf("⚠ registry DRIFT — %s is the live registry and it is missing what origin/main has:\n", router.RegistryPath)
-			for _, a := range drift.MissingAgents {
-				fmt.Printf("    agent %s: merged but ABSENT live — the router cannot address it\n", a)
+		} else {
+			wakeReal, wakeAspirational, wakeBroken, otherChanged := partitionWakeDrift(drift.ChangedFields)
+			lostReal, lostAspirational := partitionLostWake(drift.LostFields)
+
+			hasDrift := len(drift.MissingAgents) > 0 || len(lostReal) > 0 || len(wakeReal) > 0 || len(otherChanged) > 0
+			if hasDrift {
+				issues++
+				fmt.Printf("⚠ registry DRIFT — %s is the live registry and it is missing what origin/main has:\n", router.RegistryPath)
+				for _, a := range drift.MissingAgents {
+					fmt.Printf("    agent %s: merged but ABSENT live — the router cannot address it\n", a)
+				}
+				for _, f := range lostReal {
+					fmt.Printf("    %s: lost %s (origin/main has %q)\n", f.AgentID, f.Path, f.Upstream)
+				}
+				for _, c := range append(wakeReal, otherChanged...) {
+					fmt.Printf("    %s: %s differs — live %q, origin/main %q\n", c.AgentID, c.Path, c.Live, c.Upstream)
+				}
+				fmt.Println("    → a merged registry change is NOT a deployed one. Reconcile the branch; do not hand-copy the file.")
+				fmt.Println()
 			}
-			for _, f := range drift.LostFields {
-				fmt.Printf("    %s: lost %s (origin/main has %q)\n", f.AgentID, f.Path, f.Upstream)
+			if len(wakeBroken) > 0 {
+				issues++
+				fmt.Printf("⚠ %d agent(s) claim wake=launchagent but the plist is absent — this wake attempt will fail:\n", len(wakeBroken))
+				for _, c := range wakeBroken {
+					fmt.Printf("    %s: live %q — ~/Library/LaunchAgents/ai.sirsi.router.wake.%s.plist not found\n", c.AgentID, c.Live, c.AgentID)
+				}
+				fmt.Println("    → run `sirsi router wake-install <agent>` or set wake.mechanism to none.")
+				fmt.Println()
 			}
-			for _, c := range drift.ChangedFields {
-				fmt.Printf("    %s: %s differs — live %q, origin/main %q\n", c.AgentID, c.Path, c.Live, c.Upstream)
+			if len(wakeAspirational) > 0 || len(lostAspirational) > 0 {
+				// origin/main claims launchagent but the plist is not installed;
+				// the live registry accurately says none. Not actionable drift —
+				// main is aspirational. Informational only (not counted as an issue).
+				seen := map[string]bool{}
+				for _, c := range wakeAspirational {
+					seen[c.AgentID] = true
+				}
+				for _, f := range lostAspirational {
+					seen[f.AgentID] = true
+				}
+				ids := make([]string, 0, len(seen))
+				for id := range seen {
+					ids = append(ids, id)
+				}
+				sort.Strings(ids)
+				fmt.Printf("ℹ %d agent(s): origin/main claims launchagent wake but no plist is installed — live registry is accurate (main is aspirational):\n", len(ids))
+				for _, id := range ids {
+					fmt.Printf("    %s\n", id)
+				}
+				fmt.Println("    → install the plist (`sirsi router wake-install <agent>`) or update origin/main to reflect none.")
+				fmt.Println()
 			}
-			fmt.Println("    → a merged registry change is NOT a deployed one. Reconcile the branch; do not hand-copy the file.")
-			fmt.Println()
-		} else if len(drift.AheadAgents) > 0 {
-			// Not an issue: unpushed registrations are normal. Visible anyway,
-			// because "live-only" is exactly what someone needs to know when an
-			// agent works here and nowhere else.
-			fmt.Printf("ℹ registry is ahead of origin/main (not drift): %s\n\n", strings.Join(drift.AheadAgents, ", "))
+			if !hasDrift && len(wakeBroken) == 0 && len(drift.AheadAgents) > 0 {
+				// Not an issue: unpushed registrations are normal. Visible anyway,
+				// because "live-only" is exactly what someone needs to know when an
+				// agent works here and nowhere else.
+				fmt.Printf("ℹ registry is ahead of origin/main (not drift): %s\n\n", strings.Join(drift.AheadAgents, ", "))
+			}
 		}
 
 		if issues == 0 {

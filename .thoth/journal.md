@@ -4033,3 +4033,131 @@ sirsi/gemma crash or Jetsam. Threads 187→182, one reaped→successor heal, one
 session reaped, one record archived, 1.7 KiB retention. `thread reconcile` again named a new
 thread on a lost lifecycle fence — the filed `fence-retry-budget-underprovisioned` row, not a
 regression.
+
+## Conduit run 2026-08-07T03:46Z
+
+Inbox 3→0, all worked rather than triaged. codex-home returned both verdicts the prior run was
+waiting on. **PR #630 PASS → merged**: verdict transcribed verbatim and attributed onto the bind at
+`262e322e` (the same head reviewed, unchanged between review and bind), `binding-hold` re-read the
+bind and cleared, 5/5 required contexts SUCCESS, merged via `sirsi-queue-merge.sh`. **PR #631
+CHANGES REQUESTED → one finding adopted, one refuted.** codex-home reviewed without the patch (it
+said so explicitly) and inferred that the login-shell wrapper makes `dispatchConsumer` track the
+shell's pid instead of the consumer's. The exact diff refutes it: the script is `exec "$@"`, and
+`exec` replaces the shell's process image rather than forking, so the same pid becomes the consumer
+and the setsid detach plus the #628 output pipe both still hold. Sound inference about wrappers in
+general, wrong here because one keyword removes the layer — the cost of reviewing a design from its
+description. Its second finding was real and worse than cosmetic: the `SHELL` guard stat'd the path
+but never checked the executable bit, so a non-executable `SHELL` made `exec.Command` fail the
+dispatch outright — failing CLOSED, the precise opposite of the stance `loginShellArgv` documents.
+Fixed at `f5e7ffa0` with a fourth case in the existing fail-open table; negative control run:
+removing only `|| info.Mode()&0o111 == 0` reddens `.../not_executable` by name. Changelog claim
+corrected to match. #631 now 4/5 with `binding-hold` failing by design — I authored it, so it waits
+on codex-home's re-review, never a self-bind. Third item, claude-pantheon's 2400s build timeout,
+closed resolved-by-completion: its target PR #627 was already MERGED at `8ad927ee` with 5/5 pass and
+no partial worktree existed, so the worker was rebuilding landed work; flagged back that a worker
+not checking merge state before/while building is the reusable defect.
+
+**Root-caused a condition four prior runs recorded as an Actions outage.** #608 #604 #603 #595 have
+read `CLEAN` with literally zero check runs for 7+ hours. `ci.yml` triggers on
+`pull_request: branches: [main, develop]`, and that filter matches the BASE branch — all four are
+stacked onto other feature branches, so no workflow ever starts. `mergeStateStatus` reports CLEAN
+because CLEAN only means nothing failing and nothing pending: **absence of CI is indistinguishable
+from passing CI at that field**, which is exactly the vacuous-green class. It is deterministic, not
+an outage, and cannot clear on its own — the stack bottoms `#594` and `#596` are DIRTY, and a
+conflicted PR yields no checks either, so #594→#603→#608 and #596→#604 are frozen bottom-up. Routed
+the full mechanism to claude-pantheon (`20260807-034559`) with the cheap fix (resolve the two
+bottoms; GitHub auto-retargets children to main and CI fires on its own) and an explicit
+not-recommended on widening the branch filter, which would double load on the serialized
+self-hosted pool and still diff against the wrong base. Not touched here — conflicted PRs belong to
+their lane.
+
+Health 🟢 unchanged: `diagnose` 100/100, swap 740/2048 MB flat a **17th** consecutive run, free 83%,
+board :8734 → 200, zero `BINARY_MISSING`, no crash/Jetsam in 40 min. Threads 201→188 (13 terminal
+pruned), two reaped→successor heals (codex-finalwishes, codex-deck), 2 leaked sessions reaped / 4
+procs, 1.8 KiB retention. Broker still structurally absent (no plist) — correct, not a heal, so no
+leak measurement is possible. `ai.sirsi.pantheon` still live at PID 91206 where quarantine canon
+expects `-9`: left alone, healed neither way. The stranded uncommitted `.thoth/memory.yaml` in the
+shared checkout is claude-pantheon's and was again NOT adopted.
+
+## Conduit run 2026-08-07T21:14Z
+
+Inbox for claude-home was zero on arrival, and the bind bottleneck named by the prior run
+turned out to have a second, hidden layer. codex-home DID review #639/#649/#651 and approved
+them at their exact heads; its return said publication failed because `api.github.com` was
+unreachable and the Sirsi Bind App is not installed on the repo. I measured `api.github.com`
+→ 200 and confirmed all three heads byte-identical to the approved SHAs, so half that blocker
+has cleared — publication-retry routed to codex-home (`20260807-211226`), deliberately not
+re-reviewing and deliberately not running `sirsi-bind.sh` on #639/#649 myself, which
+claude-home authored. Found the reason the owner never acted on the earlier card: a bulk
+transfer at 20:34:56–20:34:58Z closed FIVE `to: owner` decision cards into codex-home's own
+inbox. A transfer is not an answer; that is an automated pass overruling an owner-scoped
+decision, same class as the re-parked lanes. Routed the defect to claude-pantheon with the
+fix at the store boundary (`20260807-211340`) and raised one consolidated owner card listing
+all five ids (`20260807-211339`), without unilaterally re-opening the four superseded ones.
+Merge gate refused all six candidate PRs correctly: #592/#600/#603/#604 CONFLICTING and
+owned by their lane agents, #602/#608 with zero required checks reporting at head — the
+vacuous-green case. System green: health 88/100, swap 1,594/3,072 MB (1,478 free), broker
+0.0000 GB/req over a driven 3-request window (6→9), board 200, 0 headless sessions.
+Left untouched: `ai.sirsi.horus.agent-router`, `ai.sirsi.triage` and
+`ai.sirsi.router.wake.claude-home` are renamed `.plist.OFF-owner-20260807` — an owner park,
+not a defect to heal.
+
+## Conduit run 2026-08-07T21:45Z (continued — owner: "codex is driven but that is never a gate")
+
+Stopped treating the binder as a gate and worked the ledger. Verified claude-pantheon's
+owner-close guard independently rather than on its word: read `Facade.CloseItem`, confirmed
+the guard sits ahead of the `close:any` branch and that `IsOwnerRecipient` covers the legacy
+`user` spelling the swept cards actually used, then ran the negative control — deleting the
+three guard lines fails `TestCloseItemRefusesOwnerRecipient`, restoring them passes. Bound it,
+and flagged the follow-up it exposes: owner aliases are deliberately absent from agents.json,
+so `ValidateAgent` rejects the owner as an actor and an owner-addressed item is now
+permanently uncloseable by anyone. Not a regression — the owner could not close their items
+before either — but "never closes" and "only the owner closes" are different designs, and
+canon assumes the second. Recommended an explicit `sirsi router dismiss` as the sole exemption.
+
+Two PRs from ledger rows. **#661**: the `ai.sirsi.gemma-broker` label starts `sne-server`, and
+`probeGemma`'s owner-facing finding never said so — that surface is what an agent read before
+downing the Tier-0 substrate believing it was Python. Did NOT do the prescribed rename; it
+needs a bootout/bootstrap of a live load-bearing server whose plist is not even on disk.
+Fixed the harm instead: the title carries the binary, the body denies the Python path, and a
+new test fails if the disclaimer is stripped. **#660**: `docs/REPRODUCTION.md` disclaims its
+`scripts/…` citations carefully and then cites four `docs/evidence/…` artifacts with no caveat
+— all four absent here, all four present in the private inference repo. Labeled them and
+recorded the gap that exposes: the sealed-binary route is unfalsifiable while
+`pinned-bin-sha.txt` (one SHA-256 line, no engine content) stays private. Did not copy anything
+across — that is an ADR-051 owner decision.
+
+Retracted rather than completed the row `pr465-steps-4-7-audit`: its premise ("7 scripts cited,
+all 7 absent") is false — there are 6, they are correctly disclaimed, and all 6 exist in the
+private repo. Acting on it would have "fixed" something already right. The real defect was one
+table down.
+
+## Conduit run 2026-08-07T22:20Z
+
+System vitals turned up the run's only real work, and it was not in a queue. Swap read **95%
+consumed** (21,394/22,528 MB) behind a reassuring 59% free RAM — the hollow-metric trap, exactly
+as canon warns. Three Jetsam events in 24h. Parsing `JetsamEvent-2026-08-07-180342.ips` named the
+driver: `sirsi-inference.test` at 3,137,200 rpages, which at 16 KB pages on Apple Silicon is
+**~50.1 GB on a 48 GB machine** — a Go test binary asking for more than the whole host, running on
+the same physical host as the live fleet via the self-hosted `sirsi-inference` runner. Second
+contributor: an **orphaned** `omlx-server` (PID 8998, PPID 1, no plist, no launchctl label) resident
+4.5h from venv `sne55-omlx-v054-stock032`, holding 13.35 GB of the *same* model the live broker
+already serves, with a 37 GB ceiling. Both are inference-lane owned; I reported and did not act —
+an orphan is not an authorization to reap. Routed as `20260807-221439` to claude-inference.
+The live broker was **ruled out by measurement, not assumption**: a driven window (3 real
+completions, requests 10→13) moved the pool 21,247,931,718 → 21,247,211,762 bytes, **−0.7 MB, i.e.
+≈0.0000 GB/req** against a known-bad rate of 0.48 GB/req. Its 🔴 Critical badge in `sirsi diagnose`
+is the documented `phys_footprint` artifact and was not treated as corroboration.
+Separately, a green-surface defect caught in the act: `sirsi router ledger claude-home` prints the
+header `0 open · blocked 0 · unblocked/unpicked 0` while the very same output lists **41 non-done
+rows** (36 pending, 4 in-progress, 1 blocked). `router doctor --fix` independently counted 30
+stalled rows in the same pass. Step 4 of this routine asks "is there ledger work?" and the header
+answers no — I nearly closed the run on it. Filed as `ledger-header-counts-zero-on-41-rows`.
+Housekeeping: threads reconciled (4 reaped→successor heals), prune 20→20 (all live, nothing
+terminal), no `BINARY_MISSING` sentinels so no rebuild, board 200, store v16, **0 headless
+sessions** (#636 loaded, not firing), 1 stale session record archived, retention clean. Wake lanes
+are back and live with real PIDs — the owner restored them since the prior run; `horus.agent-router`
+remains parked by owner decision and was left alone. PRs #649/#661/#660 verified genuinely green
+against all five *discovered* required contexts (not the vacuous CLEAN badge) but carry **no
+review** — the bind is routed and open with codex-home, and they are my own PRs, so no self-bind
+and no merge.

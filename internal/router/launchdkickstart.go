@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
 
 // launchdDeps are the OS seams (Rule A16) — tests stub these.
@@ -69,18 +71,11 @@ var launchdOS = launchdDeps{
 			// rest of the duty (bootstrap missing labels) still runs.
 			return map[string]bool{}, nil
 		}
+		// Space-joined keys are split, or a quarantined label reads as enabled
+		// and bootstrap fails with "Operation not permitted".
 		disabled := map[string]bool{}
-		for _, line := range strings.Split(string(out), "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasSuffix(line, "=> disabled") {
-				continue
-			}
-			start := strings.Index(line, `"`)
-			end := strings.LastIndex(line, `"`)
-			if start < 0 || end <= start {
-				continue
-			}
-			disabled[line[start+1:end]] = true
+		for _, label := range platform.ParseDisabledLabels(string(out)) {
+			disabled[label] = true
 		}
 		return disabled, nil
 	},

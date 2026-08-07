@@ -40,6 +40,13 @@ var noLeverRequired = map[string]bool{
 	// down again. A lever that fixes the symptom and re-arms the cause is worse
 	// than honest guidance.
 	"Agent Pause Ledger": true,
+	// guidance: reconciling a split thread registry is a DATA decision, not a
+	// command. The legacy records may be historical (archive) or genuinely
+	// missing from the store (import) — on the host where this was found the
+	// two sets were fully disjoint, so neither answer is automatic. A one-click
+	// lever here would either delete a thread registry or merge unvetted rows
+	// into the live one; both are worse than naming the split and the steps.
+	"Thread Registry Split": true,
 }
 
 // firstToken returns the verb from a "sirsi <verb> …" remediation command — the

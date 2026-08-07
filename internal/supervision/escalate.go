@@ -21,6 +21,9 @@ type Escalation struct {
 	OpenItems int
 	// Why is owner-facing prose: what is stuck and what clears it.
 	Why string
+	// Lanes is non-empty only on a ROLLUP escalation, which stands for every
+	// lane it names instead of one. See rollup().
+	Lanes []string
 }
 
 // Title is the dedup key AND the item title. One stable title per lane means a
@@ -28,6 +31,13 @@ type Escalation struct {
 // dedup is by exact title against the owner's open inbox, so the title must not
 // embed counts, ages, or anything else that drifts between passes.
 func (e Escalation) Title() string {
+	if len(e.Lanes) > 0 {
+		// Deliberately carries NO count. The set of unroutable lanes drifts by
+		// one every time a lane is opened or closed; a title like "7 lanes"
+		// would mint a fresh card on each drift and rebuild the exact flood
+		// this rollup exists to end.
+		return "Lanes need you: multiple lanes cannot be reached automatically"
+	}
 	return fmt.Sprintf("Lane needs you: %s cannot be reached automatically", e.Agent)
 }
 
@@ -79,7 +89,54 @@ func Escalations(lanes []LaneInput, states map[string]LaneState) []Escalation {
 		}
 		return out[i].Agent < out[j].Agent
 	})
-	return out
+	return rollup(out)
+}
+
+// rollupThreshold is how many simultaneously-unroutable lanes stop being
+// separate incidents and start being one fleet condition.
+//
+// Three is where the owner board stopped being readable in practice: on
+// 2026-08-07 a single pass produced 21 per-lane cards, each individually true
+// and correctly deduped, which buried the four unrelated items underneath them.
+// Per-lane dedup was never the defect — it works exactly as documented. The
+// defect is that "no supervisor exists for wake:none lanes" is ONE root cause
+// and was being reported once per lane it happened to affect.
+const rollupThreshold = 3
+
+// rollup collapses a fleet-wide escalation into a single owner card.
+//
+// Below the threshold each lane keeps its own card: two stopped lanes are two
+// incidents an owner can act on individually, and flattening them would lose
+// the agent name from the title where it is most useful.
+//
+// The rollup's Why still names every lane and its backlog, so nothing is hidden
+// — the collapse is in how many items the owner's inbox receives, not in how
+// much they are told.
+func rollup(in []Escalation) []Escalation {
+	if len(in) < rollupThreshold {
+		return in
+	}
+	var b strings.Builder
+	total := 0
+	names := make([]string, 0, len(in))
+	for _, e := range in {
+		total += e.OpenItems
+		names = append(names, e.Agent)
+	}
+	fmt.Fprintf(&b, "%d lanes are holding %d open items between them and none can be reached automatically: ", len(in), total)
+	b.WriteString(strings.Join(names, ", "))
+	b.WriteString(".\n\nEach declares no automatic wake mechanism and has no registered thread, so every one of them appears stopped. ")
+	b.WriteString("At this scale this is one condition, not N incidents — nothing on the host can start a lane whose wake mechanism is none. ")
+	b.WriteString("Opening a session for each lane clears it; so does landing a supervisor that can start them.\n\nPer lane:\n")
+	for _, e := range in {
+		fmt.Fprintf(&b, "  - %s: %d open, state %s\n", e.Agent, e.OpenItems, e.State)
+	}
+	return []Escalation{{
+		State:     in[0].State,
+		OpenItems: total,
+		Why:       b.String(),
+		Lanes:     names,
+	}}
 }
 
 func whyUnroutable(l LaneInput) string {

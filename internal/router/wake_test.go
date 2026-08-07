@@ -20,6 +20,23 @@ import (
 // wakeTestRoot builds an isolated router root with the given agents registered.
 func wakeTestRoot(t *testing.T, agents ...AgentConfig) string {
 	t.Helper()
+	// Sandbox HOME. The #639 dispatch ledger lives at $HOME/.sirsi/dispatch/
+	// <agent>.log, so without this every wake-loop test APPENDS to the real
+	// user's ledger and then reads its own accumulated history back on the next
+	// run. Two consequences, both observed on this host 2026-08-07:
+	//
+	//   1. Tests self-poison. flaky-agent.log reached 12 entries and slow-agent
+	//      11, so the hourly spawn ceiling counted a fixture's entire test
+	//      history as real dispatches and refused to dispatch at all —
+	//      TestConsumerExitFreesTheDispatchSlot saw ZERO. It failed on pristine
+	//      main and would fail harder the more often anyone ran it, which is the
+	//      worst shape of flake: it degrades with use and looks like a
+	//      regression in whatever you happened to be working on.
+	//   2. `go test` wrote fixture agent names (flaky-agent, slow-agent,
+	//      restart-agent, worker-agent) into a real operator's ~/.sirsi.
+	//
+	// t.Setenv restores the previous value at test end, so this is scoped.
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	if err := work.EnsureRoot(root); err != nil {
 		t.Fatalf("ensure root: %v", err)

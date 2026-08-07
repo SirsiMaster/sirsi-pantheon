@@ -26,7 +26,15 @@ set -euo pipefail
 
 APP_ID_FILE="${SIRSI_BIND_APP_ID_FILE:-$HOME/.sirsi/bind-app.id}"
 KEY_FILE="${SIRSI_BIND_KEY_FILE:-$HOME/.sirsi/bind-app.pem}"
-REPO="SirsiMaster/sirsi-pantheon"
+# NO DEFAULT REPO. This used to read REPO="SirsiMaster/sirsi-pantheon", which made an
+# omitted --repo mint a REAL bind on pantheon#N when the operator meant otherrepo#N.
+# PR numbers collide across repos, so the wrong repo almost always HAS a #N — the call
+# finds a PR, posts an approving review, and reports success. Measured 2026-08-07: this
+# fired TWICE, approving pantheon#64 (a months-merged CI PR nobody had read) while the
+# operator intended Assiduous#64. GitHub will not dismiss a review on a merged PR, so
+# the two spurious sirsi-bind[bot] approvals are permanent and can only be annotated.
+# Resolved from the cwd after arg parsing; hard-fails if it cannot be determined.
+REPO=""
 BODY="Independent bind recorded by the sirsi-bind identity (ADR-041)."
 PR=""
 EVENT="APPROVE"
@@ -73,6 +81,21 @@ done
 
 [ -n "$PR" ] || { echo "usage: $0 <pr-number> [--repo owner/name] [--body text|@file] [--request-changes]" >&2; exit 2; }
 
+# Resolve the repo from where the operator actually IS, never from a baked-in guess.
+# An explicit --repo always wins and is NOT cross-checked against the cwd — binding
+# another repo's PR from here is legitimate, and refusing it would break the conduit.
+# The defect was only ever the SILENT default; explicit intent is honoured as given.
+if [ -z "$REPO" ]; then
+  REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+  [ -n "$REPO" ] || {
+    echo "✗ sirsi-bind: --repo was omitted and this directory resolves to no GitHub repo." >&2
+    echo "  Refusing to guess: a wrong repo still finds SOME PR #$PR and binds it for real." >&2
+    echo "  Pass --repo owner/name, or run from a checkout of the repo you mean." >&2
+    exit 2
+  }
+  echo "sirsi-bind: --repo omitted — resolved to $REPO from the current directory." >&2
+fi
+
 # A blocking verdict must NEVER post as APPROVE. This script previously hardcoded
 # event=APPROVE, so a bind whose body opened "CHANGES REQUESTED ..." was recorded by
 # GitHub as an APPROVED review — and the gate re-run at the bottom then CLEARED
@@ -116,10 +139,35 @@ signing_input="$(printf '%s' "$header" | b64url).$(printf '%s' "$payload" | b64u
 sig=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$KEY_FILE" -binary | b64url)
 JWT="$signing_input.$sig"
 
-INSTALL_ID=$(gh api -H "Authorization: Bearer $JWT" "repos/$REPO/installation" --jq '.id') || {
-  echo "✗ sirsi-bind App is not installed on $REPO — install it (runbook: docs/runbooks/bind-identity-setup.md)." >&2
-  exit 4
-}
+# Distinguish "the App is genuinely not installed here" from "we could not ask".
+#
+# This used to be a bare `|| { echo "App is not installed"; exit 4; }`, so ANY
+# non-zero from gh api asserted a fact about the App's installation state —
+# including a transient network failure, which is not evidence about anything.
+#
+# Measured cost, 2026-08-07: codex-home hit `error connecting to api.github.com`
+# and the next line told it the App was not installed on SirsiMaster/sirsi-pantheon.
+# It escalated that to the owner as an "owner-clearable blocker: install the Sirsi
+# Bind GitHub App" and stopped retrying — while that same App had already published
+# TEN bind reviews on that same repo that evening. The claim was false, the remedy
+# was wrong, and the lane correctly declined to loop on it.
+INSTALL_OUT=$(gh api -H "Authorization: Bearer $JWT" "repos/$REPO/installation" --jq '.id' 2>&1) || INSTALL_RC=$?
+if [ "${INSTALL_RC:-0}" -ne 0 ]; then
+  case "$INSTALL_OUT" in
+    *"Not Found"*|*"404"*)
+      echo "✗ sirsi-bind App is not installed on $REPO — install it (runbook: docs/runbooks/bind-identity-setup.md)." >&2
+      exit 4 ;;
+    *)
+      # Anything else — connectivity, DNS, 5xx, rate limit, expired JWT — is a
+      # failure to ASK, not an answer. Say so, and say it is retryable, so the
+      # caller does not route a false owner-action item.
+      echo "✗ could not determine sirsi-bind App installation on $REPO — the query itself failed:" >&2
+      echo "    ${INSTALL_OUT:-<no error text>}" >&2
+      echo "  This is NOT evidence the App is uninstalled. Retry; if it persists, check https://githubstatus.com." >&2
+      exit 5 ;;
+  esac
+fi
+INSTALL_ID="$INSTALL_OUT"
 TOKEN=$(gh api -X POST -H "Authorization: Bearer $JWT" \
   "app/installations/$INSTALL_ID/access_tokens" --jq '.token')
 

@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -606,6 +607,18 @@ type consumerRun struct {
 	done chan struct{}
 	err  error
 	tail *ringTail
+
+	// depthAtDispatch is the inbox depth when this consumer started, so its exit
+	// can be scored for PROGRESS rather than merely for liveness (#636 C1).
+	// -1 means unknown and is scored as progress — an unreadable inbox must never
+	// quarantine a healthy lane. See madeProgress in dispatchgate.go.
+	depthAtDispatch int
+
+	// startedAt is set only on a run ADOPTED from the durable marker file
+	// (done == nil — this process never forked the child, so it cannot Wait
+	// on it). running() polls OS-truth liveness instead, recycle-guarded by
+	// this start signature.
+	startedAt string
 }
 
 // consumerTailBytes bounds what a failing consumer can put in the log. The
@@ -650,6 +663,9 @@ func (r *consumerRun) running() bool {
 	if r == nil {
 		return false
 	}
+	if r.done == nil {
+		return PIDStateOf(r.pid, r.startedAt) == PIDAlive
+	}
 	select {
 	case <-r.done:
 		return false
@@ -690,6 +706,42 @@ func fabricDispatchOverloaded(agentID string, depth int) bool {
 	return true
 }
 
+// loginShellArgv wraps argv so the consumer runs through the operator's login
+// shell instead of being exec'd directly.
+//
+// launchd execs a program with ONLY the plist's EnvironmentVariables and no
+// shell at all, so none of the shell startup files run. The consumer CLIs take
+// their credentials from what those files export (~/.zshenv), so a directly
+// exec'd consumer reported "Not logged in - Please run /login" and exited 1 on
+// every single dispatch: 3907 of 4161 across eight lanes, while the very same
+// command run by a human in a terminal succeeded every time. The login state
+// was never broken; the environment carrying it simply never reached the child.
+//
+// argv is passed as POSITIONAL PARAMETERS and never interpolated into the
+// script text. That is load-bearing, not stylistic: the consumer prompt
+// contains backticks and $(...) that a naive `-lc "<command>"` would execute at
+// dispatch. `exec` then replaces the shell, so the pid the caller tracks is
+// still the consumer itself and the setsid detach is unchanged.
+//
+// Fails OPEN — an unset or unusable SHELL dispatches exactly as before, the
+// same stance as an unreadable load average.
+func loginShellArgv(argv []string) []string {
+	if len(argv) == 0 {
+		return argv
+	}
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		return argv
+	}
+	// Executable bit included deliberately: exec.Command on a non-executable
+	// SHELL fails the dispatch outright, which would be failing CLOSED — the
+	// opposite of the stance this function documents.
+	if info, err := os.Stat(shell); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		return argv
+	}
+	return append([]string{shell, "-lc", `exec "$@"`, shell}, argv...)
+}
+
 // dispatchConsumer starts a resolved consumer and returns a handle that
 // completes when the process exits.
 //
@@ -701,7 +753,8 @@ func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
 	if rc.Resident {
 		return nil, fmt.Errorf("resident consumer is external and must not be spawned")
 	}
-	cmd := exec.Command(rc.Argv[0], rc.Argv[1:]...)
+	spawn := loginShellArgv(rc.Argv)
+	cmd := exec.Command(spawn[0], spawn[1:]...)
 	cmd.Dir = rc.Cwd
 	cmd.Env = rc.Env
 	cmd.SysProcAttr = detachedSysProcAttr()
@@ -740,6 +793,63 @@ func dispatchConsumer(rc *ResolvedConsumer) (*consumerRun, error) {
 		close(run.done)
 	}()
 	return run, nil
+}
+
+// consumerPIDFilePath is the durable marker for the consumer this wake-loop
+// last dispatched for agentID (design constraint 7: "pidfile" idempotency,
+// stated at the top of this file but never implemented until this fix).
+//
+// dispatchConsumer's child is Setsid-detached without Release specifically so
+// it survives THIS PROCESS restarting — but a launchctl kickstart -k (or a
+// KeepAlive crash-restart) replaces the process outright, and the in-memory
+// `run` variable that tracked the dispatch dies with it. The new process
+// starts with run == nil and, on its first tick with depth > 0, dispatches a
+// SECOND consumer on top of the still-running first one. Observed 2026-08-07:
+// two live claude-finalwishes sessions, 480MB each, spawned 65s apart. This
+// marker is what lets a restarted loop recognize "already running" instead of
+// re-dispatching.
+func consumerPIDFilePath(routerRoot, agentID string) string {
+	return filepath.Join(routerRoot, "wake-consumer-"+agentID+".pid")
+}
+
+// writeConsumerPIDFile records the just-dispatched consumer's (pid, startedAt)
+// so a restarted loop can find it. Best-effort: a write failure only costs the
+// restart-survives-dispatch guarantee, never the dispatch itself.
+func writeConsumerPIDFile(routerRoot, agentID string, pid int, startedAt string) {
+	path := consumerPIDFilePath(routerRoot, agentID)
+	_ = os.WriteFile(path, []byte(strconv.Itoa(pid)+"\n"+startedAt+"\n"), 0o644)
+}
+
+// clearConsumerPIDFile removes the marker once the dispatching process has
+// confirmed (via Wait) that the consumer exited.
+func clearConsumerPIDFile(routerRoot, agentID string) {
+	_ = os.Remove(consumerPIDFilePath(routerRoot, agentID))
+}
+
+// adoptRunningConsumer reads the durable marker and, if the recorded PID is
+// still OS-truth alive (recycle-guarded by its start signature), returns a
+// consumerRun this loop can poll instead of blind-dispatching a duplicate. A
+// stale marker (process gone) is cleaned up so it never misreports again.
+func adoptRunningConsumer(routerRoot, agentID string) *consumerRun {
+	data, err := os.ReadFile(consumerPIDFilePath(routerRoot, agentID))
+	if err != nil {
+		return nil
+	}
+	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
+	pid, perr := strconv.Atoi(strings.TrimSpace(lines[0]))
+	if perr != nil || pid <= 0 {
+		clearConsumerPIDFile(routerRoot, agentID)
+		return nil
+	}
+	startedAt := ""
+	if len(lines) > 1 {
+		startedAt = strings.TrimSpace(lines[1])
+	}
+	if PIDStateOf(pid, startedAt) != PIDAlive {
+		clearConsumerPIDFile(routerRoot, agentID)
+		return nil
+	}
+	return &consumerRun{pid: pid, startedAt: startedAt}
 }
 
 func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.Duration) error {
@@ -823,7 +933,32 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	lastBeat := time.Now()
 	// The in-flight consumer, or nil. Completion — not elapsed time — is what
 	// authorizes the next dispatch.
+	//
+	// Checked against the durable marker BEFORE the first tick: this process
+	// may be a restart (kickstart -k, KeepAlive) of a loop whose own dispatch
+	// is still running as a detached, now-unparented child. Adopting it here
+	// is what stops the restart from immediately duplicating it.
 	var run *consumerRun
+	// #636 C1 progress-gate state. `scored` ensures a finished consumer is judged
+	// exactly once; without it every subsequent tick would re-count the same exit
+	// and quarantine a lane in ten ticks rather than ten dispatches.
+	fruitless := 0
+	scored := true
+	var nextDispatchAllowed time.Time
+	quarantineLogged := false
+	ceilingLogged := false
+	if consumer != nil && !consumer.Resident {
+		if adopted := adoptRunningConsumer(routerRoot, agentID); adopted != nil {
+			run = adopted
+			// #642 x #636 C1: a previous process dispatched this run, so its
+			// depth-at-dispatch is unrecoverable. -1 (unknown) is required — the
+			// zero value would make madeProgress(0, depth) false and march a
+			// healthy lane toward quarantine after ten restarts.
+			run.depthAtDispatch = -1
+			log.Printf("wake-loop %s: adopted already-running consumer pid %d from durable marker (loop restarted)",
+				agentID, adopted.pid)
+		}
+	}
 	for {
 		// Surface the inbox depth into the heartbeat status; the worker surface's
 		// own logic processes the items — this loop only proves liveness + watches.
@@ -880,31 +1015,89 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		//
 		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
 		// would treat an unreadable inbox as an empty one.
-		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
-			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) {
-			// Report the previous run's exit before starting another, so a consumer
-			// that is failing fast leaves a trail rather than looking like progress.
-			if run != nil && run.err != nil {
-				log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v — last output: %s",
-					agentID, run.pid, run.err, run.tail)
-			}
-			next, derr := dispatchConsumer(consumer)
-			if derr != nil {
-				// A command that fails to START will fail identically next tick, so
-				// hold the slot for one retry window rather than tight-looping. This
-				// is the only place a timer is still the right instrument: there is no
-				// process to observe.
-				run = &consumerRun{done: closedChan(), err: derr}
-				log.Printf("wake-loop %s: dispatch FAILED (depth %d): %v", agentID, depth, derr)
-				select {
-				case <-ctx.Done():
-					return nil
-				case <-time.After(dispatchFailureBackoff):
-				}
+		// #636 C1 — score the FINISHED consumer for progress before considering
+		// another. Liveness alone cannot distinguish "worked and drained" from
+		// "exited instantly having done nothing", and only the second one loops.
+		if run != nil && !run.running() && !scored {
+			scored = true
+			if madeProgress(run.depthAtDispatch, depth) {
+				fruitless = 0
 			} else {
-				run = next
-				log.Printf("wake-loop %s: dispatched consumer pid %d %v (depth %d)",
-					agentID, run.pid, consumer.Argv, depth)
+				fruitless++
+				wait := wakeLoopBackoff(fruitless, interval)
+				nextDispatchAllowed = time.Now().Add(wait)
+				log.Printf("wake-loop %s: consumer made NO PROGRESS (depth %d -> %d); "+
+					"backing off %s (%d consecutive)", agentID, run.depthAtDispatch, depth, wait, fruitless)
+			}
+		}
+
+		// A lane that cannot make progress is a bug to REPORT, not a spawn to retry.
+		if fruitless >= wakeLoopFruitlessQuarantine {
+			if !quarantineLogged {
+				quarantineLogged = true
+				log.Printf("wake-loop %s: QUARANTINED after %d consecutive no-progress dispatches "+
+					"(depth %d) — dispatching stopped; this lane needs a human, not another spawn",
+					agentID, fruitless, depth)
+				msg := fmt.Sprintf("dispatch quarantined: %d consecutive consumers made no progress at depth %d",
+					fruitless, depth)
+				_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
+					Status: ThreadStatusBlocked, LastError: &msg,
+				})
+			}
+		} else if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			time.Now().After(nextDispatchAllowed) &&
+			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) {
+
+			// #636 C3 — hard hourly ceiling, enforced independently of everything
+			// above. This is what bounds a future variant whose gate logic is wrong.
+			over, n := spawnCeilingReached(agentID, time.Now())
+			if over && !ceilingLogged {
+				ceilingLogged = true
+				log.Printf("wake-loop %s: SPAWN CEILING reached (%d dispatches in the last hour, max %d) "+
+					"— refusing to dispatch", agentID, n, wakeLoopMaxSpawnsPerHour)
+			}
+			if !over {
+				ceilingLogged = false
+				// Report the previous run's exit before starting another, so a consumer
+				// that is failing fast leaves a trail rather than looking like progress.
+				if run != nil && run.err != nil {
+					log.Printf("wake-loop %s: previous consumer (pid %d) exited with error: %v — last output: %s",
+						agentID, run.pid, run.err, run.tail)
+				}
+				next, derr := dispatchConsumer(consumer)
+				if derr != nil {
+					// A command that fails to START will fail identically next tick, so
+					// hold the slot for one retry window rather than tight-looping. This
+					// is the only place a timer is still the right instrument: there is no
+					// process to observe.
+					run = &consumerRun{done: closedChan(), err: derr, depthAtDispatch: -1}
+					scored = true // a failed START is not a fruitless RUN; do not score it
+					log.Printf("wake-loop %s: dispatch FAILED (depth %d): %v", agentID, depth, derr)
+					select {
+					case <-ctx.Done():
+						return nil
+					case <-time.After(dispatchFailureBackoff):
+					}
+				} else {
+					run = next
+					run.depthAtDispatch = depth
+					scored = false
+					// #642: durable marker so a restarted loop adopts this child
+					// instead of duplicating it.
+					writeConsumerPIDFile(routerRoot, agentID, run.pid, getPIDStartFn()(run.pid))
+					go func(r *consumerRun) {
+						<-r.done
+						clearConsumerPIDFile(routerRoot, agentID)
+					}(run)
+					if err := recordDispatch(agentID, time.Now()); err != nil {
+						// Forfeiting rate protection silently is how a ceiling becomes
+						// decorative — say so.
+						log.Printf("wake-loop %s: WARNING could not record dispatch in the rate ledger: %v",
+							agentID, err)
+					}
+					log.Printf("wake-loop %s: dispatched consumer pid %d %v (depth %d)",
+						agentID, run.pid, consumer.Argv, depth)
+				}
 			}
 		}
 

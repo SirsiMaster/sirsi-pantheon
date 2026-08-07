@@ -9,11 +9,12 @@ Canonical source: sirsi-inference @ 823d1dc.
 
 > **What you can actually run today, and what you cannot.**
 >
-> The `scripts/…` paths named in the table below are **internal to the
-> private `sirsi-inference` engine repo**. They are recorded here so the
-> exact procedure behind each number is inspectable — **they are not
-> publicly runnable, and no such files exist in this repository.** Do not
-> read them as commands you can execute.
+> The `scripts/…` **and** `docs/evidence/…` paths named on this page are
+> **internal to the private `sirsi-inference` engine repo**. They are recorded
+> here so the exact procedure and provenance behind each number is nameable —
+> **none of them exist in this repository.** Do not read the `scripts/…` paths
+> as commands you can execute, and do not read the `docs/evidence/…` paths as
+> files you can open here.
 >
 > What a third party CAN run today is the **client-side harness**, which
 > ships with Anubis, measures any OpenAI-compatible server, and contains no
@@ -33,9 +34,9 @@ Canonical source: sirsi-inference @ 823d1dc.
 | OS | macOS 26.5.2 |
 | Model | `mlx-community/gemma-4-12B-it-8bit`, snapshot `200bb6db075e137a4deb08838865ac4ddb86292e` |
 | MLX | 0.32.0, vendored build (`scripts/build-mlx.sh`; stamp in `mlxbuild_stamp.go`) |
-| Engine source | pinned per-file SHA-256 in `docs/evidence/contribution-adjusted/perf-manifest-pinned.txt` |
-| Binary | `docs/evidence/contribution-adjusted/pinned-bin-sha.txt` |
-| Comparator inventory | `docs/evidence/contribution-adjusted/mlxlm-localmods.txt` (exact local state of the comparator install) |
+| Engine source | pinned per-file SHA-256 in `docs/evidence/contribution-adjusted/perf-manifest-pinned.txt` (private repo — not in this repository) |
+| Binary | `docs/evidence/contribution-adjusted/pinned-bin-sha.txt` (private repo — not in this repository; see *the one artifact this page still owes you*, below) |
+| Comparator inventory | `docs/evidence/contribution-adjusted/mlxlm-localmods.txt` (exact local state of the comparator install; private repo — not in this repository) |
 | Machine state | quiet: no other GPU workloads; warm-up before every measurement |
 
 ## The measurements and their procedures
@@ -74,5 +75,26 @@ internals, and the proposed upstream patch (held pending the deferred
 upstream-filing decision). The engine repo is private; a provisional
 patent disclosure on the deterministic-serving method precedes any
 public artifact that reveals its mechanics.
+
+## The one artifact this page still owes you
+
+"Verification runs against a SEALED signed binary we provide" is only a
+checkable claim if you can confirm the binary you were given is the binary we
+measured. That confirmation is a single line — the SHA-256 in
+`pinned-bin-sha.txt` — and it is currently **inside the private repo**, so the
+seal cannot be checked against anything. Publishing that one hash reveals no
+kernel, no architecture, and no patch; withholding it makes the sealed-binary
+route unfalsifiable in exactly the way Rule A33 exists to prevent.
+
+Same reasoning, lower stakes, for `mlxlm-localmods.txt`: it describes the state
+of the PUBLIC comparator (`mlx_lm`), not our engine, and a reader cannot
+reproduce a comparison without knowing what the comparator was.
+
+`perf-manifest-pinned.txt` is a closer call — the hashes reveal nothing but the
+filenames sketch engine module structure. `patch-qmv.py` stays sealed
+unconditionally, per the deferred upstream-filing decision above.
+
+This is recorded as an open gap rather than quietly left as a broken path. The
+publication decision is the owner's, not this page's.
 
 Refs: ADR-051, docs/CLAIMS-TABLE-A33.md, ANUBIS_RULES.md § Rule A33

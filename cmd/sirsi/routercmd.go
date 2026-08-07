@@ -718,12 +718,25 @@ var routerWakeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Writing the plist is not arming the lane. Load it and then ASK
+		// launchd, because "installed" previously meant "a file exists" —
+		// 18 lanes reported installed on 2026-08-07 with launchd holding none
+		// of them, which is what made every surface disagree with the board.
 		if changed {
 			fmt.Printf("✔ Installed wake LaunchAgent: %s\n", path)
-			fmt.Printf("  Load it: launchctl load -w %s\n", path)
 		} else {
-			fmt.Printf("✓ Wake LaunchAgent already installed (no change): %s\n", path)
+			fmt.Printf("✓ Wake LaunchAgent plist already present: %s\n", path)
 		}
+		loaded, detail := router.LoadWakeAgent(cfg.ID, path)
+		if !loaded {
+			fmt.Printf("✗ %s is NOT armed — the plist is on disk but launchd did not load it.\n", cfg.ID)
+			if detail != "" {
+				fmt.Printf("   launchctl: %s\n", detail)
+			}
+			fmt.Printf("   Nothing will wake this lane until that clears. Retry, or `launchctl bootout gui/$(id -u)/ai.sirsi.router.wake.%s` first.\n", cfg.ID)
+			return fmt.Errorf("wake agent %s not loaded", cfg.ID)
+		}
+		fmt.Printf("✔ %s is ARMED — launchd reports the job loaded.\n", cfg.ID)
 		return nil
 	},
 }
@@ -1383,5 +1396,6 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneItemsOnly, "items-only", false, "prune only closed items past the window (skip logs/dumps/queue)")
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd)
+	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }

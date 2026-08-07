@@ -56,6 +56,24 @@ func consumerLines(t *testing.T, log string) []string {
 // WRITES asynchronously, so reading the log the instant RunWakeLoop returns
 // races the child under parallel test load. Polling for the evidence is the
 // honest wait — the assertion is about what the child did, not about when.
+// mustAwaitConsumerLines is awaitConsumerLines for callers where the wait is a
+// PRECONDITION rather than the measurement.
+//
+// awaitConsumerLines returns whatever it has when the deadline passes, silently.
+// That is right where the count is the assertion, and wrong where a later
+// assertion assumes the dispatch landed: the test then measures a world that
+// never reached its starting state and reports the consequence as the cause.
+// That is exactly how a load-blocked dispatch got reported as a broken latch.
+func mustAwaitConsumerLines(t *testing.T, log string, n int) []string {
+	t.Helper()
+	lines := awaitConsumerLines(t, log, n)
+	if len(lines) < n {
+		t.Fatalf("precondition never held: waited for %d consumer dispatch(es), saw %d — "+
+			"nothing after this point is measuring what it claims to", n, len(lines))
+	}
+	return lines
+}
+
 func awaitConsumerLines(t *testing.T, log string, n int) []string {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -73,6 +91,10 @@ func awaitConsumerLines(t *testing.T, log string, n int) []string {
 // which is the difference between "spawned something headless" and "consumed
 // this inbox".
 func TestDispatchedConsumerReceivesRouterContract(t *testing.T) {
+	// Stub low load so backpressure never blocks dispatch regardless of host load.
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0)
 
@@ -154,6 +176,20 @@ func TestCodexConsumerCarriesStoreAccessAndInboxContract(t *testing.T) {
 // The earlier design used a 10-minute timer for this, which cannot tell "still
 // working" from "died" because Setsid+Release discards the handle (finding 3).
 func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
+	// Stub low load so backpressure never blocks dispatch regardless of host
+	// load — the same guard its three siblings in this file already carry, and
+	// the only one of the four that was missing it.
+	//
+	// Without it this test asserts the DISPATCH LATCH while silently depending
+	// on the runner being idle. Observed in CI 2026-08-07 on PR #653, which
+	// touches none of this code: "dispatch deferred — load average 29.45 >= 18
+	// cores" repeated for the whole window, zero dispatches, and the failure
+	// printed "dispatched 0 consumers while the first was still running" — an
+	// accusation about the latch, which had never run. The very next test in the
+	// same log dispatched fine at the same instant, because it stubs load.
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	// Sleeps well past the loop's lifetime: it is still working at every tick.
 	script := recordingConsumer(t, log, 2*time.Second)
@@ -175,7 +211,7 @@ func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- RunWakeLoop(ctx, root, "slow-agent", 40*time.Millisecond) }()
 
-	awaitConsumerLines(t, log, 1) // the first dispatch has provably happened
+	mustAwaitConsumerLines(t, log, 1) // the first dispatch has provably happened
 
 	// Give the loop many more ticks with the consumer still sleeping. If the
 	// latch were broken, a second line appears here.
@@ -198,6 +234,10 @@ func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
 // permanent latch would strand the inbox behind a consumer that died mid-drain,
 // which is the failure the discarded 10-minute timer existed to cover.
 func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
+	// Stub low load so backpressure never blocks dispatch regardless of host load.
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0) // exits at once, never drains
 
@@ -228,6 +268,71 @@ func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
 	if n < 2 {
 		t.Errorf("only %d dispatches after the consumer exited — the slot must free on "+
 			"completion or a consumer that dies mid-drain strands the inbox forever", n)
+	}
+}
+
+// A launchctl kickstart -k (or a KeepAlive crash-restart) replaces the
+// wake-loop PROCESS, but Setsid-without-Release means the dispatched consumer
+// is a detached child of the OS, not of that process — it keeps running. The
+// in-memory `run` variable that tracked it dies with the old process, so a
+// naive restart starts fresh with run == nil and, seeing depth > 0, dispatches
+// a duplicate on top of the one still working. Observed in production
+// 2026-08-07: two live claude-finalwishes sessions 65s apart, ~480MB each.
+//
+// A restarted loop must instead recognize the still-running consumer via the
+// durable marker file and hold the slot, exactly as the non-restarted case
+// (TestNoSecondConsumerWhileFirstIsStillRunning) already does in-process.
+func TestRestartDoesNotDuplicateAStillRunningConsumer(t *testing.T) {
+	// Deterministic regardless of the host's ambient load — this test asserts
+	// dispatch-adoption behavior, not backpressure (backpressure_test.go covers
+	// that separately).
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	// Sleeps well past this test's lifetime: still working at every tick.
+	script := recordingConsumer(t, log, 5*time.Second)
+
+	root := wakeTestRoot(t, AgentConfig{
+		ID:       "restart-agent",
+		Type:     "worker",
+		Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}},
+	})
+	sendItem(t, root, "restart-agent", "work that outlives the loop restart")
+
+	// First loop: dispatches, then gets canceled — simulating the process being
+	// replaced — WITHOUT its child dying (a real detached process wouldn't).
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	done1 := make(chan error, 1)
+	go func() { done1 <- RunWakeLoop(ctx1, root, "restart-agent", 40*time.Millisecond) }()
+	mustAwaitConsumerLines(t, log, 1) // first dispatch has provably landed
+	cancel1()
+	if err := <-done1; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("first RunWakeLoop: %v", err)
+	}
+
+	if _, err := os.Stat(consumerPIDFilePath(root, "restart-agent")); err != nil {
+		t.Fatalf("durable marker missing after dispatch: %v", err)
+	}
+
+	// Second loop: a fresh process (fresh `run == nil`) over the SAME root and
+	// agent id, exactly like a restart. The consumer from the first loop is
+	// still sleeping.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	done2 := make(chan error, 1)
+	go func() { done2 <- RunWakeLoop(ctx2, root, "restart-agent", 40*time.Millisecond) }()
+
+	time.Sleep(400 * time.Millisecond)
+	n := len(consumerLines(t, log))
+	cancel2()
+	if err := <-done2; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("second RunWakeLoop: %v", err)
+	}
+
+	if n != 1 {
+		t.Errorf("restart dispatched %d consumers total — want exactly 1 "+
+			"(the restarted loop must adopt the still-running consumer, not duplicate it)", n)
 	}
 }
 

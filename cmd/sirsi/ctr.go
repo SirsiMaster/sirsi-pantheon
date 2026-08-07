@@ -331,8 +331,9 @@ func renderCtr(res ctrResult) {
 			if a.Stale {
 				stale = " STALE"
 			}
-			fmt.Printf("    • %-22s oldest=%-7s blocked=%d unblocked/unpicked=%d%s\n",
-				a.AgentID, ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked, stale)
+			fmt.Printf("    • %-22s tasks=%d open (%d blocked) · items=%d blocked, %d unblocked/unpicked · oldest=%-7s%s\n",
+				a.AgentID, a.OpenTasks, a.BlockedTasks, a.BlockedCount, a.UnblockedUnpicked,
+				ledger.FormatAge(a.OldestAgeSeconds), stale)
 		}
 		fmt.Println("    → Full detail: sirsi router ledger [agent]")
 		fmt.Println()

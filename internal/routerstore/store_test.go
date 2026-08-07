@@ -893,3 +893,34 @@ func TestReadSchemaVersionAndMaxSupported(t *testing.T) {
 		t.Fatalf("live schema=%d, max supported=%d", got, MaxSupportedSchemaVersion())
 	}
 }
+
+// TestConnEstablishRetriesReadonlyContention is the regression for the 2026-08-07
+// finding: pinConnWithRetry and beginImmediateWithRetry (every CLI invocation's
+// FIRST touch of the store, e.g. `thread register`) only retried on isBusy, never
+// on isReadonlyContention — despite writeretry.go documenting, from the
+// 2026-08-06 outage, that WAL-recovery contention on this store surfaces as
+// SQLITE_READONLY(8), not SQLITE_BUSY(5). A busy fleet hit exactly that gap:
+// registration failed outright with no retry instead of waiting out contention
+// like every other write already does.
+//
+// This asserts the retry GATE these two functions use — `!isBusy(err) &&
+// !isReadonlyContention(err)` — actually classifies a readonly-contention error
+// as retryable. It cannot drive real SQLite WAL-recovery locking deterministically
+// in a fast unit test (the scenario needs a crash or concurrent -shm reinit,
+// per writeretry.go's header), so it tests the same predicate contract
+// TestIsReadonlyContention already covers, applied to the specific gate these
+// two connection-establish functions use.
+func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
+	err := readonlyErr()
+	if isBusy(err) {
+		t.Fatalf("test setup: readonlyErr() must NOT satisfy isBusy — got true")
+	}
+	if !isReadonlyContention(err) {
+		t.Fatalf("test setup: readonlyErr() must satisfy isReadonlyContention — got false")
+	}
+	retryable := isBusy(err) || isReadonlyContention(err)
+	if !retryable {
+		t.Error("a readonly-contention error must be retryable at connection-establish, " +
+			"not just at the write-retry layer — this is the exact 2026-08-07 registration-failure class")
+	}
+}

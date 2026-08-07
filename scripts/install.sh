@@ -69,16 +69,43 @@ mkdir -p "$HOME/.sirsi"
 
 acquire_lock() {
     local waited=0
+    local announced=0
     while ! mkdir "$LOCK_DIR" 2>/dev/null; do
         local pid
-        pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
-        if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-            # Stale lock from a dead process — reclaim it.
-            rm -rf "$LOCK_DIR"
-            continue
+        if [ -f "$LOCK_DIR" ]; then
+            # Go-style file lock: PID is stored as the file content, not in a
+            # $LOCK_DIR/pid subfile (mkdir on a file path cannot create a subdir).
+            # A dead recorded PID is stale — reap immediately. An empty file may
+            # be a transient window during Go's acquire (flock → write PID) or
+            # release (truncate PID → close), both sub-millisecond; observe twice
+            # ~1 s apart before reaping to avoid unlinking a live flock holder.
+            pid=$(cat "$LOCK_DIR" 2>/dev/null || true)
+            if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                rm -f "$LOCK_DIR"
+                continue
+            fi
+            if [ -z "$pid" ]; then
+                sleep 1
+                waited=$((waited + 1))
+                pid=$(cat "$LOCK_DIR" 2>/dev/null || true)
+                if [ -z "$pid" ]; then
+                    rm -f "$LOCK_DIR"
+                    continue
+                fi
+                # PID appeared — a new holder acquired in the interim; fall through.
+            fi
+        else
+            # Shell-style directory lock: PID lives in the subfile.
+            pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+            if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                # Stale lock from a dead process — reclaim it.
+                rm -rf "$LOCK_DIR"
+                continue
+            fi
         fi
-        if [ $waited -eq 0 ]; then
+        if [ $announced -eq 0 ]; then
             echo -e "${DIM}  Another install is in progress (pid ${pid:-?}); waiting up to 120s...${NC}"
+            announced=1
         fi
         waited=$((waited + 5))
         if [ $waited -ge 120 ]; then
