@@ -26,7 +26,15 @@ set -euo pipefail
 
 APP_ID_FILE="${SIRSI_BIND_APP_ID_FILE:-$HOME/.sirsi/bind-app.id}"
 KEY_FILE="${SIRSI_BIND_KEY_FILE:-$HOME/.sirsi/bind-app.pem}"
-REPO="SirsiMaster/sirsi-pantheon"
+# NO DEFAULT REPO. This used to read REPO="SirsiMaster/sirsi-pantheon", which made an
+# omitted --repo mint a REAL bind on pantheon#N when the operator meant otherrepo#N.
+# PR numbers collide across repos, so the wrong repo almost always HAS a #N — the call
+# finds a PR, posts an approving review, and reports success. Measured 2026-08-07: this
+# fired TWICE, approving pantheon#64 (a months-merged CI PR nobody had read) while the
+# operator intended Assiduous#64. GitHub will not dismiss a review on a merged PR, so
+# the two spurious sirsi-bind[bot] approvals are permanent and can only be annotated.
+# Resolved from the cwd after arg parsing; hard-fails if it cannot be determined.
+REPO=""
 BODY="Independent bind recorded by the sirsi-bind identity (ADR-041)."
 PR=""
 EVENT="APPROVE"
@@ -72,6 +80,21 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$PR" ] || { echo "usage: $0 <pr-number> [--repo owner/name] [--body text|@file] [--request-changes]" >&2; exit 2; }
+
+# Resolve the repo from where the operator actually IS, never from a baked-in guess.
+# An explicit --repo always wins and is NOT cross-checked against the cwd — binding
+# another repo's PR from here is legitimate, and refusing it would break the conduit.
+# The defect was only ever the SILENT default; explicit intent is honoured as given.
+if [ -z "$REPO" ]; then
+  REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+  [ -n "$REPO" ] || {
+    echo "✗ sirsi-bind: --repo was omitted and this directory resolves to no GitHub repo." >&2
+    echo "  Refusing to guess: a wrong repo still finds SOME PR #$PR and binds it for real." >&2
+    echo "  Pass --repo owner/name, or run from a checkout of the repo you mean." >&2
+    exit 2
+  }
+  echo "sirsi-bind: --repo omitted — resolved to $REPO from the current directory." >&2
+fi
 
 # A blocking verdict must NEVER post as APPROVE. This script previously hardcoded
 # event=APPROVE, so a bind whose body opened "CHANGES REQUESTED ..." was recorded by
