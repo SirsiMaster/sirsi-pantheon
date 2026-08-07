@@ -767,3 +767,23 @@ func installFakeBrokerPlist(t *testing.T, home string) {
 		t.Fatalf("write %s: %v", p, err)
 	}
 }
+
+// TestProbeGemmaFindingNamesTheBinary guards the ledger row
+// broker-label-misnames-sne. The LaunchAgent label says "gemma-broker" but the
+// process is sne-server (Go). An agent read the label, concluded the service
+// was the legacy python/mlx_lm gemma path, and issued a directive to
+// permanently down it — taking the Tier-0 substrate offline. The label cannot
+// be renamed without bootout/bootstrap of a live load-bearing server, so the
+// standing repair is that no owner-facing report about it ever says only
+// "gemma". If someone strips the disclaimer, this fails.
+func TestProbeGemmaFindingNamesTheBinary(t *testing.T) {
+	f := probeGemma(t.TempDir())
+	if !strings.Contains(f.Title, BrokerBinary) {
+		t.Errorf("finding title must name the real binary %q, got %q", BrokerBinary, f.Title)
+	}
+	for _, want := range []string{BrokerLabel, BrokerBinary, "NOT the legacy python"} {
+		if !strings.Contains(f.Body, want) {
+			t.Errorf("finding body must contain %q so the label cannot be misread; body=%q", want, f.Body)
+		}
+	}
+}

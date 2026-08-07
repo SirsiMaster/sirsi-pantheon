@@ -529,9 +529,12 @@ func probeGemmaAttempt(port int, model string) (GemmaStatus, string, bool) {
 // probeGemma is the read-only liveness-watch wrapper over ProbeGemmaState.
 func probeGemma(home string) Finding {
 	f := Finding{Check: "gemma-broker", Fixable: true,
-		Title: "liveness-watch: gemma broker wedged",
+		Title: "liveness-watch: gemma broker (" + BrokerBinary + ") wedged",
 		Body: "The launchd liveness watch found the warm gemma broker unresponsive " +
 			"(no port, connection error, non-200, zero tokens produced, >30s, or RSS below the 1 GB weight floor). " +
+			"NOTE ON THE NAME: the label is " + BrokerLabel + " but the process it starts is " + BrokerBinary + " " +
+			"(Go, engine sirsi-go-mlx) — NOT the legacy python/mlx_lm gemma path, which no longer exists. " +
+			"Do not act on this finding as if a Python service were involved; probing or killing by process name finds the wrong thing. " +
 			"The broker is the Tier-0 substrate the router/reconcile/gemma-builder depend on. " +
 			"If the detail says 'weights likely absent': the HF model cache was deleted — a restart will NOT fix this; " +
 			"re-download the model weights first (`huggingface-cli download <model>`). " +
@@ -555,6 +558,15 @@ func probeGemma(home string) Finding {
 // says "gemma" but the process it starts is sne-server, not python — probing
 // by process name finds the wrong thing.
 const BrokerLabel = "ai.sirsi.gemma-broker"
+
+// BrokerBinary is the executable BrokerLabel actually starts. It is named in
+// every owner-facing finding about the broker because the label alone has
+// already caused real harm: an agent read "gemma-broker", concluded it was the
+// legacy python/mlx_lm gemma service, and issued a directive to permanently
+// down it — taking the Tier-0 substrate offline. The label cannot be renamed
+// without a bootout/bootstrap of a live load-bearing server, so the cheaper
+// repair is that no report about this service ever says only "gemma".
+const BrokerBinary = "sne-server"
 
 // suppressGemmaDown reports whether a GemmaDown result describes a DELIBERATE
 // absence rather than a failure, and so must not raise a finding.
