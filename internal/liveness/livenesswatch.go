@@ -630,19 +630,19 @@ func approximateModelGB(modelID string) float64 {
 // Returns (0, nil) when the endpoint is absent or field is missing; returns
 // error only for a 200 with an unparseable body. Injectable (A16/A21).
 var (
-	brokerMLXMu     sync.RWMutex
-	brokerMLXActive = defaultBrokerMLXActive
+	brokerMLXActiveMu sync.RWMutex
+	brokerMLXActive   = defaultBrokerMLXActive
 )
 
 func getBrokerMLXActive() func(port int) (int64, error) {
-	brokerMLXMu.RLock()
-	defer brokerMLXMu.RUnlock()
+	brokerMLXActiveMu.RLock()
+	defer brokerMLXActiveMu.RUnlock()
 	return brokerMLXActive
 }
 
 func setBrokerMLXActive(fn func(port int) (int64, error)) {
-	brokerMLXMu.Lock()
-	defer brokerMLXMu.Unlock()
+	brokerMLXActiveMu.Lock()
+	defer brokerMLXActiveMu.Unlock()
 	brokerMLXActive = fn
 }
 
