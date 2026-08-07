@@ -242,9 +242,11 @@ func TestEffectiveStale_TwoThreadsOneAgent(t *testing.T) {
 	}
 }
 
-// TestThreadArmed_ReRegistrationCase verifies that threadArmed credits the
-// agent-id probe for a loop-monitor thread whose watcher has a stale thread id
-// in argv (the re-registration case).
+// TestThreadArmed_ReRegistrationCase verifies that threadArmedForNewest credits
+// the agent-id probe ONLY when isNewest=true (A35 scope fix). threadArmed
+// itself does NOT credit the agent-keyed probe (delegates with isNewest=false)
+// — call sites that own the registry use threadArmedForNewest with the computed
+// isNewest flag.
 func TestThreadArmed_ReRegistrationCase(t *testing.T) {
 	now := time.Now().UTC()
 	t.Cleanup(func() {
@@ -263,14 +265,21 @@ func TestThreadArmed_ReRegistrationCase(t *testing.T) {
 	// Agent-id probe finds the script.
 	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-pantheon" })
 
-	if !threadArmed(thr, now) {
-		t.Error("re-registered thread with live agent-id watcher must be armed")
+	// threadArmed (isNewest=false) must NOT credit agent-keyed probe — A35
+	// scoping: the unscoped call would vouch for stale older threads too.
+	if threadArmed(thr, now) {
+		t.Error("threadArmed must not credit agent-keyed probe (isNewest=false path); use threadArmedForNewest with isNewest=true at call sites that own the registry")
 	}
 
-	// Negative control: both probes dead → not armed.
+	// threadArmedForNewest(isNewest=true) IS armed — re-registration successor.
+	if !threadArmedForNewest(thr, now, true) {
+		t.Error("re-registered thread with live agent-id watcher must be armed when isNewest=true")
+	}
+
+	// Negative control: both probes dead → not armed even when isNewest.
 	setWatcherAliveByAgentFn(func(string) bool { return false })
-	if threadArmed(thr, now) {
-		t.Error("threadArmed with no watcher evidence must return false")
+	if threadArmedForNewest(thr, now, true) {
+		t.Error("threadArmedForNewest with no watcher evidence must return false")
 	}
 }
 

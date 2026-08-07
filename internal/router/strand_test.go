@@ -3,6 +3,7 @@ package router
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // errNotLoaded is what a launchctl checker returns for an unloaded label.
@@ -117,6 +118,66 @@ func TestComputeStranded_SkipsNoWakeAgents(t *testing.T) {
 	}
 	if got[0].AgentID != "claude-real" {
 		t.Errorf("stranded = %+v, want claude-real", got[0])
+	}
+}
+
+// TestThreadArmedForNewest_TwoThreadsOneAgent is the runtime-layer regression
+// fixture for A35 scoping of WatcherAliveByAgent in threadArmed / AgentArmed.
+//
+// Two threads for the same claude agent (older + newer). The thread-keyed probe
+// is dead for both (watcher carries a stale id after re-registration). The
+// agent-keyed probe is alive (claude-home-watcher.sh is running).
+//
+// Expected: older thread → NOT armed; newer thread → armed (rescued). The
+// older thread MUST NOT inherit the alive signal — that is the unscoped
+// blast-radius this fix closes (one PID vouching for N stale records).
+// AgentArmed overall is true because the newest thread is armed.
+func TestThreadArmedForNewest_TwoThreadsOneAgent(t *testing.T) {
+	now := time.Now().UTC()
+	older := &Thread{
+		ThreadID:   "thr-old",
+		AgentID:    "claude-home",
+		Surface:    surfaceClaude,
+		Status:     ThreadStatusActive,
+		StartedAt:  now.Add(-10 * time.Minute),
+		LastSeenAt: now.Add(-1 * time.Second),
+	}
+	newer := &Thread{
+		ThreadID:   "thr-new",
+		AgentID:    "claude-home",
+		Surface:    surfaceClaude,
+		Status:     ThreadStatusActive,
+		StartedAt:  now.Add(-1 * time.Minute),
+		LastSeenAt: now.Add(-1 * time.Second),
+	}
+
+	// Thread-keyed probe dead for both; agent-keyed probe alive (re-registration case).
+	setWatcherAliveFn(func(string) bool { return false })
+	setWatcherAliveByAgentFn(func(string) bool { return true })
+	defer func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	}()
+
+	// Older thread must NOT be armed — agent-keyed evidence is not its evidence.
+	if threadArmedForNewest(older, now, false) {
+		t.Error("older thread reported armed via agent-keyed probe — unscoped blast-radius regression")
+	}
+	// Newer (re-registration successor) IS armed via the agent-keyed probe.
+	if !threadArmedForNewest(newer, now, true) {
+		t.Error("newest thread must be rescued by agent-keyed probe")
+	}
+
+	// AgentArmed end-to-end: the agent is armed because the newest thread is.
+	root := writeThreads(t, older, newer)
+	if !AgentArmed(root, "claude-home") {
+		t.Error("AgentArmed must report true — newest thread is rescued via agent-keyed probe")
+	}
+
+	// Sanity: with both probes dead the agent is unarmed.
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+	if AgentArmed(root, "claude-home") {
+		t.Error("AgentArmed must report false when both probes are dead")
 	}
 }
 
