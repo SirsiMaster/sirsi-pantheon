@@ -64,9 +64,8 @@ func renderLedger(s ledger.Snapshot) {
 		if a.Stale {
 			stale = " STALE"
 		}
-		fmt.Printf("\n%s — items: %d open · oldest %s · blocked %d · unblocked/unpicked %d — tasks: %d open · %d blocked%s\n",
-			a.AgentID, len(a.Items), ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked,
-			a.OpenTasks, a.BlockedTasks, stale)
+		fmt.Printf("\n%s — %d open · oldest %s · blocked %d · unblocked/unpicked %d%s\n",
+			a.AgentID, len(a.Items), ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked, stale)
 		for _, it := range a.Items {
 			flags := make([]string, 0, 3)
 			if it.Stale {
@@ -223,6 +222,36 @@ writing.`,
 			}
 			fmt.Printf("%s: %s/%s (attempts=%d) -> %s\n", verb, r.Agent, r.TaskID, r.AttemptsUsed, state)
 		}
+		return nil
+	},
+}
+
+var routerTaskResetAttemptsCmd = &cobra.Command{
+	Use: "reset-attempts <agent> <task-id>", Args: cobra.ExactArgs(2),
+	Short: "Zero a task's retry-attempt count after fixing what exhausted it",
+	Long: `A task at the retry ceiling (attempts>=3) is otherwise recoverable only by a
+hand UPDATE against router.db — the same operator-path gap breaker-no-operator-path
+found for tripped circuit breakers, fixed the same way here. Mirrors
+'sirsi router breaker-reset': a deliberate operator action, taken after the cause
+is fixed, never automatic.
+
+Clears attempts and any stale lease remnants so the row returns to claimable.
+If exhaustion itself left the row 'blocked' (no dependency, just attempts>=3),
+this also restores it to 'pending' — that flip was exhaustion's side effect,
+so undoing exhaustion undoes it too. A row genuinely blocked on a dependency
+(blocked-by set) is left blocked; this verb only undoes what exhaustion did.
+
+  sirsi router task reset-attempts codex-home some-task-id`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err := f.Store().ResetTaskAttempts(args[0], args[1]); err != nil {
+			return fmt.Errorf("reset-attempts %s/%s: %w", args[0], args[1], err)
+		}
+		fmt.Printf("  Reset attempts for %s/%s — task is claimable again\n", args[0], args[1])
 		return nil
 	},
 }
@@ -398,6 +427,6 @@ func init() {
 	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&taskReclaimDryRun, "dry-run", false, "Report what would be reclaimed without writing")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
-	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd)
+	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskResetAttemptsCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }
