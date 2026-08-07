@@ -66,6 +66,36 @@ func TestSummarizePhaseGroups(t *testing.T) {
 	}
 }
 
+// Regression: claude-home rendered "0 open · blocked 0 · unblocked/unpicked 0"
+// while 41 non-done task rows sat in the SAME output. All three header counters
+// are item-only, so an empty inbox zeroed the header regardless of ledger depth
+// and a conduit run reading it concluded there was no work. The task counters
+// must be non-zero exactly when the registry has non-done rows, independently of
+// whether any inbox item exists.
+func TestOpenTaskCountsAreIndependentOfInboxItems(t *testing.T) {
+	tasks := []routerstore.Task{
+		{Agent: "claude-home", TaskID: "1", Subject: "s1", Status: "done", ResponsibleParty: "self"},
+		{Agent: "claude-home", TaskID: "2", Subject: "s2", Status: "pending", ResponsibleParty: "self"},
+		{Agent: "claude-home", TaskID: "3", Subject: "s3", Status: "in-progress", ResponsibleParty: "self"},
+		{Agent: "claude-home", TaskID: "4", Subject: "s4", Status: "blocked", ResponsibleParty: "owner"},
+	}
+	// nil items == the exact production condition: inbox zero, ledger full.
+	s := BuildFrom(nil, tasks, nil, "", time.Now().UTC(), time.Hour)
+	if len(s.Agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(s.Agents))
+	}
+	a := s.Agents[0]
+	if len(a.Items) != 0 || a.BlockedCount != 0 || a.UnblockedUnpicked != 0 {
+		t.Fatalf("item counters must stay item-scoped: %+v", a)
+	}
+	if a.OpenTasks != 3 {
+		t.Fatalf("OpenTasks = %d, want 3 (pending+in-progress+blocked, done excluded)", a.OpenTasks)
+	}
+	if a.BlockedTasks != 1 {
+		t.Fatalf("BlockedTasks = %d, want 1", a.BlockedTasks)
+	}
+}
+
 func TestSummarizeSemantics(t *testing.T) {
 	tests := []struct {
 		name        string

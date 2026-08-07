@@ -4078,3 +4078,86 @@ procs, 1.8 KiB retention. Broker still structurally absent (no plist) — correc
 leak measurement is possible. `ai.sirsi.pantheon` still live at PID 91206 where quarantine canon
 expects `-9`: left alone, healed neither way. The stranded uncommitted `.thoth/memory.yaml` in the
 shared checkout is claude-pantheon's and was again NOT adopted.
+
+## Conduit run 2026-08-07T21:14Z
+
+Inbox for claude-home was zero on arrival, and the bind bottleneck named by the prior run
+turned out to have a second, hidden layer. codex-home DID review #639/#649/#651 and approved
+them at their exact heads; its return said publication failed because `api.github.com` was
+unreachable and the Sirsi Bind App is not installed on the repo. I measured `api.github.com`
+→ 200 and confirmed all three heads byte-identical to the approved SHAs, so half that blocker
+has cleared — publication-retry routed to codex-home (`20260807-211226`), deliberately not
+re-reviewing and deliberately not running `sirsi-bind.sh` on #639/#649 myself, which
+claude-home authored. Found the reason the owner never acted on the earlier card: a bulk
+transfer at 20:34:56–20:34:58Z closed FIVE `to: owner` decision cards into codex-home's own
+inbox. A transfer is not an answer; that is an automated pass overruling an owner-scoped
+decision, same class as the re-parked lanes. Routed the defect to claude-pantheon with the
+fix at the store boundary (`20260807-211340`) and raised one consolidated owner card listing
+all five ids (`20260807-211339`), without unilaterally re-opening the four superseded ones.
+Merge gate refused all six candidate PRs correctly: #592/#600/#603/#604 CONFLICTING and
+owned by their lane agents, #602/#608 with zero required checks reporting at head — the
+vacuous-green case. System green: health 88/100, swap 1,594/3,072 MB (1,478 free), broker
+0.0000 GB/req over a driven 3-request window (6→9), board 200, 0 headless sessions.
+Left untouched: `ai.sirsi.horus.agent-router`, `ai.sirsi.triage` and
+`ai.sirsi.router.wake.claude-home` are renamed `.plist.OFF-owner-20260807` — an owner park,
+not a defect to heal.
+
+## Conduit run 2026-08-07T21:45Z (continued — owner: "codex is driven but that is never a gate")
+
+Stopped treating the binder as a gate and worked the ledger. Verified claude-pantheon's
+owner-close guard independently rather than on its word: read `Facade.CloseItem`, confirmed
+the guard sits ahead of the `close:any` branch and that `IsOwnerRecipient` covers the legacy
+`user` spelling the swept cards actually used, then ran the negative control — deleting the
+three guard lines fails `TestCloseItemRefusesOwnerRecipient`, restoring them passes. Bound it,
+and flagged the follow-up it exposes: owner aliases are deliberately absent from agents.json,
+so `ValidateAgent` rejects the owner as an actor and an owner-addressed item is now
+permanently uncloseable by anyone. Not a regression — the owner could not close their items
+before either — but "never closes" and "only the owner closes" are different designs, and
+canon assumes the second. Recommended an explicit `sirsi router dismiss` as the sole exemption.
+
+Two PRs from ledger rows. **#661**: the `ai.sirsi.gemma-broker` label starts `sne-server`, and
+`probeGemma`'s owner-facing finding never said so — that surface is what an agent read before
+downing the Tier-0 substrate believing it was Python. Did NOT do the prescribed rename; it
+needs a bootout/bootstrap of a live load-bearing server whose plist is not even on disk.
+Fixed the harm instead: the title carries the binary, the body denies the Python path, and a
+new test fails if the disclaimer is stripped. **#660**: `docs/REPRODUCTION.md` disclaims its
+`scripts/…` citations carefully and then cites four `docs/evidence/…` artifacts with no caveat
+— all four absent here, all four present in the private inference repo. Labeled them and
+recorded the gap that exposes: the sealed-binary route is unfalsifiable while
+`pinned-bin-sha.txt` (one SHA-256 line, no engine content) stays private. Did not copy anything
+across — that is an ADR-051 owner decision.
+
+Retracted rather than completed the row `pr465-steps-4-7-audit`: its premise ("7 scripts cited,
+all 7 absent") is false — there are 6, they are correctly disclaimed, and all 6 exist in the
+private repo. Acting on it would have "fixed" something already right. The real defect was one
+table down.
+
+## Conduit run 2026-08-07T22:20Z
+
+System vitals turned up the run's only real work, and it was not in a queue. Swap read **95%
+consumed** (21,394/22,528 MB) behind a reassuring 59% free RAM — the hollow-metric trap, exactly
+as canon warns. Three Jetsam events in 24h. Parsing `JetsamEvent-2026-08-07-180342.ips` named the
+driver: `sirsi-inference.test` at 3,137,200 rpages, which at 16 KB pages on Apple Silicon is
+**~50.1 GB on a 48 GB machine** — a Go test binary asking for more than the whole host, running on
+the same physical host as the live fleet via the self-hosted `sirsi-inference` runner. Second
+contributor: an **orphaned** `omlx-server` (PID 8998, PPID 1, no plist, no launchctl label) resident
+4.5h from venv `sne55-omlx-v054-stock032`, holding 13.35 GB of the *same* model the live broker
+already serves, with a 37 GB ceiling. Both are inference-lane owned; I reported and did not act —
+an orphan is not an authorization to reap. Routed as `20260807-221439` to claude-inference.
+The live broker was **ruled out by measurement, not assumption**: a driven window (3 real
+completions, requests 10→13) moved the pool 21,247,931,718 → 21,247,211,762 bytes, **−0.7 MB, i.e.
+≈0.0000 GB/req** against a known-bad rate of 0.48 GB/req. Its 🔴 Critical badge in `sirsi diagnose`
+is the documented `phys_footprint` artifact and was not treated as corroboration.
+Separately, a green-surface defect caught in the act: `sirsi router ledger claude-home` prints the
+header `0 open · blocked 0 · unblocked/unpicked 0` while the very same output lists **41 non-done
+rows** (36 pending, 4 in-progress, 1 blocked). `router doctor --fix` independently counted 30
+stalled rows in the same pass. Step 4 of this routine asks "is there ledger work?" and the header
+answers no — I nearly closed the run on it. Filed as `ledger-header-counts-zero-on-41-rows`.
+Housekeeping: threads reconciled (4 reaped→successor heals), prune 20→20 (all live, nothing
+terminal), no `BINARY_MISSING` sentinels so no rebuild, board 200, store v16, **0 headless
+sessions** (#636 loaded, not firing), 1 stale session record archived, retention clean. Wake lanes
+are back and live with real PIDs — the owner restored them since the prior run; `horus.agent-router`
+remains parked by owner decision and was left alone. PRs #649/#661/#660 verified genuinely green
+against all five *discovered* required contexts (not the vacuous CLEAN badge) but carry **no
+review** — the bind is routed and open with codex-home, and they are my own PRs, so no self-bind
+and no merge.

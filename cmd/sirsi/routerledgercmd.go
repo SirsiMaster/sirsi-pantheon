@@ -64,8 +64,9 @@ func renderLedger(s ledger.Snapshot) {
 		if a.Stale {
 			stale = " STALE"
 		}
-		fmt.Printf("\n%s — %d open · oldest %s · blocked %d · unblocked/unpicked %d%s\n",
-			a.AgentID, len(a.Items), ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked, stale)
+		fmt.Printf("\n%s — items: %d open · oldest %s · blocked %d · unblocked/unpicked %d — tasks: %d open · %d blocked%s\n",
+			a.AgentID, len(a.Items), ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked,
+			a.OpenTasks, a.BlockedTasks, stale)
 		for _, it := range a.Items {
 			flags := make([]string, 0, 3)
 			if it.Stale {
