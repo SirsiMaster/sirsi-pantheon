@@ -679,6 +679,16 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	// Inside the reservation it was LAUNCHED with (Lima's generated record,
 	// bound to a live vz.pid), it is reserved capacity, not a hog. It stays
 	// visible as capacity-reserved instead of being hidden from the report.
+	// The broker is judged by MEASURED TREND (brokertrend.go), never by its
+	// own self-reported cap — mlx_memory_limit_bytes is explicitly labeled
+	// "scheduler_backpressure_not_allocation_cap" by the broker's own /health
+	// response, i.e. a hint, not an enforced ceiling. Trusting that number
+	// is exactly the shape of the exemption removed on 2026-07-27. A flat
+	// footprint over time is normal; a GROWING one alarms regardless of its
+	// absolute size relative to any claimed cap — so the failure mode that
+	// actually happened (31/43.9/38.1 GB runaway) is still caught.
+	brokerPID := BrokerPID()
+
 	var hogs, reserved []string
 	for _, proc := range processes {
 		size := memSize(proc)
@@ -689,6 +699,13 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 			if capBytes, ok := ColimaVMReservation(); ok && size <= capBytes {
 				reserved = append(reserved, fmt.Sprintf("%s at %s of %s reserved",
 					proc.Name, FormatBytes(size), FormatBytes(capBytes)))
+				continue
+			}
+		}
+		if brokerPID != 0 && proc.PID == brokerPID {
+			if stable, detail := BrokerTrendStable(size); stable {
+				reserved = append(reserved, fmt.Sprintf("%s at %s (%s)",
+					processDisplayName(p, proc), FormatBytes(size), detail))
 				continue
 			}
 		}
