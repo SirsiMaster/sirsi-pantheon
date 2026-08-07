@@ -11,11 +11,13 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	cryptorand "crypto/rand"
@@ -282,6 +284,48 @@ func loadLegacyThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	return &reg, nil
 }
 
+// ErrLostLifecycleFence reports that a compare-and-swap write found the row
+// changed since the load baseline — a concurrent writer (a wake loop, a
+// watcher, a sibling sweep) legitimately touched it in between. The fence did
+// its job; this is a RECOVERABLE contention signal, not corruption, and the
+// correct response for a re-derivable mutation is reload-and-redo.
+var ErrLostLifecycleFence = errors.New("lost lifecycle fence")
+
+// fenceRetryBackoff is the pause between reload-and-redo attempts. Contention
+// here is brief (a competing writer finishing its own save), so a short fixed
+// pause clears it without making a caller wait on a genuinely wedged store.
+const fenceRetryBackoff = 50 * time.Millisecond
+
+// retryOnLostFence re-runs a load-mutate-save pass that lost its CAS fence.
+//
+// Only safe for passes that RE-DERIVE their mutation from current state rather
+// than accumulating it: ReapDeadThreads and ReapStrayThreads both recompute
+// from OS truth plus the freshly-loaded registry, so a redo against the
+// concurrent writer's result is the correct answer, not a clobber. Do not wrap
+// a pass that applies a delta.
+//
+// Without this, a lost fence surfaces to callers as "OS-truth sweep
+// incomplete" — and a failed sweep is byte-identical to "nothing to reap", so
+// dead threads keep presenting 🟢 active until the next scheduled pass happens
+// to win the race.
+func retryOnLostFence(pass func() ([]ReapedThread, error)) ([]ReapedThread, error) {
+	const attempts = 3
+	var (
+		out []ReapedThread
+		err error
+	)
+	for i := 0; i < attempts; i++ {
+		out, err = pass()
+		if !errors.Is(err, ErrLostLifecycleFence) {
+			return out, err
+		}
+		if i < attempts-1 {
+			time.Sleep(fenceRetryBackoff)
+		}
+	}
+	return out, err
+}
+
 // SaveThreadRegistry writes threads.json atomically.
 func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
@@ -310,7 +354,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 				return err
 			}
 			if !applied {
-				return fmt.Errorf("thread %q mutation lost lifecycle fence", record.ThreadID)
+				return fmt.Errorf("thread %q mutation %w", record.ThreadID, ErrLostLifecycleFence)
 			}
 		}
 		for id, old := range reg.baseline {
@@ -320,7 +364,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 					return err
 				}
 				if !deleted {
-					return fmt.Errorf("thread %q prune lost lifecycle fence", id)
+					return fmt.Errorf("thread %q prune %w", id, ErrLostLifecycleFence)
 				}
 			}
 		}
@@ -965,6 +1009,12 @@ type ReapedThread struct {
 // Returns the reaped records (empty if none). The registry is saved only when
 // at least one thread was reaped.
 func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
+	return retryOnLostFence(func() ([]ReapedThread, error) {
+		return reapDeadThreadsOnce(routerRoot)
+	})
+}
+
+func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
@@ -1083,6 +1133,12 @@ func isLiveWatcher(t *Thread) bool {
 // Returns the retired records (empty if none). The registry is saved only when at
 // least one record was retired.
 func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
+	return retryOnLostFence(func() ([]ReapedThread, error) {
+		return reapStrayThreadsOnce(routerRoot)
+	})
+}
+
+func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
@@ -1110,7 +1166,22 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 	}
 
 	// Pass 2: sweep non-live siblings of any group that has a live watcher.
-	var retired []ReapedThread
+	//
+	// The salvage PAYLOAD is computed here, against pre-mutation state (it records
+	// prior_status, which the very next line overwrites), but the Stele INSCRIPTION
+	// is deferred until the save actually persists. Splitting the pure decision from
+	// the side effect is exactly what Rule A16 built straySalvage/inscribeStraySalvage
+	// for; this uses that seam.
+	// repo is carried beside the payload rather than folded into it: the inscribed
+	// map is a consumer-visible shape, and Inscribe takes repo as its own argument.
+	type pendingSalvage struct {
+		repo string
+		data map[string]string
+	}
+	var (
+		retired []ReapedThread
+		salvage []pendingSalvage
+	)
 	for _, t := range reg.Threads {
 		if t == nil || t.Status.IsTerminal() || !SameMachine(t.MachineID, thisMachine) {
 			continue
@@ -1119,7 +1190,9 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 		if !ok || anchor.ThreadID == t.ThreadID || isLiveWatcher(t) {
 			continue // no live anchor, this IS the anchor, or itself still live
 		}
-		inscribeStraySalvage(t, anchor.ThreadID)
+		if data, ok := straySalvage(t, anchor.ThreadID); ok {
+			salvage = append(salvage, pendingSalvage{repo: t.Repo, data: data})
+		}
 		t.Status = ThreadStatusClosed
 		t.LastSeenAt = now
 		t.LastError = fmt.Sprintf("retired: superseded by live watcher %s (ADR-024 one-watcher-per-surface) at %s",
@@ -1131,7 +1204,19 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 			// Return nil, not retired: in-memory mutations were never persisted;
 			// a caller must not announce a completed sweep that did not persist
 			// (sirsi-io #18 amendment — same invariant as ReapDeadThreads).
+			//
+			// Nothing is inscribed on this path, which is what makes the pass
+			// SAFE TO RETRY. Inscribing inside the loop (the prior shape) wrote a
+			// salvage entry for every stray and only THEN discovered the save had
+			// lost its fence — so a retry re-inscribed every unpersisted stray, and
+			// even without a retry the ledger recorded a reap that never happened.
+			// The retry did not introduce that; it multiplied it.
 			return nil, err
+		}
+		// Persisted. Now the ledger can claim these were retired, because they were.
+		inscribe := getInscribeSalvageFn()
+		for _, s := range salvage {
+			inscribe(s.repo, s.data)
 		}
 	}
 	return retired, nil
@@ -1182,14 +1267,37 @@ func straySalvage(t *Thread, supersededBy string) (map[string]string, bool) {
 	return data, true
 }
 
-// inscribeStraySalvage inscribes a stray's salvageable state to the Stele ledger
-// so nothing is lost (owner directive 2026-07-22). Empty tombstones inscribe
-// nothing — the check still runs on every reap; it simply finds nothing to save.
-func inscribeStraySalvage(t *Thread, supersededBy string) {
-	if data, ok := straySalvage(t, supersededBy); ok {
-		stele.Inscribe("horus", stele.TypeThreadReap, t.Repo, data)
+// inscribeSalvage is the Stele side effect of the stray reap, injectable per Rule
+// A16 so the "nothing inscribed unless it persisted" invariant is testable without
+// writing to the real ledger (stele.Inscribe is a process-global singleton bound to
+// $HOME, so it cannot be sandboxed per-test). Guarded per Rule A21: reaps run from
+// supervisor duties, so the pointer has concurrent readers.
+var (
+	inscribeSalvageMu sync.RWMutex
+	inscribeSalvageFn = func(repo string, data map[string]string) {
+		stele.Inscribe("horus", stele.TypeThreadReap, repo, data)
 	}
+)
+
+func getInscribeSalvageFn() func(string, map[string]string) {
+	inscribeSalvageMu.RLock()
+	defer inscribeSalvageMu.RUnlock()
+	return inscribeSalvageFn
 }
+
+func setInscribeSalvageFn(fn func(string, map[string]string)) {
+	inscribeSalvageMu.Lock()
+	defer inscribeSalvageMu.Unlock()
+	inscribeSalvageFn = fn
+}
+
+// inscribeStraySalvage (removed 2026-08-07) inscribed a stray's salvage inline,
+// during the sweep loop and therefore BEFORE the save that decides whether the
+// stray is retired at all. reapStrayThreadsOnce now collects the payloads and
+// inscribes them only after SaveThreadRegistry persists, so the ledger records a
+// reap only when a reap actually happened — and the pass became safe to retry.
+// The "nothing lost" guarantee (owner directive 2026-07-22) is unchanged: the
+// check still runs on every reap, and every salvageable stray still inscribes.
 
 // IsStale reports whether a thread should be considered stale given now and
 // the configured stale-after window. Closed threads are not stale.
