@@ -35,6 +35,7 @@ func installGemmaFakes(t *testing.T, status liveness.GemmaStatus) *[]string {
 	zeroRestoreWait(t)
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
+	oldQuarantined := getIsQuarantinedFn()
 	var calls []string
 	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) { return status, "test" })
 	setGemmaServeFn(func(restart bool) error {
@@ -45,10 +46,16 @@ func installGemmaFakes(t *testing.T, status liveness.GemmaStatus) *[]string {
 		}
 		return nil
 	})
+	// Force NOT-quarantined regardless of the real filesystem. Without this,
+	// a genuinely quarantined dev machine (the marker is a real file at
+	// ~/.sirsi/gemma-quarantine, checked via os.UserHomeDir()) makes every
+	// caller of this helper fail, because home is never injected here.
+	setIsQuarantinedFn(func(string) bool { return false })
 	gemmaWedgeStrikes = 0
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
 	return &calls
@@ -136,11 +143,14 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
+	oldQuarantined := getIsQuarantinedFn()
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
+	setIsQuarantinedFn(func(string) bool { return false })
 	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) { return liveness.GemmaDown, "no port" })
 	setGemmaServeFn(func(bool) error { return errors.New("RAM won't fit — 14 GB model > 8 GB free") })
 	gemmaWedgeStrikes = 0
@@ -183,6 +193,73 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	}
 }
 
+// TestGemmaLiveness_WeightsAbsentSkipsRestartRoutesToOwner: when the probe detail
+// contains WeightsAbsentSentinel, the duty must NOT restart the broker (a restart
+// cannot fix a missing HF cache) and must route ONE non-duplicate item to owner.
+func TestGemmaLiveness_WeightsAbsentSkipsRestartRoutesToOwner(t *testing.T) {
+	zeroRestoreWait(t)
+	root := t.TempDir()
+	writeGemmaRouteRegistry(t, root)
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+	oldProbe := getGemmaProbeFn()
+	oldServe := getGemmaServeFn()
+	var serveCalls []string
+	// Detail contains the exact sentinel that comes out of ProbeGemmaState.
+	weightsDetail := "broker RSS 90 MB is below the 1024 MB weight floor — " + liveness.WeightsAbsentSentinel + "; a restart will not fix this"
+	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) {
+		return liveness.GemmaWedged, weightsDetail
+	})
+	setGemmaServeFn(func(bool) error { serveCalls = append(serveCalls, "serve"); return nil })
+	oldQuarantined := getIsQuarantinedFn()
+	setIsQuarantinedFn(func(string) bool { return false })
+	gemmaWedgeStrikes = 0
+	t.Cleanup(func() {
+		setGemmaProbeFn(oldProbe)
+		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
+		gemmaWedgeStrikes = 0
+	})
+
+	// First call: must NOT start/restart (skip futile restart), must route.
+	if err := RunGemmaLivenessDuty(root, ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(serveCalls) != 0 {
+		t.Errorf("weights-absent wedge triggered serve calls %v, want none (restart cannot fix missing HF cache)", serveCalls)
+	}
+	if gemmaWedgeStrikes != 0 {
+		t.Errorf("gemmaWedgeStrikes=%d after weights-absent; want 0 (reset, not accumulated)", gemmaWedgeStrikes)
+	}
+
+	f, err := dispatch.OpenRoot(root)
+	if err != nil {
+		t.Fatalf("open dispatch: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	items, err := f.Inbox("owner")
+	if err != nil {
+		t.Fatalf("read owner inbox: %v", err)
+	}
+	var found bool
+	for _, it := range items {
+		if it.Title == weightsAbsentTitle {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("weights-absent item not in owner inbox; got %d items", len(items))
+	}
+
+	// Second call: dedup — must not create a second item.
+	_ = RunGemmaLivenessDuty(root, "")
+	items2, _ := f.Inbox("owner")
+	if len(items2) != len(items) {
+		t.Errorf("second call duplicated the weights-absent item (got %d, want %d)", len(items2), len(items))
+	}
+}
+
 // TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser: serve succeeds but the
 // broker is still wedged after the restart — route to user via dispatch, no error.
 func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
@@ -194,11 +271,14 @@ func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 
 	oldProbe := getGemmaProbeFn()
 	oldServe := getGemmaServeFn()
+	oldQuarantined := getIsQuarantinedFn()
 	t.Cleanup(func() {
 		setGemmaProbeFn(oldProbe)
 		setGemmaServeFn(oldServe)
+		setIsQuarantinedFn(oldQuarantined)
 		gemmaWedgeStrikes = 0
 	})
+	setIsQuarantinedFn(func(string) bool { return false })
 
 	var calls []string
 	// Probe always returns wedged (so post-restore re-probe also returns wedged).

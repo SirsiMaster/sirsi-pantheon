@@ -6,6 +6,8 @@ Run: python3 .claude/hooks/router_inbox_check_test.py
 
 import importlib.util
 import os
+import sqlite3
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -288,6 +290,55 @@ class TestIdentityOverrideNarrowsOnly(unittest.TestCase):
     def test_empty_override_is_a_no_op(self):
         self.assertEqual(self._apply("claude-home", "/Users/x", ""), "claude-home")
 
+
+
+class TestPullModelOpenItems(unittest.TestCase):
+    """The inbox counter must read the STORE, never the retired items/ dir.
+
+    Regression guard for the 2026-08-06 phantom-open defect: the counter
+    scanned `.agents/idea-router/items/*.md`, which stopped being written at
+    the store cutover, so two June items that are `closed` in the store still
+    read `status: open` on disk and made every claude-home session open with a
+    false "2 pending inbox items — check the router immediately".
+    """
+
+    def _store(self, rows):
+        db = Path(self.tmp.name) / "router.db"
+        con = sqlite3.connect(db)
+        con.execute(
+            "create table items (id text primary key, to_agent text, status text)"
+        )
+        con.executemany("insert into items values (?, ?, ?)", rows)
+        con.commit()
+        con.close()
+        return db
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_counts_only_open_items_for_this_agent(self):
+        db = self._store([
+            ("open-1", "claude-home", "open"),
+            ("open-2", "claude-home", "open"),
+            ("closed-1", "claude-home", "closed"),   # the phantom case
+            ("other-1", "claude-nexus", "open"),     # wrong recipient
+        ])
+        with mock.patch.dict(os.environ, {"SIRSI_ROUTER_DB": str(db)}):
+            self.assertEqual(
+                sorted(hook.pull_model_open_items("claude-home")),
+                ["open-1", "open-2"],
+            )
+            self.assertEqual(hook.pull_model_open_items("claude-nexus"), ["other-1"])
+            self.assertEqual(hook.pull_model_open_items("nobody"), [])
+
+    def test_missing_store_is_silent_and_creates_nothing(self):
+        """A missing store must never crash the hook, and never be conjured
+        into existence just by counting."""
+        missing = Path(self.tmp.name) / "does-not-exist.db"
+        with mock.patch.dict(os.environ, {"SIRSI_ROUTER_DB": str(missing)}):
+            self.assertEqual(hook.pull_model_open_items("claude-home"), [])
+        self.assertFalse(missing.exists())
 
 
 if __name__ == "__main__":

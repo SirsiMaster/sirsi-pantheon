@@ -782,9 +782,13 @@ func TestCollectNodeStatus_HonestLiveness(t *testing.T) {
 	fGemma := mk("gemma-x", "gemma", 10006)    // surface-loop — loop-evidence N/A (NOT pgrep-gated)
 	dGone := mk("claude-d", "claude", 10004)   // OS-dead → must auto-reap
 
-	// Only thread A has a live watcher loop.
+	// Only thread A has a live watcher loop (stub both probes — tests must not pgrep the real host).
 	setWatcherAliveFn(func(id string) bool { return id == aLive.ThreadID })
-	defer func() { setWatcherAliveFn(nil) }()
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+	defer func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	}()
 
 	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
 	if err != nil {

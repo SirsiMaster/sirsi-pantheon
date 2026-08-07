@@ -15,6 +15,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	buildversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
 var dashboardPort int
@@ -63,6 +64,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		LedgerFn:     collectDashboardLedger,
 		FleetFn:      collectDashboardFleet,
 		Unroutable:   dashboardUnroutable(),
+		FabricFn:     collectDashboardFabric,
 	})
 
 	if err := srv.Start(); err != nil {
@@ -91,6 +93,18 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+func collectDashboardFabric() (ledger.FabricBoard, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return ledger.FabricBoard{}, fmt.Errorf("locate repo root: %w", err)
+	}
+	board, err := ledger.BuildFabric(repoRoot, buildversion.Current("sirsi").Version, time.Now().UTC())
+	if err != nil {
+		return ledger.FabricBoard{}, fmt.Errorf("build fabric: %w", err)
+	}
+	return board, nil
 }
 
 // collectDashboardLedger wires GET /api/ledger (A26 Nexus seam) to the

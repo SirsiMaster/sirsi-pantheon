@@ -126,6 +126,62 @@ func TestKickstartDisabledPlusUnloaded(t *testing.T) {
 	}
 }
 
+// TestKickstartHonorsGemmaQuarantine verifies the codex-inference-flagged gap
+// against PR #611: RunGemmaLivenessDuty checking the quarantine marker was not
+// enough, because this duty can still revive the broker's plist directly from
+// disk. A quarantined broker's labels must never be silently rebootstrapped;
+// unrelated labels must still revive normally.
+func TestKickstartHonorsGemmaQuarantine(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.gemma-broker.plist") // quarantined → must NOT revive
+	writeAgentPlist(t, dir, "ai.sirsi.gemma-worker.plist") // quarantined → must NOT revive
+	writeAgentPlist(t, dir, "ai.sirsi.pantheon.plist")     // unrelated → must still revive
+
+	var bootstrapped []string
+	deps := launchdDeps{
+		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		bootstrapPlist: func(p string) error {
+			bootstrapped = append(bootstrapped, filepath.Base(p))
+			return nil
+		},
+		uid:           func() int { return 501 },
+		isQuarantined: func() bool { return true },
+	}
+	revived, err := KickstartDeadLabels(dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revived) != 1 || revived[0] != "ai.sirsi.pantheon" {
+		t.Fatalf("quarantine must block only the gemma labels: got %v", revived)
+	}
+	for _, b := range bootstrapped {
+		if b == "ai.sirsi.gemma-broker.plist" || b == "ai.sirsi.gemma-worker.plist" {
+			t.Fatalf("bootstrapped a quarantined label: %v", bootstrapped)
+		}
+	}
+}
+
+// TestKickstartRevivesGemmaWhenNotQuarantined is the other direction: with no
+// quarantine in effect, the broker's labels revive exactly like any other dead
+// label — the guard must not become a standing block.
+func TestKickstartRevivesGemmaWhenNotQuarantined(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.gemma-broker.plist")
+
+	revived, err := KickstartDeadLabels(dir, launchdDeps{
+		listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
+		bootstrapPlist: func(p string) error { return nil },
+		uid:            func() int { return 501 },
+		isQuarantined:  func() bool { return false },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revived) != 1 || revived[0] != "ai.sirsi.gemma-broker" {
+		t.Fatalf("must revive gemma-broker when not quarantined: got %v", revived)
+	}
+}
+
 func TestHealCollectorDrains(t *testing.T) {
 	drainHeals() // clean slate
 	RecordHeal("one")

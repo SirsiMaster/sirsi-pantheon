@@ -39,7 +39,12 @@ func TestAgentLoopDead(t *testing.T) {
 	// claude-nexus: one session, loop dead.
 	seedClaudeThread(t, root, "claude-nexus", "thr-nexus")
 	setWatcherAliveFn(func(threadID string) bool { return threadID == "thr-armed" })
-	defer func() { setWatcherAliveFn(nil) }()
+	// Stub agent-id probe too — real claude-home-watcher.sh may be alive on this host.
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+	defer func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	}()
 
 	pending := map[string][]string{
 		"claude-home":  {"item-1", "item-2"},

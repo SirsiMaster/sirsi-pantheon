@@ -52,12 +52,16 @@ func TestAttendedSessionLive_WorkerDoesNotCountAsItsOwnAttendedSession(t *testin
 	}
 }
 
-// stubWatcher installs the loop-process probe. Tests must never pgrep the real
-// host — the answer would depend on whichever agents happen to be running.
+// stubWatcher installs both loop-process probes (thread-id and agent-id). Tests
+// must never pgrep the real host — the answer depends on whichever agents are live.
 func stubWatcher(t *testing.T, alive bool) {
 	t.Helper()
 	setWatcherAliveFn(func(string) bool { return alive })
-	t.Cleanup(func() { setWatcherAliveFn(nil) })
+	setWatcherAliveByAgentFn(func(string) bool { return alive })
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	})
 }
 
 func TestAttendedSessionLive_LiveClaudeSessionCounts(t *testing.T) {
@@ -70,7 +74,7 @@ func TestAttendedSessionLive_LiveClaudeSessionCounts(t *testing.T) {
 }
 
 // THE case that produced tonight's stall, and the reason this reuses
-// threadArmed instead of heartbeat freshness.
+// threadArmedForNewest instead of heartbeat freshness.
 //
 // A claude session record can be fresh while its /loop watcher process is dead:
 // the session is registered, heartbeating through the harness, and consuming
@@ -100,9 +104,9 @@ func TestAttendedSessionLive_CodexSessionCounts(t *testing.T) {
 //
 // Asserted on codex, not claude, on purpose. The two attended surfaces prove
 // liveness differently — claude by loop evidence (covered above), codex by
-// heartbeat freshness. threadArmed short-circuits on loop evidence for claude
-// and never consults staleness at all, so a stale CLAUDE thread would pass this
-// for an unrelated reason and assert nothing about the heartbeat path.
+// heartbeat freshness. threadArmedForNewest short-circuits on loop evidence for
+// claude and never consults staleness at all, so a stale CLAUDE thread would
+// pass this for an unrelated reason and assert nothing about the heartbeat path.
 func TestAttendedSessionLive_StaleSessionDoesNotCount(t *testing.T) {
 	root := writeThreads(t, attendedThread("codex-pantheon", surfaceCodex, 2*time.Hour))
 
