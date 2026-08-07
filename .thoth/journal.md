@@ -3977,3 +3977,59 @@ row `consumer-dispatch-rootcause` rather than left in prose. Health green throug
 MB flat, free 86%, diagnose 100/100, board :8734 → 200, zero `BINARY_MISSING`, no new crash or
 Jetsam. Threads 181→174, 3 reaped-to-successor heals, one leaked conduit session reaped, 2.8 KiB
 retention reclaimed.
+
+## Conduit run 2026-08-07T03:20Z
+
+Found and fixed the root cause of the fleet-wide consumer-dispatch failure, and the fix was
+legible only because the previous run shipped the instrumentation for it. The deployment gate
+that `consumer-dispatch-rootcause` was parked on cleared at the top of this run: the schema
+check read live store 16 against an `origin/main` that builds 16 — equal, the safe direction —
+and `origin/main` HEAD *was* `2b2e31e9`, the #628 merge. Installed it under the full guard
+(`shlock`, pristine clone, candidate-reads-live-store check, `rm` before `cp`, re-sign, verify)
+and then restarted the five long-lived Go processes, because an install does not restart them
+and they would otherwise have kept running the old image invisibly. **The very first
+post-restart dispatch printed the answer:** `exit status 1 — last output: Not logged in ·
+Please run /login`.
+
+**The login state was never broken.** The identical command run by hand returns `OK`, and
+`~/.claude/.credentials.json` is present. launchd `exec`s a program with only the plist's
+`EnvironmentVariables` and *no shell at all*, so none of the shell startup files run — and the
+consumer CLIs take their credentials from what `~/.zshenv` exports. `~/.zshenv` is the one zsh
+file sourced by every invocation, which is exactly why every human-run consumer worked and
+every launchd-run one failed. Reproduced deterministically in both directions before writing
+any code: the exact launchd environment fails, the same environment through `zsh -lc` returns
+`OK`. My first hypothesis — a missing `HOME`, by analogy to the PR #544 missing-`PATH` bug —
+was measured and **refuted**: the plist exports both correctly.
+
+Shipped as **PR #631**: `dispatchConsumer` wraps argv as `$SHELL -lc 'exec "$@"' $SHELL
+<argv...>`. argv is passed as POSITIONAL PARAMETERS and never interpolated into the script
+text, which is load-bearing rather than stylistic — the consumer prompt contains backticks and
+`$(...)` that a naive `-lc "<command>"` would execute at dispatch, turning a fix into a
+command-injection vector on agent-authored text. `exec` replaces the shell, so the tracked pid
+is still the consumer and #628's `*os.File` pipe and the setsid detach are both untouched.
+Fails open on an unusable `SHELL`. No secret is written to disk: this sources the operator's
+existing 0600 `~/.zshenv` rather than copying a 108-char token into world-readable LaunchAgent
+plists, which was the obvious alternative and is strictly worse.
+
+**The disclosure that matters more than the fix:** my first version of the regression test used
+`/bin/echo` and PASSED with the fix reverted. It proved the wrapper was *safe*, never that it
+was *applied* — a green test that survives deletion of the code it covers, which is the same
+green-surface class this entire run was chasing. The negative control caught it. The
+replacement gives itself a temp `HOME` whose `.zshenv` exports a marker, a signal that cannot
+exist unless a startup file ran, and asserts in the same run that backticks arrive literally;
+reverting only the dispatch site now reddens it by name. Scale, for the record: 3907 of 4161
+dispatches across eight lanes, `claude-finalwishes` respawning every ~60s for 24h+ with inbox
+depth pinned at 27. Explicitly NOT claimed: this repairs the environment; whether each lane
+then completes its work is registered separately as `consumer-dispatch-postfix-verify`, and
+note codex-home drained its inbox *despite* 252/322 failures, so failure count alone is not the
+success metric — inbox depth is.
+
+Also recovered the four conduit journal entries stranded on the dead
+`fix/r6-broker-mlx-active-bytes` branch (PR #630) by chronological append rather than
+cherry-pick, since main's journal had advanced independently. Re-routed the #625 closure to
+claude-pantheon a second time — still open, still a live footgun. Health green: swap 740/2048 MB
+(flat a 15th run), free 80%, diagnose 100/100, board :8734 → 200, 0 `BINARY_MISSING`, no new
+sirsi/gemma crash or Jetsam. Threads 187→182, one reaped→successor heal, one leaked conduit
+session reaped, one record archived, 1.7 KiB retention. `thread reconcile` again named a new
+thread on a lost lifecycle fence — the filed `fence-retry-budget-underprovisioned` row, not a
+regression.
