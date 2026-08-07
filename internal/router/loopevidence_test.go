@@ -130,6 +130,74 @@ func TestWatcherAlive_EmptyThreadID(t *testing.T) {
 	}
 }
 
+// TestWatcherAliveForThread_PostReconcileSuccessorChain is the regression fixture
+// for the P1 watcher-identity bug: thread reconcile reaps a record and mints a
+// successor with a new id, but the watcher process retains the OLD id in argv.
+// WatcherAliveForThread must credit the predecessor's watcher, not declare loop-dead.
+func TestWatcherAliveForThread_PostReconcileSuccessorChain(t *testing.T) {
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	})
+
+	const oldID = "thr-5750144f2a638970"
+	const newID = "thr-e42521d7db4f6450"
+
+	// Watcher process has OLD id in argv — as it would be after reconcile.
+	setWatcherAliveFn(func(id string) bool { return id == oldID })
+	// Agent-keyed probe finds nothing: this test isolates the predecessor path.
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+
+	// Freshly-registered thread with no predecessor: must not inherit anything.
+	fresh := &Thread{ThreadID: newID}
+	if WatcherAliveForThread(fresh, false) {
+		t.Error("a successor with no ReapedFrom must not inherit watcher evidence")
+	}
+
+	// Successor with ReapedFrom set — the post-reconcile case.
+	successor := &Thread{
+		ThreadID: newID,
+		SuspendPayload: &SuspendPayload{
+			ReapedFrom: oldID,
+		},
+	}
+	if !WatcherAliveForThread(successor, false) {
+		t.Error("successor must report watcher alive via predecessor id in argv (post-reconcile case)")
+	}
+
+	// Sanity: once the old watcher dies, the successor is correctly unarmed.
+	setWatcherAliveFn(func(string) bool { return false })
+	if WatcherAliveForThread(successor, false) {
+		t.Error("successor with a dead predecessor watcher must not report alive")
+	}
+}
+
+// TestWatcherAliveForThread_UnionsAllThreeProbes pins the merge of PR #609
+// (predecessor-keyed) and PR #614 (agent-keyed): they fix DIFFERENT stale-argv
+// paths, so WatcherAliveForThread must union them rather than pick one. It also
+// pins the A35 scoping — agent-keyed evidence counts only for the newest record.
+func TestWatcherAliveForThread_UnionsAllThreeProbes(t *testing.T) {
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	})
+
+	// No thread-id anywhere in argv; only the stable script name is alive.
+	setWatcherAliveFn(func(string) bool { return false })
+	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-home" })
+
+	thr := &Thread{ThreadID: "thr-new-abc", AgentID: "claude-home"}
+
+	// isNewest=true: agent-keyed probe is valid evidence for this one record.
+	if !WatcherAliveForThread(thr, true) {
+		t.Error("newest record must be rescued by the agent-keyed probe (PR #614 path survives the merge)")
+	}
+	// isNewest=false: an older sibling must NOT inherit that one PID's evidence.
+	if WatcherAliveForThread(thr, false) {
+		t.Error("non-newest record must not inherit agent-keyed evidence (A35 scoping)")
+	}
+}
+
 func TestWatcherAliveByAgent_EmptyAgentID(t *testing.T) {
 	if WatcherAliveByAgent("") {
 		t.Error("empty agent id has no watcher")

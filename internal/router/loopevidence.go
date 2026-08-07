@@ -142,6 +142,37 @@ func WatcherAliveByAgent(agentID string) bool {
 	return getWatcherAliveByAgentFn()(agentID)
 }
 
+// WatcherAliveForThread is the single union of every loop-evidence probe for one
+// thread. A watcher's argv can hold a stale identifier in two distinct ways, and
+// each needs its own probe — crediting only one silently re-opens the other's bug:
+//
+//  1. thread-keyed (WatcherAlive): steady state, argv holds the current id.
+//  2. predecessor-keyed: thread reconcile reaped the record and minted a successor
+//     with a NEW id while the running watcher kept the OLD one. pgrep on the new id
+//     returns empty and the lane falsely reads loop-dead. Probing
+//     SuspendPayload.ReapedFrom credits the watcher born under the reaped record.
+//     Unconditional: ReapedFrom is a 1:1 link to exactly one predecessor, so it
+//     cannot vouch for an unrelated record.
+//  3. agent-keyed (WatcherAliveByAgent): re-registration, where the script name is
+//     stable while every thread id in argv goes stale. Credited ONLY when
+//     isNewest=true (A35) — an agent-keyed hit is one PID, and blanket-crediting it
+//     makes every stale sibling of that agent read armed.
+//
+// Any one of the three clears the loop-dead verdict; absence of all three is
+// loop-dead. Callers without registry context pass isNewest=false.
+func WatcherAliveForThread(t *Thread, isNewest bool) bool {
+	if t == nil || t.ThreadID == "" {
+		return false
+	}
+	if WatcherAlive(t.ThreadID) {
+		return true
+	}
+	if t.SuspendPayload != nil && WatcherAlive(t.SuspendPayload.ReapedFrom) {
+		return true
+	}
+	return isNewest && WatcherAliveByAgent(t.AgentID)
+}
+
 // EffectiveStale is the loop-evidence-aware staleness used for the police-trusted
 // `.stale` field. A thread is NOT stale when any of these hold:
 //  1. Its heartbeat is fresh (IsStale = false).

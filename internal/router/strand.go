@@ -43,13 +43,7 @@ func threadArmedForNewest(thr *Thread, now time.Time, isNewest bool) bool {
 	wtype := WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 	switch {
 	case requiresThreadIDLoop(wtype):
-		if thr.ThreadID == "" {
-			return false
-		}
-		if WatcherAlive(thr.ThreadID) {
-			return true
-		}
-		return isNewest && WatcherAliveByAgent(thr.AgentID)
+		return WatcherAliveForThread(thr, isNewest)
 	case thr.IsStale(now, DefaultThreadStaleAfter):
 		return false
 	default: // app-heartbeat / native-runloop / surface-loop / pull-loop — heartbeat is the proof
