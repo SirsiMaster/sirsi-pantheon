@@ -366,6 +366,7 @@ var doctorChecks = []doctorCheck{
 		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
 	{"launchd Disabled", []string{"launchd Disabled Override"}, checkLaunchdDisabled},
 	{"Pause Ledger", []string{"Agent Pause Ledger"}, checkPauseLedger},
+	{"Thread Registry Split", []string{"Thread Registry Split"}, checkThreadRegistrySplit},
 }
 
 // externalFindingChecks are finding Check names appended to the report OUTSIDE
@@ -678,6 +679,16 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 	// Inside the reservation it was LAUNCHED with (Lima's generated record,
 	// bound to a live vz.pid), it is reserved capacity, not a hog. It stays
 	// visible as capacity-reserved instead of being hidden from the report.
+	// The broker is judged by MEASURED TREND (brokertrend.go), never by its
+	// own self-reported cap — mlx_memory_limit_bytes is explicitly labeled
+	// "scheduler_backpressure_not_allocation_cap" by the broker's own /health
+	// response, i.e. a hint, not an enforced ceiling. Trusting that number
+	// is exactly the shape of the exemption removed on 2026-07-27. A flat
+	// footprint over time is normal; a GROWING one alarms regardless of its
+	// absolute size relative to any claimed cap — so the failure mode that
+	// actually happened (31/43.9/38.1 GB runaway) is still caught.
+	brokerPID := BrokerPID()
+
 	var hogs, reserved []string
 	for _, proc := range processes {
 		size := memSize(proc)
@@ -688,6 +699,13 @@ func checkTopMemoryProcesses(p platform.Platform, report *DoctorReport) {
 			if capBytes, ok := ColimaVMReservation(); ok && size <= capBytes {
 				reserved = append(reserved, fmt.Sprintf("%s at %s of %s reserved",
 					proc.Name, FormatBytes(size), FormatBytes(capBytes)))
+				continue
+			}
+		}
+		if brokerPID != 0 && proc.PID == brokerPID {
+			if stable, detail := BrokerTrendStable(size); stable {
+				reserved = append(reserved, fmt.Sprintf("%s at %s (%s)",
+					processDisplayName(p, proc), FormatBytes(size), detail))
 				continue
 			}
 		}
@@ -1293,35 +1311,33 @@ func checkAppCrashes(report *DoctorReport) {
 }
 
 // checkSirsiProcesses checks for running Sirsi daemons and their health.
+//
+// Sized by memSize() (physical footprint, broker-truth-corrected for the
+// load-bearing local-model broker — see brokerhealth.go), not raw RSS. This
+// check used to parse `ps -axo pid,rss,comm` directly, which is exactly the
+// class R6 (PRD SNE_HETEROGENEOUS_COMPUTE.md) forbids: the broker binary is
+// `sirsi-inference`, so its name matches "sirsi" here, and a raw-RSS total
+// would have understated it by up to the measured 27 GB.
 func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
-	out, err := p.Command("ps", "-axo", "pid,rss,comm")
+	procs, err := getProcessListWith(p)
 	if err != nil {
 		return
 	}
 
 	pantheonProcs := map[string]struct {
-		pid int
-		rss int64
+		pid  int
+		size int64
 	}{}
 
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for _, pr := range procs {
+		if !strings.Contains(strings.ToLower(pr.Command), "sirsi") {
 			continue
 		}
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "sirsi") {
-			fields := strings.Fields(line)
-			if len(fields) >= 3 {
-				pid, _ := strconv.Atoi(fields[0])
-				rss, _ := strconv.ParseInt(fields[1], 10, 64)
-				name := filepath.Base(strings.Join(fields[2:], " "))
-				pantheonProcs[name] = struct {
-					pid int
-					rss int64
-				}{pid: pid, rss: rss * 1024}
-			}
-		}
+		name := filepath.Base(pr.Command)
+		pantheonProcs[name] = struct {
+			pid  int
+			size int64
+		}{pid: pr.PID, size: memSize(pr)}
 	}
 
 	finding := DiagnosticFinding{
@@ -1333,19 +1349,19 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 		finding.Message = "No Sirsi background processes running"
 	} else {
 		var details []string
-		var totalRSS int64
+		var totalSize int64
 		for name, info := range pantheonProcs {
-			details = append(details, fmt.Sprintf("%s (PID %d, %s)", name, info.pid, FormatBytes(info.rss)))
-			totalRSS += info.rss
+			details = append(details, fmt.Sprintf("%s (PID %d, %s)", name, info.pid, FormatBytes(info.size)))
+			totalSize += info.size
 		}
 		finding.Detail = strings.Join(details, " | ")
 
-		if totalRSS > 500*1024*1024 {
+		if totalSize > 500*1024*1024 {
 			finding.Severity = SeverityWarn
-			finding.Message = fmt.Sprintf("%d Sirsi process(es) using %s total", len(pantheonProcs), FormatBytes(totalRSS))
+			finding.Message = fmt.Sprintf("%d Sirsi process(es) using %s total", len(pantheonProcs), FormatBytes(totalSize))
 		} else {
 			finding.Severity = SeverityOK
-			finding.Message = fmt.Sprintf("%d Sirsi process(es) healthy (%s total)", len(pantheonProcs), FormatBytes(totalRSS))
+			finding.Message = fmt.Sprintf("%d Sirsi process(es) healthy (%s total)", len(pantheonProcs), FormatBytes(totalSize))
 		}
 	}
 

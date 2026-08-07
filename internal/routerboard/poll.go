@@ -287,18 +287,51 @@ func summarize(fleet []Lane) BoardSummary {
 	}
 	s.PctDone = pct(s.DoneTasks, s.TotalTasks)
 
-	byTotal := append([]Lane(nil), fleet...)
-	sort.Slice(byTotal, func(i, j int) bool { return byTotal[i].TasksTotal > byTotal[j].TasksTotal })
+	// Group by the task's OWN --phase label, not by agent. "Phase" here means
+	// what an agent declared work to belong to ("Host Stability", "Model
+	// Router"), not "which lane owns it" — those are different questions and
+	// collapsing them into one row per agent buried a handful of freshly
+	// worked tasks under a lane's entire multi-week backlog, making real
+	// progress invisible (owner, 2026-08-07: "I see no progress on any
+	// burndown"). A task with no --phase set falls back to its agent name,
+	// prefixed so it never collides with that agent's own real phase names.
+	type acc struct{ total, done, active, blocked int }
+	order := []string{}
+	byPhase := map[string]*acc{}
+	for _, f := range fleet {
+		for _, t := range f.Tasks {
+			label := t.str("phase")
+			if label == "" {
+				label = f.Agent + " (no phase set)"
+			}
+			a, ok := byPhase[label]
+			if !ok {
+				a = &acc{}
+				byPhase[label] = a
+				order = append(order, label)
+			}
+			a.total++
+			switch t.str("status") {
+			case "done":
+				a.done++
+			case "blocked":
+				a.blocked++
+				a.active++
+			case "in-progress", "pending":
+				a.active++
+			}
+		}
+	}
+	sort.Slice(order, func(i, j int) bool { return byPhase[order[i]].total > byPhase[order[j]].total })
 	s.Phases = []Phase{}
-	for _, f := range byTotal {
-		if f.TasksTotal == 0 {
+	for _, label := range order {
+		a := byPhase[label]
+		if a.total == 0 {
 			continue
 		}
-		pb := f.Counts["blocked"]
 		s.Phases = append(s.Phases, Phase{
-			Name: f.Agent, Total: f.TasksTotal, Done: f.Counts["done"],
-			Active: f.Counts["in-progress"] + f.Counts["pending"] + pb, Blocked: pb,
-			PctDone: pct(f.Counts["done"], f.TasksTotal),
+			Name: label, Total: a.total, Done: a.done, Active: a.active, Blocked: a.blocked,
+			PctDone: pct(a.done, a.total),
 		})
 	}
 
@@ -358,7 +391,7 @@ func taskDetails(fleet []Lane) []TaskDetail {
 			}
 			out = append(out, TaskDetail{
 				TaskID: t.str("task_id"), Agent: f.Agent, Subject: t.str("subject"),
-				Status: status, BlockedBy: bp, ResponsibleParty: t["responsible_party"],
+				Status: status, Phase: t.str("phase"), BlockedBy: bp, ResponsibleParty: t["responsible_party"],
 				Updated: t.str("updated"), Age: ageStr(t.str("updated")), Liveness: liveness,
 				Charter: t["charter"], CommissionedAt: t["commissioned_at"],
 				CommissionedBy: t["commissioned_by"], Outline: t["outline"],

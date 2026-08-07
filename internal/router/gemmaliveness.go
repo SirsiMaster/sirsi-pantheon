@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,11 +122,65 @@ var restoreWait = 5 * time.Second
 // so a persistent RAM gap does not flood every 2-minute duty tick.
 const restoreFailTitle = "gemma-liveness: broker restore failed — free memory"
 
+// weightsAbsentTitle is the router item title for the "weights likely absent"
+// class: the HF model cache was deleted and a restart cannot restore it. Distinct
+// from restoreFailTitle so the two conditions have independent dedup tracks.
+const weightsAbsentTitle = "gemma-liveness: model weights absent — re-download required"
+
+// QuarantineMarkerPath is the file whose presence tells every gemma-liveness
+// restorer to STAND DOWN. Its absence has always meant "restore me"; there was
+// no way to say "I stopped this on purpose."
+//
+// Live incident, 2026-08-06: the operator stopped the broker deliberately and
+// moved its LaunchAgent plists to ~/.sirsi/quarantined-wake-plists/ — which
+// defeats ai.sirsi.liveness-watch and sirsi-fabric-watchdog.sh (both
+// launchd-based, both need a loaded label to act on). It did NOT defeat THIS
+// duty, because RunGemmaLivenessDuty is a Go tick inside the resident router
+// process, not a launchd consumer — plist quarantine is invisible to it by
+// construction. It restarted the broker within one 2-minute tick, twice,
+// silently overriding an explicit operator instruction each time.
+//
+// So there were three independent restorers, and moving plists only silenced
+// two of them. The fix is a signal all three can observe without launchd: a
+// plain marker file, checked first, before any probe result is acted on.
+// `sirsi gemma quarantine` / `sirsi gemma unquarantine` are the sanctioned way
+// to set or clear it — never hand-edit the file.
+func QuarantineMarkerPath(home string) string {
+	return filepath.Join(home, ".sirsi", "gemma-quarantine")
+}
+
+// isQuarantinedFn is the injected existence check (A16/A21) — a plain os.Stat
+// by default, swappable in tests without touching the real filesystem.
+var isQuarantinedFn = func(home string) bool {
+	_, err := os.Stat(QuarantineMarkerPath(home))
+	return err == nil
+}
+
+func setIsQuarantinedFn(fn func(home string) bool) {
+	gemmaLifeMu.Lock()
+	defer gemmaLifeMu.Unlock()
+	isQuarantinedFn = fn
+}
+
+func getIsQuarantinedFn() func(home string) bool {
+	gemmaLifeMu.RLock()
+	defer gemmaLifeMu.RUnlock()
+	return isQuarantinedFn
+}
+
 // RunGemmaLivenessDuty is the supervisor duty: probe the broker and restore it.
 // Signature matches the SupervisorDuty GoRun contract (routerRoot, repoRoot).
 // routerRoot is used to route an owner alert when a restore does not stick.
 func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	home, _ := os.UserHomeDir()
+	// Checked BEFORE the probe result is acted on — deliberately before the
+	// switch below, so a quarantined broker being GONE (the intended state)
+	// never reaches the GemmaDown branch that would restart it. Strikes reset
+	// so a later un-quarantine starts the wedge-confirmation counter clean.
+	if getIsQuarantinedFn()(home) {
+		gemmaWedgeStrikes = 0
+		return nil
+	}
 	status, detail := getGemmaProbeFn()(home)
 	switch status {
 	case liveness.GemmaHealthy, liveness.GemmaBusy:
@@ -142,6 +198,15 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 		RecordHeal("local AI was down — restarted (bounded)")
 		return nil
 	case liveness.GemmaWedged:
+		// "Weights likely absent" class: RSS below the weight floor means the HF
+		// model cache was deleted — a restart will NOT fix it (the process comes
+		// back up but still can't load weights from a missing cache). Skip the
+		// restart entirely; route a re-download item to the owner instead.
+		if strings.Contains(detail, liveness.WeightsAbsentSentinel) {
+			gemmaWedgeStrikes = 0
+			gemmaRouteWeightsAbsent(routerRoot, detail)
+			return nil
+		}
 		gemmaWedgeStrikes++
 		if gemmaWedgeStrikes < gemmaWedgeThreshold {
 			// Confirm across ticks — a single transient never bounces the broker.
@@ -223,5 +288,40 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 		"then run `sirsi gemma serve` to restart manually."
 	if _, sendErr := f.Send("horus", "owner", restoreFailTitle, "decision", body); sendErr != nil {
 		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", sendErr)
+	}
+}
+
+// gemmaRouteWeightsAbsent routes ONE non-duplicate "re-download weights" item to
+// the owner when the broker is running but has no model weights (RSS < 1 GB).
+// A restart cannot fix this — it sends the same broker back up with an empty HF
+// cache. Only the owner can re-download the model, so we alert immediately rather
+// than wasting two ticks on a futile restart.
+func gemmaRouteWeightsAbsent(routerRoot, detail string) {
+	if routerRoot == "" {
+		return
+	}
+	f, err := dispatch.OpenRoot(routerRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route weights-absent: open dispatch: %v\n", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	// Dedup: skip if the owner already has an open item with this title.
+	if items, listErr := f.Inbox("owner"); listErr == nil {
+		for _, it := range items {
+			if it.Title == weightsAbsentTitle {
+				fmt.Fprintf(os.Stderr, "gemma-liveness: weights-absent item already open, skipping route\n")
+				return
+			}
+		}
+	}
+	body := "The gemma broker process is running but its RSS is below the 1 GB weight floor — " +
+		"the model weights are absent from the HuggingFace cache. Detail: " + detail + ". " +
+		"A restart will NOT fix this: the broker comes back up but still cannot load weights from an empty cache. " +
+		"Re-download the weights: `huggingface-cli download $(cat ~/.sirsi/gemma-model.conf)`, " +
+		"then run `sirsi gemma serve` to reload."
+	if _, sendErr := f.Send("horus", "owner", weightsAbsentTitle, "decision", body); sendErr != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: route weights-absent: %v\n", sendErr)
 	}
 }

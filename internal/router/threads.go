@@ -11,11 +11,13 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	cryptorand "crypto/rand"
@@ -154,6 +156,11 @@ type Thread struct {
 	// SuspendPayload carries resumable continuation state while Status is
 	// suspended (ADR-025). Nil for active/terminal threads.
 	SuspendPayload *SuspendPayload `json:"suspend_payload,omitempty"`
+	// ReapedFrom is the ThreadID of the reaped predecessor this thread was
+	// minted to continue. Set on active successors minted by ReconcileExits.
+	// This is the idempotency key: hasSuccessorFor checks this field so a
+	// second reconcile pass does not mint a duplicate successor.
+	ReapedFrom string `json:"reaped_from,omitempty"`
 }
 
 // IsInboxConsumer reports whether this thread can actually drain its agent's
@@ -282,6 +289,48 @@ func loadLegacyThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	return &reg, nil
 }
 
+// ErrLostLifecycleFence reports that a compare-and-swap write found the row
+// changed since the load baseline — a concurrent writer (a wake loop, a
+// watcher, a sibling sweep) legitimately touched it in between. The fence did
+// its job; this is a RECOVERABLE contention signal, not corruption, and the
+// correct response for a re-derivable mutation is reload-and-redo.
+var ErrLostLifecycleFence = errors.New("lost lifecycle fence")
+
+// fenceRetryBackoff is the pause between reload-and-redo attempts. Contention
+// here is brief (a competing writer finishing its own save), so a short fixed
+// pause clears it without making a caller wait on a genuinely wedged store.
+const fenceRetryBackoff = 50 * time.Millisecond
+
+// retryOnLostFence re-runs a load-mutate-save pass that lost its CAS fence.
+//
+// Only safe for passes that RE-DERIVE their mutation from current state rather
+// than accumulating it: ReapDeadThreads and ReapStrayThreads both recompute
+// from OS truth plus the freshly-loaded registry, so a redo against the
+// concurrent writer's result is the correct answer, not a clobber. Do not wrap
+// a pass that applies a delta.
+//
+// Without this, a lost fence surfaces to callers as "OS-truth sweep
+// incomplete" — and a failed sweep is byte-identical to "nothing to reap", so
+// dead threads keep presenting 🟢 active until the next scheduled pass happens
+// to win the race.
+func retryOnLostFence(pass func() ([]ReapedThread, error)) ([]ReapedThread, error) {
+	const attempts = 3
+	var (
+		out []ReapedThread
+		err error
+	)
+	for i := 0; i < attempts; i++ {
+		out, err = pass()
+		if !errors.Is(err, ErrLostLifecycleFence) {
+			return out, err
+		}
+		if i < attempts-1 {
+			time.Sleep(fenceRetryBackoff)
+		}
+	}
+	return out, err
+}
+
 // SaveThreadRegistry writes threads.json atomically.
 func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
@@ -310,7 +359,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 				return err
 			}
 			if !applied {
-				return fmt.Errorf("thread %q mutation lost lifecycle fence", record.ThreadID)
+				return fmt.Errorf("thread %q mutation %w", record.ThreadID, ErrLostLifecycleFence)
 			}
 		}
 		for id, old := range reg.baseline {
@@ -320,7 +369,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 					return err
 				}
 				if !deleted {
-					return fmt.Errorf("thread %q prune lost lifecycle fence", id)
+					return fmt.Errorf("thread %q prune %w", id, ErrLostLifecycleFence)
 				}
 			}
 		}
@@ -487,6 +536,16 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			if t.Repo != "" {
 				existing.Repo = t.Repo
 			}
+			// RAISE-only (never clear). A resident consumer publishes its own
+			// capability by re-registering (A27/A33 follow-up to PR #389), and
+			// that must land on the record the reuse path returns — otherwise
+			// the flag is silently dropped for exactly the long-lived workers
+			// it exists for. Clearing is NOT the inverse: credit lapses by
+			// going stale in the armed predicate, so a bare heartbeat-style
+			// re-register must not wipe a capability already proven.
+			if t.ConsumerCapable {
+				existing.ConsumerCapable = true
+			}
 			if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 				return nil, err
 			}
@@ -540,6 +599,15 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				}
 				if t.Repo != "" {
 					existing.Repo = t.Repo
+				}
+				// RAISE-only — see the session-keyed branch above. A resident
+				// worker is PID-backed, so this is the path its re-register
+				// actually takes. This matters on PROMOTION: the first record
+				// for a PID may have been minted without the capability (a
+				// plain register, or a restart that raced the declaration), and
+				// without this the worker could never publish it afterwards.
+				if t.ConsumerCapable {
+					existing.ConsumerCapable = true
 				}
 				if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 					return nil, err
@@ -775,8 +843,10 @@ const (
 	// ReconcileSuspendedStale: a stale active record (the /clear / soft-exit case)
 	// was healed in place — retro-synced then transitioned active→suspended.
 	ReconcileSuspendedStale ReconcileAction = "suspended-stale"
-	// ReconcileMintedSuccessor: a reaped (terminal) record got a NEW suspended
-	// successor carrying reaped_from; the reaped record stays reaped (ADR-022).
+	// ReconcileMintedSuccessor: a reaped (terminal) record got a NEW active
+	// successor with ReapedFrom set; the reaped record stays reaped (ADR-022).
+	// The successor is active so the session can heartbeat into it immediately
+	// without requiring a `sirsi thread resume` first.
 	ReconcileMintedSuccessor ReconcileAction = "minted-successor"
 	// ReconcileUnrecoverable: a reaped record had no recoverable transcript, so no
 	// successor could be minted. The caller MUST surface this visibly — memory was
@@ -789,18 +859,25 @@ type ReconcileOutcome struct {
 	ThreadID    string          `json:"thread_id"`              // the dirty record acted on
 	AgentID     string          `json:"agent_id"`               // its agent
 	Action      ReconcileAction `json:"action"`                 // what healing happened
-	SuccessorID string          `json:"successor_id,omitempty"` // minted suspended thread (minted-successor only)
+	SuccessorID string          `json:"successor_id,omitempty"` // minted active thread (minted-successor only)
 }
 
-// hasSuccessorFor reports whether a suspended successor already exists for the
-// given reaped thread id — the idempotency guard that stops every SessionStart
-// from minting a fresh successor for the same reaped record.
+// hasSuccessorFor reports whether a successor already exists for the given
+// reaped thread id — the idempotency guard that stops every SessionStart from
+// minting a fresh successor for the same reaped record.
+//
+// Checks both the top-level Thread.ReapedFrom (active successors, current
+// shape) and the legacy SuspendPayload.ReapedFrom (suspended successors minted
+// before this field moved to the top level).
 func (r *ThreadRegistry) hasSuccessorFor(reapedID string) bool {
 	for _, t := range r.Threads {
-		if t == nil || t.SuspendPayload == nil {
+		if t == nil {
 			continue
 		}
-		if t.SuspendPayload.ReapedFrom == reapedID {
+		if t.ReapedFrom == reapedID {
+			return true
+		}
+		if t.SuspendPayload != nil && t.SuspendPayload.ReapedFrom == reapedID {
 			return true
 		}
 	}
@@ -816,7 +893,8 @@ func (r *ThreadRegistry) hasSuccessorFor(reapedID string) bool {
 //     to suspended after a retro sync. It was never terminal, so this is legal —
 //     ADR-022's terminal invariant is untouched.
 //   - Reaped record (terminal, hard-kill case): NEVER revived. If the transcript
-//     is recoverable, a new suspended SUCCESSOR is minted carrying reaped_from;
+//     is recoverable, a new ACTIVE successor is minted with Thread.ReapedFrom set
+//     so the session can heartbeat immediately without `thread resume`;
 //     otherwise an unrecoverable warning is recorded for the caller to surface.
 //     Idempotent via hasSuccessorFor + a recency lookback.
 //
@@ -858,29 +936,33 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 			if now.Sub(t.LastSeenAt) > ReconcileReapedLookback || reg.hasSuccessorFor(t.ThreadID) {
 				continue // too old, or already healed — idempotent
 			}
-			payload, ok := retro(t)
+			_, ok := retro(t)
 			if !ok {
 				outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileUnrecoverable})
 				continue
 			}
-			if payload == nil {
-				payload = &SuspendPayload{}
-			}
-			if payload.SuspendedAt.IsZero() {
-				payload.SuspendedAt = now
-			}
-			payload.ReapedFrom = t.ThreadID
+			// Mint an ACTIVE successor so the session can heartbeat into it
+			// immediately without needing `sirsi thread resume`. A suspended
+			// successor was the root cause of the "lane-needs-you" false escalation
+			// loop: heartbeat refused the suspended record, WakePass saw no armed
+			// thread, and horus escalated to owner on every conduit pass.
+			//
+			// The successor carries no SuspendPayload (per ADR-025, that field is
+			// nil for active threads). ReapedFrom on the Thread struct is the
+			// idempotency key: hasSuccessorFor checks it so a second reconcile pass
+			// does not mint a duplicate.
 			succ := &Thread{
-				ThreadID:       NewThreadID(),
-				AgentID:        t.AgentID,
-				Surface:        t.Surface,
-				Repo:           t.Repo,
-				Workstream:     t.Workstream,
-				Host:           t.Host,
-				StartedAt:      now,
-				LastSeenAt:     now,
-				Status:         ThreadStatusSuspended,
-				SuspendPayload: payload,
+				ThreadID:   NewThreadID(),
+				AgentID:    t.AgentID,
+				Surface:    t.Surface,
+				Repo:       t.Repo,
+				Workstream: t.Workstream,
+				Host:       t.Host,
+				MachineID:  t.MachineID,
+				StartedAt:  now,
+				LastSeenAt: now,
+				Status:     ThreadStatusActive,
+				ReapedFrom: t.ThreadID,
 			}
 			reg.Threads[succ.ThreadID] = succ
 			outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileMintedSuccessor, SuccessorID: succ.ThreadID})
@@ -946,6 +1028,12 @@ type ReapedThread struct {
 // Returns the reaped records (empty if none). The registry is saved only when
 // at least one thread was reaped.
 func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
+	return retryOnLostFence(func() ([]ReapedThread, error) {
+		return reapDeadThreadsOnce(routerRoot)
+	})
+}
+
+func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
@@ -1064,6 +1152,12 @@ func isLiveWatcher(t *Thread) bool {
 // Returns the retired records (empty if none). The registry is saved only when at
 // least one record was retired.
 func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
+	return retryOnLostFence(func() ([]ReapedThread, error) {
+		return reapStrayThreadsOnce(routerRoot)
+	})
+}
+
+func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return nil, err
@@ -1091,7 +1185,22 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 	}
 
 	// Pass 2: sweep non-live siblings of any group that has a live watcher.
-	var retired []ReapedThread
+	//
+	// The salvage PAYLOAD is computed here, against pre-mutation state (it records
+	// prior_status, which the very next line overwrites), but the Stele INSCRIPTION
+	// is deferred until the save actually persists. Splitting the pure decision from
+	// the side effect is exactly what Rule A16 built straySalvage/inscribeStraySalvage
+	// for; this uses that seam.
+	// repo is carried beside the payload rather than folded into it: the inscribed
+	// map is a consumer-visible shape, and Inscribe takes repo as its own argument.
+	type pendingSalvage struct {
+		repo string
+		data map[string]string
+	}
+	var (
+		retired []ReapedThread
+		salvage []pendingSalvage
+	)
 	for _, t := range reg.Threads {
 		if t == nil || t.Status.IsTerminal() || !SameMachine(t.MachineID, thisMachine) {
 			continue
@@ -1100,7 +1209,9 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 		if !ok || anchor.ThreadID == t.ThreadID || isLiveWatcher(t) {
 			continue // no live anchor, this IS the anchor, or itself still live
 		}
-		inscribeStraySalvage(t, anchor.ThreadID)
+		if data, ok := straySalvage(t, anchor.ThreadID); ok {
+			salvage = append(salvage, pendingSalvage{repo: t.Repo, data: data})
+		}
 		t.Status = ThreadStatusClosed
 		t.LastSeenAt = now
 		t.LastError = fmt.Sprintf("retired: superseded by live watcher %s (ADR-024 one-watcher-per-surface) at %s",
@@ -1112,7 +1223,19 @@ func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
 			// Return nil, not retired: in-memory mutations were never persisted;
 			// a caller must not announce a completed sweep that did not persist
 			// (sirsi-io #18 amendment — same invariant as ReapDeadThreads).
+			//
+			// Nothing is inscribed on this path, which is what makes the pass
+			// SAFE TO RETRY. Inscribing inside the loop (the prior shape) wrote a
+			// salvage entry for every stray and only THEN discovered the save had
+			// lost its fence — so a retry re-inscribed every unpersisted stray, and
+			// even without a retry the ledger recorded a reap that never happened.
+			// The retry did not introduce that; it multiplied it.
 			return nil, err
+		}
+		// Persisted. Now the ledger can claim these were retired, because they were.
+		inscribe := getInscribeSalvageFn()
+		for _, s := range salvage {
+			inscribe(s.repo, s.data)
 		}
 	}
 	return retired, nil
@@ -1163,14 +1286,37 @@ func straySalvage(t *Thread, supersededBy string) (map[string]string, bool) {
 	return data, true
 }
 
-// inscribeStraySalvage inscribes a stray's salvageable state to the Stele ledger
-// so nothing is lost (owner directive 2026-07-22). Empty tombstones inscribe
-// nothing — the check still runs on every reap; it simply finds nothing to save.
-func inscribeStraySalvage(t *Thread, supersededBy string) {
-	if data, ok := straySalvage(t, supersededBy); ok {
-		stele.Inscribe("horus", stele.TypeThreadReap, t.Repo, data)
+// inscribeSalvage is the Stele side effect of the stray reap, injectable per Rule
+// A16 so the "nothing inscribed unless it persisted" invariant is testable without
+// writing to the real ledger (stele.Inscribe is a process-global singleton bound to
+// $HOME, so it cannot be sandboxed per-test). Guarded per Rule A21: reaps run from
+// supervisor duties, so the pointer has concurrent readers.
+var (
+	inscribeSalvageMu sync.RWMutex
+	inscribeSalvageFn = func(repo string, data map[string]string) {
+		stele.Inscribe("horus", stele.TypeThreadReap, repo, data)
 	}
+)
+
+func getInscribeSalvageFn() func(string, map[string]string) {
+	inscribeSalvageMu.RLock()
+	defer inscribeSalvageMu.RUnlock()
+	return inscribeSalvageFn
 }
+
+func setInscribeSalvageFn(fn func(string, map[string]string)) {
+	inscribeSalvageMu.Lock()
+	defer inscribeSalvageMu.Unlock()
+	inscribeSalvageFn = fn
+}
+
+// inscribeStraySalvage (removed 2026-08-07) inscribed a stray's salvage inline,
+// during the sweep loop and therefore BEFORE the save that decides whether the
+// stray is retired at all. reapStrayThreadsOnce now collects the payloads and
+// inscribes them only after SaveThreadRegistry persists, so the ledger records a
+// reap only when a reap actually happened — and the pass became safe to retry.
+// The "nothing lost" guarantee (owner directive 2026-07-22) is unchanged: the
+// check still runs on every reap, and every salvageable stray still inscribes.
 
 // IsStale reports whether a thread should be considered stale given now and
 // the configured stale-after window. Closed threads are not stale.

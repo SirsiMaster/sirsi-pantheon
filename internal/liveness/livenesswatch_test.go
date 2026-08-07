@@ -46,9 +46,13 @@ func TestPlistContent_LeverShape(t *testing.T) {
 func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	root := t.TempDir()
 	writeLivenessTestAgents(t, root)
-	// Ensure the gemma probe reads "down": point HOME at an empty dir with no
-	// gemma-server.port, so probeGemma returns wedged deterministically.
-	t.Setenv("HOME", t.TempDir())
+	// Ensure the gemma probe reads "down": point HOME at a dir with no
+	// gemma-server.port, so probeGemma returns down deterministically.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// A down broker only alarms when it is INSTALLED — an absent plist is a
+	// deliberate retirement/quarantine and is suppressed (suppressGemmaDown).
+	installFakeBrokerPlist(t, home)
 	// Own store per test: Run dispatches through the router store now, and the
 	// package-level db would let a sibling test's alert dedupe this one away.
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
@@ -257,15 +261,21 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 	}
 }
 
-// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard.
+// TestProbeGemmaState_RSSFloor is the weightless-broker regression guard for
+// the FALLBACK path: /health is unreachable, so the check falls back to RSS.
 // A broker with RSS below 1 GB cannot have model weights loaded — this is the
 // class that /health passes but generation probes see as wedged, and that a
 // restart cannot fix when the HF model cache is absent (2026-08-05 incident).
-// The RSS floor must fire BEFORE the generation probe so the detail message
+// The floor must fire BEFORE the generation probe so the detail message
 // clearly says "weights likely absent" instead of "restore — free memory."
 func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	old := getBrokerRSSFn()
 	t.Cleanup(func() { setBrokerRSSFn(old) })
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+
+	// /health unreachable — forces the RSS fallback path.
+	setBrokerMLXBytesFn(func() (int64, bool) { return 0, false })
 
 	// Stub a tiny RSS (100 MB — well below the 1 GB floor).
 	const tinyRSSKB = 100 * 1024 // 100 MB
@@ -290,6 +300,14 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	if !strings.Contains(detail, "restart will not fix") {
 		t.Errorf("detail should say restart will not fix, got: %s", detail)
 	}
+	// The bind that makes the const load-bearing: the self-healing duty in
+	// internal/router/gemmaliveness.go short-circuits on WeightsAbsentSentinel.
+	// Without this assertion, rewording the detail above leaves every test green
+	// while the production short-circuit silently stops firing (A35).
+	if !strings.Contains(detail, WeightsAbsentSentinel) {
+		t.Errorf("detail must embed WeightsAbsentSentinel (%q) or the router short-circuit breaks, got: %s",
+			WeightsAbsentSentinel, detail)
+	}
 	if called {
 		t.Error("generation probe should not be called when RSS is below the floor")
 	}
@@ -301,8 +319,11 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
 	old := getBrokerRSSFn()
 	t.Cleanup(func() { setBrokerRSSFn(old) })
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
 
-	setBrokerRSSFn(func(_ string) int64 { return 0 }) // pid file absent
+	setBrokerMLXBytesFn(func() (int64, bool) { return 0, false }) // /health unreachable too
+	setBrokerRSSFn(func(_ string) int64 { return 0 })             // pid file absent
 
 	healthy := `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -314,6 +335,77 @@ func TestProbeGemmaState_RSSFloor_ZeroSkips(t *testing.T) {
 	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
 	if got != GemmaHealthy {
 		t.Errorf("zero RSS (pid absent) with healthy server = %v (%s), want GemmaHealthy (fail-open)", got, detail)
+	}
+}
+
+// TestProbeGemmaState_MLXFloor_RecognizesLargeAllocation is the R6 regression
+// guard (PRD SNE_HETEROGENEOUS_COMPUTE.md, sirsi-pantheon-fabric): a 30 GB+
+// Metal allocation, reported via mlx_active_bytes, MUST be recognized as a
+// loaded model — even though RSS for the same broker was measured at 4.2 GB
+// (a 27 GB gap). Before this fix, a check that floored on RSS could not tell
+// this state apart from "weights absent" at all; this proves the mlx_active_bytes
+// signal is read and is authoritative over the (here, misleadingly tiny) RSS.
+func TestProbeGemmaState_MLXFloor_RecognizesLargeAllocation(t *testing.T) {
+	old := getBrokerRSSFn()
+	t.Cleanup(func() { setBrokerRSSFn(old) })
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+
+	// Measured 2026-08-06: mlx_active_bytes 24.9-31.4 GB. Use a value on the
+	// high end of that range, in bytes.
+	const measuredMLXBytes = int64(31_400_000_000) // ~31.4 GB
+	setBrokerMLXBytesFn(func() (int64, bool) { return measuredMLXBytes, true })
+	// RSS for the SAME broker, measured the same day: 4.2 GB. If the check were
+	// still RSS-floored this would be misread as comfortably "loaded" only by
+	// accident (4.2 GB > 1 GB floor) — the point of this test is that the
+	// mlx_active_bytes path is what's actually consulted, never RSS, when
+	// /health is reachable.
+	const measuredRSSKB = int64(4_200_000) // ~4.2 GB in KB
+	setBrokerRSSFn(func(_ string) int64 { return measuredRSSKB })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaHealthy {
+		t.Errorf("30GB+ mlx_active_bytes = %v (%s), want GemmaHealthy — a large Metal allocation must not read as weights-absent", got, detail)
+	}
+	if strings.Contains(detail, "weight floor") {
+		t.Errorf("detail should not mention the weight floor for a 30GB+ allocation, got: %s", detail)
+	}
+}
+
+// TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation mirrors
+// TestProbeGemmaState_RSSFloor but for the PRIMARY path: /health IS reachable
+// and reports a small mlx_active_bytes — the weight-floor check must fire from
+// that number, not from RSS.
+func TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation(t *testing.T) {
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+
+	const tinyMLXBytes = int64(50 * 1024 * 1024) // 50 MB — well below the 1 GB floor
+	setBrokerMLXBytesFn(func() (int64, bool) { return tinyMLXBytes, true })
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaWedged {
+		t.Errorf("tiny mlx_active_bytes = %v (%s), want GemmaWedged", got, detail)
+	}
+	if !strings.Contains(detail, "mlx_active_bytes") {
+		t.Errorf("detail should cite mlx_active_bytes, got: %s", detail)
+	}
+	if called {
+		t.Error("generation probe should not be called when mlx_active_bytes is below the floor")
 	}
 }
 
@@ -341,8 +433,9 @@ func TestRecipientFor(t *testing.T) {
 func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	root := t.TempDir()
 	writeLivenessTestAgents(t, root)
-	home := t.TempDir() // no gemma-server.port → probeGemma reads wedged
+	home := t.TempDir() // no gemma-server.port → probeGemma reads down
 	t.Setenv("HOME", home)
+	installFakeBrokerPlist(t, home) // installed, so the down broker alarms
 	t.Setenv(routercfg.StoreWakeEnv, "1")
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
@@ -419,6 +512,278 @@ func TestLaunchAgentPlistPresent_IgnoresRetired(t *testing.T) {
 	} {
 		if got := launchAgentPlistPresent(tc.label); got != tc.want {
 			t.Errorf("launchAgentPlistPresent(%q) = %v, want %v", tc.label, got, tc.want)
+		}
+	}
+}
+
+func TestApproximateModelGB(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		want float64
+	}{
+		// 4bit (explicit) — no multiplier; "bf16-4bit" contains "4bit" so ×1 wins.
+		{"mlx-community/gemma-2-27b-it-bf16-4bit", 14.0},
+		{"mlx-community/gemma-2-9b-it-4bit", 5.0},
+		{"mlx-community/gemma-2-2b-it-4bit", 1.5},
+		{"mlx-community/gemma-2-12b-it-4bit", 7.0},
+		// 8bit — ×2 the 4-bit base
+		{"mlx-community/gemma-4-12B-it-8bit", 14.0}, // 7.0 × 2 = 14.0
+		{"mlx-community/gemma-2-9b-it-8bit", 10.0},  // 5.0 × 2 = 10.0
+		// bf16 (no 4bit suffix) — ×4 the 4-bit base
+		{"mlx-community/gemma-2-27b-it-bf16", 56.0}, // 14.0 × 4 = 56.0
+		// unknown
+		{"mlx-community/some-unknown-model", 0},
+	} {
+		if got := approximateModelGB(tc.id); got != tc.want {
+			t.Errorf("approximateModelGB(%q) = %v, want %v", tc.id, got, tc.want)
+		}
+	}
+}
+
+// TestApproximateModelGB_Gemma4_8bit pins the live machine's model to ~14 GB.
+// Before the quantizer fix this returned 7 GB, causing rightSizeAdvice to emit
+// "~7 GB" and at 18 GB available produce empty advice (false safe: 2×7+4=18 ≤ 18).
+func TestApproximateModelGB_Gemma4_8bit(t *testing.T) {
+	got := approximateModelGB("mlx-community/gemma-4-12B-it-8bit")
+	if got != 14.0 {
+		t.Errorf("approximateModelGB(gemma-4-12B-it-8bit) = %v, want 14.0", got)
+	}
+}
+
+// homeWithModel writes gemma-model.conf under a temp home and returns the home path.
+func homeWithModel(t *testing.T, modelID string) string {
+	t.Helper()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-model.conf"), []byte(modelID), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+func stubMLX(t *testing.T, activeBytes int64) {
+	t.Helper()
+	old := getBrokerMLXActive()
+	t.Cleanup(func() { setBrokerMLXActive(old) })
+	setBrokerMLXActive(func(_ int) (int64, error) { return activeBytes, nil })
+}
+
+func TestRightSizeAdvice_FitsAlready(t *testing.T) {
+	// 2b model: 1.5+4=5.5 ≤ 20 → no advice regardless of source.
+	home := homeWithModel(t, "mlx-community/gemma-2-2b-it-4bit")
+	t.Setenv("GEMMA_MODEL", "")
+	stubMLX(t, 0) // broker not running
+	if got := rightSizeAdvice(home, 20.0); got != "" {
+		t.Errorf("expected empty advice when model fits, got %q", got)
+	}
+}
+
+// TestRightSizeAdvice_HealthEndpointUsed verifies that /health mlx_active_bytes
+// is the primary size authority. The stub returns ~37 GB (the real measurement
+// on the live SNE broker), not ~185 MB (ps RSS). With 9.68 GB available and
+// 37 GB in use, advice must fire using the /health value.
+func TestRightSizeAdvice_HealthEndpointUsed(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	// Write a port file so rightSizeAdvice tries /health.
+	if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-server.port"), []byte("8477"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const thirtySevenGB = int64(37) * 1024 * 1024 * 1024
+	stubMLX(t, thirtySevenGB)
+
+	got := rightSizeAdvice(home, 9.68)
+	if got == "" {
+		t.Fatal("expected non-empty advice: 37 GB model does not fit in 9.68 GB")
+	}
+	// The advice must reflect the /health figure (~37 GB), not the name estimate.
+	if !strings.Contains(got, "37") && !strings.Contains(got, "~37") {
+		t.Errorf("advice does not reflect /health size (~37 GB): %q", got)
+	}
+}
+
+// TestRightSizeAdvice_HealthUnavailableFallsBackToName is the regression guard
+// for "0.18 GB reading is NOT accepted as the model size". When the broker is
+// not running (no port file) or /health is unreachable, rightSizeAdvice must use
+// approximateModelGB, not any RSS-derived value.
+//
+// The old path: getBrokerRSSFn()(pidFile) returned 185 MB (ps RSS for an mmap'd
+// model), which was accepted as modelGB=0.177. 2×0.177+4=4.35 ≤ 9.68 → empty
+// advice. The operator received silence while the machine was dying.
+//
+// This test proves the fix: with /health unavailable and no pidfile, we get
+// approximateModelGB("gemma-4-12B-it-8bit") = 14 GB → 14+4=18 > 9.68 → advice fires.
+func TestRightSizeAdvice_HealthUnavailableFallsBackToName(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	// No port file — /health path is skipped.
+	stubMLX(t, 0)
+
+	got := rightSizeAdvice(home, 9.68)
+	if got == "" {
+		t.Fatal("expected advice: approximateModelGB(gemma-4-12B-it-8bit)=14 GB, threshold 14+4=18 > 9.68; " +
+			"a 0.18 GB reading (ps RSS) must not suppress this")
+	}
+}
+
+func TestRightSizeAdvice_27bReturnsSmaller(t *testing.T) {
+	// 27b model (~14 GB at 4bit): threshold 14+4=18 > 9.68 → advice.
+	// 9b-4bit: 5+4=9 ≤ 9.68 → first-fit tier offered (was 2×5+4=14 > 9.68 pre-fix).
+	home := homeWithModel(t, "mlx-community/gemma-2-27b-it-bf16-4bit")
+	t.Setenv("GEMMA_MODEL", "")
+	stubMLX(t, 0) // broker not running, fall through to approximateModelGB
+
+	got := rightSizeAdvice(home, 9.68)
+	if got == "" {
+		t.Fatal("expected non-empty advice for oversized 27b model")
+	}
+	if !strings.Contains(got, "gemma-2-9b-it-4bit") {
+		t.Errorf("expected advice to suggest 9b tier (first-fit at 9.68 GB available), got: %q", got)
+	}
+}
+
+func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
+	// 9b model: 5+4=9 > 0.5; 2b: 1.5+4=5.5 > 0.5 — nothing fits.
+	home := homeWithModel(t, "mlx-community/gemma-2-9b-it-4bit")
+	t.Setenv("GEMMA_MODEL", "")
+	stubMLX(t, 0)
+
+	got := rightSizeAdvice(home, 0.5)
+	if got == "" {
+		t.Fatal("expected non-empty advice when nothing fits")
+	}
+	if strings.Contains(got, "echo '") {
+		t.Errorf("expected stop-only advice (no model switch), got: %q", got)
+	}
+	if !strings.Contains(got, "serve --stop") {
+		t.Errorf("expected stop command in fallback advice, got: %q", got)
+	}
+}
+
+// TestRightSizeAdvice_Gemma4_NoGenDowngrade verifies that a gemma-4 node does
+// not receive an echo-to-conf command pointing at a gemma-2 tier.
+func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	stubMLX(t, 0) // broker not running
+
+	// 13 GB available: approximateModelGB=14 GB → threshold 14+4=18 > 13 → advice fires.
+	// Cross-gen guard skips all gemma-2 tiers even though 9b-4bit (9 GB) would fit;
+	// falls through to stop-only.
+	got := rightSizeAdvice(home, 13.0)
+	if got == "" {
+		t.Fatal("expected advice: gemma-4-12B-it-8bit (~14 GB) does not fit in 13 GB (14+4=18)")
+	}
+	if strings.Contains(got, "gemma-2") {
+		t.Errorf("advice must not offer a gemma-2 tier to a gemma-4 node: %q", got)
+	}
+	if !strings.Contains(got, "serve --stop") {
+		t.Errorf("expected stop command (no same-gen tier fits), got: %q", got)
+	}
+}
+
+// TestRightSizeAdvice_EstimatedPathNoDoubling pins the headroom formula for the
+// estimated (approximateModelGB) path: modelGB+4, NOT 2×modelGB+4.
+// approximateModelGB already scales for the quantizer, so a second ×2 would
+// double-count: 8bit 12b → base 7×2=14 GB, 2×14+4=32 vs actual ~11.5 GB peak.
+//
+// Scenario: gemma-4-12B-it-8bit, broker unreachable (estimated path), 20 GB available.
+//
+//	Old formula (wrong): 2×14+4=32 > 20 → advice fires (false alarm on a 24 GB node).
+//	New formula (correct): 14+4=18 ≤ 20 → no advice (model fits).
+func TestRightSizeAdvice_EstimatedPathNoDoubling(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	stubMLX(t, 0) // no /health → estimated path
+
+	if got := rightSizeAdvice(home, 20.0); got != "" {
+		t.Errorf("estimated path must use modelGB+4 (14+4=18 ≤ 20): got advice %q", got)
+	}
+}
+
+// TestRightSizeAdvice_MeasuredPathNoDoubling pins the headroom formula for the
+// measured (/health) path: modelGB+4. mlx_active_bytes already includes KV cache
+// pages; both measured and estimated paths now use the same gb+4 formula.
+//
+// Scenario: 14 GB measured active, 20 GB available.
+//
+//	Threshold: 14+4=18 ≤ 20 → no advice (model fits with 2 GB to spare).
+func TestRightSizeAdvice_MeasuredPathNoDoubling(t *testing.T) {
+	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
+	t.Setenv("GEMMA_MODEL", "")
+	if err := os.WriteFile(filepath.Join(home, ".sirsi/gemma-server.port"), []byte("8477"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const fourteenGB = int64(14) * 1024 * 1024 * 1024
+	stubMLX(t, fourteenGB)
+
+	// 20 GB available: 14+4=18 ≤ 20 → model fits, no advice.
+	if got := rightSizeAdvice(home, 20.0); got != "" {
+		t.Errorf("measured path must use modelGB+4 (18 ≤ 20): got advice %q", got)
+	}
+}
+
+// TestSuppressGemmaDown pins A35 scoping: a GemmaDown probe raises a finding
+// only when the broker is actually installed. Both directions are exercised —
+// the suppression AND the regression where a real outage still alarms.
+func TestSuppressGemmaDown(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       GemmaStatus
+		plistPresent bool
+		want         bool
+	}{
+		{"down and uninstalled — deliberate, suppress", GemmaDown, false, true},
+		{"down but installed — real outage, must alarm", GemmaDown, true, false},
+		{"wedged and uninstalled — process runs, must alarm", GemmaWedged, false, false},
+		{"wedged and installed — must alarm", GemmaWedged, true, false},
+		{"healthy and uninstalled — never a finding either way", GemmaHealthy, false, false},
+		{"busy and uninstalled — never a finding either way", GemmaBusy, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := suppressGemmaDown(tc.status, tc.plistPresent); got != tc.want {
+				t.Errorf("suppressGemmaDown(%v, plist=%v) = %v, want %v",
+					tc.status, tc.plistPresent, got, tc.want)
+			}
+		})
+	}
+}
+
+// installFakeBrokerPlist puts a gemma-broker LaunchAgent plist under home so
+// probeGemma treats a down broker as a real outage. Without it the probe reads
+// the absence as a deliberate retirement and suppresses the finding, which is
+// the correct production behavior but makes an outage test vacuous.
+func installFakeBrokerPlist(t *testing.T, home string) {
+	t.Helper()
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir LaunchAgents: %v", err)
+	}
+	p := filepath.Join(dir, BrokerLabel+".plist")
+	if err := os.WriteFile(p, []byte("<plist/>"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", p, err)
+	}
+}
+
+// TestProbeGemmaFindingNamesTheBinary guards the ledger row
+// broker-label-misnames-sne. The LaunchAgent label says "gemma-broker" but the
+// process is sne-server (Go). An agent read the label, concluded the service
+// was the legacy python/mlx_lm gemma path, and issued a directive to
+// permanently down it — taking the Tier-0 substrate offline. The label cannot
+// be renamed without bootout/bootstrap of a live load-bearing server, so the
+// standing repair is that no owner-facing report about it ever says only
+// "gemma". If someone strips the disclaimer, this fails.
+func TestProbeGemmaFindingNamesTheBinary(t *testing.T) {
+	f := probeGemma(t.TempDir())
+	if !strings.Contains(f.Title, BrokerBinary) {
+		t.Errorf("finding title must name the real binary %q, got %q", BrokerBinary, f.Title)
+	}
+	for _, want := range []string{BrokerLabel, BrokerBinary, "NOT the legacy python"} {
+		if !strings.Contains(f.Body, want) {
+			t.Errorf("finding body must contain %q so the label cannot be misread; body=%q", want, f.Body)
 		}
 	}
 }

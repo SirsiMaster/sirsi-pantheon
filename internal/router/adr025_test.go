@@ -189,8 +189,8 @@ func TestReconcileExits_StaleActiveHealedInPlace(t *testing.T) {
 }
 
 // ADR-025 acceptance: SessionStart with a reaped record + recoverable transcript
-// mints a suspended SUCCESSOR carrying reaped_from; the reaped record stays
-// reaped (terminal, ADR-022). Repeating reconciliation is idempotent (no second
+// mints an ACTIVE successor with ReapedFrom set; the reaped record stays reaped
+// (terminal, ADR-022). Repeating reconciliation is idempotent (no second
 // successor). No transcript → no successor, an unrecoverable warning instead.
 func TestReconcileExits_ReapedMintsSuccessorThenWarns(t *testing.T) {
 	now := time.Now().UTC()
@@ -217,9 +217,11 @@ func TestReconcileExits_ReapedMintsSuccessorThenWarns(t *testing.T) {
 		t.Error("the reaped record must stay reaped (ADR-022 terminal invariant)")
 	}
 	succ := reg.Threads[out[0].SuccessorID]
-	if succ == nil || succ.Status != ThreadStatusSuspended ||
-		succ.SuspendPayload == nil || succ.SuspendPayload.ReapedFrom != "thr-reaped" {
-		t.Errorf("successor not minted correctly: %+v", succ)
+	// Successor must be ACTIVE so the session can heartbeat immediately
+	// (no `thread resume` required — the fix for the false owner escalation loop).
+	if succ == nil || succ.Status != ThreadStatusActive ||
+		succ.SuspendPayload != nil || succ.ReapedFrom != "thr-reaped" {
+		t.Errorf("successor not minted correctly (want active, no SuspendPayload, ReapedFrom set): %+v", succ)
 	}
 
 	// Idempotent: a second reconcile must NOT mint another successor.
@@ -237,6 +239,55 @@ func TestReconcileExits_ReapedMintsSuccessorThenWarns(t *testing.T) {
 	}
 	if len(reg2.Threads) != 1 {
 		t.Error("no successor may be minted when the transcript is unrecoverable")
+	}
+}
+
+// Regression: the minted successor must be directly heartbeatable without
+// `sirsi thread resume`. This was the root cause of the false owner escalation
+// loop: a suspended successor blocked heartbeat, WakePass saw no armed thread,
+// and horus routed "Lane needs you" to the owner on every conduit pass.
+func TestReconcileExits_SuccessorIsDirectlyHeartbeatable(t *testing.T) {
+	routerRoot := t.TempDir()
+	now := time.Now().UTC()
+
+	// Register a thread, then mark it reaped (simulating a hard-kill).
+	thr, err := RegisterThread(routerRoot, &Thread{
+		AgentID: "claude-home", Surface: "claude", PID: 0,
+	})
+	if err != nil {
+		t.Fatalf("RegisterThread: %v", err)
+	}
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		t.Fatalf("LoadThreadRegistry: %v", err)
+	}
+	reg.Threads[thr.ThreadID].Status = ThreadStatusReaped
+	reg.Threads[thr.ThreadID].LastSeenAt = now.Add(-1 * time.Minute)
+	err = SaveThreadRegistry(routerRoot, reg)
+	if err != nil {
+		t.Fatalf("SaveThreadRegistry: %v", err)
+	}
+
+	// Reconcile should mint an active successor.
+	reg2, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		t.Fatalf("LoadThreadRegistry: %v", err)
+	}
+	withTranscript := func(_ *Thread) (*SuspendPayload, bool) { return &SuspendPayload{}, true }
+	outcomes := ReconcileExits(reg2, "" /* all hosts */, "", now, DefaultThreadStaleAfter, withTranscript)
+	if len(outcomes) != 1 || outcomes[0].Action != ReconcileMintedSuccessor {
+		t.Fatalf("outcomes = %+v, want one minted-successor", outcomes)
+	}
+	err = SaveThreadRegistry(routerRoot, reg2)
+	if err != nil {
+		t.Fatalf("SaveThreadRegistry: %v", err)
+	}
+
+	// Heartbeat the successor directly — must NOT error with "suspended and cannot heartbeat".
+	succID := outcomes[0].SuccessorID
+	_, err = Heartbeat(routerRoot, succID, HeartbeatUpdate{Status: ThreadStatusActive})
+	if err != nil {
+		t.Errorf("Heartbeat on active successor failed: %v — want direct heartbeat without thread resume", err)
 	}
 }
 

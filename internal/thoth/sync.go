@@ -109,16 +109,74 @@ func listSubdirs(dir string) (int, []string) {
 	return len(names), names
 }
 
+// walkFileBudget bounds a single estimator walk. Sync runs from the SessionEnd
+// hook under a 60s timeout, so an unbounded walk does not degrade the estimate —
+// it loses the whole sync, silently, on every session exit. An approximate count
+// that completes beats an exact one that never returns.
+const walkFileBudget = 200_000
+
+// skipWalkDir reports whether a directory is outside project source and must be
+// pruned from an estimator walk.
+//
+// Both estimators MUST route through walkSource. estimateTestCount previously
+// pruned NOTHING while estimateLineCount pruned six directories — the same file,
+// two walks, two different ideas of scope. That inconsistency is the bug: a sync
+// rooted at $HOME (findRepoRoot walks UP to ~/.thoth, which exists) then walked
+// the entire home tree — ~/Library, ~/Downloads, every node_modules and every
+// git worktree — and could not finish inside the hook's 60s budget. Measured
+// 2026-08-07: killed at 120s, never completed, on every home-rooted session.
+func skipWalkDir(base string) bool {
+	switch base {
+	case "node_modules", "vendor", "dist", "out", "build", "target", "Pods":
+		return true
+	// macOS home directories that are never project source but are enormous.
+	case "Library", "Applications", "Downloads", "Pictures", "Movies", "Music", "Documents":
+		return true
+	}
+	// Any dotted directory: .git, .thoth, caches, tool state, worktrees. Pruning
+	// by shape rather than by name means a new cache dir does not reopen this bug.
+	return len(base) > 1 && strings.HasPrefix(base, ".")
+}
+
+// walkSource visits files under root, pruning non-source directories and
+// stopping after walkFileBudget files. Bounded by construction.
+//
+// Uses WalkDir, not Walk: Walk lstats EVERY entry to build the os.FileInfo it
+// passes, which on a large tree is one syscall per file whether the caller needs
+// it or not. WalkDir hands back a DirEntry already produced by ReadDir, so the
+// stat happens only when a caller asks for it — see the size lookup in
+// estimateLineCount, which stats only the handful of source extensions it counts.
+func walkSource(root string, visit func(path string, d os.DirEntry)) {
+	seen := 0
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != root && skipWalkDir(filepath.Base(path)) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		seen++
+		if seen > walkFileBudget {
+			return filepath.SkipAll
+		}
+		visit(path, d)
+		return nil
+	})
+}
+
 func estimateTestCount(root string) int {
 	// Simple grep for "func Test" in Go files
 	count := 0
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, "_test.go") {
-			return nil
+	walkSource(root, func(path string, _ os.DirEntry) {
+		if !strings.HasSuffix(path, "_test.go") {
+			return
 		}
 		f, err := os.Open(path)
 		if err != nil {
-			return nil
+			return
 		}
 		defer f.Close()
 		scanner := bufio.NewScanner(f)
@@ -127,31 +185,21 @@ func estimateTestCount(root string) int {
 				count++
 			}
 		}
-		return nil
 	})
 	return count
 }
 
 func estimateLineCount(root string) int {
 	total := 0
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			base := filepath.Base(path)
-			if base == "node_modules" || base == ".git" || base == "vendor" || base == "dist" || base == "out" || base == ".thoth" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		// Only count relevant source extensions
-		ext := filepath.Ext(path)
-		switch ext {
+	walkSource(root, func(path string, d os.DirEntry) {
+		// Only count relevant source extensions. The stat lives HERE, behind the
+		// extension check, so a tree of non-source files costs zero stat calls.
+		switch filepath.Ext(path) {
 		case ".go", ".ts", ".js", ".tsx", ".jsx", ".md", ".html", ".css", ".yaml", ".yml":
-			total += int(info.Size())
+			if info, err := d.Info(); err == nil {
+				total += int(info.Size())
+			}
 		}
-		return nil
 	})
 	// 1 line per 50 bytes is very conservative for mixed code/MD
 	return total / 65

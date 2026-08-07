@@ -42,6 +42,12 @@ var runnerStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Every runner this Mac hosts, graded live against GitHub",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Pre-flight: a GitHub outage makes offline runners look like a local
+		// problem. One HTTP call here short-circuits a false-positive repair
+		// that would cancel in-flight job assignments (launchctl kickstart).
+		if warn := runner.ActionsOutage(); warn != "" {
+			fmt.Fprintf(os.Stderr, "⚠  %s\n", warn)
+		}
 		rows, err := runner.Status()
 		if err != nil {
 			return err

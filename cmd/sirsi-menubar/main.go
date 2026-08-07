@@ -98,6 +98,19 @@ func menubarLedger() (ledger.BoardSummary, error) {
 	return ledger.Summarize(snap), nil
 }
 
+func menubarFabric() (ledger.FabricBoard, error) {
+	routerRoot, ok := resolveRouterRoot()
+	if !ok {
+		return ledger.FabricBoard{}, fmt.Errorf("router root not resolvable from menubar context")
+	}
+	repoRoot := filepath.Dir(filepath.Dir(routerRoot))
+	board, err := ledger.BuildFabric(repoRoot, version, time.Now().UTC())
+	if err != nil {
+		return ledger.FabricBoard{}, fmt.Errorf("fabric build: %w", err)
+	}
+	return board, nil
+}
+
 // applyFDAState renders the disk-access item to the current all/some/none tier:
 // hidden at full visibility, a partial-access nudge when only some folders are
 // granted, a blunt no-access warning when blind. Re-evaluated each refresh so it
@@ -169,6 +182,7 @@ func onReady() {
 		NodeStatusFn: menubarNodeStatus,
 		// A26 Nexus seam: serve the compact ledger board summary.
 		LedgerFn: menubarLedger,
+		FabricFn: menubarFabric,
 	})
 	if err := dashSrv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
@@ -287,13 +301,10 @@ func onReady() {
 	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
 	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
 
-	// ── 📋 Ledger — universal task board (ADR-050/051) ──────────────────────────
-	// Same board the owner sees in CLI (`sirsi router ledger`) and MCP
-	// (`router_ledger`). Completion %, done/review/queued/blocked counts,
-	// and blocked items waiting on owner.
+	// ── Fabric — canonical work and message streams ────────────────────────────
 	const ledgerRowCount = 5
-	mLedger := systray.AddMenuItem("📋 Ledger — loading…", "Universal task ledger board: completion %, done/queued/blocked")
-	mLedgerProgress := mLedger.AddSubMenuItem("  Progress: loading…", "Overall completion %")
+	mLedger := systray.AddMenuItem("𓂀 Fabric — loading…", "Canonical fabric work and message status")
+	mLedgerProgress := mLedger.AddSubMenuItem("  Loading last good payload…", "Completed and in-flight work")
 	mLedgerProgress.Disable()
 	ledgerRows := make([]*systray.MenuItem, ledgerRowCount)
 	for i := range ledgerRows {
@@ -352,6 +363,7 @@ func onReady() {
 
 	// ── Background refresh: stats, Ra scopes, recent activity, ops, FDA ──────
 	go func() {
+		var lastGoodFabric time.Time
 		for {
 			snap := CollectStats(cfg)
 			lines := snap.FormatMenuItems()
@@ -391,42 +403,37 @@ func onReady() {
 				}
 			}
 
-			// Ledger board: global view, best-effort (no root = silent skip).
-			if repoRoot, rerr := router.FindRepoRoot(); rerr == nil {
-				if snap, serr := ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter); serr == nil {
-					bs := ledger.Summarize(snap)
-					pct := fmt.Sprintf("  Tasks  [%s]  %d%%", ledgerProgressBar(bs.PctDone, 12), bs.PctDone)
-					mLedgerProgress.SetTitle(pct)
-					mLedgerProgress.Enable()
-					rows := []string{
-						fmt.Sprintf("  ✅ Done: %d   🔄 Active: %d   🚫 Blocked: %d   📬 Open: %d",
-							bs.DoneTasks, bs.ActiveTasks, bs.BlockedTasks, bs.OpenItems),
-					}
-					for _, bl := range bs.Blockers {
-						rows = append(rows, fmt.Sprintf("  ⚠ %s ← %s (%s)", truncate(bl.Title, 36), bl.Agent, bl.Age))
-					}
-					// ledgerRowCount slots; if blockers overflow the remaining slots,
-					// replace the last slot with a "+N more…" tail so nothing drops silently.
-					if len(rows) > ledgerRowCount {
-						dropped := len(rows) - (ledgerRowCount - 1)
-						rows = rows[:ledgerRowCount-1]
-						rows = append(rows, fmt.Sprintf("  + %d more blocker(s)…", dropped))
-					}
-					title := "📋 Ledger"
-					if bs.TotalTasks > 0 {
-						title = fmt.Sprintf("📋 Ledger — %d%% done", bs.PctDone)
-					}
-					mLedger.SetTitle(title)
-					for i, item := range ledgerRows {
-						if i < len(rows) {
-							item.SetTitle(rows[i])
-							item.Enable()
-						} else {
-							item.SetTitle("  —")
-							item.Disable()
-						}
+			// The menubar consumes the same FabricBoard producer as /api/fabric.
+			// Failures retain the prior payload and label its age; they never turn
+			// an unavailable producer into authoritative zeroes.
+			if board, ferr := menubarFabric(); ferr == nil {
+				lastGoodFabric = time.Now().UTC()
+				mLedger.SetTitle(fmt.Sprintf("𓂀 Fabric — %d completed / %d in flight", board.Work.Done, board.Work.Open))
+				mLedgerProgress.SetTitle(fmt.Sprintf("  Completed / in flight: %d / %d", board.Work.Done, board.Work.Open))
+				mLedgerProgress.Enable()
+				rows := []string{
+					fmt.Sprintf("  In progress / assigned: %d / %d", board.Work.InProgress, board.Work.AssignedNotStarted),
+					fmt.Sprintf("  Stalled / blocked / idle: %d / %d / %d", board.Work.Stalled, board.Work.Blocked, countIdleLanes(board.Lanes)),
+					fmt.Sprintf("  %d messages pending", board.Messages.Open),
+				}
+				for _, lane := range board.Lanes {
+					if lane.State == "IDLE with work" || lane.State == "BLOCKED" {
+						rows = append(rows, fmt.Sprintf("  ⚠ %s — %s", lane.Agent, lane.State))
 					}
 				}
+				for i, item := range ledgerRows {
+					if i < len(rows) {
+						item.SetTitle(rows[i])
+						item.Enable()
+					} else {
+						item.SetTitle("  —")
+						item.Disable()
+					}
+				}
+			} else if lastGoodFabric.IsZero() {
+				mLedger.SetTitle("𓂀 Fabric — unavailable (no payload)")
+			} else {
+				mLedger.SetTitle(fmt.Sprintf("𓂀 Fabric — stale · %s old", formatAge(time.Since(lastGoodFabric))))
 			}
 
 			// Disk-access tier (all/some/none) — drops to hidden at full access.
@@ -460,6 +467,26 @@ func onReady() {
 }
 
 func onExit() {}
+
+func countIdleLanes(lanes []ledger.FabricLane) int {
+	count := 0
+	for _, lane := range lanes {
+		if lane.State == "IDLE" || lane.State == "IDLE with work" {
+			count++
+		}
+	}
+	return count
+}
+
+func formatAge(age time.Duration) string {
+	if age < time.Minute {
+		return "<1m"
+	}
+	if age < time.Hour {
+		return fmt.Sprintf("%dm", int(age.Minutes()))
+	}
+	return fmt.Sprintf("%dh%02dm", int(age.Hours()), int(age.Minutes())%60)
+}
 
 // ── TUI Bridge ─────────────────────────────────────────────────────────
 

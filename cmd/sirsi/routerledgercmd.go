@@ -24,6 +24,7 @@ var (
 	taskUpdateAddTokens, taskUpdateAddSeconds                                                        int64
 	taskLeaseWorker, taskLeaseThread, taskLeaseToken, taskLeaseResult, taskLeaseReason               string
 	taskLeaseTTL                                                                                     time.Duration
+	taskReclaimDryRun                                                                                bool
 )
 
 var routerLedgerCmd = &cobra.Command{
@@ -63,8 +64,9 @@ func renderLedger(s ledger.Snapshot) {
 		if a.Stale {
 			stale = " STALE"
 		}
-		fmt.Printf("\n%s — %d open · oldest %s · blocked %d · unblocked/unpicked %d%s\n",
-			a.AgentID, len(a.Items), ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked, stale)
+		fmt.Printf("\n%s — items: %d open · oldest %s · blocked %d · unblocked/unpicked %d — tasks: %d open · %d blocked%s\n",
+			a.AgentID, len(a.Items), ledger.FormatAge(a.OldestAgeSeconds), a.BlockedCount, a.UnblockedUnpicked,
+			a.OpenTasks, a.BlockedTasks, stale)
 		for _, it := range a.Items {
 			flags := make([]string, 0, 3)
 			if it.Stale {
@@ -175,6 +177,53 @@ var routerTaskReleaseCmd = &cobra.Command{
 		}
 		defer f.Close()
 		return f.Store().ReleaseTaskLease(args[0], args[1], taskLeaseToken, taskLeaseReason)
+	},
+}
+
+var routerTaskReclaimExpiredCmd = &cobra.Command{
+	Use: "reclaim-expired", Args: cobra.NoArgs, Short: "Clear expired lease ownership fabric-wide so orphaned tasks become claimable again",
+	Long: `The per-agent reclaim ClaimTask already applies (clearing an expired lease
+before selecting the next task) only fires as a side effect of THAT agent
+calling claim again. A queue nobody is actively driving — a session that
+claimed a task and never returned — never gets that chance, so the task
+sits lease-held and unclaimable indefinitely even though its lease expired
+hours or days ago.
+
+reclaim-expired runs the same reconciliation across every agent's queue.
+Non-destructive: it only clears lease ownership (lease_token, lease_expires,
+claimed_by, thread_id). Status is left untouched, except the same
+attempts-exhausted case ClaimTask already applies (flip to blocked rather
+than reclaimed forever). --dry-run reports what would change without
+writing.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		found, err := f.Store().ReclaimExpiredTaskLeases(taskReclaimDryRun)
+		if err != nil {
+			return err
+		}
+		if ledgerJSON {
+			return json.NewEncoder(os.Stdout).Encode(found)
+		}
+		if len(found) == 0 {
+			fmt.Println("No expired task leases found.")
+			return nil
+		}
+		verb := "Reclaimed"
+		if taskReclaimDryRun {
+			verb = "Would reclaim"
+		}
+		for _, r := range found {
+			state := "in-progress"
+			if r.Blocked {
+				state = "blocked (attempts exhausted)"
+			}
+			fmt.Printf("%s: %s/%s (attempts=%d) -> %s\n", verb, r.Agent, r.TaskID, r.AttemptsUsed, state)
+		}
+		return nil
 	},
 }
 
@@ -347,6 +396,8 @@ func init() {
 	routerTaskRenewCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
 	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "result-ref", "", "Evidence/proof reference (required)")
 	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
-	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd)
+	routerTaskReclaimExpiredCmd.Flags().BoolVar(&taskReclaimDryRun, "dry-run", false, "Report what would be reclaimed without writing")
+	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
+	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }

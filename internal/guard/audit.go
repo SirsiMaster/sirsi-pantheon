@@ -332,6 +332,13 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 	var processes []ProcessInfo
 	lines := strings.Split(string(out), "\n")
 
+	// Read the broker pidfile ONCE for the whole census — applyBrokerTruth below
+	// overrides footprint/peak with the broker's real Metal allocation
+	// (mlx_active_bytes from /health) for this PID ONLY. BrokerPID() is used
+	// rather than LoadBearingPIDs() so the worker PID (also load-bearing) does
+	// not receive the broker's /health numbers (Rule A35 — scope the check).
+	brokerPID := BrokerPID()
+
 	for i, line := range lines {
 		if i == 0 { // Skip header
 			continue
@@ -369,6 +376,7 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 		if pk, perr := vitals.PeakPhysFootprint(pid); perr == nil {
 			peak = int64(pk)
 		}
+		footprint, peak = applyBrokerTruth(brokerPID, pid, footprint, peak)
 
 		processes = append(processes, ProcessInfo{
 			PID:           pid,

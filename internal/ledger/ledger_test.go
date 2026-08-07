@@ -66,6 +66,36 @@ func TestSummarizePhaseGroups(t *testing.T) {
 	}
 }
 
+// Regression: claude-home rendered "0 open · blocked 0 · unblocked/unpicked 0"
+// while 41 non-done task rows sat in the SAME output. All three header counters
+// are item-only, so an empty inbox zeroed the header regardless of ledger depth
+// and a conduit run reading it concluded there was no work. The task counters
+// must be non-zero exactly when the registry has non-done rows, independently of
+// whether any inbox item exists.
+func TestOpenTaskCountsAreIndependentOfInboxItems(t *testing.T) {
+	tasks := []routerstore.Task{
+		{Agent: "claude-home", TaskID: "1", Subject: "s1", Status: "done", ResponsibleParty: "self"},
+		{Agent: "claude-home", TaskID: "2", Subject: "s2", Status: "pending", ResponsibleParty: "self"},
+		{Agent: "claude-home", TaskID: "3", Subject: "s3", Status: "in-progress", ResponsibleParty: "self"},
+		{Agent: "claude-home", TaskID: "4", Subject: "s4", Status: "blocked", ResponsibleParty: "owner"},
+	}
+	// nil items == the exact production condition: inbox zero, ledger full.
+	s := BuildFrom(nil, tasks, nil, "", time.Now().UTC(), time.Hour)
+	if len(s.Agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(s.Agents))
+	}
+	a := s.Agents[0]
+	if len(a.Items) != 0 || a.BlockedCount != 0 || a.UnblockedUnpicked != 0 {
+		t.Fatalf("item counters must stay item-scoped: %+v", a)
+	}
+	if a.OpenTasks != 3 {
+		t.Fatalf("OpenTasks = %d, want 3 (pending+in-progress+blocked, done excluded)", a.OpenTasks)
+	}
+	if a.BlockedTasks != 1 {
+		t.Fatalf("BlockedTasks = %d, want 1", a.BlockedTasks)
+	}
+}
+
 func TestSummarizeSemantics(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -115,6 +145,39 @@ func TestSummarizeSemantics(t *testing.T) {
 				t.Errorf("PctDone = %d, want %d", bs.PctDone, tc.wantPct)
 			}
 		})
+	}
+}
+
+func TestFabricFromKeepsWorkMessagesAndRegistrationDistinct(t *testing.T) {
+	s := Snapshot{GeneratedAt: "2026-08-05T12:00:00Z", Agents: []Agent{
+		{AgentID: "agent-a", Items: []Item{{ID: "msg", AgeSeconds: 90}}, Tasks: []routerstore.Task{
+			{TaskID: "active", Status: "in-progress", Updated: "2026-08-05T11:59:00Z"},
+			{TaskID: "done", Status: "done"},
+		}},
+		{AgentID: "agent-b", Tasks: []routerstore.Task{{TaskID: "stalled", Status: "pending", Liveness: "stalled"}}},
+	}}
+	ns := &router.NodeStatus{
+		RegisteredAgents: []string{"agent-a", "agent-b"},
+		LiveThreads:      []router.ThreadSummary{{ThreadID: "thread-a", AgentID: "agent-a"}},
+		StaleThreads:     []router.ThreadSummary{{ThreadID: "thread-b", AgentID: "agent-b"}},
+		StrandedInbox:    []router.StrandedAgent{{AgentID: "agent-b", OpenItems: 2}},
+	}
+
+	b := FabricFrom(s, ns, "v1")
+	if b.Work.Total != 3 || b.Work.Done != 1 || b.Work.Open != 2 || b.Work.InProgress != 1 || b.Work.Stalled != 1 {
+		t.Fatalf("work = %+v", b.Work)
+	}
+	if b.Messages.Open != 1 || b.Messages.OldestAgeSeconds != 90 || b.Messages.Stranded != 2 {
+		t.Fatalf("messages = %+v", b.Messages)
+	}
+	if len(b.Lanes) != 2 || b.Lanes[0].State != "WORKING" || b.Lanes[1].State != "IDLE with work" {
+		t.Fatalf("lanes = %+v", b.Lanes)
+	}
+	if !b.Lanes[0].Registered.Router || !b.Lanes[0].Registered.Thread || !b.Lanes[0].Registered.Ledger {
+		t.Fatalf("registration = %+v", b.Lanes[0].Registered)
+	}
+	if b.Health.RAMPct != nil || b.Health.Swap != nil || b.Health.GitDirty != nil || len(b.Health.Issues) != 1 {
+		t.Fatalf("health must preserve unknown values and stale issue: %+v", b.Health)
 	}
 }
 

@@ -261,8 +261,8 @@ skip it. Reaps dead PIDs first, then:
   - a STALE ACTIVE record (soft-exit / clear) is healed in place: memory is
     retro-synced and it transitions active→suspended.
   - a REAPED record (hard kill) is never revived; if memory is recoverable a new
-    suspended SUCCESSOR is minted (reaped_from), else an unrecoverable warning is
-    surfaced — never silent.
+    ACTIVE successor is minted (ReapedFrom set) so the session can heartbeat
+    immediately, else an unrecoverable warning is surfaced — never silent.
 
 Scope to one agent with --agent (each surface heals its own lineage at its own
 start). Honors SIRSI_SUPERVISOR=0 (managed action — skipped when off; manual

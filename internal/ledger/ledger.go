@@ -41,6 +41,12 @@ type Agent struct {
 	BlockedCount      int                `json:"blocked_count"`
 	UnblockedUnpicked int                `json:"unblocked_unpicked_count"`
 	LatestHeartbeat   string             `json:"latest_heartbeat,omitempty"`
+	// OpenTasks/BlockedTasks count the TASK REGISTRY, not the inbox. The three
+	// counters above are item-only; without these a lane with an empty inbox and
+	// a full ledger renders "0 open · blocked 0 · unblocked/unpicked 0" and reads
+	// as no-work-to-do (A35: scope the check to the claim).
+	OpenTasks    int `json:"open_tasks"`
+	BlockedTasks int `json:"blocked_tasks"`
 }
 
 type Snapshot struct {
@@ -99,6 +105,13 @@ func BuildFrom(all []work.Item, tasks []routerstore.Task, threads *router.Thread
 			agents[t.Agent] = &Agent{AgentID: t.Agent}
 		}
 		agents[t.Agent].Tasks = append(agents[t.Agent].Tasks, t)
+		if t.Status == "done" {
+			continue
+		}
+		agents[t.Agent].OpenTasks++
+		if t.Status == "blocked" {
+			agents[t.Agent].BlockedTasks++
+		}
 	}
 
 	latest := map[string]time.Time{}

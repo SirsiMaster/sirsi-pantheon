@@ -718,12 +718,25 @@ var routerWakeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Writing the plist is not arming the lane. Load it and then ASK
+		// launchd, because "installed" previously meant "a file exists" —
+		// 18 lanes reported installed on 2026-08-07 with launchd holding none
+		// of them, which is what made every surface disagree with the board.
 		if changed {
 			fmt.Printf("✔ Installed wake LaunchAgent: %s\n", path)
-			fmt.Printf("  Load it: launchctl load -w %s\n", path)
 		} else {
-			fmt.Printf("✓ Wake LaunchAgent already installed (no change): %s\n", path)
+			fmt.Printf("✓ Wake LaunchAgent plist already present: %s\n", path)
 		}
+		loaded, detail := router.LoadWakeAgent(cfg.ID, path)
+		if !loaded {
+			fmt.Printf("✗ %s is NOT armed — the plist is on disk but launchd did not load it.\n", cfg.ID)
+			if detail != "" {
+				fmt.Printf("   launchctl: %s\n", detail)
+			}
+			fmt.Printf("   Nothing will wake this lane until that clears. Retry, or `launchctl bootout gui/$(id -u)/ai.sirsi.router.wake.%s` first.\n", cfg.ID)
+			return fmt.Errorf("wake agent %s not loaded", cfg.ID)
+		}
+		fmt.Printf("✔ %s is ARMED — launchd reports the job loaded.\n", cfg.ID)
 		return nil
 	},
 }
@@ -965,6 +978,61 @@ Idempotent; --dry-run reports the full plan without changing anything.`,
 			fmt.Printf("✔ %squarantined: %s → %s.quarantined\n", verb, p, filepath.Base(p))
 		}
 		fmt.Println("  Wake-loops and the supervisor were not touched.")
+		return nil
+	},
+}
+
+// routerQuarantineCmd is the fabric-wide operator off-switch (R7/G6),
+// generalized from `sirsi gemma quarantine` (gemma_quarantine.go). Unlike
+// quarantine-worker (one-shot bootout + plist rename, claude-worker labels
+// only), this writes a durable marker every dispatcher in the fabric checks
+// BEFORE acting — the wake-loop's own consumer dispatch (wake.go) and the
+// dead-label kickstart duty (launchdkickstart.go) — so it holds against
+// exactly the three revival paths that defeated `bootout`/`disable` on
+// 2026-08-06 (liveness-watch re-bootstrap in 40s, print-disabled silently
+// cleared, horus.agent-router KeepAlive reinstalling all 24 lanes).
+var routerQuarantineCmd = &cobra.Command{
+	Use:   "quarantine",
+	Short: "Stand the whole fabric down — no dispatcher may start a new lane or consumer",
+	Long: `Writes the fabric quarantine marker every dispatcher checks BEFORE
+reviving a dead launchd label or spawning a new inbox consumer.
+
+  sirsi router quarantine
+  sirsi router unquarantine
+
+Does not stop anything already running — pair with quarantine-worker for that.
+This is the durable OFF switch: it holds across a supervisor restart, unlike
+launchctl bootout/disable.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("router quarantine: %w", err)
+		}
+		path := router.FabricQuarantineMarkerPath(home)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return fmt.Errorf("router quarantine: %w", err)
+		}
+		if err := os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+			return fmt.Errorf("router quarantine: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Fabric quarantined. No dispatcher will start a new lane or consumer until `sirsi router unquarantine`.\n")
+		return nil
+	},
+}
+
+var routerUnquarantineCmd = &cobra.Command{
+	Use:   "unquarantine",
+	Short: "Clear the fabric quarantine marker so dispatch resumes",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("router unquarantine: %w", err)
+		}
+		path := router.FabricQuarantineMarkerPath(home)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("router unquarantine: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Fabric quarantine cleared. Dispatch resumes on the next tick.\n")
 		return nil
 	},
 }
@@ -1328,5 +1396,6 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneItemsOnly, "items-only", false, "prune only closed items past the window (skip logs/dumps/queue)")
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd)
+	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }
