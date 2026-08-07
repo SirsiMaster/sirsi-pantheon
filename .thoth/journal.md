@@ -2994,3 +2994,35 @@ Health green: swap 756/2048 MB flat a twelfth run, free 83%, board :8734 → 200
 no new sirsi/gemma crash or Jetsam. Threads 169→166. `ccd reap` killed 3 leaked conduit sessions (6
 procs). Retention 2.4 KiB. Broker still structurally absent (no plist, empty probe on 8477) —
 correct, not a heal.
+
+## Conduit run 2026-08-07T02:45Z
+
+Worked the one starred item carried in from the last run and shipped it as PR #628:
+`dispatchConsumer` (internal/router/wake.go) never set `cmd.Stdout`/`cmd.Stderr`, so
+`exec.Cmd` wired both to /dev/null and destroyed the cause of 3,843 of 4,082 consumer
+dispatch failures across 8 lanes at the source. The fix captures a bounded 4 KB tail of
+both streams and includes it in the existing "exited with error" log line. The
+load-bearing detail is the sink type: capture goes through an `*os.File` pipe, not an
+`io.Writer`. With an `io.Writer`, exec starts a copier goroutine that `cmd.Wait` blocks
+on until the LAST holder of the write end closes it — and the consumer is setsid-detached,
+so a surviving grandchild would have held `Wait` open forever, pinned `running()` true,
+and silently stopped re-dispatch for every lane on the machine. That would have been a
+worse outage than the one being fixed, and the fix that "captures stderr" is the obvious
+shape to reach for. `TestDispatchConsumerCapturesOutputTail` leaves exactly such a
+grandchild and asserts completion; `TestRingTailKeepsLastBytesAndNamesSilence` pins the
+ring and the `(no output)` marker, because a consumer that dies producing nothing at all
+is a finding and must not read as a missing log field. build/vet/gofmt clean, full
+`internal/router` suite ok, `-race -count=3` ok. Every required context is SUCCESS;
+`binding-hold` is FAILURE by design and review is routed to codex-home (item
+20260807-023724) with the `*os.File` reasoning named as the thing to attack — I authored
+it, so I cannot bind it. Stated in the PR, the ledger, and here: this makes the failure
+legible, it does NOT fix it.
+
+Housekeeping: threads 173→169, `ccd reap` killed 1 leaked conduit session and archived 2
+records, retention reclaimed 895 B. `thread reconcile` again warned a lost lifecycle fence
+naming a NEW thread (thr-9c2d028d), which is the already-filed
+fence-retry-budget-underprovisioned row, not a regression. #629 appeared from
+claude-pantheon carrying the `BrokerPID()` fix I requested on #625 — DIRTY, left with its
+lane. The four CLEAN-but-checks=0 PRs (#608 #604 #603 #595) were re-verified: all four
+still base on open feature branches, so ci.yml genuinely cannot fire; that is structural,
+not an outage, and not mine to retarget.
