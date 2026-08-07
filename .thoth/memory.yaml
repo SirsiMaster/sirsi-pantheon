@@ -1,6 +1,6 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
 # Read this FIRST before any source files.
-# Last updated: 2026-08-06T21:57:19-04:00
+# Last updated: 2026-08-07T00:21:26-04:00
 
 ## Identity
 project: sirsi-pantheon
@@ -9,7 +9,7 @@ language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.22.0-beta
 binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
 test_count: 80615+
-line_count: ~3817,469
+line_count: ~3817,569
 module_count: 66
 command_count: 256
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
