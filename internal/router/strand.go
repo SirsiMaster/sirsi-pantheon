@@ -27,7 +27,7 @@ func threadArmed(thr *Thread, now time.Time) bool {
 	wtype := WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 	switch {
 	case requiresThreadIDLoop(wtype):
-		return thr.ThreadID != "" && WatcherAlive(thr.ThreadID)
+		return thr.ThreadID != "" && (WatcherAlive(thr.ThreadID) || WatcherAliveByAgent(thr.AgentID))
 	case thr.IsStale(now, DefaultThreadStaleAfter):
 		return false
 	default: // app-heartbeat / native-runloop / surface-loop / pull-loop — heartbeat is the proof

@@ -14,11 +14,14 @@ func TestEffectiveStale_LoopEvidence(t *testing.T) {
 	oldPID := pidStateOfThreadFn
 	defer func() {
 		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
 		pidStateOfThreadFn = oldPID
 	}()
 
 	// PID state always unknown in baseline tests so only watcher matters.
 	pidStateOfThreadFn = func(*Thread) PIDState { return PIDUnknown }
+	// Agent-id probe returns nothing in baseline (isolate thread-id behavior).
+	setWatcherAliveByAgentFn(func(string) bool { return false })
 
 	// Watcher alive for thr-stale only.
 	setWatcherAliveFn(func(id string) bool { return id == "thr-stale" })
@@ -57,18 +60,21 @@ func TestEffectiveStale_PIDAlivePreventsStale(t *testing.T) {
 	oldPID := pidStateOfThreadFn
 	defer func() {
 		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
 		pidStateOfThreadFn = oldPID
 	}()
 
-	// No watch-router watcher present (pgrep would find nothing).
+	// No watch-router watcher present (pgrep would find nothing for either probe).
 	setWatcherAliveFn(func(string) bool { return false })
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+
 	// PID alive → NOT stale even though heartbeat is old and no watcher.
 	pidStateOfThreadFn = func(*Thread) PIDState { return PIDAlive }
 	if EffectiveStale(thr, now, window) {
 		t.Error("a thread with a live PID must not be reported stale (A27 false-alarm fix)")
 	}
 
-	// PID gone → falls through to watcher check → stale (watcher is false).
+	// PID gone → falls through to watcher check → stale (both watchers are false).
 	pidStateOfThreadFn = func(*Thread) PIDState { return PIDGone }
 	if !EffectiveStale(thr, now, window) {
 		t.Error("a thread with a dead PID and no watcher must be stale")
@@ -102,6 +108,7 @@ func TestEffectiveStale_ZeroPIDSkipsPIDCheck(t *testing.T) {
 	oldPID := pidStateOfThreadFn
 	defer func() {
 		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
 		pidStateOfThreadFn = oldPID
 	}()
 
@@ -111,6 +118,7 @@ func TestEffectiveStale_ZeroPIDSkipsPIDCheck(t *testing.T) {
 		return PIDAlive
 	}
 	setWatcherAliveFn(func(string) bool { return false })
+	setWatcherAliveByAgentFn(func(string) bool { return false })
 	if !EffectiveStale(thr, now, window) {
 		t.Error("PID=0 with no watcher must be stale")
 	}
@@ -120,6 +128,184 @@ func TestWatcherAlive_EmptyThreadID(t *testing.T) {
 	if WatcherAlive("") {
 		t.Error("empty thread id has no watcher")
 	}
+}
+
+func TestWatcherAliveByAgent_EmptyAgentID(t *testing.T) {
+	if WatcherAliveByAgent("") {
+		t.Error("empty agent id has no watcher")
+	}
+}
+
+// TestEffectiveStale_ReRegistrationCase is the regression fixture for the P1
+// re-registration false loop-dead. After a thread re-registers with a new id the
+// existing watcher script carries the OLD id in argv: WatcherAlive(new-id) returns
+// false. WatcherAliveByAgent must rescue the lane via the stable script-name probe
+// — but ONLY when the thread is the newest non-terminal record for its agent (A35).
+// Call sites that know this use EffectiveStaleForNewest(..., true).
+func TestEffectiveStale_ReRegistrationCase(t *testing.T) {
+	now := time.Now().UTC()
+	window := 5 * time.Minute
+	oldPID := pidStateOfThreadFn
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+		pidStateOfThreadFn = oldPID
+	})
+
+	pidStateOfThreadFn = func(*Thread) PIDState { return PIDUnknown }
+
+	// Re-registered thread: new id, heartbeat stale, no PID recorded.
+	thr := &Thread{
+		ThreadID:   "thr-new-abc",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		LastSeenAt: now.Add(-2 * time.Hour),
+	}
+
+	// Thread-id probe finds nothing (old watcher has old-id in argv).
+	setWatcherAliveFn(func(string) bool { return false })
+	// Agent-id probe finds the script (claude-home-watcher.sh is alive).
+	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-home" })
+
+	// isNewestOfAgent=true: this is the newest thread for the agent — agent-keyed
+	// evidence is valid evidence for it.
+	if EffectiveStaleForNewest(thr, now, window, true) {
+		t.Error("newest re-registered thread with live agent-id watcher must NOT be stale (re-registration P1 fix)")
+	}
+	// isNewestOfAgent=false: bare EffectiveStale (no agent-keyed probe).
+	// An older thread of the same agent must NOT be rescued by the agent probe —
+	// that would be false-not-stale for 70 threads while one watcher is alive.
+	if !EffectiveStaleForNewest(thr, now, window, false) {
+		t.Error("older thread of same agent must remain stale even when agent-id watcher is alive (A35 scope)")
+	}
+
+	// Once the watcher script also dies, even the newest thread is genuinely stale.
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+	if !EffectiveStaleForNewest(thr, now, window, true) {
+		t.Error("re-registered thread with no watcher at all must be stale")
+	}
+}
+
+// TestEffectiveStale_TwoThreadsOneAgent is the negative-control test that
+// TestEffectiveStale_ReRegistrationCase cannot catch: one agent, two threads.
+// The older thread must stay stale; only the newest is rescued by the agent-keyed
+// probe. This test fails red with the pre-fix (unscoped) implementation and passes
+// green with the scoped one (A35 — claude-home review of PR #614, 2026-08-06).
+func TestEffectiveStale_TwoThreadsOneAgent(t *testing.T) {
+	now := time.Now().UTC()
+	window := 5 * time.Minute
+	oldPID := pidStateOfThreadFn
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+		pidStateOfThreadFn = oldPID
+	})
+
+	pidStateOfThreadFn = func(*Thread) PIDState { return PIDUnknown }
+	setWatcherAliveFn(func(string) bool { return false })
+	// Agent watcher is alive — one PID 961 vouches for the agent.
+	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-home" })
+
+	base := now.Add(-24 * time.Hour) // 24h ago — clearly before StartedAt
+	older := &Thread{
+		ThreadID:   "thr-old-111",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		StartedAt:  base,
+		LastSeenAt: now.Add(-2 * time.Hour), // stale heartbeat
+	}
+	newer := &Thread{
+		ThreadID:   "thr-new-222",
+		AgentID:    "claude-home",
+		Surface:    "claude",
+		StartedAt:  base.Add(time.Hour),     // registered 1h after older
+		LastSeenAt: now.Add(-2 * time.Hour), // stale heartbeat
+	}
+
+	threads := []*Thread{older, newer}
+	newestByAgent := NewestNonTerminalByAgent(threads)
+	// "newer" must be identified as the newest.
+	if newestByAgent["claude-home"] != "thr-new-222" {
+		t.Fatalf("NewestNonTerminalByAgent: want thr-new-222, got %q", newestByAgent["claude-home"])
+	}
+
+	// Older thread: isNewest=false → agent-keyed probe NOT credited → stale.
+	olderIsNewest := newestByAgent[older.AgentID] == older.ThreadID
+	if !EffectiveStaleForNewest(older, now, window, olderIsNewest) {
+		t.Error("older thread must remain stale even when agent-id watcher is alive (A35 scope)")
+	}
+
+	// Newer thread: isNewest=true → agent-keyed probe credited → NOT stale.
+	newerIsNewest := newestByAgent[newer.AgentID] == newer.ThreadID
+	if EffectiveStaleForNewest(newer, now, window, newerIsNewest) {
+		t.Error("newest thread with live agent-id watcher must NOT be stale (re-registration P1)")
+	}
+}
+
+// TestThreadArmed_ReRegistrationCase verifies that threadArmed credits the
+// agent-id probe for a loop-monitor thread whose watcher has a stale thread id
+// in argv (the re-registration case).
+func TestThreadArmed_ReRegistrationCase(t *testing.T) {
+	now := time.Now().UTC()
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	})
+
+	thr := &Thread{
+		ThreadID: "thr-new-xyz",
+		AgentID:  "claude-pantheon",
+		Surface:  "claude",
+	}
+
+	// Thread-id probe misses (old watcher has old id in argv).
+	setWatcherAliveFn(func(string) bool { return false })
+	// Agent-id probe finds the script.
+	setWatcherAliveByAgentFn(func(agent string) bool { return agent == "claude-pantheon" })
+
+	if !threadArmed(thr, now) {
+		t.Error("re-registered thread with live agent-id watcher must be armed")
+	}
+
+	// Negative control: both probes dead → not armed.
+	setWatcherAliveByAgentFn(func(string) bool { return false })
+	if threadArmed(thr, now) {
+		t.Error("threadArmed with no watcher evidence must return false")
+	}
+}
+
+// Rule A21 falsification for the new watcherAliveByAgentFn. Same race-detection
+// pattern as TestWatcherAliveFn_ConcurrentAccessIsRaceFree.
+func TestWatcherAliveByAgentFn_ConcurrentAccessIsRaceFree(t *testing.T) {
+	t.Cleanup(func() { setWatcherAliveByAgentFn(nil) })
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	wg.Add(1)
+	go func() { // reader
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = WatcherAliveByAgent("claude-home")
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() { // writer
+		defer wg.Done()
+		for i := 0; i < 500; i++ {
+			alive := i%2 == 0
+			setWatcherAliveByAgentFn(func(string) bool { return alive })
+		}
+		close(stop)
+	}()
+
+	wg.Wait()
 }
 
 // Rule A21 falsification. WatcherAlive is reached from goroutine-capable
