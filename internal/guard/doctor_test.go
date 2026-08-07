@@ -650,11 +650,13 @@ func TestTopMemoryProcessesAlarmsOnOurOwnGemmaBroker(t *testing.T) {
 func TestDoctorWith_SirsiProcesses(t *testing.T) {
 	m := healthyMock()
 
-	// Inject sirsi processes in ps output
-	m.CommandResults["ps -axo pid,rss,comm"] = `  PID   RSS COMM
-  100  51200 /usr/bin/node
-  900  20480 /usr/local/bin/sirsi-agent
-  901  10240 /usr/local/bin/sirsi-guard`
+	// Inject sirsi processes in ps output. checkSirsiProcesses now goes through
+	// getProcessListWith (Rule A35 fix, PRD R6) so it reads the same
+	// pid,rss,vsz,%cpu,user,comm shape every other census-based check uses.
+	m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = `  PID   RSS    VSZ  %CPU USER     COMM
+  100  51200  81920   0.1 user     /usr/bin/node
+  900  20480  40960   0.1 user     /usr/local/bin/sirsi-agent
+  901  10240  20480   0.1 user     /usr/local/bin/sirsi-guard`
 
 	report, err := DoctorWith(m)
 	if err != nil {
