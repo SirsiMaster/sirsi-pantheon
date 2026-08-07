@@ -2893,3 +2893,33 @@ the installed schema-15 runtime still cannot lease a closed-source task row,
 leaving reconciliation blocked on the schema-v16 deployment boundary. Final
 repeat pull and ledger reported zero open and zero unblocked/unpicked codex-home
 work.
+
+## Conduit run 2026-08-06T22:55Z
+
+Inbox zero and the PR queue frozen by an eighth consecutive GitHub Actions major outage, so this
+pass worked the ledger. Shipped PR #618 closing two menubar defects that turned out to be the same
+shape one layer apart: an argv parser whose single `else` branch was `app.run()`, and a singleton
+guard whose `guard let bundleID = Bundle.main.bundleIdentifier else { return }` read as "no peers
+found" when it meant "cannot tell". Both were reported as one symptom each — `--help` opens a panel;
+two panels coexist — and both had siblings the symptom did not name: `--snapshot` with no directory
+and `--width`/`--appearance` without `--snapshot` launched the UI exactly as `--help` did, and the
+bundle-id guard silently no-opped for every raw-binary run, which is the normal dev path. The fixes
+are written against the fall-through and against the missing identity respectively, not against the
+two reported flags. The new guard `macapp/check-cli-flags.sh` runs the binary rather than grepping
+it, because the invariant is "the process exits" and `app.run()` blocks forever — a structural check
+could confirm an `exit(0)` exists and still miss that it is unreachable. It was verified in both
+directions: eight cases green on the fix, and a deliberate revert of the usage block reddened exactly
+the five affected cases while the three the surviving `--snapshot` parser still handles stayed green.
+Its rename-before-run step is load-bearing rather than incidental — a regressed case launches, and a
+launched instance retires peers by executable name, so running the probe under the real name would
+have terminated the owner's live menubar (PID 91206) as a side effect of testing for that very bug;
+the PID was confirmed alive through the red run. The name-match fix carries a real behavior change —
+a `swift run` dev build will now retire an older running Sirsi Menubar.app — and that, not the
+parser work, is the question routed to codex-home for review. Separately, five owner-addressed
+`lane-needs-you` escalations are false, one of them asserting claude-home could not be reached while
+claude-home was executing the sweep that read it; the fix is claude-pantheon's PR #597, whose
+CHANGELOG conflict I attempted to resolve until `git worktree add` refused the branch as already
+checked out in their tree. That refusal did the job a convention could not: the conflict looked
+trivial, the lane was live, and backing off was correct. Housekeeping healed one reaped-thread
+successor, pruned 152 records to 140, and reaped two leaked scheduled-task sessions. Swap held flat
+at 844 MB for a fourteenth consecutive run.

@@ -864,6 +864,11 @@ var threadListCmd = &cobra.Command{
 			thr   *router.Thread
 			stale bool
 		}
+		// A35 scoping: WatcherAliveByAgent is valid evidence only for the newest
+		// non-terminal thread of each agent (the re-registration successor). Crediting
+		// it for every thread lets one live PID vouch for 71 stale records — the
+		// unscoped false-not-stale class the reviewer blocked PR #614 on (2026-08-06).
+		newestByAgent := router.NewestNonTerminalByAgent(reg.SortedThreads())
 		var rows []row
 		for _, t := range reg.SortedThreads() {
 			if t.Status.IsTerminal() && !threadListAll {
@@ -872,7 +877,8 @@ var threadListCmd = &cobra.Command{
 			// Loop-evidence-aware (A28): a thread with a live watcher loop is NOT
 			// stale even if its heartbeat aged out (harness-gated surfaces). This
 			// is the `.stale` field the registry-police trusts. Write-free.
-			rows = append(rows, row{thr: t, stale: router.EffectiveStale(t, now, stale)})
+			isNewest := newestByAgent[t.AgentID] == t.ThreadID
+			rows = append(rows, row{thr: t, stale: router.EffectiveStaleForNewest(t, now, stale, isNewest)})
 		}
 
 		if JsonOutput {

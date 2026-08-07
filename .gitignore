@@ -68,6 +68,28 @@ extensions/*/sirsi
 .agents/idea-router/.threads.json-*
 .agents/idea-router/processes.json
 .agents/idea-router/board.json
+# Per-agent runtime cursors and alarm stamps. These are written continuously by
+# `sirsi router wait` and the police duty — one file per agent, rewritten on
+# every wake. They are machine state, never source.
+#
+# Untracked is NOT harmless here: Go's buildvcs stamps `vcs.modified` from
+# `git status --porcelain`, which counts UNTRACKED files. So these alone kept
+# every build on the conduit host marked DIRTY, which tripped
+# `routerstore: refusing to migrate v0->v1 from a build with uncommitted
+# changes` and failed every cmd/sirsi test — blocking the Ma'at pre-push gate
+# for any change touching that package. The test failures were environmental,
+# never caused by the code under test.
+.agents/idea-router/.wait-cursor-*
+.agents/idea-router/police/.last-alarm-*
+# Runtime router state that lives beside the corpus. state.json is already
+# untracked on main (88dff818 "untrack all router runtime files"); naming it
+# here stops it being re-added by accident, which is how it came to be tracked
+# on a side branch and then DELETED by a checkout back to main — taking the
+# fabric down with it (router doctor failed outright, 2026-08-06).
+.agents/idea-router/state.json
+.agents/idea-router/requests/
+.agents/idea-router/results/
+.agents/idea-router/status/
 .agents/idea-router/.board-*.json
 .agents/idea-router/locks/
 # Router messages are EPHEMERAL per-machine runtime state (like the queue/registry
@@ -93,3 +115,12 @@ extensions/*/sirsi
 # never committed and never a GitHub Secret. A key in CI lets a PR approve itself.
 *.pem
 .agents/idea-router/police/*.log
+
+# Ad-hoc scratch worktrees agents create directly at repo root (not registered
+# via `git worktree add`, so `git worktree list` never sees them and they
+# never appear on the removal path). Found dirtying the primary worktree
+# 2026-08-06 while diagnosing why every push failed the Ma'at pre-push gate:
+# Go's -buildvcs stamps vcs.modified from `git status --porcelain`, which
+# counts these same as any other untracked file.
+.codex-pr545/
+worktrees/

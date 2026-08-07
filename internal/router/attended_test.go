@@ -52,12 +52,16 @@ func TestAttendedSessionLive_WorkerDoesNotCountAsItsOwnAttendedSession(t *testin
 	}
 }
 
-// stubWatcher installs the loop-process probe. Tests must never pgrep the real
-// host — the answer would depend on whichever agents happen to be running.
+// stubWatcher installs both loop-process probes (thread-id and agent-id). Tests
+// must never pgrep the real host — the answer depends on whichever agents are live.
 func stubWatcher(t *testing.T, alive bool) {
 	t.Helper()
 	setWatcherAliveFn(func(string) bool { return alive })
-	t.Cleanup(func() { setWatcherAliveFn(nil) })
+	setWatcherAliveByAgentFn(func(string) bool { return alive })
+	t.Cleanup(func() {
+		setWatcherAliveFn(nil)
+		setWatcherAliveByAgentFn(nil)
+	})
 }
 
 func TestAttendedSessionLive_LiveClaudeSessionCounts(t *testing.T) {

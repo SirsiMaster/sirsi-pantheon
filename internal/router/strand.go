@@ -19,15 +19,31 @@ import (
 	"time"
 )
 
-// threadArmed computes whether ONE thread is armed, using the SAME classification
-// as CollectNodeStatus's per-thread block (#79/#80). Kept in lockstep with that
-// switch: loop-monitor surfaces (Claude /loop) require a live thr-id loop; every
-// other surface is armed by a fresh (non-stale) heartbeat.
+// threadArmed computes whether ONE thread is armed. Delegates to
+// threadArmedForNewest with isNewest=false (no agent-keyed probe) so
+// single-thread callers without registry context stay correct.
 func threadArmed(thr *Thread, now time.Time) bool {
+	return threadArmedForNewest(thr, now, false)
+}
+
+// threadArmedForNewest is threadArmed extended with an agent-keyed watcher probe
+// that is credited ONLY when isNewest=true (A35: scope the check to its claim).
+//
+// After a thread re-registers, the watcher script retains the OLD thread id in
+// argv — WatcherAlive(newID) misses it. WatcherAliveByAgent finds the live
+// script by its stable name. But crediting that for EVERY thread of the agent
+// makes the oldest-stale record appear armed as long as the newest thread's
+// watcher is alive — one PID vouching for N unrelated records. Only the newest
+// non-terminal thread is a plausible beneficiary; all others are previous
+// registrations whose watcher, if still alive, is serving the new session.
+//
+// Call sites that own the registry precompute newestByAgent via
+// NewestNonTerminalByAgent and pass isNewest=true for the matching thread only.
+func threadArmedForNewest(thr *Thread, now time.Time, isNewest bool) bool {
 	wtype := WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 	switch {
 	case requiresThreadIDLoop(wtype):
-		return thr.ThreadID != "" && WatcherAliveForThread(thr)
+		return WatcherAliveForThread(thr, isNewest)
 	case thr.IsStale(now, DefaultThreadStaleAfter):
 		return false
 	default: // app-heartbeat / native-runloop / surface-loop / pull-loop — heartbeat is the proof
@@ -45,14 +61,16 @@ func AgentArmed(routerRoot, agentID string) bool {
 		return false
 	}
 	now := time.Now().UTC()
-	for _, t := range reg.Threads {
+	threads := reg.SortedThreads()
+	newestByAgent := NewestNonTerminalByAgent(threads)
+	for _, t := range threads {
 		if t == nil || t.AgentID != agentID {
 			continue
 		}
 		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
 			continue
 		}
-		if threadArmed(t, now) {
+		if threadArmedForNewest(t, now, newestByAgent[agentID] == t.ThreadID) {
 			return true
 		}
 	}

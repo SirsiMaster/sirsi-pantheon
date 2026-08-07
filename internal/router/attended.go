@@ -70,7 +70,9 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 		return false
 	}
 	now := time.Now().UTC()
-	for _, t := range reg.Threads {
+	threads := reg.SortedThreads()
+	newestByAgent := NewestNonTerminalByAgent(threads)
+	for _, t := range threads {
 		if t == nil || t.AgentID != agentID {
 			continue
 		}
@@ -80,7 +82,7 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 		if !IsAttendedSurface(t.Surface) {
 			continue
 		}
-		if threadArmed(t, now) {
+		if threadArmedForNewest(t, now, newestByAgent[agentID] == t.ThreadID) {
 			return true
 		}
 	}

@@ -46,9 +46,13 @@ func TestPlistContent_LeverShape(t *testing.T) {
 func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	root := t.TempDir()
 	writeLivenessTestAgents(t, root)
-	// Ensure the gemma probe reads "down": point HOME at an empty dir with no
-	// gemma-server.port, so probeGemma returns wedged deterministically.
-	t.Setenv("HOME", t.TempDir())
+	// Ensure the gemma probe reads "down": point HOME at a dir with no
+	// gemma-server.port, so probeGemma returns down deterministically.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// A down broker only alarms when it is INSTALLED — an absent plist is a
+	// deliberate retirement/quarantine and is suppressed (suppressGemmaDown).
+	installFakeBrokerPlist(t, home)
 	// Own store per test: Run dispatches through the router store now, and the
 	// package-level db would let a sibling test's alert dedupe this one away.
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
@@ -290,6 +294,14 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	if !strings.Contains(detail, "restart will not fix") {
 		t.Errorf("detail should say restart will not fix, got: %s", detail)
 	}
+	// The bind that makes the const load-bearing: the self-healing duty in
+	// internal/router/gemmaliveness.go short-circuits on WeightsAbsentSentinel.
+	// Without this assertion, rewording the detail above leaves every test green
+	// while the production short-circuit silently stops firing (A35).
+	if !strings.Contains(detail, WeightsAbsentSentinel) {
+		t.Errorf("detail must embed WeightsAbsentSentinel (%q) or the router short-circuit breaks, got: %s",
+			WeightsAbsentSentinel, detail)
+	}
 	if called {
 		t.Error("generation probe should not be called when RSS is below the floor")
 	}
@@ -341,8 +353,9 @@ func TestRecipientFor(t *testing.T) {
 func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	root := t.TempDir()
 	writeLivenessTestAgents(t, root)
-	home := t.TempDir() // no gemma-server.port → probeGemma reads wedged
+	home := t.TempDir() // no gemma-server.port → probeGemma reads down
 	t.Setenv("HOME", home)
+	installFakeBrokerPlist(t, home) // installed, so the down broker alarms
 	t.Setenv(routercfg.StoreWakeEnv, "1")
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
@@ -420,5 +433,48 @@ func TestLaunchAgentPlistPresent_IgnoresRetired(t *testing.T) {
 		if got := launchAgentPlistPresent(tc.label); got != tc.want {
 			t.Errorf("launchAgentPlistPresent(%q) = %v, want %v", tc.label, got, tc.want)
 		}
+	}
+}
+
+// TestSuppressGemmaDown pins A35 scoping: a GemmaDown probe raises a finding
+// only when the broker is actually installed. Both directions are exercised —
+// the suppression AND the regression where a real outage still alarms.
+func TestSuppressGemmaDown(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       GemmaStatus
+		plistPresent bool
+		want         bool
+	}{
+		{"down and uninstalled — deliberate, suppress", GemmaDown, false, true},
+		{"down but installed — real outage, must alarm", GemmaDown, true, false},
+		{"wedged and uninstalled — process runs, must alarm", GemmaWedged, false, false},
+		{"wedged and installed — must alarm", GemmaWedged, true, false},
+		{"healthy and uninstalled — never a finding either way", GemmaHealthy, false, false},
+		{"busy and uninstalled — never a finding either way", GemmaBusy, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := suppressGemmaDown(tc.status, tc.plistPresent); got != tc.want {
+				t.Errorf("suppressGemmaDown(%v, plist=%v) = %v, want %v",
+					tc.status, tc.plistPresent, got, tc.want)
+			}
+		})
+	}
+}
+
+// installFakeBrokerPlist puts a gemma-broker LaunchAgent plist under home so
+// probeGemma treats a down broker as a real outage. Without it the probe reads
+// the absence as a deliberate retirement and suppresses the finding, which is
+// the correct production behavior but makes an outage test vacuous.
+func installFakeBrokerPlist(t *testing.T, home string) {
+	t.Helper()
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir LaunchAgents: %v", err)
+	}
+	p := filepath.Join(dir, BrokerLabel+".plist")
+	if err := os.WriteFile(p, []byte("<plist/>"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", p, err)
 	}
 }
