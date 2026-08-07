@@ -794,7 +794,15 @@ func pinConnWithRetry(ctx context.Context, db *sql.DB) (*sql.Conn, error) {
 				err = perr
 			}
 		}
-		if !isBusy(err) {
+		// isReadonlyContention, not just isBusy: writeretry.go's whole finding
+		// was that WAL-recovery contention surfaces as SQLITE_READONLY(8), not
+		// SQLITE_BUSY(5), so busy_timeout never engages. That fix only covered
+		// s.exec's write path — every plain connection-establish (every CLI
+		// invocation's first touch of the store, e.g. `thread register`) ran
+		// through THIS function unprotected, so a fleet busy enough to trigger
+		// the contention failed registration outright with no retry (owner
+		// report 2026-08-07: codex-nexus repeatedly could not register).
+		if !isBusy(err) && !isReadonlyContention(err) {
 			return nil, err
 		}
 		select {
@@ -819,7 +827,7 @@ func beginImmediateWithRetry(ctx context.Context, conn *sql.Conn) error {
 		if _, err = conn.ExecContext(ctx, `BEGIN IMMEDIATE;`); err == nil {
 			return nil
 		}
-		if !isBusy(err) {
+		if !isBusy(err) && !isReadonlyContention(err) {
 			return err
 		}
 		select {
