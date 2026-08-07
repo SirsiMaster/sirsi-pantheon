@@ -73,6 +73,10 @@ func awaitConsumerLines(t *testing.T, log string, n int) []string {
 // which is the difference between "spawned something headless" and "consumed
 // this inbox".
 func TestDispatchedConsumerReceivesRouterContract(t *testing.T) {
+	// Stub low load so backpressure never blocks dispatch regardless of host load.
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0)
 
@@ -198,6 +202,10 @@ func TestNoSecondConsumerWhileFirstIsStillRunning(t *testing.T) {
 // permanent latch would strand the inbox behind a consumer that died mid-drain,
 // which is the failure the discarded 10-minute timer existed to cover.
 func TestConsumerExitFreesTheDispatchSlot(t *testing.T) {
+	// Stub low load so backpressure never blocks dispatch regardless of host load.
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+
 	log := filepath.Join(t.TempDir(), "fired.txt")
 	script := recordingConsumer(t, log, 0) // exits at once, never drains
 
