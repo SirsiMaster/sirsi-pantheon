@@ -66,6 +66,17 @@ extensions/*/sirsi
 .agents/idea-router/threads.json
 .agents/idea-router/logs/
 .agents/idea-router/.threads.json-*
+
+# Router runtime droppings written INTO the working tree by the router itself.
+# These are not merely noise: Go stamps a build DIRTY when `git status` is
+# non-empty (untracked files included), and routerstore then REFUSES the
+# v0->v1 migration a fresh test store needs. Every cmd/sirsi integration test
+# fails, so the Ma'at pre-push gate is unpassable for every agent, always.
+# Verified 2026-08-07: with these ignored the package is green; with them
+# present 6 tests fail on pristine main.
+.agents/idea-router/threads.json.retired-*
+.agents/idea-router/wake-consumer-*.pid
+docs/router-results/
 .agents/idea-router/processes.json
 .agents/idea-router/board.json
 # Per-agent runtime cursors and alarm stamps. These are written continuously by
