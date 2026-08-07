@@ -27,8 +27,8 @@ func TestClaimTaskSelectsExactIDAndRefusesIneligibleStates(t *testing.T) {
 		t.Fatalf("exact claim selected wrong task: %+v", lease)
 	}
 	for _, taskID := range []string{"blocked", "done", "missing"} {
-		if _, err := s.ClaimTask("codex-home", taskID, "worker", "thread", time.Minute); !errors.Is(err, ErrNoWork) {
-			t.Fatalf("exact claim of %q = %v, want ErrNoWork", taskID, err)
+		if _, err := s.ClaimTask("codex-home", taskID, "worker", "thread", time.Minute); !errors.Is(err, ErrNoClaimableTask) {
+			t.Fatalf("exact claim of %q = %v, want ErrNoClaimableTask", taskID, err)
 		}
 	}
 }
@@ -58,7 +58,7 @@ func TestClaimTaskContentionHasOneWinner(t *testing.T) {
 		switch {
 		case err == nil:
 			wins++
-		case errors.Is(err, ErrNoWork):
+		case errors.Is(err, ErrNoClaimableTask):
 			losses++
 		default:
 			t.Fatalf("unexpected contention error: %v", err)
@@ -86,7 +86,7 @@ func TestClaimTaskUsesTTLAndRetryCeiling(t *testing.T) {
 		}
 		now = now.Add(2 * time.Minute)
 	}
-	if _, err := s.ClaimTask("codex-home", "exact", "worker", "thread", time.Minute); !errors.Is(err, ErrNoWork) {
+	if _, err := s.ClaimTask("codex-home", "exact", "worker", "thread", time.Minute); !errors.Is(err, ErrNoClaimableTask) {
 		t.Fatalf("exact claim bypassed retry ceiling: %v", err)
 	}
 	got, err := s.GetTask("codex-home", "exact")
