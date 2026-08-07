@@ -34,6 +34,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/reaper"
 )
 
@@ -919,25 +920,18 @@ func probeLaunchdDisabled() Finding {
 		f.OK, f.Fixable, f.Detail = true, false, "launchctl print-disabled unavailable"
 		return f
 	}
+	// Space-joined keys are split, or five quarantined labels hide inside one
+	// key that matches nothing and the whole quarantine reads as clear.
 	var disabled, retired []string
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasSuffix(line, "=> disabled") {
+	for _, label := range platform.ParseDisabledLabels(string(out)) {
+		if !platform.ManagedLabel(label) {
 			continue
 		}
-		start := strings.Index(line, `"`)
-		end := strings.LastIndex(line, `"`)
-		if start < 0 || end <= start {
+		if !launchAgentPlistPresent(label) {
+			retired = append(retired, label)
 			continue
 		}
-		label := line[start+1 : end]
-		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
-			if !launchAgentPlistPresent(label) {
-				retired = append(retired, label)
-				continue
-			}
-			disabled = append(disabled, label)
-		}
+		disabled = append(disabled, label)
 	}
 	// Report what was filtered — a silently dropped label reads as "all clear".
 	retiredNote := ""

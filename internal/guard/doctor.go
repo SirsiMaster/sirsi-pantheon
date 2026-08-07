@@ -1647,20 +1647,13 @@ func formatAge(d time.Duration) string {
 //
 //	"label.name" => disabled
 //	"label.name2" => enabled
+//
+// A single entry may hold several space-joined labels; platform.ParseDisabledLabels
+// splits them so a quarantine written by an unquoted "$@" stays visible.
 func parseLaunchdDisabled(output string) []string {
 	var found []string
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasSuffix(line, "=> disabled") {
-			continue
-		}
-		start := strings.Index(line, `"`)
-		end := strings.LastIndex(line, `"`)
-		if start < 0 || end <= start {
-			continue
-		}
-		label := line[start+1 : end]
-		if strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.") {
+	for _, label := range platform.ParseDisabledLabels(output) {
+		if platform.ManagedLabel(label) {
 			found = append(found, label)
 		}
 	}
