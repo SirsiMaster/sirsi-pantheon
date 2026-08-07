@@ -86,15 +86,88 @@ func TestEscalationsSortDeepestBacklogFirst(t *testing.T) {
 		"codex-home":        StateUnroutable,
 	}
 
+	// Three lanes is the rollup threshold, so the sort is observable through the
+	// rollup's lane list rather than through separate items. The ordering still
+	// matters: it is the order the owner reads the backlog in.
 	got := Escalations(lanes, states)
 	want := []string{"codex-finalwishes", "codex-home", "codex-assiduous"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d escalations, want %d", len(got), len(want))
+	if len(got) != 1 {
+		t.Fatalf("got %d escalations, want 1 rollup", len(got))
+	}
+	if len(got[0].Lanes) != len(want) {
+		t.Fatalf("rollup names %d lanes, want %d", len(got[0].Lanes), len(want))
 	}
 	for i := range want {
-		if got[i].Agent != want[i] {
-			t.Errorf("position %d = %s, want %s", i, got[i].Agent, want[i])
+		if got[0].Lanes[i] != want[i] {
+			t.Errorf("position %d = %s, want %s", i, got[0].Lanes[i], want[i])
 		}
+	}
+}
+
+// Below the threshold each lane keeps its own card: two stopped lanes are two
+// actionable incidents, and the agent name belongs in the title.
+func TestBelowThresholdStaysPerLane(t *testing.T) {
+	lanes := []LaneInput{
+		escLane("codex-home", 5, 0, 0, false),
+		escLane("codex-assiduous", 1, 0, 0, false),
+	}
+	states := map[string]LaneState{"codex-home": StateUnroutable, "codex-assiduous": StateUnroutable}
+
+	got := Escalations(lanes, states)
+	if len(got) != 2 {
+		t.Fatalf("got %d escalations, want 2 separate cards below the rollup threshold", len(got))
+	}
+	for _, e := range got {
+		if len(e.Lanes) != 0 {
+			t.Errorf("%s rolled up below threshold", e.Agent)
+		}
+		if !strings.Contains(e.Title(), e.Agent) {
+			t.Errorf("per-lane title %q drops the agent name", e.Title())
+		}
+	}
+}
+
+// THE regression this rollup exists for: 21 lanes produced 21 owner cards, each
+// true, each correctly deduped, collectively burying every unrelated item.
+func TestFleetWideConditionIsOneCard(t *testing.T) {
+	var lanes []LaneInput
+	states := map[string]LaneState{}
+	for _, a := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		lanes = append(lanes, escLane("codex-"+a, 3, 0, 0, false))
+		states["codex-"+a] = StateUnroutable
+	}
+
+	got := Escalations(lanes, states)
+	if len(got) != 1 {
+		t.Fatalf("got %d owner cards for one fleet-wide condition, want 1", len(got))
+	}
+	if got[0].OpenItems != 21 {
+		t.Errorf("rollup OpenItems = %d, want the 21 it stands for", got[0].OpenItems)
+	}
+	// Nothing may be hidden by the collapse: every lane still named.
+	for _, a := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		if !strings.Contains(got[0].Why, "codex-"+a) {
+			t.Errorf("rollup body omits codex-%s — the collapse lost information", a)
+		}
+	}
+}
+
+// The rollup title must be stable while the lane SET drifts, or every lane that
+// opens or closes mints a fresh card and the flood returns by another door.
+func TestRollupTitleIsStableAcrossSetDrift(t *testing.T) {
+	build := func(names ...string) Escalation {
+		var lanes []LaneInput
+		states := map[string]LaneState{}
+		for _, n := range names {
+			lanes = append(lanes, escLane(n, 2, 0, 0, false))
+			states[n] = StateUnroutable
+		}
+		return Escalations(lanes, states)[0]
+	}
+	a := build("codex-a", "codex-b", "codex-c")
+	b := build("codex-a", "codex-b", "codex-c", "codex-d", "codex-e")
+	if a.Title() != b.Title() {
+		t.Errorf("rollup title drifted with the lane set: %q vs %q — dedup fails every pass", a.Title(), b.Title())
 	}
 }
 
