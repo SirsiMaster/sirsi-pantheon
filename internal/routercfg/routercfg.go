@@ -45,14 +45,37 @@ func MarkerPath() string {
 // StoreWake reports whether the store-as-sole-authority cutover is active.
 // Precedence: an explicit env value ("1" on, "0"/anything-else off) always wins;
 // with the env unset, the persistent marker decides.
+//
+// Only os.IsNotExist means "not cut over". Every OTHER stat error — a sandbox
+// denial, EACCES, a permission-stripped $HOME — means the marker's state is
+// UNKNOWN, and unknown must not be resolved as "off".
+//
+// The asymmetry is deliberate, because the two failure directions are not
+// comparable. Guessing "on" sends writes to the store: wrong on a genuinely
+// pre-cutover host, but the write either succeeds or fails LOUDLY. Guessing
+// "off" sends writes to the legacy .agents/idea-router/threads.json — silently
+// creating the SECOND thread registry the cutover exists to abolish, which no
+// code path reconciles and which every surface then reads inconsistently.
+//
+// Not hypothetical. Measured 2026-08-07: a sandboxed codex-assiduous session
+// could not stat the marker, took this branch, and attempted a legacy-file
+// write — `create temp threads.json: … operation not permitted`. It surfaced
+// only because that sandbox ALSO denied the write. A sandbox that blocked the
+// marker read while permitting the write would have produced a second registry
+// in silence, and the lane would have reported success.
 func StoreWake() bool {
 	if v, ok := os.LookupEnv(StoreWakeEnv); ok {
 		return v == "1"
 	}
-	if p := MarkerPath(); p != "" {
-		if _, err := os.Stat(p); err == nil {
-			return true
-		}
+	p := MarkerPath()
+	if p == "" {
+		// $HOME is unknown, so the marker cannot be consulted at all. Same
+		// unknown, same direction: never silently downgrade to legacy writes.
+		return true
 	}
-	return false
+	_, err := os.Stat(p)
+	if err == nil {
+		return true
+	}
+	return !os.IsNotExist(err)
 }

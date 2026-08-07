@@ -366,6 +366,7 @@ var doctorChecks = []doctorCheck{
 		func(_ platform.Platform, r *DoctorReport) { checkLocalSnapshots(r) }},
 	{"launchd Disabled", []string{"launchd Disabled Override"}, checkLaunchdDisabled},
 	{"Pause Ledger", []string{"Agent Pause Ledger"}, checkPauseLedger},
+	{"Thread Registry Split", []string{"Thread Registry Split"}, checkThreadRegistrySplit},
 }
 
 // externalFindingChecks are finding Check names appended to the report OUTSIDE

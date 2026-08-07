@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
@@ -105,12 +107,112 @@ func printLedgerFindings(header string, findings []ledgerFinding, remedy string)
 				fmt.Printf("        … %d more (see `sirsi router ledger %s`)\n", len(rows)-show, a)
 				break
 			}
-			fmt.Printf("        %s  %s %s\n", r.TaskID, r.Reason, r.Updated)
+			fmt.Printf("        %s\n", strings.TrimRight(fmt.Sprintf("%s  %s %s", r.TaskID, r.Reason, r.Updated), " "))
 		}
 	}
 	fmt.Println("    → " + remedy)
 	fmt.Println()
 	return 1
+}
+
+// ledgerHandoff matches a row that declares its `done` is scoped to ITS OWN
+// ledger rather than to the work.
+//
+// This is a real, deliberate pattern, not sloppiness: when the owner moves a
+// workstream between lanes, the losing lane closes its copy with an explicit
+// "CLOSED ON THIS LEDGER — not abandoned" and names where ownership went. The
+// row is done AS A COMMITMENT OF THAT LANE while the work continues elsewhere.
+//
+// It has to be recognized or the check is a false-positive generator. Measured
+// 2026-08-07: of the 10 ids whose statuses diverged, **8** were this exact
+// pattern — the SNE set handed from claude-nexus to codex-inference on
+// 2026-08-05, each carrying the marker in its subject. Reporting those as
+// defects would have buried the 2 genuine unexplained splits under 8 correct
+// handoffs, which is precisely how a truthful surface becomes one nobody reads.
+var ledgerHandoff = regexp.MustCompile(`(?i)CLOSED ON THIS LEDGER|CLOSED HERE ONLY|OWNERSHIP (MOVED|TRANSFERRED)`)
+
+// declaresLedgerHandoff reuses verdictWindow: a lane that is declaring scope
+// LEADS with it, for the same reason a lane declaring a verdict does.
+func declaresLedgerHandoff(subject string) bool {
+	if len(subject) > verdictWindow {
+		subject = subject[:verdictWindow]
+	}
+	return ledgerHandoff.MatchString(subject)
+}
+
+// findCrossAgentDivergence reports one task_id carried on more than one agent's
+// ledger with DIFFERENT statuses.
+//
+// A shared id is not itself wrong: the fabric routinely mirrors a row onto a
+// second lane so both can track it, and 14 of the 24 shared ids measured on
+// 2026-08-07 agreed on status and are fine. What is wrong is the DIVERGENT
+// case, and it is invisible by construction — each ledger is internally
+// consistent and complete on its own terms, so no single-lane surface can see
+// the split. `sirsi router ledger claude-nexus` says sne-05 is done; `sirsi
+// router ledger codex-inference` says it is blocked; both are telling the truth
+// about what they hold.
+//
+// Measured cost, 2026-08-07: 10 of 24 shared ids diverged, including sne-05,
+// sne-27, sne-28, sne-29, sne-31, sne-39, sne-42 and sne-43 — all `done` on
+// claude-nexus and `pending`/`blocked`/`in-progress` on codex-inference at the
+// same instant. Acting on one ledger produced a routing decision that would
+// have re-opened eight already-closed rows; it was caught only because the
+// receiving lane cross-checked by hand before executing.
+//
+// Ids where a holder declares an explicit ledger-scoped handoff are suppressed:
+// that row already carries its own explanation, and 8 of the 10 divergences
+// measured on this host were exactly that.
+//
+// Report-only, and deliberately so. Which side is right is a question about the
+// WORK, not about the rows — a checker that picked a winner would be guessing,
+// and guessing is what produced the mis-route.
+func findCrossAgentDivergence(tasks []routerstore.Task) []ledgerFinding {
+	type holder struct {
+		agent, status string
+		handedOff     bool
+	}
+	byID := map[string][]holder{}
+	for _, t := range tasks {
+		byID[t.TaskID] = append(byID[t.TaskID], holder{t.Agent, t.Status, declaresLedgerHandoff(t.Subject)})
+	}
+	var out []ledgerFinding
+	for id, hs := range byID {
+		if len(hs) < 2 {
+			continue
+		}
+		sort.Slice(hs, func(i, j int) bool { return hs[i].agent < hs[j].agent })
+		// A row that says so IS the explanation. Suppress the whole id when any
+		// holder declares a ledger-scoped close — see declaresLedgerHandoff.
+		explained := false
+		for _, h := range hs {
+			if h.handedOff {
+				explained = true
+				break
+			}
+		}
+		if explained {
+			continue
+		}
+		diverged := false
+		for _, h := range hs[1:] {
+			if h.status != hs[0].status {
+				diverged = true
+				break
+			}
+		}
+		if !diverged {
+			continue
+		}
+		parts := make([]string, 0, len(hs))
+		for _, h := range hs {
+			parts = append(parts, h.agent+"="+h.status)
+		}
+		// Attributed to the FIRST holder alphabetically only so the grouped
+		// output has a home; every holder is named in the reason.
+		out = append(out, ledgerFinding{hs[0].agent, id, "held by " + strconv.Itoa(len(hs)) + " lanes with different statuses: " + strings.Join(parts, ", "), ""})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TaskID < out[j].TaskID })
+	return out
 }
 
 // checkLedgerRot is the doctor's ledger arm. Returns the number of issue
@@ -130,6 +232,10 @@ func checkLedgerRot() int {
 	}
 	stalled, contradicted := findLedgerRot(tasks)
 	issues := printLedgerFindings(
+		"%d task id(s) live on more than one lane's ledger with CONTRADICTING statuses:",
+		findCrossAgentDivergence(tasks),
+		"decide which lane actually owns the work, then reconcile the loser's row — until then any routing decision made from one ledger is made on half the record. Report-only: which side is right is a question about the work, not the rows.")
+	issues += printLedgerFindings(
 		"%d ledger row(s) whose SUBJECT asserts a terminal verdict while status is not done:",
 		contradicted,
 		"reconcile the status to match the body, or rewrite a body that overstates its verdict — `sirsi router task update <agent> <task-id> --status done`.")
