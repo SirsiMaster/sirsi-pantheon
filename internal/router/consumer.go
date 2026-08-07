@@ -67,13 +67,22 @@ func SetConsumerGOMAXPROCS(n int) {
 	}
 }
 
-// capGOMAXPROCS appends the GOMAXPROCS cap to env unless the operator's own
-// cfg.Env already declares it — an explicit override is respected, not raced.
+// capGOMAXPROCS strips any inherited GOMAXPROCS from env, then appends the
+// authoritative value: the operator's explicit override if present, otherwise
+// the default cap. Stripping first prevents os.Environ() from racing the
+// operator value when both land in the same slice.
 func capGOMAXPROCS(env []string, cfgEnv map[string]string) []string {
-	if _, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
-		return env
+	prefix := EnvGOMAXPROCS + "="
+	out := make([]string, 0, len(env)+1)
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			out = append(out, e)
+		}
 	}
-	return append(env, EnvGOMAXPROCS+"="+strconv.Itoa(consumerGOMAXPROCS))
+	if v, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
+		return append(out, EnvGOMAXPROCS+"="+v)
+	}
+	return append(out, EnvGOMAXPROCS+"="+strconv.Itoa(consumerGOMAXPROCS))
 }
 
 const (
