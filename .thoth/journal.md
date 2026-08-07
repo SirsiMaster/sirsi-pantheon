@@ -3859,3 +3859,121 @@ checked out in their tree. That refusal did the job a convention could not: the 
 trivial, the lane was live, and backing off was correct. Housekeeping healed one reaped-thread
 successor, pruned 152 records to 140, and reaped two leaked scheduled-task sessions. Swap held flat
 at 844 MB for a fourteenth consecutive run.
+
+## Conduit run 2026-08-07T02:05Z
+
+Inbox 0 for claude-home; health 🟢 100/100, swap 756/2048 MB (flat an 11th run), free 83%, board :8734 → 200, no new crash/Jetsam, 0 BINARY_MISSING. **PR #624 source-deep reviewed, bound and MERGED** — the R7/G6 load-collapse fix: GOMAXPROCS=4 on spawned consumers only (operator cfg.Env override respected), a load-average dispatch gate that fails OPEN on an unreadable sysctl and records a heal so the hold is owner-visible, and a fabric-wide durable quarantine marker checked by both revival paths that defeated `bootout`/`disable` on 2026-08-06 (wake.go consumer dispatch + launchdkickstart.go dead-label revival). **PR #625 CHANGES REQUESTED and routed to claude-pantheon** (`20260807-020413`): `applyBrokerTruth` is scoped to `LoadBearingPIDs()`, which is a kill-protection allowlist — not a broker-identity set. `loadbearing.go:28` carries both `gemma-server.pid` and `gemma-worker.pid`, so a live worker gets the broker's `mlx_active_bytes` written over its footprint and renders as a 25-31 GB hog in vitals/menubar/dashboard/TUI, with guard/doctor judging it on another process's number — the same mis-attribution class the PR fixes, inverted. GitHub refuses a formal CHANGES_REQUESTED on a shared-author PR, so the verdict went as a PR comment plus a routed item; the finding is on claude-pantheon's existing `livenesswatch-rss-floor-misreads-mmapped-broker` row. #626 (pre-push DIRTY-tree naming) still awaiting codex-home — never self-bound. Threads 167→164, `ccd reap` archived 2 completed conduit sessions, retention 805 B. Doctor ✗ list unchanged a 11th run (owner-surface + `mechanism: none` lanes).
+
+## Conduit run 2026-08-07T02:40Z
+
+Inbox 0. Merged **PR #626** (pre-push gate names the DIRTY-tree cause before its test
+failures) on codex-home's independent PASS at `ff77dd9d`, and **PR #627** (rename
+`NewestNonTerminalByAgent` → `NewestActiveByAgent`) after a source-deep review confirming the
+rename is complete — zero old-name hits in any `.go` file, function body byte-identical, R6
+suspended-exclusion invariant still pinned by its test. Both bound via `sirsi-bind[bot]`; #626's
+bind explicitly attributes codex-home as reviewer so the record is not a self-bind. Responded to
+claude-pantheon with one non-blocking nit: the unreleased changelog fragment
+`20260807-scope-watcheralivebyagent-to-newest-thread.md` still names the dead symbol and will ship
+that way.
+
+**The real finding this pass is fleet-wide and was invisible to every existing surface.** Chasing
+seven `claude-finalwishes` wake failures in `router doctor` led to the wake logs: **3,843 of 4,082
+consumer dispatches (94%) exit 1 across eight lanes**, and `claude-finalwishes` has spawned a fresh
+`claude --print` every ~60s since 2026-08-06T03:05Z with its inbox depth pinned at 27 the entire
+time — roughly a thousand agent sessions, zero items closed, 1.4 MB of log whose only content is
+`exit status 1`. Root cause is `internal/router/wake.go:633-639`: `dispatchConsumer` never sets
+`cmd.Stdout`/`cmd.Stderr`, so exec.Cmd sends both to /dev/null and every consumer's actual error is
+destroyed at the source. That defeats the stated intent of the code directly above it ("so a
+consumer that is failing fast leaves a trail rather than looking like progress") — the trail exists
+and carries no information, so 1,021 consecutive failures are forensically identical to one. Two
+hypotheses were tested and refuted rather than assumed: `--permission-mode auto` is a valid
+documented choice and returns exit 0 when run directly, and the dispatch is correctly edge-triggered
+on `!run.running()` rather than the 60s clock, so consumers are not being killed by the loop. The
+cause is inside the consumer session and is unknowable by construction until stderr is captured.
+Textbook green-surface-over-a-dead-thing: live PIDs in `launchctl list`, a "dispatched consumer"
+line every minute, `sirsi diagnose` green — and no lane has consumed an item in ~23h. Registered as
+ledger task `consumer-stderr-blackhole` with the full diagnosis and the bounded-ring-buffer fix
+(never wire the transcript straight to the log). Notably, the ledger REFUSED to create it
+`in-progress` — "new executable tasks must start pending or blocked; use task claim and task
+complete for fenced execution" — which is ADR-057's lease fencing working as designed.
+
+Health green: swap 756/2048 MB flat a twelfth run, free 83%, board :8734 → 200, 0 `BINARY_MISSING`,
+no new sirsi/gemma crash or Jetsam. Threads 169→166. `ccd reap` killed 3 leaked conduit sessions (6
+procs). Retention 2.4 KiB. Broker still structurally absent (no plist, empty probe on 8477) —
+correct, not a heal.
+
+## Conduit run 2026-08-07T02:45Z
+
+Worked the one starred item carried in from the last run and shipped it as PR #628:
+`dispatchConsumer` (internal/router/wake.go) never set `cmd.Stdout`/`cmd.Stderr`, so
+`exec.Cmd` wired both to /dev/null and destroyed the cause of 3,843 of 4,082 consumer
+dispatch failures across 8 lanes at the source. The fix captures a bounded 4 KB tail of
+both streams and includes it in the existing "exited with error" log line. The
+load-bearing detail is the sink type: capture goes through an `*os.File` pipe, not an
+`io.Writer`. With an `io.Writer`, exec starts a copier goroutine that `cmd.Wait` blocks
+on until the LAST holder of the write end closes it — and the consumer is setsid-detached,
+so a surviving grandchild would have held `Wait` open forever, pinned `running()` true,
+and silently stopped re-dispatch for every lane on the machine. That would have been a
+worse outage than the one being fixed, and the fix that "captures stderr" is the obvious
+shape to reach for. `TestDispatchConsumerCapturesOutputTail` leaves exactly such a
+grandchild and asserts completion; `TestRingTailKeepsLastBytesAndNamesSilence` pins the
+ring and the `(no output)` marker, because a consumer that dies producing nothing at all
+is a finding and must not read as a missing log field. build/vet/gofmt clean, full
+`internal/router` suite ok, `-race -count=3` ok. Every required context is SUCCESS;
+`binding-hold` is FAILURE by design and review is routed to codex-home (item
+20260807-023724) with the `*os.File` reasoning named as the thing to attack — I authored
+it, so I cannot bind it. Stated in the PR, the ledger, and here: this makes the failure
+legible, it does NOT fix it.
+
+Housekeeping: threads 173→169, `ccd reap` killed 1 leaked conduit session and archived 2
+records, retention reclaimed 895 B. `thread reconcile` again warned a lost lifecycle fence
+naming a NEW thread (thr-9c2d028d), which is the already-filed
+fence-retry-budget-underprovisioned row, not a regression. #629 appeared from
+claude-pantheon carrying the `BrokerPID()` fix I requested on #625 — DIRTY, left with its
+lane. The four CLEAN-but-checks=0 PRs (#608 #604 #603 #595) were re-verified: all four
+still base on open feature branches, so ci.yml genuinely cannot fire; that is structural,
+not an outage, and not mine to retarget.
+
+## Conduit run 2026-08-07T03:05Z
+
+Cleared the inbox to zero and merged both PRs that were stuck on review gates, one of which was
+stuck for a reason no surface reported. **PR #628** (`fix/consumer-stderr-blackhole`) had all four
+content checks green since the previous run but its review request to codex-home, recorded in
+continuity as item `20260807-023724`, **did not exist in the store** — no file, no row. The routing
+had failed silently, so a PR was sitting on a review gate nobody was holding. Re-routed as
+`20260807-025839`; codex-home returned an independent source-deep PASS within minutes
+(`20260807-030155`), confirming the pipe-backed `*os.File` wiring, the bounded `ringTail`, and the
+lingering-grandchild test. They could not bind — `api.github.com` unreachable from their
+environment, `sirsi-bind` reporting App-not-installed — so claude-home transcribed their verdict
+verbatim, attributed, and carried the mechanical bind only. **#628 merged as `2b2e31e9`.** No
+self-review occurred; the author did not review.
+
+**PR #629** (`applyBrokerTruth` scoped to `BrokerPID()`, the CR-1 fix from my CHANGES_REQUESTED on
+#625) presented as `CONFLICTING`/`DIRTY` with **zero check runs** — the vacuous-CLEAN shape, where
+absence of failure reads as success. Root cause was not the PR: `CHANGELOG.md` carries
+`merge=union`, a merge driver **local git honors and GitHub's server-side merge does not**. The
+repo's own `.gitattributes` documents this trap verbatim. With no computable merge commit, the
+`pull_request` workflows never fired at all. A local merge against `origin/main` resolved clean;
+merged main into the head branch (union-resolved, both CHANGELOG entries preserved, zero markers),
+pushed `fe0c4f1c`, and CI fired immediately. Source-deep review then confirmed the fix is real and
+bounded: `BrokerPID()` reads only `gemma-server.pid` and requires `pidAlive`; both census sites
+hoist it once so at most one `/health` call per sample; exhaustive grep shows the only surviving
+`LoadBearingPIDs()` callers are `IsLoadBearing` and `FindRunaway`, both kill-protection, both
+correctly unchanged. The regression test is red **by construction** — the scalar makes the wrong
+answer unrepresentable rather than merely untested. `git diff pr625 pr629` touches exactly five
+files, with `doctor.go`/`livenesswatch.go`/`vitalscmd.go` byte-identical to #625, so no scope crept
+in on the fix. **#629 merged as `ae1d11f4`**, which makes **#625 fully superseded — it must be
+closed, not merged**, or it re-lands the pre-CR-1 `applyBrokerTruth` and reintroduces the 27 GB
+worker over-report. Routed to its lane.
+
+The stated ceiling on both merges: the broker is structurally absent on this host, so `BrokerPID()`
+returns 0 and the correction path is inert here — verified only through the injected
+`fetchBrokerHealthFn` seam, not by live-broker measurement. The build-timeout item
+(`20260807-023845`) was answered as **superseded rather than re-scoped**: the work its 2400s job was
+chasing had already merged by another path (#623 at 01:27Z, #627 at 02:26Z), which is itself a small
+instance of the ledger-rot class — nothing re-checks a cited PR's state mid-build. #628's residual
+(observability only; the dispatch root cause is unfixed and deployment-gated) is registered as ledger
+row `consumer-dispatch-rootcause` rather than left in prose. Health green throughout: swap 748/2048
+MB flat, free 86%, diagnose 100/100, board :8734 → 200, zero `BINARY_MISSING`, no new crash or
+Jetsam. Threads 181→174, 3 reaped-to-successor heals, one leaked conduit session reaped, 2.8 KiB
+retention reclaimed.
