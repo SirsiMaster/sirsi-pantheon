@@ -332,6 +332,13 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 	var processes []ProcessInfo
 	lines := strings.Split(string(out), "\n")
 
+	// Read the load-bearing pidfiles ONCE for the whole census, not once per
+	// process (R6/PRD SNE_HETEROGENEOUS_COMPUTE.md) — applyBrokerTruth below
+	// overrides footprint/peak with the broker's real Metal allocation
+	// (mlx_active_bytes from /health) ONLY for this PID; every other process
+	// keeps being sized by phys_footprint exactly as before.
+	loadBearing := LoadBearingPIDs()
+
 	for i, line := range lines {
 		if i == 0 { // Skip header
 			continue
@@ -369,6 +376,7 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 		if pk, perr := vitals.PeakPhysFootprint(pid); perr == nil {
 			peak = int64(pk)
 		}
+		footprint, peak = applyBrokerTruth(loadBearing, pid, footprint, peak)
 
 		processes = append(processes, ProcessInfo{
 			PID:           pid,

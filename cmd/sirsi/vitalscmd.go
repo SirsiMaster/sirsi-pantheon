@@ -39,7 +39,15 @@ var (
 	vitalsSwapFn      = func() int64 { return guard.SwapUsedBytes(platform.Current()) }
 )
 
-// vitalsProc is one memory hog in the snapshot: name, pid, resident bytes.
+// vitalsProc is one memory hog in the snapshot: name, pid, and its best-known
+// size. RSSBytes keeps its JSON key ("rss_bytes") for menubar/dashboard
+// schema compatibility, but the VALUE is MemProc.Size() — physical footprint
+// (broker-truth-corrected for the load-bearing local-model broker via
+// guard.BrokerMLXActiveBytes/mlx_active_bytes) when available, raw RSS only
+// as the last resort. Raw RSS understated the broker by up to 27 GB (measured
+// 2026-08-06, PRD R6, sirsi-pantheon-fabric SNE_HETEROGENEOUS_COMPUTE.md) —
+// serializing p.RSS directly here would have shown that lie to every consumer
+// of this command (menubar, dashboard, TUI).
 type vitalsProc struct {
 	Name     string `json:"name"`
 	PID      int    `json:"pid"`
@@ -84,7 +92,7 @@ func buildVitalsReport(mem guard.MemSample, pressure guard.PressureLevel, pressu
 		if i := strings.LastIndex(name, "/"); i >= 0 {
 			name = name[i+1:] // basename — "codex", not the full bundle path
 		}
-		r.Top = append(r.Top, vitalsProc{Name: name, PID: p.PID, RSSBytes: p.RSS})
+		r.Top = append(r.Top, vitalsProc{Name: name, PID: p.PID, RSSBytes: p.Size()})
 	}
 	return r
 }

@@ -92,6 +92,13 @@ func (p MemProc) memorySize() int64 {
 	return p.RSS
 }
 
+// Size is the honest size of this process: physical footprint (already
+// broker-truth-corrected for the load-bearing local-model broker — see
+// brokerhealth.go/applyBrokerTruth) when available, RSS as the last resort.
+// Exported for callers outside package guard (e.g. `sirsi vitals --json`)
+// that must not silently prefer the always-present-but-understating RSS field.
+func (p MemProc) Size() int64 { return p.memorySize() }
+
 // MemSample is a single read of system memory + the largest resident processes.
 type MemSample struct {
 	TotalRAM    int64     `json:"total_ram"`
@@ -209,6 +216,9 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 		return nil, err
 	}
 	var procs []MemProc
+	// Read once for the whole sample, not once per process — see the matching
+	// comment in audit.go's getProcessListWith.
+	loadBearing := LoadBearingPIDs()
 	sc := bufio.NewScanner(strings.NewReader(string(out)))
 	first := true
 	for sc.Scan() {
@@ -230,6 +240,7 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 		if fp, fpErr := getHapiFootprintFn()(pid); fpErr == nil {
 			proc.Footprint = int64(fp)
 		}
+		proc.Footprint, _ = applyBrokerTruth(loadBearing, pid, proc.Footprint, 0)
 		procs = append(procs, proc)
 	}
 	sort.Slice(procs, func(i, j int) bool { return procs[i].memorySize() > procs[j].memorySize() })
