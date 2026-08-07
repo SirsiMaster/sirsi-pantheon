@@ -29,6 +29,10 @@ type launchdDeps struct {
 	bootstrapPlist func(plistPath string) error
 	uid            func() int
 	isQuarantined  func() bool // true if the operator deliberately stopped the gemma broker
+	// isFabricQuarantined, when true, blocks reviving EVERY label — the R7/G6
+	// generalization of isQuarantined (which only ever covered quarantinedLabels).
+	// nil is treated as "not quarantined" so existing callers/tests are unaffected.
+	isFabricQuarantined func() bool
 }
 
 // quarantinedLabels are launchd labels this duty must never revive while the
@@ -104,6 +108,13 @@ var launchdOS = launchdDeps{
 		_, err = os.Stat(QuarantineMarkerPath(home))
 		return err == nil
 	},
+	isFabricQuarantined: func() bool {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		return IsFabricQuarantined(home)
+	},
 }
 
 // managedPlist reports whether a LaunchAgents entry is one of ours and a real
@@ -133,6 +144,13 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 		}
 		return nil, err
 	}
+	// Fabric-wide stand-down (R7/G6): honored BEFORE touching launchd at all,
+	// so a quarantined fabric reads as zero revivals rather than "everything
+	// except the labels this duty happens to know about."
+	if deps.isFabricQuarantined != nil && deps.isFabricQuarantined() {
+		return nil, nil
+	}
+
 	loaded, err := deps.listLabels()
 	if err != nil {
 		return nil, fmt.Errorf("launchctl list: %w", err)
