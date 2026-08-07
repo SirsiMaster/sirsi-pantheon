@@ -151,6 +151,37 @@ func TestCloseItemEnforcesDeclaredActorAndAuditsDelegation(t *testing.T) {
 	}
 }
 
+// TestCloseItemRefusesOwnerRecipient guards the defect reported in router item
+// 20260807-211340: a bulk "transfer" (close, then re-send elsewhere) silently
+// closed five items addressed to the owner, deleting decision requests from
+// the owner's board without an answer. The fix must refuse the close at this
+// single choke point regardless of the acting agent's close:any capability,
+// so no future caller (close, respond, a transfer) can reopen the hole.
+func TestCloseItemRefusesOwnerRecipient(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "owner", "pick a reviewer", "decision", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr := f.CloseItem("supervisor", res.ID, "transferred elsewhere"); closeErr == nil ||
+		!strings.Contains(closeErr.Error(), "addressed to the owner") {
+		t.Fatalf("close of owner-addressed item error = %v, want owner-recipient refusal", closeErr)
+	}
+	inbox, err := f.Inbox("owner")
+	if err != nil || len(inbox) != 1 {
+		t.Fatalf("owner item must remain open after refused close: inbox=%+v err=%v", inbox, err)
+	}
+	// A non-owner item with the same acting agent still closes fine — the guard
+	// is scoped to owner recipients only, not a blanket close:any regression.
+	other, err := f.Send("a", "b", "ordinary item", "review", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr := f.CloseItem("supervisor", other.ID, "done"); closeErr != nil {
+		t.Fatalf("ordinary delegated close should still work: %v", closeErr)
+	}
+}
+
 func TestValidateAgentAcceptsExplicitCLISpawn(t *testing.T) {
 	f := testFacade(t)
 	if err := f.ValidateAgent("recipient", "spawnable"); err != nil {

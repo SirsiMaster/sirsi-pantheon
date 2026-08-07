@@ -514,6 +514,14 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 	if err != nil {
 		return err
 	}
+	// An item addressed to the owner is a decision request only the owner can
+	// answer — closing it (directly, or via a "transfer" that closes-then-sends)
+	// removes the decision from the owner's board without answering it. Refuse
+	// at this single choke point so every caller (close, respond, a future
+	// transfer) inherits the guard (Rule A35 — scope the check to the claim).
+	if work.IsOwnerRecipient(item.To) {
+		return fmt.Errorf("dispatch: item %s is addressed to the owner (%q) and cannot be closed by an agent", id, item.To)
+	}
 	if item.To != actor {
 		allowed, capabilityErr := f.agentHasCapability(actor, "close:any")
 		if capabilityErr != nil {
