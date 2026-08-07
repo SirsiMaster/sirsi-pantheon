@@ -236,15 +236,15 @@ func (s *Store) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, er
 	var found []ExpiredLeaseReclaim
 	for rows.Next() {
 		var r ExpiredLeaseReclaim
-		if err := rows.Scan(&r.Agent, &r.TaskID, &r.AttemptsUsed); err != nil {
+		if scanErr := rows.Scan(&r.Agent, &r.TaskID, &r.AttemptsUsed); scanErr != nil {
 			rows.Close()
-			return nil, fmt.Errorf("routerstore: scan expired task lease: %w", err)
+			return nil, fmt.Errorf("routerstore: scan expired task lease: %w", scanErr)
 		}
 		r.Blocked = r.AttemptsUsed >= MaxRetriesPerItem
 		found = append(found, r)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 	rows.Close()
 	if dryRun || len(found) == 0 {
