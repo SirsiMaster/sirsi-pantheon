@@ -204,3 +204,68 @@ func (s *Store) ReleaseTaskLease(agent, taskID, token, reason string) error {
 	}
 	return tx.Commit()
 }
+
+// ExpiredLeaseReclaim is what one reclaim pass found and changed.
+type ExpiredLeaseReclaim struct {
+	Agent        string `json:"agent"`
+	TaskID       string `json:"task_id"`
+	AttemptsUsed int    `json:"attempts"`
+	Blocked      bool   `json:"blocked"`
+}
+
+// ReclaimExpiredTaskLeases runs the same expiry reconciliation ClaimTask
+// already applies per-agent as a side effect of that agent claiming — but
+// across every agent's queue, not just the caller's own. Without this, a
+// task orphaned by a session that claimed it and never returned (crashed,
+// hit a session boundary, lost its lease token) stays lease-held and
+// unclaimable until that exact agent happens to call claim again — every
+// OTHER agent's queue self-heals on its own next claim, but a queue nobody
+// is actively driving never gets the chance. Non-destructive: it only clears
+// lease ownership pointers (lease_token, lease_expires, claimed_by,
+// thread_id); status is left untouched except the same attempts-exhausted
+// case ClaimTask already handles (flip to blocked, never silently reclaimed
+// forever). dryRun reports what WOULD change without writing.
+func (s *Store) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, error) {
+	now := s.clock().UTC()
+	rows, err := s.db.Query(`SELECT agent,task_id,attempts FROM tasks
+		WHERE lease_token<>'' AND lease_expires<>'' AND lease_expires<=? AND status='in-progress'
+		ORDER BY agent,task_id;`, now.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: find expired task leases: %w", err)
+	}
+	var found []ExpiredLeaseReclaim
+	for rows.Next() {
+		var r ExpiredLeaseReclaim
+		if err := rows.Scan(&r.Agent, &r.TaskID, &r.AttemptsUsed); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("routerstore: scan expired task lease: %w", err)
+		}
+		r.Blocked = r.AttemptsUsed >= MaxRetriesPerItem
+		found = append(found, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if dryRun || len(found) == 0 {
+		return found, nil
+	}
+
+	tx, err := s.beginImmediate()
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: reclaim expired task leases begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`UPDATE tasks SET
+		status=CASE WHEN attempts>=? THEN 'blocked' ELSE status END,
+		failure_reason=CASE WHEN attempts>=? THEN 'task lease attempts exhausted after expiry without completion' ELSE failure_reason END,
+		lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
+		WHERE lease_token<>'' AND lease_expires<>'' AND lease_expires<=? AND status='in-progress';`,
+		MaxRetriesPerItem, MaxRetriesPerItem, now.Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		return nil, fmt.Errorf("routerstore: reclaim expired task leases: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("routerstore: reclaim expired task leases commit: %w", err)
+	}
+	return found, nil
+}
