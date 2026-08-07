@@ -93,9 +93,35 @@ func (b buildStamp) String() string {
 // can positively prove the tree was dirty, not whenever we cannot prove it was
 // clean. That is narrower than ideal and deliberately so; it catches the case
 // that actually caused both outages.
-func checkMigrationAllowed(from, to int) error {
+func checkMigrationAllowed(from, to int, storePath string) error {
 	b := currentBuild()
 	if !b.Known || !b.Dirty {
+		return nil
+	}
+	// Scope the refusal to the SHARED store, because that is the entire
+	// argument for it: "every peer binary would fail closed with no commit to
+	// recover from". No peer binary will ever open a store under t.TempDir(),
+	// so migrating one from a dirty build strands nobody.
+	//
+	// The stale premise this repairs is in the comment on
+	// TestUnstampedBuildIsAllowed: "go test produces no VCS stamp". Modern Go
+	// stamps test binaries, so a dirty tree made EVERY test that opens a fresh
+	// store fail its v0->v1 migration. The Ma'at pre-push gate had to print
+	// "Working tree is DIRTY — routerstore then refuses its test migration and
+	// cmd/sirsi tests fail for reasons unrelated to your commit", i.e. the gate
+	// had become a known-false alarm operators were told to read past. A gate
+	// people are instructed to ignore trains them past the real refusal too.
+	//
+	// Reuses isSharedProductionStore (store.go) rather than adding a second
+	// definition of "shared" — it already resolves inodes, symlinked parents and
+	// case-folding. The one deliberate difference: an EMPTY path is treated as
+	// shared here, because that helper answers "is this the live store" (empty
+	// means none) while this gate asks "may I make a one-way write that could
+	// strand peers" (unknown must fail toward refusing).
+	//
+	// This does NOT weaken the shared-store rule: the canonical store still
+	// refuses, which is the case that took the fleet down on 2026-08-05.
+	if storePath != "" && !isSharedProductionStore(storePath) {
 		return nil
 	}
 	if os.Getenv("SIRSI_ALLOW_DIRTY_MIGRATION") == "1" {

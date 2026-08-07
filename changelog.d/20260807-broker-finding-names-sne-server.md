@@ -1,0 +1,1 @@
+- liveness: the gemma-broker finding now names `sne-server` and explicitly denies the legacy python/mlx_lm path, so the misleading LaunchAgent label cannot again be read as "a Python service that can be downed".
