@@ -4033,3 +4033,48 @@ sirsi/gemma crash or Jetsam. Threads 187→182, one reaped→successor heal, one
 session reaped, one record archived, 1.7 KiB retention. `thread reconcile` again named a new
 thread on a lost lifecycle fence — the filed `fence-retry-budget-underprovisioned` row, not a
 regression.
+
+## Conduit run 2026-08-07T03:46Z
+
+Inbox 3→0, all worked rather than triaged. codex-home returned both verdicts the prior run was
+waiting on. **PR #630 PASS → merged**: verdict transcribed verbatim and attributed onto the bind at
+`262e322e` (the same head reviewed, unchanged between review and bind), `binding-hold` re-read the
+bind and cleared, 5/5 required contexts SUCCESS, merged via `sirsi-queue-merge.sh`. **PR #631
+CHANGES REQUESTED → one finding adopted, one refuted.** codex-home reviewed without the patch (it
+said so explicitly) and inferred that the login-shell wrapper makes `dispatchConsumer` track the
+shell's pid instead of the consumer's. The exact diff refutes it: the script is `exec "$@"`, and
+`exec` replaces the shell's process image rather than forking, so the same pid becomes the consumer
+and the setsid detach plus the #628 output pipe both still hold. Sound inference about wrappers in
+general, wrong here because one keyword removes the layer — the cost of reviewing a design from its
+description. Its second finding was real and worse than cosmetic: the `SHELL` guard stat'd the path
+but never checked the executable bit, so a non-executable `SHELL` made `exec.Command` fail the
+dispatch outright — failing CLOSED, the precise opposite of the stance `loginShellArgv` documents.
+Fixed at `f5e7ffa0` with a fourth case in the existing fail-open table; negative control run:
+removing only `|| info.Mode()&0o111 == 0` reddens `.../not_executable` by name. Changelog claim
+corrected to match. #631 now 4/5 with `binding-hold` failing by design — I authored it, so it waits
+on codex-home's re-review, never a self-bind. Third item, claude-pantheon's 2400s build timeout,
+closed resolved-by-completion: its target PR #627 was already MERGED at `8ad927ee` with 5/5 pass and
+no partial worktree existed, so the worker was rebuilding landed work; flagged back that a worker
+not checking merge state before/while building is the reusable defect.
+
+**Root-caused a condition four prior runs recorded as an Actions outage.** #608 #604 #603 #595 have
+read `CLEAN` with literally zero check runs for 7+ hours. `ci.yml` triggers on
+`pull_request: branches: [main, develop]`, and that filter matches the BASE branch — all four are
+stacked onto other feature branches, so no workflow ever starts. `mergeStateStatus` reports CLEAN
+because CLEAN only means nothing failing and nothing pending: **absence of CI is indistinguishable
+from passing CI at that field**, which is exactly the vacuous-green class. It is deterministic, not
+an outage, and cannot clear on its own — the stack bottoms `#594` and `#596` are DIRTY, and a
+conflicted PR yields no checks either, so #594→#603→#608 and #596→#604 are frozen bottom-up. Routed
+the full mechanism to claude-pantheon (`20260807-034559`) with the cheap fix (resolve the two
+bottoms; GitHub auto-retargets children to main and CI fires on its own) and an explicit
+not-recommended on widening the branch filter, which would double load on the serialized
+self-hosted pool and still diff against the wrong base. Not touched here — conflicted PRs belong to
+their lane.
+
+Health 🟢 unchanged: `diagnose` 100/100, swap 740/2048 MB flat a **17th** consecutive run, free 83%,
+board :8734 → 200, zero `BINARY_MISSING`, no crash/Jetsam in 40 min. Threads 201→188 (13 terminal
+pruned), two reaped→successor heals (codex-finalwishes, codex-deck), 2 leaked sessions reaped / 4
+procs, 1.8 KiB retention. Broker still structurally absent (no plist) — correct, not a heal, so no
+leak measurement is possible. `ai.sirsi.pantheon` still live at PID 91206 where quarantine canon
+expects `-9`: left alone, healed neither way. The stranded uncommitted `.thoth/memory.yaml` in the
+shared checkout is claude-pantheon's and was again NOT adopted.
