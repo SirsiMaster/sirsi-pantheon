@@ -71,7 +71,7 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 	}
 	now := time.Now().UTC()
 	threads := reg.SortedThreads()
-	newestByAgent := NewestNonTerminalByAgent(threads)
+	newestByAgent := NewestActiveByAgent(threads)
 	for _, t := range threads {
 		if t == nil || t.AgentID != agentID {
 			continue

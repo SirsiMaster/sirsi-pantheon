@@ -31,7 +31,7 @@ import (
 // registrations whose watcher, if still alive, is serving the new session.
 //
 // Call sites that own the registry precompute newestByAgent via
-// NewestNonTerminalByAgent and pass isNewest=true for the matching thread only.
+// NewestActiveByAgent and pass isNewest=true for the matching thread only.
 func threadArmedForNewest(thr *Thread, now time.Time, isNewest bool) bool {
 	wtype := WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 	switch {
@@ -55,7 +55,7 @@ func AgentArmed(routerRoot, agentID string) bool {
 	}
 	now := time.Now().UTC()
 	threads := reg.SortedThreads()
-	newestByAgent := NewestNonTerminalByAgent(threads)
+	newestByAgent := NewestActiveByAgent(threads)
 	for _, t := range threads {
 		if t == nil || t.AgentID != agentID {
 			continue
