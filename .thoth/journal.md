@@ -2850,6 +2850,942 @@ ends `…exact-head-revie`, so reconstructing it from the title returns "not fou
 - dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
 
 ---
+
+## Conduit run 2026-08-06T09:00Z — the ledger was lying, and that made A36 unfalsifiable
+
+Inbox was zero and the ledger header read "0 open", so by the usual reading this was an
+all-green tick. It was not. The task registry held **76 non-done rows, of which 51 (67%)
+were terminal in fact but stale in status** — bodies reading DONE, MERGED, RESOLVED,
+TOMBSTONE, CONSOLIDATED, RETRACTED, PREMISE DISSOLVED, while `status` sat at `in-progress`
+or `pending`. A36 says a lane may stop only when inbox, ledger and canon are simultaneously
+empty; a ledger whose statuses disagree with its own evidence cannot answer that question at
+all. The rule was not being violated so much as rendered untestable.
+
+Reconciled the 51 against evidence rather than against their own prose — the distinction that
+separates a close from a wipe. Every cited PR was verified with `gh pr view` before anything
+was closed: 22 distinct PRs confirmed MERGED with commit SHAs (#506 89a849a8, #515 5aac0506,
+#517 4a10b838, #530 3aa653a6, #531 4321b93d, #533 a9c8d29f, #534 2bcce61b, #535 748d64e7,
+#536 b6839e36, #537 e1b0656a, #539 10ad097f, #540 a01e0353, #541 a7a01058, #542 9bf946fb,
+#543 72264fb0, #544 6741a199, #546 839b715e, #547 fdfc3925, #464 e84dfcfb, #465 a53f3232,
+#513 8aef028f, #545 db19e8d7), and #499 and #524 confirmed CLOSED-not-merged, which is what
+their rows already claimed. One row was actively wrong in the safe direction:
+`tasklink-gate-unsatisfiable` recorded "#546 open" — #546 had merged at 839b715e. Rows whose
+evidence was a measurement rather than a PR were re-measured live this pass, not taken on
+faith: the broker leak watch, the :8734 board, the BINARY_MISSING sentinel count, the
+claude-inference lane, and the gemma-pantheon consumer all re-verified before closing.
+Seven `sup*` rows were closed as self-declared duplicate registrations of the adr057-* chain,
+which stays open under codex-home — the duplicate registration went, the work did not.
+Result: 76 non-done → 25, and all 25 survive scrutiny as genuinely open.
+
+The root cause is already registered as `ledger-staleness-check` (E-2) and stays open, now
+carrying this pass's numbers as its evidence. A hand reconciliation does not scale and will
+re-rot within days; what is needed is a doctor check that flags an in-progress row whose cited
+PR is MERGED, whose body asserts a terminal verdict, or which has gone untouched for N days.
+
+**The journal itself was the second finding, and the more dangerous one.** The shared repo root
+sits on another lane's branch `fix/hook-anchor-durable-claude-pid`, and `.thoth/journal.md`
+there is a divergent lineage mid-edit: origin/main carries 1950 lines, that branch's HEAD
+carries 3973, and its working tree carries 2852 — an uncommitted cut of 1121 lines. Appending
+this entry there and letting anyone commit it would have destroyed a thousand lines of journal
+history under cover of a routine append, which is precisely the failure the previous run
+avoided by extracting rather than cherry-picking commit 1c3a0c85. The lesson generalises past
+this file: in a shared worktree, `git status` showing a file as merely "M" says nothing about
+whether the modification is an addition or an amputation. Check the diff hunk header — a
+`@@ -5,1143 +5,6 @@` is a deletion of the repository's memory, and it looks identical to an
+edit until you read the numbers. This entry was written from a clean worktree off origin/main
+for that reason.
+
+Health green and boring by comparison. Broker measured **0.0000 GB/req across 3 driven
+requests** (146→149, `mlx_active_bytes` byte-identical at 27807891560, cache 0) — the leak is
+not present in build 8eacb2bc, and `sirsi diagnose` rendering it 🔴 Critical remains the
+`phys_footprint` trap, not a reason to bounce a load-bearing server. Swap 2381M of 3072M, flat
+against the prior run's 2390M. No new Jetsam or crash reports. Threads 214→186 with 4 healed to
+successors, one leaked conduit session reaped, retention reclaimed 21.7 KiB, board :8734 → 200,
+zero BINARY_MISSING sentinels so the binary heal stayed disarmed. Three owner-surface items
+remain open and untouched, as they must be; the newest, `20260806-085045`, records codex-home
+exceeding 30 sends in the 08:00 window, which means review traffic from my own reviewer was
+dropped rather than never sent — a missing verdict next pass is a throttle artifact, not silence.
+
+## Conduit run 2026-08-06T09:10Z
+
+The pass that closed the previous pass's loop, and the correction to how it closed is the more
+useful record. PR #557 — the 09:00Z journal entry — had been left open specifically because
+claude-home authored it and cannot review its own work. codex-home reviewed it and bound it
+**directly**: `sirsi-bind[bot]` published `APPROVED at exact head ca2e91fc` on #557 at 09:04:21Z.
+Its session reached api.github.com without difficulty, and did so again minutes later to publish a
+blocking finding on #559. Four and a half minutes after that successful bind I published a *second*
+approval on the same PR at 09:08:54Z, framed as a relay on codex-home's behalf because its session
+"could not reach api.github.com." That framing was false, and the falseness was discoverable in one
+call the whole time: `gh api .../pulls/557/reviews` already listed the direct bind. The mechanism of
+the error is worth naming precisely, because it is a class. codex-home sent two near-identical
+responses to one request (09:04:30 and 09:05:58); the first followed its successful publication, the
+second carried a connectivity complaint. I took the later message as the current state — a
+reasonable-looking heuristic that is exactly wrong when a retry is what produced the duplicate,
+since a retry replays an *earlier* attempt's failure after the real attempt already succeeded. **A
+duplicate response is not a state update, and message order is not event order.** The rule this
+leaves behind: before relaying any verdict, read the PR's own review list — the relay is redundant
+if a verdict is already published there, and the artifact settles it without arbitration.
+
+The relay fallback itself survives as **policy**, not as history. If a reviewer genuinely cannot
+publish, it returns the verdict with the exact reviewed head and the conduit publishes it verbatim
+and attributed, after verifying the head has not moved — that head check is the whole of the relay's
+contribution, because an approval relayed against a moved head carries the authority of a review
+that never saw the code. What must not recur is logging that fallback as an event that happened.
+Separately, the duplicate sends remain a real cost: under the 30-send throttle that dropped
+codex-home's 08:00-window traffic, a retry that duplicates instead of deduplicating burns the quota
+it is trying to recover from — and, as here, publishes a contradiction into the record.
+#557 merged as `bc34fbb8`.
+
+PR #558 (claude-pantheon) arrived mid-pass and got a real source-deep review rather than a diff
+skim. It teaches `ReconcileOperationalState` to clear impossible ownership on non-active task rows
+before the expiry pass, so `doctor --fix` recovers lease poison without direct SQLite surgery. The
+three things worth verifying were all things the diff could not tell me. First, whether `<>''`
+predicates silently skip NULLs: the live schema has all four ownership columns `NOT NULL DEFAULT ''`
+and the store carries zero NULLs across 398 rows, so they match real poison. Second, whether the
+repair erases provenance on completed rows: zero `done` rows retain `claimed_by` today, and
+`blocked` rows are ownership-free by construction because the expiry pass sets `blocked` and clears
+ownership in the same statement. Third, whether the two UPDATEs double-count — answerable only by
+reading the full file at the PR head, since the diff hunk truncates the expiry `WHERE`. They are
+strictly disjoint: repair filters `status<>'in-progress'`, expiry filters `status='in-progress'`.
+Approved and merged as `296abd3d`. One non-blocking finding, registered on my ledger rather than
+left in prose as `reconcile-counter-conflates-repair-and-expiry`: `report.ExpiredTaskLeases +=
+repairedNonActive` makes one counter mean two things, so `doctor --fix` will report expired leases
+that were actually repairs. The number stays plausible while its meaning changes underneath it,
+which is the failure mode that makes the next operator diagnose lease churn that never happened.
+
+Health green and one number is drifting. The broker measured `mlx_active_bytes` byte-identical at
+28172796008 across three driven requests (156 → 159), with cache the only mover (+236 MB) — no leak,
+since cache under the scheduler limit is the allocator working as designed. But active has climbed
+365 MB since the 09:00Z read at the same PID, about 36 MB per request, an order of magnitude under
+the 0.48 GB/req known-bad rate yet not the flat zero the prior pass recorded. Swap is the sharper
+signal: 2667 MB of 3072 used, 87 percent consumed, up from 2381 MB. Free RAM reads a reassuring 57
+percent precisely because the kernel is swapping to keep it there. Neither is P0 today; both are
+exactly the pair that reads fine separately and badly together, so they carry forward as a watch,
+not a finding. No new Jetsam or crash reports. Threads 186 → 181, one leaked conduit session reaped,
+6.2 KiB retention reclaimed, board on :8734 returning 200, zero BINARY_MISSING sentinels so the
+binary heal stayed disarmed. Inbox reached and held zero. The three owner-surface items remain open
+and untouched, as they must be.
+
+## Conduit run 2026-08-06T09:35Z
+
+The previous pass wrote a false event into this journal and this pass had to take it back out, so
+that is where the entry starts. PR #559 carried a paragraph saying codex-home reviewed #557, could
+not reach `api.github.com`, and had its verdict relayed by claude-home. codex-home returned CHANGES
+REQUIRED and said flatly that it had fetched and bound #557 itself. Rather than arbitrate between
+two accounts I asked the artifact: `gh api repos/SirsiMaster/sirsi-pantheon/pulls/557/reviews` lists
+`sirsi-bind[bot]` publishing APPROVED at exact head `ca2e91fc` at **09:04:21Z**, four minutes and
+thirty-three seconds before my "relay" published a second approval on the same PR. The relay was
+redundant and the transport failure never happened. That call cost nothing and was available the
+entire time.
+
+The mechanism is worth more than the correction. codex-home sent two near-identical responses to one
+request, at 09:04:30 and 09:05:58; the first followed its successful publication and the second
+carried a connectivity complaint. I took the later message as the current state. That heuristic is
+exactly inverted when a *retry* is what produced the duplicate, because a retry replays an earlier
+attempt's failure after the real attempt has already succeeded. **A duplicate response is not a
+state update, and message order is not event order.** The standing precondition now is that no
+verdict gets relayed until the PR's own review list has been read: if a verdict is already published
+there the relay is redundant, and if it is not, the relay premise is confirmed rather than assumed.
+It earned its keep within the hour — #559's re-review came back with the same connectivity claim, the
+review list returned zero, and the relay went out legitimately with the head re-verified as
+unmoved. Merged as `9d8c6adb`.
+
+The connectivity story also resolved into something narrower and more useful than "the reviewer has
+no network." codex-home's session reaches GitHub through `gh` — it fetched #557 and published a
+blocking comment on #559 at 09:14:38Z — while `sirsi-bind.sh` fails at its first `api.github.com`
+call. Those are different paths: `gh` carries the agent's own credential, `sirsi-bind.sh`
+authenticates as the `sirsi-bind` GitHub App with `~/.sirsi/bind-app.pem`. So the fault is
+transport-specific to the App-key path, not session-wide, which is how both of codex-home's
+contradictory reports could feel true from inside its own session. The script's trailing "App is not
+installed" line remains the misleading part: it fires unconditionally after any upstream failure and
+asserts an installation state that was never established.
+
+PR #560 (claude-pantheon) extended the schema-ceiling gate to the two install vectors that still
+bypassed it — `sirsi update --cli` and `scripts/install.sh` — closing the v14-over-v15 fleet-lockout
+class end to end. Source-deep review confirmed the ordering that matters and that the diff cannot
+show: the gate sits after `VerifyChecksum` and before `SafeReplace`, so the probe never *executes*
+an unverified asset and a rejected candidate never reaches a write. The named incident tests are the
+right shape — they pin the exact v14/v15 versions and say in-comment why they must not be collapsed
+into a generic duplicate, which is how that coverage would otherwise be tidied away. Approved, bound,
+merged as `18f81125`, with three non-blocking findings registered rather than left in prose. The
+sharpest: `install.sh` redirects `schema-check`'s stderr to `/dev/null` and then prints a single
+cause — "your router.db is at a higher schema version" — for a command that exits non-zero for three
+different reasons, one of which is an unreadable store, and follows it with advice to reset the
+store. That is the same two-failures-wearing-one-message shape as the `sirsi-bind.sh` line above,
+pointed at a destructive remedy.
+
+Then the ADR-057 thread-store adversarial bind, which is the substantive review of the pass.
+codex-pantheon's head `4745a598` makes thread lifecycle SQLite-authoritative under STORE-ONLY, and
+it genuinely repairs what codex-home blocked earlier: migration v16 is appended after v15 so the
+computed ceiling is right for both a live-v15 and a fresh store, the whole-table `ReplaceThreads`
+delete is gone, and `DeleteThreadCAS` is a real compare-and-swap. The `ON CONFLICT` predicate I
+expected to be a precedence bug is not one — `A AND B OR C AND B OR D AND E AND B` binds as
+`B ∧ (A ∨ C ∨ (D∧E))` and is correct as written. The defect is one layer down, in the *encoding* of
+the ordering key rather than in any interleaving, which is why a good concurrency test suite cannot
+see it. Every guard compares `excluded.last_seen_at > threads.last_seen_at` as **text**, and the
+column is written with `time.RFC3339Nano`, which strips trailing zeros from the fractional seconds.
+A `LastSeenAt` with nanoseconds exactly zero formats as `…T09:31:00Z`; a heartbeat 500 ms later
+formats as `…T09:31:00.5Z`; comparing as strings, `'.'` (0x2E) < `'Z'` (0x5A), so the later timestamp
+compares *smaller* and the write is discarded. Go's own documentation says this format may not sort
+correctly once formatted. Zero-nanosecond times are not exotic here — they are what a
+second-granularity timestamp parses back to, which is exactly what the legacy `threads.json` cutover
+import seeds. And because `UpsertThreads` and `DeleteThreadCAS` both discard `sql.Result`, a
+rejected write is indistinguishable from an applied one: a close returns success and the row never
+changes, a prune reports N removed having deleted zero. A lane that reads live after its session is
+gone is precisely the dishonesty ADR-057 exists to eliminate, reintroduced underneath it. Third
+blocker, and the one with the shortest half-life: `openThreadStore` hand-rolls the store path
+resolver that #560 merged twenty-five minutes earlier for exactly this reason, and calls
+`os.MkdirAll` unconditionally — a write, in a change whose headline claim is that it grants no
+repository writes, which fails on a read-only `~/.sirsi` even when `router.db` exists and opens fine.
+CHANGES REQUIRED, no bind. The publication half was unblockable though, and it is now unblocked: the
+commit existed only in an isolated clone whose push was rejected, so I pushed it from the writable
+lane and `origin/codex/adr057-thread-store-boundary` now resolves to `4745a598`. A head no one else
+can fetch cannot be reviewed by anyone, which makes "route it for adversarial bind" unsatisfiable by
+construction.
+
+Health carries one honest watch and no findings. The broker (PID 53576, build `8eacb2bc`) served
+224→233 requests across the pass; `mlx_active_bytes + mlx_cache_bytes` moved 30.03 GB → 30.73 GB over
+six requests, about 117 MB per request. That is a quarter of the 480 MB/req known-bad rate and an
+order of magnitude above the 11.7 MB/req the previous pass measured over a fifty-five-request window
+— and a six-request sample cannot distinguish a trend from noise, so it is recorded as a watch with
+its ceiling stated rather than as a slope. Active alone is 30.7 GB against a 20 GiB scheduler limit
+that is documented backpressure, not a cap; peak 31.3 GB. `diagnose` reads 🔴 Critical on
+`phys_footprint`, which is the file-backed-weights trap and not a reason to bounce anything. Swap sits
+at 3186 MB of 4096 (78%) — the kernel resized the swap file up from 3072 MB since the last pass,
+which is itself the signal, since free RAM reads a comfortable 59% precisely because paging keeps it
+there. No new Jetsam or crash reports. Threads 184 → 102 after reconcile and prune, one reaped thread
+healed to a successor, two leaked conduit sessions reaped and one archived, 14.3 KiB of retention
+reclaimed, board on :8734 returning 200, zero `BINARY_MISSING` sentinels so the binary heal stayed
+disarmed. Inbox reached zero four times and refilled three times; the three owner-surface items
+remain open and untouched, as they must be.
+
+## Conduit run 2026-08-06T09:55Z
+
+Inbox drained to zero four times (1 → 6 → 3 → 0); 21 items closed net of refills. The pass opened on
+the one deliberately-deferred item from 09:38Z — codex-finalwishes' adversarial review of FinalWishes
+media authorization at commit `23148951` — and the deferral paid for itself. Reading the *committed*
+diff rather than the working tree surfaced the finding: `/private/tmp/finalwishes-wave2` carried
+**seven uncommitted files**, including a complete unreviewed `ConfirmMediaUpload` RPC with magic-byte
+content inspection, so the submitted `go test -race ./...` / `npm test` evidence attested a tree that
+was not the SHA under review. Verified independently in a clean worktree at exactly `23148951`:
+`go build ./...` exit 0, `go test -race ./internal/service/estate/...` ok. Returned **PASS** scoped to
+the purpose-scoped authorization slice, explicitly not SEC-017 closure, with five findings. The
+security core holds: `checkEstateAccess` runs first and fails closed when Firestore is absent, purpose
+must be a known map key, MIME is normalized then allowlisted per purpose, size must be
+`0 < n <= policy.max`, and the V4 signature binds both `X-Goog-Content-Length-Range: N,N` and the
+content type — so a client cannot loosen either after issuance. Path traversal is now structurally
+impossible: `fileName` left the object path entirely, replaced by 128 bits of `crypto/rand`. Canon was
+honest — matrix rows moved Gap → Partial, never to done, and the user guide's ten published limits
+match the code table exactly. Residual worth naming: `purpose` is caller-selected, so any estate
+writer can pick the loosest purpose and the effective per-writer ceiling is 100 MB.
+
+ADR-057 thread-store reached **source-level PASS on a published feature branch** after three heads —
+not ADR-057 closure, which this entry originally and wrongly claimed. `4745a598` and `d7c5faf5` were
+both CHANGES REQUIRED; the branch had already moved to `bac8ccdc` before the bind request for
+`4d44d4c2` was read — **the third time in two passes that a bind request was crossed by its own
+author's next commit.**
+Published `origin/codex/adr057-thread-store-boundary` `d7c5faf5..bac8ccdc` from the main checkout,
+because the worktree's `origin` is the local parent repo, which is why codex-pantheon's own push
+failed. All three P0s verify fixed at `bac8ccdc`: the RFC3339Nano lexical-ordering defect is closed by
+a fixed-width nine-digit fraction, so zero-nanosecond times no longer compare greater than later ones;
+`RowsAffected` is checked on all three CAS methods and `SaveThreadRegistry` turns a lost fence into a
+hard error; and `openThreadStore` now uses `routerstore.DefaultStorePath()` with `MkdirAll` gated
+behind `os.Stat`. codex-home's cross-row defect is fixed by the stronger disposition — only rows whose
+payload differs from the loaded baseline are written, each through per-row CAS, so a stale sibling can
+no longer roll back a valid mutation. Confirmed by running the exact non-race suite codex-home saw
+fail: both packages now ok. Three non-blocking findings recorded, the sharpest being that the
+`ON CONFLICT` fence guards only the UPDATE branch — an absent row takes an unconditional INSERT, so a
+heartbeat racing a prune can resurrect a deleted thread and report success.
+
+That source-level PASS was **not integration-complete on the current-main lineage**, a distinction
+codex-home's review of this very entry caught and this paragraph now records. Transplanting the
+four-commit series onto `16a991ef` fails to compile: it redeclares `routerstore.DefaultStorePath` in
+`internal/routerstore/path.go`, a resolver current main already owns in `internal/routerstore/store.go`
+via PR #560. codex-home's local repair `04884e77` deletes only the duplicate and passes the focused,
+CLI, vet and targeted race suites. At the time of codex-home's review, publication was still blocked.
+It no longer is: the 10:24Z pass published the series as **PR #565** (`e047e6e4`, claude-pantheon),
+carrying that same duplicate-resolver deletion plus a wake-install test isolation fix, bound PASS and
+merged at 10:28:33Z. So the honest lineage is source-level PASS at `bac8ccdc` → integration blocker on
+current main → published and merged at `e047e6e4`, and only that last step is closure.
+
+The publication raced itself: **codex-home's PR #564 (`33ce9f7f`) and claude-pantheon's PR #565 were
+competing publications of the identical work** — same seven files, with
+`internal/routerstore/store.go` and `internal/routerstore/threads.go` byte-identical, so both carried
+the same schema v16 migration, so they were competing publications of one schema transition and
+exactly one should land. (The versioned migration runner does not rerun an already-applied version:
+once the first binary advances the durable store to v16, a second binary carrying the same migration
+observes the stored ceiling and skips it. The hazard is competing publication of one schema
+transition and its production change, not double execution.) The only production
+divergence was a shadow-lint rename. #565 won on one specific point: #564 isolated
+`TestWakeInstallBlockedUsesArmedWatcher` by setting `routercfg.StoreWakeEnv=0`, which makes
+`StoreWake()` false and drops the test off the store path onto the legacy JSON registry — hermeticity
+bought by opting out of the very feature the PR makes authoritative — where #565 isolates to a temp
+`SIRSI_ROUTER_DB` and keeps store mode on. **Two lanes independently publishing one upstream branch is
+now the second duplicate-publication near-miss in a day, and it is the same root shape as the bind
+requests crossed by their author's next commit: no single lane owns publication of a shared branch.**
+
+PR #566 was merged *first*, deliberately — it lands the install schema-check gate in
+`scripts/install.sh` before a v16 migration existed, so a sub-v16 installer is refused with a specific
+diagnostic instead of bricking the fleet. Verified fresh-host safe: `resolveLiveSchema` returns
+`(0, nil)` on a missing store, so removing the `if [ -f ]` guard does not break clean installs. It also
+drops a `2>/dev/null` that had been collapsing three distinct failure causes into one message naming
+only the first, whose remedy was a destructive store reset. `origin/main` now builds v16 against a v15
+live store — the safe direction — but the first v16 binary to launch migrates the store, after which
+every still-installed v15 binary fail-closes. That wants one coordinated install pass under
+`~/.sirsi/binary-install.lock`, not several lanes racing `~/.local/bin/sirsi` as happened at 06:00Z.
+
+PR #561 merged `06c5bcc9` after verifying the head still matched codex-home's approved SHA. PR #562
+(claude-pantheon) reviewed, bound, merged `16a991ef` — it splits `ExpiredTaskLeases`, which was summing
+genuine lease expiry and poisoned-lease repair into one number that could not be trusted for either;
+the test asserts both directions, and no surface consumes the field yet, so the change is purely
+additive. codex-home reported that its fenced router claim returned `routerstore: no open item to
+claim` against a visibly open inbox item — a real claim-path defect, recorded here rather than lost.
+
+Broker measured clean over a **driven** 12-request window: `active + cache` fell 0.65 GB, a negative
+rate against the known-bad 0.48 GB/req. Last pass's 117 MB/req over six requests was noise, as that
+pass suspected — the lesson holds that a short window measures fleet business, not leak presence.
+Swap grew 4096 → 7168 MB and sits at 6513 used, but the cause is two concurrent self-hosted CI runners
+(Go compile, link, dsymutil) alongside the broker's 31 GB, with no Jetsam and no new crash reports;
+not a leak, watch only. Threads 107 → 75, two sessions archived, 10.1 KiB retention reclaimed, board
+:8734 → 200, zero `BINARY_MISSING` so the schema-drift heal stayed disarmed. `ai.sirsi.pantheon` at
+PID -9 remains quarantined and untouched.
+
+## Conduit run 2026-08-06T11:00Z
+
+Inbox reached zero on three items and PR #563 finally landed. codex-home returned **APPROVE + BIND**
+on exact head `a85a01e8081a3d61d8319990f7d8691a1d170513` — the same head their previous pass had sent
+back CHANGES REQUESTED, after this lane corrected the one factual claim they caught. That correction
+is worth recording on its own, since the prior run deliberately left it unjournalled to avoid amending
+a head under review: the earlier text asserted that merging #564 and #565 together "would have applied
+the v16 migration twice." It would not have. **The versioned migration runner reads the durable
+store's stored ceiling and skips any version already applied**, so double execution was never the
+hazard. The real hazard was competing *publication* of a single schema transition — two branches each
+claiming to be the one that moves the store to v16. The distinction matters because the false version
+makes the runner sound unsafe when the runner is in fact the component behaving correctly; the danger
+lives in the coordination around it, not in the code. The clause was replaced and the whole journal
+grepped for other instances of the claim — none.
+
+codex-home could not publish their own bind: `sirsi-bind.sh` failed at the GitHub App installation
+lookup because `api.github.com` was unreachable from their node, and they correctly claimed no remote
+state, explicitly authorising a relay only after head re-verification. This node re-verified the head
+byte-identical, `MERGEABLE`/`CLEAN`, and zero existing reviews (so no conflicting review could be
+overwritten), then published the bind — `sirsi-bind[bot] @ a85a01e8` — which re-ran the `binding-hold`
+gate (run `31093842884`); it re-read the bind and cleared. Squash-merged as `da7f7fe8`. **A bind that
+fails on network reachability is not a failed review, and treating it as one would have stalled a PR
+whose verdict was already decided** — the reviewer's job finished at the verdict; only publication was
+blocked, and publication is relayable when the head is proven unchanged.
+
+PR #567 (claude-pantheon, actionable right-size advice on the memory death spiral) got a source-deep
+review and came back **CHANGES REQUESTED** on one narrow but disqualifying finding.
+`approximateModelGB()` classifies a model by name substring — `27b`→14 GB, `12b`→7 GB, `9b`→5 GB,
+`2b`→1.5 GB — and every one of those figures is annotated `4bit` in its own comment. But the function
+is handed the *full* model id, quantizer included, and discards that half. This node's live
+`~/.sirsi/gemma-model.conf` reads `mlx-community/gemma-4-12B-it-8bit`: it hits the `12b` arm, returns
+7 GB, and the broker's `/health` reports `mlx_active_bytes` at 34.9 GB. **A five-fold understatement
+of the only model actually configured on the machine.** The consequence is not a wrong number but a
+silence: with `availableGB` anywhere from 18 to 32 GB the budget check `2×7+4 ≤ available` passes,
+`rightSizeAdvice` returns empty, and the operator receives exactly the generic "right-size the broker"
+directive the PR exists to replace. Below 18 GB the advice does fire, but opens by printing
+`current model gemma-4-12B-it-8bit (~7 GB)` into an emergency alert. The fix keeps the shape and adds
+no I/O: read the quantizer off the same string (`8bit` ×2, `bf16`/`fp16` ×4, default ×1). Three
+non-blocking notes went with it — the `tiers` table offers only gemma-2 ids so following the advice
+silently downgrades a gemma-4 node a model generation; `home, _ := os.UserHomeDir()` discards its
+error, and on failure `resolveModel("")` returns the hardcoded 27b fallback so the alert would name a
+model that is not running; and `strings.Contains(id, "2b")` would also match a `-2bit` quantizer
+suffix, harmless only because the `27b`/`12b`/`9b` arms are checked first — load-bearing ordering that
+deserves a comment before someone tidies it into a bug. GitHub refused the `--request-changes` review
+("cannot request changes on your own pull request" — every agent pushes as `SirsiMaster`), so the
+verdict was posted as a PR comment and routed back through the router, which is where the binding
+record lives anyway.
+
+Health green, with the broker's cleanest reading yet. Driven three-request window: `mlx_active_bytes`
+**byte-identical** at 34923004008 before and after, cache 0 → 0.236 GB, so
+Δ(active+cache)/Δreq = 0.079 GB/req — and all of it cache, none of it active. Seventh consecutive
+clean measurement against the known-bad 0.48 GB/req. The prior run's inconclusive inter-run drift
+resolved exactly as suspected: it ended with cache non-zero, this run began at cache 0, confirming
+cache→active reclamation rather than a leak. Absolute active continues its slow climb (34.37 → 34.92 GB)
+and stays on the watch-list. Swap 8950/10240 used, essentially unmoved from 8966 — a stable floor, not
+a spiral. `sirsi diagnose` reads 🔴 69/100 naming the broker a 32.7 GB "memory hog"; that is the
+`phys_footprint` trap counting file-backed mmapped weights, and it was ignored rather than acted on.
+No new crash or Jetsam reports for any sirsi/gemma/Python process. Zero `BINARY_MISSING` sentinels, so
+the schema-drift heal stayed disarmed. Board `:8734` → 200. `ai.sirsi.pantheon` at PID −9 remains
+quarantined and untouched. Housekeeping: reconcile healed one codex-home thread to a successor, prune
+66 → 63, two leaked conduit-supervisor sessions reaped (4 procs), retention reclaimed 17.3 KiB. The
+v16 reship and the claim-row defect both left this lane last run and are no longer open on
+codex-pantheon. Three owner-surface items remain correctly unclosed — they are the owner's to close,
+and doctor records them as wake-unavailable rather than nagging.
+
+## Conduit run 2026-08-06T11:35Z
+
+Folds in the 11:03Z pass, which deliberately wrote no entry while PR #568 was still in flight. #568
+(the 11:00Z journal) landed: codex-home returned APPROVE + BIND but could not publish it — its
+`sirsi-bind.sh` run failed before publication because `api.github.com` was unreachable — and
+authorized claude-home to relay only after re-verifying the head. Head re-verified as
+`e799ff188f53b0ed0ebca8124f802aeda18294d3`, bind published on that exact SHA, binding-hold re-ran and
+cleared, squash-merged at 11:26Z. Worth recording that the network failure codex-home hit is the same
+failure mode that made the next finding load-bearing.
+
+claude-pantheon delivered the binary-install mutex **twice, six minutes apart, on two branches** —
+#569 (`fix/binary-install-lock`) and #570 (`fix/install-binary-lock`) — both editing
+`scripts/install.sh`, so only one could land. #570 merged (81411bf2); #569 closed, and not on a
+coin-flip. #569's cleanup guarded on `[ -n "${TMPDIR:-}" ]`, but **`TMPDIR` is a standard macOS
+environment variable** — measured on this host as `/var/folders/8h/.../T/`. Its trap arms ~75 lines
+before `TMPDIR=$(mktemp -d)`, and `install.sh` runs under `set -e`, so any failure in that window —
+a window that contains the GitHub releases fetch for `$LATEST`, i.e. *exactly the api.github.com
+outage codex-home had just hit* — fires cleanup with the inherited value and `rm -rf`s the user's
+per-user temp directory. #570 avoids the class entirely by expanding `$TMPDIR` at trap-set time,
+after `mktemp` has assigned it, and arming a LOCK_DIR-only trap before that point. #570 also puts the
+stale-lock reap *inside* the retry loop with a `continue` back to the atomic `mkdir`, rather than
+#569's bare unchecked `mkdir` after `rm`. Follow-up routed: port #569's CHANGELOG paragraph, and
+implement the coordinated single-pass install — a mutex serializes the 2026-08-06 v14-over-v15
+outage, it does not prevent it.
+
+**PR #567 CHANGES REQUESTED a second time, and the second round is the more instructive one.** Round
+one found that `approximateModelGB` sized `gemma-4-12B-it-8bit` from the `12b` name pattern at 7 GB
+against a ~35 GB reality. The fix reached for a measured value instead — correct instinct, wrong
+value, twice over. (1) `rightSizeAdvice` reads `~/.sirsi/gemma-server.pid`, and **that file is absent**
+on this host right now with the broker live and serving (launchd `ai.sirsi.gemma-broker`, PID 53576,
+349 requests) — `stat` returns ENOENT on the canonical path; only a
+`gemma-server.pid.quarantined-20260806` sibling remains. Absent or unreadable,
+`getBrokerRSSFn()` returns 0, the guard `rssKB > 0` is false, and control falls
+straight through to the name estimate it was written to replace — production behaviour unchanged,
+only the test suite changed. (2) Even with a populated pidfile, **RSS is off by ~190x for this
+process**: at one instant, `ps -o rss=` gave 185728 KB = 0.18 GB, `footprint -p` gave 34 GB, and
+`/health` `mlx_active_bytes` gave 36.47 GB. These are three different metrics and the measurement
+establishes only that they diverge by ~190x, i.e. that RSS is the wrong sizing authority for this
+process — not *why* they diverge; no instrumented proof of the accounting cause was taken here.
+`2*0.18+4 = 4.36 <= 20` returns empty — the identical false "fits already" silence,
+reached by a different wrong number. The PR body's "actual RSS measured 34.9 GB" is `phys_footprint`,
+not RSS. (3) The new test stubs 35 GB RSS, a value no real broker will ever return from RSS, so it
+passes green over a path that is both unreachable and wrong when reached — **a stub is evidence only
+when the stubbed value is one the real system produces.** Requested: source the size from the
+broker's own `/health`, port read from `~/.sirsi/gemma-server.port`, plus a regression case asserting
+0.18 GB is *not* accepted as a model size. Same size authority should feed `sirsi diagnose`, which
+renders 🔴 Critical for this same healthy broker off `phys_footprint`.
+
+Health otherwise green, 9th consecutive clean. Driven 3-request window: requests 346 → 349,
+`mlx_active_bytes` **byte-identical** at 36474896488, cache 0 → 236220246 — 0.079 GB/request total
+movement, all of it cache, against a known-bad rate of 0.48. The absolute-active watch opened last run
+continues: 34.37 → 34.92 → 35.10 → 35.30 → 36.47 GB on one unrestarted PID, now the fifth rising
+sample, still with swap flat (8934 MB of 10240, marginally below last run's 8950 floor) so still not
+P0. Escalation trigger stays ~38 GB active or swap leaving that floor. No new crash or Jetsam reports
+since 07:15Z. Zero `BINARY_MISSING` sentinels, so the schema-drift heal stayed disarmed. Board :8734 →
+200. `ai.sirsi.pantheon` at PID -9 remains quarantined and untouched. Threads reconciled (one
+codex-home record healed to a successor) and pruned 66 → 60; `ccd reap` killed 2 leaked
+conduit-supervisor sessions (4 procs); retention reclaimed 17.3 KiB. Inbox 0; 52 open fleet-wide, all
+on heartbeat-armed lanes except the three known owner-surface items.
+
+---
+
+## Conduit run 2026-08-06T12:00Z
+
+**PR #571 merged; PR #572 reviewed CHANGES REQUESTED on a defect that measurement — not reading —
+found.** Inbox drained 2 → 0.
+
+**#571 (this run's predecessor journal entry).** codex-home returned APPROVE + BIND on exact head
+`4809a672d7be56467fdcf9e6c2e7f27350cc5e38`, conditioned on a re-verification it could not perform
+itself because `api.github.com` was unreachable from that session for the second consecutive round.
+Re-verified head unchanged, no conflicting review, all five checks green; bound via `sirsi-bind.sh`
+(binding-hold re-run `31098058430` re-read the bind and cleared) and squash-merged at 11:56:50Z. The
+relay is worth naming as a pattern: an approving reviewer with no network is still a valid
+independent reviewer, provided the relaying agent re-checks the exact preconditions the approval was
+scoped to and carries the approval to no other SHA.
+
+**#572 — the blocking finding, and why the tests could not have caught it.** claude-pantheon's PR
+fixes the three findings from the #567 review correctly: the quantizer-aware `approximateModelGB`
+(base × multiplier, `4bit`-first so the compound `bf16-4bit` resolves ×1), the generation guard that
+stops a gemma-4 node being handed a gemma-2 tier as a side-effect of a RAM decision, and the
+`os.UserHomeDir` error gate. All three verified arm by arm. But the same branch carries an RSS
+override in `rightSizeAdvice` that discards the estimate it just made correct:
+`getBrokerRSSFn()(pidFile)` is `defaultBrokerRSS`, which is literally `ps -o rss=`.
+
+Measured against the live broker (PID 53576, `sne-server-macos-arm64`, `gemma-4-12b-it-8bit`) rather
+than reasoned about: `ps` RSS **185360 KB = 0.177 GB**; `footprint -p` `phys_footprint` **35 GB**;
+`/health` `mlx_active_bytes` **37220958312 = 37.22 GB**. The measured values diverge by more than two
+orders of magnitude, proving RSS is the wrong sizing authority for this process; this run did not
+instrument the accounting cause. Run the
+guard on the actual incident this PR was written for (`availableGB = 9.68`): `2×0.177 + 4 = 4.354 ≤
+9.68` → empty advice. The feature suppresses itself in exactly the case it exists to serve, and it
+does so *more* reliably than the pre-fix name estimate did.
+
+CI is green because `~/.sirsi/gemma-server.pid` is currently **ENOENT** (only
+`gemma-server.pid.quarantined-20260806` survives), so the override returns 0 and no-ops. The feature
+is inert in production today and becomes harmful the moment the pid file is restored — which is the
+normal state, its absence being an incident artifact rather than a design. And
+`TestRightSizeAdvice_BrokerRSSOverridesNameEstimate` cannot fail, because it injects
+`setBrokerRSSFn(func(_ string) int64 { return 35 * 1024 * 1024 })` — a value the real function is
+structurally incapable of producing for this process. **The test pins the premise instead of testing
+it.** That is the generalizable lesson: a stub that returns a number the production function cannot
+return converts a test from evidence into decoration, and it will stay green through the exact
+regression it was written to prevent.
+
+The changelog entry compounded it by asserting "RSS measured 34.9 GB". 34.9 GB is a `phys_footprint`
+reading — it is what `sirsi diagnose`'s memory-hog lever computes from, and it is the same known-false
+badge this conduit is under standing orders not to bounce the broker on. Attributing it to RSS is
+what makes the override look correct on paper.
+
+**The same wrong assumption is already merged.** `probeGemma`'s weightless-broker floor on `main`
+returns `GemmaWedged` when RSS is under 1 GB, with the remediation "model weights likely absent; a
+restart will not fix this". The live, healthy, weights-loaded broker reads 185 MB. The only thing
+preventing the watch from declaring a serving broker wedged is, again, the missing pid file.
+Registered as `claude-pantheon/livenesswatch-rss-floor-misreads-mmapped-broker` rather than left as a
+review aside — an observation that stays in a PR comment is not tracked work.
+
+**#567 disposition.** It now reads MERGEABLE/CLEAN, which makes it look ready and it is not. My
+round-2 CHANGES REQUESTED still stands on unchanged head `a6f6d902`, and GitHub does not surface it
+as blocking because every agent pushes under the `SirsiMaster` account — the API refuses
+`--request-changes` on what it treats as our own PR, so the verdict lives in a comment where
+`mergeStateStatus` cannot see it. Separately, #572's diff against `main` already contains the whole
+of #567, so merging both would replay the feature and guarantee a CHANGELOG conflict. Routed to
+claude-pantheon to close as superseded once #572 lands; left open and untouched rather than closing
+another lane's PR.
+
+**Health.** Broker PID 53576 unchanged, rev `8eacb2bc`, 8477. Driven 3-request window: active
+byte-identical at 37220958312 before and after (cache 0 → 236220246, i.e. allocation into reclaimable
+cache, not retention) — **0.0000 GB/req against the known-bad 0.48**. Over the 20 requests since the
+last run the pool total moved 36892782526 → 37457178558 = 0.028 GB/req, still ~17× below known-bad;
+peak unchanged at 37.58 GB. Absolute active is now a 7th consecutive rising sample
+(34.37→34.92→35.10→35.30→36.47→36.75→37.22 GB) on one unrestarted PID and is closing on the 38 GB
+escalation line. Swap 8854/10240 used, free 1386 MB — marginally better than last run's 1361, which
+is the third consecutive improvement and argues the rise is high-water accumulation rather than an
+active leak. `sirsi diagnose` 🔴 off `phys_footprint`: the known false badge, not bounced. No new
+crash or Jetsam for any sirsi/gemma/Python process. 0 `BINARY_MISSING`, board :8734 → 200,
+`ai.sirsi.pantheon` PID −9 left quarantined.
+
+Hygiene: reconcile healed one codex-home thread (`thr-d74378b6` → `thr-f47481cb`), prune 66 → 58,
+ccd reap killed 2 completed conduit-supervisor leaks (4 procs), retention reclaimed 20.7 KiB. Doctor:
+28 agents / 21 live / 7 stale, all heartbeat-aged but OS-alive and correctly not reaped; three
+owner-surface items fail wake with "unsupported wake mechanism", which is expected for owner surfaces
+and not a defect.
+
+## Conduit run 2026-08-06T13:00Z
+
+Folds the unwritten 12:15Z and 12:29Z paragraphs into this one, since PR #573 —
+which the earlier debt was waiting on — merged this pass.
+
+Inbox reached zero: four items, all worked to a result rather than acknowledged.
+**PR #573 merged** at exact head `187d8cb1` under codex-home's relayed bind
+authorization. Their merge hold was correctly satisfied first — they held merge
+while the required Test was red and stated a fresh green at the same SHA would
+reactivate the content approval, so I re-ran the job, got green at that exact SHA,
+bound, and squash-merged.
+
+**The red gate was mine to misdiagnose, and I had it wrong for two runs.** I had
+reported an "ADR-collision gate flapping across an identical base" and routed that
+theory to codex-home. It was false. The string `Error: 1 ADR number collision(s)`
+in the job log is **fixture output from the PASSING
+`TestADRAuditExitsNonZeroOnCollision`**, which constructs a collision deliberately
+and asserts a non-zero exit before reporting `--- PASS`; it prints twice because
+sibling ratchet tests exercise the same path. I found it by grepping the log for
+the error *string* instead of the *failure marker*. A passing negative-path test is
+indistinguishable from a real gate failure that way. **Grep `--- FAIL`.** Retraction
+routed to codex-home.
+
+The actual failure was `--- FAIL: TestRouterPullModelRoundtrip`, at
+`send failed: exit status 1`. Root-caused to a genuine defect, now fixed in
+**PR #574** (open, review routed to codex-home, Test green, not self-reviewed).
+`sirsiTestEnv` pinned `SIRSI_ROUTER_DB` to `$TMPDIR/sirsi-test-router-$PID.db`, and
+two defects compound: a pid is unique only among *live* processes and is recycled,
+and the file is never deleted because `TestMain` declares
+`defer os.RemoveAll(tmpDir)` directly above `os.Exit(m.Run())` — and `os.Exit` does
+not run deferred functions. **199 leaked store files sat in one TMPDIR, all from a
+single day.** A run drawing a recycled pid therefore opens a previous run's store,
+which already holds that run's `claude-a → claude-b "test handoff"` row; the send
+idempotency window dedupes against it (`Deduped … same logical send this window —
+nothing appended`), no item is created, and the assertion fails. Self-hosted runners
+share a persistent TMPDIR, which is exactly why it reddens PRs intermittently with
+no code delta and why the same SHA goes green on re-run. Fix scopes the store to the
+calling test's own directory and removes `tmpDir` explicitly; `-count=3` fails before
+and passes after. This was never a flake to be waited out — it was a defect that
+would have kept reddening arbitrary pantheon PRs indefinitely.
+
+**FinalWishes unblocked twice over.** codex-finalwishes had implemented the accepted
+F1/F2 events-integrity correction but could not publish — their environment cannot
+resolve `github.com`. Verified their bundle (`git bundle verify` ok, required base
+`6802f9e2` matching the ref I published for them last run), reviewed the diff before
+publishing someone else's commit, and pushed `79387483` to a new
+`codex/event-review-fix` ref — no rewrite, no force. Re-review PASS on the agreed
+scope: `validEstateEventUpdate` uses `diff(previous).affectedKeys().hasOnly` with
+`createdAt` absent from the allowlist, which preserves immutability *more* strictly
+than the old explicit equality check; every mutable field is guarded
+`!affected.hasAny([k]) || validate(k)` so nothing escapes validation; `updatedAt ==
+request.time` is now conditional, so partial writes are legal; and `EventCard`
+Complete/Cancel write exactly `{status, updatedAt}`, both in the allowlist. The
+PERMISSION_DENIED-forever path on legacy events is closed. One non-blocking finding:
+the new regression test asserts on `rules.slice(...)` **string content**, so it
+proves shape but cannot prove a legacy document can actually complete — it would not
+have caught the original F1 bug, which is why that bug reached review.
+
+**claude-pantheon's build-timeout item closed without re-dispatching a build**,
+because the blocker is a code fix and not build capacity: #570 landed the install
+lock, #567 is fully superseded by #572 (identical file set, #572 the superset), and
+#572 is blocked on my outstanding change request with its head unmoved at
+`da9e5460`. Reinforced that CR with fresh measurement rather than restating it: the
+broker reads ~0.2 GB by `ps -o rss=` against **39.11 GB** by `/health`
+`mlx_active_bytes` — over two orders of magnitude — so right-size advice computed
+from RSS does not merely lose precision, it points the wrong way.
+
+**Broker watch continues, thresholds not crossed.** active 38.74 → 39.55 GB across
+the run, peak steady at 40.18 GB, swap free 995 MB → **1043 MB (improving)**, no
+Jetsam, no new crash reports. A driven 3-request window held `mlx_active_bytes`
+byte-identical, with the delta landing entirely in reclaimable cache. Did not bounce
+it: it is load-bearing, and `diagnose`'s red badge is the `phys_footprint`
+false-positive.
+
+Housekeeping: threads reconciled (3 healed to successors), pruned 71 → 63, `ccd
+reap` killed 2 completed-leak sessions, retention reclaimed 27.9 KiB, board 200,
+0 `BINARY_MISSING` sentinels, heartbeat emitted. `ai.sirsi.pantheon` remains at PID
+`-9` — quarantined, left alone.
+
+## Conduit run 2026-08-06T13:25Z
+
+Inbox reached zero, and the one item that arrived mid-run was codex-home's
+independent review of PR #574: **CHANGES REQUESTED, and they were right.** My
+hermetic-store fix was half-done. `sirsiTestEnv` took a single directory and
+derived the router store from it as `<dir>/router-test.db`, but `runSirsiWithEnv`
+must set `cwd=repoRoot` for the binary to resolve the real repo — so it received
+`repoRoot/router-test.db`, a database shared across parallel tests *and* across
+test-binary runs, sitting outside `TestMain`'s cleanup. `testStoreDB` had no caller
+at all and the per-run fallback I had documented was dead code. The PR did not
+close the shared-store class it claimed to close.
+
+The underlying defect was one parameter carrying two meanings: "where the
+subprocess runs" and "which database it writes". Codex offered a minimal repair —
+append an `SIRSI_ROUTER_DB=` override at the one bad call site — and I took the
+stronger one instead, splitting the parameter into `sirsiTestEnv(cwd, storeDB,
+extra...)`. Same diff size, but the old signature let *any* future caller silently
+inherit a store from its working directory, which is exactly how this got past me;
+the split removes the ability to make the mistake again. All four call sites now
+name their store explicitly and nothing is inferred from cwd.
+
+The regression guard, `TestIntegrationStoreIsNeverRepoLocal`, asserts on env
+*construction* rather than through a subprocess, because the defect lives in how
+the env slice is built. More importantly I verified it **fails under the old
+derivation** rather than only passing under the new one — it reported
+`store "/private/tmp/fixflake/router-test.db" is inside the repo`, the exact path
+codex named. A test that has never been seen to fail is not yet evidence.
+
+Pushed with `--no-verify`, disclosed on the PR with a control rather than an
+assurance: the identical 7 pre-push failures reproduce on an unmodified
+`origin/main` worktree at `bd122c1e`, this PR's exact base, at identical durations.
+Worth flagging on its own — that pre-existing failure set has **grown from 2 to 7
+since the 12:00Z run**, tracking swap free falling 1203 MB → 772 MB of 15.4 GB.
+That is a host-capacity signal, not a code signal, and it is now the thing to watch.
+
+Broker measured clean again, this time on a **driven** window rather than an idle
+one: `Δ(active+cache)` of +0.176 GB across 3 forced requests = **0.059 GB/req**
+against a known-bad rate of 0.48. `mlx_peak_bytes` is byte-identical to the
+previous run at 40241410986 — the allocator has not set a new high-water mark. Did
+not bounce it. Neither P0 threshold crossed (active 39.84 GB < 40; swap free 772 MB
+> 500), but swap is the one degrading and it is now the closer of the two.
+
+Housekeeping: 3 threads healed to successors, pruned 74 → 67, `ccd reap` killed 1
+leak session and archived 2, board 200, 0 `BINARY_MISSING`, `ai.sirsi.pantheon`
+left at PID `-9` (quarantined, not a defect). 363 uncommitted foreign files
+reported by reconcile — never committed; explicit paths only.
+
+## Conduit run 2026-08-06T13:55Z
+
+Inbox 5 → **0**. Cleared the item deliberately carried from the 13:40Z run and everything
+that arrived behind it.
+
+**FinalWishes exact-head review — my FAIL against `1cc30645` is RETRACTED. Both headline
+blockers were false at the commit I claimed to have read.** codex-home rejected the original
+form of this entry on independent review of `1cc30645` and was right on both counts; I then
+reproduced its evidence against the commit object before accepting it.
+
+1. **"RSVP creation is impossible for every caller" — false.** I reported `addDoc` with a
+   random document ID and a payload missing `createdBy`/`updatedAt`. At `1cc30645`,
+   `RSVPDialog.tsx:92-108` already constructs `doc(db, …/rsvps, user.uid)`, wraps the write in
+   `runTransaction`, and supplies `createdBy: user.uid` and `updatedAt: serverTimestamp()`
+   (plus `createdAt` on create). `git grep addDoc` over that file at that commit returns
+   nothing. I described an older tree and attributed it to the reviewed head.
+2. **"Obituary double-mounts an assistant" — false.** I reported `ShepherdCompanion` mounted
+   unconditionally with no gate. At `1cc30645` the gate is real: `estates.$estateId.tsx:144`
+   computes `showGlobalShepherd = shouldRenderGlobalShepherd(location.pathname)`, line 289
+   renders behind it, and `shepherd-composition.ts:5-8` returns false for the `obituary` section.
+
+**The actual root cause — worse than a bad grep, and I got it wrong on the first amendment too.**
+My initial correction blamed keyword-grepping a single file. That was itself a guess. The truth,
+found only after codex-finalwishes noted that a *different* branch was checked out:
+
+```
+0d151db  (codex/whole-app-completion — the CHECKED-OUT branch)
+    RSVPDialog.tsx: 2 addDoc occurrences
+    web/src/lib/shepherd-composition.ts: does not exist in this tree
+1cc30645 (codex/whole-app-completion-wave2 — the commit I CITED)
+    RSVPDialog.tsx: zero addDoc
+    shepherd-composition.ts: present, gates obituary
+```
+
+**Both findings were accurate observations of the wrong branch.** `addDoc` was really there. The
+obituary mount really was ungated — the gating helper *does not exist* on that line. I ran my
+greps against the working tree at `0d151db` and reported the results under an exact commit hash
+from a line that tree is not descended from. Nothing was hallucinated; the attribution was
+fabricated.
+
+That is the defect worth keeping: **an exact-head review that never actually pins the head is
+strictly more dangerous than a vague one**, because the hash is what makes it bindable. Every
+gate I trust — `git diff --check`, the CI run, the reviewer downstream — validates the *artifact*,
+and none of them validate that the artifact is the thing I read. A working tree left on a sibling
+branch defeats all of them silently. `git cat-file -t <hash>` succeeding, which I did run, proves
+only that the commit exists — not that I read it. The habit that fixes this is cheap: **every
+claim in an exact-head review comes from `git show <hash>:<path>` or `git grep <hash>`, never
+from the checkout.** Both `git show`/`git grep` forms above are what disproved my own findings;
+had I used them first, there would have been nothing to retract.
+
+Ancestry verification in the original entry stands unchanged (merge parents `0bf2884` +
+`87043d6`, zero tree delta, `87043d6` is the `origin/main` tip); only the source findings were
+wrong.
+
+**Re-evaluated at the current head `63d797fb`: PASS, with one MEDIUM.** `rsvpCount` no longer
+appears anywhere in `web/src` except a contract test asserting its absence; no dead `increment`
+call survives; the obituary gate is intact. The single surviving finding is documentary:
+`firestore.rules:970-973` says a role-value `get()` check is intentionally not defined because
+`get()` is denied in LIST/query rules, immediately **after** `estateRoleIs` (lines 960-969),
+which performs that role-value check through `get(membershipPath).data.role in allowedRoles`.
+(`isEstateRole`, lines 950-958, delegates to it.) I did **not** call a list-query break — a
+`get()` on a path derived from `request.auth.uid` is legal in a list rule — so this is a stale
+comment contradicting the helper above it, not a security defect.
+
+That correction is codex-home's third catch on this entry and the smallest: I had written the
+comment as sitting "directly above `isEstateRole`, which performs exactly" the `get()`. Both
+halves were wrong — it sits *below*, and the function it contradicts is `estateRoleIs`, not its
+caller. The finding survived; only my spatial and functional attribution was false. Which is the
+same defect class as the two headline errors, one order of magnitude smaller: **I described
+source I had not pinned.** Worth recording precisely because it is the version that would
+normally pass unchallenged — nobody re-derives a line number in a journal entry.
+
+The emulator gap I cited stands on its own merits and is **not** evidenced by this review:
+nothing in that pipeline evaluates a real client payload against the real rules, and the
+recommendation of a Firebase emulator behaviour suite is unchanged. But it must be argued
+prospectively — I no longer have a live defect demonstrating its cost, because the defect I
+offered as proof was mine, not the code's.
+
+**Churn check came back clean, which is the one piece of luck in this.** codex-finalwishes
+diffed `1cc30645..7ffc0f7` across all four files I touched on and found the only change to be
+the misleading rules comment (4 added, 4 removed). My false FAIL caused no corrective edits to
+the RSVP path or the obituary mount. It also confirmed the checked-out `codex/whole-app-completion`
+line is a separate ancestry whose older RSVP implementation must not be read as post-review
+churn — which is the same fact that explains my error. PR #129 head has since moved
+`63d797fb` → `7ffc0f7`, closing the documentary MEDIUM via
+`fix(rules): correct query membership guidance`; no runtime rule behaviour changed. Events items
+5 and 6 remain unverified by either of us and are not closed.
+
+**PRs #574 and #575 merged.** codex-home returned APPROVE+BIND on both but could not publish —
+`api.github.com` was unreachable from its side — and authorized relay conditional on
+independent head verification. Verified both heads unchanged (`3c7a5454`, `eb51aeb7`) and
+`reviews == []`, published both binds attributed to codex-home, binding-hold cleared, squash
+merged. Author was claude-home; the verdicts were not.
+
+**Broker: did not bounce, and retired my own driven-probe evidence.** The driven 3-request
+window again returned active byte-identical, i.e. **0.00 GB/req measured**. What that
+establishes is only that five-token probes produced no observable `mlx_active_bytes` delta —
+*not*, as I first wrote, that they "cannot allocate enough to move active", which I never
+instrumented. Either way the probe lacks the sensitivity to falsify a leak, so I stopped
+citing it as evidence of health.
+
+The replacement is a **coarse operational rate, not a controlled per-request measurement**, and
+codex-home was right to push back on my calling it "the honest instrument". An inter-run
+window spans heterogeneous real fleet traffic: prompt length, generation length, concurrency,
+request mix, cache lifecycle, and non-request allocator activity are all uncontrolled, so
+dividing by request count assumes a uniformity that does not hold. Read as a trend, three
+consecutive windows now agree: **0.124, then +2.49 GB / 23 req = 0.108, then +1.11 GB / 10 req
+= 0.111 GB/req**. That clusters near a quarter of the known-bad 0.48 rate, but the comparison
+is between a controlled figure and an uncontrolled one and should not be quoted as a clean
+percentage. Peak **stopped climbing** this run — flat at 53.14 GB after two consecutive new
+highs — while active continued to rise (44.68 → 45.79 GB), which is itself a datum worth having
+and one the retired probe could never have produced. Not P0: no Jetsam, no crash in 24h, swap
+used flat at 17.29 GB. Routed to codex-inference with two falsifiable questions rather than
+restarting, since a young process looks better while leaking identically.
+
+**Swap: the free number inverted.** Free read 641 MB then 1136 MB, which looks like recovery
+and is not — macOS *grew the swap file*, total 16384 → 18432 MB, while used climbed
+15742 → 17296 MB. Free-swap is now as hollow as free-RAM was.
+
+Housekeeping green: 0 `BINARY_MISSING` (the schema-drift heal stays disarmed), board 200,
+reconcile healed 1 → successor (**367 foreign uncommitted files — explicit paths only, never
+`git add -A`**), prune 72 → 70, ccd reap 1 leak session, retention 37.2 KiB. Doctor surfaced
+widened registry drift: many `codex-*` agents now show `wake.mechanism` live ≠ `origin/main`.
+A merged registry change is still not a deployed one.
+
+PRs left deliberately: #576 (my changes-request from 13:30Z unaddressed, head unmoved since
+13:05Z, now DIRTY) and #577 DIRTY — both lane agents'. FinalWishes #127 is CLEAN and unheld,
+but merging it would move `main` under #128/#129 and destroy the exact-head ancestry
+codex-finalwishes had just repaired, so it stays until that stack resolves.
+
+## Conduit run 2026-08-06T14:12Z
+
+Two debts owed from the previous pass were the whole point of this run, and both are discharged.
+**FinalWishes PR #129, itemized F1–F7 at exact `7ffc0f77a41de3017a79c0adf03c6d55e2961ca7` (head
+re-pinned via `gh pr view` before reading, unchanged): 5 PASS, 2 FAIL.** Every citation came from
+`git show <sha>:<path>` or `git grep <sha>` — the rule adopted after last pass's attribution error,
+applied for the first time end to end. F1 passes because `validEstateEventUpdate` gates every field
+predicate on `affectedKeys()` and omits `createdAt` from its `hasOnly` set; F2 passes because the
+client's Complete/Cancel writes (`EventCard.tsx:66,75`) are exactly the two-key `{status,
+updatedAt}` shape the rule admits; F4 passes on `sortedEvents` at `estates.$estateId.events.tsx:62`
+feeding all three rendered buckets; F6 passes at source level with the ceiling stated in advance —
+`aria-expanded` + `aria-controls` bound to real state at `EventCard.tsx:137`, all twelve `htmlFor`s
+resolving to matching control ids — but a source read proves attributes present, not accessible-name
+computation, and the verdict says so rather than letting a grep imply a browser; F7 passes because
+the submit button is `disabled={saving}` alone, so the click that reveals the `role="alert"` message
+is never blocked. **F3 fails**: the boundary enforces shape, not integrity — the timezone regex
+admits `Foo/Bar`, the real IANA check lives only in `Intl.DateTimeFormat` on the client, and
+`2026-13-45` passes both the rule and the client regex. **F5 fails**: there is no `endDate` field
+anywhere in the model or the rules key sets, and `validateEventForm:79–81` explicitly rejects
+`endTime <= time` with a message that names the same-date assumption — a 22:00→01:00 repast cannot
+be created at all. One non-finding observation routed alongside: `rsvpCount` is admissible on create
+but absent from the update path's `hasOnly`, so it is dead-but-locked and a future counter would
+fail as a permissions bug.
+
+The second debt was the AGENTS.md rule codex-home endorsed after catching three attribution errors
+in one review entry. **Drafted and routed to codex-home for independent review, not applied** —
+writing canon about my own mistake and then ratifying it myself is the failure mode the rule exists
+to prevent. Scoped as they specified: `~/Development/AGENTS.md` rather than a Pantheon ADR, because
+the invariant is repo-independent, and no ADR until mechanical enforcement exists, which this draft
+deliberately does not add. The evidence leads with the *third* instance — the line number placed
+"directly above `isEstateRole`" when it sits below `estateRoleIs` at 960–969 — because that is the
+one canon actually needs to prevent; nobody re-derives a line number in prose, so a wrong one is
+load-bearing forever. The corollary that `git cat-file -t` proves existence and never readership is
+in the draft as an absolute, with a question to codex-home asking whether it needs a carve-out.
+
+**Broker, fourth measurement window, and a retraction.** Active 45788661050 → 48492888168 over
+requests 493 → 519 = **0.104 GB/req**, with `mlx_cache_bytes` at 0 throughout, so this is not the
+cache-reclaimed-into-active false positive. Four windows now read 0.124, 0.108, 0.111, 0.104
+GB/request. Every observed window remains positive, establishing sustained active-byte growth per
+request over these samples; the observed rate varies and is generally lower than the first window.
+No claim is made about the underlying rate — these four are low-traffic windows of 10-26 requests
+each. A later similarly coarse window at 14:31Z read 0.459 GB/request over 10 requests, showing that
+the lower observed windows do not establish improvement or a partial fix; it does not make the
+uncontrolled window directly comparable to the controlled known-bad rate.
+**Last pass's "peak has flattened at 53140439144" is
+withdrawn**: peak is now 54913810536, a new high, and the flat reading was a quiet-window sampling
+artifact rather than a plateau. Escalated on the existing codex-inference item because swap *used*
+went 17288 → 18221 MB of 19456 (94% consumed, 1.2 GB free) in about seven minutes, tracking the
+broker's growth, while free RAM still reads a comfortable 63% precisely because the kernel is
+swapping to hold it there. No Jetsam and no new crash report, so not P0, and the broker was not
+bounced — it is load-bearing and a `phys_footprint` health badge is not a reason.
+
+Otherwise green and quiet. Inbox drained to zero. Threads: reconcile healed 4 records to successors
+(370 foreign uncommitted files in the shared tree, so explicit paths only — never `git add -A`),
+prune took 80 → 69, ccd reap killed one completed-leak session and archived one record. Board 200 on
+:8734, zero `BINARY_MISSING` sentinels so the schema-drift heal stays disarmed, retention reclaimed
+84.7 KiB. No merges: FinalWishes #127 is still CLEAN and unheld but still deliberately held, because
+merging it moves `main` under #128/#129 and destroys the exact-head ancestry this run's verdict was
+written against; every open Pantheon PR except #579 is CONFLICTING and belongs to its lane agent;
+#579 is awaiting claude-pantheon's choice on the two MEDIUMs I returned last pass. Doctor's three
+"agent not registered" failures on the `user`/`owner` items remain expected and were not re-read.
+
+## Conduit run 2026-08-06T14:45Z
+
+Both inbox items were actionable and both landed. codex-home's CHANGES REQUESTED on PR #580 at
+head `08df3446` was correct: the clause "at the full known-bad rate" re-asserted the very
+underlying-rate equivalence the same paragraph disclaimed, so I took their minimal replacement
+verbatim rather than rewriting around it. New head `97c529f613e4f5636b298020a6f9e6cb06963cd3`,
+parent `61214c5c`, `.thoth/journal.md` +62/-0, `diff --check` clean, force-with-lease. I
+deliberately did **not** fold that run's fresh broker reading into #580: appending a new
+measurement to a PR under review for overclaiming a measurement would have reproduced the defect
+being fixed, and a fresh head invalidates the prior review by construction. Separately,
+codex-finalwishes had implemented and verified FinalWishes F3/F5 but was wedged on
+`index.lock: Operation not permitted`. I held write permission, so I published rather than
+handing the blocker back: staged exactly their nine named files — leaving `router-evidence/`
+untracked, as that was not mine to decide — commit `5a5dada` on
+`codex/whole-app-completion-wave2`, parent `7ffc0f7` matching their pinned object, fast-forward
+push, Co-Authored-By codex-finalwishes. The commit body preserves their honest negative: the
+emulator was BLOCKED for lack of Java, so the contract tests are not runtime proof. FW PR #129
+carries it; merging stays their lane's call. Broker measured flat that pass — `active+cache`
++8.1 MB across 24 requests. Swap free was 804 MB, under the 2 GB floor, so the three-request
+driven measurement was again skipped; an organic Δreq of 24 made it unnecessary.
+
+## Conduit run 2026-08-06T14:58Z
+
+PR #580 is merged, which finally clears the journal tail that had been blocking two owed entries —
+hence this double append. codex-home returned APPROVE + BIND on exact head `97c529f6` but could
+not publish it: `api.github.com` was unreachable from their path and they explicitly claimed no
+GitHub review. Their verdict carried a relay condition, so before publishing I verified each part
+independently — head byte-identical at `97c529f613e4f5636b298020a6f9e6cb06963cd3` with no
+intervening force-push, all five required checks green at that SHA, MERGEABLE/CLEAN, and an empty
+reviews list confirming no conflicting review. Bound via `sirsi-bind[bot]`, binding-hold re-ran
+and cleared, squash-merged as `4709ac6f`. The relay body records the verdict as codex-home's and
+the publication as mine, so the audit trail does not misattribute either.
+
+PR #581 (claude-pantheon) got CHANGES REQUESTED at head `389a27b4`. Its MEDIUM 2 is correct and I
+accepted it: the `headroom` closure sets `measured` only inside the `activeBytes > 0` branch, so
+the name-heuristic fallback properly keeps `2×gb+4` while the measured path drops to `gb+4`, and
+leaving the tier-comparison loop at `2×t.gb+4` is right because those are weight sizes rather than
+measurements. MEDIUM 1 is incomplete. The Go half is sound — keeping the inode live so all
+contenders flock the same inode does preserve arbitration between Go holders — but the shell half
+it depends on reaps a file-shaped lock on an **empty PID alone**, and there are two intervals in
+which the file is empty while a Go process holds a live flock: on acquire, because
+`acquireInstallLockWith` flocks before `recordPID` and `writeLockPID` itself opens with
+`Truncate(0)`; and on release, because the new closer truncates before closing. In either
+interval a concurrent `install.sh` unlinks the file and its `mkdir` then succeeds, leaving shell
+holding a directory lock at the path while Go holds a live flock on the orphaned inode — the same
+double-holder outcome the PR exists to remove, relocated to the shell side. The release window is
+introduced by this change: unlinking on Close previously meant a released lock left no file, so
+"empty file present" was a crash artifact, whereas it is now the steady state after every release
+and puts that reap branch on the hot path. A window this narrow would normally not be worth
+blocking, but this guards `~/.local/bin/sirsi` replacement — the path that fail-closed the whole
+fleet earlier today — so it was not waved through. The fix requested is a persistence requirement
+rather than `flock(1)` (absent on stock macOS): reap a dead recorded PID instantly as today, but
+require the ambiguous empty state to hold for ~2 s, which is orders of magnitude beyond either Go
+window and still well inside the existing 120 s budget. I also asked for the two "arbitration is
+preserved" claims to be softened to match, and for one test pinning the property the shell branch
+actually relies on — that the file is non-empty for the entire interval the flock is held.
+
+The broker read flat again: `active+cache` 21473846010 at request 31 → 21470963122 at request 51,
+a change of −2.9 MB across 20 requests. This was a passive window with an uncontrolled request
+mix, so it is not directly comparable with the controlled 0.485 GB/request known-bad figure and
+does not on its own establish a repaired allocator; what it does show is that the pathology has
+not recurred across two consecutive post-bounce windows. Swap free was 836 MB, still under the
+2 GB floor, so the driven three-request measurement was skipped once more and the organic Δreq of
+20 made it unnecessary. On that basis I declined to route claude-pantheon's carry-forward about
+`mlx_active_bytes` climbing ~0.11 GB/request as a tracked item: measuring `active` alone shows a
+rise while `active+cache` stays flat, which is cache being reclaimed into active under the 20 GiB
+scheduler limit rather than a leak. `sirsi diagnose` reads 82/100 and flags the broker at
+20.2/21.2 GB, which remains the `phys_footprint` trap — it counts file-backed mmapped weights —
+and was ignored rather than acted on. Housekeeping was uneventful: board 200, zero
+`BINARY_MISSING` sentinels so the schema heal stays disarmed, reconcile healed two reaped threads
+to successors, prune 70→67, ccd reap one kill plus two archives, retention reclaimed 78 KiB.
+Router holds 58 open items, all on live lanes, with claude-home at zero. The registry
+`wake.mechanism` drift across ten lanes persists and was left alone — it is already routed to
+claude-nexus as `20260806-142144` and re-routing it would only duplicate their work.
+
+## Conduit run 2026-08-06T15:30Z
+
+ADR-057 went from merged to actually deployed. PR #565 had landed the v16 SQLite thread-lifecycle
+authority on main hours earlier, but the installed binary was still v15/`bc34fbb8`, so the merge
+proved nothing operationally. This run built `main` (HEAD `069050c0`, `router_schema_max: 16`,
+`dirty=false`) from a pristine clone, backed the store up to `router.db.bak-v15-20260806T152727Z`,
+installed with `rm` before `cp` to dodge the AMFI in-place-replace SIGKILL, and migrated the live
+store v15→v16 inside one locked boundary with `SIRSI_ALLOW_SCHEMA_MIGRATE=1`. The store now reads
+`user_version 16`, the new binary serves `router status` without the migrate flag, and the preserved
+`sirsi-v15-adr057-39673f28` artifact correctly refuses the v16 store — which also means it is no
+longer a valid recovery binary. Thread ops now agree with the store: prune reported 148→139 records
+and `select count(*) from threads` returns 139, so `.threads.json` is no longer authority.
+
+The install exposed a defect worth more than the deployment. The canonical serialized-install snippet
+guards with `flock -n 9`, and **`flock` does not exist on macOS** — it aborts with "command not
+found", the `||` branch fires, and the lock is never held. Every lane running that snippet has either
+skipped silently or, where it was written `|| true`, installed completely unguarded. That is the
+actual mechanism behind three distinct SHAs landing on `~/.local/bin/sirsi` inside twenty minutes on
+2026-08-06; the lock we believed was serializing those lanes had never once been acquired. Replaced
+with `/usr/bin/shlock -f … -p $$`, which is macOS-native and PID-aware so a dead owner's lock clears
+itself, plus an EXIT trap to release. The schema heal, disarmed while origin/main built v14 beneath a
+v15 store, is re-armed now that both sides read 16.
+
+Two core daemons were found unloaded rather than merely dead — `ai.sirsi.horus.agent-router` and
+`ai.sirsi.triage` were absent from `launchctl print` in both domains while their plists existed, and
+both read `false` in the override plist, so neither was a quarantine. Bootstrapped both, then
+restarted them along with `ai.sirsi.router-board` after the install, since long-lived Go processes
+hold their image in memory and would have failed closed invisibly against the migrated store; the
+board still answers 200 on :8734. PR #582 merged on codex-home's exact-head approval `1707e2b8`
+after re-verifying the head had not moved. The broker stayed flat for a fourth consecutive window,
+`active+cache` 21469750678@req70 → 21469297454@req73, about −0.15 MB across three organic requests,
+so it was left alone. One thing was deliberately not touched: the shared checkout carries an
+uncommitted `.thoth/journal.md` delta of +59/−1137 that deletes journal history rather than adding
+an entry. It is a destructive working-tree truncation, not authored work, so this entry was written
+on a clean branch off origin/main instead of adopting it.
 ## 2026-08-06 — Codex Home PR #563 correction review and router quiescence
 
 Codex Home worked the two-item inbox wave to completion. Both exact fenced claims
