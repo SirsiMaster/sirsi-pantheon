@@ -344,8 +344,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.MaxLines != 0 {
 		t.Errorf("DefaultConfig MaxLines = %d, want 0", cfg.MaxLines)
 	}
-	if cfg.MaxBytes != 0 {
-		t.Errorf("DefaultConfig MaxBytes = %d, want 0", cfg.MaxBytes)
+	if cfg.MaxBytes != DefaultMaxBytes {
+		t.Errorf("DefaultConfig MaxBytes = %d, want %d (DefaultMaxBytes)", cfg.MaxBytes, DefaultMaxBytes)
 	}
 	if cfg.TailLines != 20 {
 		t.Errorf("DefaultConfig TailLines = %d, want 20", cfg.TailLines)
