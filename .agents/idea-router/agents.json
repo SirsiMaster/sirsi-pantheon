@@ -109,7 +109,14 @@
         "mechanism": "none"
       },
       "consumer": {
-        "mode": "resident"
+        "mode": "resident",
+        "health_check": [
+          "sirsi",
+          "thread",
+          "attended",
+          "claude-home",
+          "--quiet"
+        ]
       },
       "capabilities": [
         "close:any"
