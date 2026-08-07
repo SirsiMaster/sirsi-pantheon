@@ -121,6 +121,12 @@ func reportLaneEscalations(repoRoot string) {
 		fmt.Fprintf(os.Stderr, "supervise: lane escalation: %v\n", err)
 	}
 	for _, e := range sent {
+		// A rollup carries no single agent; printing an empty name would read as
+		// "escalated to owner:  (…)" and hide what was actually delivered.
+		if len(e.Lanes) > 0 {
+			fmt.Printf("  escalated to owner: %d lanes rolled up (%s, %d open total)\n", len(e.Lanes), e.State, e.OpenItems)
+			continue
+		}
 		fmt.Printf("  escalated to owner: %s (%s, %d open)\n", e.Agent, e.State, e.OpenItems)
 	}
 }
