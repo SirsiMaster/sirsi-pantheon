@@ -2956,3 +2956,41 @@ under the one-hour age gate — next run's work, not this one's.
 ## Conduit run 2026-08-07T02:05Z
 
 Inbox 0 for claude-home; health 🟢 100/100, swap 756/2048 MB (flat an 11th run), free 83%, board :8734 → 200, no new crash/Jetsam, 0 BINARY_MISSING. **PR #624 source-deep reviewed, bound and MERGED** — the R7/G6 load-collapse fix: GOMAXPROCS=4 on spawned consumers only (operator cfg.Env override respected), a load-average dispatch gate that fails OPEN on an unreadable sysctl and records a heal so the hold is owner-visible, and a fabric-wide durable quarantine marker checked by both revival paths that defeated `bootout`/`disable` on 2026-08-06 (wake.go consumer dispatch + launchdkickstart.go dead-label revival). **PR #625 CHANGES REQUESTED and routed to claude-pantheon** (`20260807-020413`): `applyBrokerTruth` is scoped to `LoadBearingPIDs()`, which is a kill-protection allowlist — not a broker-identity set. `loadbearing.go:28` carries both `gemma-server.pid` and `gemma-worker.pid`, so a live worker gets the broker's `mlx_active_bytes` written over its footprint and renders as a 25-31 GB hog in vitals/menubar/dashboard/TUI, with guard/doctor judging it on another process's number — the same mis-attribution class the PR fixes, inverted. GitHub refuses a formal CHANGES_REQUESTED on a shared-author PR, so the verdict went as a PR comment plus a routed item; the finding is on claude-pantheon's existing `livenesswatch-rss-floor-misreads-mmapped-broker` row. #626 (pre-push DIRTY-tree naming) still awaiting codex-home — never self-bound. Threads 167→164, `ccd reap` archived 2 completed conduit sessions, retention 805 B. Doctor ✗ list unchanged a 11th run (owner-surface + `mechanism: none` lanes).
+
+## Conduit run 2026-08-07T02:40Z
+
+Inbox 0. Merged **PR #626** (pre-push gate names the DIRTY-tree cause before its test
+failures) on codex-home's independent PASS at `ff77dd9d`, and **PR #627** (rename
+`NewestNonTerminalByAgent` → `NewestActiveByAgent`) after a source-deep review confirming the
+rename is complete — zero old-name hits in any `.go` file, function body byte-identical, R6
+suspended-exclusion invariant still pinned by its test. Both bound via `sirsi-bind[bot]`; #626's
+bind explicitly attributes codex-home as reviewer so the record is not a self-bind. Responded to
+claude-pantheon with one non-blocking nit: the unreleased changelog fragment
+`20260807-scope-watcheralivebyagent-to-newest-thread.md` still names the dead symbol and will ship
+that way.
+
+**The real finding this pass is fleet-wide and was invisible to every existing surface.** Chasing
+seven `claude-finalwishes` wake failures in `router doctor` led to the wake logs: **3,843 of 4,082
+consumer dispatches (94%) exit 1 across eight lanes**, and `claude-finalwishes` has spawned a fresh
+`claude --print` every ~60s since 2026-08-06T03:05Z with its inbox depth pinned at 27 the entire
+time — roughly a thousand agent sessions, zero items closed, 1.4 MB of log whose only content is
+`exit status 1`. Root cause is `internal/router/wake.go:633-639`: `dispatchConsumer` never sets
+`cmd.Stdout`/`cmd.Stderr`, so exec.Cmd sends both to /dev/null and every consumer's actual error is
+destroyed at the source. That defeats the stated intent of the code directly above it ("so a
+consumer that is failing fast leaves a trail rather than looking like progress") — the trail exists
+and carries no information, so 1,021 consecutive failures are forensically identical to one. Two
+hypotheses were tested and refuted rather than assumed: `--permission-mode auto` is a valid
+documented choice and returns exit 0 when run directly, and the dispatch is correctly edge-triggered
+on `!run.running()` rather than the 60s clock, so consumers are not being killed by the loop. The
+cause is inside the consumer session and is unknowable by construction until stderr is captured.
+Textbook green-surface-over-a-dead-thing: live PIDs in `launchctl list`, a "dispatched consumer"
+line every minute, `sirsi diagnose` green — and no lane has consumed an item in ~23h. Registered as
+ledger task `consumer-stderr-blackhole` with the full diagnosis and the bounded-ring-buffer fix
+(never wire the transcript straight to the log). Notably, the ledger REFUSED to create it
+`in-progress` — "new executable tasks must start pending or blocked; use task claim and task
+complete for fenced execution" — which is ADR-057's lease fencing working as designed.
+
+Health green: swap 756/2048 MB flat a twelfth run, free 83%, board :8734 → 200, 0 `BINARY_MISSING`,
+no new sirsi/gemma crash or Jetsam. Threads 169→166. `ccd reap` killed 3 leaked conduit sessions (6
+procs). Retention 2.4 KiB. Broker still structurally absent (no plist, empty probe on 8477) —
+correct, not a heal.
