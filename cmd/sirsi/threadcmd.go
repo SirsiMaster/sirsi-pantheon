@@ -868,7 +868,7 @@ var threadListCmd = &cobra.Command{
 		// non-terminal thread of each agent (the re-registration successor). Crediting
 		// it for every thread lets one live PID vouch for 71 stale records — the
 		// unscoped false-not-stale class the reviewer blocked PR #614 on (2026-08-06).
-		newestByAgent := router.NewestNonTerminalByAgent(reg.SortedThreads())
+		newestByAgent := router.NewestActiveByAgent(reg.SortedThreads())
 		var rows []row
 		for _, t := range reg.SortedThreads() {
 			if t.Status.IsTerminal() && !threadListAll {
