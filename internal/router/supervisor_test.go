@@ -90,7 +90,7 @@ func TestSuperviseOnceSurfacesReconcileCounters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.Store().AddRequirement("counters reach a surface", "ADR-057", "R6", "claude-pantheon"); err != nil {
+	if _, err = f.Store().AddRequirement("counters reach a surface", "ADR-057", "R6", "claude-pantheon"); err != nil {
 		t.Fatal(err)
 	}
 	_ = f.Close()
