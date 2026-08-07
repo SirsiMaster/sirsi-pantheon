@@ -66,3 +66,35 @@ func TestThreeWayDivergenceNamesAllThree(t *testing.T) {
 		}
 	}
 }
+
+// The 8-of-10 case. When a lane closes its copy with an explicit ledger-scoped
+// marker, the divergence is EXPLAINED and must not be reported. Without this,
+// the SNE set handed from claude-nexus to codex-inference on 2026-08-05 would
+// bury the genuine splits under 8 correct handoffs.
+func TestDeclaredLedgerHandoffIsNotReported(t *testing.T) {
+	got := findCrossAgentDivergence([]routerstore.Task{
+		{Agent: "claude-nexus", TaskID: "sne-05", Status: "done",
+			Subject: "CLOSED ON THIS LEDGER — not abandoned. Owner moved SNE engine ownership to codex-inference 2026-08-05"},
+		{Agent: "codex-inference", TaskID: "sne-05", Status: "pending", Subject: "SNE-05 admission control"},
+	})
+	if len(got) != 0 {
+		t.Fatalf("declared handoff reported as a defect: %+v", got)
+	}
+}
+
+// The marker only counts when the lane LEADS with it. A subject that merely
+// mentions the phrase deep in prose is not making a scope declaration, and
+// treating it as one would let any row suppress its own finding.
+func TestHandoffMarkerBuriedInProseDoesNotSuppress(t *testing.T) {
+	buried := "Blocked on the migration; see the note about how we handled it when ownership transferred last week"
+	if declaresLedgerHandoff(buried) {
+		t.Fatalf("a buried mention suppressed the finding: %q", buried)
+	}
+	got := findCrossAgentDivergence([]routerstore.Task{
+		{Agent: "a", TaskID: "x", Status: "done", Subject: buried},
+		{Agent: "b", TaskID: "x", Status: "pending", Subject: "still working it"},
+	})
+	if len(got) != 1 {
+		t.Fatalf("got %d findings, want 1 — a buried mention must not suppress", len(got))
+	}
+}
