@@ -66,6 +66,19 @@ func boundedLeaseTTL(ttl time.Duration) (time.Duration, error) {
 var (
 	// ErrNoWork means the agent's inbox has no claimable open item.
 	ErrNoWork = errors.New("routerstore: no open item to claim")
+	// ErrNoClaimableTask is the TASK-ledger counterpart of ErrNoWork.
+	//
+	// It exists because the two sources are independent: an agent can have an
+	// empty inbox and a full task ledger at the same time. Returning ErrNoWork
+	// ("no open ITEM to claim") from the task path told such an agent it had no
+	// work, which is false about the source it just queried.
+	//
+	// Measured cost, 2026-08-07: codex-finalwishes held two pending, unblocked,
+	// unleased, zero-attempt task rows — provably claimable, verified by running
+	// the claim by hand — read this message as "the store will not let me claim",
+	// and escalated to the owner for "router-store repair" that was never needed.
+	// The message names the ledger and the verb so the next agent does not.
+	ErrNoClaimableTask = errors.New("routerstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which — note this is the TASK ledger, separate from the inbox)")
 	// ErrLeaseInvalid means the token is missing, expired, or mismatched —
 	// including an expired worker trying to complete newer-leased work.
 	ErrLeaseInvalid = errors.New("routerstore: lease token invalid, expired, or superseded")

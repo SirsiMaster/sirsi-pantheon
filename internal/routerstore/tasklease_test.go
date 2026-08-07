@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,7 +21,7 @@ func TestTaskLeaseClaimRenewComplete(t *testing.T) {
 	if lease.Attempt != 1 || lease.ThreadID != "thread-1" || lease.Token == "" {
 		t.Fatalf("bad lease: %+v", lease)
 	}
-	if _, ifErr2 := s.ClaimNextTask("codex-home", "worker-2", "thread-2", time.Minute); !errors.Is(ifErr2, ErrNoWork) {
+	if _, ifErr2 := s.ClaimNextTask("codex-home", "worker-2", "thread-2", time.Minute); !errors.Is(ifErr2, ErrNoClaimableTask) {
 		t.Fatalf("double claim must fail, got %v", ifErr2)
 	}
 	now = now.Add(30 * time.Second)
@@ -110,7 +111,7 @@ func TestTaskLeaseCrashExpiryStopsAtRetryCeiling(t *testing.T) {
 		}
 		now = now.Add(2 * time.Minute)
 	}
-	if _, ifErr15 := s.ClaimNextTask("codex-home", "worker", "thread", time.Minute); !errors.Is(ifErr15, ErrNoWork) {
+	if _, ifErr15 := s.ClaimNextTask("codex-home", "worker", "thread", time.Minute); !errors.Is(ifErr15, ErrNoClaimableTask) {
 		t.Fatalf("crash loop remained claimable after retry ceiling: %v", ifErr15)
 	}
 	var status, reason string
@@ -119,5 +120,41 @@ func TestTaskLeaseCrashExpiryStopsAtRetryCeiling(t *testing.T) {
 	}
 	if status != "blocked" || reason == "" {
 		t.Fatalf("expired crash loop was not escalated: status=%q reason=%q", status, reason)
+	}
+}
+
+// The two work sources are independent, and the errors must say which one is
+// empty. 2026-08-07: codex-finalwishes had an EMPTY inbox and TWO claimable
+// task rows, read "no open item to claim" off the task path, concluded the
+// store was broken, and escalated to the owner for a repair that was never
+// needed. An error that names the wrong source is a false negative about work.
+func TestTaskClaimErrorNamesTheLedgerNotTheInbox(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "R1", Subject: "runtime"}); err != nil {
+		t.Fatal(err)
+	}
+	// Drain the ledger so the next claim has nothing left.
+	lease, err := s.ClaimNextTask("codex-home", "w", "th", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doneErr := s.CompleteTaskLease(lease.Agent, lease.TaskID, lease.Token, "proof://R1"); doneErr != nil {
+		t.Fatal(doneErr)
+	}
+
+	_, err = s.ClaimNextTask("codex-home", "w", "th", time.Minute)
+	if errors.Is(err, ErrNoWork) {
+		t.Fatalf("task claim returned the INBOX error: %v", err)
+	}
+	if !errors.Is(err, ErrNoClaimableTask) {
+		t.Fatalf("task claim error = %v, want ErrNoClaimableTask", err)
+	}
+	// The message must send the operator to the ledger, not leave them guessing
+	// at the store — guessing is what produced the false escalation.
+	if !strings.Contains(err.Error(), "task list") {
+		t.Errorf("error gives no next step: %v", err)
+	}
+	if strings.Contains(err.Error(), "no open item to claim") {
+		t.Errorf("error still uses the inbox noun: %v", err)
 	}
 }

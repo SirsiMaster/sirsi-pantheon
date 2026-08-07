@@ -31,7 +31,7 @@ func poisonTask(t *testing.T, s *Store, agent, taskID, status, token, expires st
 // TestClaimRepairsLeasePoisonedNonActiveTask is the production incident:
 // pantheon-serialized-binary-installer held lease 038b5d77… expiring
 // 2026-08-06T07:40:25Z, was reconciled blocked -> pending with ownership
-// retained, and became permanently unclaimable — claim-id returned ErrNoWork
+// retained, and became permanently unclaimable — claim-id returned ErrNoClaimableTask
 // while renew/release rejected the stale token, and doctor --fix did not repair
 // it. The row was excluded from lease reclaim (WHERE status='in-progress') and
 // from claimableTaskPredicate (empty lease_token) at the same time.

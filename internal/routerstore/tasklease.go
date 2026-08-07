@@ -109,7 +109,7 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 		if commitErr := tx.Commit(); commitErr != nil {
 			return nil, fmt.Errorf("routerstore: commit task expiry reconciliation: %w", commitErr)
 		}
-		return nil, ErrNoWork
+		return nil, ErrNoClaimableTask
 	}
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: select task claim: %w", err)
@@ -122,7 +122,7 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 		return nil, fmt.Errorf("routerstore: claim task: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
-		return nil, ErrNoWork
+		return nil, ErrNoClaimableTask
 	}
 	var attempt int
 	if err = tx.QueryRow(`SELECT attempts FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).Scan(&attempt); err != nil {
