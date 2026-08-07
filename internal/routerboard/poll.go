@@ -391,7 +391,7 @@ func taskDetails(fleet []Lane) []TaskDetail {
 			}
 			out = append(out, TaskDetail{
 				TaskID: t.str("task_id"), Agent: f.Agent, Subject: t.str("subject"),
-				Status: status, BlockedBy: bp, ResponsibleParty: t["responsible_party"],
+				Status: status, Phase: t.str("phase"), BlockedBy: bp, ResponsibleParty: t["responsible_party"],
 				Updated: t.str("updated"), Age: ageStr(t.str("updated")), Liveness: liveness,
 				Charter: t["charter"], CommissionedAt: t["commissioned_at"],
 				CommissionedBy: t["commissioned_by"], Outline: t["outline"],

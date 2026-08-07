@@ -219,6 +219,7 @@ type TaskDetail struct {
 	Agent            string        `json:"agent"`
 	Subject          string        `json:"subject"`
 	Status           string        `json:"status"`
+	Phase            string        `json:"phase"`
 	BlockedBy        *string       `json:"blocked_by"`
 	ResponsibleParty interface{}   `json:"responsible_party"`
 	Updated          string        `json:"updated"`
