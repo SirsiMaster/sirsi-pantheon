@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,7 @@ func TestDirtyBuildIsRefused(t *testing.T) {
 	defer restore()
 	t.Setenv("SIRSI_ALLOW_DIRTY_MIGRATION", "")
 
-	err := checkMigrationAllowed(7, 8)
+	err := checkMigrationAllowed(7, 8, sharedPathForTest(t))
 	if err == nil {
 		t.Fatal("checkMigrationAllowed() = nil for a dirty build; the migration that broke the fleet would be allowed again")
 	}
@@ -30,7 +31,7 @@ func TestCleanBuildIsAllowed(t *testing.T) {
 	restore := stubBuild(buildStamp{Revision: "abc123def456789", Dirty: false, Known: true})
 	defer restore()
 
-	if err := checkMigrationAllowed(7, 8); err != nil {
+	if err := checkMigrationAllowed(7, 8, sharedPathForTest(t)); err != nil {
 		t.Errorf("checkMigrationAllowed() = %v for a clean build, want nil", err)
 	}
 }
@@ -42,7 +43,7 @@ func TestUnstampedBuildIsAllowed(t *testing.T) {
 	restore := stubBuild(buildStamp{Known: false})
 	defer restore()
 
-	if err := checkMigrationAllowed(7, 8); err != nil {
+	if err := checkMigrationAllowed(7, 8, sharedPathForTest(t)); err != nil {
 		t.Errorf("checkMigrationAllowed() = %v for an unstamped build, want nil — this is every test binary", err)
 	}
 }
@@ -54,7 +55,7 @@ func TestOverrideAllowsDirtyMigration(t *testing.T) {
 	defer restore()
 	t.Setenv("SIRSI_ALLOW_DIRTY_MIGRATION", "1")
 
-	if err := checkMigrationAllowed(7, 8); err != nil {
+	if err := checkMigrationAllowed(7, 8, sharedPathForTest(t)); err != nil {
 		t.Errorf("explicit override should permit the migration, got %v", err)
 	}
 }
@@ -95,3 +96,48 @@ func stubBuild(b buildStamp) func() {
 }
 
 var _ = os.Getenv
+
+func sharedPathForTest(t *testing.T) string {
+	t.Helper()
+	p, err := DefaultStorePath()
+	if err != nil {
+		t.Skipf("cannot resolve the canonical store path here: %v", err)
+	}
+	return p
+}
+
+// THE fix. A dirty build migrating a PRIVATE store strands nobody, because no
+// peer binary will ever open it. Refusing here made every test that opens a
+// fresh store fail whenever the tree was dirty, which is nearly always.
+func TestDirtyBuildMayMigrateAPrivateStore(t *testing.T) {
+	restore := stubBuild(buildStamp{Revision: "abc123def456789", Dirty: true, Known: true})
+	defer restore()
+	t.Setenv("SIRSI_ALLOW_DIRTY_MIGRATION", "")
+
+	if err := checkMigrationAllowed(0, 1, filepath.Join(t.TempDir(), "router.db")); err != nil {
+		t.Errorf("refused a private test store: %v", err)
+	}
+}
+
+// Unknown is not evidence of safety, and the write being gated is one-way.
+func TestEmptyStorePathIsTreatedAsShared(t *testing.T) {
+	restore := stubBuild(buildStamp{Revision: "abc123def456789", Dirty: true, Known: true})
+	defer restore()
+	t.Setenv("SIRSI_ALLOW_DIRTY_MIGRATION", "")
+
+	if err := checkMigrationAllowed(7, 8, ""); err == nil {
+		t.Error("an unknown store path was allowed — unknown must fail toward refusing for a one-way write")
+	}
+}
+
+// The gate must not be walkable with a different spelling of the same path.
+func TestUnnormalisedCanonicalPathIsStillRefused(t *testing.T) {
+	restore := stubBuild(buildStamp{Revision: "abc123def456789", Dirty: true, Known: true})
+	defer restore()
+	t.Setenv("SIRSI_ALLOW_DIRTY_MIGRATION", "")
+
+	p := sharedPathForTest(t)
+	if err := checkMigrationAllowed(7, 8, filepath.Join(filepath.Dir(p), ".", filepath.Base(p))); err == nil {
+		t.Error("an unnormalised spelling of the canonical store was allowed — the gate is walkable")
+	}
+}
