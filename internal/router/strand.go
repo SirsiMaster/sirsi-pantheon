@@ -19,15 +19,8 @@ import (
 	"time"
 )
 
-// threadArmed computes whether ONE thread is armed. Delegates to
-// threadArmedForNewest with isNewest=false (no agent-keyed probe) so
-// single-thread callers without registry context stay correct.
-func threadArmed(thr *Thread, now time.Time) bool {
-	return threadArmedForNewest(thr, now, false)
-}
-
-// threadArmedForNewest is threadArmed extended with an agent-keyed watcher probe
-// that is credited ONLY when isNewest=true (A35: scope the check to its claim).
+// threadArmedForNewest is the single liveness predicate for one thread.
+// The agent-keyed watcher probe is credited ONLY when isNewest=true (A35: scope the check to its claim).
 //
 // After a thread re-registers, the watcher script retains the OLD thread id in
 // argv — WatcherAlive(newID) misses it. WatcherAliveByAgent finds the live

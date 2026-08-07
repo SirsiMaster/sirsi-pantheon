@@ -224,15 +224,19 @@ func EffectiveStaleForNewest(t *Thread, now time.Time, window time.Duration, isN
 }
 
 // NewestNonTerminalByAgent returns a map from agentID → threadID for the newest
-// (by StartedAt) non-terminal thread of each agent. Use this at call sites that
-// iterate the full registry to compute the isNewestOfAgent argument for
-// EffectiveStaleForNewest: only the newest thread is a plausible beneficiary of
-// the agent-keyed watcher probe (A35 — scope the check to the claim).
+// (by StartedAt) non-terminal, non-suspended thread of each agent. Use this at
+// call sites that iterate the full registry to compute the isNewestOfAgent
+// argument for EffectiveStaleForNewest: only the newest active thread is a
+// plausible beneficiary of the agent-keyed watcher probe (A35 — scope the
+// check to the claim). SUSPENDED is excluded to match AgentArmed's eval loop,
+// which skips suspended records — a suspended "newest" would yield a map entry
+// that AgentArmed never evaluates, leaving the next-newest active thread
+// without its agent-keyed rescue credit.
 func NewestNonTerminalByAgent(threads []*Thread) map[string]string {
 	newest := make(map[string]string)
 	newestAt := make(map[string]time.Time)
 	for _, t := range threads {
-		if t == nil || t.Status.IsTerminal() {
+		if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
 			continue
 		}
 		if prev, exists := newestAt[t.AgentID]; !exists || t.StartedAt.After(prev) {
