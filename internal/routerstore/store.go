@@ -710,7 +710,7 @@ func (s *Store) migrate() error {
 		// The gate: refuse a one-way write to shared state from source nobody
 		// else can rebuild. Checked under the write lock so the version pair
 		// reported is the one actually about to be applied.
-		if gateErr := checkMigrationAllowed(version, next.version); gateErr != nil {
+		if gateErr := checkMigrationAllowed(version, next.version, s.path); gateErr != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return gateErr
 		}
