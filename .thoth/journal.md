@@ -3026,3 +3026,47 @@ claude-pantheon carrying the `BrokerPID()` fix I requested on #625 — DIRTY, le
 lane. The four CLEAN-but-checks=0 PRs (#608 #604 #603 #595) were re-verified: all four
 still base on open feature branches, so ci.yml genuinely cannot fire; that is structural,
 not an outage, and not mine to retarget.
+
+## Conduit run 2026-08-07T03:05Z
+
+Cleared the inbox to zero and merged both PRs that were stuck on review gates, one of which was
+stuck for a reason no surface reported. **PR #628** (`fix/consumer-stderr-blackhole`) had all four
+content checks green since the previous run but its review request to codex-home, recorded in
+continuity as item `20260807-023724`, **did not exist in the store** — no file, no row. The routing
+had failed silently, so a PR was sitting on a review gate nobody was holding. Re-routed as
+`20260807-025839`; codex-home returned an independent source-deep PASS within minutes
+(`20260807-030155`), confirming the pipe-backed `*os.File` wiring, the bounded `ringTail`, and the
+lingering-grandchild test. They could not bind — `api.github.com` unreachable from their
+environment, `sirsi-bind` reporting App-not-installed — so claude-home transcribed their verdict
+verbatim, attributed, and carried the mechanical bind only. **#628 merged as `2b2e31e9`.** No
+self-review occurred; the author did not review.
+
+**PR #629** (`applyBrokerTruth` scoped to `BrokerPID()`, the CR-1 fix from my CHANGES_REQUESTED on
+#625) presented as `CONFLICTING`/`DIRTY` with **zero check runs** — the vacuous-CLEAN shape, where
+absence of failure reads as success. Root cause was not the PR: `CHANGELOG.md` carries
+`merge=union`, a merge driver **local git honors and GitHub's server-side merge does not**. The
+repo's own `.gitattributes` documents this trap verbatim. With no computable merge commit, the
+`pull_request` workflows never fired at all. A local merge against `origin/main` resolved clean;
+merged main into the head branch (union-resolved, both CHANGELOG entries preserved, zero markers),
+pushed `fe0c4f1c`, and CI fired immediately. Source-deep review then confirmed the fix is real and
+bounded: `BrokerPID()` reads only `gemma-server.pid` and requires `pidAlive`; both census sites
+hoist it once so at most one `/health` call per sample; exhaustive grep shows the only surviving
+`LoadBearingPIDs()` callers are `IsLoadBearing` and `FindRunaway`, both kill-protection, both
+correctly unchanged. The regression test is red **by construction** — the scalar makes the wrong
+answer unrepresentable rather than merely untested. `git diff pr625 pr629` touches exactly five
+files, with `doctor.go`/`livenesswatch.go`/`vitalscmd.go` byte-identical to #625, so no scope crept
+in on the fix. **#629 merged as `ae1d11f4`**, which makes **#625 fully superseded — it must be
+closed, not merged**, or it re-lands the pre-CR-1 `applyBrokerTruth` and reintroduces the 27 GB
+worker over-report. Routed to its lane.
+
+The stated ceiling on both merges: the broker is structurally absent on this host, so `BrokerPID()`
+returns 0 and the correction path is inert here — verified only through the injected
+`fetchBrokerHealthFn` seam, not by live-broker measurement. The build-timeout item
+(`20260807-023845`) was answered as **superseded rather than re-scoped**: the work its 2400s job was
+chasing had already merged by another path (#623 at 01:27Z, #627 at 02:26Z), which is itself a small
+instance of the ledger-rot class — nothing re-checks a cited PR's state mid-build. #628's residual
+(observability only; the dispatch root cause is unfixed and deployment-gated) is registered as ledger
+row `consumer-dispatch-rootcause` rather than left in prose. Health green throughout: swap 748/2048
+MB flat, free 86%, diagnose 100/100, board :8734 → 200, zero `BINARY_MISSING`, no new crash or
+Jetsam. Threads 181→174, 3 reaped-to-successor heals, one leaked conduit session reaped, 2.8 KiB
+retention reclaimed.
