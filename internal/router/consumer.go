@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -43,6 +44,37 @@ const (
 	EnvConsumerAgent = "SIRSI_ROUTER_AGENT"
 	EnvConsumerRoot  = "SIRSI_ROUTER_ROOT"
 )
+
+// EnvGOMAXPROCS is the standard Go env var consumer.go caps by default on
+// every SPAWNED (command-mode) consumer — see consumerGOMAXPROCS.
+const EnvGOMAXPROCS = "GOMAXPROCS"
+
+// consumerGOMAXPROCS is the default GOMAXPROCS cap applied to a spawned
+// consumer's environment (R7/G6). Measured 2026-08-06: two workers each
+// fanning `go test`/`go build` out to GOMAXPROCS=NCPU on an 18-core host
+// produced 10 concurrent compile/test procs and load average 36 — 2x
+// oversubscription from just THREE live lanes. `go build`/`go test` both
+// default their own `-p` parallelism to GOMAXPROCS, so setting it here alone
+// bounds compiler/test fan-out without every consumer hand-writing `-p 2
+// -parallel 2`. Configurable via SetConsumerGOMAXPROCS.
+var consumerGOMAXPROCS = 4
+
+// SetConsumerGOMAXPROCS overrides the default GOMAXPROCS cap for spawned
+// consumers. n <= 0 is ignored (keeps the previous value).
+func SetConsumerGOMAXPROCS(n int) {
+	if n > 0 {
+		consumerGOMAXPROCS = n
+	}
+}
+
+// capGOMAXPROCS appends the GOMAXPROCS cap to env unless the operator's own
+// cfg.Env already declares it — an explicit override is respected, not raced.
+func capGOMAXPROCS(env []string, cfgEnv map[string]string) []string {
+	if _, explicit := cfgEnv[EnvGOMAXPROCS]; explicit {
+		return env
+	}
+	return append(env, EnvGOMAXPROCS+"="+strconv.Itoa(consumerGOMAXPROCS))
+}
 
 const (
 	ConsumerModeCommand        = "command"
@@ -174,6 +206,7 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 	for k, v := range cfg.Env {
 		env = append(env, k+"="+v)
 	}
+	env = capGOMAXPROCS(env, cfg.Env)
 
 	// A declared cwd that does not exist is WORSE than no consumer at all.
 	// RunWakeLoop would persist ConsumerCapable=true, every cmd.Start would fail

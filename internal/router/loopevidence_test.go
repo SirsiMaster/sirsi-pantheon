@@ -291,10 +291,10 @@ func TestEffectiveStale_TwoThreadsOneAgent(t *testing.T) {
 	}
 
 	threads := []*Thread{older, newer}
-	newestByAgent := NewestNonTerminalByAgent(threads)
+	newestByAgent := NewestActiveByAgent(threads)
 	// "newer" must be identified as the newest.
 	if newestByAgent["claude-home"] != "thr-new-222" {
-		t.Fatalf("NewestNonTerminalByAgent: want thr-new-222, got %q", newestByAgent["claude-home"])
+		t.Fatalf("NewestActiveByAgent: want thr-new-222, got %q", newestByAgent["claude-home"])
 	}
 
 	// Older thread: isNewest=false → agent-keyed probe NOT credited → stale.
@@ -310,12 +310,12 @@ func TestEffectiveStale_TwoThreadsOneAgent(t *testing.T) {
 	}
 }
 
-// TestNewestNonTerminalByAgent_SkipsSuspended pins the residual from PR #622:
+// TestNewestActiveByAgent_SkipsSuspended pins the residual from PR #622:
 // SUSPENDED records must not win the "newest" slot because AgentArmed skips them
 // in its eval loop. If a suspended record became "newest", newestByAgent[agent]
 // would never match any evaluated thread, denying the agent-keyed rescue credit
 // to the next-newest active thread.
-func TestNewestNonTerminalByAgent_SkipsSuspended(t *testing.T) {
+func TestNewestActiveByAgent_SkipsSuspended(t *testing.T) {
 	now := time.Now().UTC()
 	active := &Thread{
 		ThreadID:  "thr-active",
@@ -331,10 +331,10 @@ func TestNewestNonTerminalByAgent_SkipsSuspended(t *testing.T) {
 		Status:    ThreadStatusSuspended,
 		StartedAt: now.Add(-1 * time.Minute), // newer than active
 	}
-	got := NewestNonTerminalByAgent([]*Thread{active, suspended})
+	got := NewestActiveByAgent([]*Thread{active, suspended})
 	// suspended must not win even though it is newer — AgentArmed skips it.
 	if got["claude-home"] != "thr-active" {
-		t.Errorf("NewestNonTerminalByAgent with suspended-newest: want thr-active, got %q", got["claude-home"])
+		t.Errorf("NewestActiveByAgent with suspended-newest: want thr-active, got %q", got["claude-home"])
 	}
 }
 

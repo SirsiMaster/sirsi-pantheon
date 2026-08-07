@@ -182,6 +182,58 @@ func TestKickstartRevivesGemmaWhenNotQuarantined(t *testing.T) {
 	}
 }
 
+// TestKickstartHonorsFabricQuarantine is the R7/G6 generalization of
+// TestKickstartHonorsGemmaQuarantine: with the fabric-wide marker set, NOT
+// EVEN unrelated labels may be revived — unlike isQuarantined (gemma labels
+// only), isFabricQuarantined blocks the whole duty.
+func TestKickstartHonorsFabricQuarantine(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.pantheon.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.gemma.plist")
+
+	var bootstrapped []string
+	deps := launchdDeps{
+		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		bootstrapPlist: func(p string) error {
+			bootstrapped = append(bootstrapped, filepath.Base(p))
+			return nil
+		},
+		uid:                 func() int { return 501 },
+		isFabricQuarantined: func() bool { return true },
+	}
+	revived, err := KickstartDeadLabels(dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revived) != 0 {
+		t.Fatalf("fabric quarantine must block every revival: got %v", revived)
+	}
+	if len(bootstrapped) != 0 {
+		t.Fatalf("fabric quarantine must never bootstrap: got %v", bootstrapped)
+	}
+}
+
+// TestKickstartRevivesWhenFabricNotQuarantined is the other direction: with no
+// fabric quarantine in effect, dead labels revive normally — the guard must
+// not become a standing block (A35).
+func TestKickstartRevivesWhenFabricNotQuarantined(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.pantheon.plist")
+
+	revived, err := KickstartDeadLabels(dir, launchdDeps{
+		listLabels:          func() (map[string]bool, error) { return map[string]bool{}, nil },
+		bootstrapPlist:      func(p string) error { return nil },
+		uid:                 func() int { return 501 },
+		isFabricQuarantined: func() bool { return false },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revived) != 1 || revived[0] != "ai.sirsi.pantheon" {
+		t.Fatalf("must revive when fabric not quarantined: got %v", revived)
+	}
+}
+
 func TestHealCollectorDrains(t *testing.T) {
 	drainHeals() // clean slate
 	RecordHeal("one")

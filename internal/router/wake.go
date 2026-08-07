@@ -619,6 +619,38 @@ func (r *consumerRun) running() bool {
 	}
 }
 
+// fabricDispatchQuarantined reports (and records, R7/G6) whether the operator
+// has stood the whole fabric down via `sirsi router quarantine`. Checked right
+// before every consumer dispatch so the marker holds against the loop's own
+// restart, not just against the launchd-level revivers (fabricquarantine.go).
+func fabricDispatchQuarantined(agentID string, depth int) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false // cannot resolve home — fail open, same stance as an unreadable load average
+	}
+	if !IsFabricQuarantined(home) {
+		return false
+	}
+	log.Printf("wake-loop %s: dispatch held — fabric quarantined (inbox depth %d)", agentID, depth)
+	return true
+}
+
+// fabricDispatchOverloaded reports (and records, R7/G6) whether load average
+// is at or above the core count, in which case dispatch defers this pass and
+// retries next tick rather than piling another lane on an already-saturated
+// host (incident 2026-08-06: load average 36 on 18 cores from just 3 lanes).
+func fabricDispatchOverloaded(agentID string, depth int) bool {
+	hold, load, cores := shouldDeferDispatch()
+	if !hold {
+		return false
+	}
+	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — load average %.2f >= %d cores (inbox depth %d)",
+		agentID, load, cores, depth)
+	log.Print(msg)
+	RecordHeal(msg)
+	return true
+}
+
 // dispatchConsumer starts a resolved consumer and returns a handle that
 // completes when the process exits.
 //
@@ -783,7 +815,8 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		//
 		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
 		// would treat an unreadable inbox as an empty one.
-		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() {
+		if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) {
 			// Report the previous run's exit before starting another, so a consumer
 			// that is failing fast leaves a trail rather than looking like progress.
 			if run != nil && run.err != nil {

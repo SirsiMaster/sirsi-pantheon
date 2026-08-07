@@ -199,7 +199,7 @@ func EffectiveStale(t *Thread, now time.Time, window time.Duration) bool {
 // evidence about (claude-home review of PR #614, 2026-08-06).
 //
 // Callers with full registry context compute isNewestOfAgent via
-// NewestNonTerminalByAgent. Callers without registry context call EffectiveStale.
+// NewestActiveByAgent. Callers without registry context call EffectiveStale.
 func EffectiveStaleForNewest(t *Thread, now time.Time, window time.Duration, isNewestOfAgent bool) bool {
 	if t == nil {
 		return false
@@ -223,16 +223,16 @@ func EffectiveStaleForNewest(t *Thread, now time.Time, window time.Duration, isN
 	return true
 }
 
-// NewestNonTerminalByAgent returns a map from agentID → threadID for the newest
-// (by StartedAt) non-terminal, non-suspended thread of each agent. Use this at
-// call sites that iterate the full registry to compute the isNewestOfAgent
-// argument for EffectiveStaleForNewest: only the newest active thread is a
-// plausible beneficiary of the agent-keyed watcher probe (A35 — scope the
-// check to the claim). SUSPENDED is excluded to match AgentArmed's eval loop,
-// which skips suspended records — a suspended "newest" would yield a map entry
-// that AgentArmed never evaluates, leaving the next-newest active thread
-// without its agent-keyed rescue credit.
-func NewestNonTerminalByAgent(threads []*Thread) map[string]string {
+// NewestActiveByAgent returns a map from agentID → threadID for the newest
+// (by StartedAt) active thread of each agent — active meaning non-terminal and
+// non-suspended. Use this at call sites that iterate the full registry to compute
+// the isNewestOfAgent argument for EffectiveStaleForNewest: only the newest
+// active thread is a plausible beneficiary of the agent-keyed watcher probe
+// (A35 — scope the check to the claim). SUSPENDED is excluded to match
+// AgentArmed's eval loop, which skips suspended records — a suspended "newest"
+// would yield a map entry that AgentArmed never evaluates, leaving the
+// next-newest active thread without its agent-keyed rescue credit.
+func NewestActiveByAgent(threads []*Thread) map[string]string {
 	newest := make(map[string]string)
 	newestAt := make(map[string]time.Time)
 	for _, t := range threads {

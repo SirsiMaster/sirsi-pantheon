@@ -426,7 +426,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		sortedThrs := treg.SortedThreads()
-		newestByAgent := NewestNonTerminalByAgent(sortedThrs)
+		newestByAgent := NewestActiveByAgent(sortedThrs)
 		for _, thr := range sortedThrs {
 			if thr.Status.IsTerminal() {
 				continue
