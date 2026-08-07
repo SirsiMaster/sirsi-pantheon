@@ -290,6 +290,14 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	if !strings.Contains(detail, "restart will not fix") {
 		t.Errorf("detail should say restart will not fix, got: %s", detail)
 	}
+	// The bind that makes the const load-bearing: the self-healing duty in
+	// internal/router/gemmaliveness.go short-circuits on WeightsAbsentSentinel.
+	// Without this assertion, rewording the detail above leaves every test green
+	// while the production short-circuit silently stops firing (A35).
+	if !strings.Contains(detail, WeightsAbsentSentinel) {
+		t.Errorf("detail must embed WeightsAbsentSentinel (%q) or the router short-circuit breaks, got: %s",
+			WeightsAbsentSentinel, detail)
+	}
 	if called {
 		t.Error("generation probe should not be called when RSS is below the floor")
 	}
