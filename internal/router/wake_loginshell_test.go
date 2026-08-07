@@ -63,10 +63,17 @@ func TestLoginShellArgvWrapsThroughShell(t *testing.T) {
 // than refusing to spawn — same stance as an unreadable load average.
 func TestLoginShellArgvFailsOpenOnUnusableShell(t *testing.T) {
 	argv := []string{"claude", "--print", "hi"}
+	// A non-executable SHELL would make exec.Command fail the dispatch
+	// outright — failing CLOSED. It must be treated as unusable like the rest.
+	notExec := filepath.Join(t.TempDir(), "shell")
+	if err := os.WriteFile(notExec, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for name, shell := range map[string]string{
-		"unset":     "",
-		"missing":   "/nonexistent/shell",
-		"directory": "/tmp",
+		"unset":          "",
+		"missing":        "/nonexistent/shell",
+		"directory":      "/tmp",
+		"not executable": notExec,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("SHELL", shell)

@@ -717,7 +717,10 @@ func loginShellArgv(argv []string) []string {
 	if shell == "" {
 		return argv
 	}
-	if info, err := os.Stat(shell); err != nil || info.IsDir() {
+	// Executable bit included deliberately: exec.Command on a non-executable
+	// SHELL fails the dispatch outright, which would be failing CLOSED — the
+	// opposite of the stance this function documents.
+	if info, err := os.Stat(shell); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
 		return argv
 	}
 	return append([]string{shell, "-lc", `exec "$@"`, shell}, argv...)
