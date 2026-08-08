@@ -28,6 +28,8 @@ const gemmaServerDefaultPort = 8477
 var (
 	gemmaServeStop        bool
 	gemmaServeStatusFlag  bool
+	gemmaServeQuarantine  bool
+	gemmaServeRestore     bool
 	gemmaServeForeground  bool
 	gemmaServePort        int
 	gemmaServeConcurrency int
@@ -42,13 +44,17 @@ inference process or a second model broker.
 
   sirsi gemma serve
   sirsi gemma serve --status
-  sirsi gemma serve --stop`,
+  sirsi gemma serve --stop
+  sirsi gemma serve --quarantine
+  sirsi gemma serve --restore`,
 	RunE: runGemmaServe,
 }
 
 func init() {
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeStop, "stop", false, "Stop the local SNE service")
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeStatusFlag, "status", false, "Show whether SNE is ready")
+	gemmaServeCmd.Flags().BoolVar(&gemmaServeQuarantine, "quarantine", false, "Hold SNE offline across Pantheon self-healing")
+	gemmaServeCmd.Flags().BoolVar(&gemmaServeRestore, "restore", false, "Restore an accepted SNE service from quarantine")
 	// Retained for CLI compatibility while launchd owns these choices.
 	gemmaServeCmd.Flags().BoolVar(&gemmaServeForeground, "foreground", false, "Deprecated: launchd owns the SNE process")
 	gemmaServeCmd.Flags().IntVar(&gemmaServePort, "port", gemmaServerDefaultPort, "Local SNE port")
@@ -62,10 +68,27 @@ func gemmaServerLogPath(home string) string { return filepath.Join(home, ".sirsi
 
 func runGemmaServe(cmd *cobra.Command, args []string) error {
 	home, _ := os.UserHomeDir()
+	actions := 0
+	for _, selected := range []bool{gemmaServeStop, gemmaServeStatusFlag, gemmaServeQuarantine, gemmaServeRestore} {
+		if selected {
+			actions++
+		}
+	}
+	if actions > 1 {
+		return fmt.Errorf("choose exactly one of --stop, --status, --quarantine, or --restore")
+	}
 	switch {
+	case gemmaServeQuarantine:
+		return gemmaServerQuarantine(home)
+	case gemmaServeRestore:
+		return gemmaServerRestore(home)
 	case gemmaServeStop:
 		return gemmaServerStop(home)
 	case gemmaServeStatusFlag:
+		if setup.GemmaBrokerQuarantined() {
+			fmt.Printf("SNE local inference: QUARANTINED at %s. Restore only an accepted candidate with `sirsi gemma serve --restore`.\n", setup.GemmaBrokerQuarantinePath())
+			return nil
+		}
 		if base := gemmaServerBase(home); base != "" {
 			fmt.Printf("SNE local inference: WARM at %s.\n", base)
 		} else {
@@ -73,6 +96,9 @@ func runGemmaServe(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	default:
+		if setup.GemmaBrokerQuarantined() {
+			return fmt.Errorf("SNE is intentionally quarantined — use `sirsi gemma serve --restore` only after candidate acceptance")
+		}
 		if !setup.GemmaBrokerInstalled() {
 			return fmt.Errorf("SNE is not installed — run `sirsi setup`; Python inference fallback is retired")
 		}
@@ -84,6 +110,70 @@ func runGemmaServe(cmd *cobra.Command, args []string) error {
 		}
 		return gemmaAwaitWarm(home)
 	}
+}
+
+var gemmaLaunchctl = func(args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "launchctl", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("launchctl %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+var gemmaLaunchdLoaded = func(target string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "launchctl", "print", target).Run() == nil
+}
+
+var gemmaAwaitWarmFn = gemmaAwaitWarm
+
+func gemmaServerQuarantine(home string) error {
+	if err := setup.QuarantineGemmaBrokerPlist(); err != nil {
+		return err
+	}
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	label := setup.GemmaBrokerLabel
+	// Durable intent first: even if bootout reports an already-unloaded job,
+	// both self-healers now lack a canonical .plist to restore.
+	_ = gemmaLaunchctl("disable", domain+"/"+label)
+	_ = gemmaLaunchctl("bootout", domain+"/"+label)
+	target := domain + "/" + label
+	deadline := time.Now().Add(10 * time.Second)
+	for gemmaLaunchdLoaded(target) && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if gemmaLaunchdLoaded(target) {
+		return fmt.Errorf("broker plist is quarantined but launchd target %s is still loaded", target)
+	}
+	_ = os.Remove(gemmaPidPath(home))
+	_ = os.Remove(gemmaPortPath(home))
+	fmt.Printf("SNE local inference: QUARANTINED at %s. Pantheon self-healing will not restore it.\n", setup.GemmaBrokerQuarantinePath())
+	return nil
+}
+
+func gemmaServerRestore(home string) error {
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	label := setup.GemmaBrokerLabel
+	if err := gemmaLaunchctl("enable", domain+"/"+label); err != nil {
+		return err
+	}
+	if err := setup.RestoreGemmaBrokerPlist(); err != nil {
+		return err
+	}
+	if err := gemmaLaunchctl("bootstrap", domain, setup.GemmaBrokerPlistPath()); err != nil {
+		// Fail closed: a candidate that cannot bootstrap returns to quarantine.
+		_ = setup.QuarantineGemmaBrokerPlist()
+		_ = gemmaLaunchctl("disable", domain+"/"+label)
+		return err
+	}
+	if err := gemmaAwaitWarmFn(home); err != nil {
+		_ = gemmaServerQuarantine(home)
+		return fmt.Errorf("restored broker failed readiness and was re-quarantined: %w", err)
+	}
+	return nil
 }
 
 func gemmaAwaitWarm(home string) error {
@@ -114,7 +204,7 @@ func gemmaServerStop(home string) error {
 	_ = os.Remove(gemmaPortPath(home))
 	fmt.Printf("Stopped SNE local inference (pid %d).\n", pid)
 	if setup.GemmaBrokerInstalled() {
-		fmt.Printf("Note: launchd will restore it. To keep it off: launchctl bootout gui/%d/%s\n", os.Getuid(), setup.GemmaBrokerLabel)
+		fmt.Println("Note: launchd will restore it. To keep it safely off: sirsi gemma serve --quarantine")
 	}
 	return nil
 }
