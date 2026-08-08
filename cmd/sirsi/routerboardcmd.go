@@ -36,6 +36,14 @@ Python is required to operate or genuinely better. Nothing here required Python.
 
 The UI (index.html) is unchanged and served as a static asset — it is a page,
 not a service, and rewriting it would risk the surface the owner actually reads.
+It is served from disk, not go:embed, so it can be hand-edited without a
+rebuild — but the canonical, version-controlled copy lives at
+internal/routerboard/ui/index.html. That copy was previously untracked
+(2026-08-07 incident: the only copy lived solely at ~/.sirsi/ledger-dashboard,
+outside git, with no review trail and no recovery if the disk copy was lost).
+After editing ~/.sirsi/ledger-dashboard/index.html, copy the change back into
+internal/routerboard/ui/index.html and commit it — the disk copy is the
+runtime, the repo copy is the record.
 
   sirsi board-serve
   sirsi board-serve --port 8734 --poll 3s`,
