@@ -4,7 +4,9 @@
 Run: python3 .claude/hooks/router_inbox_check_test.py
 """
 
+import contextlib
 import importlib.util
+import io
 import os
 import sqlite3
 import tempfile
@@ -339,6 +341,41 @@ class TestPullModelOpenItems(unittest.TestCase):
         with mock.patch.dict(os.environ, {"SIRSI_ROUTER_DB": str(missing)}):
             self.assertEqual(hook.pull_model_open_items("claude-home"), [])
         self.assertFalse(missing.exists())
+
+    def test_renamed_column_warns_loudly_instead_of_going_silent(self):
+        """Negative control for hook-store-schema-second-reader: this hook
+        duplicates the store's items.id/to_agent/status shape via raw sqlite.
+        A real column rename on the live schema must not silently degrade to
+        'return []' — that reads as a healthy empty inbox when it is actually
+        a blind counter. The schema-shape guard must print a loud stderr
+        warning naming the missing column AND still return [] (never crash
+        the hook), rather than returning [] with no signal at all.
+
+        Delete the schema-shape guard and this test still passes on the
+        return value alone — it is the stderr assertion that fails by name,
+        which is the point: a silent [] and a loud [] are behaviorally
+        identical to every OTHER caller, and only this test distinguishes
+        them."""
+        db = Path(self.tmp.name) / "router.db"
+        con = sqlite3.connect(db)
+        # 'to_agent' renamed to 'recipient' — the real-world drift this guards
+        # against, not a synthetic column count mismatch.
+        con.execute(
+            "create table items (id text primary key, recipient text, status text)"
+        )
+        con.execute("insert into items values ('open-1', 'claude-home', 'open')")
+        con.commit()
+        con.close()
+
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {"SIRSI_ROUTER_DB": str(db)}):
+            with contextlib.redirect_stderr(buf):
+                result = hook.pull_model_open_items("claude-home")
+
+        self.assertEqual(result, [])
+        warning = buf.getvalue()
+        self.assertIn("to_agent", warning)
+        self.assertIn("router-supervisor", warning)
 
 
 if __name__ == "__main__":
