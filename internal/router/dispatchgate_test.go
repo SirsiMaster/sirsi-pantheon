@@ -82,8 +82,15 @@ func TestBackoffIsMonotonicAndBounded(t *testing.T) {
 // KeepAlive=true and 151 restarts were logged during the incident, so an
 // in-process counter is exactly the hole this closes — hence a file ledger.
 func TestSpawnCeilingSurvivesProcessRestart(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	// Uses the SetDispatchDir seam rather than a HOME override. The HOME trick
+	// worked only while the ledger path was derived from the home dir on every
+	// call; TestMain now pins the dir package-wide so no test can write the
+	// operator's real ~/.sirsi/dispatch, and that pin correctly wins over HOME.
+	// Setting the seam is also what this test actually means — it asserts the
+	// ledger is a FILE that outlives the process, not where home resolves to.
+	dir := t.TempDir()
+	SetDispatchDir(dir)
+	t.Cleanup(func() { SetDispatchDir("") })
 	agent := "test-lane"
 	now := time.Now()
 
@@ -97,7 +104,7 @@ func TestSpawnCeilingSurvivesProcessRestart(t *testing.T) {
 	if !over {
 		t.Fatalf("ceiling not reached with %d dispatches in the hour (max %d)", n, wakeLoopMaxSpawnsPerHour)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".sirsi", "dispatch", agent+".log")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, agent+".log")); err != nil {
 		t.Errorf("ledger not persisted: %v", err)
 	}
 }

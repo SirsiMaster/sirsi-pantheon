@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -75,7 +76,45 @@ func wakeLoopBackoff(fruitless int, interval time.Duration) time.Duration {
 // restarts were logged during the incident), and it must not require a schema
 // migration to land. In-process counters reset on restart — that is the hole
 // this closes.
+// The base directory is an injected seam (Rule A16/A21, mirroring
+// backpressure.go's SetLoadAvgFn). It is NOT a convenience: without it the
+// ledger resolves to the operator's real ~/.sirsi/dispatch on every run,
+// including under `go test`. That had two consequences, both observed on
+// 2026-08-07 within an hour of #639 merging:
+//
+//  1. The dispatch tests wrote real entries for their fake agents, so after 12
+//     runs in an hour they tripped the very ceiling they exist to test and
+//     failed permanently — reddening `main` for everyone whose change touches
+//     internal/router, since the Ma'at pre-push gate tests changed packages.
+//     A fresh clone does not escape it: the ledger is in $HOME, not the tree.
+//  2. Worse, and the reason this is a seam rather than a t.Cleanup: a test that
+//     used a REAL agent id would inject fake dispatches into the live ceiling
+//     and silently rate-limit a production lane. Test code must not hold a
+//     write handle to production rate-limit state.
+var (
+	dispatchDirMu sync.RWMutex
+	dispatchDir   string // empty = derive from the user's home dir
+)
+
+// SetDispatchDir overrides the spawn-ledger directory. Tests pass t.TempDir();
+// passing "" restores the default. Guarded because the wake loop reads the
+// ledger from its own goroutines (A21).
+func SetDispatchDir(dir string) {
+	dispatchDirMu.Lock()
+	defer dispatchDirMu.Unlock()
+	dispatchDir = dir
+}
+
+func getDispatchDir() string {
+	dispatchDirMu.RLock()
+	defer dispatchDirMu.RUnlock()
+	return dispatchDir
+}
+
 func dispatchLedgerPath(agentID string) string {
+	if d := getDispatchDir(); d != "" {
+		return filepath.Join(d, agentID+".log")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
