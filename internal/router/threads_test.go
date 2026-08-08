@@ -1042,3 +1042,43 @@ func TestReapStrayThreads_SuccessStillInscribes(t *testing.T) {
 			(*got)[0]["prior_status"], ThreadStatusActive)
 	}
 }
+
+// TestRegisterThread_CrossLaneIdentityGuard locks in the owner directive
+// (2026-08-03): a pinned ThreadID owned by one agent must never be adopted or
+// relabeled by a different agent. Identity is the tuple (thread_id, agent_id, …),
+// so codex-inference pinning codex-home's thread ID is a blocker, not a repair.
+func TestRegisterThread_CrossLaneIdentityGuard(t *testing.T) {
+	tmp := t.TempDir()
+	home, err := RegisterThread(tmp, &Thread{
+		AgentID: "codex-home", Surface: "codex", Workstream: "home", PID: 40821,
+	})
+	if err != nil {
+		t.Fatalf("register home: %v", err)
+	}
+
+	// A different lane pins the Home thread ID — must be refused.
+	_, err = RegisterThread(tmp, &Thread{
+		ThreadID: home.ThreadID, AgentID: "codex-inference", Surface: "codex",
+		Workstream: "inference", PID: 37423,
+	})
+	if err == nil {
+		t.Fatal("expected cross-lane adoption of Home thread ID to be refused")
+	}
+
+	// The Home record must be untouched — still owned by codex-home.
+	reg, err := LoadThreadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := reg.Threads[home.ThreadID]; got == nil || got.AgentID != "codex-home" {
+		t.Errorf("Home thread was relabeled: %+v", got)
+	}
+
+	// Same agent re-pinning its own ThreadID is a legitimate update, not adoption.
+	if _, err := RegisterThread(tmp, &Thread{
+		ThreadID: home.ThreadID, AgentID: "codex-home", Surface: "codex",
+		Workstream: "home", PID: 40821,
+	}); err != nil {
+		t.Errorf("same-agent pinned re-register must be allowed, got: %v", err)
+	}
+}

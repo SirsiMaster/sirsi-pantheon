@@ -653,6 +653,19 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 		}
 	}
 
+	// Cross-lane identity guard (owner directive 2026-08-03; identity tuple is
+	// (thread_id, agent_id, workstream, watches, durable-host), not a shared repo
+	// or OS process family). A pinned ThreadID that already belongs to a DIFFERENT
+	// agent must never be relabeled/adopted — one thread ID belongs to one lane for
+	// life. Without this, a caller pinning another lane's ID (e.g. codex-inference
+	// pinning codex-home's `019f8fc4-…`) would silently overwrite the owner's record
+	// below. A mismatched identity is a blocker to route to the owner, not a repair.
+	if t.ThreadID != "" {
+		if existing, ok := reg.Threads[t.ThreadID]; ok && existing != nil && existing.AgentID != t.AgentID {
+			return nil, fmt.Errorf("thread %q is bound to agent %q; refusing to register it as %q (cross-lane identity adoption is prohibited)", t.ThreadID, existing.AgentID, t.AgentID)
+		}
+	}
+
 	if t.ThreadID == "" {
 		t.ThreadID = NewThreadID()
 	}
