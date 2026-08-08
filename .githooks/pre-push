@@ -238,6 +238,23 @@ if [ -n "$DIRTY_TREE" ]; then
     echo "$DIRTY_TREE" | sed 's/^/       /'
 fi
 
+# A CLEAN tree does not mean the tree matches what is being pushed. Pushing an
+# explicit sha that isn't HEAD (`git push origin <sha>:<branch>`, e.g. a merge
+# commit resolved in a temp worktree and pushed from the primary checkout) gates
+# on whatever HEAD happens to be — a different branch entirely — with a clean
+# `git status`, so the DIRTY_TREE warning above never fires. Every check below
+# (fmt/vet/lint/build/test) still runs against HEAD's files, not PUSH_LOCAL_SHA's.
+# 2026-08-07: pushing #663/#664's resolved merges this way produced 6 failing
+# cmd/sirsi tests that were a false signal — the same packages passed cleanly in
+# the merged worktree; the primary checkout's HEAD was simply a different branch.
+CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null || echo "")"
+if [ -n "$PUSH_LOCAL_SHA" ] && [ -n "$CURRENT_HEAD" ] && [ "$PUSH_LOCAL_SHA" != "$CURRENT_HEAD" ]; then
+    echo "  ⚠️  Pushing $PUSH_LOCAL_SHA but HEAD is $CURRENT_HEAD — checks below run on HEAD's"
+    echo "     tree, NOT the sha being pushed. A failure here may be this checkout's state,"
+    echo "     not the pushed commit's. Verify in a worktree checked out to $PUSH_LOCAL_SHA"
+    echo "     before reading any failure below as a real regression."
+fi
+
 if [ "$DEPTH" = "deep" ]; then
     # Deep: full test suite (same as CI)
     echo "  🧪 Running full test suite..."
