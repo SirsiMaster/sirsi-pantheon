@@ -331,6 +331,27 @@ func retryOnLostFence(pass func() ([]ReapedThread, error)) ([]ReapedThread, erro
 	return out, err
 }
 
+// retryOnLostFenceErr is retryOnLostFence's counterpart for a load-mutate-save
+// pass with no accumulated result to carry — a flat overwrite, re-derived from
+// a fresh load on every attempt, is exactly as safe to redo as the []ReapedThread
+// passes above. retryOnLostFence can't be reused directly: its signature is
+// pinned to the two reap passes' result type. Same budget, same backoff, same
+// contract — only the payload shape differs.
+func retryOnLostFenceErr(pass func() error) error {
+	const attempts = 3
+	var err error
+	for i := 0; i < attempts; i++ {
+		err = pass()
+		if !errors.Is(err, ErrLostLifecycleFence) {
+			return err
+		}
+		if i < attempts-1 {
+			time.Sleep(fenceRetryBackoff)
+		}
+	}
+	return err
+}
+
 // SaveThreadRegistry writes threads.json atomically.
 func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
