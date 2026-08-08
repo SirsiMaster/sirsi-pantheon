@@ -850,6 +850,55 @@ func TestReapDeadThreads_SessionKeyed_ExpiresAfterLease(t *testing.T) {
 	}
 }
 
+// TestRegisterThread_SessionKeyed_DifferentAgents verifies that two different
+// agent_ids sharing the same session_id and surface each get their own record.
+// This is the cross-lane identity adoption guard: `sirsi thread register
+// --agent claude-deck` run from inside a claude-home session must NOT inherit
+// claude-home's existing record (same CLAUDE_CODE_SESSION_ID in the environment).
+func TestRegisterThread_SessionKeyed_DifferentAgents(t *testing.T) {
+	tmp := t.TempDir()
+	sessID := "shared-session-xyz"
+
+	home, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("claude-home register: %v", err)
+	}
+	deck, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-deck",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("claude-deck register: %v", err)
+	}
+
+	if home.ThreadID == deck.ThreadID {
+		t.Errorf("different agent_ids with the same session_id must produce separate records; both got %s", home.ThreadID)
+	}
+	if deck.AgentID != "claude-deck" {
+		t.Errorf("claude-deck record has wrong agent_id %q", deck.AgentID)
+	}
+	// The registry must hold two live records for this session — one per agent.
+	reg, err := LoadThreadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var agents []string
+	for _, thr := range reg.Threads {
+		if thr == nil || thr.Status.IsTerminal() || thr.SessionID != sessID {
+			continue
+		}
+		agents = append(agents, thr.AgentID)
+	}
+	if len(agents) != 2 {
+		t.Errorf("expected 2 live session-keyed records (one per agent), got %d: %v", len(agents), agents)
+	}
+}
+
 // TestRegisterThread_SessionKeyed_RenewsLastSeen verifies that a returning
 // hook fire advances LastSeenAt on the reused record (the lease renewal).
 func TestRegisterThread_SessionKeyed_RenewsLastSeen(t *testing.T) {

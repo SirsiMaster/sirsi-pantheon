@@ -525,12 +525,26 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			if existing == nil {
 				continue
 			}
-			if existing.SessionID != t.SessionID || existing.Surface != t.Surface {
+			// Identity: (session_id, surface, agent_id). AgentID is required so that
+			// two lanes registering from the same Claude session (same ambient
+			// CLAUDE_CODE_SESSION_ID) cannot adopt each other's records — e.g.
+			// `sirsi thread register --agent claude-deck` run inside a claude-home
+			// session must mint a fresh record, not renew claude-home's. Without
+			// this guard, the incoming watches are re-scoped onto the EXISTING
+			// agent's id via normalizeWatches(existing.AgentID, ...), silently
+			// corrupting the record while returning apparent success (see #444).
+			if existing.SessionID != t.SessionID || existing.Surface != t.Surface || existing.AgentID != t.AgentID {
 				continue
 			}
 			if existing.Status.IsTerminal() || existing.Status == ThreadStatusSuspended {
 				continue
 			}
+			// Stale is intentionally reusable here: a stale session-keyed record is
+			// a live conversation that has simply gone quiet between turns (no hook
+			// fire). Renewing it is exactly the lease semantics — the session is
+			// still alive; only its last_seen_at has drifted. Terminal and suspended
+			// are the only non-renewable states (checked above).
+			//
 			// Found the live record for this session — renew the lease.
 			existing.LastSeenAt = now
 			if existing.MachineID == "" {
