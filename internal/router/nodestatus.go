@@ -415,18 +415,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	}
 
 	// --- Live thread registry ---
-	// Reap dead/defunct-PID threads against OS truth before reading, so Horus
-	// and the menubar never present a gone or zombie PID as a live agent (the
-	// CTR false-active bug). Scoped to this machine by stable id; foreign tables
-	// are unobservable (see ReapDeadThreads / SameMachine).
-	_, _ = ReapDeadThreads(routerRoot)
-	// ADR-024: sweep superseded strays too, so Horus/menubar node-status never
-	// counts a surface's duplicate suspends/ghosts once a live watcher holds it.
-	_, _ = ReapStrayThreads(routerRoot)
+	// This collector is an observer: it must never reap or otherwise rewrite the
+	// transport registry. Lifecycle writers (register, doctor --fix, session
+	// reaper) own reconciliation. We still project local OS truth below so a
+	// dead PID cannot be presented as live while it awaits that maintenance pass.
 	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		sortedThrs := treg.SortedThreads()
 		newestByAgent := NewestActiveByAgent(sortedThrs)
+		machineID := MachineID()
 		for _, thr := range sortedThrs {
 			if thr.Status.IsTerminal() {
 				continue
@@ -451,6 +448,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				PID:           thr.PID,
 				OSState:       PIDStateOf(thr.PID, thr.StartTime),
 			}
+			osDead := SameMachine(thr.MachineID, machineID) && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
 			// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
 			//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
 			//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
@@ -463,6 +461,8 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
 			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 			switch {
+			case osDead:
+				sum.Stale, sum.LoopState, sum.Armed, sum.ArmedReason = true, "dead", false, "os-"+string(sum.OSState)
 			case requiresThreadIDLoop(sum.WatcherType):
 				switch {
 				case thr.ThreadID == "":
