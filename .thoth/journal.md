@@ -1722,3 +1722,188 @@ and left unmerged — never the child first.
 #   session via remote-control) spike-gated. Feeds ADR-021 (Osiris workstation-scoping).
 # 2026-04-04: Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
 # 2026-04-02: Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
+
+## Conduit run 2026-08-08T01:10Z (completion loop, iteration 6)
+
+The binder came back and bound #668 and #669; both merged, and #668's binary was redeployed
+(pristine-clone build under the shlock guard, schema gate 16==16, verified live: `reset-attempts`
+prints its documented help and refuses cleanly on an unknown task).
+
+The main work this iteration was `lifecycle-fence-lost`, which explicitly asked for re-diagnosis at
+`setThreadConsumerCapable` rather than more retries. Found two independent gaps, not one. First: the
+call site had zero retry at all — PR #619's `retryOnLostFence` only wraps the two reap passes, so
+this write was never protected against the transient contention #619 exists to survive. Second, and
+the one that actually mattered: adding the retry alone was **not sufficient**. A real-store
+reproduction — register a thread, immediately call `setThreadConsumerCapable` — failed all three
+retry attempts identically, which is not what transient contention looks like. The cause: this is
+the only lifecycle mutator in the package that never advances `LastSeenAt`, so its compare-and-swap
+write depends entirely on the fence's fallback branch, a raw byte comparison of the JSON payload
+that is not equivalent to "this write is newer" and can fail permanently when the encoding doesn't
+happen to sort greater. Added the same `LastSeenAt` bump every other mutator already performs. The
+negative control that actually proves this — reverting only the `LastSeenAt` line with the retry
+still wired — reproduces the identical 3/3 failure, which is what turns "I fixed something" into "I
+fixed the right something." Six tests, three mock-based mirroring the existing fence-retry tests
+exactly, one real-store end-to-end check against the actual production call site. Shipped as PR
+#671, and it directly answers `fence-retry-budget-underprovisioned`'s open question: the budget
+was never actually shown insufficient, because this call site was never protected at all.
+
+Then a self-caught P0: verifying `#668`'s deploy by running the CLI myself, the ledger header had
+reverted to the exact unlabeled format `#663` fixed hours earlier. Root cause was procedural, not
+logical — `#668`'s branch was built by copying `cmd/sirsi/routerledgercmd.go` whole from the primary
+checkout, which has been on a feature branch all session and never pulled main, into a fresh worktree
+branched off `origin/main`. `#663` had touched that same file after the primary checkout's copy went
+stale, so the whole-file copy silently reverted it. None of `#668`'s own tests were anywhere near the
+function that regressed, so it shipped to main and was deployed to production before anyone noticed.
+Fixed in PR #672, restoring `#663`'s format verbatim and adding two tests that capture the actual
+stdout rather than the underlying struct fields — the fields were never touched, only the print
+statement consuming them, so a field-level test would have stayed green through the whole incident.
+
+Then audited whether the same pattern hit the other three PRs shipped tonight, all built the same
+way. Diffed each branch directly against `origin/main` — not against the primary checkout, which
+would have repeated the exact blind spot — and all three came back as exactly their intended change
+with nothing else reverted. `#668` was an isolated collision: the only file two different fixes both
+touched on the same night. Filed the general failure mode (`worktree-cp-clobbers-stale-file`) with
+the process fix for the rest of this session: diff a file against `origin/main` before copying it
+from a long-lived checkout into a fresh worktree, and if it differs beyond this session's own edits,
+sync before overwriting.
+
+## Conduit run 2026-08-08T01:15Z–01:26Z
+
+Inbox zero for claude-home. Both in-flight PRs (#672 P0, #671) are green on all five
+required contexts — verified as the set difference against branch protection, not
+`mergeStateStatus` — and neither is bindable by me (both are claude-home's own work).
+Their bind requests are minutes old, so nothing there was stale.
+
+The run's real finding is why those binds have not landed. `router doctor --fix` reported
+all six codex-home items as `wake disabled (mechanism: none)`, which reads as a delivery
+outage and is false: 27 of the 28 registered agents are `wake:none` by design, because
+consumer-mode lanes deliver through `consumer.command`, not the wake mechanism. codex-home
+has 406 dispatches today. The doctor wake pass reads only `wake.mechanism`, so it renders
+the fabric's normal delivery path as a fabric-wide failure — claim "these items cannot be
+woken", scope "one field" — and worse, it masks the actual failure. Filed as
+`doctor-wake-pass-blind-to-consumer-lanes`.
+
+The actual failure: codex-home sits at `fruitless=7` against `wakeLoopFruitlessQuarantine
+= 10` (internal/router/dispatchgate.go:34), backoff escalated 8m→16m→32m→1h over seven
+consecutive no-progress dispatches, fleet renders it UNROUTABLE, untouched 2h1m. I
+re-verified before blaming auth, per step 6: a live `codex exec --sandbox read-only` probe
+returned OK at exit 0 on codex-cli 0.147.0-alpha.6.5 / gpt-5.6-luna. The CLI works and the
+consumer still exits without draining. #639's C1 gate scores only after `run.running()`
+goes false, so these are genuine fast exits, not a too-short measurement window — I read
+wake.go rather than inferring the gate's shape from its log lines. Three more fruitless
+dispatches quarantine claude-home's sole reviewer while a P0 that fixes a live production
+regression waits on it. Filed as `codex-home-reviewer-starved-3-from-quarantine`. The
+dispatch path discards consumer stdout/stderr, which is why seven failures produced no
+evidence of cause; that is the next thing to fix.
+
+Not acted on, deliberately: `horus.agent-router`, `triage`, `liveness-watch`,
+`fabric-watchdog`, `hypergraph.digest` and `wake.claude-home` are all absent from launchd
+because their plists carry an explicit `.OFF-owner-20260807` suffix. `sirsi diagnose`
+renders one of them ("liveness-watch not installed") as a defect; it is an owner decision,
+and the step-3 canon in the task file asserting horus needs a live PID is stale against it.
+
+Broker healthy and measured on a driven window: Δ(active+cache) = 0.25 MB over 3 requests,
+≈0.0001 GB/req against a known-bad 0.48. Pool 21.25 GB, peak 14.8 GB, well under the 38 GB
+row filed against claude-nexus, and swap fell from the 15360 MB / 93.5% of that report to
+7168 MB / 78%. No new crash or Jetsam reports. Board 200. Reconcile healed one reaped
+codex-pantheon thread to a successor and re-emitted the known `lifecycle-fence-lost`
+warning that #671 addresses. Prune found nothing in either the thread registry or the
+90-day retention window. Headless claude session count: 0.
+
+## Conduit run 2026-08-08T01:26Z–01:45Z (continuation)
+
+Root-caused the reviewer starvation and it was not codex-home's problem, it was every
+codex lane's. codex 0.147.0-alpha.6.5 routes all shell commands through a sibling helper,
+`codex-code-mode-host`, and Code Mode fails closed when it is absent. `codex` on PATH is a
+symlink into /Applications/ChatGPT.app, and codex resolves the helper relative to the
+SYMLINK's directory (~/.local/bin) rather than the real binary's, so it looked for a file
+that was never installed there. Every consumer booted, failed its first tool call with
+`os error 2`, and exited with status 0 — fast, silent, and scored as no-progress. The app
+bundle restamped at 17:19 EDT and the fruitless dispatches began at 19:32. Fixed with a
+symlink to the version-matched host in the bundle. Verified at the behavior level, not the
+counter: codex-home's next natural dispatch (21:35, unforced) drained depth 6 to 0 in two
+minutes and returned six reasoned dispositions.
+
+The reason this cost four hours is that three separate instruments each reported health
+they could not observe. The conduit's own step-6 probe (`--print "respond with OK"`)
+requires no tool call, so it returned OK at exit 0 throughout, and I repeated its verdict
+in my first report of this run before the contradiction forced me back. `router doctor`
+cried `wake disabled (mechanism: none)` on a lane with 406 dispatches, because 27 of 28
+agents are wake:none by design and deliver via consumer.command. And the pre-existing
+spawn metric never matched codex lanes at all. Three rows filed; the probe one matters
+most, because canon still instructs the next run to trust it.
+
+codex-home then refused to bind, correctly, on `error connecting to api.github.com`. That
+is its sandbox, not an outage — gh succeeds from my shell at the same moment, and
+~/.codex/config.toml declares no [sandbox_workspace_write] network_access key, which
+defaults network off. So no codex lane can verify a PR. Granting an autonomous sandbox
+network is a security decision, so it went to the owner as a decision card with three
+options rather than being flipped here.
+
+#672 and #671 merged at 01:20Z during the run. Built from a pristine clone (HEAD d92be2f7),
+confirmed both merge commits are ancestors, gated the candidate against the live store
+(v16 = v16, not inverted), rm-then-cp-then-signed, and verified the artifact rather than
+the command: the ledger header now reads `items: 6 open … — tasks: 40 open · 1 blocked`
+against the old ambiguous `6 open`. That is the whole "0 open over 40 rows" complaint — the
+counter was counting items while the rows were tasks. Installed 1470a895d995aa37.
+
+Deliberately not done: I did not restart the 20+ wake lanes to activate #671, which lives
+in threads.go/wake.go and is therefore still dormant in every long-lived loop holding the
+old image. With #636's dispatch leak open and codex lanes newly able to execute, a
+simultaneous kickstart risks a spawn storm. Recorded with its exact command instead.
+
+## Conduit run 2026-08-08T02:20Z
+
+Closed the previous run's deliberately-deferred action. The 22 long-lived `router wake-loop`
+processes were all started before the 21:39 EDT install of `1470a895d995aa37` — so #671 was merged,
+deployed and dormant fleet-wide, and, more importantly, so was #639's progress gate. #639 in fact
+merged at 2026-08-07T22:30:20Z, i.e. the condition the last run set ("do it staged, or after #639
+lands") was already satisfied; the loops were running a PRE-gate image, which inverts the risk —
+restarting arms the leak fix rather than exposing the fleet to it. Restarted staged: 4 lanes first
+(claude-nexus, codex-home, claude-deck, claude-pantheon), verified each logged `started (…
+consumer=true)` and then `inbox depth -1 -> 0` with zero dispatch, then the remaining 18. All 22 now
+run the current binary; headless `claude --print` count 0 and `codex exec` count 0 after the
+restart, so no spawn storm. Merged SirsiNexusApp #279 (`d6097484994b`) after a source-deep bind:
+the fix adds `.Sc{zoom:1 !important}` inside the print media block, and I verified against the
+branch file rather than the diff that fitSlide() sets an INLINE `sc.style.zoom` — which makes the
+`!important` load-bearing rather than decorative — and that `.Sc` is the wrapper on every slide, not
+just the active one. sirsi-pantheon is at ZERO open PRs. Broker measured clean over 3 driven
+requests (pool delta -0.0003 GB over d=3, i.e. -0.0001 GB/req against a known-bad 0.48). Router
+inbox zero for claude-home; the 5 open items are all owner/user surface and stay open. Swap is the
+one number to watch: 10.9 GB of 12.0 GB consumed (88.8%), up from 78% last run — free RAM reads a
+reassuring 88%, which is exactly the hollow metric.
+
+## Conduit run 2026-08-08T03:10Z
+Quiet run — first pass since the 22:12 EDT mass-restart onto the gated binary, and it is the
+first run that can prove #639 works in production rather than assert it. All 22 wake lanes log
+`alive, inbox depth 0 unchanged` on a ~16-minute heartbeat and spawn nothing: headless
+`claude --print` sessions 0, `codex exec` 0. Pre-gate, every one of those cycles was a session.
+Broker measured over 3 DRIVEN requests: pool 21.343 GB -> 21.343 GB, delta 49,152 bytes = 0.0000
+GB/req against a known-bad 0.48 — clean, left alone despite `diagnose` rendering it 🟡 82/100 on
+the `phys_footprint` finding (the documented false positive). Healed: `thread reconcile` reaped
+thr-f4c73033e8976836 [codex-pantheon] into successor thr-964e0a28a5cbc18c; `ccd reap` killed one
+leaked completed router-conduit session. Router at 5 open, all owner/user `owner-surface` items —
+surfaced, never closed. Zero open PRs on sirsi-pantheon and SirsiNexusApp; FinalWishes #128/#127
+still DIRTY and belong to their lane agents. Swap 86.1% (10,582/12,288 MB), down from 88.8% —
+still the metric to watch, while free RAM reads a hollow 87%. The three codex ledger-rot backlogs
+(inference 35, mail 9, pantheon 2) cannot move while the no-network owner decision is open.
+
+## Conduit run 2026-08-08T04:15Z
+
+Quiet pass; the #639 progress gate continues to hold in production — all 22 wake lanes logging
+`alive, inbox depth 0 unchanged` on heartbeat with zero spawns (`claude --print` = 1, this session;
+`codex exec` = 0). Broker measured with three DRIVEN requests (1→4): pool 21,247,489,378 →
+21,246,514,874 bytes, i.e. −0.97 MB total = 0.0000 GB/req against a known-bad rate of 0.48 GB/req;
+`sirsi diagnose` 🟡 82/100 again names it a "memory hog at 19.9 GB", the documented phys_footprint
+false positive, and was ignored. Broker had restarted since the last run (requests counter reset
+43→1), so this is a fresh build measured honestly rather than a young process flattering itself.
+Healed: `thread reconcile` reaped→successor three records (codex-home ×2, codex-pantheon);
+`ccd reap --apply` killed one leaked completed conduit session (pid 62336, idle 60min). Prune 33→33
+(nothing terminal), retention within the 90-day window, 0 BINARY_MISSING sentinels, board 200 on
+:8734. Nothing merged: pantheon and SirsiNexusApp are at zero open PRs, FinalWishes #128/#127 both
+DIRTY and belong to their lane agents. Swap needs reading in absolutes this run — 6,544/7,168 MB
+reads as 91.3% versus last run's 86.1%, but the kernel shrank the backing file from 12,288 MB, so
+absolute swap consumption actually fell ~4 GB; free RAM 30%. Ledger rot is now four codex lanes
+(inference 35, mail 9, pantheon 2, home 1 — the last a newly transferred PR-14 admission-cap
+review), all of it downstream of the single open owner decision 20260808-014200 on codex network
+access; one blocker, already surfaced, so no second escalation was filed.
