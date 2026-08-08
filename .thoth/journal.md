@@ -1887,3 +1887,23 @@ surfaced, never closed. Zero open PRs on sirsi-pantheon and SirsiNexusApp; Final
 still DIRTY and belong to their lane agents. Swap 86.1% (10,582/12,288 MB), down from 88.8% —
 still the metric to watch, while free RAM reads a hollow 87%. The three codex ledger-rot backlogs
 (inference 35, mail 9, pantheon 2) cannot move while the no-network owner decision is open.
+
+## Conduit run 2026-08-08T04:15Z
+
+Quiet pass; the #639 progress gate continues to hold in production — all 22 wake lanes logging
+`alive, inbox depth 0 unchanged` on heartbeat with zero spawns (`claude --print` = 1, this session;
+`codex exec` = 0). Broker measured with three DRIVEN requests (1→4): pool 21,247,489,378 →
+21,246,514,874 bytes, i.e. −0.97 MB total = 0.0000 GB/req against a known-bad rate of 0.48 GB/req;
+`sirsi diagnose` 🟡 82/100 again names it a "memory hog at 19.9 GB", the documented phys_footprint
+false positive, and was ignored. Broker had restarted since the last run (requests counter reset
+43→1), so this is a fresh build measured honestly rather than a young process flattering itself.
+Healed: `thread reconcile` reaped→successor three records (codex-home ×2, codex-pantheon);
+`ccd reap --apply` killed one leaked completed conduit session (pid 62336, idle 60min). Prune 33→33
+(nothing terminal), retention within the 90-day window, 0 BINARY_MISSING sentinels, board 200 on
+:8734. Nothing merged: pantheon and SirsiNexusApp are at zero open PRs, FinalWishes #128/#127 both
+DIRTY and belong to their lane agents. Swap needs reading in absolutes this run — 6,544/7,168 MB
+reads as 91.3% versus last run's 86.1%, but the kernel shrank the backing file from 12,288 MB, so
+absolute swap consumption actually fell ~4 GB; free RAM 30%. Ledger rot is now four codex lanes
+(inference 35, mail 9, pantheon 2, home 1 — the last a newly transferred PR-14 admission-cap
+review), all of it downstream of the single open owner decision 20260808-014200 on codex network
+access; one blocker, already surfaced, so no second escalation was filed.

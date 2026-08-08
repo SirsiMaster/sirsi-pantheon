@@ -525,12 +525,26 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			if existing == nil {
 				continue
 			}
-			if existing.SessionID != t.SessionID || existing.Surface != t.Surface {
+			// Identity: (session_id, surface, agent_id). AgentID is required so that
+			// two lanes registering from the same Claude session (same ambient
+			// CLAUDE_CODE_SESSION_ID) cannot adopt each other's records — e.g.
+			// `sirsi thread register --agent claude-deck` run inside a claude-home
+			// session must mint a fresh record, not renew claude-home's. Without
+			// this guard, the incoming watches are re-scoped onto the EXISTING
+			// agent's id via normalizeWatches(existing.AgentID, ...), silently
+			// corrupting the record while returning apparent success (see #444).
+			if existing.SessionID != t.SessionID || existing.Surface != t.Surface || existing.AgentID != t.AgentID {
 				continue
 			}
 			if existing.Status.IsTerminal() || existing.Status == ThreadStatusSuspended {
 				continue
 			}
+			// Stale is intentionally reusable here: a stale session-keyed record is
+			// a live conversation that has simply gone quiet between turns (no hook
+			// fire). Renewing it is exactly the lease semantics — the session is
+			// still alive; only its last_seen_at has drifted. Terminal and suspended
+			// are the only non-renewable states (checked above).
+			//
 			// Found the live record for this session — renew the lease.
 			existing.LastSeenAt = now
 			if existing.MachineID == "" {
@@ -636,6 +650,19 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				_ = id
 				return existing, nil
 			}
+		}
+	}
+
+	// Cross-lane identity guard (owner directive 2026-08-03; identity tuple is
+	// (thread_id, agent_id, workstream, watches, durable-host), not a shared repo
+	// or OS process family). A pinned ThreadID that already belongs to a DIFFERENT
+	// agent must never be relabeled/adopted — one thread ID belongs to one lane for
+	// life. Without this, a caller pinning another lane's ID (e.g. codex-inference
+	// pinning codex-home's `019f8fc4-…`) would silently overwrite the owner's record
+	// below. A mismatched identity is a blocker to route to the owner, not a repair.
+	if t.ThreadID != "" {
+		if existing, ok := reg.Threads[t.ThreadID]; ok && existing != nil && existing.AgentID != t.AgentID {
+			return nil, fmt.Errorf("thread %q is bound to agent %q; refusing to register it as %q (cross-lane identity adoption is prohibited)", t.ThreadID, existing.AgentID, t.AgentID)
 		}
 	}
 
@@ -972,19 +999,31 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 			// nil for active threads). ReapedFrom on the Thread struct is the
 			// idempotency key: hasSuccessorFor checks it so a second reconcile pass
 			// does not mint a duplicate.
+			//
+			// ConsumerCapable is carried from the predecessor: it is earned at
+			// runtime (set by setThreadConsumerCapable after the wake loop resolves
+			// a consumer) and not derivable from Surface alone for all agents. A
+			// successor minted without it silently un-earns consumer credit for
+			// lanes that earned it explicitly (non-claude/codex surfaces), leaving
+			// WakePass to skip the lane and repeat the false lane-needs-you loop
+			// for exactly that subset.
+			//
+			// MachineID is carried (added in PR #596) to preserve the reaper's
+			// OS-truth scope: without it the reaper's PID liveness check runs
+			// against the wrong machine's process table.
 			succ := &Thread{
-				ThreadID:   NewThreadID(),
-				AgentID:    t.AgentID,
-				Surface:    t.Surface,
-				Repo:       t.Repo,
-				Workstream: t.Workstream,
-				Host:       t.Host,
-				MachineID:  t.MachineID,
-				StartedAt:  now,
-				LastSeenAt: now,
-				Status:     ThreadStatusActive,
-				ReapedFrom: t.ThreadID,
-			}
+				ThreadID:        NewThreadID(),
+				AgentID:         t.AgentID,
+				Surface:         t.Surface,
+				Repo:            t.Repo,
+				Workstream:      t.Workstream,
+				Host:            t.Host,
+				MachineID:       t.MachineID,
+				ConsumerCapable: t.ConsumerCapable,
+				StartedAt:       now,
+				LastSeenAt:      now,
+				Status:          ThreadStatusActive,
+				ReapedFrom:      t.ThreadID}
 			reg.Threads[succ.ThreadID] = succ
 			outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileMintedSuccessor, SuccessorID: succ.ThreadID})
 

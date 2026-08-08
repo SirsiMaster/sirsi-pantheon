@@ -850,6 +850,55 @@ func TestReapDeadThreads_SessionKeyed_ExpiresAfterLease(t *testing.T) {
 	}
 }
 
+// TestRegisterThread_SessionKeyed_DifferentAgents verifies that two different
+// agent_ids sharing the same session_id and surface each get their own record.
+// This is the cross-lane identity adoption guard: `sirsi thread register
+// --agent claude-deck` run from inside a claude-home session must NOT inherit
+// claude-home's existing record (same CLAUDE_CODE_SESSION_ID in the environment).
+func TestRegisterThread_SessionKeyed_DifferentAgents(t *testing.T) {
+	tmp := t.TempDir()
+	sessID := "shared-session-xyz"
+
+	home, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-home",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("claude-home register: %v", err)
+	}
+	deck, err := RegisterThread(tmp, &Thread{
+		AgentID:   "claude-deck",
+		Surface:   "claude",
+		SessionID: sessID,
+	})
+	if err != nil {
+		t.Fatalf("claude-deck register: %v", err)
+	}
+
+	if home.ThreadID == deck.ThreadID {
+		t.Errorf("different agent_ids with the same session_id must produce separate records; both got %s", home.ThreadID)
+	}
+	if deck.AgentID != "claude-deck" {
+		t.Errorf("claude-deck record has wrong agent_id %q", deck.AgentID)
+	}
+	// The registry must hold two live records for this session — one per agent.
+	reg, err := LoadThreadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var agents []string
+	for _, thr := range reg.Threads {
+		if thr == nil || thr.Status.IsTerminal() || thr.SessionID != sessID {
+			continue
+		}
+		agents = append(agents, thr.AgentID)
+	}
+	if len(agents) != 2 {
+		t.Errorf("expected 2 live session-keyed records (one per agent), got %d: %v", len(agents), agents)
+	}
+}
+
 // TestRegisterThread_SessionKeyed_RenewsLastSeen verifies that a returning
 // hook fire advances LastSeenAt on the reused record (the lease renewal).
 func TestRegisterThread_SessionKeyed_RenewsLastSeen(t *testing.T) {
@@ -991,5 +1040,45 @@ func TestReapStrayThreads_SuccessStillInscribes(t *testing.T) {
 	if (*got)[0]["prior_status"] != string(ThreadStatusActive) {
 		t.Errorf("prior_status = %q, want %q — payload was computed after mutation",
 			(*got)[0]["prior_status"], ThreadStatusActive)
+	}
+}
+
+// TestRegisterThread_CrossLaneIdentityGuard locks in the owner directive
+// (2026-08-03): a pinned ThreadID owned by one agent must never be adopted or
+// relabeled by a different agent. Identity is the tuple (thread_id, agent_id, …),
+// so codex-inference pinning codex-home's thread ID is a blocker, not a repair.
+func TestRegisterThread_CrossLaneIdentityGuard(t *testing.T) {
+	tmp := t.TempDir()
+	home, err := RegisterThread(tmp, &Thread{
+		AgentID: "codex-home", Surface: "codex", Workstream: "home", PID: 40821,
+	})
+	if err != nil {
+		t.Fatalf("register home: %v", err)
+	}
+
+	// A different lane pins the Home thread ID — must be refused.
+	_, err = RegisterThread(tmp, &Thread{
+		ThreadID: home.ThreadID, AgentID: "codex-inference", Surface: "codex",
+		Workstream: "inference", PID: 37423,
+	})
+	if err == nil {
+		t.Fatal("expected cross-lane adoption of Home thread ID to be refused")
+	}
+
+	// The Home record must be untouched — still owned by codex-home.
+	reg, err := LoadThreadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := reg.Threads[home.ThreadID]; got == nil || got.AgentID != "codex-home" {
+		t.Errorf("Home thread was relabeled: %+v", got)
+	}
+
+	// Same agent re-pinning its own ThreadID is a legitimate update, not adoption.
+	if _, err := RegisterThread(tmp, &Thread{
+		ThreadID: home.ThreadID, AgentID: "codex-home", Surface: "codex",
+		Workstream: "home", PID: 40821,
+	}); err != nil {
+		t.Errorf("same-agent pinned re-register must be allowed, got: %v", err)
 	}
 }

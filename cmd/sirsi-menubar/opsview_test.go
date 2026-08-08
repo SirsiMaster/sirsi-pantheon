@@ -1,15 +1,18 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 func TestOpsLeadRow(t *testing.T) {
 	// Healthy: default glyph, compact roll-up.
-	if got := opsLeadRow(dashboard.OpsSummary{LiveThreadCount: 5, QueueOpenItems: 2}); got != "🟢 ops: 5 live · 0 stale · 2 queued" {
+	if got := opsLeadRowAt(dashboard.OpsSummary{LiveThreadCount: 5, QueueOpenItems: 2}, time.Now()); got != "🟢 ops: 5 live · 0 stale · 2 queued · age unknown" {
 		t.Errorf("healthy lead = %q", got)
 	}
 	// Drift/auth + failures + suspended + explicit worst icon.
@@ -21,6 +24,44 @@ func TestOpsLeadRow(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("lead %q missing %q", got, want)
 		}
+	}
+}
+
+func TestOpsSnapshotRows_ErrorReplacesPriorSuccess(t *testing.T) {
+	now := time.Date(2026, 8, 1, 3, 5, 0, 0, time.UTC)
+	ns := &router.NodeStatus{GeneratedAt: now.Add(-5 * time.Second).Format(time.RFC3339), LiveThreadCount: 2}
+	_, lead, _ := opsSnapshotRows(ns, nil, 12, now)
+	if !strings.Contains(lead, "2 live") || !strings.Contains(lead, "age 5s") {
+		t.Fatalf("success render = %q", lead)
+	}
+
+	sum, lead, rows := opsSnapshotRows(ns, errors.New("store unavailable"), 12, now)
+	if lead != "🔴 ops: unavailable · age unknown" || len(rows) != 1 || !strings.Contains(rows[0], "unavailable") {
+		t.Fatalf("error transition retained stale success: sum=%+v lead=%q rows=%v", sum, lead, rows)
+	}
+}
+
+func TestOpsSnapshotRows_ErrorPreservesBoundedSourceReason(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "registry", err: errors.New("load registry: open /secret/agents.json: permission denied"), want: "registry read failed"},
+		{name: "router state", err: errors.New("read state: store unavailable at /secret/router.db"), want: "router state read failed"},
+		{name: "other", err: errors.New("launchctl exploded with private detail"), want: "collection failed"},
+		{name: "nil snapshot", err: nil, want: "empty snapshot"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, rows := opsSnapshotRows(nil, tc.err, 12, time.Now())
+			if len(rows) != 1 || !strings.Contains(rows[0], tc.want) {
+				t.Fatalf("rows = %v, want bounded class %q", rows, tc.want)
+			}
+			if strings.Contains(rows[0], "/secret/") || strings.Contains(rows[0], "private detail") {
+				t.Fatalf("row leaked raw error detail: %q", rows[0])
+			}
+		})
 	}
 }
 
