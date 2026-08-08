@@ -156,7 +156,7 @@ func runSpotlightMarkers(devDir string) error {
 	if err != nil {
 		return fmt.Errorf("resolve home: %w", err)
 	}
-	plan := planIndexMarkers(home, devDir)
+	plan := guard.PlanIndexMarkers(home, devDir)
 
 	var already, todo, missing int
 	for _, st := range plan {
@@ -192,7 +192,7 @@ func runSpotlightMarkers(devDir string) error {
 		return nil
 	}
 
-	plan, applyErr := applyIndexMarkers(plan)
+	plan, applyErr := guard.ApplyIndexMarkers(plan)
 	wrote := 0
 	for _, st := range plan {
 		if st.WroteNow {
@@ -212,7 +212,7 @@ func runSpotlightMarkers(devDir string) error {
 // additive; removal hands whole trees back to the indexer and will produce real
 // reindex load, so the operator sees the complete list of affected paths, one
 // line each, before anything is unlinked.
-func runSpotlightMarkerRemoval(plan []markerState, already, missing int) error {
+func runSpotlightMarkerRemoval(plan []guard.MarkerState, already, missing int) error {
 	if !spotlightMarkersConfirm {
 		output.Header("Spotlight index markers — removal preview (nothing unlinked)")
 		for _, st := range plan {
@@ -227,7 +227,7 @@ func runSpotlightMarkerRemoval(plan []markerState, already, missing int) error {
 		return nil
 	}
 
-	plan, removeErr := removeIndexMarkers(plan)
+	plan, removeErr := guard.RemoveIndexMarkers(plan)
 	removed := 0
 	for _, st := range plan {
 		if st.Removed {
@@ -244,7 +244,7 @@ func runSpotlightMarkerRemoval(plan []markerState, already, missing int) error {
 // printSkipped surfaces paths the write path deliberately refused. A refusal
 // that is not printed is indistinguishable from a success, which is how a
 // partial apply gets reported as a complete one.
-func printSkipped(plan []markerState) {
+func printSkipped(plan []guard.MarkerState) {
 	for _, st := range plan {
 		if st.Skipped != "" {
 			output.Warn("  skipped %s — %s", st.Path, st.Skipped)
@@ -259,7 +259,7 @@ func printSkipped(plan []markerState) {
 // tested; no claim is made about mechanisms that were not.
 func printRootOnlyLevers() {
 	output.Dim("\n  The two mechanisms measured here both need root (renice and taskpolicy -b return EPERM; mds is root-owned):")
-	for _, l := range rootOnlyLevers() {
+	for _, l := range guard.RootOnlyLevers() {
 		output.Dim("     %s", l)
 	}
 }

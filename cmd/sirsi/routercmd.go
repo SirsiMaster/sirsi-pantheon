@@ -489,6 +489,11 @@ var (
 )
 
 var (
+	dismissResult string
+	dismissAgent  string
+)
+
+var (
 	respondResult string
 	respondTitle  string
 	respondAgent  string
@@ -615,6 +620,45 @@ var routerCloseCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("  Closed %s\n", args[0])
+		return nil
+	},
+}
+
+var routerDismissCmd = &cobra.Command{
+	Use:   "dismiss <id>",
+	Short: "Retire the owner's own item — the sole exemption to the owner-recipient close guard",
+	Long: `An item addressed to the owner cannot be closed by 'router close' — that guard
+exists so no agent can silently remove a decision request from the owner's
+board (defect 20260807-211340). dismiss is the one path around it: it only
+succeeds when BOTH the acting agent AND the item's recipient resolve to an
+owner alias (owner, user, cylton, sirsimaster, cylton-collymore), so it is
+useless as a general-purpose close:any bypass.
+
+Run this as the owner, naming yourself explicitly:
+  sirsi router dismiss <id> --agent owner --result "reviewed, no action needed"`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		result, err := loadOrLiteral(dismissResult)
+		if err != nil {
+			return fmt.Errorf("--result: %w", err)
+		}
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		actor := strings.TrimSpace(dismissAgent)
+		if actor == "" {
+			return fmt.Errorf("--agent is required and must be an owner alias (owner, user, cylton, sirsimaster, cylton-collymore) — dismiss is not auto-resolved from the session, only the owner may run it")
+		}
+		if err := f.DismissOwnerItem(actor, args[0], result); err != nil {
+			return err
+		}
+		fmt.Printf("  Dismissed %s\n", args[0])
 		return nil
 	},
 }
@@ -1383,6 +1427,8 @@ func init() {
 	routerCloseCmd.Flags().StringVar(&closeProof, "proof", "", "Completion proof JSON path, relative to repo root or absolute (ADR-037)")
 	routerCloseCmd.Flags().BoolVar(&closeBlocked, "blocked", false, "Close as explicitly blocked; requires --result and skips proof validation")
 	routerCloseCmd.Flags().BoolVar(&closeAck, "ack", false, "Close as coordination/ack only; requires --result and skips proof validation")
+	routerDismissCmd.Flags().StringVar(&dismissResult, "result", "", "Result body (literal text, or @file)")
+	routerDismissCmd.Flags().StringVar(&dismissAgent, "agent", "", "Owner alias acting as dismisser (required: owner, user, cylton, sirsimaster, or cylton-collymore)")
 	routerStatusCmd.Flags().IntVar(&statusStaleHours, "stale", 24, "Hours after which an open item is flagged as stale (0 disables)")
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
@@ -1397,5 +1443,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
 	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }

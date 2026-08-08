@@ -1,4 +1,4 @@
-package main
+package guard
 
 import (
 	"os"
@@ -21,7 +21,7 @@ func TestPlanAndApplyIndexMarkers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(cache, markerFile), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cache, MarkerFile), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,9 +35,9 @@ func TestPlanAndApplyIndexMarkers(t *testing.T) {
 		}
 	}
 
-	plan := planIndexMarkers(home, dev)
+	plan := PlanIndexMarkers(home, dev)
 
-	byPath := map[string]markerState{}
+	byPath := map[string]MarkerState{}
 	for _, st := range plan {
 		byPath[st.Path] = st
 	}
@@ -58,7 +58,7 @@ func TestPlanAndApplyIndexMarkers(t *testing.T) {
 		t.Error("descended into a matched build dir; marking the parent already covers it")
 	}
 
-	applied, err := applyIndexMarkers(plan)
+	applied, err := ApplyIndexMarkers(plan)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -71,12 +71,12 @@ func TestPlanAndApplyIndexMarkers(t *testing.T) {
 	if wrote == 0 {
 		t.Fatal("apply wrote nothing")
 	}
-	if _, statErr := os.Stat(filepath.Join(mod, markerFile)); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(mod, MarkerFile)); statErr != nil {
 		t.Errorf("module cache not marked after apply: %v", statErr)
 	}
 
 	// Idempotence: a second apply must write nothing at all.
-	again, err := applyIndexMarkers(planIndexMarkers(home, dev))
+	again, err := ApplyIndexMarkers(PlanIndexMarkers(home, dev))
 	if err != nil {
 		t.Fatalf("second apply: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestDiscoveryRequiresBuildOutputEvidence(t *testing.T) {
 	nm := mk("anything", "node_modules")
 
 	found := map[string]bool{}
-	for _, p := range discoverBuildDirs(dev, 4) {
+	for _, p := range DiscoverBuildDirs(dev, 4) {
 		found[p] = true
 	}
 
@@ -156,7 +156,7 @@ func TestUnprovenBuildNameIsNotDescended(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dev, "checkouts", "dist", ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range discoverBuildDirs(dev, 5) {
+	for _, p := range DiscoverBuildDirs(dev, 5) {
 		if p == inner {
 			t.Fatalf("descended into a refused build-name dir: %s", p)
 		}
@@ -176,7 +176,7 @@ func TestApplyRefusesPathChangedAfterPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plan := planIndexMarkers(home, dev)
+	plan := PlanIndexMarkers(home, dev)
 
 	// Swap the previewed directory for a different one at the same path.
 	elsewhere := filepath.Join(home, "elsewhere")
@@ -190,12 +190,12 @@ func TestApplyRefusesPathChangedAfterPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	applied, err := applyIndexMarkers(plan)
+	applied, err := ApplyIndexMarkers(plan)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
-	var st markerState
+	var st MarkerState
 	for _, s := range applied {
 		if s.Path == mod {
 			st = s
@@ -207,7 +207,7 @@ func TestApplyRefusesPathChangedAfterPreview(t *testing.T) {
 	if st.Skipped == "" {
 		t.Error("redirected path was skipped without saying why")
 	}
-	if _, statErr := os.Stat(filepath.Join(elsewhere, markerFile)); statErr == nil {
+	if _, statErr := os.Stat(filepath.Join(elsewhere, MarkerFile)); statErr == nil {
 		t.Error("marker landed in the redirect target — the recheck did not hold")
 	}
 }
@@ -222,14 +222,14 @@ func TestRemoveIndexMarkers(t *testing.T) {
 	if err := os.MkdirAll(mod, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := applyIndexMarkers(planIndexMarkers(home, dev)); err != nil {
+	if _, err := ApplyIndexMarkers(PlanIndexMarkers(home, dev)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(mod, markerFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(mod, MarkerFile)); err != nil {
 		t.Fatalf("setup did not mark: %v", err)
 	}
 
-	removed, err := removeIndexMarkers(planIndexMarkers(home, dev))
+	removed, err := RemoveIndexMarkers(PlanIndexMarkers(home, dev))
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
@@ -242,11 +242,11 @@ func TestRemoveIndexMarkers(t *testing.T) {
 	if n == 0 {
 		t.Fatal("remove unlinked nothing")
 	}
-	if _, statErr := os.Stat(filepath.Join(mod, markerFile)); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(mod, MarkerFile)); !os.IsNotExist(statErr) {
 		t.Errorf("marker survived removal: %v", statErr)
 	}
 
-	again, err := removeIndexMarkers(planIndexMarkers(home, dev))
+	again, err := RemoveIndexMarkers(PlanIndexMarkers(home, dev))
 	if err != nil {
 		t.Fatalf("second remove: %v", err)
 	}

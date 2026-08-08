@@ -108,6 +108,16 @@ func supervisorDuties() []SupervisorDuty {
 		// intentionally skipped — they need the full transcript-backed recovery path
 		// that only SessionStart can provide. See stalethreadheal.go.
 		{Name: "stale-thread-reconcile", GoRun: RunStaleThreadReconcileDuty, Cadence: 15 * time.Minute},
+		// Spotlight index markers (2026-08-07 reopened directive): keeps the
+		// unprivileged `.metadata_never_index` exclusion durable and current —
+		// re-plans + re-applies against ~/Development so a build dir that
+		// appears after the last run gets marked within one cadence, instead of
+		// staying unmarked until someone remembers to run the CLI by hand. See
+		// internal/guard/spotlightmarkers.go for the mechanism and its scope
+		// (churn/build dirs only — source trees are deliberately never marked).
+		{Name: "spotlight-markers", GoRun: func(routerRoot, repoRoot string) error {
+			return getSpotlightMarkersFn()(routerRoot, repoRoot)
+		}, Cadence: 30 * time.Minute},
 	}
 }
 

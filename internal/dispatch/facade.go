@@ -514,6 +514,14 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 	if err != nil {
 		return err
 	}
+	// An item addressed to the owner is a decision request only the owner can
+	// answer — closing it (directly, or via a "transfer" that closes-then-sends)
+	// removes the decision from the owner's board without answering it. Refuse
+	// at this single choke point so every caller (close, respond, a future
+	// transfer) inherits the guard (Rule A35 — scope the check to the claim).
+	if work.IsOwnerRecipient(item.To) {
+		return fmt.Errorf("dispatch: item %s is addressed to the owner (%q) and cannot be closed by an agent", id, item.To)
+	}
 	if item.To != actor {
 		allowed, capabilityErr := f.agentHasCapability(actor, "close:any")
 		if capabilityErr != nil {
@@ -524,6 +532,36 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 		}
 		result = fmt.Sprintf("Closed by declared actor %s on behalf of recipient %s.\n\n%s", actor, item.To, result)
 	}
+	return f.closeRaw(id, result)
+}
+
+// DismissOwnerItem is the sole exemption to the owner-recipient guard in
+// CloseItem: the owner retiring their OWN card. It exists because the guard,
+// left unconditional, makes an owner-addressed item permanently uncloseable —
+// the owner alias is deliberately absent from agents.json (owner.go: "the
+// owner queue has no executable watcher"), so ValidateAgent would reject it
+// as an actor before CloseItem's guard is even reached. Scoped narrowly: the
+// actor AND the item's recipient must both resolve to an owner alias, so this
+// can never be repurposed into a general-purpose close:any bypass.
+func (f *Facade) DismissOwnerItem(actor, id, result string) error {
+	if !work.IsOwnerRecipient(actor) {
+		return fmt.Errorf("dispatch: dismiss requires an owner alias as actor, got %q", actor)
+	}
+	item, err := f.Get(id)
+	if err != nil {
+		return err
+	}
+	if !work.IsOwnerRecipient(item.To) {
+		return fmt.Errorf("dispatch: item %s is addressed to %q, not the owner — use close instead", id, item.To)
+	}
+	return f.closeRaw(id, result)
+}
+
+// closeRaw is the actual close mechanics shared by CloseItem and
+// DismissOwnerItem: close the file when one exists, close the store row, and
+// treat an already-closed row as idempotent success. All authorization
+// happens in the caller — this performs no checks of its own.
+func (f *Facade) closeRaw(id, result string) error {
 	fileExists := false
 	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {
 		fileExists = true
