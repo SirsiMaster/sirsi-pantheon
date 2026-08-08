@@ -269,3 +269,35 @@ func (s *Store) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, er
 	}
 	return found, nil
 }
+
+// ResetTaskAttempts is the operator's deliberate re-arm of one task after the
+// cause of its retry-ceiling exhaustion is fixed. Mirrors ResetBreaker
+// (breaker.go): a row at attempts>=MaxRetriesPerItem is otherwise recoverable
+// only by a hand UPDATE against the store, the same gap breaker-no-operator-path
+// found for tripped sender domains.
+//
+// Zeroes attempts, clears any lease remnants, and — ONLY when status is
+// 'blocked' AND blocked_by is empty — restores status to 'pending'. That
+// guard matters: ClaimTask/ReclaimExpiredTaskLeases flip a row to 'blocked'
+// purely as the side effect of attempts exhaustion (tasklease.go:197-198,
+// 260-261), so undoing exhaustion means undoing that flip too, in the same
+// operator action — a two-step reset (attempts here, status via a separate
+// `task update --status pending`) is exactly the kind of thing an operator
+// forgets the second half of. A row 'blocked' for a REAL reason (blocked_by
+// set, i.e. waiting on a dependency) is left alone: attempts exhaustion did
+// not cause that block, so this verb has no business clearing it.
+func (s *Store) ResetTaskAttempts(agent, taskID string) error {
+	if strings.TrimSpace(agent) == "" || strings.TrimSpace(taskID) == "" {
+		return fmt.Errorf("routerstore: ResetTaskAttempts: agent and task-id are required")
+	}
+	res, err := s.exec(`UPDATE tasks SET attempts=0, failure_reason='', lease_token='', lease_expires='', claimed_by='', thread_id='',
+		status=CASE WHEN status='blocked' AND (blocked_by IS NULL OR trim(blocked_by)='') THEN 'pending' ELSE status END
+		WHERE agent=? AND task_id=?;`, agent, taskID)
+	if err != nil {
+		return fmt.Errorf("routerstore: ResetTaskAttempts %s/%s: %w", agent, taskID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
