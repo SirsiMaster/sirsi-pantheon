@@ -185,3 +185,36 @@ func TestStoreOnlyPruneDeletesOnlyObservedTerminal(t *testing.T) {
 		t.Fatalf("prune result=%#v", reg.Threads)
 	}
 }
+
+// TestSetThreadConsumerCapablePersistsAgainstRealStore is the end-to-end
+// sanity check for lifecycle-fence-lost's fix: setThreadConsumerCapable now
+// wraps its load-mutate-save in retryOnLostFenceErr (fenceretry_test.go pins
+// that helper's retry/backoff/surface behavior against mocks). This test
+// exercises the real call site against a real store-wake-mode store, which
+// the mock tests alone do not — a mocked retryOnLostFenceErr call proves the
+// helper works but not that setThreadConsumerCapable actually uses it.
+func TestSetThreadConsumerCapablePersistsAgainstRealStore(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(t.TempDir(), ".agents", "idea-router")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, ".sirsi", "router.db"))
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
+
+	if _, err := RegisterThread(root, &Thread{ThreadID: "thr-consumer", AgentID: "codex-pantheon", Surface: "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setThreadConsumerCapable(root, "thr-consumer", true); err != nil {
+		t.Fatalf("setThreadConsumerCapable: %v", err)
+	}
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.Threads["thr-consumer"] == nil || !reg.Threads["thr-consumer"].ConsumerCapable {
+		t.Fatalf("ConsumerCapable did not persist: %#v", reg.Threads["thr-consumer"])
+	}
+}

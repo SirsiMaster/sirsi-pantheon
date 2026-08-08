@@ -577,18 +577,46 @@ func closedChan() chan struct{} {
 // setThreadConsumerCapable persists whether a thread can drain its agent's
 // inbox. Written once at loop start rather than every heartbeat: it is a
 // property of the loop's configuration, not of a tick.
+// Retries on a lost lifecycle fence (lifecycle-fence-lost): the original
+// single-attempt load-mutate-save here had NO retry at all, unlike the reap
+// passes PR #619 protects with retryOnLostFence. Under measured fleet-wide
+// write contention against ~150 thread records (fence-retry-budget-
+// underprovisioned — a different thread loses its fence on every run, not
+// one wedged thread), a single attempt frequently lost the race and the
+// write was silently dropped: 109 occurrences in wake-claude-finalwishes.log
+// and 83 in wake-claude-nexus.log AFTER #619 was live, all from this call
+// site, none from the reap passes #619 already covers. A consumer-capable
+// lane then read as watch-only until the next lucky write won.
 func setThreadConsumerCapable(routerRoot, threadID string, capable bool) error {
-	reg, err := LoadThreadRegistry(routerRoot)
-	if err != nil {
-		return err
-	}
-	for _, t := range reg.Threads {
-		if t != nil && t.ThreadID == threadID {
-			t.ConsumerCapable = capable
-			return SaveThreadRegistry(routerRoot, reg)
+	return retryOnLostFenceErr(func() error {
+		reg, err := LoadThreadRegistry(routerRoot)
+		if err != nil {
+			return err
 		}
-	}
-	return fmt.Errorf("thread %s not found", threadID)
+		for _, t := range reg.Threads {
+			if t != nil && t.ThreadID == threadID {
+				t.ConsumerCapable = capable
+				// The CAS fence's primary branch is last_seen_at strictly
+				// advancing; every OTHER lifecycle mutator in this package
+				// bumps it as part of its write. This one did not, so it fell
+				// through to the CAS's fallback branch — same last_seen_at,
+				// requiring the new payload to sort byte-greater than the old
+				// one, which is not "is this newer", just an accident of JSON
+				// field encoding, and can fail PERMANENTLY regardless of
+				// retry count when it doesn't hold. That is the deeper half
+				// of lifecycle-fence-lost: the retry above fixes transient
+				// contention; this fixes a write that could never win the
+				// fence at all. Confirmed by reproduction: register
+				// immediately followed by this call failed all 3 retry
+				// attempts identically until LastSeenAt was added here, and
+				// removing only this line (retry still wired) reproduces the
+				// same 3/3 failure — this is the fix, not the retry alone.
+				t.LastSeenAt = time.Now().UTC()
+				return SaveThreadRegistry(routerRoot, reg)
+			}
+		}
+		return fmt.Errorf("thread %s not found", threadID)
+	})
 }
 
 // consumerRun tracks ONE dispatched consumer process for its whole lifetime.
