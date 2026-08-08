@@ -183,6 +183,25 @@ def pull_model_open_items(agent_id: str) -> list[str]:
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2.0)
         try:
+            # Second-reader schema guard (hook-store-schema-second-reader):
+            # this hook duplicates the store's items.id/to_agent/status shape
+            # instead of going through the CLI, so a real column rename on the
+            # live schema would otherwise silently degrade to "return []" —
+            # the cry-wolf defect INVERTED: not a false alarm but a false
+            # all-clear, which is worse, because nothing ever tells the
+            # operator their inbox counter went blind. Checking the shape
+            # before querying turns that into a loud, visible failure.
+            cols = {row[1] for row in con.execute("pragma table_info(items)")}
+            required = {"id", "to_agent", "status"}
+            if not required.issubset(cols):
+                missing = required - cols
+                print(
+                    f"router-supervisor: items table is missing column(s) "
+                    f"{sorted(missing)} — the inbox counter cannot read the "
+                    f"store and is reporting zero rather than a wrong count",
+                    file=sys.stderr,
+                )
+                return []
             rows = con.execute(
                 "select id from items where to_agent = ? and status = 'open'",
                 (agent_id,),
