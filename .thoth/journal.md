@@ -1872,3 +1872,18 @@ requests (pool delta -0.0003 GB over d=3, i.e. -0.0001 GB/req against a known-ba
 inbox zero for claude-home; the 5 open items are all owner/user surface and stay open. Swap is the
 one number to watch: 10.9 GB of 12.0 GB consumed (88.8%), up from 78% last run — free RAM reads a
 reassuring 88%, which is exactly the hollow metric.
+
+## Conduit run 2026-08-08T03:10Z
+Quiet run — first pass since the 22:12 EDT mass-restart onto the gated binary, and it is the
+first run that can prove #639 works in production rather than assert it. All 22 wake lanes log
+`alive, inbox depth 0 unchanged` on a ~16-minute heartbeat and spawn nothing: headless
+`claude --print` sessions 0, `codex exec` 0. Pre-gate, every one of those cycles was a session.
+Broker measured over 3 DRIVEN requests: pool 21.343 GB -> 21.343 GB, delta 49,152 bytes = 0.0000
+GB/req against a known-bad 0.48 — clean, left alone despite `diagnose` rendering it 🟡 82/100 on
+the `phys_footprint` finding (the documented false positive). Healed: `thread reconcile` reaped
+thr-f4c73033e8976836 [codex-pantheon] into successor thr-964e0a28a5cbc18c; `ccd reap` killed one
+leaked completed router-conduit session. Router at 5 open, all owner/user `owner-surface` items —
+surfaced, never closed. Zero open PRs on sirsi-pantheon and SirsiNexusApp; FinalWishes #128/#127
+still DIRTY and belong to their lane agents. Swap 86.1% (10,582/12,288 MB), down from 88.8% —
+still the metric to watch, while free RAM reads a hollow 87%. The three codex ledger-rot backlogs
+(inference 35, mail 9, pantheon 2) cannot move while the no-network owner decision is open.
