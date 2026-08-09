@@ -2359,3 +2359,58 @@ ship #639, which the owner deliberately left undeployed. Broker measured clean o
 window: 0.0138 GB/req over 3 requests (known-bad 0.48), peak 11.97 GiB, revision 7a0cdf7b, port
 8477. Vitals 94/100, swap 0/0, no new crash/Jetsam reports, 0 headless sessions, quarantine and the
 parked horus/triage labels all intact.
+
+## Conduit run 2026-08-09T15:20Z
+
+All-green pass with one diagnosis worth recording. `main` CI run `31302915663` (head `f26d51d0`,
+PR #674) reads **failure** at both the run AND job level, but it is a **false red**: steps 1-9 all
+succeeded, including `Run tests`, and only step 10 `Upload metrics` was `cancelled` when the
+self-hosted runner took a shutdown signal mid-upload. A cancellation in a trailing artifact step
+poisons the job conclusion, so the standing "read the JOB, not the run" rule is insufficient here —
+read the STEP conclusions. Main is green in substance; no regression from #674, nothing routed.
+PR #675 (`fix/broker-quarantine`, claude-pantheon) is CONFLICTING with source-level conflicts in
+`internal/liveness/livenesswatch.go` and its test, and carries **zero checks** — that is a direct
+consequence of the conflict, not a CI fault: `ci.yml` fires on `push` to main/develop and on
+`pull_request`, and GitHub cannot build a merge ref for a conflicting PR, so no `pull_request` run
+is ever dispatched. Left for its lane agent to rebase. Broker measured **0.0138 GB/req** over a
+driven 3-request window (req 17→20, active+cache), peak 12.07 GiB — clean against the 0.48 GB/req
+known-bad. Registry: reconcile healed the same 3 successors again, prune 0 (29→29), ccd reap killed
+1 completed conduit session, retention nothing. Headless sessions 0.
+
+## 2026-08-09T13:0xZ — PR #675 rebased clean; menubar alarm is real but correctly not relaunched
+
+horus's `liveness-watch: menubar not running` (20260809-130002) named a genuine gap — no
+`SirsiMenubar` process — but the machine is deliberately owner-quarantined
+(`~/.sirsi/menubar-quarantine`, written 09:43:24Z). Did not relaunch it; a quarantined component
+alarming as "down" is the alarm working as designed until the quarantine-aware fix ships, not a
+reversed owner decision.
+
+That fix is exactly PR #675, which the 15:20Z conduit run had already diagnosed as CONFLICTING
+and left for its lane agent — me. Rebased onto `origin/main`: 14 commits collapsed to 6 real ones,
+because `git rebase` cleanly dropped 4 whose patch content main already carries via #674 (broker
+quarantine, weight-floor false-positive, gemma-server.pid self-heal) with the message "patch
+contents already upstream" — no manual resolution needed. The one genuine code conflict was
+`cmd/sirsi/gemma_serve.go`: an old commit added a local `syncGemmaPidFile` duplicating what main
+already ships as the shared `liveness.SyncGemmaPidFile` (identical body, confirmed by diff);
+resolved in favor of main's shared version and dropped the duplicate. `.thoth/journal.md` and
+`.thoth/memory.yaml` conflicted at nearly every step (expected — both branches append linearly);
+resolved by taking main's copy each time and popping the pre-rebase local edits back on top after,
+clean, no markers.
+
+Verified before push: `go build ./...` clean, `go vet ./...` clean, `golangci-lint run ./...` 0
+issues, `go test ./internal/liveness/... ./internal/router/... ./internal/routerstore/...` all
+pass. Full `go test ./cmd/sirsi/...` hit `TestAnubisWeigh`'s hardcoded 60s timeout (a full-
+filesystem scan integration test, unrelated to this diff — confirmed unrelated by re-running it in
+isolation and by reading the test body); `-short` mode (skips that test) passes clean. Pushed with
+`--force-with-lease`; PR flipped CONFLICTING→MERGEABLE, CI (lint/test/build/secrets) all green.
+
+Did not self-bind. The PR touches `cmd/sirsi/` (an authority-model path per `binding-hold.yml`),
+which requires an APPROVING REVIEW from an identity other than the author on the current head SHA
+(A25/A28/ADR-041) — and every agent here authenticates as the same `SirsiMaster` account, so an
+agent cannot legitimately review its own PR by running `scripts/bind/sirsi-bind.sh` on itself; that
+would be exactly the rubber-stamp A34 exists to prevent. Sent a full review request to codex-pantheon
+(`20260809-131022`) with the diff summary, rebase notes, and verification evidence, asking them to
+review and either approve directly or run the bind script. Closed the horus item with the full
+root-cause/fix-status/no-action-taken record rather than a bare ack. Until #675 merges, the
+currently deployed binary predates the quarantine marker check and this alarm will keep firing on
+its 900s interval — tracked as alarm cost, not restated as a new finding each time it fires.
