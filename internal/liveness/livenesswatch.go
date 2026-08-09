@@ -413,38 +413,6 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 		return GemmaDown, "port file unreadable"
 	}
 
-	// Weight floor: a broker with no model weights loaded onto the GPU cannot
-	// serve real inference regardless of what a bare /health 200 implies. This
-	// catches the "weightless broker" class (mlx_active_bytes ~0, /health ok,
-	// zero generation capacity) that a restart cannot fix when the HF cache is
-	// absent. Primary signal is mlx_active_bytes (ground truth, read from the
-	// broker's own /health) — RSS is understated by up to 27 GB (measured
-	// 2026-08-06, PRD R6) and can swing either side of any floor. RSS is used
-	// ONLY when /health itself is unreachable, so the check still fails safe
-	// instead of skipping entirely.
-	if bytes, ok := getBrokerMLXBytesFn()(); ok {
-		if bytes < minWeightedBytes {
-			return GemmaWedged, fmt.Sprintf(
-				"broker mlx_active_bytes=%d MB is below the %d MB weight floor — model "+WeightsAbsentSentinel+"; "+
-					"a restart will not fix this (check HF model cache and re-download weights)",
-				bytes/(1024*1024), minWeightedBytes/(1024*1024),
-			)
-		}
-	} else {
-		// /health unreachable even though the port file exists — fall back to
-		// the RSS floor. Fail-open: if the PID file is missing or ps fails,
-		// rss==0 and we skip the floor check rather than falsely classifying a
-		// healthy broker as weightless.
-		pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
-		if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
-			return GemmaWedged, fmt.Sprintf(
-				"broker RSS %d MB is below the %d MB weight floor (fallback: /health unreachable) — model "+WeightsAbsentSentinel+"; "+
-					"a restart will not fix this (check HF model cache and re-download weights)",
-				rss/1024, minWeightedRSSKB/1024,
-			)
-		}
-	}
-
 	model := resolveModel(home)
 	status, detail, timedOut := probeGemmaAttempt(port, model)
 	if timedOut {
@@ -459,6 +427,56 @@ func ProbeGemmaState(home string) (GemmaStatus, string) {
 			detail += " (twice — wedged, not just busy)"
 		case status == GemmaHealthy:
 			detail += " (on retry — broker was busy, not wedged)"
+		}
+	}
+	if status != GemmaWedged {
+		return status, detail
+	}
+
+	// The broker failed to generate. Before reporting a generic wedge, check
+	// whether it can generate AT ALL — a broker with no model weights loaded
+	// onto the GPU cannot, regardless of what a bare /health 200 implies, and
+	// a restart cannot fix it when the HF cache is absent.
+	//
+	// This runs AFTER the generation probe, not before: weights load lazily on
+	// the first request, so a freshly-restarted, idle-but-healthy broker
+	// legitimately reports mlx_active_bytes==0 before ever being asked to
+	// generate. Floor-first misread that as "weights absent", restarted a
+	// working broker, and the restarted broker was — of course — idle again on
+	// the next tick: a self-sustaining false-positive loop (measured
+	// 2026-08-09, two firings 8m42s apart against a 900s interval; router item
+	// 20260809-060146, evidence from claude-home). The functional probe is
+	// truth for BOTH the idle-but-healthy case (passes here, floor never
+	// consulted) and the weights-genuinely-absent case (fails here — a broker
+	// with no weights cannot generate either), so gating the floor on a prior
+	// generation failure keeps the "restart won't fix it" diagnosis without
+	// the lazy-init false positive.
+	//
+	// Primary signal is mlx_active_bytes (ground truth, read from the broker's
+	// own /health) — RSS is understated by up to 27 GB (measured 2026-08-06,
+	// PRD R6) and can swing either side of any floor. RSS is used ONLY when
+	// /health itself is unreachable, so the check still fails safe instead of
+	// skipping entirely.
+	if bytes, ok := getBrokerMLXBytesFn()(); ok {
+		if bytes < minWeightedBytes {
+			return GemmaWedged, fmt.Sprintf(
+				"%s; broker mlx_active_bytes=%d MB is below the %d MB weight floor — model "+WeightsAbsentSentinel+"; "+
+					"a restart will not fix this (check HF model cache and re-download weights)",
+				detail, bytes/(1024*1024), minWeightedBytes/(1024*1024),
+			)
+		}
+	} else {
+		// /health unreachable even though the port file exists — fall back to
+		// the RSS floor. Fail-open: if the PID file is missing or ps fails,
+		// rss==0 and we skip the floor check rather than falsely classifying a
+		// healthy broker as weightless.
+		pidFile := filepath.Join(home, ".sirsi/gemma-server.pid")
+		if rss := getBrokerRSSFn()(pidFile); rss > 0 && rss < minWeightedRSSKB {
+			return GemmaWedged, fmt.Sprintf(
+				"%s; broker RSS %d MB is below the %d MB weight floor (fallback: /health unreachable) — model "+WeightsAbsentSentinel+"; "+
+					"a restart will not fix this (check HF model cache and re-download weights)",
+				detail, rss/1024, minWeightedRSSKB/1024,
+			)
 		}
 	}
 	return status, detail
