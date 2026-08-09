@@ -169,16 +169,20 @@ func runConduitDisarm(_ *cobra.Command, _ []string) error {
 }
 
 func runConduitStatus(_ *cobra.Command, _ []string) error {
-	armed := runtime.GOOS == "darwin"
-	if armed {
-		if _, err := os.Stat(conduitPlistPath()); err != nil {
-			armed = false
-		}
+	if runtime.GOOS != "darwin" {
+		fmt.Println("𓁢 conduit: UNKNOWN (launchd health is unavailable on this platform)")
+		return nil
 	}
-	if armed {
+	plistPath := conduitPlistPath()
+	if _, err := os.Stat(plistPath); err != nil {
+		fmt.Println("𓁢 conduit: NOT ARMED (launchd plist is absent)")
+		return nil
+	}
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	if out, err := exec.Command("launchctl", "print", domain+"/"+conduitLabel).CombinedOutput(); err == nil {
 		fmt.Printf("𓁢 conduit: ARMED (%s)\n", conduitLabel)
 	} else {
-		fmt.Println("𓁢 conduit: not armed — run `sirsi conduit arm`")
+		fmt.Printf("𓁢 conduit: INCOMPLETE (plist present, launchd job not loaded: %s)\n", strings.TrimSpace(string(out)))
 	}
 	return nil
 }

@@ -2286,3 +2286,76 @@ successors, prune 0 (121→121), `ccd reap` killed 1 leaked session, retention n
 new sirsi/gemma crash or Jetsam since the Aug 8 16:45 AMFI kill already evaluated. Note for the next
 run: `ai.sirsi.horus.agent-router` and `ai.sirsi.triage` are **not loaded** — their plists carry the
 `.OFF-owner-20260807` suffix, which is an owner decision, not a defect to heal.
+
+## Conduit run 2026-08-09T09:1xZ
+
+Resumed from the prior run's flagged in-flight item and found it already answered: claude-pantheon
+responded to `20260809-081421` at 08:17:37Z, independently re-verified that #674 (f26d51d0, merged
+08:11:20Z) and #639 (de3b143d) are both on origin/main while `~/.local/bin/sirsi` is still dated
+Aug 7 21:39, and then declined to deploy — because rebuilding from main also ships #639's fabric
+spawn-behaviour change, which would silently execute option B of owner card `20260809-011319` while
+that card is open. That is the correct stand-down and the deploy stays owner-gated; I did not
+re-file it. Worth recording that the exposure is widening, not static: the false broker-wedge
+liveness loop fired again at 08:50:39Z (`20260809-081404`, occurrences=4) and at 09:05:39Z, seven-plus
+firings after its own fix merged, because `ai.sirsi.liveness-watch` execs the stale artifact. I
+rewrote the `merged-not-deployed-recurs` charter to carry that state so the row stops understating
+itself, and left its non-gated half — a doctor check comparing installed build revision against
+origin/main HEAD — open. Separately, the `sne-broker-active-crossed-38gb-threshold` row is stale by
+process identity, not by judgement: those 38 GB samples belong to a broker that no longer exists.
+The live one is revision `7a0cdf7b` built 07:35:28Z, `mlx_active_bytes` 11.79 GiB, peak 11.82 GiB, and
+a driven three-request window normalized per request measured **0.0166 GB/req** against a known-bad
+0.48. Swap is 1988/3072 MB, not the 93.5%-consumed state the row records. I routed that measurement
+to claude-nexus as `20260809-091146` rather than closing the row myself, since the row is theirs and
+their lane is very much alive. Everything else was clean: diagnose 94/100 (the single finding is the
+`phys_footprint` Sirsi-processes badge, the known false-critical), 0 BINARY_MISSING, board HTTP 200,
+retention nothing to prune, `ccd reap` killed 0 and archived 1, reconcile healed the same three
+successors and left the same 5 stranded files (owner call, never auto-committed), and headless
+sessions read 2 with no climb. `ai.sirsi.horus.agent-router` and `ai.sirsi.triage` remain unloaded
+behind `.OFF-owner-20260807` plists — owner decision, never bootstrapped. FinalWishes #128 and #127
+are both still DIRTY for the twelfth consecutive run; codex-home has that routed to codex-finalwishes
+(`20260809-052520`) and the conflict is theirs, not mine to resolve.
+
+## Conduit run 2026-08-09T10:1xZ
+
+The machine rebooted at 09:13Z (shutdown_stall 09:13:32Z), so every verification from the 09:4xZ
+decision-board run pre-dates the current process table. The fabric came back on its own and came
+back correct: 23 wake lanes, gemma-broker, router-board (HTTP 200) and 10 self-hosted runners all
+live; horus/triage still absent behind their `.OFF-owner-20260807` plists; `ai.sirsi.pantheon` still
+out after claude-nexus's bootout. Headless `claude --print` sessions: 1, no climb. One real signal
+to report, not heal: a `sirsi` crash at 09:14:34Z, one minute into boot, `SIGKILL (Code Signature
+Invalid)` / `CODESIGNING Launch Constraint Violation` — single occurrence, and the installed binary
+(Aug 7 21:39, sha256 `1470a895d995aa37`) passes `codesign -v` with every router verb working, so it
+reads as a lane exec'ing the binary mid-replace rather than a bad artifact. The broker re-measure is
+the run's methodology note: on a cold post-reboot process the first driven 3-request window read
+**3.98 GB/req**, which is weight load (active 0 → 11.81 GiB on request one), not a leak — a run that
+stopped there would have filed a false P0 twenty times worse than the known-bad rate. The warm
+window (requests 3→6) reads **0.0092 GB/req** on active+cache against known-bad 0.48. Clean.
+**A cold broker cannot be leak-measured any more than an idle one can; load the weights first, then
+measure.** Inbox worked to zero: claude-nexus's decisions-of-record item was ACK-closed with a
+response, and it surfaced genuinely stale canon — the conduit's own task file still called PR #639
+"DIRTY and blocked on an independent bind" and told each run that landing it was the priority.
+Rewritten to record the merge (de3b143d, 2026-08-07T22:30Z) and the owner's option C: deliberately
+undeployed, watch-and-report only. That was the copy actually driving the hourly pass, so the fix
+matters more than the CLAUDE.md one already made. FinalWishes #127/#128 both still DIRTY, thirteenth
+unchanged run, already routed to codex-finalwishes — left. reconcile healed the same 3 successors;
+5 stranded files remain an owner call; prune 0 (52→52); ccd reap 0/0; retention nothing.
+
+## Conduit run 2026-08-09T11:13Z
+
+claude-home inbox zero; 8 open fleet-wide (owner 7, user 1), all owner-surface decision cards left
+untouched — sweeping them is itself the defect two of those cards report. One new finding routed:
+PR #674 (merged f26d51d0, 08:11Z) shipped `suppressMenubarDown`, but it only suppresses when the
+LaunchAgent plist is ABSENT, and `~/Library/LaunchAgents/ai.sirsi.pantheon.plist` is still present
+(Jul 2, 593 B) — this machine's menubar quarantine is launchd-state, not plist removal, so the
+suppression never fires and `liveness-watch: menubar not running` is a permanent standing alarm
+(item 20260809-101453 at occurrences=4, last_seen 10:59:57Z). Verified from source, not inferred
+from the alarm: `Run` is read-and-route only and `ai.sirsi.pantheon` is still absent from
+`launchctl list`, so the owner's quarantine is intact — this is alarm cost, not a reversed
+decision. Routed to claude-pantheon as 20260809-111335 with two fix options, recommending they
+widen the suppression to treat "plist present but job not loaded" as quarantine rather than rename
+the owner's quarantine artifact. No second owner card opened: 20260808-221547 already covers the
+owner-facing half. The fix cannot be deployed regardless — rebuilding main to ship it would also
+ship #639, which the owner deliberately left undeployed. Broker measured clean on a WARM driven
+window: 0.0138 GB/req over 3 requests (known-bad 0.48), peak 11.97 GiB, revision 7a0cdf7b, port
+8477. Vitals 94/100, swap 0/0, no new crash/Jetsam reports, 0 headless sessions, quarantine and the
+parked horus/triage labels all intact.
