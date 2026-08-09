@@ -850,6 +850,45 @@ func TestProbeMenubar_QuarantinedIsSuppressed(t *testing.T) {
 	}
 }
 
+// TestProbeMenubar_QuarantineMarkerSuppressesEvenWithPlistPresent guards
+// router item 20260809-093638: a `launchctl bootout` leaves the exact-named
+// ai.sirsi.pantheon.plist in place (the owner's decision was "quarantine
+// holds", enforced by not bootstrapping it, not by removing the plist), so
+// the plist-absence heuristic alone re-alarms and a live agent "helpfully"
+// relaunches the app the owner just quarantined. The marker must suppress
+// the finding regardless of plist presence.
+func TestProbeMenubar_QuarantineMarkerSuppressesEvenWithPlistPresent(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar probe is darwin-only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir LaunchAgents: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, MenubarLabel+".plist"), []byte("<plist/>"), 0o644); err != nil {
+		t.Fatalf("write plist: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o700); err != nil {
+		t.Fatalf("mkdir .sirsi: %v", err)
+	}
+	if err := os.WriteFile(MenubarQuarantineMarkerPath(home), []byte("2026-08-09T09:40:00Z\n"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	f := probeMenubar()
+	if f.Detail == "running" {
+		t.Skip("the real menubar happens to be running on this machine — suppress branch not exercised")
+	}
+	if !f.OK {
+		t.Errorf("probeMenubar() with plist present + quarantine marker = %+v, want OK=true", f)
+	}
+	if f.Fixable {
+		t.Errorf("probeMenubar() quarantined = %+v, want Fixable=false", f)
+	}
+}
+
 // installFakeBrokerPlist puts a gemma-broker LaunchAgent plist under home so
 // probeGemma treats a down broker as a real outage. Without it the probe reads
 // the absence as a deliberate retirement and suppresses the finding, which is

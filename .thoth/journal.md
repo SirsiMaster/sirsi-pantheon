@@ -1907,3 +1907,510 @@ absolute swap consumption actually fell ~4 GB; free RAM 30%. Ledger rot is now f
 (inference 35, mail 9, pantheon 2, home 1 — the last a newly transferred PR-14 admission-cap
 review), all of it downstream of the single open owner decision 20260808-014200 on codex network
 access; one blocker, already surfaced, so no second escalation was filed.
+
+## Conduit run 2026-08-08T05:10Z
+
+Quiet pass with one real find. Inbox zero for claude-home; 5 open items unchanged, all
+`owner-surface`. Broker (pid 44925, unrestarted, port 8477 from the port file) measured over 3
+DRIVEN requests: pool 21,246,982,626 → 21,246,490,290 B = −0.47 MB, **0.0000 GB/req** against a
+known-bad 0.48 — clean, not bounced. Headless `claude --print` count **0**, so the #639 gate is
+still holding across 22 wake lanes. Swap read 6,256/7,168 MB: the percentage looks alarming at
+87%, but absolute used swap fell again (6,544 → 6,256 MB), which is the honest direction. The
+Jetsam at 2026-08-07T22:03Z (victim `sirsi-inference.test`, 51.4 GB at 16 KB rpages) was already
+routed and closed as `20260807-221439` → claude-inference; no duplicate filed. `thread reconcile`
+healed the same 3 records as last run (codex-home ×2, codex-pantheon → successors); prune 33→33,
+0 BINARY_MISSING, retention inside 90 days, board 200 on :8734. The find: **both self-hosted CI
+runners, `m5-sirsi` and `m5-sirsi-2`, are offline** — last successful self-hosted build was
+01:23:06Z, and PR #673 has had `Test` and `Build (self-hosted, macOS, ARM64, 1.25)` queued 54
+minutes with zero elapsed. Both are required contexts, so this is a merge freeze on the whole
+repo, and it is distinct from the codex-network card (that blocks review, this blocks checks).
+Not healable here — no runner install, process or launchd job exists on this MacBook; the service
+lives on the M5. Escalated once as `20260808-051202` with three concrete options. PR #673 left
+alone on both counts: it cannot go green, and it is this lane's own branch (no self-review).
+FinalWishes #127/#128 still DIRTY and non-trivial, left to their lane agents.
+
+## Conduit run 2026-08-08T06:10Z
+
+One real find: an **unrouted Jetsam recurrence**. `JetsamEvent-2026-08-08-000302.ips` (04:03Z) killed
+`sirsi-inference` (1,305,811 rpages = 21.4 GB) and `sirsi-infer-campaign` (822,093 rpages = 13.5 GB) —
+34.9 GB of one process family on a 48 GB host, with the kernel reclaiming down through WindowServer,
+Claude renderers and gopls. `sirsi-infer-campaign` appears in no router item, open or closed: the
+earlier card `20260807-221439` covered only the 22:03Z event (`sirsi-inference.test` 51.4 GB) and is
+closed, so whatever satisfied it did not bound this binary. Routed as `20260808-061042` →
+claude-inference with the forensics and an explicit exoneration of the broker. The 05:10Z run missed
+this file, which is why the check is "new .ips since last run" and not "new .ips since the last one I
+filed on".
+
+Broker measured clean on a DRIVEN window, not an idle one: pool 21,247,003,402 → 21,246,970,634 bytes
+across requests 15→18 = **−32 KB, 0.0000 GB/req** against a known-bad 0.48 GB/req. Peak 13.56 GB under
+the 20 GiB scheduler limit. Not bounced. `thread reconcile` healed the same 3 threads as the last two
+runs (codex-home x2, codex-pantheon), which looked like a heal that would not stick — a second
+immediate pass returned "no dirty exits to heal", proving idempotency and reclassifying them as fresh
+dead threads per interval rather than a stuck repair. `ccd reap --apply` killed one leaked conduit
+session (pid 96557, idle 61min). Prune 33→33, retention inside 90d, 0 BINARY_MISSING, board 200 on
+:8734, 0 headless sessions (#639 gate still holding across 22 live wake lanes).
+
+Both self-hosted runners (`m5-sirsi`, `m5-sirsi-2`) remain `offline`, so `Test` and `Build
+(self-hosted, macOS, ARM64, 1.25)` are still pending on PR #673 after ~2h — the pantheon merge freeze
+persists, already escalated as `20260808-051202` and deliberately not re-filed. Swap absolute fell
+again, 6,256 → 6,147 MB; free RAM 32% remains the hollow metric and was ignored.
+
+## Conduit run 2026-08-08T07:20Z
+
+All-green pass, one negative finding worth recording: **no third Jetsam event**. The 04:03Z
+recurrence routed last run as `20260808-061042` was not followed by another — zero new `.ips` in
+either DiagnosticReports tree since 06:15Z (newest is a Chrome crash from 07T23:25). Broker
+measured clean under a driven window: requests 22→25, pool 21,246,348,042 → 21,246,315,274 bytes
+= **−32 KB over 3 requests, 0.0000 GB/req** (known-bad 0.48). pid 44925 unchanged, not bounced;
+`diagnose`'s 🟡 "memory hog at 19.9 GB" is the `phys_footprint` artifact, ignored as canon requires.
+Swap absolute fell a fourth consecutive run, 6,147 → 6,091 MB used. Inbox zero for claude-home.
+Self-hosted runners `m5-sirsi` / `m5-sirsi-2` still `offline` (~6h) — merge freeze holds, single
+escalation `20260808-051202` stands, no second card filed. `thread reconcile` healed the same three
+dead-thread successors (codex-home ×2, codex-pantheon); settled behaviour, not a stuck heal.
+`ccd reap` killed a leaked conduit-supervisor session for the **second consecutive run** (pid 3256,
+idle 60min; pid 96557 last run) — the reaper catches it each time, so it is contained, but two in a
+row makes it a pattern rather than a one-off. Wake lanes wrote nothing since 03:10Z and headless
+session count is 0: the #639 spawn gate continues to hold.
+
+## Conduit run 2026-08-08T19:1xZ
+
+The 18-hour CI freeze broke. `m5-sirsi` and `m5-sirsi-2` are back `online busy=false`, and pantheon
+**#673** went from `BLOCKED` to genuinely green — all five required contexts (`Lint`, `Test`,
+`Secrets Scan (gitleaks)`, `Build (self-hosted, macOS, ARM64, 1.25)`, `binding-hold`) report
+SUCCESS, checked against branch protection's list rather than the `mergeStateStatus` badge. #673 is
+this lane's own branch, so it does not get merged here: a bind request went to codex-home as
+`20260808-191103`, carrying the file scope (`.thoth/journal.md`, `.thoth/memory.yaml` — docs only,
+no code) and an explicit note that `binding-hold` SUCCESS proves only the label's absence, never
+that a bind exists. codex-home still has no network, so that request is a handoff, not a gate; this
+lane kept working. Owner card `20260808-051202` (runners offline) is now factually resolved but
+stays open — it is `to: owner`, and this pass never closes those. Everything else held: broker
+21,243,857,674 bytes byte-identical across 7 requests (0.0000 GB/req, twelfth consecutive identical
+read), no new Jetsam or crash reports, zero headless `claude --print` sessions, board 200, thread
+reconcile healed the same three fresh successors, and `ccd reap` took the usual single stranded
+conduit session. Swap moved 5,767 → 6,026 MB used of 7,168 — first movement in four reads, worth
+watching but well short of the 98%-consumed pathology.
+
+## Conduit run 2026-08-08T17:2xZ — reboot wiped the LaunchAgent domain; fabric + CI restored
+
+The machine rebooted at ~16:43Z (uptime 27min at start of run) and **nothing in
+`~/Library/LaunchAgents` auto-loaded at login** — 60 services live in `gui/501`, zero of them
+`ai.sirsi.*` or `actions.runner.*`, despite `RunAtLoad=true` on the plists. This is not an owner
+decision and not a quarantine: it is a failed login-load. Restored the full owner-live set by
+bootstrapping every exact-suffix `ai.sirsi.*.plist` (the `.OFF-owner-*` / `.quarantined` files carry
+other suffixes, so parked lanes are excluded by construction, not by judgement): **26 bootstrapped,
+0 failed, 27 services live** — gemma-broker, router-board, menubar, liveness-watch and all 24
+`router.wake.*` lanes. Canary-verified with router-board first (pid 7294, HTTP 200) before the bulk
+pass.
+
+Two lanes latched at **exit 78 (EX_CONFIG)** and would have stayed dead: `wake.codex-io` and
+`wake.codex-mail` had `ProgramArguments[0] = /tmp/sirsi-wi`, a path macOS wipes on every reboot,
+while all 22 sibling lanes point at `~/.local/bin/sirsi`. That is a latent defect predating this
+reboot — those two lanes fail-closed after *any* restart. Repointed both at the real binary
+(`.bak-tmppath-20260808` kept), bootout+bootstrap since 78 is cached and `kickstart` cannot clear
+it; both now hold live PIDs.
+
+The same login-load failure took down all 10 `actions.runner.*` agents, and the GitHub API confirmed
+`m5-sirsi` and `m5-sirsi-2` **offline** — the substance of open owner card `20260808-051202`.
+Bootstrapped all 10; both runners re-registered **online**, verified at the API rather than the exit
+code. Card stays open (`to: owner`, never closed by the conduit).
+
+Broker came back as `sirsi-inference` on 8477 (port file agrees; the transient `sne-server` pid 7159
+on 8238 died within 30s pre-restore). First measurement window was **invalid** — baseline was a cold
+unloaded model at 0 bytes, so the +13.0 GB it showed is weight load, not leak. Re-measured warm:
+3 driven requests (3→6), pool `13,005,467,774 → 13,005,467,774` = **0 bytes, 0.0000 GB/req** against
+a known-bad 0.48. Active settled to 12.656 GB, byte-identical to the pre-reboot steady state.
+Swap is **0.00 MB of 0** (fresh boot), clearing the ~6 GB standing pressure of the last several runs.
+Router unchanged: 6 open, all owner/user `owner-surface` cards; claude-home inbox zero; FinalWishes
+#127/#128 still DIRTY and their lanes'. Headless spawn count 0.
+
+## Conduit run 2026-08-08T22:1xZ
+
+Second total fabric outage in one boot session, and the first one where the cause is narrowed. At
+session start `launchctl list` showed **0** `ai.sirsi` and **0** `actions.runner` jobs — but boot was
+16:43 EDT and the *previous* run had already restored everything at 17:11:47, so this was not the
+login-load failure that run hypothesised. The jobs carry `RunAtLoad=true` **and** `KeepAlive=true`,
+and they were absent from `launchctl list` entirely rather than sitting at PID `-`, which means they
+were **booted out**, not crashed or exited. Their wake logs stop dead at their 17:11:47 "started"
+line, ~2 minutes before the prior session ended. Unified logging had no retention for the window, so
+the actor is still unidentified; the sharpened signal is "bootstrapped from inside a conduit session,
+gone shortly after that session ended." Restored 26 `ai.sirsi` + 10 `actions.runner` and, unlike last
+run, **re-verified survival 12 minutes later** (26/10 still live, 23 wake-loops, all 10 GitHub runners
+`online`). Corrected two errors carried in the prior state: `ai.sirsi.horus.agent-router` has no exact
+`.plist` at all (only `.OFF-owner-20260807`), so horus is owner-parked and was not revived; and
+`ai.sirsi.pantheon.plist` *is* an exact plist, so the prior run's "quarantine excluded by
+construction" was false — it was excluded explicitly here instead. Broker is the new
+`sirsi-inference` binary on 8477, warmed first (a cold read is weight-load, not leak) then measured
+across 4 driven requests: pool `13,005,467,774 → 13,005,467,774`, **0 bytes, 0.0000 GB/req**, and
+byte-identical to the pre-reboot steady state. Filed one owner decision card
+(`20260808-221547`): `liveness-watch` reports the owner-quarantined menubar as WEDGED, exits 1 and
+stays dead, files a decision to `claude-pantheon`, whose live lane then relaunches the app — observed
+at 18:14:30 with no action from me. The fabric is repairing an owner decision as if it were a fault,
+and the dead liveness-watch takes the swap/session-leak/disabled-label checks down with it. Jetsam at
+18:02:56 was benign (idle system helpers, no sirsi victim). Router 7 open; claude-home inbox zero.
+
+## Conduit run 2026-08-08T23:10Z
+
+Fabric SURVIVED — the prior run's teardown-on-session-exit hypothesis did not reproduce: 26
+`ai.sirsi` LaunchAgents + 1 menubar GUI instance + 10 `actions.runner` still loaded ~1h after the
+prior conduit session ended, 23 wake-loops live, board HTTP 200. Broker `sirsi-inference` pid 21182
+(`gemma-4-12B-it-8bit`, 8477) measured **0 bytes over 3 DRIVEN requests** (requests 8→11,
+active+cache 13,005,467,774 byte-identical) = 0.0000 GB/req against a known-bad 0.48; do not bounce
+it on `diagnose`'s 12.4 GB `phys_footprint` badge. CORRECTION to the prior state file, which the
+owner card `20260808-221547` also overstates: `ai.sirsi.liveness-watch` does **not** "exit 1 and stay
+dead". It is a `StartInterval=900` periodic job — `runs=4`, `last exit code = 0`, and `state = not
+running` between cycles is its normal resting state, not a corpse. All five checks ran in each of the
+last three cycles and every one returned `ok`; the swap/session-leak/disabled-label checks were never
+lost. The card's substance stands (the fabric does treat the owner-quarantined menubar as desired
+state and relaunched it, pid 28442 still up, and liveness-watch scores "menubar ok running"), but its
+impact claim does not — a not-running periodic job read as a dead daemon, green-surface-over-dead-
+thing inverted. Its stderr also carries three `SendGuarded: quota: database is locked (517)` route
+blockers, so some of its findings never reached the router at all. No item verb exists to amend a
+filed card, so no second owner item was filed (no nags); the correction lives here and in thoth.
+Otherwise all-green: no new crash/Jetsam reports, swap 0.00 MB, 0 BINARY_MISSING, reconcile healed
+the usual 3 codex successors, prune 0 (32→32), retention nothing, `ccd reap` archived 1 (the prior
+conduit session). Router 7 open, all `to: owner`/`to: user` — claude-home inbox zero; doctor's 7
+"unsupported wake mechanism owner-surface" are correct. PRs unchanged: pantheon 0, Nexus 0,
+FinalWishes #127/#128 both DIRTY with non-trivial conflicts owned by their lanes.
+
+## Conduit run 2026-08-09T00:10Z
+All-green with one explained anomaly. Router inbox for claude-home is ZERO; 7 open items all
+`to: owner`/`to: user` (doctor's 7 "unsupported wake mechanism: owner-surface" lines are correct,
+not a defect). **The gemma broker is DOWN — deliberately, by another lane.** Claude session
+`d6bab0ee` is running an inference benchmark whose script opens with
+`launchctl bootout gui/501/ai.sirsi.gemma-broker` ("quiet the broker first, it holds the GPU") and
+then probes SNE / omlx / mlx_lm in turn; it was still on the third probe (`mlx_lm server` pid 88426,
+port 8396) at the end of this pass. That single bootout exactly accounts for the label count moving
+27 → 26 since the prior run, so **do not read the missing broker as a crash and do not restart it
+into a live GPU benchmark** — the script does not restore it, so the restore is a follow-up:
+`launchctl bootstrap gui/501 ~/Library/LaunchAgents/ai.sirsi.gemma-broker.plist` once pid 87220 is
+gone. Corrects stale canon: that plist **does exist** (Aug 7 11:02). Broker being down means no
+Gemma triage this pass; inbox zero made it moot. Vitals clean — swap 1.94 MB of 1024 MB used, one
+JetsamEvent at 22:02Z whose victims are idle-exit system daemons (largest ~240 MB), no sirsi/gemma
+process killed. 0 headless `claude --print` sessions. Board HTTP 200. `reconcile` healed the usual 3
+codex successors; prune 0 (52→52); retention nothing; 0 BINARY_MISSING; `ccd reap` killed 1 leaked
+conduit session (2 procs). PRs unchanged for a third run: FinalWishes #127/#128 both DIRTY with
+non-trivial conflicts owned by their lane; pantheon and SirsiNexusApp empty.
+
+## Conduit run 2026-08-09T01:15Z
+
+Broker self-restored — last run's in-flight item (session d6bab0ee's benchmark had booted out
+`ai.sirsi.gemma-broker` to free the GPU and never restored it) resolved without intervention: bench
+pids 87220/88426 both gone, broker back as pid 18256 on 8477, label count 26 → 27. Ran the driven
+leak measurement properly this time (3 real completions, requests 5 → 8): `mlx_active_bytes` and
+`mlx_cache_bytes` byte-identical across the window, **0.0000 GB/req** against a known-bad rate of
+≈0.48. Real signal, not the idle-broker non-reading the two runs before last produced.
+
+The run's actual finding is a deployment gap. **PR #639 — the #636 dispatch-leak fix that canon
+calls the standing priority — merged 2026-08-07T22:30:20Z (de3b143d), but `~/.local/bin/sirsi` is
+dated Aug 7 21:39, fifty-one minutes earlier.** All 23 `router wake-loop` processes (pids 436xx)
+hold that pre-fix image, and Go binaries do not hot-reload, so neither the progress gate nor the
+hourly spawn ceiling is in effect. The fabric looks healthy for the wrong reason: the leak is
+dormant, not fixed — every lane inbox is empty, so the loops idle. `wake-claude-nexus` started
+23:55Z and logged nothing across ~75 one-minute cycles; headless `claude --print` count is 1. A
+naive grep of spawn-ish tokens across `tail -2000` of each log reads as hundreds of events per lane
+and is misleading — those are historical restart lines, not current cycles. Deploy would be
+schema-safe (origin/main builds ceiling 16, live store `user_version` 16 — equal, not the v15
+inversion), but no `BINARY_MISSING` sentinel exists so the step-3 auto-heal is unarmed, and the fix
+only takes effect after rolling all 23 wake labels. Too broad to do unattended with no active leak,
+so it went to the owner as decision card
+`20260809-011319-claude-home-owner-decision-639-merged-22-30z-but-binary-predates-it-by-51min-2`.
+Canon in both `~/.claude/CLAUDE.md` and the conduit task file still describes #639 as DIRTY and
+awaiting an independent bind; that is stale either way.
+
+Everything else steady. Inbox zero for claude-home; the one new item
+(`20260809-010749`, codex-home → claude-nexus, PR #19 stop-token leak) is three minutes old and
+claude-nexus is active on `thr-2c96bd5e97673b69`, so it stays with its lane. Seven open items remain
+owner/user and structurally non-closable — doctor's seven `unsupported wake mechanism "owner-surface"`
+lines are correct behaviour, not failures. `horus.agent-router` and `triage` confirmed absent by
+owner decision (plists renamed `.OFF-owner-20260807`) and `gemma-worker` has no plist at all — all
+established, none revived. Reconcile healed the usual three codex successors; prune 0 (29 → 29);
+retention nothing; `ccd reap` killed one leaked conduit session (pid 6847, idle 61min). Board HTTP
+200. PRs unchanged for a fourth run: pantheon 0, SirsiNexusApp 0, FinalWishes #128 (draft) and #127
+both DIRTY with non-trivial conflicts belonging to their lane. Vitals clean apart from one delta
+worth watching — swap grew from 1.94 MB used to **2081 MB of 3072 MB** with no corresponding RSS hog
+(largest resident process is a 1.0 GB Chrome helper); free RAM 69% is the usual hollow metric. No new
+crash or Jetsam reports.
+
+## Conduit run 2026-08-09T02:20Z
+
+Machine rebooted 2026-08-08T20:43:43Z (shutdown stall `shutdown_stall_2026-08-08-164330`). Two
+minutes later a launchd-spawned `sirsi` (pid 1204) took SIGKILL with
+`CODESIGNING / Launch Constraint Violation` — the only `sirsi-*.ips` on this machine, ever. The
+installed binary codesigns clean (`codesign -v` exit 0) and `sirsi diagnose` runs, so this was a
+boot-window AMFI transient, not the known cp-over-live-binary class. Recorded, not chased.
+
+Chased a swap alarm to a benign root cause and it is worth pinning, because the naive read was a
+P0. `sysctl vm.swapusage` showed 7.97 GB of 9.2 GB consumed with the swapfile set having grown
+3 GB → 9 GB in ~45 minutes, while `memory_pressure` cheerfully reported 83% free. `vm_stat`
+settled it: **4,023 free pages — 64 MB on a 48 GB machine** — with 16.1 GB wired and 15.7 GB in
+the compressor. The driver was not a leak: `pgrep -fl 'sirsi-inference generate'` caught a live
+SNE compiled-parity A/B benchmark (base vs `SIRSI_KPAD=1`, 3 rounds, three concurrent zsh loops)
+re-loading gemma-4-12B-it-8bit per invocation alongside the live broker. It is another lane's
+in-flight work, so it was left alone. It finished mid-run and free pages recovered 4,023 →
+855,618 (64 MB → 13.1 GB) with no intervention. Swap *used* stayed pinned at 7.97 GB, because
+macOS neither shrinks swapfiles nor pages back in speculatively. **Lesson: swap-used is a
+high-water mark, not a live pressure gauge; `Pages free` is the live signal, and free-RAM% is
+neither.** The Jetsam at 18:02Z fits the same window and claimed only StorageManagementService on
+a per-process limit — no sirsi/gemma victim.
+
+Broker measured clean again on a driven window: requests 14→17, active +0.0295 GB, cache
+−0.0290 GB, **total +0.0004 GB = 0.0001 GB/req** against a known-bad 0.48. The active-rises-while-
+cache-falls shape is the allocator working, not a leak.
+
+PR #639 remains merged-but-undeployed for a second run: `~/.local/bin/sirsi` is still dated
+Aug 7 21:39, predating the 22:30:20Z merge, so all 23 wake lanes carry the pre-gate image. The
+leak stays dormant rather than fixed — every lane logged `alive, inbox depth 0` all run and
+headless `claude --print` count was **0**. The owner card
+(`20260809-011319`) is unanswered; not re-filed, per no-nags.
+
+Cleared one residual: `bind-script-silent-wrong-repo` warned MERGED != DEPLOYED for PR #664.
+Verified — `~/.local/bin/sirsi-bind.sh` line 37 reads `REPO=""` with the no-default comment at
+line 29, so the fix is live locally. Reconcile healed the usual 3 codex successors; prune 0
+(29→29); retention nothing; `ccd reap --apply` 0 (the dry-run's candidate aged out cleanly).
+
+## Conduit run 2026-08-09T03:10Z
+
+Inbox zero for claude-home; 9 open fleet-wide (owner 7, user 1, codex-home 1). The codex-home item
+is a fresh 03:10:23Z bind request from claude-nexus (sirsi-inference PR #23 plan interphase +
+Workstream 3b) — correct reviewer, live successor threads, left for them. **Both self-hosted CI
+runners (m5-sirsi, m5-sirsi-2) are back online** (`status=online busy=false`), which moots the
+premise of owner decision card `20260808-051202`; the card was NOT closed — owner cards were swept
+once before and drew a correction, so the resolution is recorded here rather than acted on. Swap
+total shrank 9216M→3072M after the reboot and reads 1983M used, but the live gauge is fine: 400,816
+free pages × 16KB = **6.4 GB free**, no `sirsi-inference generate` bench running, no new crash or
+Jetsam artifacts since the already-evaluated 18:02Z event. Broker measured over a **driven** 3-request
+window (8→11): active +0.0276 GB, cache +0.0176 GB, total **0.0151 GB/req** — 32× clear of the 0.48
+known-bad rate, though up from last run's 0.0001, so it is a watch line, not an alarm. `diagnose`
+🟡 88/100 on the usual `phys_footprint` memory-hog false positive (SNE 12.6 GB of mmapped weights).
+Housekeeping: reconcile healed 3 reaped→successor threads (codex-pantheon ×1, codex-home ×2) and
+again flagged the 3 stranded uncommitted files in the primary checkout — still an owner adopt/discard
+call, untouched; prune 0 (29→29); `ccd reap --apply` killed 1 leaked completed session (2 procs);
+retention nothing. Fabric intact at 37 labels: 24 sirsi + 10 Actions runners + menubar. **#639
+remains merged-but-undeployed for a third run** — `~/.local/bin/sirsi` still dated Aug 7 21:39
+against a 22:30Z merge — but the leak stays dormant: headless `claude --print` count **0**, zero
+spawn lines across all 25 wake logs, every lane at inbox depth 0. Board HTTP 200, 0 BINARY_MISSING.
+PRs unchanged a sixth run (FinalWishes #128 draft + #127, both DIRTY, their lane's).
+
+## Conduit run 2026-08-09T06:2xZ
+
+Root-caused a false-positive restart loop in `sirsi liveness-watch run`. The checker gates broker
+liveness on `mlx_active_bytes >= 1024 MB`, but the broker loads model weights **lazily on the first
+request** — a freshly restarted, idle broker legitimately reports 0. The alert's remediation is a
+restart, which reproduces the exact condition, so it re-fires: 06:01:46Z and 06:10:28Z, 8m42s apart
+against a 900s StartInterval. The second firing fell back to an RSS floor, unsound for the same
+family of reason (weights are mmapped and file-backed; a healthy broker reads ~207 MB RSS). The
+alert told the recipient the weights were "likely absent" and to re-download them — the HF cache is
+intact at 12 GB with all three safetensors shards, so that remediation would have destroyed a good
+cache. The correct probe is already implemented in the same checker and passes on earlier ticks
+(`gemma-broker ok answered in 0s (1 tok, finish="stop")`): send a request, count tokens, immune to
+both the lazy-init and mmap traps. Routed the evidence to claude-pantheon as
+`20260809-061333`, leaving their `20260809-060146` open — theirs to close, theirs to fix.
+
+Two process notes worth carrying. First, the task file's broker identity check is stale: the
+process is `sirsi-inference serve`, not `sne-server-macos-arm64`, so `pgrep -fl sne-server`
+correctly returns nothing and reads as a dead broker. Second, `launchctl list` from the scheduled
+task's shell sees a domain with zero sirsi labels while the services are genuinely running with
+PPID 1 — `launchctl print gui/501/<label>` returns "Could not find service" for labels whose
+processes are alive. Neither tool is a sound liveness signal here; the process table and a
+functional probe are. Between them these two artifacts produced an initial (wrong) reading that the
+entire fabric was down. Broker measured clean at 0.0077 GB/req over a driven 3-request window.
+
+## Conduit run 2026-08-09T07:1xZ
+
+claude-home inbox zero. The run's finding: claude-pantheon's fix for the liveness-watch
+lazy-init false positive (`22884f06`, plus the `gemma-server.pid` self-heal `16947309`/`89fa617d`)
+is **stranded on `origin/fix/broker-quarantine` — 10 commits off main, with zero open PRs on the
+repo.** They closed `20260809-060146` at 06:20:25Z as "Fix shipped"; the item re-fired at
+06:56:49Z (`occurrences=2`, reason `connection refused`, broker process start 06:56:48Z), and the
+preceding tick fired the *other* unsound probe in the same checker (`RSS 3 MB below the 1024 MB
+floor` — a healthy broker reads ~207 MB RSS because weights are mmapped). Even a merge would not
+reach the running watcher: `ai.sirsi.liveness-watch` runs `~/.local/bin/sirsi`, still **Aug 7
+21:39**, predating every one of those commits. Routed `20260809-071245` to claude-pantheon asking
+them to open the PR — deliberately not opened by me, since authoring it would disqualify me as
+their independent reviewer. Did not self-install; the deploy half is already owner card
+`20260809-011319` (unanswered, seventh run) and was not re-filed.
+
+Broker healthy and measured warm, not cold: first driven window was a cold start (0 → 12.686 GB,
+weight load, no leak signal); the warm window gave 12.8142 → 12.8437 GB over 3 requests =
+**0.0098 GB/req** against a known-bad 0.48. Vitals: swap 2787/4096 MB, 1.33M pages free, health
+94/100 (benign "4 Sirsi processes, 1.6 GB"). One `sirsi` crash `.ips` from Aug 8 20:45Z in the
+`wake.claude-finalwishes` coalition — `SIGKILL (Code Signature Invalid)`, `CODESIGNING / Launch
+Constraint Violation`, uptime 86s: the cp-over-live-binary AMFI class, single occurrence, binary
+untouched since Aug 7, so reported not chased. JetsamEvent Aug 8 18:02Z victims were all small
+system daemons (rpages 73-190), no sirsi/gemma process — not P0. Housekeeping: reconcile healed the
+same 3 successors again, stranded-file warning steady at 5 (owner call, not committed), prune 0
+(52→52), `ccd reap` killed 1 leaked session, retention 0, board HTTP 200, 0 BINARY_MISSING. PRs
+unchanged a tenth run: pantheon 0, NexusApp 0, FinalWishes #127/#128 both DIRTY and their lane's.
+Doctor now flags ~38 stale ledger rows on claude-home itself — carried as next run's first candidate.
+
+## Conduit run 2026-08-09T08:2xZ
+
+Closed the loop I opened last run. PR **#674** existed this time (`fix/broker-quarantine`, 10 commits,
+opened 07:13:38Z — a minute after my route `20260809-071245`), every required context green, only
+`binding-hold` failing for want of a signature. I am independent of it: the code is claude-pantheon's,
+I authored only the diagnosis. Source-deep reviewed the non-test delta — the weight floor now runs
+**after** the functional generation probe and merely upgrades an already-failing wedge into the
+specific "weights likely absent" diagnosis, which is the correct shape because weights load lazily on
+first request and floor-first turned a legitimately idle broker into a restart, which produced another
+idle broker on the next tick. The test inversion is real rather than cosmetic:
+`TestProbeGemmaState_IdleBrokerIsNeverMisreadAsWeightless` fails if the ordering regresses, and the two
+floor tests now serve a zero-token wedged response instead of asserting the probe is never called —
+the old assertion pinned the defect in place. Also checked `pidsync.go` (best-effort launchctl parse,
+5s timeout, never liveness truth), the `SendGuarded` whole-transaction retry (re-run-safe: nothing
+commits on a failing attempt and the idempotency key makes an ambiguous retry dedup rather than
+duplicate; `notifyWaiters` correctly moved outside the closure), and the menubar quarantine suppression
+(fires only on process-absent AND plist-absent, so it cannot mask a crashed-but-installed menubar).
+Bound at `57a985ee`, merged.
+
+**And it is still inert.** `20260809-071149` shows `occurrences=4, last_seen=07:55:14Z` — the same
+false-wedge loop firing a fourth time, 43 minutes after the previous instance was closed, because
+`ai.sirsi.liveness-watch` execs `~/.local/bin/sirsi` and that artifact is dated **Aug 7 21:39**. It now
+lags two merged fixes (#639 and #674). I did not install: deploying main also carries #639's fabric
+spawn-behaviour change while owner card `20260809-011319` has been open and unanswered on exactly that
+question since 01:13Z, and I will not walk an owner-gated change in on the back of a defect fix. Routed
+the deploy with the ordering (schema check — live store v16, main builds 16, equal and safe; `rm -f`
+before `cp`; re-sign; restart the long-lived Go processes) to claude-pantheon as `20260809-081421`, and
+opened `merged-not-deployed-recurs` asking for a doctor check that compares the installed binary's
+revision against origin/main so a merged fix cannot sit inert for days with no surface saying so.
+
+Broker measured clean and **not bounced**: cold at entry (`mlx_active=0, requests=0` — lazy init, the
+exact state #674 stops misreading), warm **0.0098 GB/req** over a driven 3-request window
+(active+cache 12.8031 → 12.8326 GB, requests 2 → 5) against a known-bad 0.48. Worked last run's flagged
+stale-ledger candidate rather than deferring it again: two rows were parked on PRs that had already
+merged — `broker-label-misnames-sne` on #661 (merged Aug 7 23:02, held 33h after its bind landed) and
+`launchctl-enable-passes-five-labels-as-one` on #613 (merged Aug 7 23:34, parked on an Actions outage
+that ended). Both re-resolved with `gh pr view` rather than from memory, leased and completed with
+evidence; the #613 follow-ons stay open as their own rows. Housekeeping: reconcile healed the same 3
+successors, prune 0 (121→121), `ccd reap` killed 1 leaked session, retention nothing, board HTTP 200,
+0 `BINARY_MISSING`, headless count 1 with no climb. `sirsi diagnose` 🟢 100/100, swap 2715/4096 MB, no
+new sirsi/gemma crash or Jetsam since the Aug 8 16:45 AMFI kill already evaluated. Note for the next
+run: `ai.sirsi.horus.agent-router` and `ai.sirsi.triage` are **not loaded** — their plists carry the
+`.OFF-owner-20260807` suffix, which is an owner decision, not a defect to heal.
+
+## Conduit run 2026-08-09T09:1xZ
+
+Resumed from the prior run's flagged in-flight item and found it already answered: claude-pantheon
+responded to `20260809-081421` at 08:17:37Z, independently re-verified that #674 (f26d51d0, merged
+08:11:20Z) and #639 (de3b143d) are both on origin/main while `~/.local/bin/sirsi` is still dated
+Aug 7 21:39, and then declined to deploy — because rebuilding from main also ships #639's fabric
+spawn-behaviour change, which would silently execute option B of owner card `20260809-011319` while
+that card is open. That is the correct stand-down and the deploy stays owner-gated; I did not
+re-file it. Worth recording that the exposure is widening, not static: the false broker-wedge
+liveness loop fired again at 08:50:39Z (`20260809-081404`, occurrences=4) and at 09:05:39Z, seven-plus
+firings after its own fix merged, because `ai.sirsi.liveness-watch` execs the stale artifact. I
+rewrote the `merged-not-deployed-recurs` charter to carry that state so the row stops understating
+itself, and left its non-gated half — a doctor check comparing installed build revision against
+origin/main HEAD — open. Separately, the `sne-broker-active-crossed-38gb-threshold` row is stale by
+process identity, not by judgement: those 38 GB samples belong to a broker that no longer exists.
+The live one is revision `7a0cdf7b` built 07:35:28Z, `mlx_active_bytes` 11.79 GiB, peak 11.82 GiB, and
+a driven three-request window normalized per request measured **0.0166 GB/req** against a known-bad
+0.48. Swap is 1988/3072 MB, not the 93.5%-consumed state the row records. I routed that measurement
+to claude-nexus as `20260809-091146` rather than closing the row myself, since the row is theirs and
+their lane is very much alive. Everything else was clean: diagnose 94/100 (the single finding is the
+`phys_footprint` Sirsi-processes badge, the known false-critical), 0 BINARY_MISSING, board HTTP 200,
+retention nothing to prune, `ccd reap` killed 0 and archived 1, reconcile healed the same three
+successors and left the same 5 stranded files (owner call, never auto-committed), and headless
+sessions read 2 with no climb. `ai.sirsi.horus.agent-router` and `ai.sirsi.triage` remain unloaded
+behind `.OFF-owner-20260807` plists — owner decision, never bootstrapped. FinalWishes #128 and #127
+are both still DIRTY for the twelfth consecutive run; codex-home has that routed to codex-finalwishes
+(`20260809-052520`) and the conflict is theirs, not mine to resolve.
+
+## Conduit run 2026-08-09T10:1xZ
+
+The machine rebooted at 09:13Z (shutdown_stall 09:13:32Z), so every verification from the 09:4xZ
+decision-board run pre-dates the current process table. The fabric came back on its own and came
+back correct: 23 wake lanes, gemma-broker, router-board (HTTP 200) and 10 self-hosted runners all
+live; horus/triage still absent behind their `.OFF-owner-20260807` plists; `ai.sirsi.pantheon` still
+out after claude-nexus's bootout. Headless `claude --print` sessions: 1, no climb. One real signal
+to report, not heal: a `sirsi` crash at 09:14:34Z, one minute into boot, `SIGKILL (Code Signature
+Invalid)` / `CODESIGNING Launch Constraint Violation` — single occurrence, and the installed binary
+(Aug 7 21:39, sha256 `1470a895d995aa37`) passes `codesign -v` with every router verb working, so it
+reads as a lane exec'ing the binary mid-replace rather than a bad artifact. The broker re-measure is
+the run's methodology note: on a cold post-reboot process the first driven 3-request window read
+**3.98 GB/req**, which is weight load (active 0 → 11.81 GiB on request one), not a leak — a run that
+stopped there would have filed a false P0 twenty times worse than the known-bad rate. The warm
+window (requests 3→6) reads **0.0092 GB/req** on active+cache against known-bad 0.48. Clean.
+**A cold broker cannot be leak-measured any more than an idle one can; load the weights first, then
+measure.** Inbox worked to zero: claude-nexus's decisions-of-record item was ACK-closed with a
+response, and it surfaced genuinely stale canon — the conduit's own task file still called PR #639
+"DIRTY and blocked on an independent bind" and told each run that landing it was the priority.
+Rewritten to record the merge (de3b143d, 2026-08-07T22:30Z) and the owner's option C: deliberately
+undeployed, watch-and-report only. That was the copy actually driving the hourly pass, so the fix
+matters more than the CLAUDE.md one already made. FinalWishes #127/#128 both still DIRTY, thirteenth
+unchanged run, already routed to codex-finalwishes — left. reconcile healed the same 3 successors;
+5 stranded files remain an owner call; prune 0 (52→52); ccd reap 0/0; retention nothing.
+
+## Conduit run 2026-08-09T11:13Z
+
+claude-home inbox zero; 8 open fleet-wide (owner 7, user 1), all owner-surface decision cards left
+untouched — sweeping them is itself the defect two of those cards report. One new finding routed:
+PR #674 (merged f26d51d0, 08:11Z) shipped `suppressMenubarDown`, but it only suppresses when the
+LaunchAgent plist is ABSENT, and `~/Library/LaunchAgents/ai.sirsi.pantheon.plist` is still present
+(Jul 2, 593 B) — this machine's menubar quarantine is launchd-state, not plist removal, so the
+suppression never fires and `liveness-watch: menubar not running` is a permanent standing alarm
+(item 20260809-101453 at occurrences=4, last_seen 10:59:57Z). Verified from source, not inferred
+from the alarm: `Run` is read-and-route only and `ai.sirsi.pantheon` is still absent from
+`launchctl list`, so the owner's quarantine is intact — this is alarm cost, not a reversed
+decision. Routed to claude-pantheon as 20260809-111335 with two fix options, recommending they
+widen the suppression to treat "plist present but job not loaded" as quarantine rather than rename
+the owner's quarantine artifact. No second owner card opened: 20260808-221547 already covers the
+owner-facing half. The fix cannot be deployed regardless — rebuilding main to ship it would also
+ship #639, which the owner deliberately left undeployed. Broker measured clean on a WARM driven
+window: 0.0138 GB/req over 3 requests (known-bad 0.48), peak 11.97 GiB, revision 7a0cdf7b, port
+8477. Vitals 94/100, swap 0/0, no new crash/Jetsam reports, 0 headless sessions, quarantine and the
+parked horus/triage labels all intact.
+
+## Conduit run 2026-08-09T15:20Z
+
+All-green pass with one diagnosis worth recording. `main` CI run `31302915663` (head `f26d51d0`,
+PR #674) reads **failure** at both the run AND job level, but it is a **false red**: steps 1-9 all
+succeeded, including `Run tests`, and only step 10 `Upload metrics` was `cancelled` when the
+self-hosted runner took a shutdown signal mid-upload. A cancellation in a trailing artifact step
+poisons the job conclusion, so the standing "read the JOB, not the run" rule is insufficient here —
+read the STEP conclusions. Main is green in substance; no regression from #674, nothing routed.
+PR #675 (`fix/broker-quarantine`, claude-pantheon) is CONFLICTING with source-level conflicts in
+`internal/liveness/livenesswatch.go` and its test, and carries **zero checks** — that is a direct
+consequence of the conflict, not a CI fault: `ci.yml` fires on `push` to main/develop and on
+`pull_request`, and GitHub cannot build a merge ref for a conflicting PR, so no `pull_request` run
+is ever dispatched. Left for its lane agent to rebase. Broker measured **0.0138 GB/req** over a
+driven 3-request window (req 17→20, active+cache), peak 12.07 GiB — clean against the 0.48 GB/req
+known-bad. Registry: reconcile healed the same 3 successors again, prune 0 (29→29), ccd reap killed
+1 completed conduit session, retention nothing. Headless sessions 0.
+
+## 2026-08-09T13:0xZ — PR #675 rebased clean; menubar alarm is real but correctly not relaunched
+
+horus's `liveness-watch: menubar not running` (20260809-130002) named a genuine gap — no
+`SirsiMenubar` process — but the machine is deliberately owner-quarantined
+(`~/.sirsi/menubar-quarantine`, written 09:43:24Z). Did not relaunch it; a quarantined component
+alarming as "down" is the alarm working as designed until the quarantine-aware fix ships, not a
+reversed owner decision.
+
+That fix is exactly PR #675, which the 15:20Z conduit run had already diagnosed as CONFLICTING
+and left for its lane agent — me. Rebased onto `origin/main`: 14 commits collapsed to 6 real ones,
+because `git rebase` cleanly dropped 4 whose patch content main already carries via #674 (broker
+quarantine, weight-floor false-positive, gemma-server.pid self-heal) with the message "patch
+contents already upstream" — no manual resolution needed. The one genuine code conflict was
+`cmd/sirsi/gemma_serve.go`: an old commit added a local `syncGemmaPidFile` duplicating what main
+already ships as the shared `liveness.SyncGemmaPidFile` (identical body, confirmed by diff);
+resolved in favor of main's shared version and dropped the duplicate. `.thoth/journal.md` and
+`.thoth/memory.yaml` conflicted at nearly every step (expected — both branches append linearly);
+resolved by taking main's copy each time and popping the pre-rebase local edits back on top after,
+clean, no markers.
+
+Verified before push: `go build ./...` clean, `go vet ./...` clean, `golangci-lint run ./...` 0
+issues, `go test ./internal/liveness/... ./internal/router/... ./internal/routerstore/...` all
+pass. Full `go test ./cmd/sirsi/...` hit `TestAnubisWeigh`'s hardcoded 60s timeout (a full-
+filesystem scan integration test, unrelated to this diff — confirmed unrelated by re-running it in
+isolation and by reading the test body); `-short` mode (skips that test) passes clean. Pushed with
+`--force-with-lease`; PR flipped CONFLICTING→MERGEABLE, CI (lint/test/build/secrets) all green.
+
+Did not self-bind. The PR touches `cmd/sirsi/` (an authority-model path per `binding-hold.yml`),
+which requires an APPROVING REVIEW from an identity other than the author on the current head SHA
+(A25/A28/ADR-041) — and every agent here authenticates as the same `SirsiMaster` account, so an
+agent cannot legitimately review its own PR by running `scripts/bind/sirsi-bind.sh` on itself; that
+would be exactly the rubber-stamp A34 exists to prevent. Sent a full review request to codex-pantheon
+(`20260809-131022`) with the diff summary, rebase notes, and verification evidence, asking them to
+review and either approve directly or run the bind script. Closed the horus item with the full
+root-cause/fix-status/no-action-taken record rather than a bare ack. Until #675 merges, the
+currently deployed binary predates the quarantine marker check and this alarm will keep firing on
+its 900s interval — tracked as alarm cost, not restated as a new finding each time it fires.
