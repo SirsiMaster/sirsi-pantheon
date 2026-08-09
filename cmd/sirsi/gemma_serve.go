@@ -92,6 +92,7 @@ func runGemmaServe(cmd *cobra.Command, args []string) error {
 		}
 		if base := gemmaServerBase(home); base != "" {
 			fmt.Printf("SNE local inference: WARM at %s.\n", base)
+			liveness.SyncGemmaPidFile(home)
 		} else {
 			fmt.Println("SNE local inference: unavailable. Start it: sirsi gemma serve")
 		}
