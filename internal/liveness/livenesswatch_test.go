@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -799,6 +800,53 @@ func TestSuppressGemmaDown(t *testing.T) {
 					tc.status, tc.plistPresent, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSuppressMenubarDown(t *testing.T) {
+	cases := []struct {
+		name         string
+		running      bool
+		plistPresent bool
+		want         bool
+	}{
+		{"down and uninstalled — owner-quarantined, suppress", false, false, true},
+		{"down but installed — real outage, must alarm", false, true, false},
+		{"running and uninstalled — never a finding either way", true, false, false},
+		{"running and installed — never a finding either way", true, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := suppressMenubarDown(tc.running, tc.plistPresent); got != tc.want {
+				t.Errorf("suppressMenubarDown(running=%v, plist=%v) = %v, want %v",
+					tc.running, tc.plistPresent, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProbeMenubar_QuarantinedIsSuppressed guards the ledger row
+// menubar-liveness-not-quarantine-aware: a menubar the owner deliberately
+// took offline (plist removed from LaunchAgents, same shape as gemma-broker
+// quarantine) must not page the owner every StartInterval about a state they
+// chose. probeMenubar's pgrep check is real (not injectable), so on a
+// machine where the SwiftUI menubar happens to be running this only exercises
+// the "running" branch, not the new suppress branch — either is a legitimate
+// OK result (never a finding either way); TestSuppressMenubarDown above
+// covers the suppress logic itself directly and unconditionally.
+func TestProbeMenubar_QuarantinedIsSuppressed(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar probe is darwin-only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	f := probeMenubar()
+	if !f.OK {
+		t.Errorf("probeMenubar() with no plist installed = %+v, want OK=true "+
+			"(deliberately quarantined, or the real menubar happens to be running)", f)
+	}
+	if f.Detail != "running" && f.Fixable {
+		t.Errorf("probeMenubar() suppress branch = %+v, want Fixable=false", f)
 	}
 }
 

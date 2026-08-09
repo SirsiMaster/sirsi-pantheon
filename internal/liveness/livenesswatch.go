@@ -853,6 +853,21 @@ func probeSessionLeak() Finding {
 	return f
 }
 
+// MenubarLabel is the LaunchAgent label for the SwiftUI menubar surface.
+const MenubarLabel = "ai.sirsi.pantheon"
+
+// suppressMenubarDown reports whether a not-running menubar describes a
+// DELIBERATE quarantine rather than a failure, and so must not raise a
+// finding. Same shape as suppressGemmaDown (A35 — scope the check to the
+// claim): "menubar not running" claims a failure, but its actual scope is "no
+// process on this path" — which is equally what a deliberately
+// owner-quarantined menubar looks like (ai.sirsi.pantheon plist
+// unloaded/removed by owner request). Firing anyway pages the owner every
+// StartInterval about a state they chose.
+func suppressMenubarDown(processRunning, plistPresent bool) bool {
+	return !processRunning && !plistPresent
+}
+
 // probeMenubar checks the SwiftUI menubar is alive by its exact executable path
 // (never a bare "SirsiMenubar" that could match a build process).
 func probeMenubar() Finding {
@@ -865,8 +880,16 @@ func probeMenubar() Finding {
 		f.OK, f.Fixable, f.Detail = true, false, "not macOS"
 		return f
 	}
-	if exec.Command("pgrep", "-f", "Sirsi Menubar.app/Contents/MacOS/SirsiMenubar").Run() == nil {
+	running := exec.Command("pgrep", "-f", "Sirsi Menubar.app/Contents/MacOS/SirsiMenubar").Run() == nil
+	if running {
 		f.OK, f.Detail = true, "running"
+		return f
+	}
+	if suppressMenubarDown(running, launchAgentPlistPresent(MenubarLabel)) {
+		f.OK = true
+		f.Fixable = false
+		f.Detail = "no SwiftUI menubar process — not installed (no " + MenubarLabel +
+			".plist in LaunchAgents): deliberately quarantined, nothing to relaunch"
 		return f
 	}
 	f.Detail = "no SwiftUI menubar process"

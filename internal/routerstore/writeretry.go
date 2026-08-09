@@ -75,7 +75,11 @@ func isReadonlyContention(err error) bool {
 }
 
 // retryWrite runs op, retrying with exponential backoff while it fails with
-// READONLY contention, up to writeRetryBudget.
+// READONLY or BUSY contention ("database is locked"), up to writeRetryBudget.
+// Both are the same underlying condition — another process holding the
+// store — surfacing under different SQLite codes depending on the contended
+// operation (see this file's header for READONLY, and store.go's isBusy for
+// plain lock contention on a single statement).
 //
 // op MUST be safe to re-run. Every caller here either executes a single
 // autocommit statement or runs a transaction that failed before commit, so no
@@ -90,7 +94,7 @@ func (s *Store) retryWrite(op func() error) error {
 	for {
 		err := op()
 		attempts++
-		if !isReadonlyContention(err) {
+		if !isReadonlyContention(err) && !isBusy(err) {
 			return err
 		}
 		if time.Now().After(deadline) {

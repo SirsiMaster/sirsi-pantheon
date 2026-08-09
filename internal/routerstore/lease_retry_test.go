@@ -87,6 +87,46 @@ func TestClaimNextGoesThroughRetryWrite(t *testing.T) {
 	}
 }
 
+// SendGuarded is the one send facade every emitting path routes through
+// (liveness-watch included). Before this fix it had no retry at all, so
+// "database is locked" contention on a busy host silently dropped sends
+// instead of retrying them (found via evidence on router item
+// 20260809-060146/061333: 3x route-blocker drops in /tmp/sirsi-liveness-watch.err).
+func TestSendGuardedGoesThroughRetryWrite(t *testing.T) {
+	src := mustReadSource(t, "facade.go")
+	send := sliceFunc(src, "func (s *Store) SendGuarded(")
+	if !strings.Contains(send, "s.retryWrite(") {
+		t.Error("SendGuarded no longer wraps its transaction in retryWrite — lock " +
+			"contention on a busy host will silently drop the send")
+	}
+	if !strings.Contains(send, "sendGuardedOnce(") {
+		t.Error("SendGuarded no longer delegates to sendGuardedOnce")
+	}
+}
+
+// TestRetryWriteRetriesBusyContention is the SQLITE_BUSY analog of
+// TestClaimNextRetriesReadonlyContention. "database is locked" (SQLITE_BUSY
+// family, e.g. extended code 517/BUSY_SNAPSHOT) is a distinct code from
+// SQLITE_READONLY(8) and was NOT covered by isReadonlyContention alone —
+// retryWrite must also check isBusy or a plain lock error propagates on the
+// first attempt instead of being retried.
+func TestRetryWriteRetriesBusyContention(t *testing.T) {
+	calls := 0
+	err := (&Store{}).retryWrite(func() error {
+		calls++
+		if calls < 3 {
+			return errors.New("database is locked (517)")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("retryWrite returned %v, want nil after the contention cleared", err)
+	}
+	if calls != 3 {
+		t.Errorf("op ran %d times, want 3 — BUSY contention must be retried like READONLY", calls)
+	}
+}
+
 func mustReadSource(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile(name)
