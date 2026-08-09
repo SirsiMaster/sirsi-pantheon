@@ -86,6 +86,23 @@ Rules:
 
 See `IDEA_ROUTER_DESIGN.md` in the Codex handoff directory for full spec.
 
+## Closing Items
+
+```sh
+sirsi router close <id> --result "..."       # only the item's own recipient may close it
+sirsi router dismiss <id> --agent owner --result "..."   # the one exemption: owner retiring an owner-addressed card
+```
+
+`close` refuses any item addressed to the owner (aliases: owner, user, cylton, sirsimaster,
+cylton-collymore) — an agent must never silently remove a decision request from the owner's
+board. `dismiss` is the sanctioned bypass: it only succeeds when BOTH the acting `--agent` AND
+the item's recipient resolve to an owner alias, so it cannot become a general close:any escape
+hatch. Only run `dismiss` when the owner has actually made the decision (in-session, recorded in
+the item you're closing, or an explicit instruction naming the item) — never to clear a card
+nobody has actually decided. This is the owner-attested close path; there is no separate
+`--owner-attest` flag because `dismiss` already gates on the same thing (router item
+20260809-093638).
+
 ## Mandatory Workstream Protocol
 
 Every non-trivial Codex/Claude workstream MUST use:

@@ -856,6 +856,49 @@ func probeSessionLeak() Finding {
 // MenubarLabel is the LaunchAgent label for the SwiftUI menubar surface.
 const MenubarLabel = "ai.sirsi.pantheon"
 
+// MenubarQuarantineMarkerPath is the file whose presence tells the liveness
+// watch (and any other restorer) the owner took the menubar offline on
+// purpose. Same shape as gemmaliveness.QuarantineMarkerPath: plist presence
+// alone is NOT a reliable "quarantined" signal — a `launchctl bootout`
+// leaves the exact-named plist in place (observed 2026-08-08/09: "quarantine
+// excluded by construction" was false, the plist was excluded explicitly),
+// so the plist-absence heuristic in suppressMenubarDown re-alarms and a
+// live agent reading the routed finding "helpfully" relaunches the app the
+// owner just quarantined (router item 20260809-093638). `sirsi menubar
+// quarantine` / `unquarantine` are the sanctioned way to set or clear it.
+func MenubarQuarantineMarkerPath(home string) string {
+	return filepath.Join(home, ".sirsi", "menubar-quarantine")
+}
+
+var (
+	menubarQuarantineMu    sync.RWMutex
+	isMenubarQuarantinedFn = func(home string) bool {
+		_, err := os.Stat(MenubarQuarantineMarkerPath(home))
+		return err == nil
+	}
+)
+
+// SetMenubarQuarantinedFn installs a test double for the menubar quarantine
+// check. Passing nil restores the real os.Stat-backed default.
+func SetMenubarQuarantinedFn(fn func(home string) bool) {
+	menubarQuarantineMu.Lock()
+	defer menubarQuarantineMu.Unlock()
+	if fn != nil {
+		isMenubarQuarantinedFn = fn
+		return
+	}
+	isMenubarQuarantinedFn = func(home string) bool {
+		_, err := os.Stat(MenubarQuarantineMarkerPath(home))
+		return err == nil
+	}
+}
+
+func getMenubarQuarantinedFn() func(home string) bool {
+	menubarQuarantineMu.RLock()
+	defer menubarQuarantineMu.RUnlock()
+	return isMenubarQuarantinedFn
+}
+
 // suppressMenubarDown reports whether a not-running menubar describes a
 // DELIBERATE quarantine rather than a failure, and so must not raise a
 // finding. Same shape as suppressGemmaDown (A35 — scope the check to the
@@ -883,6 +926,14 @@ func probeMenubar() Finding {
 	running := exec.Command("pgrep", "-f", "Sirsi Menubar.app/Contents/MacOS/SirsiMenubar").Run() == nil
 	if running {
 		f.OK, f.Detail = true, "running"
+		return f
+	}
+	home, homeErr := os.UserHomeDir()
+	if homeErr == nil && getMenubarQuarantinedFn()(home) {
+		f.OK = true
+		f.Fixable = false
+		f.Detail = "no SwiftUI menubar process — owner-quarantined (" + MenubarQuarantineMarkerPath(home) +
+			" marker present): deliberately quarantined, nothing to relaunch"
 		return f
 	}
 	if suppressMenubarDown(running, launchAgentPlistPresent(MenubarLabel)) {
