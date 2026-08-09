@@ -182,10 +182,40 @@ func gemmaAwaitWarm(home string) error {
 		time.Sleep(2 * time.Second)
 		if gemmaServerPing(base) {
 			fmt.Printf("✓ SNE is WARM at %s.\n", base)
+			syncGemmaPidFile(home)
 			return nil
 		}
 	}
 	return fmt.Errorf("SNE didn't become healthy in ~90s — check %s", gemmaServerLogPath(home))
+}
+
+// syncGemmaPidFile writes launchd's live PID for the broker into gemma-server.pid.
+//
+// Without this, gemma-server.pid never updates after the initial launch: launchd
+// (not this process) forks/respawns the broker, and neither `launchctl kickstart`
+// nor a KeepAlive crash-relaunch touches the file. A stale entry doesn't just go
+// unrecognized — a dead PID gets reused by an unrelated process, so
+// guard.LoadBearingPIDs() (A32) ends up protecting the wrong process while the
+// real broker is left killable by routine reclaim. Best-effort: a failure here
+// must not fail the warm check that already succeeded.
+func syncGemmaPidFile(home string) {
+	label := fmt.Sprintf("gui/%d/%s", os.Getuid(), setup.GemmaBrokerLabel)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "launchctl", "print", label).Output()
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "pid = ")
+		if !ok {
+			continue
+		}
+		if pid, err := strconv.Atoi(strings.TrimSpace(rest)); err == nil && pid > 0 {
+			_ = os.WriteFile(gemmaPidPath(home), []byte(strconv.Itoa(pid)), 0o644)
+		}
+		return
+	}
 }
 
 func gemmaServerStop(home string) error {
