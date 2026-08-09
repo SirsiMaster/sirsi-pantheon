@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
@@ -182,6 +183,7 @@ func gemmaAwaitWarm(home string) error {
 		time.Sleep(2 * time.Second)
 		if gemmaServerPing(base) {
 			fmt.Printf("✓ SNE is WARM at %s.\n", base)
+			liveness.SyncGemmaPidFile(home)
 			return nil
 		}
 	}

@@ -62,6 +62,31 @@ func (s *Store) SendGuarded(r SendReq) (string, bool, error) {
 	if err := validateMessageType(r.Type); err != nil {
 		return "", false, err
 	}
+
+	// Retry the WHOLE transaction under lock contention, same shape as
+	// ClaimNext: nothing commits on a failing attempt, so a re-run observes
+	// no partial work. Without this, a fleet busy enough to contend the
+	// store (multiple lanes, watchers, a board publisher) silently drops
+	// liveness/router sends outright instead of retrying them.
+	var id string
+	var deduped bool
+	err := s.retryWrite(func() error {
+		var rerr error
+		id, deduped, rerr = s.sendGuardedOnce(r)
+		return rerr
+	})
+	if err != nil {
+		return "", false, err
+	}
+	if !deduped && id != "" {
+		s.notifyWaiters(r.To)
+	}
+	return id, deduped, nil
+}
+
+// sendGuardedOnce is one attempt of SendGuarded. Never call it directly —
+// callers must go through SendGuarded so contention is retried.
+func (s *Store) sendGuardedOnce(r SendReq) (string, bool, error) {
 	now := s.clock()
 	key := s.idemKey(r, now)
 
@@ -138,7 +163,6 @@ func (s *Store) SendGuarded(r SendReq) (string, bool, error) {
 	if err := tx.Commit(); err != nil {
 		return "", false, fmt.Errorf("routerstore: SendGuarded: commit: %w", err)
 	}
-	s.notifyWaiters(r.To)
 	return id, false, nil
 }
 

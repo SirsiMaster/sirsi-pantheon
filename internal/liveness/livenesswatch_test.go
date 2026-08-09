@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -266,8 +267,15 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 // A broker with RSS below 1 GB cannot have model weights loaded — this is the
 // class that /health passes but generation probes see as wedged, and that a
 // restart cannot fix when the HF model cache is absent (2026-08-05 incident).
-// The floor must fire BEFORE the generation probe so the detail message
-// clearly says "weights likely absent" instead of "restore — free memory."
+//
+// The floor fires AFTER the generation probe, not before (2026-08-09 fix,
+// router item 20260809-060146): weights load lazily on first request, so an
+// idle-but-healthy broker legitimately has RSS/mlx_active_bytes near zero and
+// must not be misdiagnosed as weightless. A genuinely weightless broker can't
+// generate either, so the test server here returns a wedged (no-tokens)
+// response — matching what a real weights-absent broker actually does — and
+// the floor's job is to upgrade that generic wedge into the specific
+// "weights likely absent" diagnosis.
 func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	old := getBrokerRSSFn()
 	t.Cleanup(func() { setBrokerRSSFn(old) })
@@ -281,12 +289,10 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 	const tinyRSSKB = 100 * 1024 // 100 MB
 	setBrokerRSSFn(func(_ string) int64 { return tinyRSSKB })
 
-	// The test server should never be reached — the RSS floor fires first.
-	called := false
+	// A weightless broker cannot generate — the probe is called and fails.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+		_, _ = w.Write([]byte(`{"choices":[],"usage":{"completion_tokens":0}}`))
 	}))
 	defer srv.Close()
 
@@ -308,8 +314,31 @@ func TestProbeGemmaState_RSSFloor(t *testing.T) {
 		t.Errorf("detail must embed WeightsAbsentSentinel (%q) or the router short-circuit breaks, got: %s",
 			WeightsAbsentSentinel, detail)
 	}
-	if called {
-		t.Error("generation probe should not be called when RSS is below the floor")
+}
+
+// TestProbeGemmaState_IdleBrokerIsNeverMisreadAsWeightless is the lazy-init
+// regression guard (2026-08-09, router item 20260809-060146): a freshly
+// restarted, idle broker reports mlx_active_bytes==0 legitimately (weights
+// load on first request, not at process start). It must classify as healthy
+// off the functional probe alone, never as "weights absent" off the floor.
+func TestProbeGemmaState_IdleBrokerIsNeverMisreadAsWeightless(t *testing.T) {
+	oldMLX := getBrokerMLXBytesFn()
+	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
+	// Idle broker, not yet asked to generate: /health reports zero active bytes.
+	setBrokerMLXBytesFn(func() (int64, bool) { return 0, true })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if got != GemmaHealthy {
+		t.Errorf("idle broker (mlx_active_bytes=0, answers fine) = %v (%s), want GemmaHealthy", got, detail)
+	}
+	if strings.Contains(detail, WeightsAbsentSentinel) {
+		t.Errorf("idle-but-answering broker must never carry the weights-absent sentinel, got: %s", detail)
 	}
 }
 
@@ -381,7 +410,9 @@ func TestProbeGemmaState_MLXFloor_RecognizesLargeAllocation(t *testing.T) {
 // TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation mirrors
 // TestProbeGemmaState_RSSFloor but for the PRIMARY path: /health IS reachable
 // and reports a small mlx_active_bytes — the weight-floor check must fire from
-// that number, not from RSS.
+// that number, not from RSS, once the generation probe has already failed
+// (see TestProbeGemmaState_IdleBrokerIsNeverMisreadAsWeightless for the case
+// where it must NOT fire despite a small mlx_active_bytes reading).
 func TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation(t *testing.T) {
 	oldMLX := getBrokerMLXBytesFn()
 	t.Cleanup(func() { setBrokerMLXBytesFn(oldMLX) })
@@ -389,11 +420,11 @@ func TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation(t *testing.T) {
 	const tinyMLXBytes = int64(50 * 1024 * 1024) // 50 MB — well below the 1 GB floor
 	setBrokerMLXBytesFn(func() (int64, bool) { return tinyMLXBytes, true })
 
-	called := false
+	// A weightless broker cannot generate — the probe fails, then the floor
+	// upgrades the generic wedge into the specific diagnosis.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
+		_, _ = w.Write([]byte(`{"choices":[],"usage":{"completion_tokens":0}}`))
 	}))
 	defer srv.Close()
 
@@ -403,9 +434,6 @@ func TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation(t *testing.T) {
 	}
 	if !strings.Contains(detail, "mlx_active_bytes") {
 		t.Errorf("detail should cite mlx_active_bytes, got: %s", detail)
-	}
-	if called {
-		t.Error("generation probe should not be called when mlx_active_bytes is below the floor")
 	}
 }
 
@@ -772,6 +800,53 @@ func TestSuppressGemmaDown(t *testing.T) {
 					tc.status, tc.plistPresent, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSuppressMenubarDown(t *testing.T) {
+	cases := []struct {
+		name         string
+		running      bool
+		plistPresent bool
+		want         bool
+	}{
+		{"down and uninstalled — owner-quarantined, suppress", false, false, true},
+		{"down but installed — real outage, must alarm", false, true, false},
+		{"running and uninstalled — never a finding either way", true, false, false},
+		{"running and installed — never a finding either way", true, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := suppressMenubarDown(tc.running, tc.plistPresent); got != tc.want {
+				t.Errorf("suppressMenubarDown(running=%v, plist=%v) = %v, want %v",
+					tc.running, tc.plistPresent, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProbeMenubar_QuarantinedIsSuppressed guards the ledger row
+// menubar-liveness-not-quarantine-aware: a menubar the owner deliberately
+// took offline (plist removed from LaunchAgents, same shape as gemma-broker
+// quarantine) must not page the owner every StartInterval about a state they
+// chose. probeMenubar's pgrep check is real (not injectable), so on a
+// machine where the SwiftUI menubar happens to be running this only exercises
+// the "running" branch, not the new suppress branch — either is a legitimate
+// OK result (never a finding either way); TestSuppressMenubarDown above
+// covers the suppress logic itself directly and unconditionally.
+func TestProbeMenubar_QuarantinedIsSuppressed(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar probe is darwin-only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	f := probeMenubar()
+	if !f.OK {
+		t.Errorf("probeMenubar() with no plist installed = %+v, want OK=true "+
+			"(deliberately quarantined, or the real menubar happens to be running)", f)
+	}
+	if f.Detail != "running" && f.Fixable {
+		t.Errorf("probeMenubar() suppress branch = %+v, want Fixable=false", f)
 	}
 }
 

@@ -185,6 +185,14 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	switch status {
 	case liveness.GemmaHealthy, liveness.GemmaBusy:
 		gemmaWedgeStrikes = 0
+		// A healthy tick is the common case and the only place a launchd-owned
+		// respawn (KeepAlive crash-relaunch, or a broker that was never started
+		// through `sirsi gemma serve`) ever gets its pidfile corrected — the
+		// restart branches below already get this for free via the `sirsi gemma
+		// serve` subprocess they shell out to. Without it, gemma-server.pid can
+		// sit stale for hours while the broker itself is fine (found via router
+		// item 20260809-060146).
+		liveness.SyncGemmaPidFile(home)
 		return nil
 	case liveness.GemmaDown:
 		gemmaWedgeStrikes = 0
