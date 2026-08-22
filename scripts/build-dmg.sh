@@ -143,6 +143,7 @@ fi
 
 # --- Stage + create the DMG ---
 echo "Creating DMG..."
+DMG_VOLUME="${DMG_VOLUME:-Sirsi Pantheon}"
 rm -rf "${STAGING_DIR}"; mkdir -p "${STAGING_DIR}"
 cp -R "${BUNDLE_DIR}" "${STAGING_DIR}/"
 ln -s /Applications "${STAGING_DIR}/Applications"
@@ -164,7 +165,16 @@ or: brew install sirsimaster/tools/sirsi-pantheon
 More: https://sirsi.ai/pantheon
 READMEEOF
 
-hdiutil create -volname "${DMG_VOLUME}" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${DMG_CANDIDATE}"
+if ! /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="${HOME}" TMPDIR=/private/tmp \
+    /usr/bin/hdiutil create -volname "${DMG_VOLUME}" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${DMG_CANDIDATE}"; then
+    FAILURE_DIR="${BUILD_DIR}/failed-${VERSION}-${BUNDLE_BUILD_NUMBER}-${ARCH}"
+    rm -rf "${FAILURE_DIR}"
+    mv "${STAGING_DIR}" "${FAILURE_DIR}"
+    echo "ERROR: DMG creation failed; preserved the exact staged payload at ${FAILURE_DIR}" >&2
+    echo "Non-regular staged entries:" >&2
+    find "${FAILURE_DIR}" \! -type f \! -type d \! -type l -print >&2 || true
+    exit 1
+fi
 
 # --- Sign + notarize + staple the DMG (release builds only, AFTER it exists) ---
 if [ "${SIGNED_FOR_RELEASE}" = "1" ]; then
