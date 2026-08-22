@@ -45,8 +45,10 @@ cert and runs `scripts/build-dmg.sh`, which signs, notarizes, and staples.
 
 ## What the pipeline does (`scripts/build-dmg.sh`)
 
-1. Builds the menu bar app — the **native SwiftUI app** (`macapp/`) when present,
-   else the legacy fyne binary — plus the `sirsi` CLI, into `Pantheon.app`.
+1. Builds the canonical Go control engine (`cmd/sirsi-menubar`) plus the `sirsi`
+   CLI into `Pantheon.app`. The SwiftUI package under `macapp/` is an additive
+   native product surface and design/prototyping target; it may not silently
+   replace the canonical engine in a release package.
 2. Signs **inside-out** (inner executables, then the bundle) with the Developer ID,
    **hardened runtime** (`--options runtime`) + secure `--timestamp`, and verifies
    with `codesign --verify --deep --strict`.
