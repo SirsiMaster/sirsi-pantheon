@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apprecovery"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
@@ -50,6 +51,20 @@ func runDashboard(cmd *cobra.Command, args []string) {
 
 	// Find our own binary path for the command runner.
 	selfBin, _ := os.Executable()
+	appRecovery, recoveryErr := apprecovery.LoadDefaultManager()
+	if recoveryErr != nil {
+		output.Warn("Application recovery unavailable: %v", recoveryErr)
+	}
+	sneAccessToken, err := dashboard.LoadOrCreateDefaultSNELocalAccessToken()
+	if err != nil {
+		output.Error("Refusing to start an unauthenticated local AI API: %v", err)
+		return
+	}
+	sneAccessPath, err := dashboard.DefaultSNELocalAccessTokenPath()
+	if err != nil {
+		output.Error("Refusing to start without a durable local AI capability path: %v", err)
+		return
+	}
 
 	srv := dashboard.New(dashboard.Config{
 		Port:     dashboardPort,
@@ -60,11 +75,16 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
-		NodeStatusFn: collectDashboardNodeStatus,
-		LedgerFn:     collectDashboardLedger,
-		FleetFn:      collectDashboardFleet,
-		Unroutable:   dashboardUnroutable(),
-		FabricFn:     collectDashboardFabric,
+		NodeStatusFn:            collectDashboardNodeStatus,
+		LedgerFn:                collectDashboardLedger,
+		FleetFn:                 collectDashboardFleet,
+		Unroutable:              dashboardUnroutable(),
+		FabricFn:                collectDashboardFabric,
+		SNEInstall:              dashboard.DefaultSNEInstallConfig(),
+		SNELifecycle:            dashboard.DefaultSNELifecycleConfig(),
+		AppRecovery:             appRecovery,
+		SNELocalAccessToken:     sneAccessToken,
+		SNELocalAccessTokenPath: sneAccessPath,
 	})
 
 	if err := srv.Start(); err != nil {

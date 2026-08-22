@@ -165,16 +165,21 @@ var (
 	hapiPsFn     = func() ([]byte, error) { return exec.Command("ps", "-axo", "pid,rss,comm").Output() }
 )
 
-// hapiFreeRAMBytes reads vm_stat and returns reclaimable memory: free + inactive
-// + speculative pages × page size. This mirrors the broker's RAM gate
-// (gemmaFreeRAMBytes) so the gate and the governor agree on "free".
+// hapiFreeRAMBytes reads vm_stat and returns a conservative reclaimable-memory
+// estimate. The page-queue view is free + inactive + speculative. Apple's XNU
+// memorystatus design also identifies free + file-backed as the approximation
+// after purgeable memory and file cache are reclaimed under pressure. Snapshot
+// verification makes model pages active file cache, so ignoring that second
+// view falsely rejects the same model immediately after hashing it. Use the
+// larger independently valid estimate; pressure and reserve gates remain the
+// binding safety controls.
 func hapiFreeRAMBytes() int64 {
 	out, err := hapiVMStatFn()
 	if err != nil {
 		return 0
 	}
 	pageSize := int64(16384) // M-series default; corrected from the header below
-	var free, inactive, speculative int64
+	var free, inactive, speculative, fileBacked int64
 	sc := bufio.NewScanner(strings.NewReader(string(out)))
 	for sc.Scan() {
 		line := sc.Text()
@@ -203,9 +208,16 @@ func hapiFreeRAMBytes() int64 {
 			inactive = v
 		} else if v, ok := val("Pages speculative:"); ok {
 			speculative = v
+		} else if v, ok := val("File-backed pages:"); ok {
+			fileBacked = v
 		}
 	}
-	return (free + inactive + speculative) * pageSize
+	pageQueueAvailable := free + inactive + speculative
+	fileCacheAvailable := free + fileBacked
+	if fileCacheAvailable > pageQueueAvailable {
+		return fileCacheAvailable * pageSize
+	}
+	return pageQueueAvailable * pageSize
 }
 
 // hapiTopByRSS retains its historical name for package compatibility, but ranks

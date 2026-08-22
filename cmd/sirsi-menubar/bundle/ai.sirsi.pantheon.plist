@@ -6,19 +6,12 @@
 	<string>ai.sirsi.pantheon</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/bin/zsh</string>
-		<string>-l</string>
-		<string>-c</string>
-		<string>for p in "$HOME/.local/bin/sirsi-menubar" "/Applications/Pantheon.app/Contents/MacOS/sirsi-menubar" "/opt/homebrew/bin/sirsi-menubar" "$(command -v sirsi-menubar 2>/dev/null)"; do [ -x "$p" ] &amp;&amp; exec "$p"; done; echo "sirsi-menubar not found" &gt;&amp;2; exit 127</string>
+		<string>/Applications/Pantheon.app/Contents/MacOS/sirsi-menubar</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>StandardOutPath</key>
-	<string>/tmp/sirsi-menubar.log</string>
-	<key>StandardErrorPath</key>
-	<string>/tmp/sirsi-menubar.err</string>
 	<key>ProcessType</key>
 	<string>Interactive</string>
 </dict>

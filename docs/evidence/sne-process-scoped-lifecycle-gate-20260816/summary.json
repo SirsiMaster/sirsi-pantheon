@@ -1,0 +1,12 @@
+{
+  "status": "pass",
+  "package": "SNE-1.1.0-runtime-api-v0-candidate7-darwin-arm64",
+  "pids": [
+    52111,
+    52118,
+    52125
+  ],
+  "content_sha256": "fda564ba3f7a0f028106d468420f674898ed99ac5bf2765ac9586206e39d73c5",
+  "duration_seconds": 57.07,
+  "process_scoped_lifecycle": true
+}

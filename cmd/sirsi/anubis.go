@@ -161,7 +161,7 @@ func runWeigh(ctx context.Context) error {
 	engine.RegisterAll(rules.AllRules()...)
 
 	stopSpin := output.Spinner("Scanning for infrastructure waste...")
-	res, scanErr := engine.Scan(ctx, jackal.ScanOptions{})
+	res, scanErr := engine.Scan(ctx, jackal.ScanOptions{Manifest: jackal.NewPlatformManifest()})
 	stopSpin()
 	if scanErr != nil {
 		output.Warn("Scan error (partial results may follow): %v", scanErr)
@@ -1167,8 +1167,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		if !drift.Healthy {
 			f.Severity = guard.SeverityWarn
 			f.Message = "Sirsi binary drift detected"
-			f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
-			f.Fix = "sirsi self-update"  // appended after the doctor post-pass; set its remediation here
+			f.Detail = drift.Summary() + " → run `sirsi update --app` to install the newest signed Pantheon app"
+			f.Fix = "sirsi update --app" // install one matching signed app/CLI release; never route app drift through an ambiguous package-manager command
 			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
 		}
 		report.Findings = append(report.Findings, f)
@@ -1184,11 +1184,16 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			Message:  "launchd liveness watch installed",
 		}
 		if !liveness.Installed() {
-			lw.Severity = guard.SeverityWarn
-			lw.Message = "launchd liveness watch not installed"
-			lw.Detail = "the OS-level gemma/menubar/memory-death safety net is absent — a reboot without the Claude app leaves the load-bearing surfaces unwatched"
-			lw.Fix = "sirsi liveness-watch install"
-			lw.FixKind = guard.FixInstant
+			if guard.ContainmentActive("liveness-watch") {
+				lw.Message = "launchd liveness watch intentionally contained"
+				lw.Detail = "owner-approved containment is active; the supervisor remains absent and will not be restored automatically"
+			} else {
+				lw.Severity = guard.SeverityWarn
+				lw.Message = "launchd liveness watch not installed"
+				lw.Detail = "the OS-level gemma/menubar/memory-death safety net is absent — a reboot without the Claude app leaves the load-bearing surfaces unwatched"
+				lw.Fix = "sirsi liveness-watch install"
+				lw.FixKind = guard.FixInstant
+			}
 		}
 		report.Findings = append(report.Findings, lw)
 	}
@@ -1257,7 +1262,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		"sirsi clean":                   0,
 		"sirsi clean --include-caution": 0,
 		"sirsi monitor":                 1,
-		"brew upgrade sirsi-pantheon":   2,
+		"sirsi update --app":            2,
 		"sirsi diagnose --json":         3,
 	}
 	type remedy struct{ cmd, desc string }
@@ -1306,7 +1311,7 @@ func remediationFor(check string) (string, string) {
 	case strings.Contains(check, "Kernel Panic"):
 		return "sirsi diagnose --json", "Inspect the panic reports for the faulting driver or hardware"
 	case strings.Contains(check, "drift"):
-		return "brew upgrade sirsi-pantheon", "Update the Sirsi binaries to clear version drift"
+		return "sirsi update --app", "Install the newest signed Pantheon app and its matching CLI"
 	default:
 		return "", ""
 	}

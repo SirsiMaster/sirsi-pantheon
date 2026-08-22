@@ -1,0 +1,11 @@
+host=M1
+architecture=arm64
+macos=26.6.2
+package_archive_sha256=5899e19f1fdfbb035cc42b53124160f38710572e9a38dd3c499463c3dea491fc
+pantheon_test_sha256=177ac4e1c8a7d92773c8d90066d5c288e3449215bfa0a0d1cb5ecd7b06d540a2
+sne_install accepted=true mode=candidate root=/private/tmp/sne-pantheon-support-cleanhost-codex-20260821/home/Library/Application Support/Sirsi/SNE
+=== RUN   TestSNESupportBundleRealPackagedIntegration
+--- PASS: TestSNESupportBundleRealPackagedIntegration (2.75s)
+PASS
+sne_uninstall accepted=true root=/private/tmp/sne-pantheon-support-cleanhost-codex-20260821/home/Library/Application Support/Sirsi/SNE rollback_removed=true
+m1_pantheon_sne_support_integration accepted=true exact_package=true exact_pantheon_test=true isolated_install=true production_go_wrapper=true packaged_exporter=true packaged_verifier=true valid_zip=true uninstall=true residue=false model_or_metal_run=false

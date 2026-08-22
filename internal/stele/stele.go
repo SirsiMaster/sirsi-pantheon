@@ -12,9 +12,11 @@ package stele
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -163,8 +165,13 @@ func DefaultPath() string {
 	return filepath.Join(home, ".config", "ra", "stele.jsonl")
 }
 
+const openTailBytes int64 = 1 << 20
+
 // Open opens or creates the Stele ledger at the given path.
-// Reads the last entry to initialize the hash chain.
+// It reads only a bounded tail to initialize the hash chain. The previous
+// implementation read, copied, and split the entire lifetime JSONL ledger;
+// a long-lived workstation expanded that history into hundreds of megabytes
+// every time a resident Pantheon process inscribed its first event.
 func Open(path string) (*Ledger, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -176,25 +183,61 @@ func Open(path string) (*Ledger, error) {
 		prevHash: strings.Repeat("0", 64), // genesis
 	}
 
-	// Read last entry to continue the chain
-	data, err := os.ReadFile(path)
-	if err == nil && len(data) > 0 {
-		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-		for i := len(lines) - 1; i >= 0; i-- {
-			line := strings.TrimSpace(lines[i])
-			if line == "" {
-				continue
-			}
-			var last Entry
-			if err := json.Unmarshal([]byte(line), &last); err == nil {
-				l.seq = last.Seq + 1
-				l.prevHash = last.Hash
-				break
-			}
-		}
+	last, found, err := readLastEntry(path)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		l.seq = last.Seq + 1
+		l.prevHash = last.Hash
 	}
 
 	return l, nil
+}
+
+func readLastEntry(path string) (Entry, bool, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Entry{}, false, nil
+	}
+	if err != nil {
+		return Entry{}, false, fmt.Errorf("stele: open tail: %w", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return Entry{}, false, fmt.Errorf("stele: stat tail: %w", err)
+	}
+	if info.Size() == 0 {
+		return Entry{}, false, nil
+	}
+	start := info.Size() - openTailBytes
+	if start < 0 {
+		start = 0
+	}
+	buf := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+		return Entry{}, false, fmt.Errorf("stele: read tail: %w", err)
+	}
+	if start > 0 {
+		if cut := bytes.IndexByte(buf, '\n'); cut >= 0 {
+			buf = buf[cut+1:]
+		} else {
+			return Entry{}, false, errors.New("stele: final entry exceeds bounded tail")
+		}
+	}
+	lines := bytes.Split(bytes.TrimSpace(buf), []byte{'\n'})
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) == 0 {
+			continue
+		}
+		var last Entry
+		if err := json.Unmarshal(line, &last); err == nil {
+			return last, true, nil
+		}
+	}
+	return Entry{}, false, errors.New("stele: no valid entry in bounded tail")
 }
 
 // Append writes a new hash-chained entry to the Stele.

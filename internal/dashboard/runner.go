@@ -25,11 +25,11 @@ func DefaultActions() []Runnable {
 	return []Runnable{
 		{Key: "scan", Label: "Scan", Glyph: "𓁢", Args: []string{"scan"}},
 		{Key: "ghosts", Label: "Ghost Hunt", Glyph: "𓂓", Args: []string{"ghosts"}},
-		{Key: "doctor", Label: "Doctor", Glyph: "𓁐", Args: []string{"doctor"}},
-		{Key: "guard", Label: "Guard Check", Glyph: "🛡", Args: []string{"guard", "--once"}},
-		{Key: "quality", Label: "Quality Audit", Glyph: "𓆄", Args: []string{"quality"}},
+		{Key: "doctor", Label: "System Diagnostics", Glyph: "𓁐", Args: []string{"diagnose"}},
+		{Key: "guard", Label: "Guard Check", Glyph: "🛡", Args: []string{"guard"}},
+		{Key: "quality", Label: "Quality Audit", Glyph: "𓆄", Args: []string{"audit"}},
 		{Key: "network", Label: "Network Audit", Glyph: "🌐", Args: []string{"network"}},
-		{Key: "dedup", Label: "Find Duplicates", Glyph: "🔍", Args: []string{"dedup", "."}},
+		{Key: "dedup", Label: "Find Duplicates", Glyph: "🔍", Args: []string{"duplicates", "."}},
 		{Key: "hardware", Label: "Hardware", Glyph: "⚡", Args: []string{"hardware"}},
 	}
 }
@@ -43,6 +43,15 @@ type Runner struct {
 	events   *EventBuffer
 	sirsiBin string
 	notifyDB *notify.Store
+	last     RunReceipt
+}
+
+// RunReceipt is the terminal, verifiable outcome of the most recent action.
+type RunReceipt struct {
+	Key        string `json:"key,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Error      string `json:"error,omitempty"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
 }
 
 // NewRunner creates a command runner that pushes output to the event buffer.
@@ -66,6 +75,12 @@ func (r *Runner) Current() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.current
+}
+
+func (r *Runner) Status() (bool, string, RunReceipt) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.running, r.current, r.last
 }
 
 // Run executes a command by key. Returns an error if already running or key is invalid.
@@ -175,6 +190,7 @@ func (r *Runner) finish(action *Runnable, start time.Time, err error) {
 	}
 
 	r.mu.Lock()
+	r.last = RunReceipt{Key: action.Key, Status: status, Error: errMsg, DurationMs: elapsed.Milliseconds()}
 	r.running = false
 	r.current = ""
 	r.mu.Unlock()
@@ -198,8 +214,6 @@ func (s *Server) apiRunStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]interface{}{"running": false})
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"running": s.runner.IsRunning(),
-		"current": s.runner.Current(),
-	})
+	running, current, receipt := s.runner.Status()
+	writeJSON(w, map[string]interface{}{"running": running, "current": current, "last": receipt})
 }

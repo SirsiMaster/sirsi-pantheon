@@ -1498,11 +1498,31 @@ func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
 		return
 	}
 	disabled := parseLaunchdDisabled(string(out))
+	var retired []string
+	if p.Name() == "darwin" {
+		home, _ := os.UserHomeDir()
+		installed := disabled[:0]
+		for _, label := range disabled {
+			plist := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+			if _, statErr := os.Stat(plist); statErr == nil {
+				installed = append(installed, label)
+			} else if os.IsNotExist(statErr) {
+				retired = append(retired, label)
+			}
+		}
+		disabled = installed
+	}
 	if len(disabled) == 0 {
+		message := "No installed Sirsi/runner services disabled in launchd override DB"
+		detail := ""
+		if len(retired) > 0 {
+			detail = fmt.Sprintf("Ignored %d retired override record(s) with no installed LaunchAgent: %s", len(retired), strings.Join(retired, ", "))
+		}
 		report.Findings = append(report.Findings, DiagnosticFinding{
 			Check:    "launchd Disabled Override",
 			Severity: SeverityOK,
-			Message:  "No Sirsi/runner labels disabled in launchd override DB",
+			Message:  message,
+			Detail:   detail,
 		})
 		return
 	}
@@ -1537,6 +1557,17 @@ func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
 			strings.Join(disabled, ", "), downLine, uid, uid,
 		),
 	})
+}
+
+// ContainmentActive reports an explicit owner-approved hold without claiming
+// the contained service is installed or healthy.
+func ContainmentActive(service string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || service == "" || strings.ContainsAny(service, `/\\`) {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(home, ".config", "pantheon", "containment", service))
+	return err == nil
 }
 
 // pauseLedgerPath is where scripts/quiet.sh (sirsi-inference) records the

@@ -14,8 +14,8 @@ identity = no re-grant, no duplicate FDA rows).
 1. Enrol in the Apple Developer Program (required for a Developer ID).
 2. In Xcode or the Developer portal, create a **Developer ID Application** cert.
 3. Export it (with its private key) as a `.p12` and note the export password.
-4. Create an **app-specific password** for notarization:
-   appleid.apple.com → Sign-In & Security → App-Specific Passwords.
+4. Prefer an **App Store Connect API key** for notarization. An Apple-ID
+   app-specific password remains supported as a fallback.
 5. Note your **Team ID** (10 chars) from the Developer portal membership page.
 
 ## GitHub Actions secrets to add
@@ -31,6 +31,14 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 | `APPLE_ID` | the Apple ID email used for notarization |
 | `APPLE_TEAM_ID` | the 10-char Team ID |
 | `APPLE_APP_PASSWORD` | the app-specific password from step 4 |
+
+Preferred API-key alternative to the final three Apple-ID fields:
+
+| Secret | Value |
+|--------|-------|
+| `ASC_KEY_PATH` | absolute path to `AuthKey_<KEYID>.p8` on the macOS release runner |
+| `ASC_KEY_ID` | App Store Connect API key ID |
+| `ASC_ISSUER_ID` | App Store Connect issuer UUID |
 
 That's it — the workflow (`.github/workflows/release.yml`, `menubar` job) imports the
 cert and runs `scripts/build-dmg.sh`, which signs, notarizes, and staples.
@@ -59,3 +67,19 @@ A stable Developer ID means macOS TCC recognizes every version as the **same app
 So a user grants Full Disk Access **once**, and `brew upgrade` keeps it — no warning,
 no re-grant, no new row in the Full Disk Access list. That is the difference between
 "a tool you can hand to people" and the ad-hoc build that clutters their machine.
+## App Store Connect API-key notarization
+
+The preferred notarization credential is an App Store Connect API key. It is
+non-interactive, auditable, and does not require storing an Apple ID password:
+
+```bash
+export ASC_KEY_PATH=/secure/path/AuthKey_KEYID.p8
+export ASC_KEY_ID=KEYID
+export ASC_ISSUER_ID=ISSUER_UUID
+```
+
+`scripts/build-dmg.sh` submits with these three values when all are present.
+The Apple ID/app-specific-password variables remain a compatibility fallback.
+Pin both `VERSION` and numeric `BUILD_NUMBER` for a release; the script embeds
+them into `Pantheon.app` before signing so the DMG, bundle, signature,
+notarization receipt, and update metadata identify the same artifact.

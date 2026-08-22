@@ -33,6 +33,8 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
 		{"vault", "🏛", "Vault"},
+		{"sne", "⚡", "SNE"},
+		{"recovery", "↻", "Recovery"},
 		{"ra", "𓇶", "Ra"},
 	}
 
@@ -127,9 +129,12 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .t-row{display:flex;gap:16px;padding:2px 0}
 .t-row:hover{background:color-mix(in srgb, var(--gold) 3%%, transparent)}
 .t-col{color:var(--ink2)}.t-col-r{color:var(--gold);text-align:right;min-width:80px}
-.t-action{color:var(--dim);cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:var(--line)}
-.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
-.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
+	.t-action{color:var(--dim);cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:var(--line)}
+	.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
+	.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
+	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
+	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+	@media (prefers-contrast:more){.t-action:focus-visible,.nav-item:focus-visible,.stat-go:focus-visible{outline-width:3px}.t-dim,.t-action{color:var(--ink2)}}
 </style>
 </head>
 <body>
@@ -160,7 +165,16 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 // ── SPA Entry Point ───────────────────────────────────────────────────
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if token := s.sneAccess.snapshot(); token != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     sneLocalSessionCookie,
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+		})
+	}
+	if r.URL.Path != "/" && r.URL.Path != "/sne" {
 		http.NotFound(w, r)
 		return
 	}
@@ -206,7 +220,7 @@ const fmtSize=b=>{if(b>=1073741824)return(b/1073741824).toFixed(1)+' GB';
 const ago=ts=>{if(!ts)return'';const d=Date.now()-new Date(ts).getTime();
  if(d<60e3)return Math.floor(d/1e3)+'s ago';if(d<3600e3)return Math.floor(d/6e4)+'m ago';
  if(d<864e5)return Math.floor(d/36e5)+'h ago';return Math.floor(d/864e5)+'d ago'};
-let currentView='home';let running=false;
+let currentView=location.pathname==='/sne'?'sne':'home';let running=false;
 
 function out(text,cls){const d=document.createElement('div');d.className='t-line '+(cls||'t-out');
  d.textContent=text;T.appendChild(d);if(T.children.length>800)T.removeChild(T.firstChild);T.scrollTop=T.scrollHeight}
@@ -238,7 +252,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
+  notifications:viewNotifications,horus:viewHorus,vault:viewVault,sne:viewSNE,recovery:viewRecovery,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -255,6 +269,295 @@ function viewHome(){
  cmdRow('dedup','Find duplicate files');
  out('');
  out('Click any command above, or type it. The sidebar switches views.','t-dim');
+}
+
+function viewSNE(){
+ out('⚡ SNE — Local AI Engine','t-gold');
+ out('Pantheon installs, verifies, admits, and supervises. SNE computes. Nexus presents.','t-dim');
+ sep();
+ fetch('/api/sne').then(function(r){return r.json().then(function(body){
+  if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})}).then(function(data){
+  out('Service      '+(data.ready?'READY':'NOT READY'),data.ready?'t-ok':'t-err');
+  out('Model        '+(data.active_model||'none'),'t-out');
+  out('Mac          '+(data.device_family||'unknown'),'t-out');
+  out('Memory       '+fmtSize(data.unified_memory_bytes||0),'t-out');
+  if(data.runtime_catalog){
+   const c=data.runtime_catalog;
+   out('Catalog      '+(c.state||'unknown')+(c.signed_required?' · signed':''),c.state==='verified'?'t-ok':'t-err');
+   if(c.catalog_id)out('Catalog ID   '+c.catalog_id,'t-out');
+   if(c.version_sha256)out('Version      '+c.version_sha256.slice(0,12)+'… · '+c.entries+' entries · '+c.versions+' retained','t-out');
+   out('Rollback     '+(c.rollback_available?'available':'not available'),c.rollback_available?'t-gold':'t-dim');
+   if(c.update_feed_configured){
+    const check=document.createElement('div');check.className='t-line t-action';check.textContent='[Check signed catalog updates]';check.tabIndex=0;check.setAttribute('role','button');
+    check.onclick=checkSNECatalogUpdates;check.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();checkSNECatalogUpdates()}};T.appendChild(check);
+   }
+   (c.retained_versions||[]).forEach(function(version){
+    if(version===c.version_sha256)return;
+    const row=document.createElement('div');row.className='t-line t-row';
+    const label=document.createElement('span');label.className='t-col';label.style.flex='1';label.textContent='Retained     '+version.slice(0,12)+'…';
+    const rollback=document.createElement('span');rollback.className='t-action';rollback.textContent='[Rollback]';rollback.tabIndex=0;rollback.setAttribute('role','button');
+    rollback.onclick=function(){mutateSNECatalog('rollback',version)};
+    rollback.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();mutateSNECatalog('rollback',version)}};
+    const remove=document.createElement('span');remove.className='t-action';remove.style.marginLeft='12px';remove.textContent='[Remove]';remove.tabIndex=0;remove.setAttribute('role','button');
+    remove.onclick=function(){mutateSNECatalog('remove',version)};
+    remove.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();mutateSNECatalog('remove',version)}};
+    row.appendChild(label);row.appendChild(rollback);row.appendChild(remove);T.appendChild(row);
+   });
+   if(c.error)out('Catalog error '+c.error,'t-err');
+  }
+	  if(data.recovery)out('Next         '+data.recovery,'t-dim');
+	  out('Model tools   '+(data.lifecycle_tools_ready?'ready':'unavailable')+(data.lifecycle_tools_status?' · '+data.lifecycle_tools_status:''),data.lifecycle_tools_ready?'t-ok':'t-err');
+  sep();
+  out('CATALOG','t-head');
+  (data.catalog||[]).forEach(function(m){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const state=document.createElement('span');state.style.width='22px';
+   state.textContent=m.active?'●':(m.installed?'◆':'○');
+   state.style.color=m.active?'var(--ok)':(m.state==='incompatible-memory'?'var(--danger)':'var(--gold)');
+   const name=document.createElement('span');name.className='t-col';name.style.flex='1';
+   name.textContent=m.parameter_class+' · '+m.weight_format.toUpperCase()+m.weight_bits+' · '+m.execution_mode+(m.runtime_id?' · '+m.runtime_id:'');
+   name.title=m.model_id+' · '+(m.support_status||'unqualified')+(m.next_gate?' · next '+m.next_gate:'');
+   const support=document.createElement('span');support.className='t-col-r';support.style.minWidth='118px';
+   support.textContent=m.support_status||'unqualified';
+   support.style.color=m.support_status==='release-supported'?'var(--ok)':(m.support_status==='research-only'?'var(--danger)':'var(--gold)');
+   const mem=document.createElement('span');mem.className='t-col-r';mem.textContent=fmtSize(m.memory_bytes);
+   const action=document.createElement('span');action.className='t-action';action.style.marginLeft='12px';
+   action.textContent='['+m.action_label+']';
+   if(!m.action_enabled){action.style.cursor='default';action.style.opacity='.55';action.style.textDecoration='none';action.setAttribute('aria-disabled','true')}
+   else{action.tabIndex=0;action.setAttribute('role','button');action.setAttribute('aria-label',m.action_label+' '+m.model_id+(m.runtime_id?' using '+m.runtime_id:''));action.onclick=function(){actSNE(m)};
+    action.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();actSNE(m)}}}
+	   row.appendChild(state);row.appendChild(name);row.appendChild(support);row.appendChild(mem);row.appendChild(action);
+	   if(m.installed&&!m.active){const remove=document.createElement('span');remove.className='t-action';remove.style.marginLeft='12px';remove.textContent='[Remove model]';
+	    if(!m.removal_enabled){remove.style.cursor='default';remove.style.opacity='.55';remove.style.textDecoration='none';remove.setAttribute('aria-disabled','true');remove.title=m.removal_reason||'Stop SNE before removal'}
+	    else{remove.tabIndex=0;remove.setAttribute('role','button');remove.setAttribute('aria-label','Remove installed model '+m.model_id);remove.onclick=function(){removeSNEModel(m)};
+	     remove.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();removeSNEModel(m)}}}row.appendChild(remove)}
+	   T.appendChild(row);
+   if(m.license_id){const license=document.createElement('div');license.className='t-line t-dim';license.style.cssText='padding-left:38px;font-size:10px';license.appendChild(document.createTextNode('License: '+m.license_id+(m.license_acceptance_required?' · acceptance required':'')));
+    if(m.license_url){const terms=document.createElement('a');terms.href=m.license_url;terms.target='_blank';terms.rel='noopener noreferrer';terms.textContent=' · Review terms';terms.style.marginLeft='4px';license.appendChild(terms)}T.appendChild(license)}
+   if(m.reason){const why=document.createElement('div');why.className='t-line t-dim';
+    why.style.cssText='padding-left:38px;font-size:10px';why.textContent=m.reason;T.appendChild(why)}
+   if(m.next_gate&&m.next_gate!=='complete'){const gate=document.createElement('div');gate.className='t-line t-dim';
+    gate.style.cssText='padding-left:38px;font-size:10px';gate.textContent='Next qualification gate: '+m.next_gate;T.appendChild(gate)}
+  });
+  out('');out('● active · ◆ installed · ○ available · only release-supported tuples can install or start','t-dim');
+  if(data.lifecycle&&data.lifecycle.state!=='stopped'&&data.lifecycle.state!=='not-configured'){
+   if(data.lifecycle.state==='failed')renderSNELifecycleFailure(data.lifecycle);
+   else out('Lifecycle    '+data.lifecycle.state+(data.lifecycle.runtime_id?' · '+data.lifecycle.runtime_id:''),'t-dim');
+  }
+  out('Installs are transactional; starts are exact-tuple, package-bound, and Pantheon-supervised.','t-dim');
+  const activeSupported=(data.catalog||[]).some(function(m){return m.active&&m.support_status==='release-supported'});
+  if(data.ready&&activeSupported){const nexus=document.createElement('div');nexus.className='t-line t-action';nexus.textContent='[Open Nexus Local AI]';nexus.tabIndex=0;nexus.setAttribute('role','button');nexus.setAttribute('aria-label','Open Nexus with the verified local SNE model');
+   nexus.onclick=openSNENexus;nexus.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();openSNENexus()}};T.appendChild(nexus)}
+  const diagnostics=document.createElement('div');diagnostics.className='t-line t-action';diagnostics.textContent='[Export privacy-safe support diagnostics]';diagnostics.tabIndex=0;diagnostics.setAttribute('role','button');
+  diagnostics.onclick=exportSNEDiagnostics;diagnostics.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();exportSNEDiagnostics()}};T.appendChild(diagnostics);
+  const support=document.createElement('div');support.className='t-line t-action';support.textContent='[Export complete SNE support bundle]';support.tabIndex=0;support.setAttribute('role','button');support.setAttribute('aria-label','Export complete privacy-safe SNE support bundle');
+  support.onclick=exportSNESupportBundle;support.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();exportSNESupportBundle()}};T.appendChild(support);
+ }).catch(function(e){out('SNE read model unavailable: '+e.message,'t-err')});
+}
+
+function viewRecovery(){
+ out('↻ Recovery — Applications & Services','t-gold');
+ out('Restore resumes declared durable state. Fresh deliberately clears registered transient queues or caches.','t-dim');
+ sep();
+ fetch('/api/recovery').then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(data){
+  const targets=data.targets||[];
+  if(!targets.length){out('No governed recovery targets are registered.','t-dim');return}
+  targets.forEach(function(target){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const state=document.createElement('span');state.className='t-col';state.style.flex='1';state.textContent=target.target_id+' · '+target.kind+(target.auto_resume?' · auto-resume':'')+(target.phase?' · '+target.phase:'');row.appendChild(state);
+   if(target.restore_supported)row.appendChild(recoveryAction('[Restore]','Restore '+target.target_id+' from its declared durable session or checkpoint?',function(){restartRecoveryTarget(target.target_id,'restore')}));
+   if(target.fresh_supported){const fresh=recoveryAction('[Fresh restart]','Fresh restart '+target.target_id+'? Pantheon will discard only its registered transient queue/cache files.',function(){restartRecoveryTarget(target.target_id,'fresh')});fresh.style.marginLeft='12px';row.appendChild(fresh)}
+   if(target.phase==='captured'||target.phase==='stopped'||target.phase==='started'){const resume=recoveryAction('[Resume interrupted]','Resume the interrupted '+target.mode+' operation for '+target.target_id+'?',function(){resumeRecoveryTarget(target.target_id)});resume.style.marginLeft='12px';row.appendChild(resume)}
+   T.appendChild(row);
+   if(target.failure_code)out('  Failure      '+target.failure_code,'t-err');
+  });
+  out('');out('Every action is registry-bound, receipt-backed, and requires a verified replacement process.','t-dim');
+ }).catch(function(e){out('Recovery unavailable: '+e.message,'t-err')});
+}
+
+function recoveryAction(label,question,action){
+ const control=document.createElement('span');control.className='t-action';control.textContent=label;control.tabIndex=0;control.setAttribute('role','button');control.setAttribute('aria-label',label.replace(/[\[\]]/g,''));
+ control.onclick=function(){if(confirm(question))action()};control.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();control.click()}};return control;
+}
+
+function restartRecoveryTarget(targetID,mode){
+ out((mode==='restore'?'Restoring ':'Fresh restarting ')+targetID+'…','t-gold');
+ fetch('/api/recovery/restart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:targetID,mode:mode})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.failure_code||body.error||('HTTP '+r.status));return body})})
+ .then(function(){out(targetID+' is ready.','t-ok');setTimeout(viewRecovery,300)})
+ .catch(function(e){out('Recovery rejected: '+e.message,'t-err');setTimeout(viewRecovery,300)});
+}
+
+function resumeRecoveryTarget(targetID){
+ out('Resuming interrupted recovery for '+targetID+'…','t-gold');
+ fetch('/api/recovery/resume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:targetID,mode:''})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.failure_code||body.error||('HTTP '+r.status));return body})})
+ .then(function(){out(targetID+' is ready.','t-ok');setTimeout(viewRecovery,300)})
+ .catch(function(e){out('Resume rejected: '+e.message,'t-err');setTimeout(viewRecovery,300)});
+}
+
+function exportSNEDiagnostics(){
+ const link=document.createElement('a');link.href='/api/sne/diagnostics';link.download='';document.body.appendChild(link);link.click();link.remove();
+ out('Exported privacy-safe SNE support diagnostics.','t-ok');
+}
+
+function openSNENexus(){
+ out('Opening Nexus with this Mac\'s private SNE capability…','t-gold');
+ fetch('/api/sne/nexus/open',{method:'POST'}).then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error((body.error&&body.error.message)||body.error||('HTTP '+r.status));return body})})
+ .then(function(body){out('Nexus opened for '+body.model+'.','t-ok')})
+ .catch(function(e){out('Nexus handoff rejected: '+e.message,'t-err')});
+}
+
+function exportSNESupportBundle(){
+ if(!confirm('Create a privacy-safe SNE support bundle? It includes package identity, admission and resource state, local health counters, and signature status. It excludes conversations, model data, caches, logs, environment values, network configuration, and machine identifiers. Review the archive before sharing.'))return;
+ out('Creating privacy-safe SNE support bundle…','t-gold');
+ fetch('/api/sne/support-bundle',{method:'POST'}).then(function(r){if(!r.ok)return r.json().then(function(body){throw new Error(body.error||('HTTP '+r.status))});return r.blob()})
+ .then(function(blob){const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='sirsi-sne-support.zip';document.body.appendChild(link);link.click();link.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000);out('Exported privacy-verified SNE support bundle. Review it before sharing.','t-ok')})
+ .catch(function(e){out('Support bundle export failed: '+e.message,'t-err')});
+}
+
+function renderSNELifecycleFailure(state){
+ out('Lifecycle    failed'+(state.error_code?' · '+state.error_code:'')+(state.error?' · '+state.error:''),'t-err');
+ const resource=state.resource_admission;
+ if(resource){
+  out('Memory       '+fmtSize(resource.required_bytes)+' required · '+fmtSize(resource.available_ram_bytes)+' available','t-dim');
+  out('Headroom     '+fmtSize(resource.dynamic_reserve_bytes)+' dynamic · '+fmtSize(resource.lifecycle_reserve_bytes)+' lifecycle','t-dim');
+  out('Swap         '+fmtSize(resource.swap_used_bytes)+' used · '+fmtSize(resource.swap_limit_bytes)+' limit','t-dim');
+ }
+ if(state.recovery)out('Recovery     '+state.recovery,'t-gold');
+ if(state.model_id){
+  const retry=document.createElement('div');retry.className='t-line t-action';retry.textContent='[Retry when conditions are safe]';retry.tabIndex=0;retry.setAttribute('role','button');
+  retry.onclick=function(){startSNE(state.model_id,state.runtime_id||'')};
+  retry.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();startSNE(state.model_id,state.runtime_id||'')}};
+  T.appendChild(retry);
+ }
+}
+
+function installSNE(catalogEntry,modelID,licenseID,licenseURL){
+ if(!licenseID||!licenseURL){out('Install blocked: verified license terms are unavailable.','t-err');return}
+ const dialog=document.createElement('dialog');dialog.setAttribute('aria-labelledby','sne-license-title');dialog.style.cssText='max-width:560px;border:1px solid var(--gold);background:var(--bg);color:var(--text);padding:22px;box-shadow:0 18px 60px rgba(0,0,0,.45)';
+ const title=document.createElement('h2');title.id='sne-license-title';title.textContent='Review model terms';title.style.cssText='margin:0 0 12px;color:var(--gold);font-size:16px';dialog.appendChild(title);
+ const identity=document.createElement('p');identity.textContent=modelID;identity.style.cssText='overflow-wrap:anywhere';dialog.appendChild(identity);
+ const explanation=document.createElement('p');explanation.textContent='Pantheon will download and verify this exact signed model tuple. Acceptance is recorded in its checkout receipt.';dialog.appendChild(explanation);
+ const terms=document.createElement('a');terms.href=licenseURL;terms.target='_blank';terms.rel='noopener noreferrer';terms.textContent='Review '+licenseID+' in a new window';terms.style.color='var(--gold)';dialog.appendChild(terms);
+ const consentRow=document.createElement('label');consentRow.style.cssText='display:flex;gap:10px;align-items:flex-start;margin:20px 0';
+ const consent=document.createElement('input');consent.type='checkbox';consent.setAttribute('aria-describedby','sne-license-consent-copy');
+ const consentCopy=document.createElement('span');consentCopy.id='sne-license-consent-copy';consentCopy.textContent='I reviewed and accept these terms for this model installation.';consentRow.appendChild(consent);consentRow.appendChild(consentCopy);dialog.appendChild(consentRow);
+ const actions=document.createElement('div');actions.style.cssText='display:flex;justify-content:flex-end;gap:10px';
+ const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';
+ const install=document.createElement('button');install.type='button';install.textContent='Accept and install';install.disabled=true;
+ consent.onchange=function(){install.disabled=!consent.checked};cancel.onclick=function(){dialog.close('cancel')};
+ install.onclick=function(){if(!consent.checked)return;install.disabled=true;cancel.disabled=true;dialog.close('accepted');beginSNEInstall(catalogEntry)};
+ actions.appendChild(cancel);actions.appendChild(install);dialog.appendChild(actions);dialog.addEventListener('close',function(){dialog.remove()});document.body.appendChild(dialog);dialog.showModal();consent.focus();
+}
+
+function beginSNEInstall(catalogEntry){
+ out('Starting verified installation for '+catalogEntry+'…','t-gold');
+ fetch('/api/sne/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({catalog_entry:catalogEntry,accept_license:true,allow_research:false})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(job){pollSNEInstall(job.id)}).catch(function(e){out('Install rejected: '+e.message,'t-err')});
+}
+
+function discardSNEPrepared(catalogEntry,modelID){
+ if(!confirm('Discard the retained download for '+modelID+'? This removes only the failed prepared source. Installed models and shared model-store objects are not changed.'))return;
+ out('Discarding retained download for '+catalogEntry+'…','t-gold');
+ fetch('/api/sne/prepared/discard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({catalog_entry:catalogEntry})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(body){const result=body.result||{};out('Discarded retained download for '+result.catalog_entry+' · revision '+result.revision+'. Installed models were not changed.','t-ok');setTimeout(viewSNE,300)})
+ .catch(function(e){out('Retained download cleanup rejected: '+e.message,'t-err')});
+}
+
+function actSNE(model){
+ if(model.action_kind==='install'){installSNE(model.catalog_entry,model.model_id,model.license_id,model.license_url);return}
+ if(model.action_kind==='start'){startSNE(model.model_id,model.runtime_id||'');return}
+ if(model.action_kind==='stop'){stopSNE();return}
+}
+
+function removeSNEModel(model){
+	 if(!model.removal_enabled){out(model.removal_reason||'Stop SNE before removing this model.','t-err');return}
+	 if(!confirm('Remove '+model.model_id+' from this Mac? Pantheon will remove its governed model view, retain any objects shared by another installed model, and allow the model to be installed again later.'))return;
+	 out('Removing '+model.model_id+' transactionally…','t-gold');
+	 fetch('/api/sne/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({catalog_entry:model.catalog_entry,model_id:model.model_id})})
+	 .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+	 .then(function(body){const result=body.result||{};out('Removed '+model.model_id+'. Shared objects retained: '+(result.objects_retained||0)+'.','t-ok');setTimeout(viewSNE,300)})
+	 .catch(function(e){out('Removal rejected: '+e.message,'t-err')});
+}
+
+function startSNE(modelID,runtimeID){
+ out('Starting verified runtime for '+modelID+(runtimeID?' · '+runtimeID:'')+'…','t-gold');
+ fetch('/api/sne/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model_id:modelID,runtime_id:runtimeID||undefined})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(){pollSNELifecycle()}).catch(function(e){out('Start rejected: '+e.message,'t-err')});
+}
+
+function stopSNE(){
+ out('Stopping SNE under Pantheon supervision…','t-gold');
+ fetch('/api/sne/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(){out('SNE stopped.','t-ok');setTimeout(viewSNE,300)})
+ .catch(function(e){out('Stop rejected: '+e.message,'t-err')});
+}
+
+function mutateSNECatalog(action,version){
+ const verb=action==='rollback'?'Roll back to':'Remove inactive';
+ if(!confirm(verb+' signed catalog '+version.slice(0,12)+'…? SNE must be stopped.'))return;
+ out((action==='rollback'?'Rolling back to ':'Removing ')+version.slice(0,12)+'…','t-gold');
+ fetch('/api/sne/catalog/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version_sha256:version})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(){out('Catalog '+action+' completed.','t-ok');setTimeout(viewSNE,300)})
+ .catch(function(e){out('Catalog '+action+' rejected: '+e.message,'t-err')});
+}
+
+function checkSNECatalogUpdates(){
+ out('Checking the authenticated SNE catalog feed…','t-gold');
+ fetch('/api/sne/catalog/updates').then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(feed){
+  out('Update feed  '+feed.feed_id,'t-ok');
+  const available=(feed.versions||[]).filter(function(v){return v!==feed.current_version_sha256});
+  if(!available.length){out('Catalog      current','t-ok');return}
+  available.forEach(function(version){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const label=document.createElement('span');label.className='t-col';label.style.flex='1';label.textContent='Available    '+version.slice(0,12)+'…';
+   const install=document.createElement('span');install.className='t-action';install.textContent='[Install]';install.tabIndex=0;install.setAttribute('role','button');
+   install.onclick=function(){installSNECatalogUpdate(version)};install.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();installSNECatalogUpdate(version)}};
+   row.appendChild(label);row.appendChild(install);T.appendChild(row);
+  });
+ }).catch(function(e){out('Update check failed: '+e.message,'t-err')});
+}
+
+function installSNECatalogUpdate(version){
+ if(!confirm('Install authenticated catalog '+version.slice(0,12)+'…? SNE must be stopped and the current version will remain available for rollback.'))return;
+ out('Downloading and verifying signed catalog '+version.slice(0,12)+'…','t-gold');
+ fetch('/api/sne/catalog/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version_sha256:version})})
+ .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(){out('Catalog update installed; prior version retained.','t-ok');setTimeout(viewSNE,300)})
+ .catch(function(e){out('Catalog update rejected: '+e.message,'t-err')});
+}
+
+function pollSNELifecycle(){
+ fetch('/api/sne/lifecycle').then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(state){
+  if(state.state==='ready'){out('Ready        '+state.model_id,'t-ok');setTimeout(viewSNE,300);return}
+  if(state.state==='failed'){renderSNELifecycleFailure(state);return}
+  out('Lifecycle    '+state.state,'t-dim');setTimeout(pollSNELifecycle,1000);
+ }).catch(function(e){out('Lifecycle status unavailable: '+e.message,'t-err')});
+}
+
+function pollSNEInstall(id){
+ fetch('/api/sne/install/status?id='+encodeURIComponent(id)).then(function(r){return r.json().then(function(body){
+  if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})}).then(function(job){
+   if(job.progress){out('Install      '+job.progress.files_done+'/'+job.progress.files_total+' files · '+fmtSize(job.progress.bytes_done)+' / '+fmtSize(job.progress.bytes_total),'t-dim')}
+   if(job.state==='installed'){out('Installed    '+job.model_id,'t-ok');setTimeout(viewSNE,300);return}
+   if(job.state==='failed'){
+    out('Install failed: '+job.error,'t-err');
+    const discard=document.createElement('div');discard.className='t-line t-action';discard.textContent='[Discard retained download]';discard.tabIndex=0;discard.setAttribute('role','button');discard.setAttribute('aria-label','Discard retained download for '+job.model_id);
+    discard.onclick=function(){discardSNEPrepared(job.catalog_entry,job.model_id)};
+    discard.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();discardSNEPrepared(job.catalog_entry,job.model_id)}};
+    T.appendChild(discard);return
+   }
+   setTimeout(function(){pollSNEInstall(id)},1000);
+ }).catch(function(e){out('Install status unavailable: '+e.message,'t-err')});
 }
 
 function viewScan(){

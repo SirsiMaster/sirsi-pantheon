@@ -112,18 +112,28 @@ type ScanOptions struct {
 	// Manifest is the shared Horus filesystem index.
 	// When set, rules query the index instead of walking the filesystem.
 	// This enables the "walk once, share many" optimization (ADR-008).
-	Manifest interface {
-		DirSizeAndCount(dir string) (int64, int)
-		DirSize(dir string) int64
-		Exists(path string) bool
-		Glob(pattern string) []string
-		FindDirsNamed(root, name string, maxDepth int) []string
-	}
+	Manifest Manifest
+
+	// DeepScan explicitly permits rules to walk when the platform manifest has
+	// no answer. Resident and ordinary product scans leave this false; forensic
+	// callers may opt in deliberately.
+	DeepScan bool
 
 	// OnProgress is called after each rule completes during scanning.
 	// ruleName is the rule that finished, found is the number of findings,
 	// size is the total bytes found by this rule, done/total track overall progress.
 	OnProgress func(ruleName string, found int, size int64, done, total int)
+}
+
+// Manifest is Pantheon's bounded filesystem-discovery contract. On macOS the
+// production implementation consumes Spotlight metadata rather than building a
+// second broad filesystem index.
+type Manifest interface {
+	DirSizeAndCount(dir string) (int64, int)
+	DirSize(dir string) int64
+	Exists(path string) bool
+	Glob(pattern string) []string
+	FindDirsNamed(root, name string, maxDepth int) []string
 }
 
 // CleanOptions controls how cleaning behaves.

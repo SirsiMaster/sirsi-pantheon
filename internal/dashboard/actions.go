@@ -33,14 +33,20 @@ func actionSpecs() []ActionSpec {
 		// Read / scan / report (streamed via runner+SSE)
 		{Key: "scan", Label: "Scan", Glyph: "𓁢", Args: []string{"scan"}},
 		{Key: "ghosts", Label: "Ghost Hunt", Glyph: "𓂓", Args: []string{"ghosts"}},
-		{Key: "doctor", Label: "Doctor", Glyph: "𓁐", Args: []string{"doctor"}},
-		{Key: "guard", Label: "Guard Check", Glyph: "🛡", Args: []string{"guard", "--once"}},
-		{Key: "quality", Label: "Quality Audit", Glyph: "𓆄", Args: []string{"quality"}},
+		{Key: "doctor", Label: "System Diagnostics", Glyph: "𓁐", Args: []string{"diagnose"}},
+		{Key: "router/doctor", Label: "Router Doctor", Glyph: "𓇶", Args: []string{"router", "doctor", "--fix"}},
+		{Key: "guard", Label: "Guard Check", Glyph: "🛡", Args: []string{"guard"}},
+		{Key: "quality", Label: "Quality Audit", Glyph: "𓆄", Args: []string{"audit"}},
 		{Key: "audit", Label: "Audit", Glyph: "𓆄", Args: []string{"audit"}},
 		{Key: "maat", Label: "Ma'at Feather", Glyph: "𓆄", Args: []string{"maat"}},
 		{Key: "risk", Label: "Risk", Glyph: "⚖", Args: []string{"risk"}},
 		{Key: "network", Label: "Network Audit", Glyph: "🌐", Args: []string{"network"}},
 		{Key: "hardware", Label: "Hardware", Glyph: "⚡", Args: []string{"hardware"}},
+		{Key: "compute", Label: "Compute Profile", Glyph: "⚡", Args: []string{"hardware"}},
+		{Key: "status", Label: "System Status", Glyph: "𓂀", Args: []string{"status"}},
+		{Key: "gemma/serve", Label: "Start / Check Gemma Broker", Glyph: "☥", Args: []string{"gemma", "serve"}},
+		{Key: "gemma/status", Label: "SNE Status", Glyph: "☥", Args: []string{"gemma", "serve", "--status"}},
+		{Key: "router/ledger", Label: "Fabric Ledger", Glyph: "𓂀", Args: []string{"router", "ledger"}},
 		{Key: "dedup", Label: "Find Duplicates", Glyph: "🔍", Args: []string{"duplicates"}, AcceptsArgs: true},
 		{Key: "thoth/sync", Label: "Thoth Sync", Glyph: "𓁟", Args: []string{"thoth", "sync"}},
 		{Key: "seshat/ingest", Label: "Seshat Ingest", Glyph: "𓄿", Args: []string{"seshat", "ingest"}, AcceptsArgs: true},
@@ -49,10 +55,31 @@ func actionSpecs() []ActionSpec {
 
 		// Destructive / high-impact (E2 confirm token required)
 		{Key: "network/fix", Label: "Network Fix", Glyph: "🌐", Args: []string{"network", "--fix"}, Destructive: true},
+		{Key: "system/fix", Label: "Repair Diagnosed Issues", Glyph: "𓁐", Args: []string{"fix"}, Destructive: true},
+		{Key: "update/app", Label: "Install Signed Pantheon Update", Glyph: "↻", Args: []string{"update", "--app"}, Destructive: true},
+		{Key: "gemma/stop", Label: "Stop SNE", Glyph: "☥", Args: []string{"gemma", "serve", "--stop"}, Destructive: true},
+		{Key: "gemma/restore", Label: "Restore SNE", Glyph: "☥", Args: []string{"gemma", "serve", "--restore"}, Destructive: true},
+		{Key: "gemma/quarantine", Label: "Quarantine SNE", Glyph: "☥", Args: []string{"gemma", "serve", "--quarantine"}, Destructive: true},
 		{Key: "ra/deploy", Label: "Ra Deploy", Glyph: "𓇶", Args: []string{"ra", "deploy"}, Destructive: true, AcceptsArgs: true},
 		{Key: "ra/kill", Label: "Ra Kill", Glyph: "𓇶", Args: []string{"ra", "kill"}, Destructive: true, AcceptsArgs: true},
 	}
 }
+
+// ActionSpecs returns a defensive copy of the canonical cross-surface action
+// registry. Menubar, TUI, MCP, and future native clients must consume this
+// identity rather than hardcoding their own command semantics.
+func ActionSpecs() []ActionSpec {
+	specs := actionSpecs()
+	out := make([]ActionSpec, len(specs))
+	for i, spec := range specs {
+		out[i] = spec
+		out[i].Args = append([]string(nil), spec.Args...)
+	}
+	return out
+}
+
+// LookupAction resolves one canonical action for trusted local surfaces.
+func LookupAction(key string) (ActionSpec, bool) { return lookupAction(key) }
 
 // lookupAction returns the spec for a canonical action key.
 func lookupAction(key string) (ActionSpec, bool) {
@@ -67,7 +94,7 @@ func lookupAction(key string) (ActionSpec, bool) {
 // apiActions handles GET /api/actions — the action discovery endpoint. Surfaces
 // call it to learn the available actions and which require confirmation.
 func (s *Server) apiActions(w http.ResponseWriter, r *http.Request) {
-	specs := actionSpecs()
+	specs := ActionSpecs()
 	if specs == nil {
 		specs = []ActionSpec{}
 	}

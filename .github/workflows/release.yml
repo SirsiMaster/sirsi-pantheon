@@ -80,10 +80,29 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
           rm certificate.p12
 
+      - name: Verify canonical menubar release contract
+        run: bash scripts/verify-menubar-release-contract.sh
+
+      - name: Prepare App Store Connect notarization key
+        if: env.ASC_KEY_CONTENT != ''
+        env:
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY_CONTENT" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
       - name: Build + sign + notarize DMG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+          BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+          REQUIRE_RELEASE_SIGNING: "1"
           DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          ASC_KEY_PATH: ${{ env.ASC_KEY_PATH }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -266,6 +285,7 @@ jobs:
             homepage "https://github.com/SirsiMaster/sirsi-pantheon"
 
             app "Pantheon.app"
+            binary "#{appdir}/Pantheon.app/Contents/MacOS/sirsi"
 
             uninstall quit:      "ai.sirsi.pantheon",
                       launchctl: "ai.sirsi.pantheon"
@@ -279,8 +299,7 @@ jobs:
               Pantheon.app includes both the menu bar monitor and the sirsi CLI.
 
               To start the menu bar at login:
-                cp /Applications/Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist ~/Library/LaunchAgents/
-                launchctl load ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
+                /Applications/Pantheon.app/Contents/MacOS/sirsi surface install gui
 
               Quick start:
                 sirsi scan       Find waste on your machine

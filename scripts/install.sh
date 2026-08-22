@@ -242,5 +242,13 @@ if [ -t 0 ] && [ -t 1 ]; then
     echo ""
     "${INSTALL_DIR}/sirsi" setup || true
 else
-    echo -e "${DIM}  Next: run 'sirsi setup' to choose your surfaces and grant permissions.${NC}"
+	if [ "$OS" = "darwin" ] && [ -x "${INSTALL_DIR}/sirsi-menubar" ]; then
+		if "${INSTALL_DIR}/sirsi" surface install menubar; then
+			echo -e "${DIM}  Pantheon caretaker registered for this login and future logins.${NC}"
+		else
+			echo -e "${GOLD}  Pantheon caretaker registration needs attention.${NC}"
+			echo -e "${DIM}  Retry: '${INSTALL_DIR}/sirsi' surface install menubar${NC}"
+		fi
+	fi
+	echo -e "${DIM}  Next: run 'sirsi setup' to choose optional surfaces and grant permissions.${NC}"
 fi

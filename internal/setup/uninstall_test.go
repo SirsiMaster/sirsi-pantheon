@@ -1,6 +1,10 @@
 package setup
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -53,6 +57,50 @@ func TestUninstallDryRunHasNoSideEffects(t *testing.T) {
 	}
 	if !hasTCC {
 		t.Error("dry run should still surface the tcc (FDA) target")
+	}
+}
+
+func TestUninstallBootsOutAndDisablesLaunchAgents(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd uninstall is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{menubarPlistLabel, supervisorPlistLabel} {
+		if err := os.WriteFile(filepath.Join(agents, label+".plist"), []byte("<plist/>"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := getUninstallExec()
+	defer setUninstallExec(old)
+	var calls []string
+	setUninstallExec(func(name string, args ...string) error {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil
+	})
+
+	_, errs := Uninstall(false)
+	if len(errs) != 0 {
+		t.Fatalf("Uninstall() errors = %v", errs)
+	}
+	for _, label := range []string{menubarPlistLabel, supervisorPlistLabel} {
+		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+		for _, want := range []string{"launchctl bootout " + target, "launchctl disable " + target} {
+			found := false
+			for _, call := range calls {
+				found = found || call == want
+			}
+			if !found {
+				t.Fatalf("missing %q in calls %v", want, calls)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(agents, label+".plist")); !os.IsNotExist(err) {
+			t.Fatalf("LaunchAgent %s remains after uninstall: %v", label, err)
+		}
 	}
 }
 

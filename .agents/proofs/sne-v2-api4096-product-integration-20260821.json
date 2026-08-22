@@ -1,0 +1,130 @@
+{
+  "work_item_id": "sne-v2-api4096-product-integration-20260821",
+  "agent_id": "codex-sne",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": "Pantheon owns SNE lifecycle, admission, memory/swap care, diagnostics, recovery, and authoritative state; SNE computes and Nexus presents."
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": ""
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/COMMERCIALIZATION_GATE.md",
+      "role": "commercialization-law",
+      "read_at": "2026-08-21T13:11:42.170061+00:00",
+      "notes": "Required buyer, workflow, trust, operational, and done-evidence closure before launch claims."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/COMMERCIALIZATION_GATE.md",
+      "section": "Required Before Build and Required Before Completion",
+      "claim": "Pantheon SNE has an explicit local buyer, pain, workflow, value, trust boundary, operational owner, and evidence-based done definition.",
+      "files_changed": ["docs/COMMERCIALIZATION_GATE.md"],
+      "evidence": ["docs/evidence/SNE_COMMERCIALIZATION_AND_SUPPORT_PROVENANCE_20260821.md"]
+    },
+    {
+      "doc": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "section": "SNE and the Apple compute doctrine",
+      "claim": "Privacy-safe field diagnostics preserve exact runtime, manifest, profile, and cache capability identity without leaking local inference content or credentials.",
+      "files_changed": ["internal/dashboard/sne_diagnostics.go", "internal/dashboard/sne_diagnostics_test.go"],
+      "evidence": ["go test ./internal/dashboard ./internal/sne ./internal/snemodels", "docs/evidence/SNE_COMMERCIALIZATION_AND_SUPPORT_PROVENANCE_20260821.md"]
+    },
+    {
+      "doc": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "section": "SNE and the Apple compute doctrine",
+      "claim": "Pantheon projects SNE ready only when the live API, profile, runtime SHA, model ID, manifest SHA, and request policy exactly match its supervised lifecycle tuple; drift projects a distinct actionable identity-mismatch recovery.",
+      "files_changed": ["internal/dashboard/sne.go", "internal/dashboard/sne_readiness_projection_test.go"],
+      "evidence": ["go test ./internal/dashboard ./internal/sne ./internal/snemodels", "docs/evidence/SNE_COMMERCIALIZATION_AND_SUPPORT_PROVENANCE_20260821.md"]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Commercialization profile defines the governed install-to-use-to-recovery workflow; API4096 remains research until live qualification.",
+    "design": "The SNE surface includes empty, progress, ready, failure, retry, diagnostics, update, rollback, removal, and keyboard-operable actions. A ready-looking drifted endpoint is shown as identity-mismatch with specific supervised-restart recovery.",
+    "technical": "Support diagnostics add exact runtime SHA, manifest SHA, profile, cache topology/capacity, and prefix capability. Dashboard readiness requires the live service to match the supervised tuple across API, profile, runtime, model, manifest, and request policy; drift fails closed with actionable recovery. Focused privacy and integration suites pass.",
+    "operational": "Owner Reading Room Markdown and HTML mirrors exist. Native Google Doc 1kUgEvjTuG9oabxzlRCqUOAkG2QwzQoJOsJnLCm8fiSI was read back with the exact-tuple and identity-mismatch sections. Live M5 qualification and clean-host release gates remain pending.",
+    "narrative": "Canonical evidence explains the product boundary, repair, verification, and claim limitations for a stranger."
+  },
+  "verification": [
+    {
+      "name": "go tests",
+      "command": "go test ./...",
+      "status": "not-run",
+      "evidence": "Full repository verification is deferred until the integrated product slice is ready; focused SNE suites passed."
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./...",
+      "status": "not-run",
+      "evidence": "Deferred until integrated completion; this proof remains draft."
+    },
+    {
+      "name": "dashboard SNE integration",
+      "command": "go test ./internal/dashboard ./internal/sne ./internal/snemodels",
+      "status": "pass",
+      "evidence": "internal/dashboard 2.539s pass; internal/sne and internal/snemodels pass; adversarial readiness projection and identity-mismatch recovery suite included"
+    },
+    {
+      "name": "completion gate",
+      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>",
+      "status": "pass",
+      "evidence": "Draft proof structurally satisfies the completion contract; final status remains draft and live/release gates remain listed as blockers."
+    }
+  ],
+  "working_status": {
+    "environment": "Apple M5 Max development host; source-only Pantheon slice while console Metal session is locked",
+    "how_verified": "Focused Go dashboard/SNE/model-source test command plus privacy-safe diagnostic assertions",
+    "observed_result": "Source integration passes; exact runtime and cache provenance is exported without forbidden sensitive fields; unsupervised or drifted loopback services fail closed in the dashboard projection; full product goal remains incomplete",
+    "verified_at": "2026-08-21T14:12:00Z"
+  },
+  "handoffs": [],
+  "blockers": [
+    "M5 console remains locked, so API4096 Metal qualification has not run.",
+    "M1 Tailscale SSH is unreachable, so architecture-specific package transfer and qualification remain pending."
+  ]
+}

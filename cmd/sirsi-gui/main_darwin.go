@@ -25,8 +25,23 @@ func main() {
 	// WebKit must be driven from the main OS thread on macOS.
 	runtime.LockOSThread()
 
+	sneAccessToken, err := dashboard.LoadOrCreateDefaultSNELocalAccessToken()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sirsi-gui: refusing unauthenticated startup: %v\n", err)
+		os.Exit(1)
+	}
+	sneAccessPath, err := dashboard.DefaultSNELocalAccessTokenPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sirsi-gui: refusing startup without durable capability path: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Reuse a running dashboard (e.g. the menubar's) if present; else start one.
-	srv := dashboard.New(dashboard.Config{SirsiBin: setup.SirsiBinaryPath()})
+	srv := dashboard.New(dashboard.Config{
+		SirsiBin:                setup.SirsiBinaryPath(),
+		SNELocalAccessToken:     sneAccessToken,
+		SNELocalAccessTokenPath: sneAccessPath,
+	})
 	if err := srv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "sirsi-gui: reusing existing dashboard (%v)\n", err)
 	} else {

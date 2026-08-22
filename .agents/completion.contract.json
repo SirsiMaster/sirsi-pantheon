@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "repo_name": "sirsi-pantheon",
+  "repo_path": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "release_target": "Mac-first Pantheon operational foundation across CLI, TUI, MCP, native application, menu bar, dashboard, and governed SNE lifecycle integration",
+  "classification": "platform-foundation",
+  "canon_documents": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements"
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law"
+    },
+    {
+      "path": "README.md",
+      "role": "scope"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan"
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release"
+    }
+  ],
+  "done_definition": [
+    {
+      "category": "product",
+      "criteria": [
+        "The affected operator, developer, agent, node, fleet, or consuming Sirsi product workflow is named and demonstrated through the authoritative Pantheon engine.",
+        "CLI, TUI, MCP, native Mac application, menu bar, and retained dashboard surfaces expose one authoritative state and do not duplicate business logic.",
+        "SNE integration preserves Pantheon ownership of discovery, signed admission, verified acquisition, lifecycle, readiness, memory and swap care, diagnostics, updates, rollback, removal, and recovery."
+      ]
+    },
+    {
+      "category": "design",
+      "criteria": [
+        "Every affected human surface includes a clear primary action, progress, empty state, failure explanation, actionable recovery, and verification result.",
+        "The native Mac experience is accessible, consent-based, coherent with the web and terminal surfaces, and does not present internal tooling as a finished product.",
+        "Mutating operations explain scope and consequences and require the narrow authorization defined by canon."
+      ]
+    },
+    {
+      "category": "technical",
+      "criteria": [
+        "Shared engine contracts, identity, authorization, validation, errors, concurrency, compatibility, and fail-closed behavior are covered by focused and integration tests.",
+        "No feature silently falls back across local, cloud, CPU, GPU, model, precision, framework, account, or trust boundaries.",
+        "Package, catalog, model, runtime, helper, and dependency identities are durable, relocatable, and cryptographically verifiable where applicable."
+      ]
+    },
+    {
+      "category": "operational",
+      "criteria": [
+        "Install, upgrade, rollback, removal, clean uninstall, restart recovery, diagnostics, support, and clean-host behavior are proven for every supported distribution path and device tuple.",
+        "Developer ID signing, notarization, GitHub and Homebrew delivery, permitted Mac App Store disposition, privacy, security, accessibility, and recovery evidence are recorded before GA.",
+        "Node and fleet operations remain bounded, observable, reversible, and usable when cloud or upper-layer services disappear."
+      ]
+    },
+    {
+      "category": "narrative",
+      "criteria": [
+        "A stranger can understand what changed, which Pantheon responsibility owns it, who benefits, what was measured, and how to reproduce the result.",
+        "Public, owner, investor, and support materials distinguish proven product behavior from prototypes, research, proxies, inherited substrate improvements, and unsupported scope.",
+        "Material canon is linked across repository authority, the Owner Reading Room, and Sirsi Google Workspace or carries a visible synchronization blocker."
+      ]
+    }
+  ],
+  "required_verification_commands": [
+    {
+      "name": "go tests",
+      "command": "go test ./..."
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./..."
+    },
+    {
+      "name": "dashboard SNE integration",
+      "command": "go test ./internal/dashboard ./internal/sne ./internal/snemodels"
+    },
+    {
+      "name": "completion gate",
+      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>"
+    }
+  ]
+}

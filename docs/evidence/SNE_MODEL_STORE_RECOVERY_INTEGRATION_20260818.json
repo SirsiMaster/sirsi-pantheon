@@ -1,0 +1,30 @@
+{
+  "schema": "pantheon.sne-model-store-recovery-integration.v1",
+  "status": "pass",
+  "date": "2026-08-18",
+  "helpers": {
+    "checkout_sha256": "06fcc1b9769003e87e74c47bd68092924e981b55fb276d49b6835a5dc10b970c",
+    "remove_sha256": "4cec03aaea8d9411cdc09cef37c3aab2d21cbc53b1bc432aa9bc08bebfd44fe8",
+    "recovery_sha256": "283ee71f7c317cdba4cf17f393d5f98ab14db1f63f784f15d412d67ba4b051c2"
+  },
+  "real_store": {
+    "removals_recovered": 0,
+    "objects_removed": 0,
+    "objects_retained": 0,
+    "installed_model_removed": false
+  },
+  "pantheon": {
+    "install_recovery_required": true,
+    "lifecycle_recovery_required": true,
+    "fail_closed": true,
+    "dashboard_tests": "pass"
+  },
+  "signed_catalog": {
+    "catalog_id": "sne-gemma4-v2",
+    "entries": 12,
+    "version_sha256": "aca14182c98fdab493491322d14d49ed84a6da861b718a03164bffe513101019",
+    "retained_versions": 2,
+    "rollback_available": true
+  },
+  "claim_boundary": "Live interrupted-process restart, real installed removal, and shared-object upgrade/rollback remain open."
+}

@@ -1,10 +1,13 @@
 package seshat
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +24,17 @@ type GoogleWorkspaceAdapter struct {
 	// CredentialsFile is the path to the Google OAuth2 credentials.
 	// If empty, uses ~/.config/seshat/google_credentials.json
 	CredentialsFile string
+
+	// DriveBaseURL overrides the Google Drive v3 API root for deterministic tests.
+	// Production leaves this empty and uses Google's public endpoint.
+	DriveBaseURL string
+}
+
+func (a *GoogleWorkspaceAdapter) driveBaseURL() string {
+	if a.DriveBaseURL != "" {
+		return strings.TrimSuffix(a.DriveBaseURL, "/")
+	}
+	return "https://www.googleapis.com/drive/v3"
 }
 
 func (a *GoogleWorkspaceAdapter) Name() string { return "google-workspace" }
@@ -40,14 +54,6 @@ func (a *GoogleWorkspaceAdapter) tokenFile() string {
 	return filepath.Join(a.configDir(), "google_token.json")
 }
 
-// googleToken represents a stored OAuth2 token.
-type googleToken struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	TokenType    string `json:"token_type"`
-	Expiry       string `json:"expiry"`
-}
-
 // driveFile represents a Google Drive file metadata response.
 type driveFile struct {
 	ID           string `json:"id"`
@@ -63,15 +69,40 @@ type driveListResponse struct {
 }
 
 func (a *GoogleWorkspaceAdapter) loadToken() (*googleToken, error) {
-	data, err := os.ReadFile(a.tokenFile())
+	return ensureGoogleToken(context.Background(), http.DefaultClient, time.Now(), a.credentialsFile(), a.tokenFile())
+}
+
+func (a *GoogleWorkspaceAdapter) credentialsFile() string {
+	if a.CredentialsFile != "" {
+		return a.CredentialsFile
+	}
+	return filepath.Join(a.configDir(), "google_credentials.json")
+}
+
+func (a *GoogleWorkspaceAdapter) get(token *googleToken, endpoint string) (*http.Response, error) {
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("no Google token found at %s — run 'sirsi seshat auth google' to authenticate", a.tokenFile())
+		return nil, err
 	}
-	var tok googleToken
-	if err := json.Unmarshal(data, &tok); err != nil {
-		return nil, fmt.Errorf("invalid token file: %w", err)
+	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
 	}
-	return &tok, nil
+	if response.StatusCode != http.StatusUnauthorized {
+		return response, nil
+	}
+	response.Body.Close()
+	refreshed, err := refreshGoogleToken(context.Background(), http.DefaultClient, time.Now(), a.credentialsFile(), a.tokenFile(), token)
+	if err != nil {
+		return nil, err
+	}
+	retry, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	retry.Header.Set("Authorization", fmt.Sprintf("Bearer %s", refreshed.AccessToken))
+	return http.DefaultClient.Do(retry)
 }
 
 // Ingest fetches recent Google Docs and Sheets, extracting their content as Knowledge Items.
@@ -124,6 +155,9 @@ func (a *GoogleWorkspaceAdapter) Ingest(since time.Time) ([]KnowledgeItem, error
 			})
 		}
 	}
+	if docsErr != nil && sheetsErr != nil {
+		return nil, errors.Join(fmt.Errorf("Google Docs listing: %w", docsErr), fmt.Errorf("Google Sheets listing: %w", sheetsErr))
+	}
 
 	return items, nil
 }
@@ -132,24 +166,23 @@ func (a *GoogleWorkspaceAdapter) listDriveFiles(token *googleToken, mimeType str
 	sinceStr := since.Format(time.RFC3339)
 	query := fmt.Sprintf("mimeType='%s' and modifiedTime>'%s' and trashed=false", mimeType, sinceStr)
 
-	url := fmt.Sprintf("https://www.googleapis.com/drive/v3/files?q=%s&fields=files(id,name,mimeType,modifiedTime,description)&orderBy=modifiedTime desc&pageSize=50",
-		strings.ReplaceAll(query, " ", "%20"))
-
-	req, err := http.NewRequest("GET", url, nil)
+	endpoint, err := url.Parse(a.driveBaseURL() + "/files")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("construct Drive API endpoint: %w", err)
 	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+	parameters := endpoint.Query()
+	parameters.Set("q", query)
+	parameters.Set("fields", "files(id,name,mimeType,modifiedTime,description)")
+	parameters.Set("orderBy", "modifiedTime desc")
+	parameters.Set("pageSize", "50")
+	endpoint.RawQuery = parameters.Encode()
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := a.get(token, endpoint.String())
 	if err != nil {
 		return nil, fmt.Errorf("Drive API request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 401 {
-		return nil, fmt.Errorf("Google token expired — run 'sirsi seshat auth google' to refresh")
-	}
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("Drive API error %d: %s", resp.StatusCode, string(body))
@@ -164,15 +197,15 @@ func (a *GoogleWorkspaceAdapter) listDriveFiles(token *googleToken, mimeType str
 }
 
 func (a *GoogleWorkspaceAdapter) exportFileAsText(token *googleToken, fileID, exportMime string) (string, error) {
-	url := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s/export?mimeType=%s", fileID, exportMime)
-
-	req, err := http.NewRequest("GET", url, nil)
+	endpoint, err := url.Parse(fmt.Sprintf("%s/files/%s/export", a.driveBaseURL(), url.PathEscape(fileID)))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("construct Drive export endpoint: %w", err)
 	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+	parameters := endpoint.Query()
+	parameters.Set("mimeType", exportMime)
+	endpoint.RawQuery = parameters.Encode()
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := a.get(token, endpoint.String())
 	if err != nil {
 		return "", err
 	}

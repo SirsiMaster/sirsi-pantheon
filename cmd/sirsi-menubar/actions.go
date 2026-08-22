@@ -25,6 +25,11 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 )
 
+// authenticatedRestartCommand deliberately includes both CLI consent gates.
+// The menu action opens a visible Terminal; Apple's sudo/fdesetup still owns
+// credential collection and the user can cancel before any restart occurs.
+const authenticatedRestartCommand = "host restart --authenticated --confirm"
+
 // openFullDiskAccessPane opens System Settings to the Full Disk Access pane and
 // records which binary to add. macOS cannot self-grant FDA (TCC security model) —
 // this makes the one required user action a single click + an explicit path.

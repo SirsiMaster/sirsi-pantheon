@@ -1,0 +1,21 @@
+{
+  "status": "accepted",
+  "normal_launch": true,
+  "child_crash_recovered_by_fresh_supervisor": true,
+  "supervisor_crash_recovered": true,
+  "final_group_empty": true,
+  "supervisor_path": "/private/tmp/sne-pg-launchd-m1-20260821/sirsi-sne-supervisor",
+  "supervisor_sha256": "b20991e80ca25e055798eb86d4540a8ea89e87a6c7ec8d92c3d799eb9db459f3",
+  "service_sha256": "37ba074eca7c968e43396d5359b41c78eb73590081ff984b131089dba9928709",
+  "native_runtime_sha256": "e22d6ae3f92c65a65a3a313946375b5bf4e8669c49f33604df6b1010aa4a8f4e",
+  "supervisor_pids": [
+    33648,
+    33786,
+    33887
+  ],
+  "service_pids": [
+    33673,
+    33806,
+    33913
+  ]
+}

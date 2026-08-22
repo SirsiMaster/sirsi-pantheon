@@ -1,0 +1,14 @@
+{
+  "status": "accepted",
+  "http_status": 200,
+  "exact_content": "M1-READY",
+  "pantheon_supervised": true,
+  "readiness_policy": "identity",
+  "service_version": "1.2.2",
+  "catalog_entry": "e2b-nvfp4-api-v2-compat-v6-m1",
+  "orphan_predecessor_reaped": true,
+  "resource_policy": "foreground-yield-with-compact-node-reserve",
+  "supervisor_sha256": "76ef093aef732ecd601058a0879faecf900f59ded9ad1df6118a3bcf8d3a0de8",
+  "service_sha256": "3c27e78431c7b7ba2535266377e97a6546d94f0afaf594b3478029921463084f",
+  "native_runtime_sha256": "e22d6ae3f92c65a65a3a313946375b5bf4e8669c49f33604df6b1010aa4a8f4e"
+}

@@ -25,6 +25,8 @@ import (
 var nexusOrigins = map[string]bool{
 	"https://sirsi.ai":         true,
 	"https://sirsi-ai.web.app": true,
+	"http://localhost:5173":    true,
+	"http://127.0.0.1:5173":    true,
 	"http://localhost:5183":    true,
 	"http://127.0.0.1:5183":    true,
 }

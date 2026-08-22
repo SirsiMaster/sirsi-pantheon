@@ -42,7 +42,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         let ra = await SirsiEngine.runResult(args: ["ra", "status"])
         let seshat = await SirsiEngine.runResult(args: ["seshat", "list"])
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
-        await engine.diagnose()
+        await engine.diagnose(force: true)
         engine.refresh()
         // Self-loading screens draw from ENGINE state — load it here so the
         // harness renders their REAL content, not an eternal loading shell.
@@ -90,6 +90,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             ("ghosts-leftover-apps", AnyView(GhostsView(engine: engine))),
             ("scan-clean", AnyView(ScanCleanView(engine: engine))),
             ("ask-sirsi", AnyView(AskSirsiView(engine: engine, preloadedAnswer: askSirsiProbe))),
+            ("sne-models-engine", AnyView(SNEControlView(preloaded: .snapshotFixture))),
         ]
         // Owner-gated screens render only when the live board has items — the
         // detail view gets its body preloaded (ImageRenderer never runs .task).
@@ -101,7 +102,12 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         }
 
         for shot in shots {
-            let height: CGFloat = shot.name == "ask-sirsi" ? 760 : 520
+            let height: CGFloat
+            switch shot.name {
+            case "ask-sirsi": height = 760
+            case "sne-models-engine": height = 980
+            default: height = 520
+            }
             let renderer = ImageRenderer(content: shot.view
                 .environmentObject(Nav())
                 .environment(\.snapshotMode, true)

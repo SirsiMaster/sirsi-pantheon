@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apprecovery"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
@@ -19,6 +20,13 @@ import (
 type Config struct {
 	Port     int
 	NotifyDB *notify.Store
+	// SNELocalAccessToken is the scoped capability required by inference and
+	// state-changing SNE/recovery routes. Empty preserves migration-only legacy
+	// behavior; production wiring must provide a durable generated token.
+	SNELocalAccessToken string
+	// SNELocalAccessTokenPath is the private durable file atomically replaced
+	// by authenticated capability rotation. Empty disables the rotation API.
+	SNELocalAccessTokenPath string
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
@@ -65,6 +73,15 @@ type Config struct {
 	// their state from this producer). If nil, the endpoint returns 503
 	// rather than a misleading zero-valued payload.
 	FabricFn FabricProducer
+	// SNEInstall configures Pantheon's asynchronous, integrity-gated model
+	// acquisition bridge. Nil keeps model install controls honestly disabled.
+	SNEInstall *SNEInstallConfig
+	// SNELifecycle configures exact installed-model to packaged-runtime
+	// supervision. Nil keeps Start/Stop controls honestly disabled.
+	SNELifecycle *SNELifecycleConfig
+	// AppRecovery is Pantheon's optional registry-bound application recovery
+	// controller. Nil keeps recovery controls honestly unavailable.
+	AppRecovery *apprecovery.Manager
 }
 
 // FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
@@ -73,16 +90,21 @@ type FleetProducer func() (ledger.Snapshot, error)
 
 // Server is the Pantheon local dashboard HTTP server.
 type Server struct {
-	cfg     Config
-	handler http.Handler
-	alt     []*http.Server
-	srv     *http.Server
-	unlock  func()
-	mu      sync.RWMutex
-	running bool
-	runner  *Runner
-	confirm *ConfirmGuard
-	fleet   *FleetTracker
+	cfg           Config
+	handler       http.Handler
+	alt           []*http.Server
+	srv           *http.Server
+	unlock        func()
+	mu            sync.RWMutex
+	running       bool
+	runner        *Runner
+	confirm       *ConfirmGuard
+	fleet         *FleetTracker
+	sneJobs       *SNEInstallManager
+	sneLifecycle  *SNELifecycleManager
+	appRecovery   *apprecovery.Manager
+	sneAccess     *sneLocalAccess
+	sneAccessPath string
 }
 
 // New creates a dashboard server with all routes registered.
@@ -91,7 +113,13 @@ func New(cfg Config) *Server {
 		cfg.Port = DashboardPort
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable)}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), appRecovery: cfg.AppRecovery, sneAccess: newSNELocalAccess(cfg.SNELocalAccessToken), sneAccessPath: cfg.SNELocalAccessTokenPath}
+	if cfg.SNEInstall != nil {
+		s.sneJobs = NewSNEInstallManager(*cfg.SNEInstall)
+	}
+	if cfg.SNELifecycle != nil {
+		s.sneLifecycle = NewSNELifecycleManager(*cfg.SNELifecycle)
+	}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
@@ -108,6 +136,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/notifications", s.handleNotifications)
 	mux.HandleFunc("/horus", s.handleHorus)
 	mux.HandleFunc("/vault", s.handleVault)
+	mux.HandleFunc("/sne", s.handleOverview)
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
@@ -136,10 +165,32 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/vault/prune", s.apiVaultPrune)
 	mux.HandleFunc("/api/ra/status", s.apiRaStatus)
 	mux.HandleFunc("/api/ra/scopes", s.apiRaScopes)
-	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
-	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
-	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
-	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
+	mux.HandleFunc("/api/node-status", s.apiNodeStatus)                   // ADR-026 Horus ops-view read endpoint
+	mux.HandleFunc("/api/fleet", s.apiFleet)                              // A32 owner-reporting board (replaces server.py)
+	mux.HandleFunc("/api/ledger", s.apiLedger)                            // A26 Nexus board seam — ledger.BoardSummary
+	mux.HandleFunc("/api/fabric", s.apiFabric)                            // unified work/message/lane contract
+	mux.HandleFunc("/api/sne", s.secureSNERoute(false, s.apiSNE))         // local SNE catalog and runtime read-model
+	mux.HandleFunc("/api/sne/chat", s.secureSNERoute(true, s.apiSNEChat)) // governed streaming bridge to the verified local runtime
+	mux.HandleFunc("/api/sne/diagnostics", s.secureSNERoute(false, s.apiSNEDiagnostics))
+	mux.HandleFunc("/api/sne/support-bundle", s.secureSNERoute(true, s.apiSNESupportBundle))
+	mux.HandleFunc("/api/sne/access/rotate", s.secureSNERoute(true, s.apiSNEAccessRotate))
+	mux.HandleFunc("/api/sne/nexus/open", s.secureSNERoute(true, s.apiSNENexusOpen))
+	mux.HandleFunc("/api/sne/install", s.secureSNERoute(true, s.apiSNEInstall))
+	mux.HandleFunc("/api/sne/install/status", s.secureSNERoute(false, s.apiSNEInstallStatus))
+	mux.HandleFunc("/api/sne/prepared/discard", s.secureSNERoute(true, s.apiSNEDiscardPrepared))
+	mux.HandleFunc("/api/sne/remove", s.secureSNERoute(true, s.apiSNERemove))
+	mux.HandleFunc("/api/sne/start", s.secureSNERoute(true, s.apiSNEStart))
+	mux.HandleFunc("/api/sne/stop", s.secureSNERoute(true, s.apiSNEStop))
+	mux.HandleFunc("/api/sne/lifecycle", s.secureSNERoute(false, s.apiSNELifecycle))
+	mux.HandleFunc("/api/sne/catalog/rollback", s.secureSNERoute(true, s.apiSNECatalogRollback))
+	mux.HandleFunc("/api/sne/catalog/remove", s.secureSNERoute(true, s.apiSNECatalogRemove))
+	mux.HandleFunc("/api/sne/catalog/updates", s.secureSNERoute(false, s.apiSNECatalogUpdates))
+	mux.HandleFunc("/api/sne/catalog/install", s.secureSNERoute(true, s.apiSNECatalogInstall))
+	mux.HandleFunc("/api/recovery", s.secureSNERoute(false, s.apiRecovery))
+	mux.HandleFunc("/api/recovery/restart", s.secureSNERoute(true, s.apiRecoveryRestart))
+	mux.HandleFunc("/api/recovery/resume", s.secureSNERoute(true, s.apiRecoveryResume))
+	mux.HandleFunc("/v1/models", s.secureSNERoute(false, s.apiSNEOpenAIModels))  // governed OpenAI-compatible model discovery
+	mux.HandleFunc("/v1/chat/completions", s.secureSNERoute(true, s.apiSNEChat)) // governed OpenAI-compatible streaming/non-streaming bridge
 
 	s.handler = mux
 	s.srv = &http.Server{
@@ -196,6 +247,17 @@ func (s *Server) Start() error {
 	}
 
 	s.running = true
+	if s.appRecovery != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			for _, result := range s.appRecovery.ReconcilePending(ctx) {
+				if result.Err != nil {
+					fmt.Printf("dashboard: recovery reconciliation failed for %s (%s)\n", result.TargetID, result.Receipt.FailureCode)
+				}
+			}
+		}()
+	}
 	return nil
 }
 
@@ -210,6 +272,9 @@ func (s *Server) Stop() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if s.sneLifecycle != nil {
+		_, _ = s.sneLifecycle.Stop(ctx)
+	}
 
 	for _, a := range s.alt {
 		_ = a.Shutdown(ctx)

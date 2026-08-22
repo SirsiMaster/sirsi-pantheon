@@ -21,31 +21,6 @@ func openSystemURL(_ url: String) {
     try? p.run()
 }
 
-// registerForFullDiskAccess forces this app into the Full Disk Access list so
-// there is actually a row to toggle. macOS never *prompts* for FDA: an app only
-// appears in the list after it attempts a TCC-guarded `open()` and is denied —
-// that denial is what registers it. Without this the FDA pane shows no
-// "Sirsi Menubar" row at all, so the button looked like it pointed at nothing.
-//
-// We use the raw POSIX open(2) syscall, NOT Data(contentsOf:): Foundation tends
-// to do an access(R_OK) preflight, take the TCC denial as EACCES, and bail
-// before the real open() — but it is open() that TCC intercepts and registers.
-// Fired both at launch (so the row exists before the user ever opens the pane)
-// and on the button. The opens are expected to fail; failure is the point.
-func registerForFullDiskAccess() {
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    let protectedPaths = [
-        home + "/Library/Application Support/com.apple.TCC/TCC.db",
-        home + "/Library/Mail",
-        home + "/Library/Messages/chat.db",
-        home + "/Library/Safari/Bookmarks.plist",
-    ]
-    for path in protectedPaths {
-        let fd = open(path, O_RDONLY)   // TCC intercepts; EPERM here registers us
-        if fd >= 0 { close(fd) }
-    }
-}
-
 // fullDiskAccessPaneURL is the System Settings deep link for the Full Disk
 // Access list. macOS 13+ (Ventura → macOS 26) replaced the old System
 // Preferences anchor `com.apple.preference.security` with the System Settings
@@ -404,6 +379,11 @@ struct HomeView: View {
                                  dot: engine.localLLM.map { $0.healthy == true ? .green : .red })
                     }.buttonStyle(.plain)
 
+                    NavLink { SNEControlView() } label: {
+                        DeityRow(glyph: "⚡", title: "SNE — Models & Engine",
+                                 detail: "install, run, recover, and update local AI")
+                    }.buttonStyle(.plain)
+
                     NavLink { InsightView(engine: engine) } label: {
                         DeityRow(glyph: "✨", title: "Insight — what to do next")
                     }.buttonStyle(.plain)
@@ -505,7 +485,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { engine.loadProjectRoot(); engine.loadActivity(); engine.loadRunReport(); await engine.diagnose(); await engine.loadRouterBoard() }   // project + health + ledger + run report + fabric on open
+        .task { engine.loadProjectRoot(); engine.loadActivity(); engine.loadRunReport(); engine.refresh(); await engine.loadRouterBoard() }   // projection-only on open; diagnostics require the explicit Re-check action
     }
 
     @ViewBuilder private func maybeScroll<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -1008,7 +988,6 @@ struct FDAGuideView: View {
 
             VStack(spacing: 8) {
                 Button {
-                    registerForFullDiskAccess()
                     openSystemURL(fullDiskAccessPaneURL)
                     revealAppInFinder()
                 } label: {

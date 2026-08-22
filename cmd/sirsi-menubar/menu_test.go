@@ -27,6 +27,12 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedRestartMenuCommandPreservesConsentGates(t *testing.T) {
+	if authenticatedRestartCommand != "host restart --authenticated --confirm" {
+		t.Fatalf("restart menu command lost an explicit consent gate: %q", authenticatedRestartCommand)
+	}
+}
+
 func TestClaudeMCPLinked(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -49,7 +49,7 @@ func runFix(cmd *cobra.Command, args []string) error {
 	// 2. Reclaim the disk/crash backlog — the auto-safe fix (trash-first).
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
-	if scan, serr := engine.Scan(ctx, jackal.ScanOptions{}); serr == nil {
+	if scan, serr := engine.Scan(ctx, jackal.ScanOptions{Manifest: jackal.NewPlatformManifest()}); serr == nil {
 		var reclaim []jackal.Finding
 		var bytes int64
 		for _, f := range scan.Findings {
@@ -193,17 +193,22 @@ func fixPanic(msg string) {
 // fixDrift answers a binary-drift finding by running the actual update.
 func fixDrift(msg string) bool {
 	output.Warn("📦 %s", msg)
-	if !fixYes && !confirmFix("Run `brew upgrade sirsi-pantheon` now?") {
-		output.Dim("     → run `brew upgrade sirsi-pantheon` when ready")
+	if !fixYes && !confirmFix("Run `sirsi update --app` now?") {
+		output.Dim("     → run `sirsi update --app` when ready")
 		return false
 	}
-	cmd := exec.Command("brew", "upgrade", "sirsi-pantheon")
+	self, err := os.Executable()
+	if err != nil {
+		output.Error("     cannot locate the running Pantheon CLI: %v", err)
+		return false
+	}
+	cmd := exec.Command(self, "update", "--app")
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Run(); err != nil {
-		output.Error("     brew upgrade failed: %v", err)
+		output.Error("     signed app update failed: %v", err)
 		return false
 	}
-	output.Success("     Sirsi binaries updated.")
+	output.Success("     Signed Pantheon app update opened.")
 	return true
 }
 

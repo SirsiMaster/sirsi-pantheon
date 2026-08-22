@@ -59,9 +59,10 @@ SIGN_ID="${SIRSI_SIGN_IDENTITY:-Sirsi Local Code Signing}"
 ALLOW_ADHOC="${SIRSI_ALLOW_ADHOC:-0}"   # set 1 to permit ad-hoc (FDA will NOT persist)
 if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
 	if ! codesign --force --deep --sign "$SIGN_ID" --identifier "$BUNDLE_ID" "$APP" 2>&1; then
-		echo "✘ codesign with '$SIGN_ID' FAILED (keychain locked, or codesign not authorized for the key)." >&2
-		echo "  Fix: unlock the login keychain and click 'Always Allow' once, or run:" >&2
-		echo "    security set-key-partition-list -S apple-tool:,apple: -s -k <login-pw> ~/Library/Keychains/login.keychain-db" >&2
+		echo "✘ codesign with '$SIGN_ID' FAILED." >&2
+		echo "  Sirsi uses only the visible login keychain for interactive development signing." >&2
+		echo "  Open Keychain Access, unlock Login, and approve codesign when macOS asks." >&2
+		echo "  Administrator sudo credentials cannot and must not unlock a Developer ID private key." >&2
 		exit 1
 	fi
 	echo "▸ signed with: $SIGN_ID"

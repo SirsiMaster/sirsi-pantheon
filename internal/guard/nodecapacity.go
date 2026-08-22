@@ -109,11 +109,16 @@ func SampleNodeCapacity() NodeCapacity {
 }
 
 // DynamicReserve is the RAM to keep free for the OS + live agents + a margin that
-// SCALES with the node — replacing ADR-031-A's flat 8 GB headroom (mapping #2).
+// scales with the node. The historical 8 GiB floor remains appropriate for
+// 32+ GiB nodes, but may never consume more than one quarter of a smaller node.
 func (n NodeCapacity) DynamicReserve() int64 {
+	floor := nodeMarginFloor
+	if compactFloor := n.TotalRAM / 4; compactFloor > 0 && compactFloor < floor {
+		floor = compactFloor
+	}
 	margin := n.TotalRAM / nodeMarginDivisor
-	if margin < nodeMarginFloor {
-		margin = nodeMarginFloor
+	if margin < floor {
+		margin = floor
 	}
 	return n.OSBaseline + n.AgentRSS + margin
 }
