@@ -32,6 +32,9 @@ This record proves the non-GA development package lifecycle on the authorized M1
 - Running process: `~/Applications/Pantheon Dev.app/Contents/MacOS/sirsi-menubar`.
 - Menu process RSS after launch: 69,776 KiB (about 68 MiB).
 - Explicit JSON diagnostics: completed; sampled finding severity was `0`.
+- Optional GUI caretaker installation: passed; generated `ai.sirsi.pantheon.plist` with `RunAtLoad=true`, `KeepAlive=true`, and the exact installed app executable.
+- Supervised recovery: passed after launchd's 10-second minimum-runtime window; PID `94830` was deliberately terminated and replaced by PID `94909` within the 15-second gate.
+- Recovered menu process RSS: 67,696 KiB.
 
 ## Defect and repair
 
