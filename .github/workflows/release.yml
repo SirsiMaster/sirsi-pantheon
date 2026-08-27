@@ -19,6 +19,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify source identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/verify-release-source-identity.sh "$RELEASE_TAG"
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -50,6 +55,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/verify-release-source-identity.sh "$RELEASE_TAG"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -191,6 +203,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/verify-release-source-identity.sh "$RELEASE_TAG"
 
       - name: Setup Go
         uses: actions/setup-go@v5
