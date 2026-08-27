@@ -693,6 +693,32 @@
         "mechanism": "none"
       }
     },
+    "sirsi-software-admin": {
+      "id": "sirsi-software-admin",
+      "type": "codex",
+      "command": [
+        "codex"
+      ],
+      "cwd": "/Users/thekryptodragon",
+      "repo": "/Users/thekryptodragon",
+      "workstream": "pantheon",
+      "wake": {
+        "mechanism": "cli-spawn",
+        "health_check": [
+          "codex",
+          "--version"
+        ]
+      },
+      "consumer": {
+        "command": [
+          "codex",
+          "--print",
+          "--permission-mode",
+          "auto"
+        ],
+        "prompt": "You are {{agent}}. Work your inbox as a LOOP, not a one-shot: pull your open router items, read each item fully, claim it, execute it to completion, close it with evidence, reconcile your task registry and ledger, then pull again. An empty inbox alone is not completion. Router root is {{router_root}}."
+      }
+    },
     "owner": {
       "id": "owner",
       "type": "human",
