@@ -59,7 +59,7 @@
       "doc": "docs/PANTHEON_ROADMAP.md",
       "section": "SNE and operator lifecycle",
       "claim": "Pantheon remains the governed lifecycle and readiness shell with fail-closed authorization boundaries.",
-      "files_changed": ["internal/router", "scripts/verify-release-source-identity.sh", ".github/workflows/release.yml"],
+      "files_changed": ["scripts/verify-release-source-identity.sh", ".github/workflows/release.yml", ".agents/proofs/pantheon-software-readiness-20260827.json"],
       "evidence": ["focused router tests passed", "source identity verifier negative test passed"]
     },
     {
@@ -73,7 +73,7 @@
   "closure_evidence": {
     "product": "Source/test candidate includes the registered Software Admin consumer; public release remains unclaimed.",
     "design": "Menubar release contract verifier passed; live native UI qualification remains unproven.",
-    "technical": "Focused dashboard/SNE/model tests and go vet pass; full Go suite was previously passing on the parent candidate.",
+    "technical": "Focused dashboard/SNE/model tests, go vet, and the full Go suite were rerun and passed on exact candidate 1c1b6022 / tree 7843a139.",
     "operational": "Release source identity now fails closed; Developer ID signing, notarization, lifecycle, and M1/M5 receipts remain unproven.",
     "narrative": "Readiness and machine-readable manifest record source/test-ready-only scope and explicit exclusions."
   },
@@ -82,13 +82,13 @@
       "name": "go tests",
       "command": "go test ./...",
       "status": "passed",
-      "evidence": "go test ./... passed on 0a1fc792 candidate with host-level socket permission; existing linker warnings only."
+      "evidence": "go test ./... rerun on exact 1c1b60220bd4cbdd578eb7036a532353d7436036 / 7843a139f502468d924ec662b95f8aaba727882d with host-level socket permission; existing linker warnings only."
     },
     {
       "name": "go vet",
       "command": "go vet ./...",
       "status": "passed",
-      "evidence": "go vet ./... exit 0 on 0a1fc792 candidate."
+      "evidence": "go vet ./... exit 0 on exact 1c1b60220bd4cbdd578eb7036a532353d7436036."
     },
     {
       "name": "dashboard SNE integration",
@@ -104,10 +104,10 @@
     }
   ],
   "working_status": {
-    "environment": "Detached clean candidate /private/tmp/pantheon-release-candidate at 0a1fc792, macOS arm64 host.",
-    "how_verified": "Host-level focused Go tests, go vet, YAML parse, shell syntax, diff check, and negative source-identity test.",
-    "observed_result": "Source/test readiness improved; release identity rejects VERSION 0.23.9-beta against v0.23.8-beta, as intended.",
-    "verified_at": "2026-08-27T22:15:00Z"
+    "environment": "Detached clean candidate /private/tmp/pantheon-release-candidate at 1c1b60220bd4cbdd578eb7036a532353d7436036, tree 7843a139f502468d924ec662b95f8aaba727882d, macOS arm64 host.",
+    "how_verified": "Host-level full and focused Go tests, go vet, YAML parse, shell syntax, diff check, menubar contract, completion proof validation, and negative source-identity test.",
+    "observed_result": "Exact candidate passes source/test verification; release identity rejects VERSION 0.23.9-beta against v0.23.8-beta, as intended. Evidence is source/test-ready only.",
+    "verified_at": "2026-08-27T22:20:00Z"
   },
   "handoffs": [],
   "blockers": [
