@@ -105,7 +105,7 @@ cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_
 echo "Embedded bundle identity: ${VERSION} (${BUNDLE_BUILD_NUMBER})"
 
 # --- Code signing ---
-"${PROJECT_ROOT}/../tools/check_sirsi_macos_permission_contract.sh" "${PROJECT_ROOT}/.."
+"${PROJECT_ROOT}/tools/check_sirsi_macos_permission_contract.sh" "${PROJECT_ROOT}"
 if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
     echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
     LOGIN_KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
