@@ -131,16 +131,19 @@ func TestSNELifecyclePublishesActionableResourceAdmission(t *testing.T) {
 		},
 		resource: sne.ResourceAdmission{
 			RequiredBytes:     25_545_459_702,
+			TotalRAMBytes:     48 << 30,
 			AvailableRAMBytes: 28 << 30,
 			LifecycleReserve:  4 << 30,
 			SwapUsedBytes:     4 << 30,
 			SwapLimitBytes:    3 << 30,
 			Pressure:          "normal",
+			PressureSource:    "host_statistics64",
 		},
 	}
 	manager := NewSNELifecycleManager(SNELifecycleConfig{
 		CatalogStoreRoot: t.TempDir(),
 		factory:          func(sne.SupervisorProfile, sne.LaunchConfig) (sneSupervisor, error) { return fake, nil },
+		hostIdentity:     func() (string, error) { return "m5", nil },
 		resolve: func(string, string, bool) (sne.SupervisorProfile, sne.LaunchConfig, error) {
 			return sne.SupervisorProfile{}, sne.LaunchConfig{StartupTimeout: time.Second}, nil
 		},
@@ -159,6 +162,9 @@ func TestSNELifecyclePublishesActionableResourceAdmission(t *testing.T) {
 	}
 	if state.ResourceAdmission.RequiredBytes != fake.resource.RequiredBytes || state.ResourceAdmission.SwapUsedBytes != fake.resource.SwapUsedBytes {
 		t.Fatalf("measured admission lost: %+v", state.ResourceAdmission)
+	}
+	if state.PrefixCachePressure == nil || state.PrefixCachePressure.ObservationSHA256 == "" {
+		t.Fatalf("prefix-cache pressure receipt missing: %+v", state.PrefixCachePressure)
 	}
 }
 

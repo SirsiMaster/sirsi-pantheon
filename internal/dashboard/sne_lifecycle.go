@@ -60,6 +60,7 @@ type SNELifecycleConfig struct {
 	httpClient                     *http.Client
 	recover                        sneStoreRecoveryFunc
 	graphicalSessionReady          func(context.Context) (bool, error)
+	hostIdentity                   func() (string, error)
 	unlockRetryInterval            time.Duration
 }
 
@@ -70,20 +71,21 @@ type SNELifecycleRequest struct {
 }
 
 type SNELifecycleState struct {
-	ID                  string                 `json:"id,omitempty"`
-	ModelID             string                 `json:"model_id,omitempty"`
-	RuntimeID           string                 `json:"runtime_id,omitempty"`
-	RuntimeSHA256       string                 `json:"runtime_sha256,omitempty"`
-	NativeRuntimeSHA256 string                 `json:"native_runtime_sha256,omitempty"`
-	ModelManifestSHA256 string                 `json:"model_manifest_sha256,omitempty"`
-	Profile             string                 `json:"profile,omitempty"`
-	State               string                 `json:"state"`
-	Error               string                 `json:"error,omitempty"`
-	ErrorCode           string                 `json:"error_code,omitempty"`
-	Recovery            string                 `json:"recovery,omitempty"`
-	ResourceAdmission   *sne.ResourceAdmission `json:"resource_admission,omitempty"`
-	StartedAt           *time.Time             `json:"started_at,omitempty"`
-	FinishedAt          *time.Time             `json:"finished_at,omitempty"`
+	ID                  string                          `json:"id,omitempty"`
+	ModelID             string                          `json:"model_id,omitempty"`
+	RuntimeID           string                          `json:"runtime_id,omitempty"`
+	RuntimeSHA256       string                          `json:"runtime_sha256,omitempty"`
+	NativeRuntimeSHA256 string                          `json:"native_runtime_sha256,omitempty"`
+	ModelManifestSHA256 string                          `json:"model_manifest_sha256,omitempty"`
+	Profile             string                          `json:"profile,omitempty"`
+	State               string                          `json:"state"`
+	Error               string                          `json:"error,omitempty"`
+	ErrorCode           string                          `json:"error_code,omitempty"`
+	Recovery            string                          `json:"recovery,omitempty"`
+	ResourceAdmission   *sne.ResourceAdmission          `json:"resource_admission,omitempty"`
+	PrefixCachePressure *sne.PrefixCachePressureReceipt `json:"prefix_cache_pressure,omitempty"`
+	StartedAt           *time.Time                      `json:"started_at,omitempty"`
+	FinishedAt          *time.Time                      `json:"finished_at,omitempty"`
 	allowResearch       bool
 }
 
@@ -167,6 +169,9 @@ func NewSNELifecycleManager(cfg SNELifecycleConfig) *SNELifecycleManager {
 	}
 	if cfg.graphicalSessionReady == nil {
 		cfg.graphicalSessionReady = sneGraphicalSessionReady
+	}
+	if cfg.hostIdentity == nil {
+		cfg.hostIdentity = os.Hostname
 	}
 	if cfg.unlockRetryInterval <= 0 {
 		cfg.unlockRetryInterval = 5 * time.Second
@@ -553,6 +558,11 @@ func (manager *SNELifecycleManager) finishAdmission(id string, err error, resour
 		manager.state.Recovery = admissionErr.Recovery
 		measured := resource
 		manager.state.ResourceAdmission = &measured
+		if hostID, hostErr := manager.cfg.hostIdentity(); hostErr == nil {
+			if receipt, receiptErr := sne.NewPrefixCachePressureReceipt(hostID, measured, now); receiptErr == nil {
+				manager.state.PrefixCachePressure = &receipt
+			}
+		}
 		return
 	}
 	if code, recovery := classifySNELifecycleFailure(err); code != "" {
