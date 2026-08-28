@@ -14,6 +14,27 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/vitals"
 )
 
+// Footprint probes are replaceable only by package tests. Production defaults
+// remain the platform vitals syscalls, while tests can supply deterministic
+// values without allowing a live PID to contaminate a synthetic census.
+var (
+	footprintProbeMu  sync.RWMutex
+	physFootprint     = vitals.PhysFootprint
+	peakPhysFootprint = vitals.PeakPhysFootprint
+)
+
+func getFootprintProbes() (func(int) (uint64, error), func(int) (uint64, error)) {
+	footprintProbeMu.RLock()
+	defer footprintProbeMu.RUnlock()
+	return physFootprint, peakPhysFootprint
+}
+
+func setFootprintProbes(physical, peak func(int) (uint64, error)) {
+	footprintProbeMu.Lock()
+	defer footprintProbeMu.Unlock()
+	physFootprint, peakPhysFootprint = physical, peak
+}
+
 // ProcessInfo represents a running process with memory usage.
 type ProcessInfo struct {
 	PID     int
@@ -338,6 +359,9 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 	// rather than LoadBearingPIDs() so the worker PID (also load-bearing) does
 	// not receive the broker's /health numbers (Rule A35 — scope the check).
 	brokerPID := BrokerPID()
+	// Snapshot both probes once so a census uses one coherent injected pair
+	// without acquiring the accessor lock for every process row.
+	physicalFootprint, peakFootprint := getFootprintProbes()
 
 	for i, line := range lines {
 		if i == 0 { // Skip header
@@ -370,10 +394,10 @@ func getProcessListWith(p platform.Platform) ([]ProcessInfo, error) {
 		// process. Failure is non-fatal: a pid can exit between `ps` and here,
 		// and one dead process must not blank a whole census.
 		var footprint, peak int64
-		if fp, ferr := vitals.PhysFootprint(pid); ferr == nil {
+		if fp, ferr := physicalFootprint(pid); ferr == nil {
 			footprint = int64(fp)
 		}
-		if pk, perr := vitals.PeakPhysFootprint(pid); perr == nil {
+		if pk, perr := peakFootprint(pid); perr == nil {
 			peak = int64(pk)
 		}
 		footprint, peak = applyBrokerTruth(brokerPID, pid, footprint, peak)
