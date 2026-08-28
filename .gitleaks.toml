@@ -41,4 +41,15 @@ regexes = [
   # proposal shows a Stripe key elided with a Unicode ellipsis in a curl example. A real
   # Stripe key is [A-Za-z0-9]{24,}; the trailing ellipsis proves this is a placeholder.
   '''sk_(live|test)_(…|\.\.\.)''',
+
+  # Exact historical evidence/test fixtures identified by the 2026-08-28 commit-range
+  # scan. These are not credentials: the first two are published SHA-256 digests in
+  # docs/evidence/SNE_PORTABLE_SIGNED_CATALOG_LIFECYCLE_GATE_20260818.md:16 and
+  # docs/evidence/sne-e2b-api-v2-compat-v6-pantheon-m1-20260821/response.json:1;
+  # the third is the standard dummy cookie token in
+  # internal/dashboard/loopback_boundary_test.go:108. Keep the values exact so a
+  # different token or digest still fails the scan.
+  '''^60a94a48404769b133589e9b23ba137a778789b037c36af48e5f4fb6cf8b9808$''',
+  '''^66650390a7dd24be6bff30d577d04de7911320119c72026523ccc92cefa104c8$''',
+  '''^correct-horse-battery-staple-1234567890$''',
 ]
