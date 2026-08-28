@@ -48,10 +48,10 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     needs: release
     env:
-      # Job-level env makes the presence checks below evaluate before the step
-      # starts; step-local env is still used when materializing secret files.
-      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-      ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+      # Only non-sensitive presence booleans are job-scoped. Raw secret values
+      # remain confined to the steps that import/materialize them.
+      MACOS_CERTIFICATE_PRESENT: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      ASC_KEY_CONTENT_PRESENT: ${{ secrets.ASC_KEY_CONTENT != '' }}
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
     # makes `security import`/`codesign`/`notarytool --wait` hang), this caps the
@@ -83,7 +83,7 @@ jobs:
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Import signing certificate
-        if: env.MACOS_CERTIFICATE != ''
+        if: env.MACOS_CERTIFICATE_PRESENT == 'true'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -101,7 +101,7 @@ jobs:
         run: bash scripts/verify-menubar-release-contract.sh
 
       - name: Prepare App Store Connect notarization key
-        if: env.ASC_KEY_CONTENT != ''
+        if: env.ASC_KEY_CONTENT_PRESENT == 'true'
         env:
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
