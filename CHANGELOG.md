@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(menubar): render fixture receipt controls as clear read prerequisites**.
+  The fixture-only renderer now shows “Exact ID required before read” rather
+  than attempting to rasterize editable AppKit text fields; live controls are
+  unchanged. Refs: native prefix-pressure fixture evidence.
 - **fix(menubar): keep unavailable SNE capability recovery owner-visible and
   non-disruptive**. The native surface no longer tells operators to restart
   Pantheon; it states that no SNE state changed and directs the operator back

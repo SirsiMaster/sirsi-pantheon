@@ -635,20 +635,33 @@ struct SNEControlView: View {
 
     @ViewBuilder
     private func evidenceReader(kind: String, title: String, evidence: SNEPrefixCachePressureEvidenceState?) -> some View {
-        HStack {
-            Text(title).sirsiFont(.caption)
-            TextField("Exact ID", text: Binding(get: {
-                kind == "receipts" ? executionReceiptID : retentionReceiptID
-            }, set: { value in
-                if kind == "receipts" { executionReceiptID = value } else { retentionReceiptID = value }
-            }))
-            .textFieldStyle(.roundedBorder)
-            .accessibilityLabel("Exact SNE \(title.lowercased()) identity")
-            Button("Read") {
-                let id = kind == "receipts" ? executionReceiptID : retentionReceiptID
-                Task { await model.loadPrefixCachePressureEvidence(kind: kind, identity: id) }
+        if snapshotMode {
+            // ImageRenderer cannot faithfully render editable AppKit-backed
+            // text fields. A fixture image must show the truthful precondition,
+            // not a malformed yellow editor that looks like an alert.
+            HStack {
+                Text(title).sirsiFont(.caption)
+                Text("Exact ID required before read")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .accessibilityLabel("Read SNE \(title.lowercased())")
+            .accessibilityLabel("\(title), exact SNE receipt identity required before read")
+        } else {
+            HStack {
+                Text(title).sirsiFont(.caption)
+                TextField("Exact ID", text: Binding(get: {
+                    kind == "receipts" ? executionReceiptID : retentionReceiptID
+                }, set: { value in
+                    if kind == "receipts" { executionReceiptID = value } else { retentionReceiptID = value }
+                }))
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Exact SNE \(title.lowercased()) identity")
+                Button("Read") {
+                    let id = kind == "receipts" ? executionReceiptID : retentionReceiptID
+                    Task { await model.loadPrefixCachePressureEvidence(kind: kind, identity: id) }
+                }
+                .accessibilityLabel("Read SNE \(title.lowercased())")
+            }
         }
         if let evidence {
             Text(prefixCachePressureEvidenceLabel(evidence)).sirsiFont(.caption).foregroundStyle(.secondary)
