@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **test(menubar): add fixture-only SNE read-model coverage**. The native Swift
+  package now declares a test target and verifies exact lifecycle/catalog JSON
+  decoding plus the preloaded identity fixture without contacting Pantheon,
+  reading capabilities, or issuing mutations. The release identity advances to
+  `0.23.14-beta`. Refs: PANTHEON_RULES.md A7/A16/A21; native SNE surface
+  evidence.
 - **fix(build): retain a footprint fallback for cgo-disabled cross-target builds**.
   Darwin physical-footprint probes are now selected only for `darwin && cgo`;
   Linux and cgo-disabled targets use the explicit unavailable sentinel, allowing
