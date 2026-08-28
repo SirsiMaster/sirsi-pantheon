@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(release): require notarization before promoting a distributable DMG**.
+  Release builds now fail closed when Developer ID signing succeeds but
+  notarization/stapling credentials or proof are absent; signing secrets are
+  scoped to the steps that consume them. Refs: release governance successor
+  `8cbd02aa` / `c3aa55f3`.
 - **fix(security): bind historical fixture scan exceptions to exact values**. The
   release identity advances to `0.23.11-beta`; the full-history gitleaks gate now
   documents exact non-secret loopback-test and historical Thoth journal fixtures
