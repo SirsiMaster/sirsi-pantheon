@@ -52,4 +52,16 @@ regexes = [
   '''^60a94a48404769b133589e9b23ba137a778789b037c36af48e5f4fb6cf8b9808$''',
   '''^66650390a7dd24be6bff30d577d04de7911320119c72026523ccc92cefa104c8$''',
   '''^correct-horse-battery-staple-1234567890$''',
+
+  # Exact historical test fixtures from commit d1fe57564b209df2b06217bbcc01c0e91ff42d8a.
+  # This alphabetic sequence is deliberately non-secret input used by the loopback
+  # authorization tests, not a credential. Keep the value exact; other API-key-shaped
+  # values remain subject to the default rules.
+  '''^abcdefghijklmnopqrstuvwxyz123456$''',
+
+  # Exact historical journal fixtures from commits 9ca65646154f2784def940f33627e6b9cf82c705
+  # and e5bf0b7bbabb9b46a2d6341ea54c1af5edcd8432. These are literal labels in old
+  # engineering notes, not credentials; exact matching prevents broad suppression.
+  '''^finish_reason=length$''',
+  '''^thr-786f9565169abe83$''',
 ]
