@@ -183,14 +183,20 @@ func startControlPlane() (*controlPlane, error) {
 		statsConfig:         cfg,
 		sneLocalAccessToken: sneLocalAccessToken,
 	}
-	startGuardBridge(ctx)
-	traceStartupMemory("guard-bridge")
-	startPeriodicScan(ctx)
-	traceStartupMemory("periodic-scan")
-	startLiveRefresh(ctx)
-	traceStartupMemory("live-refresh")
-	cp.routerRoot, cp.routerThreadID = registerMenubarThread(ctx)
-	traceStartupMemory("router-register")
+	// The packaged Swift shell may explicitly start this binary with
+	// SIRSI_HEADLESS=1 to supply its loopback control plane. That mode must not
+	// create a second menu-bar surface, periodic scan, live-refresh loop, or CTR
+	// resident thread; it serves only the local API until its parent stops it.
+	if os.Getenv("SIRSI_HEADLESS") != "1" {
+		startGuardBridge(ctx)
+		traceStartupMemory("guard-bridge")
+		startPeriodicScan(ctx)
+		traceStartupMemory("periodic-scan")
+		startLiveRefresh(ctx)
+		traceStartupMemory("live-refresh")
+		cp.routerRoot, cp.routerThreadID = registerMenubarThread(ctx)
+		traceStartupMemory("router-register")
+	}
 	return cp, nil
 }
 

@@ -311,12 +311,36 @@ final class SNEControlModel: ObservableObject {
         self.retentionEvidence = retentionEvidence
     }
 
-    func refresh() async {
+    @discardableResult
+    func refresh() async -> Bool {
         loading = true
         defer { loading = false }
         do {
             state = try await request(path: "/api/sne", method: "GET", body: nil, authorized: false)
             failure = nil
+            return true
+        } catch {
+            failure = error.localizedDescription
+            return false
+        }
+    }
+
+    // Starts local control only after a visible owner action. The app never
+    // launches a helper on startup, on a timer, or after a failed request.
+    func startLocalControl() async {
+        actionInFlight = true
+        failure = nil
+        defer { actionInFlight = false }
+        do {
+            try SNELocalControlBridge.shared.start()
+            for _ in 0..<15 {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                if await refresh() {
+                    message = "Local control is ready. SNE remains disabled until separately admitted."
+                    return
+                }
+            }
+            failure = "Local control started but has not become ready. No SNE state changed."
         } catch {
             failure = error.localizedDescription
         }
@@ -471,6 +495,47 @@ enum SNEControlError: LocalizedError {
     }
 }
 
+@MainActor
+final class SNELocalControlBridge {
+    static let shared = SNELocalControlBridge()
+    private var process: Process?
+
+    private init() {}
+
+    func start() throws {
+        if process?.isRunning == true { return }
+        guard let path = Self.bundledEngine() else {
+            throw SNEControlError.server("Pantheon's bundled local control engine is unavailable. No SNE state changed.")
+        }
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: path)
+        child.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        var environment = ProcessInfo.processInfo.environment
+        environment["SIRSI_HEADLESS"] = "1"
+        child.environment = environment
+        child.terminationHandler = { [weak self] _ in
+            Task { @MainActor in self?.process = nil }
+        }
+        try child.run()
+        process = child
+    }
+
+    func stop() {
+        if process?.isRunning == true { process?.terminate() }
+        process = nil
+    }
+
+    nonisolated static func bundledEngine(bundleURL: URL = Bundle.main.bundleURL) -> String? {
+        let candidate = bundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Helpers", isDirectory: true)
+            .appendingPathComponent("pantheon-engine", isDirectory: false)
+            .path
+        return FileManager.default.isExecutableFile(atPath: candidate) ? candidate : nil
+    }
+}
+
 struct SNEControlView: View {
     @Environment(\.snapshotMode) private var snapshotMode
     @StateObject private var model: SNEControlModel
@@ -510,6 +575,13 @@ struct SNEControlView: View {
                     if let message = model.message { Text(message).foregroundStyle(.green).sirsiFont(.callout) }
                     if let failure = model.failure {
                         Text(failure).foregroundStyle(.red).sirsiFont(.callout).accessibilityLabel("SNE error: \(failure)")
+                        if !snapshotMode {
+                            Button("Start local control") { Task { await model.startLocalControl() } }
+                                .accessibilityLabel("Start Pantheon local control")
+                                .accessibilityHint("Starts only the bundled loopback control plane. It does not start SNE inference.")
+                                .accessibilityIdentifier("sne.local-control.start")
+                                .disabled(model.loading || model.actionInFlight)
+                        }
                     }
                 }
                 .padding(16)

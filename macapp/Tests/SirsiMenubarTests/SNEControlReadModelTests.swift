@@ -18,6 +18,22 @@ final class SNEControlReadModelTests: XCTestCase {
 
         XCTAssertEqual(SirsiEngine.bundledSirsiBinary(bundleURL: root.appendingPathComponent("Pantheon.app")), executable.path)
     }
+
+    func testBundledControlEngineResolverRequiresEmbeddedHelper() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let app = root.appendingPathComponent("Pantheon.app", isDirectory: true)
+        let executable = app
+            .appendingPathComponent("Contents/Library/Helpers", isDirectory: true)
+            .appendingPathComponent("pantheon-engine", isDirectory: false)
+        try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+        XCTAssertNil(SNELocalControlBridge.bundledEngine(bundleURL: app))
+        try Data("fixture".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertEqual(SNELocalControlBridge.bundledEngine(bundleURL: app), executable.path)
+    }
     func testSnapshotFixtureRetainsExactActiveIdentity() {
         let fixture = SNEReadViewState.snapshotFixture
 

@@ -193,6 +193,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // The optional SNE local-control child is owned by this native app
+        // session. It is never a detached resident service.
+        SNELocalControlBridge.shared.stop()
+    }
+
     // checkOwnerGated re-reads the board and toasts genuinely-new owner-gated
     // items. Board-file-only on the timer path: the CLI fallback would spawn a
     // process every 90s when the conduit is down — the file IS the cheap signal.
