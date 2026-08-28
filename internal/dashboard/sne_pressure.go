@@ -2,10 +2,14 @@ package dashboard
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,6 +27,55 @@ var prefixCachePressureIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-
 type SNEPrefixCachePressureReceiptReader interface {
 	LoadPressureExecutionReceipt(context.Context, string) (json.RawMessage, error)
 	LoadPressureRetentionReceipt(context.Context, string) (json.RawMessage, error)
+}
+
+const SNEPrefixCacheReceiptReadToolSHA256 = "adf1564810523f6cfd93e12dccd68c75c5e365381369e8ff5e5799033dcf6877"
+
+type snePrefixCacheToolReader struct {
+	toolPath     string
+	dataRoot     string
+	identityJSON string
+	run          func(context.Context, string, ...string) ([]byte, error)
+}
+
+func newSNEPrefixCacheToolReader(toolPath, dataRoot, identityJSON string) SNEPrefixCachePressureReceiptReader {
+	if strings.TrimSpace(toolPath) == "" || strings.TrimSpace(dataRoot) == "" || strings.TrimSpace(identityJSON) == "" || !filepath.IsAbs(dataRoot) {
+		return nil
+	}
+	return &snePrefixCacheToolReader{toolPath: toolPath, dataRoot: filepath.Clean(dataRoot), identityJSON: identityJSON, run: func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, path, args...).Output()
+	}}
+}
+
+func (reader *snePrefixCacheToolReader) LoadPressureExecutionReceipt(ctx context.Context, id string) (json.RawMessage, error) {
+	return reader.load(ctx, "execution", id)
+}
+
+func (reader *snePrefixCacheToolReader) LoadPressureRetentionReceipt(ctx context.Context, id string) (json.RawMessage, error) {
+	return reader.load(ctx, "retention", id)
+}
+
+func (reader *snePrefixCacheToolReader) load(ctx context.Context, kind, id string) (json.RawMessage, error) {
+	if reader == nil || !prefixCachePressureIDPattern.MatchString(id) || (kind != "execution" && kind != "retention") {
+		return nil, fmt.Errorf("invalid SNE prefix-cache receipt reader request")
+	}
+	info, err := os.Lstat(reader.toolPath)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("SNE prefix-cache receipt reader is unavailable")
+	}
+	data, err := os.ReadFile(reader.toolPath)
+	if err != nil {
+		return nil, fmt.Errorf("read SNE prefix-cache receipt reader: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != SNEPrefixCacheReceiptReadToolSHA256 {
+		return nil, fmt.Errorf("SNE prefix-cache receipt reader identity mismatch")
+	}
+	output, err := reader.run(ctx, reader.toolPath, "-root", reader.dataRoot, "-kind", kind, "-id", id, "-identity-json", reader.identityJSON)
+	if err != nil {
+		return nil, fmt.Errorf("SNE prefix-cache receipt reader rejected evidence")
+	}
+	return json.RawMessage(output), nil
 }
 
 type PrefixCachePressureEvidenceView struct {

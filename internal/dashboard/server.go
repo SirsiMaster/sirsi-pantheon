@@ -83,6 +83,9 @@ type Config struct {
 	// receipt reader. Nil projects honest unavailable evidence; it never causes
 	// Pantheon to open an arbitrary path or operate SNE cache state.
 	SNEPrefixCachePressureReader SNEPrefixCachePressureReceiptReader
+	SNEPrefixCacheReceiptTool    string
+	SNEPrefixCacheDataRoot       string
+	SNEPrefixCacheIdentityJSON   string
 	// AppRecovery is Pantheon's optional registry-bound application recovery
 	// controller. Nil keeps recovery controls honestly unavailable.
 	AppRecovery *apprecovery.Manager
@@ -127,6 +130,9 @@ func New(cfg Config) *Server {
 		s.sneLifecycle = NewSNELifecycleManager(*cfg.SNELifecycle)
 	}
 	s.snePressure = newPrefixCachePressureAuthorizationManager(s.confirm)
+	if s.snePressureReader == nil {
+		s.snePressureReader = newSNEPrefixCacheToolReader(cfg.SNEPrefixCacheReceiptTool, cfg.SNEPrefixCacheDataRoot, cfg.SNEPrefixCacheIdentityJSON)
+	}
 	if s.sneLifecycle != nil {
 		s.snePressure.containment = func() string { return s.sneLifecycle.Snapshot().State }
 	}
