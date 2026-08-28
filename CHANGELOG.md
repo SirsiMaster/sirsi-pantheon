@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **docs(evidence): record the corrected packaged MCP handshake**. The
+  v0.23.14 bundle now proves MCP and CLI identity alignment over stdio.
 - **fix(mcp): bind stdio identity to the stamped Pantheon product version**.
   MCP no longer advertises the retired Anubis copy or a hard-coded alpha
   version; its default handshake now matches `sirsi version`.
