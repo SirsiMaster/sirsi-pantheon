@@ -32,18 +32,17 @@ func ExternalProviderFromEnv() (*ExternalProvider, error) {
 	if path == "" {
 		return nil, ErrExternalProviderUnavailable
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("external Ra provider path: %w", err)
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("external Ra provider path must be absolute")
 	}
-	info, err := os.Lstat(abs)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("external Ra provider: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 		return nil, fmt.Errorf("external Ra provider must be an executable regular file")
 	}
-	return &ExternalProvider{Executable: abs}, nil
+	return &ExternalProvider{Executable: path}, nil
 }
 
 // Run invokes the provider directly with the stable operation/argument

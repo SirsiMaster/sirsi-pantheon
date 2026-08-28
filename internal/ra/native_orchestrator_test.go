@@ -77,6 +77,35 @@ func TestExternalProviderIsExplicitAndDirect(t *testing.T) {
 	}
 }
 
+func TestExternalProviderRejectsUnsafeExecutableIdentity(t *testing.T) {
+	dir := t.TempDir()
+	executable := filepath.Join(dir, "provider")
+	if err := os.WriteFile(executable, []byte("provider"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	nonExecutable := filepath.Join(dir, "non-executable")
+	if err := os.WriteFile(nonExecutable, []byte("provider"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlink := filepath.Join(dir, "provider-link")
+	if err := os.Symlink(executable, symlink); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, path := range map[string]string{
+		"relative":       "relative/provider",
+		"symlink":        symlink,
+		"non-executable": nonExecutable,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(ExternalProviderEnv, path)
+			if _, err := ExternalProviderFromEnv(); err == nil {
+				t.Fatalf("ExternalProviderFromEnv() accepted %q", path)
+			}
+		})
+	}
+}
+
 func TestRunNativeFleetPreservesCommandFailureOutput(t *testing.T) {
 	original := nativeRun
 	t.Cleanup(func() { nativeRun = original })
