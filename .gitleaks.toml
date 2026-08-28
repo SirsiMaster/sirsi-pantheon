@@ -53,10 +53,11 @@ regexes = [
   '''^66650390a7dd24be6bff30d577d04de7911320119c72026523ccc92cefa104c8$''',
   '''^correct-horse-battery-staple-1234567890$''',
 
-  # Historical Thoth journal metadata, not credentials. These exact values are
-  # generated protocol/test vocabulary in .thoth/journal.md (entries 2026-06-02
-  # and 2026-08-21); the path is retained in the scan and only the exact tokens
-  # are excluded so any other journal value remains visible.
+  # Historical git-object evidence only (not present in the current tree):
+  # `git show 9ca65646154f2784def940f33627e6b9cf82c705:.thoth/journal.md`
+  # contains `finish_reason=length`; its parent contains the router metadata
+  # token `thr-786f9565169abe83`. Both are journal vocabulary, not credentials.
+  # Keep the values exact; current-tree content remains fully scanned.
   '''^finish_reason=length$''',
   '''^thr-786f9565169abe83$''',
 ]
