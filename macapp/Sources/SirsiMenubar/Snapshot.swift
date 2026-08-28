@@ -134,3 +134,57 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
     }
     app.run()
 }
+
+// This renderer is intentionally fixture-only: unlike --snapshot it executes
+// no Sirsi command, network request, or model action. It produces durable
+// native visual evidence for the owner-action states without touching a host.
+@MainActor
+func runPrefixCachePressureFixtureSnapshot(outDir: String, width: CGFloat = 380, appearance: ColorScheme = .dark) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+
+    Task { @MainActor in
+        let requestID = "pressure-fixture-20260828"
+        let observationSHA = String(repeating: "a", count: 64)
+        let base = SNEReadViewState.snapshotFixture
+        func decodeView(_ state: String, confirmation: Bool, authorization: Bool) -> SNEPrefixCachePressureViewState {
+            let confirmationJSON = confirmation ? ",\"confirmation\":{\"confirm_token\":\"fixture-confirm-token\",\"action_hash\":\"\(String(repeating: "b", count: 64))\",\"expires_at\":\"2026-08-28T12:02:00Z\",\"preview\":\"Fixture owner confirmation.\"}" : ""
+            let authorizationJSON = authorization ? ",\"authorization\":{\"state\":\"accepted\",\"request_id\":\"\(requestID)\",\"artifact_sha256\":\"\(observationSHA)\",\"expires_at_unix\":1724846700}" : ""
+            let json = "{\"state\":\"\(state)\",\"receipt\":{\"schema\":\"pantheon.sne-prefix-cache-pressure-receipt.v1\",\"observation\":{\"request_id\":\"\(requestID)\",\"host_id\":\"fixture-host\",\"observed_at_unix\":1724846400,\"expires_at_unix\":1724846700,\"total_ram_bytes\":51539607552,\"available_ram_bytes\":25769803776,\"swap_used_bytes\":0,\"swap_limit_bytes\":8589934592,\"pressure\":\"normal\",\"pressure_source\":\"fixture\",\"swap_measured\":true},\"observation_sha256\":\"\(observationSHA)\"}\(confirmationJSON)\(authorizationJSON)}"
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try! decoder.decode(SNEPrefixCachePressureViewState.self, from: Data(json.utf8))
+        }
+        func evidence(_ kind: String, available: Bool) -> SNEPrefixCachePressureEvidenceState {
+            let receipt = kind == "retention" ? "{\"removed_request_ids\":[\"pressure-old\"],\"retained_request_ids\":[\"pressure-new\"]}" : "{\"status\":\"failed\",\"error_code\":\"cache_pressure_execution_interrupted\"}"
+            let json = available ? "{\"state\":\"available\",\"evidence_type\":\"\(kind)\",\"identity\":\"\(requestID)\",\"receipt\":\(receipt)}" : "{\"state\":\"unavailable\",\"evidence_type\":\"\(kind)\",\"identity\":\"\(requestID)\"}"
+            return try! JSONDecoder().decode(SNEPrefixCachePressureEvidenceState.self, from: Data(json.utf8))
+        }
+        let shots: [(String, SNEControlView)] = [
+            ("prefix-pressure-measure", SNEControlView(preloaded: base)),
+            ("prefix-pressure-confirmation", SNEControlView(preloaded: base, prefixCachePressure: decodeView("owner-confirmation-required", confirmation: true, authorization: false))),
+            ("prefix-pressure-authorized-unavailable", SNEControlView(preloaded: base, prefixCachePressure: decodeView("authorization-accepted", confirmation: false, authorization: true), executionEvidence: evidence("execution", available: false))),
+            ("prefix-pressure-terminal-retention", SNEControlView(preloaded: base, executionEvidence: evidence("execution", available: true), retentionEvidence: evidence("retention", available: true))),
+        ]
+        for (name, view) in shots {
+            let renderer = ImageRenderer(content: view
+                .environmentObject(Nav())
+                .environment(\.snapshotMode, true)
+                .environment(\.colorScheme, appearance)
+                .frame(width: width, height: 980)
+                .background(appearance == .light ? Color.white : Color.black)
+                .environment(\.sirsiTypeScale, typeScale(forWidth: width)))
+            renderer.scale = 2.0
+            guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) else {
+                FileHandle.standardError.write(Data("fixture snapshot failed: \(name)\n".utf8))
+                exit(1)
+            }
+            try! png.write(to: URL(fileURLWithPath: outDir + "/\(name).png"))
+            FileHandle.standardOutput.write(Data("fixture snapshot: \(name).png (\(png.count) bytes)\n".utf8))
+        }
+        exit(0)
+    }
+    app.run()
+}

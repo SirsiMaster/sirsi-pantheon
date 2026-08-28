@@ -5,6 +5,17 @@ import AppKit
 
 private let sneGold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
+@MainActor
+protocol SNEControlTransport {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+struct URLSessionSNEControlTransport: SNEControlTransport {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await URLSession.shared.data(for: request)
+    }
+}
+
 private struct SNECard<Content: View>: View {
     @Environment(\.snapshotMode) private var snapshotMode
     let title: String
@@ -40,6 +51,7 @@ struct SNELifecycleViewState: Decodable {
     let error: String?
     let errorCode: String?
     let recovery: String?
+    let prefixCachePressure: SNEPrefixCachePressureReceipt?
 
     enum CodingKeys: String, CodingKey {
         case modelID = "model_id"
@@ -49,6 +61,113 @@ struct SNELifecycleViewState: Decodable {
         case profile, state, error
         case errorCode = "error_code"
         case recovery
+        case prefixCachePressure = "prefix_cache_pressure"
+    }
+}
+
+// These values mirror Pantheon's public prefix-cache-pressure read contract.
+// They deliberately do not contain SNE cache-policy fields: Pantheon measures
+// and obtains an owner authorization, while SNE owns every decision, execution,
+// replay, and retention result.
+struct SNEPrefixCachePressureObservation: Decodable {
+    let requestID: String
+    let hostID: String
+    let observedAtUnix: Int64
+    let expiresAtUnix: Int64
+    let totalRAMBytes: UInt64
+    let availableRAMBytes: UInt64
+    let swapUsedBytes: UInt64
+    let swapLimitBytes: UInt64
+    let pressure: String
+    let pressureSource: String
+    let swapMeasured: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case hostID = "host_id"
+        case observedAtUnix = "observed_at_unix"
+        case expiresAtUnix = "expires_at_unix"
+        case totalRAMBytes = "total_ram_bytes"
+        case availableRAMBytes = "available_ram_bytes"
+        case swapUsedBytes = "swap_used_bytes"
+        case swapLimitBytes = "swap_limit_bytes"
+        case pressure
+        case pressureSource = "pressure_source"
+        case swapMeasured = "swap_measured"
+    }
+}
+
+struct SNEPrefixCachePressureReceipt: Decodable {
+    let schema: String
+    let observation: SNEPrefixCachePressureObservation
+    let observationSHA256: String
+
+    enum CodingKeys: String, CodingKey {
+        case schema, observation
+        case observationSHA256 = "observation_sha256"
+    }
+}
+
+struct SNEPrefixCachePressureConfirmation: Decodable {
+    let confirmToken: String
+    let actionHash: String
+    let expiresAt: Date
+    let preview: String
+
+    enum CodingKeys: String, CodingKey {
+        case confirmToken = "confirm_token"
+        case actionHash = "action_hash"
+        case expiresAt = "expires_at"
+        case preview
+    }
+}
+
+struct SNEPrefixCachePressureAuthorization: Decodable {
+    let state: String
+    let requestID: String
+    let artifactSHA256: String
+    let expiresAtUnix: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case state
+        case requestID = "request_id"
+        case artifactSHA256 = "artifact_sha256"
+        case expiresAtUnix = "expires_at_unix"
+    }
+}
+
+struct SNEPrefixCachePressureViewState: Decodable {
+    let state: String
+    let receipt: SNEPrefixCachePressureReceipt
+    let confirmation: SNEPrefixCachePressureConfirmation?
+    let authorization: SNEPrefixCachePressureAuthorization?
+}
+
+struct SNEPrefixCachePressureEvidenceState: Decodable {
+    let state: String
+    let evidenceType: String
+    let identity: String
+    let receipt: SNEPrefixCachePressureTerminalReceipt?
+
+    enum CodingKeys: String, CodingKey {
+        case state
+        case evidenceType = "evidence_type"
+        case identity
+        case receipt
+    }
+}
+
+struct SNEPrefixCachePressureTerminalReceipt: Decodable {
+    let status: String?
+    let errorCode: String?
+    let removedRequestIDs: [String]?
+    let retainedRequestIDs: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case errorCode = "error_code"
+        case removedRequestIDs = "removed_request_ids"
+        case retainedRequestIDs = "retained_request_ids"
     }
 }
 
@@ -155,12 +274,41 @@ final class SNEControlModel: ObservableObject {
     @Published var actionInFlight = false
     @Published var message: String?
     @Published var failure: String?
+    @Published var prefixCachePressure: SNEPrefixCachePressureViewState?
+    @Published var executionEvidence: SNEPrefixCachePressureEvidenceState?
+    @Published var retentionEvidence: SNEPrefixCachePressureEvidenceState?
 
-    private let baseURL = URL(string: "http://127.0.0.1:9119")!
+    private let baseURL: URL
+    private let transport: any SNEControlTransport
+    private let capabilityProvider: @MainActor () throws -> String
     private let decoder = JSONDecoder()
 
-    init(state: SNEReadViewState? = nil) {
+    convenience init(state: SNEReadViewState? = nil) {
+        self.init(
+            state: state,
+            baseURL: URL(string: "http://127.0.0.1:9119")!,
+            transport: URLSessionSNEControlTransport(),
+            capabilityProvider: SNEControlModel.localCapability
+        )
+    }
+
+    init(
+        state: SNEReadViewState? = nil,
+        baseURL: URL,
+        transport: any SNEControlTransport,
+        capabilityProvider: @escaping @MainActor () throws -> String,
+        prefixCachePressure: SNEPrefixCachePressureViewState? = nil,
+        executionEvidence: SNEPrefixCachePressureEvidenceState? = nil,
+        retentionEvidence: SNEPrefixCachePressureEvidenceState? = nil
+    ) {
+        decoder.dateDecodingStrategy = .iso8601
         self.state = state
+        self.baseURL = baseURL
+        self.transport = transport
+        self.capabilityProvider = capabilityProvider
+        self.prefixCachePressure = prefixCachePressure
+        self.executionEvidence = executionEvidence
+        self.retentionEvidence = retentionEvidence
     }
 
     func refresh() async {
@@ -192,6 +340,57 @@ final class SNEControlModel: ObservableObject {
 
     func stop() async {
         await mutate(path: "/api/sne/stop", body: [:], success: "SNE stopped safely.")
+    }
+
+    func preparePrefixCachePressure() async {
+        actionInFlight = true
+        failure = nil
+        defer { actionInFlight = false }
+        do {
+            prefixCachePressure = try await request(path: "/api/sne/prefix-cache-pressure", method: "GET", body: nil, authorized: true)
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
+
+    func authorizePrefixCachePressure(_ view: SNEPrefixCachePressureViewState) async {
+        guard let confirmation = view.confirmation else { return }
+        actionInFlight = true
+        failure = nil
+        defer { actionInFlight = false }
+        do {
+            prefixCachePressure = try await request(path: "/api/sne/prefix-cache-pressure", method: "POST", body: [
+                "request_id": view.receipt.observation.requestID,
+                "observation_sha256": view.receipt.observationSHA256,
+                "confirm_token": confirmation.confirmToken,
+                "action_hash": confirmation.actionHash,
+            ], authorized: true)
+            message = "Owner authorization recorded. SNE remains the sole decision and execution owner."
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
+
+    func loadPrefixCachePressureEvidence(kind: String, identity: String) async {
+        guard Self.validEvidenceIdentity(identity), (kind == "receipts" || kind == "retention") else {
+            failure = "Enter an exact receipt identity before reading SNE-owned evidence."
+            return
+        }
+        actionInFlight = true
+        failure = nil
+        defer { actionInFlight = false }
+        do {
+            let evidence: SNEPrefixCachePressureEvidenceState = try await request(path: "/api/sne/prefix-cache-pressure/\(kind)/\(identity)", method: "GET", body: nil, authorized: false)
+            if kind == "receipts" { executionEvidence = evidence } else { retentionEvidence = evidence }
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
+
+    static func validEvidenceIdentity(_ value: String) -> Bool {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+        guard (1...128).contains(value.count), value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return false }
+        return value.unicodeScalars.first.map { CharacterSet.alphanumerics.contains($0) } ?? false
     }
 
     func install(_ item: SNECatalogViewItem) async {
@@ -230,10 +429,10 @@ final class SNEControlModel: ObservableObject {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if authorized {
-            request.setValue("Bearer \(try localCapability())", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(try capabilityProvider())", forHTTPHeaderField: "Authorization")
         }
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await transport.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SNEControlError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -242,7 +441,7 @@ final class SNEControlModel: ObservableObject {
         return try decoder.decode(T.self, from: data)
     }
 
-    private func localCapability() throws -> String {
+    fileprivate static func localCapability() throws -> String {
         let path = ("~/Library/Application Support/Sirsi/Pantheon/sne-local-api.token" as NSString).expandingTildeInPath
         var info = stat()
         guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, (info.st_mode & 0o077) == 0 else {
@@ -276,9 +475,24 @@ struct SNEControlView: View {
     @Environment(\.snapshotMode) private var snapshotMode
     @StateObject private var model: SNEControlModel
     @State private var confirmation: SNEConfirmation?
+    @State private var executionReceiptID = ""
+    @State private var retentionReceiptID = ""
 
-    init(preloaded: SNEReadViewState? = nil) {
-        _model = StateObject(wrappedValue: SNEControlModel(state: preloaded))
+    init(
+        preloaded: SNEReadViewState? = nil,
+        prefixCachePressure: SNEPrefixCachePressureViewState? = nil,
+        executionEvidence: SNEPrefixCachePressureEvidenceState? = nil,
+        retentionEvidence: SNEPrefixCachePressureEvidenceState? = nil
+    ) {
+        _model = StateObject(wrappedValue: SNEControlModel(
+            state: preloaded,
+            baseURL: URL(string: "http://127.0.0.1:9119")!,
+            transport: URLSessionSNEControlTransport(),
+            capabilityProvider: SNEControlModel.localCapability,
+            prefixCachePressure: prefixCachePressure,
+            executionEvidence: executionEvidence,
+            retentionEvidence: retentionEvidence
+        ))
     }
 
     var body: some View {
@@ -289,6 +503,7 @@ struct SNEControlView: View {
                     statusCard
                     if let state = model.state {
                         lifecycleCard(state)
+                        prefixCachePressureCard(state)
                         modelCatalog(state)
                         runtimeCatalog(state)
                     }
@@ -316,6 +531,7 @@ struct SNEControlView: View {
                     case .install(let item): await model.install(item)
                     case .remove(let item): await model.remove(item)
                     case .rollback(let version): await model.rollback(to: version)
+                    case .prefixCachePressure(let view): await model.authorizePrefixCachePressure(view)
                     }
                 }
             }
@@ -375,6 +591,90 @@ struct SNEControlView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityIdentifier("sne.active.runtime")
         }
+    }
+
+    private func prefixCachePressureCard(_ state: SNEReadViewState) -> some View {
+        SNECard("Prefix-cache pressure") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let observation = state.lifecycle.prefixCachePressure?.observation {
+                    Text("Observed \(observation.pressure) pressure on \(observation.hostID)")
+                        .sirsiFont(.headline)
+                    Text("Request \(observation.requestID) · source \(observation.pressureSource)")
+                        .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                } else {
+                    Text("No measured pressure observation").foregroundStyle(.secondary)
+                }
+
+                if let view = model.prefixCachePressure {
+                    Text(prefixCachePressureLabel(view)).foregroundStyle(sneGold)
+                    Text("Observation \(view.receipt.observationSHA256.prefix(12))… · expires \(Date(timeIntervalSince1970: TimeInterval(view.receipt.observation.expiresAtUnix)).formatted(date: .omitted, time: .shortened))")
+                        .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                    if let confirmation = view.confirmation {
+                        Text(confirmation.preview).sirsiFont(.caption).foregroundStyle(.secondary)
+                        Button("Authorize SNE evaluation") { self.confirmation = .prefixCachePressure(view) }
+                            .accessibilityIdentifier("sne.prefix-pressure.authorize")
+                            .accessibilityLabel("Authorize SNE to evaluate the measured prefix-cache pressure")
+                            .accessibilityHint("Requires this visible confirmation. Pantheon does not decide or execute the cache action.")
+                    }
+                } else {
+                    Button("Measure cache pressure") { Task { await model.preparePrefixCachePressure() } }
+                        .accessibilityIdentifier("sne.prefix-pressure.measure")
+                        .accessibilityHint("Measures this host and prepares an owner confirmation. It does not start SNE or change its cache.")
+                }
+
+                evidenceReader(kind: "receipts", title: "Execution receipt", evidence: model.executionEvidence)
+                evidenceReader(kind: "retention", title: "Retention receipt", evidence: model.retentionEvidence)
+                Text("Unavailable means unknown. Pantheon does not discover receipt paths, infer SNE execution, retry, or alter retention.")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+            }
+            .disabled(model.actionInFlight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("sne.prefix-pressure")
+        }
+    }
+
+    @ViewBuilder
+    private func evidenceReader(kind: String, title: String, evidence: SNEPrefixCachePressureEvidenceState?) -> some View {
+        HStack {
+            Text(title).sirsiFont(.caption)
+            TextField("Exact ID", text: Binding(get: {
+                kind == "receipts" ? executionReceiptID : retentionReceiptID
+            }, set: { value in
+                if kind == "receipts" { executionReceiptID = value } else { retentionReceiptID = value }
+            }))
+            .textFieldStyle(.roundedBorder)
+            .accessibilityLabel("Exact SNE \(title.lowercased()) identity")
+            Button("Read") {
+                let id = kind == "receipts" ? executionReceiptID : retentionReceiptID
+                Task { await model.loadPrefixCachePressureEvidence(kind: kind, identity: id) }
+            }
+            .accessibilityLabel("Read SNE \(title.lowercased())")
+        }
+        if let evidence {
+            Text(prefixCachePressureEvidenceLabel(evidence)).sirsiFont(.caption).foregroundStyle(.secondary)
+                .accessibilityLabel("\(title), \(prefixCachePressureEvidenceLabel(evidence))")
+        }
+    }
+
+    private func prefixCachePressureLabel(_ view: SNEPrefixCachePressureViewState) -> String {
+        switch view.state {
+        case "owner-confirmation-required": return "Owner confirmation required — SNE has not been authorized."
+        case "authorization-accepted": return "Authorization accepted — SNE decision and execution evidence remain external."
+        default: return "Prefix-cache pressure state: \(view.state)"
+        }
+    }
+
+    private func prefixCachePressureEvidenceLabel(_ evidence: SNEPrefixCachePressureEvidenceState) -> String {
+        guard evidence.state == "available", let receipt = evidence.receipt else {
+            return "Unavailable — no SNE-owned state is inferred."
+        }
+        if evidence.evidenceType == "retention" {
+            return "Retention receipt available: \(receipt.removedRequestIDs?.count ?? 0) removed, \(receipt.retainedRequestIDs?.count ?? 0) retained."
+        }
+        if receipt.status == "failed", receipt.errorCode == "cache_pressure_execution_interrupted" {
+            return "Interrupted execution recovered to failed."
+        }
+        return "Execution receipt: \(receipt.status ?? "unavailable")."
     }
 
     private func modelCatalog(_ state: SNEReadViewState) -> some View {
@@ -489,7 +789,7 @@ extension SNEReadViewState {
             modelID: "gemma-4-12b-it-affine-8", runtimeID: "sne-v2-api4096",
             runtimeSHA256: String(repeating: "c", count: 64),
             modelManifestSHA256: String(repeating: "d", count: 64), profile: "interactive",
-            state: "ready", error: nil, errorCode: nil, recovery: nil),
+            state: "ready", error: nil, errorCode: nil, recovery: nil, prefixCachePressure: nil),
         recovery: nil, lifecycleToolsReady: true,
         lifecycleToolsStatus: "Checkout, recovery, and removal tools verified")
 }
@@ -498,12 +798,14 @@ private enum SNEConfirmation {
     case install(SNECatalogViewItem)
     case remove(SNECatalogViewItem)
     case rollback(String)
+    case prefixCachePressure(SNEPrefixCachePressureViewState)
 
     var title: String {
         switch self {
         case .install: return "Install verified local model?"
         case .remove: return "Remove installed model?"
         case .rollback: return "Roll back signed catalog?"
+        case .prefixCachePressure: return "Authorize SNE prefix-cache evaluation?"
         }
     }
 
@@ -512,6 +814,7 @@ private enum SNEConfirmation {
         case .install: return "Accept license and install"
         case .remove: return "Remove model"
         case .rollback: return "Roll back"
+        case .prefixCachePressure: return "Authorize evaluation"
         }
     }
 
@@ -528,6 +831,8 @@ private enum SNEConfirmation {
             return "Shared objects used by another installed model are retained. The model can be installed again later."
         case .rollback:
             return "SNE must be stopped. The selected signed version becomes active atomically."
+        case .prefixCachePressure(let view):
+            return "Authorize SNE to calculate its own bounded cache action for request \(view.receipt.observation.requestID). Pantheon does not execute, retry, or retain SNE cache data."
         }
     }
 }
