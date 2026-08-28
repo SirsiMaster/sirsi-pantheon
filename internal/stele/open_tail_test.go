@@ -19,16 +19,16 @@ func TestOpenRecoversChainFromBoundedTailOfLargeLedger(t *testing.T) {
 	}
 	block[len(block)-1] = '\n'
 	for i := 0; i < 256; i++ {
-		if _, err := f.Write(block); err != nil {
+		if _, err = f.Write(block); err != nil {
 			t.Fatal(err)
 		}
 	}
 	last := Entry{Seq: 42, Hash: "final-hash"}
 	line, _ := json.Marshal(last)
-	if _, err := f.Write(append(line, '\n')); err != nil {
+	if _, err = f.Write(append(line, '\n')); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Close(); err != nil {
+	if err = f.Close(); err != nil {
 		t.Fatal(err)
 	}
 

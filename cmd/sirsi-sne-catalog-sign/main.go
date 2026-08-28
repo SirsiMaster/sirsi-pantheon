@@ -24,8 +24,9 @@ func main() {
 	if catalogPath == "" || privateKeyPath == "" || publicKeyPath == "" || signaturePath == "" {
 		fatalf("catalog, private-key, public-key, and signature are required")
 	}
+	var err error
 	if generate {
-		if err := generateKeyPair(privateKeyPath, publicKeyPath); err != nil {
+		if err = generateKeyPair(privateKeyPath, publicKeyPath); err != nil {
 			fatalf("generate signing identity: %v", err)
 		}
 	}
@@ -33,7 +34,7 @@ func main() {
 	if err != nil {
 		fatalf("load signing identity: %v", err)
 	}
-	if err := writePublicKey(publicKeyPath, publicKey, false); err != nil {
+	if err = writePublicKey(publicKeyPath, publicKey, false); err != nil {
 		fatalf("write trusted public key: %v", err)
 	}
 	catalog, err := os.ReadFile(catalogPath)
@@ -41,7 +42,7 @@ func main() {
 		fatalf("read catalog: %v", err)
 	}
 	signature := signatureText(privateKey, catalog)
-	if err := writeAtomic(signaturePath, []byte(signature), 0o600); err != nil {
+	if err = writeAtomic(signaturePath, []byte(signature), 0o600); err != nil {
 		fatalf("write signature: %v", err)
 	}
 	fmt.Printf("signed catalog=%s bytes=%d signature=%s public_key=%s\n", catalogPath, len(catalog), signaturePath, publicKeyPath)

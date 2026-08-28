@@ -22,7 +22,7 @@ func TestGenerateSignAndRefuseIdentityOverwrite(t *testing.T) {
 	if privateInfo.Mode().Perm() != 0o600 {
 		t.Fatalf("private key mode=%o", privateInfo.Mode().Perm())
 	}
-	if err := generateKeyPair(privatePath, publicPath); err == nil {
+	if err = generateKeyPair(privatePath, publicPath); err == nil {
 		t.Fatal("signing identity overwrite was accepted")
 	}
 	privateKey, _, err := loadPrivateKey(privatePath)

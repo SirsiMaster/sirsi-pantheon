@@ -144,7 +144,7 @@ func TestWaitReadyReportsImmediateChildExit(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := supervisor.Start(ctx); err != nil {
+	if err = supervisor.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	started := time.Now()
@@ -185,10 +185,10 @@ func TestSupervisorStopTerminatesCompleteProcessGroup(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := supervisor.Start(ctx); err != nil {
+	if err = supervisor.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.WaitReady(ctx); err != nil {
+	if err = supervisor.WaitReady(ctx); err != nil {
 		t.Fatal(err)
 	}
 	pidBytes, err := os.ReadFile(descendantFile)
@@ -414,21 +414,21 @@ func TestSupervisorRestartLaunchesFreshProcess(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := supervisor.Start(ctx); err != nil {
+	if err = supervisor.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	defer supervisor.Stop(context.Background())
-	if err := supervisor.WaitReady(ctx); err != nil {
+	if err = supervisor.WaitReady(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.Restart(ctx); err != nil {
+	if err = supervisor.Restart(ctx); err != nil {
 		t.Fatal(err)
 	}
 	model := "gemma-4-12b-it-affine8-sne-v1"
-	if err := supervisor.UnloadModel(ctx, model); err != nil {
+	if err = supervisor.UnloadModel(ctx, model); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.LoadModel(ctx, model); err != nil {
+	if err = supervisor.LoadModel(ctx, model); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(countFile)
@@ -480,14 +480,14 @@ func TestSupervisorReplacesAdmittedProcessAfterConsecutiveReadinessFailures(t *t
 	supervisor.healthFails = 2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := supervisor.Start(ctx); err != nil {
+	if err = supervisor.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	defer supervisor.Stop(context.Background())
-	if err := supervisor.WaitReady(ctx); err != nil {
+	if err = supervisor.WaitReady(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(failFile, []byte("fail\n"), 0o600); err != nil {
+	if err = os.WriteFile(failFile, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -501,7 +501,7 @@ func TestSupervisorReplacesAdmittedProcessAfterConsecutiveReadinessFailures(t *t
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	if err := supervisor.WaitReady(ctx); err != nil {
+	if err = supervisor.WaitReady(ctx); err != nil {
 		t.Fatalf("replacement process did not pass exact readiness: %v", err)
 	}
 	data, err := os.ReadFile(countFile)

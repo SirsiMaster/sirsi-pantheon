@@ -332,7 +332,7 @@ func (m *Manager) startAndVerify(ctx context.Context, target Target, receipt Rec
 		}
 		select {
 		case <-ctx.Done():
-			return m.fail(receipt, "recovery_cancelled", ctx.Err())
+			return m.fail(receipt, "recovery_canceled", ctx.Err())
 		case <-deadline.C:
 			return m.fail(receipt, "readiness_timeout", errors.New("replacement process did not become ready"))
 		case <-ticker.C:

@@ -32,31 +32,31 @@ func TestSignedRuntimeCatalogFailsClosedOnMutationAndWrongKey(t *testing.T) {
 	catalogPath := filepath.Join(root, "runtime-packages.json")
 	signaturePath := catalogPath + ".sig"
 	publicKeyPath := catalogPath + ".pub"
-	if err := os.WriteFile(catalogPath, catalogBytes, 0o600); err != nil {
+	if err = os.WriteFile(catalogPath, catalogBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(signaturePath, []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, catalogBytes))+"\n"), 0o600); err != nil {
+	if err = os.WriteFile(signaturePath, []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, catalogBytes))+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	publicDER, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0o600); err != nil {
+	if err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadSignedRuntimePackageCatalog(catalogPath, signaturePath, publicKeyPath); err != nil {
+	if _, err = LoadSignedRuntimePackageCatalog(catalogPath, signaturePath, publicKeyPath); err != nil {
 		t.Fatal(err)
 	}
 
 	mutated := append(append([]byte(nil), catalogBytes...), '\n')
-	if err := os.WriteFile(catalogPath, mutated, 0o600); err != nil {
+	if err = os.WriteFile(catalogPath, mutated, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadSignedRuntimePackageCatalog(catalogPath, signaturePath, publicKeyPath); err == nil || !strings.Contains(err.Error(), "signature mismatch") {
+	if _, err = LoadSignedRuntimePackageCatalog(catalogPath, signaturePath, publicKeyPath); err == nil || !strings.Contains(err.Error(), "signature mismatch") {
 		t.Fatalf("mutated catalog was admitted: %v", err)
 	}
-	if err := os.WriteFile(catalogPath, catalogBytes, 0o600); err != nil {
+	if err = os.WriteFile(catalogPath, catalogBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	wrongPublic, _, err := ed25519.GenerateKey(rand.Reader)

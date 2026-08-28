@@ -115,7 +115,7 @@ func acquireFile(ctx context.Context, client *http.Client, sourceURL, destinatio
 	}
 	offset := info.Size()
 	if offset < 0 || offset > expected.SizeBytes {
-		if err := file.Truncate(0); err != nil {
+		if err = file.Truncate(0); err != nil {
 			file.Close()
 			return 0, err
 		}

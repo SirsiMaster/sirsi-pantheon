@@ -25,7 +25,7 @@ func TestSignedRuntimeCatalogStoreUpdateRollbackAndRemoval(t *testing.T) {
 	}
 	publicDER, _ := x509.MarshalPKIXPublicKey(publicKey)
 	publicKeyPath := filepath.Join(root, "catalog.pub")
-	if err := os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0o600); err != nil {
+	if err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	writeCatalog := func(id, packageID string) (string, string, string) {
@@ -43,11 +43,11 @@ func TestSignedRuntimeCatalogStoreUpdateRollbackAndRemoval(t *testing.T) {
 		version := hex.EncodeToString(digest[:])
 		catalogPath := filepath.Join(root, id+".json")
 		signaturePath := catalogPath + ".sig"
-		if err := os.WriteFile(catalogPath, data, 0o600); err != nil {
+		if err = os.WriteFile(catalogPath, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		signature := base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, data)) + "\n"
-		if err := os.WriteFile(signaturePath, []byte(signature), 0o600); err != nil {
+		if err = os.WriteFile(signaturePath, []byte(signature), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		return catalogPath, signaturePath, version

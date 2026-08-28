@@ -144,7 +144,7 @@ func AdmitModel(registryPath, catalogEntry, manifestPath string, allowResearch b
 		return ModelAdmission{}, fmt.Errorf("SNE model manifest hash does not match catalog entry %q", catalogEntry)
 	}
 	var manifest admissionManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	if err = json.Unmarshal(data, &manifest); err != nil {
 		return ModelAdmission{}, fmt.Errorf("decode admitted SNE model manifest: %w", err)
 	}
 	if manifest.SchemaVersion != "sne.model-manifest.v0" || manifest.Model.Family != registry.Family || !manifest.Artifacts.CompleteSnapshot {

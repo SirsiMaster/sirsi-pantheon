@@ -98,13 +98,13 @@ func LoadSupervisorProfile(path string) (SupervisorProfile, error) {
 	var profile SupervisorProfile
 	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&profile); err != nil {
+	if err = decoder.Decode(&profile); err != nil {
 		return SupervisorProfile{}, fmt.Errorf("decode SNE supervisor profile: %w", err)
 	}
 	if profile.SchemaVersion != "pantheon.sne-supervisor.v0" || (profile.SNE.Profile != "interactive" && profile.SNE.Profile != "fleet") || profile.SNE.RestartPolicy != "on-failure" {
 		return SupervisorProfile{}, fmt.Errorf("unsupported SNE supervisor profile")
 	}
-	if err := validateSupervisorServingPolicy(profile); err != nil {
+	if err = validateSupervisorServingPolicy(profile); err != nil {
 		return SupervisorProfile{}, err
 	}
 	parsed, err := url.Parse(profile.SNE.Endpoint)
@@ -146,7 +146,7 @@ func NewSupervisor(profile SupervisorProfile, launch LaunchConfig) (*Supervisor,
 		return nil, fmt.Errorf("SNE launch manifest hash mismatch")
 	}
 	var manifest admissionManifest
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+	if err = json.Unmarshal(manifestData, &manifest); err != nil {
 		return nil, fmt.Errorf("decode SNE launch manifest: %w", err)
 	}
 	if manifest.Requirements.MemoryBytes == 0 {
@@ -442,7 +442,7 @@ func (s *Supervisor) WaitReady(ctx context.Context) error {
 		s.mu.Unlock()
 		identity, err := s.client.ReadinessIdentity(timeout)
 		if err == nil {
-			if err := s.validateReadinessIdentity(identity); err != nil {
+			if err = s.validateReadinessIdentity(identity); err != nil {
 				return err
 			}
 			if s.admitReadinessGeneration(probeGeneration) {

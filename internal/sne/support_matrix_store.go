@@ -35,36 +35,36 @@ func InstallSignedSupportMatrix(storeRoot, sourceMatrix, sourceSignature, public
 		return RuntimeCatalogInstallResult{}, fmt.Errorf("invalid SNE support matrix store root")
 	}
 	versionsRoot := filepath.Join(root, supportMatrixVersionsDir)
-	if err := os.MkdirAll(versionsRoot, 0o700); err != nil {
+	if err = os.MkdirAll(versionsRoot, 0o700); err != nil {
 		return RuntimeCatalogInstallResult{}, err
 	}
 	versionRoot := filepath.Join(versionsRoot, version)
-	if _, err := os.Stat(versionRoot); os.IsNotExist(err) {
-		stage, err := os.MkdirTemp(versionsRoot, ".staging-")
-		if err != nil {
-			return RuntimeCatalogInstallResult{}, err
+	if _, statErr := os.Stat(versionRoot); os.IsNotExist(statErr) {
+		stage, stageErr := os.MkdirTemp(versionsRoot, ".staging-")
+		if stageErr != nil {
+			return RuntimeCatalogInstallResult{}, stageErr
 		}
 		defer os.RemoveAll(stage)
-		if err := os.WriteFile(filepath.Join(stage, supportMatrixFile), matrixBytes, 0o600); err != nil {
+		if err = os.WriteFile(filepath.Join(stage, supportMatrixFile), matrixBytes, 0o600); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := os.WriteFile(filepath.Join(stage, supportMatrixSignature), signatureBytes, 0o600); err != nil {
+		if err = os.WriteFile(filepath.Join(stage, supportMatrixSignature), signatureBytes, 0o600); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if _, err := LoadSignedSupportMatrix(filepath.Join(stage, supportMatrixFile), filepath.Join(stage, supportMatrixSignature), publicKeyPath); err != nil {
+		if _, err = LoadSignedSupportMatrix(filepath.Join(stage, supportMatrixFile), filepath.Join(stage, supportMatrixSignature), publicKeyPath); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := syncDirectory(stage); err != nil {
+		if err = syncDirectory(stage); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := os.Rename(stage, versionRoot); err != nil {
+		if err = os.Rename(stage, versionRoot); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := syncDirectory(versionsRoot); err != nil {
+		if err = syncDirectory(versionsRoot); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-	} else if err != nil {
-		return RuntimeCatalogInstallResult{}, err
+	} else if statErr != nil {
+		return RuntimeCatalogInstallResult{}, statErr
 	}
 	if _, err := LoadSignedSupportMatrix(filepath.Join(versionRoot, supportMatrixFile), filepath.Join(versionRoot, supportMatrixSignature), publicKeyPath); err != nil {
 		return RuntimeCatalogInstallResult{}, err

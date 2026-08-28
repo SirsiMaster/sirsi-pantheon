@@ -175,14 +175,14 @@ func TestDarwinNewManagerResumesDurableStoppedReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Stop(context.Background(), target, initial.Process.Pid); err != nil {
+	if err = driver.Stop(context.Background(), target, initial.Process.Pid); err != nil {
 		t.Fatal(err)
 	}
 	_ = initial.Wait()
 	waitForNoPID(t, driver, target)
 	store := FileStore{Root: filepath.Join(root, "receipts")}
 	now := time.Now().UTC()
-	if err := store.Save(Receipt{Schema: "pantheon.app-recovery.v1", TargetID: target.ID, Kind: target.Kind, Mode: ModeRestore, Phase: PhaseStopped, OldPID: initial.Process.Pid, Snapshot: snapshot, StartedAt: now, UpdatedAt: now}); err != nil {
+	if err = store.Save(Receipt{Schema: "pantheon.app-recovery.v1", TargetID: target.ID, Kind: target.Kind, Mode: ModeRestore, Phase: PhaseStopped, OldPID: initial.Process.Pid, Snapshot: snapshot, StartedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -593,10 +593,10 @@ func (manager *SNELifecycleManager) resolveLaunch(modelID, runtimeID string, all
 	if err != nil {
 		return profile, sne.LaunchConfig{}, err
 	}
-	if err := manager.packageRootAllowed(packaged.PackageRoot); err != nil {
+	if err = manager.packageRootAllowed(packaged.PackageRoot); err != nil {
 		return profile, sne.LaunchConfig{}, err
 	}
-	if err := sne.VerifyRuntimePackageBoundary(packaged); err != nil {
+	if err = sne.VerifyRuntimePackageBoundary(packaged); err != nil {
 		return profile, sne.LaunchConfig{}, fmt.Errorf("SNE runtime package is not self-contained: %w", err)
 	}
 	manifestPath := filepath.Join(packaged.PackageRoot, "manifests", "model.json")
@@ -640,7 +640,7 @@ func (manager *SNELifecycleManager) resolveLaunch(modelID, runtimeID string, all
 		required = append(required, assistantSafetensors)
 	}
 	for _, path := range required {
-		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		if info, statErr := os.Stat(path); statErr != nil || !info.Mode().IsRegular() {
 			return profile, sne.LaunchConfig{}, fmt.Errorf("required SNE launch artifact is unavailable: %s", path)
 		}
 	}
@@ -654,8 +654,8 @@ func (manager *SNELifecycleManager) resolveLaunch(modelID, runtimeID string, all
 		{"JACCL dylib", jacclDylib, packaged.JACCLSHA256},
 	}
 	for _, identity := range identities {
-		digest, err := sha256File(identity.path)
-		if err != nil || digest != identity.expected {
+		digest, digestErr := sha256File(identity.path)
+		if digestErr != nil || digest != identity.expected {
 			return profile, sne.LaunchConfig{}, fmt.Errorf("SNE %s identity mismatch", identity.label)
 		}
 	}
@@ -722,7 +722,7 @@ func resolveAssistantSafetensors(manifestPath, checkpointDir string) (string, er
 			} `json:"integrity"`
 		} `json:"artifacts"`
 	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	if err = json.Unmarshal(data, &manifest); err != nil {
 		return "", fmt.Errorf("decode SNE manifest assistant identity: %w", err)
 	}
 	var assistantPath, assistantSHA string

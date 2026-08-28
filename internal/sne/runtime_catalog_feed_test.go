@@ -26,7 +26,7 @@ func TestSignedRuntimeCatalogFeedDownloadsAndInstallsExactVersion(t *testing.T) 
 	}
 	publicDER, _ := x509.MarshalPKIXPublicKey(publicKey)
 	publicKeyPath := filepath.Join(root, "catalog.pub")
-	if err := os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0o600); err != nil {
+	if err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	catalogBytes, _ := json.Marshal(RuntimePackageCatalog{SchemaVersion: RuntimePackageCatalogSchema, CatalogID: "remote-v1", Entries: []RuntimePackage{{

@@ -120,7 +120,7 @@ func TestRuntimePackageCatalogRequiresExplicitVariantSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loaded.Resolve("gemma-test"); err == nil || !strings.Contains(err.Error(), "runtime_id is required") {
+	if _, err = loaded.Resolve("gemma-test"); err == nil || !strings.Contains(err.Error(), "runtime_id is required") {
 		t.Fatalf("implicit ambiguous selection did not fail closed: %v", err)
 	}
 	selected, err := loaded.ResolveRuntime("gemma-test", "candidate-v26")

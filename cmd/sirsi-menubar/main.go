@@ -697,14 +697,6 @@ func formatAge(age time.Duration) string {
 
 // ── TUI Bridge ─────────────────────────────────────────────────────────
 
-// spawnTUIWindow opens Terminal.app (or iTerm2) running `sirsi` which
-// launches the BubbleTea TUI. Uses the same AppleScript pattern as
-// ra.SpawnWindow but without the agent machinery.
-// spawnTUIWindow opens the TUI with no pre-loaded command.
-func spawnTUIWindow() {
-	spawnTUIWithCommand("")
-}
-
 // spawnTUIWithCommand opens or activates a Sirsi terminal window and runs a
 // concrete CLI command. The older ADR-016 bridge expected a `sirsi pantheon`
 // TUI command, but the active CLI surface exposes direct commands instead.

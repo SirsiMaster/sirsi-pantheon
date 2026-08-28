@@ -88,7 +88,7 @@ func TestSNELifecycleTransitions(t *testing.T) {
 	if state = manager.Snapshot(); state.State != "ready" || state.RuntimeID != "candidate-v26" || !fake.started || !gotAllowResearch || gotRuntimeID != "candidate-v26" {
 		t.Fatalf("ready state=%+v started=%v", state, fake.started)
 	}
-	if _, err := manager.RollbackCatalog(strings.Repeat("a", 64)); err == nil || !strings.Contains(err.Error(), "stop SNE") {
+	if _, err = manager.RollbackCatalog(strings.Repeat("a", 64)); err == nil || !strings.Contains(err.Error(), "stop SNE") {
 		t.Fatalf("catalog rollback while ready was not rejected: %v", err)
 	}
 	state, err = manager.Stop(context.Background())
@@ -252,7 +252,7 @@ func TestSNELifecycleStopCancelsLockedSessionRetry(t *testing.T) {
 	unlocked.Store(true)
 	time.Sleep(10 * time.Millisecond)
 	if state := manager.Snapshot(); state.State != "stopped" || starts.Load() != 1 {
-		t.Fatalf("cancelled unlock retry state=%+v starts=%d", state, starts.Load())
+		t.Fatalf("canceled unlock retry state=%+v starts=%d", state, starts.Load())
 	}
 }
 

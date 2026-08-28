@@ -124,14 +124,14 @@ func runSNESupportBundle(ctx context.Context, binary, verifier string) ([]byte, 
 	}
 	defer os.RemoveAll(temp)
 	output := filepath.Join(temp, "sirsi-sne-support.zip")
-	if err := exec.CommandContext(ctx, binary, output).Run(); err != nil {
+	if err = exec.CommandContext(ctx, binary, output).Run(); err != nil {
 		return nil, fmt.Errorf("packaged SNE support export failed")
 	}
 	info, err := os.Stat(output)
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 4<<20 {
 		return nil, fmt.Errorf("packaged SNE support archive is invalid")
 	}
-	if err := exec.CommandContext(ctx, verifier, output).Run(); err != nil {
+	if err = exec.CommandContext(ctx, verifier, output).Run(); err != nil {
 		return nil, fmt.Errorf("packaged SNE support archive failed privacy verification")
 	}
 	data, err := os.ReadFile(output)

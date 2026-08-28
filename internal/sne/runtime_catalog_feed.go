@@ -62,10 +62,10 @@ func FetchAndInstallRuntimeCatalogUpdate(ctx context.Context, client *http.Clien
 	defer os.RemoveAll(temporary)
 	catalogPath := filepath.Join(temporary, "runtime-packages.json")
 	catalogSignaturePath := catalogPath + ".sig"
-	if err := downloadHTTPSFile(ctx, client, entry.CatalogURL, catalogPath, maxRuntimeCatalogBytes); err != nil {
+	if err = downloadHTTPSFile(ctx, client, entry.CatalogURL, catalogPath, maxRuntimeCatalogBytes); err != nil {
 		return RuntimeCatalogInstallResult{}, fmt.Errorf("download SNE runtime catalog: %w", err)
 	}
-	if err := downloadHTTPSFile(ctx, client, entry.SignatureURL, catalogSignaturePath, maxRuntimeCatalogSignatureBytes); err != nil {
+	if err = downloadHTTPSFile(ctx, client, entry.SignatureURL, catalogSignaturePath, maxRuntimeCatalogSignatureBytes); err != nil {
 		return RuntimeCatalogInstallResult{}, fmt.Errorf("download SNE runtime catalog signature: %w", err)
 	}
 	data, err := os.ReadFile(catalogPath)

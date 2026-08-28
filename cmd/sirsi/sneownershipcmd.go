@@ -166,7 +166,7 @@ func repairLegacySNEOwnership() (sneOwnershipRepairReceipt, error) {
 	}
 	now := sneOwnershipNow()
 	receiptDir := filepath.Join(home, "Library", "Application Support", "Sirsi", "Pantheon", "recovery-receipts", now.Format("20060102T150405Z")+"-sne-ownership-repair")
-	if err := os.MkdirAll(receiptDir, 0o700); err != nil {
+	if err = os.MkdirAll(receiptDir, 0o700); err != nil {
 		return sneOwnershipRepairReceipt{}, fmt.Errorf("create recovery receipt: %w", err)
 	}
 	receipt := sneOwnershipRepairReceipt{
@@ -191,7 +191,7 @@ func repairLegacySNEOwnership() (sneOwnershipRepairReceipt, error) {
 			return receipt, fmt.Errorf("stage legacy plist %s: %w", record.Label, writeErr)
 		}
 	}
-	if err := writeOwnershipReceipt(filepath.Join(receiptDir, "receipt.staged.json"), receipt); err != nil {
+	if err = writeOwnershipReceipt(filepath.Join(receiptDir, "receipt.staged.json"), receipt); err != nil {
 		return receipt, fmt.Errorf("write staged receipt: %w", err)
 	}
 
@@ -208,14 +208,14 @@ func repairLegacySNEOwnership() (sneOwnershipRepairReceipt, error) {
 	}
 	for _, record := range legacy {
 		_ = sneOwnershipLaunchctl("bootout", domain+"/"+record.Label)
-		if err := sneOwnershipLaunchctl("disable", domain+"/"+record.Label); err != nil {
+		if err = sneOwnershipLaunchctl("disable", domain+"/"+record.Label); err != nil {
 			_ = sneOwnershipLaunchctl("enable", domain+"/"+record.Label)
 			_ = sneOwnershipLaunchctl("bootstrap", domain, record.Plist)
 			rollback()
 			return receipt, fmt.Errorf("disable legacy SNE owner %s: %w", record.Label, err)
 		}
 		retired := filepath.Join(receiptDir, record.Label+".plist.retired")
-		if err := os.Rename(record.Plist, retired); err != nil {
+		if err = os.Rename(record.Plist, retired); err != nil {
 			_ = sneOwnershipLaunchctl("enable", domain+"/"+record.Label)
 			rollback()
 			return receipt, fmt.Errorf("retire legacy SNE owner %s: %w", record.Label, err)

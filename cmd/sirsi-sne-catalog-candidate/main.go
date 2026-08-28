@@ -176,7 +176,7 @@ func buildEntry(packageRoot, receiptPath, pointerPath, runtimeID string, verify 
 	}
 
 	var receipt admissionReceipt
-	if err := loadStrict(receiptPath, &receipt); err != nil {
+	if err = loadStrict(receiptPath, &receipt); err != nil {
 		return sne.RuntimePackage{}, fmt.Errorf("admission receipt: %w", err)
 	}
 	if receipt.Status != "accepted" {
@@ -191,7 +191,7 @@ func buildEntry(packageRoot, receiptPath, pointerPath, runtimeID string, verify 
 		if receipt.Claim != nil || receipt.ClaimBoundary == nil || receipt.ClaimBoundary.PerformancePromoted || !receipt.ClaimBoundary.RuntimeReadinessOnly {
 			return sne.RuntimePackage{}, errors.New("API4096 v3 receipt has an invalid claim boundary")
 		}
-		if _, err := time.Parse(time.RFC3339Nano, receipt.CreatedAt); err != nil {
+		if _, err = time.Parse(time.RFC3339Nano, receipt.CreatedAt); err != nil {
 			return sne.RuntimePackage{}, errors.New("API4096 v3 receipt has an invalid creation time")
 		}
 		if receipt.Execution.Mode != "mtp" || receipt.Execution.CacheTopology == "" || receipt.Execution.ServingCacheCapacity < 4096 {
@@ -202,8 +202,8 @@ func buildEntry(packageRoot, receiptPath, pointerPath, runtimeID string, verify 
 			if !ok || !filepath.IsAbs(reference.Path) || len(reference.SHA256) != 64 {
 				return sne.RuntimePackage{}, fmt.Errorf("API4096 v3 receipt evidence %s is incomplete", name)
 			}
-			digest, err := digestFile(reference.Path)
-			if err != nil || digest != reference.SHA256 {
+			digest, digestErr := digestFile(reference.Path)
+			if digestErr != nil || digest != reference.SHA256 {
 				return sne.RuntimePackage{}, fmt.Errorf("API4096 v3 receipt evidence %s hash mismatch", name)
 			}
 		}
@@ -221,7 +221,7 @@ func buildEntry(packageRoot, receiptPath, pointerPath, runtimeID string, verify 
 		return sne.RuntimePackage{}, fmt.Errorf("product parent: %w", err)
 	}
 	var pointer promotionPointer
-	if err := loadStrict(pointerPath, &pointer); err != nil {
+	if err = loadStrict(pointerPath, &pointer); err != nil {
 		return sne.RuntimePackage{}, fmt.Errorf("promotion pointer: %w", err)
 	}
 	if pointer.Schema != "sne.active-launch-candidate.v1" {

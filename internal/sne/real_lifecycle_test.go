@@ -119,7 +119,7 @@ func TestRealSupervisorExactReadinessIdentity(t *testing.T) {
 			ServingCacheCapacity int `json:"serving_cache_capacity"`
 		} `json:"qualification"`
 	}
-	if err := json.Unmarshal(manifestData, &manifest); err != nil || manifest.Model.ID == "" {
+	if err = json.Unmarshal(manifestData, &manifest); err != nil || manifest.Model.ID == "" {
 		t.Fatalf("decode manifest identity: %v", err)
 	}
 	manifestDigest := sha256.Sum256(manifestData)
@@ -140,8 +140,8 @@ func TestRealSupervisorExactReadinessIdentity(t *testing.T) {
 		ModelManifestSHA256: hex.EncodeToString(manifestDigest[:]), StartupTimeout: 5 * time.Minute,
 	}
 	if expected := os.Getenv("SNE_REAL_PREFIX_SESSIONS_MAXIMUM"); expected != "" {
-		maximum, err := strconv.Atoi(expected)
-		if err != nil || maximum < 1 {
+		maximum, parseErr := strconv.Atoi(expected)
+		if parseErr != nil || maximum < 1 {
 			t.Fatalf("invalid SNE_REAL_PREFIX_SESSIONS_MAXIMUM=%q", expected)
 		}
 		launch.ExpectedCacheTopology = manifest.Architecture.CacheTopology
@@ -149,8 +149,8 @@ func TestRealSupervisorExactReadinessIdentity(t *testing.T) {
 		launch.ExpectedPrefixSessionsMaximum = maximum
 	}
 	if required := os.Getenv("SNE_REAL_REQUIRED_MEMORY_BYTES"); required != "" {
-		bytes, err := strconv.ParseUint(required, 10, 64)
-		if err != nil || bytes < 1 {
+		bytes, parseErr := strconv.ParseUint(required, 10, 64)
+		if parseErr != nil || bytes < 1 {
 			t.Fatalf("invalid SNE_REAL_REQUIRED_MEMORY_BYTES=%q", required)
 		}
 		launch.RequiredMemoryBytes = bytes
@@ -161,24 +161,24 @@ func TestRealSupervisorExactReadinessIdentity(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := supervisor.Start(ctx); err != nil {
+	if err = supervisor.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	defer supervisor.Stop(context.Background())
-	if err := supervisor.WaitReady(ctx); err != nil {
+	if err = supervisor.WaitReady(ctx); err != nil {
 		t.Fatal(err)
 	}
 	identity, err := supervisor.client.ReadinessIdentity(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.validateReadinessIdentity(identity); err != nil {
+	if err = supervisor.validateReadinessIdentity(identity); err != nil {
 		t.Fatal(err)
 	}
 	firstPID := supervisorPID(supervisor)
 	secondPID := 0
 	if os.Getenv("SNE_REAL_EXACT_RESTART") == "1" {
-		if err := supervisor.Restart(ctx); err != nil {
+		if err = supervisor.Restart(ctx); err != nil {
 			t.Fatal(err)
 		}
 		secondPID = supervisorPID(supervisor)

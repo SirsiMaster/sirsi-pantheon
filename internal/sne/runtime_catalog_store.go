@@ -27,7 +27,7 @@ func InstallSignedRuntimeCatalog(storeRoot, sourceCatalog, sourceSignature, publ
 	if err != nil {
 		return RuntimeCatalogInstallResult{}, err
 	}
-	if _, err := catalog.MaterializePackageRoots(packagesRoot); err != nil {
+	if _, err = catalog.MaterializePackageRoots(packagesRoot); err != nil {
 		return RuntimeCatalogInstallResult{}, err
 	}
 	catalogBytes, err := os.ReadFile(sourceCatalog)
@@ -45,32 +45,32 @@ func InstallSignedRuntimeCatalog(storeRoot, sourceCatalog, sourceSignature, publ
 		return RuntimeCatalogInstallResult{}, err
 	}
 	versionRoot := filepath.Join(versionsRoot, version)
-	if _, err := os.Stat(versionRoot); os.IsNotExist(err) {
-		staging, err := os.MkdirTemp(versionsRoot, ".staging-")
-		if err != nil {
-			return RuntimeCatalogInstallResult{}, err
+	if _, statErr := os.Stat(versionRoot); os.IsNotExist(statErr) {
+		staging, stageErr := os.MkdirTemp(versionsRoot, ".staging-")
+		if stageErr != nil {
+			return RuntimeCatalogInstallResult{}, stageErr
 		}
 		defer os.RemoveAll(staging)
-		if err := os.WriteFile(filepath.Join(staging, runtimeCatalogFile), catalogBytes, 0o600); err != nil {
+		if err = os.WriteFile(filepath.Join(staging, runtimeCatalogFile), catalogBytes, 0o600); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := os.WriteFile(filepath.Join(staging, runtimeCatalogSignature), signatureBytes, 0o600); err != nil {
+		if err = os.WriteFile(filepath.Join(staging, runtimeCatalogSignature), signatureBytes, 0o600); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := VerifyRuntimeCatalogSignature(filepath.Join(staging, runtimeCatalogFile), filepath.Join(staging, runtimeCatalogSignature), publicKeyPath); err != nil {
+		if err = VerifyRuntimeCatalogSignature(filepath.Join(staging, runtimeCatalogFile), filepath.Join(staging, runtimeCatalogSignature), publicKeyPath); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := syncDirectory(staging); err != nil {
+		if err = syncDirectory(staging); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := os.Rename(staging, versionRoot); err != nil {
+		if err = os.Rename(staging, versionRoot); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-		if err := syncDirectory(versionsRoot); err != nil {
+		if err = syncDirectory(versionsRoot); err != nil {
 			return RuntimeCatalogInstallResult{}, err
 		}
-	} else if err != nil {
-		return RuntimeCatalogInstallResult{}, err
+	} else if statErr != nil {
+		return RuntimeCatalogInstallResult{}, statErr
 	}
 	if err := verifyStoredRuntimeCatalog(versionRoot, publicKeyPath, packagesRoot, version); err != nil {
 		return RuntimeCatalogInstallResult{}, err
