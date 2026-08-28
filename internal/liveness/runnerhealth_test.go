@@ -2,6 +2,7 @@ package liveness
 
 import (
 	"errors"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,6 +81,9 @@ func TestDefaultDiscoverRunnersParse(t *testing.T) {
 }
 
 func TestCheckRunnerHealth(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd runner discovery is macOS-specific")
+	}
 	origDiscover := getDiscoverRunnersFn()
 	origGH := getGHRunnersFn()
 	origActions := getActionsOperationalFn()
@@ -244,6 +248,9 @@ func TestCheckRunnerHealth(t *testing.T) {
 }
 
 func TestProbeRunnerWedge(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd runner discovery is macOS-specific")
+	}
 	origDiscover := getDiscoverRunnersFn()
 	origGH := getGHRunnersFn()
 	origActions := getActionsOperationalFn()

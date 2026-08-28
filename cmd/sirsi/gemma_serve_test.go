@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,6 +74,9 @@ func TestGemmaBrokerQuarantineSurvivesSelfHealing(t *testing.T) {
 }
 
 func TestGemmaBrokerRestoreIsExplicitAndVerified(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd installation state is macOS-specific")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.MkdirAll(filepath.Dir(setup.GemmaBrokerPlistPath()), 0o755); err != nil {
