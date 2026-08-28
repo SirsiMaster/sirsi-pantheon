@@ -106,6 +106,12 @@ func TestInitialize(t *testing.T) {
 	if result.ServerInfo.Name != ServerName {
 		t.Errorf("ServerInfo.Name = %q, want %q", result.ServerInfo.Name, ServerName)
 	}
+	if result.ServerInfo.Version != ServerVersion {
+		t.Errorf("ServerInfo.Version = %q, want %q", result.ServerInfo.Version, ServerVersion)
+	}
+	if strings.Contains(strings.ToLower(result.Instructions), "anubis") {
+		t.Errorf("Instructions retain retired product identity: %q", result.Instructions)
+	}
 	if result.Capabilities.Tools == nil {
 		t.Error("Server should declare tools capability")
 	}

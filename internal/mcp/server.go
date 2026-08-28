@@ -1,6 +1,6 @@
-// Package mcp implements a Model Context Protocol (MCP) server for Anubis.
+// Package mcp implements Pantheon's Model Context Protocol (MCP) server.
 // MCP allows AI coding assistants (Claude, Cursor, Windsurf, Codex) to use
-// Anubis as a context sanitizer — scanning workspaces before indexing.
+// Pantheon's local, receipt-aware operational read model.
 //
 // Protocol: JSON-RPC 2.0 over stdio (stdin/stdout).
 // Spec: https://modelcontextprotocol.io/specification/2025-03-26
@@ -17,6 +17,8 @@ import (
 	"log"
 	"os"
 	"sync"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
 const (
@@ -26,9 +28,13 @@ const (
 	// ServerName is our MCP server identity.
 	ServerName = "sirsi-pantheon"
 
-	// ServerVersion is the current Pantheon version.
-	ServerVersion = "0.4.0-alpha"
 )
+
+// ServerVersion follows the binary's build-stamped product version. It is a
+// variable rather than a constant because release builds set version.Version
+// with ldflags; every stdio MCP handshake must identify the same product byte
+// as `sirsi version`.
+var ServerVersion = version.Version
 
 // ---- JSON-RPC 2.0 Types ----
 
@@ -194,7 +200,7 @@ type Server struct {
 	resHandlers  map[string]ResourceHandler
 	logger       *log.Logger
 	// Identity advertised in the initialize handshake. Empty fields fall
-	// back to the package ServerName/ServerVersion constants (Anubis).
+	// back to Pantheon's package-level identity.
 	name         string
 	version      string
 	instructions string
@@ -206,12 +212,13 @@ type ToolHandler func(args map[string]interface{}) (*ToolResult, error)
 // ResourceHandler is a function that provides resource content.
 type ResourceHandler func() (*ResourceContent, error)
 
-// NewServer creates a new MCP server with the standard Anubis tools and resources.
+// NewServer creates a new MCP server with Pantheon's standard local tools and
+// resources. The server identity follows the build-stamped product version.
 func NewServer() *Server {
 	s := &Server{
 		toolHandlers: make(map[string]ToolHandler),
 		resHandlers:  make(map[string]ResourceHandler),
-		logger:       log.New(os.Stderr, "[anubis-mcp] ", log.LstdFlags),
+		logger:       log.New(os.Stderr, "[pantheon-mcp] ", log.LstdFlags),
 	}
 
 	// Register tools
@@ -255,7 +262,7 @@ func (s *Server) RegisterResource(resource Resource, handler ResourceHandler) {
 // Run starts the MCP server, reading from stdin and writing to stdout.
 // This blocks until stdin is closed or an error occurs.
 func (s *Server) Run() error {
-	s.logger.Println("𓁢 Anubis MCP server starting (stdio mode)")
+	s.logger.Println("Pantheon MCP server starting (stdio mode)")
 
 	reader := bufio.NewReader(os.Stdin)
 	writer := os.Stdout
@@ -350,11 +357,10 @@ func (s *Server) handleInitialize(req *Request) *Response {
 	}
 	instructions := s.instructions
 	if instructions == "" {
-		instructions = "𓁢 Sirsi Anubis — Context Sanitizer for AI Development. " +
-			"Use scan_workspace to check a project directory for waste, " +
-			"ghost_report to find remnants of uninstalled apps, and " +
-			"health_check for a quick system health summary. " +
-			"All operations are local — no data leaves this machine."
+		instructions = "Sirsi Pantheon — local infrastructure hygiene and operational context. " +
+			"Use the available tools and resources to inspect local workspace, " +
+			"system-health, and receipt-backed Pantheon state. All operations are local; " +
+			"no data leaves this machine without an explicit owner action."
 	}
 
 	result := InitializeResult{

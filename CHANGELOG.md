@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(mcp): bind stdio identity to the stamped Pantheon product version**.
+  MCP no longer advertises the retired Anubis copy or a hard-coded alpha
+  version; its default handshake now matches `sirsi version`.
 - **docs(evidence): record the v0.23.14 native bundle bytes and unsigned
   boundary**. The local DMG proves the Swift app plus embedded Go authority;
   it is not a signed or published artifact.
