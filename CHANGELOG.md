@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(build): retain a footprint fallback for cgo-disabled cross-target builds**.
+  Darwin physical-footprint probes are now selected only for `darwin && cgo`;
+  Linux and cgo-disabled targets use the explicit unavailable sentinel, allowing
+  GoReleaser cross-builds to compile without changing Darwin runtime behavior.
+  The release identity advances to `0.23.13-beta`.
 - **fix(release): require notarization before promoting a distributable DMG**.
   Release builds now fail closed when Developer ID signing succeeds but
   notarization/stapling credentials or proof are absent; signing secrets are
