@@ -39,6 +39,27 @@ func TestCLIPrefixCachePressureReadsSharedLoopbackView(t *testing.T) {
 	}
 }
 
+func TestCLIPrefixCachePressureReadsEvidenceProjection(t *testing.T) {
+	oldBase, oldClient := snePressureBaseURL, snePressureHTTPClient
+	t.Cleanup(func() { snePressureBaseURL, snePressureHTTPClient = oldBase, oldClient })
+	fixture := dashboard.PrefixCachePressureEvidenceView{State: "unavailable", EvidenceType: "execution", Identity: "pressure-test"}
+	snePressureHTTPClient = &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodGet || request.URL.Path != "/api/sne/prefix-cache-pressure/receipts/pressure-test" {
+			return &http.Response{StatusCode: http.StatusForbidden, Body: io.NopCloser(bytes.NewBufferString("wrong request")), Header: make(http.Header)}, nil
+		}
+		body, err := json.Marshal(fixture)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, err
+	})}
+	snePressureBaseURL = "http://127.0.0.1:9119"
+	view, err := requestPrefixCachePressureEvidence("receipts/pressure-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State != fixture.State || view.EvidenceType != fixture.EvidenceType || view.Identity != fixture.Identity || len(view.Receipt) != 0 {
+		t.Fatalf("view=%+v want=%+v", view, fixture)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
