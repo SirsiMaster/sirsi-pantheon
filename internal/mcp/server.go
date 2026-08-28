@@ -27,7 +27,6 @@ const (
 
 	// ServerName is our MCP server identity.
 	ServerName = "sirsi-pantheon"
-
 )
 
 // ServerVersion follows the binary's build-stamped product version. It is a
