@@ -102,6 +102,7 @@ type Server struct {
 	fleet         *FleetTracker
 	sneJobs       *SNEInstallManager
 	sneLifecycle  *SNELifecycleManager
+	snePressure   *prefixCachePressureAuthorizationManager
 	appRecovery   *apprecovery.Manager
 	sneAccess     *sneLocalAccess
 	sneAccessPath string
@@ -119,6 +120,10 @@ func New(cfg Config) *Server {
 	}
 	if cfg.SNELifecycle != nil {
 		s.sneLifecycle = NewSNELifecycleManager(*cfg.SNELifecycle)
+	}
+	s.snePressure = newPrefixCachePressureAuthorizationManager(s.confirm)
+	if s.sneLifecycle != nil {
+		s.snePressure.containment = func() string { return s.sneLifecycle.Snapshot().State }
 	}
 
 	// Initialize runner if we have both an event buffer and a binary path.
@@ -182,6 +187,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/sne/start", s.secureSNERoute(true, s.apiSNEStart))
 	mux.HandleFunc("/api/sne/stop", s.secureSNERoute(true, s.apiSNEStop))
 	mux.HandleFunc("/api/sne/lifecycle", s.secureSNERoute(false, s.apiSNELifecycle))
+	mux.HandleFunc("/api/sne/prefix-cache-pressure", s.secureSNERoute(true, s.apiSNEPrefixCachePressure))
 	mux.HandleFunc("/api/sne/catalog/rollback", s.secureSNERoute(true, s.apiSNECatalogRollback))
 	mux.HandleFunc("/api/sne/catalog/remove", s.secureSNERoute(true, s.apiSNECatalogRemove))
 	mux.HandleFunc("/api/sne/catalog/updates", s.secureSNERoute(false, s.apiSNECatalogUpdates))

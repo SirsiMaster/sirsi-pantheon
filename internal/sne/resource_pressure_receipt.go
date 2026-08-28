@@ -36,7 +36,23 @@ type PrefixCachePressureDecisionBinding struct {
 	ObservationSHA256 string `json:"observation_sha256"`
 }
 
-const PrefixCachePressureReceiptSchema = "pantheon.sne-prefix-cache-pressure-receipt.v1"
+// PrefixCachePressureAuthorizationReceipt is Pantheon's explicit owner-action
+// evidence. It is not an SNE policy decision or permission to start a model.
+type PrefixCachePressureAuthorizationReceipt struct {
+	Schema         string `json:"schema"`
+	Operation      string `json:"operation"`
+	State          string `json:"state"`
+	HostID         string `json:"host_id"`
+	RequestID      string `json:"request_id"`
+	ArtifactSHA256 string `json:"artifact_sha256"`
+	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+}
+
+const (
+	PrefixCachePressureReceiptSchema              = "pantheon.sne-prefix-cache-pressure-receipt.v1"
+	PrefixCachePressureAuthorizationReceiptSchema = "pantheon.sne-prefix-cache-pressure-authorization.v1"
+	PrefixCachePressureOperation                  = "prefix-cache-pressure"
+)
 
 func NewPrefixCachePressureReceipt(host string, a ResourceAdmission, now time.Time) (PrefixCachePressureReceipt, error) {
 	if strings.TrimSpace(host) == "" || now.IsZero() {
@@ -83,6 +99,39 @@ func ValidatePrefixCachePressureDecisionBinding(r PrefixCachePressureReceipt, d 
 	}
 	if strings.TrimSpace(d.Schema) == "" || strings.TrimSpace(d.Action) == "" || d.ObservationSHA256 != r.ObservationSHA256 {
 		return fmt.Errorf("prefix-cache pressure decision is not bound to the measured observation")
+	}
+	return nil
+}
+
+// IssuePrefixCachePressureAuthorizationReceipt creates the only Pantheon
+// authorization value SNE may consume. The caller must have completed a
+// visible owner confirmation before calling this function.
+func IssuePrefixCachePressureAuthorizationReceipt(receipt PrefixCachePressureReceipt, hostID string, expiresAt time.Time, now time.Time) (PrefixCachePressureAuthorizationReceipt, error) {
+	if err := ValidatePrefixCachePressureReceiptFor(receipt, hostID, now); err != nil {
+		return PrefixCachePressureAuthorizationReceipt{}, err
+	}
+	if expiresAt.IsZero() || expiresAt.UTC().Unix() > receipt.Observation.ExpiresAtUnix || expiresAt.UTC().Unix() <= now.UTC().Unix() {
+		return PrefixCachePressureAuthorizationReceipt{}, fmt.Errorf("prefix-cache pressure authorization expiry is invalid")
+	}
+	return PrefixCachePressureAuthorizationReceipt{
+		Schema:         PrefixCachePressureAuthorizationReceiptSchema,
+		Operation:      PrefixCachePressureOperation,
+		State:          "accepted",
+		HostID:         hostID,
+		RequestID:      receipt.Observation.RequestID,
+		ArtifactSHA256: receipt.ObservationSHA256,
+		ExpiresAtUnix:  expiresAt.UTC().Unix(),
+	}, nil
+}
+
+// ValidatePrefixCachePressureAuthorizationReceiptFor fails closed before SNE
+// calculates or executes any cache policy.
+func ValidatePrefixCachePressureAuthorizationReceiptFor(receipt PrefixCachePressureReceipt, authorization PrefixCachePressureAuthorizationReceipt, hostID string, now time.Time) error {
+	if err := ValidatePrefixCachePressureReceiptFor(receipt, hostID, now); err != nil {
+		return err
+	}
+	if authorization.Schema != PrefixCachePressureAuthorizationReceiptSchema || authorization.Operation != PrefixCachePressureOperation || authorization.State != "accepted" || authorization.HostID != hostID || authorization.RequestID != receipt.Observation.RequestID || authorization.ArtifactSHA256 != receipt.ObservationSHA256 || authorization.ExpiresAtUnix <= now.UTC().Unix() || authorization.ExpiresAtUnix > receipt.Observation.ExpiresAtUnix {
+		return fmt.Errorf("prefix-cache pressure authorization is invalid or does not bind the observation")
 	}
 	return nil
 }

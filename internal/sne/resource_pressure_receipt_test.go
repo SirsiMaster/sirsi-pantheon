@@ -56,3 +56,39 @@ func TestPrefixCachePressureReceiptFailsClosed(t *testing.T) {
 		t.Fatal("accepted unbound decision")
 	}
 }
+
+func TestPrefixCachePressureAuthorizationBindsOwnerActionToObservation(t *testing.T) {
+	now := time.Unix(1_788_000_000, 0).UTC()
+	receipt, err := NewPrefixCachePressureReceipt("m5", ResourceAdmission{
+		TotalRAMBytes: 48 << 30, AvailableRAMBytes: 20 << 30,
+		SwapLimitBytes: 3 << 30, Pressure: "warning", PressureSource: "host_statistics64",
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorization, err := IssuePrefixCachePressureAuthorizationReceipt(receipt, "m5", now.Add(time.Minute), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidatePrefixCachePressureAuthorizationReceiptFor(receipt, authorization, "m5", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*PrefixCachePressureAuthorizationReceipt){
+		"operation": func(value *PrefixCachePressureAuthorizationReceipt) { value.Operation = "start" },
+		"host":      func(value *PrefixCachePressureAuthorizationReceipt) { value.HostID = "m1" },
+		"request":   func(value *PrefixCachePressureAuthorizationReceipt) { value.RequestID = "other-request" },
+		"artifact":  func(value *PrefixCachePressureAuthorizationReceipt) { value.ArtifactSHA256 = strings.Repeat("0", 64) },
+		"expired":   func(value *PrefixCachePressureAuthorizationReceipt) { value.ExpiresAtUnix = now.Unix() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := authorization
+			mutate(&candidate)
+			if err := ValidatePrefixCachePressureAuthorizationReceiptFor(receipt, candidate, "m5", now.Add(time.Second)); err == nil {
+				t.Fatal("accepted invalid authorization")
+			}
+		})
+	}
+	if _, err := IssuePrefixCachePressureAuthorizationReceipt(receipt, "m5", now.Add(301*time.Second), now); err == nil {
+		t.Fatal("issued authorization after observation expiry")
+	}
+}
