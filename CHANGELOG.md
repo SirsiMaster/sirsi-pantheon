@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **docs(evidence): record a bounded v0.23.14 binary-footprint measurement**.
+  The stripped stamped CLI is 18 MiB; unsigned packaging and lifecycle proof
+  remain explicitly open.
 - **refactor(ra): remove Python from default fleet orchestration**. Health,
   test, lint, nightly, and recorded fleet paths use the Go-native executor;
   task and broadcast require an explicit fail-closed developer provider.
