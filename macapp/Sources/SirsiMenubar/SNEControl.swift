@@ -465,7 +465,7 @@ enum SNEControlError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "Pantheon returned an invalid local response."
-        case .capabilityUnavailable: return "Pantheon's private SNE control capability is unavailable or insecure. Restart Pantheon and retry."
+        case .capabilityUnavailable: return "Pantheon's private SNE control capability is unavailable or insecure. No SNE state changed; reopen this control after the required owner action."
         case .server(let message): return message
         }
     }

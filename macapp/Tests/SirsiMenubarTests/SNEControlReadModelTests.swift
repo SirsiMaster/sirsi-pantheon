@@ -66,6 +66,14 @@ final class SNEControlReadModelTests: XCTestCase {
         XCTAssertFalse(state.lifecycleToolsReady)
         XCTAssertEqual(state.lifecycleToolsStatus, "Session required")
     }
+
+    func testUnavailableCapabilityDoesNotInstructAServiceRestart() {
+        let message = SNEControlError.capabilityUnavailable.localizedDescription
+
+        XCTAssertTrue(message.contains("No SNE state changed"))
+        XCTAssertTrue(message.contains("owner action"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("restart"))
+    }
 }
 
 private extension Collection {

@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(menubar): keep unavailable SNE capability recovery owner-visible and
+  non-disruptive**. The native surface no longer tells operators to restart
+  Pantheon; it states that no SNE state changed and directs the operator back
+  to the required owner action. Refs: SNE lifecycle containment contract.
 - **test(menubar): add fixture-only SNE read-model coverage**. The native Swift
   package now declares a test target and verifies exact lifecycle/catalog JSON
   decoding plus the preloaded identity fixture without contacting Pantheon,
