@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(security): bind historical fixture scan exceptions to exact values**. The
+  release identity advances to `0.23.11-beta`; the full-history gitleaks gate now
+  documents exact non-secret loopback-test and historical Thoth journal fixtures
+  rather than broad path suppressions. Refs: PANTHEON_RULES.md A28.
 - **fix(release): add a fail-closed pre-tag source-identity check**. Release
   ownership can now validate the exact candidate commit and `VERSION` before
   creating a tag; an already-existing tag must bind that same commit. This
