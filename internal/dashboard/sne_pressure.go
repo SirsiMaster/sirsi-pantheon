@@ -1,16 +1,36 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/sne"
 )
+
+var prefixCachePressureIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+// SNEPrefixCachePressureReceiptReader is implemented by the package-owned SNE
+// evidence reader. Implementations must validate regular file identity,
+// symlink rejection, schema, chronology, and plan/result coherence before a
+// raw receipt reaches Pantheon.
+type SNEPrefixCachePressureReceiptReader interface {
+	LoadPressureExecutionReceipt(context.Context, string) (json.RawMessage, error)
+	LoadPressureRetentionReceipt(context.Context, string) (json.RawMessage, error)
+}
+
+type PrefixCachePressureEvidenceView struct {
+	State        string          `json:"state"`
+	EvidenceType string          `json:"evidence_type"`
+	Identity     string          `json:"identity"`
+	Receipt      json.RawMessage `json:"receipt,omitempty"`
+}
 
 // PrefixCachePressureAuthorizationView is the shared non-visual read contract.
 // SNE policy, execution, replay protection, and retention remain external.
@@ -149,4 +169,64 @@ func (s *Server) apiSNEPrefixCachePressure(w http.ResponseWriter, request *http.
 	default:
 		writeError(w, "GET or POST required", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) apiSNEPrefixCachePressureExecutionReceipt(w http.ResponseWriter, request *http.Request) {
+	s.apiSNEPrefixCachePressureEvidence(w, request, "receipts", "execution")
+}
+
+func (s *Server) apiSNEPrefixCachePressureRetentionReceipt(w http.ResponseWriter, request *http.Request) {
+	s.apiSNEPrefixCachePressureEvidence(w, request, "retention", "retention")
+}
+
+func (s *Server) apiSNEPrefixCachePressureEvidence(w http.ResponseWriter, request *http.Request, route, evidenceType string) {
+	if request.Method != http.MethodGet {
+		writeError(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	identity := strings.TrimPrefix(request.URL.Path, "/api/sne/prefix-cache-pressure/"+route+"/")
+	if identity == "" || strings.Contains(identity, "/") || !prefixCachePressureIDPattern.MatchString(identity) {
+		writeError(w, "invalid prefix-cache pressure evidence identity", http.StatusBadRequest)
+		return
+	}
+	if s.snePressureReader == nil {
+		writeJSON(w, PrefixCachePressureEvidenceView{State: "unavailable", EvidenceType: evidenceType, Identity: identity})
+		return
+	}
+	var (
+		receipt json.RawMessage
+		err     error
+	)
+	if evidenceType == "execution" {
+		receipt, err = s.snePressureReader.LoadPressureExecutionReceipt(request.Context(), identity)
+	} else {
+		receipt, err = s.snePressureReader.LoadPressureRetentionReceipt(request.Context(), identity)
+	}
+	if err != nil || !validPrefixCachePressureEvidence(receipt, evidenceType, identity) {
+		writeJSON(w, PrefixCachePressureEvidenceView{State: "unavailable", EvidenceType: evidenceType, Identity: identity})
+		return
+	}
+	writeJSON(w, PrefixCachePressureEvidenceView{State: "available", EvidenceType: evidenceType, Identity: identity, Receipt: receipt})
+}
+
+func validPrefixCachePressureEvidence(raw json.RawMessage, evidenceType, identity string) bool {
+	var header struct {
+		Schema            string `json:"schema"`
+		RequestID         string `json:"request_id"`
+		CleanupID         string `json:"cleanup_id"`
+		HostID            string `json:"host_id"`
+		ObservationSHA256 string `json:"observation_sha256"`
+		Status            string `json:"status"`
+		StartedAtUnix     int64  `json:"started_at_unix"`
+		FinishedAtUnix    int64  `json:"finished_at_unix"`
+		CreatedAtUnix     int64  `json:"created_at_unix"`
+		CutoffUnix        int64  `json:"cutoff_unix"`
+	}
+	if json.Unmarshal(raw, &header) != nil {
+		return false
+	}
+	if evidenceType == "execution" {
+		return header.Schema == "sne.prefix-cache.pressure-policy.v1" && header.RequestID == identity && prefixCachePressureIDPattern.MatchString(header.HostID) && len(header.ObservationSHA256) == 64 && (header.Status == "started" || header.Status == "completed" || header.Status == "failed") && header.StartedAtUnix > 0 && (header.Status == "started" || header.FinishedAtUnix >= header.StartedAtUnix)
+	}
+	return header.Schema == "sne.prefix-cache.pressure-retention.v1" && header.CleanupID == identity && header.CreatedAtUnix > 0 && header.CutoffUnix > 0 && header.CutoffUnix < header.CreatedAtUnix
 }

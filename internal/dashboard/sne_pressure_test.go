@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,19 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/sne"
 )
+
+type fakePrefixCachePressureReader struct {
+	execution json.RawMessage
+	retention json.RawMessage
+}
+
+func (reader fakePrefixCachePressureReader) LoadPressureExecutionReceipt(context.Context, string) (json.RawMessage, error) {
+	return reader.execution, nil
+}
+
+func (reader fakePrefixCachePressureReader) LoadPressureRetentionReceipt(context.Context, string) (json.RawMessage, error) {
+	return reader.retention, nil
+}
 
 func TestPrefixCachePressureAuthorizationRequiresVisibleBoundConfirmation(t *testing.T) {
 	now := time.Unix(1_788_000_000, 0).UTC()
@@ -81,6 +95,38 @@ func TestPrefixCachePressureEndpointReturnsOnlyBoundAuthorization(t *testing.T) 
 	}
 	if accepted.Authorization == nil || accepted.Authorization.ArtifactSHA256 != prepared.Receipt.ObservationSHA256 {
 		t.Fatalf("accepted view=%+v", accepted)
+	}
+}
+
+func TestPrefixCachePressureEvidenceRoutesUseBoundedValidatedReader(t *testing.T) {
+	reader := fakePrefixCachePressureReader{
+		execution: json.RawMessage(`{"schema":"sne.prefix-cache.pressure-policy.v1","request_id":"pressure-1","host_id":"m5","observation_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"completed","started_at_unix":10,"finished_at_unix":11}`),
+		retention: json.RawMessage(`{"schema":"sne.prefix-cache.pressure-retention.v1","cleanup_id":"cleanup-1","cutoff_unix":10,"created_at_unix":11,"removed_request_ids":[],"retained_request_ids":[]}`),
+	}
+	server := New(Config{SNEPrefixCachePressureReader: reader})
+	for _, path := range []string{"/api/sne/prefix-cache-pressure/receipts/pressure-1", "/api/sne/prefix-cache-pressure/retention/cleanup-1"} {
+		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+		recorder := httptest.NewRecorder()
+		server.srv.Handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"state":"available"`) {
+			t.Fatalf("%s status=%d body=%s", path, recorder.Code, recorder.Body.String())
+		}
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/sne/prefix-cache-pressure/receipts/../escape", nil)
+	recorder := httptest.NewRecorder()
+	server.srv.Handler.ServeHTTP(recorder, request)
+	if recorder.Code == http.StatusOK {
+		t.Fatalf("path traversal accepted: %s", recorder.Body.String())
+	}
+}
+
+func TestPrefixCachePressureEvidenceRoutesProjectUnavailableWithoutReader(t *testing.T) {
+	server := New(Config{})
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/sne/prefix-cache-pressure/receipts/pressure-1", nil)
+	recorder := httptest.NewRecorder()
+	server.srv.Handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"state":"unavailable"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

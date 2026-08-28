@@ -79,6 +79,10 @@ type Config struct {
 	// SNELifecycle configures exact installed-model to packaged-runtime
 	// supervision. Nil keeps Start/Stop controls honestly disabled.
 	SNELifecycle *SNELifecycleConfig
+	// SNEPrefixCachePressureReader is an optional package-owned, validated
+	// receipt reader. Nil projects honest unavailable evidence; it never causes
+	// Pantheon to open an arbitrary path or operate SNE cache state.
+	SNEPrefixCachePressureReader SNEPrefixCachePressureReceiptReader
 	// AppRecovery is Pantheon's optional registry-bound application recovery
 	// controller. Nil keeps recovery controls honestly unavailable.
 	AppRecovery *apprecovery.Manager
@@ -90,22 +94,23 @@ type FleetProducer func() (ledger.Snapshot, error)
 
 // Server is the Pantheon local dashboard HTTP server.
 type Server struct {
-	cfg           Config
-	handler       http.Handler
-	alt           []*http.Server
-	srv           *http.Server
-	unlock        func()
-	mu            sync.RWMutex
-	running       bool
-	runner        *Runner
-	confirm       *ConfirmGuard
-	fleet         *FleetTracker
-	sneJobs       *SNEInstallManager
-	sneLifecycle  *SNELifecycleManager
-	snePressure   *prefixCachePressureAuthorizationManager
-	appRecovery   *apprecovery.Manager
-	sneAccess     *sneLocalAccess
-	sneAccessPath string
+	cfg               Config
+	handler           http.Handler
+	alt               []*http.Server
+	srv               *http.Server
+	unlock            func()
+	mu                sync.RWMutex
+	running           bool
+	runner            *Runner
+	confirm           *ConfirmGuard
+	fleet             *FleetTracker
+	sneJobs           *SNEInstallManager
+	sneLifecycle      *SNELifecycleManager
+	snePressure       *prefixCachePressureAuthorizationManager
+	snePressureReader SNEPrefixCachePressureReceiptReader
+	appRecovery       *apprecovery.Manager
+	sneAccess         *sneLocalAccess
+	sneAccessPath     string
 }
 
 // New creates a dashboard server with all routes registered.
@@ -114,7 +119,7 @@ func New(cfg Config) *Server {
 		cfg.Port = DashboardPort
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), appRecovery: cfg.AppRecovery, sneAccess: newSNELocalAccess(cfg.SNELocalAccessToken), sneAccessPath: cfg.SNELocalAccessTokenPath}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), appRecovery: cfg.AppRecovery, sneAccess: newSNELocalAccess(cfg.SNELocalAccessToken), sneAccessPath: cfg.SNELocalAccessTokenPath, snePressureReader: cfg.SNEPrefixCachePressureReader}
 	if cfg.SNEInstall != nil {
 		s.sneJobs = NewSNEInstallManager(*cfg.SNEInstall)
 	}
@@ -188,6 +193,8 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/sne/stop", s.secureSNERoute(true, s.apiSNEStop))
 	mux.HandleFunc("/api/sne/lifecycle", s.secureSNERoute(false, s.apiSNELifecycle))
 	mux.HandleFunc("/api/sne/prefix-cache-pressure", s.secureSNERoute(true, s.apiSNEPrefixCachePressure))
+	mux.HandleFunc("/api/sne/prefix-cache-pressure/receipts/", s.secureSNERoute(false, s.apiSNEPrefixCachePressureExecutionReceipt))
+	mux.HandleFunc("/api/sne/prefix-cache-pressure/retention/", s.secureSNERoute(false, s.apiSNEPrefixCachePressureRetentionReceipt))
 	mux.HandleFunc("/api/sne/catalog/rollback", s.secureSNERoute(true, s.apiSNECatalogRollback))
 	mux.HandleFunc("/api/sne/catalog/remove", s.secureSNERoute(true, s.apiSNECatalogRemove))
 	mux.HandleFunc("/api/sne/catalog/updates", s.secureSNERoute(false, s.apiSNECatalogUpdates))
