@@ -80,7 +80,14 @@ func runOrchestrator(subcmd string, extraArgs ...string) error {
 	if err != nil {
 		return fmt.Errorf("resolve fleet home: %w", err)
 	}
-	results, err := ra.RunNativeFleet(context.Background(), ra.DefaultFleetRepos(home), subcmd)
+	provider, providerErr := ra.ExternalProviderFromEnv()
+	if subcmd != "task" && subcmd != "broadcast" {
+		providerErr = nil
+	}
+	if providerErr != nil {
+		return providerErr
+	}
+	results, err := ra.RunNativeFleetWithProvider(context.Background(), ra.DefaultFleetRepos(home), subcmd, extraArgs, provider)
 	for _, result := range results {
 		fmt.Printf("  %-12s %-5s %s\n", result.Repo, result.Status, strings.TrimSpace(result.Output))
 	}
@@ -117,7 +124,17 @@ func runOrchestratorWithPipeline(subcmd string, extraArgs ...string) error {
 	if err != nil {
 		return fmt.Errorf("resolve fleet home: %w", err)
 	}
-	result, err := pipeline.RunNativeAndRecord(context.Background(), ra.DefaultFleetRepos(home), task, ra.RunNativeFleet)
+	provider, providerErr := ra.ExternalProviderFromEnv()
+	if subcmd != "task" && subcmd != "broadcast" {
+		providerErr = nil
+	}
+	if providerErr != nil {
+		return providerErr
+	}
+	runner := func(ctx context.Context, repos []ra.NativeRepo, operation string) ([]ra.NativeResult, error) {
+		return ra.RunNativeFleetWithProvider(ctx, repos, operation, extraArgs, provider)
+	}
+	result, err := pipeline.RunNativeAndRecord(context.Background(), ra.DefaultFleetRepos(home), task, runner)
 	if err != nil {
 		output.Error("Pipeline failed: %v", err)
 		return err
@@ -223,7 +240,11 @@ var raStatusCmd = &cobra.Command{
 			res.Status = "warn"
 		}
 		res.AddEvidence("native Go executor", "ready")
-		res.AddEvidence("external provider", "developer-only; not configured by default")
+		providerState := "developer-only; not configured by default"
+		if provider, err := ra.ExternalProviderFromEnv(); err == nil {
+			providerState = "configured: " + provider.Executable
+		}
+		res.AddEvidence("external provider", providerState)
 		res.AddEvidence("repositories", fmt.Sprintf("%d present", reposPresent))
 		// Per-node capacity (ADR-031-B): the fleet lord reads what THIS node
 		// can carry before placing work — free RAM, the dynamic reserve, and
