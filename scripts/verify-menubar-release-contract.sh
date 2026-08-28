@@ -27,6 +27,9 @@ reject() {
 }
 
 require 'go build .*\./cmd/sirsi-menubar/' "$DMG_SCRIPT" "dmg_go_control_engine"
+require 'swift build -c release' "$DMG_SCRIPT" "dmg_native_swift_shell"
+require 'Contents/Library/Helpers/pantheon-engine' "$DMG_SCRIPT" "dmg_nonresident_go_helper"
+require 'CFBundleExecutable SirsiMenubar' "$DMG_SCRIPT" "dmg_native_bundle_executable"
 require 'CGO_ENABLED=1 .*\./cmd/sirsi/' "$DMG_SCRIPT" "dmg_native_vitals_cli"
 require 'PlistBuddy.*CFBundleShortVersionString' "$DMG_SCRIPT" "embedded_marketing_version"
 require 'PlistBuddy.*CFBundleVersion' "$DMG_SCRIPT" "embedded_build_version"
@@ -37,7 +40,6 @@ require '\./cmd/sirsi-menubar/' "$RELEASE_WORKFLOW" "standalone_go_control_engin
 require 'BUILD_NUMBER:.*github\.run_number.*github\.run_attempt' "$RELEASE_WORKFLOW" "deterministic_ci_build_identity"
 require 'REQUIRE_RELEASE_SIGNING:.*1' "$RELEASE_WORKFLOW" "ci_release_signing_required"
 require 'REQUIRE_RELEASE_NOTARIZATION:.*1' "$RELEASE_WORKFLOW" "ci_release_notarization_required"
-reject 'swift build|macapp/\.build/release/SirsiMenubar' "$DMG_SCRIPT" "conditional_swift_substitution"
 
 # A resident Pantheon surface may render persisted projections, but it must not
 # launch full diagnostics merely because it started, opened, or reached a timer

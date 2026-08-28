@@ -1556,7 +1556,22 @@ final class SirsiEngine: ObservableObject {
         }
     }
 
+    // bundledSirsiBinary is deliberately a pure resolver so the native shell
+    // can prefer the exact CLI shipped beside it without probing the network,
+    // spawning the local control engine, or falling back to an unrelated PATH
+    // installation. The development fallbacks below remain for an unbundled
+    // SwiftPM executable only.
+    nonisolated static func bundledSirsiBinary(bundleURL: URL = Bundle.main.bundleURL) -> String? {
+        let candidate = bundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .appendingPathComponent("sirsi", isDirectory: false)
+            .path
+        return FileManager.default.isExecutableFile(atPath: candidate) ? candidate : nil
+    }
+
     nonisolated static func sirsiBinary() -> String {
+        if let bundled = bundledSirsiBinary() { return bundled }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         for c in ["\(home)/.local/bin/sirsi", "/opt/homebrew/bin/sirsi", "/usr/local/bin/sirsi"] {
             if FileManager.default.isExecutableFile(atPath: c) { return c }

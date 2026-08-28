@@ -14,6 +14,8 @@ SIGNING_MODE="$4"
 PLIST="${APP}/Contents/Info.plist"
 CLI="${APP}/Contents/MacOS/sirsi"
 MENUBAR="${APP}/Contents/MacOS/sirsi-menubar"
+NATIVE_MENUBAR="${APP}/Contents/MacOS/SirsiMenubar"
+ENGINE="${APP}/Contents/Library/Helpers/pantheon-engine"
 
 fail() {
     echo "pantheon_package_identity accepted=false reason=$1" >&2
@@ -23,7 +25,8 @@ fail() {
 [[ -d "${APP}" ]] || fail "missing_app"
 [[ -f "${PLIST}" ]] || fail "missing_info_plist"
 [[ -x "${CLI}" ]] || fail "missing_embedded_cli"
-[[ -x "${MENUBAR}" ]] || fail "missing_control_engine"
+[[ -x "${NATIVE_MENUBAR}" ]] || fail "missing_native_menubar"
+[[ -x "${ENGINE}" ]] || fail "missing_control_engine"
 [[ "${EXPECTED_BUILD}" =~ ^[0-9]+([.][0-9]+){0,2}$ ]] || fail "invalid_expected_build"
 
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${PLIST}")"
@@ -31,6 +34,7 @@ BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString'
 BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${PLIST}")"
 
 [[ "${BUNDLE_ID}" == "ai.sirsi.pantheon" ]] || fail "bundle_id_mismatch"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${PLIST}")" == "SirsiMenubar" ]] || fail "bundle_executable_mismatch"
 [[ "${BUNDLE_VERSION}" == "${EXPECTED_VERSION}" ]] || fail "bundle_version_mismatch"
 [[ "${BUNDLE_BUILD}" == "${EXPECTED_BUILD}" ]] || fail "bundle_build_mismatch"
 

@@ -6,11 +6,9 @@
 	<string>ai.sirsi.pantheon</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Applications/Pantheon.app/Contents/MacOS/sirsi-menubar</string>
+		<string>/Applications/Pantheon.app/Contents/MacOS/SirsiMenubar</string>
 	</array>
 	<key>RunAtLoad</key>
-	<true/>
-	<key>KeepAlive</key>
 	<true/>
 	<key>ProcessType</key>
 	<string>Interactive</string>

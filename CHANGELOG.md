@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(release): ship the native Swift menu bar as Pantheon.app's executable**.
+  The Go CLI and control engine are now embedded as non-visible companions;
+  bundle assembly and verification reject the former Go-tray app shape.
 - **docs(evidence): record a bounded v0.23.14 binary-footprint measurement**.
   The stripped stamped CLI is 18 MiB; unsigned packaging and lifecycle proof
   remain explicitly open.

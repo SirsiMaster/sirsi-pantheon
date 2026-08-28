@@ -75,26 +75,29 @@ BUNDLE_DIR="${BUILD_WORK_DIR}/${APP_NAME}"
 STAGING_DIR="${BUILD_WORK_DIR}/dmg-staging"
 DMG_CANDIDATE="${BUILD_WORK_DIR}/${DMG_NAME}"
 
-# --- Build the canonical menu bar + local control engine ---
-# Every distribution channel MUST package the same Go entrypoint. It owns the
-# protected loopback API, SNE lifecycle, recovery controller, durable local
-# capability, and Nexus handoff. The SwiftUI prototype is a presentation surface
-# only; selecting it merely because macapp/Package.swift exists produced a DMG
-# that looked native but silently omitted the local control engine while the
-# standalone archive retained it. A native surface may replace this executable
-# only after it launches the same packaged engine and passes the release contract.
-echo "Compiling canonical menu bar and local control engine (cmd/sirsi-menubar/)..."
-CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi-menubar" ./cmd/sirsi-menubar/
+# --- Build the native shell plus its canonical Go control plane ---
+# SirsiMenubar is the sole visible macOS app surface. The Go engine remains the
+# authority for CLI/TUI/MCP and protected local control, but is packaged as a
+# non-resident helper; opening the app must not start it implicitly.
+echo "Compiling canonical Go control engine (cmd/sirsi-menubar/)..."
+CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/pantheon-engine" ./cmd/sirsi-menubar/
 
 echo "Compiling sirsi CLI..."
 CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi" ./cmd/sirsi/
 
+echo "Compiling native Swift menu-bar shell..."
+(
+    cd "${PROJECT_ROOT}/macapp"
+    swift build -c release
+)
+
 # --- Assemble the .app bundle ---
 echo "Assembling ${APP_NAME}..."
 rm -rf "${BUNDLE_DIR}"
-mkdir -p "${BUNDLE_DIR}/Contents/MacOS" "${BUNDLE_DIR}/Contents/Resources"
-cp "${BUILD_DIR}/sirsi-menubar" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"
+mkdir -p "${BUNDLE_DIR}/Contents/MacOS" "${BUNDLE_DIR}/Contents/Library/Helpers" "${BUNDLE_DIR}/Contents/Resources"
+cp "${PROJECT_ROOT}/macapp/.build/release/SirsiMenubar" "${BUNDLE_DIR}/Contents/MacOS/SirsiMenubar"
 cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
+cp "${BUILD_DIR}/pantheon-engine" "${BUNDLE_DIR}/Contents/Library/Helpers/pantheon-engine"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
@@ -104,6 +107,7 @@ cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_
 # isolated workspace and can never mutate the prior accepted candidate.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUNDLE_BUILD_NUMBER}" "${BUNDLE_DIR}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable SirsiMenubar" "${BUNDLE_DIR}/Contents/Info.plist"
 echo "Embedded bundle identity: ${VERSION} (${BUNDLE_BUILD_NUMBER})"
 
 # --- Code signing ---
@@ -119,7 +123,7 @@ if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
     fi
     # Sign inner executables first (inside-out), then the bundle — more robust for
     # notarization than a single --deep pass. Hardened runtime + secure timestamp.
-    for inner in "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"; do
+    for inner in "${BUNDLE_DIR}/Contents/MacOS/SirsiMenubar" "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/Library/Helpers/pantheon-engine"; do
         codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${inner}"
     done
     codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${BUNDLE_DIR}"

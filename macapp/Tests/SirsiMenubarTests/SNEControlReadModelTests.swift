@@ -2,6 +2,22 @@ import XCTest
 @testable import SirsiMenubar
 
 final class SNEControlReadModelTests: XCTestCase {
+
+    func testBundledSirsiResolverPrefersExecutableInsideBundle() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let executable = root
+            .appendingPathComponent("Pantheon.app", isDirectory: true)
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .appendingPathComponent("sirsi", isDirectory: false)
+        try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertEqual(SirsiEngine.bundledSirsiBinary(bundleURL: root.appendingPathComponent("Pantheon.app")), executable.path)
+    }
     func testSnapshotFixtureRetainsExactActiveIdentity() {
         let fixture = SNEReadViewState.snapshotFixture
 
