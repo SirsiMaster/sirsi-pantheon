@@ -47,6 +47,11 @@ jobs:
     name: Build Menu Bar (macOS DMG)
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     needs: release
+    env:
+      # Job-level env makes the presence checks below evaluate before the step
+      # starts; step-local env is still used when materializing secret files.
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
     # makes `security import`/`codesign`/`notarytool --wait` hang), this caps the
@@ -111,6 +116,7 @@ jobs:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
           BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
           REQUIRE_RELEASE_SIGNING: "1"
+          REQUIRE_RELEASE_NOTARIZATION: "1"
           DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
           ASC_KEY_PATH: ${{ env.ASC_KEY_PATH }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}

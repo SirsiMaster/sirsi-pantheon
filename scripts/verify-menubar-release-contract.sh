@@ -32,9 +32,11 @@ require 'PlistBuddy.*CFBundleShortVersionString' "$DMG_SCRIPT" "embedded_marketi
 require 'PlistBuddy.*CFBundleVersion' "$DMG_SCRIPT" "embedded_build_version"
 require 'verify-pantheon-package-identity\.sh' "$DMG_SCRIPT" "assembled_artifact_identity_gate"
 require 'REQUIRE_RELEASE_SIGNING' "$DMG_SCRIPT" "release_signing_fail_closed"
+require 'REQUIRE_RELEASE_NOTARIZATION' "$DMG_SCRIPT" "release_notarization_fail_closed"
 require '\./cmd/sirsi-menubar/' "$RELEASE_WORKFLOW" "standalone_go_control_engine"
 require 'BUILD_NUMBER:.*github\.run_number.*github\.run_attempt' "$RELEASE_WORKFLOW" "deterministic_ci_build_identity"
 require 'REQUIRE_RELEASE_SIGNING:.*1' "$RELEASE_WORKFLOW" "ci_release_signing_required"
+require 'REQUIRE_RELEASE_NOTARIZATION:.*1' "$RELEASE_WORKFLOW" "ci_release_notarization_required"
 reject 'swift build|macapp/\.build/release/SirsiMenubar' "$DMG_SCRIPT" "conditional_swift_substitution"
 
 # A resident Pantheon surface may render persisted projections, but it must not

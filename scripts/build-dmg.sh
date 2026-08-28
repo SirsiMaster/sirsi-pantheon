@@ -24,6 +24,8 @@
 #   ASC_ISSUER_ID             App Store Connect issuer UUID
 # The cert itself is imported into the build keychain by the CI workflow before
 # this script runs (MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD).
+# Set REQUIRE_RELEASE_NOTARIZATION=1 for any distributable build; that mode
+# fails closed instead of promoting a signed-but-unstapled DMG.
 
 set -euo pipefail
 
@@ -179,6 +181,7 @@ fi
 # --- Sign + notarize + staple the DMG (release builds only, AFTER it exists) ---
 if [ "${SIGNED_FOR_RELEASE}" = "1" ]; then
     codesign --force --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${DMG_CANDIDATE}"
+    NOTARIZED_FOR_RELEASE=0
     if [ -n "${ASC_KEY_PATH:-}" ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ]; then
         if [ ! -f "${ASC_KEY_PATH}" ]; then
             echo "ERROR: ASC_KEY_PATH does not exist: ${ASC_KEY_PATH}" >&2
@@ -194,6 +197,7 @@ if [ "${SIGNED_FOR_RELEASE}" = "1" ]; then
         echo "Stapling notarization ticket..."
         xcrun stapler staple "${DMG_CANDIDATE}"
         xcrun stapler validate "${DMG_CANDIDATE}"
+        NOTARIZED_FOR_RELEASE=1
     elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
         echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
         # --timeout bounds the --wait poll so a stuck Apple-notary submission (or
@@ -208,9 +212,22 @@ if [ "${SIGNED_FOR_RELEASE}" = "1" ]; then
         echo "Stapling notarization ticket..."
         xcrun stapler staple "${DMG_CANDIDATE}"
         xcrun stapler validate "${DMG_CANDIDATE}"
+        NOTARIZED_FOR_RELEASE=1
     else
+        if [[ "${REQUIRE_RELEASE_NOTARIZATION:-0}" == "1" ]]; then
+            echo "ERROR: release notarization is required, but no complete notarization credentials were supplied." >&2
+            echo "Provide ASC_KEY_PATH/ASC_KEY_ID/ASC_ISSUER_ID or APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD." >&2
+            exit 1
+        fi
         echo "WARNING: signed but NOT notarized (provide ASC_KEY_PATH/ASC_KEY_ID/ASC_ISSUER_ID or APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD)."
     fi
+else
+    NOTARIZED_FOR_RELEASE=0
+fi
+
+if [[ "${REQUIRE_RELEASE_NOTARIZATION:-0}" == "1" && "${NOTARIZED_FOR_RELEASE}" != "1" ]]; then
+    echo "ERROR: release notarization is required, but the DMG has no notarization/staple proof." >&2
+    exit 1
 fi
 
 # Promotion is the final operation. A failed compile, signature, image build,
