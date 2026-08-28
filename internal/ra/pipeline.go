@@ -3,12 +3,10 @@
 package ra
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,10 +48,30 @@ type Pipeline struct {
 
 	// RepoRoot is the project root for Thoth sync operations.
 	RepoRoot string
+}
 
-	// OrchestratorPath is the resolved path to sirsi-orchestrator.py.
-	// If empty, the pipeline will attempt to find it automatically.
-	OrchestratorPath string
+// NativeFleetRunner is the injectable Go-owned executor used by the native
+// recording path. It preserves deterministic tests without invoking a shell,
+// Python, or an external agent provider.
+type NativeFleetRunner func(context.Context, []NativeRepo, string) ([]NativeResult, error)
+
+// RunNativeAndRecord records the Go-owned health, lint, test, or nightly
+// result through the same Seshat/Thoth pipeline as the legacy executor. Task
+// and broadcast remain explicit external-provider operations and fail closed
+// in RunNativeFleet when no approved provider is available.
+func (p *Pipeline) RunNativeAndRecord(ctx context.Context, repos []NativeRepo, task Task, run NativeFleetRunner) (*PipelineResult, error) {
+	if run == nil {
+		run = RunNativeFleet
+	}
+	results, err := run(ctx, repos, task.Subcmd)
+	encoded, marshalErr := json.Marshal(results)
+	if marshalErr != nil {
+		return nil, fmt.Errorf("ra pipeline: encode native results: %w", marshalErr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ra pipeline: native fleet failed: %w", err)
+	}
+	return p.recordCapturedOutput(task, string(encoded), "")
 }
 
 // NewPipeline creates a pipeline with default configuration for the given project root.
@@ -69,15 +87,17 @@ func NewPipeline(repoRoot string) *Pipeline {
 // RunAndRecord executes a Ra orchestration task, captures the output,
 // feeds it to Seshat for ingestion, then syncs to Thoth memory.
 func (p *Pipeline) RunAndRecord(ctx context.Context, task Task) (*PipelineResult, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("ra pipeline: resolve fleet home: %w", err)
+	}
+	return p.RunNativeAndRecord(ctx, DefaultFleetRepos(home), task, RunNativeFleet)
+}
+
+func (p *Pipeline) recordCapturedOutput(task Task, stdout, stderr string) (*PipelineResult, error) {
 	start := time.Now()
 
-	// Step 1: Execute the orchestrator and capture output.
-	stdout, stderr, err := p.executeOrchestrator(ctx, task)
-	if err != nil {
-		return nil, fmt.Errorf("ra pipeline: orchestrator failed: %w", err)
-	}
-
-	// Step 2: Parse orchestrator output into KnowledgeItems.
+	// Parse executor output into KnowledgeItems.
 	items := p.parseOutput(task, stdout, stderr)
 
 	// Step 3: Run Seshat's secrets filter on all items before storage.
@@ -112,48 +132,6 @@ func (p *Pipeline) RunAndRecord(ctx context.Context, task Task) (*PipelineResult
 		ThothSynced:   thothSynced,
 		Duration:      time.Since(start),
 	}, nil
-}
-
-// execCommandContext is an injectable seam for tests (mirrors internal/ka's
-// ExecCommand pattern) so unit tests never spawn a real python3 orchestrator.
-// Production always uses exec.CommandContext.
-var execCommandContext = exec.CommandContext
-
-// executeOrchestrator runs the orchestrator script and captures stdout/stderr separately.
-func (p *Pipeline) executeOrchestrator(ctx context.Context, task Task) (string, string, error) {
-	scriptPath := p.OrchestratorPath
-	if scriptPath == "" {
-		var err error
-		scriptPath, err = findOrchestratorScript()
-		if err != nil {
-			return "", "", err
-		}
-	}
-
-	args := append([]string{scriptPath, task.Subcmd}, task.ExtraArgs...)
-	cmd := execCommandContext(ctx, "python3", args...)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	// Tee to os.Stdout/Stderr so the user still sees live output.
-	cmd.Stdout = &teeWriter{buf: &stdoutBuf, passthrough: os.Stdout}
-	cmd.Stderr = &teeWriter{buf: &stderrBuf, passthrough: os.Stderr}
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		return stdoutBuf.String(), stderrBuf.String(), err
-	}
-	return stdoutBuf.String(), stderrBuf.String(), nil
-}
-
-// teeWriter writes to both a buffer and a passthrough writer.
-type teeWriter struct {
-	buf         *bytes.Buffer
-	passthrough *os.File
-}
-
-func (w *teeWriter) Write(p []byte) (int, error) {
-	w.buf.Write(p)
-	return w.passthrough.Write(p)
 }
 
 // parseOutput converts raw orchestrator output into Seshat KnowledgeItems.
@@ -312,32 +290,4 @@ func (p *Pipeline) ReadStatus() (*PipelineStatus, error) {
 		}
 	}
 	return status, nil
-}
-
-// findOrchestratorScript locates sirsi-orchestrator.py using the same
-// resolution logic as the Ra CLI command.
-func findOrchestratorScript() (string, error) {
-	candidates := []string{
-		filepath.Join(".", "scripts", "sirsi-orchestrator.py"),
-	}
-
-	if root := os.Getenv("PANTHEON_ROOT"); root != "" {
-		candidates = append(candidates, filepath.Join(root, "scripts", "sirsi-orchestrator.py"))
-	}
-
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, "Development", "sirsi-pantheon", "scripts", "sirsi-orchestrator.py"))
-	}
-
-	for _, p := range candidates {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(abs); err == nil {
-			return abs, nil
-		}
-	}
-
-	return "", fmt.Errorf("sirsi-orchestrator.py not found")
 }

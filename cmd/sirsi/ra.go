@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,9 +25,9 @@ var raCmd = &cobra.Command{
 	Short: "𓇶 Ra — Supreme Overseer & Cross-Repo Orchestrator",
 	Long: `𓇶 Ra — Supreme Overseer & Cross-Repo Orchestrator
 
-Ra orchestrates all Pantheon deities across all Sirsi repositories using
-the Sirsi Orchestrator (claude-code-sdk). He dispatches parallel work,
-runs fleet-wide health checks, tests, lints, and custom tasks.
+Ra orchestrates Pantheon fleet checks with a shell-free Go executor.
+External agent dispatch remains an explicit developer-only capability and
+fails closed when no provider is configured.
 
   sirsi ra health                Health check across all repos
   sirsi ra test                  Run tests across all repos in parallel
@@ -37,8 +36,7 @@ runs fleet-wide health checks, tests, lints, and custom tasks.
   sirsi ra broadcast <prompt>    Run prompt across all repos
   sirsi ra nightly               Full nightly CI check
   sirsi ra status                Show orchestrator status and repo config
-
-Prerequisites: python3, claude-code-sdk (pip3 install claude-code-sdk)`,
+`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if raDocs {
 			_ = help.OpenDocs("ra")
@@ -66,62 +64,28 @@ func raRepos() map[string]repoEntry {
 	}
 }
 
-// ── Orchestrator path resolution ────────────────────────────────────
-
-func findOrchestrator() (string, error) {
-	candidates := []string{
-		filepath.Join(".", "scripts", "sirsi-orchestrator.py"),
-	}
-
-	if root := os.Getenv("PANTHEON_ROOT"); root != "" {
-		candidates = append(candidates, filepath.Join(root, "scripts", "sirsi-orchestrator.py"))
-	}
-
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, "Development", "sirsi-pantheon", "scripts", "sirsi-orchestrator.py"))
-	}
-
-	for _, p := range candidates {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(abs); err == nil {
-			return abs, nil
-		}
-	}
-
-	return "", fmt.Errorf("sirsi-orchestrator.py not found.\n\nSearched:\n  %s\n\nInstall:\n  1. Clone sirsi-pantheon: git clone https://github.com/SirsiMaster/sirsi-pantheon\n  2. Set PANTHEON_ROOT to the repo root, or run from the repo directory.\n  3. Install deps: pip3 install claude-code-sdk",
-		strings.Join(candidates, "\n  "))
-}
-
 // ── Orchestrator runner ─────────────────────────────────────────────
 
 func runOrchestrator(subcmd string, extraArgs ...string) error {
-	scriptPath, err := findOrchestrator()
-	if err != nil {
-		output.Error("%v", err)
-		return err
-	}
-
 	output.Header(fmt.Sprintf("Fleet — %s", subcmd))
-	output.Info("Orchestrator: %s", scriptPath)
+	output.Info("Executor: native Go fleet")
 	fmt.Println()
 
-	// If --record is set, use the pipeline for automatic knowledge capture.
 	if raRecord {
-		return runOrchestratorWithPipeline(subcmd, scriptPath, extraArgs...)
+		return runOrchestratorWithPipeline(subcmd, extraArgs...)
 	}
 
-	cmdArgs := append([]string{scriptPath, subcmd}, extraArgs...)
-	proc := exec.Command("python3", cmdArgs...)
-	proc.Stdout = os.Stdout
-	proc.Stderr = os.Stderr
-	proc.Stdin = os.Stdin
-
 	start := time.Now()
-	if err := proc.Run(); err != nil {
-		output.Error("Orchestrator failed: %v", err)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve fleet home: %w", err)
+	}
+	results, err := ra.RunNativeFleet(context.Background(), ra.DefaultFleetRepos(home), subcmd)
+	for _, result := range results {
+		fmt.Printf("  %-12s %-5s %s\n", result.Repo, result.Status, strings.TrimSpace(result.Output))
+	}
+	if err != nil {
+		output.Error("Native fleet failed: %v", err)
 		return err
 	}
 	output.Footer(time.Since(start))
@@ -136,7 +100,7 @@ func runOrchestrator(subcmd string, extraArgs ...string) error {
 
 // runOrchestratorWithPipeline executes the orchestrator through the Ra pipeline,
 // automatically feeding results to Seshat for ingestion and Thoth for persistence.
-func runOrchestratorWithPipeline(subcmd, scriptPath string, extraArgs ...string) error {
+func runOrchestratorWithPipeline(subcmd string, extraArgs ...string) error {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		// Fallback to cwd if no .thoth/ found.
@@ -144,14 +108,16 @@ func runOrchestratorWithPipeline(subcmd, scriptPath string, extraArgs ...string)
 	}
 
 	pipeline := ra.NewPipeline(repoRoot)
-	pipeline.OrchestratorPath = scriptPath
-
 	task := ra.Task{
 		Subcmd:    subcmd,
 		ExtraArgs: extraArgs,
 	}
 
-	result, err := pipeline.RunAndRecord(context.Background(), task)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve fleet home: %w", err)
+	}
+	result, err := pipeline.RunNativeAndRecord(context.Background(), ra.DefaultFleetRepos(home), task, ra.RunNativeFleet)
 	if err != nil {
 		output.Error("Pipeline failed: %v", err)
 		return err
@@ -237,17 +203,6 @@ var raStatusCmd = &cobra.Command{
 		start := time.Now()
 		repos := raRepos()
 
-		python3Ok := false
-		if _, err := exec.LookPath("python3"); err == nil {
-			python3Ok = true
-		}
-		_, scriptErr := findOrchestrator()
-		sdkOk := false
-		sdkCheck := exec.Command("python3", "-c", "import claude_code_sdk; print('ok')")
-		if out, err := sdkCheck.Output(); err == nil && strings.TrimSpace(string(out)) == "ok" {
-			sdkOk = true
-		}
-
 		reposPresent := 0
 		for _, repo := range repos {
 			if _, err := os.Stat(repo.Path); err == nil {
@@ -259,7 +214,7 @@ var raStatusCmd = &cobra.Command{
 		// summary + evidence + real levers, not a raw text dump that ignored
 		// --json and dead-ended at a Refresh.
 		res := &output.CommandResult{Command: "sirsi ra status", BriefTitle: "Fleet Orchestrator"}
-		ready := python3Ok && scriptErr == nil && sdkOk
+		ready := reposPresent == len(repos)
 		if ready {
 			res.Summary = fmt.Sprintf("Fleet orchestrator ready — %d repositories in the fleet.", reposPresent)
 			res.Status = "ok"
@@ -267,9 +222,8 @@ var raStatusCmd = &cobra.Command{
 			res.Summary = fmt.Sprintf("Fleet orchestrator not fully set up (%d repositories tracked).", reposPresent)
 			res.Status = "warn"
 		}
-		res.AddEvidence("python3", boolMark(python3Ok))
-		res.AddEvidence("orchestrator", boolMark(scriptErr == nil))
-		res.AddEvidence("fleet SDK", boolMark(sdkOk))
+		res.AddEvidence("native Go executor", "ready")
+		res.AddEvidence("external provider", "developer-only; not configured by default")
 		res.AddEvidence("repositories", fmt.Sprintf("%d present", reposPresent))
 		// Per-node capacity (ADR-031-B): the fleet lord reads what THIS node
 		// can carry before placing work — free RAM, the dynamic reserve, and
@@ -284,12 +238,6 @@ var raStatusCmd = &cobra.Command{
 				mark = "missing"
 			}
 			res.AddEvidence(name, fmt.Sprintf("%s — %s", mark, repo.Desc))
-		}
-		if !sdkOk {
-			res.NextActions = append(res.NextActions, output.NextAction{
-				Label: "Install the fleet SDK", Command: "pip3 install claude-code-sdk",
-				Description: "The orchestrator needs claude-code-sdk to drive fleet agents.",
-			})
 		}
 		res.NextActions = append(res.NextActions,
 			output.NextAction{Label: "Check fleet health", Command: "sirsi ra health", Description: "Probe each repo's build/test/lint state."},

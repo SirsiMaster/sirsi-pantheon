@@ -1,8 +1,6 @@
 package ra
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,7 +12,7 @@ import (
 )
 
 // NOTE: none of the tests in this file use t.Parallel — they swap the
-// package-level execCommand / execCommandContext seams and redirect $HOME,
+// package-level execCommand seam and redirect $HOME,
 // so they must run sequentially (repo law from PRs #129/#131).
 
 // swapExec replaces the execCommand seam for the duration of the test.
@@ -284,13 +282,6 @@ func TestWaitAll_MonitorError(t *testing.T) {
 
 // ── pipeline.go ─────────────────────────────────────────────────────────────
 
-func swapExecContext(t *testing.T, fn func(ctx context.Context, name string, args ...string) *exec.Cmd) {
-	t.Helper()
-	orig := execCommandContext
-	execCommandContext = fn
-	t.Cleanup(func() { execCommandContext = orig })
-}
-
 func TestNewPipeline(t *testing.T) {
 	p := NewPipeline("/repo/root")
 	if p.ThothDir != filepath.Join("/repo/root", ".thoth") {
@@ -301,28 +292,6 @@ func TestNewPipeline(t *testing.T) {
 	}
 	if p.RepoRoot != "/repo/root" {
 		t.Errorf("RepoRoot = %q", p.RepoRoot)
-	}
-}
-
-func TestTeeWriter(t *testing.T) {
-	f, err := os.CreateTemp(t.TempDir(), "tee")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	var buf bytes.Buffer
-	w := &teeWriter{buf: &buf, passthrough: f}
-	n, err := w.Write([]byte("hello"))
-	if err != nil || n != 5 {
-		t.Fatalf("Write = (%d, %v)", n, err)
-	}
-	if buf.String() != "hello" {
-		t.Errorf("buffer = %q", buf.String())
-	}
-	data, _ := os.ReadFile(f.Name())
-	if string(data) != "hello" {
-		t.Errorf("passthrough = %q", data)
 	}
 }
 
@@ -404,47 +373,12 @@ func TestTryParseJSON_EmptyShapes(t *testing.T) {
 	}
 }
 
-func TestFindOrchestratorScript(t *testing.T) {
-	// Isolate from the real machine: temp HOME, controlled PANTHEON_ROOT.
-	t.Setenv("HOME", t.TempDir())
-
-	t.Run("not found", func(t *testing.T) {
-		t.Setenv("PANTHEON_ROOT", "")
-		if _, err := findOrchestratorScript(); err == nil {
-			t.Error("expected not-found error")
-		}
-	})
-
-	t.Run("found via PANTHEON_ROOT", func(t *testing.T) {
-		root := t.TempDir()
-		scripts := filepath.Join(root, "scripts")
-		os.MkdirAll(scripts, 0o755)
-		want := filepath.Join(scripts, "sirsi-orchestrator.py")
-		os.WriteFile(want, []byte("# stub"), 0o644)
-		t.Setenv("PANTHEON_ROOT", root)
-
-		got, err := findOrchestratorScript()
-		if err != nil {
-			t.Fatalf("findOrchestratorScript() error = %v", err)
-		}
-		if got != want {
-			t.Errorf("path = %q, want %q", got, want)
-		}
-	})
-}
-
 func TestRunAndRecord_Success(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // keep any stele/thoth writes out of the real home
 	repo := t.TempDir()
 
-	swapExecContext(t, func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, "echo", `[{"repo":"r1","result":"ok"}]`)
-	})
-
 	p := NewPipeline(repo)
-	p.OrchestratorPath = "/stub/orchestrator.py"
-
-	pr, err := p.RunAndRecord(context.Background(), Task{Subcmd: "health"})
+	pr, err := p.recordCapturedOutput(Task{Subcmd: "health"}, `[{"repo":"r1","result":"ok"}]`, "")
 	if err != nil {
 		t.Fatalf("RunAndRecord() error = %v", err)
 	}
@@ -472,14 +406,8 @@ func TestRunAndRecord_EmptyOutputSkipsExport(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	repo := t.TempDir()
 
-	swapExecContext(t, func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, "true") // no output at all
-	})
-
 	p := NewPipeline(repo)
-	p.OrchestratorPath = "/stub/orchestrator.py"
-
-	pr, err := p.RunAndRecord(context.Background(), Task{Subcmd: "lint"})
+	pr, err := p.recordCapturedOutput(Task{Subcmd: "lint"}, "", "")
 	if err != nil {
 		t.Fatalf("RunAndRecord() error = %v", err)
 	}
@@ -491,44 +419,14 @@ func TestRunAndRecord_EmptyOutputSkipsExport(t *testing.T) {
 	}
 }
 
-func TestRunAndRecord_OrchestratorFails(t *testing.T) {
-	swapExecContext(t, func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, "false")
-	})
-
-	p := NewPipeline(t.TempDir())
-	p.OrchestratorPath = "/stub/orchestrator.py"
-
-	if _, err := p.RunAndRecord(context.Background(), Task{Subcmd: "test"}); err == nil ||
-		!strings.Contains(err.Error(), "orchestrator failed") {
-		t.Fatalf("expected orchestrator failure, got %v", err)
-	}
-}
-
-func TestRunAndRecord_ScriptResolutionFails(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PANTHEON_ROOT", "")
-
-	p := NewPipeline(t.TempDir()) // OrchestratorPath empty → resolution runs
-	if _, err := p.RunAndRecord(context.Background(), Task{Subcmd: "health"}); err == nil {
-		t.Fatal("expected error when orchestrator script cannot be resolved")
-	}
-}
-
 func TestRunAndRecord_ExportFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	tmp := t.TempDir()
 	blocker := filepath.Join(tmp, "blocker")
 	os.WriteFile(blocker, []byte("x"), 0o644)
 
-	swapExecContext(t, func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, "echo", "some output")
-	})
-
 	p := NewPipeline(blocker) // .thoth under a regular file → MkdirAll fails
-	p.OrchestratorPath = "/stub/orchestrator.py"
-
-	if _, err := p.RunAndRecord(context.Background(), Task{Subcmd: "health"}); err == nil ||
+	if _, err := p.recordCapturedOutput(Task{Subcmd: "health"}, "some output", ""); err == nil ||
 		!strings.Contains(err.Error(), "seshat export failed") {
 		t.Fatalf("expected export failure, got %v", err)
 	}
