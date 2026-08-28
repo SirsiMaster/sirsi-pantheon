@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **docs(evidence): record fixture-bound native prefix-pressure audit**. Captures
+  the exact v0.23.14 candidate, Swift test evidence, and narrow/wide fixture
+  snapshots while explicitly leaving live VoiceOver and keyboard traversal
+  unclaimed. Refs: native prefix-pressure fixture contract.
 - **fix(menubar): render fixture receipt controls as clear read prerequisites**.
   The fixture-only renderer now shows “Exact ID required before read” rather
   than attempting to rasterize editable AppKit text fields; live controls are
