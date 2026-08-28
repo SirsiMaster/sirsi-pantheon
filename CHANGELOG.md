@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **refactor(ra): remove Python from default fleet orchestration**. Health,
+  test, lint, nightly, and recorded fleet paths use the Go-native executor;
+  task and broadcast require an explicit fail-closed developer provider.
+  Refs: PANTHEON_RA_GO_NATIVE_CUTOVER_20260828.md.
 - **docs(evidence): record fixture-bound native prefix-pressure audit**. Captures
   the exact v0.23.14 candidate, Swift test evidence, and narrow/wide fixture
   snapshots while explicitly leaving live VoiceOver and keyboard traversal
