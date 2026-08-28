@@ -52,4 +52,11 @@ regexes = [
   '''^60a94a48404769b133589e9b23ba137a778789b037c36af48e5f4fb6cf8b9808$''',
   '''^66650390a7dd24be6bff30d577d04de7911320119c72026523ccc92cefa104c8$''',
   '''^correct-horse-battery-staple-1234567890$''',
+
+  # Historical Thoth journal metadata, not credentials. These exact values are
+  # generated protocol/test vocabulary in .thoth/journal.md (entries 2026-06-02
+  # and 2026-08-21); the path is retained in the scan and only the exact tokens
+  # are excluded so any other journal value remains visible.
+  '''^finish_reason=length$''',
+  '''^thr-786f9565169abe83$''',
 ]
