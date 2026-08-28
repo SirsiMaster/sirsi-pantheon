@@ -97,6 +97,13 @@ const runTimeout = 30 * time.Second
 // decode runs a verb and unmarshals its JSON into v. It centralizes the
 // timeout, the run, and the decode so every screen's load path is identical.
 func decode(verb string, v any, args ...string) error {
+	return decodeArgs(v, verb, args...)
+}
+
+// decodeArgs is decode for a nested Cobra command. It deliberately preserves
+// the runner boundary: the TUI executes the same CLI projection an operator
+// can run, rather than reaching into dashboard or SNE internals.
+func decodeArgs(v any, verb string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	out, err := getRunner().RunJSON(ctx, verb, args...)
