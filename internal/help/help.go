@@ -129,7 +129,7 @@ func guides() map[string]deityGuide {
 				"sirsi ra nightly",
 				"sirsi ra status",
 			},
-			Platform: "All platforms. Requires python3 and claude-code-sdk (pip3 install claude-code-sdk).",
+			Platform: "All platforms. Health, test, lint, and nightly run through Pantheon's Go-native executor. Task and broadcast require an explicit developer-provider executable; Pantheon fails closed when it is absent.",
 		},
 		"isis": {
 			Name: "Isis", Glyph: "\U00013050", Tagline: "Health, Remediation & Network Security",

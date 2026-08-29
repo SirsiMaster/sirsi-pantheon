@@ -80,7 +80,7 @@ func (r *baseScanRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jac
 		}
 		// Horus Phase 2 is directory-only. If no directories matched or Horus is absent,
 		// fallback to a real filesystem glob to catch individual files.
-		if len(matches) == 0 {
+		if len(matches) == 0 && (opts.Manifest == nil || opts.DeepScan) {
 			var err error
 			matches, err = filepath.Glob(expanded)
 			if err != nil {
@@ -139,10 +139,14 @@ func (r *baseScanRule) Scan(ctx context.Context, opts jackal.ScanOptions) ([]jac
 			fileCount := 1
 			if isDir {
 				if opts.Manifest != nil {
-					// Horus: O(1) hash lookup
+					// Spotlight/Horus owns discovery for platform scans.
 					size, fileCount = opts.Manifest.DirSizeAndCount(match)
 				} else {
-					// Fallback: combined filesystem walk
+					// No manifest means this is an explicitly scoped scan (including
+					// tests and non-macOS hosts), not Pantheon's resident background
+					// path. Walk only the directory the rule explicitly selected.
+					// Using directory inode size here would report empty directories
+					// as waste and undercount newly created/unindexed files.
 					size, fileCount = dirSizeAndCount(match)
 				}
 			}

@@ -649,6 +649,26 @@ func TestHapiFreeRAMBytesDefaultPageSize(t *testing.T) {
 	}
 }
 
+func TestHapiFreeRAMBytesIncludesActiveFileBackedSnapshotCache(t *testing.T) {
+	orig := hapiVMStatFn
+	t.Cleanup(func() { hapiVMStatFn = orig })
+	hapiVMStatFn = func() ([]byte, error) {
+		return []byte(`Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                              500000.
+Pages inactive:                          600000.
+Pages speculative:                        10000.
+File-backed pages:                      1800000.
+`), nil
+	}
+	// Queue estimate is 1,110,000 pages. The full-snapshot read made 1,800,000
+	// pages file-backed and reclaimable; Apple's memorystatus approximation is
+	// free + file-backed = 2,300,000 pages.
+	want := int64(500000+1800000) * 16384
+	if got := hapiFreeRAMBytes(); got != want {
+		t.Fatalf("want %d reclaimable bytes including active file cache, got %d", want, got)
+	}
+}
+
 func TestHapiFreeRAMBytesCommandFailureIsZero(t *testing.T) {
 	orig := hapiVMStatFn
 	t.Cleanup(func() { hapiVMStatFn = orig })

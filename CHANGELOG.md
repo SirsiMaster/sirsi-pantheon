@@ -7,6 +7,130 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+
+- **Release-copy integrity:** Remove stale ad-hoc-signing and Gatekeeper-bypass
+  instructions from the draft release body. The public release surface now
+  avoids unbound test-count claims and stays consistent with the signed,
+  notarized exact-byte publication gate.
+  Refs: ADR-023; release identity verification contract.
+- **Formula publication containment:** Disable GoReleaser’s pre-publication
+  Homebrew Formula writer; the exact-DMG cask remains the only allowed Homebrew
+  release transition until Formula publishing gains an equivalent binding gate.
+- **Release publication safety:** Create GitHub releases as drafts, validate the
+  uploaded notarized DMG against its exact tag/tree before publication, then
+  allow cask promotion only after the verified release is public.
+- **Lifecycle evidence identity:** Upgrade the future M1/M5 lifecycle contract
+  to v2 so its plan and receipt bind the exact tag, version, and signed asset
+  as well as source and package identity; add a hermetic mismatch regression.
+- **Release-boundary honesty:** Label the v0.23.8 notes and roadmap as
+  historical snapshots and point current readers to the v0.23.14 unsigned
+  release decision rather than implying a newer signed, installable artifact.
+- **Release lifecycle contract:** Require the non-mutating M1/M5 lifecycle-plan
+  and receipt validators in the unsigned source gate, so an unsigned candidate
+  cannot present package/cask mechanics without an exact later lifecycle-proof
+  handoff.
+- **fix(help): describe Ra's Go-native default honestly**. The command guide no
+  longer claims Python and the Claude SDK are product prerequisites; only the
+  retained task/broadcast developer-provider boundary is optional and explicit.
+  Refs: ADR-051; Go-native Ra cutover.
+- **fix(release): add a fail-closed unsigned source-release gate**. A candidate
+  can now prove VERSION/tag/tree/package-contract coherence before credentials
+  exist, while refusing a cask that would name unsigned or nonexistent bytes.
+  Refs: ADR-023; release identity verification contract.
+- **refactor(router): run resident registry police through Go-native read
+  models**. The supervisor no longer invokes Python to parse its own discovery
+  and liveness JSON; the duty reuses bounded Go discovery/scouting, cutover-aware
+  router reads, guarded advisory dispatch, and the existing fail-closed wake
+  model. The legacy script remains developer compatibility only and is not on
+  Pantheon's default resident path.
+  Refs: ADR-024; ADR-036; PANTHEON_RULES.md A16/A21.
+- **fix(router): expose Go-native read-only completion-proof validation**.
+  Canonical verification now uses `sirsi router validate-proof`; legacy Python
+  remains an explicit developer compatibility override only. The validator
+  resolves worktree identity and rejects malformed handoff records.
+  Refs: ADR-037; Go-native completion validator.
+- **fix(ra): fence the legacy Terminal/Claude deployment bridge behind an
+  explicit developer-only opt-in**. Normal Ra health, test, lint, nightly,
+  and pipeline commands remain Go-native; `ra deploy` can no longer make
+  Terminal, Claude, or Python part of the default Pantheon product path.
+  Refs: ADR-051; Go-native Ra cutover.
+- **fix(native): keep the pure local-control transport classifier callable from
+  fixture tests**. The classifier is explicitly nonisolated because it reads
+  no menu-bar model state; this preserves main-actor UI ownership while making
+  the no-network Swift contract compile under strict concurrency.
+  Refs: PANTHEON_RULES.md A16/A21; native local-control contract.
+- **docs(release): prevent self-referential v0.23.14 tag provenance**. The
+  release-engineering baseline and eventual tag target are now explicitly
+  separated; a post-verification receipt must bind the final immutable tree
+  before publication, signing, cask generation, or lifecycle qualification.
+  Refs: ADR-023; release identity verification contract.
+- **fix(native): make SNE local control an explicit, bounded Swift-owned
+  action**. The bundled Go helper runs headlessly without legacy resident
+  duties and is stopped when the native app exits; it never auto-starts SNE.
+- **fix(native): restrict the local-control helper environment**. The explicit
+  child now receives only local process essentials, never ambient credentials,
+  provider tokens, or developer runtime switches.
+- **fix(native): show local-control start only for loopback transport loss**.
+  SNE readiness, authorization, and API errors cannot prompt a redundant helper
+  launch.
+- **fix(native): require the Swift-owned local-control child to remain alive**.
+  An unrelated loopback listener can no longer produce a false local-start
+  success message after the helper exits.
+- **docs(evidence): record the corrected packaged MCP handshake**. The
+  v0.23.14 bundle now proves MCP and CLI identity alignment over stdio.
+- **fix(mcp): bind stdio identity to the stamped Pantheon product version**.
+  MCP no longer advertises the retired Anubis copy or a hard-coded alpha
+  version; its default handshake now matches `sirsi version`.
+- **docs(evidence): record the v0.23.14 native bundle bytes and unsigned
+  boundary**. The local DMG proves the Swift app plus embedded Go authority;
+  it is not a signed or published artifact.
+- **fix(release): ship the native Swift menu bar as Pantheon.app's executable**.
+  The Go CLI and control engine are now embedded as non-visible companions;
+  bundle assembly and verification reject the former Go-tray app shape.
+- **docs(evidence): record a bounded v0.23.14 binary-footprint measurement**.
+  The stripped stamped CLI is 18 MiB; unsigned packaging and lifecycle proof
+  remain explicitly open.
+- **refactor(ra): remove Python from default fleet orchestration**. Health,
+  test, lint, nightly, and recorded fleet paths use the Go-native executor;
+  task and broadcast require an explicit fail-closed developer provider.
+  Refs: PANTHEON_RA_GO_NATIVE_CUTOVER_20260828.md.
+- **docs(evidence): record fixture-bound native prefix-pressure audit**. Captures
+  the exact v0.23.14 candidate, Swift test evidence, and narrow/wide fixture
+  snapshots while explicitly leaving live VoiceOver and keyboard traversal
+  unclaimed. Refs: native prefix-pressure fixture contract.
+- **fix(menubar): render fixture receipt controls as clear read prerequisites**.
+  The fixture-only renderer now shows “Exact ID required before read” rather
+  than attempting to rasterize editable AppKit text fields; live controls are
+  unchanged. Refs: native prefix-pressure fixture evidence.
+- **fix(menubar): keep unavailable SNE capability recovery owner-visible and
+  non-disruptive**. The native surface no longer tells operators to restart
+  Pantheon; it states that no SNE state changed and directs the operator back
+  to the required owner action. Refs: SNE lifecycle containment contract.
+- **test(menubar): add fixture-only SNE read-model coverage**. The native Swift
+  package now declares a test target and verifies exact lifecycle/catalog JSON
+  decoding plus the preloaded identity fixture without contacting Pantheon,
+  reading capabilities, or issuing mutations. The release identity advances to
+  `0.23.14-beta`. Refs: PANTHEON_RULES.md A7/A16/A21; native SNE surface
+  evidence.
+- **fix(build): retain a footprint fallback for cgo-disabled cross-target builds**.
+  Darwin physical-footprint probes are now selected only for `darwin && cgo`;
+  Linux and cgo-disabled targets use the explicit unavailable sentinel, allowing
+  GoReleaser cross-builds to compile without changing Darwin runtime behavior.
+  The release identity advances to `0.23.13-beta`.
+- **fix(release): require notarization before promoting a distributable DMG**.
+  Release builds now fail closed when Developer ID signing succeeds but
+  notarization/stapling credentials or proof are absent; signing secrets are
+  scoped to the steps that consume them. Refs: release governance successor
+  `8cbd02aa` / `c3aa55f3`.
+- **fix(security): bind historical fixture scan exceptions to exact values**. The
+  release identity advances to `0.23.11-beta`; the full-history gitleaks gate now
+  documents exact non-secret loopback-test and historical Thoth journal fixtures
+  rather than broad path suppressions. Refs: PANTHEON_RULES.md A28.
+- **fix(release): add a fail-closed pre-tag source-identity check**. Release
+  ownership can now validate the exact candidate commit and `VERSION` before
+  creating a tag; an already-existing tag must bind that same commit. This
+  detects a tag/tree mismatch before tag creation or workflow dispatch. Refs:
+  ADR-023; PANTHEON_RULES.md A7/A13.
 - **fix(liveness): the weight-floor check ran BEFORE the generation probe, so an idle-but-healthy broker was misread as "weights absent" and restarted in a self-sustaining loop** (claude-pantheon, 2026-08-09, evidence from claude-home). `ProbeGemmaState` gated on `mlx_active_bytes >= 1024 MB` (RSS as fallback) before ever attempting a real completion — but the broker loads weights lazily, on the first inference request, so a freshly-restarted, idle broker legitimately reports `mlx_active_bytes: 0`. **Measured 2026-08-09 by claude-home:** the broker was up and healthy (`reply='OK' finish=stop`, 6 requests served, 12.72 GB active once warmed) while liveness-watch fired twice, 8m42s apart against a 900s interval — the "restore" each time was a restart of a working broker into idleness, which read as weightless again on the next tick. The suggested remediation text ("re-download the model weights") would have deleted a good 12 GB HF cache to fix a broker that was never broken. Fix: run the functional generation probe FIRST; a broker that answers is `GemmaHealthy`, full stop, floor never consulted. The floor is only checked when the functional probe has ALREADY reported a wedge, to distinguish a generic transient wedge from genuinely-absent weights (still needed — the router's gemma-liveness duty short-circuits on `WeightsAbsentSentinel` to route a re-download item instead of looping restarts against a floor a weightless broker can never clear). Added `TestProbeGemmaState_IdleBrokerIsNeverMisreadAsWeightless`; updated the two floor-fires tests to simulate what a genuinely weightless broker actually returns (fails to generate) rather than the healthy stub the old floor-first order never reached. Two adjacent findings from the same evidence are tracked as follow-up, not fixed here: the menubar liveness check isn't quarantine-aware (flags a deliberate owner decision as a defect), and some liveness routes drop on SQLite lock contention (`routerstore: SendGuarded: quota: database is locked`). Refs: PANTHEON_RULES.md A32, A35; ADR-040; router items `20260809-060146-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged`, `20260809-061333-claude-home-claude-pantheon-evidence-on-20260809-060146-broker-is-healthy-liveness-watch`
 - **fix(gemma): `gemma-server.pid` never re-synced after the initial launch, so a reused PID silently defeated A32 load-bearing protection** (claude-pantheon, 2026-08-09). Triaging a horus liveness alert (`20260809-060146`) found the broker actually healthy — `curl` 200, tokens produced, RSS 5.2 GB — but `~/.sirsi/gemma-server.pid` held a PID from ~6 hours earlier that had since been reused by an unrelated `extensionkitservice` process. Root cause: launchd forks/respawns the broker directly (no Go supervisor in the loop), and `gemmaServerStop` only ever *removes* the pidfile — nothing on any start path (`launchctl kickstart`, `KeepAlive` crash-relaunch) ever wrote a fresh one. Left uncorrected, `guard.LoadBearingPIDs()` would protect the wrong (reused, unrelated) PID while the real broker stayed unprotected from routine reclaim — exactly the "stale pidfile never protects a reused PID" failure the function's own doc comment warns about. Fix, in two parts: (1) `gemmaAwaitWarm` calls the new `liveness.SyncGemmaPidFile`, which reads the live PID from `launchctl print ai.sirsi.gemma-broker` and writes it to `gemma-server.pid`, once the port confirms warm — covers explicit `sirsi gemma serve` calls and the liveness duty's Down/Wedged restore paths. (2) That alone missed the common case — a launchd-owned respawn or a broker that was simply healthy the whole time never hits path (1), which is exactly how this pidfile went stale for ~6h while the broker itself was fine — so the gemma-liveness supervisor duty (`internal/router/gemmaliveness.go`) now also calls `SyncGemmaPidFile` on every `GemmaHealthy`/`GemmaBusy` tick (~every 2 min), self-correcting regardless of how the broker came up. Both best-effort — a sync failure never fails the check that already succeeded. Refs: PANTHEON_RULES.md A32; ADR-040; router item `20260809-060146-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged`; ledger task `gemma-broker-pidfile-backfill`
 - **fix(gemma): `gemma-server.pid` never re-synced after the initial launch, so a reused PID silently defeated A32 load-bearing protection** (claude-pantheon, 2026-08-09). Triaging a horus liveness alert (`20260809-060146`) found the broker actually healthy — `curl` 200, tokens produced, RSS 5.2 GB — but `~/.sirsi/gemma-server.pid` held a PID from ~6 hours earlier that had since been reused by an unrelated `extensionkitservice` process. Root cause: launchd forks/respawns the broker directly (no Go supervisor in the loop), and `gemmaServerStop` only ever *removes* the pidfile — nothing on any start path (`launchctl kickstart`, `KeepAlive` crash-relaunch) ever wrote a fresh one. Left uncorrected, `guard.LoadBearingPIDs()` would protect the wrong (reused, unrelated) PID while the real broker stayed unprotected from routine reclaim — exactly the "stale pidfile never protects a reused PID" failure the function's own doc comment warns about. Fix: `gemmaAwaitWarm` now calls `syncGemmaPidFile` once the port confirms warm, which reads the live PID from `launchctl print ai.sirsi.gemma-broker` and writes it to `gemma-server.pid`. Best-effort — a sync failure never fails the warm check that already succeeded. Refs: PANTHEON_RULES.md A32; ADR-040; router item `20260809-060146-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged`

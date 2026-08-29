@@ -55,6 +55,54 @@ func spiralFinding(t *testing.T, m *platform.Mock) DiagnosticFinding {
 	return r.Findings[0]
 }
 
+func TestReadSwapPctTelemetryValidity(t *testing.T) {
+	tests := []struct {
+		name       string
+		output     string
+		wantPct    float64
+		wantUsedGB float64
+		wantOK     bool
+	}{
+		{
+			name:   "fresh boot allocated-zero swap is readable",
+			output: "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)",
+			wantOK: true,
+		},
+		{
+			name:       "allocated swap is parsed",
+			output:     "total = 4096.00M  used = 1024.00M  free = 3072.00M  (encrypted)",
+			wantPct:    25,
+			wantUsedGB: 1,
+			wantOK:     true,
+		},
+		{
+			name:   "missing total remains unreadable",
+			output: "used = 0.00M  free = 0.00M  (encrypted)",
+		},
+		{
+			name:   "malformed value remains unreadable",
+			output: "total = unknown  used = 0.00M  free = unknown",
+		},
+		{
+			name:   "used greater than total remains unreadable",
+			output: "total = 512.00M  used = 1024.00M  free = 0.00M  (encrypted)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &platform.Mock{NameStr: "mock", CommandResults: map[string]string{
+				"sysctl -n vm.swapusage": tt.output,
+			}}
+			pct, usedGB, ok := readSwapPct(m)
+			if pct != tt.wantPct || usedGB != tt.wantUsedGB || ok != tt.wantOK {
+				t.Fatalf("readSwapPct() = (%v, %v, %v), want (%v, %v, %v)",
+					pct, usedGB, ok, tt.wantPct, tt.wantUsedGB, tt.wantOK)
+			}
+		})
+	}
+}
+
 // TestMemoryDeathSpiral pins the 2026-07-16 incident contract: load 31.8 /
 // swap 95% / 244 leaked sessions must be Critical (live → forces RED), never
 // a 6-point deduction.

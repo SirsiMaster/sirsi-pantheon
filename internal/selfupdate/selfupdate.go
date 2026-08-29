@@ -231,8 +231,23 @@ func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftRe
 		}
 	}
 	if pathBin != "" && self.Path != "" {
-		if filepath.Clean(pathBin) != filepath.Clean(self.Path) {
-			r.D3PathBin = filepath.Clean(pathBin)
+		pathClean := filepath.Clean(pathBin)
+		selfClean := filepath.Clean(self.Path)
+		if pathClean != selfClean {
+			// Different install locations are not drift when the PATH binary is a
+			// discovered, healthy copy of this exact stamped release. Pantheon.app
+			// intentionally exposes its CLI through ~/.local/bin; path inequality
+			// alone previously produced a permanent false warning after install.
+			pathMatchesRelease := false
+			for _, s := range siblings {
+				if filepath.Clean(s.Path) == pathClean && s.Err == "" && s.Version == self.Version && s.Commit == self.Commit {
+					pathMatchesRelease = true
+					break
+				}
+			}
+			if !pathMatchesRelease {
+				r.D3PathBin = pathClean
+			}
 		}
 	}
 	r.Healthy = len(r.D2Mismatch) == 0 && r.D3PathBin == ""

@@ -172,3 +172,26 @@ The deliverable is one signed, notarized artifact downloadable from **both** Git
 
 ### Release gate
 A release ships only when, on a **clean machine**: the cask installs, the product-page button downloads the identical notarized artifact, Gatekeeper accepts it with no quarantine warning, first-run requests FDA once, an upgrade re-installs without re-prompting FDA — and the **P0 memory guard is live and observed catching a stress run**. Protection is not a footnote of the release; it is the precondition for it.
+
+### 5.5 Future installer experience gate (owner-ratified; deferred)
+
+**Status:** planned requirement and acceptance criterion. This records future product scope; it does not authorize implementation in the recording turn.
+
+Pantheon must ultimately provide a polished, low-friction installation experience comparable to Tailscale. Installation is a first-class product surface, not a packaging afterthought. Supported distribution paths are:
+
+- **Homebrew cask** for terminal-oriented Mac users;
+- **GitHub Releases** for direct, signed, notarized distribution; and
+- **Mac App Store** where Apple platform policy, entitlements, sandboxing, and Pantheon's required capabilities permit it. Any capability gap or policy-limited variant must be explicit rather than silently degraded.
+
+The installer experience is accepted only when all of the following are proven:
+
+1. It detects operating-system, architecture, disk-space, conflicting-installation, runtime, and other prerequisites before mutation and explains any unmet prerequisite in actionable language.
+2. It requests permissions, privileged helpers, login items, and network extensions only when required, explains why each is needed before the prompt, and preserves Pantheon's consent-before-control rule.
+3. Every failure names the failed step, preserves useful diagnostics without exposing secrets, provides a concrete recovery action, and can safely resume or roll back.
+4. Successful installation verifies the installed artifact, code signature, notarization, version, shared Pantheon engine, CLI, native application, menu-bar surface, and the explicit IDE-integration authorization path applicable to that distribution.
+5. Upgrades preserve compatible configuration and authoritative state, avoid unnecessary permission/TCC churn, verify the new installation, and provide an honest recovery or rollback path.
+6. Uninstall is discoverable and clean: it identifies what will be removed, preserves or exports user-owned data when requested, removes Pantheon-owned helpers and launch items, and verifies the resulting state.
+7. Clean-machine acceptance is exercised independently for every offered distribution path, including install, first launch, required permissions, verification, upgrade, failure recovery, and uninstall.
+8. Homebrew, GitHub Release, and Mac App Store artifacts identify their common source/version and documented capability differences; no route may imply parity that platform policy prevents.
+
+Implementation remains future work until it is separately planned and authorized.

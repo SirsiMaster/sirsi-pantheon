@@ -1,0 +1,9 @@
+{
+  "schema": "pantheon-sne-supervised-restart-gate-v1",
+  "service_sha256": "458b40521bf0125c7eb134b76e54415fa8c86f1fea1de7f63eedb6fa21d92b79",
+  "before_pid": 39938,
+  "after_pid": 40085,
+  "distinct_processes": true,
+  "post_restart_content_equal": true,
+  "content_sha256": "770fe7e402777a614956d7e38268ede50fa77b1d0d28c4a700bb474183e9cd08"
+}

@@ -11,11 +11,10 @@ package main
 //	  service          → runs the action, gives ⏳→✓/✗ feedback
 //	  ↳ last result     → the event response; click to open the full detail
 //
-// This file owns the reusable primitives (wire, resultRow, runService,
+// This file owns the reusable primitives (wire, resultRow,
 // openDetail, recent-activity drill-in). main.go composes them in onReady.
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,7 +22,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"fyne.io/systray"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
@@ -85,58 +83,6 @@ func (r *resultRow) open() {
 		return
 	}
 	openDetail(t, d)
-}
-
-// runService executes `sirsi <command>` off the UI thread, gives the clicked
-// item ⏳→✓/✗ feedback, records the response to Recent Activity, and fills the
-// deity's result row (clickable → full detail). Non-blocking; the menu stays
-// responsive. This is the safe (non-destructive) action runner — destructive
-// flows (clean/ra deploy/kill) keep their dedicated confirm/Terminal paths.
-func runService(clicked *systray.MenuItem, label, sirsiBin, command string, store *notify.Store, rr *resultRow) {
-	if clicked == nil || sirsiBin == "" {
-		return
-	}
-	clicked.SetTitle("⏳ " + label)
-	clicked.Disable()
-	go func() {
-		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
-		defer cancel()
-		out, err := exec.CommandContext(ctx, sirsiBin, strings.Fields(command)...).CombinedOutput()
-		dur := time.Since(start)
-		text := stripANSI(string(out))
-
-		sev, icon := notify.SeveritySuccess, "✓"
-		summary := firstMeaningfulLine(text)
-		if ctx.Err() == context.DeadlineExceeded {
-			sev, icon, summary = notify.SeverityWarning, "⏱", "timed out after "+actionTimeout.String()
-		} else if err != nil {
-			sev, icon = notify.SeverityError, "✗"
-			if summary == "" {
-				summary = err.Error()
-			}
-		}
-		if summary == "" {
-			summary = "done"
-		}
-
-		if store != nil {
-			_ = store.Record(notify.Notification{
-				Source:     label,
-				Action:     command,
-				Severity:   sev,
-				Summary:    truncate(summary, 140),
-				Details:    truncate(text, 8000),
-				DurationMs: dur.Milliseconds(),
-			})
-		}
-		if rr != nil {
-			rr.set(label, icon, summary, text)
-		}
-		clicked.SetTitle(icon + " " + label)
-		clicked.Enable()
-		time.AfterFunc(5*time.Second, func() { clicked.SetTitle(label) })
-	}()
 }
 
 // ── Recent Activity drill-in ───────────────────────────────────────────────

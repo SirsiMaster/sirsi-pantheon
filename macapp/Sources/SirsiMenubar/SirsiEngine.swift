@@ -441,17 +441,10 @@ final class SirsiEngine: ObservableObject {
     @Published var activity: [ActivityEntry] = []
     private let activityPath = (("~/.config/pantheon/menubar-activity.json") as NSString).expandingTildeInPath
 
-    func checkFDA() { hasFDA = Self.probeFullDiskAccess() }
-
-    // probeFullDiskAccess attempts a TCC-guarded open(); success == we have FDA.
-    // TCC.db exists on every Mac and is readable only with Full Disk Access.
-    nonisolated static func probeFullDiskAccess() -> Bool {
-        let probe = FileManager.default.homeDirectoryForCurrentUser.path
-            + "/Library/Application Support/com.apple.TCC/TCC.db"
-        let fd = open(probe, O_RDONLY)
-        if fd >= 0 { close(fd); return true }
-        return false
-    }
+    // macOS exposes no public, silent Full Disk Access status API. A resident
+    // refresh must not touch a protected store merely to infer permission, so
+    // this stays false until an explicit protected operation proves access.
+    func checkFDA() { hasFDA = false }
 
     // Health (Horus — Ops): findings from `sirsi diagnose`.
     @Published var health: [DiagFinding] = []
@@ -837,6 +830,7 @@ final class SirsiEngine: ObservableObject {
     var onTitle: ((String) -> Void)?
 
     private let scanPath = (("~/.config/pantheon/findings/latest-scan.json") as NSString).expandingTildeInPath
+    private let healthSnapshotPath = (("~/Library/Application Support/Sirsi/Pantheon/health-snapshot.json") as NSString).expandingTildeInPath
 
     // SAFE = the only set the one-click surface ever trashes (regenerable,
     // trash-first). CAUTION is shown for transparency but never one-click cleaned.
@@ -848,6 +842,7 @@ final class SirsiEngine: ObservableObject {
     // refresh re-reads the persisted scan (cheap; no rescan). Drives the title.
     func refresh() {
         checkFDA()
+        loadHealthSnapshot()
         // Ambient CTR roster: keep the live-thread count fresh for the Home row +
         // Threads surface without the user querying (owner directive 20260709-182003).
         Task { await loadThreads() }
@@ -957,6 +952,32 @@ final class SirsiEngine: ObservableObject {
     private var lastDiagnoseAt: Date?
     static let diagnoseTTL: TimeInterval = 300
 
+    // Resident Pantheon is a projection, not a probing daemon. Launch, timer,
+    // and ordinary panel-open paths load this owner-approved diagnostic receipt
+    // instead of running a fresh host probe that could touch a protected macOS
+    // location and provoke TCC. Only an explicit diagnostic action calls
+    // diagnose(force: true), which then atomically refreshes this snapshot.
+    private func loadHealthSnapshot() {
+        guard health.isEmpty,
+              let data = FileManager.default.contents(atPath: healthSnapshotPath),
+              let report = try? JSONDecoder().decode(DiagReport.self, from: data)
+        else { return }
+        health = report.findings
+        healthStatus = report.status ?? "green"
+    }
+
+    private func persistHealthSnapshot(_ data: Data) {
+        let url = URL(fileURLWithPath: healthSnapshotPath)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // A failed cache write must not turn a successful explicit diagnosis
+            // into a false failure. The live result remains authoritative.
+        }
+    }
+
     // diagnose runs `sirsi diagnose --json` and parses the health report. Uses a
     // stdout-only run so a banner on stderr can't corrupt the JSON.
     func diagnose(force: Bool = false) async {
@@ -970,6 +991,7 @@ final class SirsiEngine: ObservableObject {
         if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
             health = rep.findings
             healthStatus = rep.status ?? "green"
+            persistHealthSnapshot(data)
             onTitle?(titleLabel())   // health now drives the glyph, not just waste
         }
         healthLoading = false
@@ -1534,7 +1556,22 @@ final class SirsiEngine: ObservableObject {
         }
     }
 
+    // bundledSirsiBinary is deliberately a pure resolver so the native shell
+    // can prefer the exact CLI shipped beside it without probing the network,
+    // spawning the local control engine, or falling back to an unrelated PATH
+    // installation. The development fallbacks below remain for an unbundled
+    // SwiftPM executable only.
+    nonisolated static func bundledSirsiBinary(bundleURL: URL = Bundle.main.bundleURL) -> String? {
+        let candidate = bundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .appendingPathComponent("sirsi", isDirectory: false)
+            .path
+        return FileManager.default.isExecutableFile(atPath: candidate) ? candidate : nil
+    }
+
     nonisolated static func sirsiBinary() -> String {
+        if let bundled = bundledSirsiBinary() { return bundled }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         for c in ["\(home)/.local/bin/sirsi", "/opt/homebrew/bin/sirsi", "/usr/local/bin/sirsi"] {
             if FileManager.default.isExecutableFile(atPath: c) { return c }

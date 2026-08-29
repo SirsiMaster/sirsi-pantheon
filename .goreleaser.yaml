@@ -101,6 +101,12 @@ nfpms:
 
 brews:
   - name: sirsi-pantheon
+    # Pantheon is Mac-first and ships through the notarized app/cask path.
+    # A GoReleaser Formula is published during its release phase, which occurs
+    # while the GitHub release is deliberately a private draft. Keep this
+    # compatibility channel disabled until it has its own post-publication
+    # asset-binding contract; never expose a Formula that points at draft bytes.
+    disable: true
     ids:
       - default
     repository:
@@ -136,11 +142,14 @@ release:
     name: sirsi-pantheon
   name_template: "v{{.Version}}"
   prerelease: auto
-  draft: false
+  # macOS is Pantheon's product release surface. Keep the GitHub release
+  # private until the signed, notarized DMG has been uploaded and bound to the
+  # exact tag/tree; a CLI-only release must never become the public artifact.
+  draft: true
   header: |
     ## Sirsi Pantheon {{.Version}}
 
-    Infrastructure intelligence from one laptop to a fleet. 81 rules, zero config, zero telemetry.
+    Infrastructure intelligence from one laptop to a fleet. Local-first and zero telemetry.
 
     ---
 
@@ -156,18 +165,15 @@ release:
 
     ### Quick Start
     ```bash
-    sirsi scan       # Find waste (81 rules across 7 domains)
+    sirsi scan       # Find infrastructure waste
     sirsi doctor     # System health diagnostic
     sirsi ghosts     # Find remnants of uninstalled apps
     sirsi quickstart # Guided first scan with recommendations
     ```
 
-    ### macOS Gatekeeper Note
-    Pantheon.app is ad-hoc signed. On first launch, macOS may show "cannot be opened because the developer cannot be verified." Right-click the app → Open → Open. This only happens once. Notarized signing is coming with our Apple Developer enrollment.
-
   footer: |
     ---
-    **2,251 tests across 36 packages. Zero telemetry. Apache 2.0 licensed.**
+    **Zero telemetry. Apache 2.0 licensed.**
 
     [sirsi.ai/pantheon](https://sirsi.ai/pantheon) · [Documentation](https://github.com/SirsiMaster/sirsi-pantheon/blob/main/README.md) · [Changelog](https://github.com/SirsiMaster/sirsi-pantheon/blob/main/CHANGELOG.md)
 

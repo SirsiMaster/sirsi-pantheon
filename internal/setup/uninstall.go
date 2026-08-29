@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -96,7 +97,10 @@ func Uninstall(dryRun bool) (acted []UninstallTarget, errs []string) {
 		switch t.Action {
 		case "remove":
 			if t.Kind == "LaunchAgent" && runtime.GOOS == "darwin" {
-				_ = getUninstallExec()("launchctl", "unload", t.Path) // best-effort
+				label := strings.TrimSuffix(filepath.Base(t.Path), ".plist")
+				target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+				_ = getUninstallExec()("launchctl", "bootout", target)
+				_ = getUninstallExec()("launchctl", "disable", target)
 			}
 			err = os.RemoveAll(t.Path)
 		case "trash":

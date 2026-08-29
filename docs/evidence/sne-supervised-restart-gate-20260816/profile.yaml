@@ -1,0 +1,11 @@
+schema_version: pantheon.sne-supervisor.v0
+product: nexus
+sne:
+  profile: interactive
+  endpoint: http://127.0.0.1:8477
+  health_path: /health/ready
+  models_path: /v1/models
+  restart_policy: on-failure
+  memory_ceiling_bytes: 0
+  max_concurrent_requests: 4
+  yield_to_foreground: false

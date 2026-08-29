@@ -20,20 +20,29 @@ what Pantheon can do, only how you drive it.
   sirsi surface use cli      Switch to direct terminal commands
   sirsi surface use tui      Switch to the full-screen terminal app
   sirsi surface use gui      Bring the macOS menu bar app forward
-  sirsi surface use ide      Make Pantheon reachable from your AI IDE (MCP)`,
+  sirsi surface use ide      Make Pantheon reachable from your AI IDE (MCP)
+  sirsi surface install gui  Install and start the macOS caretaker at login`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		output.Header("Surfaces")
 		fmt.Println()
 		active := setup.ActiveSurface()
 		fmt.Printf("  Active: %s\n\n", active.Title())
+		caretakerInstalled, caretakerLoaded := setup.MenubarRegistration()
+		caretakerStatus := "not installed"
+		if caretakerInstalled {
+			caretakerStatus = "installed, stopped"
+		}
+		if caretakerLoaded {
+			caretakerStatus = "installed + loaded"
+		}
 
 		rows := [][]string{
-			{marker(active, setup.SurfaceCLI), "cli", setup.SurfaceCLI.Detail()},
-			{marker(active, setup.SurfaceTUI), "tui", setup.SurfaceTUI.Detail()},
-			{marker(active, setup.SurfaceGUI), "gui", "Native macOS window over the Pantheon dashboard"},
-			{marker(active, setup.SurfaceIDE), "ide", setup.SurfaceIDE.Detail()},
+			{marker(active, setup.SurfaceCLI), "cli", "available", setup.SurfaceCLI.Detail()},
+			{marker(active, setup.SurfaceTUI), "tui", "available", setup.SurfaceTUI.Detail()},
+			{marker(active, setup.SurfaceGUI), "gui", caretakerStatus, "Native macOS window over the Pantheon dashboard"},
+			{marker(active, setup.SurfaceIDE), "ide", "configure in setup", setup.SurfaceIDE.Detail()},
 		}
-		output.Table([]string{"", "Surface", "What it is"}, rows)
+		output.Table([]string{"", "Surface", "Status", "What it is"}, rows)
 		fmt.Println()
 		fmt.Println("  Switch with:  sirsi surface use <cli|tui|gui|ide>")
 		return nil
@@ -64,9 +73,35 @@ var surfaceUseCmd = &cobra.Command{
 	},
 }
 
+var surfaceInstallCmd = &cobra.Command{
+	Use:   "install <gui|menubar>",
+	Short: "Install one Pantheon surface without running the setup wizard",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		s, err := parseInstallableSurfaceArg(args[0])
+		if err != nil {
+			return err
+		}
+		result := setup.Install(s)
+		if result.Status != setup.StatusOK {
+			return fmt.Errorf("install %s: %s", args[0], result.Message)
+		}
+		output.Success("%s", result.Message)
+		return nil
+	},
+}
+
 func init() {
 	surfaceCmd.AddCommand(surfaceUseCmd)
+	surfaceCmd.AddCommand(surfaceInstallCmd)
 	rootCmd.AddCommand(surfaceCmd)
+}
+
+func parseInstallableSurfaceArg(tok string) (setup.Surface, error) {
+	if tok == "gui" || tok == "menubar" {
+		return setup.SurfaceMenubar, nil
+	}
+	return "", fmt.Errorf("surface %q is not separately installable (want: gui or menubar)", tok)
 }
 
 // parseSurfaceArg maps a user token to a Surface. "gui" and "menubar" both map

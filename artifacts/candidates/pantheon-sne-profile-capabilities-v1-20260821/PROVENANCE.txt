@@ -1,0 +1,5 @@
+Pantheon copied candidate: profile-scoped SNE cache and prefix-session capability exposure.
+No installed or immutable release was modified.
+Prefix sessions are supported only when the exact signed runtime reports a positive maximum and the admitted execution mode is plain.
+MTP remains explicitly unsupported; no fallback is implied.
+Focused dashboard and SNE suites passed on 2026-08-21.

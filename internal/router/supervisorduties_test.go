@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// scaffoldDutyScripts writes the three duty scripts under a temp router root
+// scaffoldDutyScripts writes the two legacy shell duty scripts under a temp router root
 // so runSupervisorDuties finds them (stat-only — dutyRunFn is stubbed).
 func scaffoldDutyScripts(t *testing.T) (routerRoot, repoRoot string) {
 	t.Helper()
@@ -18,12 +18,21 @@ func scaffoldDutyScripts(t *testing.T) (routerRoot, repoRoot string) {
 	if err := os.MkdirAll(filepath.Join(routerRoot, "police"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{"run-on-event.sh", "sweep.sh", filepath.Join("police", "registry-police.sh")} {
+	for _, rel := range []string{"run-on-event.sh", "sweep.sh"} {
 		if err := os.WriteFile(filepath.Join(routerRoot, rel), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return routerRoot, repoRoot
+}
+
+func stubRegistryPolice(t *testing.T) *int {
+	t.Helper()
+	runs := 0
+	orig := getRegistryPoliceFn()
+	SetRegistryPoliceFn(func(string, string) error { runs++; return nil })
+	t.Cleanup(func() { SetRegistryPoliceFn(orig) })
+	return &runs
 }
 
 // stubDutyRun replaces dutyRunFn for one test, recording invoked scripts.
@@ -66,19 +75,23 @@ func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	routerRoot, repoRoot := scaffoldDutyScripts(t)
 	calls := stubDutyRun(t, nil)
 	stubSessionReaper(t)
+	policeRuns := stubRegistryPolice(t)
 	now := time.Now()
 
 	first := runSupervisorDuties(routerRoot, repoRoot, now)
 	if len(first) != 10 {
-		t.Fatalf("first pass duties = %d, want 10 (3 scripts + native auto-heal + census + gemma-liveness + session-reaper + launchd-kickstart + stale-thread-reconcile + spotlight-markers)", len(first))
+		t.Fatalf("first pass duties = %d, want 10 (2 scripts + native registry-police + auto-heal + census + gemma-liveness + session-reaper + launchd-kickstart + stale-thread-reconcile + spotlight-markers)", len(first))
 	}
 	for _, d := range first {
 		if !d.Ran || d.Skipped != "" || d.Error != "" {
 			t.Errorf("first pass %s = %+v, want ran with no skip/error", d.Name, d)
 		}
 	}
-	if len(*calls) != 3 {
-		t.Fatalf("first pass invoked %d scripts, want 3: %v", len(*calls), *calls)
+	if len(*calls) != 2 {
+		t.Fatalf("first pass invoked %d scripts, want 2: %v", len(*calls), *calls)
+	}
+	if *policeRuns != 1 {
+		t.Fatalf("registry police runs = %d, want 1", *policeRuns)
 	}
 
 	// Second tick, 61s later (the resident loop's default interval order):
@@ -111,6 +124,9 @@ func TestRunSupervisorDuties_CadenceGating(t *testing.T) {
 	if d := byName["registry-police"]; !d.Ran {
 		t.Errorf("registry-police due after 11m, got %+v", d)
 	}
+	if *policeRuns != 2 {
+		t.Fatalf("registry police runs = %d, want 2", *policeRuns)
+	}
 	if d := byName["sweep"]; d.Ran || d.Skipped != "cadence" {
 		t.Errorf("sweep must still be cadence-gated at 11m, got %+v", d)
 	}
@@ -126,9 +142,10 @@ func TestRunSupervisorDuties_ErrorIsolated(t *testing.T) {
 		}
 		return nil
 	})
+	stubRegistryPolice(t)
 
 	results := runSupervisorDuties(routerRoot, repoRoot, time.Now())
-	if len(*calls) != 3 {
+	if len(*calls) != 2 {
 		t.Fatalf("a failing duty must not stop the rest: invoked %v", *calls)
 	}
 	byName := map[string]DutyResult{}
@@ -155,13 +172,14 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 	}
 	calls := stubDutyRun(t, nil)
 	reaperRuns := stubSessionReaper(t)
+	policeRuns := stubRegistryPolice(t)
 
 	results := runSupervisorDuties(routerRoot, repoRoot, time.Now())
 	if len(*calls) != 0 {
 		t.Fatalf("no script should run when none exist: %v", *calls)
 	}
 	for _, d := range results {
-		if d.Name == "session-reaper" || d.Name == "auto-heal" || d.Name == "thread-census" || d.Name == "gemma-liveness" || d.Name == "launchd-kickstart" || d.Name == "stale-thread-reconcile" || d.Name == "spotlight-markers" {
+		if d.Name == "registry-police" || d.Name == "session-reaper" || d.Name == "auto-heal" || d.Name == "thread-census" || d.Name == "gemma-liveness" || d.Name == "launchd-kickstart" || d.Name == "stale-thread-reconcile" || d.Name == "spotlight-markers" {
 			// Native duties: no script to be missing — they run (auto-heal is an
 			// inert no-op until cmd/sirsi injects the real pass).
 			if !d.Ran || d.Skipped != "" {
@@ -176,6 +194,9 @@ func TestRunSupervisorDuties_MissingScriptsSkipCleanly(t *testing.T) {
 	if *reaperRuns != 1 {
 		t.Fatalf("stubbed reaper runs = %d, want 1", *reaperRuns)
 	}
+	if *policeRuns != 1 {
+		t.Fatalf("registry police runs = %d, want 1", *policeRuns)
+	}
 }
 
 // TestSuperviseOnce_ReportsDuties proves the fold is wired into the supervisor
@@ -189,6 +210,7 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	writeSupervisorRegistry(t, routerRoot, repoRoot)
 	calls := stubDutyRun(t, nil)
 	stubSessionReaper(t)
+	stubRegistryPolice(t)
 
 	report, err := SuperviseOnce(SuperviseOptions{
 		RepoRoot: repoRoot,
@@ -202,8 +224,8 @@ func TestSuperviseOnce_ReportsDuties(t *testing.T) {
 	if len(report.Duties) != 10 {
 		t.Fatalf("report.Duties = %d, want 10: %+v", len(report.Duties), report.Duties)
 	}
-	if len(*calls) != 3 {
-		t.Fatalf("SuperviseOnce should have run all three duties, invoked %v", *calls)
+	if len(*calls) != 2 {
+		t.Fatalf("SuperviseOnce should have run both shell duties, invoked %v", *calls)
 	}
 	// The full work board is broadcast on every pass and persisted to board.json
 	// (owner directive 2026-07-17) — every thread reads the same file.

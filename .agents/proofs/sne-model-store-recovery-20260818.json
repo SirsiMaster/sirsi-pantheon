@@ -1,0 +1,88 @@
+{
+  "work_item_id": "sne-model-store-recovery-20260818",
+  "agent_id": "codex-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-08-18T20:52:59Z",
+      "notes": "Reviewed Pantheon and SNE ownership, lifecycle, evidence, and operational doctrine."
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-08-18T20:52:59Z",
+      "notes": "Reviewed repository operating and completion-proof requirements."
+    },
+    {
+      "path": "docs/evidence/SNE_MODEL_STORE_RECOVERY_INTEGRATION_20260818.md",
+      "role": "evidence",
+      "read_at": "2026-08-18T20:52:59Z",
+      "notes": "Canonical bounded-work evidence."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "section": "Sections 4, 6, 8, and 10",
+      "claim": "Pantheon owns SNE lifecycle and recovery; operations fail closed and preserve evidence.",
+      "files_changed": [
+        "internal/dashboard/sne_store_recovery.go",
+        "internal/dashboard/sne_install.go",
+        "internal/dashboard/sne_lifecycle.go",
+        "internal/dashboard/sne_install_test.go",
+        "internal/dashboard/sne_lifecycle_test.go",
+        "docs/evidence/SNE_MODEL_STORE_RECOVERY_INTEGRATION_20260818.md"
+      ],
+      "evidence": [
+        "docs/evidence/SNE_MODEL_STORE_RECOVERY_INTEGRATION_20260818.json",
+        "go test ./internal/dashboard -count=1",
+        "SNE_REAL_DEFAULT_SIGNED_CATALOG=1 real signed-catalog gate"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Pantheon production defaults invoke model-store recovery before install and launch; broader normal-user lifecycle remains open.",
+    "design": "Failure is surfaced through existing install/lifecycle states; polished UI recovery presentation remains open.",
+    "technical": "Focused fail-closed tests, full dashboard tests, durable helper identities, real clean-store execution, and signed-current catalog verification pass.",
+    "operational": "Recovery helper is installed durably and real store returned zero pending removals; live interrupted-process restart and installed removal remain open.",
+    "narrative": "Canonical Markdown and machine JSON distinguish proven recovery admission from unproven live removal and restart campaigns."
+  },
+  "verification": [
+    {
+      "name": "go tests",
+      "command": "go test ./...",
+      "status": "pass",
+      "evidence": "Host-permission run passed all packages. Earlier restricted-shell run is retained as environment-rejected evidence in docs/evidence/SNE_MODEL_STORE_RECOVERY_VERIFICATION_20260818.json."
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./...",
+      "status": "pass",
+      "evidence": "Independent host-permission run exited 0 with no diagnostics."
+    },
+    {
+      "name": "dashboard SNE integration",
+      "command": "go test ./internal/dashboard ./internal/sne ./internal/snemodels",
+      "status": "pass",
+      "evidence": "Independent host-permission run passed dashboard, SNE client, and SNE model acquisition packages."
+    },
+    {
+      "name": "completion gate",
+      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>",
+      "status": "not-run",
+      "evidence": "Draft proof validation pending contract-wide commands."
+    }
+  ],
+  "working_status": {
+    "environment": "M5 development host, real durable SNE model store and signed Pantheon catalog",
+    "how_verified": "Focused and full dashboard Go tests, direct durable recovery helper invocation, and real signed-current catalog test",
+    "observed_result": "Recovery returned zero pending operations; Pantheon fails closed on injected recovery error; sne-gemma4-v2 with 12 entries verifies.",
+    "verified_at": "2026-08-18T20:52:59Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

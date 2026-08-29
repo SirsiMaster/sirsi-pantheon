@@ -65,6 +65,13 @@ func TestMaxConcurrencyScalesWithNode(t *testing.T) {
 // TestDynamicReserveIsProportional proves the reserve scales with the node (not a
 // flat 8 GB) while honoring the 8 GB floor.
 func TestDynamicReserveIsProportional(t *testing.T) {
+	// 16 GB: an 8 GB floor would reserve half the node and make every useful
+	// local model unlaunchable. Compact nodes cap the floor at 25% of RAM.
+	compact := node(16, 11, 0, 1)
+	wantCompact := compact.OSBaseline + 1*gb + 4*gb
+	if got := compact.DynamicReserve(); got != wantCompact {
+		t.Errorf("16GB reserve=%d, want compact-node reserve %d", got, wantCompact)
+	}
 	// 48 GB: total/8 = 6 GB < 8 GB floor → margin 8 GB; + agentRSS + OSBaseline.
 	small := node(48, 24, 0, 4)
 	wantSmall := small.OSBaseline + 4*gb + nodeMarginFloor // floor applies

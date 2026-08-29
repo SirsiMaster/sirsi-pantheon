@@ -13,7 +13,15 @@ import (
 // the real system (mirrors uninstall.go's uninstallExecFn pattern). Production
 // shells the real binary.
 var launchctlExecFn = func(args ...string) error {
-	return exec.Command("launchctl", args...).Run()
+	out, err := exec.Command("launchctl", args...).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	detail := strings.TrimSpace(string(out))
+	if detail == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, detail)
 }
 
 func runLaunchctl(args ...string) error { return launchctlExecFn(args...) }

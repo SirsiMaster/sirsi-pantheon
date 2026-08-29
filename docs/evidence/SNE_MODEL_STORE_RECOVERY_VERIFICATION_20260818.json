@@ -1,0 +1,17 @@
+{
+  "schema_version": "pantheon.sne-model-store-recovery-verification.v1",
+  "date": "2026-08-18",
+  "status": "pass",
+  "host_verification": [
+    {"command":"go test ./...","status":"pass"},
+    {"command":"go vet ./...","status":"pass"},
+    {"command":"go test ./internal/dashboard ./internal/sne ./internal/snemodels -count=1","status":"pass"}
+  ],
+  "rejected_attempt": {
+    "status": "environment-rejected",
+    "reason": "restricted execution denied loopback and Unix sockets, hardware probes, and launchctl access",
+    "log_sha256": "5d30a6ea2030a9e25b5d00131cb1f673db8448bec072583c5e3f448a574446e3",
+    "claim": false
+  },
+  "scope": "Pantheon repository and focused SNE integration verification; live interrupted-removal recovery and normal-user lifecycle remain separate product gates"
+}

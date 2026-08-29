@@ -1,0 +1,11 @@
+{
+  "schema_version": "pantheon.sne-runtime-catalog-feed.v1",
+  "feed_id": "sirsi-sne-staging",
+  "entries": [
+    {
+      "version_sha256": "36073d1a7f518075fccca5c8b37c8b49903056a6824bb9a5a7a141aa14fb6291",
+      "catalog_url": "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/sne-v2-catalog-20260818/sne-gemma4-v2-portable.json",
+      "signature_url": "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/sne-v2-catalog-20260818/sne-gemma4-v2-portable.json.sig"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "pantheon.app-recovery-targets.v1",
+  "targets": [
+    {
+      "id": "example-browser",
+      "kind": "app_saved_state",
+      "bundle_id": "com.example.browser",
+      "executable_path": "/Applications/Example Browser.app/Contents/MacOS/Example Browser",
+      "state_paths": [
+        "/Users/example/Library/Application Support/Example Browser/session.json"
+      ],
+      "fresh_state_paths": [
+        "/Users/example/Library/Caches/Example Browser/pending-queue.json"
+      ],
+      "ready_timeout_ms": 30000,
+      "auto_resume": true
+    }
+  ]
+}

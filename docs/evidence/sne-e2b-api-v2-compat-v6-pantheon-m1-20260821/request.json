@@ -1,0 +1,1 @@
+{"model":"gemma-4-e2b-it-nvfp4-sne-v0","messages":[{"role":"user","content":"Reply with exactly M1-READY and nothing else."}],"temperature":0,"top_p":0,"max_completion_tokens":16,"stream":false}

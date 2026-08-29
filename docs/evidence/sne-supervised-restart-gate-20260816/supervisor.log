@@ -1,0 +1,6 @@
+{"time":"2026-08-16T02:58:10.683517-04:00","level":"INFO","msg":"SNE artifacts verified","artifact_set_sha256":"27341bad5dd2ef709e81f0548e91abc6f0996565cf3f0365f91b3ddbeee34df6","files":9,"bytes":13780879415,"runtime_sha256":"458b40521bf0125c7eb134b76e54415fa8c86f1fea1de7f63eedb6fa21d92b79","loaded_mlx":"/Users/thekryptodragon/Development/sirsi-native-rebuild/artifacts/candidates/sne-v145-portable-observer-v146/lib/libmlx.dylib"}
+{"time":"2026-08-16T02:58:25.245829-04:00","level":"INFO","msg":"SNE service listening","address":"127.0.0.1:8477","profile":"interactive","ready":true}
+pantheon_sne ready=true profile=interactive endpoint=http://127.0.0.1:8477
+{"time":"2026-08-16T02:58:31.53726-04:00","level":"INFO","msg":"SNE artifacts verified","artifact_set_sha256":"27341bad5dd2ef709e81f0548e91abc6f0996565cf3f0365f91b3ddbeee34df6","files":9,"bytes":13780879415,"runtime_sha256":"458b40521bf0125c7eb134b76e54415fa8c86f1fea1de7f63eedb6fa21d92b79","loaded_mlx":"/Users/thekryptodragon/Development/sirsi-native-rebuild/artifacts/candidates/sne-v145-portable-observer-v146/lib/libmlx.dylib"}
+{"time":"2026-08-16T02:58:45.005512-04:00","level":"INFO","msg":"SNE service listening","address":"127.0.0.1:8477","profile":"interactive","ready":true}
+pantheon_sne supervised_restart=true model=gemma-4-12b-it-affine8-sne-v1

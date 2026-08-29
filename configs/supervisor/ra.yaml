@@ -1,7 +1,14 @@
-# Pantheon Ra — supervisor configuration
-# Enterprise tier: fleet nodes; no foreground user to yield to.
-# Explicit opt-in — NEVER use for single-user Anubis instances.
-#
-# Refs: ADR-028, sirsi-inference docs/adr/ADR-001-sne-anubis-ra.md
+schema_version: pantheon.sne-supervisor.v0
+product: ra
 sne:
-  profile: fleet  # prior unconstrained behavior, no ceiling
+  profile: fleet
+  endpoint: http://127.0.0.1:8477
+  health_path: /health/ready
+  models_path: /v1/models
+  restart_policy: on-failure
+  memory_ceiling_bytes: 0
+  max_concurrent_requests: 1
+  max_queued_requests: 32
+  queue_discipline: fifo
+  request_timeout_ms: 120000
+  yield_to_foreground: false

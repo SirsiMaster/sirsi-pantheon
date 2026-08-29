@@ -1,12 +1,19 @@
 # 𓁢 Sirsi Pantheon — Canonical Roadmap
 **Version:** 6.0.0 (Reality Sync)
 **Date:** July 1, 2026
-**Status:** **v0.23.8-beta shipped** (signed + notarized, tagged 2026-06-30) — next: v1.0.0-rc1 Star-Grade sprint
+**Status:** Historical v0.23.8-beta snapshot (signed + notarized, tagged
+2026-06-30). The current v0.23.14-beta source candidate is **not release
+ready** pending signing, asset, lifecycle, resource/crash, and accessibility
+evidence — next: v1.0.0-rc1 Star-Grade sprint
 
 > **The coverage tables in §2 are a dated snapshot** verified by `go test -cover ./...` on
 > March 31, 2026 (the honest-measurement reset). Current repo state as of July 1, 2026:
 > `VERSION` = 0.23.8-beta = latest tag `v0.23.8-beta`; 2,078 test functions
 > (`grep -r '^func Test' --include='*_test.go' | wc -l`); Go 1.25.
+>
+> This dated roadmap snapshot is not the current release decision. See
+> `docs/evidence/PANTHEON_V2314_RELEASE_RECONCILIATION_20260828.json` for the
+> current source and unsigned-release boundary.
 
 ## 1. Vision: Pantheon Anubis — Standalone DevOps Intelligence CLI
 Pantheon is the single, modular brand for all Sirsi automation deities. The standalone CLI (Pantheon Anubis) gives you all features in one binary. Each deity can also be installed independently.

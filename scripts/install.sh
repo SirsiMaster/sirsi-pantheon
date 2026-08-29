@@ -42,6 +42,19 @@ esac
 
 echo -e "${DIM}  Platform: ${OS}/${ARCH}${NC}"
 
+# Pantheon is Mac-first. The product surface is the notarized native app whose
+# embedded CLI shares its identity; an archive-installed binary would discard
+# the stable Developer-ID/TCC boundary. Refuse before creating install state or
+# contacting a release endpoint. The archive path remains non-macOS only until
+# an equally-qualified macOS archive contract exists.
+if [ "$OS" = "darwin" ]; then
+    echo -e "${RED}  macOS archive installation is not a Pantheon release path.${NC}"
+    echo -e "${DIM}  Install the verified native app instead:${NC}"
+    echo -e "${DIM}    brew install --cask sirsimaster/tools/sirsi-pantheon${NC}"
+    echo -e "${DIM}  or download the signed and stapled Pantheon DMG from the matching GitHub release.${NC}"
+    exit 1
+fi
+
 install_executable() {
     src="$1"
     dest="$2"
@@ -49,14 +62,6 @@ install_executable() {
 
     cp "$src" "$tmp"
     chmod +x "$tmp"
-
-    if [ "$OS" = "darwin" ] && command -v codesign &>/dev/null; then
-        if ! codesign --force --sign - "$tmp" >/dev/null 2>&1; then
-            rm -f "$tmp"
-            echo -e "${RED}  codesign failed for ${dest}; keeping existing binary in place.${NC}"
-            exit 1
-        fi
-    fi
 
     mv -f "$tmp" "$dest"
 }
@@ -137,17 +142,9 @@ else
 fi
 
 if [ -z "$LATEST" ]; then
-    echo -e "${DIM}  Could not fetch latest release. Trying build from source...${NC}"
-    if command -v go &>/dev/null; then
-        echo -e "${DIM}  Building from source with Go...${NC}"
-        go install "github.com/${REPO}/cmd/sirsi@latest"
-        echo -e "${GREEN}  ✅ Installed via go install${NC}"
-        exit 0
-    else
-        echo -e "${RED}  No release found and Go not installed.${NC}"
-        echo -e "${DIM}  Install Go from https://go.dev or check GitHub Releases manually.${NC}"
-        exit 1
-    fi
+    echo -e "${RED}  No published, verified Pantheon release is available.${NC}"
+    echo -e "${DIM}  Refusing a source-build fallback: it has no release-asset, signing, or lifecycle provenance.${NC}"
+    exit 1
 fi
 
 echo -e "${DIM}  Latest: ${LATEST}${NC}"
@@ -242,5 +239,13 @@ if [ -t 0 ] && [ -t 1 ]; then
     echo ""
     "${INSTALL_DIR}/sirsi" setup || true
 else
-    echo -e "${DIM}  Next: run 'sirsi setup' to choose your surfaces and grant permissions.${NC}"
+	if [ "$OS" = "darwin" ] && [ -x "${INSTALL_DIR}/sirsi-menubar" ]; then
+		if "${INSTALL_DIR}/sirsi" surface install menubar; then
+			echo -e "${DIM}  Pantheon caretaker registered for this login and future logins.${NC}"
+		else
+			echo -e "${GOLD}  Pantheon caretaker registration needs attention.${NC}"
+			echo -e "${DIM}  Retry: '${INSTALL_DIR}/sirsi' surface install menubar${NC}"
+		fi
+	fi
+	echo -e "${DIM}  Next: run 'sirsi setup' to choose optional surfaces and grant permissions.${NC}"
 fi

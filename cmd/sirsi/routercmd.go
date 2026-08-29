@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/completiongate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -93,6 +94,39 @@ and task-registry verbs. The message loop and task commitments share one
 offline-first store; ledger joins them with thread heartbeat/current-item truth.
 
 Thread registration is handled separately by sirsi thread register.`,
+}
+
+var (
+	routerValidateProofRepo string
+	routerValidateProofPath string
+)
+
+var routerValidateProofCmd = &cobra.Command{
+	Use:   "validate-proof",
+	Short: "Validate a completion proof without changing router state",
+	Long: `Validate a completion proof against the repository's completion contract.
+This is Go-native and read-only: it does not close work, invoke Python, or
+materialize router state. Use --repo to name a checkout and --proof to name
+the JSON proof relative to that checkout or as an absolute path.`,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		repo := strings.TrimSpace(routerValidateProofRepo)
+		if repo == "" {
+			var err error
+			repo, err = router.FindRepoRoot()
+			if err != nil {
+				return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+			}
+		}
+		proof := strings.TrimSpace(routerValidateProofPath)
+		if proof == "" {
+			return fmt.Errorf("--proof is required")
+		}
+		if err := completiongate.Validate(repo, proof); err != nil {
+			return fmt.Errorf("completion proof validation failed: %w", err)
+		}
+		fmt.Println("Completion proof is valid")
+		return nil
+	},
 }
 
 var statusStaleHours int
@@ -701,19 +735,20 @@ func enforceCompletionProof(repoRoot, itemID, proof string, blocked, ack bool, r
 	return validateCompletionProof(repoRoot, proof)
 }
 
-// validateCompletionProof shells out to the portfolio gate validator
-// (tools/agent_completion_gate.py beside the repo, or
-// SIRSI_COMPLETION_GATE_SCRIPT). The proof schema and validation rules live
-// with the portfolio law, not in this binary.
+// validateCompletionProof is Go-native by default. SIRSI_COMPLETION_GATE_SCRIPT
+// is a deliberate developer compatibility override for portfolio experiments;
+// it is never discovered or invoked on the ordinary product path.
 func validateCompletionProof(repoRoot, proof string) error {
 	script := os.Getenv("SIRSI_COMPLETION_GATE_SCRIPT")
-	if script == "" {
-		devRoot := filepath.Dir(repoRoot)
-		script = filepath.Join(devRoot, "tools", "agent_completion_gate.py")
-	}
 	proofPath := proof
 	if !filepath.IsAbs(proofPath) {
 		proofPath = filepath.Join(repoRoot, proofPath)
+	}
+	if script == "" {
+		if err := completiongate.Validate(repoRoot, proofPath); err != nil {
+			return fmt.Errorf("completion proof validation failed: %w", err)
+		}
+		return nil
 	}
 	out, err := exec.Command("python3", script, "validate", "--repo", repoRoot, "--proof", proofPath).CombinedOutput()
 	if err != nil {
@@ -1425,6 +1460,8 @@ func init() {
 	routerRespondCmd.Flags().StringVar(&respondTitle, "title", "", "Title for the response inbound (default: RESPONSE: <request title>)")
 	routerRespondCmd.Flags().StringVar(&respondAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerCloseCmd.Flags().StringVar(&closeProof, "proof", "", "Completion proof JSON path, relative to repo root or absolute (ADR-037)")
+	routerValidateProofCmd.Flags().StringVar(&routerValidateProofRepo, "repo", "", "Repository root (defaults to the current router repository)")
+	routerValidateProofCmd.Flags().StringVar(&routerValidateProofPath, "proof", "", "Completion proof JSON path, relative to --repo or absolute")
 	routerCloseCmd.Flags().BoolVar(&closeBlocked, "blocked", false, "Close as explicitly blocked; requires --result and skips proof validation")
 	routerCloseCmd.Flags().BoolVar(&closeAck, "ack", false, "Close as coordination/ack only; requires --result and skips proof validation")
 	routerDismissCmd.Flags().StringVar(&dismissResult, "result", "", "Result body (literal text, or @file)")
@@ -1443,5 +1480,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
 	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerValidateProofCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }

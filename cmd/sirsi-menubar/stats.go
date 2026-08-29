@@ -96,7 +96,9 @@ func CollectStats(cfg StatsConfig) *StatsSnapshot {
 
 	// Shared vitals (RAM, Git, Accelerator) — single source of truth
 	v := vitals.Collect()
-	snap.TotalRAM = 0 // not exposed by shared vitals, not needed for menubar
+	snap.TotalRAM = v.RAMTotalBytes
+	snap.UsedRAM = v.RAMUsedBytes
+	snap.FreeRAM = v.RAMFreeBytes
 	snap.RAMPercent = v.RAMPercent
 	snap.RAMPressure = v.RAMPressure
 	snap.RAMIcon = v.RAMIcon

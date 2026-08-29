@@ -1,0 +1,14 @@
+schema_version: pantheon.sne-supervisor.v0
+product: anubis
+sne:
+  profile: interactive
+  endpoint: http://127.0.0.1:8477
+  health_path: /health/ready
+  models_path: /v1/models
+  restart_policy: on-failure
+  memory_ceiling_bytes: 12884901888
+  max_concurrent_requests: 1
+  max_queued_requests: 8
+  queue_discipline: fifo
+  request_timeout_ms: 120000
+  yield_to_foreground: true

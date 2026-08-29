@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
@@ -533,35 +535,26 @@ func seshatAuthGoogle() error {
 	credFile := filepath.Join(configDir, "google_credentials.json")
 	tokenFile := filepath.Join(configDir, "google_token.json")
 
-	if _, err := os.Stat(tokenFile); err == nil {
-		output.Success("Google token already exists at %s", tokenFile)
-		fmt.Println("  To re-authenticate, delete the token file and run again.")
+	status, err := seshat.InspectGoogleWorkspaceAuth(credFile, tokenFile)
+	if err != nil {
+		return err
+	}
+	if status.Authorized && status.Refreshable {
+		output.Success("Google Workspace authorization is durable and refreshable")
 		return nil
 	}
-
-	fmt.Println()
-	fmt.Println("  To authenticate with Google Workspace:")
-	fmt.Println()
-	fmt.Println("  1. Go to https://console.cloud.google.com/apis/credentials")
-	fmt.Println("  2. Create an OAuth 2.0 Client ID (Desktop application)")
-	fmt.Println("  3. Enable these APIs: Google Drive API, Google Docs API, Google Sheets API")
-	fmt.Println("  4. Download the credentials JSON")
-	fmt.Printf("  5. Save it to: %s\n", credFile)
-	fmt.Println()
-	fmt.Printf("  Then run: sirsi seshat auth google\n")
-	fmt.Println()
-
-	if _, err := os.Stat(credFile); os.IsNotExist(err) {
-		fmt.Printf("  ⚠️  No credentials found at %s\n", credFile)
-		fmt.Println("     Follow the steps above to set up Google API access.")
-		return nil
+	if !status.Configured {
+		return fmt.Errorf("Google OAuth desktop credentials are missing at %s; create one desktop client with Drive API access and place the downloaded JSON there", credFile)
 	}
-
-	fmt.Println("  Credentials found. To complete auth, visit:")
-	fmt.Println("  https://accounts.google.com/o/oauth2/auth?scope=https://www.googleapis.com/auth/drive.readonly&response_type=code&redirect_uri=urn:ietf:wg:oauth:2.0:oob&client_id=YOUR_CLIENT_ID")
-	fmt.Println()
-	fmt.Println("  Then paste the authorization code here (or save token manually to " + tokenFile + ")")
-
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	fmt.Println("  Opening the SirsiMaster Google authorization page once. Pantheon will store a refreshable token with owner-only permissions.")
+	if err := seshat.AuthorizeGoogleWorkspace(ctx, credFile, tokenFile, func(target string) error {
+		return exec.Command("/usr/bin/open", target).Start()
+	}); err != nil {
+		return err
+	}
+	output.Success("Google Workspace authorization completed; future access-token renewal is automatic")
 	return nil
 }
 

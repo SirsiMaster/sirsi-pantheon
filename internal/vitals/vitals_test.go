@@ -46,7 +46,7 @@ func almostEqual(a, b, tol float64) bool {
 	return math.Abs(a-b) <= tol
 }
 
-const vmStatOut = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+const vmStatOut = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                              100000.
 Pages active:                           1048576.
 Pages inactive:                          200000.
@@ -57,7 +57,7 @@ Pages purgeable:                          10000.
 
 func TestCollectRAM(t *testing.T) {
 	// 16 GiB total; active 1048576 pages + wired 524288 pages at the
-	// hardcoded 4096 bytes/page = 6 GiB used = 37.5% => low pressure.
+	// declared 4096 bytes/page = 6 GiB used = 37.5% => low pressure.
 	fakeCommands(t, map[string]string{
 		"sysctl -n hw.memsize": "17179869184\n",
 		"vm_stat":              vmStatOut,
@@ -75,8 +75,27 @@ func TestCollectRAM(t *testing.T) {
 	if !almostEqual(s.RAMUsedGB, 6, 0.01) {
 		t.Errorf("RAMUsedGB = %v, want 6", s.RAMUsedGB)
 	}
+	if s.RAMTotalBytes != 16<<30 || s.RAMUsedBytes != 6<<30 || s.RAMFreeBytes != 10<<30 {
+		t.Errorf("RAM bytes = total %d used %d free %d", s.RAMTotalBytes, s.RAMUsedBytes, s.RAMFreeBytes)
+	}
 	if s.RAMPressure != "low" || s.RAMIcon != "🟢" {
 		t.Errorf("pressure = %q icon = %q, want low 🟢", s.RAMPressure, s.RAMIcon)
+	}
+}
+
+func TestCollectRAMUsesAppleSiliconPageSize(t *testing.T) {
+	fakeCommands(t, map[string]string{
+		"sysctl -n hw.memsize": "17179869184\n",
+		"vm_stat": `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages active: 524288.
+Pages wired down: 262144.
+`,
+	})
+
+	var s Snapshot
+	collectRAM(&s)
+	if s.RAMUsedBytes != 12<<30 || !almostEqual(s.RAMPercent, 75, 0.01) {
+		t.Fatalf("Apple-silicon RAM sample = %d bytes, %.2f%%; want 12 GiB, 75%%", s.RAMUsedBytes, s.RAMPercent)
 	}
 }
 

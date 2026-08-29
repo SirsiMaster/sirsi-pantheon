@@ -35,7 +35,7 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 	engine.RegisterAll(rules.AllRules()...)
 	start := time.Now()
 	ctx := context.Background()
-	res, err := engine.Scan(ctx, jackal.ScanOptions{})
+	res, err := engine.Scan(ctx, jackal.ScanOptions{Manifest: jackal.NewPlatformManifest()})
 	elapsed := time.Since(start)
 	if err != nil {
 		return fmt.Errorf("scan failed: %w", err)

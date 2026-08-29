@@ -128,11 +128,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // exactly one, agent-managed instance within a bounce.
         retireOlderInstances()
 
-        // Proactively register with TCC so "Sirsi Menubar" already has a row in
-        // the Full Disk Access list before the user ever clicks the Grant button.
-        // A TCC-denied open() is what puts an app in that list (see Views.swift).
-        registerForFullDiskAccess()
-
         // Claim a RIGHT-side menu-bar slot from the first launch (owner reports
         // 2026-07-17): macOS hides the LEFTMOST status items when the bar fills,
         // and a newly-created item spawns leftmost — so the Eye (recreated on
@@ -174,30 +169,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = Self.makeEye(Self.tint(for: self.engine.titleStatus))
         }
         engine.refresh()
-        // Tint the Eye to REAL health immediately — a health glyph that only colors
-        // after you click it is half-useful. diagnose() sets healthStatus → onTitle.
-        Task { @MainActor in await engine.diagnose() }
 
         // Owner-gated toasts (board schema 1.1.0): open `to: user` router items
         // must reach the owner as a notification, click → action screen. Only
         // meaningful from the signed .app bundle — UNUserNotificationCenter
         // throws in an unbundled dev binary.
         if Bundle.main.bundleIdentifier != nil {
-            let nc = UNUserNotificationCenter.current()
-            nc.delegate = self
-            nc.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            // Installing or launching Pantheon never asks for a permission. The
+            // notification center is configured here, but authorization is only
+            // requested from an explicit user-facing Enable Notifications action.
+            UNUserNotificationCenter.current().delegate = self
         }
         Task { @MainActor in await self.checkOwnerGated() }
 
-        // Periodic refresh so the Eye tracks reality at a glance: cheap waste re-read
-        // + a health diagnose (≥60s — never a tight tick; A27 forbids flooding).
+        // Periodic refresh is projection-only: persisted waste, persisted health,
+        // and the local owner-gated board. Full diagnostics are explicitly
+        // user-initiated so a resident app never provokes TCC or keychain UI.
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.engine.refresh()
-                await self?.engine.diagnose()
                 await self?.checkOwnerGated()
             }
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // The optional SNE local-control child is owned by this native app
+        // session. It is never a detached resident service.
+        SNELocalControlBridge.shared.stop()
     }
 
     // checkOwnerGated re-reads the board and toasts genuinely-new owner-gated
@@ -208,6 +207,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard FileManager.default.fileExists(atPath: boardPath) else { return }
         await engine.loadRouterBoard()
         guard Bundle.main.bundleIdentifier != nil else { return }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        guard settings.authorizationStatus == .authorized ||
+              settings.authorizationStatus == .provisional else { return }
         for item in engine.claimNewOwnerGated() {
             let content = UNMutableNotificationContent()
             content.title = String(item.title.prefix(64))

@@ -194,12 +194,20 @@ func (*fakeErr) Error() string { return "fake collector failure" }
 
 func TestNodeStatus_CORS_AllowlistedOriginGetsHeader(t *testing.T) {
 	s := New(Config{NodeStatusFn: func() (*router.NodeStatus, error) { return sampleNodeStatus(), nil }})
-	req := httptest.NewRequest(http.MethodGet, "/api/node-status", nil)
-	req.Header.Set("Origin", "https://sirsi.ai")
-	rec := httptest.NewRecorder()
-	s.apiNodeStatus(rec, req)
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://sirsi.ai" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want https://sirsi.ai", got)
+	for _, origin := range []string{
+		"https://sirsi.ai",
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+	} {
+		t.Run(origin, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/node-status", nil)
+			req.Header.Set("Origin", origin)
+			rec := httptest.NewRecorder()
+			s.apiNodeStatus(rec, req)
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, origin)
+			}
+		})
 	}
 }
 

@@ -33,22 +33,32 @@ router work for arbitrary processes.`,
 			return fmt.Errorf("no idea-router found: %w", err)
 		}
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
-		host, _ := os.Hostname()
-
-		prev, err := router.LoadProcessRegistry(routerRoot)
+		reg, err := runThreadScout(routerRoot)
 		if err != nil {
-			return err
-		}
-		visible, err := enumerateVisibleProcesses()
-		if err != nil {
-			return err
-		}
-		reg := router.ReconcileProcessRegistry(prev, visible, host, time.Now().UTC())
-		if err := router.SaveProcessRegistry(routerRoot, reg); err != nil {
 			return err
 		}
 		return renderScout(reg, threadScoutLimit)
 	},
+}
+
+// runThreadScout is the native process-ledger pass shared by the interactive
+// command and registry police. It records visible processes only; it does not
+// kill, renice, steer, or otherwise act on them.
+func runThreadScout(routerRoot string) (*router.ProcessRegistry, error) {
+	host, _ := os.Hostname()
+	prev, err := router.LoadProcessRegistry(routerRoot)
+	if err != nil {
+		return nil, err
+	}
+	visible, err := enumerateVisibleProcesses()
+	if err != nil {
+		return nil, err
+	}
+	reg := router.ReconcileProcessRegistry(prev, visible, host, time.Now().UTC())
+	if err := router.SaveProcessRegistry(routerRoot, reg); err != nil {
+		return nil, err
+	}
+	return reg, nil
 }
 
 func enumerateVisibleProcesses() ([]router.ProcessRecord, error) {

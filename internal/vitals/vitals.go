@@ -22,11 +22,14 @@ type ProcInfo struct {
 
 // Snapshot holds a point-in-time collection of system vitals.
 type Snapshot struct {
-	RAMPercent  float64
-	RAMPressure string // "low", "medium", "high"
-	RAMIcon     string
-	RAMTotalGB  float64 // total RAM in GB
-	RAMUsedGB   float64 // used RAM in GB
+	RAMPercent    float64
+	RAMPressure   string // "low", "medium", "high"
+	RAMIcon       string
+	RAMTotalGB    float64 // total RAM in GB
+	RAMUsedGB     float64 // used RAM in GB
+	RAMTotalBytes int64   // physical RAM from hw.memsize
+	RAMUsedBytes  int64   // active + wired bytes from vm_stat
+	RAMFreeBytes  int64   // total - used under the same snapshot contract
 
 	GitBranch   string
 	Uncommitted int
@@ -106,8 +109,20 @@ func collectRAM(s *Snapshot) {
 		return
 	}
 
+	pageSize := int64(4096) // Intel fallback; vm_stat declares the real size.
 	var active, wired int64
 	for _, line := range strings.Split(string(vmOut), "\n") {
+		if strings.Contains(line, "page size of") {
+			fields := strings.Fields(line)
+			for i, field := range fields {
+				if field == "of" && i+1 < len(fields) {
+					if parsed, parseErr := strconv.ParseInt(fields[i+1], 10, 64); parseErr == nil && parsed > 0 {
+						pageSize = parsed
+					}
+				}
+			}
+			continue
+		}
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) != 2 {
 			continue
@@ -115,7 +130,7 @@ func collectRAM(s *Snapshot) {
 		val := strings.TrimSpace(strings.TrimSuffix(parts[1], "."))
 		var n int64
 		_, _ = fmt.Sscanf(val, "%d", &n)
-		n *= 4096 // pages to bytes (macOS default page size)
+		n *= pageSize
 		switch {
 		case strings.Contains(parts[0], "Pages active"):
 			active = n
@@ -125,6 +140,12 @@ func collectRAM(s *Snapshot) {
 	}
 
 	used := active + wired
+	if used > total {
+		used = total
+	}
+	s.RAMTotalBytes = total
+	s.RAMUsedBytes = used
+	s.RAMFreeBytes = total - used
 	s.RAMPercent = float64(used) / float64(total) * 100
 	s.RAMTotalGB = float64(total) / (1024 * 1024 * 1024)
 	s.RAMUsedGB = float64(used) / (1024 * 1024 * 1024)

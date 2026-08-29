@@ -51,9 +51,12 @@ func TestDispatchConsumerRunsThroughLoginShellSoStartupFilesApply(t *testing.T) 
 // Without the wrapper the consumer never sees the shell startup files that
 // export its credentials. Assert the wrapper is actually applied.
 func TestLoginShellArgvWrapsThroughShell(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
+	// /bin/sh is present on every supported Unix runner. The production helper
+	// validates the executable before wrapping, so a shell absent from a Linux
+	// runner would turn this shape test into an accidental platform failure.
+	t.Setenv("SHELL", "/bin/sh")
 	got := loginShellArgv([]string{"claude", "--print", "hi"})
-	want := []string{"/bin/zsh", "-lc", `exec "$@"`, "/bin/zsh", "claude", "--print", "hi"}
+	want := []string{"/bin/sh", "-lc", `exec "$@"`, "/bin/sh", "claude", "--print", "hi"}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("wrapper shape wrong.\n want %q\n got  %q", want, got)
 	}

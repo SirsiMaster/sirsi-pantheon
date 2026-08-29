@@ -100,6 +100,14 @@ jobs:
         env:
           CGO_ENABLED: 1
 
+      # Release-governance tool, intentionally excluded from the public archive.
+      # It must compile and must refuse to create a catalog successor without an
+      # accepted, promoted, exact API4096 tuple. The gate also authenticates the
+      # current signed catalog and proves that rejected input leaves it unchanged.
+      - name: SNE API4096 catalog-candidate admission
+        shell: bash
+        run: ./scripts/test-sne-api4096-catalog-candidate-admission.zsh
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:

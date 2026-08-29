@@ -1,0 +1,53 @@
+{
+  "schema": "sirsi.pantheon.signing-target-decision.v1",
+  "decided_on": "2026-08-29",
+  "current_published_release_authority": {
+    "version": "0.23.13-beta",
+    "tag": "v0.23.13-beta",
+    "tag_object": "9887a26a61f2e383bdd90614fb7e4a1f2c5238cf",
+    "peeled_commit": "39781658e6f9da6c3d2934387b9326c7274714bc",
+    "decision": "preserve; never retarget"
+  },
+  "selected_next_signing_lifecycle_target": {
+    "version": "0.23.14-beta",
+    "required_tag": "v0.23.14-beta",
+    "candidate_branch": "codex/pantheon-v2314-native-tests-20260828",
+    "release_engineering_code_commit": "498f3b47a578a7354d8025fea0973a3c40fafb58",
+    "release_engineering_code_tree": "84cdcc093a099d8a2d467e6d66e9f1f84d781c2d",
+    "final_tag_target": "external post-verification binding receipt required; this committed document must not self-bind a future tag target",
+    "tag_state": "absent",
+    "decision": "The release-engineering code commit is the eligible source baseline. After all deferred verification passes, a separately generated post-verification receipt must bind the immutable final candidate commit/tree before publication, signing, or lifecycle qualification."
+  },
+  "excluded_targets": {
+    "dirty_integration_checkout": {
+      "observed_version": "0.23.9-beta",
+      "observed_cask_version": "0.23.8-beta",
+      "observed_cask_sha256": "113684229f1d866c1edd267af620455dc9e5d655fd774b5145e6d1413031e221",
+      "observed_valid_codesigning_identities": 0,
+      "reason": "Dirty integration-worktree observation only. It is not a clean source candidate, a published release authority, or an eligible signing/lifecycle target."
+    },
+    "origin_main": {
+      "commit": "92ad980871b9b87963878efb3a2ebc80b0b64d64",
+      "reason": "development baseline only; it is not a selected release artifact"
+    },
+    "a21_branch": {
+      "commit": "abe83ed9b7a7ef4677064cb39248065435cdbe0e",
+      "reason": "historical source lineage only"
+    }
+  },
+  "required_order": [
+    "Hardware Admin releases a bounded CPU validation window",
+    "run the deferred Swift fixture suite and mandatory Pantheon pre-push verification against the exact v0.23.14 candidate",
+    "publish and read back the exact candidate branch",
+    "create and read back immutable annotated tag v0.23.14-beta at the verified candidate commit",
+    "obtain visible Developer ID and App Store Connect notarization credentials",
+    "build, sign, notarize, staple, and hash exact v0.23.14 bytes",
+    "publish/read back the asset, bind cask SHA, then qualify install/upgrade/rollback/uninstall and sustained host behavior"
+  ],
+  "prohibitions": [
+    "do not retarget v0.23.13-beta",
+    "do not bind signed bytes, cask metadata, or lifecycle receipts to the dirty integration checkout",
+    "do not sign or lifecycle-qualify main or the A21 branch",
+    "do not claim a signed asset, cask, installability, or release readiness before this sequence completes"
+  ]
+}

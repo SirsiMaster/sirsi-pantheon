@@ -1,0 +1,114 @@
+{
+  "schema_version": "pantheon.sne-runtime-packages.v2",
+  "catalog_id": "sne-gemma4-v2",
+  "entries": [
+    {
+      "model_id": "gemma-4-26b-a4b-it-qat-affine4-sne-v1",
+      "package_id": "gemma-4-26b-a4b-it-qat-affine4-sne-v1",
+      "runtime_sha256": "96133d327c8376d238ffee07e5d752a4950bca5f4b0095ca72b6f3ccc35f5802",
+      "native_runtime_sha256": "e6943012a46edbc05cdf3bd0378ed6b569e64a1e819689f0374d840d8dbd40eb",
+      "mlx_dylib_sha256": "f79af3e0d5f6b7a78d98843fa55a6f202394dcfff5641a810e935a3269db75cd",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "5f24210d0ecbc7e9b373139acd1ea0a99f5c143c196035ff3d397cd054a675ad"
+    },
+    {
+      "model_id": "gemma-4-12b-it-affine4-sne-q4-v1",
+      "package_id": "gemma-4-12b-it-affine4-sne-q4-v1",
+      "runtime_sha256": "339036b4fda62653096fcdc54638846bbc938d77303406d5c0a21aa3483074c4",
+      "native_runtime_sha256": "1b5b7db3d6dfe7d7897f1ccf6156288d6511a33af913750b6d28dc0e6987c040",
+      "mlx_dylib_sha256": "85a9238876a2b5bc2c603808225c079dac8070390273d91d3895636435ffa9d7",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "9aa1d11c4d7c4f307df5297a2f8445df2a4062dd9228d14b633e966e339b7ed0"
+    },
+    {
+      "model_id": "gemma-4-12b-it-affine5-sne-q5-v1",
+      "package_id": "gemma-4-12b-it-affine5-sne-q5-v1",
+      "runtime_sha256": "c610053d8ed471b3ebdaef7f9dd3218b935bb8f5f5a6497c30f6346cfe1d60e2",
+      "native_runtime_sha256": "3335edcac8c1703141e460dc260cfc30c1a02bde2c0fd6a83cbc1e5469ab5bb7",
+      "mlx_dylib_sha256": "7f43317f3cd5e6cfeb16c6a342a2d0347c29bca8e84f9291dd8340b6e932d80a",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "422bb8bbc37450a37c8bb380204e50832c822310a1d5a172f7ba8d072a2e44f9"
+    },
+    {
+      "model_id": "gemma-4-12b-it-affine6-sne-q6-v1",
+      "package_id": "gemma-4-12b-it-affine6-sne-q6-v1",
+      "runtime_sha256": "ba5af56051e678845ffbef10c314ecd540bc049aac0ed54a588ec0d58fcacb8c",
+      "native_runtime_sha256": "d22efe90230c0019b50dfcb5b853e53111e02d4466be9abd45f317f776920e4c",
+      "mlx_dylib_sha256": "fe08746c2232af149ed1e7a3b65a3264f110705d87d4f9ad2a11617f87db3630",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "4d5454babe629a8efdbdde14cb4705ee9ce24e10f6e5e2dbe38c88a58746953b"
+    },
+    {
+      "model_id": "gemma-4-12b-it-affine8-sne-q8-plain-v1",
+      "package_id": "gemma-4-12b-it-affine8-sne-q8-plain-v1",
+      "runtime_sha256": "09f5038bc8080b37bc99b46c6e9d6080facbd533213c263cca37fdb64dd59261",
+      "native_runtime_sha256": "b3509713ba0c491e732a4ca61bf9d844f51be90bc7b3eaba679d8c7df05f09d1",
+      "mlx_dylib_sha256": "2962e1f0e4b300b8b0a51c98c056c246cd691f46452b121eea3b419beccc7b01",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "b8744685f153d8752def6e4f30881f11c91c7a13084ba8eb6cb2f2fb922d5429"
+    },
+    {
+      "model_id": "gemma-4-12b-it-affine8-sne-v26-capacity-readiness-candidate",
+      "package_id": "SNE-2.5.0-12b-affine8-paged-v26-candidate-v1-darwin-arm64",
+      "runtime_sha256": "fc979e2031fc2459b6ecca96d3d6d85cafa8d898d7e3bcda90bda1e98f2c0787",
+      "native_runtime_sha256": "ef6a2a4b3fffee88522f60de30e27690d8881dac6bcfb70fbe09421dcd905f65",
+      "mlx_dylib_sha256": "d08f5aa87f21164450ae9c5dfdeea5eb6175eef6a21085dccd31ab64e1e138ae",
+      "metallib_sha256": "2eb93da09ebf6a33729dac7da6ad500e7e694d52df3c41c76bb6d4ad5b0f6204",
+      "jaccl_sha256": "5011b88b50788dddeda2fc9a2ecd46dc46a77c004119085e25774d125406cef7"
+    },
+    {
+      "model_id": "gemma-4-12b-it-affine8-sne-v1",
+      "package_id": "SNE-2.0.0-12b-affine8-mtp-shared-wide-v2-darwin-arm64",
+      "runtime_sha256": "0c6408fb6916d927e3365e200de315ebbf561a8e4f53ddb698a6420df3d56f01",
+      "native_runtime_sha256": "ab2ae9ff2388468f55dffa5c6dc17efdccc4c9ce5ba1892521fbdaaf69e2333b",
+      "mlx_dylib_sha256": "d08f5aa87f21164450ae9c5dfdeea5eb6175eef6a21085dccd31ab64e1e138ae",
+      "metallib_sha256": "2eb93da09ebf6a33729dac7da6ad500e7e694d52df3c41c76bb6d4ad5b0f6204",
+      "jaccl_sha256": "5011b88b50788dddeda2fc9a2ecd46dc46a77c004119085e25774d125406cef7"
+    },
+    {
+      "model_id": "gemma-4-31b-it-affine4-sne-v0",
+      "package_id": "gemma-4-31b-it-affine4-sne-v0",
+      "runtime_sha256": "21c22eb1b342ea34816a7f0a8965464c8006df2908243b225a45e08f664360d7",
+      "native_runtime_sha256": "af3ae6cbd387c6fe4ea843dc26bda19d22cc8bb5c0bea2c689d9b3e310bbf5fa",
+      "mlx_dylib_sha256": "addf10181737dea8c1640b0909d5460a2d892931ec7dacf052716a3820a50704",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "62eea3e06e63141e4d537a9555ed0ade5e1f15a27bfa5db85ffc1ae7a21ca24e"
+    },
+    {
+      "model_id": "gemma-4-e2b-it-nvfp4-sne-v0",
+      "package_id": "gemma-4-e2b-it-nvfp4-sne-v0",
+      "runtime_sha256": "655746c21299a2e0481c4ba792a741c0878689c33f3dd82374cd09439a5ccb6a",
+      "native_runtime_sha256": "289ee288439cc239e95321fa423b598dd481fee0a7c61f745d569f07a77f9f22",
+      "mlx_dylib_sha256": "e878b2d616a6d77cbbb00500edc07152eede68f4c21a5b52a158f3b19bc3b840",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "c1b1ae0e1e233d12a195148edc992f52f409059d1476c3b5b6c33923f73963c6"
+    },
+    {
+      "model_id": "gemma-4-e4b-it-nvfp4-sne-v0",
+      "package_id": "gemma-4-e4b-it-nvfp4-sne-v0",
+      "runtime_sha256": "5fbd0d6fd6257f6e55f80681107ba668e4ec372b40071bedba40db2667d030be",
+      "native_runtime_sha256": "dc7562026b6418441816c3e167567042f1ebff99512b0bfa978b7f17d0a8bb8a",
+      "mlx_dylib_sha256": "6a52d00fa544e26da1e5d6ca81ef92d47044d0ac070d88dfe720355964a43fd0",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "4d8994bce5d0c137a2ab18d6870e915155e2772454ace74c7dffdefeaa224d33"
+    },
+    {
+      "model_id": "gemma-4-12b-it-nvfp4-sne-v0",
+      "package_id": "gemma-4-12b-it-nvfp4-sne-v0",
+      "runtime_sha256": "d11bec4d73876a04f4ddab7d63509a6b38ae736a420421acb377abf59b91f578",
+      "native_runtime_sha256": "b93908c18f78eb6125f424ecbc98e623bffa94c72d79417ed1aa12091339a799",
+      "mlx_dylib_sha256": "b58dd943a72504bff4eaa6ca4b7da14749465948e50e42cb869f61e719b364db",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "2e7a9333ec59e608523c7ae25b4a3d4b13ecbf3819f6587663be56d44a798f55"
+    },
+    {
+      "model_id": "gemma-4-e2b-it-mxfp8-sne-v0",
+      "package_id": "gemma-4-e2b-it-mxfp8-sne-v0",
+      "runtime_sha256": "c33c7a61bc58908d400e14384a349212eb2e7d187f56454e88b6eb5860f87eeb",
+      "native_runtime_sha256": "e8125939c3e496d1690eee5d9346a6b56013267da318c29f01f0a5ee4aa724b5",
+      "mlx_dylib_sha256": "f17abafda968c9e454f92864d5b7fd1486f547c1ef3268b4f45a9485b200735d",
+      "metallib_sha256": "de5047b03ce933bf3c003b0375d7165d5a89d06a8a27011d080ca8d9e13b639c",
+      "jaccl_sha256": "63be9fff875a4c7d3de74e0b85c7efcd556c1ab52d47236f1cfad6d1a9627915"
+    }
+  ]
+}

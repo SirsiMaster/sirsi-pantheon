@@ -11,11 +11,13 @@ MainActor.assumeIsolated {
     let argv = CommandLine.arguments
 
     let usage = """
-    Usage: SirsiMenubar [--snapshot <dir> [--width <pt>] [--appearance light|dark]]
+    Usage: SirsiMenubar [--snapshot <dir> | --prefix-pressure-fixture-snapshot <dir> [--width <pt>] [--appearance light|dark]]
 
     With no arguments, launches the menubar surface (accessory app, no Dock icon).
 
       --snapshot <dir>          render the popover's key screens to PNGs and exit
+      --prefix-pressure-fixture-snapshot <dir>
+                                render fixture-only prefix-pressure states to PNGs and exit
       --width <pt>              snapshot width in points (default 380)
       --appearance light|dark   snapshot appearance (default dark)
       -h, --help                print this message and exit
@@ -32,12 +34,20 @@ MainActor.assumeIsolated {
     // `--snapshot` — three more ways to ask for a CLI answer and get a window.
     // The guard is written against the fall-through, not against `--help`, so a
     // flag added later cannot silently re-open the hole.
-    let knownFlags: Set<String> = ["--snapshot", "--width", "--appearance"]
+    let knownFlags: Set<String> = ["--snapshot", "--prefix-pressure-fixture-snapshot", "--width", "--appearance"]
     let flags = argv.dropFirst().filter { $0.hasPrefix("-") }
 
     func usageFailure(_ reason: String) -> Never {
         FileHandle.standardError.write(Data("SirsiMenubar: \(reason)\n\(usage)\n".utf8))
         exit(2)
+    }
+
+    func snapshotAppearance() -> ColorScheme {
+        guard let i = argv.firstIndex(of: "--appearance") else { return .dark }
+        guard i + 1 < argv.count, ["light", "dark"].contains(argv[i + 1]) else {
+            usageFailure("--appearance requires light or dark")
+        }
+        return argv[i + 1] == "light" ? .light : .dark
     }
 
     if flags.contains("--help") || flags.contains("-h") {
@@ -50,7 +60,18 @@ MainActor.assumeIsolated {
 
     // `--snapshot <dir>` renders the popover's key screens to PNGs and exits —
     // headless QA proof of what the surface really shows (see Snapshot.swift).
-    if let i = argv.firstIndex(of: "--snapshot") {
+    if let i = argv.firstIndex(of: "--prefix-pressure-fixture-snapshot") {
+        guard i + 1 < argv.count, !argv[i + 1].hasPrefix("-") else {
+            usageFailure("--prefix-pressure-fixture-snapshot requires a directory")
+        }
+        var w: CGFloat = 380
+        if let j = argv.firstIndex(of: "--width") {
+            guard j + 1 < argv.count, let v = Double(argv[j + 1]) else { usageFailure("--width requires a number") }
+            w = CGFloat(v)
+        }
+        let appearance = snapshotAppearance()
+        runPrefixCachePressureFixtureSnapshot(outDir: argv[i + 1], width: w, appearance: appearance)
+    } else if let i = argv.firstIndex(of: "--snapshot") {
         guard i + 1 < argv.count, !argv[i + 1].hasPrefix("-") else {
             usageFailure("--snapshot requires a directory")
         }
@@ -61,13 +82,7 @@ MainActor.assumeIsolated {
             }
             w = CGFloat(v)
         }
-        var appearance: ColorScheme = .dark
-        if let k = argv.firstIndex(of: "--appearance") {
-            guard k + 1 < argv.count, ["light", "dark"].contains(argv[k + 1]) else {
-                usageFailure("--appearance requires light or dark")
-            }
-            appearance = argv[k + 1] == "light" ? .light : .dark
-        }
+        let appearance = snapshotAppearance()
         runSnapshotMode(outDir: argv[i + 1], width: w, appearance: appearance)   // configures NSApp and runs it
     } else {
         // A snapshot-only flag with no `--snapshot` is a mistyped command, not a

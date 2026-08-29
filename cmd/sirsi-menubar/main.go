@@ -5,18 +5,22 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"fyne.io/systray"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apprecovery"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
@@ -31,6 +35,21 @@ import (
 
 // version is sourced from the shared build-version contract, stamped via ldflags.
 var version = modversion.Version
+
+type controlPlane struct {
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	dashboard           *dashboard.Server
+	notifications       *notify.Store
+	sirsiBin            string
+	statsConfig         StatsConfig
+	sneLocalAccessToken string
+	routerRoot          string
+	routerThreadID      string
+	stopOnce            sync.Once
+}
+
+var residentControlPlane *controlPlane
 
 func main() {
 	// Version contract: `sirsi-menubar version [--json]`. Lets internal/selfupdate
@@ -54,19 +73,158 @@ func main() {
 	}
 	defer unlock()
 
+	cp, err := initializeResidentControlPlane(startControlPlane)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Pantheon control plane: %v\n", err)
+		os.Exit(1)
+	}
+	defer cp.stop()
+
 	if os.Getenv("SIRSI_HEADLESS") == "1" {
-		runHeadless()
+		runHeadless(cp)
 		return
 	}
 
+	go stopControlPlaneOnSignal(cp, systray.Quit)
 	systray.Run(onReady, onExit)
 }
 
-func runHeadless() {
+func initializeResidentControlPlane(start func() (*controlPlane, error)) (*controlPlane, error) {
+	cp, err := start()
+	if err != nil {
+		return nil, err
+	}
+	residentControlPlane = cp
+	return cp, nil
+}
+
+func runHeadless(cp *controlPlane) {
 	fmt.Printf("☥ Sirsi Menubar %s (Headless Mode)\n", version)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	<-sigCh
+	cp.stop()
+}
+
+func stopControlPlaneOnSignal(cp *controlPlane, quitUI func()) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	<-sigCh
+	cp.stop()
+	quitUI()
+}
+
+func startControlPlane() (*controlPlane, error) {
+	traceStartupMemory("start")
+	sirsiBin := findSirsiBinary()
+	nStore, _ := notify.Open(notify.DefaultPath())
+	traceStartupMemory("notify-open")
+	cfg := DefaultStatsConfig()
+	eventBuf := dashboard.NewEventBuffer(256)
+	traceStartupMemory("event-buffer")
+	appRecovery, recoveryErr := apprecovery.LoadDefaultManager()
+	traceStartupMemory("app-recovery")
+	if recoveryErr != nil {
+		fmt.Fprintf(os.Stderr, "application recovery: %v\n", recoveryErr)
+	}
+	sneLocalAccessToken, accessErr := dashboard.LoadOrCreateDefaultSNELocalAccessToken()
+	traceStartupMemory("access-token")
+	sneLocalAccessTokenPath, pathErr := dashboard.DefaultSNELocalAccessTokenPath()
+	if pathErr != nil && accessErr == nil {
+		accessErr = pathErr
+	}
+	if accessErr != nil {
+		fallback := make([]byte, 32)
+		if _, err := rand.Read(fallback); err != nil {
+			if nStore != nil {
+				nStore.Close()
+			}
+			return nil, fmt.Errorf("SNE local capability unavailable: %w", accessErr)
+		}
+		sneLocalAccessToken = base64.RawURLEncoding.EncodeToString(fallback)
+		fmt.Fprintf(os.Stderr, "SNE local capability unavailable; protected operations fail closed: %v\n", accessErr)
+	}
+
+	dashSrv := dashboard.New(dashboard.Config{
+		Port:                    dashboard.DashboardPort,
+		NotifyDB:                nStore,
+		Events:                  eventBuf,
+		SirsiBin:                sirsiBin,
+		SNELocalAccessToken:     sneLocalAccessToken,
+		SNELocalAccessTokenPath: sneLocalAccessTokenPath,
+		StatsFn: func() ([]byte, error) {
+			snap := CollectStats(cfg)
+			return json.Marshal(snap)
+		},
+		NodeStatusFn: menubarNodeStatus,
+		LedgerFn:     menubarLedger,
+		FabricFn:     menubarFabric,
+		AppRecovery:  appRecovery,
+		SNEInstall:   dashboard.DefaultSNEInstallConfig(),
+		SNELifecycle: dashboard.DefaultSNELifecycleConfig(),
+	})
+	traceStartupMemory("dashboard-new")
+	if err := dashSrv.Start(); err != nil {
+		if nStore != nil {
+			nStore.Close()
+		}
+		return nil, fmt.Errorf("start dashboard: %w", err)
+	}
+	traceStartupMemory("dashboard-start")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cp := &controlPlane{
+		ctx:                 ctx,
+		cancel:              cancel,
+		dashboard:           dashSrv,
+		notifications:       nStore,
+		sirsiBin:            sirsiBin,
+		statsConfig:         cfg,
+		sneLocalAccessToken: sneLocalAccessToken,
+	}
+	// The packaged Swift shell may explicitly start this binary with
+	// SIRSI_HEADLESS=1 to supply its loopback control plane. That mode must not
+	// create a second menu-bar surface, periodic scan, live-refresh loop, or CTR
+	// resident thread; it serves only the local API until its parent stops it.
+	if os.Getenv("SIRSI_HEADLESS") != "1" {
+		startGuardBridge(ctx)
+		traceStartupMemory("guard-bridge")
+		startPeriodicScan(ctx)
+		traceStartupMemory("periodic-scan")
+		startLiveRefresh(ctx)
+		traceStartupMemory("live-refresh")
+		cp.routerRoot, cp.routerThreadID = registerMenubarThread(ctx)
+		traceStartupMemory("router-register")
+	}
+	return cp, nil
+}
+
+func traceStartupMemory(stage string) {
+	if os.Getenv("SIRSI_STARTUP_MEMORY_TRACE") != "1" {
+		return
+	}
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	fmt.Fprintf(os.Stderr, "pantheon_memory stage=%s heap_alloc=%d heap_sys=%d heap_idle=%d heap_released=%d\n", stage, m.HeapAlloc, m.HeapSys, m.HeapIdle, m.HeapReleased)
+}
+
+func (cp *controlPlane) stop() {
+	if cp == nil {
+		return
+	}
+	cp.stopOnce.Do(func() {
+		if cp.cancel != nil {
+			cp.cancel()
+		}
+		closeMenubarThread(cp.routerRoot, cp.routerThreadID)
+		if cp.dashboard != nil {
+			_ = cp.dashboard.Stop()
+		}
+		if cp.notifications != nil {
+			cp.notifications.Close()
+		}
+	})
 }
 
 // menubarNodeStatus produces the Horus local-node read-model for the menubar's
@@ -156,85 +314,58 @@ func onReady() {
 	systray.SetTitle("Sirsi")
 	systray.SetTooltip("Sirsi Ecosystem Monitor")
 
-	sirsiBin := findSirsiBinary()
-	nStore, _ := notify.Open(notify.DefaultPath())
+	cp := residentControlPlane
+	if cp == nil {
+		fmt.Fprintln(os.Stderr, "Pantheon control plane was not initialized")
+		systray.Quit()
+		return
+	}
+	sirsiBin := cp.sirsiBin
+	nStore := cp.notifications
+	cfg := cp.statsConfig
+	sneLocalAccessToken := cp.sneLocalAccessToken
 
 	// First launch after a DMG/GUI install drives the same surface + permission
 	// wizard as the CLI, so "the GUI install implements this" is literal.
 	maybeFirstRunSetup()
 
-	// ── Infrastructure: dashboard server, guard, periodic scan, router ──────
-	// Set up BEFORE building the menu so the wired click handlers (closures
-	// below) can capture ctx/cancel/dashSrv/router cleanly.
-	cfg := DefaultStatsConfig()
-	eventBuf := dashboard.NewEventBuffer(256)
-	dashSrv := dashboard.New(dashboard.Config{
-		Port:     dashboard.DashboardPort,
-		NotifyDB: nStore,
-		Events:   eventBuf,
-		SirsiBin: sirsiBin,
-		StatsFn: func() ([]byte, error) {
-			snap := CollectStats(cfg)
-			return json.Marshal(snap)
-		},
-		// ADR-026 step 4: serve the Horus ops read-model from the in-process
-		// dashboard. Unresolved root → error → 503 (designed degrade).
-		NodeStatusFn: menubarNodeStatus,
-		// A26 Nexus seam: serve the compact ledger board summary.
-		LedgerFn: menubarLedger,
-		FabricFn: menubarFabric,
-	})
-	if err := dashSrv.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	startGuardBridge(ctx)
-	startPeriodicScan(ctx)
-	startLiveRefresh(ctx)
-	menubarRouterRoot, menubarThreadID := registerMenubarThread(ctx)
-
 	quit := func() {
-		cancel()
-		closeMenubarThread(menubarRouterRoot, menubarThreadID)
-		_ = dashSrv.Stop()
-		if nStore != nil {
-			nStore.Close()
-		}
+		cp.stop()
 		systray.Quit()
 	}
 
-	// Close the resident thread cleanly on SIGTERM/SIGINT (launchd kickstart,
-	// logout, shutdown). Reaping (ADR-022) is the fallback if this is missed.
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		<-sigCh
-		quit()
-	}()
-
 	// ── Command Deck — local intelligence control plane ─────────────────────
 	mDeck := systray.AddMenuItem("☥ Command Deck", "Live local AI, compute, router, context, and risk")
+	rrDeck := newDeityResult(mDeck)
 	const deckRowCount = 5
 	deckRows := make([]*systray.MenuItem, deckRowCount)
 	for i := range deckRows {
 		deckRows[i] = mDeck.AddSubMenuItem("  —", "Live Sirsi control-plane signal")
 		deckRows[i].Disable()
 	}
-	mAskSirsi := mDeck.AddSubMenuItem("Ask Sirsi Local AI…", "Ask the on-device Gemma model for a status read")
+	mAskSirsi := mDeck.AddSubMenuItem("Open Nexus Local AI…", "Open the governed on-device SNE conversation surface")
 	mGemmaServe := mDeck.AddSubMenuItem("Start / Check Gemma Broker…", "Run the warm local Gemma broker")
 	mRouterDoctor := mDeck.AddSubMenuItem("Router Doctor…", "Inspect and repair safe router liveness issues")
 	mComputeProfile := mDeck.AddSubMenuItem("Compute Profile…", "Inspect Apple Silicon, GPU, and Neural Engine lanes")
+	mSafeRestart := mDeck.AddSubMenuItem("Restart & Resume Safely…", "Planned FileVault restart; Apple requests your password and Pantheon resumes after login")
 	wire(mAskSirsi, func() {
-		spawnTUIWithCommand("gemma --task analyze \"Report Sirsi local AI status and the next operator action.\"")
+		launchURL, err := buildMenubarNexusURL(sneLocalAccessToken)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "build Nexus local AI launch: %v\n", err)
+			return
+		}
+		if err := exec.Command("open", launchURL).Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "open Nexus local AI: %v\n", err)
+		}
 	})
-	wire(mGemmaServe, func() { spawnTUIWithCommand("gemma serve --status") })
-	wire(mRouterDoctor, func() { spawnTUIWithCommand("router doctor") })
-	wire(mComputeProfile, func() { spawnTUIWithCommand("seba compute") })
+	wire(mGemmaServe, func() { runCanonicalAction(mGemmaServe, "gemma/serve", nStore, rrDeck) })
+	wire(mRouterDoctor, func() { runCanonicalAction(mRouterDoctor, "router/doctor", nStore, rrDeck) })
+	wire(mComputeProfile, func() { runCanonicalAction(mComputeProfile, "compute", nStore, rrDeck) })
+	wire(mSafeRestart, func() { spawnTUIWithCommand(authenticatedRestartCommand) })
 
 	// ── Status header (top level) ───────────────────────────────────────────
-	mStats := systray.AddMenuItem("Vitals loading…", "Workstation status — click for full diagnostics in Terminal")
-	wire(mStats, func() { spawnTUIWithCommand("diagnose") })
+	mStats := systray.AddMenuItem("Vitals loading…", "Workstation status — click to run full diagnostics in place")
+	wire(mStats, func() { runCanonicalAction(mStats, "doctor", nStore, nil) })
 	// Foundational visibility: without macOS Full Disk Access, Sirsi/Horus is
 	// blind to Desktop/Documents/Mail/app containers. Shown only when missing.
 	mFDA := systray.AddMenuItem("⚠ Grant Full Disk Access…", "Grant disk access so Sirsi can see and clean the whole workstation")
@@ -247,32 +378,36 @@ func onReady() {
 	// reduced from the same NodeStatus the dashboard serves. Rows are
 	// informational; the lead + "Open Dashboard" open the full console.
 	mHorus := systray.AddMenuItem("𓂀 Horus — Ops", "Local-node operations overview")
+	rrHorus := newDeityResult(mHorus)
 	mOpsHeader := mHorus.AddSubMenuItem("ops: loading…", "Horus local-node status")
 	const opsRowCount = 12
 	opsRows := make([]*systray.MenuItem, opsRowCount)
 	for i := range opsRows {
 		opsRows[i] = mHorus.AddSubMenuItem("  —", "")
-		opsRows[i].Disable()
 	}
-	mDashboard := mHorus.AddSubMenuItem("↳ Open Full Dashboard…", "Open the full Sirsi console in Terminal")
-	wire(mOpsHeader, spawnTUIWindow)
-	wire(mDashboard, spawnTUIWindow)
+	mDashboard := mHorus.AddSubMenuItem("↳ Open Full Dashboard…", "Open the native Pantheon web control surface")
+	wire(mOpsHeader, func() { runCanonicalAction(mOpsHeader, "status", nStore, rrHorus) })
+	wire(mDashboard, func() { _ = exec.Command("open", "http://127.0.0.1:9119/horus").Start() })
+	for _, row := range opsRows {
+		item := row
+		wire(item, func() { _ = exec.Command("open", "http://127.0.0.1:9119/horus").Start() })
+	}
 
 	// ── 𓆄 Ma'at — Quality ────────────────────────────────────────────────────
 	mMaatTop := systray.AddMenuItem("𓆄 Ma'at — Quality", "Quality + governance audit, system diagnostics")
 	rrMaat := newDeityResult(mMaatTop)
 	mMaat := mMaatTop.AddSubMenuItem("Quality Audit", "Run the workstation quality + governance audit")
 	mDiag := mMaatTop.AddSubMenuItem("System Diagnostics", "Run sirsi diagnose — full health checks")
-	wire(mMaat, func() { runService(mMaat, "Quality Audit", sirsiBin, "maat audit", nStore, rrMaat) })
-	wire(mDiag, func() { runService(mDiag, "System Diagnostics", sirsiBin, "diagnose", nStore, rrMaat) })
+	wire(mMaat, func() { runCanonicalAction(mMaat, "quality", nStore, rrMaat) })
+	wire(mDiag, func() { runCanonicalAction(mDiag, "doctor", nStore, rrMaat) })
 
 	// ── 𓁢 Thoth — Memory ─────────────────────────────────────────────────────
 	mThothTop := systray.AddMenuItem("𓁢 Thoth — Memory", "Project memory + knowledge ingestion")
 	rrThoth := newDeityResult(mThothTop)
 	mThoth := mThothTop.AddSubMenuItem("Sync Memory", "Sync project memory from source + git history")
 	mSeshat := mThothTop.AddSubMenuItem("Ingest Knowledge", "Ingest configured knowledge sources")
-	wire(mThoth, func() { runService(mThoth, "Sync Memory", sirsiBin, "thoth sync", nStore, rrThoth) })
-	wire(mSeshat, func() { runService(mSeshat, "Ingest Knowledge", sirsiBin, "seshat ingest", nStore, rrThoth) })
+	wire(mThoth, func() { runCanonicalAction(mThoth, "thoth/sync", nStore, rrThoth) })
+	wire(mSeshat, func() { runCanonicalAction(mSeshat, "seshat/ingest", nStore, rrThoth) })
 
 	// ── 𓇶 Ra — Agent Fleet ───────────────────────────────────────────────────
 	// Deploy/Kill spawn/terminate windows → Terminal path (Rule A1: no silent
@@ -280,16 +415,27 @@ func onReady() {
 	mRa := systray.AddMenuItem("𓇶 Ra — Agent Fleet", "AI agent orchestration")
 	rrRa := newDeityResult(mRa)
 	mRaDeploy := mRa.AddSubMenuItem("Deploy All Scopes", "sirsi ra deploy")
+	mRaDeployConfirm := mRa.AddSubMenuItem("  ⚠ Confirm deploy", "Commit the exact prepared deployment")
+	mRaDeployConfirm.Hide()
 	mRaKill := mRa.AddSubMenuItem("Kill All Windows", "sirsi ra kill")
+	mRaKillConfirm := mRa.AddSubMenuItem("  ⚠ Confirm kill", "Commit the exact prepared fleet termination")
+	mRaKillConfirm.Hide()
 	mRaCollect := mRa.AddSubMenuItem("Collect Results", "sirsi ra collect")
 	raScopes := make([]*systray.MenuItem, 4)
 	for i := range raScopes {
 		raScopes[i] = mRa.AddSubMenuItem("  —", "Click to view scope status")
 		raScopes[i].Disable()
 	}
-	wire(mRaDeploy, func() { spawnTUIWithCommand("ra deploy") })
-	wire(mRaKill, func() { spawnTUIWithCommand("ra kill") })
-	wire(mRaCollect, func() { runService(mRaCollect, "Collect Results", sirsiBin, "ra collect", nStore, rrRa) })
+	var raDeployState, raKillState preparedMenuAction
+	wire(mRaDeploy, func() {
+		prepareCanonicalAction(mRaDeploy, mRaDeployConfirm, "ra/deploy", "all-scopes", nStore, rrRa, &raDeployState)
+	})
+	wire(mRaDeployConfirm, func() { commitCanonicalAction(mRaDeployConfirm, nStore, rrRa, &raDeployState) })
+	wire(mRaKill, func() {
+		prepareCanonicalAction(mRaKill, mRaKillConfirm, "ra/kill", "all-windows", nStore, rrRa, &raKillState)
+	})
+	wire(mRaKillConfirm, func() { commitCanonicalAction(mRaKillConfirm, nStore, rrRa, &raKillState) })
+	wire(mRaCollect, func() { runCanonicalAction(mRaCollect, "ra/collect", nStore, rrRa) })
 
 	// ── 𓋹 Insight — Hardware / Risk / Consistency ────────────────────────────
 	mInsight := systray.AddMenuItem("𓋹 Insight", "Hardware, uncommitted risk, and consistency")
@@ -297,9 +443,66 @@ func onReady() {
 	mSeba := mInsight.AddSubMenuItem("Hardware Info", "CPU, GPU, and accelerator summary")
 	mOsiris := mInsight.AddSubMenuItem("Uncommitted Risk", "Assess risk from uncommitted work")
 	mNet := mInsight.AddSubMenuItem("Consistency Check", "Validate cross-module consistency")
-	wire(mSeba, func() { runService(mSeba, "Hardware Info", sirsiBin, "seba hardware", nStore, rrInsight) })
-	wire(mOsiris, func() { runService(mOsiris, "Uncommitted Risk", sirsiBin, "osiris risk", nStore, rrInsight) })
-	wire(mNet, func() { runService(mNet, "Consistency Check", sirsiBin, "net align", nStore, rrInsight) })
+	wire(mSeba, func() { runCanonicalAction(mSeba, "hardware", nStore, rrInsight) })
+	wire(mOsiris, func() { runCanonicalAction(mOsiris, "risk", nStore, rrInsight) })
+	wire(mNet, func() { runCanonicalAction(mNet, "net/align", nStore, rrInsight) })
+
+	// ── SNE — governed local inference lifecycle ─────────────────────────────
+	mSNE := systray.AddMenuItem("☥ SNE — Local AI", "Inspect and control the governed local inference service")
+	rrSNE := newDeityResult(mSNE)
+	mSNEStatus := mSNE.AddSubMenuItem("Check SNE Readiness", "Read the exact installed model/runtime readiness")
+	mSNEStart := mSNE.AddSubMenuItem("Start / Restore SNE", "Start the accepted SNE service")
+	mSNEStop := mSNE.AddSubMenuItem("Stop SNE…", "Prepare a supervised SNE stop")
+	mSNEStopConfirm := mSNE.AddSubMenuItem("  ⚠ Confirm stop", "Commit the exact prepared SNE stop")
+	mSNEStopConfirm.Hide()
+	mSNEQuarantine := mSNE.AddSubMenuItem("Quarantine SNE…", "Hold SNE offline across automatic recovery")
+	mSNEQuarantineConfirm := mSNE.AddSubMenuItem("  ⚠ Confirm quarantine", "Commit the exact prepared quarantine")
+	mSNEQuarantineConfirm.Hide()
+	mSNEOpen := mSNE.AddSubMenuItem("Open SNE Control Center…", "Models, readiness, diagnostics, and support bundle")
+	var sneStopState, sneQuarantineState preparedMenuAction
+	wire(mSNEStatus, func() { runCanonicalAction(mSNEStatus, "gemma/status", nStore, rrSNE) })
+	wire(mSNEStart, func() { runCanonicalAction(mSNEStart, "gemma/serve", nStore, rrSNE) })
+	wire(mSNEStop, func() {
+		prepareCanonicalAction(mSNEStop, mSNEStopConfirm, "gemma/stop", "local-sne", nStore, rrSNE, &sneStopState)
+	})
+	wire(mSNEStopConfirm, func() { commitCanonicalAction(mSNEStopConfirm, nStore, rrSNE, &sneStopState) })
+	wire(mSNEQuarantine, func() {
+		prepareCanonicalAction(mSNEQuarantine, mSNEQuarantineConfirm, "gemma/quarantine", "local-sne", nStore, rrSNE, &sneQuarantineState)
+	})
+	wire(mSNEQuarantineConfirm, func() { commitCanonicalAction(mSNEQuarantineConfirm, nStore, rrSNE, &sneQuarantineState) })
+	wire(mSNEOpen, func() { _ = exec.Command("open", "http://127.0.0.1:9119/sne").Start() })
+
+	// ── Repairs — diagnosis must lead to resolution ─────────────────────────
+	mRepairs := systray.AddMenuItem("𓁐 Repairs & Recovery", "Prepare, confirm, execute, and verify system repairs")
+	rrRepairs := newDeityResult(mRepairs)
+	mRepairDiagnosed := mRepairs.AddSubMenuItem("Repair Diagnosed Issues…", "Prepare Pantheon's bounded safe repairs")
+	mRepairConfirm := mRepairs.AddSubMenuItem("  ⚠ Confirm repairs", "Commit the exact prepared repair")
+	mRepairConfirm.Hide()
+	mNetworkAudit := mRepairs.AddSubMenuItem("Audit Network", "Inspect DNS, firewall, TLS, Wi-Fi, and VPN")
+	mNetworkFix := mRepairs.AddSubMenuItem("Repair Network…", "Prepare bounded network repair")
+	mNetworkFixConfirm := mRepairs.AddSubMenuItem("  ⚠ Confirm network repair", "Commit the exact prepared network repair")
+	mNetworkFixConfirm.Hide()
+	mUpdate := mRepairs.AddSubMenuItem("Install Signed Update…", "Prepare Pantheon's signed application updater")
+	mUpdateConfirm := mRepairs.AddSubMenuItem("  ⚠ Confirm signed update", "Commit the exact prepared signed update")
+	mUpdateConfirm.Hide()
+	mPermissions := mRepairs.AddSubMenuItem("Review Full Disk Access…", "Open macOS permission settings; Pantheon verifies after return")
+	mRecoveryCenter := mRepairs.AddSubMenuItem("Open Recovery Center…", "Application restart/resume targets and receipts")
+	var repairState, networkState, updateState preparedMenuAction
+	wire(mRepairDiagnosed, func() {
+		prepareCanonicalAction(mRepairDiagnosed, mRepairConfirm, "system/fix", "this-mac", nStore, rrRepairs, &repairState)
+	})
+	wire(mRepairConfirm, func() { commitCanonicalAction(mRepairConfirm, nStore, rrRepairs, &repairState) })
+	wire(mNetworkAudit, func() { runCanonicalAction(mNetworkAudit, "network", nStore, rrRepairs) })
+	wire(mNetworkFix, func() {
+		prepareCanonicalAction(mNetworkFix, mNetworkFixConfirm, "network/fix", "this-mac", nStore, rrRepairs, &networkState)
+	})
+	wire(mNetworkFixConfirm, func() { commitCanonicalAction(mNetworkFixConfirm, nStore, rrRepairs, &networkState) })
+	wire(mUpdate, func() {
+		prepareCanonicalAction(mUpdate, mUpdateConfirm, "update/app", "Pantheon.app", nStore, rrRepairs, &updateState)
+	})
+	wire(mUpdateConfirm, func() { commitCanonicalAction(mUpdateConfirm, nStore, rrRepairs, &updateState) })
+	wire(mPermissions, func() { openFullDiskAccessPane(nStore) })
+	wire(mRecoveryCenter, func() { _ = exec.Command("open", "http://127.0.0.1:9119/").Start() })
 
 	// ── Fabric — canonical work and message streams ────────────────────────────
 	const ledgerRowCount = 5
@@ -309,10 +512,13 @@ func onReady() {
 	ledgerRows := make([]*systray.MenuItem, ledgerRowCount)
 	for i := range ledgerRows {
 		ledgerRows[i] = mLedger.AddSubMenuItem("  —", "")
-		ledgerRows[i].Disable()
 	}
 	mLedgerOpen := mLedger.AddSubMenuItem("View full ledger…", "Run sirsi router ledger in Terminal")
-	wire(mLedgerOpen, func() { runService(mLedgerOpen, "Ledger", sirsiBin, "router ledger", nStore, nil) })
+	wire(mLedgerOpen, func() { runCanonicalAction(mLedgerOpen, "router/ledger", nStore, nil) })
+	for _, row := range ledgerRows {
+		item := row
+		wire(item, func() { _ = exec.Command("open", "http://127.0.0.1:9119/horus").Start() })
+	}
 
 	// ── 🐺 Anubis — Cleanup (secondary: storage upkeep lives BELOW the live view) ─
 	// Memory is the pre-eminent view; disk cleanup is demoted here, plain-English.
@@ -325,18 +531,24 @@ func onReady() {
 	mCleanConfirm.Hide()
 	mKa := mAnubis.AddSubMenuItem("Find leftover app files", "Find bits left behind by apps you deleted")
 	mGuard := mAnubis.AddSubMenuItem("Watch for problems…", "Keep an eye on apps using too much")
+	mGuardCenter := mAnubis.AddSubMenuItem("Open Process Relief…", "Inspect, renice, or stop a selected process with confirmation")
+	mGhostCenter := mAnubis.AddSubMenuItem("Open App-Leftover Cleanup…", "Review and clean selected ghost-app files")
+	mVaultCenter := mAnubis.AddSubMenuItem("Open Vault Maintenance…", "Search and prune governed retained artifacts")
 	// Permanent delete — owner request 2026-08-03. Two-click: preview arms the
 	// confirm item (auto-disarms after 30s); confirm executes. Rule A1 compliant.
 	mAnubis.AddSubMenuItem("──────────", "").Disable()
 	mPermDelete := mAnubis.AddSubMenuItem("🗑 Permanently Delete Trash…", "Check what's in Trash, then permanently delete it")
 	mPermDeleteConfirm := mAnubis.AddSubMenuItem("  ⚠ Confirm: permanently delete", "This cannot be undone — files are gone forever")
 	mPermDeleteConfirm.Hide()
-	wire(mScan, func() { runService(mScan, "Find stuff to clear", sirsiBin, "scan", nStore, rrAnubis) })
+	wire(mScan, func() { runCanonicalAction(mScan, "scan", nStore, rrAnubis) })
 	wire(mJudge, func() { runCleanPreview(mJudge, mCleanConfirm, "Clear stuff…", sirsiBin, nStore, rrAnubis) })
 	wire(mReview, func() { reviewCleanList() })
 	wire(mCleanConfirm, func() { runCleanApply(mCleanConfirm, sirsiBin, nStore, rrAnubis) })
-	wire(mKa, func() { runService(mKa, "Find leftover app files", sirsiBin, "ghosts", nStore, rrAnubis) })
-	wire(mGuard, func() { spawnTUIWithCommand("guard") })
+	wire(mKa, func() { runCanonicalAction(mKa, "ghosts", nStore, rrAnubis) })
+	wire(mGuard, func() { runCanonicalAction(mGuard, "guard", nStore, rrAnubis) })
+	wire(mGuardCenter, func() { _ = exec.Command("open", "http://127.0.0.1:9119/guard").Start() })
+	wire(mGhostCenter, func() { _ = exec.Command("open", "http://127.0.0.1:9119/ghosts").Start() })
+	wire(mVaultCenter, func() { _ = exec.Command("open", "http://127.0.0.1:9119/vault").Start() })
 	wire(mPermDelete, func() { runPermanentDelete(mPermDelete, mPermDeleteConfirm, nStore) })
 	wire(mPermDeleteConfirm, func() { runPermanentDeleteApply(mPermDeleteConfirm, nStore) })
 
@@ -463,6 +675,10 @@ func onReady() {
 	}()
 }
 
+func buildMenubarNexusURL(token string) (string, error) {
+	return dashboard.BuildNexusCapabilityURL(dashboard.NexusLocalAIURL, token)
+}
+
 func onExit() {}
 
 func countIdleLanes(lanes []ledger.FabricLane) int {
@@ -486,14 +702,6 @@ func formatAge(age time.Duration) string {
 }
 
 // ── TUI Bridge ─────────────────────────────────────────────────────────
-
-// spawnTUIWindow opens Terminal.app (or iTerm2) running `sirsi` which
-// launches the BubbleTea TUI. Uses the same AppleScript pattern as
-// ra.SpawnWindow but without the agent machinery.
-// spawnTUIWindow opens the TUI with no pre-loaded command.
-func spawnTUIWindow() {
-	spawnTUIWithCommand("")
-}
 
 // spawnTUIWithCommand opens or activates a Sirsi terminal window and runs a
 // concrete CLI command. The older ADR-016 bridge expected a `sirsi pantheon`
@@ -684,7 +892,7 @@ func rescanWaste(ctx context.Context) {
 	engine := jackal.DefaultEngine()
 	engine.RegisterAll(rules.AllRules()...)
 	start := time.Now()
-	res, err := engine.Scan(ctx, jackal.ScanOptions{})
+	res, err := engine.Scan(ctx, jackal.ScanOptions{Manifest: jackal.NewPlatformManifest()})
 	if err != nil {
 		return
 	}
@@ -701,21 +909,17 @@ func rescanWaste(ctx context.Context) {
 	liveState.updateTitle()
 }
 
-// startPeriodicScan scans on launch, then every 4 hours. (Clean triggers an
-// immediate rescanWaste so the title never lags reality.) The 4h cadence is the
-// full-rescan fallback; startLiveRefresh makes the label react to persist events
-// in ~seconds, so the tray no longer "hasn't updated in 4h".
+var refreshFromLatestFn = refreshFromLatest
+
+// startPeriodicScan retains its historical name for call-site compatibility,
+// but resident Pantheon no longer schedules filesystem scans. Spotlight owns
+// broad macOS indexing; Pantheon hydrates its governed persisted manifest and
+// receives event-driven updates when an explicit Scan/Clean operation publishes
+// a successor. This prevents two background indexers from walking the same disk.
+// Explicit user-requested forensic scans remain available through the CLI/UI.
 func startPeriodicScan(ctx context.Context) {
-	go func() {
-		for {
-			rescanWaste(ctx)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(4 * time.Hour):
-			}
-		}
-	}()
+	_ = ctx
+	refreshFromLatestFn()
 }
 
 // liveRefreshDebounce coalesces a burst of persist writes into one label

@@ -34,8 +34,10 @@ const dutyTimeout = 2 * time.Minute
 // internal/autoheal imports this package, so the duty reaches it through this
 // seam, wired by cmd/sirsi at startup; the default is an inert no-op.
 var (
-	autoHealMu sync.RWMutex
-	autoHealFn = func(routerRoot, repoRoot string) error { return nil }
+	autoHealMu       sync.RWMutex
+	autoHealFn       = func(routerRoot, repoRoot string) error { return nil }
+	registryPoliceMu sync.RWMutex
+	registryPoliceFn = func(routerRoot, repoRoot string) error { return nil }
 )
 
 func getAutoHealFn() func(string, string) error {
@@ -50,6 +52,24 @@ func SetAutoHealFn(fn func(routerRoot, repoRoot string) error) {
 	defer autoHealMu.Unlock()
 	if fn != nil {
 		autoHealFn = fn
+	}
+}
+
+func getRegistryPoliceFn() func(string, string) error {
+	registryPoliceMu.RLock()
+	defer registryPoliceMu.RUnlock()
+	return registryPoliceFn
+}
+
+// SetRegistryPoliceFn installs the native, read-only registry accountability
+// pass. cmd/sirsi wires it at startup because its implementation owns CLI
+// process discovery and guarded dispatch; this package keeps the resident
+// supervisor dependency-free and inert for library consumers.
+func SetRegistryPoliceFn(fn func(routerRoot, repoRoot string) error) {
+	registryPoliceMu.Lock()
+	defer registryPoliceMu.Unlock()
+	if fn != nil {
+		registryPoliceFn = fn
 	}
 }
 
@@ -69,7 +89,14 @@ func supervisorDuties() []SupervisorDuty {
 	return []SupervisorDuty{
 		{Name: "dispatch-pump", ScriptRel: "run-on-event.sh", Cadence: 0},
 		{Name: "sweep", ScriptRel: "sweep.sh", Cadence: time.Hour},
-		{Name: "registry-police", ScriptRel: filepath.Join("police", "registry-police.sh"), Cadence: 10 * time.Minute},
+		// Registry police used to invoke registry-police.sh, which parsed CLI JSON
+		// through python3 on every resident pass. The native duty preserves the
+		// same discover/scout/stranding/advisory sequence without a shell or
+		// interpreter dependency; its cmd/sirsi implementation is injected to
+		// avoid an internal/router -> cmd import cycle.
+		{Name: "registry-police", GoRun: func(routerRoot, repoRoot string) error {
+			return getRegistryPoliceFn()(routerRoot, repoRoot)
+		}, Cadence: 10 * time.Minute},
 		// Auto-heal (ADR-039 P3): the monitor→identify→FIX pass, gated on
 		// autonomous mode + GateAction inside the hook. Injected from cmd/sirsi
 		// (internal/autoheal imports this package — a direct import would cycle).

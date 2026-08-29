@@ -19,6 +19,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify source identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/verify-release-source-identity.sh "$RELEASE_TAG"
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -36,12 +41,16 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   menubar:
     name: Build Menu Bar (macOS DMG)
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     needs: release
+    env:
+      # Only non-sensitive presence booleans are job-scoped. Raw secret values
+      # remain confined to the steps that import/materialize them.
+      MACOS_CERTIFICATE_PRESENT: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      ASC_KEY_CONTENT_PRESENT: ${{ secrets.ASC_KEY_CONTENT != '' }}
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
     # makes `security import`/`codesign`/`notarytool --wait` hang), this caps the
@@ -50,6 +59,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/verify-release-source-identity.sh "$RELEASE_TAG"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -66,7 +82,7 @@ jobs:
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Import signing certificate
-        if: env.MACOS_CERTIFICATE != ''
+        if: env.MACOS_CERTIFICATE_PRESENT == 'true'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -80,10 +96,30 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
           rm certificate.p12
 
+      - name: Verify canonical menubar release contract
+        run: bash scripts/verify-menubar-release-contract.sh
+
+      - name: Prepare App Store Connect notarization key
+        if: env.ASC_KEY_CONTENT_PRESENT == 'true'
+        env:
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY_CONTENT" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
       - name: Build + sign + notarize DMG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+          BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+          REQUIRE_RELEASE_SIGNING: "1"
+          REQUIRE_RELEASE_NOTARIZATION: "1"
           DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          ASC_KEY_PATH: ${{ env.ASC_KEY_PATH }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -97,42 +133,6 @@ jobs:
         run: |
           gh release upload "$TAG_NAME" \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
-
-      # goreleaser (release job) bumps Formula/sirsi-pantheon.rb but has no view
-      # of the DMG (built here, after it). Without this the Cask silently drifts
-      # behind the Formula on every tagged release — it stuck at v0.18.0 while the
-      # Formula reached v0.23.8-beta (homebrew-tools item 172647; fixed once by
-      # hand in homebrew-tools PR #2). Mirror the Formula bump for the Cask: the
-      # DMG is in hand here, so update version + sha256 in the tap and push. The
-      # cask's `url` is version-templated, so only those two fields change.
-      - name: Bump Homebrew Cask in tap (Formula-parity, no silent drift)
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          set -euo pipefail
-          DMG="bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
-          SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
-          echo "DMG sha256: $SHA"
-          git clone --depth 1 \
-            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/SirsiMaster/homebrew-tools.git" tap
-          CASK="tap/Casks/sirsi-pantheon.rb"
-          if [ ! -f "$CASK" ]; then
-            echo "::error::$CASK not found in tap — cannot bump the cask"; exit 1
-          fi
-          # perl (not BSD sed) for portable in-place edits; url uses #{version}.
-          perl -0pi -e "s/version \"[^\"]+\"/version \"${BUILD_VERSION}\"/" "$CASK"
-          perl -0pi -e "s/sha256 \"[0-9a-f]{64}\"/sha256 \"${SHA}\"/"       "$CASK"
-          cd tap
-          if git diff --quiet; then
-            echo "Cask already at ${BUILD_VERSION} — nothing to bump."
-            exit 0
-          fi
-          git config user.name  "sirsi-release-bot"
-          git config user.email "release-bot@users.noreply.github.com"
-          git add Casks/sirsi-pantheon.rb
-          git commit -m "Cask update for sirsi-pantheon version ${BUILD_VERSION}"
-          git push
 
       # The menu bar app (fyne/systray) needs CGO+Cocoa and cannot be built by
       # the ubuntu goreleaser job, so the curl install.sh path has no menubar
@@ -161,6 +161,43 @@ jobs:
           tar -czf "$ARCHIVE" -C dist/menubar sirsi-menubar
           gh release upload "$TAG_NAME" "$ARCHIVE"
 
+  publish-release:
+    name: Publish Verified macOS Release
+    runs-on: ubuntu-latest
+    needs: menubar
+    steps:
+      - name: Checkout exact tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify uploaded DMG before publishing draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          DMG="SirsiPantheon-${VERSION}-arm64.dmg"
+          gh release view "$TAG_NAME" --json isDraft,tagName,targetCommitish,assets > release.json
+          test "$(jq -r '.isDraft' release.json)" = true
+          gh release download "$TAG_NAME" --pattern "$DMG"
+          COMMIT=$(git rev-parse "${TAG_NAME}^{commit}")
+          TREE=$(git rev-parse "${COMMIT}^{tree}")
+          scripts/render-pantheon-homebrew-cask.sh \
+            --tag "$TAG_NAME" --source-commit "$COMMIT" --source-tree "$TREE" \
+            --dmg "$DMG" --release-json release.json --output rendered-cask.rb
+          scripts/verify-pantheon-release-asset.sh \
+            --tag "$TAG_NAME" --source-commit "$COMMIT" --source-tree "$TREE" \
+            --dmg "$DMG" --release-json release.json \
+            --cask rendered-cask.rb
+
+      - name: Publish verified draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh release edit "$TAG_NAME" --draft=false
+
   windows-installer:
     name: Build Windows Installer
     # Mac-first platform roadmap (ADR-032): Windows is deferred 3–6mo, demand-gated.
@@ -172,6 +209,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/verify-release-source-identity.sh "$RELEASE_TAG"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -222,30 +266,44 @@ jobs:
   bump-cask:
     name: Bump Homebrew Cask (DMG SHA256)
     runs-on: ubuntu-latest
-    needs: menubar
+    needs: publish-release
     steps:
+      - name: Checkout exact tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Extract version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Download DMG and compute SHA256
+      - name: Download and bind uploaded DMG
         id: sha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
+          set -euo pipefail
           gh release download "$TAG_NAME" \
             --repo SirsiMaster/sirsi-pantheon \
             --pattern "SirsiPantheon-${VERSION}-arm64.dmg"
-          SHA=$(sha256sum "SirsiPantheon-${VERSION}-arm64.dmg" | awk '{print $1}')
-          echo "SHA256=${SHA}" >> "$GITHUB_OUTPUT"
+          gh release view "$TAG_NAME" --repo SirsiMaster/sirsi-pantheon \
+            --json tagName,targetCommitish,assets > release.json
+          COMMIT=$(git rev-parse "${TAG_NAME}^{commit}")
+          TREE=$(git rev-parse "${COMMIT}^{tree}")
+          DMG="SirsiPantheon-${VERSION}-arm64.dmg"
+          scripts/render-pantheon-homebrew-cask.sh \
+            --tag "$TAG_NAME" --source-commit "$COMMIT" --source-tree "$TREE" \
+            --dmg "$DMG" --release-json release.json --output rendered-cask.rb
+          scripts/verify-pantheon-release-asset.sh \
+            --tag "$TAG_NAME" --source-commit "$COMMIT" --source-tree "$TREE" \
+            --dmg "$DMG" --release-json release.json --cask rendered-cask.rb
 
       - name: Update Casks/sirsi-pantheon.rb in homebrew-tools
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
-          SHA256: ${{ steps.sha.outputs.SHA256 }}
         run: |
           set -euo pipefail
           CASK_PATH="Casks/sirsi-pantheon.rb"
@@ -254,42 +312,9 @@ jobs:
           # Get current blob SHA (required for GitHub API file update)
           BLOB_SHA=$(gh api "repos/${REPO}/contents/${CASK_PATH}" --jq '.sha')
 
-          # Build cask content and base64-encode for the GitHub API
-          CONTENT=$(cat <<EOF | base64 -w0
-          cask "sirsi-pantheon" do
-            version "${VERSION}"
-            sha256 "${SHA256}"
-
-            url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-arm64.dmg"
-            name "Sirsi Pantheon"
-            desc "DevOps intelligence platform — menu bar monitor + CLI"
-            homepage "https://github.com/SirsiMaster/sirsi-pantheon"
-
-            app "Pantheon.app"
-
-            uninstall quit:      "ai.sirsi.pantheon",
-                      launchctl: "ai.sirsi.pantheon"
-
-            zap trash: [
-              "~/.config/pantheon",
-              "~/Library/LaunchAgents/ai.sirsi.pantheon.plist",
-            ]
-
-            caveats <<~EOS
-              Pantheon.app includes both the menu bar monitor and the sirsi CLI.
-
-              To start the menu bar at login:
-                cp /Applications/Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist ~/Library/LaunchAgents/
-                launchctl load ~/Library/LaunchAgents/ai.sirsi.pantheon.plist
-
-              Quick start:
-                sirsi scan       Find waste on your machine
-                sirsi doctor     Check system health
-                sirsi ghosts     Find remnants of uninstalled apps
-            EOS
-          end
-          EOF
-          )
+          # Content is rendered only after the release asset/tag/source chain is
+          # proven above; this job cannot make a cask that references absent bytes.
+          CONTENT=$(base64 -w0 rendered-cask.rb)
 
           gh api "repos/${REPO}/contents/${CASK_PATH}" \
             -X PUT \

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // NOTE: none of the tests in this file use t.Parallel — they swap the
@@ -126,8 +128,30 @@ func TestMenubarPlistContent(t *testing.T) {
 	if !strings.Contains(out, "ai.sirsi.pantheon") {
 		t.Error("plist missing label")
 	}
-	if !strings.Contains(out, `exec "/opt/space dir/sirsi-menubar"`) {
-		t.Errorf("plist must exec the quoted binary path:\n%s", out)
+	if !strings.Contains(out, `<string>/opt/space dir/sirsi-menubar</string>`) {
+		t.Errorf("plist must launch the exact binary path directly:\n%s", out)
+	}
+	if strings.Contains(out, "/bin/zsh") || strings.Contains(out, "/tmp/") {
+		t.Errorf("plist must not depend on a shell or ephemeral logs:\n%s", out)
+	}
+}
+
+func TestBootstrapUserLaunchAgentUsesModernIdempotentSequence(t *testing.T) {
+	calls := stubLaunchctl(t)
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = oldSleep })
+	if err := bootstrapUserLaunchAgent("/tmp/ai.sirsi.pantheon.plist", menubarPlistLabel, 501); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"enable", "gui/501/ai.sirsi.pantheon"},
+		{"bootout", "gui/501/ai.sirsi.pantheon"},
+		{"bootstrap", "gui/501", "/tmp/ai.sirsi.pantheon.plist"},
+		{"print", "gui/501/ai.sirsi.pantheon"},
+	}
+	if !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("launchctl calls = %#v, want %#v", *calls, want)
 	}
 }
 
@@ -241,6 +265,34 @@ func TestMenubarAndSupervisorInstalled(t *testing.T) {
 	}
 }
 
+func TestMenubarRegistrationDistinguishesPlistFromLoadedJob(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd registration is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if installed, loaded := MenubarRegistration(); installed || loaded {
+		t.Fatalf("empty home registration = installed:%t loaded:%t", installed, loaded)
+	}
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agents, "ai.sirsi.pantheon.plist"), []byte("<plist/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldExec := launchctlExecFn
+	launchctlExecFn = func(args ...string) error { return fmt.Errorf("not loaded") }
+	t.Cleanup(func() { launchctlExecFn = oldExec })
+	if installed, loaded := MenubarRegistration(); !installed || loaded {
+		t.Fatalf("unloaded registration = installed:%t loaded:%t", installed, loaded)
+	}
+	launchctlExecFn = func(args ...string) error { return nil }
+	if installed, loaded := MenubarRegistration(); !installed || !loaded {
+		t.Fatalf("loaded registration = installed:%t loaded:%t", installed, loaded)
+	}
+}
+
 func TestInstallMenubar_NoBinary(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	restrictPATH(t) // no sirsi-menubar anywhere
@@ -254,6 +306,215 @@ func TestInstallMenubar_NoBinary(t *testing.T) {
 	}
 	if res.Status != StatusFailed || !strings.Contains(res.Message, "not found") {
 		t.Fatalf("res = %+v, want binary-not-found failure", res)
+	}
+}
+
+func TestInstallMenubarRegistersCaretakerOnCleanHome(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar install is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := t.TempDir()
+	writeExecutable(t, bin, "sirsi-menubar", "#!/bin/sh\n")
+	restrictPATH(t, bin)
+	calls := stubLaunchctl(t)
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = oldSleep })
+
+	result := InstallMenubar()
+	if result.Status != StatusOK {
+		t.Fatalf("InstallMenubar() = %+v", result)
+	}
+	plist, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.pantheon.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleExec := filepath.Join(home, "Applications", "Sirsi Menubar.app", "Contents", "MacOS", "sirsi-menubar")
+	if !strings.Contains(string(plist), "<string>"+bundleExec+"</string>") {
+		t.Fatalf("LaunchAgent does not bind copied caretaker: %s", plist)
+	}
+	want := [][]string{
+		{"enable", fmt.Sprintf("gui/%d/ai.sirsi.pantheon", os.Getuid())},
+		{"bootout", fmt.Sprintf("gui/%d/ai.sirsi.pantheon", os.Getuid())},
+		{"bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.pantheon.plist")},
+		{"print", fmt.Sprintf("gui/%d/ai.sirsi.pantheon", os.Getuid())},
+	}
+	if !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("launchctl calls = %#v, want %#v", *calls, want)
+	}
+}
+
+func TestInstallMenubarPreservesCanonicalExistingAppBundle(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar install is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	app := filepath.Join(t.TempDir(), "Pantheon.app")
+	macOSDir := filepath.Join(app, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executable := writeExecutable(t, macOSDir, "sirsi-menubar", "#!/bin/sh\n")
+	info := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string>
+<key>CFBundleExecutable</key><string>sirsi-menubar</string>
+</dict></plist>`
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(info), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restrictPATH(t, macOSDir)
+	stubLaunchctl(t)
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = oldSleep })
+
+	result := InstallMenubar()
+	if result.Status != StatusOK {
+		t.Fatalf("InstallMenubar() = %+v", result)
+	}
+	plist, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.pantheon.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(plist), "<string>"+executable+"</string>") {
+		t.Fatalf("LaunchAgent does not preserve existing app executable: %s", plist)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Applications", "Sirsi Menubar.app")); !os.IsNotExist(err) {
+		t.Fatalf("canonical existing app was duplicated: %v", err)
+	}
+}
+
+func TestCanonicalCaretakerReinstallIsIdempotent(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar install is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	app := filepath.Join(t.TempDir(), "Pantheon.app")
+	macOSDir := filepath.Join(app, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, macOSDir, "sirsi-menubar", "#!/bin/sh\n")
+	info := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string>
+<key>CFBundleExecutable</key><string>sirsi-menubar</string>
+</dict></plist>`
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(info), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restrictPATH(t, macOSDir)
+	calls := stubLaunchctl(t)
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = oldSleep })
+
+	if result := InstallMenubar(); result.Status != StatusOK {
+		t.Fatalf("first InstallMenubar() = %+v", result)
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.pantheon.plist")
+	first, err := os.ReadFile(plistPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := InstallMenubar(); result.Status != StatusOK {
+		t.Fatalf("second InstallMenubar() = %+v", result)
+	}
+	second, err := os.ReadFile(plistPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("caretaker reinstall changed an unchanged launch contract")
+	}
+	if len(*calls) != 8 {
+		t.Fatalf("launchctl calls = %d, want two exact registration cycles: %#v", len(*calls), *calls)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Applications", "Sirsi Menubar.app")); !os.IsNotExist(err) {
+		t.Fatalf("caretaker reinstall duplicated canonical app: %v", err)
+	}
+}
+
+func TestCaretakerFirstInstallBootstrapFailureLeavesNoPlist(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar install is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := t.TempDir()
+	writeExecutable(t, bin, "sirsi-menubar", "#!/bin/sh\n")
+	restrictPATH(t, bin)
+	oldExec := launchctlExecFn
+	launchctlExecFn = func(args ...string) error {
+		if len(args) > 0 && args[0] == "bootstrap" {
+			return fmt.Errorf("injected bootstrap failure")
+		}
+		return nil
+	}
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { launchctlExecFn = oldExec; sleepFn = oldSleep })
+
+	result := InstallMenubar()
+	if result.Status != StatusFailed {
+		t.Fatalf("InstallMenubar() = %+v, want failure", result)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.pantheon.plist")); !os.IsNotExist(err) {
+		t.Fatalf("failed first install left login residue: %v", err)
+	}
+}
+
+func TestCaretakerUpgradeBootstrapFailureRestoresPreviousPlist(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menubar install is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := t.TempDir()
+	writeExecutable(t, bin, "sirsi-menubar", "#!/bin/sh\n")
+	restrictPATH(t, bin)
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plistPath := filepath.Join(agents, "ai.sirsi.pantheon.plist")
+	previous := []byte("previous-launch-contract\n")
+	if err := os.WriteFile(plistPath, previous, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldExec := launchctlExecFn
+	bootstrapCalls := 0
+	launchctlExecFn = func(args ...string) error {
+		if len(args) > 0 && args[0] == "bootstrap" {
+			bootstrapCalls++
+			if bootstrapCalls <= bootstrapAttempts {
+				return fmt.Errorf("injected successor bootstrap failure")
+			}
+		}
+		return nil
+	}
+	oldSleep := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { launchctlExecFn = oldExec; sleepFn = oldSleep })
+
+	result := InstallMenubar()
+	if result.Status != StatusFailed {
+		t.Fatalf("InstallMenubar() = %+v, want successor failure", result)
+	}
+	restored, err := os.ReadFile(plistPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(restored, previous) {
+		t.Fatalf("predecessor plist not restored: %q", restored)
+	}
+	if bootstrapCalls != bootstrapAttempts+1 {
+		t.Fatalf("bootstrap calls = %d, want %d successor attempts plus one predecessor restore", bootstrapCalls, bootstrapAttempts+1)
 	}
 }
 

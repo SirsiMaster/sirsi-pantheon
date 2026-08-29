@@ -1,17 +1,226 @@
+# 2026-08-21: Pantheon .8 passed the true lock-independent control-plane gate:
+# one atomic host sample showed IOConsoleLocked=Yes, exact .8 launchd PID 2534,
+# runs=1, no prior exit, and a fresh /api/stats response on loopback 9119. The
+# AppKit/onReady dependency is closed. Full FileVault reboot/login restoration
+# remains a distinct distribution gate.
+# 2026-08-21: Copied Pantheon candidate .8 supersedes .7 as active development
+# caretaker. Shared vitals now parses vm_stat's declared page size (including
+# Apple-silicon 16 KiB) and publishes real total/used/free bytes instead of zero
+# placeholders. Focused vitals/menubar/dashboard tests pass. Live .8: one
+# launchd PID 2534, runs=1, no exit; 48 GiB total, 10.16 GiB used, 37.84 GiB
+# free, 21.17%, low pressure. Hashes: menubar 77f0a3f2...b08fc, CLI
+# ad535b15...1220, DMG 36c5c524...ddc81. Ad-hoc development candidate only.
+# 2026-08-21: Pantheon candidate 0.23.8-beta-20260821.7 decouples its
+# nonvisual control plane from AppKit/systray readiness. One pre-GUI object now
+# owns dashboard, SNE install/lifecycle, notifications, Guard/scan/refresh,
+# router registration, cancellation, and idempotent shutdown; onReady only
+# attaches UI. Focused menubar/dashboard tests pass. Transactional package and
+# live install passed: launchd PID 96074, runs=1, no prior exit, exact .7 path,
+# listener 127.0.0.1:9119, live root and stats responses. Hashes: menubar
+# 7f8c6cca...183cfe, CLI da5bff02...3f93e, DMG 0e564247...c1234. Ad-hoc only;
+# true locked-session restart, Developer ID/notary, and zero absolute RAM-byte
+# telemetry remain open. Canon:
+# docs/evidence/PANTHEON_LOCK_INDEPENDENT_CONTROL_PLANE_20260821.md.
+# 2026-08-21: Post-repair M1 real API continuity passed: HTTP 200, coherent
+# 24-token visible response, exact plain NVFP4-4/no-assistant execution, runtime
+# and manifest hashes unchanged. Single request telemetry was 53.8028 visible
+# and 71.7371 engine tok/s, explicitly continuity-only and not a benchmark claim.
+# 2026-08-21: Transactional `sirsi sne ownership repair --confirm` now stages
+# SHA-pinned backups/receipts, retires only recognized legacy labels, verifies
+# one canonical owner, and rolls back launchd/plists on failure. Focused tests
+# pass. Real M1 repair accepted: legacy `ai.sirsi.pantheon-sne-e2b` retired,
+# canonical PID 43449 unchanged, exact plain E2B NVFP4 model/manifest unchanged,
+# receipt `20260821T235404Z-sne-ownership-repair` durable on M1.
+# 2026-08-21: Added `sirsi sne ownership` with stable
+# `pantheon.sne-ownership.v1` JSON. It accepts exactly one canonical
+# `ai.sirsi.sne.supervisor`, identifies `ai.sirsi.pantheon-sne-*` as legacy,
+# reports executable and loaded state, and fails closed on drift. Real M1 run
+# proved 1 canonical loaded + 1 legacy stopped => `ownership-drift`; transient
+# audit binary was removed. Transactional retirement is the next packaging task.
+# 2026-08-21: M1 installation drift audit found no Pantheon.app, no normal-path
+# CLI, and no canonical caretaker, while an ad-hoc Pantheon candidate plus two
+# competing SNE LaunchAgents and several research packages remained resident.
+# The live old candidate contradicted itself (`ready:true`, active ready entry,
+# support unqualified, lifecycle stopped, fixed cache 64). Current source now
+# adds a final signed-support invariant: unsupported active tuples remain
+# stoppable but lose readiness/Nexus/OpenAI admission. Full dashboard suite
+# passes. Canon: docs/evidence/PANTHEON_M1_INSTALLATION_DRIFT_AUDIT_20260821.md.
+# 2026-08-21: Pantheon menubar now offers optional `Restart & Resume Safely…`,
+# opening a visible Terminal with the exact consent-gated authenticated restart
+# command. Apple still owns password prompting and the user can cancel. Full
+# `cmd/sirsi` and `cmd/sirsi-menubar` suites pass. On the current locked M5
+# session, signing identities and the notarization keychain profile remain
+# inaccessible; treat this as a session gate, not certificate-loss evidence.
+# 2026-08-21: Pantheon now has a bounded planned-restart CLI foundation:
+# `sirsi host restart --authenticated --confirm`. It verifies FileVault and
+# hardware support, then delegates interactive credential handling and the
+# restart itself to Apple's `sudo fdesetup authrestart`. It does not store a
+# password, disable FileVault, enable automatic login, or claim recovery across
+# an unplanned encrypted cold boot. Focused command-contract tests pass.
+# 2026-08-21: Pantheon Homebrew release generation now uses the supported
+# one-copy Cask contract: install `Pantheon.app` once and expose its bundled
+# `sirsi` executable through `binary "#{appdir}/Pantheon.app/Contents/MacOS/sirsi"`.
+# Caretaker/login registration remains an explicit consented command through
+# `sirsi surface install gui`; the cask does not silently enable login state.
+# 2026-08-21: Pantheon now closes the user handoff from an exact ready SNE
+# tuple into Nexus. Dashboard and `sirsi sne open` share one validated HTTPS
+# sirsi.ai URL builder; the private capability travels only in the URL fragment,
+# is never returned by the API, and the UI action appears only for an active
+# release-supported tuple. Dashboard + CLI focused suites pass.
+# The shared launch target is the canonical Nexus `/local-ai` workspace, not the
+# sirsi.ai root. Nexus already consumes the fragment into sessionStorage and
+# removes it from browser history. Path-specific dashboard + CLI gates pass.
+# Nexus launch failures expose only stable recovery text; raw browser-opener
+# errors can never echo launch arguments or fragment capability material.
+# 2026-08-21: Native Google Workspace publication for SNE commercialization/support
+# is now closed at document 1b-uVcZsWJ9tfjiti2ZSqiNQHCEWZdJJJtMA_efswfJY.
+# Repo canon and both Owner Reading Room mirrors now point to that native record.
+# 2026-08-21: Three-home publication closed for SNE commercialization/support
+# evidence. Verified native Google Doc 1kUgEvjTuG9oabxzlRCqUOAkG2QwzQoJOsJnLCm8fiSI
+# contains exact-tuple and identity-mismatch sections. Earlier stale import is
+# visibly renamed SUPERSEDED, not deleted. Workspace blocker removed only for
+# this evidence item.
+# 2026-08-21: A ready-looking but identity-drifted SNE service now projects as
+# `identity-mismatch`, not generic stopped/not-ready. Pantheon gives actionable
+# recovery to stop the unverified service and restart the exact tuple through
+# supervised lifecycle. Adversarial projection and focused suites pass.
+# 2026-08-21: Pantheon dashboard readiness now fails closed unless the live SNE
+# service exactly matches the supervised lifecycle tuple: ready state, API v0/
+# sne.openai-chat.v2, profile, runtime SHA, single model ID, manifest SHA, queue
+# policy, and timeout. A healthy rogue/stale loopback process cannot project as
+# ready. Adversarial projection tests and dashboard/SNE/model suites pass.
+# 2026-08-21: Added missing repo-local commercialization profile for Pantheon
+# SNE and enriched privacy-safe support diagnostics with exact runtime SHA,
+# manifest SHA, profile, cache topology/capacity, and prefix capability. Focused
+# dashboard/SNE/model-source suites pass; live tuple qualification remains open.
+# Canon: docs/evidence/SNE_COMMERCIALIZATION_AND_SUPPORT_PROVENANCE_20260821.md.
+# 2026-08-21: Added fail-closed `sirsi-sne-catalog-candidate` for the
+# post-admission API4096 bridge. It requires the signed current catalog,
+# accepted v2 receipt, promoted pointer, API4096 ancestry, actual package-byte
+# hashes, all required gates, and package-boundary verification; output is
+# exclusive and unsigned, with no sign/install/activate capability.
+# Current-state testing exposed a pre-existing repository regression from the
+# admitted 12-entry v26 catalog aca14182... to an 11-entry staging catalog
+# 36073d1a... plus a mismatched staging admission registry. Exact admitted
+# catalog/signature were recovered from Pantheon's immutable version store and
+# the matching registry from its durable live store; staging copies remain
+# explicitly superseded. Full signed lineage and negative admission tests pass.
+# Canon: docs/evidence/SNE_API4096_CATALOG_CANDIDATE_AND_LINEAGE_REPAIR_20260821.md.
+# Three-home publication completed at native Google Doc
+# 1Mw9-3FLrMJQwN9DKF2Egeq53SGHz39aMPZHv3Faj9RQ plus Owner Reading Room MD/HTML.
+# 2026-08-20: SNE admission now correctly treats successful macOS fresh-boot
+# swap output (`total=0 used=0`) as readable zero swap. Missing, malformed,
+# negative, and impossible telemetry still fail closed. Focused guard and SNE
+# tests pass. This repaired clean-v4's false `swap_measurement_unavailable`.
+# 2026-08-20: Pantheon SNE model cards now disclose exact license ID and official
+# terms URL before consent. Install confirmation names both and receipt effect;
+# unknown license identities disable Install. Focused dashboard/install tests
+# pass; no acquisition/model/GPU ran. Canon:
+# docs/evidence/SNE_MODEL_LICENSE_DISCLOSURE_AND_CONSENT_20260820.md.
+# 2026-08-20: OpenAI-compatible SNE routes now return stable privacy-safe local
+# errors plus governed recovery and no-fallback metadata; successful SSE remains
+# preserved. Dashboard tests pass. Nexus React and Go consumers are aligned.
+# 2026-08-20: Pantheon lifecycle API, SNE UI, accessible retry control, and
+# privacy-safe support export now preserve typed admission codes, recovery, and
+# the failed measured resource sample. Dashboard tests pass; no model ran.
+# 2026-08-20: Pantheon admission failures now carry stable privacy-safe codes,
+# measured resource fields, and actionable recovery; the supervisor retains the
+# failed sample and retryable parent context. Focused supervisor/SNE tests pass.
+# Multi-hour/pressure qualification is overnight-only; daytime remains bounded.
+# 2026-08-20: Graph-Caretaker crash correctness passed but exposed a lifecycle
+# memory-admission defect. Parent package declared 20 GiB while observed active
+# high-water was 25,545,459,702 bytes; bounded restart grew swap 2.06 MiB ->
+# 3,259.81 MiB. Pantheon now hash-verifies and decodes the launch manifest,
+# derives required memory when omitted, rejects disagreement/zero values, and
+# adds total-RAM/12 lifecycle reserve on restart/reload/load-after-unload.
+# Focused internal/sne tests pass. SNE copied measured-memory descendant manifest
+# SHA b90829d0...2cc6e remains unexecuted until low-swap admission. Canon:
+# docs/evidence/SNE_GRAPH_CARETAKER_CRASH_MEMORY_ADMISSION_20260820.md.
+# 2026-08-18: Pantheon's previously missing completion contract now validates.
+# The recovery work item has a structurally valid draft proof with actual canon
+# and evidence only. Human companion:
+# docs/governance/PANTHEON_COMPLETION_CONTRACT_20260818.md. Desktop mirrored;
+# Google Workspace mirror visibly pending.
+# 2026-08-18: Pantheon now requires SNE model-store recovery before install or
+# lifecycle launch. Durable helpers are installed under ~/.local/bin; real
+# recovery returned zero pending removals. Install availability, lifecycle
+# selections, and launch fail closed on missing/failed recovery. Full dashboard
+# tests and the real signed-catalog gate pass against sne-gemma4-v2 (12 entries,
+# version aca14182..., two retained versions). Canon:
+# docs/evidence/SNE_MODEL_STORE_RECOVERY_INTEGRATION_20260818.md.
+# 2026-08-18: Copied SNE v26 capacity-bound readiness passed real Pantheon/Metal
+# admission. Pantheon required `paged-ring-4096`, serving capacity 4096, and
+# native session maximum 2 in addition to exact runtime/model/manifest identity.
+# Runtime fc979e20..., manifest 81e9332f..., native runtime ef6a2a4b..., archive
+# 1b1da317.... The v25 native runtime/MLX/metallib were unchanged. This is an
+# identity/capacity result, not performance or production promotion. Canon:
+# sirsi-native-rebuild/docs/history/SNE_V2_V26_CAPACITY_READINESS_20260818.md.
+# 2026-08-18: Pantheon no longer treats HTTP 200 as SNE readiness. It now
+# requires exact service/API/profile/runtime/model/manifest identity, rejects
+# drift as terminal, and has adversarial tests for wrong runtime, model,
+# manifest, profile, API, and multiple models. A real copied-v25 Metal run
+# passed exact readiness and the refined package boundary: runtime f967611c...,
+# manifest 931bc842..., artifact set c6c315c9..., 12,935,160,119 bytes. The
+# package's contained metallib file symlink is permitted; escaping/broken/
+# directory symlinks remain rejected. Canon:
+# docs/evidence/SNE_V25_EXACT_PACKAGE_AND_READINESS_GATE_20260818.md.
+# 2026-08-18: Pantheon SNE lifecycle now proves runtime-package
+# self-containment while deriving model availability and again before launch.
+# `VerifyRuntimePackageBoundary` rejects package symlinks, verifies the five
+# governed runtime hashes, parses Mach-O imports and `LC_RPATH`, permits only
+# package-bound references plus `/System/Library` and `/usr/lib`, and rejects
+# `/private/tmp`, developer build trees, untracked libraries, and relative
+# escapes. Focused internal/sne and internal/dashboard tests pass. This is the
+# executable prevention for the reboot-only metallib failure; matching hashes
+# alone are no longer treated as proof of package durability.
+# 2026-08-17 SNE acquisition/UI correction closure: complete strict readiness
+# schema now decodes gate_meanings/global metadata and reports registry as_of
+# separately from tuple stability. Model-source revisions/repositories reject
+# URL injection; controlled Hugging Face and signed-catalog HTTPS Sirsi
+# first-party derivative origins are supported with provider-scoped redirects.
+# Direct /sne routing works and empty device-family detection is diagnostic-safe.
+# Focused dashboard/SNE/source/command tests pass. The catalog screen remains
+# read-only until its install/start controls are connected to the now-verified
+# acquisition + SNE checkout transaction; no detached model-manager UI.
+# 2026-08-17 31B MXFP8 clean-session outcome propagated: copied SNE package
+# repaired a missing package-local metallib link and passed 100/100 exact, but
+# swap grew 0->1174.38 MiB. Pantheon readiness now rejects the tuple under the
+# performance policy as performance-rejected-research; 31B affine-4 remains the
+# admitted 31B product route.
+# 2026-08-16 E4B/12B lifecycle closure and supervisor repair: durable
+# productization supervisor had stale SHA dc074b... and lacked current tuple/
+# dylib flags even though source was current. Clean rebuild reproduced proven
+# be91216e... exactly and restored the artifact. SNE's lifecycle gate raced
+# fresh-child readiness against the asynchronous success log; it now waits for
+# both. E4B child 74719->74768 and 12B child 82742->82808 passed exact tuple
+# admission and output equality. Registry SHA is now 84e1ac06... after binding
+# the qualified 12b-nvfp4 copied manifest. Dynamic fallback remains prohibited.
+# 2026-08-16 E4B NVFP4 downstream admission state: SNE's copied
+# thinking-disabled E4B candidate preserves exact token/logit identity, passes
+# 8/8 bounded quality, and fails unqualified streaming closed at HTTP 503.
+# Pantheon exact-tuple admission already covers e4b-nvfp4, but package-specific
+# supervised lifecycle remains open and must not be inferred from E2B. SNE
+# quality readiness is now 7/16; no dynamic framework fallback is permitted.
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# 2026-08-15 SNE provider foundation: Pantheon now has a product-neutral SNE
+# API client, strict Anubis/Ra profiles, and a shell-free supervisor/CLI that
+# launches sned with explicit artifact identity, waits for fail-closed
+# readiness, sends graceful termination, and restarts unexpected exits.
+# Memory/concurrency/yield fields are declared but require enforcement evidence
+# before product admission. SNE remains replaceable behind Runtime API v0.
 # Read this FIRST before any source files.
-# Last updated: 2026-08-09T09:11:29-04:00
+# Last updated: 2026-08-22T11:01:09-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.23.8-beta
-binary_count: 5 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar)
-test_count: 14854+
-line_count: ~673,251
-module_count: 66
-command_count: 266
+binary_count: 13 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar, sirsi-sne-acquire, sirsi-sne-catalog-candidate, sirsi-sne-catalog-portable, sirsi-sne-catalog-sign, sirsi-sne-catalog-store, sirsi-sne-catalog-verify, sirsi-sne-registry-verify, sirsi-sne-supervisor)
+test_count: 15043+
+line_count: ~686,003
+module_count: 69
+command_count: 282
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
 mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, Horus 4, Brain 3, Version 1, Categories 1)
@@ -86,6 +295,11 @@ sync_protocol:
 #   Thoth: Scribe/Memory compressor (extensions/vscode/src/thothAccountability.ts)
 #   Ma'at: Quality standard/Weigher (internal/maat/)
 #   Isis: Healer/Remediation engine (internal/isis/)
+# 2026-08-21: Native `sirsi-sne-registry-verify` now validates admission/readiness
+# pairs and optional manifest/artifact hashes. E2B v8 registry v3 passes identity;
+# correctness and wrong-artifact gates reject. Its exact bounded package passed
+# an isolated signed catalog-store install as 18233e10...cc3b4d; tampered signature
+# rejected. Production catalog and service were untouched.
 #
 # 𓀰 THE MACHINE GODS (Infrastructure & OS)
 #   Horus: The Eye/Shared FS Index + AST Symbol Graph
@@ -250,6 +464,34 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-08-21: Pantheon native menu-bar SNE/Nexus handoff drift fixed. Menubar no longer hardcodes sirsi.ai root fragment; it calls shared dashboard.BuildNexusCapabilityURL with governed https://sirsi.ai/local-ai route, fragment-only capability, no query credential, and missing-capability rejection. Focused cmd/sirsi-menubar test passes. Evidence: docs/evidence/PANTHEON_MENUBAR_NEXUS_GOVERNED_HANDOFF_20260821.md.
+# 2026-08-21: Router snapshot:
+# 2026-08-21: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-08-21: completed topics: 41
+# 2026-08-21: last Codex read: 2026-06-11T04:28:50Z
+# 2026-08-21: last Claude read: 2026-06-16T15:30:16Z
+# 2026-08-21: pending: none
+# 2026-08-21: Pantheon SNE install UX: replaced browser confirm license acceptance with explicit keyboard-accessible terms dialog. Dialog identifies exact model, opens governed terms URL, requires unchecked explicit consent before enabling Accept and install, separates cancel, and preserves transactional release-supported backend request. Focused SNE route/license/install API tests pass.
+# 2026-08-21: Router snapshot:
+# 2026-08-21: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-08-21: completed topics: 41
+# 2026-08-21: last Codex read: 2026-06-11T04:28:50Z
+# 2026-08-21: last Claude read: 2026-06-16T15:30:16Z
+# 2026-08-21: pending: none
+# 2026-08-17: 2026-08-17: Pantheon SNE lifecycle now supports exact assistant-bound MTP packages. resolveLaunch derives the sole assistant artifact from the admitted manifest and formal checkout, verifies SHA identity, and passes AssistantSafetensors to the supervisor. Plain manifests reject assistants. Runtime catalog v2 now includes formal candidate9 and pins sned, native runtime, MLX dylib, metallib, and JACCL. Unit tests pass outside the sandbox; dashboard candidate b390b005 passed a real Start/serve/Stop using only formal package/model-store roots and returned exact pantheon mtp ready content. SNE formal gate passed but swap contamination prohibits a new performance claim.
+# 2026-08-17: Router snapshot:
+# 2026-08-17: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-08-17: completed topics: 41
+# 2026-08-17: last Codex read: 2026-06-11T04:28:50Z
+# 2026-08-17: last Claude read: 2026-06-16T15:30:16Z
+# 2026-08-17: pending: none
+# 2026-08-17: 2026-08-17 SNE product integration: added transactional lifecycle UI endpoints and Start/Stop actions, formal runtime package resolver, strict checkout receipt provenance, authoritative service_url, and runtime catalog schema pantheon.sne-runtime-packages.v2. Before launch Pantheon now pins/verifies sned, model-specific native runtime, libmlx.dylib, mlx.metallib, and libjaccl.dylib plus admitted manifest and checkpoint receipt. Five formal tuples appear installed/startable: 26B-A4B Q4; 12B Q4/Q5/Q6/plain-Q8. Real Pantheon generations passed for 26B, 12B Q4, and 12B Q5 with clean Stop. Tests passed outside sandbox; sandbox-only listener failures were environmental. Next: MTP assistant checkout/lifecycle, 31B/E2B/E4B package entries, signing/notarized installer UX, clean-host and M1 pilots.
+# 2026-08-17: Router snapshot:
+# 2026-08-17: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-08-17: completed topics: 41
+# 2026-08-17: last Codex read: 2026-06-11T04:28:50Z
+# 2026-08-17: last Claude read: 2026-06-16T15:30:16Z
+# 2026-08-17: pending: none
 # 2026-08-02 (codex-inference): CTR durable-host selection was repaired at the
 # source and installed. Fixed-depth parent/grandparent resolution was replaced
 # by exact executable-identity ancestry; helper/prefix matches are rejected and
@@ -262,26 +504,760 @@ sync_protocol:
 # first the candidate binary, then the installed ~/.local/bin/sirsi—registered
 # thread 019f8fc4-96a4-7f00-b564-d91a64d0a4d1 without --anchor-pid and selected
 # durable task host PID 40821, not broker PID 37423. Quiet-machine policy held.
-# 2026-08-02 (codex-inference, owner-directed quiet regime): Router Universal Task Ledger v0
-# implemented on isolated branch `codex/router-universal-task-ledger`; independently reviewed exact
-# head b08bac6d (implementation 50838f87). SQLite migration v3 adds lossless item blocked_by and durable per-agent
-# tasks; internal/ledger is the ONE producer for exact age, 4h-configurable heartbeat staleness,
-# dependency chains, current_item pickup, blocked, and unblocked/unpicked. CLI: router ledger,
-# router task add|update|list, router depend; CTR is a thin summary projection. ADR-050 proposed.
-# Full go test ./... and isolated CLI replay PASS. Claude Nexus APPROVED and first live integration
-# reconciled 35 truthful rows: 32-task SNE snapshot plus three later router-grounded obligations;
-# current closeout counts done=24, in-progress=1, pending=7, blocked=3, with no orphaned dependency
-# targets. Remote push was export-safety blocked; do not claim a PR. Three homes: repo ADR, Desktop
-# Reading Room 08, Google Doc id 1i00_61RwKxUspxV-HWtsTLp0pNtkJTQwlC1QEJknAcs.
-# P1 rollout lesson: never let a shadow/new binary migrate the shared live store before atomic
-# replacement of the canonical installed binary; v2 correctly failed closed on v3 and temporarily
-# stranded router surfaces until the approved v3 binary was atomically installed. Only Claude Nexus + codex-inference remain active;
-# do not wake fleet or run GPU work until owner lifts the SNE quiet regime.
-# ⚠ 2026-07-30 (claude-home, owner-directed): this file was 8× Thoth's own "~100 line compressed
-# state" spec. Removed: 7 raw PreCompact hook-payload lines (a hook payload is not a decision)
-# and 48 lines of near-identical "Router snapshot" blocks (stale registry state; `sirsi router
-# status` is the live source). Relocated, NOT deleted: 262 lines of 2026-03 session histories
-# (were misfiled inside Known Limitations) and 35 lines of real pre-July decisions → journal.md
-# "## Archive: relocated from memory.yaml (2026-07-30)". Root cause = `sirsi thoth sync` appending
-# payloads/snapshots as decisions; routed as 20260730-015122. If hook_event_name or "Router snapshot:"
-# lines reappear below, the sync regressed — strip, don't compress. Keep this section to ~10 entries.
+
+sne_supervision_update_20260815:
+  status: source-complete-awaiting-admission
+  controls: loopback-only endpoint, shell-free child launch, bounded request count, RSS ceiling monitor, graceful stop, on-failure restart, readiness wait, reprime
+  remaining: build and lifecycle fault-injection proof
+# 2026-08-16 SNE supervised restart gate: Pantheon now parses SNE's structured
+# `restart_required`, serializes lifecycle, replaces the child process, and
+# waits for readiness. `sirsi-sne-supervisor` maps SIGHUP through the same API
+# contract. Real Metal proof replaced PID 39938 with 40085 and preserved exact
+# content SHA 770fe7e4... using service SHA 458b4052.... In-process native MLX
+# reload is rejected after two empty-reply crashes. Platform-foundation only;
+# Nexus, clean100, package/sign/notarize, clean-Mac, security, and pilot remain.
+# 2026-08-16 Nexus workflow consumed Pantheon's SNE supervisor successfully:
+# exact model route, native SSE, process replacement PID 40979 -> 41121,
+# readiness recovery, and exact content SHA 770fe7e4... all passed. Nexus owns
+# decisions only; Pantheon retains lifecycle/resource ownership. Durability and
+# productization gates remain.
+# 2026-08-16 SNE process-scoped lifecycle: client now supports typed
+# load/unload/reload requests; Supervisor unload preserves parent context while
+# terminating the child, load starts/waits for a fresh child, and reload replaces
+# the child. Helper tests pass. Real candidate6 Metal gate passed initial,
+# unload/load, reload with PIDs 48166/48174/48226 and exact content SHA
+# 770fe7e4... in 59.76s. SNE advertises model_lifecycle=[] and supervised
+# [load,unload,restart]. Canon: docs/evidence/SNE-PROCESS-SCOPED-LIFECYCLE-GATE-20260816.md.
+# 2026-08-16: Pantheon candidate7 process lifecycle refresh passed against the
+# packaged thinking-disabled SNE candidate. Fresh supervised processes were
+# 52111, 52118, and 52125; exact final-answer content SHA was
+# fda564ba3f7a0f028106d468420f674898ed99ac5bf2765ac9586206e39d73c5.
+# Focused unit tests and vet passed with host loopback permission. The canonical,
+# Owner Reading Room, Workspace, and evidence packet were updated in place; the
+# evidence packet and Reading Room have zero duplicate-content groups.
+# 2026-08-16: Pantheon exact Gemma 4 tuple admission now precedes SNE process
+# launch. The 16-entry registry binds manifest/model/architecture/parameter/
+# adapter/execution/precision/memory/qualification/checkpoint/artifact-set
+# identity, rejects semantic duplicates and drift, enforces memory ceilings,
+# requires explicit research opt-in, and retains supervised-restart lifecycle.
+# Registry SHA cd98c772e7507484c88a1c3079337571fa6d9ffdbf4949045b9e5a7b3bb1503e.
+# All 16 real manifests pass. No dynamic framework switching or performance
+# claim is introduced. SNE evidence:
+# artifacts/evidence/sne-gemma4-pantheon-admission-v1-20260816.
+# 2026-08-16 SNE exact-tuple registry durability: the documented 16-entry
+# Gemma 4 admission registry had existed only in prior gate state. SNE now
+# deterministically generates configs/supervisor/sne-gemma4-v1-admission.json
+# from exact manifest symlinks; registry SHA is 35b9c79a.... Current supervisor
+# source admitted E2B NVFP4 at 6,442,450,944 bytes under Anubis's 40 GiB ceiling
+# and completed a real supervised restart, child PID 61882->61917, with exact
+# pre/post content SHA 2d8bd7d9.... This proves local package lifecycle only;
+# Nexus, clean100, signing/notarization, clean-Mac, security, and pilot remain.
+
+# 2026-08-16: Pantheon exact-tuple lifecycle passed for packaged E2B MXFP8
+# using supervisor SHA be91216eaf..., admission registry SHA 84e1ac06c2...,
+# service SHA 9811f05bde..., and catalog entry e2b-mxfp8. Supervised restart
+# produced distinct child PIDs, readiness returned, and post-restart content
+# SHA 2d8bd7d9bb... matched. Registry required no mutation because its strict
+# E2B MXFP8 manifest/checkpoint/artifact hashes were already current.
+# 2026-08-16 owner-ratified future Pantheon packaging requirement: installation
+# must become a Tailscale-caliber product surface through Homebrew, GitHub
+# Releases, and the Mac App Store where policy permits. Acceptance requires
+# prerequisite detection, consentful permission/network-extension handling,
+# actionable recovery, post-install verification, clean upgrade/uninstall, and
+# per-route clean-machine proof. Canon: docs/PANTHEON-FEATURE-ROADMAP.md §5.5.
+# This is deferred scope, not authorization to implement in the recording turn.
+
+sne_resource_caretaker_20260817:
+  status: implemented_real_gate_pass
+  classification: platform-foundation
+  formal_package: /Users/thekryptodragon/Library/Application Support/Sirsi/SNE/packages/SNE-2.0.0-12b-affine8-mtp-shared-wide-v2-darwin-arm64
+  manifest_sha256: bfa45db88d0988292b3b48ae8b6e7486a2e6eaf5e9ff2e9d86bc3996696865a5
+  required_bytes: 17179869184
+  available_bytes_at_gate: 28941336576
+  reserve_bytes_at_gate: 10200547328
+  swap_used_bytes_at_gate: 922747
+  swap_limit_bytes: 3221225472
+  pressure: normal_bootstrap_snapshot
+  exact_response_sha256: 271973d4979a0bdfa021f64bf7cc98f77eeffd101b3d1fbcaaf178c4b061b62f
+  real_gate_engine_tok_s: 106.713
+  real_gate_delivered_tok_s: 96.042
+  canonical_report: docs/SNE_RESOURCE_CARETAKER_20260817.md
+  google_doc: https://docs.google.com/document/d/1hHzaHt46A1zQ4cJmBnlVscTyz0kPEZAUE30peh0L2UE
+  next: qualify measured footprints for 26B_A4B and 31B before lowering conservative manifest requirements
+# 2026-08-18 v26 supervised restart re-admission: exact package/readiness gate
+# replaced PID 94803 with 94885 and independently reverified artifact set
+# c6c315c9... (12,935,160,119 bytes), runtime fc979e20..., manifest
+# 81e9332f..., package-local libmlx, paged-ring-4096, capacity 4096, and two
+# sessions. Resource gate re-admitted 17,179,869,184 required bytes with
+# 32,381,779,968 available, 10,200,547,328 reserve, 518,122,373 swap used,
+# and normal pressure. Permanent invariant: distinct PID plus complete
+# artifact/dependency/identity/capacity/resource re-proof; port/HTTP recovery
+# alone is rejected. v26 remains candidate-only and has no performance claim.
+# 2026-08-18 explicit SNE runtime selection: runtime catalog entries may now
+# carry runtime_id independently from stable model_id. Single-package legacy
+# catalogs remain valid. Multiple packages for one model require unique,
+# nonempty runtime IDs and launch must select one explicitly; ambiguity,
+# duplicate pairs, mixed legacy/explicit variants, and unknown runtime IDs fail
+# closed. Focused internal/sne and internal/dashboard tests pass. No live catalog
+# changed and no candidate was promoted. Canon:
+# docs/evidence/SNE_EXPLICIT_RUNTIME_SELECTION_GATE_20260818.md.
+# 2026-08-18 signed SNE runtime catalog: production default lifecycle now
+# verifies detached Ed25519 signature before JSON parsing/path trust. Installed
+# catalog sne-gemma4-v1 (11 entries) passed low-level and default-lifecycle real
+# gates. SHA catalog=1975d968..., sigfile=b72cef6b..., publickey=60a94a48....
+# Signer refuses key overwrite, writes atomically, private key is external 0600,
+# public trust root is checked into configs/sne. Adversarial tests reject byte
+# mutation/wrong key/malformed signature. Boundary: installed catalog contains
+# absolute paths and is not yet a portable clean-host release catalog. Canon:
+# docs/evidence/SNE_SIGNED_RUNTIME_CATALOG_GATE_20260818.md.
+# 2026-08-18 portable signed runtime catalog materialization: RuntimePackage
+# supports safe package_id as alternative to absolute package_root. Signature is
+# verified before Pantheon joins ID beneath configured PackagesRoot. Traversal,
+# separators, mixed identity, escape, and shared roots fail. Focused tests and
+# real legacy installed signed catalog pass. Clean-host proof still requires a
+# generated package_id catalog with identical signed bytes on M1/M5.
+# 2026-08-18 real portable signed lifecycle: live M5 catalog migrated with
+# rollback copies to portable signed bytes bbcdbaf9... / sig 6842cee0... /
+# public key 60a94a48.... Default Pantheon lifecycle launched plain Gemma 4 12B
+# affine8, verified artifact set 5a3ca87a... (8 files, 12,935,379,671 bytes),
+# loaded package-local MLX, reached readiness, and stopped cleanly. M1 SSH
+# timed out before transfer; cross-host proof remains open. Relative test paths
+# and sandbox listener denial were harness failures; absolute-path preflight and
+# approved execution boundary are permanent rule 30.
+# 2026-08-18 atomic SNE catalog store: signed catalogs live in digest-named
+# immutable bundles selected by runtime-catalog-current. Real M5 probe installed
+# 6beef3da... over bbcdbaf9..., default loader observed probe ID, rollback
+# restored bbcdbaf9..., loader observed original ID, inactive probe removal
+# passed, current remained original. Unit gate rejects tamper, active removal,
+# unexpected files, unsafe rollback. Canon: docs/evidence/
+# SNE_ATOMIC_CATALOG_UPDATE_ROLLBACK_REMOVAL_GATE_20260818.md.
+# 2026-08-18 signed-catalog diagnostics: Pantheon read model/UI now exposes
+# verified state, signature requirement, catalog ID, immutable current SHA,
+# entry/version counts, rollback availability, and lifecycle runtime ID. Real
+# default gate pinned sne-gemma4-v1 / bbcdbaf9... / 11 entries / one retained
+# version / no rollback. Rule: unit correctness is not product admission;
+# governance truth must survive manager, API/read-model, and UI boundaries.
+# Harness correction: one full package command was invoked from the sibling SNE
+# repo and failed before execution. Permanent Rule 30 now requires owning-module
+# preflight before Go package tests. Corrected Pantheon dashboard/SNE suites pass.
+# Signed runtime variants now remain explicit through read model and UI: one row
+# per model/runtime pair, visible runtime_id, and start submits both identities.
+# Host-boundary aggregate suites and real default signed-catalog gate pass.
+# Catalog recovery is now operator-actionable: retained versions are visible;
+# rollback/removal are same-origin, full-digest, confirmation-gated, and rejected
+# unless SNE is stopped. Rollback reverifies signed package materialization;
+# active removal remains impossible. Full suites and real default gate pass.
+# 2026-08-18 signed update feed is implemented: fixed configured HTTPS endpoints,
+# feed signature before parse, signed exact catalog digest/URLs, bounded downloads,
+# insecure redirect rejection, catalog signature/digest recheck, atomic install,
+# retained rollback, and manager mutation lease. Staging feed passes local real
+# verification but remains unconfigured until release assets/clean-host proof.
+# Live M5 dashboard API passed exact product projection: signed bbcdbaf9...
+# catalog, 11 runtime packages, one retained version, no rollback, feed inactive,
+# lifecycle stopped. 16 admission tuples remained distinct; unsupported runtime
+# tuples were disabled with reasons. Isolated dashboard shut down cleanly.
+# 2026-08-18: Pantheon SNE support diagnostics are now a versioned privacy-safe product surface. GET /api/sne/diagnostics downloads pantheon.sne-support-diagnostics.v1 with no-store semantics and exact device/model/runtime/signed-catalog/resource identity. It is constructed from an explicit allowlist and excludes raw errors, paths, environments, command lines, prompts, outputs, credentials, and assistant contents. Focused and full go test ./... gates passed; a real M5 Max loopback download preserved catalog SHA bbcdbaf9... with 11 runtime entries, 16 governed model tuples, live RAM/swap/pressure, and passed forbidden-byte scanning. Permanent Rule 35 requires positive identity assertions, negative sensitive-data injection, and real product-boundary download for every schema revision. Canon: sirsi-pantheon/docs/evidence/SNE_SUPPORT_DIAGNOSTICS_GATE_20260818.md; Workspace doc 1aTpS5E5qrYhtWL-BIu0eqM4FwcwRC_i_8sldnbCXIug.
+
+nexus_sne_supervised_model_control_20260818:
+  status: focused_contract_and_consumer_build_pass
+  scope: installed non-research Pantheon-admitted tuples only
+  cors: exact Nexus origin allowlist; unknown origins forbidden before mutation
+  pantheon_routes: [/api/sne/start, /api/sne/stop, /api/sne/lifecycle]
+  excluded: [model_download, license_acceptance, research_opt_in, arbitrary_runtime, cloud_fallback]
+  tests: go_test_internal_dashboard_pass
+  remaining: live installed-tuple switch evidence and release security review
+
+pantheon_governed_openai_api_20260818:
+  status: implementation_and_focused_contract_tests_pass_live_qualification_pending
+  base: http://127.0.0.1:9119
+  endpoints: [/v1/models, /v1/chat/completions]
+  governance: active signed Pantheon model/runtime identity required
+  completion_modes: [streaming_sse, nonstreaming_json]
+  consumer: Nexus Ask Sirsi
+  no_fallback: true
+  tests: go_test_internal_dashboard_pass
+  pending: live packaged SNE API exercise, cancellation/timeout/stop/structured/multiturn/concurrency qualification
+
+sne_one_copy_checkout_20260818:
+  status: structural_tests_pass_real_model_proof_pending
+  storage: content_addressed_checkpoint_objects_with_hardlinked_views
+  shared: plain_and_mtp_checkpoint_inodes
+  separate: mtp_assistant_artifacts
+  cleanup: exact_prepared_source_after_schema_valid_checkout_only
+  failure: prepared_source_retained
+  safety: rejects_prepared_root_and_outside_targets
+  tests: [go_test_internal_modelcheckout_pass, go_test_internal_dashboard_pass]
+  evidence: sirsi-native-rebuild/artifacts/evidence/sne-one-copy-checkout-structural-gate-20260818.json
+  pending: [real_large_model_inode_and_disk_proof, interrupted_resume, shared_object_upgrade_rollback_removal_gc]
+# 2026-08-18: Pantheon SNE model-store recovery contract-wide verification is
+# green under normal host permissions: `go test ./...`, `go vet ./...`, and
+# `go test ./internal/dashboard ./internal/sne ./internal/snemodels -count=1`
+# all pass. The earlier restricted-shell run is environment-rejected because it
+# denied loopback/Unix sockets, hardware probes, and launchctl; it is not a
+# Pantheon regression. Canon: docs/evidence/
+# SNE_MODEL_STORE_RECOVERY_VERIFICATION_20260818.json.
+# 2026-08-20: Pantheon model discovery now requires an exact machine-readable
+# SNE support tuple before enabling new install/start actions. Missing, stale,
+# mismatched, candidate, research, or unqualified evidence fails closed and
+# surfaces the next gate; active models remain stoppable. No model ran.
+# The support matrix must carry a valid detached Ed25519 signature under the
+# installed SNE catalog trust anchor; unsigned or replaced projections fail.
+# 2026-08-20: Pantheon governed model removal is source-admitted. Exact
+# catalog-entry/model-ID matching, stopped lifecycle, same-origin mutation,
+# explicit argv helper invocation, native receipt, and separate accessible UI
+# are required. Helper authority moved from ~/.local/bin to the installed SNE
+# package root so checkout/recovery/removal cannot disappear on clean hosts.
+# Dashboard tests pass; signed clean-host removal/reinstall remains pending.
+# Helper readiness is measured, not inferred: checkout, recovery, and removal
+# must each be executable before model removal is enabled. UI and diagnostics
+# report privacy-safe status and repair guidance without filesystem paths.
+# Supersession: the 2026-08-18 ~/.local/bin helper location and standalone
+# helper hashes are historical evidence only. Current authority is the
+# receipt-bound installed SNE package plus its package-local SHA256SUMS.
+# Shared Pantheon accessibility: action/navigation focus is explicit;
+# prefers-reduced-motion suppresses motion; prefers-contrast strengthens focus
+# and text. Served-page regression passes; hands-on VoiceOver remains pending.
+# 2026-08-20: Pantheon now invokes the installed SNE privacy-safe support
+# exporter through a same-origin POST, 15s deadline, 4 MiB ceiling, private
+# temporary workspace, and consent-gated keyboard-accessible ZIP download.
+# Focused dashboard suite passes; signed clean-host execution remains pending.
+
+pantheon_sne_macos_file_cache_admission_20260821:
+  status: implementation_and_focused_tests_pass_live_policy_v7_lifecycle_pending
+  defect: active_file_backed_snapshot_pages_were_excluded_from_reclaimable_memory_after_full_hash_verification
+  repair: hapiFreeRAMBytes_returns_max_of_free_plus_inactive_plus_speculative_and_free_plus_file_backed
+  unchanged: [model_measured_memory,lifecycle_reserve,swap_gate,memory_pressure_gate,emergency_gate]
+  tests: go_test_internal_guard_and_internal_sne_pass
+  evidence_sequence: {clean_v7_before_repair: memory_headroom_insufficient_with_28648226816_available_25545459702_required_10200547328_reserve_zero_swap_normal_pressure, live_after_repair: pending_policy_v7_controller_free_run}
+
+pantheon_application_recovery_contract_20260821:
+  status: mechanism_api_and_accessible_ui_implemented_clean_host_qualification_pending
+  schema: pantheon.app-recovery.v1
+  classes: [app_saved_state, launchd_service, checkpointed_process, unsupported]
+  sequence: [capture_declared_state, persist_receipt, stop, persist_receipt, relaunch, require_replacement_pid, verify_readiness, persist_ready]
+  interrupted_resume: true
+  restart_modes:
+    restore: verify_declared_session_or_checkpoint_state_then_relaunch
+    fresh: remove_only_registered_transient_files_then_relaunch
+  mode_inference: forbidden
+  fresh_ordering: stop_then_verify_old_pid_exited_then_clear_registered_files_then_start
+  launchd_fresh_boundary: supervised_replacement_clears_in_memory_state_persistent_state_requires_service_specific_contract
+  launchd_persistent_cleanup_registration: rejected
+  security: [registered_targets_only, absolute_executable, validated_bundle_and_launchd_identity, loopback_readiness_only, no_shell, no_arbitrary_pid_kill]
+  boundary: public_macos_does_not_restore_arbitrary_instruction_pointer_heap_gpu_stream_or_socket_state
+  canon: docs/architecture/PANTHEON_APPLICATION_RECOVERY_CONTRACT_20260821.md
+  registry: ~/.config/sirsi/recovery-targets.json
+  registry_admission: [fixed_location, regular_file, current_user_owned, group_and_other_inaccessible, strict_schema, unknown_fields_rejected]
+  enrollment_cli: [sirsi_recovery_list, sirsi_recovery_add, sirsi_recovery_remove]
+  target_admission: [existing_non_symlink_executable, valid_platform_identity, absolute_non_symlink_state_files, loopback_http_readiness, atomic_0600_registry_write]
+  product_surfaces: [cli_dashboard, resident_menubar_dashboard, dedicated_recovery_view]
+  auto_resume: opt_in_pending_receipts_only_never_initiates_restart
+  api: [GET_/api/recovery, POST_/api/recovery/restart, POST_/api/recovery/resume]
+  pending: [real_target_registration, clean_host_restore_evidence, clean_host_fresh_restart_evidence]
+  local_real_process_gate:
+    status: accepted_checkpoint_restore_and_fresh
+    restore: distinct_pid_checkpoint_hash_verified_ready_receipt
+    fresh: old_pid_exit_verified_exact_transient_file_removed_distinct_pid_ready_receipt
+    scope: isolated_copied_helper_and_temporary_launchagent_not_clean_host_or_user_app
+    evidence: docs/evidence/PANTHEON_APPLICATION_RECOVERY_LOCAL_GATE_20260821.md
+    launchd_fresh: accepted_isolated_temporary_user_launchagent_distinct_pid
+    app_saved_state: accepted_temporary_background_app_consumed_same_session_before_and_after_exact_bundle_relaunch
+    interrupted_resume: accepted_new_manager_completed_durable_stopped_receipt
+    full_focused_gate: go_test_apprecovery_and_dashboard_pass_11_238s_and_2_713s
+    learned_rules: [exact_registered_or_canonical_path_only, posix_pgrep_capture_syntax, exact_app_bundle_relaunch_not_mutable_bundle_lookup]
+  m1_clean_host_attempt:
+    preflight: reachable_arm64_macos_26_6_1_no_repo_no_registry
+    transfer: scp_closed_then_ssh_stream_timed_out_before_execution
+    evidence: none
+    local_artifact_cleanup: complete
+    bounded_retry: ssh_timeout_no_polling_loop
+  diagnostics_projection: privacy_safe_target_kind_modes_auto_resume_phase_failure_code
+  diagnostics_excluded: [executable_paths,state_paths,snapshot_hashes,arguments,pids,raw_driver_errors]
+
+pantheon_sne_loopback_capability_boundary_20260821:
+  status: source_and_registered_route_gates_pass_live_packaged_launch_pending
+  dns_rebinding: strict_canonical_loopback_host_authority_required_before_handler
+  capability: 256_bit_random_bearer_constant_time_comparison
+  storage: private_0700_directory_0600_regular_non_symlink_restart_stable_file
+  protected: [inference,lifecycle_mutation,model_install_remove,catalog_mutation,support_export,recovery_restart_resume]
+  nexus_handoff: URL_fragment_to_session_storage_then_immediate_URL_scrub
+  rotation: authenticated_atomic_file_and_in_memory_replacement_old_token_immediately_forbidden
+  fail_closed: durable_store_failure_uses_unexported_random_in_memory_credential
+  tests: full_internal_dashboard_pass_and_menubar_package_compile_pass
+  canon: docs/product/SNE_LOOPBACK_CAPABILITY_BOUNDARY_20260821.md
+  remaining: [live_packaged_Pantheon_to_Nexus_stream,rotation_reconnect,signed_native_Keychain_or_audit_token_same_user_boundary,upgrade_uninstall_diagnostics_redaction]
+# 2026-08-21: Pantheon release identity is now fail-closed. The DMG previously
+# selected the SwiftUI prototype whenever macapp/Package.swift existed, while
+# the standalone archive built cmd/sirsi-menubar; the Swift surface omitted the
+# protected loopback API, SNE lifecycle/recovery, capability store, and Nexus
+# handoff. Both channels now build cmd/sirsi-menubar, CI verifies the contract,
+# and sirsi dashboard/sirsi-gui also require the same durable capability or
+# refuse startup. Live isolated proof: missing=401, invalid=403, valid=503
+# sne_not_ready (auth crossed; no runtime), all no_fallback=true. GA Keychain/XPC
+# hardening remains pending because this host exposed zero signing identities.
+# Signing audit detail: both valid Developer ID Application certificates are
+# installed/public-only; their matching private keys are absent from M5 login,
+# M5 Sirsi-SNE-Release-v4, and the authorized M1. A fresh local key+CSR and
+# Apple-issued certificate are required before signed-native qualification.
+# Replacement key foundation is now durable: Apple certtool created a 2048-bit
+# RSA private key directly in login Keychain under label
+# `Sirsi Technologies Developer ID 2026-08-21`; matching CSR verifies and has
+# SHA256 a980e404f33da5b85e97de18571917c956cdbdbff30d43bbd4ac48d8cfb34373.
+# Portal upload has NOT occurred because Apple requires fresh owner sign-in.
+# Embedded Pantheon continuity repair: overview now establishes a session-only
+# HttpOnly SameSite=Strict loopback cookie, so protected lifecycle/recovery UI
+# remains usable without exposing the root capability to JS. Explicit bearer
+# always wins. Live: cookie stop=200; same cookie hostile Origin=403/no-fallback.
+# 2026-08-21: SNE readiness is generation-scoped after exact admission. Three
+# consecutive post-admission readiness/identity failures signal only the current
+# registered child; the existing memory-gated supervisor replaces it, and the
+# replacement remains untrusted until exact WaitReady admission. Hardware Admin
+# has no separate restart API. Clean model-backed M1/M5 proof remains pending.
+# Corrected Pantheon recovery candidate SHA-256: bbb6245b20d71953573658f9961e8cb36fc8b96275100385b49d59a26d061cf8.
+# Apple Developer ID Application G2 form is prepared; CSR is not uploaded.
+
+sne_profile_capabilities_20260821:
+  fields: cache_topology, serving_cache_capacity, prefix_sessions_maximum, prefix_sessions_supported
+  support_rule: execution_mode plain and signed prefix maximum greater than zero
+  no_fallback: MTP never silently becomes plain, Python, CPU, cloud, another model, or another precision
+  candidate_sha256: 5b50c61edad33556c6d08c04f5731d4bbc67ef6d1607a1925d3e02a54896e9a4
+  tests: internal/dashboard and internal/sne passed
+# 2026-08-21: SNE supervisor now requires exact API contract
+# sne.openai-chat.v2 from both readiness and status. Same coarse api_version v0
+# is no longer sufficient; older/missing/disagreeing contracts fail admission.
+# Focused internal/sne tests pass. Copied menubar SHA 33defc5b...498d.
+  sne_recovery_owner:
+    date: 2026-08-21
+    authority: Pantheon internal/sne exact-admission supervisor
+    generic_apprecovery_enrollment: prohibited
+    reason: preserve atomic model/runtime/precision/memory admission and one owner per action
+    hardware_admin_restart_api: absent
+
+# 2026-08-21: OpenAI model discovery now exposes fail-closed lowercase runtime and model-manifest SHA-256 plus serving profile; lifecycle derives these from the exact admitted package. SNE remains exclusively supervised by Pantheon.
+
+# 2026-08-21: Pantheon now carries canonical signed/strictly-derived SNE service_version into supervisor --version and fails lifecycle resolution if absent; prevents GA packages reporting 0.1.0-dev.
+# 2026-08-21: Pantheon SNE supervision now carries the existing durable local
+# capability into sned by private file path, never token text or environment.
+# Its internal client authenticates SNE /v1 requests; launch rejects missing,
+# non-regular, overly permissive, or malformed capability files. Focused
+# internal/sne and supervisor-command tests pass. Live copied-package and
+# clean-host proof remain open. Canon:
+# docs/evidence/SNE_SUPERVISOR_LOCAL_CAPABILITY_20260821.md.
+# 2026-08-21: Pantheon Mac Swift surface now exposes SNE through the shared
+# loopback API: exact server-projected model/runtime identity, model discovery,
+# license-confirmed install, start/stop/retry, governed removal, signed-catalog
+# rollback/removal, recovery, and lifecycle-tool state. Mutations require the
+# private mode-600 capability; no admission logic is duplicated in Swift.
+# `swift build --package-path macapp` passes. The SNE screen is registered in
+# the headless visual-regression harness; live accessibility/clean-host proof remains.
+# Three-home evidence: docs/evidence/SNE_NATIVE_MAC_CONTROL_SURFACE_20260821.md,
+# Owner Reading Room Pantheon, Google Doc 1Ts1kz9kJpLsN3P3Mq_2-wsyaI-xSFd1BAs7dKguQ9T4.
+# 2026-08-21: Pantheon native SNE control-surface deterministic visual QA is
+# closed at minimum and wide panel sizes. Accepted PNGs and SHA256SUMS are
+# durable under docs/evidence/artifacts/sne-native-mac-control-20260821; rejected
+# snapshot iterations and causes remain in canon. This proves layout only, not
+# live lifecycle, accessibility, clean-host behavior, or serving performance.
+# 2026-08-21: Repaired a secured-SNE readiness blocker. Pantheon's dashboard
+# read model had used an empty-token client even though the supervisor and local
+# authority held the current capability. It now snapshots the rotation-safe
+# authority and uses NewAuthenticatedClient for exact readiness/status/models.
+# Rotation regression plus dashboard/SNE suites pass. Live API4096 remains open.
+# 2026-08-21: Pantheon now projects authenticated SNE queue telemetry only when
+# live policy exactly matches admitted readiness: active/waiting, capacities,
+# FIFO discipline, timeout. Missing/drifted telemetry is unavailable, never zero.
+# Go suites pass. Nexus renders the projection but does not schedule.
+# 2026-08-21: Pantheon native SNE control now has explicit accessibility
+# identifiers and spoken semantics for readiness, progress, runtime, governed
+# models/actions, recovery, and signed-catalog/lifecycle-tool state. Decorative
+# readiness color is hidden from assistive technology. Current-toolchain Swift
+# build passes. Live VoiceOver and lifecycle proof remains pending because the
+# M5 graphical-session gate still reports the console locked.
+# 2026-08-21: Known locked-console Metal startup failures now carry stable
+# `metal_session_locked`, project as `waiting-for-unlock`, preserve exact tuple
+# identity, and never override a healthy running service. Native UI exposes an
+# accessible retry and retries only on macOS session-active notification while
+# that exact code persists. Retry uses normal admission; no cache/model/precision
+# mutation or fallback. Focused Go tests and Swift build pass; live lock/unlock,
+# Metal, and VoiceOver proof remain pending.
+# Existing native control-surface Google Doc
+# 1Ts1kz9kJpLsN3P3Mq_2-wsyaI-xSFd1BAs7dKguQ9T4 was updated in place; connector
+# readback confirms the locked-session recovery and claim boundary.
+# Go lifecycle now owns a single cancellable native `IOConsoleLocked` watcher,
+# independent of UI presence. Unlock retries exactly the preserved request under
+# full admission. Manual start/stop/catalog mutation cancels it. Focused retry
+# and stop-cancellation tests pass; live host proof remains open.
+# Locked-session probe overhead was repaired before release: 20 same-session
+# samples measured full-tree ioreg 1251.682 ms mean vs root-depth-1 9.418 ms,
+# a 99.25% reduction. Production polls the narrow fail-closed parser every 5s.
+# 2026-08-21: Fixed Pantheon SNE service/native identity confusion. RuntimePackage
+# RuntimeSHA256 is bin/sned; NativeRuntimeSHA256 is the dylib. resolveLaunch now
+# passes only NativeRuntimeSHA256 to LaunchConfig.RuntimeSHA256, sned
+# --runtime-sha256, lifecycle state, and readiness matching. Service hash remains
+# separately verified. Focused dashboard/SNE tests and an adversarial identity
+# test pass; no live model/performance run. Canon:
+# docs/evidence/SNE_NATIVE_RUNTIME_IDENTITY_CORRECTION_20260821.md.
+# 2026-08-21: Full `go test ./... -count=1` exposed two dashboard install
+# tests with an artificial one-second polling ceiling around intentionally
+# asynchronous acquisition plus subprocess checkout. Under full-suite process
+# contention they timed out while jobs remained active; no production state
+# transition failed. Replaced fixed 100x10ms iteration limits with explicit
+# ten-second deadlines while preserving immediate installed/failed assertions.
+# The repeated full Pantheon suite passes, including dashboard, recovery, SNE,
+# model acquisition, mobile, and e2e packages. Future async lifecycle tests must
+# use explicit bounded deadlines rather than scheduler-speed assumptions.
+pantheon_sne_integration_revalidation_20260821:
+  status: passed
+  packages:
+    - ./internal/dashboard
+    - ./cmd/sirsi
+  evidence: "go test ./internal/dashboard ./cmd/sirsi passed; CLI completed in 32.138s"
+  warning: "Linker reported duplicate -lobjc; non-failing and unchanged."
+pantheon_sne_support_revalidation_20260821:
+  status: passed
+  evidence: "go test ./internal/dashboard -run 'TestSNE.*(Diagnostics|SupportBundle)' -count=1"
+  contract: "Diagnostics retain exact identity and actionable failed-admission state without forbidden-value leakage; support bundle remains bounded, same-origin protected, and downloadable."
+pantheon_locked_session_revalidation_20260821:
+  status: passed
+  contract: "IOConsoleLocked parsing is narrow/fail-closed; locked runtime projects waiting-for-unlock; exact model/runtime tuple is preserved and retried after graphical unlock; explicit stop cancels pending retry."
+  boundary: "Focused Go evidence only; real host unlock transition remains pending."
+# 2026-08-21: Focused SNE model-delivery qualification passes. Pantheon proves
+# resumable exact-source acquisition; corruption and unsafe-transport rejection;
+# revision-path injection rejection; signed first-party derivative resolution;
+# transactional verified install; prepared-source retention on checkout failure;
+# fail-closed unrecovered-store handling; exact admitted-identity removal; native
+# removal receipts; cross-origin/active-runtime rejection; and keyboard-accessible
+# removal controls. Commands: focused `go test ./internal/snemodels` and
+# `go test ./internal/dashboard`, both `-count=1`, exit 0. This is hermetic
+# contract evidence only; live network checkout and model execution remain pending.
+# 2026-08-21: Pantheon now has a governed full-source checkout qualification
+# runner at SHA b3dd71eb...19cd9 and a hermetic contract gate at SHA
+# c809871e...dd73. The runner requires exact source-catalog SHA and absolute
+# paths, delegates complete per-file size/SHA verification to the Go acquisition
+# command, permits resumable partials only while incomplete, rejects successful
+# completion with any `.partial`, and seals catalog/acquisition/result identities
+# plus timing in a durable receipt. Contract gate proves accepted receipt and
+# wrong-hash exit 67 with zero residue. An initial use of zsh's read-only `status`
+# variable failed and was repaired to `exit_status`; preserve this prevention.
+# No network or model bytes ran. The real 26B tuple is ~15.6 GB and remains a
+# separately admitted live qualification, not a metadata-only substitute.
+# 2026-08-21: Real resident 26B acquisition qualification accepted. Exact source
+# catalog SHA e19253c6...870c, catalog entry
+# `26b-a4b-affine4-runtime-complete`, repository
+# `mlx-community/gemma-4-26b-a4b-it-qat-4bit`, revision 0e3cbab3...910c.
+# Pantheon's production Go acquisition path verified 8/8 files and
+# 15,641,238,190/15,641,238,190 bytes in 6 seconds; resumed_bytes equals the
+# full tuple, proving exact resident reuse with zero transfer. Result SHA
+# 8d7dffa4...b1f9; receipt SHA a8933d07...a949; stderr empty SHA e3b0c442....
+# Evidence: artifacts/evidence/sne-live-checkout-26b-resident-20260821.
+# This proves complete source acquisition identity/reuse, not installation,
+# model execution, correctness, performance, licensing acceptance, or release.
+# Storage audit found an incomplete older prepared-source sibling and a distinct
+# rejected checkout. Neither has a direct receipt/path reference, but do not
+# delete ad hoc; route cleanup through governed lifecycle/removal semantics.
+# 2026-08-21: Focused Gemma licensing gates pass with `-count=1`. Pantheon maps
+# `gemma-terms` to the canonical Google terms URL, fails closed for unknown
+# license identity, requires explicit install acceptance, binds accepted terms
+# into checkout identity, and rejects missing acceptance or hostile origin.
+# Backend enforcement is qualified; clean-host interactive UI acceptance remains
+# pending and must not be inferred from these tests.
+# 2026-08-21: Pantheon now owns governed retained-source cleanup at authenticated
+# same-origin POST `/api/sne/prepared/discard`. The caller supplies only a signed
+# catalog entry; Pantheon resolves the exact revision, rejects unknown/path-like
+# identity, refuses while acquisition/checkout is active, confines removal below
+# PreparedRoot, and returns catalog/revision/removed receipt. It cannot touch
+# installed model-store objects or rejected-checkout evidence. Focused safety
+# tests and full `go test ./internal/dashboard -count=1` pass. Implementation SHAs:
+# sne_install f554be14...b754a; tests 4e52c270...7a4a; server 36f9f763...f98f.
+# Production stale source was not deleted; authenticated accessible UI surfacing
+# and user-visible receipt are the next gate.
+# 2026-08-21: Retained-source cleanup is now user-visible and failure-scoped in
+# Pantheon. Failed install renders keyboard-accessible `[Discard retained
+# download]`, confirms that installed/shared model-store objects are unaffected,
+# calls the authenticated exact-entry endpoint, and displays the signed revision
+# receipt or actionable rejection. Focused and full dashboard tests pass.
+# UI SHA 7b8b210c...41876; test SHA d54c3b14...735bf. Production retained
+# bytes remain untouched until the owner invokes the visible governed action.
+# 2026-08-21: Pantheon support downloads now require the privacy verifier from
+# the exact installed SNE package. The exported archive is verified before
+# bytes are read or returned; success carries
+# X-Sirsi-Support-Privacy-Verified:true. A missing verifier fails closed with
+# repair/update guidance. Focused and broader diagnostics/support suites pass.
+# Canon: docs/evidence/SNE_PACKAGE_BOUND_SUPPORT_PRIVACY_VERIFICATION_20260821.md.
+# Real served-page regression coverage also requires consent, Enter/Space
+# activation, privacy-verified success language, and visible export failure.
+# Pantheon's real Go support wrapper also passes against copied SNE candidate
+# archive 5899e19f...91fc via opt-in package-root integration; exporter,
+# verifier, 15-second bound, and ZIP return all execute without a mock.
+# Combined M1 clean-host proof now binds exact SNE archive 5899e19f...91fc and
+# Pantheon test binary 177ac4e1...40a2. Isolated install, production Go wrapper,
+# packaged export/verify, valid ZIP, uninstall, and zero residue passed in 2.75s.
+# No model/Metal. Evidence log SHA b7a4f6f1...3383.
+pantheon_sne_dual_runtime_identity_20260821:
+  status: source_and_focused_tests_pass_live_metal_pending
+  service_identity: "runtime_sha256 is exact bin/sned"
+  native_identity: "native_runtime_sha256 is exact loaded libsirsi_native_runtime.dylib"
+  launch_contract: "Pass service SHA, native SHA, and package dylib path separately; status and readiness must return both."
+  evidence: docs/evidence/PANTHEON_SNE_DUAL_RUNTIME_IDENTITY_20260821.md
+  no_fallback: true
+pantheon_sne_e2b_api_v2_m1_admission_20260821:
+  status: accepted_identity_policy_bounded_functional
+  catalog_entry: e2b-nvfp4-api-v2-compat-v6-m1
+  supervisor_sha256: 76ef093aef732ecd601058a0879faecf900f59ded9ad1df6118a3bcf8d3a0de8
+  service_sha256: 3c27e78431c7b7ba2535266377e97a6546d94f0afaf594b3478029921463084f
+  native_runtime_sha256: e22d6ae3f92c65a65a3a313946375b5bf4e8669c49f33604df6b1010aa4a8f4e
+  result: "Pantheon supervised exact M1-READY HTTP 200; immutable r5 restored ready."
+  caretaker_repair: "Compact-node reserve floor capped at 25% below 32 GiB; 32+ GiB retains 8 GiB floor."
+  lifecycle_findings: "Installed supervisor/profile version skew; old bootout orphaned r5 child; explicit service version was missing."
+  claim_boundary: "Identity/bounded functional only; correctness, performance, clean100, Nexus, and release remain open."
+  canon: docs/evidence/SNE_E2B_API_V2_PANTHEON_M1_ADMISSION_20260821.md
+# 2026-08-21: Signed SNE runtime capability schema now carries optional truthful
+# streaming semantics: `incremental-sse` or `buffered-compatibility-sse`.
+# Unsupported values fail closed; absent values remain unreported. Dashboard
+# read model and support diagnostics project the capability to Nexus.
+# 2026-08-21: SNE supervision now contains each admitted launch in a dedicated
+# process group. Stop, timeout, health failure, memory ceiling, and parent loss
+# target the governed group so `sned` descendants cannot survive as orphans.
+# The real descendant gate passed on M5 and M1 with identical arm64 test binary
+# SHA 2948b46a...b746e; packaged model/launchd/crash gates remain open.
+# Real E2B crash testing found monitor restart admission could fail while the
+# foreground supervisor stayed alive childless. Supervisor.Wait now propagates
+# terminal monitor failure so launchd can perform a fresh admitted replacement.
+# launchd did not reclaim `sned` after supervisor SIGKILL. Copied product `sned`
+# now accepts Pantheon's exact parent PID and self-shuts down on reparenting;
+# Pantheon passes this identity on every supervised launch.
+# 2026-08-21: Real M1 launchd lifecycle qualification accepted for the copied
+# parent-bound candidate. Normal launch, child-crash recovery through a fresh
+# supervisor, supervisor-SIGKILL recovery, and final-empty-group all passed.
+# Supervisor SHA b20991e8...459f3; service SHA 37ba074e...8709; native SHA
+# e22d6ae3...8f4e. Raw evidence is durable under
+# docs/evidence/artifacts/sne-launchd-process-group-m1-20260821/. A rejected
+# attempt proved staging a repaired sibling is not deployment; harnesses must
+# bind canonical executable path and SHA. M5 lifecycle/API4096 remain open.
+# Lifecycle harness SHA f95443ef...e9bd now requires and verifies the exact
+# supervisor SHA before changing launchd state, and seals path/SHA in receipt
+# d3ce5589...d362. Deliberate wrong SHA exited 65 while r5 retained the same
+# PID and no test listener appeared. Strengthened positive M1 run accepted with
+# supervisor PIDs 33648/33786/33887 and service PIDs 33673/33806/33913.
+# 2026-08-21: Post-reboot M5 audit confirms Pantheon's security-preserving SNE
+# unlock recovery is implemented and focused tests pass: locked state projects
+# `metal_session_locked`/`waiting-for-unlock`, one cancellable watcher preserves
+# the exact tuple, retries through normal admission after unlock, and manual stop
+# prevents late restart. The current M5 host does not have ai.sirsi.pantheon
+# installed/loaded as a LaunchAgent; enabled override state alone is not service
+# installation. Live API4096 lock/unlock proof remains pending signed admission.
+# 2026-08-21: Pantheon caretaker installation was not low-friction or modern:
+# noninteractive install deferred setup, generated menubar setup used legacy
+# launchctl unload/load, and the bundled plist used a login-shell search plus
+# /tmp logs. Source repair now launches the exact binary directly, uses unified
+# logging, and registers via enable -> bootout -> bounded bootstrap retries.
+# Focused and full internal/setup suites pass; bundled plist lint passes. This
+# is source proof only; no development app was installed into the locked host.
+# 2026-08-21: Added narrow idempotent `sirsi surface install gui|menubar` so
+# distribution can register only the caretaker without running dependencies,
+# permissions, or router setup. Noninteractive GitHub install invokes it when
+# the menubar binary exists and emits actionable retry on failure. Command tests,
+# isolated clean-home bundle/plist/launchctl proof, and full setup suite pass.
+# 2026-08-21: Caretaker install now preserves one-copy signed app identity.
+# `canonicalPantheonAppExecutable` validates CFBundleIdentifier/executable with
+# macOS plutil and points launchd at an existing Pantheon.app; loose binaries
+# retain copied-bundle stabilization. Tests prove no duplicate home app. GitHub
+# DMG, Homebrew cask generation, and shell install all direct users through the
+# same `sirsi surface install gui|menubar` primitive. Full setup suite passes.
+# 2026-08-21: Pantheon caretaker/supervisor uninstall no longer uses legacy
+# launchctl unload. It now derives exact user-domain labels, bootouts and disables
+# each job before plist removal. Isolated tests prove both jobs stop durably and
+# plists disappear; dry-run remains side-effect-free. Full setup suite passes.
+# 2026-08-21: Caretaker LaunchAgent installation is now transactional. Plists are
+# staged, chmodded, fsynced, and atomically renamed. Failed first bootstrap removes
+# the final plist; failed upgrade restores and re-bootstraps the predecessor.
+# Idempotent reinstall and both failure paths pass; full setup suite passes.
+# 2026-08-21: Caretaker success now requires `launchctl print` of the exact
+# gui/$UID/ai.sirsi.pantheon target after bootstrap. `sirsi surface` separately
+# reports not installed, installed/stopped, or installed+loaded; plist presence
+# is no longer presented as runtime health. Focused CLI/setup and full setup pass.
+
+# 2026-08-21: Restart/session and RC2 packaging evidence
+# An ordinary FileVault restart cannot auto-login. Pantheon authenticated restart must be armed before reboot; permanent auto-login remains prohibited. Post-restart GUI domain existed but IOConsoleLocked=Yes. The sole API4096 LaunchAgent survived with RunAtLoad and remained fail-closed pending unlock.
+# Packaging repair: scripts/build-dmg.sh now resolves VERSION/ARCH before linker metadata, embeds VERSION and numeric BUILD_NUMBER into Info.plist, and builds the CLI with CGO required by native vitals. Local ad-hoc 1.0.0-rc2 (2026082101) DMG mounted consistently; SHA-256 066860c9944568ce887020568f5e85bc030861beeae64885058009ea394a6d8e. It is NOT distributable until exact-payload Developer ID signing and Apple notarization are authorized and completed.
+
+# 2026-08-21: Pantheon package identity is now executable release law. `scripts/verify-pantheon-package-identity.sh` validates embedded CLI/control engine, ai.sirsi.pantheon bundle ID, app/build/CLI version agreement, strict codesign structure, and expected ad-hoc versus Sirsi Developer ID authority. `build-dmg.sh` invokes it before DMG creation/notarization; `verify-menubar-release-contract.sh` requires the gate, native-vitals CGO CLI, and embedded plist identities. Both gates pass for local RC2.
+
+# 2026-08-21: GitHub release CI now pins CFBundleVersion to github.run_number.github.run_attempt, prepares an ASC API key only from configured secrets, and sets REQUIRE_RELEASE_SIGNING=1. build-dmg fails before DMG creation when release signing is required but absent. Static release contract and workflow YAML validation pass.
+
+# 2026-08-21: API4096 catalog candidate admission test passes. Missing evidence exits 67, creates no candidate, leaves authoritative signed catalog unchanged, and grants no signing/install/activation capability. Required gate strings are expectations validated against a strict receipt and hash-bound ancestry, not self-attested claims.
+# 2026-08-21: Real M5 caretaker installation is now closed. The installed
+# Pantheon 0.23.7 app lacked the narrow installer; current 0.23.8 source-built
+# siblings installed `ai.sirsi.pantheon` transactionally outside the Codex
+# sandbox. Launchd proves one running RunAtLoad+KeepAlive job (PID 84269) bound
+# to valid `~/Applications/Sirsi Menubar.app`, executable SHA b291f4ee...d57.
+# SNE ownership remains truthfully `not-installed`: API4096 is evidence-accepted
+# but not yet signed-catalog admitted, so no research plist was promoted.
+# Installer hardening now preserves launchctl stderr and rejects signed app
+# bundles whose strict code-signature verification fails. Setup and CLI suites
+# pass. The current host relocked; Metal performance remains inadmissible until
+# graphical unlock, while the caretaker itself remains resident.
+# 2026-08-21: Pantheon packaging is now transactional. `build-dmg.sh` uses an
+# isolated attempt directory, retains a build-numbered app candidate, and
+# promotes the public versioned DMG only after the complete pipeline succeeds.
+# Ad-hoc 0.23.8-beta build 20260821.4 passed package identity; DMG SHA
+# 5a15fbfa...fb96. Deliberate build 20260821.5 with a nonexistent signing
+# identity failed while preserving that SHA exactly. Developer ID identity
+# 4BE5346F...812C exists in Sirsi-SNE-Release-v4.keychain-db, but the dedicated
+# keychain is locked; do not replace installed app or claim distributability
+# until it is unlocked and notarization credentials are configured.
+# 2026-08-21: Resident Pantheon menubar now wires the same governed SNE install
+# and lifecycle managers as `sirsi dashboard`. The omission made the actual
+# caretaker/UI read-only despite complete backend managers. Added
+# DefaultSNEInstallConfig + DefaultSNELifecycleConfig to the menubar dashboard;
+# focused menubar tests pass. A copied successor package and live replacement
+# remain required before claiming the installed UI has this capability.
+# 2026-08-21: Copied Pantheon 0.23.8-beta build 20260821.6 is now the live M5
+# caretaker through the transactional installer. Launchd proves PID 90770,
+# runs=1, no prior exit, exact build-numbered app path. This activates the
+# repaired SNE install/lifecycle manager wiring in the resident UI. It is an
+# ad-hoc development deployment, not a signed/notarized release; immutable SNE
+# remains unchanged and API4096 still requires signed catalog admission.
+# 2026-08-21: Live locked-session proof rejected process-only caretaker health.
+# Candidate 20260821.6 remained running, but systray onReady did not fire and
+# canonical loopback 127.0.0.1:9119 never listened. Product readiness must
+# require the control-plane endpoint and governed SNE manager availability, not
+# launchd PID state. Active repair: extract nonvisual dashboard/lifecycle startup
+# ahead of Aqua readiness; retain one engine and one lifecycle owner.
+
+sne_lifecycle_dependency_20260822:
+  before: failed_missing_model_store_recovery_helper
+  after: stopped
+  source: immutable_api4096_verified_tooling
+  recovery_helper_sha256: 470c212d617b15bbf7aa3a5f4ffd76cfc5077df56a53226ccc68ffb2892233c1
+  model_data_changed: false
+  remaining_runtime_gate: console_locked_gpu_unavailable
+# 2026-08-22: SNE lifecycle now atomically migrates only the exact known legacy
+# interactive supervisor policy (4 active, omitted queue/deadline) to the signed
+# v2 policy (1 active, 8 FIFO waiters, 120000 ms). It preserves a rollback copy;
+# arbitrary policy drift remains rejected. Focused sne/dashboard tests pass.
+api4096_catalog_candidate_20260822:
+  status: strict_v3_candidate_generated_unsigned
+  candidate_sha256: 9d8ace967b41fa30f203dee42198d65ffab24d53a4dc437bd604431b0f2f2387
+  generator_sha256: 9b6e31b42d93f01e7b7270272684db14ddde86c1dc9c0f896bef2f084f6e2e8d
+  v3_manifest_schema_required: sne.model-manifest.v0
+  signed: false
+  installed: false
+  activated: false
+seshat_google_auth_20260822:
+  source_repair: accepted
+  root_cause: access_token_only_no_refresh_and_retired_oob_flow
+  oauth_flow: loopback_pkce_drive_readonly
+  token_persistence: atomic_fsync_mode_0600
+  tests: focused_seshat_and_cli_pass
+  fixed_cli_sha256: 3ce510a7d89c0f928be565009a1f9616458eec6b0622af2d347826393a8eb4c4
+  firebase_refresh_proof: four_projects_noninteractive
+  gcloud_adc_drive_scope: rejected_403_insufficient_scope
+  operational_gate: one_sirsi_owned_desktop_oauth_client_and_consent
+
+m1_lock_independent_sne_continuity_20260822:
+  transport: reachable
+  evidence: tailscale_direct_7ms_ssh_22_screen_sharing_5900
+  gui_console: locked
+  sne_status: ready
+  model_id: gemma-4-e2b-it-nvfp4-sne-v0
+  manifest_sha256: 1886efb8ec163b0ddf7c8797bfab59204bfb03147409ffff6312922be6f84def
+  swap_mib: 0
+  memory_free_percent: 68
+  rule: successful_bounded_probe_overrides_idle_tailscale_active_false
+  performance_claim: false
+
+pantheon_installer_repair_20260822:
+  status: local_proof_complete_public_release_blocked
+  canonical_local_app: /Applications/Pantheon.app
+  version: 0.23.9-beta
+  outcomes:
+    - binary drift now judges matching stamped releases, not pathname inequality
+    - diagnose reports Sirsi binaries v0.23.9-beta in sync
+    - liveness watch installed and healthy
+    - Google Workspace auth proven durable and refreshable; Cloud Console activation is unnecessary
+    - diagnosis and fix route through sirsi update --app, not ambiguous Homebrew commands
+  public_release_blocker: dedicated Sirsi-SNE-Release-v4 keychain returns errSecInternalComponent for unattended Developer-ID signing
+  distribution_rule: local app is ad-hoc signed and must not be published; public release remains fail-closed pending Developer-ID ACL repair and notarization
+  containment: do not restart experimental SNE agents disabled by Sirsi Admin on 2026-08-22
+
+pantheon_containment_and_memory_repair_20260822:
+  status: source_and_live_local_proof_complete
+  persistence_cleanup:
+    deleted_disabled_sne_agents: 10
+    deleted_stale_suffixes: [bak, OFF, quarantined, retired, miswired, superseded, reconciled]
+    adobe_login_item_removed: true
+    liveness_watch: intentionally_disabled_during_containment
+    remaining_sirsi_launch_agent: ai.sirsi.pantheon
+  release_keychain:
+    path: /Users/thekryptodragon/Library/Keychains/Sirsi-SNE-Release-v4.keychain-db
+    deleted: false
+    automatic_search: removed
+  memory_root_cause: stele_open_read_entire_lifetime_jsonl_and_expanded_it_into_go_heap
+  memory_repair: recover_sequence_and_hash_from_at_most_last_1_mib
+  before:
+    rss_mib: 1395
+    go_heap_alloc_mib: 749
+    go_heap_sys_mib: 1446
+  after_trace:
+    rss_mib: 28.5
+    go_heap_alloc_mib: 3.3
+    go_heap_sys_mib: 15.9
+  live_app_footprint_mib: 12.5
+  reduction_percent_approx: 99
+  focused_tests: pass
+  cli_diagnose_seconds: 1.4
+  indexing_law: Spotlight owns broad filesystem discovery; Pantheon consumes metadata and maintains only governed Sirsi deltas and explicit product manifests
+  resident_indexing: no_timer_no_background_jackal_scan
+  installed_menubar_sha256: 69b2c685a19251096c6e1817ac8eedda840117b47ff5bc74b4347385bc019358
+  manual_forensics: explicit_Jackal_scan_remains_available
+  pending: add Spotlight-backed provider for broad discovery while preserving explicit deep-forensic Jackal scans
+
+pantheon_menubar_action_closure_20260822:
+  status: local_candidate_complete
+  root_cause: dashboard_has_canonical_typed_actions_but_menubar_hardcoded_commands_and_drifted
+  product_loop: observe_explain_prepare_confirm_execute_verify_record
+  repaired_live:
+    - gemma_start_check_native
+    - router_doctor_safe_fix_native
+    - compute_profile_native
+    - diagnostics_native
+    - horus_real_dashboard
+    - guard_bounded_native
+  terminal_exception: authenticated_restart_and_deliberate_tui_only
+  missing_layers:
+    - shared_exported_action_registry
+    - finding_to_remediation_mapping
+    - native_two_phase_confirmation
+    - sne_lifecycle_controls
+    - app_recovery_controls
+    - signed_update_and_drift_repair
+    - permission_postcondition_verification
+    - network_and_process_relief
+    - ghost_and_vault_cleanup
+    - actionable_dynamic_rows
+  installed_cli_sha256: d4888a68e5da7e2f9c568d29c46ef9f013d6996f4e131f5ee8808bed963c8b37
+  installed_menubar_sha256: 1bc6c2051f8eaeab70f8e04d4edc791ef747b2b08a8f5a4cfd920e3f0f81fa89
+  installed_diagnosis: 100_green_zero_actionable
+  receipt_gate: matching_key_and_success_required
+  resident_tcc_probe: quiet_tcc_database_only
+  resident_scanners: none
+  canon: docs/product/PANTHEON_MENUBAR_ACTION_CLOSURE_20260822.md
+# 2026-08-22: Portfolio-wide macOS permission silence is now binding across
+# Pantheon, Nexus, SNE, Sirsi Inference, Hypergraph, and Sirsi IO Connect.
+# Resident/startup Go and legacy Swift Pantheon paths no longer touch TCC.db or
+# protected stores and no longer request Notifications automatically. Canon and
+# executable gate live at Development/SIRSI_MACOS_PERMISSION_CONTRACT.md and
+# Development/tools/check_sirsi_macos_permission_contract.sh. The six-repo gate
+# passes; focused Go tests and Swift build pass. Distribution is intentionally
+# blocked until the Developer ID private key is imported into the visible Login
+# keychain; sudo is not and cannot be a substitute for private-key authorization.
+
+zero_open_local_ai_goal_20260822:
+  status: active
+  charter: docs/product/SIRSI_LOCAL_AI_ZERO_OPEN_WORK_CLOSURE_CHARTER_20260822.md
+  inventory: docs/product/sirsi-local-ai-closure-inventory-20260822.json
+  counts: {total: 36, complete: 8, runnable: 26, external_blocked: 2, unknown: 0, stale: 0, hung: 0}
+  active_phase: reconcile_and_deduplicate_all_obligations
+  stale_routes_closed: 4
+  homebrew_repair: source_validated_publication_and_clean_host_pending
+  invariant: no_goal_completion_while_any_non_owner_gated_item_is_runnable_unknown_stale_or_hung

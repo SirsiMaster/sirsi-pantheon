@@ -120,12 +120,13 @@ const menubarPlistLabel = "ai.sirsi.pantheon"
 
 // menubarPlistContent renders the LaunchAgent for a known absolute binary path.
 //
-// It execs the resolved binary directly rather than relying on a login-shell
+// It launches the resolved binary directly rather than relying on a login-shell
 // `command -v sirsi-menubar` lookup with an /opt/homebrew fallback: that lookup
 // fails (exit 127) whenever the binary lives somewhere not on the launchd login
 // PATH (e.g. ~/.local/bin) and the hardcoded Homebrew path is absent — the exact
-// reason the menubar silently never started. A login shell still wraps the exec
-// so the menubar inherits a full PATH for the `sirsi` subprocesses it spawns.
+// reason the menubar silently never started. The process resolves `sirsi`
+// through SirsiBinaryPath, so no login shell or inherited interactive PATH is
+// needed. Pantheon uses unified logging; launchd output is not written to /tmp.
 func menubarPlistContent(binPath string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -135,24 +136,58 @@ func menubarPlistContent(binPath string) string {
 	<string>ai.sirsi.pantheon</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/bin/zsh</string>
-		<string>-l</string>
-		<string>-c</string>
-		<string>exec %q</string>
+		<string>%s</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>StandardOutPath</key>
-	<string>/tmp/sirsi-menubar.log</string>
-	<key>StandardErrorPath</key>
-	<string>/tmp/sirsi-menubar.err</string>
 	<key>ProcessType</key>
 	<string>Interactive</string>
 </dict>
 </plist>
 `, binPath)
+}
+
+func bootstrapUserLaunchAgent(path, label string, uid int) error {
+	domain := fmt.Sprintf("gui/%d", uid)
+	target := domain + "/" + label
+	_ = runLaunchctl("enable", target)
+	_ = runLaunchctl("bootout", target)
+	var err error
+	for attempt := 0; attempt < bootstrapAttempts; attempt++ {
+		if err = runLaunchctl("bootstrap", domain, path); err == nil {
+			if err = runLaunchctl("print", target); err == nil {
+				return nil
+			}
+			_ = runLaunchctl("bootout", target)
+		}
+		sleepFn(bootstrapRetryDelay)
+	}
+	return err
+}
+
+func writeLaunchAgentPlistAtomic(path string, content []byte) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-staging-")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err = temporary.Chmod(0o644); err == nil {
+		_, err = temporary.Write(content)
+	}
+	if err == nil {
+		err = temporary.Sync()
+	}
+	closeErr := temporary.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 // MenubarBinaryPath returns the resolved path to the sirsi-menubar binary, or
@@ -166,6 +201,43 @@ func MenubarBinaryPath() string {
 		return sibling
 	}
 	return ""
+}
+
+func canonicalPantheonAppExecutable(binPath string) (string, bool) {
+	abs, err := filepath.Abs(binPath)
+	if err != nil {
+		return "", false
+	}
+	clean := filepath.Clean(abs)
+	marker := ".app" + string(filepath.Separator) + "Contents" + string(filepath.Separator) + "MacOS" + string(filepath.Separator)
+	index := strings.LastIndex(clean, marker)
+	if index < 1 || strings.Contains(clean[index+len(marker):], string(filepath.Separator)) {
+		return "", false
+	}
+	bundleRoot := clean[:index+len(".app")]
+	infoPath := filepath.Join(bundleRoot, "Contents", "Info.plist")
+	read := func(key string) (string, bool) {
+		out, commandErr := exec.Command("/usr/bin/plutil", "-extract", key, "raw", "-o", "-", infoPath).Output()
+		if commandErr != nil {
+			return "", false
+		}
+		return strings.TrimSpace(string(out)), true
+	}
+	bundleID, idOK := read("CFBundleIdentifier")
+	executable, executableOK := read("CFBundleExecutable")
+	if !idOK || !executableOK || bundleID != menubarTCCIdentifier || executable != filepath.Base(clean) || !fileExists(clean) {
+		return "", false
+	}
+	// A release bundle with signing metadata must still verify after copying or
+	// updating. Metadata and an executable path alone are not proof of canonical
+	// identity: launchd/AMFI will reject a bundle whose sealed resources changed.
+	// Unsigned development fixtures remain valid inputs for isolated tests.
+	if runtime.GOOS == "darwin" && fileExists(filepath.Join(bundleRoot, "Contents", "_CodeSignature", "CodeResources")) {
+		if err := exec.Command("/usr/bin/codesign", "--verify", "--deep", "--strict", bundleRoot).Run(); err != nil {
+			return "", false
+		}
+	}
+	return clean, true
 }
 
 // SirsiBinaryPath resolves the `sirsi` binary without depending on $PATH —
@@ -226,6 +298,16 @@ func MenubarInstalled() bool {
 	return runtime.GOOS == "darwin" && fileExists(menubarPlistPath())
 }
 
+// MenubarRegistration reports both durable installation and current launchd
+// registration. A plist alone is not evidence that the caretaker is loaded.
+func MenubarRegistration() (installed, loaded bool) {
+	if !MenubarInstalled() {
+		return false, false
+	}
+	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), menubarPlistLabel)
+	return true, runLaunchctl("print", target) == nil
+}
+
 // InstallMenubar writes the LaunchAgent and loads it so the menu bar app starts
 // now and at every login. macOS only.
 func InstallMenubar() InstallResult {
@@ -252,7 +334,9 @@ func InstallMenubar() InstallResult {
 	//      the bundled executable. Falls back to signing the bare binary if
 	//      bundle creation fails (never worse than before). Failure is non-fatal.
 	target := bin
-	if bundleExec, err := installMenubarAppBundle(bin); err == nil && bundleExec != "" {
+	if existing, ok := canonicalPantheonAppExecutable(bin); ok {
+		target = existing
+	} else if bundleExec, err := installMenubarAppBundle(bin); err == nil && bundleExec != "" {
 		target = bundleExec
 	} else {
 		stableSignMenubarTCC(bin)
@@ -263,16 +347,29 @@ func InstallMenubar() InstallResult {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
-	if err := os.WriteFile(path, []byte(menubarPlistContent(target)), 0o644); err != nil {
+	previous, previousErr := os.ReadFile(path)
+	hadPrevious := previousErr == nil
+	if previousErr != nil && !os.IsNotExist(previousErr) {
+		res.Status, res.Message = StatusFailed, "inspect existing LaunchAgent: "+previousErr.Error()
+		return res
+	}
+	if err := writeLaunchAgentPlistAtomic(path, []byte(menubarPlistContent(target))); err != nil {
 		res.Status, res.Message = StatusFailed, err.Error()
 		return res
 	}
-	// Reload: unload first so a re-install picks up changes; ignore unload error
-	// (it fails when not yet loaded, which is fine).
-	_ = exec.Command("launchctl", "unload", path).Run()
-	if err := exec.Command("launchctl", "load", path).Run(); err != nil {
+	// Re-bootstrap so launchd derives fresh constraints from the exact installed
+	// executable. Enable first to clear a persistent disabled override; tolerate
+	// bootout of a job that was not loaded; retry across asynchronous teardown.
+	if err := bootstrapUserLaunchAgent(path, menubarPlistLabel, os.Getuid()); err != nil {
+		if hadPrevious {
+			if restoreErr := writeLaunchAgentPlistAtomic(path, previous); restoreErr == nil {
+				_ = bootstrapUserLaunchAgent(path, menubarPlistLabel, os.Getuid())
+			}
+		} else {
+			_ = os.Remove(path)
+		}
 		res.Status = StatusFailed
-		res.Message = "wrote LaunchAgent but launchctl load failed: " + err.Error()
+		res.Message = "wrote LaunchAgent but launchctl bootstrap failed: " + err.Error()
 		return res
 	}
 	res.Status, res.Message = StatusOK, "menu bar app installed and started"

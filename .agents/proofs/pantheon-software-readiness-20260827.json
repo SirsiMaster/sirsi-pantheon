@@ -1,0 +1,118 @@
+{
+  "work_item_id": "pantheon-software-readiness-20260827",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/private/tmp/pantheon-release-candidate",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-08-27T22:09:37.265934+00:00",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/PANTHEON_ROADMAP.md",
+      "section": "SNE and operator lifecycle",
+      "claim": "Pantheon remains the governed lifecycle and readiness shell with fail-closed authorization boundaries.",
+      "files_changed": ["scripts/verify-release-source-identity.sh", ".github/workflows/release.yml", ".agents/proofs/pantheon-software-readiness-20260827.json"],
+      "evidence": ["focused router tests passed", "source identity verifier negative test passed"]
+    },
+    {
+      "doc": "docs/RELEASE_SIGNING.md",
+      "section": "release identity",
+      "claim": "Release artifacts must be tied to an exact matching immutable version tag before signing or publication.",
+      "files_changed": ["scripts/verify-release-source-identity.sh", ".github/workflows/release.yml"],
+      "evidence": ["YAML parse passed", "VERSION/tag mismatch rejected closed"]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Source/test candidate includes the registered Software Admin consumer; public release remains unclaimed.",
+    "design": "Menubar release contract verifier passed; live native UI qualification remains unproven.",
+    "technical": "Focused dashboard/SNE/model tests, go vet, and the full Go suite were rerun and passed on exact candidate 1c1b6022 / tree 7843a139.",
+    "operational": "Release source identity now fails closed; Developer ID signing, notarization, lifecycle, and M1/M5 receipts remain unproven.",
+    "narrative": "Readiness and machine-readable manifest record source/test-ready-only scope and explicit exclusions."
+  },
+  "verification": [
+    {
+      "name": "go tests",
+      "command": "go test ./...",
+      "status": "passed",
+      "evidence": "go test ./... rerun on exact 1c1b60220bd4cbdd578eb7036a532353d7436036 / 7843a139f502468d924ec662b95f8aaba727882d with host-level socket permission; existing linker warnings only."
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./...",
+      "status": "passed",
+      "evidence": "go vet ./... exit 0 on exact 1c1b60220bd4cbdd578eb7036a532353d7436036."
+    },
+    {
+      "name": "dashboard SNE integration",
+      "command": "go test ./internal/dashboard ./internal/sne ./internal/snemodels",
+      "status": "passed",
+      "evidence": "go test ./internal/dashboard ./internal/sne ./internal/snemodels passed with host-level socket permission."
+    },
+    {
+      "name": "completion gate",
+      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>",
+      "status": "draft_not_final",
+      "evidence": "Draft proof intentionally does not claim whole-product completion; release and lifecycle gates remain open."
+    }
+  ],
+  "working_status": {
+    "environment": "Detached clean candidate /private/tmp/pantheon-release-candidate at 1c1b60220bd4cbdd578eb7036a532353d7436036, tree 7843a139f502468d924ec662b95f8aaba727882d, macOS arm64 host.",
+    "how_verified": "Host-level full and focused Go tests, go vet, YAML parse, shell syntax, diff check, menubar contract, completion proof validation, and negative source-identity test.",
+    "observed_result": "Exact candidate passes source/test verification; release identity rejects VERSION 0.23.9-beta against v0.23.8-beta, as intended. Evidence is source/test-ready only.",
+    "verified_at": "2026-08-27T22:20:00Z"
+  },
+  "handoffs": [],
+  "blockers": [
+    "No matching immutable v0.23.9-beta tag is present for positive source-identity verification.",
+    "Declared Developer ID identity is absent from the visible login keychain; signing/notarization is fail-closed.",
+    "Install/upgrade/rollback/uninstall and live M1/M5 lifecycle receipts remain unproven."
+  ]
+}

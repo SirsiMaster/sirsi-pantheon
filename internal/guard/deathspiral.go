@@ -92,13 +92,14 @@ func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
 // exact spiral ladder in checkMemoryDeathSpiral so both surfaces agree on what
 // "dying" means — one definition, two callers.
 type MemoryDeath struct {
-	SwapPct     float64
-	SwapUsedGB  float64
-	AvailableGB float64 // free + inactive — what a process can actually get
-	Load1       float64
-	Cores       int
-	Readable    bool // false when no signal is readable on this platform (never guess)
-	Dying       bool // the live-critical spiral — see isDeathSpiral
+	SwapPct      float64
+	SwapUsedGB   float64
+	SwapReadable bool
+	AvailableGB  float64 // free + inactive — what a process can actually get
+	Load1        float64
+	Cores        int
+	Readable     bool // false when no signal is readable on this platform (never guess)
+	Dying        bool // the live-critical spiral — see isDeathSpiral
 }
 
 // SampleMemoryDeath reads swap%, free RAM, and load in one pass and classifies
@@ -111,7 +112,7 @@ func SampleMemoryDeath() MemoryDeath {
 	availGB, _ := readVMStatGB(p)
 	md := MemoryDeath{
 		SwapPct: swapPct, SwapUsedGB: swapUsedGB, AvailableGB: availGB,
-		Load1: load1, Cores: cores, Readable: loadOK || swapOK,
+		SwapReadable: swapOK, Load1: load1, Cores: cores, Readable: loadOK || swapOK,
 	}
 	md.Dying = isDeathSpiral(swapPct, load1, availGB, cores)
 	return md
@@ -151,6 +152,7 @@ func readSwapPct(p platform.Platform) (pct, usedGB float64, ok bool) {
 		return 0, 0, false
 	}
 	var total, used float64
+	var totalParsed, usedParsed bool
 	fields := strings.Fields(string(out))
 	for i := 0; i+2 < len(fields); i++ {
 		v, perr := strconv.ParseFloat(strings.TrimSuffix(fields[i+2], "M"), 64)
@@ -160,12 +162,21 @@ func readSwapPct(p platform.Platform) (pct, usedGB float64, ok bool) {
 		switch fields[i] {
 		case "total":
 			total = v
+			totalParsed = true
 		case "used":
 			used = v
+			usedParsed = true
 		}
 	}
-	if total <= 0 {
+	if !totalParsed || !usedParsed || total < 0 || used < 0 || used > total {
 		return 0, 0, false
+	}
+	// A fresh macOS boot can report a valid, allocated-zero swap state as
+	// "total = 0.00M used = 0.00M". That is readable telemetry, not a probe
+	// failure. Avoid dividing by zero while preserving fail-closed handling for
+	// missing, malformed, negative, or internally inconsistent measurements.
+	if total == 0 {
+		return 0, 0, true
 	}
 	return used / total * 100, used / 1024, true
 }

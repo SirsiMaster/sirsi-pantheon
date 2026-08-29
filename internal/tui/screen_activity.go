@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,6 +20,7 @@ type activityScreen struct {
 	state    loadState
 	err      error
 	report   activityReport
+	pressure prefixCachePressurePanel
 	home     string
 	selected int
 	detail   int
@@ -54,13 +56,15 @@ func (s *activityScreen) Load() tea.Cmd {
 	return func() tea.Msg {
 		var r activityReport
 		err := decode("activity", &r)
-		return activityLoaded{report: r, err: err}
+		panel := loadPrefixCachePressurePanel()
+		return activityLoaded{report: r, pressure: panel, err: err}
 	}
 }
 
 type activityLoaded struct {
-	report activityReport
-	err    error
+	report   activityReport
+	pressure prefixCachePressurePanel
+	err      error
 }
 
 func (s *activityScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd) {
@@ -73,6 +77,7 @@ func (s *activityScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd
 		}
 		s.state = stateReady
 		s.report = m.report
+		s.pressure = m.pressure
 		s.selected = clampSelection(s.selected, len(s.report.Entries))
 		return s, nil
 
@@ -114,10 +119,6 @@ func (s *activityScreen) View(width, height int, caps Capabilities) []string {
 	case stateError:
 		return errorLines(s.err, caps)
 	}
-	if len(s.report.Entries) == 0 {
-		return emptyLines("no operations logged yet — nothing has been changed", caps)
-	}
-
 	lines := []string{
 		"  " + Paint("what sirsi actually changed", TokBrand, caps),
 		"",
@@ -159,11 +160,32 @@ func (s *activityScreen) View(width, height int, caps Capabilities) []string {
 		)
 	}
 	// u is the update/refresh key (P1#2 rebinding: r = relieve, u = update).
+	tail = append(tail, s.pressure.lines(caps)...)
 	tail = append(tail, "", "  "+Paint("read-only audit ledger · enter for detail · u update", TokDim, caps))
+	if len(rows) == 0 {
+		lines = append(lines, "  "+Paint("no operations logged yet — nothing has been changed", TokDim, caps))
+		return append(lines, tail...)
+	}
 
 	lines = append(lines, renderTableWindow(cols, rows, caps, false, height-len(lines)-len(tail))...)
 	lines = append(lines, tail...)
 	return lines
+}
+
+// loadPrefixCachePressurePanel uses only the public CLI projections. prepare
+// measures and returns a visible confirmation challenge but cannot authorize or
+// mutate SNE. Exact receipt IDs are opt-in environment inputs, so the console
+// never discovers or guesses evidence paths.
+func loadPrefixCachePressurePanel() prefixCachePressurePanel {
+	var panel prefixCachePressurePanel
+	panel.prepareErr = decodeArgs(&panel.view, "sne", "prefix-cache-pressure", "prepare")
+	if requestID := strings.TrimSpace(os.Getenv("SIRSI_PREFIX_CACHE_PRESSURE_REQUEST_ID")); requestID != "" {
+		panel.executionErr = decodeArgs(&panel.execution, "sne", "prefix-cache-pressure", "receipt", "--request-id", requestID)
+	}
+	if cleanupID := strings.TrimSpace(os.Getenv("SIRSI_PREFIX_CACHE_PRESSURE_CLEANUP_ID")); cleanupID != "" {
+		panel.retentionErr = decodeArgs(&panel.retention, "sne", "prefix-cache-pressure", "retention", "--cleanup-id", cleanupID)
+	}
+	return panel
 }
 
 // relTime renders the entry's timestamp as a compact relative label. The oplog

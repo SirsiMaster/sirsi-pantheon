@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>ai.sirsi.sne.process-group-gate</string>
+<key>ProgramArguments</key><array>
+<string>/private/tmp/sne-pg-launchd-m1-20260821/sirsi-sne-supervisor</string>
+<string>-profile</string><string>/private/tmp/sne-pg-launchd-m1-20260821/profile.yaml</string>
+<string>-model-admission-registry</string><string>/private/tmp/sne-pg-launchd-m1-20260821/model-admission.json</string>
+<string>-model-readiness-registry</string><string>/private/tmp/sne-pg-launchd-m1-20260821/model-readiness.json</string>
+<string>-readiness-policy</string><string>identity</string>
+<string>-catalog-entry</string><string>e2b-nvfp4-api-v2-compat-v6-m1</string>
+<string>-sned</string><string>/private/tmp/sne-pg-launchd-m1-20260821/sned-parent-watch-20260821</string>
+<string>-model-manifest</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/SNE/packages/SNE-1.2.2-e2b-nvfp4-m1-api-v2-compat-v6-candidate-darwin-arm64/manifests/model.json</string>
+<string>-checkpoint-dir</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/Models/gemma-4-e2b-it-nvfp4/efb12d64392777ce6f2a430327932208e13fb001</string>
+<string>-tokenizer-json</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/Models/gemma-4-e2b-it-nvfp4/efb12d64392777ce6f2a430327932208e13fb001/tokenizer.json</string>
+<string>-assistant-safetensors</string><string></string>
+<string>-metallib</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/SNE/packages/SNE-1.2.2-e2b-nvfp4-m1-api-v2-compat-v6-candidate-darwin-arm64/share/mlx.metallib</string>
+<string>-mlx-dylib</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/SNE/packages/SNE-1.2.2-e2b-nvfp4-m1-api-v2-compat-v6-candidate-darwin-arm64/lib/libmlx.dylib</string>
+<string>-native-library-dir</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/SNE/packages/SNE-1.2.2-e2b-nvfp4-m1-api-v2-compat-v6-candidate-darwin-arm64/lib/runtime</string>
+<string>-runtime-sha256</string><string>37ba074eca7c968e43396d5359b41c78eb73590081ff984b131089dba9928709</string>
+<string>-native-runtime-sha256</string><string>e22d6ae3f92c65a65a3a313946375b5bf4e8669c49f33604df6b1010aa4a8f4e</string>
+<string>-native-runtime-dylib</string><string>/Users/sirsimasterdev/Library/Application Support/Sirsi/SNE/packages/SNE-1.2.2-e2b-nvfp4-m1-api-v2-compat-v6-candidate-darwin-arm64/lib/runtime/libsirsi_native_runtime.dylib</string>
+<string>-service-version</string><string>1.2.2</string>
+<string>-local-access-token-file</string><string>/private/tmp/sne-pg-launchd-m1-20260821/capability</string>
+</array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+<key>ProcessType</key><string>Interactive</string>
+<key>ThrottleInterval</key><integer>1</integer>
+<key>StandardOutPath</key><string>/private/tmp/sne-pg-launchd-m1-20260821/launchd.log</string>
+<key>StandardErrorPath</key><string>/private/tmp/sne-pg-launchd-m1-20260821/launchd.log</string>
+</dict></plist>
