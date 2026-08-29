@@ -55,7 +55,6 @@ func Dependencies() []Dependency {
 		{Name: "go", Description: "Go compiler (build from source, Ma'at coverage)", InstallCmd: "brew install go"},
 		{Name: "golangci-lint", Description: "Linter (Ma'at pre-push gate, matches CI)", InstallCmd: "brew install golangci-lint"},
 		{Name: "gh", Description: "GitHub CLI (Ma'at pipeline, Ra CI status)", InstallCmd: "brew install gh"},
-		{Name: "python3", Description: "Ra deployment agent (scope orchestration)", InstallCmd: "brew install python3"},
 	}
 }
 

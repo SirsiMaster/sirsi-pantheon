@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(ra): fence the legacy Terminal/Claude deployment bridge behind an
+  explicit developer-only opt-in**. Normal Ra health, test, lint, nightly,
+  and pipeline commands remain Go-native; `ra deploy` can no longer make
+  Terminal, Claude, or Python part of the default Pantheon product path.
+  Refs: ADR-051; Go-native Ra cutover.
 - **fix(native): keep the pure local-control transport classifier callable from
   fixture tests**. The classifier is explicitly nonisolated because it reads
   no menu-bar model state; this preserves main-actor UI ownership while making

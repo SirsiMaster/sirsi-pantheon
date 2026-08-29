@@ -20,6 +20,13 @@ import (
 var raDocs bool
 var raRecord bool
 
+// legacyRaTerminalEnabled gates the retired Terminal/Claude implementation.
+// Normal Pantheon operation uses the Go-native Ra executor; this opt-in keeps
+// the legacy developer integration from becoming an ambient product dependency.
+func legacyRaTerminalEnabled() bool {
+	return os.Getenv("SIRSI_RA_ENABLE_LEGACY_TERMINAL") == "1"
+}
+
 var raCmd = &cobra.Command{
 	Use:   "ra",
 	Short: "𓇶 Ra — Supreme Overseer & Cross-Repo Orchestrator",
@@ -28,6 +35,9 @@ var raCmd = &cobra.Command{
 Ra orchestrates Pantheon fleet checks with a shell-free Go executor.
 External agent dispatch remains an explicit developer-only capability and
 fails closed when no provider is configured.
+
+The legacy Terminal/Claude deployment path is developer-only and requires
+SIRSI_RA_ENABLE_LEGACY_TERMINAL=1. It is not part of the default product path.
 
   sirsi ra health                Health check across all repos
   sirsi ra test                  Run tests across all repos in parallel
@@ -345,7 +355,7 @@ var raDeployDryRun bool
 
 var raDeployCmd = &cobra.Command{
 	Use:   "deploy",
-	Short: "𓁯 Neith weaves scopes, 𓇶 Ra spawns terminal windows",
+	Short: "Developer-only legacy Terminal deployment",
 	Long: `Neith assembles scope prompts from each repo's canon documents
 (CLAUDE.md, Thoth memory, ADRs, blueprints, continuation prompts).
 Ra then spawns a macOS terminal window for each scope.
@@ -355,6 +365,9 @@ Ra then spawns a macOS terminal window for each scope.
   sirsi ra deploy --wait --record    Spawn, wait, then pipeline
   sirsi ra deploy --dry-run          Show assembled prompts, don't spawn`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !legacyRaTerminalEnabled() {
+			return fmt.Errorf("ra deploy is a developer-only legacy Terminal integration; use Go-native ra health/test/lint/nightly/pipeline, or set SIRSI_RA_ENABLE_LEGACY_TERMINAL=1 for an explicit developer invocation")
+		}
 		repoRoot, err := findRepoRoot()
 		if err != nil {
 			repoRoot, _ = os.Getwd()

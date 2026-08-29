@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/completiongate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -701,19 +702,20 @@ func enforceCompletionProof(repoRoot, itemID, proof string, blocked, ack bool, r
 	return validateCompletionProof(repoRoot, proof)
 }
 
-// validateCompletionProof shells out to the portfolio gate validator
-// (tools/agent_completion_gate.py beside the repo, or
-// SIRSI_COMPLETION_GATE_SCRIPT). The proof schema and validation rules live
-// with the portfolio law, not in this binary.
+// validateCompletionProof is Go-native by default. SIRSI_COMPLETION_GATE_SCRIPT
+// is a deliberate developer compatibility override for portfolio experiments;
+// it is never discovered or invoked on the ordinary product path.
 func validateCompletionProof(repoRoot, proof string) error {
 	script := os.Getenv("SIRSI_COMPLETION_GATE_SCRIPT")
-	if script == "" {
-		devRoot := filepath.Dir(repoRoot)
-		script = filepath.Join(devRoot, "tools", "agent_completion_gate.py")
-	}
 	proofPath := proof
 	if !filepath.IsAbs(proofPath) {
 		proofPath = filepath.Join(repoRoot, proofPath)
+	}
+	if script == "" {
+		if err := completiongate.Validate(repoRoot, proofPath); err != nil {
+			return fmt.Errorf("completion proof validation failed: %w", err)
+		}
+		return nil
 	}
 	out, err := exec.Command("python3", script, "validate", "--repo", repoRoot, "--proof", proofPath).CombinedOutput()
 	if err != nil {
