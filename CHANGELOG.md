@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(release): add a fail-closed unsigned source-release gate**. A candidate
+  can now prove VERSION/tag/tree/package-contract coherence before credentials
+  exist, while refusing a cask that would name unsigned or nonexistent bytes.
+  Refs: ADR-023; release identity verification contract.
 - **refactor(router): run resident registry police through Go-native read
   models**. The supervisor no longer invokes Python to parse its own discovery
   and liveness JSON; the duty reuses bounded Go discovery/scouting, cutover-aware
