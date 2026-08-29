@@ -12,10 +12,11 @@
     "version": "0.23.14-beta",
     "required_tag": "v0.23.14-beta",
     "candidate_branch": "codex/pantheon-v2314-native-tests-20260828",
-    "candidate_commit": "498f3b47a578a7354d8025fea0973a3c40fafb58",
-    "candidate_tree": "84cdcc093a099d8a2d467e6d66e9f1f84d781c2d",
+    "release_engineering_code_commit": "498f3b47a578a7354d8025fea0973a3c40fafb58",
+    "release_engineering_code_tree": "84cdcc093a099d8a2d467e6d66e9f1f84d781c2d",
+    "final_tag_target": "external post-verification binding receipt required; this committed document must not self-bind a future tag target",
     "tag_state": "absent",
-    "decision": "This is the only candidate eligible for a future signing/lifecycle sequence after its own verification and publication gates pass."
+    "decision": "The release-engineering code commit is the eligible source baseline. After all deferred verification passes, a separately generated post-verification receipt must bind the immutable final candidate commit/tree before publication, signing, or lifecycle qualification."
   },
   "excluded_targets": {
     "dirty_integration_checkout": {

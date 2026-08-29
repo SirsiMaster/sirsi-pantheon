@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **docs(release): prevent self-referential v0.23.14 tag provenance**. The
+  release-engineering baseline and eventual tag target are now explicitly
+  separated; a post-verification receipt must bind the final immutable tree
+  before publication, signing, cask generation, or lifecycle qualification.
+  Refs: ADR-023; release identity verification contract.
 - **fix(native): make SNE local control an explicit, bounded Swift-owned
   action**. The bundled Go helper runs headlessly without legacy resident
   duties and is stopped when the native app exits; it never auto-starts SNE.

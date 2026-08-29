@@ -3,6 +3,11 @@
 **Status:** source-complete up to owner-only signing/notarization credentials;
 not a release claim.
 
+**Provenance rule:** this committed record describes the eligible release-engineering
+code baseline only. The final `v0.23.14-beta` tag target is intentionally not
+self-referenced here; it must be captured in a separate, post-verification binding
+receipt before publication or any credentialed action.
+
 ## Implemented fail-closed mechanics
 
 - `scripts/build-dmg.sh` derives its default version from root `VERSION` and
