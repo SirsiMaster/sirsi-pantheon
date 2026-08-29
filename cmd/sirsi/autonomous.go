@@ -198,6 +198,11 @@ func init() {
 	// internal/autoheal imports internal/router (GateAction), so the router's
 	// duty table reaches it through this injected seam rather than an import cycle.
 	router.SetAutoHealFn(autoheal.Run)
+	// Registry police's orchestration lives in cmd/sirsi so it can reuse the
+	// CLI's native process/session discovery and guarded dispatch. The resident
+	// supervisor invokes it through the router seam; no shell or python3 path
+	// remains on the default duty.
+	router.SetRegistryPoliceFn(runRegistryPoliceDuty)
 	// Wire the self-healing gemma-liveness pass into its supervisor duty (A32,
 	// owner directive 2026-07-17). Unlike auto-heal this is NOT gated on
 	// autonomous mode — gemma is the Tier-0 substrate and must survive on

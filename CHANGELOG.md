@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **refactor(router): run resident registry police through Go-native read
+  models**. The supervisor no longer invokes Python to parse its own discovery
+  and liveness JSON; the duty reuses bounded Go discovery/scouting, cutover-aware
+  router reads, guarded advisory dispatch, and the existing fail-closed wake
+  model. The legacy script remains developer compatibility only and is not on
+  Pantheon's default resident path.
+  Refs: ADR-024; ADR-036; PANTHEON_RULES.md A16/A21.
 - **fix(router): expose Go-native read-only completion-proof validation**.
   Canonical verification now uses `sirsi router validate-proof`; legacy Python
   remains an explicit developer compatibility override only. The validator

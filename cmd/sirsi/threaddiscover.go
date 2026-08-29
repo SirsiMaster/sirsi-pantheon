@@ -57,12 +57,6 @@ left for the operator to disambiguate in agents.json.
 		if _, reapErr := reapDeadPIDThreads(routerRoot); reapErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: OS-truth sweep incomplete (discover may show stale actives): %v\n", reapErr)
 		}
-		threads, err := router.LoadThreadRegistry(routerRoot)
-		if err != nil {
-			return err
-		}
-		host, _ := os.Hostname()
-
 		var procs []router.DiscoveredProc
 		if threadDiscoverSelf {
 			procs, err = selfProc()
@@ -73,58 +67,46 @@ left for the operator to disambiguate in agents.json.
 			procs = enumerateAgentProcs(localSurfaces(reg))
 		}
 
-		actions := router.ReconcileDiscovery(reg, threads, procs, host)
-
-		registered := 0
-		for i := range actions {
-			if actions[i].Outcome != router.OutcomeRegister {
-				continue
-			}
-			a := actions[i]
-			thr := &router.Thread{
-				AgentID: a.AgentID,
-				Surface: a.Proc.Surface,
-				Repo:    a.Repo,
-				PID:     a.Proc.PID,
-				Host:    host,
-				Watches: []string{a.AgentID},
-			}
-			if cfg, ok := reg.Agents[a.AgentID]; ok {
-				thr.Workstream = cfg.Workstream
-				thr.WakeMechanism = cfg.WakeMechanism()
-			}
-			out, regErr := router.RegisterThread(routerRoot, thr)
-			if regErr != nil {
-				// Surface the failure honestly; do not count it as registered.
-				actions[i].Outcome = router.OutcomeUnmappable
-				actions[i].Reason = "register failed: " + regErr.Error()
-				continue
-			}
-			registered++
-			actions[i].Reason = "registered " + out.ThreadID
-
-			// ADR-024: discover REGISTERS, it does not arm. It used to fork a
-			// `watch-router` bridge here, and that fork is a self-feeding storm:
-			// watch-router runs the agent's spawn command, which starts a NEW
-			// agent process; that process is unregistered, so the next discover
-			// pass finds it, registers it, and forks another watcher — which
-			// starts another agent. On the supervisor's cadence the population
-			// multiplies every pass. Observed 2026-07-27: 358 `claude` processes
-			// and 267 zombies, load average 436, swap 48.5 GB of 49 GB, the
-			// machine reporting "system has run out of application memory".
-			//
-			// This is the same fix ADR-024 already applied to `register` ("a pure
-			// handshake — it no longer auto-spawns an fs-watcher; it RETURNS the
-			// canonical watcher the surface must arm"). discover was the caller
-			// that kept the old behavior. The surface arms its own watcher; a
-			// discovered process is ALREADY RUNNING and needs watching, never
-			// launching.
-			actions[i].Reason += " (watcher: " +
-				router.WatcherFor(out.Surface, out.AgentID, out.ThreadID).Type + " — arm at the surface)"
+		host, actions, registered, err := reconcileDiscoveredProcs(routerRoot, reg, procs)
+		if err != nil {
+			return err
 		}
 
 		return renderDiscover(host, actions, registered)
 	},
+}
+
+// reconcileDiscoveredProcs is the single Go registration path for both the
+// interactive `thread discover` command and the resident registry-police duty.
+// It registers mappable processes only; it never arms or starts a watcher.
+func reconcileDiscoveredProcs(routerRoot string, reg *router.Registry, procs []router.DiscoveredProc) (string, []router.DiscoverAction, int, error) {
+	threads, err := router.LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	host, _ := os.Hostname()
+	actions := router.ReconcileDiscovery(reg, threads, procs, host)
+	registered := 0
+	for i := range actions {
+		if actions[i].Outcome != router.OutcomeRegister {
+			continue
+		}
+		a := actions[i]
+		thr := &router.Thread{AgentID: a.AgentID, Surface: a.Proc.Surface, Repo: a.Repo, PID: a.Proc.PID, Host: host, Watches: []string{a.AgentID}}
+		if cfg, ok := reg.Agents[a.AgentID]; ok {
+			thr.Workstream = cfg.Workstream
+			thr.WakeMechanism = cfg.WakeMechanism()
+		}
+		out, regErr := router.RegisterThread(routerRoot, thr)
+		if regErr != nil {
+			actions[i].Outcome = router.OutcomeUnmappable
+			actions[i].Reason = "register failed: " + regErr.Error()
+			continue
+		}
+		registered++
+		actions[i].Reason = "registered " + out.ThreadID + " (watcher: " + router.WatcherFor(out.Surface, out.AgentID, out.ThreadID).Type + " — arm at the surface)"
+	}
+	return host, actions, registered, nil
 }
 
 // localSurfaces returns the distinct process-surfaces present in the registry,
