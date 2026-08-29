@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Formula publication containment:** Disable GoReleaser’s pre-publication
+  Homebrew Formula writer; the exact-DMG cask remains the only allowed Homebrew
+  release transition until Formula publishing gains an equivalent binding gate.
 - **Release publication safety:** Create GitHub releases as drafts, validate the
   uploaded notarized DMG against its exact tag/tree before publication, then
   allow cask promotion only after the verified release is public.

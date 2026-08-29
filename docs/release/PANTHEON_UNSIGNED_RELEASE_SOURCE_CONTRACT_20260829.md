@@ -33,6 +33,11 @@ after an exact, signed, stapled, uploaded DMG exists and both
 `render-pantheon-homebrew-cask.sh` and `verify-pantheon-release-asset.sh`
 accept its tag, source commit, tree, asset filename, and SHA-256.
 
+The legacy GoReleaser Formula publisher is disabled for this Mac-first release
+path because it runs while the GitHub release is still a draft. Re-enabling it
+requires a separate post-publication asset-binding contract; it must not point
+at private draft bytes.
+
 ## Residual owner gates
 
 - A visible Developer ID Application identity and complete notarization

@@ -45,6 +45,7 @@ require 'verify-pantheon-release-asset\.sh' "$RELEASE_WORKFLOW" "uploaded_dmg_id
 require 'gh release edit.*--draft=false' "$RELEASE_WORKFLOW" "verified_draft_publication"
 require 'needs: publish-release' "$RELEASE_WORKFLOW" "cask_after_publication"
 require 'draft: true' "${ROOT}/.goreleaser.yaml" "goreleaser_draft_first"
+require 'disable: true' "${ROOT}/.goreleaser.yaml" "formula_draft_bypass_disabled"
 
 # A resident Pantheon surface may render persisted projections, but it must not
 # launch full diagnostics merely because it started, opened, or reached a timer

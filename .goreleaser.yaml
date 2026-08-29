@@ -101,6 +101,12 @@ nfpms:
 
 brews:
   - name: sirsi-pantheon
+    # Pantheon is Mac-first and ships through the notarized app/cask path.
+    # A GoReleaser Formula is published during its release phase, which occurs
+    # while the GitHub release is deliberately a private draft. Keep this
+    # compatibility channel disabled until it has its own post-publication
+    # asset-binding contract; never expose a Formula that points at draft bytes.
+    disable: true
     ids:
       - default
     repository:
