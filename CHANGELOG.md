@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(router): expose Go-native read-only completion-proof validation**.
+  Canonical verification now uses `sirsi router validate-proof`; legacy Python
+  remains an explicit developer compatibility override only. The validator
+  resolves worktree identity and rejects malformed handoff records.
+  Refs: ADR-037; Go-native completion validator.
 - **fix(ra): fence the legacy Terminal/Claude deployment bridge behind an
   explicit developer-only opt-in**. Normal Ra health, test, lint, nightly,
   and pipeline commands remain Go-native; `ra deploy` can no longer make

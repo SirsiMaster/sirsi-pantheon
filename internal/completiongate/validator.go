@@ -16,7 +16,7 @@ var finalStatuses = map[string]bool{"ready_for_review": true, "completed": true}
 var passStatuses = map[string]bool{"pass": true, "passed": true}
 
 func Validate(repoRoot, proofArg string) error {
-	repo, err := filepath.Abs(repoRoot)
+	repo, err := resolveExistingPath(repoRoot)
 	if err != nil {
 		return fmt.Errorf("resolve repo: %w", err)
 	}
@@ -40,6 +40,21 @@ func Validate(repoRoot, proofArg string) error {
 		return err
 	}
 	return nil
+}
+
+// resolveExistingPath gives repository identity the same symlink semantics as
+// the legacy completion gate's Path.resolve(). Completion proofs may name the
+// physical checkout while the operator reaches it through a worktree symlink.
+func resolveExistingPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(resolved)
 }
 
 func loadObject(path string) (map[string]any, error) {
@@ -219,7 +234,7 @@ func validateProof(repo string, p map[string]any, requiredDocs []string) error {
 	if err != nil {
 		return err
 	}
-	abs, err := filepath.Abs(proofRepo)
+	abs, err := resolveExistingPath(proofRepo)
 	if err != nil {
 		return err
 	}
@@ -339,16 +354,36 @@ func validateProof(repo string, p map[string]any, requiredDocs []string) error {
 			return err
 		}
 	}
-	for _, key := range []string{"handoffs", "blockers"} {
-		if raw, ok := p[key]; ok {
-			if _, ok := raw.([]any); !ok {
-				return fmt.Errorf("proof.%s: expected list", key)
+	handoffs, ok := p["handoffs"]
+	if !ok {
+		handoffs = []any{}
+	}
+	handoffList, ok := handoffs.([]any)
+	if !ok {
+		return fmt.Errorf("proof.handoffs: expected list")
+	}
+	for i, raw := range handoffList {
+		where := fmt.Sprintf("proof.handoffs[%d]", i)
+		item, err := objectAt(raw, where)
+		if err != nil {
+			return err
+		}
+		for _, key := range []string{"from", "to", "router_item", "status"} {
+			if _, err := stringAt(item, key, where); err != nil {
+				return err
 			}
 		}
 	}
+	blockers, ok := p["blockers"]
+	if !ok {
+		blockers = []any{}
+	}
+	blockerList, ok := blockers.([]any)
+	if !ok {
+		return fmt.Errorf("proof.blockers: expected list")
+	}
 	if status == "blocked" {
-		blockers, _ := p["blockers"].([]any)
-		if len(blockers) == 0 {
+		if len(blockerList) == 0 {
 			return fmt.Errorf("proof.blockers: blocked status requires at least one blocker")
 		}
 	}

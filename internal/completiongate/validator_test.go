@@ -31,6 +31,33 @@ func TestValidateRejectsWrongProofRepo(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsResolvedRepoIdentity(t *testing.T) {
+	repo := fixtureRepo(t, "completed", "passed")
+	alias := filepath.Join(t.TempDir(), "checkout")
+	if err := os.Symlink(repo, alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(alias, "proof.json"); err != nil {
+		t.Fatalf("resolved repository identity: %v", err)
+	}
+}
+
+func TestValidateRejectsMalformedHandoff(t *testing.T) {
+	repo := fixtureRepo(t, "draft", "not-run")
+	path := filepath.Join(repo, "proof.json")
+	proof, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken := string(proof[:len(proof)-1]) + `,"handoffs":[{"from":"agent"}]}`
+	if err := os.WriteFile(path, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(repo, path); err == nil {
+		t.Fatal("malformed handoff was accepted")
+	}
+}
+
 func fixtureRepo(t *testing.T, status, verification string) string {
 	t.Helper()
 	repo := t.TempDir()

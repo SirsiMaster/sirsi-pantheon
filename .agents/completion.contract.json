@@ -95,7 +95,7 @@
     },
     {
       "name": "completion gate",
-      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>"
+      "command": "sirsi router validate-proof --repo . --proof <proof>"
     }
   ]
 }
