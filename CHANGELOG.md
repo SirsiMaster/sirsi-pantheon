@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Release-boundary honesty:** Label the v0.23.8 notes and roadmap as
+  historical snapshots and point current readers to the v0.23.14 unsigned
+  release decision rather than implying a newer signed, installable artifact.
 - **Release lifecycle contract:** Require the non-mutating M1/M5 lifecycle-plan
   and receipt validators in the unsigned source gate, so an unsigned candidate
   cannot present package/cask mechanics without an exact later lifecycle-proof

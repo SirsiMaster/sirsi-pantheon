@@ -1,8 +1,25 @@
 # Sirsi Pantheon v0.23.8-beta Release Notes
 
 **Date:** June 30, 2026 (tag `v0.23.8-beta`)
-**Status:** Beta — signed + notarized macOS release
+**Status:** Historical release record — not the current release authority
 **Platform:** macOS Apple Silicon (primary, per ADR-032 Mac-first); Linux CLI builds; Windows deferred
+
+---
+
+## Current release boundary (2026-08-29)
+
+These notes preserve the v0.23.8-beta record. They do **not** establish that a
+newer source candidate is signed, notarized, packaged, installable, or
+Homebrew-installable. The current unsigned source candidate is
+`v0.23.14-beta`, and it remains gated on visible Developer ID/notarization
+credentials, exact signed-and-stapled bytes, uploaded release asset and cask
+binding, clean M1/M5 lifecycle qualification, sustained resource/crash proof,
+and accessibility evidence.
+
+The authoritative current-release decision is
+`docs/evidence/PANTHEON_V2314_RELEASE_RECONCILIATION_20260828.json`. Do not
+use the historical `brew` or DMG commands below to infer availability of a
+newer Pantheon release.
 
 ---
 
@@ -16,7 +33,7 @@ brew tap SirsiMaster/tools && brew install sirsi-pantheon
 go install github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi@v0.23.8-beta
 ```
 
-Or download the signed + notarized DMG from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/releases/tag/v0.23.8-beta).
+Or download the historical v0.23.8-beta DMG from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/releases/tag/v0.23.8-beta).
 
 ## Highlights of the v0.23.x line
 
