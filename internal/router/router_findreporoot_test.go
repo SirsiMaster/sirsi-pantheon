@@ -42,7 +42,7 @@ func TestFindRepoRoot_PrefersCanonicalGitRoot(t *testing.T) {
 	restore := setGitCommonDirFn(func() (string, bool) {
 		return filepath.Join(mainRoot, ".git"), true
 	})
-	defer setGitCommonDirFn(restore)
+	defer restore()
 
 	t.Chdir(worktree) // run "from" the worktree
 
@@ -65,7 +65,7 @@ func TestFindRepoRoot_FallsBackToWalkUpWhenNoGit(t *testing.T) {
 	}
 
 	restore := setGitCommonDirFn(func() (string, bool) { return "", false })
-	defer setGitCommonDirFn(restore)
+	defer restore()
 
 	t.Chdir(sub)
 
@@ -92,7 +92,7 @@ func TestFindRepoRoot_FallsBackWhenGitRootHasNoRouter(t *testing.T) {
 	restore := setGitCommonDirFn(func() (string, bool) {
 		return filepath.Join(gitRoot, ".git"), true
 	})
-	defer setGitCommonDirFn(restore)
+	defer restore()
 
 	t.Chdir(cwdRoot)
 
