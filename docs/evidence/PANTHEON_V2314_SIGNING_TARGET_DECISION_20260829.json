@@ -18,6 +18,13 @@
     "decision": "This is the only candidate eligible for a future signing/lifecycle sequence after its own verification and publication gates pass."
   },
   "excluded_targets": {
+    "dirty_integration_checkout": {
+      "observed_version": "0.23.9-beta",
+      "observed_cask_version": "0.23.8-beta",
+      "observed_cask_sha256": "113684229f1d866c1edd267af620455dc9e5d655fd774b5145e6d1413031e221",
+      "observed_valid_codesigning_identities": 0,
+      "reason": "Dirty integration-worktree observation only. It is not a clean source candidate, a published release authority, or an eligible signing/lifecycle target."
+    },
     "origin_main": {
       "commit": "92ad980871b9b87963878efb3a2ebc80b0b64d64",
       "reason": "development baseline only; it is not a selected release artifact"
@@ -38,6 +45,7 @@
   ],
   "prohibitions": [
     "do not retarget v0.23.13-beta",
+    "do not bind signed bytes, cask metadata, or lifecycle receipts to the dirty integration checkout",
     "do not sign or lifecycle-qualify main or the A21 branch",
     "do not claim a signed asset, cask, installability, or release readiness before this sequence completes"
   ]
