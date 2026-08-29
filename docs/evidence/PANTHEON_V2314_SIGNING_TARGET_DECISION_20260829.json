@@ -1,0 +1,44 @@
+{
+  "schema": "sirsi.pantheon.signing-target-decision.v1",
+  "decided_on": "2026-08-29",
+  "current_published_release_authority": {
+    "version": "0.23.13-beta",
+    "tag": "v0.23.13-beta",
+    "tag_object": "9887a26a61f2e383bdd90614fb7e4a1f2c5238cf",
+    "peeled_commit": "39781658e6f9da6c3d2934387b9326c7274714bc",
+    "decision": "preserve; never retarget"
+  },
+  "selected_next_signing_lifecycle_target": {
+    "version": "0.23.14-beta",
+    "required_tag": "v0.23.14-beta",
+    "candidate_branch": "codex/pantheon-v2314-native-tests-20260828",
+    "candidate_commit": "b6d0898e5e8e6f7173775a6f10fdca63b75ead36",
+    "candidate_tree": "159a413464ca57b72f71ab05387f94a3606bea36",
+    "tag_state": "absent",
+    "decision": "This is the only candidate eligible for a future signing/lifecycle sequence after its own verification and publication gates pass."
+  },
+  "excluded_targets": {
+    "origin_main": {
+      "commit": "92ad980871b9b87963878efb3a2ebc80b0b64d64",
+      "reason": "development baseline only; it is not a selected release artifact"
+    },
+    "a21_branch": {
+      "commit": "abe83ed9b7a7ef4677064cb39248065435cdbe0e",
+      "reason": "historical source lineage only"
+    }
+  },
+  "required_order": [
+    "Hardware Admin releases a bounded CPU validation window",
+    "run the deferred Swift fixture suite and mandatory Pantheon pre-push verification against the exact v0.23.14 candidate",
+    "publish and read back the exact candidate branch",
+    "create and read back immutable annotated tag v0.23.14-beta at the verified candidate commit",
+    "obtain visible Developer ID and App Store Connect notarization credentials",
+    "build, sign, notarize, staple, and hash exact v0.23.14 bytes",
+    "publish/read back the asset, bind cask SHA, then qualify install/upgrade/rollback/uninstall and sustained host behavior"
+  ],
+  "prohibitions": [
+    "do not retarget v0.23.13-beta",
+    "do not sign or lifecycle-qualify main or the A21 branch",
+    "do not claim a signed asset, cask, installability, or release readiness before this sequence completes"
+  ]
+}
