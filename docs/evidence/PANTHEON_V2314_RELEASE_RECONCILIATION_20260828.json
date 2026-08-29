@@ -2,6 +2,30 @@
   "schema": "sirsi.pantheon.release-reconciliation.v1",
   "observed_on": "2026-08-28",
   "decision": "not_release_ready",
+  "remote_authority": {
+    "published_release_authority": {
+      "ref": "refs/tags/v0.23.13-beta",
+      "annotated_tag_object": "9887a26a61f2e383bdd90614fb7e4a1f2c5238cf",
+      "peeled_commit": "39781658e6f9da6c3d2934387b9326c7274714bc",
+      "meaning": "The newest published Pantheon release candidate authority. It remains not_release_ready under its signed-byte, cask, and lifecycle gates."
+    },
+    "development_authority": {
+      "ref": "refs/heads/main",
+      "commit": "92ad980871b9b87963878efb3a2ebc80b0b64d64",
+      "meaning": "The remote development baseline, not a released artifact and not evidence that the v0.23.13 release gates are satisfied."
+    },
+    "historical_release_authority": {
+      "ref": "refs/tags/v0.23.12-beta",
+      "annotated_tag_object": "5d731dd4b5042e642b40dc4aa387022c2bc10696",
+      "peeled_commit": "272bd98e1609fbb78106d93327b57451164c84f2"
+    },
+    "a21_branch": {
+      "ref": "codex/ssa-pantheon-release-candidate-20260828-a21",
+      "commit": "abe83ed9b7a7ef4677064cb39248065435cdbe0e",
+      "meaning": "A source lineage reference, not a newer published release authority."
+    },
+    "local_v2314_branch": "Not published; it is an isolated successor and has no release authority until its own verification, publication, signing, and lifecycle gates are complete."
+  },
   "published_v2313": {
     "commit": "39781658e6f9da6c3d2934387b9326c7274714bc",
     "tree": "d0f58c854aff82a806c9c3ca65069dc38750dc13",
