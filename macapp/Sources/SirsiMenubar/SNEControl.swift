@@ -472,7 +472,7 @@ final class SNEControlModel: ObservableObject {
         return try decoder.decode(T.self, from: data)
     }
 
-    static func isLocalControlUnreachable(_ error: Error) -> Bool {
+    nonisolated static func isLocalControlUnreachable(_ error: Error) -> Bool {
         guard let error = error as? URLError else { return false }
         switch error.code {
         case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:

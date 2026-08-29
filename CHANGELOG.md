@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(native): keep the pure local-control transport classifier callable from
+  fixture tests**. The classifier is explicitly nonisolated because it reads
+  no menu-bar model state; this preserves main-actor UI ownership while making
+  the no-network Swift contract compile under strict concurrency.
+  Refs: PANTHEON_RULES.md A16/A21; native local-control contract.
 - **docs(release): prevent self-referential v0.23.14 tag provenance**. The
   release-engineering baseline and eventual tag target are now explicitly
   separated; a post-verification receipt must bind the final immutable tree
