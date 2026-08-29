@@ -136,7 +136,10 @@ release:
     name: sirsi-pantheon
   name_template: "v{{.Version}}"
   prerelease: auto
-  draft: false
+  # macOS is Pantheon's product release surface. Keep the GitHub release
+  # private until the signed, notarized DMG has been uploaded and bound to the
+  # exact tag/tree; a CLI-only release must never become the public artifact.
+  draft: true
   header: |
     ## Sirsi Pantheon {{.Version}}
 

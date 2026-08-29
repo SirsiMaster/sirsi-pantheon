@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Release publication safety:** Create GitHub releases as drafts, validate the
+  uploaded notarized DMG against its exact tag/tree before publication, then
+  allow cask promotion only after the verified release is public.
 - **Lifecycle evidence identity:** Upgrade the future M1/M5 lifecycle contract
   to v2 so its plan and receipt bind the exact tag, version, and signed asset
   as well as source and package identity; add a hermetic mismatch regression.

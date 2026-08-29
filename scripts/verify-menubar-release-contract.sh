@@ -40,6 +40,11 @@ require '\./cmd/sirsi-menubar/' "$RELEASE_WORKFLOW" "standalone_go_control_engin
 require 'BUILD_NUMBER:.*github\.run_number.*github\.run_attempt' "$RELEASE_WORKFLOW" "deterministic_ci_build_identity"
 require 'REQUIRE_RELEASE_SIGNING:.*1' "$RELEASE_WORKFLOW" "ci_release_signing_required"
 require 'REQUIRE_RELEASE_NOTARIZATION:.*1' "$RELEASE_WORKFLOW" "ci_release_notarization_required"
+require 'Publish Verified macOS Release' "$RELEASE_WORKFLOW" "draft_publish_gate"
+require 'verify-pantheon-release-asset\.sh' "$RELEASE_WORKFLOW" "uploaded_dmg_identity_gate"
+require 'gh release edit.*--draft=false' "$RELEASE_WORKFLOW" "verified_draft_publication"
+require 'needs: publish-release' "$RELEASE_WORKFLOW" "cask_after_publication"
+require 'draft: true' "${ROOT}/.goreleaser.yaml" "goreleaser_draft_first"
 
 # A resident Pantheon surface may render persisted projections, but it must not
 # launch full diagnostics merely because it started, opened, or reached a timer
