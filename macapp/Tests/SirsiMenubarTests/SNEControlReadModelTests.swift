@@ -34,6 +34,24 @@ final class SNEControlReadModelTests: XCTestCase {
 
         XCTAssertEqual(SNELocalControlBridge.bundledEngine(bundleURL: app), executable.path)
     }
+
+    func testLocalControlEnvironmentIsAllowlisted() {
+        let environment = SNELocalControlBridge.controlledEnvironment(parent: [
+            "HOME": "/Users/operator",
+            "LANG": "en_US.UTF-8",
+            "SIRSI_ACCESS_TOKEN": "must-not-leak",
+            "AWS_SESSION_TOKEN": "must-not-leak",
+            "PYTHONPATH": "/private/tmp/dev-only",
+        ])
+
+        XCTAssertEqual(environment["HOME"], "/Users/operator")
+        XCTAssertEqual(environment["LANG"], "en_US.UTF-8")
+        XCTAssertEqual(environment["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin")
+        XCTAssertEqual(environment["SIRSI_HEADLESS"], "1")
+        XCTAssertNil(environment["SIRSI_ACCESS_TOKEN"])
+        XCTAssertNil(environment["AWS_SESSION_TOKEN"])
+        XCTAssertNil(environment["PYTHONPATH"])
+    }
     func testSnapshotFixtureRetainsExactActiveIdentity() {
         let fixture = SNEReadViewState.snapshotFixture
 

@@ -510,9 +510,7 @@ final class SNELocalControlBridge {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: path)
         child.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-        var environment = ProcessInfo.processInfo.environment
-        environment["SIRSI_HEADLESS"] = "1"
-        child.environment = environment
+        child.environment = Self.controlledEnvironment()
         child.terminationHandler = { [weak self] _ in
             Task { @MainActor in self?.process = nil }
         }
@@ -533,6 +531,22 @@ final class SNELocalControlBridge {
             .appendingPathComponent("pantheon-engine", isDirectory: false)
             .path
         return FileManager.default.isExecutableFile(atPath: candidate) ? candidate : nil
+    }
+
+    // The control child does not inherit editor tokens, cloud credentials, or
+    // debug switches from the app session. This mirrors SNE's own supervised
+    // launch allowlist while preserving only ordinary local process context.
+    nonisolated static func controlledEnvironment(parent: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        let inheritedKeys = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "__CF_USER_TEXT_ENCODING"]
+        var environment: [String: String] = [:]
+        for key in inheritedKeys {
+            if let value = parent[key], !value.isEmpty {
+                environment[key] = value
+            }
+        }
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["SIRSI_HEADLESS"] = "1"
+        return environment
     }
 }
 
