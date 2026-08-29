@@ -52,6 +52,13 @@ final class SNEControlReadModelTests: XCTestCase {
         XCTAssertNil(environment["AWS_SESSION_TOKEN"])
         XCTAssertNil(environment["PYTHONPATH"])
     }
+
+    func testLocalControlStartIsLimitedToLoopbackTransportFailures() {
+        XCTAssertTrue(SNEControlModel.isLocalControlUnreachable(URLError(.cannotConnectToHost)))
+        XCTAssertTrue(SNEControlModel.isLocalControlUnreachable(URLError(.networkConnectionLost)))
+        XCTAssertFalse(SNEControlModel.isLocalControlUnreachable(SNEControlError.server("SNE is not admitted")))
+        XCTAssertFalse(SNEControlModel.isLocalControlUnreachable(SNEControlError.invalidResponse))
+    }
     func testSnapshotFixtureRetainsExactActiveIdentity() {
         let fixture = SNEReadViewState.snapshotFixture
 

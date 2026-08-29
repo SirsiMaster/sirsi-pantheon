@@ -274,6 +274,7 @@ final class SNEControlModel: ObservableObject {
     @Published var actionInFlight = false
     @Published var message: String?
     @Published var failure: String?
+    @Published private(set) var localControlUnavailable = false
     @Published var prefixCachePressure: SNEPrefixCachePressureViewState?
     @Published var executionEvidence: SNEPrefixCachePressureEvidenceState?
     @Published var retentionEvidence: SNEPrefixCachePressureEvidenceState?
@@ -318,9 +319,11 @@ final class SNEControlModel: ObservableObject {
         do {
             state = try await request(path: "/api/sne", method: "GET", body: nil, authorized: false)
             failure = nil
+            localControlUnavailable = false
             return true
         } catch {
             failure = error.localizedDescription
+            localControlUnavailable = Self.isLocalControlUnreachable(error)
             return false
         }
     }
@@ -465,6 +468,16 @@ final class SNEControlModel: ObservableObject {
         return try decoder.decode(T.self, from: data)
     }
 
+    static func isLocalControlUnreachable(_ error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        switch error.code {
+        case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:
+            return true
+        default:
+            return false
+        }
+    }
+
     fileprivate static func localCapability() throws -> String {
         let path = ("~/Library/Application Support/Sirsi/Pantheon/sne-local-api.token" as NSString).expandingTildeInPath
         var info = stat()
@@ -589,7 +602,7 @@ struct SNEControlView: View {
                     if let message = model.message { Text(message).foregroundStyle(.green).sirsiFont(.callout) }
                     if let failure = model.failure {
                         Text(failure).foregroundStyle(.red).sirsiFont(.callout).accessibilityLabel("SNE error: \(failure)")
-                        if !snapshotMode {
+                        if !snapshotMode && model.localControlUnavailable {
                             Button("Start local control") { Task { await model.startLocalControl() } }
                                 .accessibilityLabel("Start Pantheon local control")
                                 .accessibilityHint("Starts only the bundled loopback control plane. It does not start SNE inference.")

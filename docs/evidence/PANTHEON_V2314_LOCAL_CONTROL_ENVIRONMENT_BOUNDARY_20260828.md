@@ -25,6 +25,12 @@ process; this change does not start it, start SNE, or make a permission request.
 `SIRSI_ACCESS_TOKEN`, `AWS_SESSION_TOKEN`, and `PYTHONPATH` and asserts that
 all are absent from the child environment while the required local values remain.
 
+`SNEControlReadModelTests.testLocalControlStartIsLimitedToLoopbackTransportFailures`
+accepts only URL transport failures (`cannotConnectToHost`,
+`cannotFindHost`, `networkConnectionLost`, or `notConnectedToInternet`) as a
+reason to show the visible start action. SNE/API failures and malformed local
+responses do not offer a redundant helper launch.
+
 ## Verification disposition
 
 `git diff --check` is required before commit. Swift test execution is deferred
