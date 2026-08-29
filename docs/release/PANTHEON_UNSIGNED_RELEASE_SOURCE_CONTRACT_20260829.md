@@ -39,9 +39,11 @@ accept its tag, source commit, tree, asset filename, and SHA-256.
   credentials.
 - Exact signed and stapled DMG bytes for the tagged commit.
 - Clean M1/M5 install, upgrade, rollback, and uninstall receipts. For each
-  host, create the plan with `create-pantheon-lifecycle-plan.sh` from the exact
-  signed DMG, then validate the independently host-produced receipt with
-  `validate-pantheon-lifecycle-receipt.sh`. These scripts are evidence
+  host, create the v2 plan with `create-pantheon-lifecycle-plan.sh --tag` from
+  the exact signed DMG, then validate the independently host-produced v2
+  receipt with `validate-pantheon-lifecycle-receipt.sh`. The plan and receipt
+  must agree on tag, version, asset filename, source commit/tree, package name
+  and SHA-256, profile, phases, and resource fields. These scripts are evidence
   contracts only: they do not mount, install, upgrade, roll back, or uninstall
   an app.
 - Sustained resource/crash and native accessibility acceptance evidence.

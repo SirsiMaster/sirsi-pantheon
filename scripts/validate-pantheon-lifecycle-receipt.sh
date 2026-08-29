@@ -11,11 +11,15 @@ PLAN="$2"; RECEIPT="$4"
 command -v jq >/dev/null || { echo "pantheon_lifecycle accepted=false reason=missing_jq" >&2; exit 1; }
 
 jq -e --slurpfile plan "$PLAN" '
-  $plan[0].schema == "sirsi.pantheon.lifecycle-plan.v1" and
-  .schema == "sirsi.pantheon.lifecycle-receipt.v1" and
+  $plan[0].schema == "sirsi.pantheon.lifecycle-plan.v2" and
+  .schema == "sirsi.pantheon.lifecycle-receipt.v2" and
   .decision == "accepted" and
+  .release.tag == $plan[0].release.tag and
+  .release.version == $plan[0].release.version and
+  .release.asset == $plan[0].release.asset and
   .source.commit == $plan[0].source.commit and
   .source.tree == $plan[0].source.tree and
+  .package.name == $plan[0].package.name and
   .package.sha256 == $plan[0].package.sha256 and
   .host.profile == $plan[0].host.profile and
   (.host.profile == "m1" or .host.profile == "m5") and

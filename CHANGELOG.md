@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Lifecycle evidence identity:** Upgrade the future M1/M5 lifecycle contract
+  to v2 so its plan and receipt bind the exact tag, version, and signed asset
+  as well as source and package identity; add a hermetic mismatch regression.
 - **Release-boundary honesty:** Label the v0.23.8 notes and roadmap as
   historical snapshots and point current readers to the v0.23.14 unsigned
   release decision rather than implying a newer signed, installable artifact.
