@@ -12,8 +12,8 @@
     "version": "0.23.14-beta",
     "required_tag": "v0.23.14-beta",
     "candidate_branch": "codex/pantheon-v2314-native-tests-20260828",
-    "candidate_commit": "b6d0898e5e8e6f7173775a6f10fdca63b75ead36",
-    "candidate_tree": "159a413464ca57b72f71ab05387f94a3606bea36",
+    "candidate_commit": "498f3b47a578a7354d8025fea0973a3c40fafb58",
+    "candidate_tree": "84cdcc093a099d8a2d467e6d66e9f1f84d781c2d",
     "tag_state": "absent",
     "decision": "This is the only candidate eligible for a future signing/lifecycle sequence after its own verification and publication gates pass."
   },

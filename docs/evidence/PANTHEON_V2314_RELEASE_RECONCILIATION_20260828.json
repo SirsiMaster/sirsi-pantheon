@@ -45,9 +45,9 @@
   },
   "local_v2314_successor": {
     "branch": "codex/pantheon-v2314-native-tests-20260828",
-    "commit": "43ae9792849a235db2bace6f98afcb491e018acd",
-    "tree": "e1540993c5f4e184ec066cdd4c31a11d6d444ed5",
-    "publication": "local only; mandatory pre-push verification has not been rerun after the latest three native containment commits",
+    "commit": "498f3b47a578a7354d8025fea0973a3c40fafb58",
+    "tree": "84cdcc093a099d8a2d467e6d66e9f1f84d781c2d",
+    "publication": "local only; mandatory pre-push verification has not been rerun after native containment and release-engineering commits",
     "source_scope": [
       "explicit Swift-owned headless local-control helper",
       "minimal allowlisted child environment",
@@ -55,7 +55,7 @@
       "owned-child liveness required before readiness is reported"
     ],
     "latest_deferred_fixture": "macapp/Tests/SirsiMenubarTests/SNEControlReadModelTests.swift",
-    "package_status": "the recorded ad-hoc package is bound to earlier source commit 7b103308; no package claim is made for 43ae979"
+    "package_status": "the recorded ad-hoc package is bound to earlier source commit 7b103308; no package claim is made for 498f3b47"
   },
   "preserved_boundaries": [
     "no Pantheon/SNE/Aqua/Tailscale/Codex/security restart or mutation",
