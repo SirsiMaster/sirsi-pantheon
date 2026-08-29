@@ -703,10 +703,10 @@ Configure in your IDE:
 	},
 }
 
-// The Pantheon TUI and brand-gateway menu were removed 2026-05-21 per ADR-018.
-// The forthcoming native macOS app (cmd/sirsi-app/) replaces them; `sirsi`
-// with no arguments now prints help. `sirsi pantheon` / `sirsi tui` aliases
-// are no longer registered.
+// The legacy brand-gateway menu and `sirsi pantheon` alias were removed
+// 2026-05-21 per ADR-018. The full-screen `sirsi tui` operator console is
+// registered in tui.go, while the native Swift app is the desktop surface.
+// Invoking `sirsi` with no arguments prints help.
 
 // (not piped from an IDE or redirected from a file).
 // isTerminal reports whether fd is a real terminal. It uses golang.org/x/term
