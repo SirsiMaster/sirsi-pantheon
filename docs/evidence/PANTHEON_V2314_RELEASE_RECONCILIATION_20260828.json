@@ -1,0 +1,48 @@
+{
+  "schema": "sirsi.pantheon.release-reconciliation.v1",
+  "observed_on": "2026-08-28",
+  "decision": "not_release_ready",
+  "published_v2313": {
+    "commit": "39781658e6f9da6c3d2934387b9326c7274714bc",
+    "tree": "d0f58c854aff82a806c9c3ca65069dc38750dc13",
+    "tag": "v0.23.13-beta",
+    "release_gate_receipt": {
+      "path": "/Users/thekryptodragon/Development/sirsi-native-rebuild/docs/evidence/artifacts/pantheon-v2313-release-gate-20260828/receipt.json",
+      "sha256": "7b377982c0d5482f45c7beab02cc192044c340933323b1054b114d8420556753"
+    },
+    "status": {
+      "source_test": "accepted",
+      "publication": "complete",
+      "signing_notarization": "owner-gated: zero valid Developer ID identities",
+      "github_release_asset": "absent",
+      "cask": "v0.23.8-beta, intentionally stale until signed/stapled bytes exist",
+      "install_lifecycle": "unproven"
+    }
+  },
+  "local_v2314_successor": {
+    "branch": "codex/pantheon-v2314-native-tests-20260828",
+    "commit": "43ae9792849a235db2bace6f98afcb491e018acd",
+    "tree": "e1540993c5f4e184ec066cdd4c31a11d6d444ed5",
+    "publication": "local only; mandatory pre-push verification has not been rerun after the latest three native containment commits",
+    "source_scope": [
+      "explicit Swift-owned headless local-control helper",
+      "minimal allowlisted child environment",
+      "start action limited to loopback transport failures",
+      "owned-child liveness required before readiness is reported"
+    ],
+    "latest_deferred_fixture": "macapp/Tests/SirsiMenubarTests/SNEControlReadModelTests.swift",
+    "package_status": "the recorded ad-hoc package is bound to earlier source commit 7b103308; no package claim is made for 43ae979"
+  },
+  "preserved_boundaries": [
+    "no Pantheon/SNE/Aqua/Tailscale/Codex/security restart or mutation",
+    "no runtime or model launch",
+    "no signing, notarization, cask, install, rollback, or uninstall claim",
+    "no release claim from local source evidence"
+  ],
+  "next_safe_action": {
+    "owner": "sirsi-hardware-admin",
+    "action": "Close or replace router item 20260828-235519-codex-pantheon-sirsi-hardware-admin-request-fresh-non-gpu-finalwishes-ci-release with an explicit released CPU validation window.",
+    "then_pantheon": "Run swift test --package-path macapp on exact commit 43ae979, followed by the mandatory pre-push gate before publishing the source branch."
+  },
+  "later_release_owner_gate": "Provision a visible Developer ID Application certificate/private key and complete App Store Connect notarization credentials; only then may exact signed/stapled bytes, GitHub asset, cask binding, and install lifecycle qualification proceed."
+}
