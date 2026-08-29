@@ -107,16 +107,16 @@ func validateContract(repo string, c map[string]any) ([]string, error) {
 			return nil, err
 		}
 	}
-	classification, err := stringAt(c, "classification", "contract")
-	if err != nil {
-		return nil, err
+	classification, classificationErr := stringAt(c, "classification", "contract")
+	if classificationErr != nil {
+		return nil, classificationErr
 	}
 	if !classifications[classification] {
 		return nil, fmt.Errorf("contract: invalid classification %q", classification)
 	}
-	canon, err := listAt(c, "canon_documents", "contract")
-	if err != nil {
-		return nil, err
+	canon, canonErr := listAt(c, "canon_documents", "contract")
+	if canonErr != nil {
+		return nil, canonErr
 	}
 	var required []string
 	for i, raw := range canon {
@@ -144,9 +144,9 @@ func validateContract(repo string, c map[string]any) ([]string, error) {
 			required = append(required, path)
 		}
 	}
-	done, err := listAt(c, "done_definition", "contract")
-	if err != nil {
-		return nil, err
+	done, doneErr := listAt(c, "done_definition", "contract")
+	if doneErr != nil {
+		return nil, doneErr
 	}
 	seen := map[string]bool{}
 	for i, raw := range done {
@@ -175,9 +175,9 @@ func validateContract(repo string, c map[string]any) ([]string, error) {
 			return nil, fmt.Errorf("contract.done_definition: missing %q category", category)
 		}
 	}
-	commands, err := listAt(c, "required_verification_commands", "contract")
-	if err != nil {
-		return nil, err
+	commands, commandsErr := listAt(c, "required_verification_commands", "contract")
+	if commandsErr != nil {
+		return nil, commandsErr
 	}
 	for i, raw := range commands {
 		where := fmt.Sprintf("contract.required_verification_commands[%d]", i)
@@ -230,41 +230,41 @@ func validateProof(repo string, p map[string]any, requiredDocs []string) error {
 			return err
 		}
 	}
-	proofRepo, err := stringAt(p, "repo", "proof")
-	if err != nil {
-		return err
+	proofRepo, proofRepoErr := stringAt(p, "repo", "proof")
+	if proofRepoErr != nil {
+		return proofRepoErr
 	}
-	abs, err := resolveExistingPath(proofRepo)
-	if err != nil {
-		return err
+	abs, resolveErr := resolveExistingPath(proofRepo)
+	if resolveErr != nil {
+		return resolveErr
 	}
 	if abs != repo {
 		return fmt.Errorf("proof.repo %q does not match repo %q", proofRepo, repo)
 	}
-	status, err := stringAt(p, "status", "proof")
-	if err != nil {
-		return err
+	status, statusErr := stringAt(p, "status", "proof")
+	if statusErr != nil {
+		return statusErr
 	}
 	if !map[string]bool{"draft": true, "blocked": true, "ready_for_review": true, "completed": true}[status] {
 		return fmt.Errorf("proof: invalid status %q", status)
 	}
-	classification, err := stringAt(p, "classification", "proof")
-	if err != nil {
-		return err
+	classification, classificationErr := stringAt(p, "classification", "proof")
+	if classificationErr != nil {
+		return classificationErr
 	}
 	if !classifications[classification] {
 		return fmt.Errorf("proof: invalid classification %q", classification)
 	}
-	canon, err := listAt(p, "canon_read", "proof")
-	if err != nil {
-		return err
+	canon, canonErr := listAt(p, "canon_read", "proof")
+	if canonErr != nil {
+		return canonErr
 	}
 	seen := map[string]bool{}
 	for i, raw := range canon {
 		where := fmt.Sprintf("proof.canon_read[%d]", i)
-		item, err := objectAt(raw, where)
-		if err != nil {
-			return err
+		item, itemErr := objectAt(raw, where)
+		if itemErr != nil {
+			return itemErr
 		}
 		path, err := stringAt(item, "path", where)
 		if err != nil {
@@ -285,9 +285,9 @@ func validateProof(repo string, p map[string]any, requiredDocs []string) error {
 			}
 		}
 	}
-	trace, err := listAt(p, "requirements_trace", "proof")
-	if err != nil {
-		return err
+	trace, traceErr := listAt(p, "requirements_trace", "proof")
+	if traceErr != nil {
+		return traceErr
 	}
 	for i, raw := range trace {
 		where := fmt.Sprintf("proof.requirements_trace[%d]", i)
@@ -313,24 +313,24 @@ func validateProof(repo string, p map[string]any, requiredDocs []string) error {
 			return fmt.Errorf("%s: doc %q was not listed in canon_read", where, doc)
 		}
 	}
-	closure, err := objectAt(p["closure_evidence"], "proof.closure_evidence")
-	if err != nil {
-		return err
+	closure, closureErr := objectAt(p["closure_evidence"], "proof.closure_evidence")
+	if closureErr != nil {
+		return closureErr
 	}
 	for _, key := range []string{"product", "design", "technical", "operational", "narrative"} {
 		if _, err := stringAt(closure, key, "proof.closure_evidence"); err != nil {
 			return err
 		}
 	}
-	verify, err := listAt(p, "verification", "proof")
-	if err != nil {
-		return err
+	verify, verifyErr := listAt(p, "verification", "proof")
+	if verifyErr != nil {
+		return verifyErr
 	}
 	for i, raw := range verify {
 		where := fmt.Sprintf("proof.verification[%d]", i)
-		item, err := objectAt(raw, where)
-		if err != nil {
-			return err
+		item, itemErr := objectAt(raw, where)
+		if itemErr != nil {
+			return itemErr
 		}
 		for _, key := range []string{"name", "command", "evidence"} {
 			if _, err := stringAt(item, key, where); err != nil {
@@ -345,9 +345,9 @@ func validateProof(repo string, p map[string]any, requiredDocs []string) error {
 			return fmt.Errorf("%s: final proof requires passing status, got %q", where, state)
 		}
 	}
-	working, err := objectAt(p["working_status"], "proof.working_status")
-	if err != nil {
-		return err
+	working, workingErr := objectAt(p["working_status"], "proof.working_status")
+	if workingErr != nil {
+		return workingErr
 	}
 	for _, key := range []string{"environment", "how_verified", "observed_result", "verified_at"} {
 		if _, err := stringAt(working, key, "proof.working_status"); err != nil {

@@ -16,23 +16,23 @@ import (
 // process ledger, per-agent stranded check, and one-advisory-per-day policy.
 // It neither launches watchers nor kills, renices, or steers processes.
 func runRegistryPoliceDuty(routerRoot, repoRoot string) error {
-	reg, err := router.LoadRegistry(routerRoot)
-	if err != nil {
-		return fmt.Errorf("registry police: load registry: %w", err)
+	reg, loadErr := router.LoadRegistry(routerRoot)
+	if loadErr != nil {
+		return fmt.Errorf("registry police: load registry: %w", loadErr)
 	}
 	if _, err := reapDeadPIDThreads(routerRoot); err != nil {
 		return fmt.Errorf("registry police: OS-truth sweep incomplete: %w", err)
 	}
-	_, actions, _, err := reconcileDiscoveredProcs(routerRoot, reg, enumerateAgentProcs(localSurfaces(reg)))
-	if err != nil {
-		return fmt.Errorf("registry police: discover: %w", err)
+	_, actions, _, reconcileErr := reconcileDiscoveredProcs(routerRoot, reg, enumerateAgentProcs(localSurfaces(reg)))
+	if reconcileErr != nil {
+		return fmt.Errorf("registry police: discover: %w", reconcileErr)
 	}
 	if _, err := runThreadScout(routerRoot); err != nil {
 		return fmt.Errorf("registry police: scout: %w", err)
 	}
-	stranded, err := router.RegistryPoliceStranded(routerRoot, router.DefaultLaunchctlChecker)
-	if err != nil {
-		return err
+	stranded, strandedErr := router.RegistryPoliceStranded(routerRoot, router.DefaultLaunchctlChecker)
+	if strandedErr != nil {
+		return strandedErr
 	}
 	unmappable := 0
 	for _, action := range actions {
@@ -52,9 +52,9 @@ func runRegistryPoliceDuty(routerRoot, repoRoot string) error {
 		return fmt.Errorf("registry police: inspect advisory flag: %w", err)
 	}
 	body := registryPoliceAdvisory(now, unmappable, stranded)
-	facade, err := dispatch.Open(repoRoot)
-	if err != nil {
-		return fmt.Errorf("registry police: open guarded dispatch: %w", err)
+	facade, openErr := dispatch.Open(repoRoot)
+	if openErr != nil {
+		return fmt.Errorf("registry police: open guarded dispatch: %w", openErr)
 	}
 	defer func() { _ = facade.Close() }()
 	// Preserve the legacy CLI send contract: registry-police advisories are

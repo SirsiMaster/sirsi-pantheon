@@ -280,14 +280,6 @@ var raStatusCmd = &cobra.Command{
 	},
 }
 
-// boolMark renders a check/cross for a boolean prerequisite in evidence rows.
-func boolMark(ok bool) string {
-	if ok {
-		return "ready"
-	}
-	return "not found"
-}
-
 // raPipelineCmd shows the pipeline status — last recording, KI count, Thoth sync time.
 var raPipelineCmd = &cobra.Command{
 	Use:   "pipeline",
