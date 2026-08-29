@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Release-copy integrity:** Remove stale ad-hoc-signing and Gatekeeper-bypass
+  instructions from the draft release body. The public release surface now
+  avoids unbound test-count claims and stays consistent with the signed,
+  notarized exact-byte publication gate.
+  Refs: ADR-023; release identity verification contract.
 - **Formula publication containment:** Disable GoReleaser’s pre-publication
   Homebrew Formula writer; the exact-DMG cask remains the only allowed Homebrew
   release transition until Formula publishing gains an equivalent binding gate.

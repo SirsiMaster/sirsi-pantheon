@@ -46,6 +46,12 @@ require 'gh release edit.*--draft=false' "$RELEASE_WORKFLOW" "verified_draft_pub
 require 'needs: publish-release' "$RELEASE_WORKFLOW" "cask_after_publication"
 require 'draft: true' "${ROOT}/.goreleaser.yaml" "goreleaser_draft_first"
 require 'disable: true' "${ROOT}/.goreleaser.yaml" "formula_draft_bypass_disabled"
+# Public draft copy must not instruct owners to bypass Gatekeeper or claim an
+# unsigned/ad-hoc app is releasable. The release workflow exposes the artifact
+# only after exact signed and notarized bytes are verified.
+reject 'Pantheon\.app is ad-hoc signed' "${ROOT}/.goreleaser.yaml" "public_ad_hoc_signing_claim"
+reject 'Right-click the app' "${ROOT}/.goreleaser.yaml" "public_gatekeeper_bypass_instruction"
+reject '[0-9][0-9,]* tests across [0-9][0-9,]* packages' "${ROOT}/.goreleaser.yaml" "unbound_public_test_total"
 
 # A resident Pantheon surface may render persisted projections, but it must not
 # launch full diagnostics merely because it started, opened, or reached a timer
