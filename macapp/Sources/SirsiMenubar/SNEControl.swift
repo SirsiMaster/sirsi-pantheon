@@ -338,6 +338,10 @@ final class SNEControlModel: ObservableObject {
             try SNELocalControlBridge.shared.start()
             for _ in 0..<15 {
                 try? await Task.sleep(nanoseconds: 200_000_000)
+                guard SNELocalControlBridge.shared.isRunning else {
+                    failure = "Pantheon's local control process stopped before it became ready. No SNE state changed."
+                    return
+                }
                 if await refresh() {
                     message = "Local control is ready. SNE remains disabled until separately admitted."
                     return
@@ -534,6 +538,10 @@ final class SNELocalControlBridge {
     func stop() {
         if process?.isRunning == true { process?.terminate() }
         process = nil
+    }
+
+    var isRunning: Bool {
+        process?.isRunning == true
     }
 
     nonisolated static func bundledEngine(bundleURL: URL = Bundle.main.bundleURL) -> String? {

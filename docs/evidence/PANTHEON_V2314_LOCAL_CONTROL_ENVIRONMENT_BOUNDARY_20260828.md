@@ -31,6 +31,10 @@ accepts only URL transport failures (`cannotConnectToHost`,
 reason to show the visible start action. SNE/API failures and malformed local
 responses do not offer a redundant helper launch.
 
+Before reporting readiness, the view model also requires its own child process
+to remain alive. A coincidental or pre-existing loopback listener cannot turn an
+immediate child exit into a false successful local-control start.
+
 ## Verification disposition
 
 `git diff --check` is required before commit. Swift test execution is deferred

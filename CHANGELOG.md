@@ -16,6 +16,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **fix(native): show local-control start only for loopback transport loss**.
   SNE readiness, authorization, and API errors cannot prompt a redundant helper
   launch.
+- **fix(native): require the Swift-owned local-control child to remain alive**.
+  An unrelated loopback listener can no longer produce a false local-start
+  success message after the helper exits.
 - **docs(evidence): record the corrected packaged MCP handshake**. The
   v0.23.14 bundle now proves MCP and CLI identity alignment over stdio.
 - **fix(mcp): bind stdio identity to the stamped Pantheon product version**.
