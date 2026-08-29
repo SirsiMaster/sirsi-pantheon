@@ -29,10 +29,11 @@
 
 set -euo pipefail
 
-# --- Defaults ---
-VERSION="${VERSION:-0.17.0}"
-ARCH="${ARCH:-arm64}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE_VERSION="$(tr -d '\r\n' < "${PROJECT_ROOT}/VERSION")"
+# --- Defaults ---
+VERSION="${VERSION:-${SOURCE_VERSION}}"
+ARCH="${ARCH:-arm64}"
 BUILD_DIR="${PROJECT_ROOT}/bin"
 APP_NAME="Pantheon.app"
 DMG_VOLUME="Sirsi Pantheon"
@@ -45,6 +46,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown flag: $1"; echo "Usage: $0 [--version VERSION] [--arch ARCH]"; exit 1 ;;
     esac
 done
+
+if [[ "${VERSION}" != "${SOURCE_VERSION}" ]]; then
+    echo "ERROR: requested version ${VERSION} does not match source VERSION ${SOURCE_VERSION}." >&2
+    echo "Build a release only from the exact versioned source candidate; do not relabel package bytes." >&2
+    exit 1
+fi
 
 # Derive linker metadata only after every environment/default/flag override has
 # been resolved, so executable and bundle identities cannot diverge.
