@@ -29,6 +29,8 @@ for path in \
   scripts/verify-pantheon-package-identity.sh \
   scripts/render-pantheon-homebrew-cask.sh \
   scripts/verify-pantheon-release-asset.sh \
+  scripts/create-pantheon-lifecycle-plan.sh \
+  scripts/validate-pantheon-lifecycle-receipt.sh \
   homebrew/Casks/sirsi-pantheon.rb; do
   [[ -f "$path" ]] || die "missing_contract_input:${path}"
 done
@@ -51,5 +53,6 @@ printf '%s\n' \
   "asset=${ASSET}" \
   "current_cask_version=${CASK_VERSION}" \
   "cask_transition=blocked_until_signed_stapled_uploaded_asset" \
+  "lifecycle_contract=create-pantheon-lifecycle-plan.sh_then_validate-pantheon-lifecycle-receipt.sh" \
   "owner_gate=Developer_ID_Application_and_notarization_credentials" \
   "lifecycle_gate=clean_M1_M5_install_upgrade_rollback_uninstall_resource_crash_accessibility"

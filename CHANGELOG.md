@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+
+- **Release lifecycle contract:** Require the non-mutating M1/M5 lifecycle-plan
+  and receipt validators in the unsigned source gate, so an unsigned candidate
+  cannot present package/cask mechanics without an exact later lifecycle-proof
+  handoff.
 - **fix(help): describe Ra's Go-native default honestly**. The command guide no
   longer claims Python and the Claude SDK are product prerequisites; only the
   retained task/broadcast developer-provider boundary is optional and explicit.

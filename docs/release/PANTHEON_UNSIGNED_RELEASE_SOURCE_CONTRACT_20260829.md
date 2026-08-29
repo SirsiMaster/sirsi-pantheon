@@ -26,7 +26,8 @@ bash scripts/verify-pantheon-unsigned-release-source.sh --pretag v0.23.14-beta <
 ```
 
 The verifier requires the DMG identity verifier plus the cask renderer and
-asset verifier. It intentionally accepts the checked-in older cask only while
+asset verifier, lifecycle-plan generator, and lifecycle-receipt validator. It
+intentionally accepts the checked-in older cask only while
 it does not name the unsigned candidate version. A cask update may occur only
 after an exact, signed, stapled, uploaded DMG exists and both
 `render-pantheon-homebrew-cask.sh` and `verify-pantheon-release-asset.sh`
@@ -37,7 +38,12 @@ accept its tag, source commit, tree, asset filename, and SHA-256.
 - A visible Developer ID Application identity and complete notarization
   credentials.
 - Exact signed and stapled DMG bytes for the tagged commit.
-- Clean M1/M5 install, upgrade, rollback, and uninstall receipts.
+- Clean M1/M5 install, upgrade, rollback, and uninstall receipts. For each
+  host, create the plan with `create-pantheon-lifecycle-plan.sh` from the exact
+  signed DMG, then validate the independently host-produced receipt with
+  `validate-pantheon-lifecycle-receipt.sh`. These scripts are evidence
+  contracts only: they do not mount, install, upgrade, roll back, or uninstall
+  an app.
 - Sustained resource/crash and native accessibility acceptance evidence.
 
 No source verification can substitute for any of those physical or owner-only
