@@ -706,7 +706,8 @@ Configure in your IDE:
 // The legacy brand-gateway menu and `sirsi pantheon` alias were removed
 // 2026-05-21 per ADR-018. The full-screen `sirsi tui` operator console is
 // registered in tui.go, while the native Swift app is the desktop surface.
-// Invoking `sirsi` with no arguments prints help.
+// Invoking `sirsi` with no arguments opens the TUI on an interactive terminal;
+// non-interactive, redirected, JSON, quiet, and SIRSI_NO_TUI contexts print help.
 
 // (not piped from an IDE or redirected from a file).
 // isTerminal reports whether fd is a real terminal. It uses golang.org/x/term
