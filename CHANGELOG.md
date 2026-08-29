@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **fix(help): describe Ra's Go-native default honestly**. The command guide no
+  longer claims Python and the Claude SDK are product prerequisites; only the
+  retained task/broadcast developer-provider boundary is optional and explicit.
+  Refs: ADR-051; Go-native Ra cutover.
 - **fix(release): add a fail-closed unsigned source-release gate**. A candidate
   can now prove VERSION/tag/tree/package-contract coherence before credentials
   exist, while refusing a cask that would name unsigned or nonexistent bytes.
