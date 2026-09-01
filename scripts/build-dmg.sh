@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # build-dmg.sh — Build a signed, notarized macOS DMG for Sirsi Pantheon.
-# Usage: scripts/build-dmg.sh [--version VERSION] [--arch ARCH]
+# Usage: scripts/build-dmg.sh [--version VERSION] [--arch ARCH] [--sne-bundle DIR]
 # Requires macOS (hdiutil/codesign/notarytool are macOS-specific).
 #
 # Signing & notarization (the clean-install / no-FDA-churn contract):
@@ -26,6 +26,7 @@ set -euo pipefail
 # --- Defaults ---
 VERSION="0.17.0"
 ARCH="arm64"
+SNE_BUNDLE=""
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/bin"
 APP_NAME="Pantheon.app"
@@ -38,7 +39,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --version) VERSION="$2"; GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"; shift 2 ;;
         --arch)    ARCH="$2"; shift 2 ;;
-        *) echo "Unknown flag: $1"; echo "Usage: $0 [--version VERSION] [--arch ARCH]"; exit 1 ;;
+        --sne-bundle) SNE_BUNDLE="$2"; shift 2 ;;
+        *) echo "Unknown flag: $1"; echo "Usage: $0 [--version VERSION] [--arch ARCH] [--sne-bundle DIR]"; exit 1 ;;
     esac
 done
 
@@ -78,6 +80,16 @@ cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
+
+if [[ -n "${SNE_BUNDLE}" ]]; then
+    [[ -x "${SNE_BUNDLE}/bin/sirsi-infer" && -f "${SNE_BUNDLE}/SHA256SUMS" ]] || {
+        echo "ERROR: invalid SNE bundle: ${SNE_BUNDLE}" >&2
+        exit 1
+    }
+    ( cd "${SNE_BUNDLE}" && shasum -a 256 -c SHA256SUMS >/dev/null )
+    mkdir -p "${BUNDLE_DIR}/Contents/Resources/SNE"
+    cp -R "${SNE_BUNDLE}/." "${BUNDLE_DIR}/Contents/Resources/SNE/"
+fi
 
 # --- Code signing ---
 if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then

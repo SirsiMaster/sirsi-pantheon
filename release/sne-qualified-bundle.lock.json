@@ -1,0 +1,10 @@
+{
+  "schema": "pantheon.sne.qualified_bundle_lock.v1",
+  "asset": "sne-qualified-bundle-v3.tar.gz",
+  "m5_local_asset_path": "/Users/thekryptodragon/Development/sirsi-pantheon/artifacts/release-assets/sne-qualified-bundle-v3.tar.gz",
+  "asset_sha256": "d2a215a982964ba50caac5012e2ea9d99bee9407db3514722d8080c04b6472c9",
+  "embedded_sne_sha256": "6e32e47dcedf98872af32852d55e07a5bd2a0e1c5ea8b92287b17e7796d2f8af",
+  "qualification_authority_sha256": "d37c5055d6fe0c1b99f6666833325dd9977bef4f80427cdd1f6593c0b6078909",
+  "qualification_cohort_sha256": "8db998546948ee99d58f4586c3c1f449b384b611c82dcb153d02461f3f9251ce",
+  "qualification_execution_sha256": "1502d18dae7ec673beb4c19bb5e11b5add0e3e0613a261be0dc8a9878842b5d2"
+}
