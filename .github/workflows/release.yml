@@ -40,7 +40,7 @@ jobs:
 
   menubar:
     name: Build Menu Bar (macOS DMG)
-    runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
+    runs-on: [self-hosted, macOS, ARM64, pantheon-sne]  # Dedicated M5 SNE release runner
     needs: release
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
@@ -65,6 +65,25 @@ jobs:
           TAG_NAME="${GITHUB_REF_NAME}"
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Require signed and notarized release inputs
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PWD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PWD KEYCHAIN_PWD \
+                      DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::required signed-release input $name is absent"
+              exit 1
+            fi
+          done
+
       - name: Import signing certificate
         if: env.MACOS_CERTIFICATE != ''
         env:
@@ -80,6 +99,25 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
           rm certificate.p12
 
+      - name: Load checksum-pinned qualified SNE bundle
+        id: sne_bundle
+        run: |
+          set -euo pipefail
+          lock=release/sne-qualified-bundle.lock.json
+          asset=$(jq -er '.asset' "$lock")
+          source_path=$(jq -er '.m5_local_asset_path' "$lock")
+          expected=$(jq -er '.asset_sha256' "$lock")
+          asset_dir="$RUNNER_TEMP/sne-release-asset"
+          bundle_dir="$RUNNER_TEMP/qualified-sne"
+          mkdir -p "$asset_dir" "$bundle_dir"
+          test -f "$source_path"
+          cp "$source_path" "$asset_dir/$asset"
+          actual=$(shasum -a 256 "$asset_dir/$asset" | awk '{print $1}')
+          test "$actual" = "$expected"
+          tar -xzf "$asset_dir/$asset" -C "$bundle_dir"
+          (cd "$bundle_dir" && shasum -a 256 -c SHA256SUMS)
+          echo "path=$bundle_dir" >> "$GITHUB_OUTPUT"
+
       - name: Build + sign + notarize DMG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
@@ -87,7 +125,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: scripts/build-dmg.sh --version "$BUILD_VERSION" --arch arm64
+        run: scripts/build-dmg.sh --version "$BUILD_VERSION" --arch arm64 --sne-bundle "${{ steps.sne_bundle.outputs.path }}"
 
       - name: Upload DMG to release
         env:
