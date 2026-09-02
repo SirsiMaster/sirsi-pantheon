@@ -49,6 +49,7 @@ var (
 var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
+	"MintHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
 	"Close": true,
 }
 
@@ -116,8 +117,10 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, "", "POST only")
 		return
 	}
-	// 1. host
-	if !authorized(r, s.opts.Token) {
+	// 1. host — the bootstrap token (ServerOptions.Token) or a minted per-host
+	// token (rs-11). The resolved host constrains what a session may claim.
+	tokenHost, ok := s.hostForBearer(r)
+	if !ok {
 		writeErr(w, http.StatusUnauthorized, "", "missing or invalid bearer token")
 		return
 	}
@@ -148,6 +151,15 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	if len(bytes.TrimSpace(body)) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
 			writeErr(w, http.StatusBadRequest, "", "bad JSON: "+err.Error())
+			return
+		}
+	}
+	// A per-host token may only mint sessions for its own host: a node cannot
+	// claim to be another machine. The bootstrap token is unconstrained.
+	if name == "MintSession" && tokenHost != bootstrapHost && len(req.Args) > 0 {
+		var claimed string
+		if json.Unmarshal(req.Args[0], &claimed) == nil && claimed != tokenHost {
+			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
 			return
 		}
 	}
@@ -351,14 +363,26 @@ func Sign(secret, method, nonce string, body []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func authorized(r *http.Request, token string) bool {
+// bootstrapHost is the host name recorded for the ServerOptions.Token path.
+const bootstrapHost = "*"
+
+// hostForBearer resolves the bearer to a host: the bootstrap token → "*",
+// a minted per-host token → its host, anything else → not authorized.
+func (s *server) hostForBearer(r *http.Request) (string, bool) {
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	if !strings.HasPrefix(h, p) {
-		return false
+		return "", false
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(h, p))
-	return subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.Token)) == 1 {
+		return bootstrapHost, true
+	}
+	t, err := s.store.LookupHostToken(got)
+	if err != nil {
+		return "", false
+	}
+	return t.Host, true
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

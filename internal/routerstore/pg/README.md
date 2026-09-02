@@ -1,7 +1,7 @@
 # routerstore/pg — the Postgres ledger schema (ADR-062)
 
 **What this is.** The router ledger's Postgres schema: SQLite schema v16
-(`../store.go` migrations 1..17) translated once, plus the ADR-062 §3 identity
+(`../store.go` migrations 1..18) translated once, plus the ADR-062 §3 identity
 columns. It is the `Ra` backend; `SQLiteStore` stays the `Anubis` backend.
 Nothing here runs on a Mac — it is applied to Cloud SQL by the migrator role.
 
@@ -12,7 +12,7 @@ Nothing here runs on a Mac — it is applied to Cloud SQL by the migrator role.
 
 **Why one baseline and no migration chain.** A Postgres ledger is only ever
 created by `sirsi router migrate` (rs-12) from a quiesced SQLite dump, so it
-starts at the SQLite high-water mark. `router.schema_version` holds `17` so the
+starts at the SQLite high-water mark. `router.schema_version` holds `18` so the
 migration tool can compare it with SQLite's `PRAGMA user_version` directly.
 Future schema changes add a Postgres migration alongside the SQLite one.
 
@@ -39,7 +39,7 @@ carries `host`, `user_id`, `session`, `runtime_hash`.
 
 **Verification.** `scripts/check-pg-schema.sh` creates a throwaway database,
 applies both files as the roles they will run as in production, and asserts:
-14 tables, 12 distinct triggers, ≥5 partial indexes, version 17; an item insert
+15 tables, 12 distinct triggers, ≥5 partial indexes, version 17; an item insert
 emits exactly one wake event and a duplicate `event_key` is ignored; a claim
 acks the leased wake event; `router_service` cannot `CREATE TABLE`. Negative
 control (2026-09-02): deleting one trigger from `schema.sql` makes it fail with
