@@ -18,7 +18,7 @@ measurement.
 | Intent, placement request, user policy | Sirsi Nexus | Pantheon | Architecture exists; transport intent must bind to a hardware receipt |
 | Model/runtime/tokenizer identity and correctness | SNE | Pantheon admission, Nexus | Existing exact identity and fail-closed qualification contracts |
 | Distributed partitioning and collectives | SNE | Sleeve transport capability | Two-node JACCL design exists; physical qualification remains open |
-| Physical enclosure, aggregation electronics, rollback slots | Sleeve firmware/electronics | Pantheon | Research/design phase |
+| Physical enclosure, per-port TB5-to-optical link engines, rollback slots | Sleeve firmware/electronics | Pantheon | Research/design phase; design in SirsiNexusApp Notebook 1 (hardware) and Notebook 4 §10 (software), 2026-09-02 |
 
 Pantheon is the sole hardware admission authority. Nexus requests a capability;
 SNE consumes an admitted capability. Neither may infer a TB5 mode from a port
@@ -41,6 +41,8 @@ Primary sources: [Apple Mac Studio specifications](https://www.apple.com/mac-stu
 and [Intel's Thunderbolt 5 technical brief](https://www.intel.com/content/dam/www/central-libraries/us/en/documents/2023-09/thunderbolt-5-technology-brief.pdf).
 
 ## Sleeve capacity model
+
+**Alignment note (2026-09-02, owner decisions in SirsiNexusApp Notebooks 1 and 4):** all six TB5 ports are I/O; the Sleeve converts each port to fiber protocol-transparently and bonds nothing; every link is a native Thunderbolt host-to-host link, so the per-link directional model below is the whole model — there is no aggregate fabric port, no NIC and no Ethernet data plane. Direction is a scheduled resource per link, recorded as requested / negotiated / observed; only observed is ever rendered as fact. Whether a link survives an optical engine with RDMA and Boost intact is unestablished (SSA reading review, 2026-09-02) and is Notebook 4 Phase 0b. First receipt fields ship as `sirsi hardware links` (PR #696).
 
 The model uses per-link directional capacity, not a single symmetric aggregate:
 
