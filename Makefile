@@ -75,16 +75,20 @@ build-menubar:
 	go build $(GO_FLAGS) -o $(BUILD_DIR)/sirsi-menubar ./cmd/sirsi-menubar/
 
 # --- macOS .app Bundle ---
-# Creates Pantheon.app suitable for /Applications
-bundle: build-menubar
+# Creates Pantheon.app suitable for /Applications. The menu-bar surface resolves
+# its operational engine as a sibling, so both executables are one package unit.
+bundle: build build-menubar
 	@echo "📦 Building Pantheon.app bundle..."
 	@rm -rf Pantheon.app
 	@mkdir -p Pantheon.app/Contents/MacOS
 	@mkdir -p Pantheon.app/Contents/Resources
+	@cp $(BUILD_DIR)/sirsi Pantheon.app/Contents/MacOS/sirsi
 	@cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar
 	@cp cmd/sirsi-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
 	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
 	@codesign --force --deep --sign "$(SIGN_ID)" Pantheon.app
+	@test -x Pantheon.app/Contents/MacOS/sirsi
+	@test -x Pantheon.app/Contents/MacOS/sirsi-menubar
 	@echo "✅ Pantheon.app created (ad-hoc signed) — install with: cp -R Pantheon.app /Applications/"
 
 # --- macOS DMG Installer ---
