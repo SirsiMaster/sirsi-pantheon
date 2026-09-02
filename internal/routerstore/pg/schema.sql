@@ -338,8 +338,11 @@ CREATE OR REPLACE FUNCTION router.trg_wake_task_created() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.status IN ('pending','in-progress') AND NEW.blocked_by = '' THEN
+    -- key/reason must match SQLite's wake_task_created exactly: the rs-12
+    -- migration hash proved a 'task:actionable' key here made a migrated
+    -- ledger diverge by one wake event (found 2026-09-02).
     INSERT INTO wake_events(event_id,event_key,agent,source_kind,source_id,reason,created,updated)
-    VALUES (router.rand_hex32(),'task:actionable:'||NEW.agent||':'||NEW.task_id||':'||NEW.updated,NEW.agent,'ledger_task',NEW.task_id,'ledger task assigned or unblocked',router.now_rfc3339(),router.now_rfc3339())
+    VALUES (router.rand_hex32(),'task:create:'||NEW.agent||':'||NEW.task_id,NEW.agent,'ledger_task',NEW.task_id,'ledger task created or assigned',router.now_rfc3339(),router.now_rfc3339())
     ON CONFLICT DO NOTHING;
   END IF;
   RETURN NULL;
