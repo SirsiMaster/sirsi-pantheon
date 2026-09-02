@@ -22,7 +22,7 @@ type Agent struct {
 // on (id): re-registering an existing agent updates its pid and last_seen and
 // preserves the original registered_at, so a surface restart never accumulates
 // duplicate rows (Rule A27 idempotent-on-(agent_id,pid) intent).
-func (s *Store) RegisterAgent(id string, pid int) error {
+func (s *SQLiteStore) RegisterAgent(id string, pid int) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("routerstore: RegisterAgent: id is required")
 	}
@@ -42,7 +42,7 @@ ON CONFLICT(id) DO UPDATE SET
 // Heartbeat updates an agent's last_seen to now. It returns ErrNotFound if the
 // agent was never registered — a heartbeat is proof of an existing
 // registration, not a way to create one.
-func (s *Store) Heartbeat(id string) error {
+func (s *SQLiteStore) Heartbeat(id string) error {
 	now := s.clock().Format(time.RFC3339)
 	res, err := s.exec(`UPDATE agents SET last_seen=? WHERE id=?;`, now, id)
 	if err != nil {
@@ -55,7 +55,7 @@ func (s *Store) Heartbeat(id string) error {
 }
 
 // GetAgent returns one agent by id, or ErrNotFound.
-func (s *Store) GetAgent(id string) (Agent, error) {
+func (s *SQLiteStore) GetAgent(id string) (Agent, error) {
 	var a Agent
 	err := s.db.QueryRow(
 		`SELECT id, registered_at, last_seen, pid FROM agents WHERE id=?;`, id,
@@ -70,7 +70,7 @@ func (s *Store) GetAgent(id string) (Agent, error) {
 }
 
 // ListAgents returns every registered agent, ordered by id.
-func (s *Store) ListAgents() ([]Agent, error) {
+func (s *SQLiteStore) ListAgents() ([]Agent, error) {
 	rows, err := s.db.Query(`SELECT id, registered_at, last_seen, pid FROM agents ORDER BY id ASC;`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ListAgents: %w", err)
@@ -92,7 +92,7 @@ func (s *Store) ListAgents() ([]Agent, error) {
 
 // SetState stores an arbitrary key/value pair, projecting the old state.json
 // scalar keys (last_*_read etc.) into the durable index.
-func (s *Store) SetState(key, value string) error {
+func (s *SQLiteStore) SetState(key, value string) error {
 	if strings.TrimSpace(key) == "" {
 		return fmt.Errorf("routerstore: SetState: key is required")
 	}
@@ -106,7 +106,7 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
 
 // GetState returns the value for key. The second return is false if the key is
 // absent (distinguishing an unset key from an empty-string value).
-func (s *Store) GetState(key string) (string, bool, error) {
+func (s *SQLiteStore) GetState(key string) (string, bool, error) {
 	var value string
 	err := s.db.QueryRow(`SELECT value FROM state WHERE key=?;`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {

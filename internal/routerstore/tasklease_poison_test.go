@@ -7,7 +7,7 @@ import (
 
 // leaseOwnership reads the raw ownership columns, bypassing Task so the test
 // asserts on stored state rather than on whatever the scanner chooses to expose.
-func leaseOwnership(t *testing.T, s *Store, agent, taskID string) (token, expires, claimedBy, threadID string) {
+func leaseOwnership(t *testing.T, s *SQLiteStore, agent, taskID string) (token, expires, claimedBy, threadID string) {
 	t.Helper()
 	row := s.db.QueryRow(`SELECT lease_token,lease_expires,claimed_by,thread_id FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID)
 	if err := row.Scan(&token, &expires, &claimedBy, &threadID); err != nil {
@@ -20,7 +20,7 @@ func leaseOwnership(t *testing.T, s *Store, agent, taskID string) (token, expire
 // that still carries lease ownership. It is written as a raw UPDATE on purpose —
 // the point of the fix is that no supported API can produce this state anymore,
 // so the regression test must forge it rather than reach it through the store.
-func poisonTask(t *testing.T, s *Store, agent, taskID, status, token, expires string) {
+func poisonTask(t *testing.T, s *SQLiteStore, agent, taskID, status, token, expires string) {
 	t.Helper()
 	if _, err := s.db.Exec(`UPDATE tasks SET status=?,lease_token=?,lease_expires=?,claimed_by='dead-worker',thread_id='dead-thread' WHERE agent=? AND task_id=?;`,
 		status, token, expires, agent, taskID); err != nil {

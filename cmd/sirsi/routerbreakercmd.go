@@ -29,7 +29,7 @@ var routerBreakersJSON bool
 // SIRSI_ROUTER_DB when set, else ~/.sirsi/router.db. Pointing a breaker verb
 // at a different store than the dispatcher would let an operator "clear" a
 // breaker that is still tripped for everyone else.
-func openRouterStore() (*routerstore.Store, error) {
+func openRouterStore() (routerstore.Store, error) {
 	dbPath, err := routerstore.DefaultStorePath()
 	if err != nil {
 		return nil, err

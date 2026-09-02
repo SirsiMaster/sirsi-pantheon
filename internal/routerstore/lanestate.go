@@ -30,7 +30,7 @@ type LaneOperationalState struct {
 // ClassifyLane is the sole operational-state classifier for Horus and the
 // reconciler. wakeRoutable is supplied by the runtime wake registry; process
 // existence and thread heartbeat are intentionally not accepted as inputs.
-func (s *Store) ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error) {
+func (s *SQLiteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error) {
 	agent = strings.TrimSpace(agent)
 	if agent == "" {
 		return LaneOperationalState{}, fmt.Errorf("routerstore: lane agent is required")

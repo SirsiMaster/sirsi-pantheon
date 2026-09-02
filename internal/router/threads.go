@@ -438,7 +438,7 @@ func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 	return records, nil
 }
 
-func openThreadStore() (*routerstore.Store, error) {
+func openThreadStore() (routerstore.Store, error) {
 	path, err := routerstore.DefaultStorePath()
 	if err != nil {
 		return nil, err

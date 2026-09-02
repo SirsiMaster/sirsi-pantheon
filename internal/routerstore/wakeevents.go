@@ -41,20 +41,20 @@ func scanWakeEvent(scanner interface{ Scan(...any) error }) (WakeEvent, error) {
 // ClaimWakeEvent leases the oldest due event. Claiming increments the bounded
 // attempt counter; delivery acknowledgment must later point to a real store
 // action through AckWakeEvent.
-func (s *Store) ClaimWakeEvent(ttl time.Duration) (*WakeEvent, error) {
+func (s *SQLiteStore) ClaimWakeEvent(ttl time.Duration) (*WakeEvent, error) {
 	return s.claimWakeEventFor("", ttl)
 }
 
 // ClaimWakeEventFor is the supervisor form: one lane's event cannot consume
 // another lane's delivery lease merely because it sorts first globally.
-func (s *Store) ClaimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, error) {
+func (s *SQLiteStore) ClaimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: wake-event agent is required")
 	}
 	return s.claimWakeEventFor(strings.TrimSpace(agent), ttl)
 }
 
-func (s *Store) claimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, error) {
+func (s *SQLiteStore) claimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, error) {
 	if ttl <= 0 {
 		ttl = time.Minute
 	}
@@ -106,7 +106,7 @@ func (s *Store) claimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, 
 
 // AckWakeEvent accepts only a non-empty store-action reference (for example a
 // router claim ID or task lease ID), never a process heartbeat.
-func (s *Store) AckWakeEvent(eventID, token, ackRef string) error {
+func (s *SQLiteStore) AckWakeEvent(eventID, token, ackRef string) error {
 	ackRef = strings.TrimSpace(ackRef)
 	if ackRef == "" {
 		return fmt.Errorf("routerstore: wake acknowledgment requires a store-action reference")
@@ -134,7 +134,7 @@ func (s *Store) AckWakeEvent(eventID, token, ackRef string) error {
 	return nil
 }
 
-func (s *Store) validateWakeAckRef(agent, sourceKind, sourceID, ref string) error {
+func (s *SQLiteStore) validateWakeAckRef(agent, sourceKind, sourceID, ref string) error {
 	parts := strings.Split(ref, ":")
 	switch {
 	case len(parts) == 3 && parts[0] == "router-lease" && sourceKind == "router_item" && sourceID == parts[1]:
@@ -205,7 +205,7 @@ func expireWakeLeasesTx(tx *sql.Tx, now time.Time, agent string) (sql.Result, er
 
 // FailWakeEvent schedules bounded exponential retry. The third failure is a
 // durable terminal escalation state for reconciliation/Horus.
-func (s *Store) FailWakeEvent(eventID, token, failure string) error {
+func (s *SQLiteStore) FailWakeEvent(eventID, token, failure string) error {
 	now := s.clock().UTC()
 	tx, err := s.beginImmediate()
 	if err != nil {
@@ -233,7 +233,7 @@ func (s *Store) FailWakeEvent(eventID, token, failure string) error {
 	return tx.Commit()
 }
 
-func (s *Store) ListWakeEvents(agent string) ([]WakeEvent, error) {
+func (s *SQLiteStore) ListWakeEvents(agent string) ([]WakeEvent, error) {
 	query := wakeEventSelect
 	var rows *sql.Rows
 	var err error

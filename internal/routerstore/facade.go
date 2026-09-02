@@ -41,7 +41,7 @@ type SendReq struct {
 
 // idemKey builds the §2b idempotency key:
 // (from, to, type, subject_key, source_item_id, time_bucket).
-func (s *Store) idemKey(r SendReq, now time.Time) string {
+func (s *SQLiteStore) idemKey(r SendReq, now time.Time) string {
 	subject := r.SubjectKey
 	if strings.TrimSpace(subject) == "" {
 		subject = slugify(r.Title)
@@ -55,7 +55,7 @@ func (s *Store) idemKey(r SendReq, now time.Time) string {
 //   - idempotent duplicate → (existing id, true, nil); occurrences bumped
 //   - over quota → ("", false, ErrOverQuota); throttle singleton updated
 //   - tripped breaker → ("", false, ErrBreakerOpen)
-func (s *Store) SendGuarded(r SendReq) (string, bool, error) {
+func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
 	if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" {
 		return "", false, fmt.Errorf("routerstore: SendGuarded: from and to are required")
 	}
@@ -86,7 +86,7 @@ func (s *Store) SendGuarded(r SendReq) (string, bool, error) {
 
 // sendGuardedOnce is one attempt of SendGuarded. Never call it directly —
 // callers must go through SendGuarded so contention is retried.
-func (s *Store) sendGuardedOnce(r SendReq) (string, bool, error) {
+func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	now := s.clock()
 	key := s.idemKey(r, now)
 
@@ -170,7 +170,7 @@ func (s *Store) sendGuardedOnce(r SendReq) (string, bool, error) {
 // (source_item, failure_class) — §2b axiom 5. First occurrence creates ONE
 // bounded item; every recurrence bumps occurrences/last_seen in place. The
 // partial unique index makes duplicate rows impossible even under races.
-func (s *Store) escalateTx(tx *sql.Tx, now time.Time, sourceItem, failureClass, title, body string) error {
+func (s *SQLiteStore) escalateTx(tx *sql.Tx, now time.Time, sourceItem, failureClass, title, body string) error {
 	if sourceItem == "" || failureClass == "" {
 		return fmt.Errorf("routerstore: escalate: source_item and failure_class are required")
 	}
@@ -208,7 +208,7 @@ type DispatchCounters struct {
 }
 
 // Counters returns the dispatch health aggregate.
-func (s *Store) Counters() (DispatchCounters, error) {
+func (s *SQLiteStore) Counters() (DispatchCounters, error) {
 	var c DispatchCounters
 	rows, err := s.db.Query(`SELECT name, value FROM counters;`)
 	if err != nil {
@@ -252,7 +252,7 @@ func (s *Store) Counters() (DispatchCounters, error) {
 // GC applies retention (§2b axiom 9): terminal items older than keep are
 // deleted (their audit lives in the exported markdown / git history), and
 // quota buckets older than two windows are dropped. Returns rows removed.
-func (s *Store) GC(keep time.Duration) (int64, error) {
+func (s *SQLiteStore) GC(keep time.Duration) (int64, error) {
 	now := s.clock()
 	cutoff := now.Add(-keep).Format(time.RFC3339)
 	res, err := s.exec(

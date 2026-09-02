@@ -162,7 +162,7 @@ func deriveTaskLiveness(t Task, now time.Time) string {
 	return "unknown"
 }
 
-func (s *Store) AddTask(t Task) error {
+func (s *SQLiteStore) AddTask(t Task) error {
 	if t.Status == "" {
 		t.Status = "pending"
 	}
@@ -252,7 +252,7 @@ func hasOwnerInstruction(links []TaskLink) bool {
 	return false
 }
 
-func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
+func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.AddTokens < 0 || u.AddSeconds < 0 {
 		return Task{}, fmt.Errorf("routerstore: accounting increments cannot be negative")
 	}
@@ -389,7 +389,7 @@ func scanTask(scanner interface{ Scan(...any) error }) (Task, error) {
 	return t, nil
 }
 
-func (s *Store) GetTask(agent, taskID string) (Task, error) {
+func (s *SQLiteStore) GetTask(agent, taskID string) (Task, error) {
 	t, err := scanTask(s.db.QueryRow(taskSelect+` WHERE agent=? AND task_id=?;`, agent, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Task{}, ErrNotFound
@@ -401,7 +401,7 @@ func (s *Store) GetTask(agent, taskID string) (Task, error) {
 	return t, nil
 }
 
-func (s *Store) ListTasks(agent string) ([]Task, error) {
+func (s *SQLiteStore) ListTasks(agent string) ([]Task, error) {
 	query := taskSelect
 	var rows *sql.Rows
 	var err error

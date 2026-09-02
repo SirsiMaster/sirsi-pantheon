@@ -24,7 +24,7 @@ import (
 var WaitSafetyRecheck = 30 * time.Second
 
 // notifyBaseDir resolves the cross-process notify directory.
-func (s *Store) notifyBaseDir() string {
+func (s *SQLiteStore) notifyBaseDir() string {
 	if s.notifyDir != "" {
 		return s.notifyDir
 	}
@@ -36,7 +36,7 @@ func (s *Store) notifyBaseDir() string {
 }
 
 // NotifyPath returns agent's cross-process wake FIFO path.
-func (s *Store) NotifyPath(agent string) string {
+func (s *SQLiteStore) NotifyPath(agent string) string {
 	base := s.notifyBaseDir()
 	if base == "" {
 		return ""
@@ -48,7 +48,7 @@ func (s *Store) NotifyPath(agent string) string {
 // cross-process FIFO. Fire-and-forget: delivery truth lives in the store row
 // (a woken waiter re-reads its inbox; a missed signal is caught by the safety
 // re-check), so nothing here can fail a send.
-func (s *Store) notifyWaiters(agent string) {
+func (s *SQLiteStore) notifyWaiters(agent string) {
 	s.waitMu.Lock()
 	chans := s.waiters[agent]
 	delete(s.waiters, agent)
@@ -61,11 +61,11 @@ func (s *Store) notifyWaiters(agent string) {
 
 // NotifyAgent is the exported wake for callers that mutate items outside the
 // facade (e.g. an owner reopen making an item claimable again).
-func (s *Store) NotifyAgent(agent string) { s.notifyWaiters(agent) }
+func (s *SQLiteStore) NotifyAgent(agent string) { s.notifyWaiters(agent) }
 
 // pokeFIFO writes one byte to agent's notify FIFO iff a reader is listening.
 // O_NONBLOCK: no reader (ENXIO) or missing FIFO is a silent no-op.
-func (s *Store) pokeFIFO(agent string) {
+func (s *SQLiteStore) pokeFIFO(agent string) {
 	path := s.NotifyPath(agent)
 	if path == "" {
 		return
@@ -82,7 +82,7 @@ func (s *Store) pokeFIFO(agent string) {
 // one struct{} per wake poke until ctx ends. The returned channel is closed
 // on exit. Cross-process counterpart of the in-process wait channel: a
 // wake-loop process selects on this instead of polling.
-func (s *Store) ListenNotify(ctx context.Context, agent string) (<-chan struct{}, error) {
+func (s *SQLiteStore) ListenNotify(ctx context.Context, agent string) (<-chan struct{}, error) {
 	path := s.NotifyPath(agent)
 	if path == "" {
 		return nil, fmt.Errorf("routerstore: ListenNotify: no home dir for notify FIFO")
@@ -127,7 +127,7 @@ func (s *Store) ListenNotify(ctx context.Context, agent string) (<-chan struct{}
 // observes, it never claims). A live send wakes a waiter in well under 250ms
 // (PRD /goal #1, proven by TestWaitWakesUnder250ms); the timeout is a ceiling,
 // not a poll floor, and WaitSafetyRecheck catches any missed signal.
-func (s *Store) Wait(ctx context.Context, agent string, timeout time.Duration) (bool, error) {
+func (s *SQLiteStore) Wait(ctx context.Context, agent string, timeout time.Duration) (bool, error) {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
@@ -173,7 +173,7 @@ func (s *Store) Wait(ctx context.Context, agent string, timeout time.Duration) (
 
 // dropWaiter removes one waiter channel registration (idempotent — the
 // channel may already have been consumed and cleared by notifyWaiters).
-func (s *Store) dropWaiter(agent string, ch chan struct{}) {
+func (s *SQLiteStore) dropWaiter(agent string, ch chan struct{}) {
 	s.waitMu.Lock()
 	defer s.waitMu.Unlock()
 	list := s.waiters[agent]

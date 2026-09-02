@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func openTestStore(t *testing.T) *Store {
+func openTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
@@ -26,7 +26,7 @@ func openTestStore(t *testing.T) *Store {
 }
 
 // seedOpen inserts n open items for agent and returns their ids.
-func seedOpen(t *testing.T, s *Store, agent string, n int) []string {
+func seedOpen(t *testing.T, s *SQLiteStore, agent string, n int) []string {
 	t.Helper()
 	ids := make([]string, 0, n)
 	for i := 0; i < n; i++ {

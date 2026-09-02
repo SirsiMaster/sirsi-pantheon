@@ -22,7 +22,7 @@ type CompletionReport struct {
 // VerifyCompletion is the only whole-lane completion gate. It checks the
 // canonical three-source predicate plus failure/evidence integrity; callers
 // may not derive COMPLETE from zero visible inbox rows alone.
-func (s *Store) VerifyCompletion(agent string) (CompletionReport, error) {
+func (s *SQLiteStore) VerifyCompletion(agent string) (CompletionReport, error) {
 	runnable, err := s.RunnableFor(agent)
 	if err != nil {
 		return CompletionReport{}, err

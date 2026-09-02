@@ -32,7 +32,7 @@ type ReconcileReport struct {
 // ReconcileOperationalState mechanically repairs the SQLite half of the
 // supervision graph. Thread-registration OS truth is reconciled by the router
 // supervisor, which then supplies wakeRoutable to the shared classifier.
-func (s *Store) ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error) {
+func (s *SQLiteStore) ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error) {
 	now := s.clock().UTC()
 	report := ReconcileReport{Agent: agent}
 	tx, err := s.beginImmediate()

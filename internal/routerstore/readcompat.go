@@ -67,7 +67,7 @@ func (g SchemaGap) Banner() string {
 // Returns the store, the schema gap, and an error. A degraded gap is NOT an
 // error: the caller gets a working reader plus the obligation to render the
 // banner. Treating it as an error would reproduce the blackout.
-func OpenReadOnly(path string) (*Store, SchemaGap, error) {
+func OpenReadOnly(path string) (*SQLiteStore, SchemaGap, error) {
 	// mode=ro is enforced by the driver, not by convention — but ONLY via the
 	// file: URI form. Without the scheme the driver silently ignores the mode
 	// parameter and hands back a writable handle: the first version of this
@@ -101,5 +101,5 @@ func OpenReadOnly(path string) (*Store, SchemaGap, error) {
 			gap.MigratedBy = by
 		}
 	}
-	return &Store{db: db}, gap, nil
+	return &SQLiteStore{db: db}, gap, nil
 }

@@ -42,7 +42,7 @@ func TestIsReadonlyContention(t *testing.T) {
 // 2026-08-06 outage: a writer that loses the lock a few times must go on to
 // succeed, instead of failing outright with what looks like a permissions error.
 func TestRetryWrite_SucceedsAfterContentionClears(t *testing.T) {
-	s := &Store{}
+	s := &SQLiteStore{}
 	calls := 0
 	err := s.retryWrite(func() error {
 		calls++
@@ -62,7 +62,7 @@ func TestRetryWrite_SucceedsAfterContentionClears(t *testing.T) {
 // TestRetryWrite_PassesThroughNonContention guards against the retry swallowing
 // or delaying real errors. A constraint violation must surface immediately.
 func TestRetryWrite_PassesThroughNonContention(t *testing.T) {
-	s := &Store{}
+	s := &SQLiteStore{}
 	sentinel := errors.New("UNIQUE constraint failed")
 	start := time.Now()
 	calls := 0
@@ -82,7 +82,7 @@ func TestRetryWrite_PassesThroughNonContention(t *testing.T) {
 // still fails — bounded, wrapping the driver error, and naming contention so the
 // next operator does not lose an hour to chmod and rebuilds.
 func TestRetryWrite_GivesUpWithADiagnosticError(t *testing.T) {
-	s := &Store{}
+	s := &SQLiteStore{}
 	underlying := readonlyErr()
 
 	start := time.Now()

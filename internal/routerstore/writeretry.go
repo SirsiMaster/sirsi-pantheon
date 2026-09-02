@@ -84,7 +84,7 @@ func isReadonlyContention(err error) bool {
 // op MUST be safe to re-run. Every caller here either executes a single
 // autocommit statement or runs a transaction that failed before commit, so no
 // partial work is ever observable by a retry.
-func (s *Store) retryWrite(op func() error) error {
+func (s *SQLiteStore) retryWrite(op func() error) error {
 	// time.Now(), NOT s.clock(): clock() may be an injected fixed test clock,
 	// and a deadline built from a frozen clock would never expire.
 	deadline := time.Now().Add(writeRetryBudget)
@@ -112,7 +112,7 @@ func (s *Store) retryWrite(op func() error) error {
 
 // exec is the write-path replacement for s.db.Exec. Single autocommit statements
 // are trivially safe to re-run under contention.
-func (s *Store) exec(query string, args ...any) (sql.Result, error) {
+func (s *SQLiteStore) exec(query string, args ...any) (sql.Result, error) {
 	var res sql.Result
 	err := s.retryWrite(func() error {
 		var execErr error
