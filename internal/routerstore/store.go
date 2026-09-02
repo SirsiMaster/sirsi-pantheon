@@ -660,6 +660,19 @@ ALTER TABLE threads ADD COLUMN user_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE threads ADD COLUMN session TEXT NOT NULL DEFAULT '';
 ALTER TABLE threads ADD COLUMN runtime_hash TEXT NOT NULL DEFAULT '';
 `},
+	// v18 — ADR-062 §3/§4 per-host bearer tokens (rs-11). Only a SHA-256 of
+	// the token is stored; revocation is a timestamp so the record is kept.
+	{18, `
+CREATE TABLE IF NOT EXISTS host_tokens (
+    token_id   TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    host       TEXT NOT NULL,
+    label      TEXT NOT NULL DEFAULT '',
+    created    TEXT NOT NULL,
+    revoked    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_host_tokens_host ON host_tokens(host, revoked);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

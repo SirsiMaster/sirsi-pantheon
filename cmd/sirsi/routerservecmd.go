@@ -129,3 +129,85 @@ func redactDSN(s string) string {
 	}
 	return s
 }
+
+// ── per-host tokens (ADR-062 §3/§4, rs-11) ────────────────────────────────
+// Run ON THE SERVICE HOST against the service's own backend (--store); these
+// verbs are never served over the wire. Plaintext is printed exactly once.
+
+var routerTokenStore string
+
+var routerTokenCmd = &cobra.Command{
+	Use:   "token",
+	Short: "Mint, list or revoke per-host bearer tokens for the router service (run on the service host)",
+}
+
+var routerTokenMintCmd = &cobra.Command{
+	Use:   "mint <host>",
+	Short: "Mint a bearer token for one host; prints the plaintext once",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, err := openServeStore(routerTokenStore)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = store.Close() }()
+		label, _ := cmd.Flags().GetString("label")
+		plain, rec, err := store.MintHostToken(args[0], label)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "token id: %s  host: %s  created: %s\n", rec.ID, rec.Host, rec.Created)
+		fmt.Fprintf(cmd.OutOrStdout(), "SIRSI_ROUTER_TOKEN=%s\n", plain)
+		fmt.Fprintln(cmd.ErrOrStderr(), "  (shown once; only its hash is stored)")
+		return nil
+	},
+}
+
+var routerTokenRevokeCmd = &cobra.Command{
+	Use:   "revoke <token-id>",
+	Short: "Revoke a host token and every session minted under its host",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, err := openServeStore(routerTokenStore)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = store.Close() }()
+		if err := store.RevokeHostToken(args[0]); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "revoked %s (effective on that host's next request)\n", args[0])
+		return nil
+	},
+}
+
+var routerTokenListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List host tokens (ids, hosts, labels; never plaintext)",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		store, err := openServeStore(routerTokenStore)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = store.Close() }()
+		list, err := store.ListHostTokens()
+		if err != nil {
+			return err
+		}
+		for _, t := range list {
+			state := "active"
+			if t.Revoked != "" {
+				state = "revoked " + t.Revoked
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-16s %-24s %s  %s\n", t.ID, t.Host, t.Label, t.Created, state)
+		}
+		return nil
+	},
+}
+
+func init() {
+	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", "", "postgres:// DSN or SQLite path of the SERVICE's backend (required)")
+	routerTokenMintCmd.Flags().String("label", "", "free-text label (e.g. the machine's name)")
+	routerTokenCmd.AddCommand(routerTokenMintCmd, routerTokenRevokeCmd, routerTokenListCmd)
+	routerCmd.AddCommand(routerTokenCmd)
+}
