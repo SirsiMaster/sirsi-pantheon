@@ -86,10 +86,32 @@ Then **ownership**: a lease can only be completed, failed, blocked, started or
 renewed by the session that claimed it. A copied lease token from another
 process is refused with `ErrNotOwner`.
 
-Still to come in Phase C: per-host tokens that can be minted, rotated and
-revoked individually (today every node shares the one `--token-env` secret),
-and a release-manifest check of the runtime hash. Until per-host tokens land,
-keep the service on Tailscale or a VPC.
+## Per-host tokens
+
+The `--token-env` secret is the **bootstrap** token: it can mint sessions for
+any host. Give each machine its own token instead, and hand the bootstrap
+secret to nobody:
+
+```bash
+# on the service host, against the service's own backend
+sirsi router token mint m1-backup --label "M1 backup Mac" --store ~/.sirsi/router.db
+#   token id: 9335d398…  host: m1-backup
+#   SIRSI_ROUTER_TOKEN=<printed once — copy it to that machine>
+
+sirsi router token list   --store ~/.sirsi/router.db
+sirsi router token revoke 9335d398328a9152 --store ~/.sirsi/router.db
+```
+
+A per-host token can only mint sessions for the host it was minted for, so a
+machine cannot claim to be another. Revoking a token also revokes every session
+minted under that host; the machine is refused on its very next request, and no
+other machine notices. The host name a node presents is its `hostname`.
+
+Adding a machine is therefore: mint a token, set `SIRSI_ROUTER_URL` and
+`SIRSI_ROUTER_TOKEN` on it, and `sirsi thread register`.
+
+Still to come: a release-manifest check of the runtime hash (Phase D). Keep the
+service on Tailscale or a VPC until the hosted deployment lands.
 
 ## Migrating an existing ledger
 

@@ -1,7 +1,7 @@
 -- Router ledger — Postgres schema (ADR-062 §1/§3, Migration step rs-05).
 --
--- This is the SQLite schema at user_version 17 (internal/routerstore/store.go
--- migrations 1..17) translated once, plus the ADR-062 §3 identity tables
+-- This is the SQLite schema at user_version 18 (internal/routerstore/store.go
+-- migrations 1..18) translated once, plus the ADR-062 §3 identity tables
 -- (sessions, lease_sessions) and identity columns on threads. A Postgres ledger is
 -- always created fresh by `sirsi router migrate` from a quiesced SQLite dump
 -- (rs-12), so there is no incremental migration chain here: one baseline,
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
     version    INTEGER NOT NULL,
     applied_at TEXT    NOT NULL
 );
-INSERT INTO schema_version(version, applied_at) VALUES (17, router.now_rfc3339())
+INSERT INTO schema_version(version, applied_at) VALUES (18, router.now_rfc3339())
   ON CONFLICT (singleton) DO NOTHING;
 
 -- ── v1 ─────────────────────────────────────────────────────────────────────
@@ -262,6 +262,18 @@ CREATE TABLE lease_sessions (
     session TEXT NOT NULL,
     PRIMARY KEY (kind, key)
 );
+
+-- ── v18 — per-host bearer tokens (rs-11) ───────────────────────────────────
+
+CREATE TABLE host_tokens (
+    token_id   TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    host       TEXT NOT NULL,
+    label      TEXT NOT NULL DEFAULT '',
+    created    TEXT NOT NULL,
+    revoked    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_host_tokens_host ON host_tokens(host, revoked);
 
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME

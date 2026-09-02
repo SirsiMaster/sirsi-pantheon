@@ -51,13 +51,16 @@ type Store interface {
 	ItemSession(id string) (string, error)
 	ListAgents() ([]Agent, error)
 	ListAll() ([]Item, error)
+	ListHostTokens() ([]HostToken, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)
 	ListTasks(agent string) ([]Task, error)
 	ListThreads() ([]ThreadRecord, error)
 	ListWakeEvents(agent string) ([]WakeEvent, error)
 	ListenNotify(ctx context.Context, agent string) (<-chan struct{}, error)
+	LookupHostToken(plaintext string) (HostToken, error)
 	MarkRequirementAudit(agent, evidenceRef string) error
+	MintHostToken(host, label string) (string, HostToken, error)
 	MintSession(host, agent, runtimeHash string) (Session, error)
 	NotifyAgent(agent string)
 	NotifyPath(agent string) string
@@ -75,6 +78,7 @@ type Store interface {
 	ResetBreaker(domain string) error
 	ResetTaskAttempts(agent, taskID string) error
 	ResumeThreadCAS(record ThreadRecord, suspendedAt string) error
+	RevokeHostToken(id string) error
 	RevokeSession(id string) error
 	RunnableFor(agent string) (RunnableState, error)
 	Satisfy(reqID string) error

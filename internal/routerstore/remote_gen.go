@@ -167,6 +167,11 @@ func (rs *RemoteStore) ListAll() ([]Item, error) {
 	err := rs.call("ListAll", nil, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) ListHostTokens() ([]HostToken, error) {
+	var o0 []HostToken
+	err := rs.call("ListHostTokens", nil, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ListIdentifiers(namespace string) ([]Identifier, error) {
 	var o0 []Identifier
 	err := rs.call("ListIdentifiers", []any{namespace}, &o0)
@@ -192,8 +197,19 @@ func (rs *RemoteStore) ListWakeEvents(agent string) ([]WakeEvent, error) {
 	err := rs.call("ListWakeEvents", []any{agent}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) LookupHostToken(plaintext string) (HostToken, error) {
+	var o0 HostToken
+	err := rs.call("LookupHostToken", []any{plaintext}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) MarkRequirementAudit(agent, evidenceRef string) error {
 	return rs.call("MarkRequirementAudit", []any{agent, evidenceRef})
+}
+func (rs *RemoteStore) MintHostToken(host, label string) (string, HostToken, error) {
+	var o0 string
+	var o1 HostToken
+	err := rs.call("MintHostToken", []any{host, label}, &o0, &o1)
+	return o0, o1, err
 }
 func (rs *RemoteStore) MintSession(host, agent, runtimeHash string) (Session, error) {
 	var o0 Session
@@ -248,7 +264,8 @@ func (rs *RemoteStore) ResetTaskAttempts(agent, taskID string) error {
 func (rs *RemoteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
 	return rs.call("ResumeThreadCAS", []any{record, suspendedAt})
 }
-func (rs *RemoteStore) RevokeSession(id string) error { return rs.call("RevokeSession", []any{id}) }
+func (rs *RemoteStore) RevokeHostToken(id string) error { return rs.call("RevokeHostToken", []any{id}) }
+func (rs *RemoteStore) RevokeSession(id string) error   { return rs.call("RevokeSession", []any{id}) }
 func (rs *RemoteStore) RunnableFor(agent string) (RunnableState, error) {
 	var o0 RunnableState
 	err := rs.call("RunnableFor", []any{agent}, &o0)
