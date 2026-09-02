@@ -198,6 +198,14 @@ if ! go vet ./... 2>/dev/null; then
     exit 1
 fi
 
+# ── 2b. router store direct-open gate (ADR-062 §1) — matches CI exactly ──
+if [ -x scripts/check-router-store-open.sh ]; then
+    if ! bash scripts/check-router-store-open.sh >/dev/null 2>&1; then
+        echo "  ❌ router store opened outside routerstore.Resolve() — run: bash scripts/check-router-store-open.sh"
+        exit 1
+    fi
+fi
+
 # ── 3. golangci-lint — matches CI exactly ───────────────────────────
 if command -v golangci-lint >/dev/null 2>&1; then
     if [ -n "$CHANGED_PKGS" ] && [ "$CHANGED_PKGS" != "./..." ]; then

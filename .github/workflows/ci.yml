@@ -36,6 +36,14 @@ jobs:
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
 
+      # ADR-062 §1: the router ledger is opened only through routerstore.Resolve().
+      # A direct open outside the package is a split-brain path once a node is on
+      # the router service. --self-test first: a gate never shown red is untested.
+      - name: router store direct-open gate (ADR-062)
+        run: |
+          bash scripts/check-router-store-open.sh --self-test
+          bash scripts/check-router-store-open.sh
+
       # Structural invariant, not a style check: every user-visible font on the
       # menubar surface must route through the width-derived type scale. It runs
       # on the HOSTED runner because it needs no Xcode — a guard that only runs
