@@ -148,6 +148,25 @@ Two things it may tell you:
 Migrate a **copy** of the live file if the running fleet is still on an older
 binary: opening the source advances its schema version.
 
+## Evidence run
+
+The two-host concurrency proof (goal G3) is reproducible with the hidden
+`bench` verb. On the service host, with the service up and a per-host token
+on each node:
+
+```bash
+sirsi router bench seed  --agent bench --count 1000            # one host
+sirsi router bench claim --agent bench --trials 2000 --ttl 120s --out a.jsonl   # host A
+sirsi router bench claim --agent bench --trials 2000 --ttl 120s --out b.jsonl   # host B, concurrently
+sirsi router bench report a.jsonl b.jsonl
+```
+
+`report` fails if any item was claimed by two hosts while the first claim was
+live, and prints p50/p95/p99 per verb per host. To inject latency, start the
+service with `SIRSI_ROUTER_SERVE_TEST_DELAY=50ms`; to inject an outage, stop
+and restart the database mid-run. The 2026-09-02 run and its findings are in
+`docs/evidence/ADR-062-RS13-TWO-MAC-EVIDENCE-20260902.md`.
+
 ## Troubleshooting
 
 | Symptom | Cause |

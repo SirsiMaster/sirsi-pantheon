@@ -82,7 +82,12 @@ func runRouterServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	h, err := routerstore.Handler(store, routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait})
+	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait}
+	if d, derr := time.ParseDuration(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_SERVE_TEST_DELAY"))); derr == nil && d > 0 {
+		opts.TestDelay = d
+		fmt.Fprintf(cmd.ErrOrStderr(), "router serve: TEST DELAY %s injected on every call (SIRSI_ROUTER_SERVE_TEST_DELAY) — evidence runs only\n", d)
+	}
+	h, err := routerstore.Handler(store, opts)
 	if err != nil {
 		return err
 	}
