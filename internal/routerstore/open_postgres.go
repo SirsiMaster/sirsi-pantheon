@@ -27,7 +27,7 @@ var PostgresRolesSQL string
 // postgresSchemaVersion pairs with SQLite's PRAGMA user_version high-water
 // mark that pg/schema.sql was translated from. OpenPostgres refuses any other
 // value: a ledger this binary does not understand must never be written.
-const postgresSchemaVersion = 16
+const postgresSchemaVersion = 17
 
 // OpenPostgres opens the Ra ledger over a Postgres DSN (ADR-062 §1). The
 // schema must already exist (applied by router_migrator); this never runs
