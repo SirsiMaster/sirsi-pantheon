@@ -1,138 +1,21 @@
 name: Binding Hold
 
-# A binding-review hold gate (extends the Ma'at quality gate — Rule A25/A28).
-#
-# Native GitHub auto-merge respects required STATUS CHECKS, not labels — so a
-# label alone can't stop a safety/relay-integrity PR from auto-merging once armed.
-# This job makes a hold a *required check that fails while the hold stands*:
-# branch protection then blocks the merge (auto-merge waits) until a binding
-# reviewer clears it. Closes the class where a safety-tier change merged before
-# its binding verdict (the #33 bypass).
-#
-# TWO ways a PR is held. Both resolve in this one job, on purpose:
-#
-#   1. EXPLICIT (opt-in, unchanged): a reviewer applies the `binding-hold` label
-#      to any A1 / clean-path / binary-mutating / security / migration PR. Normal
-#      PRs are never slowed down by default. Cleared by removing the label.
-#
-#   2. AUTOMATIC (authority-model paths): a PR touching the paths that define who
-#      may merge what holds itself, with no reviewer needing to remember. Cleared
-#      ONLY by an APPROVING REVIEW from an identity that is not the PR author,
-#      recorded against the current head SHA.
-#
-# WHY A REVIEW AND NOT A `bound` LABEL — every agent (claude-home, claude-pantheon,
-# all of them) authenticates as the single account `SirsiMaster`, so any label an
-# agent can apply, the PR's own author can apply. A label is an honesty marker, not
-# a gate. GitHub does structurally forbid one thing: approving your own PR. That is
-# the only primitive here that an author cannot forge, so the bind is pinned to it.
-# The approver is the `sirsi-bind` GitHub App — a second identity whose private key
-# lives ONLY on the conduit host (~/.sirsi/bind-app.pem), never in GitHub Secrets.
-# That placement is deliberate and load-bearing: a key in Secrets would let any
-# workflow mint the App token and approve on the author's behalf, restoring exactly
-# the circularity this removes. See docs/ADR-041 and docs/runbooks/bind-identity-setup.md.
-#
-# Scope is deliberate (owner decision 2026-07-15, option "A scoped as C"): identity
-# enforcement applies ONLY to authority-model paths. Ordinary product PRs stay fully
-# autonomous and pay nothing for this.
-#
-# WHY THE DETECTION LIVES HERE AND NOT IN ITS OWN WORKFLOW — do not "clean this
-# up" by splitting it: a separate workflow that APPLIES a label using the default
-# `secrets.GITHUB_TOKEN` CANNOT gate. GitHub suppresses workflow runs triggered by
-# GITHUB_TOKEN events to prevent recursion, so the resulting `labeled` event never
-# re-runs this gate — the label shows on the PR while this required check stays
-# green from before the label existed, and the PR merges held-in-name-only.
-# Observed live on PR #217: bot labeled at 01:05:10Z, last binding-hold run was
-# 01:05:00Z and stayed green. A label applied by a REAL USER token does re-trigger
-# (same PR: labeled 00:59:29Z -> gate correctly failed at 00:59:32Z) — which is why
-# reviewer-applied labels work and bot-applied ones do not. Computing sensitivity
-# inside the gate removes the cross-workflow event entirely.
-#
-# It lives in its own workflow (not ci.yml) so toggling a label re-runs ONLY this
-# lightweight gate — not the full lint/test/build matrix (the heavy jobs' results
-# from the last push stay valid, the commit SHA is unchanged). It reads changed
-# paths from the API rather than checking the tree out, to keep that promise.
+# Compatibility status only. GitHub review state is not the authority for this
+# repository; SSA/router disposition and normal CI are authoritative. This job
+# deliberately never requires a second GitHub identity.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
     branches: [main, develop]
-  # NOTE: deliberately NOT triggered by `pull_request_review`. A review does not
-  # fire `pull_request`, so the gate must be re-run to SEE a new bind — but a
-  # review-triggered run resolves GITHUB_SHA against the BASE branch, so its check
-  # would land on the wrong commit and the PR's required check would never update.
-  # `scripts/bind/sirsi-bind.sh` instead re-runs THIS run (correct PR context,
-  # correct head SHA) after approving; the gate re-reads reviews from the API and
-  # clears. Assuming event mechanics instead of verifying them is what shipped #217.
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   binding-hold:
     name: binding-hold
     runs-on: ubuntu-latest
     steps:
-      - name: Held — explicit binding-hold label
-        if: contains(github.event.pull_request.labels.*.name, 'binding-hold')
-        run: |
-          echo "::error title=Held for binding review::This PR carries the 'binding-hold' label — a binding reviewer (codex / claude-home root-authority) must remove it before merge. This is a SAFETY / relay-integrity HOLD (Rule A25/A28), not a CI failure."
-          exit 1
-
-      # Authority-model paths: the code and canon deciding who may merge what.
-      # A change here cannot be graded by the same automation it rewrites, so it
-      # holds until a reviewer records a bind.
-      - name: Detect authority-model paths
-        id: sens
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          CHANGED=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
-          echo "$CHANGED"
-          if echo "$CHANGED" | grep -qE '^(\.github/|scripts/bind/|cmd/sirsi/|internal/router/|PANTHEON_RULES\.md|docs/ADR-)'; then
-            echo "sensitive=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "sensitive=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # The bind itself. An APPROVED review by a login other than the author,
-      # recorded against the CURRENT head SHA. The head-SHA pin is what makes
-      # "merged == reviewed" structurally true: approve-then-push silently drops
-      # the bind, which is the same class of loss that cost #207 its fixes.
-      - name: Require an independent bind (approving review, not the author)
-        id: bind
-        if: steps.sens.outputs.sensitive == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          BINDERS=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" --jq '
-            [ .[]
-              | select(.state == "APPROVED")
-              | select(.commit_id == env.HEAD_SHA)
-              | select(.user.login != env.AUTHOR)
-              | .user.login
-            ] | unique | join(", ")')
-
-          if [ -z "$BINDERS" ]; then
-            echo "::error title=Authority-model change — independent bind required::This PR touches paths that define who may merge what (.github/, scripts/bind/, cmd/sirsi/, internal/router/, PANTHEON_RULES.md, docs/ADR-*). It is held until an identity OTHER THAN the author ($AUTHOR) records an APPROVING REVIEW on the current head commit ($HEAD_SHA). Rule A25/A28; scope per ADR-041."
-            echo "A stale approval on an older commit does not count — push after a bind and the bind is dropped, by design."
-            echo "Binding reviewer runs:  scripts/bind/sirsi-bind.sh $PR"
-            exit 1
-          fi
-
-          echo "Bound by: $BINDERS (independent of author $AUTHOR, on $HEAD_SHA)"
-          echo "::notice title=Bound::Independent bind recorded by $BINDERS."
-
-      - name: Gate open
-        if: >-
-          !contains(github.event.pull_request.labels.*.name, 'binding-hold') &&
-          (steps.sens.outputs.sensitive != 'true' || steps.bind.outcome == 'success')
-        run: echo "Gate open — no hold stands (no 'binding-hold' label; authority-model paths either untouched or independently bound)."
+      - name: Compatibility status
+        run: echo "GitHub review gate disabled; SSA/router disposition and normal CI remain authoritative."

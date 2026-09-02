@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 59 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-062**
+**Total ADRs: 60 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-063**
 
 ---
 
@@ -60,6 +60,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-059](ADR-059-THOTH-EXTRACTION.md) | Extract Thoth as a Standalone Package (renumbered from a draft that collided with ADR-016 TUI Primary Interface) | Draft | 2026-08-06 |
 | [ADR-060](ADR-060-GO-OWNS-THE-SERVING-PATH.md) | Go owns the serving path; Python becomes a called extension (renumbered from a draft that collided with ADR-046 Local Sovereignty) | Draft | 2026-08-06 |
 | [ADR-061](ADR-061-DURABLE-CONTINUOUS-EXECUTION-ENFORCEMENT.md) | Durable Continuous-Execution Enforcement — provider-neutral Go/store implementation of the three-source runnable predicate, fenced leases, wake acknowledgment, reconciliation, and evidence-backed completion | **Accepted design; implementation under review, not installed** | 2026-08-06 |
+| [ADR-062](ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md) | Router as a Service — fleet concurrency for Anubis and Ra: `Store` interface + single `Resolve()`, SQLite (Anubis) and Postgres (Ra) backends, `sirsi router serve` over HTTPS with registered agent sessions, Cloud Run + Cloud SQL in `sirsi-nexus-live`, direct gcloud deploy | **Proposed rev 3 — SSA ACCEPT for Migration step 1 only; steps 2–4 conditional on bind evidence** | 2026-09-02 |
 
 ---
 
@@ -169,6 +170,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ADR-059 | **Draft** — Extract Thoth as a standalone package. Renumbered 2026-08-06 off a collision with ADR-016. |
 | ADR-060 | **Draft** — Go owns the serving path. Renumbered 2026-08-06 off a collision with ADR-046. |
 | ADR-061 | **Accepted design; implementation under review, not installed** — Durable Continuous-Execution Enforcement. Provider-neutral Go/store supervision defines the three-source runnable predicate, transactional leases, store-action wake acknowledgment, honest lane classification, reconciliation, and evidence-backed completion for every LLM surface. |
-| ADR-062 | Next available |
+| ADR-062 | **Proposed rev 3** — Router as a Service. SSA (`sirsi-software-admin`) accepted step-1 design authority (interface, resolver, direct-open gate) on 2026-09-02; service, migration and cutover need their own binds. Deploy is direct gcloud, never GitHub Actions (owner rule). |
+| ADR-063 | Next available |
 
 > **Last updated:** July 7, 2026 — indexed ADR-036 (Router v2 Durable Dispatch, accepted 2026-07-07; Phases 1-4 shipped #144/#164/#168/#174-era; cutover deliberately deferred to an owner-gated step); next available advanced to ADR-037. Earlier — July 4, 2026 — indexed ADR-035 (Runaway-Proof Execution, accepted 2026-07-04; canonizes the codex-APPROVED Phase-2 Dispatch Contract axioms at the architecture level and adds Sekhmet's independent host backstop — the "Runaway Executor" doctor finding + `sirsi router quarantine-worker`; provenance: the 2026-07-03/04 runaway-executor incident, case study `docs/case-studies/2026-07-04-runaway-executor.md`); next available advanced to ADR-036. Earlier — July 3, 2026 — indexed ADR-031-C (Broker Enforcement Must Be Universal, accepted 2026-07-03; a router-triage daemon and the warm-server's own LaunchAgent both bypassed the ADR-031-A/B broker by invoking `mlx_lm.*` directly — neither layer failed, neither was in the call path; both fixed and verified live; case study `docs/case-studies/2026-06-18-pantheon-did-not-prevent-oom.md` §6 updated same commit). Earlier — July 2, 2026 — indexed ADR-034 (Orchestration Brain, accepted 2026-07-02; governs PANTHEON_RULES A29; codifies + surfaces the existing `internal/router` wake substrate rather than rebuilding it); next available advanced to ADR-035. Earlier — July 1, 2026 — version-truth sweep: indexed ADR-033 (Remediation Catalog, accepted 2026-06-30, PR #125); next available advanced to ADR-034. Earlier — June 30, 2026: registry reconciled with disk (full-repo audit): added the previously-unregistered ADR-026 through ADR-032 (Horus ops-dashboard, router menubar, optional-SQLite, per-agent worktrees, native menubar popover, local-models-through-Pantheon + ADR-031-A/B resource governance, Mac-first roadmap); corrected the count and next-available pointer (ADR-032 was already taken on disk). Earlier milestone — ADR-023 **accepted**: one build-version contract (`internal/version`) replaces seven scattered `var version` literals; ldflags unified across all binaries; `internal/selfupdate` detects sibling (D2) and PATH (D3) drift locally with no network; `sirsi doctor` emits a `binary-drift` finding (`docs/ADR-023-BINARY-VERSION-CONTRACT.md`).
