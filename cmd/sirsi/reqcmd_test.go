@@ -17,7 +17,7 @@ func TestReqAuditCommandRecordsExternallyReachableAudit(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := routerstore.Open(db)
+	s, err := routerstore.OpenPath(db)
 	if err != nil {
 		t.Fatal(err)
 	}

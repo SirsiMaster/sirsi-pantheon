@@ -22,7 +22,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -264,18 +263,5 @@ func openRouterStoreForADR() (routerstore.Store, error) {
 	// SIRSI_ROUTER_DB overriding it. Matching that exactly matters — an ADR
 	// allocator pointed at a different database than the router would hand out
 	// numbers nobody else can see, which is the drift it exists to prevent.
-	dbPath := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB"))
-	if dbPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("resolve home: %w", err)
-		}
-		dbPath = filepath.Join(home, ".sirsi", "router.db")
-	}
-	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create store dir: %w", err)
-		}
-	}
-	return routerstore.Open(dbPath)
+	return routerstore.Resolve()
 }

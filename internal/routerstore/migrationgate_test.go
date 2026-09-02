@@ -99,7 +99,7 @@ var _ = os.Getenv
 
 func sharedPathForTest(t *testing.T) string {
 	t.Helper()
-	p, err := DefaultStorePath()
+	p, err := LocalPath()
 	if err != nil {
 		t.Skipf("cannot resolve the canonical store path here: %v", err)
 	}

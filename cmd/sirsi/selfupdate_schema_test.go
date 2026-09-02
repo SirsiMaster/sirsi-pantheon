@@ -20,7 +20,7 @@ func candidate(ceiling int) modversion.Info {
 func liveStoreAt(t *testing.T) (string, int) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "router.db")
-	s, err := routerstore.Open(path)
+	s, err := routerstore.OpenPath(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestSchemaGateRejectsCandidateWithNoDeclaredCeiling(t *testing.T) {
 }
 
 // TestResolveRouterDBPathPrefersEnvOverride pins the override contract the gate
-// and the conduit heal share. DefaultStorePath reads SIRSI_ROUTER_DB first
+// and the conduit heal share. LocalPath reads SIRSI_ROUTER_DB first
 // (testable via t.Setenv) and falls back to $HOME/.sirsi/router.db.
 func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", "/custom/router.db")

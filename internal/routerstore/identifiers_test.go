@@ -21,7 +21,7 @@ import (
 // naive read-then-write implementation, so it would not catch the regression.
 func TestAllocateIdentifierNeverCrossClaims(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(filepath.Join(dir, "router.db"))
+	s, err := OpenPath(filepath.Join(dir, "router.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

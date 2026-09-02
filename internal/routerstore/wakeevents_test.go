@@ -10,7 +10,7 @@ import (
 
 func TestMigration11ReplacesAgentWideWakeAckTriggers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestMigration11ReplacesAgentWideWakeAckTriggers(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	s, err = Open(path)
+	s, err = OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}

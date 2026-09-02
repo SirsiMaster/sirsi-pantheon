@@ -79,7 +79,7 @@ func TestTaskV4V5V6MigrateDirectlyToV7(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			s, err := Open(path)
+			s, err := OpenPath(path)
 			if err != nil {
 				t.Fatal(err)
 			}

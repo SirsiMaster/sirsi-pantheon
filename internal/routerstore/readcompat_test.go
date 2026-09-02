@@ -38,7 +38,7 @@ func TestBannerNamesBothVersionsAndTheCulprit(t *testing.T) {
 // have to remember to choose.
 func TestOpenReadOnlyOnCurrentSchemaReportsNoGap(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "r.db")
-	st, err := Open(path) // creates + migrates to this binary's max
+	st, err := OpenPath(path) // creates + migrates to this binary's max
 	if err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestOpenReadOnlyOnCurrentSchemaReportsNoGap(t *testing.T) {
 // what let an uncommitted build migrate production.
 func TestOpenReadOnlyRefusesWrites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "r.db")
-	st, err := Open(path)
+	st, err := OpenPath(path)
 	if err != nil {
 		t.Fatalf("seed store: %v", err)
 	}

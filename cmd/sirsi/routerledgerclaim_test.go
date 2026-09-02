@@ -11,7 +11,7 @@ import (
 func TestRouterTaskClaimIDCommandClaimsExactTask(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "router.db")
 	t.Setenv("SIRSI_ROUTER_DB", db)
-	s, err := routerstore.Open(db)
+	s, err := routerstore.OpenPath(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestRouterTaskClaimIDCommandClaimsExactTask(t *testing.T) {
 		t.Fatal(runErr)
 	}
 
-	s, err = routerstore.Open(db)
+	s, err = routerstore.OpenPath(db)
 	if err != nil {
 		t.Fatal(err)
 	}

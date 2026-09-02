@@ -21,11 +21,11 @@ var (
 	readSchemaFn      = routerstore.ReadSchemaVersion
 )
 
-// resolveRouterDBPath delegates to routerstore.DefaultStorePath, the single
+// resolveRouterDBPath delegates to routerstore.LocalPath, the single
 // authoritative resolver shared across self-update, sirsi update --cli, and
 // the install.sh schema-check gate.
 func resolveRouterDBPath() (string, error) {
-	return routerstore.DefaultStorePath()
+	return routerstore.LocalPath()
 }
 
 // resolveLiveSchema reports the live schema version a replacement candidate
