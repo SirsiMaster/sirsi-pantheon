@@ -67,7 +67,9 @@ else
 fi
 
 echo "Compiling sirsi CLI..."
-CGO_ENABLED=0 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi" ./cmd/sirsi/
+# The macOS CLI links the native vitals surface; disabling CGO here produces a
+# binary that cannot compile the same product that `make build` validates.
+CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi" ./cmd/sirsi/
 
 # --- Assemble the .app bundle ---
 echo "Assembling ${APP_NAME}..."
