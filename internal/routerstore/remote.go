@@ -59,6 +59,9 @@ var sentinelErrors = map[string]error{
 	"ErrSessionUnknown":       ErrSessionUnknown,
 	"ErrSessionRevoked":       ErrSessionRevoked,
 	"ErrNotOwner":             ErrNotOwner,
+	"ErrTokenUnknown":         ErrTokenUnknown,
+	"ErrTokenRevoked":         ErrTokenRevoked,
+	"ErrHostMismatch":         ErrHostMismatch,
 }
 
 func sentinelName(err error) string {

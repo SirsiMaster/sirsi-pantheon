@@ -8,6 +8,7 @@ package routercfg
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // StoreWakeEnv is the environment switch that promotes the durable store to the
@@ -64,6 +65,15 @@ func MarkerPath() string {
 // marker read while permitting the write would have produced a second registry
 // in silence, and the lane would have reported success.
 func StoreWake() bool {
+	// ADR-062: a node pointed at the router service has NO local files of
+	// record — the service is the cutover authority whatever this host's
+	// marker says. Found 2026-09-02 (rs-11 e2e): a node whose $HOME lacked the
+	// marker fell into the pre-cutover "files stay readable" branch and
+	// rendered the repo's frozen items/*.md after its token was revoked —
+	// a revoked node reporting stale counts as if nothing had happened.
+	if strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")) != "" {
+		return true
+	}
 	if v, ok := os.LookupEnv(StoreWakeEnv); ok {
 		return v == "1"
 	}
