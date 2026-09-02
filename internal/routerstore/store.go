@@ -146,7 +146,8 @@ type Item struct {
 // Store is a durable index over the work queue backed by SQLite.
 // A Store is safe for concurrent use by multiple goroutines.
 type SQLiteStore struct {
-	db              *sql.DB
+	db              *dbHandle
+	d               *dialect // SQL flavor the handle rewrites for; nil means sqlite
 	path            string
 	escalationAgent string
 	now             func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
@@ -182,7 +183,7 @@ func OpenPath(path string) (*SQLiteStore, error) {
 	if escalationAgent == "" {
 		escalationAgent = "owner"
 	}
-	s := &SQLiteStore{db: db, path: path, escalationAgent: escalationAgent}
+	s := &SQLiteStore{db: &dbHandle{db: db, d: sqliteDialect}, d: sqliteDialect, path: path, escalationAgent: escalationAgent}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -647,13 +648,18 @@ CREATE INDEX IF NOT EXISTS idx_threads_last_seen ON threads(last_seen_at);
 // rolls back and re-loops instead of double-applying. All statements run on one
 // pinned connection so the manual BEGIN/COMMIT is not spread across the pool.
 func (s *SQLiteStore) migrate() error {
+	if !s.dialect().hasPragmas {
+		// Postgres: schema is owned by router_migrator (pg/schema.sql); OpenPostgres
+		// already verified router.schema_version. Nothing to do here.
+		return nil
+	}
 	ctx := context.Background()
 	// Pinning the connection establishes it — which on a FRESH database runs the
 	// DSN pragmas, and setting journal_mode=WAL needs a brief exclusive lock. Two
 	// processes opening the same new store race there and one sees SQLITE_BUSY at
 	// connection-establishment, before any migration statement. Retry the pin on
 	// busy so a concurrent first-open never fails the whole Open.
-	conn, err := pinConnWithRetry(ctx, s.db)
+	conn, err := pinConnWithRetry(ctx, s.db.db)
 	if err != nil {
 		return fmt.Errorf("routerstore: migrate: pin connection: %w", err)
 	}

@@ -108,6 +108,13 @@ jobs:
         env:
           CGO_ENABLED: 1
 
+      # ADR-062 rs-07b: the same routerstore suite on PostgreSQL (the Ra backend),
+      # plus pg/schema.sql structure/behaviour/least-privilege checks with their
+      # negative controls. Self-hosted macOS runner: Homebrew postgresql@14, no
+      # Docker. Skips (exit 0, loud) only if initdb is absent on the runner.
+      - name: Router store on PostgreSQL (ADR-062)
+        run: bash scripts/ci-postgres.sh
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:

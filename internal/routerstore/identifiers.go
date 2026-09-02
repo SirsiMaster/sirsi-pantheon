@@ -62,7 +62,7 @@ func (i Identifier) Name() string { return fmt.Sprintf("%s-%03d", i.Namespace, i
 // on MaxOpenConns(1) + busy_timeout to serialize writers, which is exactly the
 // property the allocator needs: the MAX(number) read and the INSERT cannot be
 // interleaved by another allocator.
-func (s *SQLiteStore) withTx(fn func(*sql.Tx) error) error {
+func (s *SQLiteStore) withTx(fn func(*txHandle) error) error {
 	// The whole transaction retries under READONLY contention, not just the
 	// begin: SQLite frequently surfaces the lock failure at Commit. Nothing is
 	// committed on the failing path, so re-running fn observes no partial work.
@@ -111,7 +111,7 @@ func (s *SQLiteStore) AllocateIdentifier(namespace, title, owner string) (Identi
 	}
 
 	var out Identifier
-	err = s.withTx(func(tx *sql.Tx) error {
+	err = s.withTx(func(tx *txHandle) error {
 		var next int
 		// COALESCE over the whole namespace INCLUDING withdrawn rows, so a
 		// retired number is never handed out a second time.
@@ -155,7 +155,7 @@ func (s *SQLiteStore) ClaimIdentifierNumber(namespace string, number int, title,
 	}
 
 	var out Identifier
-	err = s.withTx(func(tx *sql.Tx) error {
+	err = s.withTx(func(tx *txHandle) error {
 		var existingOwner, existingTitle, existingStatus, existingSlug, claimedAt string
 		row := tx.QueryRow(
 			`SELECT owner, title, status, slug, claimed_at FROM identifiers WHERE namespace = ? AND number = ?;`, ns, number)
@@ -194,7 +194,7 @@ func (s *SQLiteStore) PublishIdentifier(namespace string, number int, slug strin
 	if err != nil {
 		return err
 	}
-	return s.withTx(func(tx *sql.Tx) error {
+	return s.withTx(func(tx *txHandle) error {
 		res, err := tx.Exec(
 			`UPDATE identifiers SET slug = ?, status = ? WHERE namespace = ? AND number = ?;`,
 			slug, IdentifierPublished, ns, number)
@@ -219,7 +219,7 @@ func (s *SQLiteStore) WithdrawIdentifier(namespace string, number int) error {
 	if err != nil {
 		return err
 	}
-	return s.withTx(func(tx *sql.Tx) error {
+	return s.withTx(func(tx *txHandle) error {
 		res, err := tx.Exec(
 			`UPDATE identifiers SET status = ? WHERE namespace = ? AND number = ?;`,
 			IdentifierWithdrawn, ns, number)

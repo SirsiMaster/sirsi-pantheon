@@ -187,7 +187,7 @@ func (s *SQLiteStore) validateWakeAckRef(agent, sourceKind, sourceID, ref string
 // failed wake attempt. A successful process invocation is not success: after
 // MaxWakeAttempts silent expiries the event terminally fails and must be
 // escalated instead of being retried forever.
-func expireWakeLeasesTx(tx *sql.Tx, now time.Time, agent string) (sql.Result, error) {
+func expireWakeLeasesTx(tx *txHandle, now time.Time, agent string) (sql.Result, error) {
 	nowText := now.UTC().Format(time.RFC3339)
 	query := `UPDATE wake_events SET
 		status=CASE WHEN attempts>=? THEN 'terminal_failed' ELSE 'pending' END,

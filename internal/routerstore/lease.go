@@ -111,7 +111,7 @@ func newToken() (string, error) {
 // beginImmediate opens a write transaction that takes the write lock up front
 // (SQLite BEGIN IMMEDIATE), so every lifecycle mutation serializes cleanly
 // under WAL instead of failing mid-transaction on lock upgrade.
-func (s *SQLiteStore) beginImmediate() (*sql.Tx, error) {
+func (s *SQLiteStore) beginImmediate() (*txHandle, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -207,7 +207,7 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 
 	var id string
 	err = tx.QueryRow(`SELECT i.id FROM items i WHERE i.status = 'open' AND i.to_agent = ? AND `+
-		actionableItemDependency("i")+` ORDER BY i.id ASC LIMIT 1;`, agent).Scan(&id)
+		actionableItemDependency("i")+` ORDER BY i.id ASC LIMIT 1`+s.dialect().claimLock+`;`, agent).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoWork
 	}
@@ -241,7 +241,7 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 // token matches AND the lease is unexpired AND the item is in a live claimed/
 // working state. Every mutation below embeds the same predicate in its UPDATE;
 // this pre-read only exists to disambiguate the error.
-func (s *SQLiteStore) fenceErrTx(tx *sql.Tx, id, token string, now time.Time) error {
+func (s *SQLiteStore) fenceErrTx(tx *txHandle, id, token string, now time.Time) error {
 	var status, curToken, expires string
 	err := tx.QueryRow(`SELECT status, lease_token, lease_expires FROM items WHERE id = ?;`, id).
 		Scan(&status, &curToken, &expires)
@@ -460,11 +460,11 @@ func (s *SQLiteStore) fencedUpdate(id, token string, now time.Time, q string, ar
 // dead-letters them when attempts are spent) — the crash-safe path that makes
 // "restart mid-lease" survivable without stranding work. Counted so the next
 // incident is one red number (§2b axiom 9).
-func (s *SQLiteStore) reclaimExpiredTx(tx *sql.Tx, now time.Time) error {
+func (s *SQLiteStore) reclaimExpiredTx(tx *txHandle, now time.Time) error {
 	return s.reclaimExpiredForTx(tx, now, "")
 }
 
-func (s *SQLiteStore) reclaimExpiredForTx(tx *sql.Tx, now time.Time, agent string) error {
+func (s *SQLiteStore) reclaimExpiredForTx(tx *txHandle, now time.Time, agent string) error {
 	filter := ""
 	args := []any{now.Format(time.RFC3339)}
 	if agent != "" {
@@ -536,10 +536,10 @@ func (s *SQLiteStore) reclaimExpiredForTx(tx *sql.Tx, now time.Time, agent strin
 }
 
 // bumpCounterTx increments a named dispatch counter (§2b axiom 9 observability).
-func bumpCounterTx(tx *sql.Tx, name string, delta int) error {
+func bumpCounterTx(tx *txHandle, name string, delta int) error {
 	_, err := tx.Exec(
 		`INSERT INTO counters(name, value) VALUES (?, ?)
-		 ON CONFLICT(name) DO UPDATE SET value = value + excluded.value;`, name, delta)
+		 ON CONFLICT(name) DO UPDATE SET value = counters.value + excluded.value;`, name, delta)
 	if err != nil {
 		return fmt.Errorf("routerstore: counter %s: %w", name, err)
 	}

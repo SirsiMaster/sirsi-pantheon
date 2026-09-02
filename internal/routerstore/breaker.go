@@ -32,7 +32,7 @@ type Breaker struct {
 }
 
 // breakerGateTx fails with ErrBreakerOpen if any given domain is tripped.
-func (s *SQLiteStore) breakerGateTx(tx *sql.Tx, domains ...string) error {
+func (s *SQLiteStore) breakerGateTx(tx *txHandle, domains ...string) error {
 	for _, d := range domains {
 		var tripped string
 		err := tx.QueryRow(`SELECT tripped_at FROM breakers WHERE domain = ?;`, d).Scan(&tripped)
@@ -52,7 +52,7 @@ func (s *SQLiteStore) breakerGateTx(tx *sql.Tx, domains ...string) error {
 // recordFailureTx bumps each domain's failure count and trips any domain that
 // crosses its threshold. Tripping writes ONE keyed-singleton operator item in
 // the same transaction — the operator sees one red card, not a flood.
-func (s *SQLiteStore) recordFailureTx(tx *sql.Tx, now time.Time, domains ...string) error {
+func (s *SQLiteStore) recordFailureTx(tx *txHandle, now time.Time, domains ...string) error {
 	for _, d := range domains {
 		threshold := BreakerThreshold
 		if d == "global" {
@@ -60,7 +60,7 @@ func (s *SQLiteStore) recordFailureTx(tx *sql.Tx, now time.Time, domains ...stri
 		}
 		if _, err := tx.Exec(
 			`INSERT INTO breakers(domain, failures) VALUES (?, 1)
-			 ON CONFLICT(domain) DO UPDATE SET failures = failures + 1;`, d); err != nil {
+			 ON CONFLICT(domain) DO UPDATE SET failures = breakers.failures + 1;`, d); err != nil {
 			return fmt.Errorf("routerstore: breaker record %s: %w", d, err)
 		}
 		var failures int

@@ -16,10 +16,7 @@ import (
 
 func openTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
-	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openBackendStore(t, filepath.Join(t.TempDir(), "router.db"))
 	t.Cleanup(func() { _ = s.Close() })
 	s.notifyDir = t.TempDir()
 	return s

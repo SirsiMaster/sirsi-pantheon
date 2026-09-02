@@ -113,6 +113,9 @@ func TestFreshSharedStoreInitializesWithoutDeploymentOverride(t *testing.T) {
 }
 
 func TestTaskContinuationTriggerMatchesAuthoritativeDependencyExpression(t *testing.T) {
+	if pgTestDSN() != "" {
+		t.Skip("introspects SQLite catalog (sqlite_master / PRAGMA); the Postgres schema is verified by scripts/check-pg-schema.sh")
+	}
 	s := newTestStore(t)
 	var triggerSQL string
 	if ifErr12 := s.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='wake_continue_after_task'`).Scan(&triggerSQL); ifErr12 != nil {

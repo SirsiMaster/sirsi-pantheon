@@ -114,7 +114,7 @@ func (s *SQLiteStore) MarkRequirementAudit(agent, evidenceRef string) error {
 	return nil
 }
 
-func requirementAuditExistsTx(tx *sql.Tx, agent string) (bool, error) {
+func requirementAuditExistsTx(tx *txHandle, agent string) (bool, error) {
 	var n int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM state WHERE key=? AND value<>'';`, requirementAuditPrefix+agent).Scan(&n); err != nil {
 		return false, err
