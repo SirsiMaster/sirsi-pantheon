@@ -159,6 +159,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, code, "", err.Error())
 			return
 		}
+		// A per-host bearer is a second, independent binding on every
+		// session-bearing request.  Checking it only while minting would let a
+		// session secret stolen from host A be replayed with any valid token for
+		// host B.  The service bootstrap token is deliberately operator-wide.
+		if tokenHost != bootstrapHost && tokenHost != sess.Host {
+			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
+			return
+		}
 	}
 
 	var req wireRequest

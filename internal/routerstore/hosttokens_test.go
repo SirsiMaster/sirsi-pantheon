@@ -56,6 +56,32 @@ func TestHostTokenAuthorizesOnlyItsOwnHost(t *testing.T) {
 	}
 }
 
+func TestHostTokenCannotUseAnotherHostsSession(t *testing.T) {
+	h := newIdentityHarness(t)
+	m1Token, _, err := h.backend.MintHostToken("m1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m5Token, _, err := h.backend.MintHostToken("m5", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m1 := NewRemoteStore(h.srv.URL, m1Token)
+	m1.sessionDir = ""
+	m1.host, m1.agent = "m1", "claude-m1"
+	m1.now = func() time.Time { return h.now }
+	if _, err := m1.Inbox("claude-m1"); err != nil {
+		t.Fatalf("positive control: m1 session: %v", err)
+	}
+	body := []byte(`{"args":["claude-m1"]}`)
+	if code := signedPost(t, h.srv.URL, m5Token, m1.session, m1.runtime, "Inbox", "1788386400000.cross-host", body); code != 403 {
+		t.Fatalf("m5 token using m1 session: want 403, got %d", code)
+	}
+	if code := signedPost(t, h.srv.URL, m1Token, m1.session, m1.runtime, "Inbox", "1788386400000.same-host", body); code != 200 {
+		t.Fatalf("positive control: m1 token using m1 session: want 200, got %d", code)
+	}
+}
+
 func TestHostTokenRevocationKillsItsSessionsOnNextRequest(t *testing.T) {
 	h := newIdentityHarness(t)
 	plain, rec, mintErr := h.backend.MintHostToken("m1", "")
