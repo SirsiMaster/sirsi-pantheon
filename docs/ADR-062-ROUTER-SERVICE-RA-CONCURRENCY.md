@@ -1,11 +1,12 @@
 # ADR-062: Router as a Service — Fleet Concurrency for Anubis and Ra
 
 ## Status
-**Proposed, revision 2** — September 2, 2026. Author: claude-home. Owner
+**Proposed, revision 3** — September 2, 2026. Author: claude-home. Owner
 decision recorded 2026-09-02 (verbatim: "put it in GCP", "build a solution
 only once", "skip github actions"). Reviewer: Sirsi Software Admin
-(`sirsi-software-admin`), verdict CONDITIONAL on revision 1; revision 2
-incorporates all five findings. **This ADR authorizes design and the
+(`sirsi-software-admin`), verdict CONDITIONAL on revision 1, **ACCEPT for Migration step 1 design
+authority** on revision 2 (2026-09-02T20:24Z); revision 3 folds in the
+remaining evidence conditions for steps 2–4. **This ADR authorizes design and the
 behavior-preserving refactor (Migration step 1) only.** Steps 2–4 each require
 their own bind carrying the evidence named in §Verification.
 Related: ADR-024 (one inbox), ADR-042 (self-hosted CI), ADR-051 (Anubis/Ra
@@ -118,7 +119,7 @@ Identity is a registered **agent session**, bound at `sirsi thread register`
 | Claim | Proven by | Checked on |
 |---|---|---|
 | host | per-host bearer token from Secret Manager, rotated, revocable | every request |
-| runtime | executable identity: the `sirsi` binary's code-signature hash and version, sent as a claim, matched against the release manifest | every request |
+| runtime | executable identity: the `sirsi` binary's code-signature hash and version, **bound into the session at register time** and matched against the release manifest server-side; a caller-provided hash is never trusted on its own — the service validates token, then nonce, then checks the claimed runtime equals the session's bound runtime; any mismatch invalidates the session | every request, in that order |
 | agent + session | session id minted by the service at register time, bound to (host, runtime, agent id); stored server-side | every request |
 | freshness | expiring nonce (60 s) signed with the session key; replay rejected | every mutating request |
 | ownership | lease and write verbs succeed only when the session owns the item or lease | every lease/write |
@@ -205,7 +206,14 @@ is a separate bind (Migration step 4) that must carry:
    (c) dry-run import that reports what it would write and changes nothing;
    (d) real import; (e) canonical dump of the Postgres side, full diff
    against (b), must be empty; (f) second import, must be a no-op with the
-   same hash — idempotence. The bind also carries the latency and
+   same hash — idempotence. Writes stay frozen for the **entire** interval
+   (a) through (f); the quarantine marker is released only by the migration
+   tool's own exit path, success or failure, so a failed migration cannot
+   leave the fabric falsely quarantined (the tool records which path
+   released it). **Clock and lease model:** the service's clock is the only
+   authority for lease expiry; clients send no timestamps, and every lease
+   response carries the server-issued expiry, which the client treats as
+   opaque. The bind also carries the latency and
    concurrency measurements in §Verification. Bind #3.
 4. **Provision and cut over** in `sirsi-nexus-live`, under the deployment
    authority requirements in §4. `router.db` on the M5 stays read-only until
