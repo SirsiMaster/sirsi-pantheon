@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # check-router-store-open.sh — the direct-open gate (ADR-062 §1, rs-04).
 #
-# CLAIM (scoped, A35): no non-test Go file outside internal/routerstore opens
+# CLAIM (scoped, A35): no non-test Go file outside internal/routerstore (and the
+# service entry point cmd/sirsi/routerservecmd.go) opens
 # the router ledger except through routerstore.Resolve(); the read-only path
 # resolver LocalPath() is used only by the two local-only diagnostics listed
 # in ALLOW_LOCALPATH. Anything else is a split-brain path: a node pointed at
@@ -34,8 +35,10 @@ scan() {
   local rc=0
   # grep -E -n: file:line:text; exclude tests and the package itself.
   local hits
+  # cmd/sirsi/routerservecmd.go is the service itself — the one process that
+  # may open a backend directly (ADR-062 §2). Nothing else is allowlisted.
   hits=$(grep -rEn --include='*.go' --exclude='*_test.go' --exclude-dir=.git "$FORBIDDEN" . \
-         | grep -v '^\./internal/routerstore/' || true)
+         | grep -v '^\./internal/routerstore/' | grep -v '^\./cmd/sirsi/routerservecmd\.go:' || true)
   if [ -n "$hits" ]; then
     echo "ERROR: router store opened outside routerstore.Resolve() (ADR-062 §1):"
     echo "$hits" | sed 's/^/  /'
