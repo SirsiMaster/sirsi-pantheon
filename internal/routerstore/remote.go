@@ -62,7 +62,12 @@ var sentinelErrors = map[string]error{
 	"ErrTokenUnknown":         ErrTokenUnknown,
 	"ErrTokenRevoked":         ErrTokenRevoked,
 	"ErrHostMismatch":         ErrHostMismatch,
+	"ErrServiceUnavailable":   ErrServiceUnavailable,
 }
+
+// ErrServiceUnavailable is a transient service/database failure (HTTP 503):
+// the caller should back off and retry; nothing about its credentials changed.
+var ErrServiceUnavailable = errors.New("routerstore: router service unavailable (retry)")
 
 func sentinelName(err error) string {
 	for name, s := range sentinelErrors {
@@ -282,6 +287,9 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 	if wr.Error != nil {
 		if s, ok := sentinelErrors[wr.Error.Name]; ok {
 			return s
+		}
+		if resp.StatusCode == http.StatusServiceUnavailable {
+			return fmt.Errorf("%w: %s", ErrServiceUnavailable, wr.Error.Message)
 		}
 		// Session errors arrive as 401 text; classify them so callCtx can re-mint.
 		msg := wr.Error.Message

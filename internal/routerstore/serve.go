@@ -75,6 +75,10 @@ type ServerOptions struct {
 	MaxWait time.Duration
 	// CallTimeout bounds every non-Wait call server-side.
 	CallTimeout time.Duration
+	// TestDelay, when > 0, sleeps before every call. Evidence-run knob only
+	// (ADR-062 rs-13: "service delayed to 2× p99"); off unless the operator
+	// sets SIRSI_ROUTER_SERVE_TEST_DELAY, and logged at startup when on.
+	TestDelay time.Duration
 	// now is injectable for the freshness tests (Rule A16).
 	now func() time.Time
 }
@@ -119,10 +123,20 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 	// 1. host — the bootstrap token (ServerOptions.Token) or a minted per-host
 	// token (rs-11). The resolved host constrains what a session may claim.
-	tokenHost, ok := s.hostForBearer(r)
+	// A store failure here (database down) is 503, never 401: a node must
+	// retry, not conclude its credentials died (rs-13 outage finding — every
+	// call during a 30 s Postgres outage came back "invalid bearer token").
+	tokenHost, ok, lookupErr := s.hostForBearer(r)
+	if lookupErr != nil {
+		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
+		return
+	}
 	if !ok {
 		writeErr(w, http.StatusUnauthorized, "", "missing or invalid bearer token")
 		return
+	}
+	if s.opts.TestDelay > 0 {
+		time.Sleep(s.opts.TestDelay)
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/v1/call/")
 	m, ok := storeType.MethodByName(name)
@@ -253,10 +267,13 @@ func (s *server) authenticate(r *http.Request, method string, body []byte) (Sess
 	if sid == "" || nonce == "" || sig == "" || runtime == "" {
 		return Session{}, http.StatusUnauthorized, errors.New("session headers required: X-Sirsi-Session, X-Sirsi-Nonce, X-Sirsi-Signature, X-Sirsi-Runtime (MintSession first)")
 	}
-	// 2. session
+	// 2. session — unknown/revoked is 401; a store failure is 503 (retry).
 	sess, err := s.store.GetSession(sid)
 	if err != nil {
-		return Session{}, http.StatusUnauthorized, err
+		if errors.Is(err, ErrSessionUnknown) || errors.Is(err, ErrSessionRevoked) {
+			return Session{}, http.StatusUnauthorized, err
+		}
+		return Session{}, http.StatusServiceUnavailable, fmt.Errorf("ledger unavailable: %w", err)
 	}
 	// 3. freshness
 	if err := s.checkNonce(sid, nonce); err != nil {
@@ -367,22 +384,27 @@ func Sign(secret, method, nonce string, body []byte) string {
 const bootstrapHost = "*"
 
 // hostForBearer resolves the bearer to a host: the bootstrap token → "*",
-// a minted per-host token → its host, anything else → not authorized.
-func (s *server) hostForBearer(r *http.Request) (string, bool) {
+// a minted per-host token → its host, anything else → not authorized. The
+// third result is a STORE failure (not an auth verdict) and maps to 503.
+func (s *server) hostForBearer(r *http.Request) (string, bool, error) {
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	if !strings.HasPrefix(h, p) {
-		return "", false
+		return "", false, nil
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(h, p))
 	if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.Token)) == 1 {
-		return bootstrapHost, true
+		return bootstrapHost, true, nil
 	}
 	t, err := s.store.LookupHostToken(got)
-	if err != nil {
-		return "", false
+	switch {
+	case err == nil:
+		return t.Host, true, nil
+	case errors.Is(err, ErrTokenUnknown), errors.Is(err, ErrTokenRevoked):
+		return "", false, nil
+	default:
+		return "", false, err
 	}
-	return t.Host, true
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
