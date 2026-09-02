@@ -37,7 +37,7 @@ func validStatus(status string) bool {
 // items/*.md may carry one — a mirror that refused it would drop the item and
 // violate the zero-data-loss goal (PRD /goal #4). Vocabulary enforcement lives
 // on Send, the store's new-item write path, matching the file router.
-func (s *Store) Put(it Item) error {
+func (s *SQLiteStore) Put(it Item) error {
 	if strings.TrimSpace(it.ID) == "" {
 		return fmt.Errorf("routerstore: Put: id is required")
 	}
@@ -77,7 +77,7 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 // SetBlockedBy replaces an item's optional dependency edge.
-func (s *Store) SetBlockedBy(id, blockedBy string) error {
+func (s *SQLiteStore) SetBlockedBy(id, blockedBy string) error {
 	res, err := s.exec(`UPDATE items SET blocked_by=? WHERE id=?;`, strings.TrimSpace(blockedBy), id)
 	if err != nil {
 		return fmt.Errorf("routerstore: SetBlockedBy %q: %w", id, err)
@@ -96,7 +96,7 @@ func (s *Store) SetBlockedBy(id, blockedBy string) error {
 //
 // This is the durable-dispatch write primitive. It does NOT write any file —
 // wiring the file writer and this store behind one facade is PRD Phase 3.
-func (s *Store) Send(from, to, title, msgType, instructions string) (string, error) {
+func (s *SQLiteStore) Send(from, to, title, msgType, instructions string) (string, error) {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
 		return "", fmt.Errorf("routerstore: Send: from and to are required")
 	}
@@ -122,7 +122,7 @@ func (s *Store) Send(from, to, title, msgType, instructions string) (string, err
 }
 
 // Get loads one item by id. It returns ErrNotFound if no such item exists.
-func (s *Store) Get(id string) (Item, error) {
+func (s *SQLiteStore) Get(id string) (Item, error) {
 	row := s.db.QueryRow(`SELECT `+itemCols+` FROM items WHERE id = ?;`, id)
 	it, err := scanItem(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -137,7 +137,7 @@ func (s *Store) Get(id string) (Item, error) {
 // Inbox returns open items addressed to agent, oldest id first. If agent is
 // empty it returns every open item. This is the indexed equivalent of
 // internal/work.ListInbox and uses the (to_agent, status) index.
-func (s *Store) Inbox(agent string) ([]Item, error) {
+func (s *SQLiteStore) Inbox(agent string) ([]Item, error) {
 	var (
 		rows *sql.Rows
 		err  error
@@ -155,7 +155,7 @@ func (s *Store) Inbox(agent string) ([]Item, error) {
 }
 
 // ListAll returns every item regardless of status, oldest id first.
-func (s *Store) ListAll() ([]Item, error) {
+func (s *SQLiteStore) ListAll() ([]Item, error) {
 	rows, err := s.db.Query(`SELECT ` + itemCols + ` FROM items ORDER BY id ASC;`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ListAll: %w", err)
@@ -168,7 +168,7 @@ func (s *Store) ListAll() ([]Item, error) {
 // internal/work.SetWake for store-only rows (the post-cutover authority). It is
 // a single UPDATE keyed on id; unknown ids return ErrNotFound so the caller can
 // fall back to the file path. Empty-string fields clear their column.
-func (s *Store) SetWake(id, status, attemptedAt, adapter, wakeErr string) error {
+func (s *SQLiteStore) SetWake(id, status, attemptedAt, adapter, wakeErr string) error {
 	res, err := s.exec(
 		`UPDATE items SET wake_status=?, wake_attempted_at=?, wake_adapter=?, wake_error=? WHERE id=?;`,
 		status, attemptedAt, adapter, wakeErr, id,
@@ -190,7 +190,7 @@ func (s *Store) SetWake(id, status, attemptedAt, adapter, wakeErr string) error 
 // The close is a single atomic UPDATE guarded on status='open' — there is no
 // Get→check→UPDATE window, so two concurrent closers race safely: exactly one
 // wins, the other gets ErrAlreadyClosed (TestCloseItemConcurrentDoubleClose).
-func (s *Store) CloseItem(id, result string) error {
+func (s *SQLiteStore) CloseItem(id, result string) error {
 	closedAt := s.clock().Format(time.RFC3339)
 	body := strings.TrimSpace(result)
 	if body == "" {

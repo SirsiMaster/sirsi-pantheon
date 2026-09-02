@@ -32,7 +32,7 @@ type Breaker struct {
 }
 
 // breakerGateTx fails with ErrBreakerOpen if any given domain is tripped.
-func (s *Store) breakerGateTx(tx *sql.Tx, domains ...string) error {
+func (s *SQLiteStore) breakerGateTx(tx *sql.Tx, domains ...string) error {
 	for _, d := range domains {
 		var tripped string
 		err := tx.QueryRow(`SELECT tripped_at FROM breakers WHERE domain = ?;`, d).Scan(&tripped)
@@ -52,7 +52,7 @@ func (s *Store) breakerGateTx(tx *sql.Tx, domains ...string) error {
 // recordFailureTx bumps each domain's failure count and trips any domain that
 // crosses its threshold. Tripping writes ONE keyed-singleton operator item in
 // the same transaction — the operator sees one red card, not a flood.
-func (s *Store) recordFailureTx(tx *sql.Tx, now time.Time, domains ...string) error {
+func (s *SQLiteStore) recordFailureTx(tx *sql.Tx, now time.Time, domains ...string) error {
 	for _, d := range domains {
 		threshold := BreakerThreshold
 		if d == "global" {
@@ -87,7 +87,7 @@ func (s *Store) recordFailureTx(tx *sql.Tx, now time.Time, domains ...string) er
 }
 
 // Breakers lists every domain with recorded failures, tripped first.
-func (s *Store) Breakers() ([]Breaker, error) {
+func (s *SQLiteStore) Breakers() ([]Breaker, error) {
 	rows, err := s.db.Query(`SELECT domain, failures, tripped_at, operator_item FROM breakers ORDER BY tripped_at DESC, failures DESC;`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: Breakers: %w", err)
@@ -106,7 +106,7 @@ func (s *Store) Breakers() ([]Breaker, error) {
 
 // ResetBreaker is the operator's deliberate re-arm of one domain after the
 // cause is fixed. It clears the trip and the failure count.
-func (s *Store) ResetBreaker(domain string) error {
+func (s *SQLiteStore) ResetBreaker(domain string) error {
 	if strings.TrimSpace(domain) == "" {
 		return fmt.Errorf("routerstore: ResetBreaker: domain is required")
 	}

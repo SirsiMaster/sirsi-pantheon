@@ -27,7 +27,7 @@ func quoteYAML(v string) string {
 // back to plain files the existing file router reads natively. It returns the
 // number of items written; on error, files already written are left in place
 // (a partial audit dump is still an audit dump).
-func (s *Store) ExportMarkdown(dir string) (int, error) {
+func (s *SQLiteStore) ExportMarkdown(dir string) (int, error) {
 	items, err := s.ListAll()
 	if err != nil {
 		return 0, fmt.Errorf("routerstore: ExportMarkdown: %w", err)
@@ -102,7 +102,7 @@ func renderMarkdown(it Item) string {
 // Render returns the markdown view of one item straight from the store, with
 // no file involved — the read path for Show after the ADR-036 cutover, where
 // items/<id>.md is no longer written. Returns ErrNotFound if the id is unknown.
-func (s *Store) Render(id string) (string, error) {
+func (s *SQLiteStore) Render(id string) (string, error) {
 	it, err := s.Get(id)
 	if err != nil {
 		return "", err
@@ -110,7 +110,7 @@ func (s *Store) Render(id string) (string, error) {
 	return renderMarkdown(it), nil
 }
 
-func (s *Store) ExportItem(dir, id string) (string, error) {
+func (s *SQLiteStore) ExportItem(dir, id string) (string, error) {
 	it, err := s.Get(id)
 	if err != nil {
 		return "", err

@@ -92,7 +92,7 @@ var reqIDPattern = regexp.MustCompile(`^REQ-[0-9]{3,}$`)
 // AddRequirement registers a requirement, allocating its REQ-NNN through the
 // same durable allocator that hands out ADR numbers — so two agents cannot
 // register colliding requirement IDs.
-func (s *Store) AddRequirement(title, source, sourceRef, owner string) (Requirement, error) {
+func (s *SQLiteStore) AddRequirement(title, source, sourceRef, owner string) (Requirement, error) {
 	title = strings.TrimSpace(title)
 	source = strings.TrimSpace(source)
 	owner = strings.TrimSpace(owner)
@@ -131,7 +131,7 @@ func (s *Store) AddRequirement(title, source, sourceRef, owner string) (Requirem
 // RecordEvidence attaches or updates evidence references without asserting
 // satisfaction. Only non-empty fields overwrite; this is additive so evidence
 // can accumulate across several passes.
-func (s *Store) RecordEvidence(reqID string, ev Evidence) error {
+func (s *SQLiteStore) RecordEvidence(reqID string, ev Evidence) error {
 	reqID = strings.ToUpper(strings.TrimSpace(reqID))
 	if !reqIDPattern.MatchString(reqID) {
 		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
@@ -183,7 +183,7 @@ var ErrIncompleteEvidence = errors.New("routerstore: incomplete evidence")
 // requirement by asserting that it is done: the store checks the references
 // itself, so a green build or a merged PR — each of which is only one of the
 // six — cannot stand in for the whole.
-func (s *Store) Satisfy(reqID string) error {
+func (s *SQLiteStore) Satisfy(reqID string) error {
 	reqID = strings.ToUpper(strings.TrimSpace(reqID))
 	if !reqIDPattern.MatchString(reqID) {
 		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
@@ -211,7 +211,7 @@ func (s *Store) Satisfy(reqID string) error {
 // Waive records an explicit decision that a requirement will not be met. A
 // reason is mandatory: a waiver without one is indistinguishable from a
 // requirement that was quietly dropped.
-func (s *Store) Waive(reqID, reason, ownerDecisionRef string) error {
+func (s *SQLiteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 	reqID = strings.ToUpper(strings.TrimSpace(reqID))
 	if !reqIDPattern.MatchString(reqID) {
 		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
@@ -244,7 +244,7 @@ func (s *Store) Waive(reqID, reason, ownerDecisionRef string) error {
 }
 
 // ListRequirements returns requirements, optionally filtered to one owner.
-func (s *Store) ListRequirements(owner string) ([]Requirement, error) {
+func (s *SQLiteStore) ListRequirements(owner string) ([]Requirement, error) {
 	q := `SELECT req_id, title, source, source_ref, owner, status,
 	             commit_ref, tests_ref, security_ref, design_ref, deployment_ref, production_ref,
 	             waiver_reason, waiver_ref, created, updated FROM requirements`
@@ -280,7 +280,7 @@ func (s *Store) ListRequirements(owner string) ([]Requirement, error) {
 // term of the ADR-061 runnable predicate. An empty result is what lets a lane
 // legitimately park; it is NOT the same as an absent registry, which is why
 // callers must distinguish "zero unmet" from "no registry".
-func (s *Store) UnmetRequirements(owner string) ([]Requirement, error) {
+func (s *SQLiteStore) UnmetRequirements(owner string) ([]Requirement, error) {
 	all, err := s.ListRequirements(owner)
 	if err != nil {
 		return nil, err

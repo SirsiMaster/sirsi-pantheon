@@ -20,7 +20,7 @@ func TestClaimNextRetriesReadonlyContention(t *testing.T) {
 	calls := 0
 	// Two READONLY failures then success is the shape of a real WAL race: the
 	// competing writer commits and the lock frees.
-	err := (&Store{}).retryWrite(func() error {
+	err := (&SQLiteStore{}).retryWrite(func() error {
 		calls++
 		if calls < 3 {
 			return errors.New("attempt to write a readonly database (8)")
@@ -42,7 +42,7 @@ func TestClaimNextRetriesReadonlyContention(t *testing.T) {
 func TestRetryWriteDoesNotRetryNonContention(t *testing.T) {
 	calls := 0
 	sentinel := errors.New("routerstore: budget exceeded")
-	err := (&Store{}).retryWrite(func() error {
+	err := (&SQLiteStore{}).retryWrite(func() error {
 		calls++
 		return sentinel
 	})
@@ -58,7 +58,7 @@ func TestRetryWriteDoesNotRetryNonContention(t *testing.T) {
 // "readonly" reasonably read it as a permissions fault and went looking at file
 // modes; the store is writable and the fault is lock contention under WAL.
 func TestRetryWriteExhaustionNamesContentionNotPermissions(t *testing.T) {
-	err := (&Store{}).retryWrite(func() error {
+	err := (&SQLiteStore{}).retryWrite(func() error {
 		return errors.New("attempt to write a readonly database (8)")
 	})
 	if err == nil {
@@ -77,7 +77,7 @@ func TestRetryWriteExhaustionNamesContentionNotPermissions(t *testing.T) {
 // reach it directly.
 func TestClaimNextGoesThroughRetryWrite(t *testing.T) {
 	src := mustReadSource(t, "lease.go")
-	claim := sliceFunc(src, "func (s *Store) ClaimNext(")
+	claim := sliceFunc(src, "func (s *SQLiteStore) ClaimNext(")
 	if !strings.Contains(claim, "s.retryWrite(") {
 		t.Error("ClaimNext no longer wraps its transaction in retryWrite — a lane that " +
 			"loses a WAL race will silently fail to claim work (READONLY is not BUSY)")
@@ -94,7 +94,7 @@ func TestClaimNextGoesThroughRetryWrite(t *testing.T) {
 // 20260809-060146/061333: 3x route-blocker drops in /tmp/sirsi-liveness-watch.err).
 func TestSendGuardedGoesThroughRetryWrite(t *testing.T) {
 	src := mustReadSource(t, "facade.go")
-	send := sliceFunc(src, "func (s *Store) SendGuarded(")
+	send := sliceFunc(src, "func (s *SQLiteStore) SendGuarded(")
 	if !strings.Contains(send, "s.retryWrite(") {
 		t.Error("SendGuarded no longer wraps its transaction in retryWrite — lock " +
 			"contention on a busy host will silently drop the send")
@@ -112,7 +112,7 @@ func TestSendGuardedGoesThroughRetryWrite(t *testing.T) {
 // first attempt instead of being retried.
 func TestRetryWriteRetriesBusyContention(t *testing.T) {
 	calls := 0
-	err := (&Store{}).retryWrite(func() error {
+	err := (&SQLiteStore{}).retryWrite(func() error {
 		calls++
 		if calls < 3 {
 			return errors.New("database is locked (517)")

@@ -53,7 +53,7 @@ func postEnforcementTaskPredicate(alias string) string {
 // missing registry entry cannot hide a stranded lane. The task union is also
 // load-bearing recovery coverage: task-lease expiry is reconciled per agent, so
 // a crashed holder must keep its lane enumerated until reconciliation repairs it.
-func (s *Store) OperationalAgents() ([]string, error) {
+func (s *SQLiteStore) OperationalAgents() ([]string, error) {
 	rows, err := s.db.Query(`SELECT agent FROM (
 		SELECT to_agent AS agent FROM items WHERE status IN ('open','claimed','working','blocked')
 		UNION SELECT agent FROM tasks WHERE status<>'done'
@@ -96,7 +96,7 @@ type RunnableState struct {
 // marker is distinct from the requirements themselves: an empty registry may
 // mean "audited and empty" or "never audited", and only the former may permit
 // COMPLETE/parked state.
-func (s *Store) MarkRequirementAudit(agent, evidenceRef string) error {
+func (s *SQLiteStore) MarkRequirementAudit(agent, evidenceRef string) error {
 	agent = strings.TrimSpace(agent)
 	evidenceRef = strings.TrimSpace(evidenceRef)
 	if agent == "" {
@@ -126,7 +126,7 @@ func requirementAuditExistsTx(tx *sql.Tx, agent string) (bool, error) {
 // registry in one serialized read transaction. Callers MUST consume this API;
 // duplicating any subset of its SQL would recreate the contradictory surfaces
 // ADR-061 exists to eliminate.
-func (s *Store) RunnableFor(agent string) (RunnableState, error) {
+func (s *SQLiteStore) RunnableFor(agent string) (RunnableState, error) {
 	agent = strings.TrimSpace(agent)
 	if agent == "" {
 		return RunnableState{}, fmt.Errorf("routerstore: runnable agent is required")

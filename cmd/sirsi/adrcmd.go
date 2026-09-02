@@ -259,7 +259,7 @@ func scanADRDocs(dir string) (map[int][]string, map[int][]string, error) {
 	return out, subParts, nil
 }
 
-func openRouterStoreForADR() (*routerstore.Store, error) {
+func openRouterStoreForADR() (routerstore.Store, error) {
 	// Same resolution as dispatch.Open: ~/.sirsi/router.db, with
 	// SIRSI_ROUTER_DB overriding it. Matching that exactly matters — an ADR
 	// allocator pointed at a different database than the router would hand out

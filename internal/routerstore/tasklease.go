@@ -25,14 +25,14 @@ const taskLeaseFence = ` AND lease_token=? AND lease_expires>? AND status='in-pr
 
 // ClaimNextTask atomically reclaims expired claims and leases the oldest
 // actionable task. Blocked and done tasks never enter the claim path.
-func (s *Store) ClaimNextTask(agent, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
+func (s *SQLiteStore) ClaimNextTask(agent, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
 	return s.claimTask(agent, "", worker, threadID, ttl)
 }
 
 // ClaimTask atomically leases one exact actionable task. It applies the same
 // expiry reconciliation, dependency, retry, contention, and TTL fences as
 // ClaimNextTask; taskID changes selection only, never eligibility.
-func (s *Store) ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
+func (s *SQLiteStore) ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
 		return nil, fmt.Errorf("routerstore: exact task claim requires task id")
@@ -40,7 +40,7 @@ func (s *Store) ClaimTask(agent, taskID, worker, threadID string, ttl time.Durat
 	return s.claimTask(agent, taskID, worker, threadID, ttl)
 }
 
-func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
+func (s *SQLiteStore) claimTask(agent, exactTaskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
 	agent = strings.TrimSpace(agent)
 	worker = strings.TrimSpace(worker)
 	threadID = strings.TrimSpace(threadID)
@@ -134,7 +134,7 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 	return &TaskLease{Agent: agent, TaskID: taskID, Worker: worker, ThreadID: threadID, Token: token, Expires: expires, Attempt: attempt}, nil
 }
 
-func (s *Store) taskLeaseUpdate(agent, taskID, token string, query string, args ...any) error {
+func (s *SQLiteStore) taskLeaseUpdate(agent, taskID, token string, query string, args ...any) error {
 	now := s.clock().UTC()
 	args = append(args, agent, taskID, token, now.Format(time.RFC3339))
 	res, err := s.db.Exec(query+taskLeaseFence+`;`, args...)
@@ -149,7 +149,7 @@ func (s *Store) taskLeaseUpdate(agent, taskID, token string, query string, args 
 
 // RenewTaskLease heartbeats executable ownership. It is a store mutation, so
 // supervisors can distinguish work acknowledgment from session liveness.
-func (s *Store) RenewTaskLease(agent, taskID, token string, ttl time.Duration) error {
+func (s *SQLiteStore) RenewTaskLease(agent, taskID, token string, ttl time.Duration) error {
 	var err error
 	ttl, err = boundedLeaseTTL(ttl)
 	if err != nil {
@@ -163,7 +163,7 @@ func (s *Store) RenewTaskLease(agent, taskID, token string, ttl time.Duration) e
 
 // CompleteTaskLease records evidence and completes the task under the live
 // fence. An empty result reference is refused: completion must point at proof.
-func (s *Store) CompleteTaskLease(agent, taskID, token, resultRef string) error {
+func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) error {
 	resultRef = strings.TrimSpace(resultRef)
 	if resultRef == "" {
 		return fmt.Errorf("routerstore: task completion evidence reference is required")
@@ -177,7 +177,7 @@ func (s *Store) CompleteTaskLease(agent, taskID, token, resultRef string) error 
 // ReleaseTaskLease returns a live task to pending after a recoverable failure.
 // The attempt counter is retained and the reason is recorded in failure_reason;
 // blocked_by remains reserved exclusively for dependency identity.
-func (s *Store) ReleaseTaskLease(agent, taskID, token, reason string) error {
+func (s *SQLiteStore) ReleaseTaskLease(agent, taskID, token, reason string) error {
 	now := s.clock().UTC()
 	tx, err := s.beginImmediate()
 	if err != nil {
@@ -225,7 +225,7 @@ type ExpiredLeaseReclaim struct {
 // thread_id); status is left untouched except the same attempts-exhausted
 // case ClaimTask already handles (flip to blocked, never silently reclaimed
 // forever). dryRun reports what WOULD change without writing.
-func (s *Store) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, error) {
+func (s *SQLiteStore) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, error) {
 	now := s.clock().UTC()
 	rows, err := s.db.Query(`SELECT agent,task_id,attempts FROM tasks
 		WHERE lease_token<>'' AND lease_expires<>'' AND lease_expires<=? AND status='in-progress'
@@ -286,7 +286,7 @@ func (s *Store) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, er
 // forgets the second half of. A row 'blocked' for a REAL reason (blocked_by
 // set, i.e. waiting on a dependency) is left alone: attempts exhaustion did
 // not cause that block, so this verb has no business clearing it.
-func (s *Store) ResetTaskAttempts(agent, taskID string) error {
+func (s *SQLiteStore) ResetTaskAttempts(agent, taskID string) error {
 	if strings.TrimSpace(agent) == "" || strings.TrimSpace(taskID) == "" {
 		return fmt.Errorf("routerstore: ResetTaskAttempts: agent and task-id are required")
 	}

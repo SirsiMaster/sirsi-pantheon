@@ -13,7 +13,7 @@ type ThreadRecord struct {
 
 // ImportThreadsIfEmpty atomically seeds the store at cutover. A non-empty
 // table is already authoritative and is never blended with a stale JSON file.
-func (s *Store) ImportThreadsIfEmpty(records []ThreadRecord) error {
+func (s *SQLiteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("routerstore: begin thread import: %w", err)
@@ -42,7 +42,7 @@ func (s *Store) ImportThreadsIfEmpty(records []ThreadRecord) error {
 // threads cannot erase one another. Terminal and suspended states win over a
 // stale active/idle/blocked heartbeat, preventing late liveness from reviving
 // an explicitly closed, reaped, or parked session.
-func (s *Store) UpsertThreads(records []ThreadRecord) error {
+func (s *SQLiteStore) UpsertThreads(records []ThreadRecord) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("routerstore: begin thread upsert: %w", err)
@@ -71,7 +71,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // whether its fence accepted the write. Snapshot reconciliation uses
 // UpsertThreads, where an unrelated stale row is an expected no-op; lifecycle
 // verbs use this method so losing their own target fence fails loudly.
-func (s *Store) UpsertThreadCAS(r ThreadRecord) (bool, error) {
+func (s *SQLiteStore) UpsertThreadCAS(r ThreadRecord) (bool, error) {
 	result, err := s.db.Exec(`
 INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
@@ -95,7 +95,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // ResumeThreadCAS is the sole suspended-to-active transition. Requiring the
 // exact suspended row observed by the caller prevents a heartbeat that loaded
 // before a concurrent suspend from implicitly resuming the thread.
-func (s *Store) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
+func (s *SQLiteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
 	result, err := s.db.Exec(`UPDATE threads
 SET agent=?,status=?,last_seen_at=?,payload=?
 WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
@@ -116,7 +116,7 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
 // DeleteThreadCAS removes only the exact row observed by the pruning read.
 // A concurrent heartbeat/status transition changes last_seen/status and makes
 // this a safe no-op rather than deleting live truth.
-func (s *Store) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error) {
+func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error) {
 	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=?`, threadID, status, lastSeenAt)
 	if err != nil {
 		return false, fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
@@ -129,7 +129,7 @@ func (s *Store) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, erro
 }
 
 // ListThreads returns every durable thread payload.
-func (s *Store) ListThreads() ([]ThreadRecord, error) {
+func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
 	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload FROM threads ORDER BY thread_id`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: list threads: %w", err)

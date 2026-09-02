@@ -111,7 +111,7 @@ func newToken() (string, error) {
 // beginImmediate opens a write transaction that takes the write lock up front
 // (SQLite BEGIN IMMEDIATE), so every lifecycle mutation serializes cleanly
 // under WAL instead of failing mid-transaction on lock upgrade.
-func (s *Store) beginImmediate() (*sql.Tx, error) {
+func (s *SQLiteStore) beginImmediate() (*sql.Tx, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func (s *Store) beginImmediate() (*sql.Tx, error) {
 //  2. Circuit breakers (global, target) — a tripped breaker pauses dispatch.
 //  3. Budgets — per-target concurrent claims and total active work.
 //  4. Claim: status open→claimed with a fresh token, guarded in the UPDATE.
-func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
+func (s *SQLiteStore) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 	// Retry the WHOLE transaction under READONLY contention. ClaimNext is the only
 	// transition into executable ownership, so a lane that loses this race does not
 	// merely retry later — it silently fails to pick up work at all.
@@ -161,7 +161,7 @@ func (s *Store) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 
 // claimNextOnce is one attempt of ClaimNext. Never call it directly — callers
 // must go through ClaimNext so contention is retried.
-func (s *Store) claimNextOnce(agent string, ttl time.Duration) (*Lease, error) {
+func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: ClaimNext: agent is required")
 	}
@@ -241,7 +241,7 @@ func (s *Store) claimNextOnce(agent string, ttl time.Duration) (*Lease, error) {
 // token matches AND the lease is unexpired AND the item is in a live claimed/
 // working state. Every mutation below embeds the same predicate in its UPDATE;
 // this pre-read only exists to disambiguate the error.
-func (s *Store) fenceErrTx(tx *sql.Tx, id, token string, now time.Time) error {
+func (s *SQLiteStore) fenceErrTx(tx *sql.Tx, id, token string, now time.Time) error {
 	var status, curToken, expires string
 	err := tx.QueryRow(`SELECT status, lease_token, lease_expires FROM items WHERE id = ?;`, id).
 		Scan(&status, &curToken, &expires)
@@ -267,7 +267,7 @@ func (s *Store) fenceErrTx(tx *sql.Tx, id, token string, now time.Time) error {
 const leaseFence = ` AND lease_token = ? AND lease_expires > ? AND status IN ('claimed','working')`
 
 // RenewLease extends a live lease's expiry (token-fenced).
-func (s *Store) RenewLease(id, token string, ttl time.Duration) error {
+func (s *SQLiteStore) RenewLease(id, token string, ttl time.Duration) error {
 	var err error
 	ttl, err = boundedLeaseTTL(ttl)
 	if err != nil {
@@ -281,7 +281,7 @@ func (s *Store) RenewLease(id, token string, ttl time.Duration) error {
 
 // StartWork transitions claimed→working (token-fenced). Idempotent for an
 // item already working under the same live lease.
-func (s *Store) StartWork(id, token string) error {
+func (s *SQLiteStore) StartWork(id, token string) error {
 	now := s.clock()
 	return s.fencedUpdate(id, token, now,
 		`UPDATE items SET status = 'working', lease_updated = ? WHERE id = ?`+leaseFence+`;`,
@@ -292,7 +292,7 @@ func (s *Store) StartWork(id, token string) error {
 // an expired or superseded worker CANNOT complete newer-leased work, because
 // its token no longer matches the fence. This includes owner-session closes:
 // there is no unfenced complete short of the audited ForceOwner.
-func (s *Store) Complete(id, token, result string) error {
+func (s *SQLiteStore) Complete(id, token, result string) error {
 	now := s.clock()
 	body := strings.TrimSpace(result)
 	if body == "" {
@@ -308,7 +308,7 @@ func (s *Store) Complete(id, token, result string) error {
 // at the ceiling it dead-letters TERMINALLY, emits exactly one keyed-singleton
 // escalation (§2b axiom 5 — occurrences grow, rows do not), and records the
 // failure against the sender/target/class breaker domains.
-func (s *Store) Fail(id, token, reason, failureClass string) error {
+func (s *SQLiteStore) Fail(id, token, reason, failureClass string) error {
 	now := s.clock()
 	if failureClass == "" {
 		failureClass = "unclassified"
@@ -371,7 +371,7 @@ func (s *Store) Fail(id, token, reason, failureClass string) error {
 // Block parks an item as waiting on an external/owner dependency (token-
 // fenced). Blocked is NOT terminal: an owner reopen or a future facade verb
 // unblocks it deliberately — but it is out of every claim path meanwhile.
-func (s *Store) Block(id, token, reason string) error {
+func (s *SQLiteStore) Block(id, token, reason string) error {
 	now := s.clock()
 	return s.fencedUpdate(id, token, now,
 		`UPDATE items SET status='blocked', result=?, lease_token='', lease_expires='' WHERE id = ?`+leaseFence+`;`,
@@ -381,7 +381,7 @@ func (s *Store) Block(id, token, reason string) error {
 // ForceOwner is the HUMAN-ONLY override (§2b axiom 2): it bypasses the token
 // fence, requires an explicit reason, and writes an audit record in the same
 // transaction. action ∈ {complete, dead_letter, reopen}.
-func (s *Store) ForceOwner(id, action, reason string) error {
+func (s *SQLiteStore) ForceOwner(id, action, reason string) error {
 	if strings.TrimSpace(reason) == "" {
 		return ErrReasonRequired
 	}
@@ -436,7 +436,7 @@ func (s *Store) ForceOwner(id, action, reason string) error {
 
 // fencedUpdate runs one token-fenced UPDATE inside an immediate transaction
 // and disambiguates a zero-row result into the precise lifecycle error.
-func (s *Store) fencedUpdate(id, token string, now time.Time, q string, args ...any) error {
+func (s *SQLiteStore) fencedUpdate(id, token string, now time.Time, q string, args ...any) error {
 	tx, err := s.beginImmediate()
 	if err != nil {
 		return fmt.Errorf("routerstore: begin: %w", err)
@@ -460,11 +460,11 @@ func (s *Store) fencedUpdate(id, token string, now time.Time, q string, args ...
 // dead-letters them when attempts are spent) — the crash-safe path that makes
 // "restart mid-lease" survivable without stranding work. Counted so the next
 // incident is one red number (§2b axiom 9).
-func (s *Store) reclaimExpiredTx(tx *sql.Tx, now time.Time) error {
+func (s *SQLiteStore) reclaimExpiredTx(tx *sql.Tx, now time.Time) error {
 	return s.reclaimExpiredForTx(tx, now, "")
 }
 
-func (s *Store) reclaimExpiredForTx(tx *sql.Tx, now time.Time, agent string) error {
+func (s *SQLiteStore) reclaimExpiredForTx(tx *sql.Tx, now time.Time, agent string) error {
 	filter := ""
 	args := []any{now.Format(time.RFC3339)}
 	if agent != "" {

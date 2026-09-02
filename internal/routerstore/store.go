@@ -141,7 +141,7 @@ type Item struct {
 
 // Store is a durable index over the work queue backed by SQLite.
 // A Store is safe for concurrent use by multiple goroutines.
-type Store struct {
+type SQLiteStore struct {
 	db              *sql.DB
 	path            string
 	escalationAgent string
@@ -161,7 +161,7 @@ type Store struct {
 // outside any git repo. Use ":memory:" for tests.
 //
 // The caller owns the returned Store and must Close it.
-func Open(path string) (*Store, error) {
+func Open(path string) (*SQLiteStore, error) {
 	// WAL for reader/writer concurrency; busy_timeout so a momentarily locked
 	// DB retries instead of erroring; foreign_keys off (single-table core).
 	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
@@ -176,7 +176,7 @@ func Open(path string) (*Store, error) {
 	if escalationAgent == "" {
 		escalationAgent = "owner"
 	}
-	s := &Store{db: db, path: path, escalationAgent: escalationAgent}
+	s := &SQLiteStore{db: db, path: path, escalationAgent: escalationAgent}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -185,7 +185,7 @@ func Open(path string) (*Store, error) {
 }
 
 // Close releases the underlying database handle.
-func (s *Store) Close() error {
+func (s *SQLiteStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
@@ -193,7 +193,7 @@ func (s *Store) Close() error {
 }
 
 // clock returns the store's time source (UTC), honoring an injected clock.
-func (s *Store) clock() time.Time {
+func (s *SQLiteStore) clock() time.Time {
 	if s.now != nil {
 		return s.now()
 	}
@@ -640,7 +640,7 @@ CREATE INDEX IF NOT EXISTS idx_threads_last_seen ON threads(last_seen_at);
 // user_version inside that lock: if a peer already advanced it, this process
 // rolls back and re-loops instead of double-applying. All statements run on one
 // pinned connection so the manual BEGIN/COMMIT is not spread across the pool.
-func (s *Store) migrate() error {
+func (s *SQLiteStore) migrate() error {
 	ctx := context.Background()
 	// Pinning the connection establishes it — which on a FRESH database runs the
 	// DSN pragmas, and setting journal_mode=WAL needs a brief exclusive lock. Two

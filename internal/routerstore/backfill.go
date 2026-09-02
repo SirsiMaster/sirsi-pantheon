@@ -26,7 +26,7 @@ type BackfillReport struct {
 // It is best-effort: a single malformed item is recorded in Errors and skipped
 // rather than aborting the whole migration, so one bad file never strands the
 // rest of the queue.
-func (s *Store) Backfill(items []Item) (BackfillReport, error) {
+func (s *SQLiteStore) Backfill(items []Item) (BackfillReport, error) {
 	rep := BackfillReport{Seen: len(items)}
 	for _, it := range items {
 		existed := false

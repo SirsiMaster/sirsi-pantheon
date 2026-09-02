@@ -46,7 +46,7 @@ import (
 // Facade is the single dispatch entry point shared by the CLI verbs and the
 // MCP router_* handlers.
 type Facade struct {
-	store *routerstore.Store
+	store routerstore.Store
 	root  string // <repo>/.agents/idea-router
 	// schemaGap is non-zero when the store is newer than this binary and the
 	// facade fell back to the read-only subset. Surfaces MUST render its banner
@@ -56,7 +56,7 @@ type Facade struct {
 
 // Store exposes the shared durable store to sibling read models. Facade.Close
 // remains the owner of the handle; callers must not close it directly.
-func (f *Facade) Store() *routerstore.Store { return f.store }
+func (f *Facade) Store() routerstore.Store { return f.store }
 
 // Open resolves the repo's router root and the durable store
 // (~/.sirsi/router.db — outside any git tree, PRD /goal #2).
@@ -113,7 +113,7 @@ func OpenRoot(routerRoot string) (*Facade, error) {
 }
 
 // New builds a facade over an explicit root and store (test injection).
-func New(root string, store *routerstore.Store) *Facade {
+func New(root string, store routerstore.Store) *Facade {
 	return &Facade{store: store, root: root}
 }
 

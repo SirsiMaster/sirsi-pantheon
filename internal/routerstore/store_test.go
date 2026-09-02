@@ -18,7 +18,7 @@ import (
 // closed timestamps are deterministic. Each test gets its own Store, so there
 // is no package-global state to swap and no need for t.Parallel guards
 // (repo lessons #129/#131/#139).
-func newTestStore(t *testing.T) *Store {
+func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	// A distinct DSN per test keeps in-memory DBs isolated even if the driver
 	// shares a cache; ":memory:" alone is per-connection and we cap conns to 1.
@@ -506,7 +506,7 @@ func TestGetAgentNotFound(t *testing.T) {
 	}
 }
 
-func mustPut(t *testing.T, s *Store, it Item) {
+func mustPut(t *testing.T, s *SQLiteStore, it Item) {
 	t.Helper()
 	if err := s.Put(it); err != nil {
 		t.Fatalf("Put(%s): %v", it.ID, err)
@@ -834,7 +834,7 @@ func TestExportMarkdownErrors(t *testing.T) {
 
 // TestCloseNilStore covers the nil-receiver guard on Store.Close.
 func TestCloseNilStore(t *testing.T) {
-	var s *Store
+	var s *SQLiteStore
 	if err := s.Close(); err != nil {
 		t.Errorf("nil Store.Close = %v, want nil", err)
 	}

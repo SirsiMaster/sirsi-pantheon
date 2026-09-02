@@ -62,7 +62,7 @@ func (i Identifier) Name() string { return fmt.Sprintf("%s-%03d", i.Namespace, i
 // on MaxOpenConns(1) + busy_timeout to serialize writers, which is exactly the
 // property the allocator needs: the MAX(number) read and the INSERT cannot be
 // interleaved by another allocator.
-func (s *Store) withTx(fn func(*sql.Tx) error) error {
+func (s *SQLiteStore) withTx(fn func(*sql.Tx) error) error {
 	// The whole transaction retries under READONLY contention, not just the
 	// begin: SQLite frequently surfaces the lock failure at Commit. Nothing is
 	// committed on the failing path, so re-running fn observes no partial work.
@@ -96,7 +96,7 @@ func normalizeNamespace(ns string) (string, error) {
 // transaction, so two concurrent allocators cannot both observe the same
 // highest number — the second blocks, re-reads, and gets the next one. This is
 // the whole point: the race is closed by the store, not by convention.
-func (s *Store) AllocateIdentifier(namespace, title, owner string) (Identifier, error) {
+func (s *SQLiteStore) AllocateIdentifier(namespace, title, owner string) (Identifier, error) {
 	ns, err := normalizeNamespace(namespace)
 	if err != nil {
 		return Identifier{}, err
@@ -141,7 +141,7 @@ func (s *Store) AllocateIdentifier(namespace, title, owner string) (Identifier, 
 // documents that already exist on disk from before the allocator. It fails
 // rather than silently reassigning when the number is held by someone else,
 // and is idempotent for the same owner so backfill can be re-run safely.
-func (s *Store) ClaimIdentifierNumber(namespace string, number int, title, slug, owner string) (Identifier, error) {
+func (s *SQLiteStore) ClaimIdentifierNumber(namespace string, number int, title, slug, owner string) (Identifier, error) {
 	ns, err := normalizeNamespace(namespace)
 	if err != nil {
 		return Identifier{}, err
@@ -189,7 +189,7 @@ func (s *Store) ClaimIdentifierNumber(namespace string, number int, title, slug,
 }
 
 // PublishIdentifier marks an allocation as published at slug.
-func (s *Store) PublishIdentifier(namespace string, number int, slug string) error {
+func (s *SQLiteStore) PublishIdentifier(namespace string, number int, slug string) error {
 	ns, err := normalizeNamespace(namespace)
 	if err != nil {
 		return err
@@ -214,7 +214,7 @@ func (s *Store) PublishIdentifier(namespace string, number int, slug string) err
 
 // WithdrawIdentifier retires a number. The row is retained so the number is
 // never reissued.
-func (s *Store) WithdrawIdentifier(namespace string, number int) error {
+func (s *SQLiteStore) WithdrawIdentifier(namespace string, number int) error {
 	ns, err := normalizeNamespace(namespace)
 	if err != nil {
 		return err
@@ -235,7 +235,7 @@ func (s *Store) WithdrawIdentifier(namespace string, number int) error {
 }
 
 // ListIdentifiers returns every allocation in a namespace, lowest first.
-func (s *Store) ListIdentifiers(namespace string) ([]Identifier, error) {
+func (s *SQLiteStore) ListIdentifiers(namespace string) ([]Identifier, error) {
 	ns, err := normalizeNamespace(namespace)
 	if err != nil {
 		return nil, err
