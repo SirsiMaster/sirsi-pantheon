@@ -439,16 +439,7 @@ func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 }
 
 func openThreadStore() (routerstore.Store, error) {
-	path, err := routerstore.DefaultStorePath()
-	if err != nil {
-		return nil, err
-	}
-	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
-		if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr != nil {
-			return nil, fmt.Errorf("create thread store directory: %w", mkErr)
-		}
-	}
-	store, err := routerstore.Open(path)
+	store, err := routerstore.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("open thread store: %w", err)
 	}

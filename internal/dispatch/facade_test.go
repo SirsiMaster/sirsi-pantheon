@@ -17,7 +17,7 @@ import (
 
 func testFacade(t *testing.T) *Facade {
 	t.Helper()
-	store, err := routerstore.Open(filepath.Join(t.TempDir(), "router.db"))
+	store, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -93,14 +93,18 @@ func ReadSchemaVersion(path string) (int, error) {
 	return version, nil
 }
 
-// DefaultStorePath returns the canonical filesystem path for the router store on
-// this host. SIRSI_ROUTER_DB overrides it; otherwise ~/.sirsi/router.db.
+// LocalPath returns the filesystem path of this host's LOCAL router store:
+// SIRSI_ROUTER_DB when set, else ~/.sirsi/router.db.
 //
-// This is the single authoritative resolver — callers (self-update, install.sh
-// schema-check, conduit heal) all route through here so the path logic does not
-// drift apart across vectors. Tests should prefer t.Setenv("SIRSI_ROUTER_DB", ...)
-// over patching os.UserHomeDir.
-func DefaultStorePath() (string, error) {
+// It is for read-only, local-only diagnostics (schema-check, self-update
+// backup) — never for opening a store to mutate. Production mutation goes
+// through Resolve(). When SIRSI_ROUTER_URL is set this host has no local
+// ledger of record, so LocalPath refuses rather than hand back a path that
+// would be written behind the service's back (ADR-062 §1, split-brain guard).
+func LocalPath() (string, error) {
+	if u := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); u != "" {
+		return "", fmt.Errorf("routerstore: SIRSI_ROUTER_URL is set (%s); this host has no local ledger of record", u)
+	}
 	if p := os.Getenv("SIRSI_ROUTER_DB"); p != "" {
 		return p, nil
 	}
@@ -156,12 +160,14 @@ type SQLiteStore struct {
 	notifyDir string
 }
 
-// Open opens (creating if absent) the SQLite store at path and applies the
-// schema. path is a filesystem path such as ~/.sirsi/router.db; it MUST live
+// OpenPath opens (creating if absent) the SQLite store at path and applies the
+// schema. Production code MUST NOT call it — use Resolve(); the direct-open
+// gate (ADR-062 §1, rs-04) fails the build on any non-test caller. Tests and
+// Resolve are its only callers. path is a filesystem path such as ~/.sirsi/router.db; it MUST live
 // outside any git repo. Use ":memory:" for tests.
 //
 // The caller owns the returned Store and must Close it.
-func Open(path string) (*SQLiteStore, error) {
+func OpenPath(path string) (*SQLiteStore, error) {
 	// WAL for reader/writer concurrency; busy_timeout so a momentarily locked
 	// DB retries instead of erroring; foreign_keys off (single-table core).
 	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"

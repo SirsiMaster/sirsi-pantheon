@@ -22,7 +22,7 @@ func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	// A distinct DSN per test keeps in-memory DBs isolated even if the driver
 	// shares a cache; ":memory:" alone is per-connection and we cap conns to 1.
-	s, err := Open(":memory:")
+	s, err := OpenPath(":memory:")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -35,7 +35,7 @@ func newTestStore(t *testing.T) *SQLiteStore {
 func TestOpenAndMigrateIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "router.db")
-	s1, err := Open(path)
+	s1, err := OpenPath(path)
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestOpenAndMigrateIdempotent(t *testing.T) {
 		t.Fatalf("Close store: %v", closeErr)
 	}
 	// Re-open the same file: migrate must be idempotent and data must persist.
-	s2, err := Open(path)
+	s2, err := OpenPath(path)
 	if err != nil {
 		t.Fatalf("re-Open: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestConcurrentOpenMigratesOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start // release all at once to maximize contention on the fresh DB
-			s, err := Open(path)
+			s, err := OpenPath(path)
 			if err != nil {
 				errs <- err
 				return
@@ -92,7 +92,7 @@ func TestConcurrentOpenMigratesOnce(t *testing.T) {
 		t.Fatalf("concurrent Open on a fresh DB failed (migration race): %v", err)
 	}
 	// The migrated schema must be intact and usable exactly once.
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatalf("post-race Open: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestState(t *testing.T) {
 // file-backed store. Run with `go test -race`.
 func TestConcurrentWrites(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(filepath.Join(dir, "router.db"))
+	s, err := OpenPath(filepath.Join(dir, "router.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -654,7 +654,7 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 // one ErrAlreadyClosed, every trial. The pre-fix Get→check→UPDATE window let
 // both closers win (TOCTOU). Run with -race.
 func TestCloseItemConcurrentDoubleClose(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -852,7 +852,7 @@ func TestSetStateEmptyKey(t *testing.T) {
 // version is refused loudly instead of being half-migrated.
 func TestMigrateVersioning(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -871,14 +871,14 @@ func TestMigrateVersioning(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := Open(path); err == nil {
+	if _, err := OpenPath(path); err == nil {
 		t.Fatal("Open of a future-versioned db should refuse, got nil error")
 	}
 }
 
 func TestReadSchemaVersionAndMaxSupported(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}

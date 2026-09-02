@@ -25,7 +25,7 @@ func TestHandleRouterWait_MissingAgent(t *testing.T) {
 // the wait path can be exercised without the real repo or home store.
 func newTestFacade(t *testing.T) *dispatch.Facade {
 	t.Helper()
-	store, err := routerstore.Open(filepath.Join(t.TempDir(), "router.db"))
+	store, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

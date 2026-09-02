@@ -7,7 +7,7 @@ import (
 
 func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err = Open(path)
+	s, err = OpenPath(path)
 	if err != nil {
 		t.Fatalf("v15 to v16: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 }
 
 func TestUpsertAndListThreads(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,12 +63,12 @@ func TestUpsertAndListThreads(t *testing.T) {
 
 func TestConcurrentThreadUpsertsPreserveDistinctRowsAndTerminalState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	a, err := Open(path)
+	a, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	b, err := Open(path)
+	b, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestConcurrentThreadUpsertsPreserveDistinctRowsAndTerminalState(t *testing.
 }
 
 func TestHeartbeatCannotImplicitlyResumeConcurrentSuspend(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestHeartbeatCannotImplicitlyResumeConcurrentSuspend(t *testing.T) {
 }
 
 func TestStaleCrossRowSnapshotCannotOverwriteNewerHeartbeat(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

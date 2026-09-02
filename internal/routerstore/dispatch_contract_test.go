@@ -16,7 +16,7 @@ import (
 
 func openTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestExpiredWorkerCannotCompleteNewerLeasedWork(t *testing.T) {
 func TestRestartMidLease(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "router.db")
-	s1, err := Open(path)
+	s1, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestRestartMidLease(t *testing.T) {
 	}
 	_ = s1.Close() // "restart"
 
-	s2, err := Open(path)
+	s2, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}

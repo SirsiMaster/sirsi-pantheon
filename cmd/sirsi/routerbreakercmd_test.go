@@ -16,7 +16,7 @@ import (
 // Delete ResetBreaker's wiring and the final send still returns
 // ErrBreakerOpen, so this fails by name.
 func TestBreakerResetUnblocksSend(t *testing.T) {
-	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	store, err := routerstore.OpenPath(t.TempDir() + "/router.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestBreakerResetUnblocksSend(t *testing.T) {
 // TestResetBreakerUnknownDomain pins the not-found contract the command
 // surfaces to the operator, so a typo reports a miss instead of succeeding.
 func TestResetBreakerUnknownDomain(t *testing.T) {
-	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	store, err := routerstore.OpenPath(t.TempDir() + "/router.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

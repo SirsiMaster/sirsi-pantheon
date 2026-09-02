@@ -45,11 +45,11 @@ func TestSharedProductionMigrationRequiresExplicitDeploymentGate(t *testing.T) {
 		}
 	}
 	_ = db.Close()
-	if _, ifErr4 := Open(path); ifErr4 == nil || !strings.Contains(ifErr4.Error(), "deployment event") {
+	if _, ifErr4 := OpenPath(path); ifErr4 == nil || !strings.Contains(ifErr4.Error(), "deployment event") {
 		t.Fatalf("ordinary binary advanced shared store without gate: %v", ifErr4)
 	}
 	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestFreshSharedStoreInitializesWithoutDeploymentOverride(t *testing.T) {
 	if ifErr11 := os.MkdirAll(filepath.Dir(path), 0700); ifErr11 != nil {
 		t.Fatal(ifErr11)
 	}
-	s, err := Open(path)
+	s, err := OpenPath(path)
 	if err != nil {
 		t.Fatalf("fresh host must initialize version zero store: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestSparseDeployedMigrationPathsReachCurrentSchema(t *testing.T) {
 				}
 			}
 			_ = db.Close()
-			s, err := Open(path)
+			s, err := OpenPath(path)
 			if err != nil {
 				t.Fatalf("upgrade from v%d: %v", from, err)
 			}

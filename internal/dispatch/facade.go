@@ -64,23 +64,9 @@ func (f *Facade) Store() routerstore.Store { return f.store }
 // so a test send can never write a row into the live store (the "test
 // binaries reaching the user" storm class, PR #151).
 func Open(repoRoot string) (*Facade, error) {
-	dbPath := os.Getenv("SIRSI_ROUTER_DB")
-	if dbPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("dispatch: resolve home: %w", err)
-		}
-		dbPath = filepath.Join(home, ".sirsi", "router.db")
-	}
-	// A fresh HOME has no ~/.sirsi yet — SQLite cannot create the db file in a
-	// missing directory (SQLITE_CANTOPEN, surfaced as CI's "unable to open
-	// database file"). Create the parent first.
-	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("dispatch: create store dir: %w", err)
-		}
-	}
-	store, err := routerstore.Open(dbPath)
+	// Path resolution and parent-dir creation live in routerstore.Resolve
+	// (ADR-062 §1): one resolver for every verb, so no consumer can drift.
+	store, err := routerstore.Resolve()
 	if err != nil {
 		// FAIL CLOSED. An earlier version fell back to a read-only handle here so
 		// surfaces could keep rendering through a schema gap. That was wrong at
