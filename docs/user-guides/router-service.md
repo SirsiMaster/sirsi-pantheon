@@ -115,9 +115,38 @@ service on Tailscale or a VPC until the hosted deployment lands.
 
 ## Migrating an existing ledger
 
-Not yet. `sirsi router migrate --to <url>` (Phase C, rs-12) will quiesce the
-fabric, dump the local file canonically, dry-run, import, diff, and prove a
-second import is a no-op. Until then a Postgres service starts empty.
+`sirsi router migrate-store` copies a SQLite ledger into the service backend
+and proves it. Run it on the service host, with the fabric quiet:
+
+```bash
+# 1. dry run: what would be written, nothing written
+sirsi router migrate-store --from ~/.sirsi/router.db --to 'postgres://router_migrator@db:5432/router' --dry-run
+
+# 2. the import
+sirsi router migrate-store --from ~/.sirsi/router.db --to 'postgres://…' [--scrub-nul]
+
+# 3. run it again: every table must report wrote=0 and the same hashes
+```
+
+What it does, in order: sets the fabric-quarantine marker (nothing dispatches
+while it runs) and releases it only when it exits, success or failure; dumps
+every table in primary-key order and hashes it; copies rows without ever
+overwriting; re-dumps the source and refuses if anything changed underneath it;
+dumps the destination and requires the hashes to be identical; prints both.
+
+Two things it may tell you:
+
+- **`NUL cells in source … REFUSED`** — a text cell contains a 0x00 byte, which
+  Postgres cannot store. The line names the table, key and column. Either fix
+  that row, or re-run with `--scrub-nul`, which strips the byte on both the
+  source dump and the import so the proof still holds; the report lists every
+  cell it touched.
+- **`trigger-minted wake events removed: N`** — the destination's own triggers
+  created wake events for old rows that never had one; they were removed so the
+  destination is exactly the source.
+
+Migrate a **copy** of the live file if the running fleet is still on an older
+binary: opening the source advances its schema version.
 
 ## Troubleshooting
 

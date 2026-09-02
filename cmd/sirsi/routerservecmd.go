@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
 )
@@ -210,4 +213,107 @@ func init() {
 	routerTokenMintCmd.Flags().String("label", "", "free-text label (e.g. the machine's name)")
 	routerTokenCmd.AddCommand(routerTokenMintCmd, routerTokenRevokeCmd, routerTokenListCmd)
 	routerCmd.AddCommand(routerTokenCmd)
+}
+
+// ── migrate-store (ADR-062 rs-12) ─────────────────────────────────────────
+// Copy a ledger into the service's backend with proof: quiesce (fabric
+// quarantine marker held for the whole run, released only by this command's
+// exit path), canonical dump hashes on both sides, dry-run, full diff,
+// idempotent re-import. Run ON THE SERVICE HOST.
+
+var (
+	migrateStoreFrom   string
+	migrateStoreTo     string
+	migrateStoreDryRun bool
+	migrateStoreJSON   bool
+	migrateStoreScrub  bool
+)
+
+var routerMigrateStoreCmd = &cobra.Command{
+	Use:   "migrate-store",
+	Short: "Copy a SQLite ledger into the service backend with hash proof (ADR-062 rs-12; run on the service host)",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		if migrateStoreFrom == "" || migrateStoreTo == "" {
+			return errors.New("--from <sqlite path> and --to <postgres:// DSN | sqlite path> are required")
+		}
+		home, _ := os.UserHomeDir()
+		marker := router.FabricQuarantineMarkerPath(home)
+		created := false
+		if _, err := os.Stat(marker); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(marker, []byte("migrate-store "+time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+				return fmt.Errorf("set fabric quarantine marker: %w", err)
+			}
+			created = true
+			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker set (%s)\n", marker)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker already present (%s); left in place\n", marker)
+		}
+		// Released ONLY here, success or failure, and only if we set it.
+		defer func() {
+			if created {
+				_ = os.Remove(marker)
+				fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: marker released by migrate-store exit path\n")
+			}
+		}()
+
+		src, err := routerstore.OpenPath(migrateStoreFrom)
+		if err != nil {
+			return fmt.Errorf("open source: %w", err)
+		}
+		defer func() { _ = src.Close() }()
+		dstStore, err := openServeStore(migrateStoreTo)
+		if err != nil {
+			return fmt.Errorf("open destination: %w", err)
+		}
+		defer func() { _ = dstStore.Close() }()
+		dst, ok := dstStore.(*routerstore.SQLiteStore)
+		if !ok {
+			return errors.New("destination must be a direct backend (postgres:// or a SQLite path), not a service URL")
+		}
+
+		rep, err := routerstore.MigrateStore(src, dst, routerstore.MigrateOptions{DryRun: migrateStoreDryRun, ScrubNUL: migrateStoreScrub})
+		if migrateStoreJSON {
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(rep)
+		} else {
+			mode := "IMPORT"
+			if migrateStoreDryRun {
+				mode = "DRY RUN"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  source %s  (%d tables)\n", mode, rep.Source.SHA256, len(rep.Source.Tables))
+			for _, t := range rep.Source.Tables {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %-16s rows=%-6d would_write=%-6d wrote=%-6d %s\n", t.Table, t.Rows, rep.WouldWrite[t.Table], rep.Wrote[t.Table], t.SHA256[:12])
+			}
+			if !migrateStoreDryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "destination %s\n", rep.Destination.SHA256)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "source after %s\n", rep.SourceAfter)
+			if len(rep.NULCells) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "NUL cells in source: %d (first: %s)%s\n", len(rep.NULCells), rep.NULCells[0], map[bool]string{true: " — scrubbed", false: " — REFUSED; pass --scrub-nul to strip them"}[migrateStoreScrub])
+			}
+			if rep.TriggerExtrasRemoved > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "trigger-minted wake events removed from destination: %d\n", rep.TriggerExtrasRemoved)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if !migrateStoreDryRun {
+			fmt.Fprintln(cmd.OutOrStdout(), "OK: destination dump hash equals source dump hash; run again to prove idempotence (expect wrote=0 everywhere)")
+		}
+		return nil
+	},
+}
+
+func init() {
+	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreFrom, "from", "", "source SQLite ledger path")
+	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreTo, "to", "", "destination: postgres:// DSN or SQLite path")
+	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreDryRun, "dry-run", false, "report what would be written; write nothing")
+	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreJSON, "json", false, "machine-readable report")
+	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreScrub, "scrub-nul", false, "strip 0x00 bytes from text cells (Postgres cannot store them); the report lists every cell touched")
+	routerCmd.AddCommand(routerMigrateStoreCmd)
 }
