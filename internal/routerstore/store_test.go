@@ -22,10 +22,7 @@ func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	// A distinct DSN per test keeps in-memory DBs isolated even if the driver
 	// shares a cache; ":memory:" alone is per-connection and we cap conns to 1.
-	s, err := OpenPath(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := openBackendStore(t, ":memory:")
 	fixed := time.Date(2026, 7, 2, 15, 4, 5, 0, time.UTC)
 	s.now = func() time.Time { return fixed }
 	t.Cleanup(func() { _ = s.Close() })
@@ -554,6 +551,9 @@ func fieldNames(t reflect.Type) map[string]bool {
 //  3. every field actually round-trips through Put→Get (a column that exists
 //     but isn't wired into the SQL would fail here).
 func TestFieldFidelityWithWorkItem(t *testing.T) {
+	if pgTestDSN() != "" {
+		t.Skip("introspects SQLite catalog (sqlite_master / PRAGMA); the Postgres schema is verified by scripts/check-pg-schema.sh")
+	}
 	workT := reflect.TypeOf(work.Item{})
 	storeT := reflect.TypeOf(Item{})
 

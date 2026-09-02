@@ -18,7 +18,7 @@ func (s *SQLiteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
 	if err != nil {
 		return fmt.Errorf("routerstore: begin thread import: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var count int
 	if err := tx.QueryRow(`SELECT count(*) FROM threads`).Scan(&count); err != nil {
 		return fmt.Errorf("routerstore: count threads: %w", err)
@@ -47,7 +47,7 @@ func (s *SQLiteStore) UpsertThreads(records []ThreadRecord) error {
 	if err != nil {
 		return fmt.Errorf("routerstore: begin thread upsert: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, r := range records {
 		if _, err := tx.Exec(`
 INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)

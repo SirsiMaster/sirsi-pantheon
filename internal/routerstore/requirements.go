@@ -116,7 +116,7 @@ func (s *SQLiteStore) AddRequirement(title, source, sourceRef, owner string) (Re
 		ID: id.Name(), Title: title, Source: source, SourceRef: sourceRef,
 		Owner: owner, Status: ReqOpen, Created: now, Updated: now,
 	}
-	if err := s.withTx(func(tx *sql.Tx) error {
+	if err := s.withTx(func(tx *txHandle) error {
 		_, err := tx.Exec(
 			`INSERT INTO requirements (req_id, title, source, source_ref, owner, status, created, updated)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -136,7 +136,7 @@ func (s *SQLiteStore) RecordEvidence(reqID string, ev Evidence) error {
 	if !reqIDPattern.MatchString(reqID) {
 		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
 	}
-	return s.withTx(func(tx *sql.Tx) error {
+	return s.withTx(func(tx *txHandle) error {
 		var cur Evidence
 		row := tx.QueryRow(
 			`SELECT commit_ref, tests_ref, security_ref, design_ref, deployment_ref, production_ref
@@ -188,7 +188,7 @@ func (s *SQLiteStore) Satisfy(reqID string) error {
 	if !reqIDPattern.MatchString(reqID) {
 		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
 	}
-	return s.withTx(func(tx *sql.Tx) error {
+	return s.withTx(func(tx *txHandle) error {
 		var ev Evidence
 		row := tx.QueryRow(
 			`SELECT commit_ref, tests_ref, security_ref, design_ref, deployment_ref, production_ref
@@ -223,7 +223,7 @@ func (s *SQLiteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 	if ownerDecisionRef == "" {
 		return errors.New("routerstore: waiver requires a terminal owner decision router item reference")
 	}
-	return s.withTx(func(tx *sql.Tx) error {
+	return s.withTx(func(tx *txHandle) error {
 		var decisions int
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM items WHERE id=? AND from_agent='owner' AND type='decision' AND status IN ('closed','completed') AND result<>'';`, ownerDecisionRef).Scan(&decisions); err != nil {
 			return err

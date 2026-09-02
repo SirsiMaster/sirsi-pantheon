@@ -44,6 +44,15 @@ control (2026-09-02): deleting one trigger from `schema.sql` makes it fail with
 "expected 12 triggers, got 11". Local scratch server: PG 14 on `127.0.0.1:54329`,
 user `sirsi`, see `docs/ROUTER_SERVICE_GOAL.md`.
 
-**Known limitations.** No `PostgresStore` yet (rs-06). `SKIP LOCKED` claims are
+**Dialect layer (rs-06).** `../dialect.go` applies the translation table above at
+one seam (`dbHandle`/`txHandle`); `../open_postgres.go` opens a ledger over pgx.
+Run the whole routerstore suite on Postgres with:
+
+```bash
+SIRSI_TEST_PG_DSN='postgres://sirsi@127.0.0.1:54329/routerstore_test' go test ./internal/routerstore/
+```
+
+**Known limitations.** There is no separate `PostgresStore` type — `SQLiteStore`
+carries a dialect (the name predates rs-06; a rename is cosmetic and deferred). `SKIP LOCKED` claims are
 a store-code concern, not schema. `rand_hex32()` is `md5`-based and not
 cryptographic; it only needs uniqueness, as SQLite's `randomblob` did.

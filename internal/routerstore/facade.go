@@ -122,7 +122,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	bucket := now.Truncate(SendWindow).Format("2006-01-02T15")
 	if _, err = tx.Exec(
 		`INSERT INTO send_quota(sender, bucket, count) VALUES (?, ?, 1)
-		 ON CONFLICT(sender, bucket) DO UPDATE SET count = count + 1;`, r.From, bucket); err != nil {
+		 ON CONFLICT(sender, bucket) DO UPDATE SET count = send_quota.count + 1;`, r.From, bucket); err != nil {
 		return "", false, fmt.Errorf("routerstore: SendGuarded: quota: %w", err)
 	}
 	var used int
@@ -170,7 +170,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 // (source_item, failure_class) — §2b axiom 5. First occurrence creates ONE
 // bounded item; every recurrence bumps occurrences/last_seen in place. The
 // partial unique index makes duplicate rows impossible even under races.
-func (s *SQLiteStore) escalateTx(tx *sql.Tx, now time.Time, sourceItem, failureClass, title, body string) error {
+func (s *SQLiteStore) escalateTx(tx *txHandle, now time.Time, sourceItem, failureClass, title, body string) error {
 	if sourceItem == "" || failureClass == "" {
 		return fmt.Errorf("routerstore: escalate: source_item and failure_class are required")
 	}
@@ -183,7 +183,7 @@ func (s *SQLiteStore) escalateTx(tx *sql.Tx, now time.Time, sourceItem, failureC
 		`INSERT INTO items (id, from_agent, to_agent, title, type, status, opened, instructions, source_item, failure_class, first_seen, last_seen)
 		 VALUES (?, 'routerstore', ?, ?, '', 'open', ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(source_item, failure_class) WHERE source_item <> '' AND failure_class <> '' DO UPDATE SET
-		     occurrences = occurrences + 1,
+		     occurrences = items.occurrences + 1,
 		     last_seen   = excluded.last_seen;`,
 		id, recipient, title, now.Format(time.RFC3339), strings.TrimSpace(body),
 		sourceItem, failureClass, now.Format(time.RFC3339), now.Format(time.RFC3339),

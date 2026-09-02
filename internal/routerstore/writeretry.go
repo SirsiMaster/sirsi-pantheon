@@ -94,7 +94,7 @@ func (s *SQLiteStore) retryWrite(op func() error) error {
 	for {
 		err := op()
 		attempts++
-		if !isReadonlyContention(err) && !isBusy(err) {
+		if !s.dialect().retryable(err) {
 			return err
 		}
 		if time.Now().After(deadline) {

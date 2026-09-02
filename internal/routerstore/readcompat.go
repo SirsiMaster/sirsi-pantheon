@@ -101,5 +101,5 @@ func OpenReadOnly(path string) (*SQLiteStore, SchemaGap, error) {
 			gap.MigratedBy = by
 		}
 	}
-	return &SQLiteStore{db: db}, gap, nil
+	return &SQLiteStore{db: &dbHandle{db: db, d: sqliteDialect}, d: sqliteDialect}, gap, nil
 }

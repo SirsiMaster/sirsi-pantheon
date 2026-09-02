@@ -26,7 +26,7 @@ cd "$ROOT"
 
 # Constructors that bypass Resolve(). OpenPath is for tests and Resolve only;
 # OpenReadOnly is a read surface primitive with no production caller today.
-FORBIDDEN='routerstore\.(OpenPath|OpenReadOnly|Open|DefaultStorePath)\('
+FORBIDDEN='routerstore\.(OpenPath|OpenPostgres|OpenReadOnly|Open|DefaultStorePath)\('
 # LocalPath is read-only by contract; only these files may call it.
 ALLOW_LOCALPATH='^(cmd/sirsi/schemacheckcmd\.go|cmd/sirsi/selfupdate\.go):'
 
