@@ -17,6 +17,8 @@ type Store interface {
 	AddTask(t Task) error
 	AllocateIdentifier(namespace, title, owner string) (Identifier, error)
 	Backfill(items []Item) (BackfillReport, error)
+	BindItemSession(id, session string) error
+	BindTaskSession(agent, taskID, session string) error
 	Block(id, token, reason string) error
 	Breakers() ([]Breaker, error)
 	ClaimIdentifierNumber(namespace string, number int, title, slug, owner string) (Identifier, error)
@@ -40,11 +42,13 @@ type Store interface {
 	GC(keep time.Duration) (int64, error)
 	Get(id string) (Item, error)
 	GetAgent(id string) (Agent, error)
+	GetSession(id string) (Session, error)
 	GetState(key string) (string, bool, error)
 	GetTask(agent, taskID string) (Task, error)
 	Heartbeat(id string) error
 	ImportThreadsIfEmpty(records []ThreadRecord) error
 	Inbox(agent string) ([]Item, error)
+	ItemSession(id string) (string, error)
 	ListAgents() ([]Agent, error)
 	ListAll() ([]Item, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
@@ -54,6 +58,7 @@ type Store interface {
 	ListWakeEvents(agent string) ([]WakeEvent, error)
 	ListenNotify(ctx context.Context, agent string) (<-chan struct{}, error)
 	MarkRequirementAudit(agent, evidenceRef string) error
+	MintSession(host, agent, runtimeHash string) (Session, error)
 	NotifyAgent(agent string)
 	NotifyPath(agent string) string
 	OperationalAgents() ([]string, error)
@@ -70,6 +75,7 @@ type Store interface {
 	ResetBreaker(domain string) error
 	ResetTaskAttempts(agent, taskID string) error
 	ResumeThreadCAS(record ThreadRecord, suspendedAt string) error
+	RevokeSession(id string) error
 	RunnableFor(agent string) (RunnableState, error)
 	Satisfy(reqID string) error
 	Send(from, to, title, msgType, instructions string) (string, error)
@@ -78,6 +84,8 @@ type Store interface {
 	SetState(key, value string) error
 	SetWake(id, status, attemptedAt, adapter, wakeErr string) error
 	StartWork(id, token string) error
+	TaskSession(agent, taskID string) (string, error)
+	TouchSession(id string) error
 	UnmetRequirements(owner string) ([]Requirement, error)
 	UpdateTask(agent, taskID string, u TaskUpdate) (Task, error)
 	UpsertThreadCAS(r ThreadRecord) (bool, error)

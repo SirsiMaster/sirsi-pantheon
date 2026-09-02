@@ -632,6 +632,34 @@ CREATE TABLE IF NOT EXISTS threads (
 CREATE INDEX IF NOT EXISTS idx_threads_agent_status ON threads(agent,status);
 CREATE INDEX IF NOT EXISTS idx_threads_last_seen ON threads(last_seen_at);
 `},
+	// v17 — ADR-062 §3 identity: service-minted sessions, and the session that
+	// holds each item/task lease. The binding lives in lease_sessions, NOT as
+	// columns on items/tasks: items mirror internal/work.Item field-for-field
+	// (TestFieldFidelityWithWorkItem forbids invented columns), and identity is
+	// service-side truth that must never round-trip through a markdown file.
+	{17, `
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id   TEXT PRIMARY KEY,
+    secret       TEXT NOT NULL,
+    host         TEXT NOT NULL,
+    agent        TEXT NOT NULL,
+    runtime_hash TEXT NOT NULL,
+    created      TEXT NOT NULL,
+    last_seen    TEXT NOT NULL,
+    revoked      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_host_agent ON sessions(host, agent);
+CREATE TABLE IF NOT EXISTS lease_sessions (
+    kind    TEXT NOT NULL,   -- 'item' | 'task'
+    key     TEXT NOT NULL,   -- item id, or agent||'/'||task_id
+    session TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+ALTER TABLE threads ADD COLUMN host TEXT NOT NULL DEFAULT '';
+ALTER TABLE threads ADD COLUMN user_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE threads ADD COLUMN session TEXT NOT NULL DEFAULT '';
+ALTER TABLE threads ADD COLUMN runtime_hash TEXT NOT NULL DEFAULT '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

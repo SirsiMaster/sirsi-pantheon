@@ -1,7 +1,7 @@
 # routerstore/pg — the Postgres ledger schema (ADR-062)
 
 **What this is.** The router ledger's Postgres schema: SQLite schema v16
-(`../store.go` migrations 1..16) translated once, plus the ADR-062 §3 identity
+(`../store.go` migrations 1..17) translated once, plus the ADR-062 §3 identity
 columns. It is the `Ra` backend; `SQLiteStore` stays the `Anubis` backend.
 Nothing here runs on a Mac — it is applied to Cloud SQL by the migrator role.
 
@@ -12,7 +12,7 @@ Nothing here runs on a Mac — it is applied to Cloud SQL by the migrator role.
 
 **Why one baseline and no migration chain.** A Postgres ledger is only ever
 created by `sirsi router migrate` (rs-12) from a quiesced SQLite dump, so it
-starts at the SQLite high-water mark. `router.schema_version` holds `16` so the
+starts at the SQLite high-water mark. `router.schema_version` holds `17` so the
 migration tool can compare it with SQLite's `PRAGMA user_version` directly.
 Future schema changes add a Postgres migration alongside the SQLite one.
 
@@ -30,14 +30,16 @@ Future schema changes add a Postgres migration alongside the SQLite one.
 Timestamps stay `TEXT` RFC3339 UTC on purpose: the store compares them as
 strings and the migration diff (rs-12) is byte-for-byte.
 
-**Identity columns (ADR-062 §3).** `items`, `tasks`: `host`, `user_id`,
-`session`. `threads`: those plus `runtime_hash`, with a partial unique index on
-`session`. They default to `''` so a migrated SQLite row is valid; the service
-fills them from the authenticated session on every write (rs-10).
+**Identity (ADR-062 §3).** `sessions` (minted by the service; secret, host,
+agent, runtime hash, revoked) and `lease_sessions` (which session holds each
+item/task lease). Deliberately NOT columns on `items`/`tasks`: items mirror
+`work.Item` field-for-field (`TestFieldFidelityWithWorkItem` forbids invented
+columns) and identity must never round-trip through a markdown file. `threads`
+carries `host`, `user_id`, `session`, `runtime_hash`.
 
 **Verification.** `scripts/check-pg-schema.sh` creates a throwaway database,
 applies both files as the roles they will run as in production, and asserts:
-12 tables, 12 distinct triggers, ≥5 partial indexes, version 16; an item insert
+14 tables, 12 distinct triggers, ≥5 partial indexes, version 17; an item insert
 emits exactly one wake event and a duplicate `event_key` is ignored; a claim
 acks the leased wake event; `router_service` cannot `CREATE TABLE`. Negative
 control (2026-09-02): deleting one trigger from `schema.sql` makes it fail with

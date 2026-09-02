@@ -67,15 +67,29 @@ whole rollback.
   with backoff on engine contention, so a slow service backpressures the wake
   loop instead of piling up claims.
 
-## Security floor and what is still to come
+## Security model
 
-Today: one shared bearer token, compared in constant time, required on every
-call; TLS from Cloud Run or your own certificate. Coming in Phase C (ADR-062 §3):
-per-host tokens that can be revoked individually, service-minted sessions bound
-to the host, the binary's signature and the agent id, a signed 60-second nonce
-on every mutation, and ownership checks on every lease and write. Do not expose
-the service to the public internet before that lands; keep it on Tailscale or a
-VPC.
+Every call a node makes carries five proofs, checked in this order:
+
+1. **Host** — the bearer token (`SIRSI_ROUTER_TOKEN`). Wrong or missing → 401.
+2. **Session** — a session id the service minted for this host + agent +
+   binary. The node mints one automatically on first use and caches it at
+   `~/.sirsi/sessions/<agent>.json` (mode 0600).
+3. **Freshness** — a nonce with a millisecond timestamp, accepted only inside
+   ±60 s and only once. Keep node clocks within a minute of the service.
+4. **Signature** — HMAC of the method, nonce and body with the session secret.
+5. **Runtime** — the SHA-256 of the `sirsi` binary, bound when the session was
+   minted. A different binary presenting the same session is refused and the
+   session is revoked; the node then mints a new one for the new binary.
+
+Then **ownership**: a lease can only be completed, failed, blocked, started or
+renewed by the session that claimed it. A copied lease token from another
+process is refused with `ErrNotOwner`.
+
+Still to come in Phase C: per-host tokens that can be minted, rotated and
+revoked individually (today every node shares the one `--token-env` secret),
+and a release-manifest check of the runtime hash. Until per-host tokens land,
+keep the service on Tailscale or a VPC.
 
 ## Migrating an existing ledger
 
@@ -88,6 +102,6 @@ second import is a no-op. Until then a Postgres service starts empty.
 | Symptom | Cause |
 |---|---|
 | `SIRSI_ROUTER_URL … is set but SIRSI_ROUTER_TOKEN is empty` | export the token on the node |
-| `HTTP 401` | token on the node differs from the service's `--token-env` value |
+| `HTTP 401` | token differs from the service's `--token-env` value, or the nonce is outside ±60 s (check the clock), or the session was revoked |
 | `postgres ledger has no router.schema_version` | apply `internal/routerstore/pg/schema.sql` as `router_migrator` first |
 | `this host has no local ledger of record` | expected: a node on the service refuses local-file diagnostics |

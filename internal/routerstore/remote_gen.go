@@ -25,6 +25,12 @@ func (rs *RemoteStore) Backfill(items []Item) (BackfillReport, error) {
 	err := rs.call("Backfill", []any{items}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) BindItemSession(id, session string) error {
+	return rs.call("BindItemSession", []any{id, session})
+}
+func (rs *RemoteStore) BindTaskSession(agent, taskID, session string) error {
+	return rs.call("BindTaskSession", []any{agent, taskID, session})
+}
 func (rs *RemoteStore) Block(id, token, reason string) error {
 	return rs.call("Block", []any{id, token, reason})
 }
@@ -121,6 +127,11 @@ func (rs *RemoteStore) GetAgent(id string) (Agent, error) {
 	err := rs.call("GetAgent", []any{id}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) GetSession(id string) (Session, error) {
+	var o0 Session
+	err := rs.call("GetSession", []any{id}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) GetState(key string) (string, bool, error) {
 	var o0 string
 	var o1 bool
@@ -139,6 +150,11 @@ func (rs *RemoteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
 func (rs *RemoteStore) Inbox(agent string) ([]Item, error) {
 	var o0 []Item
 	err := rs.call("Inbox", []any{agent}, &o0)
+	return o0, err
+}
+func (rs *RemoteStore) ItemSession(id string) (string, error) {
+	var o0 string
+	err := rs.call("ItemSession", []any{id}, &o0)
 	return o0, err
 }
 func (rs *RemoteStore) ListAgents() ([]Agent, error) {
@@ -178,6 +194,11 @@ func (rs *RemoteStore) ListWakeEvents(agent string) ([]WakeEvent, error) {
 }
 func (rs *RemoteStore) MarkRequirementAudit(agent, evidenceRef string) error {
 	return rs.call("MarkRequirementAudit", []any{agent, evidenceRef})
+}
+func (rs *RemoteStore) MintSession(host, agent, runtimeHash string) (Session, error) {
+	var o0 Session
+	err := rs.call("MintSession", []any{host, agent, runtimeHash}, &o0)
+	return o0, err
 }
 func (rs *RemoteStore) OperationalAgents() ([]string, error) {
 	var o0 []string
@@ -227,6 +248,7 @@ func (rs *RemoteStore) ResetTaskAttempts(agent, taskID string) error {
 func (rs *RemoteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
 	return rs.call("ResumeThreadCAS", []any{record, suspendedAt})
 }
+func (rs *RemoteStore) RevokeSession(id string) error { return rs.call("RevokeSession", []any{id}) }
 func (rs *RemoteStore) RunnableFor(agent string) (RunnableState, error) {
 	var o0 RunnableState
 	err := rs.call("RunnableFor", []any{agent}, &o0)
@@ -256,6 +278,12 @@ func (rs *RemoteStore) SetWake(id, status, attemptedAt, adapter, wakeErr string)
 func (rs *RemoteStore) StartWork(id, token string) error {
 	return rs.call("StartWork", []any{id, token})
 }
+func (rs *RemoteStore) TaskSession(agent, taskID string) (string, error) {
+	var o0 string
+	err := rs.call("TaskSession", []any{agent, taskID}, &o0)
+	return o0, err
+}
+func (rs *RemoteStore) TouchSession(id string) error { return rs.call("TouchSession", []any{id}) }
 func (rs *RemoteStore) UnmetRequirements(owner string) ([]Requirement, error) {
 	var o0 []Requirement
 	err := rs.call("UnmetRequirements", []any{owner}, &o0)
