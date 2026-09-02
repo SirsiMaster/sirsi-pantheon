@@ -180,7 +180,16 @@ func (rs *RemoteStore) ListenNotify(ctx context.Context, agent string) (<-chan s
 				return
 			}
 			woke, err := rs.Wait(ctx, agent, 25*time.Second)
-			if err != nil || !woke {
+			if err != nil {
+				// Service unreachable: back off instead of spinning (ADR-062 §2).
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(2 * time.Second):
+				}
+				continue
+			}
+			if !woke {
 				continue
 			}
 			select {
