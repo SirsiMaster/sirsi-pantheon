@@ -1,7 +1,7 @@
 # ADR-062: Router as a Service — Fleet Concurrency for Anubis and Ra
 
 ## Status
-**Proposed, revision 3** — September 2, 2026. Author: claude-home. Owner
+**Accepted for step 1 (merged 2026-09-02: #682, #683, #684); revision 4** — September 2, 2026. Author: claude-home. Owner
 decision recorded 2026-09-02 (verbatim: "put it in GCP", "build a solution
 only once", "skip github actions"). Reviewer: Sirsi Software Admin
 (`sirsi-software-admin`), verdict CONDITIONAL on revision 1, **ACCEPT for Migration step 1 design
@@ -261,3 +261,56 @@ Bind #4
   other host is unaffected.
 - `sirsi router status` on M1 and M5 report identical open counts and the
   same item ids after each writes one item.
+
+
+## Amendments (revision 4, 2026-09-02, from implementation and SSA review)
+
+Each amendment records what the code does where it differs from the text
+above, with the reviewer's disposition.
+
+1. **Constructor naming (SSA Bind #1, accepted).** `Open`/`DefaultStorePath`
+   did not become unexported; they became `OpenPath` (tests and `Resolve()`
+   only) and `LocalPath()` (read-only diagnostics, refuses under
+   `SIRSI_ROUTER_URL`). Seven test files across five packages need a
+   path-open, so the boundary is enforced by the direct-open gate
+   (`scripts/check-router-store-open.sh`, in CI and pre-push) rather than by
+   export scope. The gate's allowlist is exactly `cmd/sirsi/routerservecmd.go`,
+   the service entry point.
+2. **Identity binding lives in a side table (SSA rs-10, accepted).** §3 said
+   items and tasks gain `host`/`user`/`session` columns. `items` mirrors
+   `internal/work.Item` field-for-field and round-trips through markdown
+   (`TestFieldFidelityWithWorkItem` forbids invented columns), and identity is
+   service-side truth that must never round-trip through a file. The binding
+   is `lease_sessions(kind, key, session)`; `threads` does gain
+   `host`, `user_id`, `session`, `runtime_hash`. Sessions live in `sessions`.
+3. **Enrollment (SSA rs-10 condition; rs-11).** `MintSession` is reachable
+   with a bearer token only, by design — it is how a node obtains a session.
+   Under a **per-host token** (`sirsi router token mint <host>`) it may mint
+   only for that host (`ErrHostMismatch`); the shared bootstrap token is the
+   single unconstrained path and is operator-held. Agent id stays
+   caller-declared: ownership is by session, an agent label is a workstream
+   claim, not a permission. Runtime attestation beyond the self-reported
+   executable hash (release-manifest match) is Phase D, rs-16, as §3 states.
+4. **Store failures are 503, never 401 (rs-13 finding).** During a 30 s
+   database outage every call had read "invalid bearer token" because the
+   token/session lookups failed on the store and the handler treated that as
+   an auth verdict; clients re-minted sessions. A store failure in the auth
+   chain is now `503` + `ErrServiceUnavailable`; the client keeps its
+   session and retries (`TestOutageIs503NotUnauthorized`).
+5. **Lease-expiry reclaim is not a duplicate claim.** Under an outage a holder
+   whose completion fails keeps its lease until TTL; the item then reopens and
+   another host may claim it. The evidence report distinguishes this designed
+   recovery from a concurrent duplicate (two hosts both completing). Measured
+   2026-09-02: 3,000 items, two hosts, 0 concurrent duplicates
+   (`docs/evidence/ADR-062-RS13-TWO-MAC-EVIDENCE-20260902.md`).
+6. **One implementation, two dialects.** There is no separate `PostgresStore`
+   type; `SQLiteStore` carries a dialect (`internal/routerstore/dialect.go`)
+   and `OpenPostgres` returns it. "PostgresStore implements the same
+   interface" is satisfied by one implementation behind one rewrite seam.
+7. **Migration also removes trigger-minted wake events and scrubs NUL on
+   request.** `migrate-store` deletes destination wake events the source
+   never had (minted by the destination's own insert triggers for pre-v10
+   rows) and, with `--scrub-nul`, strips 0x00 from text cells on both sides;
+   a source with NUL is otherwise refused with the cells listed.
+8. **Evidence-run knob.** `SIRSI_ROUTER_SERVE_TEST_DELAY` sleeps before every
+   call on the service; off unless set, logged at startup when on.
