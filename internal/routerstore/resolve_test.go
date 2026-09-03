@@ -16,8 +16,17 @@ func TestResolveAndLocalPathRefuseWhenServiceURLSet(t *testing.T) {
 	if _, err := LocalPath(); err == nil || !strings.Contains(err.Error(), "SIRSI_ROUTER_URL") {
 		t.Fatalf("LocalPath with SIRSI_ROUTER_URL set: want refusal naming the variable, got err=%v", err)
 	}
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
 	if s, err := Resolve(); err == nil || s != nil {
-		t.Fatalf("Resolve with SIRSI_ROUTER_URL set: want (nil, err), got (%v, %v)", s, err)
+		t.Fatalf("Resolve with URL but no token: want (nil, err), got (%v, %v)", s, err)
+	}
+	t.Setenv("SIRSI_ROUTER_TOKEN", "tok")
+	s, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve with URL+token: %v", err)
+	}
+	if _, ok := s.(*RemoteStore); !ok {
+		t.Fatalf("Resolve with URL+token: want *RemoteStore, got %T", s)
 	}
 }
 
