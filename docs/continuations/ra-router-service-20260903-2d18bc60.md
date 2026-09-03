@@ -30,3 +30,6 @@ then heartbeat every few tool calls. Send `--from ra`. Ledger: `sirsi router led
 
 ## Durability rule
 Update this file and `~/.claude/projects/-Users-thekryptodragon/memory/project_router_service_ra_gcp.md` at the end of every substantive turn.
+
+## Charter (2026-09-03T21:4xZ)
+ADR-063 Ra Charter MERGED 174dc7c8 (#705), bound under Ra authority on the owner mandate "make the recommended decision that has the most legs". Rules in force: D2 complete = verified release; D3 every step enumerated in `docs/goals/<slug>.md` + ledger before work; D4 owner gates = security, privacy, bind authority ONLY (cost/cut-over/placement are Ra decisions under D8, recorded with reason + rollback); D9 product bar. ADR-062 is goal #1, complete at rs-25. rs-15 credential step (owner runs `scripts/router-service/grant-provisioner.sh` as sirsimaster@gmail.com) is still the only thing Ra cannot do itself.
