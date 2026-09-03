@@ -67,27 +67,111 @@ whole rollback.
   with backoff on engine contention, so a slow service backpressures the wake
   loop instead of piling up claims.
 
-## Security floor and what is still to come
+## Security model
 
-Today: one shared bearer token, compared in constant time, required on every
-call; TLS from Cloud Run or your own certificate. Coming in Phase C (ADR-062 §3):
-per-host tokens that can be revoked individually, service-minted sessions bound
-to the host, the binary's signature and the agent id, a signed 60-second nonce
-on every mutation, and ownership checks on every lease and write. Do not expose
-the service to the public internet before that lands; keep it on Tailscale or a
-VPC.
+Every call a node makes carries five proofs, checked in this order:
+
+1. **Host** — the bearer token (`SIRSI_ROUTER_TOKEN`). Wrong or missing → 401.
+2. **Session** — a session id the service minted for this host + agent +
+   binary. The node mints one automatically on first use and caches it at
+   `~/.sirsi/sessions/<agent>.json` (mode 0600).
+3. **Freshness** — a nonce with a millisecond timestamp, accepted only inside
+   ±60 s and only once. Keep node clocks within a minute of the service.
+4. **Signature** — HMAC of the method, nonce and body with the session secret.
+5. **Runtime** — the SHA-256 of the `sirsi` binary, bound when the session was
+   minted. A different binary presenting the same session is refused and the
+   session is revoked; the node then mints a new one for the new binary.
+
+Then **ownership**: a lease can only be completed, failed, blocked, started or
+renewed by the session that claimed it. A copied lease token from another
+process is refused with `ErrNotOwner`.
+
+## Per-host tokens
+
+The `--token-env` secret is the **bootstrap** token: it can mint sessions for
+any host. Give each machine its own token instead, and hand the bootstrap
+secret to nobody:
+
+```bash
+# on the service host, against the service's own backend
+sirsi router token mint m1-backup --label "M1 backup Mac" --store ~/.sirsi/router.db
+#   token id: 9335d398…  host: m1-backup
+#   SIRSI_ROUTER_TOKEN=<printed once — copy it to that machine>
+
+sirsi router token list   --store ~/.sirsi/router.db
+sirsi router token revoke 9335d398328a9152 --store ~/.sirsi/router.db
+```
+
+A per-host token can only mint sessions for the host it was minted for, so a
+machine cannot claim to be another. Revoking a token also revokes every session
+minted under that host; the machine is refused on its very next request, and no
+other machine notices. The host name a node presents is its `hostname`.
+
+Adding a machine is therefore: mint a token, set `SIRSI_ROUTER_URL` and
+`SIRSI_ROUTER_TOKEN` on it, and `sirsi thread register`.
+
+Still to come: a release-manifest check of the runtime hash (Phase D). Keep the
+service on Tailscale or a VPC until the hosted deployment lands.
 
 ## Migrating an existing ledger
 
-Not yet. `sirsi router migrate --to <url>` (Phase C, rs-12) will quiesce the
-fabric, dump the local file canonically, dry-run, import, diff, and prove a
-second import is a no-op. Until then a Postgres service starts empty.
+`sirsi router migrate-store` copies a SQLite ledger into the service backend
+and proves it. Run it on the service host, with the fabric quiet:
+
+```bash
+# 1. dry run: what would be written, nothing written
+sirsi router migrate-store --from ~/.sirsi/router.db --to 'postgres://router_migrator@db:5432/router' --dry-run
+
+# 2. the import
+sirsi router migrate-store --from ~/.sirsi/router.db --to 'postgres://…' [--scrub-nul]
+
+# 3. run it again: every table must report wrote=0 and the same hashes
+```
+
+What it does, in order: sets the fabric-quarantine marker (nothing dispatches
+while it runs) and releases it only when it exits, success or failure; dumps
+every table in primary-key order and hashes it; copies rows without ever
+overwriting; re-dumps the source and refuses if anything changed underneath it;
+dumps the destination and requires the hashes to be identical; prints both.
+
+Two things it may tell you:
+
+- **`NUL cells in source … REFUSED`** — a text cell contains a 0x00 byte, which
+  Postgres cannot store. The line names the table, key and column. Either fix
+  that row, or re-run with `--scrub-nul`, which strips the byte on both the
+  source dump and the import so the proof still holds; the report lists every
+  cell it touched.
+- **`trigger-minted wake events removed: N`** — the destination's own triggers
+  created wake events for old rows that never had one; they were removed so the
+  destination is exactly the source.
+
+Migrate a **copy** of the live file if the running fleet is still on an older
+binary: opening the source advances its schema version.
+
+## Evidence run
+
+The two-host concurrency proof (goal G3) is reproducible with the hidden
+`bench` verb. On the service host, with the service up and a per-host token
+on each node:
+
+```bash
+sirsi router bench seed  --agent bench --count 1000            # one host
+sirsi router bench claim --agent bench --trials 2000 --ttl 120s --out a.jsonl   # host A
+sirsi router bench claim --agent bench --trials 2000 --ttl 120s --out b.jsonl   # host B, concurrently
+sirsi router bench report a.jsonl b.jsonl
+```
+
+`report` fails if any item was claimed by two hosts while the first claim was
+live, and prints p50/p95/p99 per verb per host. To inject latency, start the
+service with `SIRSI_ROUTER_SERVE_TEST_DELAY=50ms`; to inject an outage, stop
+and restart the database mid-run. The 2026-09-02 run and its findings are in
+`docs/evidence/ADR-062-RS13-TWO-MAC-EVIDENCE-20260902.md`.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
 | `SIRSI_ROUTER_URL … is set but SIRSI_ROUTER_TOKEN is empty` | export the token on the node |
-| `HTTP 401` | token on the node differs from the service's `--token-env` value |
+| `HTTP 401` | token differs from the service's `--token-env` value, or the nonce is outside ±60 s (check the clock), or the session was revoked |
 | `postgres ledger has no router.schema_version` | apply `internal/routerstore/pg/schema.sql` as `router_migrator` first |
 | `this host has no local ledger of record` | expected: a node on the service refuses local-file diagnostics |

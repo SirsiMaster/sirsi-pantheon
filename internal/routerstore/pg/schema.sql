@@ -1,8 +1,8 @@
 -- Router ledger — Postgres schema (ADR-062 §1/§3, Migration step rs-05).
 --
--- This is the SQLite schema at user_version 16 (internal/routerstore/store.go
--- migrations 1..16) translated once, plus the ADR-062 §3 identity columns
--- (host, user_id, session) on items, tasks and threads. A Postgres ledger is
+-- This is the SQLite schema at user_version 18 (internal/routerstore/store.go
+-- migrations 1..18) translated once, plus the ADR-062 §3 identity tables
+-- (sessions, lease_sessions) and identity columns on threads. A Postgres ledger is
 -- always created fresh by `sirsi router migrate` from a quiesced SQLite dump
 -- (rs-12), so there is no incremental migration chain here: one baseline,
 -- versioned by router.schema_version so the migration tool can compare it
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
     version    INTEGER NOT NULL,
     applied_at TEXT    NOT NULL
 );
-INSERT INTO schema_version(version, applied_at) VALUES (16, router.now_rfc3339())
+INSERT INTO schema_version(version, applied_at) VALUES (18, router.now_rfc3339())
   ON CONFLICT (singleton) DO NOTHING;
 
 -- ── v1 ─────────────────────────────────────────────────────────────────────
@@ -78,11 +78,7 @@ CREATE TABLE items (
     -- v3
     blocked_by        TEXT    NOT NULL DEFAULT '',
     -- v13
-    lease_updated     TEXT    NOT NULL DEFAULT '',
-    -- ADR-062 §3 identity (host proven by token, session minted by the service)
-    host              TEXT    NOT NULL DEFAULT '',
-    user_id           TEXT    NOT NULL DEFAULT '',
-    session           TEXT    NOT NULL DEFAULT ''
+    lease_updated     TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_items_to_status      ON items(to_agent, status);
 CREATE UNIQUE INDEX idx_items_idem    ON items(idem_key) WHERE idem_key <> '';
@@ -91,7 +87,6 @@ CREATE UNIQUE INDEX idx_items_singleton ON items(source_item, failure_class)
 CREATE INDEX idx_items_lease          ON items(status, lease_expires);
 CREATE INDEX idx_items_blocked_by     ON items(blocked_by) WHERE blocked_by <> '';
 CREATE INDEX idx_items_lease_updated  ON items(to_agent, status, lease_updated);
-CREATE INDEX idx_items_host_session   ON items(host, session);
 
 CREATE TABLE agents (
     id            TEXT PRIMARY KEY,
@@ -159,10 +154,6 @@ CREATE TABLE tasks (
     idempotency_key   TEXT NOT NULL DEFAULT '',
     result_ref        TEXT NOT NULL DEFAULT '',
     failure_reason    TEXT NOT NULL DEFAULT '',
-    -- ADR-062 §3
-    host              TEXT NOT NULL DEFAULT '',
-    user_id           TEXT NOT NULL DEFAULT '',
-    session           TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (agent, task_id)
 );
 CREATE INDEX idx_tasks_agent_status ON tasks(agent, status);
@@ -248,6 +239,42 @@ CREATE INDEX idx_threads_agent_status ON threads(agent, status);
 CREATE INDEX idx_threads_last_seen    ON threads(last_seen_at);
 CREATE UNIQUE INDEX idx_threads_session ON threads(session) WHERE session <> '';
 
+-- ── v17 — ADR-062 §3 sessions ──────────────────────────────────────────────
+
+CREATE TABLE sessions (
+    session_id   TEXT PRIMARY KEY,
+    secret       TEXT NOT NULL,
+    host         TEXT NOT NULL,
+    agent        TEXT NOT NULL,
+    runtime_hash TEXT NOT NULL,
+    created      TEXT NOT NULL,
+    last_seen    TEXT NOT NULL,
+    revoked      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_sessions_host_agent ON sessions(host, agent);
+
+-- Which session holds each lease. A side table, not columns on items/tasks:
+-- items mirror work.Item field-for-field and identity never round-trips
+-- through markdown.
+CREATE TABLE lease_sessions (
+    kind    TEXT NOT NULL,
+    key     TEXT NOT NULL,
+    session TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+-- ── v18 — per-host bearer tokens (rs-11) ───────────────────────────────────
+
+CREATE TABLE host_tokens (
+    token_id   TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    host       TEXT NOT NULL,
+    label      TEXT NOT NULL DEFAULT '',
+    created    TEXT NOT NULL,
+    revoked    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_host_tokens_host ON host_tokens(host, revoked);
+
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME
 -- transaction as the source mutation, exactly as in SQLite, so a writer
@@ -311,8 +338,11 @@ CREATE OR REPLACE FUNCTION router.trg_wake_task_created() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.status IN ('pending','in-progress') AND NEW.blocked_by = '' THEN
+    -- key/reason must match SQLite's wake_task_created exactly: the rs-12
+    -- migration hash proved a 'task:actionable' key here made a migrated
+    -- ledger diverge by one wake event (found 2026-09-02).
     INSERT INTO wake_events(event_id,event_key,agent,source_kind,source_id,reason,created,updated)
-    VALUES (router.rand_hex32(),'task:actionable:'||NEW.agent||':'||NEW.task_id||':'||NEW.updated,NEW.agent,'ledger_task',NEW.task_id,'ledger task assigned or unblocked',router.now_rfc3339(),router.now_rfc3339())
+    VALUES (router.rand_hex32(),'task:create:'||NEW.agent||':'||NEW.task_id,NEW.agent,'ledger_task',NEW.task_id,'ledger task created or assigned',router.now_rfc3339(),router.now_rfc3339())
     ON CONFLICT DO NOTHING;
   END IF;
   RETURN NULL;

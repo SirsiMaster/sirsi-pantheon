@@ -23,7 +23,9 @@ func remoteHarness(t *testing.T) (Store, *RemoteStore) {
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return backend, NewRemoteStore(srv.URL, "t0k")
+	rs := NewRemoteStore(srv.URL, "t0k")
+	rs.sessionDir = "" // never touch ~/.sirsi/sessions from a test
+	return backend, rs
 }
 
 func TestRemoteRoundTripsAClaimLifecycle(t *testing.T) {
@@ -95,6 +97,7 @@ func TestRemoteRejectsBadTokenAndUnknownMethod(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	wrong := NewRemoteStore(srv.URL, "wrong")
+	wrong.sessionDir = ""
 	if _, ierr := wrong.Inbox("a"); ierr == nil {
 		t.Fatal("wrong token must be refused")
 	}
@@ -116,7 +119,8 @@ func TestRemoteRejectsBadTokenAndUnknownMethod(t *testing.T) {
 func TestSentinelsRoundTrip(t *testing.T) {
 	all := []error{ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrIdentifierTaken, ErrNoWork,
 		ErrNoClaimableTask, ErrLeaseInvalid, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
-		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists}
+		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists,
+		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable}
 	if len(all) != len(sentinelErrors) {
 		t.Fatalf("sentinel table has %d entries, package exports %d", len(sentinelErrors), len(all))
 	}
