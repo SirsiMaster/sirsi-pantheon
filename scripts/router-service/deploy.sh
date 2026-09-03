@@ -11,7 +11,7 @@ gcloud --project="$PROJECT" run deploy sirsi-router --source . --region="$REGION
   --set-secrets="SIRSI_ROUTER_SERVE_TOKEN=sirsi-router-bootstrap-token:latest,SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
   --args="router,serve,--store,\$(SIRSI_ROUTER_STORE)" \
   --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --concurrency=80 --timeout=90 \
-  --build-env-vars-file=/dev/null --labels=adr=062,workstream=router-service
+  --labels=adr=062,workstream=router-service
 # --allow-unauthenticated: nodes authenticate with per-host bearer tokens inside the service (rs-10/11);
 # Cloud Run IAM would require a Google identity on every Mac, which the design rejects.
 URL=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format='value(status.url)')
