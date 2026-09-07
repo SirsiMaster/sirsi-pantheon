@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -61,5 +62,25 @@ func TestProviderConnectorRejectsServedModelDrift(t *testing.T) {
 	_, _, err = c.Complete(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, CacheNamespace: session.Identity.CacheNamespace})
 	if err == nil {
 		t.Fatal("served model drift was accepted")
+	}
+}
+
+func TestNamedConnectorsAndStreamingFailureAreExplicit(t *testing.T) {
+	identity := testIdentity()
+	identity.Engine = KindMLX
+	connector, err := NewMLXConnector(fakeProvider{available: true, response: provider.Response{Model: "model-a"}}, identity, Capabilities{Sessions: true, Streaming: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "s-stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = connector.Stream(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 2, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err == nil || !errors.Is(err, ErrUnsupportedCapability) {
+		t.Fatalf("streaming result = %v, want explicit unsupported capability", err)
+	}
+	if _, err := NewSNEConnector(fakeProvider{}, func() Identity { i := testIdentity(); i.Engine = KindMLX; return i }(), Capabilities{}); err == nil {
+		t.Fatal("SNE constructor accepted an MLX identity")
 	}
 }

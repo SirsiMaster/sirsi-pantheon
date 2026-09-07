@@ -22,6 +22,8 @@ import (
 
 const ABIVersion = "pantheon.engine/v1"
 
+var ErrUnsupportedCapability = errors.New("engine capability unsupported")
+
 type Kind string
 
 const (
@@ -263,6 +265,7 @@ type Connector interface {
 	Capabilities() Capabilities
 	OpenSession(context.Context, string) (Session, error)
 	Complete(context.Context, Session, GenerateRequest) (Completion, Receipt, error)
+	Stream(context.Context, Session, GenerateRequest) (<-chan Event, error)
 }
 
 // ProviderConnector adapts the existing provider ladder into the ABI. MLX,
@@ -279,6 +282,32 @@ type ProviderConnector struct {
 func (c ProviderConnector) Kind() Kind { return c.Engine }
 
 func (c ProviderConnector) Capabilities() Capabilities { return c.Caps }
+
+func NewProviderConnector(backend provider.Provider, kind Kind, identity Identity, capabilities Capabilities) (ProviderConnector, error) {
+	connector := ProviderConnector{Backend: backend, Engine: kind, Model: identity, Caps: capabilities}
+	if backend == nil {
+		return ProviderConnector{}, errors.New("engine connector: provider is required")
+	}
+	if err := identity.Validate(); err != nil {
+		return ProviderConnector{}, err
+	}
+	if identity.Engine != kind {
+		return ProviderConnector{}, fmt.Errorf("engine connector: engine %q does not match identity %q", kind, identity.Engine)
+	}
+	return connector, nil
+}
+
+func NewMLXConnector(backend provider.Provider, identity Identity, capabilities Capabilities) (ProviderConnector, error) {
+	return NewProviderConnector(backend, KindMLX, identity, capabilities)
+}
+
+func NewOMLXConnector(backend provider.Provider, identity Identity, capabilities Capabilities) (ProviderConnector, error) {
+	return NewProviderConnector(backend, KindOMLX, identity, capabilities)
+}
+
+func NewSNEConnector(backend provider.Provider, identity Identity, capabilities Capabilities) (ProviderConnector, error) {
+	return NewProviderConnector(backend, KindSNE, identity, capabilities)
+}
 
 func (c ProviderConnector) OpenSession(ctx context.Context, id string) (Session, error) {
 	if c.Backend == nil {
@@ -349,6 +378,17 @@ func (c ProviderConnector) Complete(ctx context.Context, session Session, req Ge
 		return Completion{}, Receipt{}, err
 	}
 	return Completion{Text: response.Text, Model: response.Model, FinishReason: response.FinishReason, PromptTokens: response.PromptTokens, OutputTokens: response.OutputTokens}, receipt, nil
+}
+
+// Stream is intentionally explicit for the current OpenAI-compatible bridge:
+// provider.Provider has no streaming method, so claiming streaming here would
+// silently turn a requested stream into a buffered completion. Future
+// streaming adapters implement this method without changing the ABI.
+func (c ProviderConnector) Stream(ctx context.Context, session Session, req GenerateRequest) (<-chan Event, error) {
+	if err := req.Validate(session, c.Caps); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
 }
 
 func (r Receipt) Validate(session Session) error {
