@@ -14,6 +14,9 @@ NETWORK=${NETWORK:-default}
 G="gcloud --project=$PROJECT --quiet"
 run() { if [ "${DRY_RUN:-0}" = 1 ]; then echo "+ $*"; else echo "+ $*" >&2; "$@"; fi; }
 exists() { "$@" >/dev/null 2>&1; }
+secret_get() { # name -> latest value; under DRY_RUN a secret that was only echoed into existence reads as a placeholder
+  if [ "${DRY_RUN:-0}" = 1 ] && ! exists $G secrets describe "$1"; then echo "<dry-run:$1>"; else $G secrets versions access latest --secret="$1"; fi
+}
 secret_put() { # name, value-from-stdin
   if exists $G secrets describe "$1"; then run $G secrets versions add "$1" --data-file=-; else run $G secrets create "$1" --replication-policy=automatic --data-file=-; fi
 }
@@ -44,7 +47,7 @@ for role in router_migrator router_service; do
     pw=$(openssl rand -base64 33 | tr -d '/+=' | cut -c1-40)
     printf '%s' "$pw" | secret_put "$secret"
   fi
-  pw=$($G secrets versions access latest --secret="$secret")
+  pw=$(secret_get "$secret")
   if exists $G sql users describe $role --instance=$INSTANCE; then
     run $G sql users set-password $role --instance=$INSTANCE --password="$pw"
   else
@@ -58,7 +61,7 @@ if ! exists $G secrets describe sirsi-router-bootstrap-token; then
 fi
 
 echo "== 6. Service DSN secret (unix socket via the Cloud Run Cloud SQL connector)"
-svcpw=$($G secrets versions access latest --secret=sirsi-router-router-service-password)
+svcpw=$(secret_get sirsi-router-router-service-password)
 printf 'postgres://router_service:%s@/%s?host=/cloudsql/%s:%s:%s' "$svcpw" "$DB" "$PROJECT" "$REGION" "$INSTANCE" | secret_put sirsi-router-service-dsn
 
 echo "== 7. Service account $SA_EMAIL — cloudsql.client + accessor on exactly two secrets + logs"

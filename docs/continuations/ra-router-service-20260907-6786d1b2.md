@@ -7,7 +7,7 @@ Supersedes `ra-router-service-20260903-2d18bc60.md`. Owner 2026-09-07: "transfer
 ## Who you are, where you run
 Router agent `ra`. Host: M1 (`sirsimasterdev@192.168.1.180`, M1 Pro 16 GiB, macOS 26.6.2). Start Claude Code from `$HOME` (`/Users/sirsimasterdev`) so `~/.claude/projects/-Users-sirsimasterdev/memory/` loads. PATH for non-login shells: `/opt/homebrew/bin:$HOME/.local/bin`.
 - `sirsi` = `~/.local/bin/sirsi`, built from main 68568e9d on 2026-09-07 (`go build -o ~/.local/bin/sirsi ./cmd/sirsi`).
-- Repo `~/Development/sirsi-pantheon` on branch `main` (was detached at 92ad980 before the move). Push needs the owner's `gh auth login` on the M1 (it was logged out at transfer time); `git@github.com` host key is not trusted there — use https via gh.
+- Repo `~/Development/sirsi-pantheon` on branch `main` (was detached at 92ad980 before the move). `gh` is LOGGED IN on the M1 as SirsiMaster since 2026-09-07T20:xxZ (https protocol) — push and PRs work from here.
 - Session transcript copied to `~/.claude/projects/-Users-sirsimasterdev/6786d1b2-1c1f-4213-bd0b-f0f1d0d651fb.jsonl` (try `claude --resume 6786d1b2-1c1f-4213-bd0b-f0f1d0d651fb` from `$HOME`; if the app refuses, resume from this file + memory).
 - Memory rsynced from the M5 (`~/.claude/projects/-Users-thekryptodragon/memory/` → M1). Paths inside still say `/Users/thekryptodragon`; read them as the M5.
 
@@ -34,7 +34,9 @@ export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=~/.config/gcloud/sirsi-nexus-live-
 DRY_RUN=1 bash scripts/router-service/provision.sh   # review, then run without DRY_RUN
 bash scripts/router-service/deploy.sh                # rs-16
 ```
-Probe first: `gcloud projects get-iam-policy sirsi-nexus-live --flatten=bindings --filter='bindings.members:claude-agent'` shows whether the grant landed. Region us-central1. Schema apply needs cloud-sql-proxy + psql (`brew install cloud-sql-proxy libpq` on the M1 — not yet installed).
+Probe first: `gcloud projects get-iam-policy sirsi-nexus-live --flatten=bindings --filter='bindings.members:claude-agent'` shows whether the grant landed. Region us-central1. cloud-sql-proxy 2.25.4 + psql 18.6 (`/opt/homebrew/opt/libpq/bin`) are installed on the M1.
+
+**2026-09-07T20:3xZ probe (session 84ab1eaa, M1):** grant NOT landed — `sql instances list` denied, `secrets list` / `services list` / `iam service-accounts list` OK (pre-existing roles). `DRY_RUN=1 provision.sh` died at step 4 (read a secret the dry run had only echoed) — fixed by `secret_get` (dry-run placeholder); dry run now exits 0, negative control exits 1.
 
 ## Housekeeping
 M5 main checkout still on foreign dirty branch `fix/broker-quarantine` — never work there. `worktrees/ra-rs01` (branch rs13-evidence) droppable. Owner item `20260902-211336-…-pr-678-blocked-signed-release…` still open. Charter ADR-063 (174dc7c8) in force: complete = verified release at rs-25; tokens are not progress.
