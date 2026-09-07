@@ -160,6 +160,7 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 
 	request := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","agent":"a","task_id":"t","subject":"s","unexpected":true}`))
 	request.Header.Set("Authorization", "Bearer test-token")
+	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
@@ -172,6 +173,33 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 	response = postControlAction(t, noTokenMux, "", ControlActionRequest{Verb: "delegate", Agent: "a", TaskID: "t", Subject: "s"})
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("missing configured token status = %d, want 503", response.Code)
+	}
+}
+
+func TestControlActionRequiresJSONContentType(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
+	mux := http.NewServeMux()
+	h.Register(mux)
+	request := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","agent":"a","task_id":"t","subject":"s"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("missing content type status = %d, want 415", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","agent":"a","task_id":"t","subject":"s"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("parameterized JSON content type status = %d: %s", response.Code, response.Body.String())
 	}
 }
 
@@ -247,6 +275,7 @@ func postControlAction(t *testing.T, mux *http.ServeMux, token string, request C
 	if token != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+token)
 	}
+	httpRequest.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, httpRequest)
 	return response

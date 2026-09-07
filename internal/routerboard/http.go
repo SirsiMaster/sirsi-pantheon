@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -119,6 +120,11 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.authorizeControl(w, r, true) {
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, `{"error":"control action requires Content-Type: application/json"}`, http.StatusUnsupportedMediaType)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
