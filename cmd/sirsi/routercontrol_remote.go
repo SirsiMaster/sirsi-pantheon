@@ -144,6 +144,9 @@ func readControlActionRequest(source string) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("invalid control action request: %w", err)
 	}
+	if err := routerboard.ValidateJSONNoDuplicateKeys(body); err != nil {
+		return nil, err
+	}
 	return body, nil
 }
 

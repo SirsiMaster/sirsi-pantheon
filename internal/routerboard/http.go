@@ -134,7 +134,7 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid control action: request body too large or unreadable"}`, http.StatusBadRequest)
 		return
 	}
-	if err := validateJSONNoDuplicateKeys(raw); err != nil {
+	if err := ValidateJSONNoDuplicateKeys(raw); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
 	}

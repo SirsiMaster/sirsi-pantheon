@@ -7,10 +7,10 @@ import (
 	"io"
 )
 
-// validateJSONNoDuplicateKeys rejects ambiguous JSON before a control request
+// ValidateJSONNoDuplicateKeys rejects ambiguous JSON before a control request
 // reaches the action decoder. encoding/json intentionally uses the last value
 // for duplicate object keys; control mutations must not depend on that detail.
-func validateJSONNoDuplicateKeys(body []byte) error {
+func ValidateJSONNoDuplicateKeys(body []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 	if err := walkJSONValue(decoder); err != nil {

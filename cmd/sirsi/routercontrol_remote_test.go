@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,6 +42,13 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 	gotBody, err := readControlActionRequest(requestFile)
 	if err != nil || !bytes.Equal(gotBody, requestBody) {
 		t.Fatalf("request body = %s, err=%v", gotBody, err)
+	}
+	duplicateFile := filepath.Join(t.TempDir(), "duplicate.json")
+	if err := os.WriteFile(duplicateFile, []byte(`{"verb":"delegate","agent":"a","agent":"b","task_id":"t-1","subject":"ship"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readControlActionRequest(duplicateFile); err == nil || !strings.Contains(err.Error(), "duplicate object key") {
+		t.Fatalf("duplicate request file was accepted: %v", err)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
