@@ -204,6 +204,39 @@ func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	}
 }
 
+func TestControlAuthorizationRejectsDuplicateOrNonExactBearerHeaders(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h := NewHandlerWithControlAuth(New("/bin/false", "", "test-build"), t.TempDir(), "test-token", true)
+	h.openControlStore = func() (*routerstore.Store, bool, error) { return store, false, nil }
+	h.board.mu.Lock()
+	h.board.version = 1
+	h.board.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	h.board.mu.Unlock()
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	duplicate := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	duplicate.Header.Add("Authorization", "Bearer test-token")
+	duplicate.Header.Add("Authorization", "Bearer test-token")
+	duplicateResponse := httptest.NewRecorder()
+	mux.ServeHTTP(duplicateResponse, duplicate)
+	if duplicateResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("duplicate authorization status = %d, want 401", duplicateResponse.Code)
+	}
+
+	trailing := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	trailing.Header.Set("Authorization", "Bearer test-token ")
+	trailingResponse := httptest.NewRecorder()
+	mux.ServeHTTP(trailingResponse, trailing)
+	if trailingResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("non-exact authorization status = %d, want 401", trailingResponse.Code)
+	}
+}
+
 func postControlAction(t *testing.T, mux *http.ServeMux, token string, request ControlActionRequest) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(request)

@@ -3,6 +3,7 @@ package routerboard
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -157,14 +158,27 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) authorizeControl(w http.ResponseWriter, r *http.Request, required bool) bool {
-	if !required && strings.TrimSpace(h.controlToken) == "" {
+	configured := strings.TrimSpace(h.controlToken)
+	if !required && configured == "" {
 		return true
 	}
-	if strings.TrimSpace(h.controlToken) == "" {
+	if configured == "" {
 		http.Error(w, `{"error":"control authorization is not configured"}`, http.StatusServiceUnavailable)
 		return false
 	}
-	if strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer "+h.controlToken {
+	// A control request has exactly one bearer credential. Header.Get can hide
+	// duplicate values by joining or selecting one of them, which would make
+	// the authenticated boundary depend on intermediary behavior. Compare
+	// fixed-size digests so the secret itself is never used in a
+	// length-dependent equality check.
+	authorizations := r.Header.Values("Authorization")
+	want := sha256.Sum256([]byte("Bearer " + configured))
+	valid := len(authorizations) == 1
+	if valid {
+		got := sha256.Sum256([]byte(authorizations[0]))
+		valid = subtle.ConstantTimeCompare(got[:], want[:]) == 1
+	}
+	if !valid {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, `{"error":"control authorization failed"}`, http.StatusUnauthorized)
 		return false
