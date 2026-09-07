@@ -85,6 +85,21 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 	if _, err := sendRemoteControlAction(context.Background(), badResponse.URL, "test-token", requestBody); err == nil || !strings.Contains(err.Error(), "authority") {
 		t.Fatalf("accepted untrusted action response: %v", err)
 	}
+
+	failureServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		failure := routerboard.ControlActionFailure{
+			Schema: routerboard.ControlFailureSchema, Authority: "canonical-routerstore", Verb: "delegate", Error: "task already exists",
+		}
+		if err := failure.SealControlActionFailure(requestBody); err != nil {
+			t.Fatalf("seal failure: %v", err)
+		}
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(failure)
+	}))
+	defer failureServer.Close()
+	if _, err := sendRemoteControlAction(context.Background(), failureServer.URL, "test-token", requestBody); err == nil || !strings.Contains(err.Error(), "task already exists") {
+		t.Fatalf("failure receipt was not returned: %v", err)
+	}
 }
 
 func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {

@@ -8,6 +8,63 @@ import (
 	"fmt"
 )
 
+const ControlFailureSchema = "pantheon.worker-control-failure/v1"
+
+// ControlActionFailure is the negative-path counterpart to
+// ControlActionResponse. It binds a rejected action to the exact request
+// bytes, so a remote worker can distinguish a real router rejection from a
+// detached or replayed error body.
+type ControlActionFailure struct {
+	Schema        string `json:"schema"`
+	Authority     string `json:"authority"`
+	Verb          string `json:"verb,omitempty"`
+	Error         string `json:"error"`
+	RequestSHA256 string `json:"request_sha256"`
+	ReceiptSHA256 string `json:"receipt_sha256,omitempty"`
+}
+
+func (f *ControlActionFailure) SealControlActionFailure(requestBody []byte) error {
+	if f == nil {
+		return fmt.Errorf("control action failure receipt: response is nil")
+	}
+	requestSum := sha256.Sum256(requestBody)
+	f.RequestSHA256 = hex.EncodeToString(requestSum[:])
+	f.ReceiptSHA256 = ""
+	canonical, err := json.Marshal(f)
+	if err != nil {
+		return fmt.Errorf("control action failure receipt: marshal response: %w", err)
+	}
+	receiptSum := sha256.Sum256(canonical)
+	f.ReceiptSHA256 = hex.EncodeToString(receiptSum[:])
+	return nil
+}
+
+func (f ControlActionFailure) VerifyControlActionFailure(requestBody []byte) error {
+	if f.Schema != ControlFailureSchema || f.Authority != "canonical-routerstore" {
+		return fmt.Errorf("control action failure identity is not canonical")
+	}
+	if f.Error == "" || f.RequestSHA256 == "" || f.ReceiptSHA256 == "" {
+		return fmt.Errorf("control action failure receipt is incomplete")
+	}
+	requestSum := sha256.Sum256(requestBody)
+	expectedRequest := hex.EncodeToString(requestSum[:])
+	if subtle.ConstantTimeCompare([]byte(f.RequestSHA256), []byte(expectedRequest)) != 1 {
+		return fmt.Errorf("control action failure request digest mismatch")
+	}
+	expectedReceipt := f.ReceiptSHA256
+	f.ReceiptSHA256 = ""
+	canonical, err := json.Marshal(f)
+	if err != nil {
+		return fmt.Errorf("control action failure receipt: marshal response: %w", err)
+	}
+	receiptSum := sha256.Sum256(canonical)
+	actualReceipt := hex.EncodeToString(receiptSum[:])
+	if subtle.ConstantTimeCompare([]byte(expectedReceipt), []byte(actualReceipt)) != 1 {
+		return fmt.Errorf("control action failure receipt digest mismatch")
+	}
+	return nil
+}
+
 // SealControlActionResponse binds a successful action response to the exact
 // request bytes received by the router. It is an in-band receipt, not a second
 // durable ledger: routerstore remains the only mutation authority.

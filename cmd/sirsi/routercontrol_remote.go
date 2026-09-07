@@ -191,12 +191,49 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 		return nil, fmt.Errorf("control action response exceeds %d-byte limit", remoteControlBodyLimit)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("control action returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(result)))
+		if err := validateRemoteControlActionFailure(body, result); err != nil {
+			return nil, fmt.Errorf("control action returned HTTP %d with invalid failure receipt: %w", response.StatusCode, err)
+		}
+		var failure routerboard.ControlActionFailure
+		if err := json.Unmarshal(result, &failure); err != nil {
+			return nil, fmt.Errorf("control action returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(result)))
+		}
+		return nil, fmt.Errorf("control action rejected HTTP %d: %s", response.StatusCode, failure.Error)
 	}
 	if err := validateRemoteControlActionResponse(body, result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func validateRemoteControlActionFailure(requestBody, responseBody []byte) error {
+	if err := routerboard.ValidateJSONNoDuplicateKeys(responseBody); err != nil {
+		return fmt.Errorf("control action failure JSON is ambiguous: %w", err)
+	}
+	var request routerboard.ControlActionRequest
+	requestDecoder := json.NewDecoder(bytes.NewReader(requestBody))
+	requestDecoder.DisallowUnknownFields()
+	requestErr := requestDecoder.Decode(&request)
+	var failure routerboard.ControlActionFailure
+	responseDecoder := json.NewDecoder(bytes.NewReader(responseBody))
+	responseDecoder.DisallowUnknownFields()
+	if err := responseDecoder.Decode(&failure); err != nil {
+		return fmt.Errorf("control action failure is not valid JSON: %w", err)
+	}
+	var trailing any
+	if err := responseDecoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("control action failure contains multiple JSON values")
+		}
+		return fmt.Errorf("control action failure contains trailing JSON: %w", err)
+	}
+	if requestErr == nil && strings.TrimSpace(failure.Verb) != strings.TrimSpace(request.Verb) {
+		return fmt.Errorf("control action failure verb %q does not match %q", failure.Verb, strings.TrimSpace(request.Verb))
+	}
+	if err := failure.VerifyControlActionFailure(requestBody); err != nil {
+		return err
+	}
+	return nil
 }
 
 func validateRemoteControlActionResponse(requestBody, responseBody []byte) error {

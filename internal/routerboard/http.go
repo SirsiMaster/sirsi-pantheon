@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -135,27 +136,27 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := ValidateJSONNoDuplicateKeys(raw); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		h.writeControlActionFailure(w, http.StatusBadRequest, raw, "", err)
 		return
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var request ControlActionRequest
 	if err := decoder.Decode(&request); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid control action: "+err.Error()), http.StatusBadRequest)
+		h.writeControlActionFailure(w, http.StatusBadRequest, raw, "", fmt.Errorf("invalid control action: %w", err))
 		return
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err == nil {
-		http.Error(w, `{"error":"invalid control action: multiple JSON values"}`, http.StatusBadRequest)
+		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, errors.New("invalid control action: multiple JSON values"))
 		return
 	} else if err != io.EOF {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid control action: trailing data: "+err.Error()), http.StatusBadRequest)
+		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, fmt.Errorf("invalid control action: trailing data: %w", err))
 		return
 	}
 	store, owned, err := h.openControlStore()
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, "control store unavailable: "+err.Error()), http.StatusServiceUnavailable)
+		h.writeControlActionFailure(w, http.StatusServiceUnavailable, raw, request.Verb, fmt.Errorf("control store unavailable: %w", err))
 		return
 	}
 	if owned {
@@ -165,7 +166,7 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusConflict)
+		h.writeControlActionFailure(w, http.StatusConflict, raw, request.Verb, err)
 		return
 	}
 	if err := response.SealControlActionResponse(raw); err != nil {
@@ -175,6 +176,20 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		return
 	}
+}
+
+func (h *Handler) writeControlActionFailure(w http.ResponseWriter, status int, requestBody []byte, verb string, cause error) {
+	failure := ControlActionFailure{
+		Schema: ControlFailureSchema, Authority: "canonical-routerstore", Verb: strings.TrimSpace(verb), Error: cause.Error(),
+	}
+	if err := failure.SealControlActionFailure(requestBody); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(failure)
 }
 
 func (h *Handler) authorizeControl(w http.ResponseWriter, r *http.Request, required bool) bool {
