@@ -2437,3 +2437,8 @@ loopback; a non-loopback explicit selection is refused rather than silently
 falling back to the legacy broker port. `remoteFromEnv` uses the same predicate,
 so a selected Native v2 configuration can never be mislabeled as a remote rung.
 Focused provider and Gemma tests plus both CLI builds passed.
+
+M1 and M5 are documented as peer local-engine hosts: the selector is host-neutral
+and accepts each host's own loopback service under the same named engine. SNE
+qualification evidence must remain host-scoped; Pantheon will not turn either
+endpoint into an undocumented cross-host fallback.

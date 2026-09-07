@@ -56,6 +56,21 @@ engine). A configured endpoint that is unavailable remains a local failure; it
 is never reclassified as a remote provider or silently replaced. This config
 selects an endpoint only—SNE retains runtime lifecycle and qualification.
 
+## M1 and M5 are peer local-engine hosts
+
+The same `sne-native-v2` selection is valid on an M1 or M5. Each host points
+its own Pantheon configuration at its own loopback SNE service and records its
+results with that host identity. Pantheon does not treat M1 as a fallback,
+mirror, or proxy for M5: both use the identical OpenAI-compatible ABI and MCP
+tool contract, while SNE owns each host's model/profile choice and qualification
+evidence. Results from M1 and M5 must remain host-scoped; a successful M1
+correctness or transport run is not an M5 performance claim, and vice versa.
+
+Multi-host transport belongs to the SNE/Pantheon router plane. The engine
+selector itself never rewrites a local endpoint to another host or starts a
+remote service, so it cannot hide a cross-host fallback behind a local-engine
+name.
+
 ## OMLX
 
 Start the local OMLX OpenAI-compatible server for the desired model, then use:
