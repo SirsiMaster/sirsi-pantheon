@@ -15,6 +15,7 @@ type fakeSNEControlClient struct {
 	unloads    []string
 	reloads    []string
 	loadErr    error
+	onLoad     func()
 }
 
 func (f *fakeSNEControlClient) ReadinessIdentity(context.Context) (sne.ServiceReadinessIdentity, error) {
@@ -30,6 +31,9 @@ func (f *fakeSNEControlClient) ReadinessIdentity(context.Context) (sne.ServiceRe
 
 func (f *fakeSNEControlClient) LoadModel(_ context.Context, model string) error {
 	f.loads = append(f.loads, model)
+	if f.onLoad != nil {
+		f.onLoad()
+	}
 	return f.loadErr
 }
 
@@ -153,6 +157,27 @@ func TestSNEControlRefusesMutationAfterContextCancellation(t *testing.T) {
 	}
 	if len(client.loads) != 0 {
 		t.Fatalf("load calls after cancellation: %v", client.loads)
+	}
+}
+
+func TestSNEControlRejectsCancellationAfterMutation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &fakeSNEControlClient{
+		identities: []sne.ServiceReadinessIdentity{
+			sneIdentity("stopped", ""),
+			sneIdentity("ready", "model-a"),
+		},
+		onLoad: cancel,
+	}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Apply(ctx, SNELoad); err == nil {
+		t.Fatal("cancelled lifecycle was reported successful after mutation")
+	}
+	if len(client.loads) != 1 {
+		t.Fatalf("expected exactly one attempted load, got %v", client.loads)
 	}
 }
 

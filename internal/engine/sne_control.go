@@ -167,6 +167,9 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 	if err != nil {
 		return SNELifecycle{}, fmt.Errorf("SNE control: %s %s: %w", action, c.modelID, err)
 	}
+	if err := ctx.Err(); err != nil {
+		return SNELifecycle{}, fmt.Errorf("SNE control: %s cancelled after mutation: %w", action, err)
+	}
 	afterIdentity, err := c.client.ReadinessIdentity(ctx)
 	if err != nil {
 		return SNELifecycle{}, fmt.Errorf("SNE control: postflight readiness: %w", err)
@@ -177,6 +180,9 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 	}
 	if action == SNEUnload && (after.Ready || after.ServedModel != "") {
 		return SNELifecycle{}, fmt.Errorf("SNE control: unload did not clear admitted identity: status=%q model=%q", afterIdentity.Status, after.ServedModel)
+	}
+	if err := ctx.Err(); err != nil {
+		return SNELifecycle{}, fmt.Errorf("SNE control: %s cancelled before success: %w", action, err)
 	}
 	return SNELifecycle{Action: action, ModelID: c.modelID, StartedAt: started, FinishedAt: c.clock().UTC(), Before: before, After: after}, nil
 }
