@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,12 @@ func recordingConsumer(t *testing.T, log string, sleep time.Duration) string {
 	body := "#!/bin/sh\n" +
 		"echo \"argv=$* agent=$" + EnvConsumerAgent + " root=$" + EnvConsumerRoot + "\" >> " + log + "\n"
 	if sleep > 0 {
-		body += "sleep " + strings.TrimSuffix(sleep.String(), "0s") + "\n"
+		// BSD /bin/sh's sleep accepts whole seconds only; time.Duration.String
+		// produces values such as "2s", which GNU sleep accepts but BSD sleep
+		// rejects. Round up so the fixture remains alive for at least the requested
+		// interval on every supported macOS/Linux runner.
+		seconds := int64((sleep + time.Second - 1) / time.Second)
+		body += "sleep " + strconv.FormatInt(seconds, 10) + "\n"
 	}
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write consumer: %v", err)

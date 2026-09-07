@@ -24,7 +24,13 @@ BIN="$HERE/.build/release/SirsiMenubar"
 
 if [ ! -x "$BIN" ]; then
   echo "check-cli-flags: building release binary…"
-  (cd "$HERE" && swift build -c release >/dev/null)
+  # Preserve compiler output in CI. A failed release build used to leave the
+  # behavioral guard with only an unhelpful exit status, obscuring the actual
+  # product/compiler incompatibility that needs repair.
+  # Pin complete concurrency checking here rather than relying on whichever
+  # Xcode version happens to power CI. This is the build mode that caught the
+  # unsafe Timer capture before it reached a signed menubar package.
+  (cd "$HERE" && swift build -c release -Xswiftc -strict-concurrency=complete)
 fi
 [ -x "$BIN" ] || { echo "check-cli-flags: no binary at $BIN" >&2; exit 2; }
 
@@ -44,14 +50,29 @@ fails=0
 # run_case <expected-exit> <must-contain> <args…>
 run_case() {
   local want="$1" needle="$2"; shift 2
-  local out rc=0
-  # A 5s cap is the whole point: a regressed build LAUNCHES and never returns.
-  # Timing out is a FAILURE, and is reported as one rather than as a flake.
-  out="$(timeout 5 "$PROBE" "$@" 2>&1)" || rc=$?
-  if [ "$rc" = 124 ]; then
-    echo "  FAIL  [$*] did not exit within 5s — it launched the UI"
-    fails=$((fails + 1)); return
-  fi
+  local out rc=0 elapsed=0 pid out_file
+  out_file="$(mktemp)"
+  # macOS runners do not provide GNU `timeout`. Run the renamed probe in the
+  # background and enforce the same five-second cap ourselves. A regression
+  # launches the menubar and never returns; it must be terminated and reported
+  # as a behavioral failure, not mistaken for a missing external utility.
+  "$PROBE" "$@" >"$out_file" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$elapsed" -ge 50 ]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      out="$(cat "$out_file")"
+      rm -f "$out_file"
+      echo "  FAIL  [$*] did not exit within 5s — it launched the UI"
+      fails=$((fails + 1)); return
+    fi
+    sleep 0.1
+    elapsed=$((elapsed + 1))
+  done
+  if wait "$pid"; then rc=0; else rc=$?; fi
+  out="$(cat "$out_file")"
+  rm -f "$out_file"
   if [ "$rc" != "$want" ]; then
     echo "  FAIL  [$*] exit=$rc want=$want"
     fails=$((fails + 1)); return
@@ -72,8 +93,12 @@ run_case 2 "unknown flag"                  --nonsense
 run_case 2 "requires a directory"          --snapshot
 run_case 2 "requires --snapshot"           --width 500
 run_case 2 "requires --snapshot"           --appearance light
-run_case 2 "requires a number"             --snapshot /tmp --width wide
+run_case 2 "positive finite number"         --snapshot /tmp --width wide
+run_case 2 "positive finite number"         --snapshot /tmp --width 0
+run_case 2 "positive finite number"         --snapshot /tmp --width nan
+run_case 2 "positive finite number"         --snapshot /tmp --width inf
 run_case 2 "requires light or dark"        --snapshot /tmp --appearance purple
+run_case 2 "duplicate flag"                 --snapshot /tmp --snapshot /tmp/other
 
 if [ "$fails" -gt 0 ]; then
   echo "check-cli-flags: $fails case(s) FAILED" >&2

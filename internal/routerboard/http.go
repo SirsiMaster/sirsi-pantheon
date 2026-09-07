@@ -6,20 +6,51 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // Handler serves the router board: the page, the stream, and the one lever.
 type Handler struct {
-	board *Board
-	dir   string // holds index.html
+	board              *Board
+	dir                string // holds index.html
+	controlToken       string
+	requireControlAuth bool
+	openControlStore   func() (routerstore.Store, bool, error)
 }
 
-func NewHandler(b *Board, dir string) *Handler { return &Handler{board: b, dir: dir} }
+func NewHandler(b *Board, dir string) *Handler {
+	return NewHandlerWithControlAuth(b, dir, os.Getenv("SIRSI_CONTROL_TOKEN"), false)
+}
+
+// NewHandlerWithControlAuth configures whether read-only control snapshots
+// require bearer authentication. Protected deployments use this when the
+// surrounding listener is already bound to an authenticated private network;
+// the default handler remains loopback-compatible.
+func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *Handler {
+	return &Handler{
+		board: b, dir: dir, controlToken: token, requireControlAuth: requireAuth,
+		openControlStore: func() (routerstore.Store, bool, error) {
+			store, err := routerstore.Resolve()
+			return store, true, err
+		},
+	}
+}
+
+// NewHandlerWithControlStore injects the canonical store for tests and
+// embedded hosts. The handler does not close an injected store.
+func NewHandlerWithControlStore(b *Board, dir string, store routerstore.Store, token string) *Handler {
+	return &Handler{board: b, dir: dir, controlToken: token, openControlStore: func() (routerstore.Store, bool, error) {
+		return store, false, nil
+	}}
+}
 
 // BuildID fingerprints index.html so the page can display which UI it is.
 // The owner was once served a CACHED page for hours while a fixed one was
@@ -37,10 +68,99 @@ func BuildID(dir string) string {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.index)
 	mux.HandleFunc("/index.html", h.index)
+	mux.HandleFunc("/api/control", h.control)
+	mux.HandleFunc("/api/control/action", h.controlAction)
 	mux.HandleFunc("/api/ledger", h.slice)
 	mux.HandleFunc("/api/tasks", h.slice)
 	mux.HandleFunc("/api/stream", h.stream)
 	mux.HandleFunc("/api/arm", h.arm)
+}
+
+// control serves the canonical worker-control envelope. It is intentionally
+// read-only; mutations stay on the constrained router CLI/task lease surface.
+func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "control endpoint is read-only", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.authorizeControl(w, r, h.requireControlAuth) {
+		return
+	}
+	body, version, err := h.board.SnapshotControl()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		http.Error(w, `{"error":"control snapshot unavailable"}`, http.StatusInternalServerError)
+		return
+	}
+	if version == 0 || len(body) == 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
+		return
+	}
+	_, _ = w.Write(body)
+}
+
+func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "control action requires POST", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.authorizeControl(w, r, true) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var request ControlActionRequest
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid control action: "+err.Error()), http.StatusBadRequest)
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		http.Error(w, `{"error":"invalid control action: multiple JSON values"}`, http.StatusBadRequest)
+		return
+	} else if err != io.EOF {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid control action: trailing data: "+err.Error()), http.StatusBadRequest)
+		return
+	}
+	store, owned, err := h.openControlStore()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "control store unavailable: "+err.Error()), http.StatusServiceUnavailable)
+		return
+	}
+	if owned {
+		defer store.Close()
+	}
+	response, err := ApplyControlAction(store, request)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusConflict)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		return
+	}
+}
+
+func (h *Handler) authorizeControl(w http.ResponseWriter, r *http.Request, required bool) bool {
+	if !required && strings.TrimSpace(h.controlToken) == "" {
+		return true
+	}
+	if strings.TrimSpace(h.controlToken) == "" {
+		http.Error(w, `{"error":"control authorization is not configured"}`, http.StatusServiceUnavailable)
+		return false
+	}
+	if strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer "+h.controlToken {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, `{"error":"control authorization failed"}`, http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {

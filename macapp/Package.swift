@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "SirsiMenubar",
             path: "Sources/SirsiMenubar"
+        ),
+        .testTarget(
+            name: "SirsiMenubarTests",
+            dependencies: ["SirsiMenubar"],
+            path: "Tests/SirsiMenubarTests"
         )
     ]
 )

@@ -20,6 +20,20 @@ android_app: android/ (Jetpack Compose, 9 screens, nav drawer, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
 ## Current UI State
+# 2026-09-07: Pantheon CI now runs required macOS validation on hosted runners.
+# The router wake-loop test fixture emits BSD-compatible whole-second sleep
+# values, and the menubar CLI guard preserves Swift compiler diagnostics instead
+# of hiding an actionable build failure. The refresh timer now uses main-run-loop
+# selector delivery rather than an unsafe concurrent closure, and notification
+# publication uses the async API. The CLI contract now explicitly enforces
+# complete Swift concurrency checking; notification delegate completion stays
+# nonisolated before its main-actor UI hop. Clean local release build and all
+# command-line non-launch cases pass without Swift concurrency warnings.
+# Menubar command parsing now lives in a testable pure Swift module. It rejects
+# malformed and orphaned flags before NSApplication is created; four native unit
+# tests cover launch, help, valid snapshots, and fail-closed malformed inputs.
+# Duplicate options and zero/non-finite snapshot widths also reject before any
+# AppKit surface is initialized.
 # 2026-09-07: SSA added an explicit `sirsi-gemma` selector for SNE, recovered
 # SNE Native v2, MLX, and OMLX on branch codex/ssa-sne-engine-selection-20260907
 # (current lineage includes `ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes
@@ -30,6 +44,11 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # remain host/sandbox-limited and are not a qualification result.
 # Native-v2 selection additionally binds results to an explicit `m1` or `m5`
 # host profile and configured model identity, emitted as MCP result metadata.
+# 2026-09-07: Router-board worker controls resolve the ledger only through
+# routerstore.Resolve and its Store interface, preserving the canonical remote
+# service route and avoiding direct local-store writes from the dashboard.
+# Required CI test/build jobs use hosted macOS runners so active product changes
+# do not queue behind unavailable local-runner capacity.
 # 2026-08-05: SNE-52 ledger schema v7 implementation is active on
 # codex/router-unification-store-v7. The v4→v7 additive migration, derived
 # four-hour liveness, governed stage/test/charter fields, append-deduped links,
@@ -300,3 +319,8 @@ sync_protocol:
 # Only loopback endpoints are accepted; the same local-provider predicate
 # prevents a selected Native v2 endpoint from becoming a remote rung. This is
 # ABI consumption only—SNE retains runtime lifecycle and qualification.
+# 2026-09-07 (SSA): Hosted macOS validation exposed that the menubar CLI
+# behavioral guard relied on GNU `timeout`, which macOS runners do not ship.
+# The guard now owns the same five-second process cap with POSIX shell
+# primitives, so a CLI regression that opens AppKit still fails deterministically
+# on macOS without a missing-tool false negative.
