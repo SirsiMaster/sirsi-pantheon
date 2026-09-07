@@ -133,6 +133,16 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	.t-action{color:var(--dim);cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:var(--line)}
 	.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
 	.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
+	.engine-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px}
+	.engine-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.025);min-height:122px}
+	.engine-card.selected{border-color:var(--gold);background:rgba(200,169,81,.08)}
+	.engine-name{color:var(--ink2);font-size:14px;font-weight:600;letter-spacing:.08em}
+	.engine-status{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+	.engine-caps{color:var(--dim);font-size:11px;line-height:1.5;flex:1}
+	.engine-select{align-self:flex-start;padding:4px 9px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:inherit;font-size:11px;cursor:pointer}
+	.engine-select:hover{border-color:var(--gold);background:rgba(200,169,81,.08)}
+	.engine-select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+	.engine-select:disabled{border-color:var(--gold);color:var(--gold);cursor:default;opacity:.9}
 	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 	@media (prefers-contrast:more){.t-action:focus-visible,.nav-item:focus-visible,.stat-go:focus-visible{outline-width:3px}.t-dim,.t-action{color:var(--ink2)}}
@@ -281,16 +291,22 @@ function viewEngine(){
   out('Preferred    '+(data.preferred||'none'),'t-ok');
   out('Fallback     '+(data.allow_fallback?'explicitly allowed':'disabled'),'t-out');
   out('Configured engines','t-head');
+  const grid=document.createElement('div');grid.className='engine-grid';
   (data.connectors||[]).forEach(function(connector){
-   const row=document.createElement('div');row.className='t-line t-row';
-   const label=document.createElement('span');label.className='t-col';label.style.flex='1';label.textContent=connector.kind.toUpperCase();
+   const selected=connector.kind===data.preferred;
+   const card=document.createElement('section');card.className='engine-card'+(selected?' selected':'');
+   card.setAttribute('aria-label',connector.kind.toUpperCase()+' engine');
+   const label=document.createElement('div');label.className='engine-name';label.textContent=connector.kind.toUpperCase();
+   const status=document.createElement('div');status.className='engine-status';status.textContent=selected?'Preferred policy':'Configured';
    const caps=connector.capabilities||{};const names=[];
    Object.keys(caps).forEach(function(k){if(caps[k]===true)names.push(k)});
-   const detail=document.createElement('span');detail.className='t-col';detail.style.color='var(--dim)';detail.textContent=names.join(', ')||'no optional capabilities';
-   const choose=document.createElement('span');choose.className='t-action';choose.textContent=connector.kind===data.preferred?'[selected]':'[select]';
-   if(connector.kind!==data.preferred){choose.tabIndex=0;choose.setAttribute('role','button');choose.onclick=function(){selectEngine(connector.kind)};choose.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();selectEngine(connector.kind)}}}
-   row.appendChild(label);row.appendChild(detail);row.appendChild(choose);T.appendChild(row);
+   const detail=document.createElement('div');detail.className='engine-caps';detail.textContent=names.join(' · ')||'No optional capabilities';
+   const choose=document.createElement('button');choose.className='engine-select';choose.type='button';choose.textContent=selected?'Selected':'Use '+connector.kind.toUpperCase();
+   choose.disabled=selected;choose.setAttribute('aria-pressed',selected?'true':'false');
+   if(!selected){choose.onclick=function(){selectEngine(connector.kind)}}
+   card.appendChild(label);card.appendChild(status);card.appendChild(detail);card.appendChild(choose);grid.appendChild(card);
   });
+  T.appendChild(grid);
   out('Selection changes policy only; availability is proved when a session opens.','t-dim');
  }).catch(function(e){out('Engine selection unavailable: '+e.message,'t-err')});
 }
