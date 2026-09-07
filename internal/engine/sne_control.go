@@ -64,20 +64,45 @@ type SNEBenchmarkSession struct {
 // surface. It never edits the native SNE package or invents a second lifecycle
 // authority.
 type SNEControl struct {
-	client  SNEControlClient
-	modelID string
-	now     func() time.Time
+	client      SNEControlClient
+	modelID     string
+	expectation SNEControlIdentity
+	now         func() time.Time
+}
+
+// SNEControlIdentity is the immutable runtime tuple a lifecycle operation may
+// mutate around. Empty hash fields preserve the legacy model-only constructor;
+// NewSNEControlWithIdentity enables full runtime/native-runtime/manifest fences.
+type SNEControlIdentity struct {
+	ModelID             string `json:"model_id"`
+	RuntimeSHA256       string `json:"runtime_sha256,omitempty"`
+	NativeRuntimeSHA256 string `json:"native_runtime_sha256,omitempty"`
+	ManifestSHA256      string `json:"manifest_sha256,omitempty"`
 }
 
 func NewSNEControl(client SNEControlClient, modelID string) (*SNEControl, error) {
+	return NewSNEControlWithIdentity(client, SNEControlIdentity{ModelID: modelID})
+}
+
+func NewSNEControlWithIdentity(client SNEControlClient, expectation SNEControlIdentity) (*SNEControl, error) {
 	if client == nil {
 		return nil, fmt.Errorf("SNE control: client is required")
 	}
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
+	expectation.ModelID = strings.TrimSpace(expectation.ModelID)
+	if expectation.ModelID == "" {
 		return nil, fmt.Errorf("SNE control: model is required")
 	}
-	return &SNEControl{client: client, modelID: modelID, now: time.Now}, nil
+	for name, value := range map[string]string{
+		"runtime":        expectation.RuntimeSHA256,
+		"native runtime": expectation.NativeRuntimeSHA256,
+		"manifest":       expectation.ManifestSHA256,
+	} {
+		value = strings.TrimSpace(value)
+		if value != "" && !sha256Pattern.MatchString(value) {
+			return nil, fmt.Errorf("SNE control: %s identity must be lowercase SHA-256", name)
+		}
+	}
+	return &SNEControl{client: client, modelID: expectation.ModelID, expectation: expectation, now: time.Now}, nil
 }
 
 func (c *SNEControl) Readiness(ctx context.Context) (SNEReadiness, error) {
@@ -110,6 +135,9 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 	before := c.readiness(beforeIdentity)
 	if before.ServedModel != "" && before.ServedModel != c.modelID {
 		return SNELifecycle{}, fmt.Errorf("SNE control: preflight identity is not admitted: status=%q model=%q", beforeIdentity.Status, before.ServedModel)
+	}
+	if action == SNELoad && strings.EqualFold(strings.TrimSpace(beforeIdentity.Status), "ready") && !before.Ready {
+		return SNELifecycle{}, fmt.Errorf("SNE control: load refused ready-state identity drift: model=%q", before.ServedModel)
 	}
 	if action != SNELoad && !before.Ready {
 		return SNELifecycle{}, fmt.Errorf("SNE control: %s requires a ready admitted service: status=%q model=%q", action, beforeIdentity.Status, before.ServedModel)
@@ -172,8 +200,42 @@ func (c *SNEControl) readiness(identity sne.ServiceReadinessIdentity) SNEReadine
 		ObservedAt:  c.clock().UTC(),
 		Identity:    identity,
 		ServedModel: servedModel,
-		Ready:       strings.EqualFold(strings.TrimSpace(identity.Status), "ready") && servedModel == c.modelID,
+		Ready:       c.identityMatches(identity) && strings.EqualFold(strings.TrimSpace(identity.Status), "ready") && servedModel == c.modelID,
 	}
+}
+
+func (c *SNEControl) identityMatches(identity sne.ServiceReadinessIdentity) bool {
+	for _, expected := range []struct {
+		name     string
+		expected string
+		ready    string
+		fallback string
+	}{
+		{name: "runtime", expected: c.expectation.RuntimeSHA256, ready: identity.ReadyRuntimeSHA256, fallback: identity.RuntimeSHA256},
+		{name: "native runtime", expected: c.expectation.NativeRuntimeSHA256, ready: identity.ReadyNativeRuntimeSHA256, fallback: identity.NativeRuntimeSHA256},
+		{name: "manifest", expected: c.expectation.ManifestSHA256, ready: identity.ReadyManifestSHA256, fallback: manifestForModel(identity, c.modelID)},
+	} {
+		if expected.expected == "" {
+			continue
+		}
+		actual := strings.TrimSpace(expected.ready)
+		if actual == "" {
+			actual = strings.TrimSpace(expected.fallback)
+		}
+		if actual != expected.expected {
+			return false
+		}
+	}
+	return true
+}
+
+func manifestForModel(identity sne.ServiceReadinessIdentity, modelID string) string {
+	for _, model := range identity.Models {
+		if strings.TrimSpace(model.ID) == modelID {
+			return model.ManifestSHA256
+		}
+	}
+	return ""
 }
 
 func (c *SNEControl) clock() time.Time {

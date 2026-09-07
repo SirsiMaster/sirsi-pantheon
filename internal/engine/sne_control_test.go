@@ -47,6 +47,15 @@ func sneIdentity(status, model string) sne.ServiceReadinessIdentity {
 	return sne.ServiceReadinessIdentity{Status: status, ReadyModelID: model}
 }
 
+func sneFullIdentity(status, model, runtime, native, manifest string) sne.ServiceReadinessIdentity {
+	return sne.ServiceReadinessIdentity{
+		Status: status, ReadyModelID: model,
+		RuntimeSHA256: runtime, ReadyRuntimeSHA256: runtime,
+		NativeRuntimeSHA256: native, ReadyNativeRuntimeSHA256: native,
+		ReadyManifestSHA256: manifest,
+	}
+}
+
 func TestSNEControlReadinessAndLifecycleBindIdentity(t *testing.T) {
 	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
 		sneIdentity("ready", "model-a"),
@@ -105,6 +114,27 @@ func TestSNEControlLoadAllowsStoppedPreflightAndRequiresReadyPostflight(t *testi
 	}
 	if result.Before.Ready || result.Before.ServedModel != "" || !result.After.Ready || len(client.loads) != 1 {
 		t.Fatalf("load lifecycle did not bind stopped-to-ready readback: %+v client=%+v", result, client)
+	}
+}
+
+func TestSNEControlFullIdentityRejectsRuntimeDriftBeforeLoad(t *testing.T) {
+	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	other := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+		sneFullIdentity("ready", "model-a", other, sha, sha),
+	}}
+	control, err := NewSNEControlWithIdentity(client, SNEControlIdentity{ModelID: "model-a", RuntimeSHA256: sha, NativeRuntimeSHA256: sha, ManifestSHA256: sha})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Readiness(context.Background()); err == nil {
+		t.Fatal("runtime drift was accepted")
+	}
+	if _, err := control.Apply(context.Background(), SNELoad); err == nil {
+		t.Fatal("load mutated after ready-state runtime drift")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load calls after identity drift: %v", client.loads)
 	}
 }
 
