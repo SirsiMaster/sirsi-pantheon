@@ -50,6 +50,7 @@ SH
 SCRIPT=${SCRIPT//CONN/$CONN}
 run $G run jobs deploy "$JOB" --region="$REGION" --image=docker.io/library/postgres:16-alpine \
   --service-account="$JOB_SA" --set-cloudsql-instances="$CONN" \
+  --network=default --subnet=default --vpc-egress=private-ranges-only \
   --set-secrets="/sql/apply.sql=sirsi-router-schema-sql:latest,PGPASSWORD=sirsi-router-router-migrator-password:latest,SVCPW=sirsi-router-router-service-password:latest" \
   --command=sh "--args=^@^-c@$SCRIPT" --max-retries=0 --task-timeout=10m --labels=adr=062,workstream=router-service
 
