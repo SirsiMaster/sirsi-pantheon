@@ -120,9 +120,15 @@ func (c *SNEControl) Readiness(ctx context.Context) (SNEReadiness, error) {
 	if c == nil || c.client == nil {
 		return SNEReadiness{}, fmt.Errorf("SNE control: client is required")
 	}
+	if err := ctx.Err(); err != nil {
+		return SNEReadiness{}, fmt.Errorf("SNE control: readiness cancelled before readback: %w", err)
+	}
 	identity, err := c.client.ReadinessIdentity(ctx)
 	if err != nil {
 		return SNEReadiness{}, fmt.Errorf("SNE control: readiness: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return SNEReadiness{}, fmt.Errorf("SNE control: readiness cancelled after readback: %w", err)
 	}
 	readiness := c.readiness(identity)
 	if !readiness.Ready {

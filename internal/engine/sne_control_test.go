@@ -103,6 +103,21 @@ func TestSNEControlRejectsDriftAndDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestSNEControlReadinessRejectsCancelledContext(t *testing.T) {
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+		sneIdentity("ready", "model-a"),
+	}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := control.Readiness(ctx); err == nil {
+		t.Fatal("cancelled readiness was reported successful")
+	}
+}
+
 func TestSNEControlLoadAllowsStoppedPreflightAndRequiresReadyPostflight(t *testing.T) {
 	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
 		sneIdentity("stopped", ""),
