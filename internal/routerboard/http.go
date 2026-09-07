@@ -23,7 +23,7 @@ type Handler struct {
 	dir                string // holds index.html
 	controlToken       string
 	requireControlAuth bool
-	openControlStore   func() (*routerstore.Store, bool, error)
+	openControlStore   func() (routerstore.Store, bool, error)
 }
 
 func NewHandler(b *Board, dir string) *Handler {
@@ -37,17 +37,8 @@ func NewHandler(b *Board, dir string) *Handler {
 func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *Handler {
 	return &Handler{
 		board: b, dir: dir, controlToken: token, requireControlAuth: requireAuth,
-		openControlStore: func() (*routerstore.Store, bool, error) {
-			path, err := routerstore.DefaultStorePath()
-			if err != nil {
-				return nil, false, err
-			}
-			if parent := filepath.Dir(path); parent != "." && parent != "" {
-				if err := os.MkdirAll(parent, 0o755); err != nil {
-					return nil, false, err
-				}
-			}
-			store, err := routerstore.Open(path)
+		openControlStore: func() (routerstore.Store, bool, error) {
+			store, err := routerstore.Resolve()
 			return store, true, err
 		},
 	}
@@ -55,8 +46,8 @@ func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *H
 
 // NewHandlerWithControlStore injects the canonical store for tests and
 // embedded hosts. The handler does not close an injected store.
-func NewHandlerWithControlStore(b *Board, dir string, store *routerstore.Store, token string) *Handler {
-	return &Handler{board: b, dir: dir, controlToken: token, openControlStore: func() (*routerstore.Store, bool, error) {
+func NewHandlerWithControlStore(b *Board, dir string, store routerstore.Store, token string) *Handler {
+	return &Handler{board: b, dir: dir, controlToken: token, openControlStore: func() (routerstore.Store, bool, error) {
 		return store, false, nil
 	}}
 }

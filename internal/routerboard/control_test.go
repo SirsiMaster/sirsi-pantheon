@@ -91,7 +91,7 @@ func TestControlEndpointIsReadOnlyAndReturnsTheEnvelope(t *testing.T) {
 }
 
 func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T) {
-	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	store, err := routerstore.OpenPath(t.TempDir() + "/router.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,8 +122,8 @@ func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T)
 	if claimedResponse.Code != http.StatusOK {
 		t.Fatalf("claim status = %d: %s", claimedResponse.Code, claimedResponse.Body.String())
 	}
-	if err := json.Unmarshal(claimedResponse.Body.Bytes(), &claimed); err != nil || claimed.Lease == nil || claimed.Lease.Token == "" {
-		t.Fatalf("claim response = %s, err=%v", claimedResponse.Body.String(), err)
+	if decodeErr := json.Unmarshal(claimedResponse.Body.Bytes(), &claimed); decodeErr != nil || claimed.Lease == nil || claimed.Lease.Token == "" {
+		t.Fatalf("claim response = %s, err=%v", claimedResponse.Body.String(), decodeErr)
 	}
 
 	completed := postControlAction(t, mux, "test-token", ControlActionRequest{
@@ -141,8 +141,33 @@ func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T)
 	}
 }
 
+func TestReviewRequestForcesReviewTypeAndMessageRejectsMissingType(t *testing.T) {
+	store, err := routerstore.OpenPath(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	review, err := ApplyControlAction(store, ControlActionRequest{
+		Verb: "review_request", From: "ssa", To: "pantheon", Title: "review this", Type: "decision",
+	})
+	if err != nil {
+		t.Fatalf("review request: %v", err)
+	}
+	item, err := store.Get(review.ItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Type != "review" {
+		t.Fatalf("review type = %q, want review", item.Type)
+	}
+	if _, err := ApplyControlAction(store, ControlActionRequest{Verb: "message", From: "ssa", To: "pantheon", Title: "missing type"}); err == nil {
+		t.Fatal("message without a closed type was accepted")
+	}
+}
+
 func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) {
-	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	store, err := routerstore.OpenPath(t.TempDir() + "/router.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,13 +194,13 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 }
 
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
-	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	store, err := routerstore.OpenPath(t.TempDir() + "/router.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 	h := NewHandlerWithControlAuth(New("/bin/false", "", "test-build"), t.TempDir(), "test-token", true)
-	h.openControlStore = func() (*routerstore.Store, bool, error) { return store, false, nil }
+	h.openControlStore = func() (routerstore.Store, bool, error) { return store, false, nil }
 	h.board.mu.Lock()
 	h.board.version = 1
 	h.board.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)

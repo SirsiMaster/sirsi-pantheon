@@ -2467,3 +2467,11 @@ emits a second JSON MCP result block containing the engine, loopback endpoint,
 host profile, and configured model identity. The primary answer stays plain
 text, preserving the existing tool contract. The profile is provenance only:
 no code path derives or compares throughput across M1 and M5.
+
+### Router control surface follows the canonical store constructor
+
+The authenticated router-board control endpoint now resolves its ledger through
+`routerstore.Resolve()` and programs against `routerstore.Store`, rather than
+opening a local SQLite path directly. This preserves the configured remote-store
+route and the split-brain guard while keeping injected stores limited to tests.
+Focused router-board and CLI tests pass with race detection on the host surface.

@@ -50,8 +50,12 @@ func (r ControlActionRequest) validate() error {
 		if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" || strings.TrimSpace(r.Title) == "" {
 			return fmt.Errorf("%s requires from, to, and title", r.Verb)
 		}
-		if r.Verb == "review_request" {
-			r.Type = "review"
+		if r.Verb == "message" {
+			switch strings.TrimSpace(r.Type) {
+			case "proposal", "review", "decision":
+			default:
+				return fmt.Errorf("message requires type proposal, review, or decision")
+			}
 		}
 	case "delegate":
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.Subject) == "" {
@@ -81,7 +85,7 @@ func (r ControlActionRequest) validate() error {
 // ApplyControlAction maps the closed worker-control verbs to the existing
 // canonical routerstore. No second control-plane database or subprocess path
 // is introduced.
-func ApplyControlAction(store *routerstore.Store, req ControlActionRequest) (ControlActionResponse, error) {
+func ApplyControlAction(store routerstore.Store, req ControlActionRequest) (ControlActionResponse, error) {
 	if store == nil {
 		return ControlActionResponse{}, fmt.Errorf("control store is nil")
 	}
