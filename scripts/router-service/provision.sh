@@ -66,7 +66,11 @@ printf 'postgres://router_service:%s@/%s?host=/cloudsql/%s:%s:%s' "$svcpw" "$DB"
 
 echo "== 7. Service account $SA_EMAIL — cloudsql.client + accessor on exactly two secrets + logs"
 exists $G iam service-accounts describe "$SA_EMAIL" || run $G iam service-accounts create $SA --display-name="sirsi router serve (ADR-062)"
-run $G projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA_EMAIL" --role=roles/cloudsql.client >/dev/null
+# A just-created SA is invisible to IAM for a few seconds ("does not exist" on the first binding) — retry.
+for i in 1 2 3 4 5 6; do
+  run $G projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA_EMAIL" --role=roles/cloudsql.client >/dev/null && break
+  [ "$i" = 6 ] && exit 1; sleep 5
+done
 run $G projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA_EMAIL" --role=roles/logging.logWriter >/dev/null
 for s in sirsi-router-bootstrap-token sirsi-router-service-dsn; do
   run $G secrets add-iam-policy-binding $s --member="serviceAccount:$SA_EMAIL" --role=roles/secretmanager.secretAccessor >/dev/null
