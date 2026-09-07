@@ -206,3 +206,22 @@ func TestRemoteControlSnapshotBindsEnvelopeTimestampToState(t *testing.T) {
 		t.Fatalf("accepted timestamp-mismatched snapshot: %v", err)
 	}
 }
+
+func TestRemoteControlSnapshotRejectsMalformedObservationTimestamp(t *testing.T) {
+	state := routerboard.Payload{GeneratedAt: "not-a-timestamp"}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSum := sha256.Sum256(stateBytes)
+	body, err := json.Marshal(routerboard.ControlEnvelope{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 1,
+		GeneratedAt: state.GeneratedAt, StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlSnapshot(body); err == nil || !strings.Contains(err.Error(), "RFC3339") {
+		t.Fatalf("malformed observation timestamp was accepted: %v", err)
+	}
+}

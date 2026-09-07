@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
 )
 
 // ControlSchema is the stable machine-facing envelope used by remote workers.
@@ -59,6 +62,12 @@ func (b *Board) SnapshotControl() ([]byte, uint64, error) {
 	var state Payload
 	if err := json.Unmarshal(body, &state); err != nil {
 		return nil, version, err
+	}
+	if strings.TrimSpace(state.GeneratedAt) == "" {
+		return nil, version, fmt.Errorf("control snapshot: generated_at is required")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, state.GeneratedAt); err != nil {
+		return nil, version, fmt.Errorf("control snapshot: generated_at is not RFC3339: %w", err)
 	}
 	canonicalState, err := json.Marshal(state)
 	if err != nil {

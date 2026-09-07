@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
@@ -67,6 +68,17 @@ func TestSnapshotControlRefusesUnpolledBoard(t *testing.T) {
 	}
 	if body != nil || version != 0 {
 		t.Fatalf("unpolled board returned data: version=%d body=%q", version, body)
+	}
+}
+
+func TestSnapshotControlRejectsMalformedObservationTimestamp(t *testing.T) {
+	b := New("/bin/false", "", "test-build")
+	b.mu.Lock()
+	b.version = 1
+	b.payload = []byte(`{"generated_at":"not-a-timestamp","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.mu.Unlock()
+	if body, version, err := b.SnapshotControl(); err == nil || body != nil || version != 1 || !strings.Contains(err.Error(), "RFC3339") {
+		t.Fatalf("malformed timestamp was accepted: body=%q version=%d err=%v", body, version, err)
 	}
 }
 
