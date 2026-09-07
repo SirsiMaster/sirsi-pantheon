@@ -177,6 +177,15 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 		t.Fatalf("unknown field status = %d, want 400", response.Code)
 	}
 
+	duplicate := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","agent":"a","agent":"b","task_id":"t","subject":"s"}`))
+	duplicate.Header.Set("Authorization", "Bearer test-token")
+	duplicate.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, duplicate)
+	if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte("duplicate object key")) {
+		t.Fatalf("duplicate field response = %d %s", response.Code, response.Body.String())
+	}
+
 	noToken := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "")
 	noTokenMux := http.NewServeMux()
 	noToken.Register(noTokenMux)

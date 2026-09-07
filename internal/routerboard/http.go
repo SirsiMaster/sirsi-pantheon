@@ -1,6 +1,7 @@
 package routerboard
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -127,8 +128,17 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"control action requires Content-Type: application/json"}`, http.StatusUnsupportedMediaType)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-	decoder := json.NewDecoder(r.Body)
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024+1)
+	raw, readErr := io.ReadAll(r.Body)
+	if readErr != nil || len(raw) > 64*1024 {
+		http.Error(w, `{"error":"invalid control action: request body too large or unreadable"}`, http.StatusBadRequest)
+		return
+	}
+	if err := validateJSONNoDuplicateKeys(raw); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var request ControlActionRequest
 	if err := decoder.Decode(&request); err != nil {
