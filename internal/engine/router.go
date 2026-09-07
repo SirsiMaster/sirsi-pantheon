@@ -168,12 +168,26 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 	routed := make(chan Event, 1)
 	go func() {
 		defer close(routed)
+		var previous uint64
 		for event := range events {
 			if event.Receipt != nil {
 				route := decision
 				event.Receipt.Route = &route
+				if err := event.Receipt.Validate(session); err != nil {
+					routerEmitError(ctx, routed, previous, session.ID, err)
+					return
+				}
 			}
-			routed <- event
+			if err := event.Validate(previous); err != nil {
+				routerEmitError(ctx, routed, previous, session.ID, err)
+				return
+			}
+			previous = event.Sequence
+			select {
+			case routed <- event:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 	return routed, nil
@@ -183,6 +197,9 @@ func (r *Router) connectorForDecision(session Session, decision RouteDecision) (
 	if r == nil {
 		return nil, fmt.Errorf("engine router: nil router")
 	}
+	if err := decision.validate(session.Identity.Engine); err != nil {
+		return nil, fmt.Errorf("engine router: invalid route decision: %w", err)
+	}
 	if decision.Selected != session.Identity.Engine {
 		return nil, fmt.Errorf("engine router: decision %q does not match session engine %q", decision.Selected, session.Identity.Engine)
 	}
@@ -191,6 +208,20 @@ func (r *Router) connectorForDecision(session Session, decision RouteDecision) (
 		return nil, fmt.Errorf("engine router: selected connector %q is not configured", decision.Selected)
 	}
 	return connector, nil
+}
+
+func routerEmitError(ctx context.Context, events chan<- Event, previous uint64, sessionID string, err error) {
+	event := Event{
+		Kind:      EventError,
+		SessionID: sessionID,
+		Sequence:  previous + 1,
+		ErrorCode: "stream_event_invalid",
+		Error:     err.Error(),
+	}
+	select {
+	case events <- event:
+	case <-ctx.Done():
+	}
 }
 
 func (r *Router) candidateOrder(preferred Kind) []Kind {

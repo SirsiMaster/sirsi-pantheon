@@ -9,13 +9,14 @@ import (
 )
 
 type routerFixtureConnector struct {
-	kind       Kind
-	identity   Identity
-	caps       Capabilities
-	available  bool
-	onOpen     func()
-	onComplete func()
-	onStream   func()
+	kind         Kind
+	identity     Identity
+	caps         Capabilities
+	available    bool
+	onOpen       func()
+	onComplete   func()
+	onStream     func()
+	streamEvents <-chan Event
 }
 
 func (f routerFixtureConnector) Kind() Kind                 { return f.kind }
@@ -39,7 +40,7 @@ func (f routerFixtureConnector) Stream(_ context.Context, _ Session, _ GenerateR
 	if f.onStream != nil {
 		f.onStream()
 	}
-	return nil, nil
+	return f.streamEvents, nil
 }
 
 func identityFor(kind Kind) Identity {
@@ -171,5 +172,59 @@ func TestRouterRejectsDecisionSessionEngineMismatch(t *testing.T) {
 	session := Session{ID: "match", Identity: identityFor(KindMLX), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if _, _, err := r.Complete(context.Background(), session, GenerateRequest{}, decision); err == nil {
 		t.Fatal("decision/session engine mismatch was accepted")
+	}
+}
+
+func TestRouterRejectsInvalidStreamReceiptAtRouterBoundary(t *testing.T) {
+	session := Session{ID: "stream-receipt", Identity: identityFor(KindMLX), CreatedAt: "2026-09-07T16:00:00Z"}
+	stream := make(chan Event, 1)
+	stream <- Event{
+		Kind:      EventCompleted,
+		SessionID: session.ID,
+		Sequence:  1,
+		Receipt: &Receipt{
+			ABIVersion:       ABIVersion,
+			SessionID:        session.ID,
+			Identity:         session.Identity,
+			IdentityDigest:   "not-the-session-digest",
+			RequestSHA256:    testSHA,
+			CompletionSHA256: testSHA,
+			StartedAt:        session.CreatedAt,
+			FinishedAt:       "2026-09-07T16:00:01Z",
+		},
+	}
+	close(stream)
+	r, err := NewRouter(routerFixtureConnector{
+		kind:         KindMLX,
+		identity:     session.Identity,
+		caps:         Capabilities{Sessions: true, Streaming: true},
+		available:    true,
+		streamEvents: stream,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := RouteDecision{Requested: KindMLX, Selected: KindMLX, Rationale: "preferred mlx connector admitted"}
+	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, Stream: true, CacheNamespace: session.Identity.CacheNamespace}
+	events, err := r.Stream(context.Background(), session, request, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := <-events
+	if event.Kind != EventError || event.ErrorCode != "stream_event_invalid" || !strings.Contains(event.Error, "identity digest") {
+		t.Fatalf("invalid receipt was not converted to a boundary error: %+v", event)
+	}
+}
+
+func TestRouterRejectsInvalidRouteDecisionBeforeConnector(t *testing.T) {
+	r, err := NewRouter(routerFixtureConnector{kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := Session{ID: "invalid-route", Identity: identityFor(KindMLX), CreatedAt: "2026-09-07T16:00:00Z"}
+	decision := RouteDecision{Requested: KindMLX, Selected: KindMLX}
+	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, CacheNamespace: session.Identity.CacheNamespace}
+	if _, _, err := r.Complete(context.Background(), session, request, decision); err == nil || !strings.Contains(err.Error(), "rationale") {
+		t.Fatalf("invalid route decision was accepted: %v", err)
 	}
 }
