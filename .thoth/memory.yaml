@@ -325,3 +325,8 @@ sync_protocol:
 # Engine requests now carry a closed required-capabilities set and reject
 # duplicate or unsupported execution requirements before provider transport.
 # Focused provider/engine race tests, vet, lint, secret scan, and ARM64 build pass.
+# 2026-09-07 (SSA): Hosted macOS validation exposed that the menubar CLI
+# behavioral guard relied on GNU `timeout`, which macOS runners do not ship.
+# The guard now owns the same five-second process cap with POSIX shell
+# primitives, so a CLI regression that opens AppKit still fails deterministically
+# on macOS without a missing-tool false negative.

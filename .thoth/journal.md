@@ -2530,3 +2530,11 @@ checking.
 The parser also rejects duplicate options and zero, NaN, or infinite snapshot
 widths. The executable-level contract invokes each rejection case with a timeout
 to prove no malformed command reaches the menubar launch path.
+
+### Portable menubar CLI timeout
+
+GitHub-hosted macOS runners do not include GNU `timeout`, so the executable
+contract was failing before it evaluated the product. The shell guard now starts
+the renamed probe itself, polls its PID for five seconds, terminates a hung probe,
+and records that as the same launch failure. Normal output and exit semantics are
+unchanged; this makes the behavioral assertion executable on the release target.
