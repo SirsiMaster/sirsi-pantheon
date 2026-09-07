@@ -21,7 +21,11 @@ final class CLIArgumentsTests: XCTestCase {
     func testMalformedOrOrphanFlagsFailClosed() {
         XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot"]))
         XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot", "/tmp/out", "--width", "wide"]))
+        XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot", "/tmp/out", "--width", "0"]))
+        XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot", "/tmp/out", "--width", "nan"]))
+        XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot", "/tmp/out", "--width", "inf"]))
         XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--appearance", "light"]))
+        XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot", "/tmp/out", "--snapshot", "/tmp/other"]))
         XCTAssertThrowsError(try MenubarCommandParser.parse(["SirsiMenubar", "--nonsense"]))
     }
 }

@@ -13,16 +13,18 @@ enum MenubarCommand: Equatable {
 
 enum MenubarCommandError: Error, Equatable {
     case unknownFlag(String)
+    case duplicateFlag(String)
     case snapshotRequiresDirectory
-    case widthRequiresNumber
+    case widthRequiresPositiveFiniteNumber
     case appearanceRequiresValue
     case snapshotRequired(String)
 
     var message: String {
         switch self {
         case let .unknownFlag(flag): return "unknown flag \(flag)"
+        case let .duplicateFlag(flag): return "duplicate flag \(flag)"
         case .snapshotRequiresDirectory: return "--snapshot requires a directory"
-        case .widthRequiresNumber: return "--width requires a number"
+        case .widthRequiresPositiveFiniteNumber: return "--width requires a positive finite number"
         case .appearanceRequiresValue: return "--appearance requires light or dark"
         case let .snapshotRequired(flag): return "\(flag) requires --snapshot"
         }
@@ -52,6 +54,9 @@ enum MenubarCommandParser {
         if let unknown = flags.first(where: { !knownFlags.contains($0) }) {
             throw MenubarCommandError.unknownFlag(unknown)
         }
+        for flag in knownFlags where flags.filter({ $0 == flag }).count > 1 {
+            throw MenubarCommandError.duplicateFlag(flag)
+        }
 
         guard let snapshotIndex = arguments.firstIndex(of: "--snapshot") else {
             if let orphan = flags.first {
@@ -65,8 +70,11 @@ enum MenubarCommandParser {
 
         var width = 380.0
         if let widthIndex = arguments.firstIndex(of: "--width") {
-            guard widthIndex + 1 < arguments.count, let value = Double(arguments[widthIndex + 1]) else {
-                throw MenubarCommandError.widthRequiresNumber
+            guard widthIndex + 1 < arguments.count,
+                  let value = Double(arguments[widthIndex + 1]),
+                  value.isFinite,
+                  value > 0 else {
+                throw MenubarCommandError.widthRequiresPositiveFiniteNumber
             }
             width = value
         }
