@@ -16,6 +16,16 @@ type fakeProvider struct {
 	response  provider.Response
 }
 
+type recordingProvider struct {
+	fakeProvider
+	request provider.Request
+}
+
+func (p *recordingProvider) Complete(_ context.Context, request provider.Request) (provider.Response, error) {
+	p.request = request
+	return p.response, nil
+}
+
 func (f fakeProvider) Name() string                   { return "fake" }
 func (f fakeProvider) Tier() provider.Tier            { return provider.TierLocal }
 func (f fakeProvider) Caps() provider.Caps            { return provider.Caps{Streaming: false, Offline: true} }
@@ -64,6 +74,33 @@ func TestProviderConnectorRejectsServedModelDrift(t *testing.T) {
 	_, _, err = c.Complete(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, CacheNamespace: session.Identity.CacheNamespace})
 	if err == nil {
 		t.Fatal("served model drift was accepted")
+	}
+}
+
+func TestProviderConnectorPreservesSystemAndToolInputs(t *testing.T) {
+	backend := &recordingProvider{fakeProvider: fakeProvider{
+		available: true,
+		response:  provider.Response{Text: "hello", Model: "model-a", FinishReason: "stop"},
+	}}
+	identity := testIdentity()
+	connector, err := NewSNEConnector(backend, identity, Capabilities{Sessions: true, Tools: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "s-tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := GenerateRequest{
+		SessionID: session.ID, Identity: session.Identity, System: "be concise", Prompt: "hello", MaxTokens: 4,
+		CacheNamespace: session.Identity.CacheNamespace,
+		Tools:          []ToolSpec{{Name: "inspect", Description: "inspect state", Schema: map[string]any{"type": "object"}}},
+	}
+	if _, _, err := connector.Complete(context.Background(), session, req); err != nil {
+		t.Fatal(err)
+	}
+	if backend.request.System != "be concise" || backend.request.Prompt != "hello" || len(backend.request.Tools) != 1 || backend.request.Tools[0].Name != "inspect" {
+		t.Fatalf("provider request lost ABI inputs: %+v", backend.request)
 	}
 }
 

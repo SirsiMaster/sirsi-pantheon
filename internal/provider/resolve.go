@@ -178,12 +178,14 @@ func remoteFromEnv(conf Conf) *OpenAICompat {
 		return nil
 	}
 	return &OpenAICompat{
-		ProviderName:  "remote",
-		Endpoint:      ep,
-		Model:         firstNonEmpty(os.Getenv("SIRSI_REMOTE_MODEL"), conf.Model),
-		APIKey:        key,
-		TierValue:     TierRemote,
-		SupportsTools: true,
+		ProviderName: "remote",
+		Endpoint:     ep,
+		Model:        firstNonEmpty(os.Getenv("SIRSI_REMOTE_MODEL"), conf.Model),
+		APIKey:       key,
+		TierValue:    TierRemote,
+		// The current OpenAI-compatible transport does not encode tool schemas
+		// or tool calls. Do not advertise a capability the wire format drops.
+		SupportsTools: false,
 		ContextTokens: 128000,
 	}
 }

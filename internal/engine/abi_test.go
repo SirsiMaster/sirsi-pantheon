@@ -75,6 +75,18 @@ func TestGenerateRequestRejectsUnsupportedRequiredCapabilitiesBeforeTransport(t 
 	}
 }
 
+func TestGenerateRequestRejectsToolsWhenConnectorDoesNotAdvertiseThem(t *testing.T) {
+	s := testSession()
+	req := GenerateRequest{
+		SessionID: s.ID, Identity: s.Identity, Prompt: "hello", MaxTokens: 8,
+		CacheNamespace: s.Identity.CacheNamespace,
+		Tools:          []ToolSpec{{Name: "inspect", Description: "inspect state"}},
+	}
+	if err := req.Validate(s, Capabilities{}); err == nil || !errors.Is(err, ErrUnsupportedCapability) || !strings.Contains(err.Error(), "tools") {
+		t.Fatalf("unsupported tools were not rejected explicitly: %v", err)
+	}
+}
+
 func TestEventSequenceAndReceiptIdentityAreFailClosed(t *testing.T) {
 	e := Event{Kind: EventDelta, SessionID: "session-1", Sequence: 1, Text: "hi"}
 	if err := e.Validate(0); err != nil {

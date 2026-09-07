@@ -35,6 +35,7 @@ const (
 type Capability string
 
 const (
+	CapabilityTools        Capability = "tools"
 	CapabilityStreaming    Capability = "streaming"
 	CapabilityCancellation Capability = "cancellation"
 	CapabilityPrefill      Capability = "prefill"
@@ -49,6 +50,7 @@ const (
 // Capabilities are declarations, not inferred behavior. A false capability
 // must produce an explicit error before a request reaches a connector.
 type Capabilities struct {
+	Tools        bool `json:"tools"`
 	Streaming    bool `json:"streaming"`
 	Cancellation bool `json:"cancellation"`
 	Prefill      bool `json:"prefill"`
@@ -62,6 +64,8 @@ type Capabilities struct {
 
 func (c Capabilities) Has(want Capability) bool {
 	switch want {
+	case CapabilityTools:
+		return c.Tools
 	case CapabilityStreaming:
 		return c.Streaming
 	case CapabilityCancellation:
@@ -157,16 +161,27 @@ func (s Session) Validate() error {
 	return nil
 }
 
+// ToolSpec is the engine-neutral declaration passed to a connector. A
+// connector may reject it explicitly when its transport cannot encode tools;
+// it must never silently drop the request.
+type ToolSpec struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Schema      map[string]any `json:"schema,omitempty"`
+}
+
 type GenerateRequest struct {
-	SessionID      string   `json:"session_id"`
-	Identity       Identity `json:"identity"`
-	Prompt         string   `json:"prompt"`
-	MaxTokens      int      `json:"max_tokens"`
-	Temperature    *float64 `json:"temperature,omitempty"`
-	TopP           *float64 `json:"top_p,omitempty"`
-	Seed           *int64   `json:"seed,omitempty"`
-	Stream         bool     `json:"stream"`
-	CacheNamespace string   `json:"cache_namespace"`
+	SessionID      string     `json:"session_id"`
+	Identity       Identity   `json:"identity"`
+	System         string     `json:"system,omitempty"`
+	Prompt         string     `json:"prompt"`
+	MaxTokens      int        `json:"max_tokens"`
+	Tools          []ToolSpec `json:"tools,omitempty"`
+	Temperature    *float64   `json:"temperature,omitempty"`
+	TopP           *float64   `json:"top_p,omitempty"`
+	Seed           *int64     `json:"seed,omitempty"`
+	Stream         bool       `json:"stream"`
+	CacheNamespace string     `json:"cache_namespace"`
 	// RequiredCapabilities are checked before the request reaches a provider.
 	// This prevents a connector from silently dropping prefill/decode/MTP/KV or
 	// receipt requirements when engines expose different subsets.
@@ -185,6 +200,9 @@ func (r GenerateRequest) Validate(session Session, capabilities Capabilities) er
 	}
 	if r.CacheNamespace != session.Identity.CacheNamespace {
 		return errors.New("engine request: cache namespace does not match the session")
+	}
+	if len(r.Tools) > 0 && !capabilities.Has(CapabilityTools) {
+		return fmt.Errorf("%w: tools", ErrUnsupportedCapability)
 	}
 	seenCapabilities := make(map[Capability]struct{}, len(r.RequiredCapabilities))
 	for _, capability := range r.RequiredCapabilities {
@@ -362,7 +380,7 @@ func (c ProviderConnector) Complete(ctx context.Context, session Session, req Ge
 		started = c.Now
 	}
 	start := started().UTC()
-	response, err := c.Backend.Complete(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens})
+	response, err := c.Backend.Complete(ctx, provider.Request{System: req.System, Prompt: req.Prompt, MaxTokens: req.MaxTokens, Tools: providerTools(req.Tools)})
 	if err != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}
@@ -407,7 +425,7 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 	if !ok {
 		return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
 	}
-	raw, err := streaming.Stream(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens})
+	raw, err := streaming.Stream(ctx, provider.Request{System: req.System, Prompt: req.Prompt, MaxTokens: req.MaxTokens, Tools: providerTools(req.Tools)})
 	if err != nil {
 		return nil, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}
@@ -468,6 +486,17 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 		}
 	}()
 	return events, nil
+}
+
+func providerTools(tools []ToolSpec) []provider.ToolSpec {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]provider.ToolSpec, len(tools))
+	for i, tool := range tools {
+		out[i] = provider.ToolSpec{Name: tool.Name, Description: tool.Description, Schema: tool.Schema}
+	}
+	return out
 }
 
 func emitEngineEvent(ctx context.Context, events chan<- Event, event Event) bool {
