@@ -33,6 +33,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
 		{"vault", "🏛", "Vault"},
+		{"engine", "◈", "Engine"},
 		{"sne", "⚡", "SNE"},
 		{"recovery", "↻", "Recovery"},
 		{"ra", "𓇶", "Ra"},
@@ -252,7 +253,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  notifications:viewNotifications,horus:viewHorus,vault:viewVault,sne:viewSNE,recovery:viewRecovery,ra:viewRa};
+  notifications:viewNotifications,horus:viewHorus,vault:viewVault,engine:viewEngine,sne:viewSNE,recovery:viewRecovery,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -269,6 +270,37 @@ function viewHome(){
  cmdRow('dedup','Find duplicate files');
  out('');
  out('Click any command above, or type it. The sidebar switches views.','t-dim');
+}
+
+function viewEngine(){
+ out('◈ Engine — Pantheon routing','t-gold');
+ out('Choose the preferred engine once; every surface uses the same ABI router.','t-dim');
+ sep();
+ fetch('/api/engine').then(function(r){return r.json().then(function(body){
+  if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})}).then(function(data){
+  out('Preferred    '+(data.preferred||'none'),'t-ok');
+  out('Fallback     '+(data.allow_fallback?'explicitly allowed':'disabled'),'t-out');
+  out('Configured engines','t-head');
+  (data.connectors||[]).forEach(function(connector){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const label=document.createElement('span');label.className='t-col';label.style.flex='1';label.textContent=connector.kind.toUpperCase();
+   const caps=connector.capabilities||{};const names=[];
+   Object.keys(caps).forEach(function(k){if(caps[k]===true)names.push(k)});
+   const detail=document.createElement('span');detail.className='t-col';detail.style.color='var(--dim)';detail.textContent=names.join(', ')||'no optional capabilities';
+   const choose=document.createElement('span');choose.className='t-action';choose.textContent=connector.kind===data.preferred?'[selected]':'[select]';
+   if(connector.kind!==data.preferred){choose.tabIndex=0;choose.setAttribute('role','button');choose.onclick=function(){selectEngine(connector.kind)};choose.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();selectEngine(connector.kind)}}}
+   row.appendChild(label);row.appendChild(detail);row.appendChild(choose);T.appendChild(row);
+  });
+  out('Selection changes policy only; availability is proved when a session opens.','t-dim');
+ }).catch(function(e){out('Engine selection unavailable: '+e.message,'t-err')});
+}
+
+function selectEngine(kind){
+ fetch('/api/engine').then(function(r){return r.json()}).then(function(current){
+  return fetch('/api/engine/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preferred:kind,allow_fallback:current.allow_fallback,required_capabilities:current.required_capabilities||[]})})
+ }).then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
+ .then(function(){out('✓ Preferred engine set to '+kind.toUpperCase(),'t-ok');setTimeout(viewEngine,250)})
+ .catch(function(e){out('✗ Engine selection rejected: '+e.message,'t-err')});
 }
 
 function viewSNE(){

@@ -73,6 +73,9 @@ type Config struct {
 	// their state from this producer). If nil, the endpoint returns 503
 	// rather than a misleading zero-valued payload.
 	FabricFn FabricProducer
+	// EngineSelection is the one engine-neutral policy owner shared by UI
+	// surfaces. Nil disables selection rather than inventing a default engine.
+	EngineSelection EngineSelection
 	// SNEInstall configures Pantheon's asynchronous, integrity-gated model
 	// acquisition bridge. Nil keeps model install controls honestly disabled.
 	SNEInstall *SNEInstallConfig
@@ -169,6 +172,8 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/fleet", s.apiFleet)                              // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)                            // A26 Nexus board seam — ledger.BoardSummary
 	mux.HandleFunc("/api/fabric", s.apiFabric)                            // unified work/message/lane contract
+	mux.HandleFunc("/api/engine", s.apiEngine)
+	mux.HandleFunc("/api/engine/select", s.secureSNERoute(true, s.apiEngineSelect))
 	mux.HandleFunc("/api/sne", s.secureSNERoute(false, s.apiSNE))         // local SNE catalog and runtime read-model
 	mux.HandleFunc("/api/sne/chat", s.secureSNERoute(true, s.apiSNEChat)) // governed streaming bridge to the verified local runtime
 	mux.HandleFunc("/api/sne/diagnostics", s.secureSNERoute(false, s.apiSNEDiagnostics))
