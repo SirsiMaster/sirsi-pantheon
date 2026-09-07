@@ -28,9 +28,11 @@ import (
 	"time"
 )
 
-// SNERunner calls an OpenAI-compatible /v1/chat/completions endpoint.
-// Every Generate call is a fresh stateless POST (same contract as MLXRunner).
+// SNERunner calls an OpenAI-compatible /v1/chat/completions endpoint. SNE and
+// oMLX share this wire implementation so engine selection does not change the
+// Pantheon tool workflow.
 type SNERunner struct {
+	backend string
 	baseURL string // e.g. "http://localhost:11434/v1"
 	model   string // model name forwarded in the request body
 	client  *http.Client
@@ -43,6 +45,21 @@ func NewSNERunner(baseURL, model string) *SNERunner {
 		model = "gemma-2-27b-it"
 	}
 	return &SNERunner{
+		backend: "sne",
+		baseURL: strings.TrimRight(baseURL, "/"),
+		model:   model,
+		client:  &http.Client{Timeout: 5 * time.Minute},
+	}
+}
+
+// NewOMLXRunner uses oMLX's OpenAI-compatible server through the same Pantheon
+// request and response contract as SNE.
+func NewOMLXRunner(baseURL, model string) *SNERunner {
+	if model == "" {
+		model = "gemma-4-12b-it"
+	}
+	return &SNERunner{
+		backend: "omlx",
 		baseURL: strings.TrimRight(baseURL, "/"),
 		model:   model,
 		client:  &http.Client{Timeout: 5 * time.Minute},
@@ -71,6 +88,7 @@ type sneResponse struct {
 }
 
 func (r *SNERunner) Generate(ctx context.Context, prompt string, maxTokens int, temperature float64) (string, error) {
+	prefix := r.backend + " runner"
 	body := sneRequest{
 		Model:       r.model,
 		Messages:    []sneMessage{{Role: "user", Content: prompt}},
@@ -79,38 +97,38 @@ func (r *SNERunner) Generate(ctx context.Context, prompt string, maxTokens int, 
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return "", fmt.Errorf("sne runner: marshal request: %w", err)
+		return "", fmt.Errorf("%s: marshal request: %w", prefix, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		r.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("sne runner: build request: %w", err)
+		return "", fmt.Errorf("%s: build request: %w", prefix, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("sne runner: POST %s/chat/completions: %w", r.baseURL, err)
+		return "", fmt.Errorf("%s: POST %s/chat/completions: %w", prefix, r.baseURL, err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("sne runner: read response: %w", err)
+		return "", fmt.Errorf("%s: read response: %w", prefix, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("sne runner: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return "", fmt.Errorf("%s: HTTP %d: %s", prefix, resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var out sneResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("sne runner: decode response: %w", err)
+		return "", fmt.Errorf("%s: decode response: %w", prefix, err)
 	}
 	if out.Error != nil {
-		return "", fmt.Errorf("sne runner: server error: %s", out.Error.Message)
+		return "", fmt.Errorf("%s: server error: %s", prefix, out.Error.Message)
 	}
 	if len(out.Choices) == 0 {
-		return "", fmt.Errorf("sne runner: no choices in response")
+		return "", fmt.Errorf("%s: no choices in response", prefix)
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }

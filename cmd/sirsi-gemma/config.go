@@ -9,24 +9,27 @@ import (
 	"strings"
 )
 
-// Config controls how sirsi-gemma drives a local MLX-Gemma install or an
-// SNE-compatible HTTP endpoint.
+// Config controls which local inference engine backs the common Gemma tools.
 //
 // Loaded from ~/.config/sirsi/gemma.toml (flat key=value). Missing file
 // or missing keys fall back to the defaults below.
 //
-// SNE seam (ADR-003 in sirsi-inference): set sne_url to activate the HTTP
-// runner instead of the MLX subprocess. Example:
+// Set engine explicitly for new configurations. Existing configurations that
+// only set sne_url continue to select SNE.
 //
+//	engine = sne
 //	sne_url = http://localhost:11434/v1
 type Config struct {
+	Engine      string  // "mlx", "sne", or "omlx"; empty preserves legacy autodetection
 	ModelID     string  // e.g. "mlx-community/gemma-2-27b-it-4bit"
 	VenvPath    string  // absolute path to the Python venv root
 	MaxTokens   int     // default max tokens per generation
 	Temperature float64 // default sampling temperature
 	// SNE seam — when non-empty, sirsi-gemma uses SNERunner instead of MLXRunner.
-	SNEURL   string // base URL of SNE's OpenAI-compatible API, e.g. "http://localhost:11434/v1"
-	SNEModel string // model name forwarded to SNE (default: "gemma-2-27b-it")
+	SNEURL    string // base URL of SNE's OpenAI-compatible API, e.g. "http://localhost:11434/v1"
+	SNEModel  string // model name forwarded to SNE (default: "gemma-2-27b-it")
+	OMLXURL   string // base URL of oMLX's OpenAI-compatible API
+	OMLXModel string // model name forwarded to oMLX
 }
 
 // DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
@@ -84,6 +87,12 @@ func LoadConfig(path string) (Config, error) {
 
 func (c *Config) set(key, val string) error {
 	switch key {
+	case "engine":
+		val = strings.ToLower(val)
+		if val != "mlx" && val != "sne" && val != "omlx" {
+			return fmt.Errorf("engine must be mlx, sne, or omlx")
+		}
+		c.Engine = val
 	case "model_id":
 		c.ModelID = val
 	case "venv_path":
@@ -104,10 +113,29 @@ func (c *Config) set(key, val string) error {
 		c.SNEURL = val
 	case "sne_model":
 		c.SNEModel = val
+	case "omlx_url":
+		c.OMLXURL = val
+	case "omlx_model":
+		c.OMLXModel = val
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
 	return nil
+}
+
+// EffectiveEngine resolves the explicit selector while preserving the original
+// sne_url-only configuration contract.
+func (c Config) EffectiveEngine() string {
+	if c.Engine != "" {
+		return c.Engine
+	}
+	if c.SNEURL != "" {
+		return "sne"
+	}
+	if c.OMLXURL != "" {
+		return "omlx"
+	}
+	return "mlx"
 }
 
 func expandHome(p string) string {
