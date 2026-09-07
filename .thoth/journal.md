@@ -2414,3 +2414,16 @@ review and either approve directly or run the bind script. Closed the horus item
 root-cause/fix-status/no-action-taken record rather than a bare ack. Until #675 merges, the
 currently deployed binary predates the quarantine marker check and this alarm will keep firing on
 its 900s interval — tracked as alarm cost, not restated as a new finding each time it fires.
+
+## 2026-09-07 — SSA SNE Engine ABI consumer integration
+
+Implemented the Pantheon-side selector on `codex/ssa-sne-engine-selection-20260907`:
+`2d07cd40` introduced explicit SNE/MLX/OMLX selection with legacy `sne_url`
+compatibility; `ded08295` added the recovered SNE Native v2 RC1 as
+`engine = "sne-native-v2"`. All engine choices preserve the `gemma_chat` and
+`gemma_complete` MCP contract and selected endpoints fail visibly rather than
+falling back. Pantheon consumes the published OpenAI-compatible HTTP ABI only;
+it does not launch, qualify, or alter SNE internals. `go test ./cmd/sirsi-gemma`,
+`go build ./cmd/sirsi-gemma`, diff checks, gitleaks, and the pre-push gate passed.
+The broad suite was sandbox-blocked by denied loopback listeners and host-only
+launchctl observations in unrelated packages.
