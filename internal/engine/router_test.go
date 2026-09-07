@@ -88,6 +88,18 @@ func TestRouterRejectsCancelledSessionAdmission(t *testing.T) {
 	}
 }
 
+func TestRouterRejectsConnectorSessionIdentityDrift(t *testing.T) {
+	r, err := NewRouter(routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindSNE), caps: Capabilities{Sessions: true}, available: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.OpenSession(context.Background(), "identity-drift", RoutePolicy{Preferred: KindMLX}); err == nil || !strings.Contains(err.Error(), "returned identity") {
+		t.Fatalf("accepted connector identity drift: %v", err)
+	}
+}
+
 func TestRouterReturnsErrorForUnconfiguredPreferredConnector(t *testing.T) {
 	r, err := NewRouter(routerFixtureConnector{
 		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,

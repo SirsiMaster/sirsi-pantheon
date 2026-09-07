@@ -85,6 +85,15 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 			reasons = append(reasons, fmt.Sprintf("%s: %v", kind, err))
 			continue
 		}
+		if session.ID != sessionID {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned session %q for requested session %q", kind, session.ID, sessionID)
+		}
+		if err := session.Validate(); err != nil {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned invalid session: %w", kind, err)
+		}
+		if session.Identity.Engine != kind {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned identity for %s", kind, session.Identity.Engine)
+		}
 		decision := RouteDecision{Requested: policy.Preferred, Selected: kind, Fallback: index > 0}
 		if index == 0 {
 			decision.Rationale = fmt.Sprintf("preferred %s connector admitted", kind)
