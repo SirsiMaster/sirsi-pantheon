@@ -31,7 +31,9 @@ set -euo pipefail
 VERSION="${VERSION:-0.17.0}"
 ARCH="${ARCH:-arm64}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="${PROJECT_ROOT}/bin"
+# Keep the checked-in default for release CI, but allow local verification and
+# rollback drills to use an isolated output root without touching bin/.
+BUILD_DIR="${BUILD_DIR:-${PROJECT_ROOT}/bin}"
 APP_NAME="Pantheon.app"
 DMG_VOLUME="Sirsi Pantheon"
 
@@ -81,18 +83,17 @@ DMG_CANDIDATE="${BUILD_WORK_DIR}/${DMG_NAME}"
 # that looked native but silently omitted the local control engine while the
 # standalone archive retained it. A native surface may replace this executable
 # only after it launches the same packaged engine and passes the release contract.
+/bin/bash "${PROJECT_ROOT}/scripts/verify-menubar-release-contract.sh"
+echo "Assembling isolated ${APP_NAME} workspace..."
+mkdir -p "${BUNDLE_DIR}/Contents/MacOS" "${BUNDLE_DIR}/Contents/Resources"
 echo "Compiling canonical menu bar and local control engine (cmd/sirsi-menubar/)..."
-CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi-menubar" ./cmd/sirsi-menubar/
+CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar" ./cmd/sirsi-menubar/
 
 echo "Compiling sirsi CLI..."
-CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi" ./cmd/sirsi/
+CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUNDLE_DIR}/Contents/MacOS/sirsi" ./cmd/sirsi/
 
 # --- Assemble the .app bundle ---
 echo "Assembling ${APP_NAME}..."
-rm -rf "${BUNDLE_DIR}"
-mkdir -p "${BUNDLE_DIR}/Contents/MacOS" "${BUNDLE_DIR}/Contents/Resources"
-cp "${BUILD_DIR}/sirsi-menubar" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"
-cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
@@ -160,7 +161,7 @@ INSTALL
 The bundle includes the menu bar app and the `sirsi` CLI
 (/Applications/Pantheon.app/Contents/MacOS/sirsi). To use the CLI in a terminal:
   alias sirsi="/Applications/Pantheon.app/Contents/MacOS/sirsi"
-or: brew install sirsimaster/tools/sirsi-pantheon
+or: brew install --cask sirsimaster/tools/sirsi-pantheon
 
 More: https://sirsi.ai/pantheon
 READMEEOF
