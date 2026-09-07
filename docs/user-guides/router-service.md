@@ -37,7 +37,7 @@ sirsi router serve --store 'postgres://router_service@db-host:5432/router' --lis
 | `--tls-cert` / `--tls-key` | serve TLS yourself; leave unset behind Cloud Run |
 | `--max-wait` | ceiling for a `router wait` long-poll (default 60s) |
 
-The service refuses to start without a token. `GET /healthz` answers `ok`.
+The service refuses to start without a token. `GET /v1/healthz` answers `ok` (`/healthz` is swallowed by the Cloud Run front end).
 
 ## Pointing a node at it
 
