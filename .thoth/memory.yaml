@@ -306,4 +306,6 @@ sync_protocol:
 # sampling-control forwarding fences.
 # Local OpenAI-compatible engines declare their actual SSE support; remote
 # streaming remains disabled until the endpoint is explicitly configured.
+# Engine requests now carry a closed required-capabilities set and reject
+# duplicate or unsupported execution requirements before provider transport.
 # Focused provider/engine race tests, vet, lint, secret scan, and ARM64 build pass.

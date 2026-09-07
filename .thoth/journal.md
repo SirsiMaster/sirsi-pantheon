@@ -2482,3 +2482,7 @@ claimed by this transport work.
 Streaming capability is now honest at resolver level: the local broker declares
 its supported SSE transport, while a remote OpenAI-compatible endpoint must opt
 in with `SIRSI_REMOTE_STREAMING=true` before callers may request a stream.
+
+The connector ABI additionally carries explicit required capabilities. Requests
+for unsupported or duplicate prefill, decode, MTP, KV-state, telemetry, or
+receipt features fail before provider transport rather than degrading silently.
