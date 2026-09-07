@@ -27,7 +27,10 @@ if [ ! -x "$BIN" ]; then
   # Preserve compiler output in CI. A failed release build used to leave the
   # behavioral guard with only an unhelpful exit status, obscuring the actual
   # product/compiler incompatibility that needs repair.
-  (cd "$HERE" && swift build -c release)
+  # Pin complete concurrency checking here rather than relying on whichever
+  # Xcode version happens to power CI. This is the build mode that caught the
+  # unsafe Timer capture before it reached a signed menubar package.
+  (cd "$HERE" && swift build -c release -Xswiftc -strict-concurrency=complete)
 fi
 [ -x "$BIN" ] || { echo "check-cli-flags: no binary at $BIN" >&2; exit 2; }
 

@@ -2500,3 +2500,10 @@ Focused router-board and CLI tests pass with race detection on the host surface.
 Required test and build jobs now run on GitHub-hosted `macos-14` runners. The
 change removes an unavailable self-hosted M5 runner from the PR delivery path;
 release-only workflows remain separately scoped to their required hardware.
+
+### Swift concurrency enforcement
+
+The menubar CLI contract invokes release builds with complete Swift concurrency
+checking. Notification-response completion is called while nonisolated, before
+the UI handoff to the main actor, eliminating a Swift 6 sendability warning
+that otherwise could become a future compiler error.

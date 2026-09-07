@@ -25,8 +25,10 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # values, and the menubar CLI guard preserves Swift compiler diagnostics instead
 # of hiding an actionable build failure. The refresh timer now uses main-run-loop
 # selector delivery rather than an unsafe concurrent closure, and notification
-# publication uses the async API. Clean local release build and all command-line
-# non-launch cases pass without Swift concurrency warnings.
+# publication uses the async API. The CLI contract now explicitly enforces
+# complete Swift concurrency checking; notification delegate completion stays
+# nonisolated before its main-actor UI hop. Clean local release build and all
+# command-line non-launch cases pass without Swift concurrency warnings.
 # 2026-09-07: SSA added an explicit `sirsi-gemma` selector for SNE, recovered
 # SNE Native v2, MLX, and OMLX on branch codex/ssa-sne-engine-selection-20260907
 # (current lineage includes `ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes
