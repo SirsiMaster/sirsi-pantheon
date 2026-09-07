@@ -70,6 +70,19 @@ func TestRouterRejectsCapabilityGapBeforeConnectorAdmission(t *testing.T) {
 	}
 }
 
+func TestRouterReturnsErrorForUnconfiguredPreferredConnector(t *testing.T) {
+	r, err := NewRouter(routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.OpenSession(context.Background(), "missing-preferred", RoutePolicy{Preferred: KindOMLX})
+	if err == nil || !strings.Contains(err.Error(), "omlx") || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("unconfigured preferred connector error = %v", err)
+	}
+}
+
 func TestRouterRejectsDecisionSessionEngineMismatch(t *testing.T) {
 	r, err := NewRouter(routerFixtureConnector{kind: KindSNE, identity: identityFor(KindSNE), caps: Capabilities{Sessions: true}, available: true})
 	if err != nil {

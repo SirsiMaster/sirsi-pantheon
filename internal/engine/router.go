@@ -64,7 +64,11 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		if index > 0 && !policy.AllowFallback {
 			break
 		}
-		connector := r.connectors[kind]
+		connector, configured := r.connectors[kind]
+		if !configured {
+			reasons = append(reasons, fmt.Sprintf("%s: connector is not configured", kind))
+			continue
+		}
 		if err := requireCapabilities(connector.Capabilities(), policy.RequiredCapabilities); err != nil {
 			capabilityFailures++
 			reasons = append(reasons, fmt.Sprintf("%s: %v", kind, err))
