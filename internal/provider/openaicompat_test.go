@@ -53,6 +53,39 @@ func TestCompleteFailsWhenBrokerServesNoModel(t *testing.T) {
 	}
 }
 
+func TestCompleteRejectsResponseModelDrift(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/chat/completions":
+			_, _ = w.Write([]byte(`{"model":"different-model","choices":[{"finish_reason":"stop","message":{"content":"wrong"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	p := &OpenAICompat{ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: "admitted-model", TierValue: TierLocal, HTTP: srv.Client()}
+	if _, err := p.Complete(context.Background(), Request{Prompt: "hello"}); err == nil {
+		t.Fatal("expected completion model drift to fail closed")
+	}
+}
+
+func TestAvailableRejectsConfiguredModelDrift(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"different-model"}]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	p := &OpenAICompat{ProviderName: "omlx", Endpoint: srv.URL + "/v1", Model: "admitted-model", TierValue: TierLocal, HTTP: srv.Client()}
+	if p.Available(context.Background()) {
+		t.Fatal("expected availability to reject configured model drift")
+	}
+}
+
 func TestStreamParsesSSEChunksAndDone(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -85,6 +118,33 @@ func TestStreamParsesSSEChunksAndDone(t *testing.T) {
 	}
 	if text != "hello" || !sawDone {
 		t.Fatalf("stream = %q done=%v, want hello/done", text, sawDone)
+	}
+}
+
+func TestStreamRejectsResponseModelDrift(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"model\":\"different-model\",\"choices\":[{\"delta\":{\"content\":\"wrong\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	p := &OpenAICompat{ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: "admitted-model", TierValue: TierLocal, HTTP: srv.Client()}
+	chunks, err := p.Stream(context.Background(), Request{Prompt: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawDrift bool
+	for chunk := range chunks {
+		if chunk.Err != nil {
+			sawDrift = true
+		}
+	}
+	if !sawDrift {
+		t.Fatal("expected stream model drift to fail closed")
 	}
 }
 

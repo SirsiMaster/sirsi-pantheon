@@ -71,19 +71,10 @@ func (o *OpenAICompat) Available(ctx context.Context) bool {
 	if o.UseRealCompletionProbe {
 		return o.probeCompletion(ctx)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(o.Endpoint, "/")+"/models", nil)
-	if err != nil {
-		return false
-	}
-	o.auth(req)
-	resp, err := o.client().Do(req)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return resp.StatusCode == http.StatusOK
+	_, err := o.ProbeServedModel(probeCtx)
+	return err == nil
 }
 
 // probeCompletion sends a 1-token chat completion to verify the engine can
@@ -211,7 +202,23 @@ func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 	if len(models.Data) == 0 || strings.TrimSpace(models.Data[0].ID) == "" {
 		return "", fmt.Errorf("%s: no served model", o.ProviderName)
 	}
-	return models.Data[0].ID, nil
+	model := strings.TrimSpace(models.Data[0].ID)
+	if err := o.validateModel(model); err != nil {
+		return "", err
+	}
+	return model, nil
+}
+
+func (o *OpenAICompat) validateModel(served string) error {
+	served = strings.TrimSpace(served)
+	expected := strings.TrimSpace(o.Model)
+	if expected != "" && served != expected {
+		return fmt.Errorf("%s: served model %q does not match admitted model %q", o.ProviderName, served, expected)
+	}
+	if served == "" {
+		return fmt.Errorf("%s: served model is empty", o.ProviderName)
+	}
+	return nil
 }
 
 func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, error) {
@@ -260,6 +267,9 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	}
 	if len(cc.Choices) == 0 {
 		return Response{}, fmt.Errorf("%s: no choices in response", o.ProviderName)
+	}
+	if err := o.validateModel(cc.Model); err != nil {
+		return Response{}, err
 	}
 
 	ch := cc.Choices[0]
@@ -352,6 +362,10 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 			}
 			if len(chunk.Choices) == 0 {
 				continue
+			}
+			if err := o.validateModel(chunk.Model); err != nil {
+				_ = sendStreamChunk(ctx, out, StreamChunk{Err: err})
+				return
 			}
 			choice := chunk.Choices[0]
 			if !sendStreamChunk(ctx, out, StreamChunk{Text: choice.Delta.Content, Model: chunk.Model, FinishReason: choice.FinishReason, Done: choice.FinishReason != ""}) {
