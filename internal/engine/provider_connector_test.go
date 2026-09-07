@@ -21,6 +21,15 @@ type recordingProvider struct {
 	request provider.Request
 }
 
+type blockingStreamingProvider struct {
+	recordingProvider
+	chunks chan provider.StreamChunk
+}
+
+func (p *blockingStreamingProvider) Stream(context.Context, provider.Request) (<-chan provider.StreamChunk, error) {
+	return p.chunks, nil
+}
+
 func (p *recordingProvider) Complete(_ context.Context, request provider.Request) (provider.Response, error) {
 	p.request = request
 	return p.response, nil
@@ -182,5 +191,77 @@ func TestProviderConnectorNormalizesLoopbackStreamAndReceipt(t *testing.T) {
 	}
 	if err := receipt.Validate(session); err != nil {
 		t.Fatalf("stream receipt invalid: %v", err)
+	}
+}
+
+func TestProviderConnectorEmitsCancelledReceiptWhenStreamStalls(t *testing.T) {
+	backend := &blockingStreamingProvider{
+		recordingProvider: recordingProvider{fakeProvider: fakeProvider{
+			available: true,
+			response:  provider.Response{Model: "model-a"},
+		}},
+		chunks: make(chan provider.StreamChunk),
+	}
+	identity := testIdentity()
+	connector, err := NewSNEConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Cancellation: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "cancel-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := connector.Stream(ctx, session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	var got *Event
+	for event := range events {
+		copy := event
+		got = &copy
+	}
+	if got == nil || got.Kind != EventError || got.ErrorCode != "cancelled" || got.Receipt == nil || !got.Receipt.Cancelled {
+		t.Fatalf("cancellation event = %+v, want cancelled error with receipt", got)
+	}
+	if err := got.Receipt.Validate(session); err != nil {
+		t.Fatalf("cancelled receipt invalid: %v", err)
+	}
+}
+
+func TestProviderConnectorCancelsAfterPartialStream(t *testing.T) {
+	chunks := make(chan provider.StreamChunk, 1)
+	chunks <- provider.StreamChunk{Model: "model-a", Text: "partial"}
+	backend := &blockingStreamingProvider{
+		recordingProvider: recordingProvider{fakeProvider: fakeProvider{available: true, response: provider.Response{Model: "model-a"}}},
+		chunks:            chunks,
+	}
+	identity := testIdentity()
+	connector, err := NewSNEConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Cancellation: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "cancel-after-partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := connector.Stream(ctx, session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := <-events
+	if first.Kind != EventDelta || first.Text != "partial" {
+		t.Fatalf("first event = %+v, want partial delta", first)
+	}
+	cancel()
+	var got *Event
+	for event := range events {
+		copy := event
+		got = &copy
+	}
+	if got == nil || got.ErrorCode != "cancelled" || got.Receipt == nil || !got.Receipt.Cancelled {
+		t.Fatalf("post-partial cancellation = %+v, want cancelled receipt", got)
 	}
 }

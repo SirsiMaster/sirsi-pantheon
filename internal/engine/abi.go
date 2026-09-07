@@ -442,6 +442,9 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 	if err := req.Validate(session, c.Caps); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("engine connector: stream cancelled before start: %w", err)
+	}
 	streaming, ok := c.Backend.(provider.StreamingProvider)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
@@ -450,7 +453,10 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 	if err != nil {
 		return nil, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}
-	events := make(chan Event)
+	// One slot lets the cancellation terminal event be retained even after the
+	// caller cancels its context and stops receiving immediately. The provider
+	// still receives the same context, so network-backed streams can terminate.
+	events := make(chan Event, 1)
 	now := time.Now
 	if c.Now != nil {
 		now = c.Now
@@ -461,7 +467,33 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 		var sequence uint64
 		var text strings.Builder
 		model := ""
-		for chunk := range raw {
+		emitCancellation := func() {
+			sequence++
+			receipt, err := streamReceipt(session, req, text.String(), started, now().UTC(), true)
+			if err != nil {
+				return
+			}
+			select {
+			case events <- Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "cancelled", Error: "stream cancelled", Receipt: &receipt}:
+			default:
+			}
+		}
+		for {
+			var chunk provider.StreamChunk
+			var ok bool
+			select {
+			case <-ctx.Done():
+				emitCancellation()
+				return
+			case chunk, ok = <-raw:
+				if !ok {
+					return
+				}
+			}
+			if ctx.Err() != nil {
+				emitCancellation()
+				return
+			}
 			if chunk.Err != nil {
 				sequence++
 				emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "stream_error", Error: chunk.Err.Error()})
@@ -488,13 +520,13 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 				}
 			}
 			if chunk.Done {
+				if ctx.Err() != nil {
+					emitCancellation()
+					return
+				}
 				sequence++
-				requestBytes, _ := json.Marshal(req)
-				requestSum := sha256.Sum256(requestBytes)
-				completionSum := sha256.Sum256([]byte(text.String()))
-				receipt := Receipt{ABIVersion: ABIVersion, SessionID: session.ID, Identity: session.Identity, RequestSHA256: hex.EncodeToString(requestSum[:]), CompletionSHA256: hex.EncodeToString(completionSum[:]), StartedAt: started.Format(time.RFC3339Nano), FinishedAt: now().UTC().Format(time.RFC3339Nano)}
-				receipt.IdentityDigest, _ = session.Identity.Digest()
-				if err := receipt.Validate(session); err != nil {
+				receipt, err := streamReceipt(session, req, text.String(), started, now().UTC(), false)
+				if err != nil {
 					sequence++
 					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "receipt_invalid", Error: err.Error()})
 					return
@@ -507,6 +539,33 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 		}
 	}()
 	return events, nil
+}
+
+func streamReceipt(session Session, req GenerateRequest, text string, started, finished time.Time, cancelled bool) (Receipt, error) {
+	requestBytes, err := json.Marshal(req)
+	if err != nil {
+		return Receipt{}, err
+	}
+	requestSum := sha256.Sum256(requestBytes)
+	completionSum := sha256.Sum256([]byte(text))
+	receipt := Receipt{
+		ABIVersion:       ABIVersion,
+		SessionID:        session.ID,
+		Identity:         session.Identity,
+		RequestSHA256:    hex.EncodeToString(requestSum[:]),
+		CompletionSHA256: hex.EncodeToString(completionSum[:]),
+		StartedAt:        started.Format(time.RFC3339Nano),
+		FinishedAt:       finished.Format(time.RFC3339Nano),
+		Cancelled:        cancelled,
+	}
+	receipt.IdentityDigest, err = session.Identity.Digest()
+	if err != nil {
+		return Receipt{}, err
+	}
+	if err := receipt.Validate(session); err != nil {
+		return Receipt{}, err
+	}
+	return receipt, nil
 }
 
 func providerTools(tools []ToolSpec) []provider.ToolSpec {
