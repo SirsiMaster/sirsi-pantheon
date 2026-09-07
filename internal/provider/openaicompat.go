@@ -363,6 +363,10 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 		}
 		if err := scanner.Err(); err != nil {
 			_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: read stream: %w", o.ProviderName, err)})
+			return
+		}
+		if ctx.Err() == nil {
+			_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: stream ended before a terminal marker", o.ProviderName)})
 		}
 	}()
 	return out, nil

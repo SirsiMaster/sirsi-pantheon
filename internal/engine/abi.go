@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -188,10 +189,10 @@ func (r GenerateRequest) Validate(session Session, capabilities Capabilities) er
 	if r.MaxTokens <= 0 {
 		return errors.New("engine request: max_tokens must be positive")
 	}
-	if r.Temperature != nil && (*r.Temperature < 0 || *r.Temperature > 2) {
+	if r.Temperature != nil && (math.IsNaN(*r.Temperature) || math.IsInf(*r.Temperature, 0) || *r.Temperature < 0 || *r.Temperature > 2) {
 		return fmt.Errorf("engine request: temperature %.3f outside [0,2]", *r.Temperature)
 	}
-	if r.TopP != nil && (*r.TopP <= 0 || *r.TopP > 1) {
+	if r.TopP != nil && (math.IsNaN(*r.TopP) || math.IsInf(*r.TopP, 0) || *r.TopP <= 0 || *r.TopP > 1) {
 		return fmt.Errorf("engine request: top_p %.3f outside (0,1]", *r.TopP)
 	}
 	if r.Stream && !capabilities.Has(CapabilityStreaming) {
@@ -245,7 +246,7 @@ type Receipt struct {
 	CompletionSHA256 string   `json:"completion_sha256"`
 	StartedAt        string   `json:"started_at"`
 	FinishedAt       string   `json:"finished_at"`
-	Cancelled        bool     `json:"cancelled"`
+	Canceled         bool     `json:"cancelled"` //nolint:misspell // stable ABI wire key
 }
 
 // Completion is the normalized non-streaming result shared by all provider
@@ -407,7 +408,7 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 		defer close(events)
 		var sequence uint64
 		var text strings.Builder
-		model := ""
+		observedModel := ""
 		for chunk := range raw {
 			if chunk.Err != nil {
 				sequence++
@@ -415,13 +416,13 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 				return
 			}
 			if chunk.Model != "" {
-				if model != "" && model != chunk.Model {
+				if observedModel != "" && observedModel != chunk.Model {
 					sequence++
 					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "model_identity_mismatch", Error: "stream changed served model"})
 					return
 				}
-				model = chunk.Model
-				if model != session.Identity.ModelID {
+				observedModel = chunk.Model
+				if observedModel != session.Identity.ModelID {
 					sequence++
 					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "model_identity_mismatch", Error: "stream model does not match admitted identity"})
 					return
@@ -436,11 +437,24 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 			}
 			if chunk.Done {
 				sequence++
-				requestBytes, _ := json.Marshal(req)
+				if observedModel == "" {
+					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "model_identity_unobserved", Error: "stream completed without an observed served model"})
+					return
+				}
+				requestBytes, marshalErr := json.Marshal(req)
+				if marshalErr != nil {
+					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "receipt_invalid", Error: fmt.Sprintf("request digest: %v", marshalErr)})
+					return
+				}
 				requestSum := sha256.Sum256(requestBytes)
 				completionSum := sha256.Sum256([]byte(text.String()))
 				receipt := Receipt{ABIVersion: ABIVersion, SessionID: session.ID, Identity: session.Identity, RequestSHA256: hex.EncodeToString(requestSum[:]), CompletionSHA256: hex.EncodeToString(completionSum[:]), StartedAt: started.Format(time.RFC3339Nano), FinishedAt: now().UTC().Format(time.RFC3339Nano)}
-				receipt.IdentityDigest, _ = session.Identity.Digest()
+				identityDigest, digestErr := session.Identity.Digest()
+				if digestErr != nil {
+					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "receipt_invalid", Error: fmt.Sprintf("identity digest: %v", digestErr)})
+					return
+				}
+				receipt.IdentityDigest = identityDigest
 				if err := receipt.Validate(session); err != nil {
 					sequence++
 					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "receipt_invalid", Error: err.Error()})

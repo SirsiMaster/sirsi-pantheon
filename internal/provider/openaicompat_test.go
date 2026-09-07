@@ -122,3 +122,31 @@ func TestStreamCancellationClosesResponse(t *testing.T) {
 		t.Fatal("stream did not close after cancellation")
 	}
 }
+
+func TestStreamRejectsEOFBeforeTerminalMarker(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"stream-model"}]}`))
+		case "/v1/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"model\":\"stream-model\",\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":\"\"}]}\n\n"))
+		}
+	}))
+	defer srv.Close()
+
+	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	chunks, err := p.Stream(context.Background(), Request{Prompt: "hello", MaxTokens: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var terminalErr error
+	for chunk := range chunks {
+		if chunk.Err != nil {
+			terminalErr = chunk.Err
+		}
+	}
+	if terminalErr == nil {
+		t.Fatal("truncated stream closed without an error")
+	}
+}
