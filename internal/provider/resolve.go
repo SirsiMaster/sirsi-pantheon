@@ -132,6 +132,7 @@ func Local(home string, conf Conf) *OpenAICompat {
 		Model:                  model,
 		TierValue:              TierLocal,
 		SupportsTools:          false, // mlx_lm.server has no tool-calling
+		SupportsStreaming:      true,  // local OpenAI-compatible broker exposes SSE
 		ContextTokens:          8192,
 		UseRealCompletionProbe: true, // MODEL-ROUTER-DESIGN.md: liveness = real completion, not /health
 	}
@@ -220,7 +221,10 @@ func remoteFromEnv(conf Conf) *OpenAICompat {
 		APIKey:        key,
 		TierValue:     TierRemote,
 		SupportsTools: true,
-		ContextTokens: 128000,
+		// A remote endpoint must declare streaming explicitly; protocol shape is
+		// insufficient evidence that its configured account/model supports it.
+		SupportsStreaming: strings.EqualFold(strings.TrimSpace(os.Getenv("SIRSI_REMOTE_STREAMING")), "true"),
+		ContextTokens:     128000,
 	}
 }
 

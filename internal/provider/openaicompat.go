@@ -1,10 +1,12 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -28,7 +30,11 @@ type OpenAICompat struct {
 	// tool-calling; claiming otherwise would make the loop believe a silent
 	// no-op was the model declining to act.
 	SupportsTools bool
-	ContextTokens int
+	// SupportsStreaming is declared by the resolved provider configuration.
+	// OpenAI compatibility alone is not proof that a particular endpoint permits
+	// streamed responses.
+	SupportsStreaming bool
+	ContextTokens     int
 	// UseRealCompletionProbe changes Available() from a /v1/models check to a
 	// real 1-token completion. Required for the SNE local lane per
 	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
@@ -42,7 +48,7 @@ func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 func (o *OpenAICompat) Caps() Caps {
 	return Caps{
 		Tools:         o.SupportsTools,
-		Streaming:     false,
+		Streaming:     o.SupportsStreaming,
 		ContextTokens: o.ContextTokens,
 		Offline:       o.TierValue == TierLocal,
 	}
@@ -134,9 +140,13 @@ type ccMessage struct {
 }
 
 type ccRequest struct {
-	Model     string      `json:"model"`
-	Messages  []ccMessage `json:"messages"`
-	MaxTokens int         `json:"max_tokens,omitempty"`
+	Model       string      `json:"model"`
+	Messages    []ccMessage `json:"messages"`
+	MaxTokens   int         `json:"max_tokens,omitempty"`
+	Stream      bool        `json:"stream,omitempty"`
+	Temperature *float64    `json:"temperature,omitempty"`
+	TopP        *float64    `json:"top_p,omitempty"`
+	Seed        *int64      `json:"seed,omitempty"`
 }
 
 type ccResponse struct {
@@ -226,7 +236,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	if err != nil {
 		return Response{}, err
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens})
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
 	if err != nil {
 		return Response{}, err
 	}
@@ -278,4 +288,102 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		PromptTokens: cc.Usage.PromptTokens,
 		OutputTokens: cc.Usage.CompletionTokens,
 	}, nil
+}
+
+// Stream implements the optional provider streaming extension for
+// OpenAI-compatible SSE endpoints. It never treats a buffered response as a
+// stream: a backend that lacks this method remains explicitly unsupported at
+// the engine ABI boundary.
+func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamChunk, error) {
+	if strings.TrimSpace(o.Endpoint) == "" {
+		return nil, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
+	}
+	msgs := make([]ccMessage, 0, 2)
+	if req.System != "" {
+		msgs = append(msgs, ccMessage{Role: "system", Content: req.System})
+	}
+	msgs = append(msgs, ccMessage{Role: "user", Content: req.Prompt})
+	model, err := o.ServedModel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Stream: true, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
+	if err != nil {
+		return nil, fmt.Errorf("%s: encode stream request: %w", o.ProviderName, err)
+	}
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(o.Endpoint, "/")+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	o.auth(hreq)
+	hresp, err := o.client().Do(hreq)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrUnavailable, o.ProviderName, err)
+	}
+	if hresp.StatusCode != http.StatusOK {
+		defer func() { _ = hresp.Body.Close() }()
+		b, _ := io.ReadAll(io.LimitReader(hresp.Body, 64*1024))
+		return nil, fmt.Errorf("%s: stream http %d: %s", o.ProviderName, hresp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	out := make(chan StreamChunk)
+	go func() {
+		defer close(out)
+		defer func() { _ = hresp.Body.Close() }()
+		scanner := bufio.NewScanner(hresp.Body)
+		scanner.Buffer(make([]byte, 4096), 1024*1024)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, ":") || !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if data == "[DONE]" {
+				if !sendStreamChunk(ctx, out, StreamChunk{Done: true}) {
+					return
+				}
+				return
+			}
+			var chunk struct {
+				Model   string `json:"model"`
+				Choices []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+					FinishReason string `json:"finish_reason"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: decode stream chunk: %w", o.ProviderName, err)})
+				return
+			}
+			if len(chunk.Choices) == 0 {
+				continue
+			}
+			choice := chunk.Choices[0]
+			if !sendStreamChunk(ctx, out, StreamChunk{Text: choice.Delta.Content, Model: chunk.Model, FinishReason: choice.FinishReason, Done: choice.FinishReason != ""}) {
+				return
+			}
+			if choice.FinishReason != "" {
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: read stream: %w", o.ProviderName, err)})
+			return
+		}
+		if ctx.Err() == nil {
+			_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: stream ended before a terminal marker", o.ProviderName)})
+		}
+	}()
+	return out, nil
+}
+
+func sendStreamChunk(ctx context.Context, out chan<- StreamChunk, chunk StreamChunk) bool {
+	select {
+	case out <- chunk:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }

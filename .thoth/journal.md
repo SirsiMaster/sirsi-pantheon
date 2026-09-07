@@ -5,6 +5,25 @@
 
 ---
 
+## Entry 028 — 2026-09-07 — Hosted macOS CI recovery
+
+Moving required validation from an unavailable self-hosted runner to GitHub
+hosted macOS surfaced two honest cross-platform gaps. The router dispatch test
+generated `sleep 2s`, accepted by GNU sleep but rejected by BSD sleep; its
+fixture now writes rounded whole-second arguments. The menubar behavioral guard
+also discarded Swift release-build diagnostics, turning a build failure into an
+opaque exit status. It now leaves compiler output intact. A clean local Swift
+release build and the complete non-launch CLI behavior suite pass.
+
+The exposed hosted-toolchain failure was a Swift 6 error: a `Timer` closure
+captured weak `AppDelegate` state in concurrently executing code. The refresh
+path now uses a main-run-loop selector, then a main-actor task. Notification
+publication also uses the async API rather than its deprecated callback form.
+This removes the strict-concurrency errors and warning while retaining the
+90-second refresh and best-effort owner-toast behavior.
+
+---
+
 ## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
 
 CTR's original registration heuristic assumed a stable process-tree depth: the
@@ -2467,3 +2486,55 @@ emits a second JSON MCP result block containing the engine, loopback endpoint,
 host profile, and configured model identity. The primary answer stays plain
 text, preserving the existing tool contract. The profile is provenance only:
 no code path derives or compares throughput across M1 and M5.
+
+### Streaming connector integrity
+
+Pantheon now has a clean canonical-main-based streaming connector branch. It
+normalizes OpenAI-compatible SSE for local engines, rejects EOF before a
+terminal marker, requires a served-model observation equal to the admitted
+identity before a completion receipt, and rejects non-finite request values.
+Validated temperature, top-p, and seed values now reach both buffered and SSE
+OpenAI-compatible requests, so receipt-bound requests match backend behavior.
+Focused provider/engine race tests and vet pass; no SNE runtime qualification is
+claimed by this transport work.
+
+Streaming capability is now honest at resolver level: the local broker declares
+its supported SSE transport, while a remote OpenAI-compatible endpoint must opt
+in with `SIRSI_REMOTE_STREAMING=true` before callers may request a stream.
+
+The connector ABI additionally carries explicit required capabilities. Requests
+for unsupported or duplicate prefill, decode, MTP, KV-state, telemetry, or
+receipt features fail before provider transport rather than degrading silently.
+
+### Hosted macOS CI execution
+
+Required test and build jobs now run on GitHub-hosted `macos-14` runners. The
+change removes an unavailable self-hosted M5 runner from the PR delivery path;
+release-only workflows remain separately scoped to their required hardware.
+
+### Swift concurrency enforcement
+
+The menubar CLI contract invokes release builds with complete Swift concurrency
+checking. Notification-response completion is called while nonisolated, before
+the UI handoff to the main actor, eliminating a Swift 6 sendability warning
+that otherwise could become a future compiler error.
+
+### Menubar command parser coverage
+
+The top-level menubar command parsing was extracted into `CLIArguments.swift`.
+This makes it unit-testable and ensures invalid flags fail before AppKit launch.
+The package now declares a native test target that exercises launch, help,
+snapshot options, and malformed command rejection under complete concurrency
+checking.
+
+The parser also rejects duplicate options and zero, NaN, or infinite snapshot
+widths. The executable-level contract invokes each rejection case with a timeout
+to prove no malformed command reaches the menubar launch path.
+
+### Portable menubar CLI timeout
+
+GitHub-hosted macOS runners do not include GNU `timeout`, so the executable
+contract was failing before it evaluated the product. The shell guard now starts
+the renamed probe itself, polls its PID for five seconds, terminates a hung probe,
+and records that as the same launch failure. Normal output and exit semantics are
+unchanged; this makes the behavioral assertion executable on the release target.
