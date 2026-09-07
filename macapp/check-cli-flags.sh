@@ -35,6 +35,11 @@ fi
 # Run under the real name and a REGRESSION IN THE CODE UNDER TEST would kill the
 # owner's running panel as a side effect of testing for it. Copied to a name no
 # peer matcher recognises, a regressed case can only hang and be timed out.
+# macOS ships no `timeout`; brew coreutils links it as `timeout` and `gtimeout`. Resolve it up front
+# so a bare Mac reports the missing tool instead of eight misleading exit=127 cases.
+TIMEOUT="$(command -v timeout || command -v gtimeout)" \
+  || { echo "check-cli-flags: GNU timeout not found — brew install coreutils" >&2; exit 2; }
+
 PROBE="$(mktemp -d)/sirsi-cli-probe"
 trap 'rm -rf "$(dirname "$PROBE")"' EXIT
 cp "$BIN" "$PROBE"
@@ -47,7 +52,7 @@ run_case() {
   local out rc=0
   # A 5s cap is the whole point: a regressed build LAUNCHES and never returns.
   # Timing out is a FAILURE, and is reported as one rather than as a flake.
-  out="$(timeout 5 "$PROBE" "$@" 2>&1)" || rc=$?
+  out="$("$TIMEOUT" 5 "$PROBE" "$@" 2>&1)" || rc=$?
   if [ "$rc" = 124 ]; then
     echo "  FAIL  [$*] did not exit within 5s — it launched the UI"
     fails=$((fails + 1)); return
