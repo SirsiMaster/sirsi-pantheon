@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,22 @@ func TestGenerateRequestRejectsSilentIdentityAndCapabilityChanges(t *testing.T) 
 	bad.CacheNamespace = "other-cache"
 	if err := bad.Validate(s, Capabilities{Streaming: true}); err == nil || !strings.Contains(err.Error(), "cache namespace") {
 		t.Fatalf("cache drift was accepted: %v", err)
+	}
+}
+
+func TestGenerateRequestRejectsUnsupportedRequiredCapabilitiesBeforeTransport(t *testing.T) {
+	s := testSession()
+	req := GenerateRequest{
+		SessionID: s.ID, Identity: s.Identity, Prompt: "hello", MaxTokens: 8,
+		CacheNamespace:       s.Identity.CacheNamespace,
+		RequiredCapabilities: []Capability{CapabilityMTP, CapabilityKVState},
+	}
+	if err := req.Validate(s, Capabilities{KVState: true}); err == nil || !errors.Is(err, ErrUnsupportedCapability) || !strings.Contains(err.Error(), "mtp") {
+		t.Fatalf("unsupported MTP capability was not rejected explicitly: %v", err)
+	}
+	req.RequiredCapabilities = []Capability{CapabilityKVState, CapabilityKVState}
+	if err := req.Validate(s, Capabilities{KVState: true}); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("duplicate capability requirement was accepted: %v", err)
 	}
 }
 

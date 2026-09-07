@@ -167,6 +167,10 @@ type GenerateRequest struct {
 	Seed           *int64   `json:"seed,omitempty"`
 	Stream         bool     `json:"stream"`
 	CacheNamespace string   `json:"cache_namespace"`
+	// RequiredCapabilities are checked before the request reaches a provider.
+	// This prevents a connector from silently dropping prefill/decode/MTP/KV or
+	// receipt requirements when engines expose different subsets.
+	RequiredCapabilities []Capability `json:"required_capabilities,omitempty"`
 }
 
 func (r GenerateRequest) Validate(session Session, capabilities Capabilities) error {
@@ -181,6 +185,16 @@ func (r GenerateRequest) Validate(session Session, capabilities Capabilities) er
 	}
 	if r.CacheNamespace != session.Identity.CacheNamespace {
 		return errors.New("engine request: cache namespace does not match the session")
+	}
+	seenCapabilities := make(map[Capability]struct{}, len(r.RequiredCapabilities))
+	for _, capability := range r.RequiredCapabilities {
+		if _, seen := seenCapabilities[capability]; seen {
+			return fmt.Errorf("engine request: duplicate required capability %q", capability)
+		}
+		seenCapabilities[capability] = struct{}{}
+		if !capabilities.Has(capability) {
+			return fmt.Errorf("%w: %s", ErrUnsupportedCapability, capability)
+		}
 	}
 	if strings.TrimSpace(r.Prompt) == "" {
 		return errors.New("engine request: prompt is required")
