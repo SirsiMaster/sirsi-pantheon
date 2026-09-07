@@ -286,6 +286,28 @@ func TestControlActionCanonicalizesLedgerFieldsAndRequiresHandbackReason(t *test
 	}
 }
 
+func TestControlActionReceiptBindsExactRequestAndResponse(t *testing.T) {
+	response := ControlActionResponse{
+		Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "message", ItemID: "item-1",
+	}
+	request := []byte(`{"verb":"message","from":"m1","to":"m5","title":"inspect"}`)
+	if err := response.SealControlActionResponse(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := response.VerifyControlActionResponse(request); err != nil {
+		t.Fatalf("verify receipt: %v", err)
+	}
+	if err := response.VerifyControlActionResponse([]byte(`{"verb":"message","from":"m1","to":"m5","title":"tampered"}`)); err == nil {
+		t.Fatal("tampered request accepted by receipt")
+	}
+
+	tampered := response
+	tampered.ItemID = "item-2"
+	if err := tampered.VerifyControlActionResponse(request); err == nil {
+		t.Fatal("tampered response accepted by receipt")
+	}
+}
+
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {

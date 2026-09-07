@@ -263,6 +263,9 @@ func validateRemoteControlActionResponse(requestBody, responseBody []byte) error
 	if requestVerb == "result_return" && strings.TrimSpace(response.ResultRef) == "" {
 		return fmt.Errorf("control action response omitted result_ref")
 	}
+	if err := response.VerifyControlActionResponse(requestBody); err != nil {
+		return fmt.Errorf("control action response receipt invalid: %w", err)
+	}
 	return nil
 }
 

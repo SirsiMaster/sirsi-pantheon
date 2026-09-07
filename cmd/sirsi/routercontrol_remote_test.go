@@ -62,7 +62,15 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 		if err != nil || !bytes.Equal(received, requestBody) {
 			t.Fatalf("received body = %s, err=%v", received, err)
 		}
-		_, _ = w.Write([]byte(`{"schema":"pantheon.worker-control/v1","authority":"canonical-routerstore","verb":"delegate","task_id":"t-1"}`))
+		response := routerboard.ControlActionResponse{
+			Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Verb: "delegate", TaskID: "t-1",
+		}
+		if err := response.SealControlActionResponse(received); err != nil {
+			t.Fatalf("seal response: %v", err)
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
 	}))
 	defer server.Close()
 	response, err := sendRemoteControlAction(context.Background(), server.URL, "test-token", requestBody)

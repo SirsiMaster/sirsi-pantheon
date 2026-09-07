@@ -168,6 +168,10 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusConflict)
 		return
 	}
+	if err := response.SealControlActionResponse(raw); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "control action receipt: "+err.Error()), http.StatusInternalServerError)
+		return
+	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		return
 	}
