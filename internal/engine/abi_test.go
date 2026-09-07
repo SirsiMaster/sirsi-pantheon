@@ -136,4 +136,13 @@ func TestEventSequenceAndReceiptIdentityAreFailClosed(t *testing.T) {
 	if err := r.Validate(s); err == nil || !strings.Contains(err.Error(), "digest") {
 		t.Fatal("receipt with mismatched identity digest accepted")
 	}
+	route := RouteDecision{Requested: KindMLX, Selected: KindSNE, Fallback: true, Rationale: "preferred mlx unavailable; explicit fallback selected sne"}
+	r.Route = &route
+	if err := r.Validate(s); err != nil {
+		t.Fatalf("valid fallback route receipt rejected: %v", err)
+	}
+	r.Route.Selected = KindMLX
+	if err := r.Validate(s); err == nil || !strings.Contains(err.Error(), "selected engine") {
+		t.Fatal("route identity drift accepted")
+	}
 }

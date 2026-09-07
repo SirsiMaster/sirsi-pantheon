@@ -299,15 +299,16 @@ func (e Event) Validate(previous uint64) error {
 }
 
 type Receipt struct {
-	ABIVersion       string   `json:"abi_version"`
-	SessionID        string   `json:"session_id"`
-	Identity         Identity `json:"identity"`
-	IdentityDigest   string   `json:"identity_digest"`
-	RequestSHA256    string   `json:"request_sha256"`
-	CompletionSHA256 string   `json:"completion_sha256"`
-	StartedAt        string   `json:"started_at"`
-	FinishedAt       string   `json:"finished_at"`
-	Cancelled        bool     `json:"cancelled"`
+	ABIVersion       string         `json:"abi_version"`
+	SessionID        string         `json:"session_id"`
+	Identity         Identity       `json:"identity"`
+	IdentityDigest   string         `json:"identity_digest"`
+	RequestSHA256    string         `json:"request_sha256"`
+	CompletionSHA256 string         `json:"completion_sha256"`
+	StartedAt        string         `json:"started_at"`
+	FinishedAt       string         `json:"finished_at"`
+	Cancelled        bool           `json:"cancelled"`
+	Route            *RouteDecision `json:"route,omitempty"`
 }
 
 // Completion is the normalized non-streaming result shared by all provider
@@ -619,6 +620,11 @@ func (r Receipt) Validate(session Session) error {
 	digest, err := r.Identity.Digest()
 	if err != nil {
 		return err
+	}
+	if r.Route != nil {
+		if err := r.Route.validate(session.Identity.Engine); err != nil {
+			return err
+		}
 	}
 	if r.IdentityDigest != digest {
 		return errors.New("engine receipt: identity digest mismatch")

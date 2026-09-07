@@ -22,6 +22,25 @@ type RouteDecision struct {
 	Rationale string `json:"rationale"`
 }
 
+func (d RouteDecision) validate(selected Kind) error {
+	if d.Requested != KindMLX && d.Requested != KindOMLX && d.Requested != KindSNE {
+		return fmt.Errorf("engine route: requested engine %q is invalid", d.Requested)
+	}
+	if d.Selected != selected {
+		return fmt.Errorf("engine route: selected engine %q does not match receipt identity %q", d.Selected, selected)
+	}
+	if d.Selected != KindMLX && d.Selected != KindOMLX && d.Selected != KindSNE {
+		return fmt.Errorf("engine route: selected engine %q is invalid", d.Selected)
+	}
+	if d.Fallback != (d.Requested != d.Selected) {
+		return fmt.Errorf("engine route: fallback flag does not match requested/selected engines")
+	}
+	if strings.TrimSpace(d.Rationale) == "" {
+		return fmt.Errorf("engine route: rationale is required")
+	}
+	return nil
+}
+
 // Router is the one engine-neutral selection authority. Connectors are keyed
 // by ABI Kind, so MLX/OMLX/SNE cannot silently overwrite one another or route
 // through a backend-specific side channel.
@@ -120,6 +139,14 @@ func (r *Router) Complete(ctx context.Context, session Session, request Generate
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion cancelled after connector: %w", ctxErr)
 	}
+	if err != nil {
+		return Completion{}, Receipt{}, err
+	}
+	route := decision
+	receipt.Route = &route
+	if err := receipt.Validate(session); err != nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion receipt: %w", err)
+	}
 	return completion, receipt, err
 }
 
@@ -135,7 +162,21 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, fmt.Errorf("engine router: stream cancelled after connector: %w", ctxErr)
 	}
-	return events, err
+	if err != nil {
+		return nil, err
+	}
+	routed := make(chan Event, 1)
+	go func() {
+		defer close(routed)
+		for event := range events {
+			if event.Receipt != nil {
+				route := decision
+				event.Receipt.Route = &route
+			}
+			routed <- event
+		}
+	}()
+	return routed, nil
 }
 
 func (r *Router) connectorForDecision(session Session, decision RouteDecision) (Connector, error) {
