@@ -150,3 +150,23 @@ func TestRemoteControlValidationRejectsDuplicateAndTrailingJSON(t *testing.T) {
 		t.Fatalf("accepted duplicate control snapshot: %v", err)
 	}
 }
+
+func TestRemoteControlSnapshotBindsEnvelopeTimestampToState(t *testing.T) {
+	state := routerboard.Payload{GeneratedAt: "2026-09-07T12:00:00Z"}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSum := sha256.Sum256(stateBytes)
+	envelope := routerboard.ControlEnvelope{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 1,
+		GeneratedAt: "2026-09-07T12:00:01Z", StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+	}
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlSnapshot(body); err == nil || !strings.Contains(err.Error(), "generated_at") {
+		t.Fatalf("accepted timestamp-mismatched snapshot: %v", err)
+	}
+}

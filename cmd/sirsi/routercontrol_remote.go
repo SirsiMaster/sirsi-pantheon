@@ -116,6 +116,9 @@ func validateRemoteControlSnapshot(body []byte) error {
 	if envelope.Revision == 0 {
 		return fmt.Errorf("control snapshot revision is zero")
 	}
+	if strings.TrimSpace(envelope.GeneratedAt) == "" || envelope.GeneratedAt != envelope.State.GeneratedAt {
+		return fmt.Errorf("control snapshot generated_at does not match canonical state")
+	}
 	canonicalState, err := json.Marshal(envelope.State)
 	if err != nil {
 		return fmt.Errorf("control snapshot state: %w", err)
