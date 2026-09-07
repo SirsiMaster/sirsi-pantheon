@@ -78,8 +78,12 @@ run_case 2 "unknown flag"                  --nonsense
 run_case 2 "requires a directory"          --snapshot
 run_case 2 "requires --snapshot"           --width 500
 run_case 2 "requires --snapshot"           --appearance light
-run_case 2 "requires a number"             --snapshot /tmp --width wide
+run_case 2 "positive finite number"         --snapshot /tmp --width wide
+run_case 2 "positive finite number"         --snapshot /tmp --width 0
+run_case 2 "positive finite number"         --snapshot /tmp --width nan
+run_case 2 "positive finite number"         --snapshot /tmp --width inf
 run_case 2 "requires light or dark"        --snapshot /tmp --appearance purple
+run_case 2 "duplicate flag"                 --snapshot /tmp --snapshot /tmp/other
 
 if [ "$fails" -gt 0 ]; then
   echo "check-cli-flags: $fails case(s) FAILED" >&2
