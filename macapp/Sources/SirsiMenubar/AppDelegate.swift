@@ -191,12 +191,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Periodic refresh so the Eye tracks reality at a glance: cheap waste re-read
         // + a health diagnose (≥60s — never a tight tick; A27 forbids flooding).
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.engine.refresh()
-                await self?.engine.diagnose()
-                await self?.checkOwnerGated()
-            }
+        // Selector delivery stays on the main run loop. Avoid capturing weak
+        // AppDelegate state from Timer's concurrently-executing closure: Swift
+        // 6 correctly rejects that on current hosted macOS toolchains.
+        refreshTimer = Timer.scheduledTimer(
+            timeInterval: 90,
+            target: self,
+            selector: #selector(handleRefreshTimer(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    @objc private func handleRefreshTimer(_ timer: Timer) {
+        engine.refresh()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await engine.diagnose()
+            await checkOwnerGated()
         }
     }
 
