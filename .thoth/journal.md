@@ -2467,3 +2467,12 @@ emits a second JSON MCP result block containing the engine, loopback endpoint,
 host profile, and configured model identity. The primary answer stays plain
 text, preserving the existing tool contract. The profile is provenance only:
 no code path derives or compares throughput across M1 and M5.
+
+### Streaming connector integrity
+
+Pantheon now has a clean canonical-main-based streaming connector branch. It
+normalizes OpenAI-compatible SSE for local engines, rejects EOF before a
+terminal marker, requires a served-model observation equal to the admitted
+identity before a completion receipt, and rejects non-finite request values.
+Focused provider/engine race tests and vet pass; no SNE runtime qualification is
+claimed by this transport work.

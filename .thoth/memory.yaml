@@ -300,3 +300,7 @@ sync_protocol:
 # Only loopback endpoints are accepted; the same local-provider predicate
 # prevents a selected Native v2 endpoint from becoming a remote rung. This is
 # ABI consumption only—SNE retains runtime lifecycle and qualification.
+# 2026-09-07 (SSA): Clean canonical-main streaming connector branch
+# `codex/ssa-streaming-terminal-integrity-clean-20260907` adds OpenAI-compatible
+# SSE transport with terminal-marker, observed-model, and finite-receipt fences.
+# Focused provider/engine race tests, vet, lint, secret scan, and ARM64 build pass.
