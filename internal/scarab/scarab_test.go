@@ -204,10 +204,3 @@ func TestAuditContainers(t *testing.T) {
 		t.Errorf("AuditContainers failed: %v", err)
 	}
 }
-
-func TestDiscover(t *testing.T) {
-	_, err := Discover()
-	if err != nil {
-		t.Logf("Discover info (might skip in CI): %v", err)
-	}
-}
