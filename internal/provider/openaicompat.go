@@ -30,7 +30,11 @@ type OpenAICompat struct {
 	// tool-calling; claiming otherwise would make the loop believe a silent
 	// no-op was the model declining to act.
 	SupportsTools bool
-	ContextTokens int
+	// SupportsStreaming is declared by the resolved provider configuration.
+	// OpenAI compatibility alone is not proof that a particular endpoint permits
+	// streamed responses.
+	SupportsStreaming bool
+	ContextTokens     int
 	// UseRealCompletionProbe changes Available() from a /v1/models check to a
 	// real 1-token completion. Required for the SNE local lane per
 	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
@@ -44,7 +48,7 @@ func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 func (o *OpenAICompat) Caps() Caps {
 	return Caps{
 		Tools:         o.SupportsTools,
-		Streaming:     false,
+		Streaming:     o.SupportsStreaming,
 		ContextTokens: o.ContextTokens,
 		Offline:       o.TierValue == TierLocal,
 	}

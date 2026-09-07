@@ -2478,3 +2478,7 @@ Validated temperature, top-p, and seed values now reach both buffered and SSE
 OpenAI-compatible requests, so receipt-bound requests match backend behavior.
 Focused provider/engine race tests and vet pass; no SNE runtime qualification is
 claimed by this transport work.
+
+Streaming capability is now honest at resolver level: the local broker declares
+its supported SSE transport, while a remote OpenAI-compatible endpoint must opt
+in with `SIRSI_REMOTE_STREAMING=true` before callers may request a stream.

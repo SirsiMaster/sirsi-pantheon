@@ -304,4 +304,6 @@ sync_protocol:
 # `codex/ssa-streaming-terminal-integrity-clean-20260907` adds OpenAI-compatible
 # SSE transport with terminal-marker, observed-model, finite-receipt, and
 # sampling-control forwarding fences.
+# Local OpenAI-compatible engines declare their actual SSE support; remote
+# streaming remains disabled until the endpoint is explicitly configured.
 # Focused provider/engine race tests, vet, lint, secret scan, and ARM64 build pass.
