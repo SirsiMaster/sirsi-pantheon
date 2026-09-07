@@ -65,6 +65,10 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		output.Error("Refusing to start without a durable local AI capability path: %v", err)
 		return
 	}
+	engineSelection, engineErr := buildDashboardEngineSelection()
+	if engineErr != nil {
+		output.Warn("Engine selection unavailable: %v", engineErr)
+	}
 
 	srv := dashboard.New(dashboard.Config{
 		Port:     dashboardPort,
@@ -80,6 +84,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		FleetFn:                 collectDashboardFleet,
 		Unroutable:              dashboardUnroutable(),
 		FabricFn:                collectDashboardFabric,
+		EngineSelection:         engineSelection,
 		SNEInstall:              dashboard.DefaultSNEInstallConfig(),
 		SNELifecycle:            dashboard.DefaultSNELifecycleConfig(),
 		AppRecovery:             appRecovery,
