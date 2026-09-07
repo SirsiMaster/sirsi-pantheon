@@ -30,6 +30,8 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # remain host/sandbox-limited and are not a qualification result.
 # Native-v2 selection additionally binds results to an explicit `m1` or `m5`
 # host profile and configured model identity, emitted as MCP result metadata.
+# Required CI test/build jobs use hosted macOS runners so active product changes
+# do not queue behind unavailable local-runner capacity.
 # 2026-08-05: SNE-52 ledger schema v7 implementation is active on
 # codex/router-unification-store-v7. The v4→v7 additive migration, derived
 # four-hour liveness, governed stage/test/charter fields, append-deduped links,

@@ -2486,3 +2486,9 @@ in with `SIRSI_REMOTE_STREAMING=true` before callers may request a stream.
 The connector ABI additionally carries explicit required capabilities. Requests
 for unsupported or duplicate prefill, decode, MTP, KV-state, telemetry, or
 receipt features fail before provider transport rather than degrading silently.
+
+### Hosted macOS CI execution
+
+Required test and build jobs now run on GitHub-hosted `macos-14` runners. The
+change removes an unavailable self-hosted M5 runner from the PR delivery path;
+release-only workflows remain separately scoped to their required hardware.
