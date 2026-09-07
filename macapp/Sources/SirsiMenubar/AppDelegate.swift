@@ -342,9 +342,13 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo["id"] as? String
-        Task { @MainActor in
-            if let id { self.openOwnerItem(id: id) }
-            completionHandler()
+        // The delegate completion is nonisolated. Acknowledge it before
+        // hopping to the main actor so Swift 6 does not capture a non-Sendable
+        // callback across actor isolation.
+        completionHandler()
+        Task { @MainActor [weak self] in
+            guard let self, let id else { return }
+            self.openOwnerItem(id: id)
         }
     }
 
