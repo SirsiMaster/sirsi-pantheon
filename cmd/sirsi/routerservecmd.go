@@ -49,7 +49,7 @@ process listings. Nodes present it as SIRSI_ROUTER_TOKEN.`,
 
 func init() {
 	routerServeCmd.Flags().StringVar(&routerServeListen, "listen", ":8080", "address to listen on ($PORT overrides, for Cloud Run)")
-	routerServeCmd.Flags().StringVar(&routerServeStore, "store", "", "postgres:// DSN or SQLite path (required)")
+	routerServeCmd.Flags().StringVar(&routerServeStore, "store", os.Getenv("SIRSI_ROUTER_STORE"), "postgres:// DSN or SQLite path (required; default $SIRSI_ROUTER_STORE — Cloud Run does not expand $(VAR) in args for secret-backed env vars)")
 	routerServeCmd.Flags().StringVar(&routerServeTokenEnv, "token-env", "SIRSI_ROUTER_SERVE_TOKEN", "env var holding the bearer token")
 	routerServeCmd.Flags().StringVar(&routerServeTLSCert, "tls-cert", "", "TLS certificate file (self-hosted; Cloud Run terminates TLS)")
 	routerServeCmd.Flags().StringVar(&routerServeTLSKey, "tls-key", "", "TLS key file")
