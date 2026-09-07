@@ -1,7 +1,7 @@
 # sirsi-gemma — User Guide
 
-`sirsi-gemma` is a Model Context Protocol (MCP) server that exposes a
-locally-running MLX-Gemma model to any MCP-capable client — Claude Code,
+`sirsi-gemma` is a Model Context Protocol (MCP) server that exposes a selected
+local Gemma engine to any MCP-capable client — Claude Code,
 Cursor, IDE plugins — as two tools:
 
 - **`gemma_chat`** — multi-turn chat with an optional system prompt.
@@ -28,8 +28,9 @@ it for the bounded, repeatable work where local speed wins.
 
 ## Prerequisites
 
-- macOS (Apple Silicon) with the MLX runtime + Gemma 2 27B 4-bit
-  installed per [docs/setup/MLX_GEMMA_LOCAL.md](../setup/MLX_GEMMA_LOCAL.md).
+- A configured local engine: MLX, SNE, SNE Native v2, or OMLX. See
+  [Pantheon engine selection](PANTHEON-ENGINE-SELECTION.md) for the exact
+  configuration for each engine.
 - The `sirsi-gemma` binary, built with `go build ./cmd/sirsi-gemma/`.
 
 ## Configure
@@ -66,15 +67,16 @@ After adding the snippet, in a fresh Claude Code session:
 ```
 
 Claude should call `gemma_chat` with the README contents and return
-Gemma's summary. If sirsi-gemma is misconfigured, the tool call returns:
+Gemma's summary. If the selected engine is unavailable, the tool call returns:
 
 ```
-local MLX-Gemma not configured: ... — see ~/Development/sirsi-pantheon/docs/setup/MLX_GEMMA_LOCAL.md
+selected local inference engine unavailable: ... — see docs/user-guides/PANTHEON-ENGINE-SELECTION.md
 ```
 
-That message means the binary started, the MCP handshake worked, but the
-1-token health probe at startup failed. Fix the install, restart Claude
-Code, retry.
+That message means the binary started and the MCP handshake worked, but the
+selected engine's 1-token startup health probe failed. Repair that engine's
+configuration, restart the MCP client, and retry; Pantheon will not switch to a
+different engine on its own.
 
 You can also probe the binary directly:
 

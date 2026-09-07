@@ -3,23 +3,26 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-// Config controls how sirsi-gemma drives a local MLX-Gemma install or an
-// SNE-compatible HTTP endpoint.
+// Config controls which local inference engine backs the common Gemma tools.
 //
 // Loaded from ~/.config/sirsi/gemma.toml (flat key=value). Missing file
 // or missing keys fall back to the defaults below.
 //
-// SNE seam (ADR-003 in sirsi-inference): set sne_url to activate the HTTP
-// runner instead of the MLX subprocess. Example:
+// Set engine explicitly for new configurations. Existing configurations that
+// only set sne_url continue to select SNE.
 //
+//	engine = sne
 //	sne_url = http://localhost:11434/v1
 type Config struct {
+	Engine      string  // "mlx", "sne", "sne-native-v2", or "omlx"; empty preserves legacy autodetection
 	ModelID     string  // e.g. "mlx-community/gemma-2-27b-it-4bit"
 	VenvPath    string  // absolute path to the Python venv root
 	MaxTokens   int     // default max tokens per generation
@@ -27,6 +30,15 @@ type Config struct {
 	// SNE seam — when non-empty, sirsi-gemma uses SNERunner instead of MLXRunner.
 	SNEURL   string // base URL of SNE's OpenAI-compatible API, e.g. "http://localhost:11434/v1"
 	SNEModel string // model name forwarded to SNE (default: "gemma-2-27b-it")
+	// SNENativeV2URL is the recovered native-v2 service endpoint. Pantheon only
+	// consumes its OpenAI-compatible ABI; SNE owns its launch and qualification.
+	SNENativeV2URL   string
+	SNENativeV2Model string
+	// SNENativeV2HostProfile identifies the local native service that owns
+	// this endpoint. M1 and M5 share an ABI, not a performance identity.
+	SNENativeV2HostProfile string // "m1" or "m5"
+	OMLXURL                string // base URL of oMLX's OpenAI-compatible API
+	OMLXModel              string // model name forwarded to oMLX
 }
 
 // DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
@@ -84,6 +96,12 @@ func LoadConfig(path string) (Config, error) {
 
 func (c *Config) set(key, val string) error {
 	switch key {
+	case "engine":
+		val = strings.ToLower(val)
+		if val != "mlx" && val != "sne" && val != "sne-native-v2" && val != "omlx" {
+			return fmt.Errorf("engine must be mlx, sne, sne-native-v2, or omlx")
+		}
+		c.Engine = val
 	case "model_id":
 		c.ModelID = val
 	case "venv_path":
@@ -104,10 +122,56 @@ func (c *Config) set(key, val string) error {
 		c.SNEURL = val
 	case "sne_model":
 		c.SNEModel = val
+	case "sne_native_v2_url":
+		c.SNENativeV2URL = val
+	case "sne_native_v2_model":
+		c.SNENativeV2Model = val
+	case "sne_native_v2_host_profile":
+		val = strings.ToLower(val)
+		if val != "m1" && val != "m5" {
+			return fmt.Errorf("sne_native_v2_host_profile must be m1 or m5")
+		}
+		c.SNENativeV2HostProfile = val
+	case "omlx_url":
+		c.OMLXURL = val
+	case "omlx_model":
+		c.OMLXModel = val
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
 	return nil
+}
+
+// EffectiveEngine resolves the explicit selector while preserving the original
+// sne_url-only configuration contract.
+func (c Config) EffectiveEngine() string {
+	if c.Engine != "" {
+		return c.Engine
+	}
+	if c.SNEURL != "" {
+		return "sne"
+	}
+	if c.OMLXURL != "" {
+		return "omlx"
+	}
+	return "mlx"
+}
+
+// isLocalEngineURL is shared by every OpenAI-compatible local engine. The MCP
+// server promises that prompts stay on this host; accepting an arbitrary HTTPS
+// URL under engine=sne-native-v2 would violate that promise while looking like a
+// local selection. SNE's cross-host transport is a separate, explicit surface.
+func isLocalEngineURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func expandHome(p string) string {

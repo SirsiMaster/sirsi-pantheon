@@ -20,6 +20,16 @@ android_app: android/ (Jetpack Compose, 9 screens, nav drawer, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
 ## Current UI State
+# 2026-09-07: SSA added an explicit `sirsi-gemma` selector for SNE, recovered
+# SNE Native v2, MLX, and OMLX on branch codex/ssa-sne-engine-selection-20260907
+# (current lineage includes `ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes
+# its OpenAI-compatible endpoint only; SNE owns its launch and qualification.
+# Selected SNE/Native-v2/OMLX MCP endpoints must be HTTP(S) loopback endpoints;
+# a remote URL is refused before any prompt can leave the host. Focused adapter
+# tests/build and pre-push checks pass. Repository-wide tests
+# remain host/sandbox-limited and are not a qualification result.
+# Native-v2 selection additionally binds results to an explicit `m1` or `m5`
+# host profile and configured model identity, emitted as MCP result metadata.
 # 2026-08-05: SNE-52 ledger schema v7 implementation is active on
 # codex/router-unification-store-v7. The v4→v7 additive migration, derived
 # four-hour liveness, governed stage/test/charter fields, append-deduped links,
@@ -285,3 +295,8 @@ sync_protocol:
 # "## Archive: relocated from memory.yaml (2026-07-30)". Root cause = `sirsi thoth sync` appending
 # payloads/snapshots as decisions; routed as 20260730-015122. If hook_event_name or "Router snapshot:"
 # lines reappear below, the sync regressed — strip, don't compress. Keep this section to ~10 entries.
+# 2026-09-07 (SSA): Pantheon recognizes `sne-native-v2` as an explicit local
+# provider in both Gemma MCP configuration and the shared `sirsi ask` ladder.
+# Only loopback endpoints are accepted; the same local-provider predicate
+# prevents a selected Native v2 endpoint from becoming a remote rung. This is
+# ABI consumption only—SNE retains runtime lifecycle and qualification.

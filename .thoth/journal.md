@@ -2414,3 +2414,56 @@ review and either approve directly or run the bind script. Closed the horus item
 root-cause/fix-status/no-action-taken record rather than a bare ack. Until #675 merges, the
 currently deployed binary predates the quarantine marker check and this alarm will keep firing on
 its 900s interval — tracked as alarm cost, not restated as a new finding each time it fires.
+
+## 2026-09-07 — SSA SNE Engine ABI consumer integration
+
+Implemented the Pantheon-side selector on `codex/ssa-sne-engine-selection-20260907`:
+`2d07cd40` introduced explicit SNE/MLX/OMLX selection with legacy `sne_url`
+compatibility; `ded08295` added the recovered SNE Native v2 RC1 as
+`engine = "sne-native-v2"`. All engine choices preserve the `gemma_chat` and
+`gemma_complete` MCP contract and selected endpoints fail visibly rather than
+falling back. Pantheon consumes the published OpenAI-compatible HTTP ABI only;
+it does not launch, qualify, or alter SNE internals. `go test ./cmd/sirsi-gemma`,
+`go build ./cmd/sirsi-gemma`, diff checks, gitleaks, and the pre-push gate passed.
+The broad suite was sandbox-blocked by denied loopback listeners and host-only
+launchctl observations in unrelated packages.
+
+### Shared CLI provider ladder
+
+Followed the MCP selector through Pantheon's shared provider path: commit pending
+after `a431a9a2` makes `provider=sne-native-v2` (and `sne`/`omlx`) explicit local
+configuration in `~/.sirsi/orchestrator.conf`. A native-v2 endpoint must be
+loopback; a non-loopback explicit selection is refused rather than silently
+falling back to the legacy broker port. `remoteFromEnv` uses the same predicate,
+so a selected Native v2 configuration can never be mislabeled as a remote rung.
+Focused provider and Gemma tests plus both CLI builds passed.
+
+M1 and M5 are documented as peer local-engine hosts: the selector is host-neutral
+and accepts each host's own loopback service under the same named engine. SNE
+qualification evidence must remain host-scoped; Pantheon will not turn either
+endpoint into an undocumented cross-host fallback.
+
+The direct `sirsi gemma` command now resolves through the same provider-local
+selection. A named SNE/Native-v2/OMLX engine must provide its own loopback
+endpoint; it cannot silently adopt `gemma-server.port`. A direct native-v2
+fixture proves the CLI sends the configured model to the configured service.
+
+MCP startup failure output is engine-neutral. A failed Native v2/SNE/OMLX probe
+now preserves the actual cause and points to the shared engine-selection guide,
+instead of falsely telling an operator to install MLX.
+
+### Local-endpoint privacy invariant
+
+The MCP-side explicit selector now applies the same local-only rule as the
+shared provider and direct CLI: `sne_url`, `sne_native_v2_url`, and `omlx_url`
+must be HTTP(S) URLs with a loopback host. This closes the remaining route by
+which an explicit "local" engine could have sent a prompt to a remote endpoint.
+Focused selector tests cover remote rejection and IPv4/IPv6 localhost recognition.
+
+### M1/M5 result provenance
+
+Native SNE v2 selection now requires `sne_native_v2_host_profile=m1|m5` and
+emits a second JSON MCP result block containing the engine, loopback endpoint,
+host profile, and configured model identity. The primary answer stays plain
+text, preserving the existing tool contract. The profile is provenance only:
+no code path derives or compares throughput across M1 and M5.

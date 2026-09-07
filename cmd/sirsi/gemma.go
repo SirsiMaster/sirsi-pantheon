@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -78,13 +79,14 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	// backend. (claude-home review, PR #382.)
 
 	home, _ := os.UserHomeDir()
-	model := gemmaResolveModel(home)
+	base, model := gemmaSelectedLocalEndpoint(home)
 
-	// Prefer the WARM Pantheon broker if it's up: no model reload, instant answer,
-	// concurrent with other requests on the GPU. SNE is the only inference path;
-	// failure is visible and repairable rather than spawning a second runtime.
+	// The direct CLI consumes the same explicit local-engine selection as
+	// `sirsi ask`. This keeps SNE Native v2, SNE, and OMLX from being silently
+	// replaced by the legacy gemma broker when an operator uses the human-facing
+	// command instead of MCP.
 	var warmErr error
-	if base := gemmaServerBase(home); base != "" {
+	if base != "" && gemmaServerPing(base) {
 		fmt.Fprintf(os.Stderr, "gemma · %s · warm broker, thinking…\n", gemmaShortModel(model))
 		ans, err := gemmaWarmComplete(base, model, prompt, gemmaMaxTokens)
 		if err == nil && ans != "" {
@@ -103,11 +105,34 @@ func runGemma(cmd *cobra.Command, args []string) error {
 	if warmErr != nil {
 		return fmt.Errorf("SNE local inference did not answer: %w", warmErr)
 	}
-	return fmt.Errorf("SNE local inference is not running — start it with `sirsi gemma serve`; Python fallback is retired")
+	return fmt.Errorf("selected local inference endpoint is unavailable; verify the configured local engine and endpoint")
+}
+
+// gemmaSelectedLocalEndpoint makes the human-facing `sirsi gemma` command use
+// the exact same local-provider selection as `sirsi ask`. provider.Local
+// returns an OpenAI-compatible /v1 endpoint; gemmaWarmComplete takes its
+// service base without that suffix.
+func gemmaSelectedLocalEndpoint(home string) (base, model string) {
+	p := provider.Local(home, provider.LoadConf(home))
+	if p == nil {
+		return "", ""
+	}
+	model = gemmaResolveModel(home)
+	if gemmaExplicitModel(home) == "" && strings.TrimSpace(p.Model) != "" {
+		model = p.Model
+	}
+	return strings.TrimSuffix(strings.TrimRight(p.Endpoint, "/"), "/v1"), model
 }
 
 // gemmaResolveModel mirrors the worker: flag > env > ~/.sirsi/gemma-model[-max].conf > fallback.
 func gemmaResolveModel(home string) string {
+	if m := gemmaExplicitModel(home); m != "" {
+		return m
+	}
+	return "mlx-community/gemma-2-27b-it-bf16-4bit"
+}
+
+func gemmaExplicitModel(home string) string {
 	if gemmaModelFlag != "" {
 		return gemmaModelFlag
 	}
@@ -123,7 +148,7 @@ func gemmaResolveModel(home string) string {
 			return m
 		}
 	}
-	return "mlx-community/gemma-2-27b-it-bf16-4bit"
+	return ""
 }
 
 func gemmaShortModel(m string) string {

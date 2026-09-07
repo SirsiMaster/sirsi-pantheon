@@ -85,3 +85,39 @@ func TestRunGemmaSendsIdentityExactlyOnceOnWarmPath(t *testing.T) {
 		t.Errorf("identity block sent %d time(s) across all messages, want exactly 1", total)
 	}
 }
+
+func TestRunGemmaUsesSelectedNativeV2Endpoint(t *testing.T) {
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/v1/models") {
+			_, _ = io.WriteString(w, `{"data":[{"id":"native-v2"}]}`)
+			return
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		gotModel = body.Model
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"native ok"}}]}`)
+	}))
+	defer srv.Close()
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := "provider=sne-native-v2\nendpoint=" + srv.URL + "/v1\nmodel=gemma-4-12b-it-affine8-sne-v1\n"
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "orchestrator.conf"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("GEMMA_MODEL", "")
+	if err := runGemma(gemmaCmd, []string{"hello"}); err != nil {
+		t.Fatalf("runGemma native v2: %v", err)
+	}
+	if gotModel != "gemma-4-12b-it-affine8-sne-v1" {
+		t.Fatalf("model = %q, want configured native-v2 model", gotModel)
+	}
+}
