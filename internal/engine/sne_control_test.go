@@ -1,0 +1,120 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/sne"
+)
+
+type fakeSNEControlClient struct {
+	identities []sne.ServiceReadinessIdentity
+	loads      []string
+	unloads    []string
+	reloads    []string
+	loadErr    error
+}
+
+func (f *fakeSNEControlClient) ReadinessIdentity(context.Context) (sne.ServiceReadinessIdentity, error) {
+	if len(f.identities) == 0 {
+		return sne.ServiceReadinessIdentity{}, errors.New("missing fake identity")
+	}
+	identity := f.identities[0]
+	if len(f.identities) > 1 {
+		f.identities = f.identities[1:]
+	}
+	return identity, nil
+}
+
+func (f *fakeSNEControlClient) LoadModel(_ context.Context, model string) error {
+	f.loads = append(f.loads, model)
+	return f.loadErr
+}
+
+func (f *fakeSNEControlClient) UnloadModel(_ context.Context, model string) error {
+	f.unloads = append(f.unloads, model)
+	return nil
+}
+
+func (f *fakeSNEControlClient) ReloadModel(_ context.Context, model string) error {
+	f.reloads = append(f.reloads, model)
+	return nil
+}
+
+func sneIdentity(status, model string) sne.ServiceReadinessIdentity {
+	return sne.ServiceReadinessIdentity{Status: status, ReadyModelID: model}
+}
+
+func TestSNEControlReadinessAndLifecycleBindIdentity(t *testing.T) {
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+		sneIdentity("ready", "model-a"),
+		sneIdentity("ready", "model-a"),
+	}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, time.January, 1, 1, 2, 3, 0, time.UTC)
+	control.now = func() time.Time { return when }
+	readiness, err := control.Readiness(context.Background())
+	if err != nil || !readiness.Ready || readiness.ServedModel != "model-a" {
+		t.Fatalf("readiness = %+v, err=%v", readiness, err)
+	}
+	result, err := control.Apply(context.Background(), SNEReload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != SNEReload || result.ModelID != "model-a" || len(client.reloads) != 1 || result.Before.ServedModel != result.After.ServedModel {
+		t.Fatalf("unexpected lifecycle result: %+v client=%+v", result, client)
+	}
+}
+
+func TestSNEControlRejectsDriftAndDoesNotMutate(t *testing.T) {
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+		sneIdentity("ready", "other-model"),
+	}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Readiness(context.Background()); err == nil {
+		t.Fatal("expected readiness drift rejection")
+	}
+	if _, err := control.Apply(context.Background(), SNELoad); err == nil {
+		t.Fatal("expected lifecycle preflight drift rejection")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load mutated after drift: %v", client.loads)
+	}
+}
+
+func TestSNEControlRecoveryAndBenchmarkAreHashBound(t *testing.T) {
+	control, err := NewSNEControl(&fakeSNEControlClient{}, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	request := sne.RecoveryRequest{
+		Action: sne.RecoveryRetry, ReceiptID: "receipt-1",
+		Current: sne.RecoveryIdentity{ModelID: "model-a", RuntimeID: "runtime", PackageID: "package", PackageSHA256: sha, RuntimeSHA256: sha, ManifestSHA256: sha, ArtifactSetSHA256: sha},
+		Lease:   sne.RecoveryArtifactLease{LeaseID: "lease-1", SHA256: sha}, OperatorState: sne.RecoveryOperatorActive,
+	}
+	recovery, err := control.PlanRecovery(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovery.PlanSHA256 == "" || recovery.PlanSHA256 == sha || recovery.Plan.ReceiptID != request.ReceiptID {
+		t.Fatalf("unexpected recovery binding: %+v", recovery)
+	}
+	benchmark, err := NewSNEBenchmarkSession(sne.BenchmarkProvenance{
+		SessionID: "session", ClaimClass: "performance", CleanRoom: true, DeviceIdentity: "device", OSVersion: "macOS", SourceRevision: "source", ModelID: "model-a", RuntimeID: "runtime", ArtifactSetSHA256: sha, ManifestSHA256: sha, CorpusSHA256: sha, PowerSource: "AC", ThermalState: "nominal", InputTokens: 8, OutputTokens: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := benchmark.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
