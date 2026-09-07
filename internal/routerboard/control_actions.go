@@ -66,6 +66,9 @@ func (r ControlActionRequest) validate() error {
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.LeaseToken) == "" {
 			return fmt.Errorf("cancel_handback requires agent, task_id, and lease_token")
 		}
+		if strings.TrimSpace(r.Reason) == "" {
+			return fmt.Errorf("cancel_handback requires reason")
+		}
 	case "result_return":
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.LeaseToken) == "" || strings.TrimSpace(r.ResultRef) == "" {
 			return fmt.Errorf("result_return requires agent, task_id, lease_token, and result_ref")
@@ -79,6 +82,28 @@ func (r ControlActionRequest) validate() error {
 	return nil
 }
 
+func (r ControlActionRequest) normalized() ControlActionRequest {
+	r.Verb = strings.TrimSpace(r.Verb)
+	r.From = strings.TrimSpace(r.From)
+	r.To = strings.TrimSpace(r.To)
+	r.Title = strings.TrimSpace(r.Title)
+	r.Type = strings.TrimSpace(r.Type)
+	r.Instructions = strings.TrimSpace(r.Instructions)
+	r.SubjectKey = strings.TrimSpace(r.SubjectKey)
+	r.SourceItem = strings.TrimSpace(r.SourceItem)
+	r.Agent = strings.TrimSpace(r.Agent)
+	r.TaskID = strings.TrimSpace(r.TaskID)
+	r.Subject = strings.TrimSpace(r.Subject)
+	r.Phase = strings.TrimSpace(r.Phase)
+	r.ResponsibleParty = strings.TrimSpace(r.ResponsibleParty)
+	r.Worker = strings.TrimSpace(r.Worker)
+	r.ThreadID = strings.TrimSpace(r.ThreadID)
+	r.LeaseToken = strings.TrimSpace(r.LeaseToken)
+	r.Reason = strings.TrimSpace(r.Reason)
+	r.ResultRef = strings.TrimSpace(r.ResultRef)
+	return r
+}
+
 // ApplyControlAction maps the closed worker-control verbs to the existing
 // canonical routerstore. No second control-plane database or subprocess path
 // is introduced.
@@ -86,7 +111,7 @@ func ApplyControlAction(store *routerstore.Store, req ControlActionRequest) (Con
 	if store == nil {
 		return ControlActionResponse{}, fmt.Errorf("control store is nil")
 	}
-	req.Verb = strings.TrimSpace(req.Verb)
+	req = req.normalized()
 	if err := req.validate(); err != nil {
 		return ControlActionResponse{}, err
 	}

@@ -34,6 +34,7 @@ type Task struct {
 	TaskID           string          `json:"task_id"`
 	Subject          string          `json:"subject"`
 	Status           string          `json:"status"`
+	FailureReason    string          `json:"failure_reason,omitempty"`
 	Phase            string          `json:"phase"`
 	ResponsibleParty string          `json:"responsible_party"`
 	BlockedBy        string          `json:"blocked_by"`
@@ -358,13 +359,13 @@ func (s *Store) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	return s.GetTask(agent, taskID)
 }
 
-const taskSelect = `SELECT agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds FROM tasks`
+const taskSelect = `SELECT agent,task_id,subject,status,failure_reason,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds FROM tasks`
 
 func scanTask(scanner interface{ Scan(...any) error }) (Task, error) {
 	var t Task
 	var charter, outline sql.NullString
 	var timeline, links string
-	err := scanner.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated, &charter, &t.CommissionedAt, &t.CommissionedBy, &outline, &timeline, &links, &t.TestState, &t.Stage, &t.TokensConsumed, &t.DurationSeconds)
+	err := scanner.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.FailureReason, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated, &charter, &t.CommissionedAt, &t.CommissionedBy, &outline, &timeline, &links, &t.TestState, &t.Stage, &t.TokensConsumed, &t.DurationSeconds)
 	if err != nil {
 		return Task{}, err
 	}

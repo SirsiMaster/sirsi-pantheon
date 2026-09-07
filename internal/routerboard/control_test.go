@@ -203,6 +203,61 @@ func TestControlActionRequiresJSONContentType(t *testing.T) {
 	}
 }
 
+func TestControlActionCanonicalizesLedgerFieldsAndRequiresHandbackReason(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	response, err := ApplyControlAction(store, ControlActionRequest{
+		Verb: " delegate ", Agent: " worker ", TaskID: " task-1 ", Subject: " ship the control plane ",
+	})
+	if err != nil {
+		t.Fatalf("delegate: %v", err)
+	}
+	if response.TaskID != "task-1" {
+		t.Fatalf("task id = %q, want task-1", response.TaskID)
+	}
+	task, err := store.GetTask("worker", "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Subject != "ship the control plane" {
+		t.Fatalf("subject = %q, want canonical whitespace", task.Subject)
+	}
+
+	lease, err := ApplyControlAction(store, ControlActionRequest{
+		Verb: "claim", Agent: "worker", TaskID: "task-1", Worker: "m1", ThreadID: "thread-1",
+	})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if lease.Lease == nil || lease.Lease.Token == "" {
+		t.Fatalf("claim response missing lease: %+v", lease)
+	}
+	if _, err := ApplyControlAction(store, ControlActionRequest{
+		Verb: "cancel_handback", Agent: "worker", TaskID: "task-1", LeaseToken: lease.Lease.Token,
+	}); err == nil {
+		t.Fatal("cancel_handback without reason unexpectedly succeeded")
+	}
+	if _, err := ApplyControlAction(store, ControlActionRequest{
+		Verb: "cancel_handback", Agent: " worker ", TaskID: " task-1 ", LeaseToken: " " + lease.Lease.Token + " ", Reason: " retry after review ",
+	}); err != nil {
+		t.Fatalf("cancel_handback: %v", err)
+	}
+	task, err = store.GetTask("worker", "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != "pending" {
+		t.Fatalf("status = %q, want pending", task.Status)
+	}
+	if task.FailureReason != "retry after review" {
+		t.Fatalf("failure reason = %q, want canonical handback reason", task.FailureReason)
+	}
+}
+
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {
