@@ -33,7 +33,7 @@ run $G services vpc-peerings connect --service=servicenetworking.googleapis.com 
 
 echo "== 3. Cloud SQL $INSTANCE (POSTGRES_16, db-f1-micro, zonal, private IP only, daily backups, PITR)"
 if ! exists $G sql instances describe $INSTANCE; then
-  run $G sql instances create $INSTANCE --database-version=POSTGRES_16 --tier=db-f1-micro --region=$REGION \
+  run $G sql instances create $INSTANCE --database-version=POSTGRES_16 --edition=ENTERPRISE --tier=db-f1-micro --region=$REGION \
     --availability-type=zonal --storage-size=10GB --storage-auto-increase \
     --backup-start-time=08:00 --enable-point-in-time-recovery --retained-backups-count=7 \
     --network=projects/$PROJECT/global/networks/$NETWORK --no-assign-ip --deletion-protection
