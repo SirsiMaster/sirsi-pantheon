@@ -37,10 +37,34 @@ func BuildID(dir string) string {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.index)
 	mux.HandleFunc("/index.html", h.index)
+	mux.HandleFunc("/api/control", h.control)
 	mux.HandleFunc("/api/ledger", h.slice)
 	mux.HandleFunc("/api/tasks", h.slice)
 	mux.HandleFunc("/api/stream", h.stream)
 	mux.HandleFunc("/api/arm", h.arm)
+}
+
+// control serves the canonical worker-control envelope. It is intentionally
+// read-only; mutations stay on the constrained router CLI/task lease surface.
+func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "control endpoint is read-only", http.StatusMethodNotAllowed)
+		return
+	}
+	body, version, err := h.board.SnapshotControl()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		http.Error(w, `{"error":"control snapshot unavailable"}`, http.StatusInternalServerError)
+		return
+	}
+	if version == 0 || len(body) == 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
+		return
+	}
+	_, _ = w.Write(body)
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
