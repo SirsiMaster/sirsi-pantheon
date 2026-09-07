@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -82,5 +84,59 @@ func TestNamedConnectorsAndStreamingFailureAreExplicit(t *testing.T) {
 	}
 	if _, err := NewSNEConnector(fakeProvider{}, func() Identity { i := testIdentity(); i.Engine = KindMLX; return i }(), Capabilities{}); err == nil {
 		t.Fatal("SNE constructor accepted an MLX identity")
+	}
+}
+
+func TestProviderConnectorNormalizesLoopbackStreamAndReceipt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		case "/v1/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"model\":\"model-a\",\"choices\":[{\"delta\":{\"content\":\"a\"},\"finish_reason\":\"\"}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"model\":\"model-a\",\"choices\":[{\"delta\":{\"content\":\"b\"},\"finish_reason\":\"stop\"}]}\n\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	identity := testIdentity()
+	identity.Engine = KindMLX
+	backend := &provider.OpenAICompat{ProviderName: "mlx", Endpoint: srv.URL + "/v1", TierValue: provider.TierLocal, HTTP: srv.Client()}
+	connector, err := NewMLXConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "stream-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := connector.Stream(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	var receipt *Receipt
+	var previous uint64
+	for event := range events {
+		if err := event.Validate(previous); err != nil {
+			t.Fatal(err)
+		}
+		previous = event.Sequence
+		if event.Kind == EventDelta {
+			text += event.Text
+		}
+		if event.Kind == EventCompleted {
+			receipt = event.Receipt
+		}
+	}
+	if text != "ab" || receipt == nil {
+		t.Fatalf("stream text=%q receipt=%v, want ab and receipt", text, receipt)
+	}
+	if err := receipt.Validate(session); err != nil {
+		t.Fatalf("stream receipt invalid: %v", err)
 	}
 }
