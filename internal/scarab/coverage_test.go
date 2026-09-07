@@ -308,6 +308,26 @@ func TestPingSweep_InvalidSubnet(t *testing.T) {
 	}
 }
 
+func TestPingSweep_LimitsLargeSubnet(t *testing.T) {
+	saveAndRestoreDiscovery(t)
+	var mu sync.Mutex
+	pinged := 0
+	pingHostFn = func(string) bool {
+		mu.Lock()
+		pinged++
+		mu.Unlock()
+		return false
+	}
+
+	defaultPingSweep("10.0.0.0/8")
+	mu.Lock()
+	got := pinged
+	mu.Unlock()
+	if got != maxPingTargets {
+		t.Fatalf("large subnet scheduled %d targets, want safety cap %d", got, maxPingTargets)
+	}
+}
+
 func TestPingHost_Mocked(t *testing.T) {
 	saveAndRestoreDiscovery(t)
 	pingHostFn = func(ip string) bool { return ip == "1.2.3.4" }

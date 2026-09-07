@@ -4,6 +4,7 @@
 package scarab
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os/exec"
@@ -20,18 +21,31 @@ var (
 	pingSweepFn      = defaultPingSweep
 	pingHostFn       = defaultPingHost
 	runARPCommand    = func() ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), discoveryCommandTimeout)
+		defer cancel()
 		var cmd *exec.Cmd
 		switch runtime.GOOS {
 		case "darwin":
-			cmd = exec.Command("arp", "-a")
+			cmd = exec.CommandContext(ctx, "arp", "-a")
 		case "linux":
-			cmd = exec.Command("arp", "-n")
+			cmd = exec.CommandContext(ctx, "arp", "-n")
 		default:
 			return nil, fmt.Errorf("unsupported OS")
 		}
-		return cmd.Output()
+		out, err := cmd.Output()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return out, err
 	}
 )
+
+// maxPingTargets bounds active discovery work. ARP remains authoritative for
+// already-known hosts, while a pathological /16 or larger interface cannot
+// turn a dashboard refresh into an unbounded process fan-out.
+const maxPingTargets = 512
+
+const discoveryCommandTimeout = 5 * time.Second
 
 // Host represents a discovered host on the network.
 type Host struct {
@@ -220,12 +234,17 @@ func defaultPingSweep(subnet string) []Host {
 
 	// Limit concurrency to avoid flood
 	sem := make(chan struct{}, 50)
+	targets := 0
 
 	for scanIP := ip.Mask(ipnet.Mask); ipnet.Contains(scanIP); incrementIP(scanIP) {
 		target := scanIP.String()
 		if target == ipnet.IP.String() {
 			continue // Skip network address
 		}
+		if targets >= maxPingTargets {
+			break
+		}
+		targets++
 
 		wg.Add(1)
 		sem <- struct{}{}
