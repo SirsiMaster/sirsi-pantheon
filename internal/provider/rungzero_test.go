@@ -114,7 +114,7 @@ func TestLocalRungDoesNotInheritARemoteModelName(t *testing.T) {
 
 func TestLocalRungKeepsAnExplicitlyLocalModel(t *testing.T) {
 	home := localHome(t, "8765")
-	for _, prov := range []string{"", "gemma", "local"} {
+	for _, prov := range []string{"", "gemma", "local", "sne", "sne-native-v2", "omlx"} {
 		got := Local(home, Conf{Provider: prov, Model: "gemma-3-12b-8bit"})
 		if got == nil {
 			t.Fatalf("provider=%q: local rung missing", prov)
@@ -122,6 +122,37 @@ func TestLocalRungKeepsAnExplicitlyLocalModel(t *testing.T) {
 		if got.Model != "gemma-3-12b-8bit" {
 			t.Fatalf("provider=%q: a LOCAL conf's model must be honored, got %q", prov, got.Model)
 		}
+	}
+}
+
+func TestNativeV2ConfUsesItsLoopbackEndpointAndModel(t *testing.T) {
+	home := localHome(t, "8765")
+	got := Local(home, Conf{
+		Provider: "sne-native-v2",
+		Endpoint: "http://127.0.0.1:11434/v1",
+		Model:    "gemma-4-12b-it-affine8-sne-v1",
+	})
+	if got == nil {
+		t.Fatal("sne-native-v2 did not create a local rung")
+	}
+	if got.Endpoint != "http://127.0.0.1:11434/v1" || got.Model != "gemma-4-12b-it-affine8-sne-v1" {
+		t.Fatalf("native-v2 rung = endpoint %q model %q", got.Endpoint, got.Model)
+	}
+}
+
+func TestNativeV2NeverBecomesARemoteRung(t *testing.T) {
+	t.Setenv("SIRSI_REMOTE_API_KEY", "sk-test")
+	t.Setenv("SIRSI_REMOTE_ENDPOINT", "")
+	if got := remoteFromEnv(Conf{Provider: "sne-native-v2", Endpoint: "http://127.0.0.1:11434/v1"}); got != nil {
+		t.Fatalf("native-v2 loopback was classified as remote: %+v", got)
+	}
+}
+
+func TestNativeV2RejectsANonLoopbackSelectionInsteadOfFallingBack(t *testing.T) {
+	home := localHome(t, "8765")
+	got := Local(home, Conf{Provider: "sne-native-v2", Endpoint: "https://example.test/v1"})
+	if got != nil {
+		t.Fatalf("non-loopback native-v2 selection fell back to another local engine: %+v", got)
 	}
 }
 

@@ -291,3 +291,8 @@ sync_protocol:
 # "## Archive: relocated from memory.yaml (2026-07-30)". Root cause = `sirsi thoth sync` appending
 # payloads/snapshots as decisions; routed as 20260730-015122. If hook_event_name or "Router snapshot:"
 # lines reappear below, the sync regressed — strip, don't compress. Keep this section to ~10 entries.
+# 2026-09-07 (SSA): Pantheon recognizes `sne-native-v2` as an explicit local
+# provider in both Gemma MCP configuration and the shared `sirsi ask` ladder.
+# Only loopback endpoints are accepted; the same local-provider predicate
+# prevents a selected Native v2 endpoint from becoming a remote rung. This is
+# ABI consumption only—SNE retains runtime lifecycle and qualification.

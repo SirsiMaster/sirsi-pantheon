@@ -2427,3 +2427,13 @@ it does not launch, qualify, or alter SNE internals. `go test ./cmd/sirsi-gemma`
 `go build ./cmd/sirsi-gemma`, diff checks, gitleaks, and the pre-push gate passed.
 The broad suite was sandbox-blocked by denied loopback listeners and host-only
 launchctl observations in unrelated packages.
+
+### Shared CLI provider ladder
+
+Followed the MCP selector through Pantheon's shared provider path: commit pending
+after `a431a9a2` makes `provider=sne-native-v2` (and `sne`/`omlx`) explicit local
+configuration in `~/.sirsi/orchestrator.conf`. A native-v2 endpoint must be
+loopback; a non-loopback explicit selection is refused rather than silently
+falling back to the legacy broker port. `remoteFromEnv` uses the same predicate,
+so a selected Native v2 configuration can never be mislabeled as a remote rung.
+Focused provider and Gemma tests plus both CLI builds passed.

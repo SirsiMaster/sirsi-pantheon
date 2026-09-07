@@ -17,7 +17,7 @@ import (
 // disagreeing about which brain is active is precisely the dual-source class
 // that produced the router's phantom-item P0.
 type Conf struct {
-	Provider string // gemma | claude | codex | gemini | openai
+	Provider string // local engines: gemma | local | sne | sne-native-v2 | omlx; or a remote provider
 	Model    string
 	Endpoint string
 }
@@ -90,10 +90,17 @@ func Local(home string, conf Conf) *OpenAICompat {
 	// exactly the one whose owner still expects the zero-token offline path to
 	// answer first. Local is dropped for ONE reason only — there is no local
 	// broker to talk to (no port file, or a non-loopback address).
-	localConf := conf.Provider == "" || conf.Provider == "gemma" || conf.Provider == "local"
+	localConf := isLocalProvider(conf.Provider)
 
 	ep := localEndpoint(home)
-	if localConf && isLoopbackEndpoint(conf.Endpoint) {
+	if localConf && strings.TrimSpace(conf.Endpoint) != "" {
+		// An explicitly selected local engine must name a loopback service. Do
+		// not quietly fall back to gemma-server.port when that selection points
+		// elsewhere: that would run a different engine than the configuration
+		// names while reporting success.
+		if !isLoopbackEndpoint(conf.Endpoint) {
+			return nil
+		}
 		ep = conf.Endpoint // explicit local override wins over the port file
 	}
 	if !isLoopbackEndpoint(ep) {
@@ -137,6 +144,20 @@ func isLoopbackEndpoint(endpoint string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// isLocalProvider names every explicit on-device engine selection supported by
+// Pantheon. Keep this predicate shared by Local and remoteFromEnv: otherwise a
+// selected loopback engine can accidentally become a remote rung when a cloud
+// key is present, which would make an unavailable local service silently
+// escalate to the network.
+func isLocalProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "gemma", "local", "sne", "sne-native-v2", "omlx":
+		return true
+	default:
+		return false
+	}
+}
+
 // Ladder returns the providers to try, cheapest rung first.
 //
 // This is the certainties ladder in code (SIRSI_V2_APPLICATION §2c). The
@@ -162,7 +183,7 @@ func Ladder(ctx context.Context, home string) []Provider {
 func remoteFromEnv(conf Conf) *OpenAICompat {
 	key := firstNonEmpty(os.Getenv("SIRSI_REMOTE_API_KEY"), os.Getenv("OPENAI_API_KEY"))
 	ep := os.Getenv("SIRSI_REMOTE_ENDPOINT")
-	if ep == "" && conf.Provider != "" && conf.Provider != "gemma" && conf.Provider != "local" {
+	if ep == "" && !isLocalProvider(conf.Provider) {
 		ep = conf.Endpoint
 	}
 	if key == "" || ep == "" {

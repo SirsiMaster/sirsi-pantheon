@@ -42,6 +42,20 @@ The native-v2 choice is a candidate integration, not a performance claim. A
 missing or unhealthy endpoint stays a visible failure; Pantheon never switches
 to MLX, OMLX, or another SNE implementation on its behalf.
 
+To make the main `sirsi ask` ladder use the same local candidate, add the
+matching explicit local selection to `~/.sirsi/orchestrator.conf`:
+
+```ini
+provider=sne-native-v2
+endpoint=http://127.0.0.1:11434/v1
+model=gemma-4-12b-it-affine8-sne-v1
+```
+
+Only loopback endpoints are accepted for `sne-native-v2` (as for every local
+engine). A configured endpoint that is unavailable remains a local failure; it
+is never reclassified as a remote provider or silently replaced. This config
+selects an endpoint only—SNE retains runtime lifecycle and qualification.
+
 ## OMLX
 
 Start the local OMLX OpenAI-compatible server for the desired model, then use:
