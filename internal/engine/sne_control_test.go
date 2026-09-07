@@ -138,6 +138,24 @@ func TestSNEControlFullIdentityRejectsRuntimeDriftBeforeLoad(t *testing.T) {
 	}
 }
 
+func TestSNEControlRefusesMutationAfterContextCancellation(t *testing.T) {
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+		sneIdentity("stopped", ""),
+	}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := control.Apply(ctx, SNELoad); err == nil {
+		t.Fatal("cancelled lifecycle unexpectedly mutated")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load calls after cancellation: %v", client.loads)
+	}
+}
+
 func TestSNEControlRequiresCompleteRuntimeIdentityTuple(t *testing.T) {
 	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	client := &fakeSNEControlClient{}

@@ -153,6 +153,9 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 	if action != SNELoad && !before.Ready {
 		return SNELifecycle{}, fmt.Errorf("SNE control: %s requires a ready admitted service: status=%q model=%q", action, beforeIdentity.Status, before.ServedModel)
 	}
+	if err := ctx.Err(); err != nil {
+		return SNELifecycle{}, fmt.Errorf("SNE control: %s cancelled before mutation: %w", action, err)
+	}
 	switch action {
 	case SNELoad:
 		err = c.client.LoadModel(ctx, c.modelID)
