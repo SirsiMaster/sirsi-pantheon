@@ -131,7 +131,11 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("engine router: stream cancelled before connector: %w", err)
 	}
-	return connector.Stream(ctx, session, request)
+	events, err := connector.Stream(ctx, session, request)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, fmt.Errorf("engine router: stream cancelled after connector: %w", ctxErr)
+	}
+	return events, err
 }
 
 func (r *Router) connectorForDecision(session Session, decision RouteDecision) (Connector, error) {

@@ -15,6 +15,7 @@ type routerFixtureConnector struct {
 	available  bool
 	onOpen     func()
 	onComplete func()
+	onStream   func()
 }
 
 func (f routerFixtureConnector) Kind() Kind                 { return f.kind }
@@ -35,6 +36,9 @@ func (f routerFixtureConnector) Complete(_ context.Context, _ Session, _ Generat
 	return Completion{Text: "ok", Model: f.identity.ModelID, FinishReason: "stop"}, Receipt{}, nil
 }
 func (f routerFixtureConnector) Stream(_ context.Context, _ Session, _ GenerateRequest) (<-chan Event, error) {
+	if f.onStream != nil {
+		f.onStream()
+	}
 	return nil, nil
 }
 
@@ -120,6 +124,25 @@ func TestRouterRejectsCancellationAroundCompletion(t *testing.T) {
 	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, CacheNamespace: session.Identity.CacheNamespace}
 	if _, _, err := r.Complete(ctx, session, request, decision); err == nil {
 		t.Fatal("cancelled completion was reported successful")
+	}
+}
+
+func TestRouterRejectsCancellationAroundStreamAdmission(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r, err := NewRouter(routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,
+		onStream: cancel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, decision, err := r.OpenSession(context.Background(), "stream-cancel", RoutePolicy{Preferred: KindMLX})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, Stream: true, CacheNamespace: session.Identity.CacheNamespace}
+	if _, err := r.Stream(ctx, session, request, decision); err == nil {
+		t.Fatal("cancelled stream admission was reported successful")
 	}
 }
 
