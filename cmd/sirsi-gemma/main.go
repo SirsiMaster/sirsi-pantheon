@@ -75,8 +75,11 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 		if !isLocalEngineURL(cfg.SNENativeV2URL) {
 			return &disabledRunner{reason: "engine=sne-native-v2 requires a loopback sne_native_v2_url"}
 		}
+		if cfg.SNENativeV2HostProfile != "m1" && cfg.SNENativeV2HostProfile != "m5" {
+			return &disabledRunner{reason: "engine=sne-native-v2 requires sne_native_v2_host_profile=m1 or m5"}
+		}
 		logger.Printf("runner: SNE Native v2 seam active — %s (model %s)", cfg.SNENativeV2URL, cfg.SNENativeV2Model)
-		r = NewSNENativeV2Runner(cfg.SNENativeV2URL, cfg.SNENativeV2Model)
+		r = NewSNENativeV2Runner(cfg.SNENativeV2URL, cfg.SNENativeV2Model, cfg.SNENativeV2HostProfile)
 	case "omlx":
 		if !isLocalEngineURL(cfg.OMLXURL) {
 			return &disabledRunner{reason: "engine=omlx requires a loopback omlx_url"}
@@ -161,7 +164,7 @@ func makeChatHandler(runner Runner) mcp.ToolHandler {
 		if err != nil {
 			return errResult(err.Error()), nil
 		}
-		return textResult(out), nil
+		return textResult(out, runner), nil
 	}
 }
 
@@ -179,12 +182,18 @@ func makeCompleteHandler(runner Runner) mcp.ToolHandler {
 		if err != nil {
 			return errResult(err.Error()), nil
 		}
-		return textResult(out), nil
+		return textResult(out, runner), nil
 	}
 }
 
-func textResult(text string) *mcp.ToolResult {
-	return &mcp.ToolResult{Content: []mcp.ContentBlock{{Type: "text", Text: text}}}
+func textResult(text string, runner Runner) *mcp.ToolResult {
+	result := &mcp.ToolResult{Content: []mcp.ContentBlock{{Type: "text", Text: text}}}
+	if identified, ok := runner.(resultIdentityRunner); ok {
+		if identity, present := identified.ResultIdentity(); present {
+			result.Content = append(result.Content, mcp.ContentBlock{Type: "text", Text: identity.JSON()})
+		}
+	}
+	return result
 }
 
 func errResult(msg string) *mcp.ToolResult {

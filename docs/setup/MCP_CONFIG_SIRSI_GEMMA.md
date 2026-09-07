@@ -16,6 +16,9 @@ sirsi-gemma in any Claude Code session via `~/.claude/mcp.json`.
    [Pantheon engine selection](../user-guides/PANTHEON-ENGINE-SELECTION.md).
    SNE, Native v2, and OMLX endpoints must be loopback URLs; this MCP server
    refuses to send a local prompt to a remote address.
+   Native v2 also requires `sne_native_v2_host_profile = "m1"` or `"m5"`.
+   Its successful responses include the endpoint, host profile, and configured
+   model identity in a second JSON MCP content block; keep it with the result.
 
 3. Add the snippet below to `~/.claude/mcp.json` (create the file if it
    doesn't exist; merge the `mcpServers` map if it does).

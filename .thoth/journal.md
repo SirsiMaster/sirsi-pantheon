@@ -2459,3 +2459,11 @@ shared provider and direct CLI: `sne_url`, `sne_native_v2_url`, and `omlx_url`
 must be HTTP(S) URLs with a loopback host. This closes the remaining route by
 which an explicit "local" engine could have sent a prompt to a remote endpoint.
 Focused selector tests cover remote rejection and IPv4/IPv6 localhost recognition.
+
+### M1/M5 result provenance
+
+Native SNE v2 selection now requires `sne_native_v2_host_profile=m1|m5` and
+emits a second JSON MCP result block containing the engine, loopback endpoint,
+host profile, and configured model identity. The primary answer stays plain
+text, preserving the existing tool contract. The profile is provenance only:
+no code path derives or compares throughput across M1 and M5.

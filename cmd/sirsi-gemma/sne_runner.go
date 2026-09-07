@@ -35,7 +35,10 @@ type SNERunner struct {
 	backend string
 	baseURL string // e.g. "http://localhost:11434/v1"
 	model   string // model name forwarded in the request body
-	client  *http.Client
+	// hostProfile is result provenance, never a throughput claim or a
+	// cross-host fallback target.
+	hostProfile string
+	client      *http.Client
 }
 
 // NewSNERunner constructs a runner pointed at baseURL.
@@ -55,16 +58,50 @@ func NewSNERunner(baseURL, model string) *SNERunner {
 // NewSNENativeV2Runner consumes the recovered native SNE v2 service through
 // the same stable OpenAI-compatible ABI as SNE. It does not launch, qualify,
 // or otherwise manage the native runtime; those stay in SNE's lifecycle lane.
-func NewSNENativeV2Runner(baseURL, model string) *SNERunner {
+func NewSNENativeV2Runner(baseURL, model, hostProfile string) *SNERunner {
 	if model == "" {
 		model = "gemma-4-12b-it-affine8-sne-v1"
 	}
 	return &SNERunner{
-		backend: "sne-native-v2",
-		baseURL: strings.TrimRight(baseURL, "/"),
-		model:   model,
-		client:  &http.Client{Timeout: 5 * time.Minute},
+		backend:     "sne-native-v2",
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		model:       model,
+		hostProfile: hostProfile,
+		client:      &http.Client{Timeout: 5 * time.Minute},
 	}
+}
+
+// resultIdentityRunner lets a native SNE runner add transparent provenance
+// without changing the plain-text contract of other local engines.
+type resultIdentityRunner interface {
+	ResultIdentity() (engineResultIdentity, bool)
+}
+
+// engineResultIdentity names the exact local native service that generated a
+// result. Consumers must retain the host profile: M1 output is not an M5
+// throughput measurement.
+type engineResultIdentity struct {
+	Engine        string `json:"engine"`
+	Endpoint      string `json:"endpoint"`
+	HostProfile   string `json:"host_profile"`
+	ModelIdentity string `json:"model_identity"`
+}
+
+func (i engineResultIdentity) JSON() string {
+	b, err := json.Marshal(i)
+	if err != nil {
+		return `{"engine":"sne-native-v2","identity_error":"marshal"}`
+	}
+	return string(b)
+}
+
+func (r *SNERunner) ResultIdentity() (engineResultIdentity, bool) {
+	if r.backend != "sne-native-v2" || (r.hostProfile != "m1" && r.hostProfile != "m5") {
+		return engineResultIdentity{}, false
+	}
+	return engineResultIdentity{
+		Engine: r.backend, Endpoint: r.baseURL, HostProfile: r.hostProfile, ModelIdentity: r.model,
+	}, true
 }
 
 // NewOMLXRunner uses oMLX's OpenAI-compatible server through the same Pantheon

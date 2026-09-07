@@ -34,8 +34,11 @@ type Config struct {
 	// consumes its OpenAI-compatible ABI; SNE owns its launch and qualification.
 	SNENativeV2URL   string
 	SNENativeV2Model string
-	OMLXURL          string // base URL of oMLX's OpenAI-compatible API
-	OMLXModel        string // model name forwarded to oMLX
+	// SNENativeV2HostProfile identifies the local native service that owns
+	// this endpoint. M1 and M5 share an ABI, not a performance identity.
+	SNENativeV2HostProfile string // "m1" or "m5"
+	OMLXURL                string // base URL of oMLX's OpenAI-compatible API
+	OMLXModel              string // model name forwarded to oMLX
 }
 
 // DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
@@ -123,6 +126,12 @@ func (c *Config) set(key, val string) error {
 		c.SNENativeV2URL = val
 	case "sne_native_v2_model":
 		c.SNENativeV2Model = val
+	case "sne_native_v2_host_profile":
+		val = strings.ToLower(val)
+		if val != "m1" && val != "m5" {
+			return fmt.Errorf("sne_native_v2_host_profile must be m1 or m5")
+		}
+		c.SNENativeV2HostProfile = val
 	case "omlx_url":
 		c.OMLXURL = val
 	case "omlx_model":

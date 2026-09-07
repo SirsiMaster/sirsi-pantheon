@@ -34,6 +34,7 @@ runtime; SNE owns its lifecycle and qualification.
 engine = "sne-native-v2"
 sne_native_v2_url = "http://127.0.0.1:11434/v1"
 sne_native_v2_model = "gemma-4-12b-it-affine8-sne-v1"
+sne_native_v2_host_profile = "m5"
 max_tokens = 1024
 temperature = 0.7
 ```
@@ -55,6 +56,12 @@ Only loopback endpoints are accepted for `sne-native-v2` (as for every local
 engine). A configured endpoint that is unavailable remains a local failure; it
 is never reclassified as a remote provider or silently replaced. This config
 selects an endpoint only—SNE retains runtime lifecycle and qualification.
+
+Native v2 requires `sne_native_v2_host_profile = "m1"` or `"m5"`. Successful
+MCP replies include a second JSON content block naming that profile, the
+loopback endpoint, and the configured model identity. Preserve it with any
+result: it makes the host scope visible and prevents M1 serving output from
+being presented as an M5 performance measurement.
 
 The same configuration also drives `sirsi gemma "…"`. The command sends its
 request to the selected service and model; it does not fall back to the legacy

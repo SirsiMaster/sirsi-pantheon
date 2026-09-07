@@ -26,7 +26,7 @@ func TestEffectiveEngine(t *testing.T) {
 	}{
 		{"default", Config{}, "mlx"},
 		{"legacy-sne-url", Config{SNEURL: "http://sne/v1"}, "sne"},
-		{"native-v2-url", Config{Engine: "sne-native-v2", SNENativeV2URL: "http://sne-v2/v1"}, "sne-native-v2"},
+		{"native-v2-url", Config{Engine: "sne-native-v2", SNENativeV2URL: "http://sne-v2/v1", SNENativeV2HostProfile: "m1"}, "sne-native-v2"},
 		{"omlx-url", Config{OMLXURL: "http://omlx/v1"}, "omlx"},
 		{"explicit-mlx", Config{Engine: "mlx", SNEURL: "http://sne/v1"}, "mlx"},
 		{"explicit-sne", Config{Engine: "sne"}, "sne"},
@@ -89,6 +89,25 @@ func TestSelectedLocalEngineRejectsRemoteEndpoint(t *testing.T) {
 	}
 }
 
+func TestNativeV2SelectionRequiresExplicitHostProfile(t *testing.T) {
+	logger := log.New(io.Discard, "", 0)
+	withoutProfile := selectRunner(Config{
+		Engine: "sne-native-v2", SNENativeV2URL: "http://127.0.0.1:11434/v1",
+	}, true, logger)
+	disabled, ok := withoutProfile.(*disabledRunner)
+	if !ok || !strings.Contains(disabled.reason, "host_profile") {
+		t.Fatalf("native v2 accepted without a host profile: %#v", withoutProfile)
+	}
+	withProfile := selectRunner(Config{
+		Engine: "sne-native-v2", SNENativeV2URL: "http://127.0.0.1:11434/v1", SNENativeV2HostProfile: "m5",
+	}, true, logger)
+	if runner, ok := withProfile.(*SNERunner); !ok {
+		t.Fatalf("native v2 did not activate with explicit host profile: %#v", withProfile)
+	} else if identity, present := runner.ResultIdentity(); !present || identity.HostProfile != "m5" {
+		t.Fatalf("native result identity = %#v, present=%v", identity, present)
+	}
+}
+
 func TestLocalEngineURLRecognition(t *testing.T) {
 	for raw, want := range map[string]bool{
 		"http://127.0.0.1:11434/v1":      true,
@@ -127,7 +146,7 @@ func TestOpenAICompatibleEnginesShareWorkflow(t *testing.T) {
 
 	for _, runner := range []*SNERunner{
 		NewSNERunner("http://sne.test/v1", "gemma-4"),
-		NewSNENativeV2Runner("http://sne-native-v2.test/v1", "gemma-4"),
+		NewSNENativeV2Runner("http://sne-native-v2.test/v1", "gemma-4", "m5"),
 		NewOMLXRunner("http://omlx.test/v1", "gemma-4"),
 	} {
 		runner.client = client

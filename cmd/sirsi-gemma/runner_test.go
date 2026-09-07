@@ -52,6 +52,7 @@ model_id = "my-model"
 venv_path = "/tmp/v"
 max_tokens = 256
 temperature = 0.2
+sne_native_v2_host_profile = "M1"
 `
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -60,8 +61,11 @@ temperature = 0.2
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ModelID != "my-model" || cfg.VenvPath != "/tmp/v" || cfg.MaxTokens != 256 || cfg.Temperature != 0.2 {
+	if cfg.ModelID != "my-model" || cfg.VenvPath != "/tmp/v" || cfg.MaxTokens != 256 || cfg.Temperature != 0.2 || cfg.SNENativeV2HostProfile != "m1" {
 		t.Fatalf("overlay failed: %+v", cfg)
+	}
+	if err := cfg.set("sne_native_v2_host_profile", "m3"); err == nil {
+		t.Fatal("invalid native host profile was accepted")
 	}
 }
 
@@ -151,6 +155,34 @@ func TestCompleteHandler_DispatchesToRunner(t *testing.T) {
 	}
 	if res.IsError || res.Content[0].Text != "echo:ping" {
 		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+type identifiedFakeRunner struct {
+	fakeRunner
+	identity engineResultIdentity
+}
+
+func (f *identifiedFakeRunner) ResultIdentity() (engineResultIdentity, bool) {
+	return f.identity, true
+}
+
+func TestCompleteHandlerPublishesNativeHostAndModelIdentity(t *testing.T) {
+	fr := &identifiedFakeRunner{identity: engineResultIdentity{
+		Engine: "sne-native-v2", Endpoint: "http://127.0.0.1:11434/v1",
+		HostProfile: "m1", ModelIdentity: "gemma-4-12b-it-affine8-sne-v1",
+	}}
+	res, err := makeCompleteHandler(fr)(map[string]any{"prompt": "ping"})
+	if err != nil || res.IsError {
+		t.Fatalf("complete = %#v, %v", res, err)
+	}
+	if len(res.Content) != 2 {
+		t.Fatalf("content blocks = %d, want answer plus identity", len(res.Content))
+	}
+	for _, want := range []string{`"host_profile":"m1"`, `"model_identity":"gemma-4-12b-it-affine8-sne-v1"`} {
+		if !strings.Contains(res.Content[1].Text, want) {
+			t.Errorf("identity %q missing from %s", want, res.Content[1].Text)
+		}
 	}
 }
 

@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **feat(gemma): bind Native SNE v2 results to their M1 or M5 host profile and
+  configured model identity**. Native selection now fails visibly without an
+  explicit `sne_native_v2_host_profile`, and successful MCP replies include
+  endpoint, host profile, and model identity metadata. M1 and M5 share the
+  same ABI but never a performance label.
 - **fix(gemma): enforce loopback-only endpoints for MCP local engines**. `engine=sne`, `sne-native-v2`, and `omlx` now reject remote or malformed URLs before any health probe or prompt transmission. This aligns the MCP surface with the local-only privacy contract already enforced by the shared provider ladder. Refs: docs/setup/MCP_CONFIG_SIRSI_GEMMA.md; Changelog: Unreleased
 - **fix(gemma): report the selected local engine on MCP startup failure**. A failed SNE Native v2, SNE, or OMLX probe no longer tells the operator that MLX is missing. The disabled tool response preserves the actual failure and directs operators to the shared engine-selection guide. Refs: docs/user-guides/PANTHEON-ENGINE-SELECTION.md; Changelog: Unreleased
 - **feat(gemma): route the human-facing `sirsi gemma` command through the explicit local-engine selector**. Native v2, SNE, and OMLX selections now reach their configured loopback OpenAI-compatible endpoint and model through the direct CLI as well as MCP and `sirsi ask`. A named engine without a loopback endpoint is refused instead of adopting the legacy broker's port. Refs: docs/user-guides/PANTHEON-ENGINE-SELECTION.md; Changelog: Unreleased
