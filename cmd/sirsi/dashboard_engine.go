@@ -66,6 +66,7 @@ func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector,
 		backend = &provider.OpenAICompat{
 			ProviderName: strings.ToLower(string(kind)), Endpoint: endpoint, Model: modelID,
 			TierValue: provider.TierLocal, HTTP: http.DefaultClient,
+			SupportsStreaming:      true,
 			UseRealCompletionProbe: true,
 		}
 	case engine.KindSNE:
@@ -91,9 +92,7 @@ func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector,
 		Tools: backendCaps.Tools, Temperature: backendCaps.Temperature,
 		TopP: backendCaps.TopP, Seed: backendCaps.Seed,
 	}
-	if _, ok := backend.(provider.StreamingProvider); ok {
-		caps.Streaming = true
-	}
+	caps.Streaming = backendCaps.Streaming
 	connector, err := engine.NewProviderConnector(backend, kind, identity, caps)
 	if err != nil {
 		return nil, false, fmt.Errorf("%s connector: %w", prefix, err)

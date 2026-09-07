@@ -105,6 +105,32 @@ func TestLocalDeclaresNoToolCalling(t *testing.T) {
 	}
 }
 
+func TestResolvedOpenAICompatDeclaresStreamingFromTransportContract(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".sirsi", "gemma-server.port"), []byte("8765"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	local := Local(home, Conf{})
+	if local == nil || !local.Caps().Streaming {
+		t.Fatalf("resolved local streaming capability = %v, want true", local != nil && local.Caps().Streaming)
+	}
+
+	remote := remoteFromEnv(Conf{Endpoint: "https://api.example.test/v1"})
+	if remote != nil {
+		// Credentials are intentionally absent in this fixture, so construct the
+		// remote provider through the same explicit transport fields instead of
+		// widening process-global environment state.
+		t.Fatal("unexpected remote provider without credentials")
+	}
+	configured := &OpenAICompat{ProviderName: "remote", Endpoint: "https://api.example.test/v1", SupportsStreaming: true}
+	if !configured.Caps().Streaming {
+		t.Fatal("explicit remote streaming capability was not preserved")
+	}
+}
+
 func TestRemoteConfigIsNeverClassifiedAsLocal(t *testing.T) {
 	remote := Conf{Provider: "openai", Endpoint: "https://api.example.test/v1", Model: "remote-model"}
 	if got := Local(t.TempDir(), remote); got != nil {

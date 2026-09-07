@@ -30,6 +30,10 @@ type OpenAICompat struct {
 	// tool-calling; claiming otherwise would make the loop believe a silent
 	// no-op was the model declining to act.
 	SupportsTools bool
+	// SupportsStreaming is explicit because an OpenAI-compatible endpoint may
+	// expose buffered completions without accepting SSE. The provider must not
+	// advertise a stream merely because this implementation has an SSE parser.
+	SupportsStreaming bool
 	// These are explicit transport capabilities. An endpoint that does not
 	// accept one of these controls must leave it false so the engine rejects
 	// the request before any sampling semantics are silently lost.
@@ -53,7 +57,7 @@ func (o *OpenAICompat) Caps() Caps {
 		Temperature:   o.SupportsTemperature,
 		TopP:          o.SupportsTopP,
 		Seed:          o.SupportsSeed,
-		Streaming:     false,
+		Streaming:     o.SupportsStreaming,
 		ContextTokens: o.ContextTokens,
 		Offline:       o.TierValue == TierLocal,
 	}
