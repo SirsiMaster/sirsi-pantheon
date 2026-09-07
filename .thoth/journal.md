@@ -2507,3 +2507,11 @@ The menubar CLI contract invokes release builds with complete Swift concurrency
 checking. Notification-response completion is called while nonisolated, before
 the UI handoff to the main actor, eliminating a Swift 6 sendability warning
 that otherwise could become a future compiler error.
+
+### Menubar command parser coverage
+
+The top-level menubar command parsing was extracted into `CLIArguments.swift`.
+This makes it unit-testable and ensures invalid flags fail before AppKit launch.
+The package now declares a native test target that exercises launch, help,
+snapshot options, and malformed command rejection under complete concurrency
+checking.

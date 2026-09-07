@@ -29,6 +29,9 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # complete Swift concurrency checking; notification delegate completion stays
 # nonisolated before its main-actor UI hop. Clean local release build and all
 # command-line non-launch cases pass without Swift concurrency warnings.
+# Menubar command parsing now lives in a testable pure Swift module. It rejects
+# malformed and orphaned flags before NSApplication is created; four native unit
+# tests cover launch, help, valid snapshots, and fail-closed malformed inputs.
 # 2026-09-07: SSA added an explicit `sirsi-gemma` selector for SNE, recovered
 # SNE Native v2, MLX, and OMLX on branch codex/ssa-sne-engine-selection-20260907
 # (current lineage includes `ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes
