@@ -54,12 +54,20 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 		if err != nil || !bytes.Equal(received, requestBody) {
 			t.Fatalf("received body = %s, err=%v", received, err)
 		}
-		_, _ = w.Write([]byte(`{"schema":"pantheon.worker-control/v1","verb":"delegate","task_id":"t-1"}`))
+		_, _ = w.Write([]byte(`{"schema":"pantheon.worker-control/v1","authority":"canonical-routerstore","verb":"delegate","task_id":"t-1"}`))
 	}))
 	defer server.Close()
 	response, err := sendRemoteControlAction(context.Background(), server.URL, "test-token", requestBody)
 	if err != nil || !strings.Contains(string(response), `"task_id":"t-1"`) {
 		t.Fatalf("response = %s, err=%v", response, err)
+	}
+
+	badResponse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"schema":"pantheon.worker-control/v1","authority":"untrusted","verb":"delegate","task_id":"t-1"}`))
+	}))
+	defer badResponse.Close()
+	if _, err := sendRemoteControlAction(context.Background(), badResponse.URL, "test-token", requestBody); err == nil || !strings.Contains(err.Error(), "authority") {
+		t.Fatalf("accepted untrusted action response: %v", err)
 	}
 }
 

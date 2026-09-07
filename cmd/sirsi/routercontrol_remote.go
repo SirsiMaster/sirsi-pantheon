@@ -176,10 +176,57 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("control action returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(result)))
 	}
-	if !json.Valid(result) {
-		return nil, fmt.Errorf("control action response is not valid JSON")
+	if err := validateRemoteControlActionResponse(body, result); err != nil {
+		return nil, err
 	}
 	return result, nil
+}
+
+func validateRemoteControlActionResponse(requestBody, responseBody []byte) error {
+	var request routerboard.ControlActionRequest
+	requestDecoder := json.NewDecoder(strings.NewReader(string(requestBody)))
+	requestDecoder.DisallowUnknownFields()
+	if err := requestDecoder.Decode(&request); err != nil {
+		return fmt.Errorf("control action request is invalid: %w", err)
+	}
+	requestVerb := strings.TrimSpace(request.Verb)
+	var response routerboard.ControlActionResponse
+	responseDecoder := json.NewDecoder(strings.NewReader(string(responseBody)))
+	responseDecoder.DisallowUnknownFields()
+	if err := responseDecoder.Decode(&response); err != nil {
+		return fmt.Errorf("control action response is not valid JSON: %w", err)
+	}
+	if response.Schema != routerboard.ControlSchema {
+		return fmt.Errorf("control action response schema %q is unsupported", response.Schema)
+	}
+	if response.Authority != "canonical-routerstore" {
+		return fmt.Errorf("control action response authority %q is not canonical-routerstore", response.Authority)
+	}
+	if response.Verb != requestVerb {
+		return fmt.Errorf("control action response verb %q does not match %q", response.Verb, requestVerb)
+	}
+	switch requestVerb {
+	case "message", "review_request":
+		if strings.TrimSpace(response.ItemID) == "" {
+			return fmt.Errorf("control action response omitted item_id")
+		}
+	case "delegate", "cancel_handback", "result_return":
+		if strings.TrimSpace(response.TaskID) == "" {
+			return fmt.Errorf("control action response omitted task_id")
+		}
+	case "claim":
+		if response.Lease == nil || strings.TrimSpace(response.Lease.Token) == "" || strings.TrimSpace(response.Lease.TaskID) == "" {
+			return fmt.Errorf("control action response omitted lease proof")
+		}
+	case "":
+		return fmt.Errorf("control action request omitted verb")
+	default:
+		return fmt.Errorf("control action response has unsupported verb %q", requestVerb)
+	}
+	if requestVerb == "result_return" && strings.TrimSpace(response.ResultRef) == "" {
+		return fmt.Errorf("control action response omitted result_ref")
+	}
+	return nil
 }
 
 func printControlJSON(body []byte) error {
