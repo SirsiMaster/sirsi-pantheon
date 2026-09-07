@@ -288,9 +288,28 @@ func validateRemoteControlActionResponse(requestBody, responseBody []byte) error
 		if strings.TrimSpace(response.TaskID) == "" {
 			return fmt.Errorf("control action response omitted task_id")
 		}
+		if strings.TrimSpace(request.TaskID) == "" || strings.TrimSpace(response.TaskID) != strings.TrimSpace(request.TaskID) {
+			return fmt.Errorf("control action response task_id %q does not match requested task_id %q", response.TaskID, request.TaskID)
+		}
 	case "claim":
 		if response.Lease == nil || strings.TrimSpace(response.Lease.Token) == "" || strings.TrimSpace(response.Lease.TaskID) == "" {
 			return fmt.Errorf("control action response omitted lease proof")
+		}
+		lease := response.Lease
+		if strings.TrimSpace(lease.Agent) != strings.TrimSpace(request.Agent) {
+			return fmt.Errorf("control action lease agent %q does not match requested agent %q", lease.Agent, request.Agent)
+		}
+		if strings.TrimSpace(lease.Worker) != strings.TrimSpace(request.Worker) {
+			return fmt.Errorf("control action lease worker %q does not match requested worker %q", lease.Worker, request.Worker)
+		}
+		if strings.TrimSpace(lease.ThreadID) != strings.TrimSpace(request.ThreadID) {
+			return fmt.Errorf("control action lease thread_id %q does not match requested thread_id %q", lease.ThreadID, request.ThreadID)
+		}
+		if requestedTaskID := strings.TrimSpace(request.TaskID); requestedTaskID != "" && strings.TrimSpace(lease.TaskID) != requestedTaskID {
+			return fmt.Errorf("control action lease task_id %q does not match requested task_id %q", lease.TaskID, requestedTaskID)
+		}
+		if strings.TrimSpace(response.TaskID) != strings.TrimSpace(lease.TaskID) || lease.Expires.IsZero() || lease.Attempt <= 0 {
+			return fmt.Errorf("control action lease proof is incomplete or detached from task_id")
 		}
 	case "":
 		return fmt.Errorf("control action request omitted verb")
@@ -299,6 +318,9 @@ func validateRemoteControlActionResponse(requestBody, responseBody []byte) error
 	}
 	if requestVerb == "result_return" && strings.TrimSpace(response.ResultRef) == "" {
 		return fmt.Errorf("control action response omitted result_ref")
+	}
+	if requestVerb == "result_return" && strings.TrimSpace(response.ResultRef) != strings.TrimSpace(request.ResultRef) {
+		return fmt.Errorf("control action response result_ref does not match requested result_ref")
 	}
 	if err := response.VerifyControlActionResponse(requestBody); err != nil {
 		return fmt.Errorf("control action response receipt invalid: %w", err)

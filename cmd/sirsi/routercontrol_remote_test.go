@@ -77,6 +77,19 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 	if err != nil || !strings.Contains(string(response), `"task_id":"t-1"`) {
 		t.Fatalf("response = %s, err=%v", response, err)
 	}
+	misbound := routerboard.ControlActionResponse{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Verb: "delegate", TaskID: "different-task",
+	}
+	if err := misbound.SealControlActionResponse(requestBody); err != nil {
+		t.Fatal(err)
+	}
+	misboundBody, err := json.Marshal(misbound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionResponse(requestBody, misboundBody); err == nil || !strings.Contains(err.Error(), "does not match requested task_id") {
+		t.Fatalf("accepted receipt-bound response for a different task: %v", err)
+	}
 
 	badResponse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"schema":"pantheon.worker-control/v1","authority":"untrusted","verb":"delegate","task_id":"t-1"}`))
