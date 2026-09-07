@@ -2447,3 +2447,7 @@ The direct `sirsi gemma` command now resolves through the same provider-local
 selection. A named SNE/Native-v2/OMLX engine must provide its own loopback
 endpoint; it cannot silently adopt `gemma-server.port`. A direct native-v2
 fixture proves the CLI sends the configured model to the configured service.
+
+MCP startup failure output is engine-neutral. A failed Native v2/SNE/OMLX probe
+now preserves the actual cause and points to the shared engine-selection guide,
+instead of falsely telling an operator to install MLX.

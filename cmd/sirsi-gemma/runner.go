@@ -11,9 +11,9 @@ import (
 )
 
 // Runner is the injectable surface (Rule A16) between sirsi-gemma's MCP
-// tools and the actual MLX subprocess. Tests pass a fake; production passes
-// MLXRunner. Keeps the tool layer free of exec.Command, which would make
-// unit tests require a live Python install.
+// tools and the selected local engine. Tests pass a fake; production passes
+// MLXRunner or an OpenAI-compatible local adapter. Keeps the tool layer free
+// of exec.Command, which would make unit tests require a live Python install.
 type Runner interface {
 	// Generate runs a single prompt → text generation. The prompt is the
 	// fully-rendered string (chat templating is the caller's job — Gemma's
@@ -117,14 +117,14 @@ func stripGemmaTokens(s string) string {
 	return s
 }
 
-// disabledRunner is used when the startup health probe fails. Every tool
-// call returns the same actionable error pointing the operator at the
-// setup doc, instead of the binary refusing to start. This keeps the MCP
-// server discoverable from Claude Code even when Gemma is misconfigured.
+// disabledRunner is used when the startup health probe fails. Every tool call
+// preserves the actual failed engine rather than diagnosing every local backend
+// as MLX. This keeps the MCP server discoverable while retaining truthful repair
+// guidance.
 type disabledRunner struct{ reason string }
 
 func (d *disabledRunner) Generate(_ context.Context, _ string, _ int, _ float64) (string, error) {
-	return "", fmt.Errorf("local MLX-Gemma not configured: %s — see ~/Development/sirsi-pantheon/docs/setup/MLX_GEMMA_LOCAL.md", d.reason)
+	return "", fmt.Errorf("selected local inference engine unavailable: %s — see docs/user-guides/PANTHEON-ENGINE-SELECTION.md", d.reason)
 }
 
 func (d *disabledRunner) Health(_ context.Context) error {

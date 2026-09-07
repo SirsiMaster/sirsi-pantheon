@@ -1,7 +1,7 @@
 # sirsi-gemma — Developer README
 
-A Model Context Protocol (MCP) server that exposes a locally-running
-MLX-Gemma model to MCP-capable clients (Claude Code, Cursor, IDE plugins)
+A Model Context Protocol (MCP) server that exposes a selected locally-running
+Gemma engine to MCP-capable clients (Claude Code, Cursor, IDE plugins)
 through two tools: `gemma_chat` and `gemma_complete`.
 
 This file is the developer-facing companion to the user-facing guide at
@@ -18,7 +18,7 @@ internal/mcp.Server via NewBareServer (framing/dispatch — only our 2 tools)
 makeChatHandler / makeCompleteHandler   (main.go)
    ↓ Runner interface
 MLXRunner ──exec.CommandContext──▶ ~/.venvs/mlx/bin/mlx_lm.generate ▶ stdout
-                                   (Gemma 2 27B bf16-4bit on Apple Silicon)
+SNERunner ──HTTP─────────────────▶ selected SNE / Native v2 / OMLX endpoint
 ```
 
 The server is built with `mcp.NewBareServer` (not `mcp.NewServer`) so it
@@ -31,7 +31,7 @@ Files in this directory:
 | File | Role |
 | --- | --- |
 | `main.go` | wires `internal/mcp.Server`, registers the two tools, runs startup health probe |
-| `runner.go` | `Runner` interface + `MLXRunner` subprocess impl + `disabledRunner` fallback |
+| `runner.go` | `Runner` interface + `MLXRunner` subprocess implementation + engine-neutral disabled fallback |
 | `chat.go` | renders multi-turn chat history into Gemma's `<start_of_turn>` template |
 | `config.go` | flat TOML loader for `~/.config/sirsi/gemma.toml` (zero external deps) |
 | `runner_test.go` | unit tests using a fake `Runner` — no live MLX required |
@@ -78,13 +78,13 @@ during generation so Claude Code can render partial output.
 
 ## Health probe
 
-On startup, `selectRunner` calls `MLXRunner.Health(ctx)` — a 1-token
-generation against the configured model. Probe failure does not kill the
-server; we swap in `disabledRunner` so every subsequent tool call returns
-the same actionable error pointing the operator at
-[docs/setup/MLX_GEMMA_LOCAL.md](../../docs/setup/MLX_GEMMA_LOCAL.md). This
-keeps the MCP handshake discoverable from Claude Code even when Gemma is
-misconfigured.
+On startup, `selectRunner` calls the selected runner's `Health(ctx)` — a
+1-token generation against the configured model. Probe failure does not kill
+the server; we swap in `disabledRunner` so every subsequent tool call names the
+actual failure and points to
+[PANTHEON-ENGINE-SELECTION.md](../../docs/user-guides/PANTHEON-ENGINE-SELECTION.md).
+This keeps the MCP handshake discoverable without falsely diagnosing an SNE or
+OMLX failure as an MLX installation problem.
 
 ## Build / test / lint
 

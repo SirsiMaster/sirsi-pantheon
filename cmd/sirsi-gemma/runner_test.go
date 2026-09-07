@@ -168,8 +168,11 @@ func TestDisabledRunner_SurfacesActionableMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "MLX_GEMMA_LOCAL.md") {
-		t.Errorf("error should point to setup doc, got: %v", err)
+	if !strings.Contains(err.Error(), "PANTHEON-ENGINE-SELECTION.md") {
+		t.Errorf("error should point to the engine guide, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "venv missing") {
+		t.Errorf("error should preserve the actual failed engine reason, got: %v", err)
 	}
 }
 
