@@ -113,13 +113,23 @@ func (r *Router) Complete(ctx context.Context, session Session, request Generate
 	if err != nil {
 		return Completion{}, Receipt{}, err
 	}
-	return connector.Complete(ctx, session, request)
+	if err := ctx.Err(); err != nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion cancelled before connector: %w", err)
+	}
+	completion, receipt, err := connector.Complete(ctx, session, request)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion cancelled after connector: %w", ctxErr)
+	}
+	return completion, receipt, err
 }
 
 func (r *Router) Stream(ctx context.Context, session Session, request GenerateRequest, decision RouteDecision) (<-chan Event, error) {
 	connector, err := r.connectorForDecision(session, decision)
 	if err != nil {
 		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("engine router: stream cancelled before connector: %w", err)
 	}
 	return connector.Stream(ctx, session, request)
 }

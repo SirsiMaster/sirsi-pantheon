@@ -9,11 +9,12 @@ import (
 )
 
 type routerFixtureConnector struct {
-	kind      Kind
-	identity  Identity
-	caps      Capabilities
-	available bool
-	onOpen    func()
+	kind       Kind
+	identity   Identity
+	caps       Capabilities
+	available  bool
+	onOpen     func()
+	onComplete func()
 }
 
 func (f routerFixtureConnector) Kind() Kind                 { return f.kind }
@@ -28,6 +29,9 @@ func (f routerFixtureConnector) OpenSession(_ context.Context, id string) (Sessi
 	return Session{ID: id, Identity: f.identity, CreatedAt: "2026-09-07T16:00:00Z"}, nil
 }
 func (f routerFixtureConnector) Complete(_ context.Context, _ Session, _ GenerateRequest) (Completion, Receipt, error) {
+	if f.onComplete != nil {
+		f.onComplete()
+	}
 	return Completion{Text: "ok", Model: f.identity.ModelID, FinishReason: "stop"}, Receipt{}, nil
 }
 func (f routerFixtureConnector) Stream(_ context.Context, _ Session, _ GenerateRequest) (<-chan Event, error) {
@@ -97,6 +101,25 @@ func TestRouterRejectsConnectorSessionIdentityDrift(t *testing.T) {
 	}
 	if _, _, err := r.OpenSession(context.Background(), "identity-drift", RoutePolicy{Preferred: KindMLX}); err == nil || !strings.Contains(err.Error(), "returned identity") {
 		t.Fatalf("accepted connector identity drift: %v", err)
+	}
+}
+
+func TestRouterRejectsCancellationAroundCompletion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r, err := NewRouter(routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,
+		onComplete: cancel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, decision, err := r.OpenSession(context.Background(), "completion-cancel", RoutePolicy{Preferred: KindMLX})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, CacheNamespace: session.Identity.CacheNamespace}
+	if _, _, err := r.Complete(ctx, session, request, decision); err == nil {
+		t.Fatal("cancelled completion was reported successful")
 	}
 }
 
