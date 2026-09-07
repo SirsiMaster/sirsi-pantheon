@@ -1,10 +1,13 @@
 package routerboard
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
@@ -85,4 +88,97 @@ func TestControlEndpointIsReadOnlyAndReturnsTheEnvelope(t *testing.T) {
 	if post.Header().Get("Allow") != http.MethodGet {
 		t.Fatalf("POST Allow = %q, want GET", post.Header().Get("Allow"))
 	}
+}
+
+func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	b := New("/bin/false", "", "test-build")
+	h := NewHandlerWithControlStore(b, t.TempDir(), store, "test-token")
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	unauthorized := postControlAction(t, mux, "", ControlActionRequest{
+		Verb: "delegate", Agent: "codex-pantheon", TaskID: "task-1", Subject: "ship control plane",
+	})
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d, want 401", unauthorized.Code)
+	}
+
+	delegated := postControlAction(t, mux, "test-token", ControlActionRequest{
+		Verb: "delegate", Agent: "codex-pantheon", TaskID: "task-1", Subject: "ship control plane",
+	})
+	if delegated.Code != http.StatusOK {
+		t.Fatalf("delegate status = %d: %s", delegated.Code, delegated.Body.String())
+	}
+
+	var claimed ControlActionResponse
+	claimedResponse := postControlAction(t, mux, "test-token", ControlActionRequest{
+		Verb: "claim", Agent: "codex-pantheon", TaskID: "task-1", Worker: "m1-worker", ThreadID: "thread-1", TTLSeconds: 60,
+	})
+	if claimedResponse.Code != http.StatusOK {
+		t.Fatalf("claim status = %d: %s", claimedResponse.Code, claimedResponse.Body.String())
+	}
+	if err := json.Unmarshal(claimedResponse.Body.Bytes(), &claimed); err != nil || claimed.Lease == nil || claimed.Lease.Token == "" {
+		t.Fatalf("claim response = %s, err=%v", claimedResponse.Body.String(), err)
+	}
+
+	completed := postControlAction(t, mux, "test-token", ControlActionRequest{
+		Verb: "result_return", Agent: "codex-pantheon", TaskID: "task-1", LeaseToken: claimed.Lease.Token, ResultRef: "receipt://task-1",
+	})
+	if completed.Code != http.StatusOK {
+		t.Fatalf("result_return status = %d: %s", completed.Code, completed.Body.String())
+	}
+	got, err := store.GetTask("codex-pantheon", "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "done" {
+		t.Fatalf("task status = %q, want done", got.Status)
+	}
+}
+
+func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","agent":"a","task_id":"t","subject":"s","unexpected":true}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field status = %d, want 400", response.Code)
+	}
+
+	noToken := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "")
+	noTokenMux := http.NewServeMux()
+	noToken.Register(noTokenMux)
+	response = postControlAction(t, noTokenMux, "", ControlActionRequest{Verb: "delegate", Agent: "a", TaskID: "t", Subject: "s"})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing configured token status = %d, want 503", response.Code)
+	}
+}
+
+func postControlAction(t *testing.T, mux *http.ServeMux, token string, request ControlActionRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewReader(body))
+	if token != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+token)
+	}
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httpRequest)
+	return response
 }
