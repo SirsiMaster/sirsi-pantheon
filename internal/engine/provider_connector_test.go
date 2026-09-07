@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -138,5 +139,62 @@ func TestProviderConnectorNormalizesLoopbackStreamAndReceipt(t *testing.T) {
 	}
 	if err := receipt.Validate(session); err != nil {
 		t.Fatalf("stream receipt invalid: %v", err)
+	}
+}
+
+func TestProviderConnectorRejectsCompletionWithoutObservedModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		case "/v1/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		}
+	}))
+	defer srv.Close()
+
+	identity := testIdentity()
+	identity.Engine = KindMLX
+	backend := &provider.OpenAICompat{ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: identity.ModelID, TierValue: provider.TierLocal, HTTP: srv.Client()}
+	connector, err := NewMLXConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "stream-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := connector.Stream(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawUnobserved bool
+	for event := range events {
+		sawUnobserved = sawUnobserved || event.ErrorCode == "model_identity_unobserved"
+		if event.Kind == EventCompleted {
+			t.Fatal("model-less stream emitted completion")
+		}
+	}
+	if !sawUnobserved {
+		t.Fatal("model-less stream was accepted")
+	}
+}
+
+func TestProviderConnectorRejectsNonFiniteStreamingRequest(t *testing.T) {
+	identity := testIdentity()
+	identity.Engine = KindMLX
+	connector, err := NewMLXConnector(fakeProvider{available: true}, identity, Capabilities{Sessions: true, Streaming: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(context.Background(), "stream-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nan := math.NaN()
+	_, err = connector.Stream(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Temperature: &nan, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err == nil {
+		t.Fatal("non-finite streaming request was accepted")
 	}
 }
