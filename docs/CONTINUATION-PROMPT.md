@@ -29,4 +29,4 @@ docs/continuations/<agent>-<workstream-slug>-<YYYYMMDD>-<session8>.md
 When you write a new continuation: create the per-thread file above, then add/replace your row
 in this table (one row per agent+workstream; keep the latest). The `<session8>` makes two same-day
 runs of the same workstream distinct. Never write the full continuation into this index file.
-| ra | router-service (ADR-062) | 2026-09-02 | /Users/thekryptodragon/Development/sirsi-pantheon/docs/continuations/ra-router-service-20260902-0c6da0d0.md |
+| ra | router-service (ADR-062) | 2026-09-03 | /Users/thekryptodragon/Development/sirsi-pantheon/docs/continuations/ra-router-service-20260903-2d18bc60.md |

@@ -1,0 +1,9 @@
+.git
+worktrees
+docs
+build
+dist
+*.md
+.thoth
+.agents
+.understand-anything
