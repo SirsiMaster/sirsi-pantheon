@@ -17,6 +17,11 @@ func setDashboardEngineIdentity(t *testing.T, prefix, kind string) {
 	t.Setenv(prefix+"_TOKENIZER_SHA256", sha)
 	t.Setenv(prefix+"_PRECISION", "bf16")
 	t.Setenv(prefix+"_CACHE_NAMESPACE", "pantheon-test")
+	if kind == "sne" {
+		t.Setenv(prefix+"_RUNTIME_SHA256", sha)
+		t.Setenv(prefix+"_NATIVE_RUNTIME_SHA256", sha)
+		t.Setenv(prefix+"_MANIFEST_SHA256", sha)
+	}
 }
 
 func TestBuildDashboardEngineSelectionRequiresExplicitIdentity(t *testing.T) {

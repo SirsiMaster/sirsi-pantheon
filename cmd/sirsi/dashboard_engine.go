@@ -73,7 +73,12 @@ func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector,
 		if err != nil {
 			return nil, false, fmt.Errorf("%s client: %w", prefix, err)
 		}
-		backend, err = provider.NewSNEProvider(client, modelID)
+		backend, err = provider.NewSNEProvider(client, provider.SNEIdentityExpectation{
+			ModelID:             modelID,
+			RuntimeSHA256:       os.Getenv(prefix + "_RUNTIME_SHA256"),
+			NativeRuntimeSHA256: os.Getenv(prefix + "_NATIVE_RUNTIME_SHA256"),
+			ManifestSHA256:      os.Getenv(prefix + "_MANIFEST_SHA256"),
+		})
 		if err != nil {
 			return nil, false, err
 		}
