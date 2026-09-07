@@ -168,6 +168,35 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 	}
 }
 
+func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h := NewHandlerWithControlAuth(New("/bin/false", "", "test-build"), t.TempDir(), "test-token", true)
+	h.openControlStore = func() (*routerstore.Store, bool, error) { return store, false, nil }
+	h.board.mu.Lock()
+	h.board.version = 1
+	h.board.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	h.board.mu.Unlock()
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	missing := httptest.NewRecorder()
+	mux.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/control", nil))
+	if missing.Code != http.StatusUnauthorized {
+		t.Fatalf("protected unauthenticated GET = %d, want 401", missing.Code)
+	}
+	authorizedRequest := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	authorizedRequest.Header.Set("Authorization", "Bearer test-token")
+	authorized := httptest.NewRecorder()
+	mux.ServeHTTP(authorized, authorizedRequest)
+	if authorized.Code != http.StatusOK {
+		t.Fatalf("protected authenticated GET = %d: %s", authorized.Code, authorized.Body.String())
+	}
+}
+
 func postControlAction(t *testing.T, mux *http.ServeMux, token string, request ControlActionRequest) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(request)

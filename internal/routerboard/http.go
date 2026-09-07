@@ -19,15 +19,24 @@ import (
 
 // Handler serves the router board: the page, the stream, and the one lever.
 type Handler struct {
-	board            *Board
-	dir              string // holds index.html
-	controlToken     string
-	openControlStore func() (*routerstore.Store, bool, error)
+	board              *Board
+	dir                string // holds index.html
+	controlToken       string
+	requireControlAuth bool
+	openControlStore   func() (*routerstore.Store, bool, error)
 }
 
 func NewHandler(b *Board, dir string) *Handler {
+	return NewHandlerWithControlAuth(b, dir, os.Getenv("SIRSI_CONTROL_TOKEN"), false)
+}
+
+// NewHandlerWithControlAuth configures whether read-only control snapshots
+// require bearer authentication. Protected deployments use this when the
+// surrounding listener is already bound to an authenticated private network;
+// the default handler remains loopback-compatible.
+func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *Handler {
 	return &Handler{
-		board: b, dir: dir, controlToken: os.Getenv("SIRSI_CONTROL_TOKEN"),
+		board: b, dir: dir, controlToken: token, requireControlAuth: requireAuth,
 		openControlStore: func() (*routerstore.Store, bool, error) {
 			path, err := routerstore.DefaultStorePath()
 			if err != nil {
@@ -84,6 +93,9 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "control endpoint is read-only", http.StatusMethodNotAllowed)
 		return
 	}
+	if !h.authorizeControl(w, r, h.requireControlAuth) {
+		return
+	}
 	body, version, err := h.board.SnapshotControl()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -105,14 +117,7 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "control action requires POST", http.StatusMethodNotAllowed)
 		return
 	}
-	if strings.TrimSpace(h.controlToken) == "" {
-		http.Error(w, `{"error":"control authorization is not configured"}`, http.StatusServiceUnavailable)
-		return
-	}
-	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	if auth != "Bearer "+h.controlToken {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, `{"error":"control authorization failed"}`, http.StatusUnauthorized)
+	if !h.authorizeControl(w, r, true) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
@@ -149,6 +154,22 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		return
 	}
+}
+
+func (h *Handler) authorizeControl(w http.ResponseWriter, r *http.Request, required bool) bool {
+	if !required && strings.TrimSpace(h.controlToken) == "" {
+		return true
+	}
+	if strings.TrimSpace(h.controlToken) == "" {
+		http.Error(w, `{"error":"control authorization is not configured"}`, http.StatusServiceUnavailable)
+		return false
+	}
+	if strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer "+h.controlToken {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, `{"error":"control authorization failed"}`, http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
