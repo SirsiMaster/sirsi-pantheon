@@ -119,6 +119,22 @@ type Response struct {
 	OutputTokens int
 }
 
+// StreamChunk is the provider-neutral incremental response. It is an
+// optional extension: existing providers remain valid buffered providers, and
+// callers must type-assert StreamingProvider before promising live tokens.
+type StreamChunk struct {
+	Text         string
+	Model        string
+	FinishReason string
+	Done         bool
+	Err          error
+}
+
+type StreamingProvider interface {
+	Provider
+	Stream(context.Context, Request) (<-chan StreamChunk, error)
+}
+
 // Provider is one swappable backend.
 type Provider interface {
 	Name() string

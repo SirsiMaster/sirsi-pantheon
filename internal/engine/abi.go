@@ -217,6 +217,7 @@ type Event struct {
 	ErrorCode  string    `json:"error_code,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	ReceiptSHA string    `json:"receipt_sha256,omitempty"`
+	Receipt    *Receipt  `json:"receipt,omitempty"`
 }
 
 func (e Event) Validate(previous uint64) error {
@@ -388,7 +389,80 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 	if err := req.Validate(session, c.Caps); err != nil {
 		return nil, err
 	}
-	return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
+	streaming, ok := c.Backend.(provider.StreamingProvider)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
+	}
+	raw, err := streaming.Stream(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens})
+	if err != nil {
+		return nil, fmt.Errorf("engine connector %s: %w", c.Engine, err)
+	}
+	events := make(chan Event)
+	now := time.Now
+	if c.Now != nil {
+		now = c.Now
+	}
+	started := now().UTC()
+	go func() {
+		defer close(events)
+		var sequence uint64
+		var text strings.Builder
+		model := ""
+		for chunk := range raw {
+			if chunk.Err != nil {
+				sequence++
+				emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "stream_error", Error: chunk.Err.Error()})
+				return
+			}
+			if chunk.Model != "" {
+				if model != "" && model != chunk.Model {
+					sequence++
+					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "model_identity_mismatch", Error: "stream changed served model"})
+					return
+				}
+				model = chunk.Model
+				if model != session.Identity.ModelID {
+					sequence++
+					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "model_identity_mismatch", Error: "stream model does not match admitted identity"})
+					return
+				}
+			}
+			if chunk.Text != "" {
+				text.WriteString(chunk.Text)
+				sequence++
+				if !emitEngineEvent(ctx, events, Event{Kind: EventDelta, SessionID: session.ID, Sequence: sequence, Text: chunk.Text}) {
+					return
+				}
+			}
+			if chunk.Done {
+				sequence++
+				requestBytes, _ := json.Marshal(req)
+				requestSum := sha256.Sum256(requestBytes)
+				completionSum := sha256.Sum256([]byte(text.String()))
+				receipt := Receipt{ABIVersion: ABIVersion, SessionID: session.ID, Identity: session.Identity, RequestSHA256: hex.EncodeToString(requestSum[:]), CompletionSHA256: hex.EncodeToString(completionSum[:]), StartedAt: started.Format(time.RFC3339Nano), FinishedAt: now().UTC().Format(time.RFC3339Nano)}
+				receipt.IdentityDigest, _ = session.Identity.Digest()
+				if err := receipt.Validate(session); err != nil {
+					sequence++
+					emitEngineEvent(ctx, events, Event{Kind: EventError, SessionID: session.ID, Sequence: sequence, ErrorCode: "receipt_invalid", Error: err.Error()})
+					return
+				}
+				if !emitEngineEvent(ctx, events, Event{Kind: EventCompleted, SessionID: session.ID, Sequence: sequence, Text: text.String(), Receipt: &receipt}) {
+					return
+				}
+				return
+			}
+		}
+	}()
+	return events, nil
+}
+
+func emitEngineEvent(ctx context.Context, events chan<- Event, event Event) bool {
+	select {
+	case events <- event:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (r Receipt) Validate(session Session) error {
