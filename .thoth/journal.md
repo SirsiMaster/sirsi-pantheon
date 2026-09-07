@@ -2526,3 +2526,7 @@ This makes it unit-testable and ensures invalid flags fail before AppKit launch.
 The package now declares a native test target that exercises launch, help,
 snapshot options, and malformed command rejection under complete concurrency
 checking.
+
+The parser also rejects duplicate options and zero, NaN, or infinite snapshot
+widths. The executable-level contract invokes each rejection case with a timeout
+to prove no malformed command reaches the menubar launch path.
