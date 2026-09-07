@@ -20,6 +20,11 @@ android_app: android/ (Jetpack Compose, 9 screens, nav drawer, Material 3)
 vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth Accountability + Crashpad Monitor)
 
 ## Current UI State
+# 2026-09-07: Pantheon CI now runs required macOS validation on hosted runners.
+# The router wake-loop test fixture emits BSD-compatible whole-second sleep
+# values, and the menubar CLI guard preserves Swift compiler diagnostics instead
+# of hiding an actionable build failure. Clean local release build and all
+# command-line non-launch cases pass.
 # 2026-09-07: SSA added an explicit `sirsi-gemma` selector for SNE, recovered
 # SNE Native v2, MLX, and OMLX on branch codex/ssa-sne-engine-selection-20260907
 # (current lineage includes `ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes

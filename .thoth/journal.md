@@ -5,6 +5,18 @@
 
 ---
 
+## Entry 028 — 2026-09-07 — Hosted macOS CI recovery
+
+Moving required validation from an unavailable self-hosted runner to GitHub
+hosted macOS surfaced two honest cross-platform gaps. The router dispatch test
+generated `sleep 2s`, accepted by GNU sleep but rejected by BSD sleep; its
+fixture now writes rounded whole-second arguments. The menubar behavioral guard
+also discarded Swift release-build diagnostics, turning a build failure into an
+opaque exit status. It now leaves compiler output intact. A clean local Swift
+release build and the complete non-launch CLI behavior suite pass.
+
+---
+
 ## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
 
 CTR's original registration heuristic assumed a stable process-tree depth: the
