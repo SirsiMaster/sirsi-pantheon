@@ -54,6 +54,9 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 	if r == nil || len(r.connectors) == 0 {
 		return Session{}, RouteDecision{}, fmt.Errorf("engine router: no connectors configured")
 	}
+	if err := ctx.Err(); err != nil {
+		return Session{}, RouteDecision{}, fmt.Errorf("engine router: session admission cancelled before routing: %w", err)
+	}
 	if policy.Preferred != KindMLX && policy.Preferred != KindOMLX && policy.Preferred != KindSNE {
 		return Session{}, RouteDecision{}, fmt.Errorf("engine router: preferred engine %q is required", policy.Preferred)
 	}
@@ -75,6 +78,9 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 			continue
 		}
 		session, err := connector.OpenSession(ctx, sessionID)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: session admission cancelled after %s connector: %w", kind, ctxErr)
+		}
 		if err != nil {
 			reasons = append(reasons, fmt.Sprintf("%s: %v", kind, err))
 			continue

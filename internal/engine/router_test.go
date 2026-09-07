@@ -13,11 +13,15 @@ type routerFixtureConnector struct {
 	identity  Identity
 	caps      Capabilities
 	available bool
+	onOpen    func()
 }
 
 func (f routerFixtureConnector) Kind() Kind                 { return f.kind }
 func (f routerFixtureConnector) Capabilities() Capabilities { return f.caps }
 func (f routerFixtureConnector) OpenSession(_ context.Context, id string) (Session, error) {
+	if f.onOpen != nil {
+		f.onOpen()
+	}
 	if !f.available {
 		return Session{}, errors.New("fixture unavailable")
 	}
@@ -67,6 +71,20 @@ func TestRouterRejectsCapabilityGapBeforeConnectorAdmission(t *testing.T) {
 	_, _, err = r.OpenSession(context.Background(), "cap-gap", RoutePolicy{Preferred: KindSNE, RequiredCapabilities: []Capability{CapabilityKVState}})
 	if err == nil || !errors.Is(err, ErrUnsupportedCapability) {
 		t.Fatalf("capability gap = %v", err)
+	}
+}
+
+func TestRouterRejectsCancelledSessionAdmission(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r, err := NewRouter(routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,
+		onOpen: cancel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.OpenSession(ctx, "cancelled", RoutePolicy{Preferred: KindMLX}); err == nil {
+		t.Fatal("cancelled session admission was reported successful")
 	}
 }
 
