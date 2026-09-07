@@ -108,8 +108,11 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 		return SNELifecycle{}, fmt.Errorf("SNE control: preflight readiness: %w", err)
 	}
 	before := c.readiness(beforeIdentity)
-	if !before.Ready || (before.ServedModel != "" && before.ServedModel != c.modelID) {
+	if before.ServedModel != "" && before.ServedModel != c.modelID {
 		return SNELifecycle{}, fmt.Errorf("SNE control: preflight identity is not admitted: status=%q model=%q", beforeIdentity.Status, before.ServedModel)
+	}
+	if action != SNELoad && !before.Ready {
+		return SNELifecycle{}, fmt.Errorf("SNE control: %s requires a ready admitted service: status=%q model=%q", action, beforeIdentity.Status, before.ServedModel)
 	}
 	switch action {
 	case SNELoad:
@@ -130,8 +133,8 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 	if action != SNEUnload && (!after.Ready || after.ServedModel != c.modelID) {
 		return SNELifecycle{}, fmt.Errorf("SNE control: %s did not restore admitted identity: status=%q model=%q", action, afterIdentity.Status, after.ServedModel)
 	}
-	if action == SNEUnload && after.ServedModel != "" && after.ServedModel != c.modelID {
-		return SNELifecycle{}, fmt.Errorf("SNE control: unload readback served unexpected model %q", after.ServedModel)
+	if action == SNEUnload && (after.Ready || after.ServedModel != "") {
+		return SNELifecycle{}, fmt.Errorf("SNE control: unload did not clear admitted identity: status=%q model=%q", afterIdentity.Status, after.ServedModel)
 	}
 	return SNELifecycle{Action: action, ModelID: c.modelID, StartedAt: started, FinishedAt: c.clock().UTC(), Before: before, After: after}, nil
 }

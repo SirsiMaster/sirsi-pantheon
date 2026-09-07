@@ -90,6 +90,51 @@ func TestSNEControlRejectsDriftAndDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestSNEControlLoadAllowsStoppedPreflightAndRequiresReadyPostflight(t *testing.T) {
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+		sneIdentity("stopped", ""),
+		sneIdentity("ready", "model-a"),
+	}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := control.Apply(context.Background(), SNELoad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Before.Ready || result.Before.ServedModel != "" || !result.After.Ready || len(client.loads) != 1 {
+		t.Fatalf("load lifecycle did not bind stopped-to-ready readback: %+v client=%+v", result, client)
+	}
+}
+
+func TestSNEControlUnloadRequiresClearedPostflightIdentity(t *testing.T) {
+	tests := []struct {
+		name        string
+		after       sne.ServiceReadinessIdentity
+		wantErr     bool
+		wantUnloads int
+	}{
+		{name: "cleared", after: sneIdentity("stopped", ""), wantUnloads: 1},
+		{name: "still-ready", after: sneIdentity("ready", "model-a"), wantErr: true, wantUnloads: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{
+				sneIdentity("ready", "model-a"), tc.after,
+			}}
+			control, err := NewSNEControl(client, "model-a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = control.Apply(context.Background(), SNEUnload)
+			if tc.wantErr != (err != nil) || len(client.unloads) != tc.wantUnloads {
+				t.Fatalf("unload err=%v calls=%v, wantErr=%v calls=%d", err, client.unloads, tc.wantErr, tc.wantUnloads)
+			}
+		})
+	}
+}
+
 func TestSNEControlRecoveryAndBenchmarkAreHashBound(t *testing.T) {
 	control, err := NewSNEControl(&fakeSNEControlClient{}, "model-a")
 	if err != nil {
