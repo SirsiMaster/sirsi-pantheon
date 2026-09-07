@@ -15,6 +15,13 @@ also discarded Swift release-build diagnostics, turning a build failure into an
 opaque exit status. It now leaves compiler output intact. A clean local Swift
 release build and the complete non-launch CLI behavior suite pass.
 
+The exposed hosted-toolchain failure was a Swift 6 error: a `Timer` closure
+captured weak `AppDelegate` state in concurrently executing code. The refresh
+path now uses a main-run-loop selector, then a main-actor task. Notification
+publication also uses the async API rather than its deprecated callback form.
+This removes the strict-concurrency errors and warning while retaining the
+90-second refresh and best-effort owner-toast behavior.
+
 ---
 
 ## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
