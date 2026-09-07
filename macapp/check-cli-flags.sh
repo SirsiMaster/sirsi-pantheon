@@ -50,14 +50,29 @@ fails=0
 # run_case <expected-exit> <must-contain> <args…>
 run_case() {
   local want="$1" needle="$2"; shift 2
-  local out rc=0
-  # A 5s cap is the whole point: a regressed build LAUNCHES and never returns.
-  # Timing out is a FAILURE, and is reported as one rather than as a flake.
-  out="$(timeout 5 "$PROBE" "$@" 2>&1)" || rc=$?
-  if [ "$rc" = 124 ]; then
-    echo "  FAIL  [$*] did not exit within 5s — it launched the UI"
-    fails=$((fails + 1)); return
-  fi
+  local out rc=0 elapsed=0 pid out_file
+  out_file="$(mktemp)"
+  # macOS runners do not provide GNU `timeout`. Run the renamed probe in the
+  # background and enforce the same five-second cap ourselves. A regression
+  # launches the menubar and never returns; it must be terminated and reported
+  # as a behavioral failure, not mistaken for a missing external utility.
+  "$PROBE" "$@" >"$out_file" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$elapsed" -ge 50 ]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      out="$(cat "$out_file")"
+      rm -f "$out_file"
+      echo "  FAIL  [$*] did not exit within 5s — it launched the UI"
+      fails=$((fails + 1)); return
+    fi
+    sleep 0.1
+    elapsed=$((elapsed + 1))
+  done
+  if wait "$pid"; then rc=0; else rc=$?; fi
+  out="$(cat "$out_file")"
+  rm -f "$out_file"
   if [ "$rc" != "$want" ]; then
     echo "  FAIL  [$*] exit=$rc want=$want"
     fails=$((fails + 1)); return

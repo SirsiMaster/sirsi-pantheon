@@ -319,3 +319,8 @@ sync_protocol:
 # Only loopback endpoints are accepted; the same local-provider predicate
 # prevents a selected Native v2 endpoint from becoming a remote rung. This is
 # ABI consumption only—SNE retains runtime lifecycle and qualification.
+# 2026-09-07 (SSA): Hosted macOS validation exposed that the menubar CLI
+# behavioral guard relied on GNU `timeout`, which macOS runners do not ship.
+# The guard now owns the same five-second process cap with POSIX shell
+# primitives, so a CLI regression that opens AppKit still fails deterministically
+# on macOS without a missing-tool false negative.
