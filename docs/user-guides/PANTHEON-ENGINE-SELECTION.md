@@ -56,6 +56,10 @@ engine). A configured endpoint that is unavailable remains a local failure; it
 is never reclassified as a remote provider or silently replaced. This config
 selects an endpoint only—SNE retains runtime lifecycle and qualification.
 
+The same configuration also drives `sirsi gemma "…"`. The command sends its
+request to the selected service and model; it does not fall back to the legacy
+Gemma broker when a named SNE, Native v2, or OMLX engine is unavailable.
+
 ## M1 and M5 are peer local-engine hosts
 
 The same `sne-native-v2` selection is valid on an M1 or M5. Each host points

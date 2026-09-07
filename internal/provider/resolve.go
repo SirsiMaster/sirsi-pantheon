@@ -103,6 +103,12 @@ func Local(home string, conf Conf) *OpenAICompat {
 		}
 		ep = conf.Endpoint // explicit local override wins over the port file
 	}
+	if localConf && requiresExplicitLocalEndpoint(conf.Provider) && strings.TrimSpace(conf.Endpoint) == "" {
+		// Unlike the historical gemma broker, named engine selections have no
+		// canonical port file. Falling back to gemma-server.port would execute a
+		// different engine than the operator selected.
+		return nil
+	}
 	if !isLoopbackEndpoint(ep) {
 		return nil
 	}
@@ -152,6 +158,15 @@ func isLoopbackEndpoint(endpoint string) bool {
 func isLocalProvider(provider string) bool {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "", "gemma", "local", "sne", "sne-native-v2", "omlx":
+		return true
+	default:
+		return false
+	}
+}
+
+func requiresExplicitLocalEndpoint(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "sne", "sne-native-v2", "omlx":
 		return true
 	default:
 		return false

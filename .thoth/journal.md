@@ -2442,3 +2442,8 @@ M1 and M5 are documented as peer local-engine hosts: the selector is host-neutra
 and accepts each host's own loopback service under the same named engine. SNE
 qualification evidence must remain host-scoped; Pantheon will not turn either
 endpoint into an undocumented cross-host fallback.
+
+The direct `sirsi gemma` command now resolves through the same provider-local
+selection. A named SNE/Native-v2/OMLX engine must provide its own loopback
+endpoint; it cannot silently adopt `gemma-server.port`. A direct native-v2
+fixture proves the CLI sends the configured model to the configured service.
