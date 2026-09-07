@@ -225,9 +225,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             content.title = String(item.title.prefix(64))
             content.body = item.why ?? "An item needs your decision."
             content.userInfo = ["id": item.id]
-            UNUserNotificationCenter.current().add(
-                UNNotificationRequest(identifier: item.id, content: content, trigger: nil),
-                withCompletionHandler: nil)
+            // Keep the original best-effort notification semantics while using
+            // the concurrency-safe API required by current Swift toolchains.
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: item.id, content: content, trigger: nil))
         }
     }
 
