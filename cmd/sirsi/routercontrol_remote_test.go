@@ -135,3 +135,18 @@ func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 		t.Fatal("accepted invalid remote control JSON")
 	}
 }
+
+func TestRemoteControlValidationRejectsDuplicateAndTrailingJSON(t *testing.T) {
+	request := []byte(`{"verb":"delegate","agent":"codex","task_id":"t-1","subject":"ship"}`)
+	duplicateResponse := []byte(`{"schema":"pantheon.worker-control/v1","authority":"canonical-routerstore","verb":"delegate","task_id":"t-1","task_id":"t-2"}`)
+	if err := validateRemoteControlActionResponse(request, duplicateResponse); err == nil || !strings.Contains(err.Error(), "duplicate object key") {
+		t.Fatalf("accepted duplicate action response: %v", err)
+	}
+	trailingResponse := []byte(`{"schema":"pantheon.worker-control/v1","authority":"canonical-routerstore","verb":"delegate","task_id":"t-1"} {}`)
+	if err := validateRemoteControlActionResponse(request, trailingResponse); err == nil || !strings.Contains(err.Error(), "multiple JSON values") {
+		t.Fatalf("accepted trailing action response: %v", err)
+	}
+	if err := validateRemoteControlSnapshot([]byte(`{"schema":"pantheon.worker-control/v1","schema":"evil"}`)); err == nil || !strings.Contains(err.Error(), "duplicate object key") {
+		t.Fatalf("accepted duplicate control snapshot: %v", err)
+	}
+}

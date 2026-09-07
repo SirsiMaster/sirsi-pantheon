@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -90,11 +91,21 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 }
 
 func validateRemoteControlSnapshot(body []byte) error {
+	if err := routerboard.ValidateJSONNoDuplicateKeys(body); err != nil {
+		return fmt.Errorf("control snapshot JSON is ambiguous: %w", err)
+	}
 	var envelope routerboard.ControlEnvelope
-	decoder := json.NewDecoder(strings.NewReader(string(body)))
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&envelope); err != nil {
 		return fmt.Errorf("control snapshot is not a valid worker-control envelope: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("control snapshot contains multiple JSON values")
+		}
+		return fmt.Errorf("control snapshot contains trailing JSON: %w", err)
 	}
 	if envelope.Schema != routerboard.ControlSchema {
 		return fmt.Errorf("control snapshot schema %q is unsupported", envelope.Schema)
@@ -186,18 +197,38 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 }
 
 func validateRemoteControlActionResponse(requestBody, responseBody []byte) error {
+	if err := routerboard.ValidateJSONNoDuplicateKeys(requestBody); err != nil {
+		return fmt.Errorf("control action request JSON is ambiguous: %w", err)
+	}
+	if err := routerboard.ValidateJSONNoDuplicateKeys(responseBody); err != nil {
+		return fmt.Errorf("control action response JSON is ambiguous: %w", err)
+	}
 	var request routerboard.ControlActionRequest
-	requestDecoder := json.NewDecoder(strings.NewReader(string(requestBody)))
+	requestDecoder := json.NewDecoder(bytes.NewReader(requestBody))
 	requestDecoder.DisallowUnknownFields()
 	if err := requestDecoder.Decode(&request); err != nil {
 		return fmt.Errorf("control action request is invalid: %w", err)
 	}
+	var requestTrailing any
+	if err := requestDecoder.Decode(&requestTrailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("control action request contains multiple JSON values")
+		}
+		return fmt.Errorf("control action request contains trailing JSON: %w", err)
+	}
 	requestVerb := strings.TrimSpace(request.Verb)
 	var response routerboard.ControlActionResponse
-	responseDecoder := json.NewDecoder(strings.NewReader(string(responseBody)))
+	responseDecoder := json.NewDecoder(bytes.NewReader(responseBody))
 	responseDecoder.DisallowUnknownFields()
 	if err := responseDecoder.Decode(&response); err != nil {
 		return fmt.Errorf("control action response is not valid JSON: %w", err)
+	}
+	var responseTrailing any
+	if err := responseDecoder.Decode(&responseTrailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("control action response contains multiple JSON values")
+		}
+		return fmt.Errorf("control action response contains trailing JSON: %w", err)
 	}
 	if response.Schema != routerboard.ControlSchema {
 		return fmt.Errorf("control action response schema %q is unsupported", response.Schema)
