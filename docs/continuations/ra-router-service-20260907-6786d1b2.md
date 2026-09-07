@@ -23,8 +23,9 @@ Thread registration for `ra` must also be on the M5 store (reuse the id, never m
 |---|---|---|
 | A–C rs-01..13 | merged | #682–#687, #703 (e7af6a04) |
 | D rs-14 | done | owner "1a 2a 3a" 2026-09-03 |
-| D rs-15 provision | scaffolding MERGED — **PR #704 → 68568e9d** (SSA ACCEPT at head 556bf92e, item 20260907-153958; sirsi-bind App review 2026-09-07T17:03Z; binding-hold run 33808373927 green). Ledger row stays `in-progress`: provision.sh has not run. | `scripts/router-service/{provision,deploy,grant-provisioner}.sh`, Dockerfile |
-| D rs-16..20, E rs-21..25 | pending | blocked on rs-15 |
+| D rs-15 provision | **DONE 2026-09-07T23:5xZ** (see below; ledger closed with evidence). Earlier: scaffolding MERGED — **PR #704 → 68568e9d** (SSA ACCEPT at head 556bf92e, item 20260907-153958; sirsi-bind App review 2026-09-07T17:03Z; binding-hold run 33808373927 green). Ledger row stays `in-progress`: provision.sh has not run. | `scripts/router-service/{provision,deploy,grant-provisioner}.sh`, Dockerfile |
+| D rs-16 first deploy | **DONE 2026-09-08T00:2xZ** — revision `sirsi-router-00003-nq4`, ledger closed | see below |
+| D rs-17..20, E rs-21..25 | pending | rs-17 rehearsals next |
 
 ### rs-15 — the one thing Ra cannot do itself
 Owner runs `scripts/router-service/grant-provisioner.sh` as sirsimaster@gmail.com (grants the provisioning roles to `claude-agent@sirsi-nexus-live`). On the M1: gcloud installed via `brew install --cask google-cloud-sdk`; SA key at `~/.config/gcloud/sirsi-nexus-live-claude-agent.json` (mode 600). After the grant:
@@ -40,3 +41,25 @@ Probe first: `gcloud projects get-iam-policy sirsi-nexus-live --flatten=bindings
 
 ## Housekeeping
 M5 main checkout still on foreign dirty branch `fix/broker-quarantine` — never work there. `worktrees/ra-rs01` (branch rs13-evidence) droppable. Owner item `20260902-211336-…-pr-678-blocked-signed-release…` still open. Charter ADR-063 (174dc7c8) in force: complete = verified release at rs-25; tokens are not progress.
+
+## rs-15 + rs-16 executed for real (2026-09-07T23:1xZ – 2026-09-08T00:2xZ, session 84ab1eaa on the M1)
+Owner granted the 11 provisioner roles from the IAM page in Safari at 23:19Z (phone; Cloud Shell in the mobile app had no gcloud account).
+Probe that works: REST `projects:testIamPermissions` with the SA token.
+
+**Live (sirsi-nexus-live, us-central1):** Cloud SQL `sirsi-router` POSTGRES_16 ENTERPRISE db-f1-micro, private IP 10.95.0.3, db `router`,
+users router_migrator/router_service; secrets sirsi-router-{router-migrator-password,router-service-password,bootstrap-token,service-dsn,schema-sql};
+runtime SA sirsi-router-svc@ (cloudsql.client, logWriter, accessor on token+dsn); Cloud Run job `sirsi-router-apply-schema` (execution pqg8b:
+tables=15 triggers=12 partial=5 version=18, router_service DML-only); Cloud Run service `sirsi-router` revision **00003-nq4**, image
+`…/cloud-run-source-deploy/sirsi-router@sha256:bceaeef6…`, URL https://sirsi-router-6kdf4or4qq-uc.a.run.app, SPKI
+`78rPvnhm1Lb3jziI2hDDogyku5XoaVABHemUnWwOd7M=` (Google-managed cert — expect rotation; the pin is a receipt, not a lock).
+Proof: `/v1/healthz` 200 · no bearer 401 · from a repo cwd with `SIRSI_ROUTER_URL` + `SIRSI_ROUTER_TOKEN=<bootstrap>`: `sirsi router status ra`
+→ `Items: 0 open, 0 closed`. The bootstrap token lives only in Secret Manager; read it into env, never a file.
+
+**Six findings, one commit each on this PR (#711):** DRY_RUN placeholder · `--edition=ENTERPRISE` · SA-binding retry · new
+`apply-schema-job.sh` (VPC egress flags required; REVOKE cloudsqlsuperuser) · `--store` defaults to `$SIRSI_ROUTER_STORE` because Cloud Run
+does not expand `$(VAR)` for secret-backed env vars · health route `/v1/healthz` because run.app swallows `/healthz`.
+SSA has the whole-PR bind request (item 20260907-235249; the earlier one-question item 203151 is superseded).
+
+**Next = rs-17 rehearsals:** rollback (`gcloud run services update-traffic sirsi-router --to-revisions=sirsi-router-00002-qpc=100`, timed, then
+back) and revocation (`sirsi router token revoke` for a host token → next call 401). Then rs-18 migrate the M5 ledger (`router migrate-store`
+against the service — needs the M5's `sirsi` rebuilt to v18 first, see [[project-ra-moved-to-m1]] D8 notes).
