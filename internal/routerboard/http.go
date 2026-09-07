@@ -6,20 +6,51 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // Handler serves the router board: the page, the stream, and the one lever.
 type Handler struct {
-	board *Board
-	dir   string // holds index.html
+	board            *Board
+	dir              string // holds index.html
+	controlToken     string
+	openControlStore func() (*routerstore.Store, bool, error)
 }
 
-func NewHandler(b *Board, dir string) *Handler { return &Handler{board: b, dir: dir} }
+func NewHandler(b *Board, dir string) *Handler {
+	return &Handler{
+		board: b, dir: dir, controlToken: os.Getenv("SIRSI_CONTROL_TOKEN"),
+		openControlStore: func() (*routerstore.Store, bool, error) {
+			path, err := routerstore.DefaultStorePath()
+			if err != nil {
+				return nil, false, err
+			}
+			if parent := filepath.Dir(path); parent != "." && parent != "" {
+				if err := os.MkdirAll(parent, 0o755); err != nil {
+					return nil, false, err
+				}
+			}
+			store, err := routerstore.Open(path)
+			return store, true, err
+		},
+	}
+}
+
+// NewHandlerWithControlStore injects the canonical store for tests and
+// embedded hosts. The handler does not close an injected store.
+func NewHandlerWithControlStore(b *Board, dir string, store *routerstore.Store, token string) *Handler {
+	return &Handler{board: b, dir: dir, controlToken: token, openControlStore: func() (*routerstore.Store, bool, error) {
+		return store, false, nil
+	}}
+}
 
 // BuildID fingerprints index.html so the page can display which UI it is.
 // The owner was once served a CACHED page for hours while a fixed one was
@@ -38,6 +69,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.index)
 	mux.HandleFunc("/index.html", h.index)
 	mux.HandleFunc("/api/control", h.control)
+	mux.HandleFunc("/api/control/action", h.controlAction)
 	mux.HandleFunc("/api/ledger", h.slice)
 	mux.HandleFunc("/api/tasks", h.slice)
 	mux.HandleFunc("/api/stream", h.stream)
@@ -65,6 +97,58 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = w.Write(body)
+}
+
+func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "control action requires POST", http.StatusMethodNotAllowed)
+		return
+	}
+	if strings.TrimSpace(h.controlToken) == "" {
+		http.Error(w, `{"error":"control authorization is not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if auth != "Bearer "+h.controlToken {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, `{"error":"control authorization failed"}`, http.StatusUnauthorized)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var request ControlActionRequest
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid control action: "+err.Error()), http.StatusBadRequest)
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		http.Error(w, `{"error":"invalid control action: multiple JSON values"}`, http.StatusBadRequest)
+		return
+	} else if err != io.EOF {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid control action: trailing data: "+err.Error()), http.StatusBadRequest)
+		return
+	}
+	store, owned, err := h.openControlStore()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "control store unavailable: "+err.Error()), http.StatusServiceUnavailable)
+		return
+	}
+	if owned {
+		defer store.Close()
+	}
+	response, err := ApplyControlAction(store, request)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusConflict)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		return
+	}
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
