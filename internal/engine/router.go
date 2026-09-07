@@ -165,6 +165,9 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 	if err != nil {
 		return nil, err
 	}
+	if events == nil {
+		return nil, fmt.Errorf("engine router: connector returned a nil stream")
+	}
 	routed := make(chan Event, 1)
 	go func() {
 		defer close(routed)

@@ -228,3 +228,21 @@ func TestRouterRejectsInvalidRouteDecisionBeforeConnector(t *testing.T) {
 		t.Fatalf("invalid route decision was accepted: %v", err)
 	}
 }
+
+func TestRouterRejectsNilStreamFromConnector(t *testing.T) {
+	r, err := NewRouter(routerFixtureConnector{
+		kind:      KindMLX,
+		identity:  identityFor(KindMLX),
+		caps:      Capabilities{Sessions: true, Streaming: true},
+		available: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := Session{ID: "nil-stream", Identity: identityFor(KindMLX), CreatedAt: "2026-09-07T16:00:00Z"}
+	decision := RouteDecision{Requested: KindMLX, Selected: KindMLX, Rationale: "preferred mlx connector admitted"}
+	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, Stream: true, CacheNamespace: session.Identity.CacheNamespace}
+	if _, err := r.Stream(context.Background(), session, request, decision); err == nil || !strings.Contains(err.Error(), "nil stream") {
+		t.Fatalf("nil connector stream was accepted: %v", err)
+	}
+}
