@@ -3,12 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
 )
 
 func TestControlEndpointURLCanonicalizesHostOnlyEndpoint(t *testing.T) {
@@ -59,6 +64,20 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 }
 
 func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
+	state := routerboard.Payload{GeneratedAt: "2026-09-07T12:00:00Z", Evidence: []routerboard.EvidenceRef{}, Fleet: []routerboard.Lane{}, Activity: []routerboard.Event{}, DataErrors: []string{}, Threads: []routerboard.Thread{}, RegistrationGaps: []string{}, Tasks: []routerboard.TaskDetail{}}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSum := sha256.Sum256(stateBytes)
+	envelope := routerboard.ControlEnvelope{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 7,
+		GeneratedAt: state.GeneratedAt, StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+	}
+	validBody, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/control" {
 			t.Fatalf("path = %q", r.URL.Path)
@@ -67,7 +86,7 @@ func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schema":"pantheon.worker-control/v1","revision":7}`))
+		_, _ = w.Write(validBody)
 	}))
 	defer server.Close()
 
@@ -77,6 +96,18 @@ func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"revision":7`) {
 		t.Fatalf("body = %s", body)
+	}
+
+	digestMismatch := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		broken := envelope
+		broken.StateSHA256 = strings.Repeat("0", 64)
+		payload, _ := json.Marshal(broken)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer digestMismatch.Close()
+	if _, err := fetchRemoteControl(context.Background(), digestMismatch.URL, ""); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("accepted digest-mismatched snapshot: %v", err)
 	}
 
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
 )
 
 const remoteControlBodyLimit = 8 << 20
@@ -79,10 +83,38 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("control snapshot returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
-	if !json.Valid(body) {
-		return nil, fmt.Errorf("control snapshot is not valid JSON")
+	if err := validateRemoteControlSnapshot(body); err != nil {
+		return nil, err
 	}
 	return body, nil
+}
+
+func validateRemoteControlSnapshot(body []byte) error {
+	var envelope routerboard.ControlEnvelope
+	decoder := json.NewDecoder(strings.NewReader(string(body)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		return fmt.Errorf("control snapshot is not a valid worker-control envelope: %w", err)
+	}
+	if envelope.Schema != routerboard.ControlSchema {
+		return fmt.Errorf("control snapshot schema %q is unsupported", envelope.Schema)
+	}
+	if envelope.Authority != "canonical-routerstore" {
+		return fmt.Errorf("control snapshot authority %q is not canonical-routerstore", envelope.Authority)
+	}
+	if envelope.Revision == 0 {
+		return fmt.Errorf("control snapshot revision is zero")
+	}
+	canonicalState, err := json.Marshal(envelope.State)
+	if err != nil {
+		return fmt.Errorf("control snapshot state: %w", err)
+	}
+	stateSum := sha256.Sum256(canonicalState)
+	want := hex.EncodeToString(stateSum[:])
+	if envelope.StateSHA256 != want {
+		return fmt.Errorf("control snapshot state digest mismatch")
+	}
+	return nil
 }
 
 func readControlActionRequest(source string) ([]byte, error) {
