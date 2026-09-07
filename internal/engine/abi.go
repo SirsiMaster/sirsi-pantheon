@@ -286,6 +286,15 @@ func (e Event) Validate(previous uint64) error {
 	if e.Kind == EventError && strings.TrimSpace(e.ErrorCode) == "" {
 		return errors.New("engine event: error_code is required for error events")
 	}
+	if e.Kind == EventCompleted && e.Receipt == nil {
+		return errors.New("engine event: completed events require a receipt")
+	}
+	if e.Kind == EventCompleted && e.Receipt != nil && e.Receipt.Cancelled {
+		return errors.New("engine event: completed event cannot carry a cancelled receipt")
+	}
+	if e.Receipt != nil && e.Receipt.SessionID != e.SessionID {
+		return errors.New("engine event: receipt session does not match event session")
+	}
 	return nil
 }
 

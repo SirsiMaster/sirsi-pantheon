@@ -117,6 +117,12 @@ func TestEventSequenceAndReceiptIdentityAreFailClosed(t *testing.T) {
 	if err := (Event{Kind: EventCompleted, SessionID: "session-1", Sequence: 1}).Validate(1); err == nil {
 		t.Fatal("duplicate event sequence accepted")
 	}
+	if err := (Event{Kind: EventCompleted, SessionID: "session-1", Sequence: 2}).Validate(1); err == nil || !strings.Contains(err.Error(), "receipt") {
+		t.Fatal("completed event without receipt accepted")
+	}
+	if err := (Event{Kind: EventCompleted, SessionID: "session-1", Sequence: 2, Receipt: &Receipt{SessionID: "other-session"}}).Validate(1); err == nil || !strings.Contains(err.Error(), "receipt session") {
+		t.Fatal("cross-session receipt accepted")
+	}
 	s := testSession()
 	digest, err := s.Identity.Digest()
 	if err != nil {
