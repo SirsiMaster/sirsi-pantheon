@@ -33,6 +33,8 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 # 2026-09-07: Router-board worker controls resolve the ledger only through
 # routerstore.Resolve and its Store interface, preserving the canonical remote
 # service route and avoiding direct local-store writes from the dashboard.
+# Required CI test/build jobs use hosted macOS runners so active product changes
+# do not queue behind unavailable local-runner capacity.
 # 2026-08-05: SNE-52 ledger schema v7 implementation is active on
 # codex/router-unification-store-v7. The v4→v7 additive migration, derived
 # four-hour liveness, governed stage/test/charter fields, append-deduped links,

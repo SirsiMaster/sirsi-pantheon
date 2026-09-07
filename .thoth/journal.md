@@ -2475,3 +2475,9 @@ The authenticated router-board control endpoint now resolves its ledger through
 opening a local SQLite path directly. This preserves the configured remote-store
 route and the split-brain guard while keeping injected stores limited to tests.
 Focused router-board and CLI tests pass with race detection on the host surface.
+
+### Hosted macOS CI execution
+
+Required test and build jobs now run on GitHub-hosted `macos-14` runners. The
+change removes an unavailable self-hosted M5 runner from the PR delivery path;
+release-only workflows remain separately scoped to their required hardware.
