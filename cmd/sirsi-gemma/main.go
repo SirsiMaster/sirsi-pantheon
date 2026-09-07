@@ -66,20 +66,20 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 	engine := cfg.EffectiveEngine()
 	switch engine {
 	case "sne":
-		if cfg.SNEURL == "" {
-			return &disabledRunner{reason: "engine=sne requires sne_url"}
+		if !isLocalEngineURL(cfg.SNEURL) {
+			return &disabledRunner{reason: "engine=sne requires a loopback sne_url"}
 		}
 		logger.Printf("runner: SNE seam active — %s (model %s)", cfg.SNEURL, cfg.SNEModel)
 		r = NewSNERunner(cfg.SNEURL, cfg.SNEModel)
 	case "sne-native-v2":
-		if cfg.SNENativeV2URL == "" {
-			return &disabledRunner{reason: "engine=sne-native-v2 requires sne_native_v2_url"}
+		if !isLocalEngineURL(cfg.SNENativeV2URL) {
+			return &disabledRunner{reason: "engine=sne-native-v2 requires a loopback sne_native_v2_url"}
 		}
 		logger.Printf("runner: SNE Native v2 seam active — %s (model %s)", cfg.SNENativeV2URL, cfg.SNENativeV2Model)
 		r = NewSNENativeV2Runner(cfg.SNENativeV2URL, cfg.SNENativeV2Model)
 	case "omlx":
-		if cfg.OMLXURL == "" {
-			return &disabledRunner{reason: "engine=omlx requires omlx_url"}
+		if !isLocalEngineURL(cfg.OMLXURL) {
+			return &disabledRunner{reason: "engine=omlx requires a loopback omlx_url"}
 		}
 		logger.Printf("runner: OMLX seam active — %s (model %s)", cfg.OMLXURL, cfg.OMLXModel)
 		r = NewOMLXRunner(cfg.OMLXURL, cfg.OMLXModel)

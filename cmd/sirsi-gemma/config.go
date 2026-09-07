@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -144,6 +146,23 @@ func (c Config) EffectiveEngine() string {
 		return "omlx"
 	}
 	return "mlx"
+}
+
+// isLocalEngineURL is shared by every OpenAI-compatible local engine. The MCP
+// server promises that prompts stay on this host; accepting an arbitrary HTTPS
+// URL under engine=sne-native-v2 would violate that promise while looking like a
+// local selection. SNE's cross-host transport is a separate, explicit surface.
+func isLocalEngineURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func expandHome(p string) string {

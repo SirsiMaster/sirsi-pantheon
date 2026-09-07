@@ -22,9 +22,11 @@ vscode_extension: extensions/vscode/ (TypeScript, 7 modules, 10 commands, Thoth 
 ## Current UI State
 # 2026-09-07: SSA added an explicit `sirsi-gemma` selector for SNE, recovered
 # SNE Native v2, MLX, and OMLX on branch codex/ssa-sne-engine-selection-20260907
-# (`ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes
+# (current lineage includes `ded08295`). The user-facing MCP tools remain unchanged. Native v2 consumes
 # its OpenAI-compatible endpoint only; SNE owns its launch and qualification.
-# Focused adapter tests/build and pre-push checks pass. Repository-wide tests
+# Selected SNE/Native-v2/OMLX MCP endpoints must be HTTP(S) loopback endpoints;
+# a remote URL is refused before any prompt can leave the host. Focused adapter
+# tests/build and pre-push checks pass. Repository-wide tests
 # remain host/sandbox-limited and are not a qualification result.
 # 2026-08-05: SNE-52 ledger schema v7 implementation is active on
 # codex/router-unification-store-v7. The v4→v7 additive migration, derived

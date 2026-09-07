@@ -74,6 +74,35 @@ func TestSelectRunnerDoesNotSilentlySwitchEngines(t *testing.T) {
 	}
 }
 
+func TestSelectedLocalEngineRejectsRemoteEndpoint(t *testing.T) {
+	logger := log.New(io.Discard, "", 0)
+	for _, cfg := range []Config{
+		{Engine: "sne", SNEURL: "https://engine.example.test/v1"},
+		{Engine: "sne-native-v2", SNENativeV2URL: "https://engine.example.test/v1"},
+		{Engine: "omlx", OMLXURL: "https://engine.example.test/v1"},
+	} {
+		r := selectRunner(cfg, true, logger)
+		disabled, ok := r.(*disabledRunner)
+		if !ok || !strings.Contains(disabled.reason, "loopback") {
+			t.Fatalf("%s accepted a non-local endpoint: %#v", cfg.Engine, r)
+		}
+	}
+}
+
+func TestLocalEngineURLRecognition(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"http://127.0.0.1:11434/v1":      true,
+		"http://[::1]:11434/v1":          true,
+		"https://localhost:11434/v1":     true,
+		"https://engine.example.test/v1": false,
+		"not-a-url":                      false,
+	} {
+		if got := isLocalEngineURL(raw); got != want {
+			t.Errorf("isLocalEngineURL(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
 func TestOpenAICompatibleEnginesShareWorkflow(t *testing.T) {
 	var paths []string
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

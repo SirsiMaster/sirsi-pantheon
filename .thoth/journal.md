@@ -2451,3 +2451,11 @@ fixture proves the CLI sends the configured model to the configured service.
 MCP startup failure output is engine-neutral. A failed Native v2/SNE/OMLX probe
 now preserves the actual cause and points to the shared engine-selection guide,
 instead of falsely telling an operator to install MLX.
+
+### Local-endpoint privacy invariant
+
+The MCP-side explicit selector now applies the same local-only rule as the
+shared provider and direct CLI: `sne_url`, `sne_native_v2_url`, and `omlx_url`
+must be HTTP(S) URLs with a loopback host. This closes the remaining route by
+which an explicit "local" engine could have sent a prompt to a remote endpoint.
+Focused selector tests cover remote rejection and IPv4/IPv6 localhost recognition.
