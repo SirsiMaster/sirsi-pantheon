@@ -92,12 +92,23 @@ func NewSNEControlWithIdentity(client SNEControlClient, expectation SNEControlId
 	if expectation.ModelID == "" {
 		return nil, fmt.Errorf("SNE control: model is required")
 	}
+	expectation.RuntimeSHA256 = strings.TrimSpace(expectation.RuntimeSHA256)
+	expectation.NativeRuntimeSHA256 = strings.TrimSpace(expectation.NativeRuntimeSHA256)
+	expectation.ManifestSHA256 = strings.TrimSpace(expectation.ManifestSHA256)
+	providedIdentities := 0
+	for _, value := range []string{expectation.RuntimeSHA256, expectation.NativeRuntimeSHA256, expectation.ManifestSHA256} {
+		if value != "" {
+			providedIdentities++
+		}
+	}
+	if providedIdentities != 0 && providedIdentities != 3 {
+		return nil, fmt.Errorf("SNE control: runtime, native runtime, and manifest identities must be supplied together")
+	}
 	for name, value := range map[string]string{
 		"runtime":        expectation.RuntimeSHA256,
 		"native runtime": expectation.NativeRuntimeSHA256,
 		"manifest":       expectation.ManifestSHA256,
 	} {
-		value = strings.TrimSpace(value)
 		if value != "" && !sha256Pattern.MatchString(value) {
 			return nil, fmt.Errorf("SNE control: %s identity must be lowercase SHA-256", name)
 		}

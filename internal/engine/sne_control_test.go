@@ -138,6 +138,26 @@ func TestSNEControlFullIdentityRejectsRuntimeDriftBeforeLoad(t *testing.T) {
 	}
 }
 
+func TestSNEControlRequiresCompleteRuntimeIdentityTuple(t *testing.T) {
+	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	client := &fakeSNEControlClient{}
+	if _, err := NewSNEControlWithIdentity(client, SNEControlIdentity{ModelID: "model-a", RuntimeSHA256: sha}); err == nil {
+		t.Fatal("accepted partial runtime identity tuple")
+	}
+	control, err := NewSNEControlWithIdentity(client, SNEControlIdentity{
+		ModelID:             "model-a",
+		RuntimeSHA256:       " " + sha + " ",
+		NativeRuntimeSHA256: sha,
+		ManifestSHA256:      sha,
+	})
+	if err != nil {
+		t.Fatalf("trimmed complete identity tuple rejected: %v", err)
+	}
+	if control.expectation.RuntimeSHA256 != sha || control.expectation.NativeRuntimeSHA256 != sha || control.expectation.ManifestSHA256 != sha {
+		t.Fatalf("identity tuple was not canonicalized: %+v", control.expectation)
+	}
+}
+
 func TestSNEControlUnloadRequiresClearedPostflightIdentity(t *testing.T) {
 	tests := []struct {
 		name        string
