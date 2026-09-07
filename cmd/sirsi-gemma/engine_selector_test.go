@@ -26,6 +26,7 @@ func TestEffectiveEngine(t *testing.T) {
 	}{
 		{"default", Config{}, "mlx"},
 		{"legacy-sne-url", Config{SNEURL: "http://sne/v1"}, "sne"},
+		{"native-v2-url", Config{Engine: "sne-native-v2", SNENativeV2URL: "http://sne-v2/v1"}, "sne-native-v2"},
 		{"omlx-url", Config{OMLXURL: "http://omlx/v1"}, "omlx"},
 		{"explicit-mlx", Config{Engine: "mlx", SNEURL: "http://sne/v1"}, "mlx"},
 		{"explicit-sne", Config{Engine: "sne"}, "sne"},
@@ -61,6 +62,7 @@ func TestSelectRunnerDoesNotSilentlySwitchEngines(t *testing.T) {
 	logger := log.New(io.Discard, "", 0)
 	for _, cfg := range []Config{
 		{Engine: "sne"},
+		{Engine: "sne-native-v2"},
 		{Engine: "omlx"},
 	} {
 		if _, ok := selectRunner(cfg, true, logger).(*disabledRunner); !ok {
@@ -96,6 +98,7 @@ func TestOpenAICompatibleEnginesShareWorkflow(t *testing.T) {
 
 	for _, runner := range []*SNERunner{
 		NewSNERunner("http://sne.test/v1", "gemma-4"),
+		NewSNENativeV2Runner("http://sne-native-v2.test/v1", "gemma-4"),
 		NewOMLXRunner("http://omlx.test/v1", "gemma-4"),
 	} {
 		runner.client = client
@@ -107,7 +110,7 @@ func TestOpenAICompatibleEnginesShareWorkflow(t *testing.T) {
 			t.Fatalf("Generate() = %q", got)
 		}
 	}
-	if len(paths) != 2 || paths[0] != "/v1/chat/completions" || paths[1] != paths[0] {
+	if len(paths) != 3 || paths[0] != "/v1/chat/completions" || paths[1] != paths[0] || paths[2] != paths[0] {
 		t.Fatalf("engine workflows diverged: %v", paths)
 	}
 }

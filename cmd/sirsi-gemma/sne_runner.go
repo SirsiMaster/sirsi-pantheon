@@ -52,6 +52,21 @@ func NewSNERunner(baseURL, model string) *SNERunner {
 	}
 }
 
+// NewSNENativeV2Runner consumes the recovered native SNE v2 service through
+// the same stable OpenAI-compatible ABI as SNE. It does not launch, qualify,
+// or otherwise manage the native runtime; those stay in SNE's lifecycle lane.
+func NewSNENativeV2Runner(baseURL, model string) *SNERunner {
+	if model == "" {
+		model = "gemma-4-12b-it-affine8-sne-v1"
+	}
+	return &SNERunner{
+		backend: "sne-native-v2",
+		baseURL: strings.TrimRight(baseURL, "/"),
+		model:   model,
+		client:  &http.Client{Timeout: 5 * time.Minute},
+	}
+}
+
 // NewOMLXRunner uses oMLX's OpenAI-compatible server through the same Pantheon
 // request and response contract as SNE.
 func NewOMLXRunner(baseURL, model string) *SNERunner {

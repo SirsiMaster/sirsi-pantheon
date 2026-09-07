@@ -1,7 +1,7 @@
 # Pantheon local engine selection
 
-Pantheon's `sirsi-gemma` tools keep one user workflow across three local
-engines: SNE, MLX, and OMLX. The MCP tool names remain `gemma_chat` and
+Pantheon's `sirsi-gemma` tools keep one user workflow across four local
+engines: SNE, SNE Native v2, MLX, and OMLX. The MCP tool names remain `gemma_chat` and
 `gemma_complete`; only `~/.config/sirsi/gemma.toml` changes.
 
 ## SNE
@@ -23,6 +23,24 @@ venv_path = "~/.venvs/mlx"
 max_tokens = 1024
 temperature = 0.7
 ```
+
+## SNE Native v2
+
+The recovered SNE Native v2 release candidate is selected through its local
+OpenAI-compatible service. Pantheon does not start, qualify, or manage that
+runtime; SNE owns its lifecycle and qualification.
+
+```toml
+engine = "sne-native-v2"
+sne_native_v2_url = "http://127.0.0.1:11434/v1"
+sne_native_v2_model = "gemma-4-12b-it-affine8-sne-v1"
+max_tokens = 1024
+temperature = 0.7
+```
+
+The native-v2 choice is a candidate integration, not a performance claim. A
+missing or unhealthy endpoint stays a visible failure; Pantheon never switches
+to MLX, OMLX, or another SNE implementation on its behalf.
 
 ## OMLX
 

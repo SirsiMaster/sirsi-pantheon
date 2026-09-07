@@ -46,7 +46,7 @@ func main() {
 	srv := mcp.NewBareServer("sirsi-gemma", serverVersion,
 		"𓂀 Sirsi Gemma — local inference over MCP. Use gemma_chat for "+
 			"multi-turn chat and gemma_complete for single-shot completion. "+
-			"Select SNE, MLX, or OMLX without changing either tool — no tokens billed, "+
+			"Select SNE, SNE Native v2, MLX, or OMLX without changing either tool — no tokens billed, "+
 			"no data leaves the host.",
 		"[sirsi-gemma] ")
 	registerGemmaTools(srv, runner)
@@ -71,6 +71,12 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 		}
 		logger.Printf("runner: SNE seam active — %s (model %s)", cfg.SNEURL, cfg.SNEModel)
 		r = NewSNERunner(cfg.SNEURL, cfg.SNEModel)
+	case "sne-native-v2":
+		if cfg.SNENativeV2URL == "" {
+			return &disabledRunner{reason: "engine=sne-native-v2 requires sne_native_v2_url"}
+		}
+		logger.Printf("runner: SNE Native v2 seam active — %s (model %s)", cfg.SNENativeV2URL, cfg.SNENativeV2Model)
+		r = NewSNENativeV2Runner(cfg.SNENativeV2URL, cfg.SNENativeV2Model)
 	case "omlx":
 		if cfg.OMLXURL == "" {
 			return &disabledRunner{reason: "engine=omlx requires omlx_url"}
@@ -97,7 +103,7 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 func registerGemmaTools(srv *mcp.Server, runner Runner) {
 	srv.RegisterTool(mcp.Tool{
 		Name:        "gemma_chat",
-		Description: "Multi-turn chat with the selected local SNE, MLX, or OMLX engine. Pass a system prompt plus a history of {role,content} messages. Returns generated assistant text.",
+		Description: "Multi-turn chat with the selected local SNE, SNE Native v2, MLX, or OMLX engine. Pass a system prompt plus a history of {role,content} messages. Returns generated assistant text.",
 		InputSchema: mcp.InputSchema{
 			Type: "object",
 			Properties: map[string]mcp.SchemaField{
@@ -112,7 +118,7 @@ func registerGemmaTools(srv *mcp.Server, runner Runner) {
 
 	srv.RegisterTool(mcp.Tool{
 		Name:        "gemma_complete",
-		Description: "Single-shot text completion from a raw prompt using the selected local SNE, MLX, or OMLX engine. Use for non-chat workloads (rewrite, summarize, extract).",
+		Description: "Single-shot text completion from a raw prompt using the selected local SNE, SNE Native v2, MLX, or OMLX engine. Use for non-chat workloads (rewrite, summarize, extract).",
 		InputSchema: mcp.InputSchema{
 			Type: "object",
 			Properties: map[string]mcp.SchemaField{

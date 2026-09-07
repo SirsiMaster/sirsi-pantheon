@@ -20,16 +20,20 @@ import (
 //	engine = sne
 //	sne_url = http://localhost:11434/v1
 type Config struct {
-	Engine      string  // "mlx", "sne", or "omlx"; empty preserves legacy autodetection
+	Engine      string  // "mlx", "sne", "sne-native-v2", or "omlx"; empty preserves legacy autodetection
 	ModelID     string  // e.g. "mlx-community/gemma-2-27b-it-4bit"
 	VenvPath    string  // absolute path to the Python venv root
 	MaxTokens   int     // default max tokens per generation
 	Temperature float64 // default sampling temperature
 	// SNE seam — when non-empty, sirsi-gemma uses SNERunner instead of MLXRunner.
-	SNEURL    string // base URL of SNE's OpenAI-compatible API, e.g. "http://localhost:11434/v1"
-	SNEModel  string // model name forwarded to SNE (default: "gemma-2-27b-it")
-	OMLXURL   string // base URL of oMLX's OpenAI-compatible API
-	OMLXModel string // model name forwarded to oMLX
+	SNEURL   string // base URL of SNE's OpenAI-compatible API, e.g. "http://localhost:11434/v1"
+	SNEModel string // model name forwarded to SNE (default: "gemma-2-27b-it")
+	// SNENativeV2URL is the recovered native-v2 service endpoint. Pantheon only
+	// consumes its OpenAI-compatible ABI; SNE owns its launch and qualification.
+	SNENativeV2URL   string
+	SNENativeV2Model string
+	OMLXURL          string // base URL of oMLX's OpenAI-compatible API
+	OMLXModel        string // model name forwarded to oMLX
 }
 
 // DefaultConfig matches chip A's MLX_GEMMA_LOCAL.md install layout.
@@ -89,8 +93,8 @@ func (c *Config) set(key, val string) error {
 	switch key {
 	case "engine":
 		val = strings.ToLower(val)
-		if val != "mlx" && val != "sne" && val != "omlx" {
-			return fmt.Errorf("engine must be mlx, sne, or omlx")
+		if val != "mlx" && val != "sne" && val != "sne-native-v2" && val != "omlx" {
+			return fmt.Errorf("engine must be mlx, sne, sne-native-v2, or omlx")
 		}
 		c.Engine = val
 	case "model_id":
@@ -113,6 +117,10 @@ func (c *Config) set(key, val string) error {
 		c.SNEURL = val
 	case "sne_model":
 		c.SNEModel = val
+	case "sne_native_v2_url":
+		c.SNENativeV2URL = val
+	case "sne_native_v2_model":
+		c.SNENativeV2Model = val
 	case "omlx_url":
 		c.OMLXURL = val
 	case "omlx_model":
