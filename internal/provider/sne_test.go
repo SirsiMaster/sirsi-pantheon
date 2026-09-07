@@ -88,7 +88,8 @@ func TestSNEProviderBindsReadinessAndMapsCompletion(t *testing.T) {
 	if !provider.Available(context.Background()) {
 		t.Fatal("expected ready SNE provider to be available")
 	}
-	response, err := provider.Complete(context.Background(), Request{System: "be concise", Prompt: "hello", MaxTokens: 8})
+	temperature := 0.65
+	response, err := provider.Complete(context.Background(), Request{System: "be concise", Prompt: "hello", MaxTokens: 8, Temperature: &temperature})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +102,7 @@ func TestSNEProviderBindsReadinessAndMapsCompletion(t *testing.T) {
 	if len(client.request.Messages) != 2 || client.request.Messages[0].Role != "system" || client.request.Messages[1].Role != "user" {
 		t.Fatalf("unexpected mapped messages: %+v", client.request.Messages)
 	}
-	if client.request.Model != "sne-model" || client.request.MaxTokens != 8 || client.request.Stream {
+	if client.request.Model != "sne-model" || client.request.MaxTokens != 8 || client.request.Temperature != temperature || client.request.Stream {
 		t.Fatalf("unexpected native request: %+v", client.request)
 	}
 }

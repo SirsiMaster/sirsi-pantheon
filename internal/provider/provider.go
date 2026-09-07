@@ -65,6 +65,9 @@ func (t Tier) String() string {
 // transcript, rather than failing in a way that looks like the model being bad.
 type Caps struct {
 	Tools         bool // can the model call tools?
+	Temperature   bool // accepts temperature control
+	TopP          bool // accepts nucleus-sampling control
+	Seed          bool // accepts deterministic seed control
 	Streaming     bool
 	ContextTokens int
 	Offline       bool // usable with no network
@@ -72,9 +75,12 @@ type Caps struct {
 
 // Request is one turn of work.
 type Request struct {
-	System    string
-	Prompt    string
-	MaxTokens int
+	System      string
+	Prompt      string
+	MaxTokens   int
+	Temperature *float64
+	TopP        *float64
+	Seed        *int64
 	// Tools offered this turn. A provider without Caps.Tools must ignore these
 	// and the caller must notice — see Response.ToolsHonored.
 	Tools []ToolSpec

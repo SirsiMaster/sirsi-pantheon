@@ -73,7 +73,7 @@ func (p *SNEProvider) Name() string { return "sne" }
 func (p *SNEProvider) Tier() Tier { return TierLocal }
 
 func (p *SNEProvider) Caps() Caps {
-	return Caps{Streaming: false, Offline: true}
+	return Caps{Temperature: true, Streaming: false, Offline: true}
 }
 
 func (p *SNEProvider) Available(ctx context.Context) bool {
@@ -95,11 +95,15 @@ func (p *SNEProvider) Complete(ctx context.Context, req Request) (Response, erro
 		messages = append(messages, sne.Message{Role: "system", Content: req.System})
 	}
 	messages = append(messages, sne.Message{Role: "user", Content: req.Prompt})
+	temperature := 0.0
+	if req.Temperature != nil {
+		temperature = *req.Temperature
+	}
 	completion, err := p.client.Complete(ctx, sne.CompletionRequest{
 		Model:       p.expectation.ModelID,
 		Messages:    messages,
 		MaxTokens:   req.MaxTokens,
-		Temperature: 0,
+		Temperature: temperature,
 		Stream:      false,
 	})
 	if err != nil {

@@ -30,7 +30,13 @@ type OpenAICompat struct {
 	// tool-calling; claiming otherwise would make the loop believe a silent
 	// no-op was the model declining to act.
 	SupportsTools bool
-	ContextTokens int
+	// These are explicit transport capabilities. An endpoint that does not
+	// accept one of these controls must leave it false so the engine rejects
+	// the request before any sampling semantics are silently lost.
+	SupportsTemperature bool
+	SupportsTopP        bool
+	SupportsSeed        bool
+	ContextTokens       int
 	// UseRealCompletionProbe changes Available() from a /v1/models check to a
 	// real 1-token completion. Required for the SNE local lane per
 	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
@@ -44,6 +50,9 @@ func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 func (o *OpenAICompat) Caps() Caps {
 	return Caps{
 		Tools:         o.SupportsTools,
+		Temperature:   o.SupportsTemperature,
+		TopP:          o.SupportsTopP,
+		Seed:          o.SupportsSeed,
 		Streaming:     false,
 		ContextTokens: o.ContextTokens,
 		Offline:       o.TierValue == TierLocal,
@@ -127,10 +136,13 @@ type ccMessage struct {
 }
 
 type ccRequest struct {
-	Model     string      `json:"model"`
-	Messages  []ccMessage `json:"messages"`
-	MaxTokens int         `json:"max_tokens,omitempty"`
-	Stream    bool        `json:"stream,omitempty"`
+	Model       string      `json:"model"`
+	Messages    []ccMessage `json:"messages"`
+	MaxTokens   int         `json:"max_tokens,omitempty"`
+	Temperature *float64    `json:"temperature,omitempty"`
+	TopP        *float64    `json:"top_p,omitempty"`
+	Seed        *int64      `json:"seed,omitempty"`
+	Stream      bool        `json:"stream,omitempty"`
 }
 
 type ccResponse struct {
@@ -236,7 +248,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	if err != nil {
 		return Response{}, err
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens})
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
 	if err != nil {
 		return Response{}, err
 	}
@@ -310,7 +322,7 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Stream: true})
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Stream: true})
 	if err != nil {
 		return nil, fmt.Errorf("%s: encode stream request: %w", o.ProviderName, err)
 	}

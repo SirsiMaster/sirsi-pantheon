@@ -41,6 +41,32 @@ func TestCompleteResolvesServedModel(t *testing.T) {
 	}
 }
 
+func TestCompletePreservesSamplingControlsOnWire(t *testing.T) {
+	var received ccRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"model":"admitted-model","choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	temperature := 0.7
+	topP := 0.8
+	seed := int64(42)
+	p := &OpenAICompat{ProviderName: "remote", Endpoint: srv.URL + "/v1", Model: "admitted-model", TierValue: TierRemote, HTTP: srv.Client()}
+	if _, err := p.Complete(context.Background(), Request{Prompt: "hello", MaxTokens: 4, Temperature: &temperature, TopP: &topP, Seed: &seed}); err != nil {
+		t.Fatal(err)
+	}
+	if received.Temperature == nil || *received.Temperature != temperature || received.TopP == nil || *received.TopP != topP || received.Seed == nil || *received.Seed != seed {
+		t.Fatalf("wire request lost sampling controls: %+v", received)
+	}
+}
+
 func TestCompleteFailsWhenBrokerServesNoModel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[]}`))

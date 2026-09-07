@@ -87,6 +87,28 @@ func TestGenerateRequestRejectsToolsWhenConnectorDoesNotAdvertiseThem(t *testing
 	}
 }
 
+func TestGenerateRequestRejectsUnadvertisedSamplingControl(t *testing.T) {
+	s := testSession()
+	cases := []struct {
+		name string
+		edit func(*GenerateRequest)
+		want string
+	}{
+		{name: "temperature", edit: func(r *GenerateRequest) { v := 0.7; r.Temperature = &v }, want: "temperature"},
+		{name: "top_p", edit: func(r *GenerateRequest) { v := 0.8; r.TopP = &v }, want: "top_p"},
+		{name: "seed", edit: func(r *GenerateRequest) { v := int64(42); r.Seed = &v }, want: "seed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := GenerateRequest{SessionID: s.ID, Identity: s.Identity, Prompt: "hello", MaxTokens: 8, CacheNamespace: s.Identity.CacheNamespace}
+			tc.edit(&req)
+			if err := req.Validate(s, Capabilities{}); err == nil || !errors.Is(err, ErrUnsupportedCapability) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("unadvertised %s was not rejected explicitly: %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestEventSequenceAndReceiptIdentityAreFailClosed(t *testing.T) {
 	e := Event{Kind: EventDelta, SessionID: "session-1", Sequence: 1, Text: "hi"}
 	if err := e.Validate(0); err != nil {

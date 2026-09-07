@@ -85,7 +85,12 @@ func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector,
 	default:
 		return nil, false, fmt.Errorf("unsupported dashboard engine %q", kind)
 	}
-	caps := engine.Capabilities{Sessions: true, Cancellation: true, Receipts: true, Tools: backend.Caps().Tools}
+	backendCaps := backend.Caps()
+	caps := engine.Capabilities{
+		Sessions: true, Cancellation: true, Receipts: true,
+		Tools: backendCaps.Tools, Temperature: backendCaps.Temperature,
+		TopP: backendCaps.TopP, Seed: backendCaps.Seed,
+	}
 	if _, ok := backend.(provider.StreamingProvider); ok {
 		caps.Streaming = true
 	}

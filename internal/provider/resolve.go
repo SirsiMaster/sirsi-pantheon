@@ -119,6 +119,8 @@ func Local(home string, conf Conf) *OpenAICompat {
 		Model:                  model,
 		TierValue:              TierLocal,
 		SupportsTools:          false, // mlx_lm.server has no tool-calling
+		SupportsTemperature:    true,
+		SupportsTopP:           true,
 		ContextTokens:          8192,
 		UseRealCompletionProbe: true, // MODEL-ROUTER-DESIGN.md: liveness = real completion, not /health
 	}
@@ -185,8 +187,10 @@ func remoteFromEnv(conf Conf) *OpenAICompat {
 		TierValue:    TierRemote,
 		// The current OpenAI-compatible transport does not encode tool schemas
 		// or tool calls. Do not advertise a capability the wire format drops.
-		SupportsTools: false,
-		ContextTokens: 128000,
+		SupportsTools:       false,
+		SupportsTemperature: true,
+		SupportsTopP:        true,
+		ContextTokens:       128000,
 	}
 }
 

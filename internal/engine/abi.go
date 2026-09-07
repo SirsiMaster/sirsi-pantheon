@@ -36,6 +36,9 @@ type Capability string
 
 const (
 	CapabilityTools        Capability = "tools"
+	CapabilityTemperature  Capability = "temperature"
+	CapabilityTopP         Capability = "top_p"
+	CapabilitySeed         Capability = "seed"
 	CapabilityStreaming    Capability = "streaming"
 	CapabilityCancellation Capability = "cancellation"
 	CapabilityPrefill      Capability = "prefill"
@@ -51,6 +54,9 @@ const (
 // must produce an explicit error before a request reaches a connector.
 type Capabilities struct {
 	Tools        bool `json:"tools"`
+	Temperature  bool `json:"temperature"`
+	TopP         bool `json:"top_p"`
+	Seed         bool `json:"seed"`
 	Streaming    bool `json:"streaming"`
 	Cancellation bool `json:"cancellation"`
 	Prefill      bool `json:"prefill"`
@@ -66,6 +72,12 @@ func (c Capabilities) Has(want Capability) bool {
 	switch want {
 	case CapabilityTools:
 		return c.Tools
+	case CapabilityTemperature:
+		return c.Temperature
+	case CapabilityTopP:
+		return c.TopP
+	case CapabilitySeed:
+		return c.Seed
 	case CapabilityStreaming:
 		return c.Streaming
 	case CapabilityCancellation:
@@ -203,6 +215,15 @@ func (r GenerateRequest) Validate(session Session, capabilities Capabilities) er
 	}
 	if len(r.Tools) > 0 && !capabilities.Has(CapabilityTools) {
 		return fmt.Errorf("%w: tools", ErrUnsupportedCapability)
+	}
+	if r.Temperature != nil && !capabilities.Has(CapabilityTemperature) {
+		return fmt.Errorf("%w: temperature", ErrUnsupportedCapability)
+	}
+	if r.TopP != nil && !capabilities.Has(CapabilityTopP) {
+		return fmt.Errorf("%w: top_p", ErrUnsupportedCapability)
+	}
+	if r.Seed != nil && !capabilities.Has(CapabilitySeed) {
+		return fmt.Errorf("%w: seed", ErrUnsupportedCapability)
 	}
 	seenCapabilities := make(map[Capability]struct{}, len(r.RequiredCapabilities))
 	for _, capability := range r.RequiredCapabilities {
@@ -380,7 +401,7 @@ func (c ProviderConnector) Complete(ctx context.Context, session Session, req Ge
 		started = c.Now
 	}
 	start := started().UTC()
-	response, err := c.Backend.Complete(ctx, provider.Request{System: req.System, Prompt: req.Prompt, MaxTokens: req.MaxTokens, Tools: providerTools(req.Tools)})
+	response, err := c.Backend.Complete(ctx, providerRequest(req))
 	if err != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}
@@ -425,7 +446,7 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 	if !ok {
 		return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
 	}
-	raw, err := streaming.Stream(ctx, provider.Request{System: req.System, Prompt: req.Prompt, MaxTokens: req.MaxTokens, Tools: providerTools(req.Tools)})
+	raw, err := streaming.Stream(ctx, providerRequest(req))
 	if err != nil {
 		return nil, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}
@@ -497,6 +518,18 @@ func providerTools(tools []ToolSpec) []provider.ToolSpec {
 		out[i] = provider.ToolSpec{Name: tool.Name, Description: tool.Description, Schema: tool.Schema}
 	}
 	return out
+}
+
+func providerRequest(req GenerateRequest) provider.Request {
+	return provider.Request{
+		System:      req.System,
+		Prompt:      req.Prompt,
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		Seed:        req.Seed,
+		Tools:       providerTools(req.Tools),
+	}
 }
 
 func emitEngineEvent(ctx context.Context, events chan<- Event, event Event) bool {

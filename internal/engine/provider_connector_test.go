@@ -83,7 +83,7 @@ func TestProviderConnectorPreservesSystemAndToolInputs(t *testing.T) {
 		response:  provider.Response{Text: "hello", Model: "model-a", FinishReason: "stop"},
 	}}
 	identity := testIdentity()
-	connector, err := NewSNEConnector(backend, identity, Capabilities{Sessions: true, Tools: true, Receipts: true})
+	connector, err := NewSNEConnector(backend, identity, Capabilities{Sessions: true, Tools: true, Temperature: true, TopP: true, Seed: true, Receipts: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,16 +91,23 @@ func TestProviderConnectorPreservesSystemAndToolInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	temperature := 0.7
+	topP := 0.8
+	seed := int64(42)
 	req := GenerateRequest{
 		SessionID: session.ID, Identity: session.Identity, System: "be concise", Prompt: "hello", MaxTokens: 4,
 		CacheNamespace: session.Identity.CacheNamespace,
-		Tools:          []ToolSpec{{Name: "inspect", Description: "inspect state", Schema: map[string]any{"type": "object"}}},
+		Temperature:    &temperature, TopP: &topP, Seed: &seed,
+		Tools: []ToolSpec{{Name: "inspect", Description: "inspect state", Schema: map[string]any{"type": "object"}}},
 	}
 	if _, _, err := connector.Complete(context.Background(), session, req); err != nil {
 		t.Fatal(err)
 	}
 	if backend.request.System != "be concise" || backend.request.Prompt != "hello" || len(backend.request.Tools) != 1 || backend.request.Tools[0].Name != "inspect" {
 		t.Fatalf("provider request lost ABI inputs: %+v", backend.request)
+	}
+	if backend.request.Temperature == nil || *backend.request.Temperature != temperature || backend.request.TopP == nil || *backend.request.TopP != topP || backend.request.Seed == nil || *backend.request.Seed != seed {
+		t.Fatalf("provider request lost sampling controls: %+v", backend.request)
 	}
 }
 
