@@ -218,7 +218,7 @@ func (b *Board) Poll(ctx context.Context) {
 
 	p := Payload{
 		Build: b.buildID, DataErrors: errs, GeneratedAt: ledger.GeneratedAt,
-		Counters: c, Activity: act, Fleet: fleet,
+		Evidence: evidenceDetails(fleet), Counters: c, Activity: act, Fleet: fleet,
 		Board:   summarize(fleet),
 		Ledger:  summarize(fleet),
 		Threads: threads, RegistrationGaps: gaps, Tasks: taskDetails(fleet),
@@ -235,6 +235,42 @@ func (b *Board) Poll(ctx context.Context) {
 		b.payload = body
 		b.version++
 	}
+}
+
+func evidenceDetails(fleet []Lane) []EvidenceRef {
+	out := []EvidenceRef{}
+	for _, lane := range fleet {
+		for _, task := range lane.Tasks {
+			links, ok := task["links"].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, raw := range links {
+				link, ok := raw.(map[string]interface{})
+				if !ok || strOr(link["kind"], "") != "evidence" {
+					continue
+				}
+				out = append(out, EvidenceRef{
+					TaskID: task.str("task_id"), Agent: lane.Agent,
+					Label: strOr(link["label"], ""), URL: strOr(link["url"], ""),
+					Status: strOr(task["status"], "pending"), Updated: task.str("updated"),
+				})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Agent != out[j].Agent {
+			return out[i].Agent < out[j].Agent
+		}
+		if out[i].TaskID != out[j].TaskID {
+			return out[i].TaskID < out[j].TaskID
+		}
+		if out[i].Label != out[j].Label {
+			return out[i].Label < out[j].Label
+		}
+		return out[i].URL < out[j].URL
+	})
+	return out
 }
 
 // diffAndLog emits an event for every real status change.

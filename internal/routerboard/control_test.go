@@ -14,7 +14,7 @@ func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
 	b := New("/bin/false", "", "test-build")
 	b.mu.Lock()
 	b.version = 4
-	b.payload = []byte(`{"build":"test-build","generated_at":"2026-09-07T12:00:00Z","fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.payload = []byte(`{"build":"test-build","generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
 	b.mu.Unlock()
 
 	body, version, err := b.SnapshotControl()
@@ -33,6 +33,9 @@ func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
 	}
 	if got.State.Build != "test-build" || got.GeneratedAt != got.State.GeneratedAt {
 		t.Fatalf("state was not preserved: %+v", got)
+	}
+	if got.Revision != 4 {
+		t.Fatalf("revision = %d, want 4", got.Revision)
 	}
 	if len(got.Capabilities) != 7 {
 		t.Fatalf("capability count = %d, want 7", len(got.Capabilities))
@@ -61,7 +64,7 @@ func TestControlEndpointIsReadOnlyAndReturnsTheEnvelope(t *testing.T) {
 	b := New("/bin/false", "", "test-build")
 	b.mu.Lock()
 	b.version = 1
-	b.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
 	b.mu.Unlock()
 	h := NewHandler(b, t.TempDir())
 	mux := http.NewServeMux()
@@ -132,6 +135,10 @@ func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T)
 	if completed.Code != http.StatusOK {
 		t.Fatalf("result_return status = %d: %s", completed.Code, completed.Body.String())
 	}
+	var completedBody ControlActionResponse
+	if err := json.Unmarshal(completed.Body.Bytes(), &completedBody); err != nil || completedBody.ResultRef != "receipt://task-1" {
+		t.Fatalf("result return response = %s, err=%v", completed.Body.String(), err)
+	}
 	got, err := store.GetTask("codex-pantheon", "task-1")
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +185,7 @@ func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	h.openControlStore = func() (*routerstore.Store, bool, error) { return store, false, nil }
 	h.board.mu.Lock()
 	h.board.version = 1
-	h.board.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	h.board.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
 	h.board.mu.Unlock()
 	mux := http.NewServeMux()
 	h.Register(mux)

@@ -25,6 +25,7 @@ var uiFields = []string{
 	"build",
 	"counters",
 	"data_errors",
+	"evidence",
 	"fleet",
 	"ledger",
 	"registration_gaps",
@@ -152,12 +153,44 @@ func TestPhaseBurndownGroupsByTaskPhaseNotAgent(t *testing.T) {
 	}
 }
 
+func TestEvidenceDetailsProjectsOnlyEvidenceLinksInStableOrder(t *testing.T) {
+	fleet := []Lane{{
+		Agent: "worker-b",
+		Tasks: []rawTask{{
+			"task_id": "task-2", "status": "done", "updated": "2026-09-07T12:02:00Z",
+			"links": []interface{}{
+				map[string]interface{}{"kind": "repo", "label": "source", "url": "https://example.invalid/source"},
+				map[string]interface{}{"kind": "evidence", "label": "receipt-b", "url": "https://example.invalid/b"},
+			},
+		}},
+	}, {
+		Agent: "worker-a",
+		Tasks: []rawTask{{
+			"task_id": "task-1", "status": "in-progress", "updated": "2026-09-07T12:01:00Z",
+			"links": []interface{}{
+				map[string]interface{}{"kind": "evidence", "label": "receipt-a", "url": "https://example.invalid/a"},
+			},
+		}},
+	}}
+	got := evidenceDetails(fleet)
+	if len(got) != 2 {
+		t.Fatalf("evidence count = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].Agent != "worker-a" || got[0].TaskID != "task-1" || got[0].Status != "in-progress" {
+		t.Fatalf("evidence ordering/identity = %+v", got[0])
+	}
+	if got[1].Agent != "worker-b" || got[1].TaskID != "task-2" || got[1].Label != "receipt-b" {
+		t.Fatalf("evidence ordering/identity = %+v", got[1])
+	}
+}
+
 // Empty slices must marshal as [] and never null: the page calls .length on
 // them, and null throws before anything renders.
 func TestEmptyCollectionsMarshalAsArrays(t *testing.T) {
 	body, err := json.Marshal(Payload{
 		DataErrors: []string{}, Activity: []Event{}, Fleet: []Lane{},
-		Threads: []Thread{}, RegistrationGaps: []string{}, Tasks: []TaskDetail{},
+		Evidence: []EvidenceRef{},
+		Threads:  []Thread{}, RegistrationGaps: []string{}, Tasks: []TaskDetail{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +199,7 @@ func TestEmptyCollectionsMarshalAsArrays(t *testing.T) {
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"data_errors", "activity", "fleet", "threads", "registration_gaps", "tasks"} {
+	for _, f := range []string{"data_errors", "evidence", "activity", "fleet", "threads", "registration_gaps", "tasks"} {
 		if string(got[f]) == "null" {
 			t.Errorf("%s marshaled as null — the page calls .length on it and throws", f)
 		}

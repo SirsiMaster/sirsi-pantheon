@@ -24,6 +24,7 @@ type ControlCapability struct {
 type ControlEnvelope struct {
 	Schema       string              `json:"schema"`
 	Authority    string              `json:"authority"`
+	Revision     uint64              `json:"revision"`
 	GeneratedAt  string              `json:"generated_at"`
 	Capabilities []ControlCapability `json:"capabilities"`
 	State        Payload             `json:"state"`
@@ -57,6 +58,7 @@ func (b *Board) SnapshotControl() ([]byte, uint64, error) {
 	envelope := ControlEnvelope{
 		Schema:       ControlSchema,
 		Authority:    "canonical-routerstore",
+		Revision:     version,
 		GeneratedAt:  state.GeneratedAt,
 		Capabilities: cloneCapabilities(),
 		State:        state,

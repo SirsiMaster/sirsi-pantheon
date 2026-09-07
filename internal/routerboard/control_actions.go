@@ -40,6 +40,7 @@ type ControlActionResponse struct {
 	ItemID    string                 `json:"item_id,omitempty"`
 	Deduped   bool                   `json:"deduped,omitempty"`
 	TaskID    string                 `json:"task_id,omitempty"`
+	ResultRef string                 `json:"result_ref,omitempty"`
 	Lease     *routerstore.TaskLease `json:"lease,omitempty"`
 }
 
@@ -139,7 +140,7 @@ func ApplyControlAction(store *routerstore.Store, req ControlActionRequest) (Con
 		if err := store.CompleteTaskLease(req.Agent, req.TaskID, req.LeaseToken, req.ResultRef); err != nil {
 			return ControlActionResponse{}, err
 		}
-		out.TaskID = req.TaskID
+		out.TaskID, out.ResultRef = req.TaskID, strings.TrimSpace(req.ResultRef)
 	}
 	return out, nil
 }

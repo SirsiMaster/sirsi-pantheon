@@ -107,13 +107,14 @@ type Event struct {
 // renamed key is an empty cell, and an empty cell reads as "no data" rather
 // than as a bug.
 type Payload struct {
-	Build       string       `json:"build"`
-	DataErrors  []string     `json:"data_errors"`
-	GeneratedAt string       `json:"generated_at"`
-	Counters    Counters     `json:"counters"`
-	Activity    []Event      `json:"activity"`
-	Fleet       []Lane       `json:"fleet"`
-	Board       BoardSummary `json:"board"`
+	Build       string        `json:"build"`
+	DataErrors  []string      `json:"data_errors"`
+	GeneratedAt string        `json:"generated_at"`
+	Evidence    []EvidenceRef `json:"evidence"`
+	Counters    Counters      `json:"counters"`
+	Activity    []Event       `json:"activity"`
+	Fleet       []Lane        `json:"fleet"`
+	Board       BoardSummary  `json:"board"`
 	// Ledger is the SAME BoardSummary under the key index.html actually reads.
 	// The UI renders d.ledger; the payload carried only d.board, so every tile
 	// bound to it read undefined and the page displayed nonsense while the API
@@ -126,6 +127,19 @@ type Payload struct {
 	RegistrationGaps []string     `json:"registration_gaps"`
 	Tasks            []TaskDetail `json:"tasks"`
 	SchemaBanner     string       `json:"schema_banner,omitempty"`
+}
+
+// EvidenceRef is the canonical, normalized projection of a task's evidence
+// link. It is intentionally derived from the same ledger read as Tasks, so a
+// remote client never has to interpret raw task JSON or maintain a second
+// evidence index.
+type EvidenceRef struct {
+	TaskID  string `json:"task_id"`
+	Agent   string `json:"agent"`
+	Label   string `json:"label"`
+	URL     string `json:"url"`
+	Status  string `json:"status"`
+	Updated string `json:"updated"`
 }
 
 type Counters struct {
