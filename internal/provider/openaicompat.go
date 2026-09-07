@@ -136,10 +136,13 @@ type ccMessage struct {
 }
 
 type ccRequest struct {
-	Model     string      `json:"model"`
-	Messages  []ccMessage `json:"messages"`
-	MaxTokens int         `json:"max_tokens,omitempty"`
-	Stream    bool        `json:"stream,omitempty"`
+	Model       string      `json:"model"`
+	Messages    []ccMessage `json:"messages"`
+	MaxTokens   int         `json:"max_tokens,omitempty"`
+	Stream      bool        `json:"stream,omitempty"`
+	Temperature *float64    `json:"temperature,omitempty"`
+	TopP        *float64    `json:"top_p,omitempty"`
+	Seed        *int64      `json:"seed,omitempty"`
 }
 
 type ccResponse struct {
@@ -229,7 +232,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	if err != nil {
 		return Response{}, err
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens})
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
 	if err != nil {
 		return Response{}, err
 	}
@@ -300,7 +303,7 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Stream: true})
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Stream: true, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
 	if err != nil {
 		return nil, fmt.Errorf("%s: encode stream request: %w", o.ProviderName, err)
 	}

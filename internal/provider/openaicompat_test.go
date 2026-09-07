@@ -11,16 +11,16 @@ import (
 
 func TestCompleteResolvesServedModel(t *testing.T) {
 	var requestedModel string
+	var requestBody ccRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
 			_, _ = w.Write([]byte(`{"data":[{"id":"served-model"}]}`))
 		case "/v1/chat/completions":
-			var req ccRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 				t.Fatal(err)
 			}
-			requestedModel = req.Model
+			requestedModel = requestBody.Model
 			_, _ = w.Write([]byte(`{"model":"served-model","choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}`))
 		default:
 			http.NotFound(w, r)
@@ -29,7 +29,8 @@ func TestCompleteResolvesServedModel(t *testing.T) {
 	defer srv.Close()
 
 	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
-	resp, err := p.Complete(context.Background(), Request{Prompt: "hello"})
+	temperature, topP, seed := 0.4, 0.85, int64(7)
+	resp, err := p.Complete(context.Background(), Request{Prompt: "hello", Temperature: &temperature, TopP: &topP, Seed: &seed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +39,9 @@ func TestCompleteResolvesServedModel(t *testing.T) {
 	}
 	if resp.Model != "served-model" || resp.Text != "ok" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if requestBody.Temperature == nil || *requestBody.Temperature != temperature || requestBody.TopP == nil || *requestBody.TopP != topP || requestBody.Seed == nil || *requestBody.Seed != seed {
+		t.Fatalf("sampling controls were not forwarded: %+v", requestBody)
 	}
 }
 
@@ -54,11 +58,15 @@ func TestCompleteFailsWhenBrokerServesNoModel(t *testing.T) {
 }
 
 func TestStreamParsesSSEChunksAndDone(t *testing.T) {
+	var requestBody ccRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
 			_, _ = w.Write([]byte(`{"data":[{"id":"stream-model"}]}`))
 		case "/v1/chat/completions":
+			if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+				t.Fatal(err)
+			}
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = w.Write([]byte("data: {\"model\":\"stream-model\",\"choices\":[{\"delta\":{\"content\":\"hel\"},\"finish_reason\":\"\"}]}\n\n"))
 			_, _ = w.Write([]byte("data: {\"model\":\"stream-model\",\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n"))
@@ -70,7 +78,8 @@ func TestStreamParsesSSEChunksAndDone(t *testing.T) {
 	defer srv.Close()
 
 	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
-	chunks, err := p.Stream(context.Background(), Request{Prompt: "hello", MaxTokens: 4})
+	temperature, topP, seed := 0.3, 0.9, int64(11)
+	chunks, err := p.Stream(context.Background(), Request{Prompt: "hello", MaxTokens: 4, Temperature: &temperature, TopP: &topP, Seed: &seed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +94,9 @@ func TestStreamParsesSSEChunksAndDone(t *testing.T) {
 	}
 	if text != "hello" || !sawDone {
 		t.Fatalf("stream = %q done=%v, want hello/done", text, sawDone)
+	}
+	if requestBody.Temperature == nil || *requestBody.Temperature != temperature || requestBody.TopP == nil || *requestBody.TopP != topP || requestBody.Seed == nil || *requestBody.Seed != seed {
+		t.Fatalf("stream sampling controls were not forwarded: %+v", requestBody)
 	}
 }
 

@@ -2474,5 +2474,7 @@ Pantheon now has a clean canonical-main-based streaming connector branch. It
 normalizes OpenAI-compatible SSE for local engines, rejects EOF before a
 terminal marker, requires a served-model observation equal to the admitted
 identity before a completion receipt, and rejects non-finite request values.
+Validated temperature, top-p, and seed values now reach both buffered and SSE
+OpenAI-compatible requests, so receipt-bound requests match backend behavior.
 Focused provider/engine race tests and vet pass; no SNE runtime qualification is
 claimed by this transport work.

@@ -349,7 +349,7 @@ func (c ProviderConnector) Complete(ctx context.Context, session Session, req Ge
 		started = c.Now
 	}
 	start := started().UTC()
-	response, err := c.Backend.Complete(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens})
+	response, err := c.Backend.Complete(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
 	if err != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}
@@ -394,7 +394,7 @@ func (c ProviderConnector) Stream(ctx context.Context, session Session, req Gene
 	if !ok {
 		return nil, fmt.Errorf("%w: %s connector has no streaming transport", ErrUnsupportedCapability, c.Engine)
 	}
-	raw, err := streaming.Stream(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens})
+	raw, err := streaming.Stream(ctx, provider.Request{Prompt: req.Prompt, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
 	if err != nil {
 		return nil, fmt.Errorf("engine connector %s: %w", c.Engine, err)
 	}

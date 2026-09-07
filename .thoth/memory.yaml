@@ -302,5 +302,6 @@ sync_protocol:
 # ABI consumption only—SNE retains runtime lifecycle and qualification.
 # 2026-09-07 (SSA): Clean canonical-main streaming connector branch
 # `codex/ssa-streaming-terminal-integrity-clean-20260907` adds OpenAI-compatible
-# SSE transport with terminal-marker, observed-model, and finite-receipt fences.
+# SSE transport with terminal-marker, observed-model, finite-receipt, and
+# sampling-control forwarding fences.
 # Focused provider/engine race tests, vet, lint, secret scan, and ARM64 build pass.

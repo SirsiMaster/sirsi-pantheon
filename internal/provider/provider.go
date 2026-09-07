@@ -75,6 +75,11 @@ type Request struct {
 	System    string
 	Prompt    string
 	MaxTokens int
+	// Sampling controls are optional so a caller can preserve a deliberate
+	// generation contract across buffered and streaming transports.
+	Temperature *float64
+	TopP        *float64
+	Seed        *int64
 	// Tools offered this turn. A provider without Caps.Tools must ignore these
 	// and the caller must notice — see Response.ToolsHonored.
 	Tools []ToolSpec
