@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 const remoteControlBodyLimit = 8 << 20
+const remoteControlActionBodyLimit = 64 << 10
 
 func firstNonEmptyControlEndpoint(values ...string) string {
 	for _, value := range values {
@@ -24,6 +26,14 @@ func firstNonEmptyControlEndpoint(values ...string) string {
 }
 
 func controlEndpointURL(raw string) (string, error) {
+	return controlURL(raw, "/api/control")
+}
+
+func controlActionEndpointURL(raw string) (string, error) {
+	return controlURL(raw, "/api/control/action")
+}
+
+func controlURL(raw, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("control endpoint must be an absolute URL: %q", raw)
@@ -31,14 +41,13 @@ func controlEndpointURL(raw string) (string, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("control endpoint scheme %q is unsupported", parsed.Scheme)
 	}
-	if parsed.Path == "" || parsed.Path == "/" {
-		parsed.Path = "/api/control"
-	} else if parsed.Path != "/api/control" {
-		return "", fmt.Errorf("control endpoint path must be /api/control, got %q", parsed.Path)
+	if parsed.Path != "" && parsed.Path != "/" && parsed.Path != "/api/control" {
+		return "", fmt.Errorf("control endpoint path must be empty, /, or /api/control, got %q", parsed.Path)
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", fmt.Errorf("control endpoint must not include query or fragment")
 	}
+	parsed.Path = path
 	return parsed.String(), nil
 }
 
@@ -74,6 +83,71 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 		return nil, fmt.Errorf("control snapshot is not valid JSON")
 	}
 	return body, nil
+}
+
+func readControlActionRequest(source string) ([]byte, error) {
+	var reader io.Reader = os.Stdin
+	var file *os.File
+	if strings.TrimSpace(source) != "" && source != "-" {
+		clean := filepath.Clean(source)
+		opened, err := os.Open(clean) //nolint:gosec // explicit operator-selected request file
+		if err != nil {
+			return nil, fmt.Errorf("open control action request %q: %w", clean, err)
+		}
+		file = opened
+		defer func() { _ = file.Close() }()
+		reader = file
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, remoteControlActionBodyLimit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read control action request: %w", err)
+	}
+	if len(body) > remoteControlActionBodyLimit {
+		return nil, fmt.Errorf("control action request exceeds %d-byte limit", remoteControlActionBodyLimit)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		if err == nil {
+			err = fmt.Errorf("request must be a JSON object")
+		}
+		return nil, fmt.Errorf("invalid control action request: %w", err)
+	}
+	return body, nil
+}
+
+func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, body []byte) ([]byte, error) {
+	endpoint, err := controlActionEndpointURL(rawEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("build control action request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if token = strings.TrimSpace(token); token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("send control action: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	result, readErr := io.ReadAll(io.LimitReader(response.Body, remoteControlBodyLimit+1))
+	if readErr != nil {
+		return nil, fmt.Errorf("read control action response: %w", readErr)
+	}
+	if len(result) > remoteControlBodyLimit {
+		return nil, fmt.Errorf("control action response exceeds %d-byte limit", remoteControlBodyLimit)
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("control action returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(result)))
+	}
+	if !json.Valid(result) {
+		return nil, fmt.Errorf("control action response is not valid JSON")
+	}
+	return result, nil
 }
 
 func printControlJSON(body []byte) error {

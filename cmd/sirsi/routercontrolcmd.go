@@ -13,6 +13,8 @@ import (
 
 var routerControlEndpoint string
 
+var routerControlActionRequestFile string
+
 var routerControlCmd = &cobra.Command{
 	Use:   "control",
 	Short: "Inspect the canonical worker control plane as one JSON envelope",
@@ -50,4 +52,28 @@ var routerControlCmd = &cobra.Command{
 func init() {
 	routerControlCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
 	routerCmd.AddCommand(routerControlCmd)
+	routerControlActionCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
+	routerControlActionCmd.Flags().StringVar(&routerControlActionRequestFile, "request-file", "-", "JSON action request file, or - for stdin")
+	routerCmd.AddCommand(routerControlActionCmd)
+}
+
+var routerControlActionCmd = &cobra.Command{
+	Use:   "control-action",
+	Short: "Send one closed authenticated worker-control action to M5",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		endpoint := firstNonEmptyControlEndpoint(routerControlEndpoint, os.Getenv("SIRSI_CONTROL_ENDPOINT"))
+		if endpoint == "" {
+			return fmt.Errorf("control endpoint is required via --endpoint or SIRSI_CONTROL_ENDPOINT")
+		}
+		body, err := readControlActionRequest(routerControlActionRequestFile)
+		if err != nil {
+			return err
+		}
+		response, err := sendRemoteControlAction(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body)
+		if err != nil {
+			return err
+		}
+		return printControlJSON(response)
+	},
 }
