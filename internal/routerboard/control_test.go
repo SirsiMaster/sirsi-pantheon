@@ -186,6 +186,15 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 		t.Fatalf("duplicate field response = %d %s", response.Code, response.Body.String())
 	}
 
+	semantic := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"message","from":"a","to":"b","title":"hello","task_id":"not-a-message-field"}`))
+	semantic.Header.Set("Authorization", "Bearer test-token")
+	semantic.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, semantic)
+	if response.Code != http.StatusConflict || !bytes.Contains(response.Body.Bytes(), []byte("does not accept task_id")) {
+		t.Fatalf("cross-verb field response = %d %s", response.Code, response.Body.String())
+	}
+
 	noToken := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "")
 	noTokenMux := http.NewServeMux()
 	noToken.Register(noTokenMux)

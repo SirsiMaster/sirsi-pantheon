@@ -44,10 +44,32 @@ type ControlActionResponse struct {
 	Lease     *routerstore.TaskLease `json:"lease,omitempty"`
 }
 
+type actionField struct {
+	name  string
+	value string
+}
+
+func rejectNonEmptyActionFields(verb string, fields ...actionField) error {
+	for _, field := range fields {
+		if strings.TrimSpace(field.value) != "" {
+			return fmt.Errorf("%s does not accept %s", verb, field.name)
+		}
+	}
+	return nil
+}
+
 func (r ControlActionRequest) validate() error {
 	r.Verb = strings.TrimSpace(r.Verb)
 	switch r.Verb {
 	case "message", "review_request":
+		if err := rejectNonEmptyActionFields(r.Verb,
+			actionField{"agent", r.Agent}, actionField{"task_id", r.TaskID}, actionField{"subject", r.Subject},
+			actionField{"phase", r.Phase}, actionField{"responsible_party", r.ResponsibleParty}, actionField{"worker", r.Worker},
+			actionField{"thread_id", r.ThreadID}, actionField{"lease_token", r.LeaseToken}, actionField{"reason", r.Reason},
+			actionField{"result_ref", r.ResultRef},
+		); err != nil {
+			return err
+		}
 		if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" || strings.TrimSpace(r.Title) == "" {
 			return fmt.Errorf("%s requires from, to, and title", r.Verb)
 		}
@@ -55,14 +77,38 @@ func (r ControlActionRequest) validate() error {
 			r.Type = "review"
 		}
 	case "delegate":
+		if err := rejectNonEmptyActionFields(r.Verb,
+			actionField{"from", r.From}, actionField{"to", r.To}, actionField{"title", r.Title}, actionField{"type", r.Type},
+			actionField{"instructions", r.Instructions}, actionField{"subject_key", r.SubjectKey}, actionField{"source_item", r.SourceItem},
+			actionField{"worker", r.Worker}, actionField{"thread_id", r.ThreadID}, actionField{"lease_token", r.LeaseToken},
+			actionField{"reason", r.Reason}, actionField{"result_ref", r.ResultRef},
+		); err != nil {
+			return err
+		}
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.Subject) == "" {
 			return fmt.Errorf("delegate requires agent, task_id, and subject")
 		}
 	case "claim":
+		if err := rejectNonEmptyActionFields(r.Verb,
+			actionField{"from", r.From}, actionField{"to", r.To}, actionField{"title", r.Title}, actionField{"type", r.Type},
+			actionField{"instructions", r.Instructions}, actionField{"subject_key", r.SubjectKey}, actionField{"source_item", r.SourceItem},
+			actionField{"subject", r.Subject}, actionField{"phase", r.Phase}, actionField{"responsible_party", r.ResponsibleParty},
+			actionField{"lease_token", r.LeaseToken}, actionField{"reason", r.Reason}, actionField{"result_ref", r.ResultRef},
+		); err != nil {
+			return err
+		}
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.Worker) == "" || strings.TrimSpace(r.ThreadID) == "" {
 			return fmt.Errorf("claim requires agent, worker, and thread_id")
 		}
 	case "cancel_handback":
+		if err := rejectNonEmptyActionFields(r.Verb,
+			actionField{"from", r.From}, actionField{"to", r.To}, actionField{"title", r.Title}, actionField{"type", r.Type},
+			actionField{"instructions", r.Instructions}, actionField{"subject_key", r.SubjectKey}, actionField{"source_item", r.SourceItem},
+			actionField{"subject", r.Subject}, actionField{"phase", r.Phase}, actionField{"responsible_party", r.ResponsibleParty},
+			actionField{"worker", r.Worker}, actionField{"thread_id", r.ThreadID}, actionField{"result_ref", r.ResultRef},
+		); err != nil {
+			return err
+		}
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.LeaseToken) == "" {
 			return fmt.Errorf("cancel_handback requires agent, task_id, and lease_token")
 		}
@@ -70,11 +116,22 @@ func (r ControlActionRequest) validate() error {
 			return fmt.Errorf("cancel_handback requires reason")
 		}
 	case "result_return":
+		if err := rejectNonEmptyActionFields(r.Verb,
+			actionField{"from", r.From}, actionField{"to", r.To}, actionField{"title", r.Title}, actionField{"type", r.Type},
+			actionField{"instructions", r.Instructions}, actionField{"subject_key", r.SubjectKey}, actionField{"source_item", r.SourceItem},
+			actionField{"subject", r.Subject}, actionField{"phase", r.Phase}, actionField{"responsible_party", r.ResponsibleParty},
+			actionField{"worker", r.Worker}, actionField{"thread_id", r.ThreadID}, actionField{"reason", r.Reason},
+		); err != nil {
+			return err
+		}
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.LeaseToken) == "" || strings.TrimSpace(r.ResultRef) == "" {
 			return fmt.Errorf("result_return requires agent, task_id, lease_token, and result_ref")
 		}
 	default:
 		return fmt.Errorf("unsupported control action %q", r.Verb)
+	}
+	if r.TTLSeconds != 0 && r.Verb != "claim" {
+		return fmt.Errorf("%s does not accept ttl_seconds", r.Verb)
 	}
 	if r.TTLSeconds < 0 || r.TTLSeconds > int64((24*time.Hour)/time.Second) {
 		return fmt.Errorf("ttl_seconds must be between 0 and 86400")
