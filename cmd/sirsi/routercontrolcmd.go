@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,11 +11,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var routerControlEndpoint string
+
 var routerControlCmd = &cobra.Command{
 	Use:   "control",
 	Short: "Inspect the canonical worker control plane as one JSON envelope",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if endpoint := firstNonEmptyControlEndpoint(routerControlEndpoint, os.Getenv("SIRSI_CONTROL_ENDPOINT")); endpoint != "" {
+			body, err := fetchRemoteControl(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"))
+			if err != nil {
+				return err
+			}
+			return printControlJSON(body)
+		}
 		repoRoot, err := router.FindRepoRoot()
 		if err != nil {
 			return fmt.Errorf("locate repo root: %w", err)
@@ -35,14 +43,11 @@ var routerControlCmd = &cobra.Command{
 		if version == 0 || len(body) == 0 {
 			return fmt.Errorf("control snapshot unavailable: canonical router poll did not complete")
 		}
-		var out map[string]json.RawMessage
-		if err := json.Unmarshal(body, &out); err != nil {
-			return fmt.Errorf("validate control snapshot: %w", err)
-		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(out)
+		return printControlJSON(body)
 	},
 }
 
-func init() { routerCmd.AddCommand(routerControlCmd) }
+func init() {
+	routerControlCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
+	routerCmd.AddCommand(routerControlCmd)
+}
