@@ -246,3 +246,29 @@ func TestRouterRejectsNilStreamFromConnector(t *testing.T) {
 		t.Fatalf("nil connector stream was accepted: %v", err)
 	}
 }
+
+func TestRouterRejectsStreamClosedBeforeTerminalEvent(t *testing.T) {
+	stream := make(chan Event)
+	close(stream)
+	r, err := NewRouter(routerFixtureConnector{
+		kind:         KindMLX,
+		identity:     identityFor(KindMLX),
+		caps:         Capabilities{Sessions: true, Streaming: true},
+		available:    true,
+		streamEvents: stream,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := Session{ID: "incomplete-stream", Identity: identityFor(KindMLX), CreatedAt: "2026-09-07T16:00:00Z"}
+	decision := RouteDecision{Requested: KindMLX, Selected: KindMLX, Rationale: "preferred mlx connector admitted"}
+	request := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 1, Stream: true, CacheNamespace: session.Identity.CacheNamespace}
+	events, err := r.Stream(context.Background(), session, request, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := <-events
+	if event.Kind != EventError || event.ErrorCode != "stream_event_invalid" || !strings.Contains(event.Error, "terminal event") {
+		t.Fatalf("incomplete stream was not rejected: %+v", event)
+	}
+}

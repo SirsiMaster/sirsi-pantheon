@@ -172,6 +172,7 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 	go func() {
 		defer close(routed)
 		var previous uint64
+		terminal := false
 		for event := range events {
 			if event.Receipt != nil {
 				route := decision
@@ -185,12 +186,18 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 				routerEmitError(ctx, routed, previous, session.ID, err)
 				return
 			}
+			if event.Kind == EventCompleted || event.Kind == EventError {
+				terminal = true
+			}
 			previous = event.Sequence
 			select {
 			case routed <- event:
 			case <-ctx.Done():
 				return
 			}
+		}
+		if !terminal {
+			routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream ended before a terminal event"))
 		}
 	}()
 	return routed, nil
