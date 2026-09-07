@@ -1,6 +1,10 @@
 package routerboard
 
-import "encoding/json"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
 
 // ControlSchema is the stable machine-facing envelope used by remote workers.
 // The board payload remains the presentation contract; this envelope makes the
@@ -26,6 +30,7 @@ type ControlEnvelope struct {
 	Authority    string              `json:"authority"`
 	Revision     uint64              `json:"revision"`
 	GeneratedAt  string              `json:"generated_at"`
+	StateSHA256  string              `json:"state_sha256"`
 	Capabilities []ControlCapability `json:"capabilities"`
 	State        Payload             `json:"state"`
 }
@@ -55,11 +60,17 @@ func (b *Board) SnapshotControl() ([]byte, uint64, error) {
 	if err := json.Unmarshal(body, &state); err != nil {
 		return nil, version, err
 	}
+	canonicalState, err := json.Marshal(state)
+	if err != nil {
+		return nil, version, err
+	}
+	stateSum := sha256.Sum256(canonicalState)
 	envelope := ControlEnvelope{
 		Schema:       ControlSchema,
 		Authority:    "canonical-routerstore",
 		Revision:     version,
 		GeneratedAt:  state.GeneratedAt,
+		StateSHA256:  hex.EncodeToString(stateSum[:]),
 		Capabilities: cloneCapabilities(),
 		State:        state,
 	}

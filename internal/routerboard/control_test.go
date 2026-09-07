@@ -2,6 +2,8 @@ package routerboard
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +38,14 @@ func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
 	}
 	if got.Revision != 4 {
 		t.Fatalf("revision = %d, want 4", got.Revision)
+	}
+	canonicalState, err := json.Marshal(got.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSum := sha256.Sum256(canonicalState)
+	if got.StateSHA256 != hex.EncodeToString(stateSum[:]) {
+		t.Fatalf("state digest = %q, want canonical state digest", got.StateSHA256)
 	}
 	if len(got.Capabilities) != 7 {
 		t.Fatalf("capability count = %d, want 7", len(got.Capabilities))
