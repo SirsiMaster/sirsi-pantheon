@@ -214,7 +214,7 @@ var routerTokenListCmd = &cobra.Command{
 }
 
 func init() {
-	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", "", "postgres:// DSN or SQLite path of the SERVICE's backend (required)")
+	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", os.Getenv("SIRSI_ROUTER_STORE"), "postgres:// DSN or SQLite path of the SERVICE's backend (required; default $SIRSI_ROUTER_STORE so a Cloud Run job can mint/revoke)")
 	routerTokenMintCmd.Flags().String("label", "", "free-text label (e.g. the machine's name)")
 	routerTokenCmd.AddCommand(routerTokenMintCmd, routerTokenRevokeCmd, routerTokenListCmd)
 	routerCmd.AddCommand(routerTokenCmd)
