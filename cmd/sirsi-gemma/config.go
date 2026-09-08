@@ -141,6 +141,17 @@ func (c Config) EffectiveEngine() string {
 	return "mlx"
 }
 
+// OverrideEngine applies an explicit command-line selection without changing
+// the on-disk configuration. Empty values leave the loaded configuration
+// untouched; non-empty values use the same closed validation as gemma.toml.
+func (c *Config) OverrideEngine(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return c.set("engine", value)
+}
+
 func expandHome(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {

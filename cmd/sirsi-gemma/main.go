@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
@@ -28,6 +29,7 @@ import (
 
 func main() {
 	configPath := flag.String("config", DefaultConfigPath(), "path to gemma.toml")
+	engineOverride := flag.String("engine", "", "override the configured engine: mlx, sne, or omlx")
 	skipHealth := flag.Bool("skip-health", false, "skip the startup health probe (debugging only)")
 	flag.Parse()
 
@@ -36,6 +38,12 @@ func main() {
 	if err != nil {
 		logger.Printf("config: %v — falling back to defaults", err)
 		cfg = DefaultConfig()
+	}
+	if strings.TrimSpace(*engineOverride) != "" {
+		if err := cfg.OverrideEngine(*engineOverride); err != nil {
+			logger.Fatalf("engine override: %v", err)
+		}
+		logger.Printf("engine: command-line override selected %s", cfg.Engine)
 	}
 
 	runner := selectRunner(cfg, *skipHealth, logger)

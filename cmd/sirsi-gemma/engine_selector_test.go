@@ -56,6 +56,22 @@ func TestLoadConfigEngineValues(t *testing.T) {
 	}
 }
 
+func TestOverrideEngineDoesNotRewriteConfigAndRejectsUnknownValues(t *testing.T) {
+	cfg := Config{Engine: "mlx", SNEURL: "http://sne.test/v1"}
+	if err := cfg.OverrideEngine("  sne "); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Engine != "sne" || cfg.SNEURL != "http://sne.test/v1" {
+		t.Fatalf("override changed the wrong config fields: %+v", cfg)
+	}
+	if err := cfg.OverrideEngine("patched-mlx"); err == nil {
+		t.Fatal("unknown command-line engine was accepted")
+	}
+	if err := cfg.OverrideEngine(""); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompatibleEnginesShareWorkflow(t *testing.T) {
 	var paths []string
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

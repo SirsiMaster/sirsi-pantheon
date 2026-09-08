@@ -70,8 +70,11 @@ performs session admission and returns an actionable readiness error if SNE is
 not available.
 
 There is no separate `sirsi engine select` CLI today. Connector selection is
-configured with the `SIRSI_*` environment contract above and changed during a
-running dashboard session through the Engine view. Do not start a model
+configured with the `SIRSI_*` environment contract above. For the MCP CLI
+surface, `sirsi-gemma --engine sne` (or `mlx`/`omlx`) overrides the file for
+that process without rewriting it; its `gemma_chat` and `gemma_complete` tools
+then submit prompts through the selected connector. The dashboard selection is
+changed during a running session through the Engine view. Do not start a model
 workload merely to inspect the selection snapshot; availability is proved only
 when an operator submits a prompt.
 
