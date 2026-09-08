@@ -47,19 +47,6 @@ type SNELifecycle struct {
 	After      SNEReadiness       `json:"after"`
 }
 
-// SNERecovery is a plan-only, hash-bound recovery decision. Execution remains
-// with the existing receipt-bound recovery/lifecycle owners.
-type SNERecovery struct {
-	Plan       sne.RecoveryPlan `json:"plan"`
-	PlanSHA256 string           `json:"plan_sha256"`
-}
-
-// SNEBenchmarkSession is the Pantheon-facing name for the existing native
-// benchmark provenance/session contract.
-type SNEBenchmarkSession struct {
-	Session sne.BenchmarkSession `json:"session"`
-}
-
 // SNEControl composes Pantheon's engine layer with the native SNE control
 // surface. It never edits the native SNE package or invents a second lifecycle
 // authority.
@@ -191,30 +178,6 @@ func (c *SNEControl) Apply(ctx context.Context, action SNELifecycleAction) (SNEL
 		return SNELifecycle{}, fmt.Errorf("SNE control: %s cancelled before success: %w", action, err)
 	}
 	return SNELifecycle{Action: action, ModelID: c.modelID, StartedAt: started, FinishedAt: c.clock().UTC(), Before: before, After: after}, nil
-}
-
-func (c *SNEControl) PlanRecovery(request sne.RecoveryRequest) (SNERecovery, error) {
-	plan, err := sne.PlanRecovery(request)
-	if err != nil {
-		return SNERecovery{}, fmt.Errorf("SNE control: recovery plan: %w", err)
-	}
-	digest, err := sne.RecoveryPlanSHA256(plan)
-	if err != nil {
-		return SNERecovery{}, fmt.Errorf("SNE control: recovery plan digest: %w", err)
-	}
-	return SNERecovery{Plan: plan, PlanSHA256: digest}, nil
-}
-
-func NewSNEBenchmarkSession(provenance sne.BenchmarkProvenance) (SNEBenchmarkSession, error) {
-	session, err := sne.NewBenchmarkSession(provenance)
-	if err != nil {
-		return SNEBenchmarkSession{}, fmt.Errorf("SNE control: benchmark session: %w", err)
-	}
-	return SNEBenchmarkSession{Session: session}, nil
-}
-
-func (s SNEBenchmarkSession) Validate() error {
-	return s.Session.Validate()
 }
 
 func (c *SNEControl) readiness(identity sne.ServiceReadinessIdentity) SNEReadiness {

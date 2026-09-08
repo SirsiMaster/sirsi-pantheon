@@ -242,32 +242,3 @@ func TestSNEControlUnloadRequiresClearedPostflightIdentity(t *testing.T) {
 		})
 	}
 }
-
-func TestSNEControlRecoveryAndBenchmarkAreHashBound(t *testing.T) {
-	control, err := NewSNEControl(&fakeSNEControlClient{}, "model-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	request := sne.RecoveryRequest{
-		Action: sne.RecoveryRetry, ReceiptID: "receipt-1",
-		Current: sne.RecoveryIdentity{ModelID: "model-a", RuntimeID: "runtime", PackageID: "package", PackageSHA256: sha, RuntimeSHA256: sha, ManifestSHA256: sha, ArtifactSetSHA256: sha},
-		Lease:   sne.RecoveryArtifactLease{LeaseID: "lease-1", SHA256: sha}, OperatorState: sne.RecoveryOperatorActive,
-	}
-	recovery, err := control.PlanRecovery(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recovery.PlanSHA256 == "" || recovery.PlanSHA256 == sha || recovery.Plan.ReceiptID != request.ReceiptID {
-		t.Fatalf("unexpected recovery binding: %+v", recovery)
-	}
-	benchmark, err := NewSNEBenchmarkSession(sne.BenchmarkProvenance{
-		SessionID: "session", ClaimClass: "performance", CleanRoom: true, DeviceIdentity: "device", OSVersion: "macOS", SourceRevision: "source", ModelID: "model-a", RuntimeID: "runtime", ArtifactSetSHA256: sha, ManifestSHA256: sha, CorpusSHA256: sha, PowerSource: "AC", ThermalState: "nominal", InputTokens: 8, OutputTokens: 4,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := benchmark.Validate(); err != nil {
-		t.Fatal(err)
-	}
-}
