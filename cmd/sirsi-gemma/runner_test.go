@@ -162,6 +162,7 @@ func TestCompleteHandler_PreservesTextAndAddsConfiguredReceipt(t *testing.T) {
 		}},
 		engine: "sne",
 		model:  "gemma-test",
+		route:  "explicit-selection",
 	}
 	res, err := makeCompleteHandler(runner)(map[string]any{
 		"prompt":      "ping",
@@ -189,6 +190,24 @@ func TestCompleteHandler_PreservesTextAndAddsConfiguredReceipt(t *testing.T) {
 	}
 	if receipt.RuntimeVerified || receipt.RequestSHA256 == "" || receipt.CompletionSHA256 == "" {
 		t.Fatalf("receipt overclaims or lacks digests: %+v", receipt)
+	}
+}
+
+func TestConfiguredReceiptDefaultsMirrorConnectorModels(t *testing.T) {
+	if got := configuredModel(Config{}, "sne"); got != "gemma-2-27b-it" {
+		t.Fatalf("SNE default model = %q", got)
+	}
+	if got := configuredModel(Config{}, "omlx"); got != "gemma-4-12b-it" {
+		t.Fatalf("oMLX default model = %q", got)
+	}
+	if got := configuredRoute(Config{Engine: "sne"}); got != "explicit-selection" {
+		t.Fatalf("explicit route = %q", got)
+	}
+	if got := configuredRoute(Config{SNEURL: "http://sne"}); got != "legacy-configured-selection" {
+		t.Fatalf("legacy route = %q", got)
+	}
+	if got := configuredRoute(Config{}); got != "default-selection" {
+		t.Fatalf("default route = %q", got)
 	}
 }
 

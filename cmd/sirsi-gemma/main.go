@@ -90,7 +90,7 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 	}
 	if skipHealth {
 		logger.Println("health: skipped via --skip-health")
-		return &configuredReceiptRunner{Runner: r, engine: engine, model: configuredModel(cfg, engine)}
+		return &configuredReceiptRunner{Runner: r, engine: engine, model: configuredModel(cfg, engine), route: configuredRoute(cfg)}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -99,18 +99,34 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 		return &disabledRunner{reason: err.Error()}
 	}
 	logger.Printf("health: %s engine alive", engine)
-	return &configuredReceiptRunner{Runner: r, engine: engine, model: configuredModel(cfg, engine)}
+	return &configuredReceiptRunner{Runner: r, engine: engine, model: configuredModel(cfg, engine), route: configuredRoute(cfg)}
 }
 
 func configuredModel(cfg Config, engine string) string {
 	switch engine {
 	case "sne":
+		if cfg.SNEModel == "" {
+			return "gemma-2-27b-it"
+		}
 		return cfg.SNEModel
 	case "omlx":
+		if cfg.OMLXModel == "" {
+			return "gemma-4-12b-it"
+		}
 		return cfg.OMLXModel
 	default:
 		return cfg.ModelID
 	}
+}
+
+func configuredRoute(cfg Config) string {
+	if cfg.Engine != "" {
+		return "explicit-selection"
+	}
+	if cfg.SNEURL != "" || cfg.OMLXURL != "" {
+		return "legacy-configured-selection"
+	}
+	return "default-selection"
 }
 
 func registerGemmaTools(srv *mcp.Server, runner Runner) {

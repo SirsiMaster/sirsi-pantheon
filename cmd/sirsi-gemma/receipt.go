@@ -32,6 +32,7 @@ type configuredReceiptRunner struct {
 	Runner
 	engine string
 	model  string
+	route  string
 }
 
 func (r *configuredReceiptRunner) GenerateWithReceipt(ctx context.Context, prompt string, maxTokens int, temperature float64) (string, GenerationReceipt, error) {
@@ -43,7 +44,7 @@ func (r *configuredReceiptRunner) GenerateWithReceipt(ctx context.Context, promp
 		Schema:           "pantheon.gemma-generation-receipt/v1",
 		Engine:           r.engine,
 		Model:            r.model,
-		Route:            "explicit-selection",
+		Route:            r.route,
 		IdentitySource:   "configured-engine-selection",
 		RuntimeVerified:  false,
 		RequestSHA256:    generationRequestDigest(prompt, maxTokens, temperature),
