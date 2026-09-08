@@ -20,7 +20,22 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	info := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`)
+	info := []byte(`<?xml version="1.0"?>
+<!-- production-shaped whitespace and non-string values -->
+<plist version="1.0">
+  <dict>
+    <key>CFBundleIdentifier</key>
+    <string>ai.sirsi.pantheon</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>CFBundleShortVersionString</key>
+    <string>0.23.9-beta</string>
+    <key>CFBundleDocumentTypes</key>
+    <array><string>public.data</string></array>
+    <key>CFBundleVersion</key>
+    <string>20260908</string>
+  </dict>
+</plist>`)
 	pkgInfo := []byte("APPL????")
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
 	files := map[string][]byte{

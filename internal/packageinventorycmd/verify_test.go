@@ -52,7 +52,22 @@ func makeCommandBundle(t *testing.T) (string, string, string, string) {
 	info := filepath.Join(root, "Info.plist")
 	pkgInfo := filepath.Join(root, "PkgInfo")
 	launchAgent := filepath.Join(root, "LaunchAgent.plist")
-	infoBytes := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`)
+	infoBytes := []byte(`<?xml version="1.0"?>
+<!-- production-shaped whitespace and non-string values -->
+<plist version="1.0">
+  <dict>
+    <key>CFBundleIdentifier</key>
+    <string>ai.sirsi.pantheon</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>CFBundleShortVersionString</key>
+    <string>0.23.9-beta</string>
+    <key>CFBundleDocumentTypes</key>
+    <array><string>public.data</string></array>
+    <key>CFBundleVersion</key>
+    <string>20260908</string>
+  </dict>
+</plist>`)
 	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}

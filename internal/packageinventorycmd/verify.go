@@ -5,6 +5,7 @@ package packageinventorycmd
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -143,39 +144,9 @@ func openParent(path string) (int, string, error) {
 
 func validateInfoPlist(data []byte, version, build string) error {
 	decoder := xml.NewDecoder(strings.NewReader(string(data)))
-	values := make(map[string]string)
-	var key string
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return errors.New("Info.plist is not valid XML")
-		}
-		start, ok := token.(xml.StartElement)
-		if !ok || start.Name.Local != "key" {
-			continue
-		}
-		if err := decoder.DecodeElement(&key, &start); err != nil || key == "" {
-			return errors.New("Info.plist contains an invalid key")
-		}
-		valueToken, err := decoder.Token()
-		if err != nil {
-			return errors.New("Info.plist key has no value")
-		}
-		valueStart, ok := valueToken.(xml.StartElement)
-		if !ok || valueStart.Name.Local != "string" {
-			return errors.New("Info.plist value is not a string")
-		}
-		var value string
-		if err := decoder.DecodeElement(&value, &valueStart); err != nil {
-			return errors.New("Info.plist contains an invalid string")
-		}
-		if _, exists := values[key]; exists {
-			return errors.New("Info.plist contains duplicate keys")
-		}
-		values[key] = value
+	values, err := parseRootDictionary(decoder)
+	if err != nil {
+		return err
 	}
 	if values["CFBundleIdentifier"] != "ai.sirsi.pantheon" {
 		return errors.New("Info.plist bundle identifier mismatch")
@@ -187,6 +158,84 @@ func validateInfoPlist(data []byte, version, build string) error {
 		return errors.New("Info.plist build does not match --build")
 	}
 	return nil
+}
+
+func parseRootDictionary(decoder *xml.Decoder) (map[string]string, error) {
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil, errors.New("Info.plist dictionary is missing")
+		}
+		if err != nil {
+			return nil, errors.New("Info.plist is not valid XML")
+		}
+		start, ok := token.(xml.StartElement)
+		if ok && start.Name.Local == "dict" {
+			return parseDictionary(decoder, start)
+		}
+	}
+}
+
+func parseDictionary(decoder *xml.Decoder, start xml.StartElement) (map[string]string, error) {
+	values := make(map[string]string)
+	for {
+		token, err := nextSignificantToken(decoder)
+		if err != nil {
+			return nil, errors.New("Info.plist dictionary is incomplete")
+		}
+		if end, ok := token.(xml.EndElement); ok && end.Name.Local == start.Name.Local {
+			return values, nil
+		}
+		keyStart, ok := token.(xml.StartElement)
+		if !ok || keyStart.Name.Local != "key" {
+			return nil, errors.New("Info.plist dictionary contains a non-key entry")
+		}
+		var key string
+		if err := decoder.DecodeElement(&key, &keyStart); err != nil || strings.TrimSpace(key) == "" {
+			return nil, errors.New("Info.plist contains an invalid key")
+		}
+		valueToken, err := nextSignificantToken(decoder)
+		if err != nil {
+			return nil, errors.New("Info.plist key has no value")
+		}
+		valueStart, ok := valueToken.(xml.StartElement)
+		if !ok {
+			return nil, errors.New("Info.plist key has an invalid value")
+		}
+		if key != "CFBundleIdentifier" && key != "CFBundleShortVersionString" && key != "CFBundleVersion" {
+			if err := decoder.Skip(); err != nil {
+				return nil, errors.New("Info.plist contains an invalid value")
+			}
+			continue
+		}
+		if valueStart.Name.Local != "string" {
+			return nil, fmt.Errorf("Info.plist target %s must be a string", key)
+		}
+		if _, exists := values[key]; exists {
+			return nil, fmt.Errorf("Info.plist contains duplicate target key %s", key)
+		}
+		var value string
+		if err := decoder.DecodeElement(&value, &valueStart); err != nil {
+			return nil, errors.New("Info.plist contains an invalid string")
+		}
+		values[key] = value
+	}
+}
+
+func nextSignificantToken(decoder *xml.Decoder) (xml.Token, error) {
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		if chars, ok := token.(xml.CharData); ok && strings.TrimSpace(string(chars)) == "" {
+			continue
+		}
+		if _, ok := token.(xml.Comment); ok {
+			continue
+		}
+		return token, nil
+	}
 }
 
 func sameIdentity(a, b unix.Stat_t) bool {
