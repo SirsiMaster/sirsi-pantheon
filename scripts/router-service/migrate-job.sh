@@ -26,7 +26,8 @@ TAG="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/sirsi-router-migrat
 ctx=$(mktemp -d); trap 'rm -rf "$ctx"' EXIT
 cp "$SNAP" "$ctx/src.db"
 printf 'FROM %s\nCOPY src.db /data/src.db\n' "$BASE" >"$ctx/Dockerfile"
-$G builds submit "$ctx" --tag "$TAG" >/dev/null
+# --suppress-logs: the provisioner SA cannot read the build log bucket, and without it gcloud exits 1 on a build that succeeds.
+$G builds submit "$ctx" --tag "$TAG" --suppress-logs >/dev/null
 echo "   $TAG"
 
 echo "== 3. Job $JOB (${DRY_RUN:+DRY RUN}${DRY_RUN:-REAL IMPORT})"
